@@ -13,7 +13,6 @@ import {
   formatUptime,
   formatWatts,
   formatWh,
-  STATE_LABELS,
   STATE_TINT,
 } from '../../src/lib/format';
 import type { LedMode } from '../../src/lib/types';
@@ -80,38 +79,56 @@ export default function DashboardScreen() {
         </Card>
       ) : null}
 
-      {/* The centrepiece: where power is coming from and going, live. */}
-      <Card paddingVertical="$3" paddingHorizontal="$2" gap="$2">
-        <EnergyFlow status={status} />
+      {/* The centrepiece. Totals lead, because "how much in, how much out" is
+          the first question; the diagram then answers "from where, to where". */}
+      <Card paddingTop="$4" paddingBottom="$4" paddingHorizontal="$3" gap="$2">
+        <XStack paddingHorizontal="$2">
+          <YStack flex={1} gap={2}>
+            <Text fontSize={12} fontWeight="700" color="$success" letterSpacing={0.4}>
+              Input
+            </Text>
+            <AnimatedNumber
+              value={status.totalInputWatts}
+              format={formatWatts}
+              fontSize={28}
+              fontWeight="800"
+              color={status.totalInputWatts > 0 ? '$color' : '$muted'}
+            />
+          </YStack>
+          <YStack flex={1} gap={2} alignItems="flex-end">
+            <Text fontSize={12} fontWeight="700" color="$warning" letterSpacing={0.4}>
+              Output
+            </Text>
+            <AnimatedNumber
+              value={status.totalOutputWatts}
+              format={formatWatts}
+              fontSize={28}
+              fontWeight="800"
+              color={status.totalOutputWatts > 0 ? '$color' : '$muted'}
+            />
+          </YStack>
+        </XStack>
 
-        <YStack alignItems="center" gap="$1" paddingBottom="$2">
-          <Text fontSize={13} color={tint} fontWeight="700">
-            {eta}
-          </Text>
+        <EnergyFlow status={status} chargeLimit={settings?.chargeLimit} />
+
+        <YStack alignItems="center" gap="$1">
+          <XStack alignItems="center" gap="$2">
+            <YStack
+              width={6}
+              height={6}
+              borderRadius={999}
+              backgroundColor={tint}
+              opacity={status.state === 'idle' || status.state === 'standby' ? 0.5 : 1}
+            />
+            <Text fontSize={14} color={tint} fontWeight="700">
+              {eta}
+            </Text>
+          </XStack>
           <Text fontSize={12} color="$muted">
             {formatWh(storedWh)} of {formatWh(status.capacityWh)}
-            {settings && settings.chargeLimit < 100
-              ? ` · AC charges to ${settings.chargeLimit}%`
-              : ''}
           </Text>
         </YStack>
       </Card>
-
-      {/* Totals, big enough to read across a room. */}
-      <XStack gap="$3">
-        <FlowTile
-          icon="arrow-down-circle"
-          label="INPUT"
-          watts={status.totalInputWatts}
-          tone={status.totalInputWatts > 0 ? '$success' : '$muted'}
-        />
-        <FlowTile
-          icon="arrow-up-circle"
-          label="OUTPUT"
-          watts={status.totalOutputWatts}
-          tone={status.totalOutputWatts > 0 ? '$warning' : '$muted'}
-        />
-      </XStack>
 
       {/* Expansion packs — the P280 takes up to four */}
       {status.expansionSoc.length > 0 ? (
@@ -258,36 +275,6 @@ export default function DashboardScreen() {
   );
 }
 
-function FlowTile({
-  icon,
-  label,
-  watts,
-  tone,
-}: {
-  icon: React.ComponentProps<typeof Feather>['name'];
-  label: string;
-  watts: number;
-  tone: string;
-}) {
-  const theme = useTheme();
-  return (
-    <Card flex={1} gap="$2" paddingVertical="$3">
-      <XStack alignItems="center" gap="$2">
-        <Feather name={icon} size={13} color={theme.muted?.val} />
-        <Text fontSize={11} color="$muted" fontWeight="700" letterSpacing={0.6}>
-          {label}
-        </Text>
-      </XStack>
-      <AnimatedNumber
-        value={watts}
-        format={(v) => formatWatts(v)}
-        fontSize={26}
-        fontWeight="800"
-        color={tone}
-      />
-    </Card>
-  );
-}
 
 function Value({ children }: { children: ReactNode }) {
   return (
