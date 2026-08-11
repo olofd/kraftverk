@@ -105,9 +105,23 @@ export type DiscoveredDevice = {
   bound: boolean;
 };
 
+/**
+ * Component firmware versions, read-only.
+ *
+ * `controllerA` and `controllerB` are the BMS and the PV controller, but which
+ * is which is unresolved — both read 1.4 on the unit this was identified on.
+ */
+export type FirmwareVersions = {
+  ac: string;
+  controllerA: string;
+  controllerB: string;
+  panel: string;
+};
+
 export type StationStatus = {
   name: string;
   model: string;
+  firmware: FirmwareVersions | null;
   state: StationState;
   link: {
     mode: LinkMode;

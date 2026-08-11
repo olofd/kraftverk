@@ -7,6 +7,7 @@ import {
 } from '../protocol/modbus.ts';
 import {
   assertWritable,
+  decodeFirmware,
   decodeSettings,
   decodeTelemetry,
   HOLDING,
@@ -15,6 +16,7 @@ import {
   wattsToChargeRate,
   type DecodedSettings,
   type DecodedTelemetry,
+  type FirmwareVersions,
 } from '../protocol/registers.ts';
 import { LED_MODES, type LedMode, type PortId, type StationSettings, type StationSettingsPatch, type StationStatus } from '../types.ts';
 import type { StationDriver } from './types.ts';
@@ -62,6 +64,7 @@ export class DeviceDriver implements StationDriver {
 
   #telemetry: DecodedTelemetry | null = null;
   #deviceSettings: DecodedSettings | null = null;
+  #firmware: FirmwareVersions | null = null;
   #lastSeen: Date | null = null;
   #temperatureUnit: StationSettings['temperatureUnit'] = 'C';
 
@@ -119,6 +122,7 @@ export class DeviceDriver implements StationDriver {
       this.#telemetry = decodeTelemetry(frame.values);
     } else if (frame.fn === 0x03 && frame.values.length >= 69) {
       this.#deviceSettings = decodeSettings(frame.values);
+      this.#firmware = decodeFirmware(frame.values);
     }
   }
 
@@ -206,6 +210,7 @@ export class DeviceDriver implements StationDriver {
     return {
       name: 'Aferiy Powerstation',
       model: MODEL,
+      firmware: this.#firmware,
       state,
       link: {
         mode: 'device',
@@ -332,6 +337,22 @@ export class DeviceDriver implements StationDriver {
     if (!this.#transport.boundId) throw new Error('No device bound');
     const frame = await this.#enqueue(() =>
       this.#transport.request(readInputRegisters(0, INPUT_REGISTER_COUNT), 'input')
+    );
+    return frame.kind === 'registers' ? frame.values : [];
+  }
+
+  /**
+   * Diagnostics: read an arbitrary register range.
+   *
+   * Reads only — no write frame can be produced here — so exploring outside the
+   * documented 0-79 window is safe. An out-of-range address simply returns a
+   * MODBUS exception, which surfaces as a timeout or a null result.
+   */
+  async readRange(fn: 3 | 4, start: number, count: number): Promise<number[]> {
+    if (!this.#transport.boundId) throw new Error('No device bound');
+    const build = fn === 4 ? readInputRegisters : readHoldingRegisters;
+    const frame = await this.#enqueue(() =>
+      this.#transport.request(build(start, count), fn === 4 ? 'input' : 'holding')
     );
     return frame.kind === 'registers' ? frame.values : [];
   }

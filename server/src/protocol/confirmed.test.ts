@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   assertWritable,
   CAPABILITY_BLOCK,
+  decodeFirmware,
   decodeSettings,
   decodeTelemetry,
   HOLDING,
@@ -222,6 +223,27 @@ describe('confirmed on a real P280', () => {
       expect(() => assertWritable(register, 0)).not.toThrow();
     }
     expect(() => assertWritable(HOLDING.SLEEP_MINUTES, 0)).toThrow(UnsafeWriteError);
+  });
+
+  /**
+   * Identified against a P280 whose BrightEMS reported BMS 1.4, AC 1.8, PV 1.4
+   * and panel 2.8. Registers 47-50 read 18, 14, 14, 28 — the same multiset,
+   * across four consecutive registers. Undocumented.
+   *
+   * AC and panel are certain, being the only distinct values. The two 1.4s
+   * cannot be assigned to BMS versus PV from data alone.
+   */
+  test('firmware versions decode from the undocumented 47-50 block', () => {
+    expect(decodeFirmware(holding({ 47: 18, 48: 14, 49: 14, 50: 28 }))).toEqual({
+      ac: '1.8',
+      controllerA: '1.4',
+      controllerB: '1.4',
+      panel: '2.8',
+    });
+  });
+
+  test('a firmware register reading zero shows as unknown rather than v0.0', () => {
+    expect(decodeFirmware(holding({})).ac).toBe('—');
   });
 
   test('AC silent charging is holding register 57', () => {

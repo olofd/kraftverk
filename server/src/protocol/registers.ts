@@ -156,6 +156,34 @@ export const HOLDING = {
 export const HOLDING_REGISTER_COUNT = 80;
 
 /**
+ * Firmware versions, one tenth each — `14` is v1.4.
+ *
+ * Undocumented. Identified on a P280 whose BrightEMS reported BMS 1.4, AC 1.8,
+ * PV 1.4 and panel 2.8: registers 47-50 read 18, 14, 14, 28, which matches that
+ * multiset exactly across four consecutive registers.
+ *
+ * AC and PANEL are unambiguous — they are the only distinct values. BMS and PV
+ * both read 14 on this unit, so which of registers 48 and 49 is which cannot be
+ * told apart from data alone. Resolving it needs a station where those two
+ * versions differ, or a firmware update to one of them.
+ */
+export const FIRMWARE = {
+  AC: 47,
+  /** Either BMS or PV — see the caveat above. */
+  CONTROLLER_A: 48,
+  /** The other of BMS and PV. */
+  CONTROLLER_B: 49,
+  PANEL: 50,
+} as const;
+
+export type FirmwareVersions = {
+  ac: string;
+  controllerA: string;
+  controllerB: string;
+  panel: string;
+};
+
+/**
  * Observed on a real AFERIY P280 but not yet confirmed against the display or
  * BrightEMS. Recorded here so the next session starts from evidence.
  *
@@ -484,6 +512,18 @@ export function decodeSettings(regs: readonly number[]): DecodedSettings {
     dischargeLowerLimitPercent: tenths(at(regs, HOLDING.DISCHARGE_LOWER_LIMIT)),
     chargingUpperLimitPercent: tenths(at(regs, HOLDING.AC_CHARGING_UPPER_LIMIT)),
     sleepMinutes: at(regs, HOLDING.SLEEP_MINUTES),
+  };
+}
+
+/** Tenths to a display string: 14 -> "1.4". */
+const version = (raw: number) => (raw > 0 ? (raw / 10).toFixed(1) : '—');
+
+export function decodeFirmware(regs: readonly number[]): FirmwareVersions {
+  return {
+    ac: version(at(regs, FIRMWARE.AC)),
+    controllerA: version(at(regs, FIRMWARE.CONTROLLER_A)),
+    controllerB: version(at(regs, FIRMWARE.CONTROLLER_B)),
+    panel: version(at(regs, FIRMWARE.PANEL)),
   };
 }
 

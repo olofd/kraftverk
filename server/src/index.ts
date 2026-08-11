@@ -286,6 +286,54 @@ diag.post('/snapshot', async (c) => {
 
 diag.get('/blocked', (c) => c.json(device?.blockedWrites ?? []));
 
+/**
+ * Read an arbitrary register range, and show it decoded as ASCII too.
+ *
+ * Strings the station stores — a WiFi SSID, say — would be packed two
+ * characters per register and are invisible in a numeric dump. Reads only, so
+ * probing outside the documented window cannot change anything.
+ */
+diag.get('/scan', async (c) => {
+  if (!device) throw new HTTPException(400, { message: 'Needs a hardware driver' });
+
+  const { fn, start, count } = z
+    .object({
+      fn: z.coerce.number().int().refine((v) => v === 3 || v === 4, 'fn must be 3 or 4'),
+      start: z.coerce.number().int().min(0).max(65535),
+      count: z.coerce.number().int().min(1).max(125),
+    })
+    .parse({
+      fn: c.req.query('fn') ?? 3,
+      start: c.req.query('start') ?? 0,
+      count: c.req.query('count') ?? 40,
+    });
+
+  const values = await device.readRange(fn as 3 | 4, start, count).catch(() => [] as number[]);
+
+  /** Two bytes per register, printable ASCII only. */
+  const ascii = values
+    .map((v) => {
+      const hi = (v >> 8) & 0xff;
+      const lo = v & 0xff;
+      const ch = (b: number) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : '.');
+      return ch(hi) + ch(lo);
+    })
+    .join('');
+
+  return c.json({
+    fn,
+    start,
+    count,
+    ok: values.length > 0,
+    values: values.map((raw, i) => ({
+      register: start + i,
+      raw,
+      hex: raw.toString(16).padStart(4, '0'),
+    })),
+    ascii,
+  });
+});
+
 /** Every input register, raw and decoded, with the documented name where known. */
 diag.get('/registers', async (c) => {
   if (!device) {

@@ -424,6 +424,41 @@ undoes it for you.
 | 21 | `0x0300` | bitfield? |
 | 22 | `233` | 23.3 — temperature? |
 
+### 🆕 Firmware versions live in registers 47–50 — undocumented
+
+BrightEMS reports four component firmware versions. Registers 47–50 hold them,
+one tenth each (`14` = v1.4):
+
+| Register | Raw | Version | Component |
+| --- | --- | --- | --- |
+| 47 | `18` | 1.8 | **AC converter** ✅ |
+| 48 | `14` | 1.4 | BMS *or* PV |
+| 49 | `14` | 1.4 | the other |
+| 50 | `28` | 2.8 | **Panel** ✅ |
+
+Found by matching against a unit reporting BMS 1.4, AC 1.8, PV 1.4, panel 2.8 —
+four consecutive registers whose values are exactly that multiset.
+
+**AC and panel are certain**, being the only distinct values. **BMS versus PV is
+unresolved**: both read `14`, so registers 48 and 49 cannot be told apart from
+data alone. Settling it needs a station where those versions differ, or a
+firmware update to one of them. The UI shows them as a pair rather than
+guessing.
+
+### ❌ The WiFi SSID is not readable through the register interface
+
+Scanned holding 0–199 and input 0–119 for printable ASCII. Reads succeeded well
+past the documented window and returned nothing string-shaped anywhere.
+
+That matches the BLE protocol notes, which list **function `0x07`** as WiFi
+configuration (write/notify) — a separate channel from the register banks. Its
+request format is undocumented, and it is write-oriented, so probing it blindly
+risks knocking the station off its network for no real gain. Not attempted.
+
+If the SSID becomes worth having, the safer route is the MQTT transport: a
+station connecting to our broker reveals its IP address, which at least
+identifies the network it is on.
+
 ### ✅ Registers 14–22 are a capability block
 
 Three are now established, and they share a character: they describe **what the
@@ -455,10 +490,13 @@ Both sat at `1000` while SOC (register 56) read `1000`, and both dropped to
 | 70, 71 | `990` | 99.0 % |
 
 That is consistent with the **whole-percent value the unit's own screen shows**,
-stored in tenths — 99.9 % truncates to 99 %. Two data points agree, but two
-points also fit several other curves. Needs a third reading at a clearly
-different SOC (say 70-something) before it is worth acting on. Nothing uses
-these registers today.
+stored in tenths — 99.9 % truncates to 99 %.
+
+A later reading at 98.0 % SOC had all three registers at `980`. That is
+consistent but **not discriminating**: when SOC already sits on a whole percent,
+truncation and equality give the same answer. The `999` → `990` observation
+remains the only reading that distinguishes them, so this is still one
+data point short of a real conclusion. Nothing uses these registers.
 
 ### ❌ The "mirror register" hypothesis is dead
 

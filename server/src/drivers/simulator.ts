@@ -161,6 +161,7 @@ export class SimulatorDriver implements StationDriver {
     return {
       name: 'Aferiy Powerstation',
       model: MODEL,
+      firmware: { ac: '1.8', controllerA: '1.4', controllerB: '1.4', panel: '2.8' },
       state,
       link: { mode: 'simulator', state: 'connected', mac: null, lastSeen: new Date().toISOString() },
       level: round(this.#level, 1),

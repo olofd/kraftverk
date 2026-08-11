@@ -281,6 +281,29 @@ export default function DashboardScreen() {
           />
         </Card>
       </YStack>
+
+      {/* Read-only. Registers 47-50, undocumented; AC and panel are certain,
+          the two controllers both read 1.4 so their order is unresolved. */}
+      {status.firmware ? (
+        <YStack gap="$2">
+          <SectionLabel>Firmware</SectionLabel>
+          <Card inset>
+            <Row title="AC converter" accessory={<Value>v{status.firmware.ac}</Value>} />
+            <RowSeparator />
+            <Row
+              title="BMS / PV controller"
+              subtitle="Both report the same version; the registers can't be told apart"
+              accessory={
+                <Value>
+                  v{status.firmware.controllerA} · v{status.firmware.controllerB}
+                </Value>
+              }
+            />
+            <RowSeparator />
+            <Row title="Panel" accessory={<Value>v{status.firmware.panel}</Value>} />
+          </Card>
+        </YStack>
+      ) : null}
     </Screen>
   );
 }

@@ -66,9 +66,18 @@ export type PortState = {
   watts: number;
 };
 
+/** `controllerA`/`controllerB` are BMS and PV — which is which is unresolved. */
+export type FirmwareVersions = {
+  ac: string;
+  controllerA: string;
+  controllerB: string;
+  panel: string;
+};
+
 export type StationStatus = {
   name: string;
   model: string;
+  firmware: FirmwareVersions | null;
   state: StationState;
   link: {
     mode: LinkMode;
