@@ -5,7 +5,10 @@ import { STATE_TINT } from '../lib/format';
 
 type Props = {
   level: number;
-  /** Charge stops here, drawn as a notch on the track. */
+  /**
+   * Mains charging stops here, drawn as a notch on the track. Solar ignores it,
+   * so the level legitimately sits above the notch — don't read it as a fault.
+   */
   chargeLimit: number;
   state: StationStatus['state'];
 };
@@ -54,7 +57,7 @@ export function ChargeMeter({ level, chargeLimit, state }: Props) {
         </Text>
         {chargeLimit < 100 ? (
           <Text fontSize={11} color="$muted">
-            limit {chargeLimit}%
+            AC limit {chargeLimit}%
           </Text>
         ) : null}
         <Text fontSize={11} color="$muted">

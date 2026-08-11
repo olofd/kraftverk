@@ -81,8 +81,8 @@ export default function SettingsScreen() {
         <SectionLabel>Battery</SectionLabel>
         <Card inset>
           <SliderRow
-            title="Charge limit"
-            subtitle="Stops charging here. 80-90% meaningfully extends pack life."
+            title="AC charge limit"
+            subtitle="Caps charging from mains only — solar will still fill the pack past this."
             value={settings.chargeLimit}
             min={60}
             max={100}

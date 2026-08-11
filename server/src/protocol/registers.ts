@@ -63,6 +63,13 @@ export const HOLDING = {
   SCREEN_REST_SECONDS: 62,
   STOP_CHARGE_AFTER_MINUTES: 63,
   DISCHARGE_LOWER_LIMIT: 66,
+  /**
+   * Confirmed on a P280: read 600 while BrightEMS showed a 60% charge limit.
+   *
+   * The name is literal — it caps **AC** charging only. Solar charges past it,
+   * which is why a station limited to 60% was sitting at 100% SOC. Don't
+   * present this as a general "stop charging here" ceiling.
+   */
   AC_CHARGING_UPPER_LIMIT: 67,
   SLEEP_MINUTES: 68,
 } as const;
