@@ -1,7 +1,7 @@
 # AFERIY P280 — protocol findings
 
 A running log of what has been established against **real hardware** (MAC
-`MAC redacted`, advertised as `POWER-nnnn`), as distinct from what the
+MAC redacted), as distinct from what the
 published maps claim.
 
 The published register map was derived largely from **Fossibot F2400/F3600**
@@ -17,7 +17,7 @@ Status legend: **✅ confirmed on hardware** · **📖 from docs, untested** ·
 
 | Fact | Status |
 | --- | --- |
-| Advertises as `POWER-nnnn`, MAC `MAC redacted` | ✅ |
+| Advertises as `POWER-nnnn`, MAC used as the BLE peripheral id | ✅ |
 | GATT service `0000a002-...` (write `c304`, notify `c305`) | ✅ |
 | Second vendor service `0000a003-...`, purpose unknown | ❓ |
 | **Pairing is NOT required** — bound with `IsPaired: false` | ✅ |

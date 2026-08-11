@@ -930,6 +930,46 @@ Physical acceptance before unattended automation:
 
 ---
 
+## Interface design direction
+
+The Dashboard is now built around a live **energy-flow diagram**, which is the
+signature element of this product category — EcoFlow, Lunar Energy and MYGRID all
+centre on one, and usability research on MYGRID found the flow chart and the
+headline value were what users returned to several times a day.
+
+Current implementation (`client/src/components/EnergyFlow.tsx`):
+
+- sources feed the battery from above, loads draw from below;
+- each active path animates a dashed stroke toward the ring or away from it, so
+  direction reads without arrowheads;
+- dash speed scales with wattage, so a trickle and a fast charge look different;
+- idle paths stay drawn but dim, keeping the topology stable as ports switch;
+- the state-of-charge ring springs to new values, and wattages ease between
+  readings rather than snapping, because 2-second telemetry otherwise flickers.
+
+### Next interface work, in order of value
+
+1. **Charge-limit and reserve markers on the ring.** Show the AC charge limit as a
+   tick, and shade the region below the automation hard floor. The reserve concept
+   is what this whole project is built around and it is currently invisible.
+2. **Tap a node to drill in.** Tapping AC should expand voltage, frequency and
+   per-port detail in place, rather than that living in a separate card further
+   down the page.
+3. **History sparklines.** Once telemetry is logged to SQLite, put a 24-hour SOC
+   curve under the ring, and input/output history behind the flow tiles.
+4. **Grid-relay state in the flow.** When the ATORCH plug exists, the grid path
+   needs a third visual state — connected, disconnected by automation, and
+   unavailable — because "no AC input" means something very different in each.
+   Do not render an automation-driven disconnect the same as a power cut.
+5. **Light theme pass.** Only dark has been reviewed.
+6. **Motion accessibility.** Respect `prefers-reduced-motion`; the flow animation
+   should degrade to a static directional indicator rather than stopping dead.
+7. **Device-first testing.** The animation has only been judged in a desktop
+   browser. It has to feel right on a phone, which is where it will be used.
+
+Keep the Dashboard station-first. Forecast, price and relay extensions may add
+small badges, but their configuration belongs in the Extensions area.
+
 ## Research links
 
 - Existing project protocol sources: see `README.md`.
