@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "Aferiy Powerstation",
+    "slug": "aferiy-powerstation",
+    "version": "1.0.0",
+    "sdkVersion": "57.0.0",
+    "platforms": ["ios", "android", "web"],
+    "extra": {
+      "apiBaseUrl": "http://localhost:3333/api"
+    }
+  }
+}
