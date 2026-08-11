@@ -514,6 +514,35 @@ and is not acted on anywhere.
 
 ---
 
+## ✅ Writes work end to end
+
+Confirmed by the owner against the real station, with the server running in
+write mode (`readOnly: false`) over BLE. Frames built by this codebase reached
+the hardware and changed it:
+
+| Written | Register | Result |
+| --- | --- | --- |
+| LED flash mode | holding 27 | light changed on the unit |
+| AC output on | holding 26 | output switched |
+| DC output on | holding 25 | output switched |
+| AC charge limit | holding 67 | limit changed |
+
+That closes the project's last standing assumption. Everything before this had
+been read-only: the register map, the decoding and the safety guards were all
+verified, but nothing had proven that a frame *we* build is accepted by the
+station. It is.
+
+### Still open: the registers 25/26 toggle question
+
+The published notes warn that registers 25 and 26 *toggle* on any write rather
+than honouring the value sent. This session does not settle it.
+
+The driver reads current state first and skips a write when the port is already
+in the requested state, so a state **change** works correctly whether the
+register is a toggle or a value. The two behaviours only diverge when the same
+value is written twice and idempotency is expected. Until that is tested
+deliberately, treat 25 and 26 as toggles.
+
 ## Safety
 
 **Writing `0` to holding register 68 permanently bricks the station.** Three

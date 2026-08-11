@@ -173,7 +173,11 @@ P280-specific candidates requiring confirmation:
 
 ### Current gaps to fix
 
-- Hardware writes are not proven end-to-end against this P280.
+- ~~Hardware writes are not proven end-to-end against this P280.~~ **Done.**
+  Confirmed against the real station in write mode over BLE: LED mode (27),
+  AC output (26), DC output (25) and AC charge limit (67) all written from this
+  codebase and observed to take effect. Registers 25/26 toggle behaviour remains
+  untested, since the driver skips redundant writes.
 - A write may be sent followed by a poll whose errors are swallowed, so the UI needs
   per-setting acknowledgement and explicit readback verification—not just cached state.
 - The complete register catalog has not yet been evidenced on this device.
