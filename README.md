@@ -395,6 +395,12 @@ Base URL: `http://<host>:3333/api`
 
 ## Verifying the map against your unit
 
+> **[docs/P280-FINDINGS.md](docs/P280-FINDINGS.md) is the live record** of what
+> has been confirmed against real hardware versus what is still taken on faith
+> from the published maps. Update it as you learn things — it is the document
+> that stops us re-deriving the same facts.
+
+
 The published map was derived largely from **Fossibot F2400/F3600** hardware.
 The P280 is the same stack but a bigger machine — 1800 W AC input vs 1100 W —
 so some scaling may differ.
@@ -424,7 +430,19 @@ against captured traffic from real hardware — and the write-safety whitelist.
 
 ## What's verified vs. inferred
 
-Being explicit, because it determines how much to trust each part.
+Being explicit, because it determines how much to trust each part. The
+register-level detail lives in [docs/P280-FINDINGS.md](docs/P280-FINDINGS.md);
+this is the summary.
+
+**Confirmed against a real P280 over BLE:**
+- The station connects and streams telemetry — SOC, solar input, port states,
+  runtime — all decoding sensibly
+- Pairing is *not* required; the phone app holding the BLE connection is what
+  hides the vendor GATT services
+- Register 48 is a bitmask (`0x8040`), not the documented exact `0x8000`
+- Register 67 caps **AC** charging only; solar charges past it
+- Status bits `0x0200` (USB) and `0x0080` (DC converter), holding 24 (USB switch)
+- The `0x0060` DC-input bits are not redundant, contrary to the docs
 
 **Verified against real captured traffic:**
 - Frame construction for reads and writes

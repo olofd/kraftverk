@@ -11,6 +11,15 @@ export function formatWh(wh: number): string {
 
 export function formatDuration(minutes: number | null): string {
   if (minutes === null || !Number.isFinite(minutes) || minutes <= 0) return '—';
+
+  // A P280 sitting idle reports genuine multi-week runtimes (20 000+ minutes),
+  // so hours alone stops being readable.
+  const days = Math.floor(minutes / 1440);
+  if (days >= 1) {
+    const hours = Math.round((minutes % 1440) / 60);
+    return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+  }
+
   const h = Math.floor(minutes / 60);
   const m = Math.round(minutes % 60);
   if (h === 0) return `${m}m`;

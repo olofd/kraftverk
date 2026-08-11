@@ -51,6 +51,7 @@ export const INPUT_REGISTER_COUNT = 80;
 export const HOLDING = {
   AC_CHARGING_RATE: 13,
   MAX_CHARGING_CURRENT: 20,
+  /** Confirmed on a P280: 0 -> 1 when USB was switched on at the unit. */
   USB_OUTPUT: 24,
   DC_OUTPUT: 25,
   AC_OUTPUT: 26,
@@ -99,13 +100,27 @@ export const UNCONFIRMED_P280 = {
   MAYBE_BATTERY_TEMP: 54,
 } as const;
 
-/** Bit masks in input register 41. */
+/**
+ * Bit masks in input register 41.
+ *
+ * USB_OUTPUT_ON and DC_CONVERTER_ACTIVE are confirmed on a P280: switching USB
+ * on at the unit moved the register from 0x0020 to 0x02A0, setting exactly
+ * those two bits (USB feeds through the DC converter, so both are expected).
+ */
 export const STATUS = {
   LED_ON: 0x1000,
   AC_OUTPUT_ON: 0x0800,
   DC_OUTPUT_ON: 0x0400,
+  /** Confirmed on a P280. */
   USB_OUTPUT_ON: 0x0200,
+  /** Confirmed on a P280. */
   DC_CONVERTER_ACTIVE: 0x0080,
+  /**
+   * The published map calls these two bits redundant. They are not: a P280 with
+   * a panel attached but producing nothing reads 0x0020, and reads 0x0060 once
+   * solar is actually delivering. Masking both still answers "is DC input
+   * present", which is all this flag is used for.
+   */
   DC_INPUT_CONNECTED: 0x0060,
   CHARGING_FROM_AC: 0x0010,
   /**
