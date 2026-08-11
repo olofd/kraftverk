@@ -101,6 +101,9 @@ export type VersionInfo = {
   startedAt: string;
   uptimeSeconds: number;
   link: LinkMode;
+  transport?: TransportKind;
+  /** True when the server is refusing every write to the station. */
+  readOnly: boolean;
 };
 
 export type LinkDiagnostics = {

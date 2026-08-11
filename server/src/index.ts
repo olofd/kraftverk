@@ -6,7 +6,7 @@ import { z, ZodError } from 'zod';
 
 import pkg from '../package.json' with { type: 'json' };
 import { loadBinding, saveBinding } from './binding.ts';
-import { DeviceDriver } from './drivers/device.ts';
+import { DeviceDriver, ReadOnlyError } from './drivers/device.ts';
 import { SimulatorDriver } from './drivers/simulator.ts';
 import type { StationDriver } from './drivers/types.ts';
 import { describeMessage, DeviceBroker } from './mqtt/broker.ts';
@@ -36,6 +36,8 @@ const flag = (name: string) =>
   process.argv.find((a) => a.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
 
 const DRIVER = flag('driver') ?? process.env.STATION_DRIVER ?? 'sim';
+/** Block every write. Use when bringing up an unfamiliar station. */
+const READ_ONLY = process.argv.includes('--read-only') || process.env.READ_ONLY === '1';
 /** Skip the device picker and bind this id (MQTT MAC or BLE peripheral id). */
 const DEVICE_ID = flag('device') ?? process.env.DEVICE_ID ?? process.env.DEVICE_MAC;
 /** Bind the first station discovered instead of waiting for a choice. */
@@ -66,8 +68,12 @@ if (DRIVER === 'device' || DRIVER === 'ble') {
     console.log('Point mqtt.sydpower.com at this machine so the station connects here.');
   }
 
-  device = new DeviceDriver({ transport });
+  device = new DeviceDriver({ transport, readOnly: READ_ONLY });
   driver = device;
+
+  if (READ_ONLY) {
+    console.log('READ-ONLY: every write will be refused. Nothing can change on the station.');
+  }
 
   // Restore the previous choice, else adopt the first station we see.
   const saved = await loadBinding();
@@ -142,6 +148,8 @@ api.get('/version', (c) => {
     startedAt: startedAt.toISOString(),
     uptimeSeconds: Math.round((Date.now() - startedAt.getTime()) / 1000),
     link: driver.mode,
+    transport: transport?.kind,
+    readOnly: device?.readOnly ?? false,
   };
   return c.json(info);
 });
@@ -226,6 +234,24 @@ diag.get('/link', (c) =>
 
 diag.get('/traffic', (c) => c.json(broker.recentMessages.map(describeMessage)));
 
+/**
+ * Baseline for the register diff.
+ *
+ * Snapshot, change one thing on the station (or in BrightEMS), then read again:
+ * whatever moved is the register behind that control. This is how the map gets
+ * confirmed on hardware it was not derived from.
+ */
+let baseline: { at: string; input: number[]; holding: number[] } | null = null;
+
+diag.post('/snapshot', async (c) => {
+  if (!device) throw new HTTPException(400, { message: 'Needs a hardware driver' });
+  const [input, holding] = await Promise.all([device.readAllInput(), device.readAllHolding()]);
+  baseline = { at: new Date().toISOString(), input, holding };
+  return c.json({ at: baseline.at, input: input.length, holding: holding.length });
+});
+
+diag.get('/blocked', (c) => c.json(device?.blockedWrites ?? []));
+
 /** Every input register, raw and decoded, with the documented name where known. */
 diag.get('/registers', async (c) => {
   if (!device) {
@@ -238,20 +264,32 @@ diag.get('/registers', async (c) => {
     device.readAllHolding().catch(() => [] as number[]),
   ]);
 
-  const describe = (values: number[], names: Record<number, string>, writable: boolean) =>
-    values.map((raw, index) => ({
-      register: index,
-      name: names[index] ?? null,
-      raw,
-      hex: raw.toString(16).padStart(4, '0'),
-      asTenths: raw / 10,
-      writable: writable ? (WRITABLE[index] ?? null) : null,
-    }));
+  const describe = (
+    values: number[],
+    names: Record<number, string>,
+    writable: boolean,
+    before: number[] | undefined
+  ) =>
+    values.map((raw, index) => {
+      const previous = before?.[index];
+      return {
+        register: index,
+        name: names[index] ?? null,
+        raw,
+        hex: raw.toString(16).padStart(4, '0'),
+        asTenths: raw / 10,
+        writable: writable ? (WRITABLE[index] ?? null) : null,
+        previous: previous ?? null,
+        changed: previous !== undefined && previous !== raw,
+      };
+    });
 
   return c.json({
     mac: device.mac,
-    input: describe(input, INPUT_NAMES, false),
-    holding: describe(holding, HOLDING_NAMES, true),
+    readOnly: device.readOnly,
+    baselineAt: baseline?.at ?? null,
+    input: describe(input, INPUT_NAMES, false, baseline?.input),
+    holding: describe(holding, HOLDING_NAMES, true, baseline?.holding),
   });
 });
 
@@ -287,6 +325,7 @@ app.notFound((c) => c.json({ error: 'Not found', path: c.req.path }, 404));
 app.onError((err, c) => {
   if (err instanceof HTTPException) return err.getResponse();
   if (err instanceof UnsafeWriteError) return c.json({ error: err.message }, 400);
+  if (err instanceof ReadOnlyError) return c.json({ error: err.message, readOnly: true }, 423);
   if (err instanceof ZodError) {
     return c.json(
       {

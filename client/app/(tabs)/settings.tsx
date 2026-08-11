@@ -36,7 +36,7 @@ const SLEEP = [
 ] as const;
 
 export default function SettingsScreen() {
-  const { settings, status, apiBaseUrl, updateSettings } = useStation();
+  const { settings, status, version, apiBaseUrl, updateSettings } = useStation();
 
   if (!settings) {
     return (
@@ -52,12 +52,31 @@ export default function SettingsScreen() {
   }
 
   const simulated = status?.link.mode === 'simulator';
+  const readOnly = version?.readOnly ?? false;
 
   return (
     <Screen
       title="Settings"
-      subtitle={simulated ? 'Simulator — not a real device' : 'Written straight to the P280'}
+      subtitle={
+        readOnly
+          ? 'Read-only — nothing here will reach the station'
+          : simulated
+            ? 'Simulator — not a real device'
+            : 'Written straight to the P280'
+      }
     >
+      {readOnly ? (
+        <Card borderColor="$success" gap="$2">
+          <Text fontSize={14} fontWeight="700" color="$success">
+            Read-only mode
+          </Text>
+          <Text fontSize={12} color="$muted" lineHeight={18}>
+            These controls still show what the station reports, but every write is refused. Restart
+            the server without --read-only when you are ready to make changes.
+          </Text>
+        </Card>
+      ) : null}
+
       <YStack gap="$2">
         <SectionLabel>Battery</SectionLabel>
         <Card inset>

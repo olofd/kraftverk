@@ -120,14 +120,27 @@ export type RegisterRow = {
   raw: number;
   hex: string;
   asTenths: number;
+  previous: number | null;
+  /** Differs from the snapshot baseline. */
+  changed: boolean;
+};
+
+export type RegisterDump = {
+  mac: string | null;
+  readOnly: boolean;
+  baselineAt: string | null;
+  input: RegisterRow[];
+  holding: RegisterRow[];
 };
 
 export async function fetchRegisters(signal?: AbortSignal) {
-  const { data } = await api.get<{
-    mac: string | null;
-    input: RegisterRow[];
-    holding: RegisterRow[];
-  }>('/diagnostics/registers', { signal });
+  const { data } = await api.get<RegisterDump>('/diagnostics/registers', { signal });
+  return data;
+}
+
+/** Captures a baseline so the next dump can show what moved. */
+export async function snapshotRegisters(signal?: AbortSignal) {
+  const { data } = await api.post<{ at: string }>('/diagnostics/snapshot', {}, { signal });
   return data;
 }
 

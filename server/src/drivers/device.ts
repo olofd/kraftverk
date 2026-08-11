@@ -25,7 +25,22 @@ const MODEL = 'AFERIY P280';
 export type DeviceDriverOptions = {
   transport: Transport;
   pollMs?: number;
+  /**
+   * Refuse every write, at the lowest level that still knows a frame is a
+   * write. For bringing up an unfamiliar unit: poll and decode freely while
+   * making it impossible to change anything on the hardware.
+   */
+  readOnly?: boolean;
 };
+
+export class ReadOnlyError extends Error {
+  constructor(register: number, value: number) {
+    super(
+      `Refused to write ${value} to register ${register}: the server is in read-only mode. ` +
+        `Restart without --read-only to allow writes.`
+    );
+  }
+}
 
 /**
  * Talks to a real station over the embedded MQTT broker.
@@ -38,6 +53,9 @@ export class DeviceDriver implements StationDriver {
 
   #transport: Transport;
   #pollMs: number;
+  #readOnly: boolean;
+  /** Writes blocked while read-only, for the diagnostics view. */
+  #blocked: { at: string; register: number; value: number }[] = [];
   #timer: ReturnType<typeof setInterval> | null = null;
   #queue: Promise<unknown> = Promise.resolve();
 
@@ -49,6 +67,15 @@ export class DeviceDriver implements StationDriver {
   constructor(options: DeviceDriverOptions) {
     this.#transport = options.transport;
     this.#pollMs = options.pollMs ?? 5000;
+    this.#readOnly = options.readOnly ?? false;
+  }
+
+  get readOnly(): boolean {
+    return this.#readOnly;
+  }
+
+  get blockedWrites(): { at: string; register: number; value: number }[] {
+    return this.#blocked;
   }
 
   get transport(): Transport {
@@ -125,7 +152,15 @@ export class DeviceDriver implements StationDriver {
   async #write(register: number, value: number): Promise<void> {
     if (!this.#transport.boundId) throw new Error('No device bound');
 
+    // Whitelist first, so an unsafe value is reported as unsafe even in
+    // read-only mode rather than being masked by the read-only refusal.
     assertWritable(register, value);
+
+    if (this.#readOnly) {
+      this.#blocked.push({ at: new Date().toISOString(), register, value });
+      if (this.#blocked.length > 50) this.#blocked.shift();
+      throw new ReadOnlyError(register, value);
+    }
 
     await this.#enqueue(async () => {
       await this.#transport.send(writeRegister(register, value));

@@ -9,6 +9,8 @@ import {
   fetchLinkDiagnostics,
   fetchRegisters,
   fetchTraffic,
+  snapshotRegisters,
+  type RegisterDump,
   type RegisterRow,
 } from '../../src/lib/api';
 import type { LinkDiagnostics, TrafficEntry } from '../../src/lib/types';
@@ -23,14 +25,13 @@ import { useStation } from '../../src/state/StationProvider';
  * your unit actually reports.
  */
 export default function DiagnosticsScreen() {
-  const { status } = useStation();
+  const { status, version } = useStation();
   const [link, setLink] = useState<LinkDiagnostics | null>(null);
   const [traffic, setTraffic] = useState<TrafficEntry[]>([]);
-  const [registers, setRegisters] = useState<{ input: RegisterRow[]; holding: RegisterRow[] } | null>(
-    null
-  );
+  const [registers, setRegisters] = useState<RegisterDump | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [onlyChanged, setOnlyChanged] = useState(false);
 
   const refresh = useCallback(async () => {
     setBusy(true);
@@ -64,10 +65,38 @@ export default function DiagnosticsScreen() {
     }
   }, []);
 
+  const snapshot = useCallback(async () => {
+    setBusy(true);
+    try {
+      await snapshotRegisters();
+      setRegisters(await fetchRegisters());
+      setOnlyChanged(true);
+      setError(null);
+    } catch (err) {
+      const message = describeError(err);
+      if (message) setError(message);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
   const simulated = status?.link.mode === 'simulator';
+  const readOnly = version?.readOnly ?? false;
 
   return (
-    <Screen title="Diagnostics" subtitle="Verify the protocol against real hardware">
+    <Screen title="Protocol" subtitle="Verify the register map against real hardware">
+      {readOnly ? (
+        <Card borderColor="$success" gap="$2">
+          <Text fontSize={14} fontWeight="700" color="$success">
+            Read-only mode
+          </Text>
+          <Text fontSize={12} color="$muted" lineHeight={18}>
+            Every write is refused before a frame is built. You can poll and decode freely without
+            any risk of changing the station.
+          </Text>
+        </Card>
+      ) : null}
+
       {error ? (
         <Card borderColor="$danger">
           <Text fontSize={13} color="$danger">
@@ -103,7 +132,7 @@ export default function DiagnosticsScreen() {
         </Card>
       </YStack>
 
-      <XStack gap="$3">
+      <XStack gap="$3" flexWrap="wrap">
         <Button flex={1} size="$3" onPress={() => void refresh()} disabled={busy}>
           Refresh
         </Button>
@@ -119,12 +148,46 @@ export default function DiagnosticsScreen() {
         </Button>
       </XStack>
 
+      {/*
+        Snapshot, change one thing on the station, dump again: whatever moved is
+        the register behind that control. This is how the map gets confirmed on
+        hardware it was not derived from.
+      */}
+      <XStack gap="$3" flexWrap="wrap">
+        <Button flex={1} size="$3" onPress={() => void snapshot()} disabled={busy || simulated}>
+          Snapshot baseline
+        </Button>
+        <Button
+          flex={1}
+          size="$3"
+          onPress={() => setOnlyChanged((v) => !v)}
+          disabled={!registers?.baselineAt}
+        >
+          {onlyChanged ? 'Show all' : 'Show changed only'}
+        </Button>
+      </XStack>
+
+      {registers?.baselineAt ? (
+        <Text fontSize={12} color="$muted" paddingHorizontal="$1">
+          Baseline captured {new Date(registers.baselineAt).toLocaleTimeString()}. Change something
+          on the station or in BrightEMS, then dump again to see which registers moved.
+        </Text>
+      ) : null}
+
       {busy ? <Spinner color="$accent" /> : null}
 
       {registers ? (
         <>
-          <RegisterTable title="Input registers (0x04)" rows={registers.input} />
-          <RegisterTable title="Holding registers (0x03)" rows={registers.holding} />
+          <RegisterTable
+            title="Input registers (0x04)"
+            rows={registers.input}
+            onlyChanged={onlyChanged}
+          />
+          <RegisterTable
+            title="Holding registers (0x03)"
+            rows={registers.holding}
+            onlyChanged={onlyChanged}
+          />
         </>
       ) : null}
 
@@ -165,18 +228,35 @@ export default function DiagnosticsScreen() {
 }
 
 /** Only registers with a non-zero value or a documented name are worth showing. */
-function RegisterTable({ title, rows }: { title: string; rows: RegisterRow[] }) {
-  const interesting = rows.filter((r) => r.raw !== 0 || r.name);
+function RegisterTable({
+  title,
+  rows,
+  onlyChanged,
+}: {
+  title: string;
+  rows: RegisterRow[];
+  onlyChanged: boolean;
+}) {
+  const interesting = rows.filter((r) =>
+    onlyChanged ? r.changed : r.raw !== 0 || r.name || r.changed
+  );
 
   return (
     <YStack gap="$2">
       <SectionLabel>{title}</SectionLabel>
       <Card inset>
         {interesting.length === 0 ? (
-          <Row title="No data" subtitle="Is the station connected?" />
+          <Row
+            title={onlyChanged ? 'Nothing changed' : 'No data'}
+            subtitle={
+              onlyChanged
+                ? 'Change something on the station, then dump again'
+                : 'Is the station connected?'
+            }
+          />
         ) : (
           interesting.map((row, index) => (
-            <YStack key={row.register}>
+            <YStack key={row.register} backgroundColor={row.changed ? '$backgroundPress' : undefined}>
               {index > 0 ? <RowSeparator /> : null}
               <XStack
                 paddingHorizontal="$4"
@@ -185,13 +265,27 @@ function RegisterTable({ title, rows }: { title: string; rows: RegisterRow[] }) 
                 gap="$3"
                 justifyContent="space-between"
               >
-                <Text fontSize={12} color="$muted" width={28} fontVariant={['tabular-nums']}>
+                <Text
+                  fontSize={12}
+                  color={row.changed ? '$warning' : '$muted'}
+                  width={28}
+                  fontVariant={['tabular-nums']}
+                >
                   {row.register}
                 </Text>
                 <Text fontSize={12} color="$color" flex={1} numberOfLines={1}>
                   {row.name ?? '—'}
                 </Text>
-                <Text fontSize={12} color="$accent" fontFamily="monospace">
+                {row.changed && row.previous !== null ? (
+                  <Text fontSize={12} color="$muted" fontFamily="monospace">
+                    {row.previous} →
+                  </Text>
+                ) : null}
+                <Text
+                  fontSize={12}
+                  color={row.changed ? '$warning' : '$accent'}
+                  fontFamily="monospace"
+                >
                   0x{row.hex}
                 </Text>
                 <Text
