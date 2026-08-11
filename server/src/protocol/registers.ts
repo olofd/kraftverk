@@ -109,6 +109,7 @@ export const UNCONFIRMED_P280 = {
  */
 export const STATUS = {
   LED_ON: 0x1000,
+  /** Confirmed on a P280: set when AC output was switched on at the unit. */
   AC_OUTPUT_ON: 0x0800,
   DC_OUTPUT_ON: 0x0400,
   /** Confirmed on a P280. */
@@ -124,15 +125,15 @@ export const STATUS = {
   DC_INPUT_CONNECTED: 0x0060,
   CHARGING_FROM_AC: 0x0010,
   /**
-   * The published map gives 0x000E here, but bit 2 (0x0004) is set on a device
-   * that is demonstrably unplugged: in a captured frame with status 0x0804 the
-   * AC input reads 1.3 V at 0 Hz, register 48 is 0x4000 (not charging), and the
-   * unit is discharging with 641 minutes remaining. Bit 2 tracks something else
-   * — most likely the inverter, since AC output is on in that same frame.
+   * Confirmed by experiment: switching AC output on at a P280 with nothing
+   * plugged into the wall moved status from 0x0020 to 0x0824 — setting 0x0800
+   * (AC output) and 0x0004 together. Bit 2 is the inverter, not mains.
    *
-   * The source notes bits 3 and 1 are the redundant pair, so we mask those.
-   * `decodeTelemetry` also corroborates against AC input voltage.
+   * The published map folds bit 2 into a 0x000E "AC input connected" mask,
+   * which would report a station running purely off its own battery as being
+   * on grid power. Mask bits 3 and 1 only.
    */
+  INVERTER_ACTIVE: 0x0004,
   AC_INPUT_CONNECTED: 0x000a,
 } as const;
 
@@ -239,12 +240,22 @@ export type DecodedTelemetry = {
   chargingBookingMinutes: number;
 };
 
-/** Mains is ~110-240 V; anything below this is sensor noise on an idle input. */
-const AC_INPUT_PRESENT_VOLTS = 50;
+/**
+ * Corroborating a mains connection needs both voltage and frequency.
+ *
+ * Voltage alone is not enough: with the inverter running and nothing plugged
+ * into the wall, a P280 reports 59.1 V on the AC *input* sense line — backfeed
+ * from its own output. Real mains is ~110-240 V at 50/60 Hz, and the frequency
+ * register reads 0 when no supply is present, so requiring both rejects the
+ * backfeed case.
+ */
+const AC_INPUT_PRESENT_VOLTS = 100;
+const AC_INPUT_PRESENT_HZ = 40;
 
 export function decodeTelemetry(regs: readonly number[]): DecodedTelemetry {
   const status = at(regs, INPUT.STATUS_BITS);
   const acInputVolts = tenths(at(regs, INPUT.AC_INPUT_VOLTAGE));
+  const acInputHz = Math.round(at(regs, INPUT.AC_INPUT_FREQUENCY)) / 100;
 
   const usbWatts =
     tenths(at(regs, INPUT.USB_OUTPUT_1)) +
@@ -265,7 +276,7 @@ export function decodeTelemetry(regs: readonly number[]): DecodedTelemetry {
     socPercent: tenths(at(regs, INPUT.STATE_OF_CHARGE)),
     expansionSoc: expansion,
     acInputVolts,
-    acInputHz: Math.round(at(regs, INPUT.AC_INPUT_FREQUENCY)) / 100,
+    acInputHz,
     acOutputVolts: tenths(at(regs, INPUT.AC_OUTPUT_VOLTAGE)),
     acOutputHz: tenths(at(regs, INPUT.AC_OUTPUT_FREQUENCY)),
     acOutputWatts: at(regs, INPUT.AC_OUTPUT_POWER),
@@ -279,7 +290,8 @@ export function decodeTelemetry(regs: readonly number[]): DecodedTelemetry {
       (at(regs, INPUT.AC_CHARGING_STATE) & AC_CHARGING_ACTIVE) !== 0 ||
       (status & STATUS.CHARGING_FROM_AC) !== 0,
     acInputConnected:
-      (status & STATUS.AC_INPUT_CONNECTED) !== 0 || acInputVolts >= AC_INPUT_PRESENT_VOLTS,
+      (status & STATUS.AC_INPUT_CONNECTED) !== 0 ||
+      (acInputVolts >= AC_INPUT_PRESENT_VOLTS && acInputHz >= AC_INPUT_PRESENT_HZ),
     dcInputConnected: (status & STATUS.DC_INPUT_CONNECTED) !== 0,
     acOutputEnabled: (status & STATUS.AC_OUTPUT_ON) !== 0,
     dcOutputEnabled: (status & STATUS.DC_OUTPUT_ON) !== 0,

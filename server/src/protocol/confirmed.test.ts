@@ -61,4 +61,37 @@ describe('confirmed on a real P280', () => {
     const t = decodeTelemetry(telemetry({ 41: 0x0804, 21: 13, 48: 0x4000 }));
     expect(t.acInputConnected).toBe(false);
   });
+
+  test('switching AC output on sets the output bit and the inverter bit', () => {
+    // Observed: status 0x0020 -> 0x0824 with nothing plugged into the wall.
+    const t = decodeTelemetry(telemetry({ 41: 0x0824, 18: 2306, 20: 9 }));
+    expect(t.acOutputEnabled).toBe(true);
+    expect(t.acOutputVolts).toBe(230.6);
+    expect(t.acOutputWatts).toBe(9);
+    expect(0x0824 & STATUS.INVERTER_ACTIVE).toBeTruthy();
+  });
+
+  /**
+   * The inverter backfeeds the AC *input* sense line. A P280 running its
+   * inverter with nothing plugged into the wall reported 59.1 V on register 21
+   * at 0 Hz. Voltage alone would call that mains and claim the station was on
+   * grid power while it drained its own battery.
+   */
+  test('inverter backfeed on the AC input sense line is not mistaken for mains', () => {
+    const t = decodeTelemetry(telemetry({ 41: 0x0824, 21: 591, 22: 0, 18: 2306 }));
+    expect(t.acInputVolts).toBe(59.1);
+    expect(t.acInputHz).toBe(0);
+    expect(t.acInputConnected).toBe(false);
+  });
+
+  test('real mains — mains-level voltage at mains frequency — is recognised', () => {
+    const t = decodeTelemetry(telemetry({ 41: 0x0000, 21: 2304, 22: 5000 }));
+    expect(t.acInputVolts).toBe(230.4);
+    expect(t.acInputHz).toBe(50);
+    expect(t.acInputConnected).toBe(true);
+  });
+
+  test('USB standby timer reads 3 minutes, matching the observed auto-off', () => {
+    expect(HOLDING.USB_STANDBY_MINUTES).toBe(59);
+  });
 });

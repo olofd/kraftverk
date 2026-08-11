@@ -74,10 +74,10 @@ Verified against three independent captures:
 | 6 | Total input power | W | ✅ | tracked reg 4 with no mains |
 | 9 | DC output power | 0.1 W | 📖 | |
 | 15 | LED power | 0.1 W | 📖 | |
-| 18 | AC output voltage | 0.1 V | 📖 | `0` with inverter off |
+| 18 | AC output voltage | 0.1 V | ✅ | `0` off → `2306` (230.6 V) with inverter on |
 | 19 | AC output frequency | 0.1 Hz | ⚠️ | reads `500` (50 Hz) **even when AC output is off** — nominal, not measured |
-| 20 | AC output power | W | 📖 | |
-| 21 | AC input voltage | 0.1 V | ✅ | `2` (0.2 V) with no mains |
+| 20 | AC output power | W | ✅ | `9` W inverter idle draw |
+| 21 | AC input voltage | 0.1 V | ⚠️ | `2` with no mains, but **`591` when the inverter runs** — backfeed, see below |
 | 22 | AC input frequency | 0.01 Hz | ✅ | `0` with no mains |
 | 25 | LED state | enum | 📖 | |
 | 30–31, 34–37 | USB port power | 0.1 W | 📖 | stayed `0` with USB enabled but nothing plugged in |
@@ -106,13 +106,22 @@ entirely. Mask bit 15.
 | Mask | Meaning | Status |
 | --- | --- | --- |
 | `0x1000` | LED on | 📖 |
-| `0x0800` | AC output on | 📖 |
+| `0x0800` | AC output on | ✅ |
 | `0x0400` | DC output on | 📖 |
 | `0x0200` | USB output on | ✅ |
 | `0x0080` | DC converter active | ✅ |
 | `0x0060` | DC input present | ⚠️ |
 | `0x0010` | Charging from AC | 📖 |
+| `0x0004` | **Inverter active** | ✅ |
 | `0x000A` | AC input connected | ⚠️ |
+
+**AC output test:** switching AC output on moved register 41 from `0x0020` to
+`0x0824`, setting `0x0800` **and** `0x0004`, with nothing plugged into the wall.
+Also moved: input 18 → `2306` (230.6 V), input 20 → `9` W, holding 26 → `1`.
+
+That settles what bit 2 is: **the inverter**. The published map folds it into
+the `0x000E` "AC input connected" mask, which would report a station running
+purely off its own battery as being on grid power.
 
 **USB test:** switching USB on at the unit moved register 41 from `0x0020` to
 `0x02A0` — setting `0x0200` and `0x0080` together. USB feeds through the DC
@@ -123,10 +132,19 @@ time, and nothing else in either bank moved.
 but producing nothing reads `0x0020`; once solar delivers it reads `0x0060`.
 Masking both still answers "is DC input present", which is all we use it for.
 
-**⚠️ AC input mask is `0x000A`, not `0x000E`.** Bit 2 is set on a station
-demonstrably running off battery — 1.3 V at 0 Hz, register 48 saying not
-charging, discharging with 641 minutes left. Bit 2 tracks something else,
-probably the inverter. Corroborated against AC input voltage in the decoder.
+**⚠️ AC input mask is `0x000A`, not `0x000E`.** Bit 2 is the inverter, proven
+by the AC output test above.
+
+### ⚠️ The inverter backfeeds the AC input sense line
+
+With the inverter running and **nothing plugged into the wall**, input register
+21 (AC input voltage) read **59.1 V** — up from 0.2 V. Register 22 (AC input
+frequency) stayed at `0`.
+
+An earlier version of the decoder treated anything above 50 V as mains, so this
+would have reported the station as grid-connected while it drained its own
+battery. Presence now requires **voltage ≥ 100 V *and* frequency ≥ 40 Hz**,
+which rejects backfeed and still recognises real mains (~230 V at 50 Hz).
 
 ---
 
@@ -140,11 +158,11 @@ Values below are from the live unit.
 | 20 | Max charging current | `20` A | 📖 |
 | 24 | USB output | `0`→`1` | ✅ |
 | 25 | DC output | `0` | 📖 |
-| 26 | AC output | `0` | 📖 |
+| 26 | AC output | `0`→`1` | ✅ |
 | 27 | LED mode | `0` | 📖 |
 | 56 | Key sound | `1` | 📖 |
 | 57 | AC silent charging | `0` | 📖 |
-| 59 | USB standby | `3` min | 📖 |
+| 59 | USB standby | `3` min | ✅ |
 | 60 | AC standby | `480` min | 📖 |
 | 61 | DC standby | `480` min | 📖 |
 | 62 | Screen rest | `300` s | 📖 |
@@ -162,6 +180,13 @@ BrightEMS showed a 60 % charge limit; register 67 read `600`. The name is
 literal — **solar charges straight past it**, which is why a station limited to
 60 % was sitting at 100 %. Presenting this as a general "stop charging here"
 ceiling would have people chasing a fault that does not exist.
+
+### ✅ Standby timers really fire
+
+USB switched itself off roughly three minutes after being enabled with nothing
+plugged in — matching holding register 59 reading `3`. Worth knowing while
+testing: enable an output, and you have about three minutes before the station
+undoes it for you.
 
 ### ❓ Unidentified holding registers
 
@@ -213,7 +238,9 @@ the diff stops being evidence.
 
 ## Next
 
-- [ ] Toggle AC output → confirm mask `0x0800` and holding 26
+- [x] Toggle USB → confirmed `0x0200`, `0x0080`, holding 24
+- [x] Toggle AC output → confirmed `0x0800`, `0x0004` (inverter), holding 26,
+      input 18 and 20
 - [ ] Toggle DC output → confirm mask `0x0400` and holding 25
 - [ ] Turn the light on → confirm mask `0x1000`, holding 27, input 15 and 25
 - [ ] Plug a load into USB → confirm registers 30–31 / 34–37 scaling
