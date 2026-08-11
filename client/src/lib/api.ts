@@ -3,10 +3,13 @@ import { Platform } from 'react-native';
 import axios from 'axios';
 
 import type {
+  DeviceList,
+  LinkDiagnostics,
   PortId,
   StationSettings,
   StationSettingsPatch,
   StationStatus,
+  TrafficEntry,
   VersionInfo,
 } from './types';
 
@@ -75,6 +78,56 @@ export async function setPort(id: PortId, enabled: boolean, signal?: AbortSignal
 
 export async function setGridConnected(connected: boolean, signal?: AbortSignal) {
   const { data } = await api.post<StationStatus>('/grid', { connected }, { signal });
+  return data;
+}
+
+export async function fetchDevices(signal?: AbortSignal) {
+  const { data } = await api.get<DeviceList>('/devices', { signal });
+  return data;
+}
+
+export async function bindDevice(id: string, signal?: AbortSignal) {
+  const { data } = await api.post<{ boundId: string | null; connected: boolean }>(
+    '/devices/bind',
+    { id },
+    { signal }
+  );
+  return data;
+}
+
+export async function unbindDevice(signal?: AbortSignal) {
+  const { data } = await api.post<{ boundId: null; connected: false }>(
+    '/devices/unbind',
+    {},
+    { signal }
+  );
+  return data;
+}
+
+export async function fetchLinkDiagnostics(signal?: AbortSignal) {
+  const { data } = await api.get<LinkDiagnostics>('/diagnostics/link', { signal });
+  return data;
+}
+
+export async function fetchTraffic(signal?: AbortSignal) {
+  const { data } = await api.get<TrafficEntry[]>('/diagnostics/traffic', { signal });
+  return data;
+}
+
+export type RegisterRow = {
+  register: number;
+  name: string | null;
+  raw: number;
+  hex: string;
+  asTenths: number;
+};
+
+export async function fetchRegisters(signal?: AbortSignal) {
+  const { data } = await api.get<{
+    mac: string | null;
+    input: RegisterRow[];
+    holding: RegisterRow[];
+  }>('/diagnostics/registers', { signal });
   return data;
 }
 

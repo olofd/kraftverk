@@ -33,6 +33,20 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => <Feather name="sliders" size={size} color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="devices"
+        options={{
+          title: 'Devices',
+          tabBarIcon: ({ color, size }) => <Feather name="radio" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="diagnostics"
+        options={{
+          title: 'Protocol',
+          tabBarIcon: ({ color, size }) => <Feather name="activity" size={size} color={color} />,
+        }}
+      />
     </Tabs>
   );
 }

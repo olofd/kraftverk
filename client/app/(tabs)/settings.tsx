@@ -5,23 +5,38 @@ import { Row, RowSeparator, ToggleRow } from '../../src/components/Row';
 import { Screen } from '../../src/components/Screen';
 import { SegmentedControl } from '../../src/components/SegmentedControl';
 import { SliderRow } from '../../src/components/SliderRow';
-import { formatWatts } from '../../src/lib/format';
-import type { ChargeSpeed } from '../../src/lib/types';
+import { formatDuration } from '../../src/lib/format';
+import type { LedMode } from '../../src/lib/types';
 import { useStation } from '../../src/state/StationProvider';
 
-const CHARGE_SPEEDS = [
-  { value: 'silent', label: 'Silent' },
-  { value: 'standard', label: 'Standard' },
-  { value: 'turbo', label: 'Turbo' },
-] as const satisfies readonly { value: ChargeSpeed; label: string }[];
+const LED_MODES = [
+  { value: 'off', label: 'Off' },
+  { value: 'on', label: 'On' },
+  { value: 'sos', label: 'SOS' },
+  { value: 'flash', label: 'Flash' },
+] as const satisfies readonly { value: LedMode; label: string }[];
 
 const TEMPERATURE_UNITS = [
   { value: 'C', label: 'Celsius' },
   { value: 'F', label: 'Fahrenheit' },
 ] as const;
 
+const STANDBY_LONG = [
+  { value: 0, label: 'Never' },
+  { value: 480, label: '8h' },
+  { value: 960, label: '16h' },
+  { value: 1440, label: '24h' },
+] as const;
+
+const SLEEP = [
+  { value: 5, label: '5m' },
+  { value: 10, label: '10m' },
+  { value: 30, label: '30m' },
+  { value: 480, label: '8h' },
+] as const;
+
 export default function SettingsScreen() {
-  const { settings, status, version, apiBaseUrl, updateSettings, setGridConnected } = useStation();
+  const { settings, status, apiBaseUrl, updateSettings } = useStation();
 
   if (!settings) {
     return (
@@ -36,16 +51,21 @@ export default function SettingsScreen() {
     );
   }
 
+  const simulated = status?.link.mode === 'simulator';
+
   return (
-    <Screen title="Settings" subtitle="Changes are saved to the server immediately">
+    <Screen
+      title="Settings"
+      subtitle={simulated ? 'Simulator — not a real device' : 'Written straight to the P280'}
+    >
       <YStack gap="$2">
         <SectionLabel>Battery</SectionLabel>
         <Card inset>
           <SliderRow
             title="Charge limit"
-            subtitle="Stop charging here. Around 80–90% meaningfully extends pack life."
+            subtitle="Stops charging here. 80-90% meaningfully extends pack life."
             value={settings.chargeLimit}
-            min={50}
+            min={60}
             max={100}
             step={5}
             format={(v) => `${v}%`}
@@ -54,10 +74,10 @@ export default function SettingsScreen() {
           <RowSeparator />
           <SliderRow
             title="Discharge floor"
-            subtitle="Outputs cut off below this level to protect the cells."
+            subtitle="Outputs cut off below this level. The device allows 0-50%."
             value={settings.dischargeFloor}
             min={0}
-            max={Math.max(0, settings.chargeLimit - 10)}
+            max={50}
             step={5}
             format={(v) => `${v}%`}
             onCommit={(dischargeFloor) => void updateSettings({ dischargeFloor })}
@@ -68,106 +88,98 @@ export default function SettingsScreen() {
       <YStack gap="$2">
         <SectionLabel>Charging</SectionLabel>
         <Card inset>
-          <SegmentedControl
-            title="Charge speed"
-            subtitle="Turbo is fastest; silent keeps the fans down."
-            value={settings.chargeSpeed}
-            options={CHARGE_SPEEDS}
-            onChange={(chargeSpeed) => void updateSettings({ chargeSpeed })}
+          <ToggleRow
+            title="Silent AC charging"
+            subtitle="Slower, but keeps the fans down."
+            checked={settings.acSilentCharging}
+            onCheckedChange={(acSilentCharging) => void updateSettings({ acSilentCharging })}
           />
           <RowSeparator />
           <SliderRow
-            title="Max AC input"
-            subtitle="Cap the draw so the station shares a weak circuit safely."
-            value={settings.maxInputWatts}
-            min={200}
-            max={1500}
-            step={50}
-            format={formatWatts}
-            onCommit={(maxInputWatts) => void updateSettings({ maxInputWatts })}
-          />
-          <RowSeparator />
-          <ToggleRow
-            title="Quiet hours"
-            subtitle="Throttle the fans overnight, at the cost of charge speed."
-            checked={settings.quietHours}
-            onCheckedChange={(quietHours) => void updateSettings({ quietHours })}
-          />
-        </Card>
-      </YStack>
-
-      <YStack gap="$2">
-        <SectionLabel>Power behaviour</SectionLabel>
-        <Card inset>
-          <ToggleRow
-            title="Eco mode"
-            subtitle="Shut outputs off automatically when nothing is drawing power."
-            checked={settings.ecoMode}
-            onCheckedChange={(ecoMode) => void updateSettings({ ecoMode })}
-          />
-          <RowSeparator />
-          <ToggleRow
-            title="UPS / pass-through"
-            subtitle="Run connected gear from the wall and switch to battery instantly on an outage."
-            checked={settings.upsMode}
-            onCheckedChange={(upsMode) => void updateSettings({ upsMode })}
-          />
-        </Card>
-      </YStack>
-
-      <YStack gap="$2">
-        <SectionLabel>Display</SectionLabel>
-        <Card inset>
-          <SliderRow
-            title="Screen brightness"
-            value={settings.displayBrightness}
-            min={10}
-            max={100}
-            step={10}
-            format={(v) => `${v}%`}
-            onCommit={(displayBrightness) => void updateSettings({ displayBrightness })}
+            title="Max solar/DC current"
+            subtitle="Ceiling for the XT90 input."
+            value={settings.maxChargingCurrent}
+            min={1}
+            max={20}
+            step={1}
+            format={(v) => `${v} A`}
+            onCommit={(maxChargingCurrent) => void updateSettings({ maxChargingCurrent })}
           />
           <RowSeparator />
           <SliderRow
-            title="Screen timeout"
-            subtitle="Minutes of inactivity before the built-in display sleeps."
-            value={settings.screenTimeoutMinutes}
+            title="Delay charging"
+            subtitle="Hold off charging for this long — handy on a time-of-use tariff."
+            value={settings.stopChargeAfterMinutes}
             min={0}
-            max={60}
-            step={5}
-            format={(v) => (v === 0 ? 'Never' : `${v} min`)}
-            onCommit={(screenTimeoutMinutes) => void updateSettings({ screenTimeoutMinutes })}
+            max={1440}
+            step={30}
+            format={(v) => (v === 0 ? 'Charge now' : formatDuration(v))}
+            onCommit={(stopChargeAfterMinutes) => void updateSettings({ stopChargeAfterMinutes })}
+          />
+        </Card>
+      </YStack>
+
+      <YStack gap="$2">
+        <SectionLabel>Light</SectionLabel>
+        <Card inset>
+          <SegmentedControl
+            title="LED mode"
+            value={settings.ledMode}
+            options={LED_MODES}
+            onChange={(ledMode) => void updateSettings({ ledMode })}
+          />
+        </Card>
+      </YStack>
+
+      <YStack gap="$2">
+        <SectionLabel>Auto shut-off</SectionLabel>
+        <Card inset>
+          <SegmentedControl
+            title="AC standby"
+            subtitle="Turn the inverter off after this long with no load."
+            value={settings.acStandbyMinutes}
+            options={STANDBY_LONG}
+            onChange={(acStandbyMinutes) => void updateSettings({ acStandbyMinutes })}
+          />
+          <RowSeparator />
+          <SegmentedControl
+            title="DC standby"
+            value={settings.dcStandbyMinutes}
+            options={STANDBY_LONG}
+            onChange={(dcStandbyMinutes) => void updateSettings({ dcStandbyMinutes })}
+          />
+          <RowSeparator />
+          <SegmentedControl
+            title="Whole unit sleep"
+            subtitle="Idle time before the station powers down completely."
+            value={settings.sleepMinutes}
+            options={SLEEP}
+            onChange={(sleepMinutes) => void updateSettings({ sleepMinutes })}
+          />
+        </Card>
+      </YStack>
+
+      <YStack gap="$2">
+        <SectionLabel>Panel</SectionLabel>
+        <Card inset>
+          <ToggleRow
+            title="Key sound"
+            checked={settings.keySound}
+            onCheckedChange={(keySound) => void updateSettings({ keySound })}
           />
           <RowSeparator />
           <SegmentedControl
             title="Temperature unit"
+            subtitle="Display preference only — the station has no register for this."
             value={settings.temperatureUnit}
             options={TEMPERATURE_UNITS}
             onChange={(temperatureUnit) => void updateSettings({ temperatureUnit })}
           />
-        </Card>
-      </YStack>
-
-      <YStack gap="$2">
-        <SectionLabel>Developer</SectionLabel>
-        <Card inset>
-          <ToggleRow
-            title="Grid connected"
-            subtitle="Simulate pulling the wall plug, to exercise the discharge path."
-            checked={status?.gridConnected ?? true}
-            onCheckedChange={(connected) => void setGridConnected(connected)}
-          />
-          <RowSeparator />
-          <Row title="API endpoint" subtitle={apiBaseUrl} />
           <RowSeparator />
           <Row
-            title="Server"
-            subtitle={version ? `${version.name} · ${version.runtime}` : 'Not connected'}
-            accessory={
-              <Text fontSize={15} fontWeight="700" color="$color">
-                {version ? `v${version.version}` : '—'}
-              </Text>
-            }
+            title="API endpoint"
+            subtitle={apiBaseUrl}
+            accessory={<Text fontSize={13} color="$muted">{simulated ? 'sim' : 'device'}</Text>}
           />
         </Card>
       </YStack>

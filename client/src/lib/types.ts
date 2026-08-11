@@ -1,26 +1,50 @@
 /**
  * Mirrors `server/src/types.ts`.
  *
- * Kept as a hand-written copy rather than a cross-workspace import so Metro
- * never has to resolve outside `client/`. If the API surface grows, the next
- * step is Hono's RPC client (`hc<AppType>`), which gives the client these types
- * straight from the server's route definitions.
+ * Hand-written rather than a cross-workspace import so Metro never resolves
+ * outside `client/`.
  */
 
-export type PortId = 'ac' | 'dc' | 'usb';
-export type ChargeSpeed = 'silent' | 'standard' | 'turbo';
+export type PortId = 'ac' | 'dc' | 'usb' | 'led';
+export type LedMode = 'off' | 'on' | 'sos' | 'flash';
 export type StationState = 'charging' | 'discharging' | 'idle' | 'standby';
+export type LinkMode = 'device' | 'simulator';
+export type LinkState = 'connected' | 'waiting' | 'offline';
+export type TransportKind = 'mqtt' | 'ble';
+
+export type DiscoveredDevice = {
+  id: string;
+  kind: TransportKind;
+  name: string;
+  mac: string | null;
+  rssi?: number;
+  firstSeen: string;
+  lastSeen: string;
+  bound: boolean;
+};
+
+export type DeviceList = {
+  transport: TransportKind | null;
+  boundId: string | null;
+  connected: boolean;
+  autoBind: boolean;
+  devices: DiscoveredDevice[];
+};
 
 export type StationSettings = {
   chargeLimit: number;
   dischargeFloor: number;
-  maxInputWatts: number;
-  chargeSpeed: ChargeSpeed;
-  ecoMode: boolean;
-  upsMode: boolean;
-  quietHours: boolean;
-  displayBrightness: number;
-  screenTimeoutMinutes: number;
+  maxChargingCurrent: number;
+  acSilentCharging: boolean;
+  stopChargeAfterMinutes: number;
+  ledMode: LedMode;
+  keySound: boolean;
+  usbStandbyMinutes: 0 | 3 | 5 | 10 | 30;
+  acStandbyMinutes: 0 | 480 | 960 | 1440;
+  dcStandbyMinutes: 0 | 480 | 960 | 1440;
+  screenRestSeconds: 0 | 180 | 300 | 600 | 1800;
+  /** Never 0 — that value permanently bricks the device. */
+  sleepMinutes: 5 | 10 | 30 | 480;
   temperatureUnit: 'C' | 'F';
 };
 
@@ -37,16 +61,35 @@ export type StationStatus = {
   name: string;
   model: string;
   state: StationState;
-  gridConnected: boolean;
+  link: {
+    mode: LinkMode;
+    state: LinkState;
+    transport?: TransportKind;
+    mac: string | null;
+    lastSeen: string | null;
+  };
+
   level: number;
+  expansionSoc: number[];
   capacityWh: number;
-  inputWatts: number;
-  outputWatts: number;
-  batteryTempC: number;
+
+  gridConnected: boolean;
+  solarConnected: boolean;
+
+  acInputWatts: number;
+  solarInputWatts: number;
+  totalInputWatts: number;
+  totalOutputWatts: number;
+
+  acInputVolts: number;
+  acInputHz: number;
+  acOutputVolts: number;
+  acOutputHz: number;
+
   minutesToFull: number | null;
   minutesRemaining: number | null;
-  cycleCount: number;
-  healthPercent: number;
+  chargeBookingMinutes: number;
+
   ports: PortState[];
   lastUpdated: string;
 };
@@ -57,4 +100,21 @@ export type VersionInfo = {
   runtime: string;
   startedAt: string;
   uptimeSeconds: number;
+  link: LinkMode;
+};
+
+export type LinkDiagnostics = {
+  driver: LinkMode;
+  brokerListening: boolean;
+  mqtt: { host: string; port: number };
+  devices: { mac: string; lastSeen: string }[];
+  configuredMac: string | null;
+};
+
+export type TrafficEntry = {
+  at: string;
+  mac: string;
+  topic: string;
+  bytes: number;
+  hex: string;
 };

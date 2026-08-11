@@ -43,6 +43,7 @@ type StationContextValue = {
   updateSettings: (patch: StationSettingsPatch) => Promise<void>;
   togglePort: (id: PortId, enabled: boolean) => Promise<void>;
   setGridConnected: (connected: boolean) => Promise<void>;
+  reloadSettings: () => Promise<void>;
 };
 
 const StationContext = createContext<StationContextValue | null>(null);
@@ -172,12 +173,22 @@ export function StationProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  /** Simulator-only; the real station reports whatever the mains is doing. */
   const setGridConnected = useCallback(async (connected: boolean) => {
     try {
       setStatus(await apiSetGrid(connected));
     } catch (err) {
       const message = describeError(err);
       if (message) setError(message);
+    }
+  }, []);
+
+  /** Re-reads settings, e.g. after binding a different station. */
+  const reloadSettings = useCallback(async () => {
+    try {
+      setSettings(await fetchSettings());
+    } catch {
+      /* the banner already reports connection trouble */
     }
   }, []);
 
@@ -193,8 +204,20 @@ export function StationProvider({ children }: { children: ReactNode }) {
       updateSettings,
       togglePort,
       setGridConnected,
+      reloadSettings,
     }),
-    [status, settings, version, connection, error, refresh, updateSettings, togglePort, setGridConnected]
+    [
+      status,
+      settings,
+      version,
+      connection,
+      error,
+      refresh,
+      updateSettings,
+      togglePort,
+      setGridConnected,
+      reloadSettings,
+    ]
   );
 
   return <StationContext.Provider value={value}>{children}</StationContext.Provider>;

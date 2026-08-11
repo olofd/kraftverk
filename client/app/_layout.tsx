@@ -10,7 +10,8 @@ import config, { BACKGROUNDS } from '../tamagui.config';
 import { StationProvider } from '../src/state/StationProvider';
 
 export default function RootLayout() {
-  const scheme = useColorScheme() ?? 'dark';
+  // useColorScheme can report values outside light/dark; anything else gets dark.
+  const scheme: 'light' | 'dark' = useColorScheme() === 'light' ? 'light' : 'dark';
 
   // Keeps the native root view behind the JS from flashing white in dark mode.
   useEffect(() => {

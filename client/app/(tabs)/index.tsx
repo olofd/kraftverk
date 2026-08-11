@@ -9,7 +9,6 @@ import { Screen } from '../../src/components/Screen';
 import { StatTile } from '../../src/components/StatTile';
 import {
   formatDuration,
-  formatTemperature,
   formatUptime,
   formatWatts,
   formatWh,
@@ -42,17 +41,37 @@ export default function DashboardScreen() {
       : status.state === 'discharging'
         ? theme.warning?.val
         : theme.muted?.val;
+
   const storedWh = (status.level / 100) * status.capacityWh;
   const eta =
     status.state === 'charging'
       ? `Full in ${formatDuration(status.minutesToFull)}`
       : status.state === 'discharging'
         ? `${formatDuration(status.minutesRemaining)} remaining`
-        : 'No load';
+        : status.chargeBookingMinutes > 0
+          ? `Charging deferred ${formatDuration(status.chargeBookingMinutes)}`
+          : 'No load';
+
+  const waitingForDevice = status.link.mode === 'device' && status.link.state !== 'connected';
 
   return (
     <Screen title={status.name} subtitle={status.model}>
-      {/* Hero: state of charge */}
+      {waitingForDevice ? (
+        <Card borderColor="$warning" gap="$2">
+          <XStack alignItems="center" gap="$2">
+            <Feather name="radio" size={15} color={theme.warning?.val} />
+            <Text fontSize={14} fontWeight="700" color="$warning">
+              {status.link.state === 'waiting' ? 'Waiting for the station' : 'Station offline'}
+            </Text>
+          </XStack>
+          <Text fontSize={12} color="$muted" lineHeight={18}>
+            The API is up but no station has connected to the MQTT broker yet. Point
+            mqtt.sydpower.com at this machine and power-cycle the P280.
+          </Text>
+        </Card>
+      ) : null}
+
+      {/* State of charge */}
       <Card gap="$4">
         <XStack alignItems="flex-start" justifyContent="space-between">
           <YStack>
@@ -107,25 +126,44 @@ export default function DashboardScreen() {
         </Text>
       </Card>
 
-      {/* Live telemetry */}
+      {/* Expansion packs — the P280 takes up to four */}
+      {status.expansionSoc.length > 0 ? (
+        <YStack gap="$2">
+          <SectionLabel>Expansion batteries</SectionLabel>
+          <Card inset>
+            {status.expansionSoc.map((soc, index) => (
+              <YStack key={index}>
+                {index > 0 ? <RowSeparator /> : null}
+                <Row
+                  title={`Pack ${index + 1}`}
+                  subtitle="2 048 Wh"
+                  accessory={<Value>{soc.toFixed(1)}%</Value>}
+                />
+              </YStack>
+            ))}
+          </Card>
+        </YStack>
+      ) : null}
+
+      {/* Power flow */}
       <XStack gap="$3" flexWrap="wrap">
         <StatTile
-          icon="download"
-          label="INPUT"
-          value={formatWatts(status.inputWatts)}
-          tone={status.inputWatts > 0 ? 'success' : 'muted'}
+          icon="zap"
+          label="AC IN"
+          value={formatWatts(status.acInputWatts)}
+          tone={status.acInputWatts > 0 ? 'success' : 'muted'}
+        />
+        <StatTile
+          icon="sun"
+          label="SOLAR IN"
+          value={formatWatts(status.solarInputWatts)}
+          tone={status.solarInputWatts > 0 ? 'success' : 'muted'}
         />
         <StatTile
           icon="upload"
           label="OUTPUT"
-          value={formatWatts(status.outputWatts)}
-          tone={status.outputWatts > 0 ? 'warning' : 'muted'}
-        />
-        <StatTile
-          icon="thermometer"
-          label="BATTERY"
-          value={formatTemperature(status.batteryTempC, settings?.temperatureUnit ?? 'C')}
-          tone={status.batteryTempC > 45 ? 'danger' : 'color'}
+          value={formatWatts(status.totalOutputWatts)}
+          tone={status.totalOutputWatts > 0 ? 'warning' : 'muted'}
         />
       </XStack>
 
@@ -147,37 +185,63 @@ export default function DashboardScreen() {
         </Card>
       </YStack>
 
-      {/* Battery health */}
+      {/* Mains detail */}
       <YStack gap="$2">
-        <SectionLabel>Battery health</SectionLabel>
+        <SectionLabel>AC</SectionLabel>
         <Card inset>
-          <Row title="Cycle count" accessory={<Value>{status.cycleCount}</Value>} />
+          <Row
+            title="Grid input"
+            subtitle={status.gridConnected ? 'Connected' : 'Not connected'}
+            accessory={
+              <Value>
+                {status.gridConnected
+                  ? `${status.acInputVolts.toFixed(1)} V · ${status.acInputHz.toFixed(1)} Hz`
+                  : '—'}
+              </Value>
+            }
+          />
           <RowSeparator />
           <Row
-            title="Estimated health"
-            accessory={<Value>{status.healthPercent.toFixed(1)}%</Value>}
+            title="Inverter output"
+            accessory={
+              <Value>
+                {status.acOutputVolts > 0
+                  ? `${status.acOutputVolts.toFixed(1)} V · ${status.acOutputHz.toFixed(1)} Hz`
+                  : '—'}
+              </Value>
+            }
           />
         </Card>
       </YStack>
 
-      {/* Server identity — the thing this prototype set out to prove */}
+      {/* Link + server */}
       <YStack gap="$2">
-        <SectionLabel>API server</SectionLabel>
+        <SectionLabel>Connection</SectionLabel>
         <Card inset>
           <Row
-            title="Version"
-            subtitle={version?.name}
+            title="Link"
+            subtitle={status.link.mode === 'device' ? 'Local MQTT' : 'Built-in simulator'}
+            accessory={
+              <Value>{status.link.mode === 'device' ? status.link.state : 'simulated'}</Value>
+            }
+          />
+          {status.link.mac ? (
+            <>
+              <RowSeparator />
+              <Row title="Device" accessory={<Value>{status.link.mac}</Value>} />
+            </>
+          ) : null}
+          <RowSeparator />
+          <Row
+            title="Server"
+            subtitle={version?.runtime}
             accessory={<Value>{version ? `v${version.version}` : '—'}</Value>}
           />
-          <RowSeparator />
-          <Row title="Runtime" accessory={<Value>{version?.runtime ?? '—'}</Value>} />
           <RowSeparator />
           <Row
             title="Uptime"
             accessory={<Value>{version ? formatUptime(version.uptimeSeconds) : '—'}</Value>}
           />
-          <RowSeparator />
-          <Row title="Endpoint" subtitle={apiBaseUrl} />
         </Card>
       </YStack>
     </Screen>

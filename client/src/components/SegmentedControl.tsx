@@ -2,9 +2,9 @@ import { Text, XStack, YStack } from 'tamagui';
 
 import { haptic } from '../lib/haptics';
 
-type Option<T extends string> = { value: T; label: string };
+type Option<T extends string | number> = { value: T; label: string };
 
-type Props<T extends string> = {
+type Props<T extends string | number> = {
   title: string;
   subtitle?: string;
   value: T;
@@ -12,7 +12,7 @@ type Props<T extends string> = {
   onChange: (value: T) => void;
 };
 
-export function SegmentedControl<T extends string>({
+export function SegmentedControl<T extends string | number>({
   title,
   subtitle,
   value,
