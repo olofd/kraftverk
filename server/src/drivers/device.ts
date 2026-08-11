@@ -173,13 +173,19 @@ export class DeviceDriver implements StationDriver {
     const t = this.#telemetry;
     const packs = 1 + (t?.expansionSoc.length ?? 0);
 
+    /**
+     * Derive from power flow rather than the AC charging flag alone: a station
+     * charging from solar with no mains was previously reported as 'standby',
+     * which is plainly wrong when 114 W is going in.
+     */
+    const net = (t?.totalInputWatts ?? 0) - (t?.totalOutputWatts ?? 0);
     const state: StationStatus['state'] = !t
       ? 'standby'
-      : t.charging
+      : net > 5 || t.charging
         ? 'charging'
         : t.totalOutputWatts > 5
           ? 'discharging'
-          : t.acInputConnected
+          : t.acInputConnected || t.dcInputConnected
             ? 'idle'
             : 'standby';
 

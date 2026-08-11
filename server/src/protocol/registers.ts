@@ -69,6 +69,29 @@ export const HOLDING = {
 
 export const HOLDING_REGISTER_COUNT = 80;
 
+/**
+ * Observed on a real AFERIY P280 but not yet confirmed against the display or
+ * BrightEMS. Recorded here so the next session starts from evidence.
+ *
+ *   holding 14 = 1800  matches the P280's 1800 W AC input ceiling exactly, so
+ *                      this is very likely AC charging power in watts. The
+ *                      published map describes charging rate as a 1-5 config
+ *                      value (registers 2 and 13, which read 3 here), so the
+ *                      P280 appears to expose the wattage separately.
+ *   input   54 = 376   plausible as battery temperature (37.6 C). No documented
+ *                      temperature register exists; needs corroboration.
+ *   input   70,71 = 1000 (i.e. 100.0) each. Possibly pack health or per-string
+ *                      state of charge.
+ *   input   47 = 0x3000, input 62 = 0x00ff, holding 11 = 0x1500  unknown flags.
+ *
+ * To identify any of these: snapshot the baseline, change one thing on the
+ * station, and dump again (POST /api/diagnostics/snapshot).
+ */
+export const UNCONFIRMED_P280 = {
+  AC_CHARGING_WATTS: 14,
+  MAYBE_BATTERY_TEMP: 54,
+} as const;
+
 /** Bit masks in input register 41. */
 export const STATUS = {
   LED_ON: 0x1000,
@@ -91,7 +114,13 @@ export const STATUS = {
   AC_INPUT_CONNECTED: 0x000a,
 } as const;
 
-/** Input register 48 reads 0x8000 while charging from AC. */
+/**
+ * Bit 15 of input register 48 is the charging flag.
+ *
+ * The published map describes this register as reading exactly 0x8000 when
+ * charging and 0x4000 otherwise. A real P280 reports 0x8040 — the low bits
+ * carry something else — so this must be masked, not compared for equality.
+ */
 export const AC_CHARGING_ACTIVE = 0x8000;
 
 /**
@@ -225,7 +254,7 @@ export function decodeTelemetry(regs: readonly number[]): DecodedTelemetry {
     totalInputWatts: at(regs, INPUT.TOTAL_INPUT_POWER),
     totalOutputWatts: at(regs, INPUT.TOTAL_OUTPUT_POWER),
     charging:
-      at(regs, INPUT.AC_CHARGING_STATE) === AC_CHARGING_ACTIVE ||
+      (at(regs, INPUT.AC_CHARGING_STATE) & AC_CHARGING_ACTIVE) !== 0 ||
       (status & STATUS.CHARGING_FROM_AC) !== 0,
     acInputConnected:
       (status & STATUS.AC_INPUT_CONNECTED) !== 0 || acInputVolts >= AC_INPUT_PRESENT_VOLTS,
