@@ -100,6 +100,12 @@ export const HOLDING = {
   KEY_SOUND: 56,
   /** Confirmed on a P280: 0 -> 1 when "AC silent charging" was enabled. */
   AC_SILENT_CHARGING: 57,
+  /**
+   * No-load standby timers, in **minutes**. All three confirmed on a P280.
+   * Note the contrast with SCREEN_REST_SECONDS, which is in seconds.
+   *
+   * BrightEMS offers "Never" (0) for each of these three.
+   */
   USB_STANDBY_MINUTES: 59,
   AC_STANDBY_MINUTES: 60,
   DC_STANDBY_MINUTES: 61,
@@ -137,6 +143,13 @@ export const HOLDING = {
    * present this as a general "stop charging here" ceiling.
    */
   AC_CHARGING_UPPER_LIMIT: 67,
+  /**
+   * Whole-machine idle shutdown, in minutes. Confirmed on a P280: 5 -> 480.
+   *
+   * DANGER: a value of 0 permanently bricks the device. BrightEMS offers a
+   * "Never" option for the USB, AC and DC standby timers but deliberately omits
+   * it here — independent corroboration that 0 is fatal on this register alone.
+   */
   SLEEP_MINUTES: 68,
 } as const;
 
@@ -291,7 +304,15 @@ export const WRITABLE: Partial<Record<number, WriteRule>> = {
   [HOLDING.DISCHARGE_LOWER_LIMIT]: { kind: 'range', min: 0, max: 500 },
   // Official app range is 600-1000 (60-100%).
   [HOLDING.AC_CHARGING_UPPER_LIMIT]: { kind: 'range', min: 600, max: 1000 },
-  // NEVER include 0 here. Zero bricks the device.
+  /**
+   * NEVER include 0 here. Zero bricks the device.
+   *
+   * Corroborated by the vendor app itself: BrightEMS offers a "Never" option
+   * for the USB, AC and DC standby timers — all of which accept 0 — but the
+   * whole-machine timer offers only 5/10/30/480 minutes. The one register where
+   * 0 is documented as fatal is the one register where the vendor removed the
+   * ability to select it.
+   */
   [HOLDING.SLEEP_MINUTES]: { kind: 'set', values: [5, 10, 30, 480] },
 };
 

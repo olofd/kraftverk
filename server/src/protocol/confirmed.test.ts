@@ -197,6 +197,33 @@ describe('confirmed on a real P280', () => {
     expect(() => assertWritable(HOLDING.SCREEN_REST_SECONDS, 3)).toThrow(UnsafeWriteError);
   });
 
+  /** All four confirmed in one pass on a P280. Minutes, unlike register 62. */
+  test('the four standby timers are all in minutes', () => {
+    expect(decodeSettings(holding({ 59: 10, 60: 960, 61: 1440, 68: 480 }))).toMatchObject({
+      usbStandbyMinutes: 10, // 3 -> 10 minutes
+      acStandbyMinutes: 960, // 8h -> 16h
+      dcStandbyMinutes: 1440, // 8h -> 24h
+      sleepMinutes: 480, // 5 -> 480 minutes
+    });
+  });
+
+  /**
+   * BrightEMS offers "Never" for the USB, AC and DC standby timers, and does
+   * not offer it for whole-machine sleep. The one register where 0 is
+   * documented as fatal is the one where the vendor removed the option —
+   * independent corroboration of the brick warning.
+   */
+  test('zero is accepted for the standby timers but never for whole-machine sleep', () => {
+    for (const register of [
+      HOLDING.USB_STANDBY_MINUTES,
+      HOLDING.AC_STANDBY_MINUTES,
+      HOLDING.DC_STANDBY_MINUTES,
+    ]) {
+      expect(() => assertWritable(register, 0)).not.toThrow();
+    }
+    expect(() => assertWritable(HOLDING.SLEEP_MINUTES, 0)).toThrow(UnsafeWriteError);
+  });
+
   test('AC silent charging is holding register 57', () => {
     expect(decodeSettings(holding({ 57: 1 })).acSilentCharging).toBe(true);
     expect(decodeSettings(holding({ 57: 0 })).acSilentCharging).toBe(false);

@@ -230,14 +230,14 @@ Values below are from the live unit.
 | 27 | LED mode | `0`→`1` | ✅ |
 | 56 | Key sound | `1` | 📖 |
 | 57 | AC silent charging | `0`→`1` | ✅ |
-| 59 | USB standby | `3` min | ✅ |
-| 60 | AC standby | `480` min | 📖 |
-| 61 | DC standby | `480` min | 📖 |
+| 59 | USB no-load standby | `3`→`10` min | ✅ |
+| 60 | AC no-load standby | `480`→`960` min | ✅ |
+| 61 | DC no-load standby | `480`→`1440` min | ✅ |
 | 62 | Screen shutdown | `300`→`180` s | ✅ |
 | 63 | AC charge booking | `0`→`1439` | ✅ |
 | 66 | Discharge floor | `100` → 10 %, `230` → 23 % | ✅ |
 | 67 | **AC** charge limit | `600` → 60 % | ✅ |
-| 68 | Idle shutdown | `5` min | 📖 |
+| 68 | Whole machine unused | `5`→`480` min | ✅ |
 
 Every settings register decoded to a value inside its expected whitelist, which
 is good evidence the map transfers to this model.
@@ -356,6 +356,33 @@ schema were both capped at 1440 and are now 1439.
 This changed the UI. A slider bound to a value the device decrements would drift
 under the user's finger, so the control offers fixed delays (Now / 1h / 4h / 8h
 / 12h / 24h) and reports the live remaining time separately.
+
+### ✅ All four standby timers, and what BrightEMS refuses to offer
+
+Changed together on a P280 and all confirmed in one pass. **Minutes**, unlike
+the screen timer below.
+
+| Setting | Register | Change | BrightEMS options |
+| --- | --- | --- | --- |
+| USB no-load standby | 59 | `3` → `10` | Never, 3, 5, 10, 30 min |
+| AC no-load standby | 60 | `480` → `960` | Never, 8h, 16h, 24h |
+| DC no-load standby | 61 | `480` → `1440` | Never, 8h, 16h, 24h |
+| Whole machine unused | 68 | `5` → `480` | 5, 10, 30, 480 min |
+
+### 🔒 The vendor app corroborates the brick warning
+
+Look at the last row. BrightEMS offers **"Never"** for the USB, AC and DC
+standby timers — all of which map to `0`. For whole-machine unused time it
+offers only 5/10/30/480 minutes.
+
+**The one register where `0` is documented as permanently bricking the device is
+the one register where the vendor removed the ability to select it.**
+
+That is independent corroboration from a completely different direction than the
+reverse-engineering notes, and it is the strongest evidence yet that the warning
+is real rather than folklore. Our whitelist, zod schema and UI all omit zero
+here; a test asserts the write is refused while the same value is accepted on
+the three neighbouring timers.
 
 ### ✅ Screen shutdown is in seconds, not minutes
 

@@ -22,6 +22,7 @@ const TEMPERATURE_UNITS = [
   { value: 'F', label: 'Fahrenheit' },
 ] as const;
 
+/** Minutes. Matches BrightEMS's options for the AC and DC standby timers. */
 const STANDBY_LONG = [
   { value: 0, label: 'Never' },
   { value: 480, label: '8h' },
@@ -29,6 +30,19 @@ const STANDBY_LONG = [
   { value: 1440, label: '24h' },
 ] as const;
 
+/** USB gets a much shorter scale than AC and DC. */
+const STANDBY_USB = [
+  { value: 0, label: 'Never' },
+  { value: 3, label: '3m' },
+  { value: 5, label: '5m' },
+  { value: 10, label: '10m' },
+  { value: 30, label: '30m' },
+] as const;
+
+/**
+ * No zero. Writing 0 to this register permanently bricks the station, and
+ * BrightEMS omits "Never" here while offering it for the three timers above.
+ */
 const SLEEP = [
   { value: 5, label: '5m' },
   { value: 10, label: '10m' },
@@ -231,7 +245,7 @@ export default function SettingsScreen() {
         <SectionLabel>Auto shut-off</SectionLabel>
         <Card inset>
           <SegmentedControl
-            title="AC standby"
+            title="AC no-load standby"
             subtitle="Turn the inverter off after this long with no load."
             value={settings.acStandbyMinutes}
             options={STANDBY_LONG}
@@ -239,14 +253,27 @@ export default function SettingsScreen() {
           />
           <RowSeparator />
           <SegmentedControl
-            title="DC standby"
+            title="DC no-load standby"
             value={settings.dcStandbyMinutes}
             options={STANDBY_LONG}
             onChange={(dcStandbyMinutes) => void updateSettings({ dcStandbyMinutes })}
           />
           <RowSeparator />
           <SegmentedControl
-            title="Whole unit sleep"
+            title="USB no-load standby"
+            subtitle="Short by design — USB switches itself off quickly with nothing drawing."
+            value={settings.usbStandbyMinutes}
+            options={STANDBY_USB}
+            onChange={(usbStandbyMinutes) => void updateSettings({ usbStandbyMinutes })}
+          />
+          <RowSeparator />
+          {/*
+            No "Never" option, deliberately. Writing 0 to this register
+            permanently bricks the station — BrightEMS omits it here too, while
+            offering it for the three timers above.
+          */}
+          <SegmentedControl
+            title="Whole machine unused time"
             subtitle="Idle time before the station powers down completely."
             value={settings.sleepMinutes}
             options={SLEEP}
