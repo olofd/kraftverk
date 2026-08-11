@@ -53,6 +53,8 @@ export class MqttTransport extends EventEmitter implements Transport {
         mac: message.mac,
         firstSeen: existing?.firstSeen ?? now.toISOString(),
         lastSeen: now.toISOString(),
+        // Anything speaking this protocol on our broker is a station.
+        likelyStation: true,
       };
       this.#devices.set(message.mac, device);
       if (!existing) this.emit('discovery', device);

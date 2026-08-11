@@ -13,6 +13,12 @@ export type DiscoveredDevice = {
   rssi?: number;
   firstSeen: string;
   lastSeen: string;
+  /**
+   * Strong evidence this is actually a power station — a matching advertised
+   * service UUID or device name. Only these are auto-bound; anything else must
+   * be bound deliberately, so we never connect to a stranger's peripheral.
+   */
+  likelyStation: boolean;
 };
 
 /**

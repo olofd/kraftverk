@@ -41,6 +41,22 @@ export class BleTransport extends EventEmitter implements Transport {
   /** Notifications can arrive split across packets. */
   #rxBuffer: number[] = [];
 
+  // Connection keep-alive. BLE links drop routinely — especially at weak
+  // signal — so binding sets a target and a loop works to keep it connected.
+  #reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  #backoffMs = 2000;
+  #connecting = false;
+  #lastError: string | null = null;
+  #attempts = 0;
+
+  get lastError(): string | null {
+    return this.#lastError;
+  }
+
+  get attempts(): number {
+    return this.#attempts;
+  }
+
   get boundId(): string | null {
     return this.#boundId;
   }
@@ -55,11 +71,23 @@ export class BleTransport extends EventEmitter implements Transport {
 
     noble.on('discover', (peripheral: Peripheral) => {
       const name: string = peripheral.advertisement?.localName ?? '';
-      if (name && !NAME_PATTERN.test(name)) return;
-
       const id: string = peripheral.id;
       const now = new Date().toISOString();
       const existing = this.#devices.get(id);
+
+      /**
+       * Advertised service UUIDs are far stronger evidence than a name: plenty
+       * of nearby peripherals advertise nothing at all, and an earlier version
+       * of this filter let unnamed devices through and auto-connected to a
+       * stranger's fitness tracker.
+       */
+      const advertised: string[] = (peripheral.advertisement?.serviceUuids ?? []).map(
+        (u: string) => u.replace(/-/g, '').toLowerCase()
+      );
+      const hasKnownService = SERVICE_CANDIDATES.some((candidate) =>
+        advertised.some((u) => u === candidate.service || u.startsWith(`0000${candidate.service}`))
+      );
+      const nameMatches = Boolean(name) && NAME_PATTERN.test(name);
 
       const device: DiscoveredDevice = {
         id,
@@ -69,11 +97,13 @@ export class BleTransport extends EventEmitter implements Transport {
         rssi: peripheral.rssi,
         firstSeen: existing?.firstSeen ?? now,
         lastSeen: now,
+        // Only these are safe to connect to unprompted.
+        likelyStation: hasKnownService || nameMatches,
       };
 
       this.#peripherals.set(id, peripheral);
       this.#devices.set(id, device);
-      this.emit('discovery', device);
+      if (!existing) this.emit('discovery', device);
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -98,11 +128,62 @@ export class BleTransport extends EventEmitter implements Transport {
     return [...this.#devices.values()];
   }
 
+  /**
+   * Targets a station and keeps it connected.
+   *
+   * One connect attempt runs inline so the caller gets immediate feedback, but
+   * a failure is not fatal: a backoff loop keeps retrying, and reconnects if
+   * the link drops later. At weak signal that is the difference between working
+   * and not.
+   */
   async bind(id: string): Promise<void> {
-    const peripheral = this.#peripherals.get(id);
-    if (!peripheral) throw new Error(`No BLE device with id ${id}. Scan first.`);
+    if (!this.#peripherals.has(id)) throw new Error(`No BLE device with id ${id}. Scan first.`);
 
     await this.unbind();
+    this.#boundId = id;
+    this.#backoffMs = 2000;
+
+    try {
+      await this.#connect();
+    } catch (error) {
+      // Keep the binding and let the loop retry; report the first failure.
+      this.#scheduleReconnect();
+      throw error;
+    }
+  }
+
+  #scheduleReconnect(): void {
+    if (this.#reconnectTimer || !this.#boundId) return;
+    const delay = this.#backoffMs;
+    this.#backoffMs = Math.min(this.#backoffMs * 2, 30_000);
+    this.#reconnectTimer = setTimeout(() => {
+      this.#reconnectTimer = null;
+      void this.#connect().catch(() => this.#scheduleReconnect());
+    }, delay);
+  }
+
+  async #connect(): Promise<void> {
+    const id = this.#boundId;
+    if (!id || this.#connecting || this.#connected) return;
+
+    const peripheral = this.#peripherals.get(id);
+    if (!peripheral) throw new Error(`Device ${id} is no longer in range`);
+
+    this.#connecting = true;
+    this.#attempts += 1;
+    try {
+      await this.#openGatt(peripheral);
+      this.#lastError = null;
+      this.#backoffMs = 2000;
+    } catch (error) {
+      this.#lastError = (error as Error).message;
+      throw error;
+    } finally {
+      this.#connecting = false;
+    }
+  }
+
+  async #openGatt(peripheral: Peripheral): Promise<void> {
     await peripheral.connectAsync();
 
     const { characteristics } = await peripheral.discoverAllServicesAndCharacteristicsAsync();
@@ -135,20 +216,28 @@ export class BleTransport extends EventEmitter implements Transport {
       );
     }
 
+    notifyChar.removeAllListeners('data');
     notifyChar.on('data', (data: Buffer) => this.#onNotification(data));
     await notifyChar.subscribeAsync();
 
+    peripheral.removeAllListeners('disconnect');
     peripheral.once('disconnect', () => {
       this.#connected = false;
       this.#writeChar = null;
+      this.#rxBuffer = [];
+      this.#lastError = 'Link dropped';
+      // Still bound — keep trying to get it back.
+      this.#scheduleReconnect();
     });
 
     this.#writeChar = writeChar;
-    this.#boundId = id;
     this.#connected = true;
   }
 
   async unbind(): Promise<void> {
+    if (this.#reconnectTimer) clearTimeout(this.#reconnectTimer);
+    this.#reconnectTimer = null;
+
     const current = this.#boundId ? this.#peripherals.get(this.#boundId) : null;
     if (current) await current.disconnectAsync().catch(() => {});
     this.#boundId = null;

@@ -89,9 +89,12 @@ if (DRIVER === 'device' || DRIVER === 'ble') {
   }
 
   transport.onDiscovery((found) => {
-    console.log(`Discovered ${found.kind} station ${found.name} (${found.id})`);
+    const label = found.likelyStation ? 'station' : 'device (not a station)';
+    console.log(`Discovered ${found.kind} ${label}: ${found.name} (${found.id})`);
+
     const wanted = preferred && found.id.toUpperCase() === preferred.toUpperCase();
-    if (!transport!.boundId && (wanted || AUTO_BIND)) {
+    // Never auto-connect to something we can't identify as a station.
+    if (!transport!.boundId && (wanted || (AUTO_BIND && found.likelyStation))) {
       void transport!
         .bind(found.id)
         .then(async () => {
@@ -183,6 +186,8 @@ api.get('/devices', (c) =>
     boundId: transport?.boundId ?? null,
     connected: transport?.connected ?? false,
     autoBind: AUTO_BIND,
+    lastError: transport instanceof BleTransport ? transport.lastError : null,
+    attempts: transport instanceof BleTransport ? transport.attempts : null,
     devices: (transport?.discovered() ?? []).map((d) => ({
       ...d,
       bound: d.id === transport?.boundId,

@@ -138,10 +138,24 @@ export default function DevicesScreen() {
             title="Auto-bind"
             subtitle={
               list?.autoBind
-                ? 'Adopts the first station discovered'
+                ? 'Adopts the first identified station; retries with backoff'
                 : 'Disabled — bind manually below'
             }
           />
+          {list?.lastError ? (
+            <>
+              <RowSeparator />
+              <Row
+                title="Last connect error"
+                subtitle={list.lastError}
+                accessory={
+                  <Text fontSize={13} color="$muted">
+                    {list.attempts ?? 0} tries
+                  </Text>
+                }
+              />
+            </>
+          ) : null}
         </Card>
       </YStack>
 
@@ -162,8 +176,11 @@ export default function DevicesScreen() {
               }
             />
           ) : (
-            list.devices.map((found, index) => (
-              <YStack key={found.id}>
+            // Stations first; unidentified peripherals sink to the bottom.
+            [...list.devices]
+              .sort((a, b) => Number(b.likelyStation) - Number(a.likelyStation))
+              .map((found, index) => (
+              <YStack key={found.id} opacity={found.likelyStation ? 1 : 0.55}>
                 {index > 0 ? <RowSeparator /> : null}
                 <XStack
                   alignItems="center"
@@ -186,6 +203,7 @@ export default function DevicesScreen() {
                     <Text fontSize={12} color="$muted" numberOfLines={1}>
                       {found.mac ?? found.id}
                       {found.rssi !== undefined ? ` · ${found.rssi} dBm` : ''}
+                      {found.likelyStation ? '' : ' · not identified as a station'}
                     </Text>
                   </YStack>
 
@@ -196,12 +214,12 @@ export default function DevicesScreen() {
                   ) : (
                     <Button
                       size="$2"
-                      backgroundColor="$accent"
-                      color="$background"
+                      backgroundColor={found.likelyStation ? '$accent' : undefined}
+                      color={found.likelyStation ? '$background' : undefined}
                       disabled={busy}
                       onPress={() => void bind(found.id)}
                     >
-                      Bind
+                      {found.likelyStation ? 'Bind' : 'Try anyway'}
                     </Button>
                   )}
                 </XStack>

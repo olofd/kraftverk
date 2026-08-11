@@ -10,12 +10,22 @@
     "node": ">=20.19.0"
   },
   "scripts": {
+    "predev": "npm run free-ports",
     "dev": "concurrently -n server,client -c magenta,cyan \"npm run server\" \"npm run web\"",
+    "predev:device": "npm run free-ports",
     "dev:device": "concurrently -n server,client -c magenta,cyan \"npm run server:device\" \"npm run web\"",
+    "predev:device:write": "npm run free-ports",
+    "dev:device:write": "concurrently -n server,client -c magenta,cyan \"npm run server:device:write\" \"npm run web\"",
+    "predev:ble": "npm run free-ports",
     "dev:ble": "concurrently -n server,client -c magenta,cyan \"npm run server:ble\" \"npm run web\"",
+    "predev:ble:write": "npm run free-ports",
+    "dev:ble:write": "concurrently -n server,client -c magenta,cyan \"npm run server:ble:write\" \"npm run web\"",
     "server": "npm run dev --workspace server",
     "server:device": "npm run dev:device --workspace server",
+    "server:device:write": "npm run dev:device:write --workspace server",
     "server:ble": "npm run dev:ble --workspace server",
+    "server:ble:write": "npm run dev:ble:write --workspace server",
+    "free-ports": "kill-port 3333 1883 8081",
     "test": "npm run test --workspace server",
     "web": "npm run web --workspace client",
     "ios": "npm run ios --workspace client",
@@ -24,6 +34,7 @@
     "typecheck": "npm run typecheck --workspace client && npm run typecheck --workspace server"
   },
   "devDependencies": {
-    "concurrently": "^10.0.4"
+    "concurrently": "^10.0.4",
+    "kill-port": "^1.6.1"
   }
 }

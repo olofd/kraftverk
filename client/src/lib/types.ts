@@ -21,6 +21,8 @@ export type DiscoveredDevice = {
   firstSeen: string;
   lastSeen: string;
   bound: boolean;
+  /** Identified as a power station. Others are only bindable deliberately. */
+  likelyStation: boolean;
 };
 
 export type DeviceList = {
@@ -28,6 +30,9 @@ export type DeviceList = {
   boundId: string | null;
   connected: boolean;
   autoBind: boolean;
+  /** BLE only: why the last connect attempt failed, and how many were made. */
+  lastError: string | null;
+  attempts: number | null;
   devices: DiscoveredDevice[];
 };
 
