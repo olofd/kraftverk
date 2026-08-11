@@ -107,7 +107,7 @@ entirely. Mask bit 15.
 | --- | --- | --- |
 | `0x1000` | LED on | ✅ |
 | `0x0800` | AC output on | ✅ |
-| `0x0400` | DC output on | 📖 |
+| `0x0400` | DC output on | ✅ |
 | `0x0200` | USB output on | ✅ |
 | `0x0080` | DC converter active | ✅ |
 | `0x0060` | DC input present | ⚠️ |
@@ -134,6 +134,24 @@ Masking both still answers "is DC input present", which is all we use it for.
 
 **⚠️ AC input mask is `0x000A`, not `0x000E`.** Bit 2 is the inverter, proven
 by the AC output test above.
+
+### ✅ Every bit of the status register is accounted for
+
+With AC output, the car port and the light all on, a panel attached and the
+inverter running, register 41 read **`0x1CA4`**. Every set bit is individually
+confirmed by its own experiment:
+
+| Bit | Meaning | Confirmed by |
+| --- | --- | --- |
+| `0x1000` | LED on | light test |
+| `0x0800` | AC output on | AC test |
+| `0x0400` | DC output on | car port test |
+| `0x0080` | DC converter active | USB test, again by the light |
+| `0x0020` | DC input present | solar delivering |
+| `0x0004` | Inverter active | AC test with no mains |
+
+`0x1CA4 & ~explained == 0` — nothing unexplained remains in an observed status
+word. All four outputs and both switch banks are confirmed.
 
 ### ✅ The power registers add up
 
@@ -197,7 +215,7 @@ Values below are from the live unit.
 | 13 | AC charging rate | `3` | 📖 |
 | 20 | Max charging current | `20` A | 📖 |
 | 24 | USB output | `0`→`1` | ✅ |
-| 25 | DC output | `0` | 📖 |
+| 25 | DC output | `0`→`1` | ✅ |
 | 26 | AC output | `0`→`1` | ✅ |
 | 27 | LED mode | `0`→`1` | ✅ |
 | 56 | Key sound | `1` | 📖 |
@@ -274,6 +292,13 @@ The Protocol tab drives this:
 Whatever moved is the register behind that control. One change at a time, or
 the diff stops being evidence.
 
+The baseline persists to `server/data/baseline.json`, so a server restart — and
+`--hot` reloads on every edit — no longer throws away the comparison you were
+in the middle of making. Re-snapshot whenever you want a new reference point.
+
+Note the standby timers while testing: USB switches itself off after about
+three minutes with no load (holding 59), so take the second dump promptly.
+
 ---
 
 ## Next
@@ -283,7 +308,7 @@ the diff stops being evidence.
       input 18 and 20
 - [x] Turn the light on → confirmed `0x1000`, holding 27, input 15 and 25, and
       the 0.1 W scaling via the output sum
-- [ ] Toggle DC output → confirm mask `0x0400` and holding 25
+- [x] Toggle DC output → confirmed `0x0400` and holding 25
 - [ ] Plug a load into USB → confirm registers 30–31 / 34–37 scaling
 - [x] LED SOS and flash → all four enum values confirmed (0, 1, 2, 3)
 - [ ] Compare input 54 against the temperature BrightEMS reports

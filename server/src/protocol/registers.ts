@@ -65,6 +65,7 @@ export const HOLDING = {
   MAX_CHARGING_CURRENT: 20,
   /** Confirmed on a P280: 0 -> 1 when USB was switched on at the unit. */
   USB_OUTPUT: 24,
+  /** Confirmed on a P280: 0 -> 1 when the 12V car port was switched on. */
   DC_OUTPUT: 25,
   /** Confirmed on a P280: 0 -> 1 when AC output was switched on at the unit. */
   AC_OUTPUT: 26,
@@ -126,6 +127,7 @@ export const STATUS = {
   LED_ON: 0x1000,
   /** Confirmed on a P280: set when AC output was switched on at the unit. */
   AC_OUTPUT_ON: 0x0800,
+  /** Confirmed on a P280: set when the 12V car port was switched on. */
   DC_OUTPUT_ON: 0x0400,
   /** Confirmed on a P280. */
   USB_OUTPUT_ON: 0x0200,

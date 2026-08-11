@@ -121,6 +121,31 @@ describe('confirmed on a real P280', () => {
   });
 
   /**
+   * With AC, DC, USB and the light all exercised on a real unit, every bit the
+   * status register sets is now individually accounted for. 0x1CA4 was observed
+   * with AC output, the car port and the light on, a panel attached, and the
+   * inverter running.
+   */
+  test('every bit of an observed status word decodes', () => {
+    const t = decodeTelemetry(telemetry({ 41: 0x1ca4 }));
+    expect(t.ledEnabled).toBe(true); //        0x1000
+    expect(t.acOutputEnabled).toBe(true); //   0x0800
+    expect(t.dcOutputEnabled).toBe(true); //   0x0400
+    expect(t.dcInputConnected).toBe(true); //  0x0020
+    expect(t.usbOutputEnabled).toBe(false); // 0x0200 clear — USB was off
+    expect(t.acInputConnected).toBe(false); // no mains; 0x0004 is the inverter
+
+    const explained =
+      STATUS.LED_ON |
+      STATUS.AC_OUTPUT_ON |
+      STATUS.DC_OUTPUT_ON |
+      STATUS.DC_CONVERTER_ACTIVE |
+      STATUS.DC_INPUT_CONNECTED |
+      STATUS.INVERTER_ACTIVE;
+    expect(0x1ca4 & ~explained).toBe(0);
+  });
+
+  /**
    * Proves the 0.1 W scaling by arithmetic rather than assumption: with the
    * inverter at 8 W and the light on, the station reported 9 W total. At whole
    * watts the LED's raw 10 would have made that 18.

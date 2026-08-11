@@ -1,3 +1,6 @@
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
@@ -259,12 +262,25 @@ diag.get('/gatt', (c) =>
  * whatever moved is the register behind that control. This is how the map gets
  * confirmed on hardware it was not derived from.
  */
-let baseline: { at: string; input: number[]; holding: number[] } | null = null;
+type Baseline = { at: string; input: number[]; holding: number[] };
+
+const BASELINE_FILE = resolve(import.meta.dirname, '../data/baseline.json');
+
+/**
+ * Persisted, because the server restarts constantly during protocol work —
+ * `--hot` reloads on every edit — and losing the baseline mid-experiment throws
+ * away the comparison you were in the middle of making.
+ */
+let baseline: Baseline | null = await readFile(BASELINE_FILE, 'utf8')
+  .then((raw) => JSON.parse(raw) as Baseline)
+  .catch(() => null);
 
 diag.post('/snapshot', async (c) => {
   if (!device) throw new HTTPException(400, { message: 'Needs a hardware driver' });
   const [input, holding] = await Promise.all([device.readAllInput(), device.readAllHolding()]);
   baseline = { at: new Date().toISOString(), input, holding };
+  await mkdir(dirname(BASELINE_FILE), { recursive: true });
+  await writeFile(BASELINE_FILE, JSON.stringify(baseline), 'utf8');
   return c.json({ at: baseline.at, input: input.length, holding: holding.length });
 });
 
