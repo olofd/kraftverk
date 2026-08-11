@@ -30,6 +30,8 @@ function stripCollapsable<P extends object>(Component: React.ComponentType<P>, n
 }
 
 const AnimatedG = stripCollapsable<React.ComponentProps<typeof G>>(G, 'PlainG');
+const AnimatedPath = stripCollapsable<React.ComponentProps<typeof Path>>(Path, 'PlainPath');
+// Still used for the charging pulse ring.
 const AnimatedCircle = stripCollapsable<React.ComponentProps<typeof Circle>>(Circle, 'PlainCircle');
 
 /**
@@ -163,69 +165,6 @@ function polyPath(points: Point[]): string {
   return d;
 }
 
-/**
- * A teardrop pointing along +X: a round bulb with a drawn-out tip, so it reads
- * as something falling rather than a dot sliding along a wire. Rotated to the
- * direction of travel at render time.
- */
-function dropPath(r: number, tip: number): string {
-  return (
-    `M ${tip} 0 ` +
-    `Q ${r * 0.55} ${-r} 0 ${-r} ` +
-    `A ${r} ${r} 0 0 0 0 ${r} ` +
-    `Q ${r * 0.55} ${r} ${tip} 0 Z`
-  );
-}
-
-/**
- * Heading at each point, in degrees, unwrapped so consecutive values never jump
- * more than 180°. Interpolating these turns the droplet through each corner
- * instead of snapping it round.
- */
-function headings(points: Point[]): number[] {
-  const segs: number[] = [];
-  for (let i = 0; i < points.length - 1; i++) {
-    const dx = points[i + 1]!.x - points[i]!.x;
-    const dy = points[i + 1]!.y - points[i]!.y;
-    segs.push((Math.atan2(dy, dx) * 180) / Math.PI);
-  }
-  for (let i = 1; i < segs.length; i++) {
-    while (segs[i]! - segs[i - 1]! > 180) segs[i]! -= 360;
-    while (segs[i]! - segs[i - 1]! < -180) segs[i]! += 360;
-  }
-  // One value per point: the heading of the segment leaving it.
-  return [segs[0]!, ...segs];
-}
-
-/**
- * Rotation ramp that holds a constant heading along each straight run and turns
- * quickly at the joint.
- *
- * Interpolating heading point-to-point instead makes the droplet rotate
- * continuously for the whole length of every segment, which reads as aimless
- * spinning. Doubling up the stops either side of each corner keeps the angle
- * fixed on the straights and confines the turn to the bend.
- */
-function rotationRamp(points: Point[]) {
-  const st = stops(points);
-  const hd = headings(points);
-  const turn = 0.035;
-
-  const inputRange: number[] = [0];
-  const outputRange: number[] = [hd[0]!];
-
-  for (let i = 1; i < points.length - 1; i++) {
-    const before = Math.max(inputRange[inputRange.length - 1]! + 0.001, st[i]! - turn);
-    const after = Math.min(1 - 0.001, Math.max(before + 0.001, st[i]! + turn));
-    inputRange.push(before, after);
-    outputRange.push(hd[i - 1]!, hd[i]!);
-  }
-
-  inputRange.push(1);
-  outputRange.push(hd[points.length - 2]!);
-  return { inputRange, outputRange };
-}
-
 /** Distance-proportional stops, so a droplet moves at constant speed. */
 function stops(points: Point[]) {
   const segs = points.slice(1).map((p, i) => Math.hypot(p.x - points[i]!.x, p.y - points[i]!.y));
@@ -264,14 +203,6 @@ export function EnergyFlow({
   const nodes = useMemo<Node[]>(() => {
     const inX = [W * 0.16, W * 0.84];
     const outX = [W * 0.11, W * 0.37, W * 0.63, W * 0.89];
-
-    /**
-     * Each output leg gets its own horizontal lane. Sharing one made every
-     * horizontal run overlap the others, so the AC leg passed straight through
-     * the DC node's leg. Legs that travel furthest sideways turn earliest —
-     * nearest the cell — so they clear the verticals of the ones inside them.
-     */
-    const lane = (i: number) => (i === 0 || i === 3 ? TRUNK_OUT_Y : TRUNK_OUT_Y + 26);
 
     const inbound = (
       id: string,
@@ -312,11 +243,17 @@ export function EnergyFlow({
       y: OUT_Y,
       watts,
       inbound: false,
-      // Cell -> down the trunk -> out along this leg's lane -> down to the badge.
+      /*
+        One shared rail, not a lane each. Every port drops from the same
+        horizontal line by a short stub, so the four read as taps off one bus
+        rather than as separate branches at different depths. Verticals leave
+        the rail downward, so they meet it at a junction rather than crossing
+        another leg's run.
+      */
       points: [
         { x: CX, y: CY + R },
-        { x: CX, y: lane(index) },
-        { x, y: lane(index) },
+        { x: CX, y: TRUNK_OUT_Y },
+        { x, y: TRUNK_OUT_Y },
         { x, y: OUT_Y - 19 },
       ],
     });
@@ -625,8 +562,13 @@ function ChargePulse({ accent }: { accent: string }) {
 /** Particles travelling the leg, emitted and absorbed. */
 function Droplets({ node, tint }: { node: Node; tint: string }) {
   const active = node.watts > 0.5;
-  const count = node.watts > 400 ? 4 : node.watts > 60 ? 3 : 2;
-  const duration = Math.max(900, 3000 - Math.min(node.watts, 1800));
+  const count = node.watts > 400 ? 3 : node.watts > 60 ? 2 : 1;
+  const duration = Math.max(1100, 3200 - Math.min(node.watts, 1800));
+
+  const d = polyPath(node.points);
+  const length = node.points
+    .slice(1)
+    .reduce((sum, p, i) => sum + Math.hypot(p.x - node.points[i]!.x, p.y - node.points[i]!.y), 0);
 
   if (!active) return null;
 
@@ -639,6 +581,8 @@ function Droplets({ node, tint }: { node: Node; tint: string }) {
           tint={tint}
           duration={duration}
           delay={(duration / count) * i}
+          d={d}
+          length={length}
         />
       ))}
     </>
@@ -650,11 +594,16 @@ function Droplet({
   tint,
   duration,
   delay,
+  d,
+  length,
 }: {
   node: Node;
   tint: string;
   duration: number;
   delay: number;
+  /** The leg's own path data — the droplet rides this exact geometry. */
+  d: string;
+  length: number;
 }) {
   const t = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
@@ -694,46 +643,56 @@ function Droplet({
     return () => loop.stop();
   }, [pulse]);
 
-  const range = stops(node.points);
-  const cx = t.interpolate({ inputRange: range, outputRange: node.points.map((p) => p.x) });
-  const cy = t.interpolate({ inputRange: range, outputRange: node.points.map((p) => p.y) });
-  const rotation = t.interpolate(rotationRamp(node.points));
-
   /*
-    Weighted toward the trunk rather than the cell. A droplet at full strength
-    against the rim competes with the liquid and reads as a stuck dot; fading it
-    over the last stretch makes it look absorbed, and leaves the straight runs —
-    where the motion is actually legible — carrying the effect.
+    The droplet is a single short dash riding the leg's own path.
+
+    Rotating a teardrop shape along interpolated coordinates never tracked the
+    geometry — react-native-svg does not reliably animate `rotation`, and even
+    when it did, the shape only pointed the right way on the straights. A dash
+    with `strokeDashoffset` follows the exact path, corners included, for free.
+    Round caps make it a bead rather than a segment, so it reads as something
+    moving through a pipe.
+
+    The gap is the full path length, so exactly one bead is ever on the leg.
   */
+  const head = 11;
+  const offset = t.interpolate({
+    inputRange: [0, 1],
+    outputRange: [head, -(length + head)],
+  });
+
+  // Strong along the run, dissolving as it is absorbed at the far end.
   const opacity = node.inbound
-    ? t.interpolate({ inputRange: [0, 0.12, 0.58, 1], outputRange: [0, 1, 1, 0] })
-    : t.interpolate({ inputRange: [0, 0.42, 0.88, 1], outputRange: [0, 1, 1, 0] });
+    ? t.interpolate({ inputRange: [0, 0.12, 0.6, 1], outputRange: [0, 1, 0.95, 0] })
+    : t.interpolate({ inputRange: [0, 0.4, 0.9, 1], outputRange: [0, 0.95, 1, 0] });
 
-  // Swells just after release and tapers as it is absorbed, with a small throb
-  // on top so it reads as a bead of liquid rather than a rigid shape.
-  const travel = node.inbound
-    ? t.interpolate({ inputRange: [0, 0.25, 1], outputRange: [0.7, 1.05, 0.75] })
-    : t.interpolate({ inputRange: [0, 0.75, 1], outputRange: [0.75, 1.05, 0.7] });
-  const throb = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1.08] });
+  // A slow throb in width, so the bead breathes instead of sliding rigidly.
+  const strokeWidth = pulse.interpolate({ inputRange: [0, 1], outputRange: [5, 6.6] });
 
-  /*
-    Transforms are nested rather than stacked on one group. `rotation` and
-    `scale` on a <G> pivot about that group's own origin, so combining them with
-    the positioning x/y swung the droplet around the canvas corner instead of
-    turning on the spot. Translating first, then rotating, then scaling inside
-    it, keeps every pivot at the droplet itself.
-  */
   return (
-    <AnimatedG x={cx} y={cy} opacity={opacity}>
-      <AnimatedG rotation={rotation}>
-        <AnimatedG scale={travel}>
-          <AnimatedG scale={throb}>
-            {/* Tip leads, bulb trails back toward the source. */}
-            <Path d={dropPath(2.9, 8.5)} fill={tint} />
-          </AnimatedG>
-        </AnimatedG>
-      </AnimatedG>
-    </AnimatedG>
+    <>
+      {/* Faint trail behind the head */}
+      <AnimatedPath
+        d={d}
+        stroke={tint}
+        strokeWidth={2.5}
+        strokeLinecap="round"
+        fill="none"
+        strokeDasharray={`${head * 2.4} ${length}`}
+        strokeDashoffset={offset}
+        opacity={Animated.multiply(opacity, 0.35)}
+      />
+      <AnimatedPath
+        d={d}
+        stroke={tint}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        fill="none"
+        strokeDasharray={`${head} ${length}`}
+        strokeDashoffset={offset}
+        opacity={opacity}
+      />
+    </>
   );
 }
 
