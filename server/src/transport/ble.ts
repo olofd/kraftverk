@@ -25,6 +25,9 @@ const NAME_PATTERN = /^(fossibot|aferiy|sydpower|abok|ecoplay|power|p\d{3})/i;
 /** The device drops frames if you talk too fast; the reference client uses 500ms. */
 const WRITE_SPACING_MS = 500;
 
+/** Drop a device from the list after this long without an advertisement. */
+const STALE_AFTER_MS = 30_000;
+
 type Noble = typeof import('@stoprocent/noble').default;
 type Peripheral = Awaited<ReturnType<Noble['startScanningAsync']>> extends never ? never : any;
 
@@ -103,6 +106,7 @@ export class BleTransport extends EventEmitter implements Transport {
 
       this.#peripherals.set(id, peripheral);
       this.#devices.set(id, device);
+      // Only announce the first sighting; duplicates just refresh rssi/lastSeen.
       if (!existing) this.emit('discovery', device);
     });
 
@@ -115,7 +119,26 @@ export class BleTransport extends EventEmitter implements Transport {
       });
     });
 
-    await noble.startScanningAsync([], false);
+    // allowDuplicates: repeated advertisements from a device we already know
+    // are what keep rssi and lastSeen current. Without this each device is
+    // reported exactly once and the signal reading freezes at first sighting —
+    // useless when you are moving an antenna to improve it.
+    await noble.startScanningAsync([], true);
+  }
+
+  /**
+   * Devices stop advertising when they sleep, move out of range, or power off.
+   * Nothing tells us that happened, so treat silence as gone.
+   */
+  #prune(): void {
+    const cutoff = Date.now() - STALE_AFTER_MS;
+    for (const [id, device] of this.#devices) {
+      if (id === this.#boundId) continue; // keep the target visible
+      if (new Date(device.lastSeen).getTime() < cutoff) {
+        this.#devices.delete(id);
+        this.#peripherals.delete(id);
+      }
+    }
   }
 
   async stop(): Promise<void> {
@@ -124,8 +147,10 @@ export class BleTransport extends EventEmitter implements Transport {
     this.#noble = null;
   }
 
+  /** Currently in range, strongest signal first. */
   discovered(): DiscoveredDevice[] {
-    return [...this.#devices.values()];
+    this.#prune();
+    return [...this.#devices.values()].sort((a, b) => (b.rssi ?? -999) - (a.rssi ?? -999));
   }
 
   /**
