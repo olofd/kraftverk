@@ -77,6 +77,25 @@ describe('confirmed on a real P280', () => {
     expect(decodeSettings(holding({ 66: 230 })).dischargeLowerLimitPercent).toBe(23);
   });
 
+  test('AC silent charging is holding register 57', () => {
+    expect(decodeSettings(holding({ 57: 1 })).acSilentCharging).toBe(true);
+    expect(decodeSettings(holding({ 57: 0 })).acSilentCharging).toBe(false);
+  });
+
+  /**
+   * Register 48 is AC-specific and useless as a general "is it charging" flag:
+   * 0x8040 charging from mains, 0x4000 mains present but idle, and 0 with no AC
+   * at all — including while charging happily from solar. The driver derives
+   * state from net power flow instead.
+   */
+  test('a station charging from solar alone reports no AC charging state', () => {
+    const t = decodeTelemetry(telemetry({ 48: 0, 41: 0x0864, 4: 50, 6: 50 }));
+    expect(t.charging).toBe(false); // no *AC* charging
+    expect(t.dcInputConnected).toBe(true);
+    expect(t.dcInputWatts).toBe(50);
+    expect(t.totalInputWatts).toBe(50);
+  });
+
   test('mains is not reported present on a station running off battery', () => {
     // status 0x0804 with AC input at 1.3V, 0Hz, not charging.
     const t = decodeTelemetry(telemetry({ 41: 0x0804, 21: 13, 48: 0x4000 }));

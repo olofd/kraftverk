@@ -93,7 +93,7 @@ Verified against three independent captures:
 | 58 | Time to full | min | 📖 | |
 | 59 | Time to empty | min | ✅ | `22560` idle → `20509` after enabling USB |
 | 62 | — | — | ❓ | reads `0x00FF` |
-| 70, 71 | — | — | ❓ | both read `1000` (100.0) |
+| 70, 71 | displayed SOC? | 0.1 % | ❓ | both `1000` at 100.0 % SOC, both `990` when SOC hit 999 — see below |
 
 ### ⚠️ Register 48 is a bitmask, not a value
 
@@ -131,6 +131,15 @@ time, and nothing else in either bank moved.
 **⚠️ `0x0060` bits are not redundant.** Docs claim they are. A panel attached
 but producing nothing reads `0x0020`; once solar delivers it reads `0x0060`.
 Masking both still answers "is DC input present", which is all we use it for.
+
+Confirmed twice: on a later capture the status moved `0x0824` → `0x0864` — the
+only bit to change was `0x0040` — at the same moment DC input power went from
+`0` to `50` W as the panel began producing.
+
+**Register 48 is AC-specific.** It read `0x8040` while charging from mains,
+`0x4000` with mains present but not charging, and `0` with no AC connected at
+all while charging happily from solar. Do not use it to answer "is the station
+charging" — use net power flow, which is what the driver does.
 
 **⚠️ AC input mask is `0x000A`, not `0x000E`.** Bit 2 is the inverter, proven
 by the AC output test above.
@@ -219,7 +228,7 @@ Values below are from the live unit.
 | 26 | AC output | `0`→`1` | ✅ |
 | 27 | LED mode | `0`→`1` | ✅ |
 | 56 | Key sound | `1` | 📖 |
-| 57 | AC silent charging | `0` | 📖 |
+| 57 | AC silent charging | `0`→`1` | ✅ |
 | 59 | USB standby | `3` min | ✅ |
 | 60 | AC standby | `480` min | 📖 |
 | 61 | DC standby | `480` min | 📖 |
@@ -279,6 +288,22 @@ undoes it for you.
 | 19 | `550` | pack max voltage, 55.0 V? Right order for a 48 V LiFePO₄ string. |
 | 21 | `0x0300` | bitfield? |
 | 22 | `233` | 23.3 — temperature? |
+
+### ❓ Registers 70 and 71 look like the displayed state of charge
+
+Both sat at `1000` while SOC (register 56) read `1000`, and both dropped to
+`990` at the exact moment SOC fell to `999`:
+
+| Register | Raw | As percent |
+| --- | --- | --- |
+| 56 state of charge | `999` | 99.9 % |
+| 70, 71 | `990` | 99.0 % |
+
+That is consistent with the **whole-percent value the unit's own screen shows**,
+stored in tenths — 99.9 % truncates to 99 %. Two data points agree, but two
+points also fit several other curves. Needs a third reading at a clearly
+different SOC (say 70-something) before it is worth acting on. Nothing uses
+these registers today.
 
 ### ❌ The "mirror register" hypothesis is dead
 

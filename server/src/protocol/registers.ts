@@ -72,6 +72,7 @@ export const HOLDING = {
   /** Confirmed on a P280: 0 -> 1 for "always on". */
   LED_MODE: 27,
   KEY_SOUND: 56,
+  /** Confirmed on a P280: 0 -> 1 when "AC silent charging" was enabled. */
   AC_SILENT_CHARGING: 57,
   USB_STANDBY_MINUTES: 59,
   AC_STANDBY_MINUTES: 60,
@@ -107,8 +108,11 @@ export const HOLDING_REGISTER_COUNT = 80;
  *                      P280 appears to expose the wattage separately.
  *   input   54 = 376   plausible as battery temperature (37.6 C). No documented
  *                      temperature register exists; needs corroboration.
- *   input   70,71 = 1000 (i.e. 100.0) each. Possibly pack health or per-string
- *                      state of charge.
+ *   input   70,71    track state of charge but truncated to whole percent:
+ *                      both read 1000 at 100.0% SOC and 990 the moment SOC fell
+ *                      to 999 (99.9%). Most likely the value shown on the unit's
+ *                      own display, in tenths. Two data points; needs a third at
+ *                      a clearly different SOC before being relied on.
  *   input   47 = 0x3000, input 62 = 0x00ff, holding 11 = 0x1500  unknown flags.
  *
  * To identify any of these: snapshot the baseline, change one thing on the
