@@ -239,8 +239,13 @@ Cross-checked against BrightEMS on the same unit:
 | Setting in BrightEMS | Register | Raw |
 | --- | --- | --- |
 | AC charge limit 60 % | holding 67 | `600` |
+| AC charge limit 73 % | holding 67 | `730` |
 | Discharge limit 10 % | holding 66 | `100` |
 | Discharge limit 23 % | holding 66 | `230` |
+
+BrightEMS describes register 67 as: *"In AC charging mode, the energy storage
+power supply will stop charging at the set charging level."* The app enforces a
+**60 % minimum**, which the device itself may or may not.
 
 The 23 % reading is the valuable one — a non-round value proves the tenths
 scaling holds generally rather than only at multiples of ten. It also showed the
@@ -268,16 +273,26 @@ undoes it for you.
 | 11 | `0x1500` | bitfield? |
 | 12 | `9` | |
 | 14 | `1800` | **AC charging power in watts** — matches the P280's 1800 W input ceiling exactly. The documented 1–5 rate lives in registers 2 and 13 (both read `3`), so this model appears to expose wattage separately. |
-| 16 | `600` | **mirrors register 67** (the 60 % AC limit) |
-| 17 | `20` | **mirrors register 20** (max charging current) |
+| 16 | `600` | **not** a mirror of register 67 — see below |
+| 17 | `20` | equals register 20 (max charging current), but see below |
 | 18 | `115` | |
 | 19 | `550` | pack max voltage, 55.0 V? Right order for a 48 V LiFePO₄ string. |
 | 21 | `0x0300` | bitfield? |
 | 22 | `233` | 23.3 — temperature? |
 
-**Registers 16 and 17 mirroring 67 and 20 is worth care before writing.** It
-may be an active-value vs setpoint split. Writing a setpoint while its mirror
-disagrees is a good way to get behaviour nobody expects.
+### ❌ The "mirror register" hypothesis is dead
+
+Registers 16 and 17 read `600` and `20`, matching the AC charge limit and the
+max charging current. That looked like an active-value vs setpoint split, and
+was noted as something to be careful about before writing.
+
+**It was a coincidence.** Changing the charge limit from 60 % to 73 % moved
+register 67 to `730` while **register 16 stayed at `600`**. They are unrelated.
+
+Two registers holding the same value proves nothing — worth remembering for the
+remaining unknowns. Register 16 is more plausibly a voltage or power threshold
+that happens to equal 600 (alongside register 19's `550`), but that is a guess
+and is not acted on anywhere.
 
 ---
 
