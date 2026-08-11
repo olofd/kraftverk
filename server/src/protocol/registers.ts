@@ -81,6 +81,13 @@ export const HOLDING = {
    * after writing rather than assuming the rest are unchanged.
    */
   DC_INPUT_TYPE: 15,
+  /**
+   * DC/solar charging current ceiling, in amps. Freely settable — a P280 was
+   * observed at 20, 8 and 16 A.
+   *
+   * The usable maximum depends on the input type: 20 A in PV mode, 8 A in DC.
+   * Switching to DC clamps a higher value down rather than rejecting it.
+   */
   MAX_CHARGING_CURRENT: 20,
   /** Confirmed on a P280: 0 -> 1 when USB was switched on at the unit. */
   USB_OUTPUT: 24,
@@ -150,6 +157,26 @@ export const HOLDING_REGISTER_COUNT = 80;
  */
 export const UNCONFIRMED_P280 = {
   MAYBE_BATTERY_TEMP: 54,
+} as const;
+
+/**
+ * Holding registers 14-22 look like a capability block: constants describing
+ * what the hardware supports, rather than settings.
+ *
+ * Three are effectively established. Holding 14 (`1800`) and 16 (`600`) are the
+ * ends of the AC charging power scale and did not move when that setting
+ * changed. Holding 17 (`20`) held steady while the actual current ceiling went
+ * 20 -> 8 -> 16 A, so it is the maximum rather than a copy of it.
+ *
+ * That pattern makes 18 (`115`), 19 (`550`), 21 (`0x0300`) and 22 (`233`) more
+ * likely to be limits too — plausibly voltages and currents — but none has been
+ * moved by anything yet, which is exactly why they remain unidentified. Nothing
+ * reads them.
+ */
+export const CAPABILITY_BLOCK = {
+  MAX_AC_CHARGING_WATTS: 14,
+  MIN_AC_CHARGING_WATTS: 16,
+  MAX_DC_CHARGING_AMPS: 17,
 } as const;
 
 /**

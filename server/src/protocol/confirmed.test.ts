@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   assertWritable,
+  CAPABILITY_BLOCK,
   decodeSettings,
   decodeTelemetry,
   HOLDING,
@@ -156,6 +157,29 @@ describe('confirmed on a real P280', () => {
       dcInputType: 'dc',
       maxChargingCurrent: 8,
     });
+  });
+
+  /**
+   * Observed at 20, 8 and 16 A on the same unit, so the register holds a real
+   * value rather than a mode-derived constant. 8 A is the ceiling DC mode
+   * imposes, not a fixed DC value.
+   */
+  test('max charging current takes arbitrary amps, and PV mode restores 20', () => {
+    expect(decodeSettings(holding({ 15: 0, 20: 16 }))).toMatchObject({
+      dcInputType: 'pv',
+      maxChargingCurrent: 16,
+    });
+  });
+
+  /**
+   * Holding 17 read 20 throughout, while the actual ceiling went 20 -> 8 -> 16.
+   * It is the maximum the hardware supports, not a copy of the setting — the
+   * third "mirror" hypothesis to die this way, after 16 and the charge limit.
+   */
+  test('holding 17 is a capability constant, not a copy of the current setting', () => {
+    expect(CAPABILITY_BLOCK.MAX_DC_CHARGING_AMPS).toBe(17);
+    expect(CAPABILITY_BLOCK.MAX_AC_CHARGING_WATTS).toBe(14);
+    expect(CAPABILITY_BLOCK.MIN_AC_CHARGING_WATTS).toBe(16);
   });
 
   test('AC silent charging is holding register 57', () => {

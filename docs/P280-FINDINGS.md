@@ -288,6 +288,12 @@ which we never wrote:
 | --- | --- | --- |
 | PV mode | `0` | `20` A |
 | DC mode | `1` | `8` A |
+| back to PV, set 16 A | `0` | `16` A |
+
+**8 A is DC mode's ceiling, not a fixed DC value.** Switching to DC clamps a
+higher setting down rather than rejecting it; PV mode allows up to 20 A. The
+register itself takes arbitrary amps — 20, 8 and 16 all observed. The settings
+slider caps itself at 8 A in DC mode accordingly.
 
 Physically sensible — a DC adapter tolerates less current than a solar array —
 but it means the station changes settings on its own. **Anything writing this
@@ -364,13 +370,33 @@ undoes it for you.
 | --- | --- | --- |
 | 11 | `0x1500` | bitfield? |
 | 12 | `9` | |
-| 14 | `1800` | ✅ maximum AC charging power — the top of the 1–5 scale. Unchanged when the power was set to 900 W, so a capability constant, not a setting. |
-| 16 | `600` | ✅ minimum AC charging power — the bottom of the same scale. |
-| 17 | `20` | equals register 20 (max charging current), but see below |
-| 18 | `115` | |
+| 14 | `1800` | ✅ **maximum AC charging power** — top of the 1–5 scale, unchanged when the power was set to 900 W |
+| 16 | `600` | ✅ **minimum AC charging power** — bottom of the same scale |
+| 17 | `20` | ✅ **maximum DC charging current** — held at 20 while the actual ceiling went 20 → 8 → 16 A |
+| 18 | `115` | limit of some kind? |
 | 19 | `550` | pack max voltage, 55.0 V? Right order for a 48 V LiFePO₄ string. |
 | 21 | `0x0300` | bitfield? |
 | 22 | `233` | 23.3 — temperature? |
+
+### ✅ Registers 14–22 are a capability block
+
+Three are now established, and they share a character: they describe **what the
+hardware supports**, not what it is set to.
+
+| Register | Value | Meaning | Proof |
+| --- | --- | --- | --- |
+| 14 | `1800` | max AC charging power | unchanged while power went 1200 → 900 W |
+| 16 | `600` | min AC charging power | unchanged, matches the scale's bottom |
+| 17 | `20` | max DC charging current | unchanged while the ceiling went 20 → 8 → 16 A |
+
+That makes 18, 19, 21 and 22 more likely to be limits too — plausibly voltages
+and currents. But **none has been moved by anything yet**, which is precisely
+why they are still unidentified. Nothing reads them.
+
+It also kills the third and final "mirror" hypothesis. Register 17 read `20`
+while max charging current read `20`, then the setting changed and 17 did not
+follow. Same story as register 16 and the charge limit. **Two registers holding
+the same value has now been coincidence three times out of three.**
 
 ### ❓ Registers 70 and 71 look like the displayed state of charge
 

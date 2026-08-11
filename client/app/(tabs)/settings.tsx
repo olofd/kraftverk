@@ -170,16 +170,18 @@ export default function SettingsScreen() {
             onChange={(dcInputType) => void updateSettings({ dcInputType })}
           />
           <RowSeparator />
+          {/* The ceiling is mode-dependent: 20 A on a solar array, 8 A on a DC
+              adapter. Offering 20 A in DC mode would just get clamped. */}
           <SliderRow
-            title="Max solar/DC current"
+            title="Max charging current"
             subtitle={
               settings.dcInputType === 'dc'
-                ? 'Ceiling for the XT90 input. The station lowers this in DC mode.'
-                : 'Ceiling for the XT90 input.'
+                ? 'Ceiling for the XT90 input. DC mode allows up to 8 A.'
+                : 'Ceiling for the XT90 input. Solar allows up to 20 A.'
             }
-            value={settings.maxChargingCurrent}
+            value={Math.min(settings.maxChargingCurrent, settings.dcInputType === 'dc' ? 8 : 20)}
             min={1}
-            max={20}
+            max={settings.dcInputType === 'dc' ? 8 : 20}
             step={1}
             format={(v) => `${v} A`}
             onCommit={(maxChargingCurrent) => void updateSettings({ maxChargingCurrent })}
