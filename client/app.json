@@ -1,20 +1,20 @@
 {
   "expo": {
-    "name": "Aferiy Powerstation",
-    "slug": "aferiy-powerstation",
+    "name": "kraftverk",
+    "slug": "kraftverk",
     "version": "1.0.0",
-    "scheme": "aferiy",
+    "scheme": "kraftverk",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "platforms": ["ios", "android", "web"],
     "plugins": ["expo-router"],
     "ios": {
-      "bundleIdentifier": "com.aferiy.powerstation",
+      "bundleIdentifier": "se.kraftverk.app",
       "supportsTablet": true
     },
     "android": {
-      "package": "com.aferiy.powerstation",
+      "package": "se.kraftverk.app",
       "edgeToEdgeEnabled": true
     },
     "web": {

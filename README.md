@@ -1,15 +1,45 @@
-# Aferiy P280 — local control
+# kraftverk
 
-Monitor and control an **AFERIY P280** portable power station from iOS and the
-browser, over Wi‑Fi or Bluetooth, **without the vendor cloud**.
+Local control for **Sydpower-stack portable power stations** — monitor and
+control them from iOS and the browser, over Wi‑Fi or Bluetooth, **without the
+vendor cloud**.
+
+Developed and verified against an **AFERIY P280**.
 
 <p align="center">
   <img src="docs/screenshots/dashboard.png" alt="Dashboard showing a live energy-flow diagram" width="380">
 </p>
 
 > **Unofficial.** Not affiliated with, endorsed by, or supported by AFERIY,
-> Sydpower, Fossibot or any related company. "AFERIY" and "P280" are used only
-> to identify the hardware this software talks to.
+> Sydpower, Fossibot or any related company. Those names appear only to identify
+> the hardware this software talks to.
+>
+> *kraftverk* is Swedish for "power plant".
+
+---
+
+## Supported models
+
+| Model | Status | Notes |
+| --- | --- | --- |
+| **AFERIY P280** | ✅ **Verified** | Every setting confirmed against real hardware over BLE. The reference device for this project. |
+| AFERIY P210 / P310 | ⚠️ Untested | Same Sydpower stack; listed as supported by other community projects. Expect most things to work. |
+| FOSSiBOT F2400 / F3600 / F3600 Pro | ⚠️ Untested | The published register maps were originally derived from these. |
+| Eco Play SYD2400 / SYD3600 | ⚠️ Untested | Same stack. |
+| ABOK Power Ark3600 | ⚠️ Untested | Same stack. |
+
+If it works with the **BrightEMS** app, it is probably speaking this protocol.
+
+**Untested does not mean compatible.** Several values are known to be
+model-specific — the AC charging power scale is 600–1800 W on a P280 but
+300–1100 W on an F2400, and the register map has diverged from the published
+version in six places on the P280 alone. Assume yours differs until you have
+checked it.
+
+The **Protocol** tab exists precisely for this: dump your registers, compare
+against [docs/P280-FINDINGS.md](docs/P280-FINDINGS.md), and open an issue with
+what differs. Model-specific handling and a model selector in the UI are on the
+roadmap; today the decoding assumes a P280.
 
 ---
 
@@ -180,7 +210,7 @@ from the vendor cloud before connecting. Only the MQTT traffic is redirected.
 Windows Firewall usually blocks the inbound connection:
 
 ```bash
-netsh advfirewall firewall add rule name="Aferiy MQTT" dir=in action=allow protocol=TCP localport=1883 profile=private
+netsh advfirewall firewall add rule name="kraftverk MQTT" dir=in action=allow protocol=TCP localport=1883 profile=private
 ```
 
 ### Connecting over Bluetooth
