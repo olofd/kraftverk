@@ -4,6 +4,7 @@ import { Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { Card, SectionLabel } from '../../src/components/Card';
 import { ChargeMeter } from '../../src/components/ChargeMeter';
+import { ModeRow } from '../../src/components/ModeRow';
 import { Row, RowSeparator, ToggleRow } from '../../src/components/Row';
 import { Screen } from '../../src/components/Screen';
 import { StatTile } from '../../src/components/StatTile';
@@ -15,10 +16,26 @@ import {
   STATE_LABELS,
   STATE_TINT,
 } from '../../src/lib/format';
+import type { LedMode } from '../../src/lib/types';
 import { useStation } from '../../src/state/StationProvider';
 
+/** All four values confirmed against a real P280: 0 off, 1 on, 2 SOS, 3 flash. */
+const LED_MODE_OPTIONS = [
+  { value: 'off', label: 'Off' },
+  { value: 'on', label: 'On' },
+  { value: 'sos', label: 'SOS' },
+  { value: 'flash', label: 'Flash' },
+] as const satisfies readonly { value: LedMode; label: string }[];
+
+const LED_LABELS: Record<LedMode, string> = {
+  off: 'Off',
+  on: 'Always on',
+  sos: 'SOS',
+  flash: 'Flashing',
+};
+
 export default function DashboardScreen() {
-  const { status, settings, version, apiBaseUrl, togglePort } = useStation();
+  const { status, settings, version, apiBaseUrl, togglePort, updateSettings } = useStation();
   const theme = useTheme();
 
   if (!status) {
@@ -167,19 +184,33 @@ export default function DashboardScreen() {
         />
       </XStack>
 
-      {/* Output ports */}
+      {/* Output ports. The light has four modes, so it gets a selector rather
+          than a switch, which would collapse SOS and flash into "on". */}
       <YStack gap="$2">
         <SectionLabel>Outputs</SectionLabel>
         <Card inset>
           {status.ports.map((port, index) => (
             <YStack key={port.id}>
               {index > 0 ? <RowSeparator /> : null}
-              <ToggleRow
-                title={port.label}
-                subtitle={port.enabled ? `Drawing ${formatWatts(port.watts)}` : 'Off'}
-                checked={port.enabled}
-                onCheckedChange={(next) => void togglePort(port.id, next)}
-              />
+              {port.id === 'led' ? (
+                <ModeRow
+                  title={port.label}
+                  subtitle={
+                    port.enabled ? `${LED_LABELS[settings?.ledMode ?? 'off']} · ${formatWatts(port.watts)}` : 'Off'
+                  }
+                  value={settings?.ledMode ?? 'off'}
+                  options={LED_MODE_OPTIONS}
+                  disabled={!settings}
+                  onChange={(ledMode) => void updateSettings({ ledMode })}
+                />
+              ) : (
+                <ToggleRow
+                  title={port.label}
+                  subtitle={port.enabled ? `Drawing ${formatWatts(port.watts)}` : 'Off'}
+                  checked={port.enabled}
+                  onCheckedChange={(next) => void togglePort(port.id, next)}
+                />
+              )}
             </YStack>
           ))}
         </Card>
@@ -220,7 +251,13 @@ export default function DashboardScreen() {
         <Card inset>
           <Row
             title="Link"
-            subtitle={status.link.mode === 'device' ? 'Local MQTT' : 'Built-in simulator'}
+            subtitle={
+              status.link.mode !== 'device'
+                ? 'Built-in simulator'
+                : status.link.transport === 'ble'
+                  ? 'Bluetooth LE'
+                  : 'Local MQTT over WiFi'
+            }
             accessory={
               <Value>{status.link.mode === 'device' ? status.link.state : 'simulated'}</Value>
             }

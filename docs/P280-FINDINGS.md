@@ -156,15 +156,16 @@ ordering.
 
 ### ✅ The light is fully characterised — and is the safe first write
 
-Three of the four LED modes verified on hardware. Holding 27 and input 25 track
-each other exactly:
+
+All four LED modes verified on hardware. Holding 27 and input 25 track each
+other exactly:
 
 | Mode on the unit | holding 27 | input 25 |
 | --- | --- | --- |
 | off | `0` | `0` |
 | always on | `1` | `1` |
 | SOS | `2` | `2` |
-| flash | untested | untested |
+| flash | `3` | `3` |
 
 The status bit `0x1000` and the 1.0 W draw stayed constant across the mode
 change, so the mode register is independent of the on/off bit. Register 15
@@ -284,7 +285,7 @@ the diff stops being evidence.
       the 0.1 W scaling via the output sum
 - [ ] Toggle DC output → confirm mask `0x0400` and holding 25
 - [ ] Plug a load into USB → confirm registers 30–31 / 34–37 scaling
-- [x] LED SOS mode → confirmed enum value 2 (flash, value 3, still untested)
+- [x] LED SOS and flash → all four enum values confirmed (0, 1, 2, 3)
 - [ ] Compare input 54 against the temperature BrightEMS reports
 - [ ] Check whether BrightEMS exposes an "AC charging power" setting showing
       1800 W, which would confirm holding 14

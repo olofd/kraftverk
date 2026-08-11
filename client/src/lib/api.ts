@@ -149,7 +149,13 @@ export function describeError(error: unknown): string {
   if (axios.isCancel(error)) return '';
   if (axios.isAxiosError(error)) {
     if (error.response) {
-      return `Server responded ${error.response.status}`;
+      // 423 Locked is the server refusing a write in read-only mode. Say so
+      // plainly — a bare status code reads like a failure rather than a guard.
+      if (error.response.status === 423) {
+        return 'Read-only mode: the server refused that write. Restart it without --read-only to make changes.';
+      }
+      const detail = (error.response.data as { error?: string } | undefined)?.error;
+      return detail ?? `Server responded ${error.response.status}`;
     }
     if (error.code === 'ECONNABORTED') {
       return `Timed out reaching ${API_BASE_URL}`;
