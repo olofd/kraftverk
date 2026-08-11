@@ -303,7 +303,7 @@ server/
   src/transport/         mqtt and ble transports
   src/drivers/           device driver, simulator
 docs/P280-FINDINGS.md    evidence log: confirmed vs. assumed
-readme.markdown          long-term plan and architecture brief
+docs/PROJECT-BRIEF.md    long-term plan and architecture brief
 ```
 
 ---

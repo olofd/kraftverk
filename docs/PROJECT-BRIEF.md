@@ -5,7 +5,8 @@
 This is the complete hand-off brief for the next agent working on this project.
 It describes what exists, what has been learned, the owner’s desired behaviour,
 the safety rules, and a staged implementation plan. Read it together with the
-existing [`README.md`](README.md) before changing code.
+[`README.md`](../README.md) and [`P280-FINDINGS.md`](P280-FINDINGS.md) before
+changing code.
 
 The goal is a reliable local energy controller for an AFERIY P280 power station:
 
