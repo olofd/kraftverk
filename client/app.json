@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Aferiy Powerstation",
+    "slug": "aferiy-powerstation",
+    "version": "1.0.0",
+    "scheme": "aferiy",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "platforms": ["ios", "android", "web"],
+    "plugins": ["expo-router"],
+    "ios": {
+      "bundleIdentifier": "com.aferiy.powerstation",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.aferiy.powerstation",
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "extra": {
+      "router": {}
+    }
+  }
+}

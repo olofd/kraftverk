@@ -1,34 +1,24 @@
 {
-  "name": "aferiy-powerstation",
+  "name": "aferiy-powerstation-monorepo",
   "version": "0.1.0",
   "private": true,
-  "main": "node_modules/expo/AppEntry.js",
-  "scripts": {
-    "start": "expo start --web",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
-    "server": "node server/index.js",
-    "dev": "concurrently \"npm run server\" \"npm run web\""
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
   },
-  "dependencies": {
-    "axios": "^1.6.5",
-    "expo": "^57.0.12",
-    "expo-status-bar": "^1.4.4",
-    "express": "^4.18.4",
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
-    "react-native": "0.73.16",
-    "react-native-safe-area-context": "^4.9.3",
-    "react-native-web": "0.21.2",
-    "tamagui": "^2.7.4",
-    "@tamagui/font-inter": "^2.7.4",
-    "@tamagui/stacks": "^2.7.4"
+  "scripts": {
+    "dev": "concurrently -n server,client -c magenta,cyan \"npm run server\" \"npm run web\"",
+    "server": "npm run dev --workspace server",
+    "web": "npm run web --workspace client",
+    "ios": "npm run ios --workspace client",
+    "android": "npm run android --workspace client",
+    "start": "npm run start --workspace client",
+    "typecheck": "npm run typecheck --workspace client && npm run typecheck --workspace server"
   },
   "devDependencies": {
-    "@babel/core": "^7.24.9",
-    "@tamagui/babel": "^2.7.4",
-    "concurrently": "^8.2.2",
-    "typescript": "^5.5.4"
+    "concurrently": "^10.0.4"
   }
 }

@@ -1,0 +1,10 @@
+node_modules/
+.expo/
+.expo-shared/
+.tamagui/
+dist/
+web-build/
+expo-env.d.ts
+android/
+ios/
+*.log
