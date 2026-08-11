@@ -36,6 +36,14 @@ const SLEEP = [
   { value: 480, label: '8h' },
 ] as const;
 
+/** Register 62 holds seconds. These are the four values BrightEMS offers. */
+const SCREEN_TIMEOUTS = [
+  { value: 180, label: '3 min' },
+  { value: 300, label: '5 min' },
+  { value: 600, label: '10 min' },
+  { value: 1800, label: '30 min' },
+] as const;
+
 const DC_INPUT_TYPES = [
   { value: 'pv', label: 'Solar (PV)' },
   { value: 'dc', label: 'DC adapter' },
@@ -250,6 +258,15 @@ export default function SettingsScreen() {
       <YStack gap="$2">
         <SectionLabel>Panel</SectionLabel>
         <Card inset>
+          {/* Stored in seconds. BrightEMS offers exactly these four. */}
+          <ModeRow
+            title="Screen shutdown"
+            subtitle="How long the station's own display stays lit."
+            value={settings.screenRestSeconds}
+            options={SCREEN_TIMEOUTS}
+            onChange={(screenRestSeconds) => void updateSettings({ screenRestSeconds })}
+          />
+          <RowSeparator />
           <ToggleRow
             title="Key sound"
             checked={settings.keySound}

@@ -182,6 +182,21 @@ describe('confirmed on a real P280', () => {
     expect(CAPABILITY_BLOCK.MIN_AC_CHARGING_WATTS).toBe(16);
   });
 
+  /**
+   * Seconds, not minutes: the register read 300 while BrightEMS showed
+   * "5 minutes", and 180 after switching to "3 minutes". The app's four
+   * options map exactly onto the whitelist.
+   */
+  test('screen shutdown time is stored in seconds', () => {
+    expect(decodeSettings(holding({ 62: 300 })).screenRestSeconds).toBe(300);
+    expect(decodeSettings(holding({ 62: 180 })).screenRestSeconds).toBe(180);
+    for (const seconds of [180, 300, 600, 1800]) {
+      expect(() => assertWritable(HOLDING.SCREEN_REST_SECONDS, seconds)).not.toThrow();
+    }
+    // 3 minutes expressed in minutes rather than seconds must not pass.
+    expect(() => assertWritable(HOLDING.SCREEN_REST_SECONDS, 3)).toThrow(UnsafeWriteError);
+  });
+
   test('AC silent charging is holding register 57', () => {
     expect(decodeSettings(holding({ 57: 1 })).acSilentCharging).toBe(true);
     expect(decodeSettings(holding({ 57: 0 })).acSilentCharging).toBe(false);

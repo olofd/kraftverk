@@ -103,6 +103,14 @@ export const HOLDING = {
   USB_STANDBY_MINUTES: 59,
   AC_STANDBY_MINUTES: 60,
   DC_STANDBY_MINUTES: 61,
+  /**
+   * Display shutdown delay, in **seconds**. Confirmed on a P280: read 300 at
+   * BrightEMS's "5 minutes", and 180 after changing it to "3 minutes".
+   *
+   * The app offers 3/5/10/30 minutes only. Zero is on the whitelist from the
+   * published map — presumably "never" — but is not reachable from BrightEMS
+   * and has not been tested here.
+   */
   SCREEN_REST_SECONDS: 62,
   /**
    * Minutes until AC charging is enabled — a **live countdown**, not a clock

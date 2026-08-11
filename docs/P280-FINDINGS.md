@@ -233,7 +233,7 @@ Values below are from the live unit.
 | 59 | USB standby | `3` min | ✅ |
 | 60 | AC standby | `480` min | 📖 |
 | 61 | DC standby | `480` min | 📖 |
-| 62 | Screen rest | `300` s | 📖 |
+| 62 | Screen shutdown | `300`→`180` s | ✅ |
 | 63 | AC charge booking | `0`→`1439` | ✅ |
 | 66 | Discharge floor | `100` → 10 %, `230` → 23 % | ✅ |
 | 67 | **AC** charge limit | `600` → 60 % | ✅ |
@@ -356,6 +356,25 @@ schema were both capped at 1440 and are now 1439.
 This changed the UI. A slider bound to a value the device decrements would drift
 under the user's finger, so the control offers fixed delays (Now / 1h / 4h / 8h
 / 12h / 24h) and reports the live remaining time separately.
+
+### ✅ Screen shutdown is in seconds, not minutes
+
+Register 62 read `300` while BrightEMS showed "5 minutes", and `180` after
+changing it to "3 minutes". The unit is **seconds**, and the app's four options
+map exactly onto the whitelist:
+
+| BrightEMS | Register 62 |
+| --- | --- |
+| 3 minutes | `180` ✅ observed |
+| 5 minutes | `300` ✅ observed |
+| 10 minutes | `600` |
+| 30 minutes | `1800` |
+
+Worth noting because several neighbouring timers — USB, AC and DC standby, and
+whole-unit sleep — are in **minutes**. Writing `3` here would be three seconds,
+not three minutes, which is why the whitelist rejects anything outside the four
+documented values. Zero is on the whitelist from the published map, presumably
+"never", but BrightEMS cannot reach it and it is untested.
 
 ### ✅ Standby timers really fire
 
