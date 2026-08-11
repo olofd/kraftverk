@@ -73,13 +73,13 @@ Verified against three independent captures:
 | 4 | DC/solar input power | W | ✅ | read `166` with a panel delivering |
 | 6 | Total input power | W | ✅ | tracked reg 4 with no mains |
 | 9 | DC output power | 0.1 W | 📖 | |
-| 15 | LED power | 0.1 W | 📖 | |
+| 15 | LED power | 0.1 W | ✅ | `10` → 1.0 W with the light on; scaling proven by arithmetic, see below |
 | 18 | AC output voltage | 0.1 V | ✅ | `0` off → `2306` (230.6 V) with inverter on |
 | 19 | AC output frequency | 0.1 Hz | ⚠️ | reads `500` (50 Hz) **even when AC output is off** — nominal, not measured |
 | 20 | AC output power | W | ✅ | `9` W inverter idle draw |
 | 21 | AC input voltage | 0.1 V | ⚠️ | `2` with no mains, but **`591` when the inverter runs** — backfeed, see below |
 | 22 | AC input frequency | 0.01 Hz | ✅ | `0` with no mains |
-| 25 | LED state | enum | 📖 | |
+| 25 | LED state | enum | ✅ | `1` in "always on" mode — confirms `0=off, 1=on, 2=SOS, 3=flash` |
 | 30–31, 34–37 | USB port power | 0.1 W | 📖 | stayed `0` with USB enabled but nothing plugged in |
 | 39 | Total output power | W | ✅ | |
 | 41 | Status bitmask | — | ✅ | see below |
@@ -105,7 +105,7 @@ entirely. Mask bit 15.
 
 | Mask | Meaning | Status |
 | --- | --- | --- |
-| `0x1000` | LED on | 📖 |
+| `0x1000` | LED on | ✅ |
 | `0x0800` | AC output on | ✅ |
 | `0x0400` | DC output on | 📖 |
 | `0x0200` | USB output on | ✅ |
@@ -135,6 +135,25 @@ Masking both still answers "is DC input present", which is all we use it for.
 **⚠️ AC input mask is `0x000A`, not `0x000E`.** Bit 2 is the inverter, proven
 by the AC output test above.
 
+### ✅ The power registers add up
+
+**Light test:** switching the light to "always on" (with AC output still on)
+moved status `0x0824` → `0x18A4`, adding `0x1000` (LED) and `0x0080` (DC
+converter). The light draws through the converter, exactly as USB does.
+
+The arithmetic is the useful part:
+
+| Register | Raw | Interpreted |
+| --- | --- | --- |
+| 20 AC output power | `8` | 8 W |
+| 15 LED power | `10` | 1.0 W |
+| 39 Total output | `9` | 9 W |
+
+8 + 1 = 9. **This proves the 0.1 W scaling rather than assuming it** — at whole
+watts the light's raw `10` would have made the total 18. Holding 27 and input 25
+both read `1`, matching the unit's "always on" mode and confirming the LED enum
+ordering.
+
 ### ⚠️ The inverter backfeeds the AC input sense line
 
 With the inverter running and **nothing plugged into the wall**, input register
@@ -159,7 +178,7 @@ Values below are from the live unit.
 | 24 | USB output | `0`→`1` | ✅ |
 | 25 | DC output | `0` | 📖 |
 | 26 | AC output | `0`→`1` | ✅ |
-| 27 | LED mode | `0` | 📖 |
+| 27 | LED mode | `0`→`1` | ✅ |
 | 56 | Key sound | `1` | 📖 |
 | 57 | AC silent charging | `0` | 📖 |
 | 59 | USB standby | `3` min | ✅ |
@@ -241,9 +260,11 @@ the diff stops being evidence.
 - [x] Toggle USB → confirmed `0x0200`, `0x0080`, holding 24
 - [x] Toggle AC output → confirmed `0x0800`, `0x0004` (inverter), holding 26,
       input 18 and 20
+- [x] Turn the light on → confirmed `0x1000`, holding 27, input 15 and 25, and
+      the 0.1 W scaling via the output sum
 - [ ] Toggle DC output → confirm mask `0x0400` and holding 25
-- [ ] Turn the light on → confirm mask `0x1000`, holding 27, input 15 and 25
 - [ ] Plug a load into USB → confirm registers 30–31 / 34–37 scaling
+- [ ] Try LED SOS and flash modes → confirm enum values 2 and 3
 - [ ] Compare input 54 against the temperature BrightEMS reports
 - [ ] Check whether BrightEMS exposes an "AC charging power" setting showing
       1800 W, which would confirm holding 14

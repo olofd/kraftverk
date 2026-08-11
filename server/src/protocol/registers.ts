@@ -19,12 +19,23 @@ export const INPUT = {
   DC_INPUT_POWER: 4,
   TOTAL_INPUT_POWER: 6,
   DC_OUTPUT_POWER: 9,
+  /**
+   * Confirmed on a P280: reads 10 with the light on, i.e. 1.0 W.
+   *
+   * The tenths scaling is proven by arithmetic rather than assumed — with the
+   * inverter drawing 8 W and the light on, total output (register 39) read 9 W.
+   * At whole watts the total would have been 18.
+   */
   LED_POWER: 15,
   AC_OUTPUT_VOLTAGE: 18,
   AC_OUTPUT_FREQUENCY: 19,
   AC_OUTPUT_POWER: 20,
   AC_INPUT_VOLTAGE: 21,
   AC_INPUT_FREQUENCY: 22,
+  /**
+   * Confirmed on a P280: reads 1 with the light in "always on" mode, matching
+   * the documented enum 0=off, 1=on, 2=SOS, 3=flash.
+   */
   LED_STATE: 25,
   USB_OUTPUT_1: 30,
   USB_OUTPUT_2: 31,
@@ -54,7 +65,9 @@ export const HOLDING = {
   /** Confirmed on a P280: 0 -> 1 when USB was switched on at the unit. */
   USB_OUTPUT: 24,
   DC_OUTPUT: 25,
+  /** Confirmed on a P280: 0 -> 1 when AC output was switched on at the unit. */
   AC_OUTPUT: 26,
+  /** Confirmed on a P280: 0 -> 1 for "always on". */
   LED_MODE: 27,
   KEY_SOUND: 56,
   AC_SILENT_CHARGING: 57,
@@ -108,6 +121,7 @@ export const UNCONFIRMED_P280 = {
  * those two bits (USB feeds through the DC converter, so both are expected).
  */
 export const STATUS = {
+  /** Confirmed on a P280: set when the light was switched on at the unit. */
   LED_ON: 0x1000,
   /** Confirmed on a P280: set when AC output was switched on at the unit. */
   AC_OUTPUT_ON: 0x0800,

@@ -94,4 +94,30 @@ describe('confirmed on a real P280', () => {
   test('USB standby timer reads 3 minutes, matching the observed auto-off', () => {
     expect(HOLDING.USB_STANDBY_MINUTES).toBe(59);
   });
+
+  test('the light sets its own bit and the DC-converter bit', () => {
+    // Observed: status 0x0824 (AC on) -> 0x18A4 when the light came on, adding
+    // 0x1000 and 0x0080. The light draws through the DC converter, as USB does.
+    const t = decodeTelemetry(telemetry({ 41: 0x18a4, 15: 10, 25: 1 }));
+    expect(t.ledEnabled).toBe(true);
+    expect(t.acOutputEnabled).toBe(true);
+    expect(0x18a4 & STATUS.DC_CONVERTER_ACTIVE).toBeTruthy();
+  });
+
+  test('LED mode 1 is "always on", matching the unit', () => {
+    expect(decodeTelemetry(telemetry({ 25: 1 })).ledMode).toBe(1);
+  });
+
+  /**
+   * Proves the 0.1 W scaling by arithmetic rather than assumption: with the
+   * inverter at 8 W and the light on, the station reported 9 W total. At whole
+   * watts the LED's raw 10 would have made that 18.
+   */
+  test('LED power is tenths of a watt, and the output wattages add up', () => {
+    const t = decodeTelemetry(telemetry({ 41: 0x18a4, 15: 10, 20: 8, 39: 9 }));
+    expect(t.ledWatts).toBe(1);
+    expect(t.acOutputWatts).toBe(8);
+    expect(t.totalOutputWatts).toBe(9);
+    expect(t.acOutputWatts + t.ledWatts).toBe(t.totalOutputWatts);
+  });
 });
