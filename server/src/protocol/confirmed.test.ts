@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
-import { decodeSettings, decodeTelemetry, HOLDING, STATUS } from './registers.ts';
+import {
+  assertWritable,
+  decodeSettings,
+  decodeTelemetry,
+  HOLDING,
+  STATUS,
+  UnsafeWriteError,
+} from './registers.ts';
 
 /**
  * Behaviour confirmed against a real AFERIY P280 over BLE.
@@ -75,6 +82,23 @@ describe('confirmed on a real P280', () => {
    */
   test('discharge limit decodes an arbitrary percentage, not just round ones', () => {
     expect(decodeSettings(holding({ 66: 230 })).dischargeLowerLimitPercent).toBe(23);
+  });
+
+  /**
+   * BrightEMS shows this as "24:00", which reads like a clock time. It is a
+   * countdown in minutes: scheduling 24 hours stored 1439, and the register
+   * decremented once a minute (1438 -> 1437 over 101 s). Input 57 mirrors it.
+   */
+  test('AC charge booking is a duration in minutes, not a clock time', () => {
+    expect(decodeSettings(holding({ 63: 1439 })).stopChargeAfterMinutes).toBe(1439);
+    expect(decodeTelemetry(telemetry({ 57: 1439 })).chargingBookingMinutes).toBe(1439);
+    // Zero means charging is enabled, not "scheduled for midnight".
+    expect(decodeSettings(holding({ 63: 0 })).stopChargeAfterMinutes).toBe(0);
+  });
+
+  test('the booking register tops out at 1439, so 1440 is refused', () => {
+    expect(() => assertWritable(HOLDING.STOP_CHARGE_AFTER_MINUTES, 1439)).not.toThrow();
+    expect(() => assertWritable(HOLDING.STOP_CHARGE_AFTER_MINUTES, 1440)).toThrow(UnsafeWriteError);
   });
 
   test('AC silent charging is holding register 57', () => {

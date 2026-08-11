@@ -1,6 +1,7 @@
 import { Spinner, Text, YStack } from 'tamagui';
 
 import { Card, SectionLabel } from '../../src/components/Card';
+import { ModeRow } from '../../src/components/ModeRow';
 import { Row, RowSeparator, ToggleRow } from '../../src/components/Row';
 import { Screen } from '../../src/components/Screen';
 import { SegmentedControl } from '../../src/components/SegmentedControl';
@@ -34,6 +35,26 @@ const SLEEP = [
   { value: 30, label: '30m' },
   { value: 480, label: '8h' },
 ] as const;
+
+/** 1439, not 1440 — that is the register's maximum. */
+const CHARGE_DELAYS = [
+  { value: 0, label: 'Now' },
+  { value: 60, label: '1h' },
+  { value: 240, label: '4h' },
+  { value: 480, label: '8h' },
+  { value: 720, label: '12h' },
+  { value: 1439, label: '24h' },
+] as const;
+
+/**
+ * The device counts this register down every minute, so a running timer almost
+ * never equals a preset exactly. Highlight the preset it started from.
+ */
+function nearestDelay(minutes: number): (typeof CHARGE_DELAYS)[number]['value'] {
+  if (minutes <= 0) return 0;
+  // Smallest preset still at or above the remaining time.
+  return CHARGE_DELAYS.find((delay) => delay.value >= minutes)?.value ?? 1439;
+}
 
 export default function SettingsScreen() {
   const { settings, status, version, apiBaseUrl, updateSettings } = useStation();
@@ -128,15 +149,22 @@ export default function SettingsScreen() {
             onCommit={(maxChargingCurrent) => void updateSettings({ maxChargingCurrent })}
           />
           <RowSeparator />
-          <SliderRow
-            title="Delay charging"
-            subtitle="Hold off charging for this long — handy on a time-of-use tariff."
-            value={settings.stopChargeAfterMinutes}
-            min={0}
-            max={1440}
-            step={30}
-            format={(v) => (v === 0 ? 'Charge now' : formatDuration(v))}
-            onCommit={(stopChargeAfterMinutes) => void updateSettings({ stopChargeAfterMinutes })}
+          {/*
+            This register is a live countdown on the device, not a setpoint: it
+            ticks down once a minute and charging resumes at zero. A slider bound
+            to it would drift under the user's finger, so offer fixed delays and
+            report the remaining time separately.
+          */}
+          <ModeRow
+            title="Delay AC charging"
+            subtitle={
+              settings.stopChargeAfterMinutes > 0
+                ? `Charging starts in ${formatDuration(settings.stopChargeAfterMinutes)} — counting down`
+                : 'Charging is enabled now. Useful on a time-of-use tariff.'
+            }
+            value={nearestDelay(settings.stopChargeAfterMinutes)}
+            options={CHARGE_DELAYS}
+            onChange={(stopChargeAfterMinutes) => void updateSettings({ stopChargeAfterMinutes })}
           />
         </Card>
       </YStack>

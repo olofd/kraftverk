@@ -25,8 +25,12 @@ export const StationSettingsSchema = z.object({
   maxChargingCurrent: z.number().int().min(1).max(20),
   /** Quieter, slower AC charging. */
   acSilentCharging: z.boolean(),
-  /** Delay charging by N minutes (0 = charge now). Device accepts 0-1440. */
-  stopChargeAfterMinutes: z.number().int().min(0).max(1440),
+  /**
+   * Minutes until AC charging is enabled. A live countdown on the device, not
+   * a clock time — it decrements once a minute and charging resumes at 0.
+   * Range 0-1439.
+   */
+  stopChargeAfterMinutes: z.number().int().min(0).max(1439),
   ledMode: LedModeSchema,
   keySound: z.boolean(),
   /** Auto-off timers, in minutes. 0 disables. */

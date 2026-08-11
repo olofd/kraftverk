@@ -233,7 +233,7 @@ Values below are from the live unit.
 | 60 | AC standby | `480` min | 📖 |
 | 61 | DC standby | `480` min | 📖 |
 | 62 | Screen rest | `300` s | 📖 |
-| 63 | Delay charging | `0` | 📖 |
+| 63 | AC charge booking | `0`→`1439` | ✅ |
 | 66 | Discharge floor | `100` → 10 %, `230` → 23 % | ✅ |
 | 67 | **AC** charge limit | `600` → 60 % | ✅ |
 | 68 | Idle shutdown | `5` min | 📖 |
@@ -267,6 +267,31 @@ BrightEMS showed a 60 % charge limit; register 67 read `600`. The name is
 literal — **solar charges straight past it**, which is why a station limited to
 60 % was sitting at 100 %. Presenting this as a general "stop charging here"
 ceiling would have people chasing a fault that does not exist.
+
+### ✅ "AC booking charging" is a countdown, not a clock time
+
+BrightEMS presents this as **HH:MM** — scheduling it for "24:00" looks like
+setting an alarm for midnight. It is not. The register stores **minutes until AC
+charging is enabled**, and the device counts it down.
+
+Measured directly:
+
+| Time | holding 63 | input 57 |
+| --- | --- | --- |
+| set to "24:00" | `1439` | `1439` |
+| +60 s | `1438` | — |
+| +101 s | `1437` | — |
+
+One decrement per minute. Charging resumes at `0`, so `0` means "charging
+enabled now", not "scheduled for midnight".
+
+**The maximum is 1439, not 1440.** 24 hours exactly does not appear to be
+storable; the published map gives the same bound. The write whitelist and the
+schema were both capped at 1440 and are now 1439.
+
+This changed the UI. A slider bound to a value the device decrements would drift
+under the user's finger, so the control offers fixed delays (Now / 1h / 4h / 8h
+/ 12h / 24h) and reports the live remaining time separately.
 
 ### ✅ Standby timers really fire
 

@@ -78,6 +78,17 @@ export const HOLDING = {
   AC_STANDBY_MINUTES: 60,
   DC_STANDBY_MINUTES: 61,
   SCREEN_REST_SECONDS: 62,
+  /**
+   * Minutes until AC charging is enabled — a **live countdown**, not a clock
+   * time or a static setting.
+   *
+   * Confirmed on a P280: scheduled for "24:00" in BrightEMS, the register read
+   * 1439 and then ticked down one per minute (1438 -> 1437 over 101 s). Input
+   * register 57 mirrors it. Reaching 0 lets charging resume.
+   *
+   * BrightEMS presents it as HH:MM, which reads like a clock time. It isn't.
+   * Range is 0-1439; 1440 would be 24h exactly and appears not to be storable.
+   */
   STOP_CHARGE_AFTER_MINUTES: 63,
   /**
    * Confirmed on a P280: read 100 while BrightEMS showed a 10% discharge limit.
@@ -194,7 +205,9 @@ export const WRITABLE: Partial<Record<number, WriteRule>> = {
   [HOLDING.AC_STANDBY_MINUTES]: { kind: 'set', values: [0, 480, 960, 1440] },
   [HOLDING.DC_STANDBY_MINUTES]: { kind: 'set', values: [0, 480, 960, 1440] },
   [HOLDING.SCREEN_REST_SECONDS]: { kind: 'set', values: [0, 180, 300, 600, 1800] },
-  [HOLDING.STOP_CHARGE_AFTER_MINUTES]: { kind: 'range', min: 0, max: 1440 },
+  // 0-1439, not 0-1440: a P280 set to "24:00" stored 1439, and the published
+  // map gives the same upper bound.
+  [HOLDING.STOP_CHARGE_AFTER_MINUTES]: { kind: 'range', min: 0, max: 1439 },
   // Official app range is 0-500 (0-50%); the device accepts up to 1000.
   [HOLDING.DISCHARGE_LOWER_LIMIT]: { kind: 'range', min: 0, max: 500 },
   // Official app range is 600-1000 (60-100%).
