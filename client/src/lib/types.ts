@@ -39,6 +39,8 @@ export type DeviceList = {
 export type StationSettings = {
   chargeLimit: number;
   dischargeFloor: number;
+  /** Stored on the device as a step 1-5; on a P280 those are these watts. */
+  acChargingWatts: 600 | 900 | 1200 | 1500 | 1800;
   maxChargingCurrent: number;
   acSilentCharging: boolean;
   stopChargeAfterMinutes: number;

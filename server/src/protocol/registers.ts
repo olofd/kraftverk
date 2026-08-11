@@ -61,6 +61,13 @@ export const INPUT_REGISTER_COUNT = 80;
 
 /** Holding registers (function 0x03 read / 0x06 write) — settings. */
 export const HOLDING = {
+  /**
+   * AC charging power, as a step 1-5. Confirmed on a P280 alongside input
+   * register 2, which mirrors it: 1200 W read 3, 900 W read 2.
+   *
+   * The published map marks this read-only. It is not — BrightEMS changes it,
+   * and nothing else moved when the power was changed.
+   */
   AC_CHARGING_RATE: 13,
   MAX_CHARGING_CURRENT: 20,
   /** Confirmed on a P280: 0 -> 1 when USB was switched on at the unit. */
@@ -130,9 +137,30 @@ export const HOLDING_REGISTER_COUNT = 80;
  * station, and dump again (POST /api/diagnostics/snapshot).
  */
 export const UNCONFIRMED_P280 = {
-  AC_CHARGING_WATTS: 14,
   MAYBE_BATTERY_TEMP: 54,
 } as const;
+
+/**
+ * AC charging power steps, confirmed on a P280.
+ *
+ * The published map documents this scale as 300-1100 W for a FOSSiBOT F2400.
+ * The P280 is a bigger machine and uses an entirely different range, so the
+ * step-to-watts mapping is model-specific and must not be assumed.
+ *
+ * Holding 14 reads 1800 and holding 16 reads 600 — the two ends of this scale.
+ * Neither moved when the power was changed, so they look like capability
+ * constants rather than settings.
+ */
+export const AC_CHARGING_WATTS = [600, 900, 1200, 1500, 1800] as const;
+export type AcChargingWatts = (typeof AC_CHARGING_WATTS)[number];
+
+/** Step 1-5 as stored in register 13, from a wattage. */
+export const wattsToChargeRate = (watts: AcChargingWatts): number =>
+  AC_CHARGING_WATTS.indexOf(watts) + 1;
+
+/** Wattage from the 1-5 step, falling back to the nearest sane value. */
+export const chargeRateToWatts = (rate: number): AcChargingWatts =>
+  AC_CHARGING_WATTS[rate - 1] ?? 1800;
 
 /**
  * Bit masks in input register 41.
@@ -194,6 +222,8 @@ export type WriteRule =
   | { kind: 'range'; min: number; max: number };
 
 export const WRITABLE: Partial<Record<number, WriteRule>> = {
+  // Steps 1-5. On a P280 these are 600/900/1200/1500/1800 W — see AC_CHARGING_WATTS.
+  [HOLDING.AC_CHARGING_RATE]: { kind: 'set', values: [1, 2, 3, 4, 5] },
   [HOLDING.MAX_CHARGING_CURRENT]: { kind: 'range', min: 1, max: 20 },
   [HOLDING.USB_OUTPUT]: { kind: 'set', values: [0, 1] },
   [HOLDING.DC_OUTPUT]: { kind: 'set', values: [0, 1] },
@@ -343,6 +373,8 @@ export function decodeTelemetry(regs: readonly number[]): DecodedTelemetry {
 }
 
 export type DecodedSettings = {
+  /** AC charging power in watts, resolved from the 1-5 step. */
+  acChargingWatts: AcChargingWatts;
   maxChargingCurrent: number;
   usbOutput: boolean;
   dcOutput: boolean;
@@ -362,6 +394,7 @@ export type DecodedSettings = {
 
 export function decodeSettings(regs: readonly number[]): DecodedSettings {
   return {
+    acChargingWatts: chargeRateToWatts(at(regs, HOLDING.AC_CHARGING_RATE)),
     maxChargingCurrent: at(regs, HOLDING.MAX_CHARGING_CURRENT),
     usbOutput: at(regs, HOLDING.USB_OUTPUT) === 1,
     dcOutput: at(regs, HOLDING.DC_OUTPUT) === 1,

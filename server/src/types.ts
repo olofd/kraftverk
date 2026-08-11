@@ -21,6 +21,18 @@ export const StationSettingsSchema = z.object({
   chargeLimit: z.number().int().min(60).max(100),
   /** Cut output below this SOC. Device accepts 0-50%. */
   dischargeFloor: z.number().int().min(0).max(50),
+  /**
+   * AC charging power. The station stores this as a step 1-5; on a P280 those
+   * are 600/900/1200/1500/1800 W. The mapping is model-specific — the same
+   * register spans 300-1100 W on a FOSSiBOT F2400.
+   */
+  acChargingWatts: z.union([
+    z.literal(600),
+    z.literal(900),
+    z.literal(1200),
+    z.literal(1500),
+    z.literal(1800),
+  ]),
   /** Solar/DC charging current ceiling, 1-20 A. */
   maxChargingCurrent: z.number().int().min(1).max(20),
   /** Quieter, slower AC charging. */

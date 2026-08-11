@@ -7,6 +7,7 @@ import {
   HOLDING,
   STATUS,
   UnsafeWriteError,
+  wattsToChargeRate,
 } from './registers.ts';
 
 /**
@@ -99,6 +100,32 @@ describe('confirmed on a real P280', () => {
   test('the booking register tops out at 1439, so 1440 is refused', () => {
     expect(() => assertWritable(HOLDING.STOP_CHARGE_AFTER_MINUTES, 1439)).not.toThrow();
     expect(() => assertWritable(HOLDING.STOP_CHARGE_AFTER_MINUTES, 1440)).toThrow(UnsafeWriteError);
+  });
+
+  /**
+   * BrightEMS offers 600/900/1200/1500/1800 W; the register stores 1-5.
+   * Confirmed on a P280: 1200 W read 3, and changing to 900 W read 2. Input
+   * register 2 mirrors it.
+   *
+   * The published map gives this scale as 300-1100 W for a FOSSiBOT F2400, so
+   * the step-to-watts mapping is model-specific and must not be assumed.
+   */
+  test('AC charging power steps map to P280 wattages', () => {
+    expect(decodeSettings(holding({ 13: 3 })).acChargingWatts).toBe(1200);
+    expect(decodeSettings(holding({ 13: 2 })).acChargingWatts).toBe(900);
+    expect(decodeSettings(holding({ 13: 1 })).acChargingWatts).toBe(600);
+    expect(decodeSettings(holding({ 13: 5 })).acChargingWatts).toBe(1800);
+    expect(wattsToChargeRate(900)).toBe(2);
+    expect(wattsToChargeRate(1200)).toBe(3);
+  });
+
+  test('the charging rate register is writable, despite the docs marking it read-only', () => {
+    // BrightEMS changes it, and nothing else moved when the power changed.
+    for (const step of [1, 2, 3, 4, 5]) {
+      expect(() => assertWritable(HOLDING.AC_CHARGING_RATE, step)).not.toThrow();
+    }
+    expect(() => assertWritable(HOLDING.AC_CHARGING_RATE, 6)).toThrow(UnsafeWriteError);
+    expect(() => assertWritable(HOLDING.AC_CHARGING_RATE, 0)).toThrow(UnsafeWriteError);
   });
 
   test('AC silent charging is holding register 57', () => {

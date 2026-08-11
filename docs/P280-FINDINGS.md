@@ -221,7 +221,7 @@ Values below are from the live unit.
 
 | Reg | Name | Read | Status |
 | --- | --- | --- | --- |
-| 13 | AC charging rate | `3` | 📖 |
+| 13 | AC charging power, step 1–5 | `3`→`2` | ✅ writable |
 | 20 | Max charging current | `20` A | 📖 |
 | 24 | USB output | `0`→`1` | ✅ |
 | 25 | DC output | `0`→`1` | ✅ |
@@ -268,6 +268,34 @@ literal — **solar charges straight past it**, which is why a station limited t
 60 % was sitting at 100 %. Presenting this as a general "stop charging here"
 ceiling would have people chasing a fault that does not exist.
 
+### ⚠️ AC charging power: the wattage scale is model-specific
+
+BrightEMS offers five AC charging powers. Register 13 stores the **step**, and
+input register 2 mirrors it. Confirmed by changing the setting on the unit:
+
+| BrightEMS | Register 13 |
+| --- | --- |
+| 600 W | `1` |
+| 900 W | `2` ✅ observed |
+| 1200 W | `3` ✅ observed |
+| 1500 W | `4` |
+| 1800 W | `5` |
+
+**The published map gives this scale as 300–1100 W for a FOSSiBOT F2400.** The
+P280 spans 600–1800 W. Same register, same step encoding, completely different
+wattages — so the step-to-watts mapping cannot be carried between models. Any
+integration that assumes the F2400 values will show the wrong power on a P280.
+
+**Registers 14 and 16 are the ends of this scale.** Holding 14 reads `1800` and
+holding 16 reads `600` — the maximum and minimum of the P280's range. Neither
+moved when the power was changed from 1200 W to 900 W, so they are capability
+constants rather than settings. That also explains why register 16 held `600`
+while the charge limit was 60 %: coincidence, as established above.
+
+**Register 13 is writable, despite the docs marking it read-only.** BrightEMS
+changes it, and nothing else in either bank moved when the power changed. It is
+now on the write whitelist, restricted to steps 1–5.
+
 ### ✅ "AC booking charging" is a countdown, not a clock time
 
 BrightEMS presents this as **HH:MM** — scheduling it for "24:00" looks like
@@ -306,8 +334,8 @@ undoes it for you.
 | --- | --- | --- |
 | 11 | `0x1500` | bitfield? |
 | 12 | `9` | |
-| 14 | `1800` | **AC charging power in watts** — matches the P280's 1800 W input ceiling exactly. The documented 1–5 rate lives in registers 2 and 13 (both read `3`), so this model appears to expose wattage separately. |
-| 16 | `600` | **not** a mirror of register 67 — see below |
+| 14 | `1800` | ✅ maximum AC charging power — the top of the 1–5 scale. Unchanged when the power was set to 900 W, so a capability constant, not a setting. |
+| 16 | `600` | ✅ minimum AC charging power — the bottom of the same scale. |
 | 17 | `20` | equals register 20 (max charging current), but see below |
 | 18 | `115` | |
 | 19 | `550` | pack max voltage, 55.0 V? Right order for a 48 V LiFePO₄ string. |
@@ -392,8 +420,8 @@ three minutes with no load (holding 59), so take the second dump promptly.
 - [ ] Plug a load into USB → confirm registers 30–31 / 34–37 scaling
 - [x] LED SOS and flash → all four enum values confirmed (0, 1, 2, 3)
 - [ ] Compare input 54 against the temperature BrightEMS reports
-- [ ] Check whether BrightEMS exposes an "AC charging power" setting showing
-      1800 W, which would confirm holding 14
+- [x] AC charging power → confirmed register 13 (steps 1–5 = 600–1800 W), and
+      identified holding 14 and 16 as the scale's maximum and minimum
 - [ ] Connect an expansion pack → confirm registers 53 and 55
 - [ ] First write, once the above is settled: LED mode. Visible across the
       room, instantly reversible, cannot affect the battery.

@@ -12,6 +12,7 @@ import {
   HOLDING,
   HOLDING_REGISTER_COUNT,
   INPUT_REGISTER_COUNT,
+  wattsToChargeRate,
   type DecodedSettings,
   type DecodedTelemetry,
 } from '../protocol/registers.ts';
@@ -244,6 +245,7 @@ export class DeviceDriver implements StationDriver {
     return {
       chargeLimit: Math.round(s?.chargingUpperLimitPercent ?? 100),
       dischargeFloor: Math.round(s?.dischargeLowerLimitPercent ?? 0),
+      acChargingWatts: s?.acChargingWatts ?? 1800,
       maxChargingCurrent: s?.maxChargingCurrent || 20,
       acSilentCharging: s?.acSilentCharging ?? false,
       stopChargeAfterMinutes: s?.stopChargeAfterMinutes ?? 0,
@@ -271,6 +273,8 @@ export class DeviceDriver implements StationDriver {
       writes.push([HOLDING.AC_CHARGING_UPPER_LIMIT, patch.chargeLimit * 10]);
     if (patch.dischargeFloor !== undefined)
       writes.push([HOLDING.DISCHARGE_LOWER_LIMIT, patch.dischargeFloor * 10]);
+    if (patch.acChargingWatts !== undefined)
+      writes.push([HOLDING.AC_CHARGING_RATE, wattsToChargeRate(patch.acChargingWatts)]);
     if (patch.maxChargingCurrent !== undefined)
       writes.push([HOLDING.MAX_CHARGING_CURRENT, patch.maxChargingCurrent]);
     if (patch.acSilentCharging !== undefined)

@@ -36,6 +36,15 @@ const SLEEP = [
   { value: 480, label: '8h' },
 ] as const;
 
+/** Confirmed on a P280: register 13 steps 1-5 map to these watts. */
+const AC_CHARGING_POWER = [
+  { value: 600, label: '600 W' },
+  { value: 900, label: '900 W' },
+  { value: 1200, label: '1.2 kW' },
+  { value: 1500, label: '1.5 kW' },
+  { value: 1800, label: '1.8 kW' },
+] as const;
+
 /** 1439, not 1440 — that is the register's maximum. */
 const CHARGE_DELAYS = [
   { value: 0, label: 'Now' },
@@ -131,6 +140,16 @@ export default function SettingsScreen() {
       <YStack gap="$2">
         <SectionLabel>Charging</SectionLabel>
         <Card inset>
+          {/* Five discrete steps on the device (register 13 stores 1-5). The
+              watt values are P280-specific — an F2400 spans 300-1100 W. */}
+          <ModeRow
+            title="AC charging power"
+            subtitle="How hard the station pulls from the wall."
+            value={settings.acChargingWatts}
+            options={AC_CHARGING_POWER}
+            onChange={(acChargingWatts) => void updateSettings({ acChargingWatts })}
+          />
+          <RowSeparator />
           <ToggleRow
             title="Silent AC charging"
             subtitle="Slower, but keeps the fans down."

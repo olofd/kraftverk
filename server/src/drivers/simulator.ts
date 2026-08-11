@@ -23,6 +23,7 @@ const SETTINGS_FILE = resolve(import.meta.dirname, '../../data/settings.json');
 const DEFAULTS: StationSettings = {
   chargeLimit: 90,
   dischargeFloor: 10,
+  acChargingWatts: 1800,
   maxChargingCurrent: 20,
   acSilentCharging: false,
   stopChargeAfterMinutes: 0,
@@ -126,8 +127,11 @@ export class SimulatorDriver implements StationDriver {
     if (!this.#gridConnected) return this.#solarWatts;
     if (this.#level >= this.#settings.chargeLimit) return 0;
 
-    // P280 takes up to 1800 W from AC; silent charging trades speed for noise.
-    const ceiling = this.#settings.acSilentCharging ? 400 : 1800;
+    // Silent charging trades speed for noise, otherwise honour the configured
+    // AC charging power (600-1800 W on a P280).
+    const ceiling = this.#settings.acSilentCharging
+      ? Math.min(400, this.#settings.acChargingWatts)
+      : this.#settings.acChargingWatts;
     const headroom = this.#settings.chargeLimit - this.#level;
     const taper = headroom < 10 ? clamp(headroom / 10, 0.15, 1) : 1;
     return round(ceiling * taper) + this.#solarWatts;
