@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { decodeTelemetry, HOLDING, STATUS } from './registers.ts';
+import { decodeSettings, decodeTelemetry, HOLDING, STATUS } from './registers.ts';
 
 /**
  * Behaviour confirmed against a real AFERIY P280 over BLE.
@@ -15,6 +15,9 @@ function telemetry(values: Record<number, number>): number[] {
   for (const [index, value] of Object.entries(values)) regs[Number(index)] = value;
   return regs;
 }
+
+/** Same shape, for the holding (settings) bank. */
+const holding = telemetry;
 
 describe('confirmed on a real P280', () => {
   test('charging flag is a bitmask: the station reports 0x8040, not 0x8000', () => {
@@ -51,9 +54,27 @@ describe('confirmed on a real P280', () => {
     expect(decodeTelemetry(telemetry({ 59: 22560 })).minutesToEmpty).toBe(22560);
   });
 
-  test('AC charge limit register is the one BrightEMS shows', () => {
-    // BrightEMS showed 60%; holding register 67 read 600.
+  /**
+   * Both battery limits cross-checked against BrightEMS on the same unit:
+   * charge limit 60% with register 67 reading 600, discharge limit 10% with
+   * register 66 reading 100. Tenths of a percent in both cases.
+   */
+  test('battery limit registers match what BrightEMS displays', () => {
     expect(HOLDING.AC_CHARGING_UPPER_LIMIT).toBe(67);
+    expect(HOLDING.DISCHARGE_LOWER_LIMIT).toBe(66);
+    expect(decodeSettings(holding({ 67: 600, 66: 100 }))).toMatchObject({
+      chargingUpperLimitPercent: 60,
+      dischargeLowerLimitPercent: 10,
+    });
+  });
+
+  /**
+   * 23% is the useful case: not a round number, so it shows the tenths scaling
+   * holds at arbitrary values rather than only at multiples of ten. The UI
+   * slider originally stepped by 5 and could not have produced it.
+   */
+  test('discharge limit decodes an arbitrary percentage, not just round ones', () => {
+    expect(decodeSettings(holding({ 66: 230 })).dischargeLowerLimitPercent).toBe(23);
   });
 
   test('mains is not reported present on a station running off battery', () => {

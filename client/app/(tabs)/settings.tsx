@@ -80,13 +80,16 @@ export default function SettingsScreen() {
       <YStack gap="$2">
         <SectionLabel>Battery</SectionLabel>
         <Card inset>
+          {/* Step 1, not 5: the station stores tenths of a percent and accepts
+              arbitrary values — a P280 set to 23% reads 230. A coarser step
+              would make settings unreachable that the hardware supports. */}
           <SliderRow
             title="AC charge limit"
             subtitle="Caps charging from mains only — solar will still fill the pack past this."
             value={settings.chargeLimit}
             min={60}
             max={100}
-            step={5}
+            step={1}
             format={(v) => `${v}%`}
             onCommit={(chargeLimit) => void updateSettings({ chargeLimit })}
           />
@@ -97,7 +100,7 @@ export default function SettingsScreen() {
             value={settings.dischargeFloor}
             min={0}
             max={50}
-            step={5}
+            step={1}
             format={(v) => `${v}%`}
             onCommit={(dischargeFloor) => void updateSettings({ dischargeFloor })}
           />

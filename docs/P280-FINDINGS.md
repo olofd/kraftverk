@@ -225,12 +225,27 @@ Values below are from the live unit.
 | 61 | DC standby | `480` min | 📖 |
 | 62 | Screen rest | `300` s | 📖 |
 | 63 | Delay charging | `0` | 📖 |
-| 66 | Discharge floor | `100` → 10 % | 📖 |
+| 66 | Discharge floor | `100` → 10 %, `230` → 23 % | ✅ |
 | 67 | **AC** charge limit | `600` → 60 % | ✅ |
 | 68 | Idle shutdown | `5` min | 📖 |
 
 Every settings register decoded to a value inside its expected whitelist, which
 is good evidence the map transfers to this model.
+
+### ✅ Both battery limits confirmed, at arbitrary percentages
+
+Cross-checked against BrightEMS on the same unit:
+
+| Setting in BrightEMS | Register | Raw |
+| --- | --- | --- |
+| AC charge limit 60 % | holding 67 | `600` |
+| Discharge limit 10 % | holding 66 | `100` |
+| Discharge limit 23 % | holding 66 | `230` |
+
+The 23 % reading is the valuable one — a non-round value proves the tenths
+scaling holds generally rather than only at multiples of ten. It also showed the
+UI was wrong: the sliders stepped by 5 and could not have produced 23 %. They
+step by 1 now, since the hardware clearly accepts any integer percent.
 
 ### ✅ Register 67 caps AC charging only
 

@@ -78,6 +78,10 @@ export const HOLDING = {
   DC_STANDBY_MINUTES: 61,
   SCREEN_REST_SECONDS: 62,
   STOP_CHARGE_AFTER_MINUTES: 63,
+  /**
+   * Confirmed on a P280: read 100 while BrightEMS showed a 10% discharge limit.
+   * Tenths of a percent, same scaling as the charge limit.
+   */
   DISCHARGE_LOWER_LIMIT: 66,
   /**
    * Confirmed on a P280: read 600 while BrightEMS showed a 60% charge limit.
