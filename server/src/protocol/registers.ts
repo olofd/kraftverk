@@ -33,8 +33,9 @@ export const INPUT = {
   AC_INPUT_VOLTAGE: 21,
   AC_INPUT_FREQUENCY: 22,
   /**
-   * Confirmed on a P280: reads 1 with the light in "always on" mode, matching
-   * the documented enum 0=off, 1=on, 2=SOS, 3=flash.
+   * Confirmed on a P280 across three of four values: reads 1 in "always on"
+   * and 2 in SOS, matching the documented enum 0=off, 1=on, 2=SOS, 3=flash.
+   * Holding register 27 tracks it exactly.
    */
   LED_STATE: 25,
   USB_OUTPUT_1: 30,

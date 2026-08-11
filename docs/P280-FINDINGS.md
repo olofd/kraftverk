@@ -79,7 +79,7 @@ Verified against three independent captures:
 | 20 | AC output power | W | ✅ | `9` W inverter idle draw |
 | 21 | AC input voltage | 0.1 V | ⚠️ | `2` with no mains, but **`591` when the inverter runs** — backfeed, see below |
 | 22 | AC input frequency | 0.01 Hz | ✅ | `0` with no mains |
-| 25 | LED state | enum | ✅ | `1` in "always on" mode — confirms `0=off, 1=on, 2=SOS, 3=flash` |
+| 25 | LED state | enum | ✅ | `1` in "always on", `2` in SOS — confirms `0=off, 1=on, 2=SOS, 3=flash` |
 | 30–31, 34–37 | USB port power | 0.1 W | 📖 | stayed `0` with USB enabled but nothing plugged in |
 | 39 | Total output power | W | ✅ | |
 | 41 | Status bitmask | — | ✅ | see below |
@@ -153,6 +153,26 @@ The arithmetic is the useful part:
 watts the light's raw `10` would have made the total 18. Holding 27 and input 25
 both read `1`, matching the unit's "always on" mode and confirming the LED enum
 ordering.
+
+### ✅ The light is fully characterised — and is the safe first write
+
+Three of the four LED modes verified on hardware. Holding 27 and input 25 track
+each other exactly:
+
+| Mode on the unit | holding 27 | input 25 |
+| --- | --- | --- |
+| off | `0` | `0` |
+| always on | `1` | `1` |
+| SOS | `2` | `2` |
+| flash | untested | untested |
+
+The status bit `0x1000` and the 1.0 W draw stayed constant across the mode
+change, so the mode register is independent of the on/off bit. Register 15
+reports nominal draw, not instantaneous — it stayed at `10` while flashing.
+
+This makes holding 27 the right target for the first write: the whole read path
+is confirmed, the effect is visible across the room, it reverses instantly, and
+it cannot touch the battery.
 
 ### ⚠️ The inverter backfeeds the AC input sense line
 
@@ -264,7 +284,7 @@ the diff stops being evidence.
       the 0.1 W scaling via the output sum
 - [ ] Toggle DC output → confirm mask `0x0400` and holding 25
 - [ ] Plug a load into USB → confirm registers 30–31 / 34–37 scaling
-- [ ] Try LED SOS and flash modes → confirm enum values 2 and 3
+- [x] LED SOS mode → confirmed enum value 2 (flash, value 3, still untested)
 - [ ] Compare input 54 against the temperature BrightEMS reports
 - [ ] Check whether BrightEMS exposes an "AC charging power" setting showing
       1800 W, which would confirm holding 14

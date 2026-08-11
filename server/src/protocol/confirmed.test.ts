@@ -104,8 +104,20 @@ describe('confirmed on a real P280', () => {
     expect(0x18a4 & STATUS.DC_CONVERTER_ACTIVE).toBeTruthy();
   });
 
-  test('LED mode 1 is "always on", matching the unit', () => {
+  /**
+   * Verified on hardware for off, on and SOS. The light stayed lit and the
+   * status bit stayed set across the mode change, so the mode register is
+   * independent of the on/off bit.
+   */
+  test('LED mode enum matches the unit: 0 off, 1 always-on, 2 SOS', () => {
+    expect(decodeTelemetry(telemetry({ 25: 0 })).ledMode).toBe(0);
     expect(decodeTelemetry(telemetry({ 25: 1 })).ledMode).toBe(1);
+    expect(decodeTelemetry(telemetry({ 41: 0x18a4, 25: 2 })).ledMode).toBe(2);
+  });
+
+  test('reported LED draw is nominal, not instantaneous', () => {
+    // Register 15 stayed at 10 (1.0 W) while the light was flashing in SOS.
+    expect(decodeTelemetry(telemetry({ 15: 10, 25: 2 })).ledWatts).toBe(1);
   });
 
   /**
