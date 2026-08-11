@@ -69,6 +69,18 @@ export const HOLDING = {
    * and nothing else moved when the power was changed.
    */
   AC_CHARGING_RATE: 13,
+  /**
+   * DC input type: 0 = PV (solar), 1 = DC (adapter / car).
+   *
+   * Not present in any published register map — the documented holding
+   * registers skip from 13 to 20. Found by changing "DC input type setting" on
+   * a P280 and diffing: this was the only register that moved to describe it.
+   *
+   * WARNING: writing this has a side effect. Switching PV -> DC also changed
+   * MAX_CHARGING_CURRENT from 20 A to 8 A on its own. Re-read the settings
+   * after writing rather than assuming the rest are unchanged.
+   */
+  DC_INPUT_TYPE: 15,
   MAX_CHARGING_CURRENT: 20,
   /** Confirmed on a P280: 0 -> 1 when USB was switched on at the unit. */
   USB_OUTPUT: 24,
@@ -224,6 +236,8 @@ export type WriteRule =
 export const WRITABLE: Partial<Record<number, WriteRule>> = {
   // Steps 1-5. On a P280 these are 600/900/1200/1500/1800 W — see AC_CHARGING_WATTS.
   [HOLDING.AC_CHARGING_RATE]: { kind: 'set', values: [1, 2, 3, 4, 5] },
+  // 0 = PV, 1 = DC. Undocumented; both values observed on a P280.
+  [HOLDING.DC_INPUT_TYPE]: { kind: 'set', values: [0, 1] },
   [HOLDING.MAX_CHARGING_CURRENT]: { kind: 'range', min: 1, max: 20 },
   [HOLDING.USB_OUTPUT]: { kind: 'set', values: [0, 1] },
   [HOLDING.DC_OUTPUT]: { kind: 'set', values: [0, 1] },
@@ -372,9 +386,12 @@ export function decodeTelemetry(regs: readonly number[]): DecodedTelemetry {
   };
 }
 
+export type DcInputType = 'pv' | 'dc';
+
 export type DecodedSettings = {
   /** AC charging power in watts, resolved from the 1-5 step. */
   acChargingWatts: AcChargingWatts;
+  dcInputType: DcInputType;
   maxChargingCurrent: number;
   usbOutput: boolean;
   dcOutput: boolean;
@@ -395,6 +412,7 @@ export type DecodedSettings = {
 export function decodeSettings(regs: readonly number[]): DecodedSettings {
   return {
     acChargingWatts: chargeRateToWatts(at(regs, HOLDING.AC_CHARGING_RATE)),
+    dcInputType: at(regs, HOLDING.DC_INPUT_TYPE) === 1 ? 'dc' : 'pv',
     maxChargingCurrent: at(regs, HOLDING.MAX_CHARGING_CURRENT),
     usbOutput: at(regs, HOLDING.USB_OUTPUT) === 1,
     dcOutput: at(regs, HOLDING.DC_OUTPUT) === 1,

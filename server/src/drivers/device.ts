@@ -246,6 +246,7 @@ export class DeviceDriver implements StationDriver {
       chargeLimit: Math.round(s?.chargingUpperLimitPercent ?? 100),
       dischargeFloor: Math.round(s?.dischargeLowerLimitPercent ?? 0),
       acChargingWatts: s?.acChargingWatts ?? 1800,
+      dcInputType: s?.dcInputType ?? 'pv',
       maxChargingCurrent: s?.maxChargingCurrent || 20,
       acSilentCharging: s?.acSilentCharging ?? false,
       stopChargeAfterMinutes: s?.stopChargeAfterMinutes ?? 0,
@@ -275,6 +276,10 @@ export class DeviceDriver implements StationDriver {
       writes.push([HOLDING.DISCHARGE_LOWER_LIMIT, patch.dischargeFloor * 10]);
     if (patch.acChargingWatts !== undefined)
       writes.push([HOLDING.AC_CHARGING_RATE, wattsToChargeRate(patch.acChargingWatts)]);
+    // Note: the station adjusts MAX_CHARGING_CURRENT itself in response to this,
+    // which is why applySettings re-polls before returning.
+    if (patch.dcInputType !== undefined)
+      writes.push([HOLDING.DC_INPUT_TYPE, patch.dcInputType === 'dc' ? 1 : 0]);
     if (patch.maxChargingCurrent !== undefined)
       writes.push([HOLDING.MAX_CHARGING_CURRENT, patch.maxChargingCurrent]);
     if (patch.acSilentCharging !== undefined)

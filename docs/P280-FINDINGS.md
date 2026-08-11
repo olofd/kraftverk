@@ -222,6 +222,7 @@ Values below are from the live unit.
 | Reg | Name | Read | Status |
 | --- | --- | --- | --- |
 | 13 | AC charging power, step 1–5 | `3`→`2` | ✅ writable |
+| 15 | **DC input type** (0=PV, 1=DC) | `0`→`1` | ✅ **undocumented** |
 | 20 | Max charging current | `20` A | 📖 |
 | 24 | USB output | `0`→`1` | ✅ |
 | 25 | DC output | `0`→`1` | ✅ |
@@ -267,6 +268,35 @@ BrightEMS showed a 60 % charge limit; register 67 read `600`. The name is
 literal — **solar charges straight past it**, which is why a station limited to
 60 % was sitting at 100 %. Presenting this as a general "stop charging here"
 ceiling would have people chasing a fault that does not exist.
+
+### 🆕 Holding 15 is the DC input type — and it is in no published map
+
+BrightEMS calls this **"DC input type setting"**, toggling between **PV**
+(photovoltaic) and **DC** (adapter or car). Switching PV → DC moved holding 15
+from `0` to `1`.
+
+**This register is undocumented.** Every source we have — schauveau,
+ha-fossibot, the BLE work — lists holding registers 0–1, 13, 20, 24–27, 56–68,
+73, 78–79. Register 15 is absent. Found purely by diffing.
+
+### ⚠️ Writing register 15 has a side effect
+
+The same change moved **`MAX_CHARGING_CURRENT` (holding 20) from 20 A to 8 A**,
+which we never wrote:
+
+| | holding 15 | holding 20 |
+| --- | --- | --- |
+| PV mode | `0` | `20` A |
+| DC mode | `1` | `8` A |
+
+Physically sensible — a DC adapter tolerates less current than a solar array —
+but it means the station changes settings on its own. **Anything writing this
+register must re-read afterwards rather than assume the rest held.** The driver
+already re-polls after every write, so this is handled; the simulator models the
+same coupling so the behaviour is exercised without hardware.
+
+This is a useful warning for the remaining unknowns: a register write is not
+guaranteed to affect only that register.
 
 ### ⚠️ AC charging power: the wattage scale is model-specific
 

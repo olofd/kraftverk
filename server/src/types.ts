@@ -33,6 +33,13 @@ export const StationSettingsSchema = z.object({
     z.literal(1500),
     z.literal(1800),
   ]),
+  /**
+   * What is plugged into the DC input: a solar array (PV) or a DC adapter.
+   *
+   * Changing this also changes `maxChargingCurrent` on the device — switching
+   * PV to DC dropped it from 20 A to 8 A unprompted. Re-read after writing.
+   */
+  dcInputType: z.enum(['pv', 'dc']),
   /** Solar/DC charging current ceiling, 1-20 A. */
   maxChargingCurrent: z.number().int().min(1).max(20),
   /** Quieter, slower AC charging. */

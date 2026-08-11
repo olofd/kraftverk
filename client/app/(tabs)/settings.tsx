@@ -36,6 +36,11 @@ const SLEEP = [
   { value: 480, label: '8h' },
 ] as const;
 
+const DC_INPUT_TYPES = [
+  { value: 'pv', label: 'Solar (PV)' },
+  { value: 'dc', label: 'DC adapter' },
+] as const;
+
 /** Confirmed on a P280: register 13 steps 1-5 map to these watts. */
 const AC_CHARGING_POWER = [
   { value: 600, label: '600 W' },
@@ -157,9 +162,21 @@ export default function SettingsScreen() {
             onCheckedChange={(acSilentCharging) => void updateSettings({ acSilentCharging })}
           />
           <RowSeparator />
+          <SegmentedControl
+            title="DC input type"
+            subtitle="What is plugged into the XT90 input. Changing this also moves the current ceiling below."
+            value={settings.dcInputType}
+            options={DC_INPUT_TYPES}
+            onChange={(dcInputType) => void updateSettings({ dcInputType })}
+          />
+          <RowSeparator />
           <SliderRow
             title="Max solar/DC current"
-            subtitle="Ceiling for the XT90 input."
+            subtitle={
+              settings.dcInputType === 'dc'
+                ? 'Ceiling for the XT90 input. The station lowers this in DC mode.'
+                : 'Ceiling for the XT90 input.'
+            }
             value={settings.maxChargingCurrent}
             min={1}
             max={20}

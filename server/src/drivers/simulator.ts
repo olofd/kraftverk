@@ -24,6 +24,7 @@ const DEFAULTS: StationSettings = {
   chargeLimit: 90,
   dischargeFloor: 10,
   acChargingWatts: 1800,
+  dcInputType: 'pv',
   maxChargingCurrent: 20,
   acSilentCharging: false,
   stopChargeAfterMinutes: 0,
@@ -191,6 +192,11 @@ export class SimulatorDriver implements StationDriver {
     const next = { ...this.#settings, ...patch };
     if (next.dischargeFloor >= next.chargeLimit) {
       next.dischargeFloor = Math.max(0, next.chargeLimit - 10);
+    }
+    // Mirrors the real station: switching the DC input type also moves the
+    // current ceiling, since a DC adapter tolerates less than a solar array.
+    if (patch.dcInputType && patch.dcInputType !== this.#settings.dcInputType) {
+      next.maxChargingCurrent = patch.dcInputType === 'dc' ? 8 : 20;
     }
     this.#settings = StationSettingsSchema.parse(next);
     await this.#persist();

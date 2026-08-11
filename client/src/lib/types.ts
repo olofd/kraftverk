@@ -41,6 +41,8 @@ export type StationSettings = {
   dischargeFloor: number;
   /** Stored on the device as a step 1-5; on a P280 those are these watts. */
   acChargingWatts: 600 | 900 | 1200 | 1500 | 1800;
+  /** Changing this also moves maxChargingCurrent on the device. */
+  dcInputType: 'pv' | 'dc';
   maxChargingCurrent: number;
   acSilentCharging: boolean;
   stopChargeAfterMinutes: number;

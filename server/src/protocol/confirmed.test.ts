@@ -128,6 +128,36 @@ describe('confirmed on a real P280', () => {
     expect(() => assertWritable(HOLDING.AC_CHARGING_RATE, 0)).toThrow(UnsafeWriteError);
   });
 
+  /**
+   * Holding 15 appears in no published register map — the documented holding
+   * registers skip from 13 to 20. Found by changing "DC input type setting" on
+   * a P280: it was the only register describing the change.
+   */
+  test('DC input type lives in an undocumented register', () => {
+    expect(HOLDING.DC_INPUT_TYPE).toBe(15);
+    expect(decodeSettings(holding({ 15: 0 })).dcInputType).toBe('pv');
+    expect(decodeSettings(holding({ 15: 1 })).dcInputType).toBe('dc');
+    expect(() => assertWritable(HOLDING.DC_INPUT_TYPE, 1)).not.toThrow();
+    expect(() => assertWritable(HOLDING.DC_INPUT_TYPE, 2)).toThrow(UnsafeWriteError);
+  });
+
+  /**
+   * Switching PV -> DC also moved MAX_CHARGING_CURRENT from 20 A to 8 A, which
+   * we never wrote. A DC adapter tolerates less current than a solar array, so
+   * the station enforces its own ceiling. Anything writing register 15 must
+   * re-read rather than assume the other settings held.
+   */
+  test('switching to DC mode is accompanied by a lower current ceiling', () => {
+    expect(decodeSettings(holding({ 15: 0, 20: 20 }))).toMatchObject({
+      dcInputType: 'pv',
+      maxChargingCurrent: 20,
+    });
+    expect(decodeSettings(holding({ 15: 1, 20: 8 }))).toMatchObject({
+      dcInputType: 'dc',
+      maxChargingCurrent: 8,
+    });
+  });
+
   test('AC silent charging is holding register 57', () => {
     expect(decodeSettings(holding({ 57: 1 })).acSilentCharging).toBe(true);
     expect(decodeSettings(holding({ 57: 0 })).acSilentCharging).toBe(false);
