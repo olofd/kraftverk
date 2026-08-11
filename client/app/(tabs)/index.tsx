@@ -2,12 +2,12 @@ import type { ReactNode } from 'react';
 import { Feather } from '@expo/vector-icons';
 import { Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
+import { AnimatedNumber } from '../../src/components/AnimatedNumber';
 import { Card, SectionLabel } from '../../src/components/Card';
-import { ChargeMeter } from '../../src/components/ChargeMeter';
+import { EnergyFlow } from '../../src/components/EnergyFlow';
 import { ModeRow } from '../../src/components/ModeRow';
 import { Row, RowSeparator, ToggleRow } from '../../src/components/Row';
 import { Screen } from '../../src/components/Screen';
-import { StatTile } from '../../src/components/StatTile';
 import {
   formatDuration,
   formatUptime,
@@ -52,24 +52,17 @@ export default function DashboardScreen() {
   }
 
   const tint = STATE_TINT[status.state];
-  const tintValue =
-    status.state === 'charging'
-      ? theme.success?.val
-      : status.state === 'discharging'
-        ? theme.warning?.val
-        : theme.muted?.val;
-
   const storedWh = (status.level / 100) * status.capacityWh;
+  const waitingForDevice = status.link.mode === 'device' && status.link.state !== 'connected';
+
   const eta =
     status.state === 'charging'
       ? `Full in ${formatDuration(status.minutesToFull)}`
       : status.state === 'discharging'
-        ? `${formatDuration(status.minutesRemaining)} remaining`
+        ? `${formatDuration(status.minutesRemaining)} of runtime left`
         : status.chargeBookingMinutes > 0
           ? `Charging deferred ${formatDuration(status.chargeBookingMinutes)}`
-          : 'No load';
-
-  const waitingForDevice = status.link.mode === 'device' && status.link.state !== 'connected';
+          : 'Idle — no load';
 
   return (
     <Screen title={status.name} subtitle={status.model}>
@@ -82,66 +75,43 @@ export default function DashboardScreen() {
             </Text>
           </XStack>
           <Text fontSize={12} color="$muted" lineHeight={18}>
-            The API is up but no station has connected to the MQTT broker yet. Point
-            mqtt.sydpower.com at this machine and power-cycle the P280.
+            The API is up but the station has not connected yet.
           </Text>
         </Card>
       ) : null}
 
-      {/* State of charge */}
-      <Card gap="$4">
-        <XStack alignItems="flex-start" justifyContent="space-between">
-          <YStack>
-            <XStack alignItems="baseline" gap="$1">
-              <Text fontSize={56} fontWeight="800" letterSpacing={-2.5} color="$color">
-                {Math.round(status.level)}
-              </Text>
-              <Text fontSize={24} fontWeight="700" color="$muted">
-                %
-              </Text>
-            </XStack>
-            <Text fontSize={13} color="$muted">
-              {formatWh(storedWh)} of {formatWh(status.capacityWh)}
-            </Text>
-          </YStack>
+      {/* The centrepiece: where power is coming from and going, live. */}
+      <Card paddingVertical="$3" paddingHorizontal="$2" gap="$2">
+        <EnergyFlow status={status} />
 
-          <XStack
-            alignItems="center"
-            gap="$2"
-            paddingHorizontal="$3"
-            paddingVertical="$2"
-            borderRadius={999}
-            backgroundColor="$backgroundStrong"
-            borderWidth={1}
-            borderColor="$borderColor"
-          >
-            <Feather
-              name={
-                status.state === 'charging'
-                  ? 'zap'
-                  : status.state === 'discharging'
-                    ? 'battery'
-                    : 'pause'
-              }
-              size={13}
-              color={tintValue}
-            />
-            <Text fontSize={12} fontWeight="700" color={tint}>
-              {STATE_LABELS[status.state]}
-            </Text>
-          </XStack>
-        </XStack>
-
-        <ChargeMeter
-          level={status.level}
-          chargeLimit={settings?.chargeLimit ?? 100}
-          state={status.state}
-        />
-
-        <Text fontSize={13} color="$muted">
-          {eta}
-        </Text>
+        <YStack alignItems="center" gap="$1" paddingBottom="$2">
+          <Text fontSize={13} color={tint} fontWeight="700">
+            {eta}
+          </Text>
+          <Text fontSize={12} color="$muted">
+            {formatWh(storedWh)} of {formatWh(status.capacityWh)}
+            {settings && settings.chargeLimit < 100
+              ? ` · AC charges to ${settings.chargeLimit}%`
+              : ''}
+          </Text>
+        </YStack>
       </Card>
+
+      {/* Totals, big enough to read across a room. */}
+      <XStack gap="$3">
+        <FlowTile
+          icon="arrow-down-circle"
+          label="INPUT"
+          watts={status.totalInputWatts}
+          tone={status.totalInputWatts > 0 ? '$success' : '$muted'}
+        />
+        <FlowTile
+          icon="arrow-up-circle"
+          label="OUTPUT"
+          watts={status.totalOutputWatts}
+          tone={status.totalOutputWatts > 0 ? '$warning' : '$muted'}
+        />
+      </XStack>
 
       {/* Expansion packs — the P280 takes up to four */}
       {status.expansionSoc.length > 0 ? (
@@ -162,28 +132,6 @@ export default function DashboardScreen() {
         </YStack>
       ) : null}
 
-      {/* Power flow */}
-      <XStack gap="$3" flexWrap="wrap">
-        <StatTile
-          icon="zap"
-          label="AC IN"
-          value={formatWatts(status.acInputWatts)}
-          tone={status.acInputWatts > 0 ? 'success' : 'muted'}
-        />
-        <StatTile
-          icon="sun"
-          label="SOLAR IN"
-          value={formatWatts(status.solarInputWatts)}
-          tone={status.solarInputWatts > 0 ? 'success' : 'muted'}
-        />
-        <StatTile
-          icon="upload"
-          label="OUTPUT"
-          value={formatWatts(status.totalOutputWatts)}
-          tone={status.totalOutputWatts > 0 ? 'warning' : 'muted'}
-        />
-      </XStack>
-
       {/* Output ports. The light has four modes, so it gets a selector rather
           than a switch, which would collapse SOS and flash into "on". */}
       <YStack gap="$2">
@@ -196,7 +144,9 @@ export default function DashboardScreen() {
                 <ModeRow
                   title={port.label}
                   subtitle={
-                    port.enabled ? `${LED_LABELS[settings?.ledMode ?? 'off']} · ${formatWatts(port.watts)}` : 'Off'
+                    port.enabled
+                      ? `${LED_LABELS[settings?.ledMode ?? 'off']} · ${formatWatts(port.watts)}`
+                      : 'Off'
                   }
                   value={settings?.ledMode ?? 'off'}
                   options={LED_MODE_OPTIONS}
@@ -305,6 +255,37 @@ export default function DashboardScreen() {
         </YStack>
       ) : null}
     </Screen>
+  );
+}
+
+function FlowTile({
+  icon,
+  label,
+  watts,
+  tone,
+}: {
+  icon: React.ComponentProps<typeof Feather>['name'];
+  label: string;
+  watts: number;
+  tone: string;
+}) {
+  const theme = useTheme();
+  return (
+    <Card flex={1} gap="$2" paddingVertical="$3">
+      <XStack alignItems="center" gap="$2">
+        <Feather name={icon} size={13} color={theme.muted?.val} />
+        <Text fontSize={11} color="$muted" fontWeight="700" letterSpacing={0.6}>
+          {label}
+        </Text>
+      </XStack>
+      <AnimatedNumber
+        value={watts}
+        format={(v) => formatWatts(v)}
+        fontSize={26}
+        fontWeight="800"
+        color={tone}
+      />
+    </Card>
   );
 }
 

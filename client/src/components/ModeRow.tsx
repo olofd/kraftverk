@@ -28,14 +28,11 @@ export function ModeRow<T extends string | number>({
   onChange,
 }: Props<T>) {
   return (
-    <YStack
-      paddingHorizontal="$4"
-      paddingVertical="$3"
-      gap="$3"
-      opacity={disabled ? 0.45 : 1}
-      $gtXs={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-    >
-      <YStack flex={1} gap={2}>
+    // Always stacked. A side-by-side layout looked tidier with two options but
+    // clipped the title once a control had five, so the label always gets its
+    // own line and the options share the full width below it.
+    <YStack paddingHorizontal="$4" paddingVertical="$3" gap="$3" opacity={disabled ? 0.45 : 1}>
+      <YStack gap={2}>
         <Text fontSize={15} fontWeight="600" color="$color">
           {title}
         </Text>
@@ -52,9 +49,12 @@ export function ModeRow<T extends string | number>({
           return (
             <XStack
               key={String(option.value)}
+              // Equal shares, so five options fit a phone without overflowing.
+              flex={1}
+              justifyContent="center"
               role="radio"
               aria-checked={selected}
-              paddingHorizontal="$3"
+              paddingHorizontal="$2"
               paddingVertical="$2"
               borderRadius="$2"
               cursor={disabled ? 'default' : 'pointer'}
@@ -72,6 +72,7 @@ export function ModeRow<T extends string | number>({
                 fontSize={13}
                 fontWeight={selected ? '700' : '500'}
                 color={selected ? '$color' : '$muted'}
+                numberOfLines={1}
               >
                 {option.label}
               </Text>
