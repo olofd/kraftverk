@@ -239,6 +239,19 @@ diag.get('/link', (c) =>
 
 diag.get('/traffic', (c) => c.json(broker.recentMessages.map(describeMessage)));
 
+/** What the BLE GATT enumeration actually returned on the last connect. */
+diag.get('/gatt', (c) =>
+  c.json(
+    transport instanceof BleTransport
+      ? {
+          lastError: transport.lastError,
+          attempts: transport.attempts,
+          discovery: transport.lastDiscovery,
+        }
+      : { error: 'Not on the BLE transport' }
+  )
+);
+
 /**
  * Baseline for the register diff.
  *

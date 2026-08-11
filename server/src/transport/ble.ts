@@ -51,9 +51,19 @@ export class BleTransport extends EventEmitter implements Transport {
   #connecting = false;
   #lastError: string | null = null;
   #attempts = 0;
+  /** What the last GATT enumeration actually returned, for diagnostics. */
+  #lastDiscovery: {
+    at: string;
+    services: string[];
+    characteristics: { uuid: string; properties: string[] }[];
+  } | null = null;
 
   get lastError(): string | null {
     return this.#lastError;
+  }
+
+  get lastDiscovery() {
+    return this.#lastDiscovery;
   }
 
   get attempts(): number {
@@ -211,9 +221,35 @@ export class BleTransport extends EventEmitter implements Transport {
   async #openGatt(peripheral: Peripheral): Promise<void> {
     await peripheral.connectAsync();
 
-    const { characteristics } = await peripheral.discoverAllServicesAndCharacteristicsAsync();
+    let { services, characteristics } = await peripheral.discoverAllServicesAndCharacteristicsAsync();
 
     const short = (uuid: string) => uuid.replace(/-/g, '').toLowerCase();
+    /** 1800/1801 are Generic Access and Generic Attribute — every device has them. */
+    const onlyGenericServices = (list: any[]) =>
+      list.every((s: any) => ['1800', '1801'].includes(short(s.uuid).replace(/^0000|0000.*$/g, '')));
+
+    // Windows sometimes returns a partial GATT database on the first pass, and
+    // for an unpaired peripheral it returns only 1800/1801 permanently (WinRT
+    // hides custom services until the device is bonded). A retry costs little
+    // and fixes the transient case; the permanent case is reported below.
+    if (services.length === 0 || onlyGenericServices(services)) {
+      await new Promise((r) => setTimeout(r, 1200));
+      const retry = await peripheral.discoverAllServicesAndCharacteristicsAsync();
+      if (retry.services.length > services.length) {
+        services = retry.services;
+        characteristics = retry.characteristics;
+      }
+    }
+
+    this.#lastDiscovery = {
+      at: new Date().toISOString(),
+      services: services.map((s: any) => s.uuid),
+      characteristics: characteristics.map((c: any) => ({
+        uuid: c.uuid,
+        properties: c.properties ?? [],
+      })),
+    };
+
     const find = (want: string) =>
       characteristics.find((c: any) => {
         const u = short(c.uuid);
@@ -233,11 +269,40 @@ export class BleTransport extends EventEmitter implements Transport {
       }
     }
 
+    // Last resort: any writable characteristic paired with any notifying one,
+    // in the same non-generic service. Covers a vendor layout we don't know.
+    if (!writeChar || !notifyChar) {
+      const vendor = characteristics.filter((c: any) => {
+        const u = short(c.uuid);
+        return !u.startsWith('00002a') && !['1800', '1801'].includes(u);
+      });
+      const w = vendor.find((c: any) =>
+        (c.properties ?? []).some((p: string) => p === 'write' || p === 'writeWithoutResponse')
+      );
+      const n = vendor.find((c: any) =>
+        (c.properties ?? []).some((p: string) => p === 'notify' || p === 'indicate')
+      );
+      if (w && n) {
+        console.log(
+          `[ble] unknown GATT layout; using write=${w.uuid} notify=${n.uuid} by capability`
+        );
+        writeChar = w;
+        notifyChar = n;
+      }
+    }
+
     if (!writeChar || !notifyChar) {
       await peripheral.disconnectAsync().catch(() => {});
-      const seen = characteristics.map((c: any) => c.uuid).join(', ');
+      const svc = services.map((s: any) => s.uuid).join(', ') || 'none';
+      const chr = characteristics.map((c: any) => c.uuid).join(', ') || 'none';
+      const generic = onlyGenericServices(services);
       throw new Error(
-        `Device exposes neither known GATT layout. Characteristics found: ${seen || 'none'}`
+        generic
+          ? `Only the standard GATT services are visible (${svc}). On Windows this means the ` +
+            `device is not paired: WinRT hides custom services from unpaired peripherals, so ` +
+            `1800/1801 is all we ever get. Pair the station in Settings > Bluetooth & devices > ` +
+            `Add device, then retry.`
+          : `No usable characteristics. Services: ${svc}. Characteristics: ${chr}`
       );
     }
 
