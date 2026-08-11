@@ -5,13 +5,13 @@
   "type": "module",
   "module": "src/index.ts",
   "scripts": {
-    "dev": "bun --hot src/index.ts",
-    "dev:device": "bun --hot src/index.ts --driver=device --read-only",
-    "dev:device:write": "bun --hot src/index.ts --driver=device",
-    "dev:ble": "bun --hot src/index.ts --driver=ble --read-only",
-    "dev:ble:write": "bun --hot src/index.ts --driver=ble",
-    "start": "bun src/index.ts",
-    "test": "bun test",
+    "dev": "node ../scripts/run-bun.mjs --hot src/index.ts",
+    "dev:device": "node ../scripts/run-bun.mjs --hot src/index.ts --driver=device --read-only",
+    "dev:device:write": "node ../scripts/run-bun.mjs --hot src/index.ts --driver=device",
+    "dev:ble": "node ../scripts/run-bun.mjs --hot src/index.ts --driver=ble --read-only",
+    "dev:ble:write": "node ../scripts/run-bun.mjs --hot src/index.ts --driver=ble",
+    "start": "node ../scripts/run-bun.mjs src/index.ts",
+    "test": "node ../scripts/run-bun.mjs test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
