@@ -1,12 +1,25 @@
 import { describe, expect, test } from 'bun:test';
 
-import { DeviceDriver, ReadOnlyError } from './device.ts';
-import { HOLDING, UnsafeWriteError } from '../protocol/registers.ts';
-import type { ParsedFrame } from '../protocol/modbus.ts';
-import type { DiscoveredDevice, Transport } from '../transport/types.ts';
+import {
+  ReadOnlyError,
+  StationClient,
+  type DiscoveredDevice,
+  type StationTransport,
+} from './client.ts';
+import type { ParsedFrame } from './modbus.ts';
+import { HOLDING, UnsafeWriteError } from './registers.ts';
+
+/**
+ * The read-only guard and the write whitelist, tested where they now live.
+ *
+ * These used to cover the server's device driver. They did not move because the
+ * file did: the same class is what the app runs when it connects to a station
+ * directly over Bluetooth, so this is now the only implementation of "which
+ * writes are allowed" in the repo, and the only place it needs proving.
+ */
 
 /** Records every frame that reaches the wire, and never answers. */
-class SpyTransport implements Transport {
+class SpyTransport implements StationTransport {
   readonly kind = 'mqtt' as const;
   sent: Uint8Array[] = [];
   boundId: string | null = 'AABBCCDDEEFF';
@@ -36,20 +49,20 @@ class SpyTransport implements Transport {
 describe('read-only mode', () => {
   test('refuses a setting write and sends nothing to the station', async () => {
     const transport = new SpyTransport();
-    const driver = new DeviceDriver({ transport, readOnly: true });
+    const client = new StationClient({ transport, readOnly: true });
 
-    await expect(driver.applySettings({ chargeLimit: 80 })).rejects.toBeInstanceOf(ReadOnlyError);
+    await expect(client.applySettings({ chargeLimit: 80 })).rejects.toBeInstanceOf(ReadOnlyError);
     expect(transport.sent).toHaveLength(0);
   });
 
   test('records what was blocked, so it is visible in diagnostics', async () => {
     const transport = new SpyTransport();
-    const driver = new DeviceDriver({ transport, readOnly: true });
+    const client = new StationClient({ transport, readOnly: true });
 
-    await driver.applySettings({ chargeLimit: 80 }).catch(() => {});
+    await client.applySettings({ chargeLimit: 80 }).catch(() => {});
 
-    expect(driver.blockedWrites).toHaveLength(1);
-    expect(driver.blockedWrites[0]).toMatchObject({
+    expect(client.blockedWrites).toHaveLength(1);
+    expect(client.blockedWrites[0]).toMatchObject({
       register: HOLDING.AC_CHARGING_UPPER_LIMIT,
       value: 800,
     });
@@ -57,29 +70,29 @@ describe('read-only mode', () => {
 
   test('an unsafe value is still reported as unsafe, not merely blocked', async () => {
     const transport = new SpyTransport();
-    const driver = new DeviceDriver({ transport, readOnly: true });
+    const client = new StationClient({ transport, readOnly: true });
 
     // sleepMinutes 0 bricks the device. It must fail the whitelist, not the
     // read-only check, so the reason survives if read-only is ever turned off.
-    await expect(
-      driver.applySettings({ sleepMinutes: 0 as never })
-    ).rejects.toBeInstanceOf(UnsafeWriteError);
+    await expect(client.applySettings({ sleepMinutes: 0 as never })).rejects.toBeInstanceOf(
+      UnsafeWriteError
+    );
     expect(transport.sent).toHaveLength(0);
   });
 
   test('a port toggle is blocked too', async () => {
     const transport = new SpyTransport();
-    const driver = new DeviceDriver({ transport, readOnly: true });
+    const client = new StationClient({ transport, readOnly: true });
 
-    await expect(driver.setPort('usb', true)).rejects.toBeInstanceOf(ReadOnlyError);
+    await expect(client.setPort('usb', true)).rejects.toBeInstanceOf(ReadOnlyError);
     expect(transport.sent).toHaveLength(0);
   });
 
   test('writes are allowed when read-only is off', async () => {
     const transport = new SpyTransport();
-    const driver = new DeviceDriver({ transport, readOnly: false });
+    const client = new StationClient({ transport, readOnly: false });
 
-    await driver.applySettings({ chargeLimit: 80 }).catch(() => {});
+    await client.applySettings({ chargeLimit: 80 }).catch(() => {});
     expect(transport.sent.length).toBeGreaterThan(0);
   });
 });

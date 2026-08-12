@@ -15,8 +15,16 @@ import {
   formatWh,
   STATE_TINT,
 } from '../../src/lib/format';
-import type { LedMode } from '../../src/lib/types';
+import type { LedMode, TransportKind } from '../../src/lib/types';
 import { useStation } from '../../src/state/StationProvider';
+
+/** How each link describes itself. The app can hold two of these four itself. */
+const TRANSPORT_LABELS: Partial<Record<TransportKind, string>> = {
+  mqtt: 'Local MQTT over WiFi',
+  ble: 'Bluetooth LE, via the server',
+  'direct-web-ble': 'Bluetooth LE, straight from this browser',
+  'direct-native-ble': 'Bluetooth LE, straight from this device',
+};
 
 /** All four values confirmed against a real P280: 0 off, 1 on, 2 SOS, 3 flash. */
 const LED_MODE_OPTIONS = [
@@ -34,16 +42,30 @@ const LED_LABELS: Record<LedMode, string> = {
 };
 
 export default function DashboardScreen() {
-  const { status, settings, version, apiBaseUrl, togglePort, updateSettings } = useStation();
+  const { status, settings, version, apiBaseUrl, source, direct, togglePort, updateSettings } =
+    useStation();
   const theme = useTheme();
 
   if (!status) {
+    // On a direct link there is nothing to wait for until a station is picked,
+    // so say what to do rather than spinning at a server that isn't involved —
+    // unless we are busy reconnecting to the one from last time.
+    const waitingOnDirect = source === 'direct' && !direct.resuming;
+
     return (
       <Screen title="Dashboard">
         <Card alignItems="center" paddingVertical="$8" gap="$4">
-          <Spinner size="large" color="$accent" />
-          <Text color="$muted" fontSize={13}>
-            Connecting to {apiBaseUrl}
+          {waitingOnDirect ? (
+            <Feather name="bluetooth" size={22} color={theme.muted?.val} />
+          ) : (
+            <Spinner size="large" color="$accent" />
+          )}
+          <Text color="$muted" fontSize={13} textAlign="center" lineHeight={19}>
+            {source === 'server'
+              ? `Connecting to ${apiBaseUrl}`
+              : direct.resuming
+                ? `Reconnecting to ${direct.remembered?.name ?? 'your station'}…`
+                : 'No station connected.\nOpen Devices to connect over Bluetooth.'}
           </Text>
         </Card>
       </Screen>
@@ -74,7 +96,9 @@ export default function DashboardScreen() {
             </Text>
           </XStack>
           <Text fontSize={12} color="$muted" lineHeight={18}>
-            The API is up but the station has not connected yet.
+            {source === 'direct'
+              ? 'The Bluetooth link is open but no telemetry has arrived yet.'
+              : 'The API is up but the station has not connected yet.'}
           </Text>
         </Card>
       ) : null}
@@ -221,9 +245,7 @@ export default function DashboardScreen() {
             subtitle={
               status.link.mode !== 'device'
                 ? 'Built-in simulator'
-                : status.link.transport === 'ble'
-                  ? 'Bluetooth LE'
-                  : 'Local MQTT over WiFi'
+                : (TRANSPORT_LABELS[status.link.transport ?? 'mqtt'] ?? 'Bluetooth LE')
             }
             accessory={
               <Value>{status.link.mode === 'device' ? status.link.state : 'simulated'}</Value>
@@ -232,20 +254,29 @@ export default function DashboardScreen() {
           {status.link.mac ? (
             <>
               <RowSeparator />
-              <Row title="Device" accessory={<Value>{status.link.mac}</Value>} />
+              <Row
+                title="Station"
+                subtitle={source === 'direct' ? 'Connected by this app' : undefined}
+                accessory={<Value>{direct.remembered?.name ?? status.link.mac}</Value>}
+              />
             </>
           ) : null}
-          <RowSeparator />
-          <Row
-            title="Server"
-            subtitle={version?.runtime}
-            accessory={<Value>{version ? `v${version.version}` : '—'}</Value>}
-          />
-          <RowSeparator />
-          <Row
-            title="Uptime"
-            accessory={<Value>{version ? formatUptime(version.uptimeSeconds) : '—'}</Value>}
-          />
+          {/* There is no server to report on when the app holds the link itself. */}
+          {source === 'server' ? (
+            <>
+              <RowSeparator />
+              <Row
+                title="Server"
+                subtitle={version?.runtime}
+                accessory={<Value>{version ? `v${version.version}` : '—'}</Value>}
+              />
+              <RowSeparator />
+              <Row
+                title="Uptime"
+                accessory={<Value>{version ? formatUptime(version.uptimeSeconds) : '—'}</Value>}
+              />
+            </>
+          ) : null}
         </Card>
       </YStack>
 

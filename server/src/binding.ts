@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
-import type { TransportKind } from './transport/types.ts';
+import type { ServerTransportKind } from './transport/types.ts';
 
 /**
  * Remembers which station the user chose, so a restart reconnects to the same
@@ -10,7 +10,7 @@ import type { TransportKind } from './transport/types.ts';
 
 const FILE = resolve(import.meta.dirname, '../data/binding.json');
 
-export type Binding = { kind: TransportKind; id: string; boundAt: string };
+export type Binding = { kind: ServerTransportKind; id: string; boundAt: string };
 
 export async function loadBinding(): Promise<Binding | null> {
   try {

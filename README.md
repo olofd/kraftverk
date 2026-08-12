@@ -93,6 +93,10 @@ Additional cautions:
   timeout, light modes, and every output port.
 - **Two transports** — a local MQTT broker the station connects to instead of
   the vendor cloud, or a direct Bluetooth LE link. Both carry identical frames.
+- **Or no server at all** — the app can hold the Bluetooth link itself, from a
+  browser over Web Bluetooth or from an iPhone. Pick it under **Devices ▸
+  Connection**. It runs the same protocol code the server does, so the readings
+  and the write guards are identical either way.
 - **Protocol diagnostics** — full register dumps, a snapshot/diff workflow for
   identifying unknown registers, and a live frame log.
 - **A simulator**, so the app is fully usable with no hardware present.
@@ -112,12 +116,17 @@ brands. **Search for "Sydpower" and "Fossibot", not AFERIY.**
 
 The station is a **MODBUS RTU slave at address `0x11`**, reachable two ways:
 
-| Transport | How it reaches the device | Requires |
+| Transport | Who holds the link | Requires |
 | --- | --- | --- |
-| `mqtt` | The station connects to a broker embedded in this server | Redirecting `mqtt.sydpower.com` to your machine |
-| `ble` | Direct Bluetooth LE GATT connection | A Bluetooth adapter on the server machine |
+| `mqtt` | The server — the station connects to a broker embedded in it | Redirecting `mqtt.sydpower.com` to your machine |
+| `ble` | The server — Bluetooth LE GATT | A Bluetooth adapter on the server machine |
+| Web Bluetooth | The browser, directly | Chrome or Edge, on `localhost` or HTTPS |
+| react-native-ble-plx | The phone, directly | An iOS/Android development build (see below) |
 
-Both carry byte-identical frames, so one codec and one register map serve both.
+Every one of them carries byte-identical frames, so a single codec, a single
+register map and a single write whitelist serve all four. They live in
+`packages/protocol`, which the server and the app both import — the app is not
+a thin client that trusts the server's decoding, it contains the same decoder.
 
 ### The detail that will cost you a day
 
@@ -223,6 +232,71 @@ npm run dev:ble
 time, and while the phone holds it, Windows sees only the generic GATT services
 and the vendor service is invisible. Pairing is *not* required.
 
+### Connecting from the app itself, with no server
+
+Open **Devices**, switch **Connection** to **This device**, and pick the station.
+Nothing else needs to be running — this path does not use the API at all.
+
+- **In a browser**: Chrome or Edge, on `localhost` or over HTTPS. The browser
+  shows its own device chooser; a page is not allowed to scan. Safari and
+  Firefox have no Web Bluetooth and the screen says so rather than failing at a
+  tap.
+
+  Two refusals come from the browser rather than from this app, and both look
+  like a bug here if you do not know them:
+
+  - **"Web Bluetooth API globally disabled."** The feature is switched off.
+    Brave ships it that way — enable `brave://flags/#brave-web-bluetooth-api`.
+    On Chrome or Edge check `chrome://flags/#enable-web-bluetooth`, and
+    `chrome://policy` for a `DefaultWebBluetoothGuardSetting` set by an
+    organisation. The Devices screen now asks the browser up front and shows
+    this instead of leaving you to discover it at the tap.
+  - **The chooser closes instantly, reporting "User cancelled".** Browsers
+    embedded inside another app usually have no chooser UI, so Chromium cancels
+    on your behalf. Open the app in a real Chrome or Edge window.
+- **On a phone**: needs a development build, because Bluetooth is a native
+  module and Expo Go cannot load one.
+
+  ```bash
+  npm install react-native-ble-plx --workspace client
+  ```
+
+  Then add the usage strings iOS requires (`NSBluetoothAlwaysUsageDescription`)
+  to `client/app.json` and run `npx expo run:ios`. Without the library the app
+  still builds and runs — Metro resolves it to nothing and the screen explains
+  what is missing.
+
+### Coming back to the same station
+
+The app remembers which station it last held a link to, and how. On the next
+launch it goes straight back to it:
+
+- **Silently, when the platform allows it.** A browser can only reconnect to a
+  device it still holds permission for — `navigator.bluetooth.getDevices()` is
+  what reveals that, and where Chrome keeps those permissions the reconnect
+  needs no interaction at all. On a phone the app scans for the remembered
+  peripheral id and connects when it appears.
+- **Otherwise in one tap.** The station appears under **Last used** with a
+  Reconnect button, and the chooser it opens is filtered to that station alone,
+  so it is a single click rather than a second hunt through the list.
+
+Two deliberate refusals to be clever:
+
+- **Disconnecting on purpose stops the automatic reconnect.** The station stays
+  on file for one-tap use, but a refreshed tab will not take the link back —
+  these units accept one connection, and grabbing it would lock out whatever
+  you just handed it to.
+- **"Allow writes" is never remembered.** Every launch starts read-only.
+
+Writes are **refused by default** on a direct connection, exactly as they are in
+the server's hardware modes. Turn them on deliberately with the switch on the
+same screen. The whitelist and the brick-value guard apply regardless — they are
+in the shared protocol package, not in either front end.
+
+The single-connection rule still bites: while the app holds the link, the server
+cannot have it, and vice versa. Switching **Connection** back to **Server**
+drops the app's link for that reason.
+
 ---
 
 ## API
@@ -285,26 +359,37 @@ Two things that workflow taught us, worth knowing before you trust a hypothesis:
 npm test
 ```
 
-56 tests covering frame construction, response parsing and telemetry decoding
+60 tests covering frame construction, response parsing and telemetry decoding
 against captured traffic from real hardware, plus the write-safety whitelist and
-the behaviours confirmed on a P280.
+the behaviours confirmed on a P280. They live with the protocol package, so they
+cover every link equally — a direct Bluetooth connection from the app runs the
+code these tests exercise.
 
 ---
 
 ## Project layout
 
 ```
+packages/protocol/       everything that knows the protocol (+ tests)
+  src/modbus.ts          framing and the big-endian CRC
+  src/registers.ts       register map, decoding, write whitelist
+  src/station.ts         registers -> the model the UI renders
+  src/client.ts          poll loop, write guard, transport interface
+  src/ble.ts             GATT layout and frame reassembly, stack-agnostic
 client/                  Expo app (iOS + web)
   app/(tabs)/            dashboard, settings, devices, protocol
   src/components/        EnergyFlow, Card, Row, ModeRow, …
+  src/link/              the app's own Bluetooth transports
   src/state/             one poll loop for the whole app
 server/
-  src/protocol/          modbus codec + register map (+ tests)
   src/transport/         mqtt and ble transports
   src/drivers/           device driver, simulator
 docs/P280-FINDINGS.md    evidence log: confirmed vs. assumed
 docs/PROJECT-BRIEF.md    long-term plan and architecture brief
 ```
+
+`packages/protocol` is imported as TypeScript source with no build step, by both
+the server (under Bun) and the app (through Metro).
 
 ---
 

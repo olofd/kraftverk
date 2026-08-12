@@ -1,29 +1,33 @@
+import type { DiscoveredDevice, LinkMode, TransportKind } from '@kraftverk/protocol';
+
 /**
- * Mirrors `server/src/types.ts`.
+ * The station's shape comes from `@kraftverk/protocol`, the same package the
+ * server decodes with — and the same one this app runs directly when it talks
+ * to a station over Bluetooth itself. There is no second copy to drift.
  *
- * Hand-written rather than a cross-workspace import so Metro never resolves
- * outside `client/`.
+ * What is declared here is the server's HTTP surface: the envelopes around
+ * those shapes, which only exist when there is a server in the middle.
  */
+export type {
+  DiscoveredDevice,
+  FirmwareVersions,
+  RegisterDump,
+  RegisterRow,
+  LedMode,
+  LinkMode,
+  LinkState,
+  PortId,
+  PortState,
+  StationSettings,
+  StationSettingsPatch,
+  StationState,
+  StationStatus,
+  TransportKind,
+  VersionInfo,
+} from '@kraftverk/protocol';
 
-export type PortId = 'ac' | 'dc' | 'usb' | 'led';
-export type LedMode = 'off' | 'on' | 'sos' | 'flash';
-export type StationState = 'charging' | 'discharging' | 'idle' | 'standby';
-export type LinkMode = 'device' | 'simulator';
-export type LinkState = 'connected' | 'waiting' | 'offline';
-export type TransportKind = 'mqtt' | 'ble';
-
-export type DiscoveredDevice = {
-  id: string;
-  kind: TransportKind;
-  name: string;
-  mac: string | null;
-  rssi?: number;
-  firstSeen: string;
-  lastSeen: string;
-  bound: boolean;
-  /** Identified as a power station. Others are only bindable deliberately. */
-  likelyStation: boolean;
-};
+/** A discovered device as `/api/devices` reports it: bound or not. */
+export type BoundableDevice = DiscoveredDevice & { bound: boolean };
 
 export type DeviceList = {
   transport: TransportKind | null;
@@ -33,103 +37,19 @@ export type DeviceList = {
   /** BLE only: why the last connect attempt failed, and how many were made. */
   lastError: string | null;
   attempts: number | null;
-  devices: DiscoveredDevice[];
+  devices: BoundableDevice[];
 };
 
-export type StationSettings = {
-  chargeLimit: number;
-  dischargeFloor: number;
-  /** Stored on the device as a step 1-5; on a P280 those are these watts. */
-  acChargingWatts: 600 | 900 | 1200 | 1500 | 1800;
-  /** Changing this also moves maxChargingCurrent on the device. */
-  dcInputType: 'pv' | 'dc';
-  maxChargingCurrent: number;
-  acSilentCharging: boolean;
-  stopChargeAfterMinutes: number;
-  ledMode: LedMode;
-  keySound: boolean;
-  usbStandbyMinutes: 0 | 3 | 5 | 10 | 30;
-  acStandbyMinutes: 0 | 480 | 960 | 1440;
-  dcStandbyMinutes: 0 | 480 | 960 | 1440;
-  screenRestSeconds: 0 | 180 | 300 | 600 | 1800;
-  /** Never 0 — that value permanently bricks the device. */
-  sleepMinutes: 5 | 10 | 30 | 480;
-  temperatureUnit: 'C' | 'F';
-};
-
-export type StationSettingsPatch = Partial<StationSettings>;
-
-export type PortState = {
-  id: PortId;
-  label: string;
-  enabled: boolean;
-  watts: number;
-};
-
-/** `controllerA`/`controllerB` are BMS and PV — which is which is unresolved. */
-export type FirmwareVersions = {
-  ac: string;
-  controllerA: string;
-  controllerB: string;
-  panel: string;
-};
-
-export type StationStatus = {
-  name: string;
-  model: string;
-  firmware: FirmwareVersions | null;
-  state: StationState;
-  link: {
-    mode: LinkMode;
-    state: LinkState;
-    transport?: TransportKind;
-    mac: string | null;
-    lastSeen: string | null;
-  };
-
-  level: number;
-  expansionSoc: number[];
-  capacityWh: number;
-
-  gridConnected: boolean;
-  solarConnected: boolean;
-
-  acInputWatts: number;
-  solarInputWatts: number;
-  totalInputWatts: number;
-  totalOutputWatts: number;
-
-  acInputVolts: number;
-  acInputHz: number;
-  acOutputVolts: number;
-  acOutputHz: number;
-
-  minutesToFull: number | null;
-  minutesRemaining: number | null;
-  chargeBookingMinutes: number;
-
-  ports: PortState[];
-  lastUpdated: string;
-};
-
-export type VersionInfo = {
-  name: string;
-  version: string;
-  runtime: string;
-  startedAt: string;
-  uptimeSeconds: number;
-  link: LinkMode;
-  transport?: TransportKind;
-  /** True when the server is refusing every write to the station. */
-  readOnly: boolean;
-};
-
+/** `GET /api/diagnostics/link`, as the server actually sends it. */
 export type LinkDiagnostics = {
   driver: LinkMode;
+  transport: TransportKind | null;
   brokerListening: boolean;
   mqtt: { host: string; port: number };
-  devices: { mac: string; lastSeen: string }[];
-  configuredMac: string | null;
+  devices: BoundableDevice[];
+  boundId: string | null;
+  connected: boolean;
+  configuredId: string | null;
 };
 
 export type TrafficEntry = {

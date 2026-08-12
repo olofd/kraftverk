@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "workspaces": [
+    "packages/*",
     "client",
     "server"
   ],
@@ -26,12 +27,12 @@
     "server:ble": "npm run dev:ble --workspace server",
     "server:ble:write": "npm run dev:ble:write --workspace server",
     "free-ports": "kill-port 3333 1883 8081",
-    "test": "npm run test --workspace server",
+    "test": "npm run test --workspace @kraftverk/protocol",
     "web": "npm run web --workspace client",
     "ios": "npm run ios --workspace client",
     "android": "npm run android --workspace client",
     "start": "npm run start --workspace client",
-    "typecheck": "npm run typecheck --workspace client && npm run typecheck --workspace server"
+    "typecheck": "npm run typecheck --workspace @kraftverk/protocol && npm run typecheck --workspace client && npm run typecheck --workspace server"
   },
   "devDependencies": {
     "concurrently": "^10.0.4",

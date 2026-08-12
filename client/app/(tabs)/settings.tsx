@@ -93,15 +93,17 @@ function nearestDelay(minutes: number): (typeof CHARGE_DELAYS)[number]['value'] 
 }
 
 export default function SettingsScreen() {
-  const { settings, status, version, apiBaseUrl, updateSettings } = useStation();
+  const { settings, status, version, apiBaseUrl, source, direct, updateSettings } = useStation();
 
   if (!settings) {
     return (
       <Screen title="Settings">
         <Card alignItems="center" paddingVertical="$8" gap="$4">
-          <Spinner size="large" color="$accent" />
-          <Text color="$muted" fontSize={13}>
-            Loading settings from {apiBaseUrl}
+          {source === 'server' ? <Spinner size="large" color="$accent" /> : null}
+          <Text color="$muted" fontSize={13} textAlign="center" lineHeight={19}>
+            {source === 'direct'
+              ? 'No station connected.\nOpen Devices to connect over Bluetooth.'
+              : `Loading settings from ${apiBaseUrl}`}
           </Text>
         </Card>
       </Screen>
@@ -128,8 +130,10 @@ export default function SettingsScreen() {
             Read-only mode
           </Text>
           <Text fontSize={12} color="$muted" lineHeight={18}>
-            These controls still show what the station reports, but every write is refused. Restart
-            the server without --read-only when you are ready to make changes.
+            These controls still show what the station reports, but every write is refused.{' '}
+            {source === 'direct'
+              ? 'Turn on “Allow writes” under Devices when you are ready to make changes.'
+              : 'Restart the server without --read-only when you are ready to make changes.'}
           </Text>
         </Card>
       ) : null}
@@ -308,11 +312,28 @@ export default function SettingsScreen() {
             onChange={(temperatureUnit) => void updateSettings({ temperatureUnit })}
           />
           <RowSeparator />
-          <Row
-            title="API endpoint"
-            subtitle={apiBaseUrl}
-            accessory={<Text fontSize={13} color="$muted">{simulated ? 'sim' : 'device'}</Text>}
-          />
+          {/* On a direct link there is no API in the picture at all. */}
+          {source === 'direct' ? (
+            <Row
+              title="Connection"
+              subtitle="Straight to the station from this app — no server"
+              accessory={
+                <Text fontSize={13} color="$muted">
+                  {direct.support.label}
+                </Text>
+              }
+            />
+          ) : (
+            <Row
+              title="API endpoint"
+              subtitle={apiBaseUrl}
+              accessory={
+                <Text fontSize={13} color="$muted">
+                  {simulated ? 'sim' : 'device'}
+                </Text>
+              }
+            />
+          )}
         </Card>
       </YStack>
     </Screen>

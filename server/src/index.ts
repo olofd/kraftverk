@@ -16,13 +16,14 @@ import { describeMessage, DeviceBroker } from './mqtt/broker.ts';
 import { BleTransport } from './transport/ble.ts';
 import { MqttTransport } from './transport/mqtt.ts';
 import type { Transport } from './transport/types.ts';
-import { fromHex, parseFrame, toHex } from './protocol/modbus.ts';
 import {
-  HOLDING_NAMES,
-  INPUT_NAMES,
+  describeRegisters,
+  fromHex,
+  parseFrame,
+  toHex,
   UnsafeWriteError,
-  WRITABLE,
-} from './protocol/registers.ts';
+  type RegisterDump,
+} from '@kraftverk/protocol';
 import { PortIdSchema, PortPatchSchema, StationSettingsPatchSchema, type VersionInfo } from './types.ts';
 
 const PORT = Number(process.env.PORT ?? 3333);
@@ -103,7 +104,11 @@ if (DRIVER === 'device' || DRIVER === 'ble') {
         .then(async () => {
           console.log(`Auto-bound to ${found.id}`);
           device?.reset();
-          await saveBinding({ kind: found.kind, id: found.id, boundAt: new Date().toISOString() });
+          await saveBinding({
+            kind: transport!.kind,
+            id: found.id,
+            boundAt: new Date().toISOString(),
+          });
         })
         .catch((error) => console.warn(`Auto-bind failed:`, (error as Error).message));
     }
@@ -346,33 +351,17 @@ diag.get('/registers', async (c) => {
     device.readAllHolding().catch(() => [] as number[]),
   ]);
 
-  const describe = (
-    values: number[],
-    names: Record<number, string>,
-    writable: boolean,
-    before: number[] | undefined
-  ) =>
-    values.map((raw, index) => {
-      const previous = before?.[index];
-      return {
-        register: index,
-        name: names[index] ?? null,
-        raw,
-        hex: raw.toString(16).padStart(4, '0'),
-        asTenths: raw / 10,
-        writable: writable ? (WRITABLE[index] ?? null) : null,
-        previous: previous ?? null,
-        changed: previous !== undefined && previous !== raw,
-      };
-    });
-
-  return c.json({
+  // Shared with the app's own Bluetooth link, so a dump means the same thing
+  // however it was taken.
+  const dump: RegisterDump = {
     mac: device.mac,
     readOnly: device.readOnly,
     baselineAt: baseline?.at ?? null,
-    input: describe(input, INPUT_NAMES, false, baseline?.input),
-    holding: describe(holding, HOLDING_NAMES, true, baseline?.holding),
-  });
+    input: describeRegisters(input, 'input', baseline?.input),
+    holding: describeRegisters(holding, 'holding', baseline?.holding),
+  };
+
+  return c.json(dump);
 });
 
 /**

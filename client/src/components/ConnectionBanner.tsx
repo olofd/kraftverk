@@ -5,10 +5,14 @@ import { useStation } from '../state/StationProvider';
 
 /** Only renders when something is wrong — otherwise it stays out of the way. */
 export function ConnectionBanner() {
-  const { connection, error, apiBaseUrl, refresh } = useStation();
+  const { connection, error, apiBaseUrl, source, refresh } = useStation();
   const theme = useTheme();
 
   if (connection !== 'offline') return null;
+
+  // Blaming the API server is wrong when the app is holding the Bluetooth link
+  // itself — there is no server in that path at all.
+  const direct = source === 'direct';
 
   return (
     <XStack
@@ -20,13 +24,17 @@ export function ConnectionBanner() {
       borderWidth={1}
       borderColor="$danger"
     >
-      <Feather name="wifi-off" size={18} color={theme.danger?.val ?? '#ef4444'} />
+      <Feather
+        name={direct ? 'bluetooth' : 'wifi-off'}
+        size={18}
+        color={theme.danger?.val ?? '#ef4444'}
+      />
       <YStack flex={1} gap={2}>
         <Text fontSize={14} fontWeight="700" color="$danger">
-          Can&apos;t reach the API server
+          {direct ? 'Lost the station' : "Can't reach the API server"}
         </Text>
         <Text fontSize={12} color="$muted">
-          {error ?? apiBaseUrl}
+          {error ?? (direct ? 'The Bluetooth link went quiet' : apiBaseUrl)}
         </Text>
       </YStack>
       <Button size="$2" onPress={() => void refresh()}>

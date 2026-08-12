@@ -31,6 +31,22 @@ export function formatUptime(seconds: number): string {
   return formatDuration(seconds / 60);
 }
 
+/** "just now" / "12 minutes ago" / "yesterday" — for a remembered connection. */
+export function formatAgo(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return 'earlier';
+
+  const minutes = Math.round((Date.now() - then) / 60_000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+
+  const days = Math.round(hours / 24);
+  return days === 1 ? 'yesterday' : `${days} days ago`;
+}
+
 export function formatTemperature(celsius: number, unit: StationSettings['temperatureUnit']) {
   return unit === 'F'
     ? `${Math.round(celsius * 1.8 + 32)}°F`

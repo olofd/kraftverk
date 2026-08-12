@@ -4,6 +4,10 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
+    // `@kraftverk/protocol` is consumed as TypeScript source — it is a
+    // workspace package with no build step — and its own imports carry `.ts`
+    // extensions, so the app has to accept them when it typechecks through it.
+    "allowImportingTsExtensions": true,
     "paths": {
       "@/*": [
         "./src/*"

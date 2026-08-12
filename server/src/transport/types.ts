@@ -1,59 +1,21 @@
-import type { ParsedFrame } from '../protocol/modbus.ts';
-
-export type TransportKind = 'mqtt' | 'ble';
-
-/** Something that looks like a power station, found by a transport. */
-export type DiscoveredDevice = {
-  /** Stable handle for binding. MAC for MQTT, peripheral id for BLE. */
-  id: string;
-  kind: TransportKind;
-  name: string;
-  mac: string | null;
-  /** BLE only. */
-  rssi?: number;
-  firstSeen: string;
-  lastSeen: string;
-  /**
-   * Strong evidence this is actually a power station — a matching advertised
-   * service UUID or device name. Only these are auto-bound; anything else must
-   * be bound deliberately, so we never connect to a stranger's peripheral.
-   */
-  likelyStation: boolean;
-};
+import type { DiscoveredDevice, StationTransport } from '@kraftverk/protocol';
 
 /**
- * A way to exchange MODBUS frames with a station.
- *
- * Both transports carry byte-identical frames — the BLE GATT link and the MQTT
- * bridge speak the same protocol — so everything above this interface is shared.
+ * The transport contract lives in `@kraftverk/protocol`, because the app
+ * implements it too — over Web Bluetooth in the browser and over
+ * react-native-ble-plx on a phone. These aliases keep the server's own
+ * transports reading naturally without a second definition to drift.
  */
-export interface Transport {
-  readonly kind: TransportKind;
+export type { DiscoveredDevice };
 
-  start(): Promise<void>;
-  stop(): Promise<void>;
+/** What the server itself can carry. The app adds the `direct-*` kinds. */
+export type ServerTransportKind = 'mqtt' | 'ble';
 
-  /** Devices seen so far. */
-  discovered(): DiscoveredDevice[];
-
-  /** The device we are currently talking to, if any. */
-  readonly boundId: string | null;
-
-  bind(id: string): Promise<void>;
-  unbind(): Promise<void>;
-
-  /** True when the bound device is reachable right now. */
-  readonly connected: boolean;
-
-  send(frame: Uint8Array): Promise<void>;
-
-  /**
-   * Sends a frame and resolves with the matching response.
-   * `expect` selects which response stream to wait on: telemetry (0x04) or
-   * settings (0x03).
-   */
-  request(frame: Uint8Array, expect: 'input' | 'holding', timeoutMs?: number): Promise<ParsedFrame>;
-
-  onFrame(listener: (frame: ParsedFrame) => void): () => void;
-  onDiscovery(listener: (device: DiscoveredDevice) => void): () => void;
+/**
+ * The shared contract, narrowed to the two links a server can hold. Keeping
+ * `kind` narrow is what lets a saved binding record which transport it belongs
+ * to without having to handle transports only the app can open.
+ */
+export interface Transport extends StationTransport {
+  readonly kind: ServerTransportKind;
 }

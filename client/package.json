@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
+    "@kraftverk/protocol": "*",
     "@tamagui/animations-react-native": "^2.7.4",
     "@tamagui/font-inter": "^2.7.4",
     "axios": "^1.19.0",

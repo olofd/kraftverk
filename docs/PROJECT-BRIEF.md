@@ -68,10 +68,17 @@ Test first with a small non-critical load.
 
 ### Architecture
 
+- `packages/protocol/`: the protocol itself — framing, register map, decoding,
+  the write whitelist and the polling client. No dependencies, no build step.
+  Both the server and the app import it, so there is exactly one implementation
+  of what a register means and which writes are safe.
 - `client/`: Expo / React Native / react-native-web application with Tamagui and
   expo-router. It has Devices, Protocol diagnostics, Settings, and status screens.
+  It can either talk to the server over HTTP, or hold the Bluetooth link itself
+  (Web Bluetooth in a browser, react-native-ble-plx on a phone) and run the
+  shared `StationClient` locally. The user chooses under Devices ▸ Connection.
 - `server/`: Hono API on Bun. It connects to the station over a locally redirected
-  MQTT broker or BLE; the browser/app communicates with this server over HTTP.
+  MQTT broker or BLE, and exposes the same station model over HTTP.
 - Protocol: Sydpower-stack MODBUS RTU frames, carried byte-for-byte by MQTT or BLE.
 - Device: AFERIY P280, a Sydpower-stack model related to Fossibot / BrightEMS.
 
@@ -84,9 +91,12 @@ Key implementation files:
 
 | File | Purpose |
 | --- | --- |
-| `server/src/protocol/modbus.ts` | MODBUS frame build/parse and special CRC handling |
-| `server/src/protocol/registers.ts` | register map, settings decoding, safety whitelist |
-| `server/src/drivers/device.ts` | real-device polling, serialised requests and writes |
+| `packages/protocol/src/modbus.ts` | MODBUS frame build/parse and special CRC handling |
+| `packages/protocol/src/registers.ts` | register map, settings decoding, safety whitelist |
+| `packages/protocol/src/client.ts` | polling, serialised requests, read-only guard, writes |
+| `packages/protocol/src/ble.ts` | GATT layout and frame reassembly, shared by all three BLE stacks |
+| `client/src/link/` | the app's own Web Bluetooth and react-native-ble-plx transports |
+| `server/src/drivers/device.ts` | the shared client, wearing the server's driver interface |
 | `server/src/index.ts` | API, device setup and diagnostics endpoints |
 | `client/app/(tabs)/diagnostics.tsx` | register dump / snapshot / diff UI |
 | `client/app/(tabs)/settings.tsx` | station-settings UI |

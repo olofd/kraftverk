@@ -10,11 +10,27 @@ import {
   fetchRegisters,
   fetchTraffic,
   snapshotRegisters,
-  type RegisterDump,
-  type RegisterRow,
 } from '../../src/lib/api';
-import type { LinkDiagnostics, TrafficEntry } from '../../src/lib/types';
+import type {
+  LinkDiagnostics,
+  RegisterDump,
+  RegisterRow,
+  TrafficEntry,
+} from '../../src/lib/types';
 import { useStation } from '../../src/state/StationProvider';
+
+/**
+ * A button sitting on the page rather than on a card needs its own surface.
+ *
+ * Tamagui's default button background is the same colour as this theme's page
+ * background, and its border is transparent, so these read as plain text —
+ * "Snapshot baseline" looked like a caption rather than the control that drives
+ * the whole register-diff workflow.
+ */
+const SECONDARY = {
+  backgroundColor: '$backgroundStrong',
+  borderColor: '$borderColor',
+} as const;
 
 /**
  * Ground truth for protocol work.
@@ -25,7 +41,7 @@ import { useStation } from '../../src/state/StationProvider';
  * your unit actually reports.
  */
 export default function DiagnosticsScreen() {
-  const { status, version } = useStation();
+  const { status, version, source, direct } = useStation();
   const [link, setLink] = useState<LinkDiagnostics | null>(null);
   const [traffic, setTraffic] = useState<TrafficEntry[]>([]);
   const [registers, setRegisters] = useState<RegisterDump | null>(null);
@@ -33,7 +49,17 @@ export default function DiagnosticsScreen() {
   const [busy, setBusy] = useState(false);
   const [onlyChanged, setOnlyChanged] = useState(false);
 
+  /**
+   * On a direct link the app reads the registers itself, so there is no server
+   * to ask — but the workflow is the same, because both sides build the dump
+   * with the same code from the protocol package.
+   */
+  const isDirect = source === 'direct';
+
   const refresh = useCallback(async () => {
+    // The broker and its traffic log belong to the server; there is nothing to
+    // refresh when the app holds the link.
+    if (isDirect) return;
     setBusy(true);
     try {
       const [nextLink, nextTraffic] = await Promise.all([fetchLinkDiagnostics(), fetchTraffic()]);
@@ -46,7 +72,7 @@ export default function DiagnosticsScreen() {
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [isDirect]);
 
   useEffect(() => {
     void refresh();
@@ -55,7 +81,7 @@ export default function DiagnosticsScreen() {
   const dumpRegisters = useCallback(async () => {
     setBusy(true);
     try {
-      setRegisters(await fetchRegisters());
+      setRegisters(isDirect ? await direct.dump() : await fetchRegisters());
       setError(null);
     } catch (err) {
       const message = describeError(err);
@@ -63,13 +89,17 @@ export default function DiagnosticsScreen() {
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [direct, isDirect]);
 
   const snapshot = useCallback(async () => {
     setBusy(true);
     try {
-      await snapshotRegisters();
-      setRegisters(await fetchRegisters());
+      if (isDirect) {
+        setRegisters(await direct.snapshot());
+      } else {
+        await snapshotRegisters();
+        setRegisters(await fetchRegisters());
+      }
       setOnlyChanged(true);
       setError(null);
     } catch (err) {
@@ -78,9 +108,15 @@ export default function DiagnosticsScreen() {
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [direct, isDirect]);
 
-  const simulated = status?.link.mode === 'simulator';
+  const simulated = !isDirect && status?.link.mode === 'simulator';
+  /** The broker card and the frame log only mean anything on the MQTT link. */
+  const onMqtt = !isDirect && link?.transport === 'mqtt';
+  /** Nothing to dump until there is a station on the other end. */
+  const noStation = isDirect && !direct.connected;
+  /** Dimmed as well as inert: a bright button that ignores taps reads as broken. */
+  const cannotRead = busy || simulated || noStation;
   const readOnly = version?.readOnly ?? false;
 
   return (
@@ -105,44 +141,89 @@ export default function DiagnosticsScreen() {
         </Card>
       ) : null}
 
-      <YStack gap="$2">
-        <SectionLabel>MQTT broker</SectionLabel>
-        <Card inset>
-          <Row
-            title="Driver"
-            accessory={<Mono>{link?.driver ?? '—'}</Mono>}
-            subtitle={simulated ? 'Set STATION_DRIVER=device to talk to hardware' : undefined}
-          />
-          <RowSeparator />
-          <Row
-            title="Listening"
-            accessory={<Mono>{link ? (link.brokerListening ? 'yes' : 'no') : '—'}</Mono>}
-            subtitle={link ? `${link.mqtt.host}:${link.mqtt.port}` : undefined}
-          />
-          <RowSeparator />
-          <Row
-            title="Stations seen"
-            accessory={<Mono>{link?.devices.length ?? 0}</Mono>}
-            subtitle={
-              link?.devices.length
-                ? link.devices.map((d) => d.mac).join(', ')
-                : 'None yet — point mqtt.sydpower.com here and power-cycle the P280'
-            }
-          />
-        </Card>
-      </YStack>
+      {isDirect ? (
+        <YStack gap="$2">
+          <SectionLabel>Link</SectionLabel>
+          <Card inset>
+            <Row
+              title="Reading directly"
+              subtitle="Registers come straight off the Bluetooth link — no server involved"
+              accessory={<Mono>{direct.support.label}</Mono>}
+            />
+            <RowSeparator />
+            <Row
+              title="Station"
+              accessory={<Mono>{direct.connected ? 'connected' : 'none'}</Mono>}
+              subtitle={
+                direct.connected
+                  ? (direct.boundId ?? undefined)
+                  : 'Connect one under Devices to dump its registers'
+              }
+            />
+          </Card>
+        </YStack>
+      ) : (
+        <YStack gap="$2">
+          {/*
+            The broker only exists on the MQTT transport. Showing "Listening:
+            no" during a Bluetooth session made a healthy link look broken, and
+            the empty frame log below it made it look doubly so.
+          */}
+          <SectionLabel>{onMqtt ? 'MQTT broker' : 'Link'}</SectionLabel>
+          <Card inset>
+            <Row
+              title="Driver"
+              accessory={<Mono>{link?.driver ?? '—'}</Mono>}
+              subtitle={simulated ? 'Set STATION_DRIVER=device to talk to hardware' : undefined}
+            />
+            <RowSeparator />
+            {onMqtt ? (
+              <Row
+                title="Listening"
+                accessory={<Mono>{link ? (link.brokerListening ? 'yes' : 'no') : '—'}</Mono>}
+                subtitle={link ? `${link.mqtt.host}:${link.mqtt.port}` : undefined}
+              />
+            ) : (
+              <Row
+                title="Transport"
+                accessory={<Mono>{link?.transport ?? 'simulator'}</Mono>}
+                subtitle={
+                  link?.boundId
+                    ? `${link.boundId}${link.connected ? ' · connected' : ' · not answering'}`
+                    : undefined
+                }
+              />
+            )}
+            <RowSeparator />
+            <Row
+              title="Stations seen"
+              accessory={<Mono>{link?.devices.length ?? 0}</Mono>}
+              subtitle={
+                link?.devices.length
+                  ? link.devices.map((device) => device.name || device.mac || device.id).join(', ')
+                  : onMqtt
+                    ? 'None yet — point mqtt.sydpower.com here and power-cycle the P280'
+                    : 'None yet'
+              }
+            />
+          </Card>
+        </YStack>
+      )}
 
       <XStack gap="$3" flexWrap="wrap">
-        <Button flex={1} size="$3" onPress={() => void refresh()} disabled={busy}>
-          Refresh
-        </Button>
+        {isDirect ? null : (
+          <Button flex={1} size="$3" {...SECONDARY} onPress={() => void refresh()} disabled={busy}>
+            Refresh
+          </Button>
+        )}
         <Button
           flex={1}
           size="$3"
           backgroundColor="$accent"
           color="$background"
           onPress={() => void dumpRegisters()}
-          disabled={busy || simulated}
+          disabled={cannotRead}
+          opacity={cannotRead ? 0.45 : 1}
         >
           Dump registers
         </Button>
@@ -154,14 +235,23 @@ export default function DiagnosticsScreen() {
         hardware it was not derived from.
       */}
       <XStack gap="$3" flexWrap="wrap">
-        <Button flex={1} size="$3" onPress={() => void snapshot()} disabled={busy || simulated}>
+        <Button
+          flex={1}
+          size="$3"
+          {...SECONDARY}
+          onPress={() => void snapshot()}
+          disabled={cannotRead}
+          opacity={cannotRead ? 0.45 : 1}
+        >
           Snapshot baseline
         </Button>
         <Button
           flex={1}
           size="$3"
+          {...SECONDARY}
           onPress={() => setOnlyChanged((v) => !v)}
           disabled={!registers?.baselineAt}
+          opacity={registers?.baselineAt ? 1 : 0.45}
         >
           {onlyChanged ? 'Show all' : 'Show changed only'}
         </Button>
@@ -171,6 +261,7 @@ export default function DiagnosticsScreen() {
         <Text fontSize={12} color="$muted" paddingHorizontal="$1">
           Baseline captured {new Date(registers.baselineAt).toLocaleTimeString()}. Change something
           on the station or in BrightEMS, then dump again to see which registers moved.
+          {isDirect ? ' Held in memory here, so a reload starts over.' : ''}
         </Text>
       ) : null}
 
@@ -191,7 +282,8 @@ export default function DiagnosticsScreen() {
         </>
       ) : null}
 
-      <YStack gap="$2">
+      {/* The frame log is the broker's; the other links have no broker. */}
+      <YStack gap="$2" display={onMqtt ? undefined : 'none'}>
         <SectionLabel>Recent MQTT traffic</SectionLabel>
         <Card inset>
           {traffic.length === 0 ? (

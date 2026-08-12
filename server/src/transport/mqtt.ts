@@ -1,7 +1,8 @@
 import { EventEmitter } from 'node:events';
 
+import type { ParsedFrame } from '@kraftverk/protocol';
+
 import { DeviceBroker } from '../mqtt/broker.ts';
-import type { ParsedFrame } from '../protocol/modbus.ts';
 import type { DiscoveredDevice, Transport } from './types.ts';
 
 /**

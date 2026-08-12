@@ -2,6 +2,10 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import axios from 'axios';
 
+// The dump the server returns is built by the shared package, so its shape is
+// declared there rather than described a second time here.
+import type { RegisterDump } from '@kraftverk/protocol';
+
 import type {
   DeviceList,
   LinkDiagnostics,
@@ -113,25 +117,6 @@ export async function fetchTraffic(signal?: AbortSignal) {
   const { data } = await api.get<TrafficEntry[]>('/diagnostics/traffic', { signal });
   return data;
 }
-
-export type RegisterRow = {
-  register: number;
-  name: string | null;
-  raw: number;
-  hex: string;
-  asTenths: number;
-  previous: number | null;
-  /** Differs from the snapshot baseline. */
-  changed: boolean;
-};
-
-export type RegisterDump = {
-  mac: string | null;
-  readOnly: boolean;
-  baselineAt: string | null;
-  input: RegisterRow[];
-  holding: RegisterRow[];
-};
 
 export async function fetchRegisters(signal?: AbortSignal) {
   const { data } = await api.get<RegisterDump>('/diagnostics/registers', { signal });

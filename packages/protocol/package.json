@@ -1,0 +1,20 @@
+{
+  "name": "@kraftverk/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sydpower-stack MODBUS protocol, register map and station model. Shared by the server and the app so a direct client connection and a server connection decode identically.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node ../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}

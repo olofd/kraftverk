@@ -11,10 +11,10 @@
     "dev:ble": "node ../scripts/run-bun.mjs --hot src/index.ts --driver=ble --read-only",
     "dev:ble:write": "node ../scripts/run-bun.mjs --hot src/index.ts --driver=ble",
     "start": "node ../scripts/run-bun.mjs src/index.ts",
-    "test": "node ../scripts/run-bun.mjs test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@kraftverk/protocol": "*",
     "@stoprocent/noble": "^2.7.1",
     "aedes": "^1.1.1",
     "hono": "^4.13.1",

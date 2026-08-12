@@ -176,6 +176,10 @@ export const FIRMWARE = {
   PANEL: 50,
 } as const;
 
+/**
+ * `controllerA`/`controllerB` are the BMS and the PV controller. Which is which
+ * is unresolved — both read the same version on the unit this was identified on.
+ */
 export type FirmwareVersions = {
   ac: string;
   controllerA: string;
@@ -241,6 +245,14 @@ export const CAPABILITY_BLOCK = {
  */
 export const AC_CHARGING_WATTS = [600, 900, 1200, 1500, 1800] as const;
 export type AcChargingWatts = (typeof AC_CHARGING_WATTS)[number];
+
+/**
+ * LED_MODE register values in order, confirmed on a P280 across all four.
+ * Index is the register value.
+ */
+export const LED_MODE_VALUES = ['off', 'on', 'sos', 'flash'] as const;
+export type LedMode = (typeof LED_MODE_VALUES)[number];
+export type DcInputType = 'pv' | 'dc';
 
 /** Step 1-5 as stored in register 13, from a wattage. */
 export const wattsToChargeRate = (watts: AcChargingWatts): number =>
@@ -469,8 +481,6 @@ export function decodeTelemetry(regs: readonly number[]): DecodedTelemetry {
     chargingBookingMinutes: at(regs, INPUT.AC_CHARGING_BOOKING),
   };
 }
-
-export type DcInputType = 'pv' | 'dc';
 
 export type DecodedSettings = {
   /** AC charging power in watts, resolved from the 1-5 step. */

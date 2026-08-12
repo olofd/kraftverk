@@ -66,9 +66,21 @@ function StatusDot() {
   const { connection } = useStation();
 
   const color =
-    connection === 'online' ? '$success' : connection === 'connecting' ? '$warning' : '$danger';
+    connection === 'online'
+      ? '$success'
+      : connection === 'connecting'
+        ? '$warning'
+        : connection === 'idle'
+          ? '$muted'
+          : '$danger';
   const label =
-    connection === 'online' ? 'Online' : connection === 'connecting' ? 'Connecting' : 'Offline';
+    connection === 'online'
+      ? 'Online'
+      : connection === 'connecting'
+        ? 'Connecting'
+        : connection === 'idle'
+          ? 'Not connected'
+          : 'Offline';
 
   return (
     <XStack alignItems="center" gap="$2" paddingBottom={6}>

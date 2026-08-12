@@ -1,20 +1,40 @@
 import { z } from 'zod';
 
+import type { StationSettings } from '@kraftverk/protocol';
+
 /**
- * The API surface, described once as zod schemas with TypeScript types
- * inferred from them, so validation and types cannot drift apart.
+ * Request validation for the HTTP API.
  *
- * Modelled on the AFERIY P280 (2048Wh, 2800W, expandable to 10.24kWh) and the
- * SYDPOWER register map its firmware exposes.
+ * The *shapes* — `StationStatus`, `StationSettings`, `VersionInfo` — belong to
+ * `@kraftverk/protocol` and are re-exported here, because the app shares them
+ * whether it talks to this server or to a station directly over Bluetooth.
+ * What lives here is the zod layer: the server validates untrusted JSON, which
+ * the package deliberately does not do (it stays dependency-free so it bundles
+ * into the app).
+ *
+ * The two are pinned together by `_SettingsMatch` below, so a value the schema
+ * would accept can never drift from the type the rest of the code relies on.
  */
 
+export type {
+  FirmwareVersions,
+  LedMode,
+  LinkMode,
+  LinkState,
+  PortId,
+  PortState,
+  StationSettings,
+  StationSettingsPatch,
+  StationState,
+  StationStatus,
+  TransportKind,
+  VersionInfo,
+} from '@kraftverk/protocol';
+
 export const PortIdSchema = z.enum(['ac', 'dc', 'usb', 'led']);
-export type PortId = z.infer<typeof PortIdSchema>;
 
 /** Matches the device's LED_MODE holding register. */
 export const LedModeSchema = z.enum(['off', 'on', 'sos', 'flash']);
-export type LedMode = z.infer<typeof LedModeSchema>;
-export const LED_MODES: LedMode[] = ['off', 'on', 'sos', 'flash'];
 
 export const StationSettingsSchema = z.object({
   /** Stop charging at this SOC. Device accepts 60-100%. */
@@ -73,100 +93,12 @@ export const StationSettingsSchema = z.object({
   sleepMinutes: z.union([z.literal(5), z.literal(10), z.literal(30), z.literal(480)]),
   temperatureUnit: z.enum(['C', 'F']),
 });
-export type StationSettings = z.infer<typeof StationSettingsSchema>;
 
 export const StationSettingsPatchSchema = StationSettingsSchema.partial();
-export type StationSettingsPatch = z.infer<typeof StationSettingsPatchSchema>;
 
 export const PortPatchSchema = z.object({ enabled: z.boolean() });
 
-export type PortState = {
-  id: PortId;
-  label: string;
-  enabled: boolean;
-  watts: number;
-};
-
-export type StationState = 'charging' | 'discharging' | 'idle' | 'standby';
-
-/** How the server is currently talking to the station. */
-export type LinkMode = 'device' | 'simulator';
-export type LinkState = 'connected' | 'waiting' | 'offline';
-export type TransportKind = 'mqtt' | 'ble';
-
-export type DiscoveredDevice = {
-  id: string;
-  kind: TransportKind;
-  name: string;
-  mac: string | null;
-  rssi?: number;
-  firstSeen: string;
-  lastSeen: string;
-  bound: boolean;
-};
-
-/**
- * Component firmware versions, read-only.
- *
- * `controllerA` and `controllerB` are the BMS and the PV controller, but which
- * is which is unresolved — both read 1.4 on the unit this was identified on.
- */
-export type FirmwareVersions = {
-  ac: string;
-  controllerA: string;
-  controllerB: string;
-  panel: string;
-};
-
-export type StationStatus = {
-  name: string;
-  model: string;
-  firmware: FirmwareVersions | null;
-  state: StationState;
-  link: {
-    mode: LinkMode;
-    state: LinkState;
-    transport?: TransportKind;
-    mac: string | null;
-    lastSeen: string | null;
-  };
-
-  /** Main pack state of charge, 0-100. */
-  level: number;
-  /** SOC of each attached expansion battery. */
-  expansionSoc: number[];
-  capacityWh: number;
-
-  gridConnected: boolean;
-  solarConnected: boolean;
-
-  acInputWatts: number;
-  solarInputWatts: number;
-  totalInputWatts: number;
-  totalOutputWatts: number;
-
-  acInputVolts: number;
-  acInputHz: number;
-  acOutputVolts: number;
-  acOutputHz: number;
-
-  minutesToFull: number | null;
-  minutesRemaining: number | null;
-  /** Minutes until a scheduled charge begins; 0 when charging is not deferred. */
-  chargeBookingMinutes: number;
-
-  ports: PortState[];
-  lastUpdated: string;
-};
-
-export type VersionInfo = {
-  name: string;
-  version: string;
-  runtime: string;
-  startedAt: string;
-  uptimeSeconds: number;
-  link: LinkMode;
-  transport?: TransportKind;
-  /** True when the server is refusing every write to the station. */
-  readOnly: boolean;
-};
+/** Fails to compile if the schema and the shared settings type ever diverge. */
+type AssertAssignable<Target, Source extends Target> = Source;
+type _SchemaMatchesType = AssertAssignable<StationSettings, z.infer<typeof StationSettingsSchema>>;
+type _TypeMatchesSchema = AssertAssignable<z.infer<typeof StationSettingsSchema>, StationSettings>;

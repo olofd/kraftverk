@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:net';
 
 import { Aedes } from 'aedes';
 
-import { parseFrame, toHex, type ParsedFrame } from '../protocol/modbus.ts';
+import { parseFrame, toHex, type ParsedFrame } from '@kraftverk/protocol';
 
 /**
  * An MQTT broker the power station talks to instead of the vendor cloud.
