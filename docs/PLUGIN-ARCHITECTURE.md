@@ -1,5 +1,10 @@
 # Extensions, and the grid relay that is their first consumer
 
+> **Current implementation authority:** read
+> [`DEVICE-FIRST-REFACTOR.md`](DEVICE-FIRST-REFACTOR.md) first. In particular,
+> plugin-wide configuration and `devices()[0]` are interim architecture; the target
+> is a per-saved-device adapter instance commissioned through the Add-device wizard.
+
 Design document and research log for the plugin system described in
 [`PROJECT-BRIEF.md`](PROJECT-BRIEF.md). Read that first for the product goal; this document
 covers **how the extension system is built** and **what already exists in the world** so the
@@ -323,7 +328,14 @@ GET    /api/history?from=&to=&fields=     samples, CSV or JSON
 
 ### How one screen serves every plugin
 
-Built and working. The Extensions tab renders entirely from what a plugin declares:
+Built and working — but **the Extensions tab leaves the primary navigation**. It
+was the right screen for "manage installed drivers" and the wrong destination for
+"add a plug": people think in devices. What follows describes the rendering
+machinery, which survives intact inside the device canvas, the add-device wizard
+and device-scoped settings. See
+[`DEVICE-FIRST-REFACTOR.md`](DEVICE-FIRST-REFACTOR.md).
+
+The generic renderer works from what an adapter declares:
 
 - **Cards** group by kind and show status, freshness and `health.facts` — label/value pairs the
   plugin formats itself, so the same row reads "Relay: on · 240 W" for a plug and "Now: 4 °C ·
@@ -352,7 +364,7 @@ plugin. Three rules keep it from becoming a hole:
 Verified in a real web bundle: the Tuya panel ships, while its server code — the LAN session, the
 cloud client, `node:net` — does not.
 
-- **Extensions tab** — catalog by category; per-plugin card with icon, status, data age and last
+- **Advanced app settings, not a tab** — catalog by category; per-adapter card with icon, status, data age and last
   error; setup form generated from `configSchema`; secrets masked and write-only; Test button;
   capability consent screen with the actuator warning and two-step confirmation; activity log;
   configuration export.

@@ -8,16 +8,20 @@ import { ACTUATOR_CONFIRMATION, type CapabilityName, type ConfigValues, type Set
 import type { RegisterDump } from '@kraftverk/protocol';
 
 import type {
+  DeviceHistory,
+  DeviceSettings,
+  DeviceTypeOption,
+  DeviceView,
   GridStatus,
   PluginConfig,
   PluginList,
   RelayCommandResult,
-  DeviceList,
   LinkDiagnostics,
   PortId,
   StationSettings,
   StationSettingsPatch,
   StationStatus,
+  StationTransports,
   TrafficEntry,
   VersionInfo,
 } from './types';
@@ -90,23 +94,29 @@ export async function setGridConnected(connected: boolean, signal?: AbortSignal)
   return data;
 }
 
-export async function fetchDevices(signal?: AbortSignal) {
-  const { data } = await api.get<DeviceList>('/devices', { signal });
+// --- the station's link -----------------------------------------------------
+//
+// Which stations the server's radio can see, and which one it is bound to.
+// Deliberately not `/devices`: that name belongs to the catalog of things you
+// own, and a peripheral a radio noticed is not yet one of them.
+
+export async function fetchStationTransports(signal?: AbortSignal) {
+  const { data } = await api.get<StationTransports>('/station/transports', { signal });
   return data;
 }
 
-export async function bindDevice(id: string, signal?: AbortSignal) {
+export async function bindStation(id: string, signal?: AbortSignal) {
   const { data } = await api.post<{ boundId: string | null; connected: boolean }>(
-    '/devices/bind',
+    '/station/bind',
     { id },
     { signal }
   );
   return data;
 }
 
-export async function unbindDevice(signal?: AbortSignal) {
+export async function unbindStation(signal?: AbortSignal) {
   const { data } = await api.post<{ boundId: null; connected: false }>(
-    '/devices/unbind',
+    '/station/unbind',
     {},
     { signal }
   );
@@ -203,6 +213,116 @@ export async function switchGridRelay(on: boolean, reason: string) {
     confirmation: ACTUATOR_CONFIRMATION,
     // Verification waits for the station to agree, which is deliberately slow.
     }, { timeout: 45_000 });
+  return data;
+}
+
+// --- devices ----------------------------------------------------------------
+//
+// One list of the things you own, described identically whether the core
+// provides them or a plugin does. Every call here is device-shaped rather than
+// station-shaped, which is what lets one screen serve a device nobody has
+// written yet.
+
+/** Catalog ids carry a `:` — `power-station:ab12cd34` — so they must be escaped. */
+const devicePath = (id: string, suffix = '') => `/devices/${encodeURIComponent(id)}${suffix}`;
+
+export async function fetchDeviceList(signal?: AbortSignal) {
+  const { data } = await api.get<{ devices: DeviceView[] }>('/devices', { signal });
+  return data.devices;
+}
+
+export async function fetchDevice(id: string, signal?: AbortSignal) {
+  const { data } = await api.get<DeviceView>(devicePath(id), { signal });
+  return data;
+}
+
+/** What can be added, and what each one needs. */
+export async function fetchDeviceTypes(signal?: AbortSignal) {
+  const { data } = await api.get<{ types: DeviceTypeOption[] }>('/device-types', { signal });
+  return data.types;
+}
+
+export async function addDevice(
+  input: {
+    type: 'power-station' | 'smart-plug';
+    driver: string;
+    name: string;
+    model?: string | null;
+    config?: Record<string, unknown>;
+  },
+  signal?: AbortSignal
+) {
+  const { data } = await api.post<DeviceView>('/devices', input, { signal });
+  return data;
+}
+
+export async function updateDevice(
+  id: string,
+  changes: { name?: string; model?: string | null; config?: Record<string, unknown> },
+  signal?: AbortSignal
+) {
+  const { data } = await api.patch<DeviceView>(devicePath(id), changes, { signal });
+  return data;
+}
+
+/** Forgets a device. Its samples go with it — see the server's note on why. */
+export async function removeDevice(id: string, signal?: AbortSignal) {
+  const { data } = await api.delete<{ ok: boolean }>(devicePath(id), { signal });
+  return data;
+}
+
+export async function fetchDeviceSettings(id: string, signal?: AbortSignal) {
+  const { data } = await api.get<DeviceSettings>(devicePath(id, '/settings'), { signal });
+  return data;
+}
+
+/**
+ * Writes a device's own settings.
+ *
+ * Only the changed keys are sent. The reply is a readback rather than an echo —
+ * writing one setting can move another on this hardware — so callers should
+ * take the values it returns over the ones they asked for.
+ */
+export async function patchDeviceSettings(id: string, patch: ConfigValues, signal?: AbortSignal) {
+  const { data } = await api.patch<{ values: ConfigValues }>(devicePath(id, '/settings'), patch, {
+    signal,
+  });
+  return data.values;
+}
+
+/** One measurement over a window, already thinned to something a chart can draw. */
+export async function fetchDeviceHistory(
+  id: string,
+  key: string,
+  options: { hours?: number; points?: number } = {},
+  signal?: AbortSignal
+) {
+  const { data } = await api.get<DeviceHistory>(devicePath(id, '/history'), {
+    params: { key, hours: options.hours ?? 24, points: options.points ?? 240 },
+    signal,
+  });
+  return data;
+}
+
+/**
+ * Invokes a control on a device.
+ *
+ * What comes back depends on what was switched: the station's own ports answer
+ * with its status, while anything that moves mains goes through the action
+ * gateway and answers with its verdict.
+ */
+export async function invokeDeviceControl(
+  id: string,
+  controlId: string,
+  value: boolean | number | string,
+  confirmation?: string
+) {
+  const { data } = await api.post<StationStatus | RelayCommandResult>(
+    devicePath(id, `/control/${encodeURIComponent(controlId)}`),
+    { value, confirmation },
+    // A verified switch waits for the station to agree, which is slow on purpose.
+    { timeout: 45_000 }
+  );
   return data;
 }
 

@@ -1,5 +1,11 @@
 # Devices, and wiring them together
 
+> **Current implementation authority:** read
+> [`DEVICE-FIRST-REFACTOR.md`](DEVICE-FIRST-REFACTOR.md) first. It defines the
+> required blank-canvas setup flow, commissioning wizard, persisted-device model,
+> device-scoped navigation and refactor order. This document is supporting design
+> background and contains older status/route assumptions.
+
 Design for the next layer: one list of the things you own, a screen per thing, and a way to
 connect them that feels like assembling Lego rather than programming.
 
@@ -70,9 +76,12 @@ export type DeviceDescriptor = {
   id: string;
   /** Vendor name, overridden by whatever the user renames it to. */
   name: string;
-  kind: 'power-station' | 'smart-plug' | 'meter' | 'sensor' | 'service';
+  // 'service' was here for weather and prices. Removed: services are plugins,
+  // not things you own, and they do not appear on the device canvas. Where
+  // their configuration lives is open until the first one is built.
+  kind: 'power-station' | 'smart-plug' | 'meter' | 'sensor';
   icon: string;
-  /** Which plugin provides it. Absent for the built-in station. */
+  /** Which adapter provides it. Absent for the built-in station. */
   providedBy?: string;
   measurements: MeasurementSpec[];
   controls: ControlSpec[];

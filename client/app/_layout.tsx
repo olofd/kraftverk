@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TamaguiProvider, Theme } from 'tamagui';
 
 import config, { BACKGROUNDS } from '../tamagui.config';
+import { DevicesProvider } from '../src/state/DevicesProvider';
 import { StationProvider } from '../src/state/StationProvider';
 
 export default function RootLayout() {
@@ -22,11 +23,18 @@ export default function RootLayout() {
     <TamaguiProvider config={config} defaultTheme={scheme}>
       <Theme name={scheme}>
         <SafeAreaProvider>
+          {/*
+            Devices sit inside the link, not beside it: the catalog only exists
+            when a server holds it, and whether that is the case is the link's
+            business.
+          */}
           <StationProvider>
-            <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-            <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="(tabs)" />
-            </Stack>
+            <DevicesProvider>
+              <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+              <Stack screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="(tabs)" />
+              </Stack>
+            </DevicesProvider>
           </StationProvider>
         </SafeAreaProvider>
       </Theme>

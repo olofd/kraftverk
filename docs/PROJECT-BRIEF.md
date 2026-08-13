@@ -36,6 +36,48 @@ observed direct-sun peak is about 300 W.
 
 ## The end goal: devices you own, wired together
 
+> **The authoritative target and implementation order is
+> [`DEVICE-FIRST-REFACTOR.md`](DEVICE-FIRST-REFACTOR.md)**, with package
+> boundaries in [`MODULAR-CODE-ARCHITECTURE.md`](MODULAR-CODE-ARCHITECTURE.md).
+> Where this brief and that document disagree about sequencing or navigation,
+> that document wins. This section states the product intent behind it.
+
+Three decisions settled with the owner, which the rest of the documentation must
+not contradict:
+
+**A connection's owner decides what a device can do.** Server-owned links are
+first class: only the server is running when the app is closed, so only it can
+sample history, hold a session and drive an automation. A client-owned Bluetooth
+link is a genuine way to *use* a device — live readings, settings, manual
+control — and it is not diagnostics-only. But automations and background history
+require the server component, and the app must say so rather than implying a
+client-only device is durable.
+
+**Services are out of scope until they are built.** Weather, price and Home
+Assistant remain plugins, not devices, and do not appear on the device canvas.
+Where their own configuration lives — automation, app settings, or somewhere
+else — is deliberately unanswered until the first one is written.
+
+**Root is always the canvas; every device also has its own address.** Opening the
+app lands on *Your devices* regardless of how many you own, so the shape never
+changes as you add the second. Each saved device has a stable route of its own,
+so it can be bookmarked or pinned and opened directly.
+
+### Vocabulary
+
+Three words, used precisely from here on:
+
+```text
+adapter   code that knows a protocol            "Tuya Local"        installed
+device    a saved thing you own, named          "Hallway plug"      added
+plugin    a service with no hardware behind it  SMHI weather        optional
+```
+
+An adapter is not a device: you add a plug, not a plugin. The Tuya relay work
+built as `packages/plugins/tuya-local-grid-relay` is therefore a **device
+adapter**, and needs per-saved-device instances rather than one configuration
+per package — see the refactor document's Milestone C.
+
 Everything below this section describes the station and its extensions. This section
 describes what the whole thing is becoming, and every design decision should be read
 against it.
@@ -126,12 +168,14 @@ rule engine with a loaded gun.
 | --- | --- |
 | Extension system: SDK, host, action gateway, audit | **Built** |
 | Tuya plug driver, simulated plug, setup wizard UI | **Built** |
-| Device catalog: persisted, CRUD, models, auto-adopted station | **Built (server)** |
+| Device catalog: persisted, CRUD, model selection | **Built (server)** |
+| Auto-adoption of the station at startup | **Built, and to be removed** — it makes a blank canvas impossible |
 | Per-device history sampling | **Built (server)**; charts pending |
 | **The P280 as a device package** — declarations *and* all four screens | **Built** |
 | `@kraftverk/ui` and `@kraftverk/api-client` extracted | **Built** |
-| Devices grid, device detail, add-device flow | **Next** |
-| `StationProvider` reading the device model | **Next** — the last station-shaped assumption |
+| Devices canvas, device detail, add-device wizard | **In progress** — Milestone A |
+| Per-saved-device adapter instances, `ConnectionManager` | **Next** — Milestones B and C |
+| Global `StationProvider` and global station tabs | **To be removed**, not extended |
 | Recipes, then rules | Planned |
 
 The package layout this produced:

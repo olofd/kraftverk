@@ -26,18 +26,23 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => <Feather name="zap" size={size} color={color} />,
         }}
       />
+      {/*
+        Devices sits second, ahead of Settings. It is the list of things you
+        own — the app's main surface now that the station is one row in it
+        rather than the whole application.
+      */}
+      <Tabs.Screen
+        name="devices"
+        options={{
+          title: 'Devices',
+          tabBarIcon: ({ color, size }) => <Feather name="box" size={size} color={color} />,
+        }}
+      />
       <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',
           tabBarIcon: ({ color, size }) => <Feather name="sliders" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="devices"
-        options={{
-          title: 'Devices',
-          tabBarIcon: ({ color, size }) => <Feather name="radio" size={size} color={color} />,
         }}
       />
       <Tabs.Screen

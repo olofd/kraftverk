@@ -1,5 +1,14 @@
 # kraftverk
 
+> **Refactor status:** the project is transitioning to a device-first architecture.
+> The current target, known gaps and required implementation order are documented in
+> [`docs/DEVICE-FIRST-REFACTOR.md`](docs/DEVICE-FIRST-REFACTOR.md). The rest of this
+> README describes the proven P280 protocol and existing features; some UI navigation
+> descriptions predate the refactor and should not be treated as the target UX.
+
+> **Code boundaries:** [`docs/MODULAR-CODE-ARCHITECTURE.md`](docs/MODULAR-CODE-ARCHITECTURE.md)
+> defines the protocol/device/adapter/server/API separation that the refactor must follow.
+
 Local control for **Sydpower-stack portable power stations** — monitor and
 control them from iOS and the browser, over Wi‑Fi or Bluetooth, **without the
 vendor cloud**.
@@ -93,10 +102,12 @@ Additional cautions:
   timeout, light modes, and every output port.
 - **Two transports** — a local MQTT broker the station connects to instead of
   the vendor cloud, or a direct Bluetooth LE link. Both carry identical frames.
-- **Or no server at all** — the app can hold the Bluetooth link itself, from a
-  browser over Web Bluetooth or from an iPhone. Pick it under **Devices ▸
-  Connection**. It runs the same protocol code the server does, so the readings
-  and the write guards are identical either way.
+- **Or the app holds the link itself** — over Web Bluetooth in a browser, or
+  Bluetooth on an iPhone. Same protocol code, same write guards, so the readings
+  are identical. What differs is what a connection can *do*: history and
+  automations need the server, because only the server is running when the app
+  is closed. A client-held link is for watching and controlling a device now,
+  not for running one in the background.
 - **Protocol diagnostics** — full register dumps, a snapshot/diff workflow for
   identifying unknown registers, and a live frame log.
 - **A simulator**, so the app is fully usable with no hardware present.

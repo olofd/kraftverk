@@ -14,6 +14,7 @@
 
 export { AnimatedNumber } from './AnimatedNumber';
 export { Card, SectionLabel, type CardProps } from './Card';
+export { DeviceCard, type DeviceCardDevice } from './DeviceCard';
 export { ModeRow } from './ModeRow';
 export { Row, RowSeparator, ToggleRow } from './Row';
 export { SchemaForm, isComplete } from './SchemaForm';
@@ -22,8 +23,28 @@ export { SliderRow } from './SliderRow';
 
 export { haptic } from './haptics';
 export {
+  fixedRange,
+  formatMeasurement,
+  freshestAt,
+  isStale,
+  primaryMeasurement,
+  readingFor,
+  startsAtZero,
+  STALE_AFTER_MS,
+} from './measurement';
+export {
+  chartPath,
+  chartScale,
+  chartSegments,
+  chartY,
+  type ChartBox,
+  type ChartScale,
+  type SeriesPoint,
+} from './series';
+export {
   formatAgo,
   formatDuration,
+  formatFresh,
   formatTemperature,
   formatUptime,
   formatWatts,

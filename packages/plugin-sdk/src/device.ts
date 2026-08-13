@@ -19,7 +19,14 @@ export type DeviceKind =
   | 'smart-plug'
   | 'meter'
   | 'sensor'
-  /** Something without hardware: a forecast, a price feed. */
+  /**
+   * Reserved, and deliberately unused.
+   *
+   * Weather and price feeds are *plugins*, not devices: you do not own them,
+   * and they do not belong on a canvas called "your devices". Where their
+   * configuration lives is an open question until the first one is written —
+   * see PROJECT-BRIEF.md. Nothing should return this kind today.
+   */
   | 'service';
 
 /**

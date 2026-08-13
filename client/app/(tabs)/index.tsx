@@ -1,22 +1,40 @@
-import { StationDashboard } from '@kraftverk/device-aferiy-p280/ui/dashboard';
-
 import { Screen } from '../../src/components/Screen';
+import { NoStation } from '../../src/components/NoStation';
+import { screensFor } from '../../src/devices/screens';
+import { useDevices } from '../../src/state/DevicesProvider';
 import { useStation } from '../../src/state/StationProvider';
 
 /**
- * The app's frame around the P280's dashboard.
+ * The app's frame around the station's dashboard.
  *
- * Every pixel below the title belongs to the device package. When a second
- * device type arrives, this file picks whose dashboard to show and still knows
- * nothing about either.
+ * Which dashboard that is comes from the device model, not from an assumption:
+ * the station is looked up in the catalog, and the screens table says who draws
+ * it. The title is the name *you* gave it — the station's own idea of what it
+ * is called is a fact about the hardware, and belongs under the name, not in
+ * place of it.
+ *
+ * Every pixel below the title belongs to the device package.
  */
 export default function DashboardScreen() {
   const { status, settings, version, apiBaseUrl, source, direct, togglePort, updateSettings } =
     useStation();
+  const { station } = useDevices();
+
+  const screens = screensFor(station);
+
+  if (!station || !screens) {
+    return (
+      <Screen title="Dashboard">
+        <NoStation />
+      </Screen>
+    );
+  }
+
+  const Dashboard = screens.dashboard;
 
   return (
-    <Screen title={status?.name ?? 'Dashboard'} subtitle={status?.model}>
-      <StationDashboard
+    <Screen title={station.record.name} subtitle={station.description}>
+      <Dashboard
         status={status}
         settings={settings}
         version={version}

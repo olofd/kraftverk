@@ -47,6 +47,23 @@ export function formatAgo(iso: string): string {
   return days === 1 ? 'yesterday' : `${days} days ago`;
 }
 
+/**
+ * How old a reading is, at the resolution a live device deserves.
+ *
+ * `formatAgo` rounds everything under a minute to "just now", which is right
+ * for a connection you made yesterday and wrong for telemetry: the difference
+ * between four seconds and fifty is the difference between a live device and
+ * one that has quietly stopped answering.
+ */
+export function formatFresh(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return 'unknown';
+
+  const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  return formatAgo(iso);
+}
+
 export function formatTemperature(celsius: number, unit: StationSettings['temperatureUnit']) {
   return unit === 'F'
     ? `${Math.round(celsius * 1.8 + 32)}°F`

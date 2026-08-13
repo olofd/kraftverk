@@ -1,5 +1,10 @@
 # Handover
 
+> **Architecture update:** this file is a historical implementation snapshot.
+> Start with [`DEVICE-FIRST-REFACTOR.md`](DEVICE-FIRST-REFACTOR.md) for the current
+> device-first target. In particular, its “working tree clean” and completion claims
+> must not be used to override the current repository state.
+
 State of play, and the things that would otherwise cost you a day. The vision and
 the architecture are in [`PROJECT-BRIEF.md`](PROJECT-BRIEF.md) — read its end-goal
 section first. This document is only what that one cannot tell you: where things
@@ -28,22 +33,60 @@ Built and verified this session:
 - **Tuya LAN driver** — 3.3/3.4/3.5 framing with protocol detection, UDP
   discovery, cloud helper for local keys, setup wizard in the app.
 
-## Do these next, in this order
+## Active work: Milestone A
 
-1. **`StationProvider` should read the device model.** It still calls `/status`
-   and `/settings` directly. It is the last station-shaped assumption in the
-   client, and the devices grid cannot be honest until it is gone.
-2. **Devices grid and detail screens.** The server side is done and tested:
-   `/api/devices`, `/api/device-types`, CRUD, `/api/devices/:id/history`. This is
-   where the work pays off — adding the plug becomes a row, not a feature.
-3. **Charts.** The sampler already records every declared measurement each
-   minute, so one chart component answers "how many watts is it drawing" for
-   every device at once, and brings the P280's own history with it.
+The plan is [`DEVICE-FIRST-REFACTOR.md`](DEVICE-FIRST-REFACTOR.md). **Milestone A
+— make the blank canvas real** is the current milestone, and nothing from D
+(automations, weather, autonomous switching) starts until A–C are done.
 
-Then: recipes (Backup reserve first), the arming gate, and `se.smhi.weather`.
-Build the weather plugin **early** — it is the only real test of whether a new
-device type needs zero client code, and you want to find out while the contract
-is still cheap to change.
+Milestone A, in order:
+
+1. **Remove `DeviceRegistry.adoptStation()` from startup.** It inserts a station
+   at server start, which makes a blank install impossible and turns discovery
+   into ownership. Legacy `binding.json` users get an explicit one-time import,
+   never an automatic adoption.
+2. **Root becomes `Your devices`.** Global Dashboard, Settings, Protocol and
+   Extensions leave the primary tab bar. Root is always the canvas even with one
+   device; each saved device gets its own stable route so it can be opened
+   directly.
+3. **`/devices` returns `SavedDeviceView`** with connection health and explicit
+   ids — see the identifier rule below.
+4. **Migrations** for `updated_at`, connection records, device-scoped secrets and
+   automation references, with CRUD tests.
+5. **Deleting a device** must reject or explicitly cascade when an automation
+   references it.
+
+Then B (commission one P280 through the wizard) and C (the same shape for a
+plug, with per-saved-device adapter instances).
+
+## Known limitations to correct, not preserve
+
+These are current behaviours the refactor exists to fix. Do not treat them as
+settled design:
+
+- **The station is auto-adopted at startup**, so there is no blank canvas.
+- **`StationProvider` is global**, and the station still behaves like the app
+  rather than like one device.
+- **The server holds one `driver`, one `transport`, one binding.** A second
+  station, or per-device connections, cannot be represented honestly. A
+  `ConnectionManager` keyed by saved device id replaces it.
+- **`PluginHost` keeps one configuration per package** and the registry reads
+  `plugin.devices()[0]`, so one adapter cannot serve two plugs.
+- **`DeviceDescriptor.id` and `DeviceView.id` mean different things** — vendor
+  identity versus catalog id — and the registry reads one while history keys on
+  the other. Use `SavedDeviceId`, `CandidateId` and `ProviderDeviceId`
+  explicitly; never overload `id` in a DTO.
+- **`/api/device-types` flattens every relay adapter to a generic smart plug**
+  and says nothing about connection choices, discovery or verification.
+- **Adding a device writes the record before the connection is configured**, so
+  a permanently grey device can be created.
+
+## Vocabulary
+
+`adapter` = code that knows a protocol. `device` = a saved thing you own.
+`plugin` = a service with no hardware, like weather. Tuya is an **adapter**; the
+relay is a **device**. Services do not appear on the device canvas at all until
+that work begins.
 
 ## Traps
 
