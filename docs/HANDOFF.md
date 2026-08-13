@@ -127,6 +127,23 @@ settled design:
 - **Adding a device writes the record before the connection is configured**, so
   a permanently grey device can be created.
 
+## Known gaps
+
+**Toggles cannot be operated from a keyboard.** They are focusable and announce
+correctly, but neither a Tamagui `onKeyDown` prop, a listener attached through
+the ref, nor `role="button"` + `aria-pressed` flipped one — the first two never
+fire, and react-native-web's built-in Enter/Space handling did not reach it.
+Tappable rows *are* keyboard-operable (`src/components/Pressable.tsx`), so the
+problem is specific to the switch. Unresolved; worth a look at how Tamagui
+forwards DOM events on web before trying again.
+
+**The register diagnostics are still global.** `/api/diagnostics/*` resolves to
+whichever session the server holds, even though the Protocol screen now sits
+under one device's Advanced.
+
+**The deprecated global routes are dead code.** `/status`, `/settings`,
+`/ports/:id` and `/simulator/grid` still work; nothing calls them.
+
 ## Vocabulary
 
 `adapter` = code that knows a protocol. `device` = a saved thing you own.

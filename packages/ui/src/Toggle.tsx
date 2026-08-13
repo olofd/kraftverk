@@ -55,6 +55,20 @@ export function Toggle({ checked, onCheckedChange, disabled }: ToggleProps) {
       role="switch"
       aria-checked={checked}
       aria-disabled={disabled}
+      /*
+        Focusable, and announced correctly — but **not yet operable from a
+        keyboard**, which is a known gap rather than an oversight.
+
+        A Tamagui `onKeyDown` prop never reaches the DOM here (checked by
+        dispatching a real keydown at the node and watching nothing happen), a
+        listener attached through the ref did not fire either, and switching to
+        `role="button"` + `aria-pressed` — which react-native-web does give
+        Enter and Space — did not flip it either. Rather than ship a handler
+        that looks like support and is not, this keeps the honest semantics and
+        the gap is written down.
+      */
+      tabIndex={disabled ? -1 : 0}
+      focusVisibleStyle={{ outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid' }}
       width={TRACK_WIDTH}
       height={TRACK_HEIGHT}
       borderRadius={999}

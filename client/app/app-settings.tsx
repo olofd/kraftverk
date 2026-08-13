@@ -169,7 +169,17 @@ function Servers() {
       <SectionLabel>Kraftverk server</SectionLabel>
 
       <Card inset>
-        <Pressable onPress={() => servers.use(null)}>
+        {/*
+          Any change to the list clears the note: it describes one attempt to
+          add one address, and it outlived the server it was about — telling
+          the user nothing answered at a machine they had just forgotten.
+        */}
+        <Pressable
+          onPress={() => {
+            setProblem(null);
+            servers.use(null);
+          }}
+        >
           <Row
             title="Local only"
             subtitle="This device holds its own links over Bluetooth. No history, and nothing runs while the app is closed."
@@ -182,7 +192,12 @@ function Servers() {
         {servers.all.map((server) => (
           <YStack key={server.id}>
             <RowSeparator />
-            <Pressable onPress={() => servers.use(server.id)}>
+            <Pressable
+              onPress={() => {
+                setProblem(null);
+                servers.use(server.id);
+              }}
+            >
               <Row
                 title={server.name}
                 subtitle={server.url}
@@ -197,6 +212,7 @@ function Servers() {
                       icon={<Feather name="trash-2" size={12} color={theme.danger?.val} />}
                       onPress={() => {
                         haptic();
+                        setProblem(null);
                         servers.remove(server.id);
                       }}
                     >
