@@ -4,9 +4,14 @@ import axios from 'axios';
 
 // The dump the server returns is built by the shared package, so its shape is
 // declared there rather than described a second time here.
+import { ACTUATOR_CONFIRMATION, type CapabilityName, type ConfigValues, type SetupActionResult } from '@kraftverk/plugin-sdk';
 import type { RegisterDump } from '@kraftverk/protocol';
 
 import type {
+  GridStatus,
+  PluginConfig,
+  PluginList,
+  RelayCommandResult,
   DeviceList,
   LinkDiagnostics,
   PortId,
@@ -126,6 +131,78 @@ export async function fetchRegisters(signal?: AbortSignal) {
 /** Captures a baseline so the next dump can show what moved. */
 export async function snapshotRegisters(signal?: AbortSignal) {
   const { data } = await api.post<{ at: string }>('/diagnostics/snapshot', {}, { signal });
+  return data;
+}
+
+// --- extensions -------------------------------------------------------------
+
+export async function fetchPlugins(signal?: AbortSignal) {
+  const { data } = await api.get<PluginList>('/plugins', { signal });
+  return data;
+}
+
+export async function fetchPluginConfig(id: string, signal?: AbortSignal) {
+  const { data } = await api.get<PluginConfig>(`/plugins/${id}/config`, { signal });
+  return data;
+}
+
+export async function patchPluginConfig(id: string, values: ConfigValues) {
+  const { data } = await api.patch<{ ok: boolean }>(`/plugins/${id}/config`, values);
+  return data;
+}
+
+export async function setPluginEnabled(id: string, enabled: boolean) {
+  const { data } = await api.post<{ ok: boolean }>(`/plugins/${id}/enable`, { enabled });
+  return data;
+}
+
+export async function testPlugin(id: string) {
+  const { data } = await api.post<{ ok: boolean; detail: string; data?: Record<string, unknown> }>(
+    `/plugins/${id}/test`,
+    {}
+  );
+  return data;
+}
+
+/** Runs a commissioning helper the plugin declared. Slow by nature — a LAN scan takes seconds. */
+export async function runSetupAction(id: string, actionId: string, input: ConfigValues) {
+  const { data } = await api.post<SetupActionResult>(`/plugins/${id}/setup/${actionId}`, input, {
+    timeout: 95_000,
+  });
+  return data;
+}
+
+export async function setPluginGrant(
+  id: string,
+  capability: CapabilityName,
+  granted: boolean,
+  confirmation?: string
+) {
+  const { data } = await api.post<{ ok: boolean; grants: CapabilityName[] }>(
+    `/plugins/${id}/grants`,
+    { capability, granted, confirmation }
+  );
+  return data;
+}
+
+export async function setPluginProvider(id: string) {
+  const { data } = await api.post<{ ok: boolean }>(`/plugins/${id}/provider`, {});
+  return data;
+}
+
+export async function fetchGrid(signal?: AbortSignal) {
+  const { data } = await api.get<GridStatus>('/grid', { signal });
+  return data;
+}
+
+/** Asks the core to switch mains. The gateway decides whether it may. */
+export async function switchGridRelay(on: boolean, reason: string) {
+  const { data } = await api.post<RelayCommandResult>('/grid/relay', {
+    on,
+    reason,
+    confirmation: ACTUATOR_CONFIRMATION,
+    // Verification waits for the station to agree, which is deliberately slow.
+    }, { timeout: 45_000 });
   return data;
 }
 

@@ -1,0 +1,21 @@
+{
+  "name": "@kraftverk/plugin-fake-grid-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A grid relay that exists only in memory, with injectable failure modes. Lets the action gateway and the reserve controller be developed and tested without touching mains.",
+  "type": "module",
+  "main": "src/index.ts",
+  "kraftverk": {
+    "plugin": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kraftverk/plugin-sdk": "*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}

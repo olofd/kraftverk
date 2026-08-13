@@ -3,14 +3,14 @@ import { Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { Card, SectionLabel } from '../../src/components/Card';
-import { Row, RowSeparator, ToggleRow } from '../../src/components/Row';
+import { Card, SectionLabel } from '@kraftverk/ui';
+import { Row, RowSeparator, ToggleRow } from '@kraftverk/ui';
 import { Screen } from '../../src/components/Screen';
-import { SegmentedControl } from '../../src/components/SegmentedControl';
-import { bindDevice, describeError, fetchDevices, unbindDevice } from '../../src/lib/api';
-import { formatAgo } from '../../src/lib/format';
-import { haptic } from '../../src/lib/haptics';
-import type { DeviceList } from '../../src/lib/types';
+import { SegmentedControl } from '@kraftverk/ui';
+import { bindDevice, describeError, fetchDevices, unbindDevice } from '@kraftverk/api-client';
+import { formatAgo } from '@kraftverk/ui';
+import { haptic } from '@kraftverk/ui';
+import type { DeviceList } from '@kraftverk/api-client';
 import { useStation, type LinkSource } from '../../src/state/StationProvider';
 
 /**

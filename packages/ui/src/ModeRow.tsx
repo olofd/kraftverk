@@ -1,6 +1,6 @@
 import { Text, XStack, YStack } from 'tamagui';
 
-import { haptic } from '../lib/haptics';
+import { haptic } from './haptics';
 
 type Option<T extends string | number> = { value: T; label: string };
 
@@ -9,18 +9,29 @@ type Props<T extends string | number> = {
   subtitle?: string;
   value: T;
   options: readonly Option<T>[];
+  disabled?: boolean;
   onChange: (value: T) => void;
 };
 
-export function SegmentedControl<T extends string | number>({
+/**
+ * A list row whose accessory is a compact multi-way selector.
+ *
+ * For controls with more than two states — the light is off / on / SOS / flash
+ * — where a switch would throw away meaning.
+ */
+export function ModeRow<T extends string | number>({
   title,
   subtitle,
   value,
   options,
+  disabled,
   onChange,
 }: Props<T>) {
   return (
-    <YStack gap="$3" paddingHorizontal="$4" paddingVertical="$3">
+    // Always stacked. A side-by-side layout looked tidier with two options but
+    // clipped the title once a control had five, so the label always gets its
+    // own line and the options share the full width below it.
+    <YStack paddingHorizontal="$4" paddingVertical="$3" gap="$3" opacity={disabled ? 0.45 : 1}>
       <YStack gap={2}>
         <Text fontSize={15} fontWeight="600" color="$color">
           {title}
@@ -32,31 +43,27 @@ export function SegmentedControl<T extends string | number>({
         ) : null}
       </YStack>
 
-      <XStack
-        backgroundColor="$backgroundPress"
-        borderRadius="$3"
-        padding={3}
-        gap={3}
-        role="radiogroup"
-      >
+      <XStack backgroundColor="$backgroundPress" borderRadius="$3" padding={3} gap={3}>
         {options.map((option) => {
           const selected = option.value === value;
           return (
             <XStack
-              key={option.value}
+              key={String(option.value)}
+              // Equal shares, so five options fit a phone without overflowing.
               flex={1}
+              justifyContent="center"
               role="radio"
               aria-checked={selected}
-              justifyContent="center"
+              paddingHorizontal="$2"
               paddingVertical="$2"
               borderRadius="$2"
-              cursor="pointer"
+              cursor={disabled ? 'default' : 'pointer'}
               backgroundColor={selected ? '$card' : 'transparent'}
               transition="fast"
-              hoverStyle={selected ? undefined : { backgroundColor: '$backgroundHover' }}
-              pressStyle={{ opacity: 0.7 }}
+              hoverStyle={selected || disabled ? undefined : { backgroundColor: '$backgroundHover' }}
+              pressStyle={disabled ? undefined : { opacity: 0.7 }}
               onPress={() => {
-                if (selected) return;
+                if (disabled || selected) return;
                 haptic();
                 onChange(option.value);
               }}
@@ -65,6 +72,7 @@ export function SegmentedControl<T extends string | number>({
                 fontSize={13}
                 fontWeight={selected ? '700' : '500'}
                 color={selected ? '$color' : '$muted'}
+                numberOfLines={1}
               >
                 {option.label}
               </Text>

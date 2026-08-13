@@ -13,8 +13,22 @@ import Svg, {
 } from 'react-native-svg';
 import { Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { formatWatts } from '../lib/format';
-import type { StationStatus } from '../lib/types';
+import type { StationStatus } from '@kraftverk/protocol';
+
+/**
+ * Lives in the device package, not the app.
+ *
+ * This is the P280's own screen furniture: a cell of liquid with orthogonal
+ * legs, droplets whose speed follows the wattage, and a charge-limit tick on
+ * the rim. None of it generalises to a smart plug or a weather source, and
+ * that is the point — a device with strong opinions about how it should be
+ * drawn brings its own drawing, while the app keeps only the generics every
+ * device gets for free.
+ */
+
+/** Local rather than imported: the package must not depend on the app. */
+const formatWatts = (watts: number): string =>
+  watts >= 1000 ? `${(watts / 1000).toFixed(2)} kW` : `${Math.round(watts)} W`;
 
 /**
  * `Animated.createAnimatedComponent` adds React Native's `collapsable` prop,

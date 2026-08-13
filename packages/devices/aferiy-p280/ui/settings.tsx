@@ -1,0 +1,342 @@
+import { Spinner, Text, YStack } from 'tamagui';
+
+import { Card, SectionLabel } from '@kraftverk/ui';
+import { ModeRow } from '@kraftverk/ui';
+import { Row, RowSeparator, ToggleRow } from '@kraftverk/ui';
+import { SegmentedControl } from '@kraftverk/ui';
+import { SliderRow } from '@kraftverk/ui';
+import { formatDuration } from '@kraftverk/ui';
+import type { LedMode } from '@kraftverk/protocol';
+import type { StationScreenProps } from './contract';
+
+const LED_MODES = [
+  { value: 'off', label: 'Off' },
+  { value: 'on', label: 'On' },
+  { value: 'sos', label: 'SOS' },
+  { value: 'flash', label: 'Flash' },
+] as const satisfies readonly { value: LedMode; label: string }[];
+
+const TEMPERATURE_UNITS = [
+  { value: 'C', label: 'Celsius' },
+  { value: 'F', label: 'Fahrenheit' },
+] as const;
+
+/** Minutes. Matches BrightEMS's options for the AC and DC standby timers. */
+const STANDBY_LONG = [
+  { value: 0, label: 'Never' },
+  { value: 480, label: '8h' },
+  { value: 960, label: '16h' },
+  { value: 1440, label: '24h' },
+] as const;
+
+/** USB gets a much shorter scale than AC and DC. */
+const STANDBY_USB = [
+  { value: 0, label: 'Never' },
+  { value: 3, label: '3m' },
+  { value: 5, label: '5m' },
+  { value: 10, label: '10m' },
+  { value: 30, label: '30m' },
+] as const;
+
+/**
+ * No zero. Writing 0 to this register permanently bricks the station, and
+ * BrightEMS omits "Never" here while offering it for the three timers above.
+ */
+const SLEEP = [
+  { value: 5, label: '5m' },
+  { value: 10, label: '10m' },
+  { value: 30, label: '30m' },
+  { value: 480, label: '8h' },
+] as const;
+
+/** Register 62 holds seconds. These are the four values BrightEMS offers. */
+const SCREEN_TIMEOUTS = [
+  { value: 180, label: '3 min' },
+  { value: 300, label: '5 min' },
+  { value: 600, label: '10 min' },
+  { value: 1800, label: '30 min' },
+] as const;
+
+const DC_INPUT_TYPES = [
+  { value: 'pv', label: 'Solar (PV)' },
+  { value: 'dc', label: 'DC adapter' },
+] as const;
+
+/** Confirmed on a P280: register 13 steps 1-5 map to these watts. */
+const AC_CHARGING_POWER = [
+  { value: 600, label: '600 W' },
+  { value: 900, label: '900 W' },
+  { value: 1200, label: '1.2 kW' },
+  { value: 1500, label: '1.5 kW' },
+  { value: 1800, label: '1.8 kW' },
+] as const;
+
+/** 1439, not 1440 — that is the register's maximum. */
+const CHARGE_DELAYS = [
+  { value: 0, label: 'Now' },
+  { value: 60, label: '1h' },
+  { value: 240, label: '4h' },
+  { value: 480, label: '8h' },
+  { value: 720, label: '12h' },
+  { value: 1439, label: '24h' },
+] as const;
+
+/**
+ * The device counts this register down every minute, so a running timer almost
+ * never equals a preset exactly. Highlight the preset it started from.
+ */
+function nearestDelay(minutes: number): (typeof CHARGE_DELAYS)[number]['value'] {
+  if (minutes <= 0) return 0;
+  // Smallest preset still at or above the remaining time.
+  return CHARGE_DELAYS.find((delay) => delay.value >= minutes)?.value ?? 1439;
+}
+
+/**
+ * The P280's settings, and every value in them is this model's.
+ *
+ * Lives in the device package because none of it generalises: the AC charging
+ * steps are 600–1800 W here and 300–1100 W on an F2400, the standby timers are
+ * exactly the ones BrightEMS offers, and "whole machine unused time" has no
+ * "never" because that value permanently destroys the station.
+ *
+ * Content only — the page frame belongs to the app.
+ */
+export function StationSettings({
+  status,
+  settings,
+  readOnly,
+  simulated,
+  direct,
+  apiBaseUrl,
+  updateSettings,
+}: StationScreenProps) {
+  if (!settings) {
+    return (
+      <Card alignItems="center" paddingVertical="$8" gap="$4">
+        {direct ? null : <Spinner size="large" color="$accent" />}
+        <Text color="$muted" fontSize={13} textAlign="center" lineHeight={19}>
+          {direct
+            ? 'No station connected.\nOpen Devices to connect over Bluetooth.'
+            : `Loading settings from ${apiBaseUrl}`}
+        </Text>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      {readOnly ? (
+        <Card borderColor="$success" gap="$2">
+          <Text fontSize={14} fontWeight="700" color="$success">
+            Read-only mode
+          </Text>
+          <Text fontSize={12} color="$muted" lineHeight={18}>
+            These controls still show what the station reports, but every write is refused.{' '}
+            {direct
+              ? 'Turn on “Allow writes” under Devices when you are ready to make changes.'
+              : 'Restart the server without --read-only when you are ready to make changes.'}
+          </Text>
+        </Card>
+      ) : null}
+
+      <YStack gap="$2">
+        <SectionLabel>Battery</SectionLabel>
+        <Card inset>
+          {/* Step 1, not 5: the station stores tenths of a percent and accepts
+              arbitrary values — a P280 set to 23% reads 230. A coarser step
+              would make settings unreachable that the hardware supports. */}
+          <SliderRow
+            title="AC charge limit"
+            subtitle="Caps charging from mains only — solar will still fill the pack past this."
+            value={settings.chargeLimit}
+            min={60}
+            max={100}
+            step={1}
+            format={(v) => `${v}%`}
+            onCommit={(chargeLimit) => void updateSettings({ chargeLimit })}
+          />
+          <RowSeparator />
+          <SliderRow
+            title="Discharge floor"
+            subtitle="Outputs cut off below this level. The device allows 0-50%."
+            value={settings.dischargeFloor}
+            min={0}
+            max={50}
+            step={1}
+            format={(v) => `${v}%`}
+            onCommit={(dischargeFloor) => void updateSettings({ dischargeFloor })}
+          />
+        </Card>
+      </YStack>
+
+      <YStack gap="$2">
+        <SectionLabel>Charging</SectionLabel>
+        <Card inset>
+          {/* Five discrete steps on the device (register 13 stores 1-5). The
+              watt values are P280-specific — an F2400 spans 300-1100 W. */}
+          <ModeRow
+            title="AC charging power"
+            subtitle="How hard the station pulls from the wall."
+            value={settings.acChargingWatts}
+            options={AC_CHARGING_POWER}
+            onChange={(acChargingWatts) => void updateSettings({ acChargingWatts })}
+          />
+          <RowSeparator />
+          <ToggleRow
+            title="Silent AC charging"
+            subtitle="Slower, but keeps the fans down."
+            checked={settings.acSilentCharging}
+            onCheckedChange={(acSilentCharging) => void updateSettings({ acSilentCharging })}
+          />
+          <RowSeparator />
+          <SegmentedControl
+            title="DC input type"
+            subtitle="What is plugged into the XT90 input. Changing this also moves the current ceiling below."
+            value={settings.dcInputType}
+            options={DC_INPUT_TYPES}
+            onChange={(dcInputType) => void updateSettings({ dcInputType })}
+          />
+          <RowSeparator />
+          {/* The ceiling is mode-dependent: 20 A on a solar array, 8 A on a DC
+              adapter. Offering 20 A in DC mode would just get clamped. */}
+          <SliderRow
+            title="Max charging current"
+            subtitle={
+              settings.dcInputType === 'dc'
+                ? 'Ceiling for the XT90 input. DC mode allows up to 8 A.'
+                : 'Ceiling for the XT90 input. Solar allows up to 20 A.'
+            }
+            value={Math.min(settings.maxChargingCurrent, settings.dcInputType === 'dc' ? 8 : 20)}
+            min={1}
+            max={settings.dcInputType === 'dc' ? 8 : 20}
+            step={1}
+            format={(v) => `${v} A`}
+            onCommit={(maxChargingCurrent) => void updateSettings({ maxChargingCurrent })}
+          />
+          <RowSeparator />
+          {/*
+            This register is a live countdown on the device, not a setpoint: it
+            ticks down once a minute and charging resumes at zero. A slider bound
+            to it would drift under the user's finger, so offer fixed delays and
+            report the remaining time separately.
+          */}
+          <ModeRow
+            title="Delay AC charging"
+            subtitle={
+              settings.stopChargeAfterMinutes > 0
+                ? `Charging starts in ${formatDuration(settings.stopChargeAfterMinutes)} — counting down`
+                : 'Charging is enabled now. Useful on a time-of-use tariff.'
+            }
+            value={nearestDelay(settings.stopChargeAfterMinutes)}
+            options={CHARGE_DELAYS}
+            onChange={(stopChargeAfterMinutes) => void updateSettings({ stopChargeAfterMinutes })}
+          />
+        </Card>
+      </YStack>
+
+      <YStack gap="$2">
+        <SectionLabel>Light</SectionLabel>
+        <Card inset>
+          <SegmentedControl
+            title="LED mode"
+            value={settings.ledMode}
+            options={LED_MODES}
+            onChange={(ledMode) => void updateSettings({ ledMode })}
+          />
+        </Card>
+      </YStack>
+
+      <YStack gap="$2">
+        <SectionLabel>Auto shut-off</SectionLabel>
+        <Card inset>
+          <SegmentedControl
+            title="AC no-load standby"
+            subtitle="Turn the inverter off after this long with no load."
+            value={settings.acStandbyMinutes}
+            options={STANDBY_LONG}
+            onChange={(acStandbyMinutes) => void updateSettings({ acStandbyMinutes })}
+          />
+          <RowSeparator />
+          <SegmentedControl
+            title="DC no-load standby"
+            value={settings.dcStandbyMinutes}
+            options={STANDBY_LONG}
+            onChange={(dcStandbyMinutes) => void updateSettings({ dcStandbyMinutes })}
+          />
+          <RowSeparator />
+          <SegmentedControl
+            title="USB no-load standby"
+            subtitle="Short by design — USB switches itself off quickly with nothing drawing."
+            value={settings.usbStandbyMinutes}
+            options={STANDBY_USB}
+            onChange={(usbStandbyMinutes) => void updateSettings({ usbStandbyMinutes })}
+          />
+          <RowSeparator />
+          {/*
+            No "Never" option, deliberately. Writing 0 to this register
+            permanently bricks the station — BrightEMS omits it here too, while
+            offering it for the three timers above.
+          */}
+          <SegmentedControl
+            title="Whole machine unused time"
+            subtitle="Idle time before the station powers down completely."
+            value={settings.sleepMinutes}
+            options={SLEEP}
+            onChange={(sleepMinutes) => void updateSettings({ sleepMinutes })}
+          />
+        </Card>
+      </YStack>
+
+      <YStack gap="$2">
+        <SectionLabel>Panel</SectionLabel>
+        <Card inset>
+          {/* Stored in seconds. BrightEMS offers exactly these four. */}
+          <ModeRow
+            title="Screen shutdown"
+            subtitle="How long the station's own display stays lit."
+            value={settings.screenRestSeconds}
+            options={SCREEN_TIMEOUTS}
+            onChange={(screenRestSeconds) => void updateSettings({ screenRestSeconds })}
+          />
+          <RowSeparator />
+          <ToggleRow
+            title="Key sound"
+            checked={settings.keySound}
+            onCheckedChange={(keySound) => void updateSettings({ keySound })}
+          />
+          <RowSeparator />
+          <SegmentedControl
+            title="Temperature unit"
+            subtitle="Display preference only — the station has no register for this."
+            value={settings.temperatureUnit}
+            options={TEMPERATURE_UNITS}
+            onChange={(temperatureUnit) => void updateSettings({ temperatureUnit })}
+          />
+          <RowSeparator />
+          {/* On a direct link there is no API in the picture at all. */}
+          {direct ? (
+            <Row
+              title="Connection"
+              subtitle="Straight to the station from this app — no server"
+              accessory={
+                <Text fontSize={13} color="$muted">
+                  Bluetooth
+                </Text>
+              }
+            />
+          ) : (
+            <Row
+              title="API endpoint"
+              subtitle={apiBaseUrl}
+              accessory={
+                <Text fontSize={13} color="$muted">
+                  {simulated ? 'sim' : 'device'}
+                </Text>
+              }
+            />
+          )}
+        </Card>
+      </YStack>
+    </>
+  );
+}

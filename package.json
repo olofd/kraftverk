@@ -4,6 +4,8 @@
   "private": true,
   "workspaces": [
     "packages/*",
+    "packages/devices/*",
+    "packages/plugins/*",
     "client",
     "server"
   ],
@@ -27,12 +29,14 @@
     "server:ble": "npm run dev:ble --workspace server",
     "server:ble:write": "npm run dev:ble:write --workspace server",
     "free-ports": "kill-port 3333 1883 8081",
-    "test": "npm run test --workspace @kraftverk/protocol",
+    "test": "node scripts/run-bun.mjs test",
+    "scan:tuya": "node scripts/run-bun.mjs packages/plugins/tuya-local-grid-relay/src/scan.ts",
+    "keys:tuya": "node scripts/run-bun.mjs packages/plugins/tuya-local-grid-relay/src/wizard.ts",
     "web": "npm run web --workspace client",
     "ios": "npm run ios --workspace client",
     "android": "npm run android --workspace client",
     "start": "npm run start --workspace client",
-    "typecheck": "npm run typecheck --workspace @kraftverk/protocol && npm run typecheck --workspace client && npm run typecheck --workspace server"
+    "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {
     "concurrently": "^10.0.4",

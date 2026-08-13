@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Separator, Switch, Text, XStack, YStack } from 'tamagui';
 
-import { haptic } from '../lib/haptics';
+import { haptic } from './haptics';
 
 type RowProps = {
   title: string;

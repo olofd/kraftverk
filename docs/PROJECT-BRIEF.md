@@ -29,6 +29,129 @@ observed direct-sun peak is about 300 W.
 
 ---
 
+## The end goal: devices you own, wired together
+
+Everything below this section describes the station and its extensions. This section
+describes what the whole thing is becoming, and every design decision should be read
+against it.
+
+### One noun: the device
+
+The product is not "a P280 app with plugins". It is **your devices**, in one list, each
+with its own screen, which you can connect to each other.
+
+```
+driver  = code that knows how to talk to something   "Tuya (local)", "core.station"
+device  = a thing you own, added and named           "Hallway plug", "Aferiy P280"
+```
+
+One driver can provide many devices — a Home Assistant driver would provide dozens —
+and a device outlives its driver's mood: unplug a plug for a week and it stays in the
+list, greyed, with its history intact. Devices are **persisted in the database**, not
+derived from whatever happens to answer a scan.
+
+The station is a device. That is the load-bearing decision: the moment it is a special
+case, every feature after it has to be built twice.
+
+### Adding, renaming, removing, resetting
+
+A device is something you deliberately **add**, and adding it is where the model gets
+established:
+
+1. **What kind** — a power station, a smart plug, later a weather source.
+2. **Which model** — AFERIY P280, FOSSiBOT F2400, "something else". This is not
+   cosmetic: the register map differs between them, and the app must not guess. The
+   picker says which models are verified and which are assumed.
+3. **How it connects** — for a station, WiFi/MQTT, the server's Bluetooth, or the
+   browser's; for a plug, its address and key.
+
+Full CRUD, with the destructive parts treated as destructive:
+
+- **Rename** freely; the name is yours and survives the driver renaming things upstream.
+- **Remove** with a warning that names what is lost — its history, and any automation
+  that references it. "Used by: Backup reserve" appears on the device screen so that is
+  visible *before* the button is pressed.
+- **Reset to a blank slate** — remove everything and start again, because a setup you
+  cannot undo is a setup people are afraid to try.
+
+### Each device brings its own UI
+
+The current P280 screens — the energy-flow dashboard, the settings with their
+model-specific charge-power steps, the register diagnostics — are **P280 UI**, not app
+UI. They are excellent, and they are specific. So they belong with the thing they
+describe, exactly as the Tuya plug's panel already lives in its own package:
+
+```
+packages/devices/aferiy-p280/       station UI: dashboard, settings, protocol screens
+packages/plugins/tuya-…/ui/         plug UI: live metering and the relay control
+client/                             the shell: device list, wiring, shared primitives
+```
+
+The app becomes a **shell**: it renders the device list, the wiring, and the generic
+pieces (schema forms, charts, health, setup wizards) that every device gets for free. A
+device with no UI of its own is fully usable through those generics; a device with UI
+of its own takes over its detail screen.
+
+Two rules keep this from becoming a loophole:
+
+- **Compile-time only.** A panel ships in a release or it does not exist. No downloaded
+  UI, ever — an iOS build must not fetch and execute code.
+- **Data and callbacks, not privileges.** A device's own screen reaches the hardware
+  through the same action gateway as everything else, with the same grants, dwell,
+  freshness checks and two-stage verification.
+
+### Wiring: Lego with typed studs
+
+Once two devices exist, you connect them. Two tiers, because "make it programmable" and
+"do not cut mains at 3am" pull against each other:
+
+- **Recipes** — whole behaviours the core implements, with **roles** you fill from a
+  dropdown that only offers devices whose capabilities fit. *Backup reserve* wants a
+  station and a grid relay. All the safety lives inside the recipe.
+- **Rules** — one sentence for the long tail: *when the plug draws more than 2 kW for a
+  minute and the pack is above 50 %, turn the plug off*. Built from what devices
+  declare, executed only through the action gateway, dry-run by default.
+
+An incompatible piece cannot be connected. That is the difference between Lego and a
+rule engine with a loaded gun.
+
+### Where this stands
+
+| Piece | State |
+| --- | --- |
+| Extension system: SDK, host, action gateway, audit | **Built** |
+| Tuya plug driver, simulated plug, setup wizard UI | **Built** |
+| Device catalog: persisted, CRUD, models, auto-adopted station | **Built (server)** |
+| Per-device history sampling | **Built (server)**; charts pending |
+| **The P280 as a device package** — declarations *and* all four screens | **Built** |
+| `@kraftverk/ui` and `@kraftverk/api-client` extracted | **Built** |
+| Devices grid, device detail, add-device flow | **Next** |
+| `StationProvider` reading the device model | **Next** — the last station-shaped assumption |
+| Recipes, then rules | Planned |
+
+The package layout this produced:
+
+```
+packages/protocol        MODBUS, register map, station model
+packages/plugin-sdk      the contracts: capabilities, devices, panels
+packages/ui              shared primitives; Tamagui as a peer, so one theme context
+packages/api-client      every endpoint, and the shapes the server sends
+packages/devices/aferiy-p280   the station: what it measures, and its own screens
+packages/plugins/*       drivers, one with its own panel
+client                   the shell — 34-line tabs that choose whose screen to render
+```
+
+Dependencies point one way: a device package never imports from the app. Where a device
+needs something from the app, the app passes it — `ProtocolScreenProps.direct` is a
+*structural* type describing what the screen needs, which the app's richer object
+satisfies.
+
+The two design documents that expand this: [`PLUGIN-ARCHITECTURE.md`](PLUGIN-ARCHITECTURE.md)
+for how drivers work, [`DEVICES-AND-AUTOMATION.md`](DEVICES-AND-AUTOMATION.md) for the
+device model and the wiring.
+
+---
+
 ## Desired real-world behaviour
 
 The P280 currently prefers AC/bypass power whenever its AC input is present. Thus,
@@ -229,6 +352,10 @@ Before unattended use, document and physically verify all of the following:
 ---
 
 ## Extension architecture — open-source core, optional plugins
+
+> The detailed design for this section, together with research into existing ATORCH/Tuya
+> implementations that can be reused instead of reverse engineered, is in
+> [`PLUGIN-ARCHITECTURE.md`](PLUGIN-ARCHITECTURE.md).
 
 ### Product boundary
 

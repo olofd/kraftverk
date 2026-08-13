@@ -1,0 +1,36 @@
+{
+  "name": "@kraftverk/plugin-tuya-local-grid-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Grid relay over the Tuya LAN protocol. Talks to an ATORCH S1W (and other Tuya sockets) directly on the local network — no vendor cloud, no Home Assistant.",
+  "type": "module",
+  "main": "src/index.ts",
+  "kraftverk": {
+    "plugin": "./src/index.ts",
+    "panel": "./ui/panel.tsx"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./ui/panel": "./ui/panel.tsx"
+  },
+  "scripts": {
+    "scan": "node ../../../scripts/run-bun.mjs src/scan.ts",
+    "test": "node ../../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kraftverk/plugin-sdk": "*"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "tamagui": "*"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true },
+    "tamagui": { "optional": true }
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}

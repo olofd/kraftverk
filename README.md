@@ -317,6 +317,12 @@ Base URL: `http://<host>:3333/api`
 | `GET` | `/diagnostics/scan` | Read an arbitrary register range (read-only) |
 | `GET` | `/diagnostics/traffic` · `/gatt` · `/blocked` | Frames, GATT, refused writes |
 | `POST` | `/diagnostics/raw` | Arbitrary frame — needs `ALLOW_RAW_MODBUS=1` |
+| `GET` | `/plugins` | Installed extensions: status, health, data age, grants |
+| `GET` `PATCH` | `/plugins/:id/config` | Setup form schema and values; secrets are write-only |
+| `POST` | `/plugins/:id/enable` · `/test` · `/grants` · `/provider` | Lifecycle, side-effect-free probe, capability consent, provider choice |
+| `GET` | `/grid` | Grid-relay state, freshness and active provider |
+| `POST` | `/grid/relay` | Switch mains — through the action gateway, confirmation required |
+| `GET` | `/audit` | The timeline: intents, commands, verification outcomes |
 
 ### Environment
 
@@ -359,7 +365,7 @@ Two things that workflow taught us, worth knowing before you trust a hypothesis:
 npm test
 ```
 
-60 tests covering frame construction, response parsing and telemetry decoding
+93 tests covering frame construction, response parsing and telemetry decoding
 against captured traffic from real hardware, plus the write-safety whitelist and
 the behaviours confirmed on a P280. They live with the protocol package, so they
 cover every link equally — a direct Bluetooth connection from the app runs the
@@ -370,6 +376,14 @@ code these tests exercise.
 ## Project layout
 
 ```
+packages/plugin-sdk/     the extension contract: manifests, capabilities, devices
+packages/ui/             shared interface primitives, used by the app and by devices
+packages/api-client/     every API endpoint, and the shapes the server sends
+packages/devices/
+  aferiy-p280/           the station: what it measures, and its own four screens
+packages/plugins/        in-repo extensions
+  tuya-local-grid-relay/   ATORCH S1W and other Tuya sockets, over the LAN
+  fake-grid-relay/         an in-memory plug for tests and the simulator
 packages/protocol/       everything that knows the protocol (+ tests)
   src/modbus.ts          framing and the big-endian CRC
   src/registers.ts       register map, decoding, write whitelist
@@ -384,9 +398,32 @@ client/                  Expo app (iOS + web)
 server/
   src/transport/         mqtt and ble transports
   src/drivers/           device driver, simulator
+  src/plugins/           extension host: discovery, lifecycle, grants
+  src/actions/           the only code allowed to switch mains
+  src/history/           sqlite: config, secrets, audit timeline
 docs/P280-FINDINGS.md    evidence log: confirmed vs. assumed
 docs/PROJECT-BRIEF.md    long-term plan and architecture brief
+docs/PLUGIN-ARCHITECTURE.md  extension system design, and the smart-plug research
+docs/TUYA-LOCAL-KEY.md   five-minute guide to getting a plug's local key
+docs/DEVICES-AND-AUTOMATION.md  one device list, and wiring devices together
 ```
+
+### Connecting a smart plug
+
+```bash
+npm run scan:tuya
+```
+
+finds Tuya plugs on your network — no credentials needed — and reports each one's address and
+protocol version.
+
+```bash
+npm run keys:tuya
+```
+
+fetches their local keys, which is the one step that needs a (free) Tuya cloud project. Both are
+also buttons in the app under **Extensions**, driven by the same code.
+[docs/TUYA-LOCAL-KEY.md](docs/TUYA-LOCAL-KEY.md) walks through it.
 
 `packages/protocol` is imported as TypeScript source with no build step, by both
 the server (under Bun) and the app (through Metro).

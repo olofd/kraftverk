@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
+    "@kraftverk/device-aferiy-p280": "*",
+    "@kraftverk/plugin-sdk": "*",
     "@kraftverk/protocol": "*",
     "@tamagui/animations-react-native": "^2.7.4",
     "@tamagui/font-inter": "^2.7.4",

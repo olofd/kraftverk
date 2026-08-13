@@ -7,8 +7,16 @@ import { logger } from 'hono/logger';
 import { HTTPException } from 'hono/http-exception';
 import { z, ZodError } from 'zod';
 
+import { isActuator, validateConfig as validatePluginConfig } from '@kraftverk/plugin-sdk';
+
 import pkg from '../package.json' with { type: 'json' };
+import { ActionGateway, CONFIRMATION_PHRASE } from './actions/gateway.ts';
 import { loadBinding, saveBinding } from './binding.ts';
+import { DeviceCatalog, STATION_MODELS } from './devices/catalog.ts';
+import { DeviceRegistry } from './devices/registry.ts';
+import { recentAudit, secretsAreEncrypted } from './history/db.ts';
+import { Sampler, series } from './history/sampler.ts';
+import { PluginHost, type PluginInstance } from './plugins/host.ts';
 import { DeviceDriver, ReadOnlyError } from './drivers/device.ts';
 import { SimulatorDriver } from './drivers/simulator.ts';
 import type { StationDriver } from './drivers/types.ts';
@@ -178,7 +186,8 @@ api.post('/ports/:id', async (c) => {
   return c.json(await driver.setPort(id, enabled));
 });
 
-api.post('/grid', async (c) => {
+/** Simulator-only: pretend the mains came or went. `/grid` belongs to the relay. */
+api.post('/simulator/grid', async (c) => {
   if (!driver.setGridConnected) {
     throw new HTTPException(400, { message: 'Only the simulator can fake the grid connection' });
   }
@@ -186,9 +195,14 @@ api.post('/grid', async (c) => {
   return c.json(await driver.setGridConnected(connected));
 });
 
-// --- device discovery and binding ----------------------------------------
+// --- station transports ---------------------------------------------------
+//
+// Which stations the current transport can see, and which one we are bound to.
+// This used to be `/api/devices`; that name now belongs to the unified device
+// list, because "device" should mean "a thing you own", not "a station this
+// particular radio noticed".
 
-api.get('/devices', (c) =>
+api.get('/station/transports', (c) =>
   c.json({
     transport: transport?.kind ?? null,
     boundId: transport?.boundId ?? null,
@@ -203,7 +217,7 @@ api.get('/devices', (c) =>
   })
 );
 
-api.post('/devices/bind', async (c) => {
+api.post('/station/bind', async (c) => {
   if (!transport) throw new HTTPException(400, { message: 'Binding requires a hardware driver' });
   const { id } = await body(c, z.object({ id: z.string().min(1) }));
 
@@ -213,7 +227,7 @@ api.post('/devices/bind', async (c) => {
   return c.json({ boundId: transport.boundId, connected: transport.connected });
 });
 
-api.post('/devices/unbind', async (c) => {
+api.post('/station/unbind', async (c) => {
   if (!transport) throw new HTTPException(400, { message: 'Binding requires a hardware driver' });
   await transport.unbind();
   device?.reset();
@@ -386,6 +400,429 @@ diag.post('/raw', async (c) => {
     to: transport.boundId,
     parsedAsRequest: parseFrame(frame),
   });
+});
+
+// --- extensions -----------------------------------------------------------
+//
+// Plugins provide signals and offer capabilities; they never actuate. Every
+// relay command goes through the action gateway, which checks the grant, the
+// policy and the freshness of the data, then proves the physical effect
+// happened. See docs/PLUGIN-ARCHITECTURE.md.
+
+const host = new PluginHost();
+await host.discover();
+await host.startEnabled();
+
+const gateway = new ActionGateway({
+  host,
+  readStation: () => driver.status(),
+  isReadOnly: () => device?.readOnly ?? false,
+});
+
+const plugins = new Hono();
+
+const describePlugin = (instance: PluginInstance) => {
+  const health = host.health(instance.manifest.id);
+  return {
+    id: instance.manifest.id,
+    name: instance.manifest.name,
+    description: instance.manifest.description,
+    version: instance.manifest.version,
+    kind: instance.manifest.kind,
+    icon: instance.manifest.ui.icon,
+    capabilities: instance.manifest.capabilities,
+    setupActions: instance.manifest.setupActions ?? [],
+    /*
+      Lifecycle and liveness are different questions — a plugin can have started
+      cleanly and still be unable to reach its device. Report the liveness one,
+      because "healthy" beside a failed health check is exactly the green light
+      over stale data the brief warns about.
+    */
+    status: instance.status === 'healthy' ? health.status : instance.status,
+    enabled: host.enabled(instance.manifest.id),
+    health,
+    grants: host.grants(instance.manifest.id),
+    error: instance.error ?? health.detail ?? null,
+  };
+};
+
+plugins.get('/', (c) =>
+  c.json({
+    secretsEncrypted: secretsAreEncrypted(),
+    activeProviders: { gridRelay: host.activeProvider('gridRelay') },
+    plugins: host.all.map(describePlugin),
+  })
+);
+
+plugins.get('/:id/config', (c) => {
+  const instance = host.instance(c.req.param('id'));
+  if (!instance) throw new HTTPException(404, { message: 'No such plugin' });
+
+  return c.json({
+    id: instance.manifest.id,
+    schema: instance.manifest.configSchema,
+    // Secrets are never returned — only whether each one has been set.
+    values: host.configOf(instance.manifest.id),
+    secretsSet: host.secretsSet(instance.manifest.id),
+    enabled: host.enabled(instance.manifest.id),
+  });
+});
+
+plugins.patch('/:id/config', async (c) => {
+  const id = c.req.param('id');
+  if (!host.instance(id)) throw new HTTPException(404, { message: 'No such plugin' });
+
+  await host.setConfig(id, await body(c, z.record(z.string(), z.unknown())));
+  if (host.enabled(id)) await host.restart(id);
+
+  return c.json({ ok: true, status: host.instance(id)?.status, health: host.health(id) });
+});
+
+plugins.post('/:id/enable', async (c) => {
+  const id = c.req.param('id');
+  const { enabled } = await body(c, z.object({ enabled: z.boolean() }));
+  await host.setEnabled(id, enabled);
+  return c.json({ ok: true, status: host.instance(id)?.status, health: host.health(id) });
+});
+
+/** Side-effect-free probe. For the Tuya plugin this dumps every datapoint. */
+plugins.post('/:id/test', async (c) => {
+  const instance = host.instance(c.req.param('id'));
+  if (!instance) throw new HTTPException(404, { message: 'No such plugin' });
+  if (!instance.plugin.test) return c.json({ ok: false, detail: 'This plugin offers no test' });
+
+  return c.json(await instance.plugin.test());
+});
+
+/**
+ * Runs a commissioning helper the plugin declared in its manifest.
+ *
+ * Generic on purpose: this route knows nothing about Tuya, or about what the
+ * action does. It validates the input against the schema the plugin published,
+ * runs it with a timeout, and hands back the result — so a weather plugin's
+ * "find my location" works through the identical path and the identical screen.
+ *
+ * Runs on a stopped plugin: getting to a working configuration is the point.
+ */
+plugins.post('/:id/setup/:action', async (c) => {
+  const instance = host.instance(c.req.param('id'));
+  if (!instance) throw new HTTPException(404, { message: 'No such plugin' });
+
+  const actionId = c.req.param('action');
+  const action = instance.manifest.setupActions?.find((candidate) => candidate.id === actionId);
+  if (!action || !instance.plugin.runSetupAction) {
+    throw new HTTPException(404, { message: `No setup action "${actionId}"` });
+  }
+
+  const input = await body(c, z.record(z.string(), z.unknown()));
+  if (action.input) {
+    const validated = validatePluginConfig(action.input, input);
+    if (!validated.ok) {
+      return c.json({ ok: false, detail: validated.issues.map((i) => i.message).join('; ') }, 400);
+    }
+  }
+
+  // A network scan legitimately takes tens of seconds; a hung cloud call must
+  // not take the route with it.
+  const result = await Promise.race([
+    instance.plugin.runSetupAction(actionId, input as Record<string, string | number | boolean>),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('The setup action timed out')), 90_000)
+    ),
+  ]).catch((error: unknown) => ({
+    ok: false,
+    detail: error instanceof Error ? error.message : String(error),
+  }));
+
+  return c.json(result);
+});
+
+plugins.post('/:id/grants', async (c) => {
+  const id = c.req.param('id');
+  const instance = host.instance(id);
+  if (!instance) throw new HTTPException(404, { message: 'No such plugin' });
+
+  const { capability, granted, confirmation } = await body(
+    c,
+    z.object({
+      capability: z.string(),
+      granted: z.boolean(),
+      confirmation: z.string().optional(),
+    })
+  );
+
+  const name = capability as (typeof instance.manifest.capabilities)[number];
+  if (!instance.manifest.capabilities.includes(name)) {
+    throw new HTTPException(400, { message: `${id} does not offer ${capability}` });
+  }
+  // Granting something that can move a physical switch is a two-step act.
+  if (granted && isActuator(name) && confirmation !== CONFIRMATION_PHRASE) {
+    throw new HTTPException(400, {
+      message: `Granting ${capability} controls mains power and needs confirmation`,
+    });
+  }
+
+  host.setGrant(id, name, granted);
+  return c.json({ ok: true, grants: host.grants(id) });
+});
+
+plugins.post('/:id/provider', async (c) => {
+  const id = c.req.param('id');
+  if (!host.instance(id)) throw new HTTPException(404, { message: 'No such plugin' });
+  host.setActiveProvider('gridRelay', id);
+  return c.json({ ok: true, activeProvider: host.activeProvider('gridRelay') });
+});
+
+api.route('/plugins', plugins);
+
+// --- the grid relay -------------------------------------------------------
+
+api.get('/grid', async (c) => {
+  const state = await gateway.state();
+  return c.json({
+    provider: host.activeProvider('gridRelay'),
+    granted: (() => {
+      const id = host.activeProvider('gridRelay');
+      return id ? host.isGranted(id, 'gridRelay.switch') : false;
+    })(),
+    state,
+  });
+});
+
+api.post('/grid/relay', async (c) => {
+  const { on, reason, confirmation } = await body(
+    c,
+    z.object({
+      on: z.boolean(),
+      reason: z.string().min(1).max(200).default('Requested from the app'),
+      confirmation: z.string().optional(),
+    })
+  );
+
+  const result = await gateway.execute({ desired: on, reason, actor: 'user', confirmation });
+  return c.json(result, result.outcome === 'refused' ? 409 : 200);
+});
+
+api.get('/audit', (c) => c.json(recentAudit(Number(c.req.query('limit') ?? 100))));
+
+// --- devices --------------------------------------------------------------
+//
+// One list of the things you own: the station, and whatever the installed
+// drivers provide. Described identically, so the app has one card, one detail
+// screen and one chart for all of them.
+
+const catalog = new DeviceCatalog();
+const registry = new DeviceRegistry(catalog, host, () => driver);
+registry.adoptStation();
+
+const sampler = new Sampler(registry);
+sampler.start();
+
+api.get('/devices', async (c) => c.json({ devices: await registry.all() }));
+
+/** What can be added, and what each one needs. Drives the add-device wizard. */
+api.get('/device-types', (c) =>
+  c.json({
+    types: [
+      {
+        id: 'power-station',
+        label: 'Power station',
+        description: 'A Sydpower-stack station: AFERIY, FOSSiBOT, Eco Play, ABOK.',
+        icon: 'zap',
+        driver: 'core.station',
+        models: STATION_MODELS,
+        available: true,
+        note: 'The server talks to it over WiFi or Bluetooth.',
+      },
+      ...host.all
+        .filter((instance) => instance.manifest.kind === 'grid-relay')
+        .map((instance) => ({
+          id: instance.manifest.id,
+          label: instance.manifest.name,
+          description: instance.manifest.description,
+          icon: instance.manifest.ui.icon,
+          driver: instance.manifest.id,
+          models: [],
+          available: true,
+          note: instance.manifest.setupActions?.length
+            ? 'Finds it on your network and fetches what it needs.'
+            : undefined,
+        })),
+    ],
+  })
+);
+
+api.post('/devices', async (c) => {
+  const input = await body(
+    c,
+    z.object({
+      type: z.enum(['power-station', 'smart-plug']),
+      driver: z.string().min(1),
+      name: z.string().min(1).max(60),
+      model: z.string().nullish(),
+      config: z.record(z.string(), z.unknown()).optional(),
+    })
+  );
+
+  // One station for now: the driver holds a single link, so a second entry
+  // would be a promise the server cannot keep.
+  if (input.type === 'power-station' && catalog.find((record) => record.type === 'power-station')) {
+    throw new HTTPException(409, { message: 'A power station is already added' });
+  }
+
+  const record = catalog.add({
+    type: input.type,
+    driver: input.driver,
+    name: input.name,
+    model: input.model ?? null,
+    config: input.config,
+  });
+
+  return c.json(await registry.find(record.id));
+});
+
+api.get('/devices/:id', async (c) => {
+  const found = await registry.find(decodeURIComponent(c.req.param('id')));
+  if (!found) throw new HTTPException(404, { message: 'No such device' });
+  return c.json(found);
+});
+
+api.patch('/devices/:id', async (c) => {
+  const id = decodeURIComponent(c.req.param('id'));
+  const changes = await body(
+    c,
+    z.object({
+      name: z.string().min(1).max(60).optional(),
+      model: z.string().nullish(),
+      config: z.record(z.string(), z.unknown()).optional(),
+    })
+  );
+
+  if (!catalog.update(id, changes)) throw new HTTPException(404, { message: 'No such device' });
+  return c.json(await registry.find(id));
+});
+
+/**
+ * A device's own settings: what it remembers, not how we reach it.
+ *
+ * The schema comes from the device, so the app renders the P280's charge limit
+ * and a future plug's timers through the same code — and a setting that can
+ * damage the hardware is marked as such by the device rather than known by the
+ * app.
+ */
+api.get('/devices/:id/settings', async (c) => {
+  const id = decodeURIComponent(c.req.param('id'));
+  const found = await registry.find(id);
+  if (!found) throw new HTTPException(404, { message: 'No such device' });
+  if (!found.settings) return c.json({ schema: null, values: {}, dangerous: [] });
+
+  return c.json({
+    schema: found.settings.schema,
+    dangerous: found.settings.dangerous ?? [],
+    values: registry.readSettings(found.record),
+  });
+});
+
+api.patch('/devices/:id/settings', async (c) => {
+  const id = decodeURIComponent(c.req.param('id'));
+  const found = await registry.find(id);
+  if (!found?.settings) throw new HTTPException(404, { message: 'That device has no settings' });
+
+  const patch = await body(c, z.record(z.string(), z.unknown()));
+  const validated = validatePluginConfig(found.settings.schema, {
+    ...registry.readSettings(found.record),
+    ...patch,
+  });
+  if (!validated.ok) {
+    return c.json({ error: 'Validation failed', issues: validated.issues }, 400);
+  }
+
+  // Only what was asked for is sent: applying the full set would rewrite every
+  // register on the station to change one of them.
+  const values = await registry.writeSettings(
+    found.record,
+    Object.fromEntries(Object.keys(patch).map((key) => [key, validated.value[key]]))
+  );
+  return c.json({ values });
+});
+
+api.delete('/devices/:id', async (c) => {
+  const id = decodeURIComponent(c.req.param('id'));
+  if (!catalog.get(id)) throw new HTTPException(404, { message: 'No such device' });
+  catalog.remove(id);
+  return c.json({ ok: true });
+});
+
+/**
+ * One measurement over time.
+ *
+ * Thinned server-side: a fortnight of minute samples is far more points than a
+ * phone-sized chart can show, and sending them all would only make the device
+ * do arithmetic it cannot display.
+ */
+api.get('/devices/:id/history', (c) => {
+  const id = decodeURIComponent(c.req.param('id'));
+  const { key, hours, points } = z
+    .object({
+      key: z.string().min(1),
+      hours: z.coerce.number().min(0.5).max(24 * 14).default(24),
+      points: z.coerce.number().int().min(20).max(1000).default(240),
+    })
+    .parse({
+      key: c.req.query('key'),
+      hours: c.req.query('hours') ?? 24,
+      points: c.req.query('points') ?? 240,
+    });
+
+  const to = new Date();
+  const from = new Date(to.getTime() - hours * 3_600_000);
+
+  return c.json({
+    deviceId: id,
+    key,
+    from: from.toISOString(),
+    to: to.toISOString(),
+    points: series(id, key, from.toISOString(), to.toISOString(), points),
+  });
+});
+
+/**
+ * Invokes a device control.
+ *
+ * Anything physical goes through the action gateway, so a control on a device
+ * screen has exactly the authority a manual switch does — no more.
+ */
+api.post('/devices/:id/control/:control', async (c) => {
+  const deviceId = decodeURIComponent(c.req.param('id'));
+  const controlId = c.req.param('control');
+  const found = await registry.find(deviceId);
+  if (!found) throw new HTTPException(404, { message: 'No such device' });
+
+  const control = found.controls.find((candidate) => candidate.id === controlId);
+  if (!control) throw new HTTPException(404, { message: 'No such control' });
+
+  const { value, confirmation } = await body(
+    c,
+    z.object({ value: z.union([z.boolean(), z.number(), z.string()]), confirmation: z.string().optional() })
+  );
+
+  // The station's own ports are core business and keep their existing path.
+  if (found.record.driver === 'core.station') {
+    const port = PortIdSchema.parse(controlId);
+    return c.json(await driver.setPort(port, value === true));
+  }
+
+  if (control.capability === 'gridRelay.switch') {
+    const result = await gateway.execute({
+      desired: value === true,
+      reason: `${control.label} switched from the device screen`,
+      actor: 'user',
+      confirmation,
+    });
+    return c.json(result, result.outcome === 'refused' ? 409 : 200);
+  }
+
+  throw new HTTPException(400, { message: `${control.capability} cannot be invoked yet` });
 });
 
 api.route('/diagnostics', diag);

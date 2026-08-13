@@ -1,4 +1,4 @@
-import type { StationSettings, StationState } from './types';
+import type { StationSettings, StationState } from '@kraftverk/protocol';
 
 export function formatWatts(watts: number): string {
   if (watts >= 1000) return `${(watts / 1000).toFixed(2)} kW`;

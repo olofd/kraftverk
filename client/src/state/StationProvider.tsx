@@ -25,7 +25,7 @@ import {
   fetchVersion,
   patchSettings,
   setPort as apiSetPort,
-} from '../lib/api';
+} from '@kraftverk/api-client';
 import {
   forgetRememberedStation,
   readPreference,
@@ -40,7 +40,7 @@ import type {
   StationSettingsPatch,
   StationStatus,
   VersionInfo,
-} from '../lib/types';
+} from '@kraftverk/api-client';
 import {
   ChooserCancelled,
   createDirectTransport,

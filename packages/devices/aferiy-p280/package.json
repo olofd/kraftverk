@@ -1,0 +1,45 @@
+{
+  "name": "@kraftverk/device-aferiy-p280",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The AFERIY P280 as a device: what it measures, what it can be told to do, what it remembers — and the screens that are specific to it.",
+  "type": "module",
+  "main": "src/index.ts",
+  "kraftverk": {
+    "device": "./src/index.ts",
+    "panel": "./ui/dashboard.tsx"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./ui/energy-flow": "./ui/energy-flow.tsx",
+    "./ui/settings": "./ui/settings.tsx",
+    "./ui/protocol": "./ui/protocol.tsx",
+    "./ui/contract": "./ui/contract.ts",
+    "./ui/dashboard": "./ui/dashboard.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kraftverk/plugin-sdk": "*",
+    "@kraftverk/protocol": "*",
+    "@kraftverk/ui": "*",
+    "@kraftverk/api-client": "*"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "tamagui": "*"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "tamagui": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "@kraftverk/plugin-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The contract between kraftverk and its extensions: manifests, capabilities and the scoped context a plugin runs in. No dependencies, no runtime — types and validation only.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node ../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}
