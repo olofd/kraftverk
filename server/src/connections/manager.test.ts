@@ -56,7 +56,13 @@ class StubTransport implements Transport {
   }
   onDiscovery(listener: (device: DiscoveredDevice) => void) {
     this.#listeners.push(listener);
-    return () => {};
+    return () => {
+      this.#listeners = this.#listeners.filter((candidate) => candidate !== listener);
+    };
+  }
+
+  get watchers(): number {
+    return this.#listeners.length;
   }
 
   /** Pretends a station advertised itself. */
@@ -286,6 +292,85 @@ describe('the connection manager', () => {
       await Promise.resolve();
 
       expect(transport.bindings).toEqual([]);
+    });
+
+    /*
+      The failure this prevents is nasty: closing a session unbinds the radio,
+      and a listener left behind by the closed session would see an unbound
+      transport and bind the very station the user just forgot.
+    */
+    test('a forgotten device stops watching for stations', async () => {
+      const { connections, catalog, station, transport, bound } = harness('ble', {
+        autoBind: true,
+      });
+      const record = station();
+      await connections.sync(catalog.list());
+      expect(transport.watchers).toBe(1);
+
+      catalog.remove(record.id);
+      await connections.sync(catalog.list());
+      expect(transport.watchers).toBe(0);
+
+      transport.announce({ id: 'EE:FF' });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(transport.bindings).toEqual([]);
+      expect(bound).toEqual([]);
+    });
+
+    test('opening and closing repeatedly leaves one watcher, not a pile', async () => {
+      const { connections, catalog, station, transport } = harness('ble');
+
+      for (let round = 0; round < 3; round += 1) {
+        const record = station(`Round ${round}`);
+        await connections.sync(catalog.list());
+        expect(transport.watchers).toBe(1);
+        catalog.remove(record.id);
+        await connections.sync(catalog.list());
+      }
+
+      expect(transport.watchers).toBe(0);
+    });
+
+    /*
+      The record is the authority on which station is this device's. A session
+      that kept preferring the id it opened with would drag the user back to the
+      station they had just moved away from.
+    */
+    test('after a rebind, a dropped link comes back to the new station', async () => {
+      const { connections, catalog, station, transport } = harness('ble', { autoBind: false });
+      const record = station('Mine', { boundId: 'AA:BB' });
+      await connections.sync(catalog.list());
+
+      await connections.bind(record.id, 'CC:DD');
+      // The link drops on its own — the radio loses it, nobody asked it to.
+      await transport.unbind();
+
+      // The station it was moved *away* from advertises. Auto-bind is off, so
+      // only this device's own station may be taken, and this is not it.
+      transport.announce({ id: 'AA:BB' });
+      await Promise.resolve();
+      expect(transport.boundId).toBeNull();
+
+      transport.announce({ id: 'CC:DD' });
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(transport.boundId).toBe('CC:DD');
+    });
+
+    /** A deliberate unbind means stop, not "reconnect at the first chance". */
+    test('an explicit unbind is not undone by the station reappearing', async () => {
+      const { connections, catalog, station, transport } = harness('ble', { autoBind: false });
+      const record = station('Mine', { boundId: 'AA:BB' });
+      await connections.sync(catalog.list());
+
+      await connections.unbind(record.id);
+      transport.announce({ id: 'AA:BB' });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(transport.boundId).toBeNull();
     });
 
     test('closing a session releases the station but keeps the radio', async () => {

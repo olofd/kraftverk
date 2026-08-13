@@ -6,13 +6,24 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScrollView, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { ConnectionBanner } from './ConnectionBanner';
-import { useStation } from '../state/StationProvider';
+import { useDevices } from '../state/DevicesProvider';
+import type { Connection } from '../state/DirectLinkProvider';
 
 type Props = {
   title: string;
   subtitle?: string;
-  /** Pushed screens get a way back; the tabs bring their own. */
+  /** Pushed screens get a way back. Root has none, because it is the root. */
   back?: string;
+  /**
+   * Where back goes when there is no history to pop.
+   *
+   * These screens are reachable by deep link and by refresh, where `back()`
+   * would strand the user. Without this the label lied: Advanced said
+   * "Settings" and landed you on the device canvas.
+   */
+  backTo?: string;
+  /** Overrides the header status, for screens that are about one device. */
+  status?: ScreenStatus;
   children: ReactNode;
 };
 
@@ -20,10 +31,10 @@ type Props = {
  * Shared page chrome: safe-area padding, a centred max-width column so the web
  * build doesn't stretch to 2000px, pull-to-refresh, and the offline banner.
  */
-export function Screen({ title, subtitle, back, children }: Props) {
+export function Screen({ title, subtitle, back, backTo, status, children }: Props) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
-  const { connection, refresh } = useStation();
+  const { connection, refresh } = useDevices();
 
   return (
     <ScrollView
@@ -49,10 +60,11 @@ export function Screen({ title, subtitle, back, children }: Props) {
             alignItems="center"
             gap="$1.5"
             alignSelf="flex-start"
+            cursor="pointer"
             pressStyle={{ opacity: 0.6 }}
-            // These screens are also reachable by deep link, where there is no
-            // history to pop and `back()` would strand the user on a dead end.
-            onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/devices'))}
+            onPress={() =>
+              router.canGoBack() ? router.back() : router.replace(backTo ?? '/')
+            }
           >
             <Feather name="chevron-left" size={16} color={theme.muted?.val} />
             <Text fontSize={14} fontWeight="600" color="$muted">
@@ -72,7 +84,7 @@ export function Screen({ title, subtitle, back, children }: Props) {
               </Text>
             ) : null}
           </YStack>
-          <StatusDot />
+          <StatusDot status={status} />
         </XStack>
 
         <ConnectionBanner />
@@ -83,8 +95,20 @@ export function Screen({ title, subtitle, back, children }: Props) {
   );
 }
 
-function StatusDot() {
-  const { connection } = useStation();
+/**
+ * What is being reported, and by whom.
+ *
+ * By default this is the app's own reachability: can it get to the server, or
+ * to the station it holds itself. On a screen that is *about one device* that
+ * is the wrong subject — a reachable server happily reports "Online" beside a
+ * station that has never connected — so those screens pass the device's state
+ * instead.
+ */
+export type ScreenStatus = { connection: Connection; label?: string };
+
+function StatusDot({ status }: { status?: ScreenStatus }) {
+  const { connection: appConnection } = useDevices();
+  const connection = status?.connection ?? appConnection;
 
   const color =
     connection === 'online'
@@ -95,13 +119,14 @@ function StatusDot() {
           ? '$muted'
           : '$danger';
   const label =
-    connection === 'online'
+    status?.label ??
+    (connection === 'online'
       ? 'Online'
       : connection === 'connecting'
         ? 'Connecting'
         : connection === 'idle'
           ? 'Not connected'
-          : 'Offline';
+          : 'Offline');
 
   return (
     <XStack alignItems="center" gap="$2" paddingBottom={6}>

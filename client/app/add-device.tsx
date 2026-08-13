@@ -77,7 +77,7 @@ export default function AddDeviceScreen() {
   }, [add, chosen, model, name]);
 
   return (
-    <Screen back="Devices" title="Add a device" subtitle="What have you got?">
+    <Screen back="Your devices" title="Add a device" subtitle="What have you got?">
       {error ? (
         <Card borderColor="$danger">
           <Text fontSize={13} color="$danger" lineHeight={19}>
@@ -105,6 +105,7 @@ export default function AddDeviceScreen() {
                   {index > 0 ? <RowSeparator /> : null}
                   <XStack
                     opacity={blocked ? 0.45 : 1}
+                    cursor={blocked ? undefined : 'pointer'}
                     pressStyle={blocked ? undefined : { opacity: 0.6 }}
                     onPress={blocked ? undefined : () => choose(option)}
                   >
@@ -132,6 +133,8 @@ export default function AddDeviceScreen() {
           </Card>
         </YStack>
       )}
+
+      {chosen?.id === 'power-station' ? <ConnectionOwner /> : null}
 
       {chosen ? (
         <>
@@ -190,6 +193,55 @@ export default function AddDeviceScreen() {
 }
 
 /**
+ * Who will hold the link — and the honest admission that this screen only makes
+ * one of the two.
+ *
+ * Adding a device here creates a **server-owned** station: the server holds the
+ * link, which is what makes history, background sampling and automations
+ * possible, because only the server is running when the app is closed.
+ *
+ * Driving a station straight from this browser or phone over Bluetooth is a
+ * different kind of connection, and it does not need a saved device at all. It
+ * is set up on the Station link screen. Saying so here is the difference between
+ * a user who finds that screen and one who adds a station the server cannot
+ * reach and is left with a permanently grey card.
+ *
+ * The wizard that offers both in one flow is Milestone B; until it exists, this
+ * points at the screen that already works rather than pretending.
+ */
+function ConnectionOwner() {
+  const theme = useTheme();
+
+  return (
+    <YStack gap="$2">
+      <SectionLabel>Connection</SectionLabel>
+      <Card gap="$3" alignItems="flex-start">
+        <Text fontSize={13} color="$muted" lineHeight={19}>
+          The <Text color="$color">server</Text> will hold this station's link, over WiFi or its
+          own Bluetooth. That is what records history and can run automations while the app is
+          closed.
+        </Text>
+        <Text fontSize={13} color="$muted" lineHeight={19}>
+          To drive a station from <Text color="$color">this device</Text> over Bluetooth instead —
+          live readings, settings and manual control while the app is open — you do not add it
+          here. Set that up on the Station link screen.
+        </Text>
+        <Button
+          size="$3"
+          icon={<Feather name="bluetooth" size={14} color={theme.color?.val} />}
+          onPress={() => {
+            haptic();
+            router.push('/link');
+          }}
+        >
+          Connect over Bluetooth instead
+        </Button>
+      </Card>
+    </YStack>
+  );
+}
+
+/**
  * Which hardware it is, and how far each option is actually trusted.
  *
  * The register map was verified on one machine. Saying so at the point of
@@ -214,7 +266,7 @@ function Models({
         {models.map((option, index) => (
           <YStack key={option.id}>
             {index > 0 ? <RowSeparator /> : null}
-            <XStack pressStyle={{ opacity: 0.6 }} onPress={() => onChange(option.id)}>
+            <XStack cursor="pointer" pressStyle={{ opacity: 0.6 }} onPress={() => onChange(option.id)}>
               <YStack flex={1}>
                 <Row
                   title={option.label}

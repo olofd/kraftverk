@@ -17,6 +17,7 @@ export { Card, SectionLabel, type CardProps } from './Card';
 export { DeviceCard, type DeviceCardDevice } from './DeviceCard';
 export { ModeRow } from './ModeRow';
 export { Row, RowSeparator, ToggleRow } from './Row';
+export { Toggle, type ToggleProps } from './Toggle';
 export { SchemaForm, isComplete } from './SchemaForm';
 export { SegmentedControl } from './SegmentedControl';
 export { SliderRow } from './SliderRow';

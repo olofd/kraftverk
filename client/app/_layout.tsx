@@ -8,7 +8,7 @@ import { TamaguiProvider, Theme } from 'tamagui';
 
 import config, { BACKGROUNDS } from '../tamagui.config';
 import { DevicesProvider } from '../src/state/DevicesProvider';
-import { StationProvider } from '../src/state/StationProvider';
+import { DirectLinkProvider } from '../src/state/DirectLinkProvider';
 
 export default function RootLayout() {
   // useColorScheme can report values outside light/dark; anything else gets dark.
@@ -28,14 +28,19 @@ export default function RootLayout() {
             when a server holds it, and whether that is the case is the link's
             business.
           */}
-          <StationProvider>
+          <DirectLinkProvider>
             <DevicesProvider>
               <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+              {/*
+                No tab bar. Root is the device canvas, and everything else is
+                pushed on top of it — a device's own screens, the add flow, and
+                the app-level infrastructure pages.
+              */}
               <Stack screenOptions={{ headerShown: false }}>
-                <Stack.Screen name="(tabs)" />
+                <Stack.Screen name="index" />
               </Stack>
             </DevicesProvider>
-          </StationProvider>
+          </DirectLinkProvider>
         </SafeAreaProvider>
       </Theme>
     </TamaguiProvider>

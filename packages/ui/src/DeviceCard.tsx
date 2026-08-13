@@ -57,6 +57,7 @@ export function DeviceCard({ device, icon, secondary, onPress }: Props) {
       gap="$3"
       // Dimmed rather than dropped: the device is still yours, it is just quiet.
       opacity={device.online ? 1 : 0.55}
+      cursor={onPress ? 'pointer' : undefined}
       pressStyle={onPress ? { opacity: 0.75 } : undefined}
       onPress={
         onPress

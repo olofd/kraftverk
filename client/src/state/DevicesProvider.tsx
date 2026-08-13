@@ -35,12 +35,12 @@ import {
   valuesToSettings,
 } from '@kraftverk/device-aferiy-p280';
 
-import { useStation } from './StationProvider';
+import { useDirectLink, type Connection } from './DirectLinkProvider';
 
 /**
  * The things you own.
  *
- * Separate from `StationProvider` on purpose. That one owns a *link* — a socket
+ * Separate from `DirectLinkProvider` on purpose. That one owns a *link* — a socket
  * to one station, which the app may be holding itself over Bluetooth. This one
  * owns a *catalog*, which only a server keeps: your devices, their names, and
  * their history, all of which outlive whatever happens to be reachable.
@@ -69,6 +69,15 @@ type DevicesContextValue = {
    * would otherwise have to disable.
    */
   editable: boolean;
+  /**
+   * Whether the app can reach the thing that holds the catalog.
+   *
+   * On a server link this is the server; on a direct link it is the station the
+   * app is holding itself. It lives here rather than in a station provider
+   * because it is a fact about the *link*, and the catalog is the one thing
+   * polled on every screen — so it is what notices first.
+   */
+  connection: Connection;
   devices: DeviceView[];
   /** The station, if one has been added. The app's dashboard follows it. */
   station: DeviceView | null;
@@ -110,12 +119,21 @@ type DevicesContextValue = {
 const DevicesContext = createContext<DevicesContextValue | null>(null);
 
 export function DevicesProvider({ children }: { children: ReactNode }) {
-  const { source, status, connection, settings, updateSettings, togglePort } = useStation();
+  const { source, status, connection, settings, updateSettings, togglePort } = useDirectLink();
   const editable = source === 'server';
 
   const [served, setServed] = useState<DeviceView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Set only by the poll, never by an action.
+   *
+   * "The server refused what you asked" and "the server is not there" are
+   * different facts, and conflating them put the whole app behind a *Can't
+   * reach the API server* banner whenever a rename collided or a second station
+   * was refused — while the server was answering perfectly well.
+   */
+  const [unreachable, setUnreachable] = useState(false);
 
   /**
    * Guards the poll from overwriting a list the user just changed.
@@ -135,10 +153,12 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       try {
         const next = await fetchDeviceList(signal);
         if (pending.current === 0) setServed(next);
+        setUnreachable(false);
         setError(null);
       } catch (err) {
         const message = describeError(err);
         if (!message) return; // aborted
+        setUnreachable(true);
         setError(message);
       } finally {
         setLoading(false);
@@ -332,9 +352,23 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     [devices]
   );
 
+  /*
+    The catalog is polled on every screen, so its last answer is the honest
+    report of whether the server is there. On a direct link there is no server
+    in the path at all, and the station's own link is the only thing to report.
+  */
+  const reachability: Connection = !editable
+    ? connection
+    : unreachable
+      ? 'offline'
+      : loading
+        ? 'connecting'
+        : 'online';
+
   const value = useMemo<DevicesContextValue>(
     () => ({
       editable,
+      connection: reachability,
       devices,
       station,
       loading: editable ? loading : false,
@@ -358,11 +392,13 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       load,
       loading,
       readSettings,
+      reachability,
       remove,
       rename,
       setModel,
       station,
       types,
+      unreachable,
       writeSettings,
     ]
   );

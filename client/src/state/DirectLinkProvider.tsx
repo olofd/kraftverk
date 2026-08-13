@@ -18,19 +18,26 @@ import {
 } from '@kraftverk/protocol';
 
 import {
-  API_BASE_URL,
+  DEFAULT_API_BASE_URL,
   describeError,
-  fetchSettings,
-  fetchStatus,
-  fetchVersion,
-  patchSettings,
-  setPort as apiSetPort,
+  probeServer,
+  setApiBaseUrl,
 } from '@kraftverk/api-client';
+
+import {
+  addServer as storeAddServer,
+  markServersConfigured,
+  readActiveServer,
+  readServers,
+  removeServer as storeRemoveServer,
+  serversConfigured,
+  updateServer as storeUpdateServer,
+  writeActiveServerId,
+  type SavedServer,
+} from '../lib/servers';
 import {
   forgetRememberedStation,
-  readPreference,
   readRememberedStation,
-  writePreference,
   writeRememberedStation,
   type RememberedStation,
 } from '../lib/preferences';
@@ -59,8 +66,6 @@ const POLL_MS = 2000;
  * connection asks less often.
  */
 const DIRECT_POLL_MS = 3000;
-
-const SOURCE_KEY = 'kraftverk.link.source';
 
 /**
  * `idle` is not a degraded `offline`: it means nothing is connected and nothing
@@ -106,24 +111,77 @@ export type DirectLink = {
   snapshot: () => Promise<RegisterDump>;
 };
 
-type StationContextValue = {
+/**
+ * The link this app is holding itself, if it is holding one.
+ *
+ * This used to be `StationProvider`, and it used to be two things at once: the
+ * app's own Bluetooth connection to a station, *and* a poller for the server's
+ * global `/api/status`. The second half is gone. Station telemetry now belongs
+ * to a device — `useDeviceConnection(device)` asks for one device's, by id —
+ * so nothing in the app reads "the station" any more.
+ *
+ * What remains is genuinely one client-owned connection: the browser or phone
+ * holding a station's single Bluetooth slot. `status` and `settings` here are
+ * that link's, and they are null whenever the app is not holding one.
+ */
+type DirectLinkContextValue = {
+  /** Live only on a direct link; the server's devices are read per device. */
   status: StationStatus | null;
   settings: StationSettings | null;
+  /** Describes the link the app is holding, not a server. */
   version: VersionInfo | null;
   connection: Connection;
   error: string | null;
-  apiBaseUrl: string;
+  /** `server` when one is selected, `direct` when this device holds the link. */
   source: LinkSource;
   setSource: (source: LinkSource) => void;
+  /** The kraftverk servers this app knows about, and which one is in use. */
+  servers: Servers;
   direct: DirectLink;
   refresh: () => Promise<void>;
   updateSettings: (patch: StationSettingsPatch) => Promise<void>;
   togglePort: (id: PortId, enabled: boolean) => Promise<void>;
 };
 
-const StationContext = createContext<StationContextValue | null>(null);
+/**
+ * Server configuration, which belongs to the app rather than to any server.
+ *
+ * Adding one is how you leave local mode; forgetting the active one is how you
+ * return to it. Nothing here contacts a server except `test`, which is offered
+ * before a bad address is saved rather than after.
+ */
+export type Servers = {
+  all: SavedServer[];
+  active: SavedServer | null;
+  /** True while the first-run probe is deciding; the UI waits rather than lies. */
+  deciding: boolean;
+  add: (input: { name?: string; url: string }) => Promise<SavedServer>;
+  update: (id: string, changes: { name?: string; url?: string }) => void;
+  remove: (id: string) => void;
+  /** `null` means local mode: this device holds its own links. */
+  use: (id: string | null) => void;
+  test: (url: string) => Promise<boolean>;
+};
 
-const initialSource = (): LinkSource => (readPreference(SOURCE_KEY) === 'direct' ? 'direct' : 'server');
+const DirectLinkContext = createContext<DirectLinkContextValue | null>(null);
+
+/**
+ * Local until told otherwise.
+ *
+ * A server is something you add, so having one selected is what puts the app in
+ * server mode. On the very first run nothing is selected yet and the app starts
+ * local — see the adoption effect below, which looks for a server running
+ * beside it rather than assuming one.
+ */
+const initialSource = (): LinkSource => (readActiveServer() ? 'server' : 'direct');
+
+/*
+  Point the HTTP client at the selected server on import, before any screen has
+  had a chance to call it. Doing this in a render or an effect would let the
+  first poll go to the build-time default instead.
+*/
+const selectedAtStartup = readActiveServer();
+if (selectedAtStartup) setApiBaseUrl(selectedAtStartup.url);
 
 /** Polls a condition, because a scan reports devices whenever it feels like it. */
 function waitFor(test: () => boolean, timeoutMs: number): Promise<boolean> {
@@ -142,7 +200,7 @@ function waitFor(test: () => boolean, timeoutMs: number): Promise<boolean> {
   });
 }
 
-export function StationProvider({ children }: { children: ReactNode }) {
+export function DirectLinkProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<StationStatus | null>(null);
   const [settings, setSettings] = useState<StationSettings | null>(null);
   const [version, setVersion] = useState<VersionInfo | null>(null);
@@ -151,6 +209,10 @@ export function StationProvider({ children }: { children: ReactNode }) {
   );
   const [error, setError] = useState<string | null>(null);
   const [source, setSourceState] = useState<LinkSource>(initialSource);
+
+  const [serverList, setServerList] = useState<SavedServer[]>(readServers);
+  const [activeServer, setActiveServer] = useState<SavedServer | null>(readActiveServer);
+  const [deciding, setDeciding] = useState(() => !serversConfigured());
 
   const [support, setSupport] = useState<DirectSupport>(directSupport);
   const [scanning, setScanning] = useState(false);
@@ -476,89 +538,14 @@ export function StationProvider({ children }: { children: ReactNode }) {
     return dumpDirect();
   }, [dumpDirect]);
 
-  // --- server link ---------------------------------------------------------
-
-  const load = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const [nextStatus, nextVersion, nextSettings] = await Promise.all([
-        fetchStatus(signal),
-        fetchVersion(signal),
-        fetchSettings(signal),
-      ]);
-      setStatus(nextStatus);
-      setVersion(nextVersion);
-      if (pendingSettings.current === 0) setSettings(nextSettings);
-      setConnection('online');
-      setError(null);
-    } catch (err) {
-      const message = describeError(err);
-      if (!message) return; // aborted
-      setConnection('offline');
-      setError(message);
-    }
-  }, []);
-
-  const poll = useCallback(async (signal?: AbortSignal) => {
-    try {
-      setStatus(await fetchStatus(signal));
-      setConnection('online');
-      setError(null);
-    } catch (err) {
-      const message = describeError(err);
-      if (!message) return;
-      setConnection('offline');
-      setError(message);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (source !== 'server') return;
-
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setInterval> | undefined;
-
-    const start = () => {
-      if (timer) return;
-      timer = setInterval(() => {
-        void poll(controller.signal);
-      }, POLL_MS);
-    };
-
-    const stop = () => {
-      if (!timer) return;
-      clearInterval(timer);
-      timer = undefined;
-    };
-
-    void load(controller.signal).then(start);
-
-    // Don't burn battery polling while the app is backgrounded on iOS.
-    const subscription = AppState.addEventListener('change', (next) => {
-      if (next === 'active') {
-        void load(controller.signal);
-        start();
-      } else {
-        stop();
-      }
-    });
-
-    return () => {
-      stop();
-      subscription.remove();
-      controller.abort();
-    };
-  }, [load, poll, source]);
-
   /**
    * Switching source resets the view rather than leaving the previous link's
    * numbers on screen, and drops the Bluetooth connection on the way out —
    * these stations accept one connection at a time, so holding it would lock
    * the server out of the station the user just switched to.
    */
-  const setSource = useCallback(
+  const enterMode = useCallback(
     (next: LinkSource) => {
-      if (next === source) return;
-      writePreference(SOURCE_KEY, next);
       setStatus(null);
       setSettings(null);
       setVersion(null);
@@ -567,8 +554,113 @@ export function StationProvider({ children }: { children: ReactNode }) {
       if (next === 'server') void disconnectDirect();
       setSourceState(next);
     },
-    [disconnectDirect, source]
+    [disconnectDirect]
   );
+
+  /**
+   * Selects a server, or `null` for local mode.
+   *
+   * Selecting one *is* server mode — there is no separate switch to fall out of
+   * step with the list. Local mode is the honest state of an app with no server
+   * to talk to, not an error.
+   */
+  const useServer = useCallback(
+    (id: string | null) => {
+      markServersConfigured();
+      const chosen = id ? (readServers().find((server) => server.id === id) ?? null) : null;
+
+      writeActiveServerId(chosen?.id ?? null);
+      setActiveServer(chosen);
+      if (chosen) setApiBaseUrl(chosen.url);
+      enterMode(chosen ? 'server' : 'direct');
+    },
+    [enterMode]
+  );
+
+  /**
+   * The old Server / This device switch, in terms of the server list.
+   *
+   * Choosing "server" with none saved cannot do anything useful, so it is a
+   * no-op rather than a mode that shows an error banner about an address the
+   * user never gave.
+   */
+  const setSource = useCallback(
+    (next: LinkSource) => {
+      if (next === source) return;
+      if (next === 'direct') {
+        useServer(null);
+        return;
+      }
+      const fallback = activeServer ?? readServers()[0];
+      if (fallback) useServer(fallback.id);
+    },
+    [activeServer, source, useServer]
+  );
+
+  const servers = useMemo<Servers>(
+    () => ({
+      all: serverList,
+      active: activeServer,
+      deciding,
+      add: async (input) => {
+        const saved = storeAddServer(input);
+        setServerList(readServers());
+        // Adding the first server is also choosing it: nobody types an address
+        // in order to then not use it.
+        if (!activeServer) useServer(saved.id);
+        return saved;
+      },
+      update: (id, changes) => {
+        const next = storeUpdateServer(id, changes);
+        setServerList(readServers());
+        if (next && next.id === activeServer?.id) {
+          setActiveServer(next);
+          setApiBaseUrl(next.url);
+        }
+      },
+      remove: (id) => {
+        const wasActive = activeServer?.id === id;
+        storeRemoveServer(id);
+        setServerList(readServers());
+        if (wasActive) useServer(null);
+      },
+      use: useServer,
+      test: (url) => probeServer(url),
+    }),
+    [activeServer, deciding, serverList, useServer]
+  );
+
+  /**
+   * On the very first run, look for a server running beside the app.
+   *
+   * Someone who has just started `npm run dev`, or who self-hosts on the machine
+   * serving this page, should not have to type in an address they did not
+   * choose. Someone opening the app with no server should not be told anything
+   * is wrong. So: probe once, adopt it if it answers, and stay local if it does
+   * not. Either way the question is then settled and never asked again.
+   */
+  useEffect(() => {
+    if (!deciding) return;
+    let live = true;
+
+    void (async () => {
+      const found = await probeServer(DEFAULT_API_BASE_URL);
+      if (!live) return;
+
+      if (found) {
+        const saved = storeAddServer({ url: DEFAULT_API_BASE_URL });
+        setServerList(readServers());
+        useServer(saved.id);
+      } else {
+        markServersConfigured();
+      }
+      setDeciding(false);
+    })();
+
+    return () => {
+      live = false;
+    };
+  }, [deciding, useServer]);
 
   /**
    * Pick up where the last session left off.
@@ -632,74 +724,53 @@ export function StationProvider({ children }: { children: ReactNode }) {
   // --- actions -------------------------------------------------------------
 
   const refresh = useCallback(async () => {
+    if (source !== 'direct') return;
     setConnection((current) => (current === 'online' ? current : 'connecting'));
-    if (source === 'direct') {
-      await clientRef.current?.poll();
-      return;
+    await clientRef.current?.poll();
+  }, [source]);
+
+  const updateSettings = useCallback(async (patch: StationSettingsPatch) => {
+    const client = clientRef.current;
+    if (!client) throw new Error('No station connected');
+
+    setSettings((current) => (current ? { ...current, ...patch } : current));
+    pendingSettings.current += 1;
+    try {
+      setSettings(await client.applySettings(patch));
+      setError(null);
+    } catch (err) {
+      const message = describeError(err);
+      if (message) setError(message);
+      // Rejected or unreachable — resync so the UI stops lying.
+      setSettings(client.settings() ?? null);
+    } finally {
+      pendingSettings.current -= 1;
     }
-    await load();
-  }, [load, source]);
+  }, []);
 
-  const updateSettings = useCallback(
-    async (patch: StationSettingsPatch) => {
-      setSettings((current) => (current ? { ...current, ...patch } : current));
-      pendingSettings.current += 1;
-      try {
-        if (source === 'direct') {
-          const client = clientRef.current;
-          if (!client) throw new Error('No station connected');
-          setSettings(await client.applySettings(patch));
-        } else {
-          setSettings(await patchSettings(patch));
-        }
-        setError(null);
-      } catch (err) {
-        const message = describeError(err);
-        if (message) setError(message);
-        // Rejected or unreachable — resync so the UI stops lying.
-        try {
-          setSettings(
-            source === 'direct' ? (clientRef.current?.settings() ?? null) : await fetchSettings()
-          );
-        } catch {
-          /* leave the optimistic value; the banner already says we're offline */
-        }
-      } finally {
-        pendingSettings.current -= 1;
-      }
-    },
-    [source]
-  );
+  const togglePort = useCallback(async (id: PortId, enabled: boolean) => {
+    const client = clientRef.current;
+    if (!client) throw new Error('No station connected');
 
-  const togglePort = useCallback(
-    async (id: PortId, enabled: boolean) => {
-      setStatus((current) =>
-        current
-          ? {
-              ...current,
-              ports: current.ports.map((port) =>
-                port.id === id ? { ...port, enabled, watts: enabled ? port.watts : 0 } : port
-              ),
-            }
-          : current
-      );
-      try {
-        if (source === 'direct') {
-          const client = clientRef.current;
-          if (!client) throw new Error('No station connected');
-          setStatus(await client.setPort(id, enabled));
-        } else {
-          setStatus(await apiSetPort(id, enabled));
-        }
-        setError(null);
-      } catch (err) {
-        const message = describeError(err);
-        if (message) setError(message);
-        if (source === 'direct') setStatus(clientRef.current?.status() ?? null);
-      }
-    },
-    [source]
-  );
+    setStatus((current) =>
+      current
+        ? {
+            ...current,
+            ports: current.ports.map((port) =>
+              port.id === id ? { ...port, enabled, watts: enabled ? port.watts : 0 } : port
+            ),
+          }
+        : current
+    );
+    try {
+      setStatus(await client.setPort(id, enabled));
+      setError(null);
+    } catch (err) {
+      const message = describeError(err);
+      if (message) setError(message);
+      setStatus(client.status() ?? null);
+    }
+  }, []);
 
   /**
    * On a direct link there is no server to ask for a version, but the screens
@@ -765,16 +836,16 @@ export function StationProvider({ children }: { children: ReactNode }) {
     ]
   );
 
-  const value = useMemo<StationContextValue>(
+  const value = useMemo<DirectLinkContextValue>(
     () => ({
       status,
       settings,
-      version: source === 'direct' ? directVersion : version,
+      version: directVersion,
       connection,
       error,
-      apiBaseUrl: API_BASE_URL,
       source,
       setSource,
+      servers,
       direct,
       refresh,
       updateSettings,
@@ -784,6 +855,7 @@ export function StationProvider({ children }: { children: ReactNode }) {
       connection,
       direct,
       directVersion,
+      servers,
       error,
       refresh,
       setSource,
@@ -792,17 +864,16 @@ export function StationProvider({ children }: { children: ReactNode }) {
       status,
       togglePort,
       updateSettings,
-      version,
     ]
   );
 
-  return <StationContext.Provider value={value}>{children}</StationContext.Provider>;
+  return <DirectLinkContext.Provider value={value}>{children}</DirectLinkContext.Provider>;
 }
 
-export function useStation(): StationContextValue {
-  const context = useContext(StationContext);
+export function useDirectLink(): DirectLinkContextValue {
+  const context = useContext(DirectLinkContext);
   if (!context) {
-    throw new Error('useStation must be used inside <StationProvider>');
+    throw new Error('useDirectLink must be used inside <DirectLinkProvider>');
   }
   return context;
 }

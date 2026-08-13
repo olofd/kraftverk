@@ -19,12 +19,31 @@ Last updated at commit `9fa7c77` on branch `devices-and-extensions`.
 On **`devices-and-extensions`**, **not pushed**. Typecheck clean across seven
 packages, 160 tests passing (`npm test`).
 
-The device-first restructuring is partly done. Auto-adoption is gone and the
-`ConnectionManager` exists; the app's global tabs and `StationProvider` do not
-yet, so the remaining work is the client's. The global station routes
-(`/api/status`, `/api/settings`, `/api/ports`) still exist, but they now resolve
-through the one open session and answer 404 when there is no station — they are
-deprecated in favour of `/api/devices/:id/...`.
+**The device-first restructuring is done**, in the sense the session set out:
+the P280 works as it did, and it is a saved device that can be added, renamed,
+edited and deleted. Auto-adoption is gone, the `ConnectionManager` owns every
+session, root is the device canvas, and no client code reads a global station.
+
+Two loose ends, both deliberate and both cheap:
+
+- **The global station routes are now dead code.** `/api/status`,
+  `/api/settings`, `/api/ports/:id` and `/api/simulator/grid` still exist and
+  still work — they resolve through the one open session and 404 when there is
+  no station — but nothing in the app calls them. Deleting them (and the
+  matching `fetchStatus`/`patchSettings`/`setPort` in `@kraftverk/api-client`)
+  is a self-contained next commit.
+- **`/api/diagnostics/*` is still global.** The Protocol screen sits under a
+  device's Advanced, but the register dump it reads still resolves to whichever
+  session the server holds. It becomes device-scoped when the P280 adapter moves
+  into its package in Milestone B.
+
+**Local mode and server mode.** The app no longer assumes a server exists. A
+server is a client-side record — address, name — kept in `localStorage` by
+`client/src/lib/servers.ts`, with full CRUD and one selected at a time; selecting
+none *is* local mode. On first run the app probes the build-time default address
+and adopts the server if one answers, so `npm run dev` still just works, and a
+browser-only user is left in local mode with nothing red on screen. The API
+client's base URL is now runtime-settable (`setApiBaseUrl`), not a constant.
 
 `KRAFTVERK_DB` and `KRAFTVERK_BINDING_FILE` now override where the database and
 the station binding live. They exist so tests — and a scratch server — work on
@@ -60,10 +79,14 @@ Milestone A, in order:
    binding names — a BLE binding under the simulator would create a record the
    server cannot operate. Taking it or dismissing it is remembered in the new
    `app_state` table, so the banner asks once.
-2. **Root becomes `Your devices`.** Global Dashboard, Settings, Protocol and
-   Extensions leave the primary tab bar. Root is always the canvas even with one
-   device; each saved device gets its own stable route so it can be opened
-   directly.
+2. ~~**Root becomes `Your devices`.**~~ **Done.** There is no tab bar at all.
+   Root is the canvas; `/device/:id` and `/device/:id/settings` are that
+   device's only two primary destinations, and the register tools sit at
+   `/device/:id/advanced`, reached from its Settings under Advanced. Extensions
+   and the station link moved to `/app-settings`, one level down. The P280's
+   panels are rendered from the device route through `src/devices/screens.ts`;
+   a device with no panels of its own gets the generic ones in
+   `src/features/devices/panels.tsx` and loses nothing.
 3. **`/devices` returns `SavedDeviceView`** with connection health and explicit
    ids — see the identifier rule below.
 4. **Migrations** for `updated_at`, connection records, device-scoped secrets and
@@ -80,8 +103,12 @@ These are current behaviours the refactor exists to fix. Do not treat them as
 settled design:
 
 - ~~The station is auto-adopted at startup~~ — **fixed**, see Milestone A item 1.
-- **`StationProvider` is global**, and the station still behaves like the app
-  rather than like one device.
+- ~~`StationProvider` is global~~ — **fixed.** It is now `DirectLinkProvider`,
+  and it owns only the link the *app* holds over Bluetooth. Station telemetry is
+  per device: `useDeviceConnection(device)` reads
+  `GET /api/devices/:id/p280/state` and writes through
+  `PATCH /api/devices/:id/p280/settings` and the device's own control route.
+  Nothing in the client reads "the station" any more.
 - ~~The server holds one `driver`, one `transport`, one binding.~~ **Fixed.**
   `server/src/connections/manager.ts` opens one session per saved station,
   keyed by catalog id, and is the only thing that knows about live drivers and

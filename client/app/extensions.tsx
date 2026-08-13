@@ -6,7 +6,7 @@ import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 import { Card, SectionLabel } from '@kraftverk/ui';
 import { Row, RowSeparator, ToggleRow } from '@kraftverk/ui';
 import { isComplete, SchemaForm } from '@kraftverk/ui';
-import { Screen } from '../../src/components/Screen';
+import { Screen } from '../src/components/Screen';
 import {
   describeError,
   fetchGrid,
@@ -31,7 +31,7 @@ import type {
   PluginSummary,
   SetupActionResult,
 } from '@kraftverk/api-client';
-import { panelFor } from '../../src/plugins/panels';
+import { panelFor } from '../src/plugins/panels';
 
 /**
  * Extensions: what is installed, and getting each one working.
@@ -119,7 +119,7 @@ export default function ExtensionsScreen() {
   }
 
   return (
-    <Screen title="Extensions" subtitle="Smart plugs, weather and other optional pieces">
+    <Screen back="App settings" backTo="/app-settings" title="Extensions" subtitle="Smart plugs, weather and other optional pieces">
       {error ? (
         <Card borderColor="$danger">
           <Text fontSize={13} color="$danger">

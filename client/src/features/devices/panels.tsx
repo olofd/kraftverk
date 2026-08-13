@@ -244,6 +244,7 @@ export function History({ device }: { device: DeviceView }) {
               borderRadius="$3"
               backgroundColor={spec.key === selected.key ? '$accent' : '$backgroundPress'}
               color={spec.key === selected.key ? '$background' : '$muted'}
+              cursor="pointer"
               pressStyle={{ opacity: 0.7 }}
               onPress={() => {
                 haptic();

@@ -173,10 +173,12 @@ rule engine with a loaded gun.
 | Per-device history sampling | **Built (server)**; charts pending |
 | **The P280 as a device package** — declarations *and* all four screens | **Built** |
 | `@kraftverk/ui` and `@kraftverk/api-client` extracted | **Built** |
-| Devices canvas, device detail, add-device wizard | **In progress** — Milestone A |
+| Devices canvas and device detail | **Built.** Root is the canvas; each device has Dashboard and Settings and nothing else |
+| Add-device wizard | **Next** — Milestone B. Adding still writes the record before the connection is configured |
 | `ConnectionManager`, one session per saved station | **Built.** No route reaches a global driver; a second station is refused with a reason |
 | Per-saved-device adapter instances | **Next** — Milestone C |
-| Global `StationProvider` and global station tabs | **To be removed**, not extended |
+| Global station tabs | **Removed** |
+| Global `StationProvider` | **Removed.** It is now `DirectLinkProvider` — the app's own Bluetooth link, nothing more. Station telemetry comes from `useDeviceConnection(device)`, per device |
 | Recipes, then rules | Planned |
 
 The package layout this produced:

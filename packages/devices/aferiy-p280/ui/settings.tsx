@@ -105,7 +105,6 @@ export function StationSettings({
   status,
   settings,
   readOnly,
-  simulated,
   direct,
   apiBaseUrl,
   updateSettings,
@@ -312,29 +311,12 @@ export function StationSettings({
             options={TEMPERATURE_UNITS}
             onChange={(temperatureUnit) => void updateSettings({ temperatureUnit })}
           />
-          <RowSeparator />
-          {/* On a direct link there is no API in the picture at all. */}
-          {direct ? (
-            <Row
-              title="Connection"
-              subtitle="Straight to the station from this app — no server"
-              accessory={
-                <Text fontSize={13} color="$muted">
-                  Bluetooth
-                </Text>
-              }
-            />
-          ) : (
-            <Row
-              title="API endpoint"
-              subtitle={apiBaseUrl}
-              accessory={
-                <Text fontSize={13} color="$muted">
-                  {simulated ? 'sim' : 'device'}
-                </Text>
-              }
-            />
-          )}
+          {/*
+            The API endpoint used to be the last row of this card. It is app
+            infrastructure, not something a P280 remembers — it belongs under
+            App settings with the rest of the server configuration, and showing
+            it here made "how this app is wired up" look like a station setting.
+          */}
         </Card>
       </YStack>
     </>

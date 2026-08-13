@@ -20,6 +20,7 @@ import type {
   LinkDiagnostics,
   PortId,
   StationSettings,
+  StationDeviceState,
   StationSettingsPatch,
   StationStatus,
   StationTransports,
@@ -57,13 +58,47 @@ function resolveApiBaseUrl(): string {
   return `http://${host ?? 'localhost'}:${API_PORT}/api`;
 }
 
-export const API_BASE_URL = resolveApiBaseUrl();
+/**
+ * Where a kraftverk server *would* be, if one is running beside this app.
+ *
+ * A suggestion, not a fact. The app is usable in a browser with no server at
+ * all, so this is the address offered when someone chooses to add one — not an
+ * assumption that it answers.
+ */
+export const DEFAULT_API_BASE_URL = resolveApiBaseUrl();
 
 export const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: DEFAULT_API_BASE_URL,
   timeout: 6000,
   headers: { Accept: 'application/json' },
 });
+
+/**
+ * Points the client at a server the user chose.
+ *
+ * The address is a runtime setting rather than a build-time constant, because
+ * a browser build is one artefact that different people point at different
+ * machines — and because someone with no server should not be stuck with an
+ * address that will never answer.
+ */
+export function setApiBaseUrl(url: string): void {
+  api.defaults.baseURL = url.replace(/\/$/, '');
+}
+
+export function getApiBaseUrl(): string {
+  return api.defaults.baseURL ?? DEFAULT_API_BASE_URL;
+}
+
+/** Is a kraftverk server actually there? Used before trusting an address. */
+export async function probeServer(url?: string, signal?: AbortSignal): Promise<boolean> {
+  const base = (url ?? getApiBaseUrl()).replace(/\/$/, '');
+  try {
+    const { data } = await axios.get<{ ok: boolean }>(`${base}/health`, { timeout: 3000, signal });
+    return data?.ok === true;
+  } catch {
+    return false;
+  }
+}
 
 export async function fetchStatus(signal?: AbortSignal) {
   const { data } = await api.get<StationStatus>('/status', { signal });
@@ -272,6 +307,29 @@ export async function removeDevice(id: string, signal?: AbortSignal) {
   return data;
 }
 
+// --- one P280, by device id -------------------------------------------------
+//
+// The model-specific half of the device surface. A P280 panel calls these with
+// the id of the device it is drawing, so it cannot accidentally read or write
+// whichever station the server happens to be holding.
+
+export async function fetchStationDevice(id: string, signal?: AbortSignal) {
+  const { data } = await api.get<StationDeviceState>(devicePath(id, '/p280/state'), { signal });
+  return data;
+}
+
+/** Writes the station's own settings. The reply is a readback, not an echo. */
+export async function patchStationDevice(
+  id: string,
+  patch: StationSettingsPatch,
+  signal?: AbortSignal
+) {
+  const { data } = await api.patch<StationSettings>(devicePath(id, '/p280/settings'), patch, {
+    signal,
+  });
+  return data;
+}
+
 // --- the legacy station import ---------------------------------------------
 //
 // The server no longer adopts a station at startup, so a binding made before
@@ -362,9 +420,9 @@ export function describeError(error: unknown): string {
       return detail ?? `Server responded ${error.response.status}`;
     }
     if (error.code === 'ECONNABORTED') {
-      return `Timed out reaching ${API_BASE_URL}`;
+      return `Timed out reaching ${getApiBaseUrl()}`;
     }
-    return `Can't reach ${API_BASE_URL}`;
+    return `Can't reach ${getApiBaseUrl()}`;
   }
   return error instanceof Error ? error.message : 'Unknown error';
 }

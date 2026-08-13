@@ -58,11 +58,24 @@ const palette = {
 
 const tokens = createTokens({
   color: palette,
+  /*
+    Half steps are real tokens, not a convenience.
+
+    Tamagui silently drops a style whose token does not exist, so `gap="$1.5"`
+    was not "close enough to $1" — it was no gap at all, and `paddingHorizontal
+    ="$2.5"` was no padding. That is how the history pills ended up touching
+    each other with no space between them. Anything the code asks for has to be
+    defined here or it vanishes without a warning.
+  */
   space: {
     0: 0,
+    0.5: 2,
     1: 4,
+    1.5: 6,
     2: 8,
+    2.5: 10,
     3: 12,
+    3.5: 14,
     true: 16,
     4: 16,
     5: 24,

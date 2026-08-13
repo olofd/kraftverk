@@ -57,6 +57,23 @@ export class ConnectionManager {
   #sessions = new Map<string, StationSession>();
   /** Why a saved device has no session, in words a user can act on. */
   #refusals = new Map<string, string>();
+  /**
+   * How to stop listening for discoveries on a session's behalf.
+   *
+   * The transport outlives its sessions, so a listener left behind by a closed
+   * session keeps running — and, since closing unbinds the radio, it would
+   * happily auto-bind the station again on behalf of a device that has just
+   * been forgotten.
+   */
+  #watchers = new Map<string, () => void>();
+  /**
+   * Which station each session is meant to be on.
+   *
+   * Tracked here rather than re-read from the catalog, so the manager stays
+   * free of the database — but it must follow a rebind, or a session would go
+   * on preferring the station the user just moved away from.
+   */
+  #bound = new Map<string, string | null>();
   #transport: Transport | null = null;
   #starting: Promise<Transport> | null = null;
 
@@ -192,6 +209,8 @@ export class ConnectionManager {
     // What the record already knows, which is how a restart reconnects to the
     // same unit instead of whichever station answers first.
     const saved = typeof record.config.boundId === 'string' ? record.config.boundId : null;
+    this.#bound.set(record.id, saved);
+
     if (saved) {
       try {
         await transport.bind(saved);
@@ -201,8 +220,15 @@ export class ConnectionManager {
       }
     }
 
-    transport.onDiscovery((found) => {
-      const wanted = saved && found.id.toUpperCase() === saved.toUpperCase();
+    const stop = transport.onDiscovery((found) => {
+      // Gone: this session was closed, and a forgotten device must not quietly
+      // take the radio back the moment something advertises.
+      if (!this.#sessions.has(record.id)) return;
+
+      // The record is the authority on which station is this device's, and it
+      // changes under us when the user binds a different one.
+      const preferred = this.#bound.get(record.id) ?? null;
+      const wanted = preferred && found.id.toUpperCase() === preferred.toUpperCase();
       // Never auto-connect to something that cannot be identified as a station.
       if (transport.boundId || !(wanted || (this.deps.autoBind && found.likelyStation))) return;
 
@@ -211,12 +237,15 @@ export class ConnectionManager {
         .then(() => {
           this.deps.log?.(`Auto-bound ${record.name} to ${found.id}`);
           device.reset();
+          this.#bound.set(record.id, found.id);
           this.deps.onBound?.(record.id, kind, found.id);
         })
         .catch((error: unknown) => {
           this.deps.log?.(`Auto-bind failed: ${(error as Error).message}`);
         });
     });
+
+    this.#watchers.set(record.id, stop);
 
     return { deviceId: record.id, kind, driver: device, device, transport };
   }
@@ -234,6 +263,7 @@ export class ConnectionManager {
 
     await session.transport.bind(stationId);
     session.device?.reset();
+    this.#bound.set(deviceId, stationId);
     this.deps.onBound?.(deviceId, session.kind, stationId);
   }
 
@@ -243,6 +273,7 @@ export class ConnectionManager {
 
     await session.transport.unbind();
     session.device?.reset();
+    this.#bound.set(deviceId, null);
     this.deps.onBound?.(deviceId, session.kind, null);
   }
 
@@ -251,6 +282,12 @@ export class ConnectionManager {
     if (!session) return;
 
     this.#sessions.delete(deviceId);
+    this.#bound.delete(deviceId);
+    // Stop watching before releasing the radio: an unbound transport is exactly
+    // what this session's discovery listener would rush to bind again.
+    this.#watchers.get(deviceId)?.();
+    this.#watchers.delete(deviceId);
+
     await session.driver.stop().catch(() => undefined);
     // The transport outlives the session: it is this process's one radio, and
     // the next device to be opened will want it.

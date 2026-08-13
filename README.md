@@ -102,6 +102,13 @@ Additional cautions:
   timeout, light modes, and every output port.
 - **Two transports** — a local MQTT broker the station connects to instead of
   the vendor cloud, or a direct Bluetooth LE link. Both carry identical frames.
+- **A server is optional.** The app runs in a browser with no server at all, in
+  **local mode**: it holds a station's Bluetooth link itself. A kraftverk server
+  is something you *add* under App settings by typing its address — one browser
+  build, pointed at whichever machine you self-host on, or at none. The address
+  list lives in the browser and is fully editable. A server is what buys you
+  history, background sampling and, later, automations, because only it is
+  running while the app is closed.
 - **Or the app holds the link itself** — over Web Bluetooth in a browser, or
   Bluetooth on an iPhone. Same protocol code, same write guards, so the readings
   are identical. What differs is what a connection can *do*: history and
@@ -112,9 +119,18 @@ Additional cautions:
   identifying unknown registers, and a live frame log.
 - **A simulator**, so the app is fully usable with no hardware present.
 
-| Dashboard | Settings | Devices | Protocol |
+The app opens on **Your devices** and stays there as you add more. Each saved
+device has its own address and exactly two primary screens — Dashboard and
+Settings — with model-specific tools such as the P280's register diagnostics
+under its Settings, never as a global tab.
+
+| Your devices | Device dashboard | Device settings | Protocol |
 | --- | --- | --- | --- |
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Settings](docs/screenshots/settings.png) | ![Devices](docs/screenshots/devices.png) | ![Protocol](docs/screenshots/protocol.png) |
+| ![Your devices](docs/screenshots/devices.png) | ![Dashboard](docs/screenshots/dashboard.png) | ![Settings](docs/screenshots/settings.png) | ![Protocol](docs/screenshots/protocol.png) |
+
+> The screenshots predate the device-first restructuring and still show the old
+> tab bar. The screens themselves are the same; where you reach them from is
+> not. See [`DEVICE-FIRST-REFACTOR.md`](docs/DEVICE-FIRST-REFACTOR.md).
 
 ---
 
@@ -314,15 +330,26 @@ drops the app's link for that reason.
 
 Base URL: `http://<host>:3333/api`
 
+Everything is device-scoped: a route names the device it acts on, and the server
+resolves that device's own session. `:id` is a catalog id such as
+`power-station:3db445e0`, and it contains a `:`, so it must be URL-encoded.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/health` | Liveness |
 | `GET` | `/version` | Name, version, runtime, uptime, link mode |
-| `GET` | `/status` | Live telemetry |
-| `GET` `PATCH` | `/settings` | Read / update station settings |
-| `POST` | `/ports/:id` | Toggle `ac` \| `dc` \| `usb` \| `led` |
-| `GET` | `/devices` | Discovered stations and current binding |
-| `POST` | `/devices/bind` · `/devices/unbind` | Bind or release a station |
+| `GET` | `/devices` | The devices you have added, with live readings and health |
+| `POST` | `/devices` | Add one |
+| `GET` `PATCH` `DELETE` | `/devices/:id` | Read, rename/re-model, or forget |
+| `GET` `PATCH` | `/devices/:id/settings` | A device's own settings, from the schema it publishes |
+| `POST` | `/devices/:id/control/:control` | Invoke a control — physical ones pass the action gateway |
+| `GET` | `/devices/:id/history` | One measurement over time, thinned for a chart |
+| `GET` | `/devices/:id/p280/state` | A station's rich telemetry, settings and link state |
+| `PATCH` | `/devices/:id/p280/settings` | Write station settings, through the write whitelist |
+| `GET` | `/migration/station` | A station bound before the catalog existed, offered for import |
+| `POST` | `/migration/station/import` · `/dismiss` | Take that offer once, or decline it for good |
+| `GET` | `/station/transports` | What the current radio can see, and what it is bound to |
+| `POST` | `/station/bind` · `/station/unbind` | Bind or release a station |
 | `GET` | `/diagnostics/registers` | Full register dump, raw and named |
 | `POST` | `/diagnostics/snapshot` | Capture a baseline for diffing |
 | `GET` | `/diagnostics/scan` | Read an arbitrary register range (read-only) |
@@ -334,6 +361,11 @@ Base URL: `http://<host>:3333/api`
 | `GET` | `/grid` | Grid-relay state, freshness and active provider |
 | `POST` | `/grid/relay` | Switch mains — through the action gateway, confirmation required |
 | `GET` | `/audit` | The timeline: intents, commands, verification outcomes |
+
+**Deprecated, and no longer used by the app.** `/status`, `/settings`,
+`/ports/:id` and `/simulator/grid` still work and still resolve through the one
+open station session, but they describe "the station" as though a server could
+only ever have one. Use the device-scoped routes above.
 
 ### Environment
 
@@ -402,12 +434,16 @@ packages/protocol/       everything that knows the protocol (+ tests)
   src/client.ts          poll loop, write guard, transport interface
   src/ble.ts             GATT layout and frame reassembly, stack-agnostic
 client/                  Expo app (iOS + web)
-  app/(tabs)/            dashboard, settings, devices, protocol
-  src/components/        EnergyFlow, Card, Row, ModeRow, …
+  app/index.tsx          "Your devices" — the root, always
+  app/device/[id]/       one device: dashboard, settings, advanced
+  app/app-settings.tsx   extensions, station link, this install
+  src/components/        Screen, Card, Row, ModeRow, …
+  src/features/devices/  device shell, generic panels, per-device connection
   src/link/              the app's own Bluetooth transports
-  src/state/             one poll loop for the whole app
+  src/state/             the device catalog, and the link the app holds itself
 server/
   src/transport/         mqtt and ble transports
+  src/connections/       one live session per saved device
   src/drivers/           device driver, simulator
   src/plugins/           extension host: discovery, lifecycle, grants
   src/actions/           the only code allowed to switch mains

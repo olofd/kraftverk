@@ -771,6 +771,54 @@ api.patch('/devices/:id', async (c) => {
   return c.json(await registry.find(id));
 });
 
+// --- one P280, by device id -----------------------------------------------
+//
+// The station's rich telemetry does not fit the generic `Reading[]` shape: the
+// energy-flow view needs ports, firmware, link state and a dozen quantities in
+// their model's own units. So it is served under the device's namespace, and
+// the server checks the device really is a station before answering.
+//
+// This is what replaced the global `/api/status`: the same data, but for a
+// device the caller named, from that device's own session.
+
+/** Resolves a saved station and its live session, or explains which is missing. */
+function stationDevice(c: Context): StationSession {
+  const id = decodeURIComponent(c.req.param('id') ?? '');
+  const record = catalog.get(id);
+  if (!record) throw new HTTPException(404, { message: 'No such device' });
+  if (record.driver !== 'core.station') {
+    throw new HTTPException(400, { message: 'That device is not a power station' });
+  }
+
+  const session = connections.get(id);
+  if (!session) {
+    throw new HTTPException(409, {
+      message: connections.refusal(id) ?? 'The server is not holding a link to that device',
+    });
+  }
+  return session;
+}
+
+api.get('/devices/:id/p280/state', (c) => {
+  const session = stationDevice(c);
+  return c.json({
+    status: session.driver.status(),
+    settings: session.driver.settings(),
+    // Facts about *this* connection, which used to be read off a global
+    // `/api/version` that described the whole server.
+    readOnly: connections.readOnly,
+    link: session.kind,
+  });
+});
+
+api.patch('/devices/:id/p280/settings', async (c) => {
+  const session = stationDevice(c);
+  // The same schema the global route used, so the register-68 guard and every
+  // other bound still stand on the device-scoped path.
+  const patch = await body(c, StationSettingsPatchSchema);
+  return c.json(await session.driver.applySettings(patch));
+});
+
 /**
  * A device's own settings: what it remembers, not how we reach it.
  *

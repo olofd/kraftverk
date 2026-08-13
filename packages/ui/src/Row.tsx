@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
-import { Separator, Switch, Text, XStack, YStack } from 'tamagui';
+import { Separator, Text, XStack, YStack } from 'tamagui';
 
-import { haptic } from './haptics';
+import { Toggle } from './Toggle';
 
 type RowProps = {
   title: string;
@@ -50,20 +50,7 @@ export function ToggleRow({ checked, onCheckedChange, disabled, ...rest }: Toggl
       {...rest}
       disabled={disabled}
       accessory={
-        <Switch
-          size="$3"
-          checked={checked}
-          disabled={disabled}
-          onCheckedChange={(next) => {
-            haptic();
-            onCheckedChange(next);
-          }}
-          // The checked colour comes from the theme's `backgroundActive`;
-          // Tamagui applies it after spreading props, so setting it here loses.
-          backgroundColor="$backgroundPress"
-        >
-          <Switch.Thumb transition="fast" backgroundColor="$white" />
-        </Switch>
+        <Toggle checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
       }
     />
   );

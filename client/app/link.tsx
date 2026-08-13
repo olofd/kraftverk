@@ -16,7 +16,7 @@ import {
 import { formatAgo } from '@kraftverk/ui';
 import { haptic } from '@kraftverk/ui';
 import type { StationTransports } from '@kraftverk/api-client';
-import { useStation, type LinkSource } from '../src/state/StationProvider';
+import { useDirectLink, type LinkSource } from '../src/state/DirectLinkProvider';
 
 /**
  * How the app reaches the station, and which station.
@@ -41,10 +41,10 @@ const SOURCES = [
 ] as const satisfies readonly { value: LinkSource; label: string }[];
 
 export default function LinkScreen() {
-  const { status, refresh, source, setSource, direct } = useStation();
+  const { status, refresh, source, setSource, direct } = useDirectLink();
 
   return (
-    <Screen back="Devices" title="Station link" subtitle="How this app reaches your power station">
+    <Screen back="Your devices" title="Station link" subtitle="How this app reaches your power station">
       <Card inset>
         <SegmentedControl
           title="Connection"
@@ -80,7 +80,7 @@ function ServerLink({
   status,
   refresh,
 }: {
-  status: ReturnType<typeof useStation>['status'];
+  status: ReturnType<typeof useDirectLink>['status'];
   refresh: () => Promise<void>;
 }) {
   const [list, setList] = useState<StationTransports | null>(null);
@@ -280,7 +280,7 @@ function ServerLink({
 }
 
 /** The app's own Bluetooth link: chooser or scan, connect, and the write guard. */
-function DirectLink({ direct }: { direct: ReturnType<typeof useStation>['direct'] }) {
+function DirectLink({ direct }: { direct: ReturnType<typeof useDirectLink>['direct'] }) {
   const { support, devices, boundId, connected, readOnly, busy, scanning, error } = direct;
   const { remembered, resuming } = direct;
   const isWeb = Platform.OS === 'web';

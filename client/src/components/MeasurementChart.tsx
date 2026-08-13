@@ -89,6 +89,7 @@ export function MeasurementChart({
               borderRadius="$2"
               color={range.hours === hours ? '$color' : '$muted'}
               backgroundColor={range.hours === hours ? '$backgroundPress' : 'transparent'}
+              cursor="pointer"
               pressStyle={{ opacity: 0.6 }}
               onPress={() => {
                 haptic();

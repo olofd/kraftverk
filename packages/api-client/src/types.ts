@@ -212,6 +212,22 @@ export type LegacyStationOffer = {
   name: string | null;
 };
 
+/**
+ * Everything a P280's own screens need, for one saved device.
+ *
+ * The station's telemetry does not fit the generic `Reading[]` shape — the
+ * energy-flow view needs ports, firmware and link state in the model's own
+ * units — so it has a device-scoped route of its own. `readOnly` and `link`
+ * describe *this* connection, which used to be read off a global version
+ * endpoint that described the whole server.
+ */
+export type StationDeviceState = {
+  status: import('@kraftverk/protocol').StationStatus;
+  settings: import('@kraftverk/protocol').StationSettings;
+  readOnly: boolean;
+  link: 'sim' | 'mqtt' | 'ble';
+};
+
 /** A device's own settings: the schema it declares, and what it holds now. */
 export type DeviceSettings = {
   schema: import('@kraftverk/plugin-sdk').ConfigSchema | null;

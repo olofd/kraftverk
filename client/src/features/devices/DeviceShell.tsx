@@ -76,13 +76,10 @@ function DeviceTabs({ tab, onChange }: { tab: DeviceTab; onChange: (next: Device
 export function DeviceShell({
   id,
   tab,
-  subtitle,
   children,
 }: {
   id: string | undefined;
   tab: DeviceTab;
-  /** Overrides the device's own description under the title. */
-  subtitle?: string;
   children: (device: DeviceView) => ReactNode;
 }) {
   const device = useDevice(id);
@@ -109,16 +106,27 @@ export function DeviceShell({
   const path = `/device/${encodeURIComponent(device.id)}`;
 
   return (
-    <Screen back="Your devices" title={device.record.name} subtitle={subtitle ?? device.description}>
-      <SegmentedControl
-        value={tab}
-        options={TABS}
-        onChange={(next) => {
-          if (next === tab) return;
+    <Screen
+      back="Your devices"
+      title={device.record.name}
+      subtitle={device.description}
+      /*
+        This device's state, not the app's. A reachable server was reporting
+        "Online" above a station that had never connected — the header was
+        answering a question nobody on this screen was asking.
+      */
+      status={{
+        connection: device.online ? 'online' : 'idle',
+        label: device.online ? 'Online' : (device.detail ?? 'Not connected'),
+      }}
+    >
+      <DeviceTabs
+        tab={tab}
+        onChange={(next) =>
           // Replace, not push: the two tabs are one destination, and pushing
           // would make Back walk through every tab the user glanced at.
-          router.replace(next === 'dashboard' ? path : `${path}/settings`);
-        }}
+          router.replace(next === 'dashboard' ? path : `${path}/settings`)
+        }
       />
       {children(device)}
     </Screen>
