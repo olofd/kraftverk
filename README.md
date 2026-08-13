@@ -406,6 +406,7 @@ docs/PROJECT-BRIEF.md    long-term plan and architecture brief
 docs/PLUGIN-ARCHITECTURE.md  extension system design, and the smart-plug research
 docs/TUYA-LOCAL-KEY.md   five-minute guide to getting a plug's local key
 docs/DEVICES-AND-AUTOMATION.md  one device list, and wiring devices together
+docs/HANDOFF.md          state of play, and the traps worth knowing
 ```
 
 ### Connecting a smart plug
