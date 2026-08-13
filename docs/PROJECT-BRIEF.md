@@ -1,14 +1,19 @@
-# AFERIY P280 — Next-Agent Project Brief
+# kraftverk — project brief
 
 ## Purpose of this document
 
-This is the complete hand-off brief for the next agent working on this project.
-It describes what exists, what has been learned, the owner’s desired behaviour,
-the safety rules, and a staged implementation plan. Read it together with the
-[`README.md`](../README.md) and [`P280-FINDINGS.md`](P280-FINDINGS.md) before
-changing code.
+The complete hand-off brief for whoever works on this next. It describes what
+exists, what has been learned, the owner's desired behaviour, the safety rules,
+and a staged plan. Read it together with the [`README.md`](../README.md) and
+[`P280-FINDINGS.md`](P280-FINDINGS.md) before changing code.
 
-The goal is a reliable local energy controller for an AFERIY P280 power station:
+The project began as an app for one power station and is now a local energy
+controller for **the devices you own**, with an AFERIY P280 as the reference
+hardware and the only one verified against real firmware. Read the end-goal
+section next; everything after it describes the station and its extensions in
+detail.
+
+The goal, unchanged since the start:
 
 - prove that every supported station setting can be read and safely changed;
 - document every setting and its evidence on the actual P280, rather than trusting
@@ -191,24 +196,37 @@ Test first with a small non-critical load.
 
 ### Architecture
 
-- `packages/protocol/`: the protocol itself — framing, register map, decoding,
-  the write whitelist and the polling client. No dependencies, no build step.
-  Both the server and the app import it, so there is exactly one implementation
-  of what a register means and which writes are safe.
-- `client/`: Expo / React Native / react-native-web application with Tamagui and
-  expo-router. It has Devices, Protocol diagnostics, Settings, and status screens.
-  It can either talk to the server over HTTP, or hold the Bluetooth link itself
-  (Web Bluetooth in a browser, react-native-ble-plx on a phone) and run the
-  shared `StationClient` locally. The user chooses under Devices ▸ Connection.
-- `server/`: Hono API on Bun. It connects to the station over a locally redirected
-  MQTT broker or BLE, and exposes the same station model over HTTP.
-- Protocol: Sydpower-stack MODBUS RTU frames, carried byte-for-byte by MQTT or BLE.
-- Device: AFERIY P280, a Sydpower-stack model related to Fossibot / BrightEMS.
+Seven packages, plus the app and the server. Dependencies point one way: a
+device or plugin package never imports from the app.
 
-In the UI, make the station display name configurable. The owner refers to this setup as
-“F3”, while the current code/protocol research identifies the hardware as an AFERIY P280.
-Keep `P280` as the verified protocol/model identity until F3 is independently identified;
-use a user-selected nickname for the presentation layer rather than conflating models.
+- `packages/protocol/`: framing, register map, decoding, the write whitelist and
+  the polling client. No dependencies, no build step. The server and the app
+  both import it, so there is exactly one implementation of what a register
+  means and which writes are safe.
+- `packages/plugin-sdk/`: the contracts — capabilities, the device model,
+  config schemas, setup actions, panels. Types and validation only.
+- `packages/ui/`: shared interface primitives. Tamagui is a *peer* dependency:
+  two copies would mean two theme contexts and broken styling.
+- `packages/api-client/`: every API endpoint and the shapes the server sends.
+  Extracted so a device screen can read register dumps without importing the
+  app's HTTP client.
+- `packages/devices/aferiy-p280/`: the station — what it measures, what it can
+  be told to do, what it remembers, and all four of its screens.
+- `packages/plugins/`: drivers. A Tuya LAN grid relay with its own panel, and an
+  in-memory plug with injectable faults for testing the action gateway.
+- `client/`: Expo / React Native / react-native-web with Tamagui and
+  expo-router — now a **shell**. Its tabs are 21–46 lines that choose whose
+  screen to render. It can talk to the server over HTTP or hold the Bluetooth
+  link itself (Web Bluetooth in a browser, react-native-ble-plx on a phone),
+  running the shared `StationClient` locally.
+- `server/`: Hono API on Bun. Station link over redirected MQTT or BLE, plus the
+  plugin host, the action gateway, the device catalog and the history sampler.
+
+Device names are the user's: the catalog stores whatever you rename a device to,
+and it survives a driver renaming things upstream. The owner calls this setup
+“F3” while the protocol research identifies the hardware as an AFERIY P280 —
+which is exactly the split the catalog now models. `model` stays the verified
+identity and decides how the thing is decoded; the name is presentation.
 
 Key implementation files:
 
@@ -220,9 +238,13 @@ Key implementation files:
 | `packages/protocol/src/ble.ts` | GATT layout and frame reassembly, shared by all three BLE stacks |
 | `client/src/link/` | the app's own Web Bluetooth and react-native-ble-plx transports |
 | `server/src/drivers/device.ts` | the shared client, wearing the server's driver interface |
-| `server/src/index.ts` | API, device setup and diagnostics endpoints |
-| `client/app/(tabs)/diagnostics.tsx` | register dump / snapshot / diff UI |
-| `client/app/(tabs)/settings.tsx` | station-settings UI |
+| `server/src/index.ts` | the API surface |
+| `server/src/actions/gateway.ts` | **the only code allowed to switch mains** |
+| `server/src/plugins/host.ts` | plugin discovery, lifecycle, config, secrets, grants |
+| `server/src/devices/catalog.ts` | the devices you added, persisted |
+| `server/src/history/sampler.ts` | one sample per measurement per minute, for any device |
+| `packages/devices/aferiy-p280/src/index.ts` | what a P280 measures, controls and remembers |
+| `packages/devices/aferiy-p280/ui/` | its dashboard, settings, protocol and energy-flow screens |
 | `README.md` | protocol research, setup instructions, current API reference |
 
 ### Existing capabilities
@@ -314,8 +336,13 @@ P280-specific candidates requiring confirmation:
 - A write may be sent followed by a poll whose errors are swallowed, so the UI needs
   per-setting acknowledgement and explicit readback verification—not just cached state.
 - The complete register catalog has not yet been evidenced on this device.
-- No smart-plug integration, history database, weather source, solar forecast, or
-  automation state machine exists yet.
+- ~~No smart-plug integration or history database exists yet.~~ **Partly done.**
+  The Tuya LAN driver, the action gateway and per-device history sampling are
+  built; the plug itself is not yet commissioned, because that needs its local
+  key (see [`TUYA-LOCAL-KEY.md`](TUYA-LOCAL-KEY.md)).
+- No weather source, solar forecast, or automation state machine exists yet.
+  The controller is designed but unwritten, and nothing may actuate on its own
+  until the arming checklist below passes — including API authentication.
 
 ### System-level safety boundaries (required before automation)
 
@@ -399,7 +426,10 @@ predictable.
 
 ### Versioned plugin manifest and lifecycle
 
-Create a small, documented TypeScript SDK in a package such as `packages/plugin-sdk`.
+**Built.** The SDK is `packages/plugin-sdk`; the manifest below is close to what
+shipped, with `setupActions` and the device model added since. What follows
+records the reasoning, and remains the specification any new capability is held
+to.
 Use stable reverse-DNS IDs, semantic versions, and a compatibility range—not filesystem
 names as identity.
 
@@ -521,7 +551,9 @@ Tasmota, Home Assistant, or another supported actuator without changing automati
 
 ### Extensions UI
 
-Add an **Extensions** area to the main app:
+**Built**, with one revision from the end-goal section: Extensions is where you
+manage *drivers*, while **Devices** is where you add and use the things you own.
+People add a plug, not a plugin. Add an **Extensions** area to the main app:
 
 - catalog of installed and available reference plugins, grouped by category;
 - per-plugin card with icon, description, capability badges, health, data freshness and
@@ -1079,7 +1111,8 @@ signature element of this product category — EcoFlow, Lunar Energy and MYGRID 
 centre on one, and usability research on MYGRID found the flow chart and the
 headline value were what users returned to several times a day.
 
-Current implementation (`client/src/components/EnergyFlow.tsx`):
+Current implementation (`packages/devices/aferiy-p280/ui/energy-flow.tsx` — it
+belongs to the device, because none of it generalises to a plug or a forecast):
 
 - sources feed the battery from above, loads draw from below;
 - each active path animates a dashed stroke toward the ring or away from it, so
@@ -1142,3 +1175,7 @@ The work is complete only when:
 6. The independent-power, recovery-path, API-security and grid-outage acceptance
    checks above have passed; a mere software request to turn AC on is not accepted as
    proof that mains was restored.
+7. A second device — the plug, and later a weather source — is added, used and
+   wired to the station **without a screen being written for it**. That is the
+   test of whether the device model is real: if adding one still needs bespoke
+   UI, the abstraction has not earned its keep.
