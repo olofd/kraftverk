@@ -11,19 +11,18 @@ import { isActuator, validateConfig as validatePluginConfig } from '@kraftverk/p
 
 import pkg from '../package.json' with { type: 'json' };
 import { ActionGateway, CONFIRMATION_PHRASE } from './actions/gateway.ts';
-import { loadBinding, saveBinding } from './binding.ts';
+import { ConnectionManager, type LinkKind, type StationSession } from './connections/manager.ts';
 import { DeviceCatalog, STATION_MODELS } from './devices/catalog.ts';
+import { LegacyStationImport } from './devices/legacy.ts';
 import { DeviceRegistry } from './devices/registry.ts';
 import { recentAudit, secretsAreEncrypted } from './history/db.ts';
 import { Sampler, series } from './history/sampler.ts';
 import { PluginHost, type PluginInstance } from './plugins/host.ts';
 import { DeviceDriver, ReadOnlyError } from './drivers/device.ts';
 import { SimulatorDriver } from './drivers/simulator.ts';
-import type { StationDriver } from './drivers/types.ts';
 import { describeMessage, DeviceBroker } from './mqtt/broker.ts';
 import { BleTransport } from './transport/ble.ts';
 import { MqttTransport } from './transport/mqtt.ts';
-import type { Transport } from './transport/types.ts';
 import {
   describeRegisters,
   fromHex,
@@ -58,74 +57,99 @@ const AUTO_BIND = process.env.AUTO_BIND !== '0';
 const startedAt = new Date();
 
 const broker = new DeviceBroker();
-let driver: StationDriver;
-let transport: Transport | null = null;
-let device: DeviceDriver | null = null;
 
-if (DRIVER === 'device' || DRIVER === 'ble') {
-  transport =
-    DRIVER === 'ble' ? new BleTransport() : new MqttTransport(broker, MQTT_PORT, MQTT_HOST);
+/**
+ * What this process can reach, and what it is reaching right now.
+ *
+ * The link kind is a launch decision — the simulator, WiFi/MQTT or Bluetooth —
+ * but *whose* link it is belongs to a saved device. The catalog says what you
+ * own; the connection manager opens one session per saved station and is the
+ * only thing that knows about live drivers and transports. No route reaches a
+ * global `driver` any more: it asks for a device's session, and gets nothing
+ * when that device has none.
+ */
+const LINK: LinkKind = DRIVER === 'ble' ? 'ble' : DRIVER === 'device' ? 'mqtt' : 'sim';
 
+const catalog = new DeviceCatalog();
+
+const connections = new ConnectionManager({
+  kind: LINK,
+  readOnly: READ_ONLY,
+  autoBind: AUTO_BIND,
+  transport: () =>
+    LINK === 'ble' ? new BleTransport() : new MqttTransport(broker, MQTT_PORT, MQTT_HOST),
+  simulator: () => new SimulatorDriver(),
+  /*
+    Where a device is reached is a property of that device. The old code kept it
+    in `data/binding.json`, one per server, which is exactly why a second
+    station could not be represented — so the answer is written back onto the
+    record instead.
+  */
+  onBound: (deviceId, kind, boundId) => {
+    catalog.update(deviceId, { config: { transport: kind, boundId } });
+  },
+  log: (message) => console.log(`[link] ${message}`),
+});
+
+const host = new PluginHost();
+await host.discover();
+await host.startEnabled();
+
+const registry = new DeviceRegistry(catalog, host, connections);
+
+if (LINK !== 'sim') {
   try {
-    await transport.start();
+    // Started before any session, because discovery has to work before there is
+    // a device to bind: you cannot choose the station you have not found yet.
+    await connections.link();
   } catch (error) {
-    console.error(`Could not start the ${DRIVER} transport:`, error);
+    console.error(`Could not start the ${LINK} transport:`, error);
     throw error;
   }
 
-  if (DRIVER === 'ble') {
+  if (LINK === 'ble') {
     console.log('Scanning for Bluetooth stations…');
   } else {
     console.log(`MQTT broker listening on ${MQTT_HOST}:${MQTT_PORT}`);
     console.log('Point mqtt.sydpower.com at this machine so the station connects here.');
   }
 
-  device = new DeviceDriver({ transport, readOnly: READ_ONLY });
-  driver = device;
-
   if (READ_ONLY) {
     console.log('READ-ONLY: every write will be refused. Nothing can change on the station.');
   }
-
-  // Restore the previous choice, else adopt the first station we see.
-  const saved = await loadBinding();
-  const preferred = DEVICE_ID ?? (saved?.kind === transport.kind ? saved.id : undefined);
-
-  if (preferred) {
-    try {
-      await transport.bind(preferred);
-      console.log(`Bound to ${preferred}`);
-    } catch (error) {
-      console.warn(`Could not bind ${preferred} yet:`, (error as Error).message);
-    }
-  }
-
-  transport.onDiscovery((found) => {
-    const label = found.likelyStation ? 'station' : 'device (not a station)';
-    console.log(`Discovered ${found.kind} ${label}: ${found.name} (${found.id})`);
-
-    const wanted = preferred && found.id.toUpperCase() === preferred.toUpperCase();
-    // Never auto-connect to something we can't identify as a station.
-    if (!transport!.boundId && (wanted || (AUTO_BIND && found.likelyStation))) {
-      void transport!
-        .bind(found.id)
-        .then(async () => {
-          console.log(`Auto-bound to ${found.id}`);
-          device?.reset();
-          await saveBinding({
-            kind: transport!.kind,
-            id: found.id,
-            boundAt: new Date().toISOString(),
-          });
-        })
-        .catch((error) => console.warn(`Auto-bind failed:`, (error as Error).message));
-    }
-  });
-} else {
-  driver = new SimulatorDriver();
 }
 
-await driver.start();
+/*
+  Nothing is adopted at startup. Sessions are opened for the stations already in
+  the catalog, and for nothing else — a blank installation opens no links at all.
+*/
+await connections.sync(catalog.list());
+
+if (DEVICE_ID) {
+  const station = connections.station();
+  if (station) await connections.bind(station.deviceId, DEVICE_ID).catch(() => undefined);
+  else await connections.link().then((link) => link?.bind(DEVICE_ID)).catch(() => undefined);
+}
+
+/** The station session, or an honest 404. The global station routes end here. */
+function stationOr404(): StationSession {
+  const session = connections.station();
+  if (!session) {
+    throw new HTTPException(404, {
+      message: 'No station has been added yet. Add one from Devices.',
+    });
+  }
+  return session;
+}
+
+/** Register-level access, which only real hardware has. */
+function hardwareOr400(): DeviceDriver {
+  const session = connections.station();
+  if (!session?.device) {
+    throw new HTTPException(400, { message: 'Needs a hardware driver (STATION_DRIVER=device or ble)' });
+  }
+  return session.device;
+}
 
 const app = new Hono();
 
@@ -166,28 +190,36 @@ api.get('/version', (c) => {
     runtime: typeof Bun !== 'undefined' ? `bun ${Bun.version}` : `node ${process.versions.node}`,
     startedAt: startedAt.toISOString(),
     uptimeSeconds: Math.round((Date.now() - startedAt.getTime()) / 1000),
-    link: driver.mode,
-    transport: transport?.kind,
-    readOnly: device?.readOnly ?? false,
+    link: connections.station()?.driver.mode ?? (LINK === 'sim' ? 'simulator' : 'device'),
+    transport: connections.transport?.kind,
+    readOnly: connections.readOnly,
   };
   return c.json(info);
 });
 
-api.get('/status', (c) => c.json(driver.status()));
-api.get('/settings', (c) => c.json(driver.settings()));
+/*
+  The global station routes. Every one of them now resolves through the single
+  open session rather than a module-level driver, which is why they can answer
+  "there is no station" instead of inventing one. They are deprecated: their
+  replacements are the device-scoped `/api/devices/:id/...` routes, and they go
+  when the app's global tabs do.
+*/
+api.get('/status', (c) => c.json(stationOr404().driver.status()));
+api.get('/settings', (c) => c.json(stationOr404().driver.settings()));
 
 api.patch('/settings', async (c) =>
-  c.json(await driver.applySettings(await body(c, StationSettingsPatchSchema)))
+  c.json(await stationOr404().driver.applySettings(await body(c, StationSettingsPatchSchema)))
 );
 
 api.post('/ports/:id', async (c) => {
   const { id } = z.object({ id: PortIdSchema }).parse(c.req.param());
   const { enabled } = await body(c, PortPatchSchema);
-  return c.json(await driver.setPort(id, enabled));
+  return c.json(await stationOr404().driver.setPort(id, enabled));
 });
 
 /** Simulator-only: pretend the mains came or went. `/grid` belongs to the relay. */
 api.post('/simulator/grid', async (c) => {
+  const { driver } = stationOr404();
   if (!driver.setGridConnected) {
     throw new HTTPException(400, { message: 'Only the simulator can fake the grid connection' });
   }
@@ -202,37 +234,53 @@ api.post('/simulator/grid', async (c) => {
 // list, because "device" should mean "a thing you own", not "a station this
 // particular radio noticed".
 
-api.get('/station/transports', (c) =>
-  c.json({
-    transport: transport?.kind ?? null,
-    boundId: transport?.boundId ?? null,
-    connected: transport?.connected ?? false,
+api.get('/station/transports', (c) => {
+  const link = connections.transport;
+  return c.json({
+    transport: link?.kind ?? null,
+    boundId: link?.boundId ?? null,
+    connected: link?.connected ?? false,
     autoBind: AUTO_BIND,
-    lastError: transport instanceof BleTransport ? transport.lastError : null,
-    attempts: transport instanceof BleTransport ? transport.attempts : null,
-    devices: (transport?.discovered() ?? []).map((d) => ({
-      ...d,
-      bound: d.id === transport?.boundId,
-    })),
-  })
-);
+    lastError: link instanceof BleTransport ? link.lastError : null,
+    attempts: link instanceof BleTransport ? link.attempts : null,
+    devices: (link?.discovered() ?? []).map((d) => ({ ...d, bound: d.id === link?.boundId })),
+  });
+});
 
+/**
+ * Binds the station a saved device points at.
+ *
+ * The choice used to go to `data/binding.json`, one per server. It now goes to
+ * the device's own record, so a restart reconnects *that* device rather than
+ * whatever the file last said. Binding with nothing saved yet is still allowed
+ * and still deliberately transient: it is commissioning, which Milestone B
+ * turns into a wizard that ends in a saved device.
+ */
 api.post('/station/bind', async (c) => {
-  if (!transport) throw new HTTPException(400, { message: 'Binding requires a hardware driver' });
+  const link = await connections.link();
+  if (!link) throw new HTTPException(400, { message: 'Binding requires a hardware driver' });
   const { id } = await body(c, z.object({ id: z.string().min(1) }));
 
-  await transport.bind(id);
-  device?.reset();
-  await saveBinding({ kind: transport.kind, id, boundAt: new Date().toISOString() });
-  return c.json({ boundId: transport.boundId, connected: transport.connected });
+  const session = connections.station();
+  if (session) await connections.bind(session.deviceId, id);
+  else await link.bind(id);
+
+  return c.json({
+    deviceId: session?.deviceId ?? null,
+    boundId: link.boundId,
+    connected: link.connected,
+  });
 });
 
 api.post('/station/unbind', async (c) => {
-  if (!transport) throw new HTTPException(400, { message: 'Binding requires a hardware driver' });
-  await transport.unbind();
-  device?.reset();
-  await saveBinding(null);
-  return c.json({ boundId: null, connected: false });
+  const link = await connections.link();
+  if (!link) throw new HTTPException(400, { message: 'Binding requires a hardware driver' });
+
+  const session = connections.station();
+  if (session) await connections.unbind(session.deviceId);
+  else await link.unbind();
+
+  return c.json({ deviceId: session?.deviceId ?? null, boundId: null, connected: false });
 });
 
 // --- diagnostics ----------------------------------------------------------
@@ -243,36 +291,31 @@ api.post('/station/unbind', async (c) => {
 
 const diag = new Hono();
 
-diag.get('/link', (c) =>
-  c.json({
-    driver: driver.mode,
-    transport: transport?.kind ?? null,
+diag.get('/link', (c) => {
+  const link = connections.transport;
+  return c.json({
+    driver: connections.station()?.driver.mode ?? (LINK === 'sim' ? 'simulator' : 'device'),
+    transport: link?.kind ?? null,
     brokerListening: broker.listening,
     mqtt: { host: MQTT_HOST, port: MQTT_PORT },
-    devices: (transport?.discovered() ?? []).map((d) => ({
-      ...d,
-      bound: d.id === transport?.boundId,
-    })),
-    boundId: transport?.boundId ?? null,
-    connected: transport?.connected ?? false,
+    devices: (link?.discovered() ?? []).map((d) => ({ ...d, bound: d.id === link?.boundId })),
+    boundId: link?.boundId ?? null,
+    connected: link?.connected ?? false,
     configuredId: DEVICE_ID ?? null,
-  })
-);
+  });
+});
 
 diag.get('/traffic', (c) => c.json(broker.recentMessages.map(describeMessage)));
 
 /** What the BLE GATT enumeration actually returned on the last connect. */
-diag.get('/gatt', (c) =>
-  c.json(
-    transport instanceof BleTransport
-      ? {
-          lastError: transport.lastError,
-          attempts: transport.attempts,
-          discovery: transport.lastDiscovery,
-        }
+diag.get('/gatt', (c) => {
+  const link = connections.transport;
+  return c.json(
+    link instanceof BleTransport
+      ? { lastError: link.lastError, attempts: link.attempts, discovery: link.lastDiscovery }
       : { error: 'Not on the BLE transport' }
-  )
-);
+  );
+});
 
 /**
  * Baseline for the register diff.
@@ -295,7 +338,7 @@ let baseline: Baseline | null = await readFile(BASELINE_FILE, 'utf8')
   .catch(() => null);
 
 diag.post('/snapshot', async (c) => {
-  if (!device) throw new HTTPException(400, { message: 'Needs a hardware driver' });
+  const device = hardwareOr400();
   const [input, holding] = await Promise.all([device.readAllInput(), device.readAllHolding()]);
   baseline = { at: new Date().toISOString(), input, holding };
   await mkdir(dirname(BASELINE_FILE), { recursive: true });
@@ -303,7 +346,7 @@ diag.post('/snapshot', async (c) => {
   return c.json({ at: baseline.at, input: input.length, holding: holding.length });
 });
 
-diag.get('/blocked', (c) => c.json(device?.blockedWrites ?? []));
+diag.get('/blocked', (c) => c.json(connections.station()?.device?.blockedWrites ?? []));
 
 /**
  * Read an arbitrary register range, and show it decoded as ASCII too.
@@ -313,7 +356,7 @@ diag.get('/blocked', (c) => c.json(device?.blockedWrites ?? []));
  * probing outside the documented window cannot change anything.
  */
 diag.get('/scan', async (c) => {
-  if (!device) throw new HTTPException(400, { message: 'Needs a hardware driver' });
+  const device = hardwareOr400();
 
   const { fn, start, count } = z
     .object({
@@ -355,11 +398,7 @@ diag.get('/scan', async (c) => {
 
 /** Every input register, raw and decoded, with the documented name where known. */
 diag.get('/registers', async (c) => {
-  if (!device) {
-    throw new HTTPException(400, {
-      message: 'Register dumps require STATION_DRIVER=device or ble',
-    });
-  }
+  const device = hardwareOr400();
   const [input, holding] = await Promise.all([
     device.readAllInput().catch(() => [] as number[]),
     device.readAllHolding().catch(() => [] as number[]),
@@ -391,13 +430,14 @@ diag.post('/raw', async (c) => {
     });
   }
   const { hex } = await body(c, z.object({ hex: z.string().regex(/^[0-9a-fA-F]+$/) }));
-  if (!transport?.boundId) throw new HTTPException(400, { message: 'No device bound' });
+  const link = connections.transport;
+  if (!link?.boundId) throw new HTTPException(400, { message: 'No device bound' });
 
   const frame = fromHex(hex);
-  await transport.send(frame);
+  await link.send(frame);
   return c.json({
     sent: toHex(frame),
-    to: transport.boundId,
+    to: link.boundId,
     parsedAsRequest: parseFrame(frame),
   });
 });
@@ -409,14 +449,10 @@ diag.post('/raw', async (c) => {
 // policy and the freshness of the data, then proves the physical effect
 // happened. See docs/PLUGIN-ARCHITECTURE.md.
 
-const host = new PluginHost();
-await host.discover();
-await host.startEnabled();
-
 const gateway = new ActionGateway({
   host,
-  readStation: () => driver.status(),
-  isReadOnly: () => device?.readOnly ?? false,
+  readStation: () => connections.station()?.driver.status() ?? null,
+  isReadOnly: () => connections.readOnly,
 });
 
 const plugins = new Hono();
@@ -611,14 +647,44 @@ api.get('/audit', (c) => c.json(recentAudit(Number(c.req.query('limit') ?? 100))
 // drivers provide. Described identically, so the app has one card, one detail
 // screen and one chart for all of them.
 
-const catalog = new DeviceCatalog();
-const registry = new DeviceRegistry(catalog, host, () => driver);
-registry.adoptStation();
+/*
+  Nothing is adopted at startup. A device exists because someone added it, and
+  a fresh installation is a blank canvas — see docs/DEVICE-FIRST-REFACTOR.md.
+  The one exception is offered rather than taken: a station bound before the
+  catalog existed can be imported, once, by the user.
+*/
+const legacyStation = new LegacyStationImport({
+  catalog,
+  transport: () => connections.transport?.kind ?? null,
+  // What the radio calls the station it found, rather than a placeholder.
+  stationName: (boundId) =>
+    connections.transport?.discovered().find((d) => d.id.toUpperCase() === boundId.toUpperCase())
+      ?.name ?? 'Power station',
+});
 
 const sampler = new Sampler(registry);
 sampler.start();
 
 api.get('/devices', async (c) => c.json({ devices: await registry.all() }));
+
+// --- the legacy station import --------------------------------------------
+
+api.get('/migration/station', async (c) => c.json(await legacyStation.offer()));
+
+api.post('/migration/station/import', async (c) => {
+  const { name } = await body(c, z.object({ name: z.string().min(1).max(60).optional() }));
+  const record = await legacyStation.accept(name);
+  if (!record) throw new HTTPException(409, { message: 'There is no station to import' });
+
+  // The imported station gets its link straight away, as an added one does.
+  await connections.sync(catalog.list());
+  return c.json(await registry.find(record.id));
+});
+
+api.post('/migration/station/dismiss', (c) => {
+  legacyStation.dismiss();
+  return c.json({ ok: true });
+});
 
 /** What can be added, and what each one needs. Drives the add-device wizard. */
 api.get('/device-types', (c) =>
@@ -664,8 +730,9 @@ api.post('/devices', async (c) => {
     })
   );
 
-  // One station for now: the driver holds a single link, so a second entry
-  // would be a promise the server cannot keep.
+  // One station for now: this process holds one link, so a second entry would
+  // be a promise the server cannot keep. The manager would refuse it honestly;
+  // refusing to create it at all is clearer until the wizard can offer a choice.
   if (input.type === 'power-station' && catalog.find((record) => record.type === 'power-station')) {
     throw new HTTPException(409, { message: 'A power station is already added' });
   }
@@ -678,6 +745,8 @@ api.post('/devices', async (c) => {
     config: input.config,
   });
 
+  // Adding a station opens its link, rather than waiting for a restart.
+  await connections.sync(catalog.list());
   return c.json(await registry.find(record.id));
 });
 
@@ -749,7 +818,11 @@ api.patch('/devices/:id/settings', async (c) => {
 api.delete('/devices/:id', async (c) => {
   const id = decodeURIComponent(c.req.param('id'));
   if (!catalog.get(id)) throw new HTTPException(404, { message: 'No such device' });
+
   catalog.remove(id);
+  // Forgetting a device closes its link. Leaving a session open for a record
+  // that no longer exists is how a deleted device keeps polling the hardware.
+  await connections.sync(catalog.list());
   return c.json({ ok: true });
 });
 
@@ -806,10 +879,17 @@ api.post('/devices/:id/control/:control', async (c) => {
     z.object({ value: z.union([z.boolean(), z.number(), z.string()]), confirmation: z.string().optional() })
   );
 
-  // The station's own ports are core business and keep their existing path.
+  // The station's own ports are core business and keep their existing path —
+  // but through *this device's* session, not a global driver.
   if (found.record.driver === 'core.station') {
+    const session = connections.get(deviceId);
+    if (!session) {
+      throw new HTTPException(409, {
+        message: connections.refusal(deviceId) ?? 'The server is not holding a link to that device',
+      });
+    }
     const port = PortIdSchema.parse(controlId);
-    return c.json(await driver.setPort(port, value === true));
+    return c.json(await session.driver.setPort(port, value === true));
   }
 
   if (control.capability === 'gridRelay.switch') {
@@ -847,9 +927,10 @@ app.onError((err, c) => {
   return c.json({ error: 'Internal server error' }, 500);
 });
 
-const linkLabel = transport ? `${driver.mode}/${transport.kind}` : driver.mode;
+const open = connections.sessions.length;
 console.log(
-  `Aferiy API listening on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT} (link: ${linkLabel})`
+  `Aferiy API listening on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT} ` +
+    `(link: ${LINK}, ${open === 1 ? '1 station open' : `${open} stations open`})`
 );
 
 export default { port: PORT, hostname: HOST, fetch: app.fetch };

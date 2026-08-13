@@ -6,8 +6,8 @@ import {
 } from '@kraftverk/device-aferiy-p280';
 import type { ConfigValues, DeviceDescriptor, Reading } from '@kraftverk/plugin-sdk';
 
-import { DEFAULT_STATION_MODEL, modelLabel, type DeviceCatalog, type DeviceRecord } from './catalog.ts';
-import type { StationDriver } from '../drivers/types.ts';
+import { modelLabel, type DeviceCatalog, type DeviceRecord } from './catalog.ts';
+import type { ConnectionManager } from '../connections/manager.ts';
 import type { PluginHost } from '../plugins/host.ts';
 
 /**
@@ -37,29 +37,9 @@ export class DeviceRegistry {
   constructor(
     private catalog: DeviceCatalog,
     private host: PluginHost,
-    private driver: () => StationDriver
+    /** Live links, keyed by the same catalog id the records use. */
+    private connections: ConnectionManager
   ) {}
-
-  /**
-   * Adopts a station the server is already talking to.
-   *
-   * Existing installations have a working station and no catalog entry, and
-   * asking someone to "add" the thing already on their dashboard would be
-   * absurd. So the first time a station is live and unclaimed, it is added —
-   * with the model it is decoded as, which the user can correct.
-   */
-  adoptStation(): void {
-    if (this.catalog.find((record) => record.type === 'power-station')) return;
-
-    const status = this.driver().status();
-    this.catalog.add({
-      type: 'power-station',
-      model: DEFAULT_STATION_MODEL,
-      driver: 'core.station',
-      name: status.name,
-      config: { transport: status.link.transport ?? 'sim', boundId: status.link.mac },
-    });
-  }
 
   async all(): Promise<DeviceView[]> {
     const views: DeviceView[] = [];
@@ -111,14 +91,33 @@ export class DeviceRegistry {
   }
 
   #stationView(record: DeviceRecord): DeviceView {
-    const driver = this.driver();
-    const status = driver.status();
+    const session = this.connections.get(record.id);
+    const label = record.model ? modelLabel(record.model) : 'Power station';
+
+    /*
+      A station with no session is still a station you own. It keeps its name,
+      its model and its place in the list, and says why it is not answering —
+      which is the difference between a device catalog and a scan result.
+    */
+    if (!session) {
+      return {
+        ...p280Descriptor(record.id, record.name, label),
+        id: record.id,
+        record,
+        name: record.name,
+        online: false,
+        detail: this.connections.refusal(record.id) ?? 'The server is not holding a link to it',
+        readings: [],
+      };
+    }
+
+    const status = session.driver.status();
     const online = status.link.mode === 'simulator' || status.link.state === 'connected';
 
     // The description of what a P280 is lives in its own package: what it
     // measures, what it can be told to do, and what it remembers.
     return {
-      ...p280Descriptor(record.id, record.name, record.model ? modelLabel(record.model) : status.model),
+      ...p280Descriptor(record.id, record.name, record.model ? label : status.model),
       id: record.id,
       record,
       name: record.name,
@@ -130,15 +129,17 @@ export class DeviceRegistry {
 
   /** The station's own settings, in the schema language the app renders. */
   readSettings(record: DeviceRecord): ConfigValues {
-    if (record.driver !== 'core.station') return {};
-    return settingsToValues(this.driver().settings());
+    const session = this.connections.get(record.id);
+    if (record.driver !== 'core.station' || !session) return {};
+    return settingsToValues(session.driver.settings());
   }
 
   async writeSettings(record: DeviceRecord, patch: ConfigValues): Promise<ConfigValues> {
-    if (record.driver !== 'core.station') return {};
+    const session = this.connections.get(record.id);
+    if (record.driver !== 'core.station' || !session) return {};
     // A readback, not an echo: writing the DC input type moves the charging
     // current ceiling on this hardware, so the caller is told what happened.
-    const applied = await this.driver().applySettings(valuesToSettings(patch) as never);
+    const applied = await session.driver.applySettings(valuesToSettings(patch) as never);
     return settingsToValues(applied);
   }
 }

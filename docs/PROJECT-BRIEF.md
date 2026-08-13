@@ -169,12 +169,13 @@ rule engine with a loaded gun.
 | Extension system: SDK, host, action gateway, audit | **Built** |
 | Tuya plug driver, simulated plug, setup wizard UI | **Built** |
 | Device catalog: persisted, CRUD, model selection | **Built (server)** |
-| Auto-adoption of the station at startup | **Built, and to be removed** — it makes a blank canvas impossible |
+| Auto-adoption of the station at startup | **Removed.** A fresh database is a blank canvas; a station bound under the old code is offered as an explicit one-time import |
 | Per-device history sampling | **Built (server)**; charts pending |
 | **The P280 as a device package** — declarations *and* all four screens | **Built** |
 | `@kraftverk/ui` and `@kraftverk/api-client` extracted | **Built** |
 | Devices canvas, device detail, add-device wizard | **In progress** — Milestone A |
-| Per-saved-device adapter instances, `ConnectionManager` | **Next** — Milestones B and C |
+| `ConnectionManager`, one session per saved station | **Built.** No route reaches a global driver; a second station is refused with a reason |
+| Per-saved-device adapter instances | **Next** — Milestone C |
 | Global `StationProvider` and global station tabs | **To be removed**, not extended |
 | Recipes, then rules | Planned |
 

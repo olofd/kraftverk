@@ -197,6 +197,21 @@ export type DeviceTypeOption = {
   note?: string;
 };
 
+/**
+ * A station bound before the device catalog existed.
+ *
+ * The server no longer adopts a station it happens to be talking to, so a
+ * previous installation's binding is offered as an import instead — once, and
+ * only when the server is running the transport the binding names.
+ */
+export type LegacyStationOffer = {
+  state: 'none' | 'offered' | 'imported' | 'dismissed';
+  transport: 'mqtt' | 'ble' | null;
+  boundId: string | null;
+  boundAt: string | null;
+  name: string | null;
+};
+
 /** A device's own settings: the schema it declares, and what it holds now. */
 export type DeviceSettings = {
   schema: import('@kraftverk/plugin-sdk').ConfigSchema | null;

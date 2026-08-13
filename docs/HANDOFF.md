@@ -16,8 +16,19 @@ Last updated at commit `9fa7c77` on branch `devices-and-extensions`.
 
 ## Where things stand
 
-Four commits on **`devices-and-extensions`**, **not pushed**. Working tree clean,
-typecheck clean across seven packages, 99 tests passing (`npm test`).
+On **`devices-and-extensions`**, **not pushed**. Typecheck clean across seven
+packages, 160 tests passing (`npm test`).
+
+The device-first restructuring is partly done. Auto-adoption is gone and the
+`ConnectionManager` exists; the app's global tabs and `StationProvider` do not
+yet, so the remaining work is the client's. The global station routes
+(`/api/status`, `/api/settings`, `/api/ports`) still exist, but they now resolve
+through the one open session and answer 404 when there is no station — they are
+deprecated in favour of `/api/devices/:id/...`.
+
+`KRAFTVERK_DB` and `KRAFTVERK_BINDING_FILE` now override where the database and
+the station binding live. They exist so tests — and a scratch server — work on
+their own state instead of the owner's devices and real station binding.
 
 Built and verified this session:
 
@@ -41,10 +52,14 @@ The plan is [`DEVICE-FIRST-REFACTOR.md`](DEVICE-FIRST-REFACTOR.md). **Milestone 
 
 Milestone A, in order:
 
-1. **Remove `DeviceRegistry.adoptStation()` from startup.** It inserts a station
-   at server start, which makes a blank install impossible and turns discovery
-   into ownership. Legacy `binding.json` users get an explicit one-time import,
-   never an automatic adoption.
+1. ~~**Remove `DeviceRegistry.adoptStation()` from startup.**~~ **Done.** Nothing
+   is adopted now; a fresh database renders an empty canvas. The one case that
+   would otherwise lose something is `server/src/devices/legacy.ts`: a station
+   bound before the catalog existed is *offered* as an import behind a banner on
+   the Devices screen, and only when the server is running the transport the
+   binding names — a BLE binding under the simulator would create a record the
+   server cannot operate. Taking it or dismissing it is remembered in the new
+   `app_state` table, so the banner asks once.
 2. **Root becomes `Your devices`.** Global Dashboard, Settings, Protocol and
    Extensions leave the primary tab bar. Root is always the canvas even with one
    device; each saved device gets its own stable route so it can be opened
@@ -64,12 +79,16 @@ plug, with per-saved-device adapter instances).
 These are current behaviours the refactor exists to fix. Do not treat them as
 settled design:
 
-- **The station is auto-adopted at startup**, so there is no blank canvas.
+- ~~The station is auto-adopted at startup~~ — **fixed**, see Milestone A item 1.
 - **`StationProvider` is global**, and the station still behaves like the app
   rather than like one device.
-- **The server holds one `driver`, one `transport`, one binding.** A second
-  station, or per-device connections, cannot be represented honestly. A
-  `ConnectionManager` keyed by saved device id replaces it.
+- ~~The server holds one `driver`, one `transport`, one binding.~~ **Fixed.**
+  `server/src/connections/manager.ts` opens one session per saved station,
+  keyed by catalog id, and is the only thing that knows about live drivers and
+  transports. This process still holds one radio, so a second station is
+  *refused with a reason* rather than handed the first one's link — the honest
+  version of the same constraint. `binding.json` is legacy and read-only now;
+  where a device is reached lives on its record.
 - **`PluginHost` keeps one configuration per package** and the registry reads
   `plugin.devices()[0]`, so one adapter cannot serve two plugs.
 - **`DeviceDescriptor.id` and `DeviceView.id` mean different things** — vendor
@@ -126,7 +145,7 @@ is what lets the app build without `react-native-ble-plx` installed.
 ```bash
 npm run dev            # simulator + web app
 npm run dev:ble        # real station over Bluetooth, read-only
-npm test               # 99 tests, whole repo
+npm test               # 160 tests, whole repo
 npm run typecheck      # all seven packages
 npm run scan:tuya      # find Tuya plugs — no credentials needed
 npm run keys:tuya      # fetch their local keys (needs a Tuya cloud project)

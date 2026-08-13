@@ -13,6 +13,7 @@ import type {
   DeviceTypeOption,
   DeviceView,
   GridStatus,
+  LegacyStationOffer,
   PluginConfig,
   PluginList,
   RelayCommandResult,
@@ -268,6 +269,27 @@ export async function updateDevice(
 /** Forgets a device. Its samples go with it — see the server's note on why. */
 export async function removeDevice(id: string, signal?: AbortSignal) {
   const { data } = await api.delete<{ ok: boolean }>(devicePath(id), { signal });
+  return data;
+}
+
+// --- the legacy station import ---------------------------------------------
+//
+// The server no longer adopts a station at startup, so a binding made before
+// the catalog existed is offered to the user instead of acted on. Three calls:
+// what is on offer, take it, or wave it away for good.
+
+export async function fetchStationImport(signal?: AbortSignal) {
+  const { data } = await api.get<LegacyStationOffer>('/migration/station', { signal });
+  return data;
+}
+
+export async function importLegacyStation(name?: string, signal?: AbortSignal) {
+  const { data } = await api.post<DeviceView>('/migration/station/import', { name }, { signal });
+  return data;
+}
+
+export async function dismissStationImport(signal?: AbortSignal) {
+  const { data } = await api.post<{ ok: boolean }>('/migration/station/dismiss', {}, { signal });
   return data;
 }
 

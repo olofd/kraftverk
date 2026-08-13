@@ -12,7 +12,13 @@ import { Database } from 'bun:sqlite';
  * lives beside the station's other state in `server/data/`, which is gitignored.
  */
 
-const FILE = resolve(import.meta.dirname, '../../data/kraftverk.db');
+/**
+ * `KRAFTVERK_DB` exists for tests, which must not write to the database the
+ * owner's devices live in. Point it at a temp file — or `:memory:` — and the
+ * same migrations run against a throwaway. Read when the database is first
+ * opened rather than when this module loads, so a test can set it.
+ */
+const file = () => process.env.KRAFTVERK_DB || resolve(import.meta.dirname, '../../data/kraftverk.db');
 
 export type Db = Database;
 
@@ -21,13 +27,25 @@ let database: Db | null = null;
 export function db(): Db {
   if (database) return database;
 
-  mkdirSync(dirname(FILE), { recursive: true });
-  const handle = new Database(FILE, { create: true });
+  const path = file();
+  if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
+  const handle = new Database(path, { create: true });
   handle.exec('PRAGMA journal_mode = WAL');
   handle.exec('PRAGMA foreign_keys = ON');
   migrate(handle);
   database = handle;
   return handle;
+}
+
+/**
+ * Closes the handle, so the next `db()` opens whatever `KRAFTVERK_DB` now says.
+ *
+ * For tests, which need a database of their own rather than the one the owner's
+ * devices live in. Nothing in the running server closes the database.
+ */
+export function closeDb(): void {
+  database?.close();
+  database = null;
 }
 
 /**
@@ -128,6 +146,24 @@ const MIGRATIONS: { id: number; sql: string }[] = [
       CREATE INDEX sample_lookup ON sample (device_id, key, at);
     `,
   },
+  {
+    id: 4,
+    sql: `
+      /*
+        Decisions the app has already put to the user, so it stops asking.
+
+        The first of them is the legacy station import: someone who bound a
+        station before there was a device catalog gets offered it once, and
+        whether they took it or waved it away has to outlive the restart. A
+        banner that reappears every boot is a banner people learn to ignore.
+      */
+      CREATE TABLE app_state (
+        key        TEXT PRIMARY KEY,
+        value      TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 function migrate(handle: Db): void {
@@ -146,6 +182,26 @@ function migrate(handle: Db): void {
       );
     })();
   }
+}
+
+// --- app state -------------------------------------------------------------
+
+/** A decision the app has already made, or null if it never has. */
+export function appState(key: string): string | null {
+  return (
+    db()
+      .query<{ value: string }, [string]>('SELECT value FROM app_state WHERE key = ?')
+      .get(key)?.value ?? null
+  );
+}
+
+export function setAppState(key: string, value: string): void {
+  db()
+    .query(
+      `INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+    )
+    .run(key, value, new Date().toISOString());
 }
 
 // --- secrets ---------------------------------------------------------------
