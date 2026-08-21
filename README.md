@@ -235,6 +235,22 @@ Only when you have verified reads and decided to accept the risk:
 npm run dev:ble:write
 ```
 
+### Running the server in Docker
+
+For a machine that is always on — which is what buys you history and, later,
+automations:
+
+```bash
+docker compose up -d --build
+```
+
+Then add `http://<that-host>:3333` under **App settings → Servers**. The image
+is the server only; the app stays a browser client pointed at it. It ships the
+simulator with writes refused by default, and Bluetooth is deliberately not in
+it — a container has no honest access to a radio, and MQTT is the transport that
+suits a server anyway. [**docs/DOCKER.md**](docs/DOCKER.md) covers the transport
+choice, secrets, CORS, backups and the DNS redirect Wi-Fi needs.
+
 ### Connecting over Wi-Fi
 
 1. Start with `npm run dev:device`; the server listens for MQTT on `:1883`.
@@ -397,6 +413,7 @@ only ever have one. Use the device-scoped routes above.
 | `ALLOW_RAW_MODBUS` | — | — | `1` enables raw frames |
 | `KRAFTVERK_DB` | — | `server/data/kraftverk.db` | Where the database lives. **Required under `NODE_ENV=test`** — the server refuses to open the default file from a test run |
 | `KRAFTVERK_BINDING_FILE` | — | `server/data/binding.json` | The legacy pre-catalog binding, read-only now |
+| `KRAFTVERK_BASELINE_FILE` | — | `server/data/baseline.json` | The register baseline the Protocol diff compares against. Overridable so a container can keep it on a volume |
 | `KRAFTVERK_SECRET_KEY` | — | — | Passphrase for AES-256-GCM plugin secrets. Without it they are stored as given, and the UI says so |
 
 ---
@@ -479,6 +496,7 @@ server/
   src/actions/           the only code allowed to switch mains
   src/history/           sqlite: config, secrets, audit timeline, samples
 docs/HANDOFF.md          state of play, and the traps worth knowing — start here
+docs/DOCKER.md           running the server in a container
 docs/DEVICE-FIRST-REFACTOR.md   the device-first target and its milestones
 docs/MODULAR-CODE-ARCHITECTURE.md  package, protocol, server and API boundaries
 docs/PROJECT-BRIEF.md    long-term plan and architecture brief

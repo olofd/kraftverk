@@ -364,7 +364,14 @@ diag.get('/gatt', (c) => {
  */
 type Baseline = { at: string; input: number[]; holding: number[] };
 
-const BASELINE_FILE = resolve(import.meta.dirname, '../data/baseline.json');
+/**
+ * Overridable for the same reason `KRAFTVERK_DB` is: in a container the source
+ * tree is a read-only image layer, and a baseline written there would vanish on
+ * the next restart — silently, halfway through the one workflow whose whole
+ * point is comparing against something taken earlier.
+ */
+const BASELINE_FILE =
+  process.env.KRAFTVERK_BASELINE_FILE || resolve(import.meta.dirname, '../data/baseline.json');
 
 /**
  * Persisted, because the server restarts constantly during protocol work —

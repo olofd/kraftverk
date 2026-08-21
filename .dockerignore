@@ -1,0 +1,24 @@
+# Installed in the image from the lockfile, never copied in: a host
+# node_modules is the wrong platform's binaries and by far the largest thing
+# that would otherwise be uploaded as build context.
+**/node_modules
+
+.git
+.gitignore
+.expo
+.claude
+
+# The owner's database, secrets, station binding and register baseline. Copying
+# these into an image would bake one machine's devices — and its plugin
+# secrets — into something you might push to a registry.
+server/data
+
+client/.expo
+client/dist
+client/web-build
+docs/screenshots
+**/*.log
+**/.DS_Store
+Dockerfile
+.dockerignore
+docker-compose.yml

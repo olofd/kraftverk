@@ -1,0 +1,47 @@
+# kraftverk server.
+#
+# Defaults are the safe ones: the simulator, and writes refused. Read
+# docs/DOCKER.md before changing either — the second one is the difference
+# between a dashboard and something that can switch mains power.
+
+services:
+  kraftverk:
+    build: .
+    image: kraftverk-server
+    container_name: kraftverk
+    restart: unless-stopped
+
+    ports:
+      - "3333:3333"
+      # The MQTT broker the station connects to instead of the vendor cloud.
+      # Only needed with STATION_DRIVER=device, and it must be reachable on the
+      # LAN at the address mqtt.sydpower.com resolves to.
+      - "1883:1883"
+
+    environment:
+      # sim | device — the simulator, or real hardware over WiFi/MQTT.
+      # `ble` is deliberately absent: see docs/DOCKER.md.
+      STATION_DRIVER: sim
+
+      # 1 refuses every write at the driver. The npm scripts pass --read-only
+      # for the hardware modes; nothing passes it for you here, so it is set
+      # explicitly rather than left to a default that means "writes allowed".
+      READ_ONLY: "1"
+
+      # Without this, plugin secrets — a Tuya plug's local key — are stored as
+      # given. The app says so plainly on the Extensions screen. Set it to a
+      # long random string and keep it somewhere other than this file.
+      # KRAFTVERK_SECRET_KEY: ${KRAFTVERK_SECRET_KEY:?set this in .env}
+
+      # Browsers are allowed from loopback and private ranges already, which
+      # covers a phone or laptop on the same network. Name any other origin the
+      # app is served from — a hostname, a reverse proxy — here.
+      # ALLOWED_ORIGINS: "https://kraftverk.example.com"
+
+    volumes:
+      # Devices, history, plugin config, secrets and the audit timeline.
+      # Delete this volume and you are back to a blank canvas.
+      - kraftverk-data:/data
+
+volumes:
+  kraftverk-data:
