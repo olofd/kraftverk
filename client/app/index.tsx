@@ -9,6 +9,7 @@ import {
   dismissStationImport,
   fetchStationImport,
   importLegacyStation,
+  isOnline,
 } from '@kraftverk/api-client';
 import type { LegacyStationOffer } from '@kraftverk/api-client';
 
@@ -121,7 +122,7 @@ export default function DevicesScreen() {
             <Feather
               name={featherName(device.icon, 'zap')}
               size={16}
-              color={device.online ? theme.accent?.val : theme.muted?.val}
+              color={isOnline(device.health) ? theme.accent?.val : theme.muted?.val}
             />
           }
           onPress={() => router.push(`/device/${encodeURIComponent(device.id)}`)}

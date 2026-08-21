@@ -15,7 +15,7 @@ import { ConnectionManager, type LinkKind, type StationSession } from './connect
 import { DeviceCatalog, STATION_MODELS } from './devices/catalog.ts';
 import { LegacyStationImport } from './devices/legacy.ts';
 import { DeviceRegistry } from './devices/registry.ts';
-import { recentAudit, secretsAreEncrypted } from './history/db.ts';
+import { audit, recentAudit, secretsAreEncrypted } from './history/db.ts';
 import { Sampler, series } from './history/sampler.ts';
 import { PluginHost, type PluginInstance } from './plugins/host.ts';
 import { DeviceDriver, ReadOnlyError } from './drivers/device.ts';
@@ -156,11 +156,49 @@ const app = new Hono();
 // The client polls /status; logging it would drown out everything useful.
 app.use('*', async (c, next) => (c.req.path === '/api/status' ? next() : logger()(c, next)));
 
+/**
+ * Which browsers may talk to this server.
+ *
+ * It used to reflect whatever origin asked. That is the same as no policy at
+ * all: this server has no authentication, it is on the user's LAN, and one of
+ * its routes switches mains power — so any page in any tab could have listed
+ * the devices and thrown the relay, because the browser was being told the
+ * answer was fine to read.
+ *
+ * Loopback and private ranges are allowed because that is where this app
+ * legitimately runs: Metro on `localhost:8081`, and the same app opened from a
+ * phone on the house network. Anything else has to be named in
+ * `ALLOWED_ORIGINS`, which is the escape hatch for a real deployment rather
+ * than a hole left open by default.
+ *
+ * Requests with no `Origin` at all — curl, the native app — are not CORS
+ * requests and are unaffected.
+ */
+const EXTRA_ORIGINS = (process.env.ALLOWED_ORIGINS ?? '')
+  .split(',')
+  .map((entry) => entry.trim())
+  .filter(Boolean);
+
+const PRIVATE_HOST =
+  /^(localhost|127\.\d+\.\d+\.\d+|\[::1\]|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|[\w-]+\.local)$/;
+
+const allowOrigin = (origin: string): string | null => {
+  if (EXTRA_ORIGINS.includes(origin) || EXTRA_ORIGINS.includes('*')) return origin;
+  try {
+    return PRIVATE_HOST.test(new URL(origin).hostname) ? origin : null;
+  } catch {
+    return null; // not a URL we can reason about, so not one we trust
+  }
+};
+
 app.use(
   '/api/*',
   cors({
-    origin: (origin) => origin ?? '*',
-    allowMethods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
+    origin: (origin) => allowOrigin(origin),
+    // DELETE was missing, and it is the method behind "Forget this device".
+    // The preflight said GET,POST,PATCH,OPTIONS, so every browser blocked the
+    // request — and the app, which never caught the failure, showed nothing.
+    allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type'],
   })
 );
@@ -516,6 +554,10 @@ plugins.patch('/:id/config', async (c) => {
 
 plugins.post('/:id/enable', async (c) => {
   const id = c.req.param('id');
+  // Every sibling route checks this; this one did not, so enabling a plugin
+  // that is not installed answered 500 rather than "no such plugin".
+  if (!host.instance(id)) throw new HTTPException(404, { message: 'No such plugin' });
+
   const { enabled } = await body(c, z.object({ enabled: z.boolean() }));
   await host.setEnabled(id, enabled);
   return c.json({ ok: true, status: host.instance(id)?.status, health: host.health(id) });
@@ -639,13 +681,36 @@ api.post('/grid/relay', async (c) => {
   return c.json(result, result.outcome === 'refused' ? 409 : 200);
 });
 
-api.get('/audit', (c) => c.json(recentAudit(Number(c.req.query('limit') ?? 100))));
+api.get('/audit', (c) => {
+  // `Number(c.req.query('limit'))` was passed straight to SQL, so `?limit=abc`
+  // bound NaN and the route answered 500 "Internal server error" — the one
+  // query parameter on the server that was not validated like the rest.
+  const { limit } = z
+    .object({ limit: z.coerce.number().int().min(1).max(1000).default(100) })
+    .parse({ limit: c.req.query('limit') ?? 100 });
+
+  return c.json(recentAudit(limit));
+});
 
 // --- devices --------------------------------------------------------------
 //
 // One list of the things you own: the station, and whatever the installed
 // drivers provide. Described identically, so the app has one card, one detail
 // screen and one chart for all of them.
+
+/**
+ * Records what happened to the catalog.
+ *
+ * The audit timeline covered plugins and every physical action, and the legacy
+ * import wrote itself down — but adding, renaming and *forgetting* a device
+ * wrote nothing at all. Forgetting is the destructive one: it takes the
+ * device's entire recorded history with it, in a transaction, with no trace
+ * that it ever existed. A device that vanishes with no entry anywhere is a
+ * device nobody can account for afterwards, which is exactly the situation this
+ * line was written in.
+ */
+const auditDevice = (kind: string, id: string, summary: string, detail?: unknown) =>
+  audit({ at: new Date().toISOString(), kind, actor: 'user', resource: id, summary, detail });
 
 /*
   Nothing is adopted at startup. A device exists because someone added it, and
@@ -745,6 +810,11 @@ api.post('/devices', async (c) => {
     config: input.config,
   });
 
+  auditDevice('device.added', record.id, `Added "${record.name}" (${record.driver})`, {
+    type: record.type,
+    model: record.model,
+  });
+
   // Adding a station opens its link, rather than waiting for a restart.
   await connections.sync(catalog.list());
   return c.json(await registry.find(record.id));
@@ -767,7 +837,19 @@ api.patch('/devices/:id', async (c) => {
     })
   );
 
-  if (!catalog.update(id, changes)) throw new HTTPException(404, { message: 'No such device' });
+  const before = catalog.get(id);
+  const updated = catalog.update(id, changes);
+  if (!before || !updated) throw new HTTPException(404, { message: 'No such device' });
+
+  // The rename is worth naming both sides of: "Living room" in a log is useless
+  // if you cannot tell what it used to be called.
+  if (updated.name !== before.name) {
+    auditDevice('device.renamed', id, `Renamed "${before.name}" to "${updated.name}"`);
+  }
+  if (updated.model !== before.model) {
+    auditDevice('device.remodelled', id, `${updated.name} is now a ${updated.model ?? 'unknown model'}`);
+  }
+
   return c.json(await registry.find(id));
 });
 
@@ -865,7 +947,17 @@ api.patch('/devices/:id/settings', async (c) => {
 
 api.delete('/devices/:id', async (c) => {
   const id = decodeURIComponent(c.req.param('id'));
-  if (!catalog.get(id)) throw new HTTPException(404, { message: 'No such device' });
+  const record = catalog.get(id);
+  if (!record) throw new HTTPException(404, { message: 'No such device' });
+
+  // Written before the delete, so the entry survives even if the transaction
+  // does not — and so the record's own details are still there to describe.
+  auditDevice('device.forgotten', id, `Forgot "${record.name}" and everything it had recorded`, {
+    type: record.type,
+    driver: record.driver,
+    model: record.model,
+    addedAt: record.addedAt,
+  });
 
   catalog.remove(id);
   // Forgetting a device closes its link. Leaving a session open for a record
@@ -883,6 +975,10 @@ api.delete('/devices/:id', async (c) => {
  */
 api.get('/devices/:id/history', (c) => {
   const id = decodeURIComponent(c.req.param('id'));
+  // An unknown device answered 200 with an empty series, which is indis-
+  // tinguishable from a device that simply has not recorded anything yet.
+  if (!catalog.get(id)) throw new HTTPException(404, { message: 'No such device' });
+
   const { key, hours, points } = z
     .object({
       key: z.string().min(1),

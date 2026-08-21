@@ -7,6 +7,7 @@ import { describeError } from '@kraftverk/api-client';
 import type { DeviceModelOption, DeviceTypeOption } from '@kraftverk/api-client';
 import { Card, Row, RowSeparator, SectionLabel, haptic } from '@kraftverk/ui';
 
+import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
 import { featherName } from '../src/lib/icons';
 import { useDevices } from '../src/state/DevicesProvider';
@@ -101,32 +102,30 @@ export default function AddDeviceScreen() {
               const active = chosen?.id === option.id;
 
               return (
-                <YStack key={option.id}>
+                <YStack key={option.id} opacity={blocked ? 0.45 : 1}>
                   {index > 0 ? <RowSeparator /> : null}
-                  <XStack
-                    opacity={blocked ? 0.45 : 1}
-                    cursor={blocked ? undefined : 'pointer'}
-                    pressStyle={blocked ? undefined : { opacity: 0.6 }}
-                    onPress={blocked ? undefined : () => choose(option)}
+                  <Pressable
+                    disabled={blocked}
+                    selected={active}
+                    label={`${option.label}${blocked ? ', already added' : ''}`}
+                    onPress={() => choose(option)}
                   >
-                    <YStack flex={1}>
-                      <Row
-                        title={option.label}
-                        subtitle={
-                          blocked
-                            ? 'Already added — the server holds one station link at a time'
-                            : (option.note ?? option.description)
-                        }
-                        accessory={
-                          <Feather
-                            name={active ? 'check-circle' : featherName(option.icon)}
-                            size={16}
-                            color={active ? theme.accent?.val : theme.muted?.val}
-                          />
-                        }
-                      />
-                    </YStack>
-                  </XStack>
+                    <Row
+                      title={option.label}
+                      subtitle={
+                        blocked
+                          ? 'Already added — the server holds one station link at a time'
+                          : (option.note ?? option.description)
+                      }
+                      accessory={
+                        <Feather
+                          name={active ? 'check-circle' : featherName(option.icon)}
+                          size={16}
+                          color={active ? theme.accent?.val : theme.muted?.val}
+                        />
+                      }
+                    />
+                  </Pressable>
                 </YStack>
               );
             })}
@@ -266,26 +265,28 @@ function Models({
         {models.map((option, index) => (
           <YStack key={option.id}>
             {index > 0 ? <RowSeparator /> : null}
-            <XStack cursor="pointer" pressStyle={{ opacity: 0.6 }} onPress={() => onChange(option.id)}>
-              <YStack flex={1}>
-                <Row
-                  title={option.label}
-                  subtitle={option.note}
-                  accessory={
-                    <XStack alignItems="center" gap="$2">
-                      {option.verified ? (
-                        <Feather name="check" size={13} color={theme.success?.val} />
-                      ) : null}
-                      <Feather
-                        name={option.id === value ? 'disc' : 'circle'}
-                        size={16}
-                        color={option.id === value ? theme.accent?.val : theme.muted?.val}
-                      />
-                    </XStack>
-                  }
-                />
-              </YStack>
-            </XStack>
+            <Pressable
+              selected={option.id === value}
+              label={`${option.label}${option.verified ? ', verified' : ', untested'}`}
+              onPress={() => onChange(option.id)}
+            >
+              <Row
+                title={option.label}
+                subtitle={option.note}
+                accessory={
+                  <XStack alignItems="center" gap="$2">
+                    {option.verified ? (
+                      <Feather name="check" size={13} color={theme.success?.val} />
+                    ) : null}
+                    <Feather
+                      name={option.id === value ? 'disc' : 'circle'}
+                      size={16}
+                      color={option.id === value ? theme.accent?.val : theme.muted?.val}
+                    />
+                  </XStack>
+                }
+              />
+            </Pressable>
           </YStack>
         ))}
       </Card>

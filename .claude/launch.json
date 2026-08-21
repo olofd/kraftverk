@@ -8,6 +8,18 @@
       "port": 3333
     },
     {
+      "name": "server:ble",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "server:ble"],
+      "port": 3333
+    },
+    {
+      "name": "server:ble:write",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "server:ble:write"],
+      "port": 3333
+    },
+    {
       "name": "web",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "web"],

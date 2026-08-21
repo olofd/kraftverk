@@ -5,7 +5,8 @@ import { router } from 'expo-router';
 import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { ACTUATOR_CONFIRMATION } from '@kraftverk/plugin-sdk';
-import type { ConfigValues, ControlSpec, DeviceView, MeasurementSpec } from '@kraftverk/api-client';
+import type { ConfigValues, ControlSpec, SavedDeviceView, MeasurementSpec } from '@kraftverk/api-client';
+import { describeError, isOnline } from '@kraftverk/api-client';
 import {
   Card,
   ModeRow,
@@ -39,7 +40,7 @@ import { useDevices } from '../../state/DevicesProvider';
  * between *what is shown*, not between generic and specific.
  */
 
-export function Overview({ device }: { device: DeviceView }) {
+export function Overview({ device }: { device: SavedDeviceView }) {
   const theme = useTheme();
 
   return (
@@ -49,7 +50,7 @@ export function Overview({ device }: { device: DeviceView }) {
         <Feather
           name={featherName(device.icon, 'zap')}
           size={16}
-          color={device.online ? theme.accent?.val : theme.muted?.val}
+          color={isOnline(device.health) ? theme.accent?.val : theme.muted?.val}
         />
       }
     />
@@ -65,7 +66,7 @@ export function Overview({ device }: { device: DeviceView }) {
  * and the confirmation it then sends is the same token the action gateway
  * demands, so a tap here has exactly the authority a manual switch does.
  */
-export function Controls({ device }: { device: DeviceView }) {
+export function Controls({ device }: { device: SavedDeviceView }) {
   const { invoke } = useDevices();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -116,7 +117,7 @@ export function Controls({ device }: { device: DeviceView }) {
                   title={control.label}
                   subtitle={control.consequence}
                   checked={reading?.value === true}
-                  disabled={!device.online || busy === control.id}
+                  disabled={!isOnline(device.health) || busy === control.id}
                   onCheckedChange={(next) => request(control, next)}
                 />
               ) : control.kind === 'enum' && control.options ? (
@@ -125,18 +126,18 @@ export function Controls({ device }: { device: DeviceView }) {
                   subtitle={control.consequence}
                   value={String(reading?.value ?? control.options[0]?.value ?? '')}
                   options={control.options}
-                  disabled={!device.online || busy === control.id}
+                  disabled={!isOnline(device.health) || busy === control.id}
                   onChange={(next) => request(control, next)}
                 />
               ) : (
                 <Row
                   title={control.label}
                   subtitle={control.consequence}
-                  disabled={!device.online || busy === control.id}
+                  disabled={!isOnline(device.health) || busy === control.id}
                   accessory={
                     <Button
                       size="$2"
-                      disabled={!device.online || busy === control.id}
+                      disabled={!isOnline(device.health) || busy === control.id}
                       onPress={() => request(control, true)}
                     >
                       Run
@@ -182,7 +183,7 @@ function confirmDangerous(control: ControlSpec, proceed: () => void): void {
 // --- readings ---------------------------------------------------------------
 
 /** Everything the device declared it measures, and what it last said. */
-export function Readings({ device }: { device: DeviceView }) {
+export function Readings({ device }: { device: SavedDeviceView }) {
   if (device.measurements.length === 0) return null;
 
   return (
@@ -216,7 +217,7 @@ export function Readings({ device }: { device: DeviceView }) {
  * declaration list — which is why this section needs no knowledge of what is
  * being charted.
  */
-export function History({ device }: { device: DeviceView }) {
+export function History({ device }: { device: SavedDeviceView }) {
   const { editable } = useDevices();
   const chartable = device.measurements.filter((spec) => spec.kind !== 'state');
   const [key, setKey] = useState<string | null>(null);
@@ -235,8 +236,13 @@ export function History({ device }: { device: DeviceView }) {
       <Card gap="$3">
         <XStack flexWrap="wrap" gap="$1.5">
           {chartable.map((spec) => (
+            // A chip is a choice, not a decoration: `radio` is what makes a
+            // screen reader say which of the twelve is currently charted.
             <Text
               key={spec.key}
+              role="radio"
+              tabIndex={0}
+              aria-checked={spec.key === selected.key}
               fontSize={12}
               fontWeight="600"
               paddingHorizontal="$2.5"
@@ -246,6 +252,7 @@ export function History({ device }: { device: DeviceView }) {
               color={spec.key === selected.key ? '$background' : '$muted'}
               cursor="pointer"
               pressStyle={{ opacity: 0.7 }}
+              focusVisibleStyle={{ outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid' }}
               onPress={() => {
                 haptic();
                 setKey(spec.key);
@@ -271,7 +278,7 @@ export function History({ device }: { device: DeviceView }) {
  * the station through a dozen writes to reach one value, and every one of them
  * is a real write to real hardware.
  */
-export function GenericSettings({ device }: { device: DeviceView }) {
+export function GenericSettings({ device }: { device: SavedDeviceView }) {
   const { readSettings, writeSettings } = useDevices();
   const [values, setValues] = useState<ConfigValues | null>(null);
   const [draft, setDraft] = useState<ConfigValues>({});
@@ -337,7 +344,7 @@ export function GenericSettings({ device }: { device: DeviceView }) {
           <SchemaForm
             schema={schema}
             values={{ ...values, ...draft }}
-            disabled={busy || !device.online}
+            disabled={busy || !isOnline(device.health)}
             onChange={(name, value) =>
               setDraft((current) => ({ ...current, [name]: value as ConfigValues[string] }))
             }
@@ -378,10 +385,21 @@ export function GenericSettings({ device }: { device: DeviceView }) {
 // --- manage -----------------------------------------------------------------
 
 /** Its name, and whether you still own it. Both belong to the catalog. */
-export function Manage({ device }: { device: DeviceView }) {
+export function Manage({ device }: { device: SavedDeviceView }) {
   const { rename, remove } = useDevices();
   const [name, setName] = useState(device.record.name);
   const [busy, setBusy] = useState(false);
+  /**
+   * Why the last thing you asked for did not happen.
+   *
+   * Both writes here used to be `void promise.finally(…)` with no catch: the
+   * provider's own error state only reaches the banner when the *server* is
+   * unreachable, which a refused rename is not. So a failure showed nothing at
+   * all — the button stopped spinning and the old name stayed. Worse for
+   * Forget, where the user had already confirmed a warning that said the device
+   * was about to be destroyed, and then watched nothing happen.
+   */
+  const [error, setError] = useState<string | null>(null);
   const theme = useTheme();
 
   const dirty = name.trim() !== device.record.name && name.trim().length > 0;
@@ -392,8 +410,12 @@ export function Manage({ device }: { device: DeviceView }) {
 
     const proceed = () => {
       setBusy(true);
-      void remove(device.id)
+      setError(null);
+      remove(device.id)
         .then(() => router.replace('/'))
+        .catch((err: unknown) => {
+          setError(describeError(err) || 'That device could not be forgotten');
+        })
         .finally(() => setBusy(false));
     };
 
@@ -435,15 +457,27 @@ export function Manage({ device }: { device: DeviceView }) {
                 onPress={() => {
                   haptic();
                   setBusy(true);
-                  void rename(device.id, name.trim()).finally(() => setBusy(false));
+                  setError(null);
+                  rename(device.id, name.trim())
+                    .catch((err: unknown) => {
+                      setError(describeError(err) || 'That name could not be saved');
+                    })
+                    .finally(() => setBusy(false));
                 }}
               >
                 Save
               </Button>
             ) : null}
           </XStack>
+          {/*
+            Only when there is a second name to contrast with. `device.name` is
+            the catalog's — the very name in the box above — so this sentence
+            used to promise the vendor's and print the user's back at them.
+          */}
           <Text fontSize={12} color="$muted" lineHeight={17}>
-            Yours, not the vendor’s. The device keeps reporting {device.name}.
+            {device.providerName
+              ? `Yours, not the vendor’s. The device keeps reporting ${device.providerName}.`
+              : 'Yours alone. Changing it later changes nothing but the label.'}
           </Text>
         </YStack>
 
@@ -465,6 +499,12 @@ export function Manage({ device }: { device: DeviceView }) {
           }
         />
       </Card>
+
+      {error ? (
+        <Text fontSize={12} color="$danger" lineHeight={18} paddingHorizontal="$1">
+          {error}
+        </Text>
+      ) : null}
     </YStack>
   );
 }

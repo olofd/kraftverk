@@ -184,8 +184,12 @@ function PluginCard({ plugin, onPress }: { plugin: PluginSummary; onPress: () =>
       gap="$3"
       paddingHorizontal="$4"
       paddingVertical="$3"
+      role="button"
+      tabIndex={0}
+      aria-label={`${plugin.name}, ${plugin.status}`}
       cursor="pointer"
       pressStyle={{ opacity: 0.7 }}
+      focusVisibleStyle={{ outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid' }}
       onPress={() => {
         haptic();
         onPress();
@@ -410,7 +414,14 @@ function PluginSetup({
                 gap="$3"
                 paddingHorizontal="$4"
                 paddingVertical="$3"
+                // A disclosure, so `aria-expanded` is what tells a screen
+                // reader whether pressing it opens or closes the step.
+                role="button"
+                tabIndex={0}
+                aria-expanded={open}
+                aria-label={step.title}
                 cursor="pointer"
+                focusVisibleStyle={{ outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid' }}
                 onPress={() => setOpenStep(open ? '' : step.id)}
               >
                 <YStack

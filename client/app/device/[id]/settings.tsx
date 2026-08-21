@@ -3,10 +3,11 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Card, Row, SectionLabel } from '@kraftverk/ui';
 import { Text, useTheme, XStack, YStack } from 'tamagui';
 
-import type { DeviceView } from '@kraftverk/api-client';
+import type { SavedDeviceView } from '@kraftverk/api-client';
 
 import { getApiBaseUrl } from '@kraftverk/api-client';
 
+import { Pressable } from '../../../src/components/Pressable';
 import { DeviceShell } from '../../../src/features/devices/DeviceShell';
 import { useDeviceConnection } from '../../../src/features/devices/connection';
 import { GenericSettings, Manage } from '../../../src/features/devices/panels';
@@ -51,7 +52,7 @@ export default function DeviceSettingsScreen() {
  * device-scoped one lost it, on a device where one wrong register permanently
  * bricks the machine. It is one line, and it is worth the space.
  */
-function WhereWritesGo({ device }: { device: DeviceView }) {
+function WhereWritesGo({ device }: { device: SavedDeviceView }) {
   const { status, readOnly, simulated, direct } = useDeviceConnection(device);
   const theme = useTheme();
 
@@ -77,7 +78,7 @@ function WhereWritesGo({ device }: { device: DeviceView }) {
   );
 }
 
-function Settings({ device }: { device: DeviceView }) {
+function Settings({ device }: { device: SavedDeviceView }) {
   const connection = useDeviceConnection(device);
 
   const screens = screensFor(device);
@@ -102,7 +103,7 @@ function Settings({ device }: { device: DeviceView }) {
 }
 
 /** Model-specific tools, for the models that have any. */
-function Advanced({ device }: { device: DeviceView }) {
+function Advanced({ device }: { device: SavedDeviceView }) {
   const theme = useTheme();
   const screens = screensFor(device);
   if (!screens?.protocol) return null;
@@ -111,19 +112,15 @@ function Advanced({ device }: { device: DeviceView }) {
     <YStack gap="$2">
       <SectionLabel>Advanced</SectionLabel>
       <Card inset>
-        <XStack
-          cursor="pointer"
-          pressStyle={{ opacity: 0.6 }}
+        <Pressable
           onPress={() => router.push(`/device/${encodeURIComponent(device.id)}/advanced`)}
         >
-          <YStack flex={1}>
-            <Row
-              title="Protocol"
-              subtitle="Register dumps and the snapshot-and-diff workflow, for verifying the map against real hardware"
-              accessory={<Feather name="chevron-right" size={16} color={theme.muted?.val} />}
-            />
-          </YStack>
-        </XStack>
+          <Row
+            title="Protocol"
+            subtitle="Register dumps and the snapshot-and-diff workflow, for verifying the map against real hardware"
+            accessory={<Feather name="chevron-right" size={16} color={theme.muted?.val} />}
+          />
+        </Pressable>
       </Card>
     </YStack>
   );
