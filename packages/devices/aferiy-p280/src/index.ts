@@ -39,22 +39,24 @@ export const MEASUREMENTS: MeasurementSpec[] = [
   { key: 'usbWatts', label: 'USB draw', unit: 'W', kind: 'power', precision: 0 },
 ];
 
+/**
+ * The three outputs, and nothing else.
+ *
+ * The light is deliberately absent. It looks like a control — you tap it and
+ * the lamp changes — but the station *remembers* the mode across a power cycle,
+ * and the SDK draws the line exactly there: momentary is a control, remembered
+ * is a setting. It lives in `SETTINGS_SCHEMA` as `ledMode`, which is also the
+ * only path that can express SOS and flash; the port register behind it is a
+ * boolean and would silently reduce four modes to two.
+ *
+ * Declaring it in both places was the tempting mistake. The generic device
+ * screen would then have shown a control that the generic control endpoint
+ * cannot honour.
+ */
 export const CONTROLS: ControlSpec[] = [
   { id: 'ac', label: 'AC outlets', kind: 'switch', capability: 'station.ports', measurementKey: 'acOn' },
   { id: 'dc', label: '12V DC / car port', kind: 'switch', capability: 'station.ports', measurementKey: 'dcOn' },
   { id: 'usb', label: 'USB-A + USB-C', kind: 'switch', capability: 'station.ports', measurementKey: 'usbOn' },
-  {
-    id: 'led',
-    label: 'Light',
-    kind: 'enum',
-    capability: 'station.ports',
-    options: [
-      { value: 'off', label: 'Off' },
-      { value: 'on', label: 'On' },
-      { value: 'sos', label: 'SOS' },
-      { value: 'flash', label: 'Flash' },
-    ],
-  },
 ];
 
 /**
