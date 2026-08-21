@@ -10,6 +10,7 @@
 
 export * from './capabilities.ts';
 export * from './device.ts';
+export * from './identity.ts';
 export * from './schema.ts';
 export * from './plugin.ts';
 export * from './panel.ts';

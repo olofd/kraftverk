@@ -141,12 +141,18 @@ export type RelayCommandResult = {
 // it — the catalog record and whether the thing is answering — is HTTP.
 
 export type {
+  CandidateId,
+  ConnectionHealth,
+  ConnectionStatus,
   ControlSpec,
   DeviceDescriptor,
   DeviceKind,
   MeasurementSpec,
+  ProviderDeviceId,
   Reading,
+  SavedDeviceId,
 } from '@kraftverk/plugin-sdk';
+export { isOnline } from '@kraftverk/plugin-sdk';
 
 export type DeviceRecord = {
   id: string;
@@ -161,19 +167,30 @@ export type DeviceRecord = {
 };
 
 /**
- * A device as the app sees it: what it is, plus what it is doing right now.
+ * A saved device as the app sees it: what it is, plus what it is doing now.
  *
- * `online: false` is a normal resting state, not an error — the catalog outlives
- * the radio. A device that is unplugged keeps its card, its name and its
- * history, and says why it isn't answering.
+ * `health.status` is not a boolean, and deliberately so — the catalog outlives
+ * the radio, and "unplugged", "still connecting", "never finished setting up"
+ * and "the key is wrong" ask four different things of the user. Every one of
+ * them carries a sentence, so a quiet card can always say why.
+ *
+ * The descriptor is spread in without its `id` and `name`: those two belong to
+ * the catalog here, and the vendor's are `providerDeviceId` and `providerName`.
  */
-export type DeviceView = import('@kraftverk/plugin-sdk').DeviceDescriptor & {
-  /** The catalog id: stable, and what history is keyed by. */
-  id: string;
+export type SavedDeviceView = Omit<
+  import('@kraftverk/plugin-sdk').DeviceDescriptor,
+  'id' | 'name'
+> & {
+  /** The catalog id: stable, the route segment, and what history is keyed by. */
+  id: import('@kraftverk/plugin-sdk').SavedDeviceId;
+  /** The adapter's own identity — a MAC, a Tuya id. Null before commissioning. */
+  providerDeviceId: import('@kraftverk/plugin-sdk').ProviderDeviceId | null;
+  /** What the user called it. */
+  name: string;
+  /** What the vendor calls it, when that is known and differs. */
+  providerName: string | null;
   record: DeviceRecord;
-  online: boolean;
-  /** Why not, when it isn't. */
-  detail?: string;
+  health: import('@kraftverk/plugin-sdk').ConnectionHealth;
   readings: import('@kraftverk/plugin-sdk').Reading[];
 };
 

@@ -3,10 +3,27 @@ import { router } from 'expo-router';
 import { Card, haptic } from '@kraftverk/ui';
 import { Spinner, Text, XStack, YStack } from 'tamagui';
 
-import type { DeviceView } from '@kraftverk/api-client';
+import type { ConnectionStatus, SavedDeviceView } from '@kraftverk/api-client';
 
+import type { Connection } from '../../state/DirectLinkProvider';
 import { Screen } from '../../components/Screen';
 import { useDevice, useDevices } from '../../state/DevicesProvider';
+
+/**
+ * A device's health, as the header's one dot.
+ *
+ * Five states collapse into four colours, and the pair that share one are the
+ * pair that mean the same thing to a person looking at a header: nothing is
+ * connected and nothing is wrong. The *reason* they differ is not lost — it is
+ * the label beside the dot, which is always the health's own sentence.
+ */
+const DOT: Record<ConnectionStatus, Connection> = {
+  connected: 'online',
+  connecting: 'connecting',
+  offline: 'idle',
+  unconfigured: 'idle',
+  error: 'offline',
+};
 
 /**
  * The frame around one device.
@@ -80,7 +97,7 @@ export function DeviceShell({
 }: {
   id: string | undefined;
   tab: DeviceTab;
-  children: (device: DeviceView) => ReactNode;
+  children: (device: SavedDeviceView) => ReactNode;
 }) {
   const device = useDevice(id);
   const { loading } = useDevices();
@@ -115,10 +132,7 @@ export function DeviceShell({
         "Online" above a station that had never connected — the header was
         answering a question nobody on this screen was asking.
       */
-      status={{
-        connection: device.online ? 'online' : 'idle',
-        label: device.online ? 'Online' : (device.detail ?? 'Not connected'),
-      }}
+      status={{ connection: DOT[device.health.status], label: device.health.detail }}
     >
       <DeviceTabs
         tab={tab}

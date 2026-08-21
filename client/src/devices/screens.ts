@@ -2,7 +2,7 @@ import { StationDashboard } from '@kraftverk/device-aferiy-p280/ui/dashboard';
 import { StationProtocol } from '@kraftverk/device-aferiy-p280/ui/protocol';
 import { StationSettings } from '@kraftverk/device-aferiy-p280/ui/settings';
 
-import type { DeviceView } from '@kraftverk/api-client';
+import type { SavedDeviceView } from '@kraftverk/api-client';
 
 /**
  * Which device package draws which device's screens.
@@ -33,5 +33,5 @@ const BY_DRIVER: Record<string, DeviceScreens> = {
   },
 };
 
-export const screensFor = (device: DeviceView | null): DeviceScreens | null =>
+export const screensFor = (device: SavedDeviceView | null): DeviceScreens | null =>
   device ? (BY_DRIVER[device.record.driver] ?? null) : null;

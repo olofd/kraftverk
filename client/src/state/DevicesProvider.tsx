@@ -25,7 +25,7 @@ import type {
   ConfigValues,
   DeviceSettings,
   DeviceTypeOption,
-  DeviceView,
+  SavedDeviceView,
   PortId,
 } from '@kraftverk/api-client';
 import {
@@ -78,9 +78,9 @@ type DevicesContextValue = {
    * polled on every screen — so it is what notices first.
    */
   connection: Connection;
-  devices: DeviceView[];
+  devices: SavedDeviceView[];
   /** The station, if one has been added. The app's dashboard follows it. */
-  station: DeviceView | null;
+  station: SavedDeviceView | null;
   /** True until the first answer, so the grid can show a spinner rather than "none". */
   loading: boolean;
   error: string | null;
@@ -93,7 +93,7 @@ type DevicesContextValue = {
     name: string;
     model?: string | null;
     config?: Record<string, unknown>;
-  }) => Promise<DeviceView>;
+  }) => Promise<SavedDeviceView>;
   rename: (id: string, name: string) => Promise<void>;
   setModel: (id: string, model: string | null) => Promise<void>;
   remove: (id: string) => Promise<void>;
@@ -105,11 +105,11 @@ type DevicesContextValue = {
    * registry: which side does the reading is a fact about the link, not about
    * the device, and the settings screen should not have to know.
    */
-  readSettings: (device: DeviceView) => Promise<DeviceSettings>;
-  writeSettings: (device: DeviceView, patch: ConfigValues) => Promise<ConfigValues>;
+  readSettings: (device: SavedDeviceView) => Promise<DeviceSettings>;
+  writeSettings: (device: SavedDeviceView, patch: ConfigValues) => Promise<ConfigValues>;
   /** Invokes a control. Anything physical still passes the server's gateway. */
   invoke: (
-    device: DeviceView,
+    device: SavedDeviceView,
     controlId: string,
     value: boolean | number | string,
     confirmation?: string
@@ -122,7 +122,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   const { source, status, connection, settings, updateSettings, togglePort } = useDirectLink();
   const editable = source === 'server';
 
-  const [served, setServed] = useState<DeviceView[]>([]);
+  const [served, setServed] = useState<SavedDeviceView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   /**
@@ -260,7 +260,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   const types = useCallback(() => fetchDeviceTypes(), []);
 
   const readSettings = useCallback(
-    async (device: DeviceView): Promise<DeviceSettings> => {
+    async (device: SavedDeviceView): Promise<DeviceSettings> => {
       if (editable) return fetchDeviceSettings(device.id);
       // No server to ask, so the values come off the link and the schema off the
       // device package — the same two halves the server would have joined.
@@ -274,7 +274,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   );
 
   const writeSettings = useCallback(
-    async (device: DeviceView, patch: ConfigValues): Promise<ConfigValues> => {
+    async (device: SavedDeviceView, patch: ConfigValues): Promise<ConfigValues> => {
       if (editable) return patchDeviceSettings(device.id, patch);
       await updateSettings(valuesToSettings(patch) as never);
       return patch;
@@ -292,7 +292,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
    */
   const invoke = useCallback(
     async (
-      device: DeviceView,
+      device: SavedDeviceView,
       controlId: string,
       value: boolean | number | string,
       confirmation?: string
@@ -320,13 +320,25 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
    * MAC rather than a catalog id because there is no catalog: nothing persists,
    * so nothing needs a persistent name for it.
    */
-  const linked = useMemo<DeviceView | null>(() => {
+  const linked = useMemo<SavedDeviceView | null>(() => {
     if (editable || !status) return null;
-    const id = `station:${status.link.mac ?? 'direct'}`;
+    const mac = status.link.mac;
+    const id = `station:${mac ?? 'direct'}`;
+    const { id: _providerId, name: _providerName, ...descriptor } = stationDescriptor(
+      id,
+      status.name,
+      status.model
+    );
 
     return {
-      ...stationDescriptor(id, status.name, status.model),
+      ...descriptor,
       id,
+      // The station's MAC *is* the provider identity here, and with no catalog
+      // it is also standing in as the saved id — which is exactly the conflation
+      // the two fields exist to make visible rather than hide.
+      providerDeviceId: mac,
+      name: status.name,
+      providerName: null,
       record: {
         id,
         type: 'power-station',
@@ -336,8 +348,20 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         config: {},
         addedAt: status.lastUpdated,
       },
-      online: connection === 'online',
-      detail: connection === 'online' ? undefined : 'This app is not connected to the station',
+      health: {
+        status: connection === 'online' ? 'connected' : connection === 'connecting' ? 'connecting' : 'offline',
+        detail:
+          connection === 'online'
+            ? 'Connected over Bluetooth'
+            : connection === 'connecting'
+              ? 'Connecting over Bluetooth'
+              : 'This app is not connected to the station',
+        // The app in your hand holds this one, which is the whole distinction:
+        // it cannot survive the screen locking, and it records no history.
+        owner: 'client',
+        transport: status.link.transport ?? null,
+        lastReadingAt: status.lastUpdated,
+      },
       readings: stationReadings(status),
     };
   }, [connection, editable, status]);
@@ -415,7 +439,7 @@ export function useDevices(): DevicesContextValue {
 }
 
 /** One device by catalog id, from the list already being polled. */
-export function useDevice(id: string | undefined): DeviceView | null {
+export function useDevice(id: string | undefined): SavedDeviceView | null {
   const { devices } = useDevices();
   return useMemo(
     () => (id ? (devices.find((device) => device.id === id) ?? null) : null),

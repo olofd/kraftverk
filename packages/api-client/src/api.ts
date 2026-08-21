@@ -11,7 +11,7 @@ import type {
   DeviceHistory,
   DeviceSettings,
   DeviceTypeOption,
-  DeviceView,
+  SavedDeviceView,
   GridStatus,
   LegacyStationOffer,
   PluginConfig,
@@ -263,12 +263,12 @@ export async function switchGridRelay(on: boolean, reason: string) {
 const devicePath = (id: string, suffix = '') => `/devices/${encodeURIComponent(id)}${suffix}`;
 
 export async function fetchDeviceList(signal?: AbortSignal) {
-  const { data } = await api.get<{ devices: DeviceView[] }>('/devices', { signal });
+  const { data } = await api.get<{ devices: SavedDeviceView[] }>('/devices', { signal });
   return data.devices;
 }
 
 export async function fetchDevice(id: string, signal?: AbortSignal) {
-  const { data } = await api.get<DeviceView>(devicePath(id), { signal });
+  const { data } = await api.get<SavedDeviceView>(devicePath(id), { signal });
   return data;
 }
 
@@ -288,7 +288,7 @@ export async function addDevice(
   },
   signal?: AbortSignal
 ) {
-  const { data } = await api.post<DeviceView>('/devices', input, { signal });
+  const { data } = await api.post<SavedDeviceView>('/devices', input, { signal });
   return data;
 }
 
@@ -297,7 +297,7 @@ export async function updateDevice(
   changes: { name?: string; model?: string | null; config?: Record<string, unknown> },
   signal?: AbortSignal
 ) {
-  const { data } = await api.patch<DeviceView>(devicePath(id), changes, { signal });
+  const { data } = await api.patch<SavedDeviceView>(devicePath(id), changes, { signal });
   return data;
 }
 
@@ -342,7 +342,7 @@ export async function fetchStationImport(signal?: AbortSignal) {
 }
 
 export async function importLegacyStation(name?: string, signal?: AbortSignal) {
-  const { data } = await api.post<DeviceView>('/migration/station/import', { name }, { signal });
+  const { data } = await api.post<SavedDeviceView>('/migration/station/import', { name }, { signal });
   return data;
 }
 

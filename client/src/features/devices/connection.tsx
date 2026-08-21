@@ -6,10 +6,11 @@ import {
   fetchStationDevice,
   fetchVersion,
   invokeDeviceControl,
+  isOnline,
   patchStationDevice,
 } from '@kraftverk/api-client';
 import type {
-  DeviceView,
+  SavedDeviceView,
   PortId,
   StationSettings,
   StationSettingsPatch,
@@ -69,7 +70,7 @@ export type DeviceConnection = {
   togglePort: (id: PortId, enabled: boolean) => Promise<void>;
 };
 
-export function useDeviceConnection(device: DeviceView | null): DeviceConnection {
+export function useDeviceConnection(device: SavedDeviceView | null): DeviceConnection {
   const link = useDirectLink();
   /*
     Only a station has this state to fetch. The server refuses the route for
@@ -226,9 +227,17 @@ export function useDeviceConnection(device: DeviceView | null): DeviceConnection
             simulated: status?.link.mode === 'simulator',
             direct: false,
             error,
-            // The registry already wrote the reason onto the device itself, so
-            // the card on the canvas and the device's own screen agree.
-            reason: status ? null : (device?.detail ?? null),
+            /*
+              The registry already wrote the reason onto the device itself, so
+              the card on the canvas and the device's own screen agree.
+
+              Health is asked first, and not merely for tidiness: every state
+              carries a sentence now, including the connected ones. Reading the
+              sentence alone would put "Connected" in the middle of a dashboard
+              during the moment before the first telemetry arrives — a reason
+              given for something that is not happening.
+            */
+            reason: status || !device || isOnline(device.health) ? null : device.health.detail,
             refresh,
             updateSettings,
             togglePort,
@@ -249,7 +258,7 @@ export function useDeviceConnection(device: DeviceView | null): DeviceConnection
             togglePort: link.togglePort,
           },
     [
-      device?.detail,
+      device,
       error,
       link,
       readOnly,

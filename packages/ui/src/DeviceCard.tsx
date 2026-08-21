@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import { Text, XStack, YStack } from 'tamagui';
 
-import type { MeasurementSpec, Reading } from '@kraftverk/plugin-sdk';
+import type { ConnectionHealth, MeasurementSpec, Reading } from '@kraftverk/plugin-sdk';
+import { isOnline } from '@kraftverk/plugin-sdk';
 
 import { Card } from './Card';
 import { haptic } from './haptics';
@@ -24,10 +25,24 @@ import { formatMeasurement, primaryMeasurement, readingFor } from './measurement
 export type DeviceCardDevice = {
   name: string;
   description?: string;
-  online: boolean;
-  detail?: string;
+  health: ConnectionHealth;
   measurements: readonly MeasurementSpec[];
   readings: readonly Reading[];
+};
+
+/**
+ * The dot's colour, by state.
+ *
+ * `connecting` is amber rather than green because a card that goes green while
+ * it is still trying is a card that has lied once already, and `error` is red
+ * where `offline` is grey: an unplugged device is not a fault.
+ */
+const DOT: Record<ConnectionHealth['status'], string> = {
+  connected: '$success',
+  connecting: '$warning',
+  offline: '$muted',
+  unconfigured: '$muted',
+  error: '$danger',
 };
 
 type Props = {
@@ -40,6 +55,7 @@ type Props = {
 };
 
 export function DeviceCard({ device, icon, secondary, onPress }: Props) {
+  const online = isOnline(device.health);
   const primary = primaryMeasurement(device.measurements);
   const primaryValue = primary
     ? formatMeasurement(primary, readingFor(device.readings, primary.key)?.value ?? null)
@@ -56,9 +72,26 @@ export function DeviceCard({ device, icon, secondary, onPress }: Props) {
     <Card
       gap="$3"
       // Dimmed rather than dropped: the device is still yours, it is just quiet.
-      opacity={device.online ? 1 : 0.55}
+      opacity={online ? 1 : 0.55}
+      /*
+        A tappable card is a button. It was a plain div with a click handler, so
+        on the web a keyboard could not reach any device at all — opening one is
+        the primary navigation of this app, and Tab skipped every card on the
+        canvas. The role is what earns Enter and Space from react-native-web;
+        the focus ring is what makes the reached card visible.
+
+        The label is spelled out because the card's own text is a name followed
+        by bare numbers, which a screen reader would otherwise read as the whole
+        button title.
+      */
+      role={onPress ? 'button' : undefined}
+      tabIndex={onPress ? 0 : undefined}
+      aria-label={onPress ? `${device.name}, ${device.health.detail}` : undefined}
       cursor={onPress ? 'pointer' : undefined}
       pressStyle={onPress ? { opacity: 0.75 } : undefined}
+      focusVisibleStyle={
+        onPress ? { outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid' } : undefined
+      }
       onPress={
         onPress
           ? () => {
@@ -87,7 +120,7 @@ export function DeviceCard({ device, icon, secondary, onPress }: Props) {
           height={8}
           borderRadius={999}
           marginTop={6}
-          backgroundColor={device.online ? '$success' : '$muted'}
+          backgroundColor={DOT[device.health.status]}
         />
       </XStack>
 
@@ -119,11 +152,11 @@ export function DeviceCard({ device, icon, secondary, onPress }: Props) {
         ) : null}
       </XStack>
 
-      {!device.online && device.detail ? (
+      {online ? null : (
         <Text fontSize={12} color="$muted" lineHeight={17}>
-          {device.detail}
+          {device.health.detail}
         </Text>
-      ) : null}
+      )}
     </Card>
   );
 }

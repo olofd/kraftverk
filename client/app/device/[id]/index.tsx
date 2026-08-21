@@ -4,7 +4,7 @@ import { Text, useTheme } from 'tamagui';
 
 import { Card } from '@kraftverk/ui';
 import { getApiBaseUrl } from '@kraftverk/api-client';
-import type { DeviceView } from '@kraftverk/api-client';
+import type { SavedDeviceView } from '@kraftverk/api-client';
 
 import { DeviceShell } from '../../../src/features/devices/DeviceShell';
 import { useDeviceConnection } from '../../../src/features/devices/connection';
@@ -34,7 +34,7 @@ export default function DeviceDashboardScreen() {
   );
 }
 
-function Dashboard({ device }: { device: DeviceView }) {
+function Dashboard({ device }: { device: SavedDeviceView }) {
   const connection = useDeviceConnection(device);
   const { direct } = useDirectLink();
 
