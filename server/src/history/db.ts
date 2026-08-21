@@ -18,7 +18,36 @@ import { Database } from 'bun:sqlite';
  * same migrations run against a throwaway. Read when the database is first
  * opened rather than when this module loads, so a test can set it.
  */
-const file = () => process.env.KRAFTVERK_DB || resolve(import.meta.dirname, '../../data/kraftverk.db');
+const DEFAULT_FILE = () => resolve(import.meta.dirname, '../../data/kraftverk.db');
+
+/**
+ * A test may never open the real database. This is not a style rule.
+ *
+ * Every server test sets `KRAFTVERK_DB` in `beforeAll` and cleared it again in
+ * `afterAll` — but bun runs all test files in one process, sharing this
+ * module's handle and `process.env`. So the moment one file finished and
+ * cleared the variable, the next file's `beforeEach` — several of which begin
+ * `DELETE FROM device; DELETE FROM sample` — reopened *this* path and truncated
+ * the owner's catalog and every sample it had ever recorded.
+ *
+ * It did exactly that, and the tests still passed, because they were deleting
+ * from a database that happened to satisfy them. Refusing to open the default
+ * path under a test runner turns a silent, order-dependent data loss into a
+ * failure on the first line that causes it.
+ */
+const file = () => {
+  const configured = process.env.KRAFTVERK_DB;
+  if (configured) return configured;
+
+  if (process.env.NODE_ENV === 'test') {
+    throw new Error(
+      'A test tried to open the real database. Set KRAFTVERK_DB to a temp file ' +
+        'before anything calls db(), and do not clear it while other files may still run.'
+    );
+  }
+
+  return DEFAULT_FILE();
+};
 
 export type Db = Database;
 

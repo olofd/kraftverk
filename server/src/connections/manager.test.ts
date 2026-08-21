@@ -109,7 +109,9 @@ beforeAll(() => {
 
 afterAll(() => {
   closeDb();
-  delete process.env.KRAFTVERK_DB;
+  // `KRAFTVERK_DB` is deliberately left set: bun shares one process across
+  // test files, and clearing it here let a later file reopen the real
+  // database and delete from it. See the guard in `history/db.ts`.
   rmSync(dir, { recursive: true, force: true });
 });
 
