@@ -560,7 +560,8 @@ read-only.
 
 ## Method
 
-The Protocol tab drives this:
+The Protocol screen drives this — it lives under a device's **Settings →
+Advanced**, not as a global tab:
 
 1. **Snapshot baseline** — captures all 160 registers
 2. Change **one** thing on the station itself

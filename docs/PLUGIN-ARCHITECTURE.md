@@ -32,7 +32,7 @@ arming gate, Home Assistant plugin — are still design only.
 
 Verified end to end against the simulator: grant refusal, confirmation requirement, dwell, stale
 telemetry refusal, `verified`, and `unverified` when the plug reports success but the station's AC
-input does not agree. 93 tests pass.
+input does not agree. 177 tests pass.
 
 ---
 

@@ -1,13 +1,12 @@
 # kraftverk
 
-> **Refactor status:** the project is transitioning to a device-first architecture.
-> The current target, known gaps and required implementation order are documented in
-> [`docs/DEVICE-FIRST-REFACTOR.md`](docs/DEVICE-FIRST-REFACTOR.md). The rest of this
-> README describes the proven P280 protocol and existing features; some UI navigation
-> descriptions predate the refactor and should not be treated as the target UX.
-
-> **Code boundaries:** [`docs/MODULAR-CODE-ARCHITECTURE.md`](docs/MODULAR-CODE-ARCHITECTURE.md)
-> defines the protocol/device/adapter/server/API separation that the refactor must follow.
+> **Architecture:** the app is a **device catalog first**. Root is *Your devices*;
+> there is no global tab bar, and the station is one saved device among others.
+> The target, the remaining milestones and the reasoning are in
+> [`docs/DEVICE-FIRST-REFACTOR.md`](docs/DEVICE-FIRST-REFACTOR.md);
+> [`docs/MODULAR-CODE-ARCHITECTURE.md`](docs/MODULAR-CODE-ARCHITECTURE.md) defines the
+> protocol/device/adapter/server/API boundaries, and
+> [`docs/HANDOFF.md`](docs/HANDOFF.md) is where things actually stand today.
 
 Local control for **Sydpower-stack portable power stations** — monitor and
 control them from iOS and the browser, over Wi‑Fi or Bluetooth, **without the
@@ -45,10 +44,16 @@ model-specific — the AC charging power scale is 600–1800 W on a P280 but
 version in six places on the P280 alone. Assume yours differs until you have
 checked it.
 
-The **Protocol** tab exists precisely for this: dump your registers, compare
-against [docs/P280-FINDINGS.md](docs/P280-FINDINGS.md), and open an issue with
-what differs. Model-specific handling and a model selector in the UI are on the
-roadmap; today the decoding assumes a P280.
+The **Protocol** screen exists precisely for this — it lives under a device's
+**Settings → Advanced**, because it is a tool for one machine rather than a
+property of the app. Dump your registers, compare against
+[docs/P280-FINDINGS.md](docs/P280-FINDINGS.md), and open an issue with what
+differs.
+
+You pick the model when you add the station, and can correct it afterwards on
+its Settings screen; the picker marks which models are verified. The *decoding*
+still assumes a P280 — choosing another model records what you have, it does not
+yet change how registers are read.
 
 ---
 
@@ -88,8 +93,10 @@ Additional cautions:
   other availability-critical equipment is connected.
 - Start every session with a new unit in `--read-only`, which is the default for
   the hardware modes.
-- The API has no authentication and permissive CORS. Keep it on your LAN. Never
-  port-forward it.
+- **The API has no authentication.** CORS is restricted to loopback and private
+  ranges, so an arbitrary web page cannot read from it — but that is a browser
+  rule, not a lock. Anything on your LAN can call it directly. Keep it on your
+  LAN and never port-forward it.
 
 ---
 
@@ -238,7 +245,9 @@ npm run dev:ble:write
    ```
 
 3. Power-cycle the station so it re-resolves DNS.
-4. Open the **Devices** tab; it appears and binds automatically.
+4. Add it under **Your devices → Add a device → Power station**. Nothing is
+   adopted for you: a device exists because you added it. Once saved, the server
+   opens its link and binds to the station it finds.
 
 The station still needs internet on first connect — it fetches MQTT credentials
 from the vendor cloud before connecting. Only the MQTT traffic is redirected.
@@ -261,8 +270,9 @@ and the vendor service is invisible. Pairing is *not* required.
 
 ### Connecting from the app itself, with no server
 
-Open **Devices**, switch **Connection** to **This device**, and pick the station.
-Nothing else needs to be running — this path does not use the API at all.
+Open **App settings → Station link**, switch **Connection** to **This device**,
+and pick the station. Nothing else needs to be running — this path does not use
+the API at all, and needs no saved device, because nothing is being persisted.
 
 - **In a browser**: Chrome or Edge, on `localhost` or over HTTPS. The browser
   shows its own device chooser; a page is not allowed to scan. Safari and
@@ -334,6 +344,12 @@ Everything is device-scoped: a route names the device it acts on, and the server
 resolves that device's own session. `:id` is a catalog id such as
 `power-station:3db445e0`, and it contains a `:`, so it must be URL-encoded.
 
+**`id` is always the catalog's.** A device also carries `providerDeviceId` — the
+vendor's own identity, a MAC or a Tuya id — as a separate field, because the two
+answer different questions and one adapter may provide many devices. Health is
+not a boolean: `health.status` is one of `connected`, `connecting`, `offline`,
+`unconfigured` or `error`, and always comes with a sentence in `health.detail`.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/health` | Liveness |
@@ -374,16 +390,21 @@ only ever have one. Use the device-scoped routes above.
 | `STATION_DRIVER` | `--driver=` | `sim` | `sim` \| `device` \| `ble` |
 | `READ_ONLY` | `--read-only` | on for hardware modes | Refuse every write |
 | `DEVICE_ID` | `--device=` | — | Bind this station instead of auto-binding |
+| `AUTO_BIND` | — | on | `0` waits for an explicit bind instead of taking the first station found |
 | `PORT` / `HOST` | — | `3333` / `0.0.0.0` | HTTP API |
 | `MQTT_PORT` / `MQTT_HOST` | — | `1883` / `0.0.0.0` | Embedded broker |
+| `ALLOWED_ORIGINS` | — | — | Extra browser origins, comma-separated. Loopback and private ranges are already allowed; `*` restores the old reflect-anything behaviour |
 | `ALLOW_RAW_MODBUS` | — | — | `1` enables raw frames |
+| `KRAFTVERK_DB` | — | `server/data/kraftverk.db` | Where the database lives. **Required under `NODE_ENV=test`** — the server refuses to open the default file from a test run |
+| `KRAFTVERK_BINDING_FILE` | — | `server/data/binding.json` | The legacy pre-catalog binding, read-only now |
+| `KRAFTVERK_SECRET_KEY` | — | — | Passphrase for AES-256-GCM plugin secrets. Without it they are stored as given, and the UI says so |
 
 ---
 
 ## Identifying unknown registers
 
-The **Protocol** tab implements the workflow that produced everything in the
-findings document:
+The **Protocol** screen — under a device's **Settings → Advanced** — implements
+the workflow that produced everything in the findings document:
 
 1. **Snapshot baseline** — captures all 160 registers
 2. Change **one** thing on the station itself
@@ -408,11 +429,18 @@ Two things that workflow taught us, worth knowing before you trust a hypothesis:
 npm test
 ```
 
-93 tests covering frame construction, response parsing and telemetry decoding
-against captured traffic from real hardware, plus the write-safety whitelist and
-the behaviours confirmed on a P280. They live with the protocol package, so they
-cover every link equally — a direct Bluetooth connection from the app runs the
-code these tests exercise.
+177 tests. The protocol ones — frame construction, response parsing, telemetry
+decoding against captured traffic from real hardware, plus the write-safety
+whitelist and the behaviours confirmed on a P280 — live with the protocol
+package, so they cover every link equally: a direct Bluetooth connection from
+the app runs the code these tests exercise. The rest cover the catalog, the
+connection manager, the action gateway and the device registry.
+
+**Server tests must set `KRAFTVERK_DB`.** Bun runs every test file in one
+process, sharing the database handle, and several suites begin by deleting from
+`device` and `sample`. A suite that reaches the default file would truncate the
+owner's catalog — it has happened — so `db()` now throws rather than open it
+under `NODE_ENV=test`.
 
 ---
 
@@ -420,6 +448,7 @@ code these tests exercise.
 
 ```
 packages/plugin-sdk/     the extension contract: manifests, capabilities, devices
+  src/identity.ts        which id is which, and what "connected" means
 packages/ui/             shared interface primitives, used by the app and by devices
 packages/api-client/     every API endpoint, and the shapes the server sends
 packages/devices/
@@ -444,16 +473,19 @@ client/                  Expo app (iOS + web)
 server/
   src/transport/         mqtt and ble transports
   src/connections/       one live session per saved device
+  src/devices/           the catalog, the registry that joins it to live drivers
   src/drivers/           device driver, simulator
   src/plugins/           extension host: discovery, lifecycle, grants
   src/actions/           the only code allowed to switch mains
-  src/history/           sqlite: config, secrets, audit timeline
-docs/P280-FINDINGS.md    evidence log: confirmed vs. assumed
+  src/history/           sqlite: config, secrets, audit timeline, samples
+docs/HANDOFF.md          state of play, and the traps worth knowing — start here
+docs/DEVICE-FIRST-REFACTOR.md   the device-first target and its milestones
+docs/MODULAR-CODE-ARCHITECTURE.md  package, protocol, server and API boundaries
 docs/PROJECT-BRIEF.md    long-term plan and architecture brief
+docs/P280-FINDINGS.md    evidence log: confirmed vs. assumed
 docs/PLUGIN-ARCHITECTURE.md  extension system design, and the smart-plug research
-docs/TUYA-LOCAL-KEY.md   five-minute guide to getting a plug's local key
 docs/DEVICES-AND-AUTOMATION.md  one device list, and wiring devices together
-docs/HANDOFF.md          state of play, and the traps worth knowing
+docs/TUYA-LOCAL-KEY.md   five-minute guide to getting a plug's local key
 ```
 
 ### Connecting a smart plug

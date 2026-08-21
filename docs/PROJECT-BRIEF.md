@@ -179,18 +179,20 @@ rule engine with a loaded gun.
 | Per-saved-device adapter instances | **Next** — Milestone C |
 | Global station tabs | **Removed** |
 | Global `StationProvider` | **Removed.** It is now `DirectLinkProvider` — the app's own Bluetooth link, nothing more. Station telemetry comes from `useDeviceConnection(device)`, per device |
+| `SavedDeviceView`: catalog id, vendor id and connection health kept apart | **Built.** `id` is always the catalog's; `providerDeviceId` and `providerName` carry the vendor's; `health` has five states and a sentence, where there used to be a boolean |
+| Device lifecycle in the audit timeline | **Built.** Adding, renaming and forgetting are recorded; forgetting destroys the device's history, and used to leave no trace |
 | Recipes, then rules | Planned |
 
 The package layout this produced:
 
 ```
 packages/protocol        MODBUS, register map, station model
-packages/plugin-sdk      the contracts: capabilities, devices, panels
+packages/plugin-sdk      the contracts: capabilities, devices, panels, identity, health
 packages/ui              shared primitives; Tamagui as a peer, so one theme context
 packages/api-client      every endpoint, and the shapes the server sends
 packages/devices/aferiy-p280   the station: what it measures, and its own screens
 packages/plugins/*       drivers, one with its own panel
-client                   the shell — 34-line tabs that choose whose screen to render
+client                   the shell — 21-to-46-line routes that choose whose screen to render
 ```
 
 Dependencies point one way: a device package never imports from the app. Where a device

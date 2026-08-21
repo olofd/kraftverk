@@ -139,7 +139,10 @@ automations with no extra work.
 
 ---
 
-## 3. Devices tab: the home for things you own
+## 3. Your devices: the home for things you own
+
+> Written when this was a tab. It is now the app's **root** — there is no tab
+> bar — but the layout below is what that root became.
 
 A responsive grid of cards — two columns on a phone, more on a desktop — grouped by kind:
 

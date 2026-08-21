@@ -1,23 +1,22 @@
 # Handover
 
-> **Architecture update:** this file is a historical implementation snapshot.
-> Start with [`DEVICE-FIRST-REFACTOR.md`](DEVICE-FIRST-REFACTOR.md) for the current
-> device-first target. In particular, its “working tree clean” and completion claims
-> must not be used to override the current repository state.
-
 State of play, and the things that would otherwise cost you a day. The vision and
 the architecture are in [`PROJECT-BRIEF.md`](PROJECT-BRIEF.md) — read its end-goal
-section first. This document is only what that one cannot tell you: where things
-stand right now, and what has already been learned the hard way.
+section first; the device-first target and its milestones are in
+[`DEVICE-FIRST-REFACTOR.md`](DEVICE-FIRST-REFACTOR.md). This document is only what
+those cannot tell you: where things stand right now, and what has already been
+learned the hard way.
 
-Last updated at commit `9fa7c77` on branch `devices-and-extensions`.
+Last updated at commit `95d95ed` on `main`.
 
 ---
 
 ## Where things stand
 
-On **`devices-and-extensions`**, **not pushed**. Typecheck clean across seven
-packages, 160 tests passing (`npm test`).
+**Merged to `main` and pushed.** `devices-and-extensions` was fast-forwarded into
+`main` at `95d95ed`; the two refs are identical, so the feature branch holds
+nothing extra. Typecheck clean across all nine workspaces — the seven packages,
+the client and the server — and 177 tests passing (`npm test`).
 
 **The device-first restructuring is done**, in the sense the session set out:
 the P280 works as it did, and it is a saved device that can be added, renamed,
@@ -47,9 +46,20 @@ client's base URL is now runtime-settable (`setApiBaseUrl`), not a constant.
 
 `KRAFTVERK_DB` and `KRAFTVERK_BINDING_FILE` now override where the database and
 the station binding live. They exist so tests — and a scratch server — work on
-their own state instead of the owner's devices and real station binding.
+their own state instead of the owner's devices and real station binding. Under
+`NODE_ENV=test`, `KRAFTVERK_DB` is **required**: see the trap about the suite
+that deleted the real database.
 
-Built and verified this session:
+**Browsers are no longer trusted by default.** CORS reflected whatever origin
+asked, which on an unauthenticated LAN server with a route that switches mains
+is the same as no policy. Loopback and private ranges are allowed; anything else
+must be named in `ALLOWED_ORIGINS`. `DELETE` was also missing from
+`allowMethods`, so *Forget this device* was refused by every browser — and the
+app never caught the failure, so it showed nothing at all. Both are fixed, and
+the catalog's own lifecycle (`device.added` / `renamed` / `remodelled` /
+`forgotten`) is now written to the audit timeline, which it never was.
+
+Built and verified in earlier sessions:
 
 - **Extension system** — SDK contracts, plugin host with scoped contexts and
   failure isolation, capability grants, audit timeline.
@@ -87,8 +97,14 @@ Milestone A, in order:
    panels are rendered from the device route through `src/devices/screens.ts`;
    a device with no panels of its own gets the generic ones in
    `src/features/devices/panels.tsx` and loses nothing.
-3. **`/devices` returns `SavedDeviceView`** with connection health and explicit
-   ids — see the identifier rule below.
+3. ~~**`/devices` returns `SavedDeviceView`**~~ **Done.** `id` is always the
+   catalog's, `providerDeviceId` carries the vendor's, and `providerName` the
+   vendor's name — the descriptor is spread in with `id` and `name` *omitted*,
+   so `Omit<DeviceDescriptor, 'id' | 'name'>` is what stops the old overwrite
+   coming back rather than a convention someone has to remember. `online:
+   boolean` became `health: ConnectionHealth`, whose five states each carry a
+   sentence; the aliases and that type live in `packages/plugin-sdk/src/
+   identity.ts`, which the server and the API client both import.
 4. **Migrations** for `updated_at`, connection records, device-scoped secrets and
    automation references, with CRUD tests.
 5. **Deleting a device** must reject or explicitly cascade when an automation
@@ -118,10 +134,10 @@ settled design:
   where a device is reached lives on its record.
 - **`PluginHost` keeps one configuration per package** and the registry reads
   `plugin.devices()[0]`, so one adapter cannot serve two plugs.
-- **`DeviceDescriptor.id` and `DeviceView.id` mean different things** — vendor
-  identity versus catalog id — and the registry reads one while history keys on
-  the other. Use `SavedDeviceId`, `CandidateId` and `ProviderDeviceId`
-  explicitly; never overload `id` in a DTO.
+- ~~**`DeviceDescriptor.id` and `DeviceView.id` mean different things.**~~
+  **Fixed**, see Milestone A item 3. The rule still stands for everything
+  written from here: `SavedDeviceId`, `CandidateId` and `ProviderDeviceId` are
+  named types in the SDK, and `id` in a public DTO always means the catalog's.
 - **`/api/device-types` flattens every relay adapter to a generic smart plug**
   and says nothing about connection choices, discovery or verification.
 - **Adding a device writes the record before the connection is configured**, so
@@ -133,9 +149,17 @@ settled design:
 correctly, but neither a Tamagui `onKeyDown` prop, a listener attached through
 the ref, nor `role="button"` + `aria-pressed` flipped one — the first two never
 fire, and react-native-web's built-in Enter/Space handling did not reach it.
-Tappable rows *are* keyboard-operable (`src/components/Pressable.tsx`), so the
-problem is specific to the switch. Unresolved; worth a look at how Tamagui
-forwards DOM events on web before trying again.
+Everything *else* is keyboard-operable now, so the problem is specific to the
+switch. Unresolved; worth a look at how Tamagui forwards DOM events on web
+before trying again.
+
+Everything else was fixed by giving each tappable a `role`, a `tabIndex` and a
+focus ring — the lesson being that a Tamagui `XStack` with an `onPress` renders
+a plain `div` and is invisible to Tab. Measured before the fix: the device
+canvas offered three focusable elements and **not one was a device**, and *Add a
+device* offered **none at all**. If you add a tappable that is not a `Button`,
+use `src/components/Pressable.tsx`, and pass `selected` when it is one of a set
+of choices so it announces as a radio rather than a fourth identical button.
 
 **The register diagnostics are still global.** `/api/diagnostics/*` resolves to
 whichever session the server holds, even though the Protocol screen now sits
@@ -176,6 +200,16 @@ not apply. BLE works with neither.
 your devices, plugin config, secrets and history — which is also the fastest way
 back to a blank slate when testing the add-device flow.
 
+**A test suite once deleted that database, and the tests still passed.** Bun runs
+every test file in one process, sharing `history/db.ts`'s module-level handle and
+`process.env`. Each server suite set `KRAFTVERK_DB` in `beforeAll` and cleared it
+in `afterAll`; the moment one file cleared it, the next file's `beforeEach` —
+several begin `DELETE FROM device; DELETE FROM sample` — reopened the real
+database and truncated it. It cost the owner four devices and ~28,000 samples.
+`db()` now throws rather than open the default path under `NODE_ENV=test`, and no
+suite clears the variable. **Do not reintroduce that cleanup**, and if you add a
+suite that touches the database, set `KRAFTVERK_DB` before anything calls `db()`.
+
 **Tamagui must stay a `peerDependency`** in `packages/ui` and every device
 package. Two installed copies mean two theme contexts and silently broken styling.
 
@@ -189,13 +223,21 @@ is what lets the app build without `react-native-ble-plx` installed.
 ```bash
 npm run dev            # simulator + web app
 npm run dev:ble        # real station over Bluetooth, read-only
-npm test               # 160 tests, whole repo
-npm run typecheck      # all seven packages
+npm run dev:ble:write  # the same, with writes allowed — read the hardware warning
+npm test               # 177 tests, whole repo
+npm run typecheck      # nine workspaces: seven packages, client, server
 npm run scan:tuya      # find Tuya plugs — no credentials needed
 npm run keys:tuya      # fetch their local keys (needs a Tuya cloud project)
 ```
 
 The server runs on Bun; `scripts/run-bun.mjs` finds it even when PATH is stale.
+
+**The transport is a launch flag, not a setting.** `npm run dev` is the
+*simulator*; the Station link screen will say so and there is no control on it
+that can change that. Restarting a Bluetooth server with the wrong script is an
+easy way to spend ten minutes wondering why the radio vanished.
+`.claude/launch.json` carries `server`, `server:ble` and `server:ble:write` for
+that reason.
 
 ## Waiting on the owner
 
@@ -205,4 +247,7 @@ The server runs on Bun; `scripts/run-bun.mjs` finds it even when PATH is stale.
   speaks 3.4, `192.168.50.17` speaks 3.3; the ATORCH uses a Beken module and the
   3.3 device's id embeds an Espressif MAC, so the 3.4 one is the likelier
   candidate — but it went offline mid-session and was never confirmed.
-- **Whether to push this branch.**
+
+~~Whether to push this branch.~~ **Decided**: merged to `main` and pushed.
+`origin/devices-and-extensions` is stale and can be deleted; `main` has
+everything.

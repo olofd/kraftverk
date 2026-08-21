@@ -136,6 +136,12 @@ automation transactionally or after an explicit destructive confirmation.
 
 The current work has valuable foundations, but it is not yet device-first.
 
+> **This table is the diagnosis that started the work, kept for its reasoning.**
+> The first two rows, the `DeviceView.id` row and the global-tabs row are done;
+> the wizard, per-saved-device adapter instances and `/api/device-types` are not.
+> [`HANDOFF.md`](HANDOFF.md) is the authority on what is actually true today —
+> read it rather than inferring status from this table.
+
 | Current implementation | Why it conflicts with the target | Required correction |
 | --- | --- | --- |
 | `DeviceRegistry.adoptStation()` inserts a station at server start | A blank install is impossible; discovery becomes ownership | Remove automatic adoption. Offer migration/import only for legacy `binding.json` users, behind an explicit one-time banner. |
@@ -148,13 +154,13 @@ The current work has valuable foundations, but it is not yet device-first.
 | Device detail has generic Overview/Controls/History/Readings/Settings/Manage sections | Good generic fallback, but does not meet “Dashboard + Settings only” navigation or model-specific rich dashboard | Retain generic components inside device Dashboard/Settings panels; let model packages provide registered panels. |
 | Existing global Extensions screen is part of normal tab bar | Users think in devices, not installed driver packages | Remove it from primary navigation; link to advanced app settings only. |
 
-### A bug/semantic issue to resolve now
+### A bug/semantic issue to resolve now — **resolved**
 
 `DeviceDescriptor.id` is documented as the adapter/vendor identity, while
-`DeviceView.id` is overwritten with the core catalog ID. The registry then calls
-`readDevice(descriptor.id)` but records/history use catalog IDs. This is workable only
-for the current one-device plugin and will break as soon as one adapter discovers more
-than one device. Use distinct, named identifiers:
+`DeviceView.id` was overwritten with the core catalog ID. The registry then called
+`readDevice(descriptor.id)` while records/history keyed on catalog IDs. This was
+workable only for the current one-device plugin and would break as soon as one adapter
+discovered more than one device. Use distinct, named identifiers:
 
 ```ts
 type SavedDeviceId = string;       // core UUID; primary key and routing/history key
@@ -164,6 +170,16 @@ type ProviderDeviceId = string;    // adapter/vendor identity, scoped to adapter
 
 Never overload `id` in a public DTO. Return `id` for `SavedDeviceId` and explicit
 `providerDeviceId` where needed.
+
+**Implemented** in `packages/plugin-sdk/src/identity.ts`, which the server and the API
+client both import. `SavedDeviceView` is `Omit<DeviceDescriptor, 'id' | 'name'>` plus
+the catalog's own `id` and `name`, the vendor's `providerDeviceId` and `providerName`,
+and `health`. The `Omit` is the mechanism: the overwrite cannot return without the
+compiler objecting, which is stronger than a rule in a document. The same file replaces
+`online: boolean` with `ConnectionHealth` — `connected` / `connecting` / `offline` /
+`unconfigured` / `error`, each carrying a sentence, because a boolean could not tell
+"never set up" from "busy elsewhere" from "unplugged", and those ask different things
+of the user.
 
 ---
 
@@ -316,15 +332,17 @@ P280-specific global state. Keep the separation, document it, and enforce import
 
 ### Milestone A — Make the blank canvas real
 
-1. Remove `adoptStation()` from normal startup and preserve existing `binding.json`
-   only through an explicit migration/import action.
-2. Change root navigation to `Your devices`; remove global station Dashboard, Settings,
-   Protocol and Extensions from the primary tab bar.
-3. Keep `/devices` as the API listing saved records, but return `SavedDeviceView` with
-   connection health and explicit IDs.
+1. ~~Remove `adoptStation()` from normal startup and preserve existing `binding.json`
+   only through an explicit migration/import action.~~ **Done.**
+2. ~~Change root navigation to `Your devices`; remove global station Dashboard, Settings,
+   Protocol and Extensions from the primary tab bar.~~ **Done.** There is no tab bar.
+3. ~~Keep `/devices` as the API listing saved records, but return `SavedDeviceView` with
+   connection health and explicit IDs.~~ **Done**, see the identifier section above.
 4. Add a migration for `updated_at`, `connection`, scoped secrets and automation
    references. Write migration/CRUD tests.
 5. Make deleting a device reject or explicitly cascade when it has automation references.
+
+Items 4 and 5 remain. `HANDOFF.md` tracks the current state.
 
 Acceptance: an empty database renders no station, a refresh remains empty, and a
 legacy user can intentionally import—not auto-adopt—their prior station.
