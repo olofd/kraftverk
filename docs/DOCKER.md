@@ -167,6 +167,24 @@ docker run --rm -v kraftverk-data:/data -v "$PWD:/backup" busybox tar czf /backu
 Deleting the volume resets you to a blank canvas, which is also the fastest way
 to test the add-device flow from scratch.
 
+### Resetting without touching the volume
+
+Write a passphrase of at least eight characters to `/data/reset-secret` and the
+app offers **App settings → Danger zone → Erase everything**, which empties
+every table while the container keeps running:
+
+```bash
+docker compose exec kraftverk sh -c 'printf "%s" "a-long-passphrase" > /data/reset-secret'
+```
+
+Without that file the route does not exist at all, and the app shows the path to
+create rather than a button that cannot work. Delete the file to switch it off
+again — it is read on each attempt, so nothing needs restarting either way.
+
+The passphrase is not authentication for the API, which has none: anyone who can
+write that file could delete the database directly. It is there so that reaching
+this from the network takes more than reaching the network.
+
 ---
 
 ## Operating it

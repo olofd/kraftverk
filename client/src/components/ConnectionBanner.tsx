@@ -10,8 +10,8 @@ import { useDevices } from '../state/DevicesProvider';
  * "Wrong" means a link the user asked for is not working: a station this app
  * was holding has gone quiet, or a server they added is not answering. Running
  * with no server at all is not wrong — it is what this app does in a browser —
- * so local mode says nothing, where a red banner about an address nobody chose
- * used to sit permanently across the top.
+ * so local mode says nothing rather than showing a red banner about an address
+ * nobody chose.
  */
 export function ConnectionBanner() {
   const { connection, error, refresh } = useDevices();

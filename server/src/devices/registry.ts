@@ -33,12 +33,10 @@ import type { PluginHost } from '../plugins/host.ts';
 /**
  * A saved device, joined to what it is doing right now.
  *
- * The descriptor is spread in, minus the two fields that used to be silently
- * overwritten by it. `id` here is always the catalog's; the vendor's identity
- * is `providerDeviceId` and the vendor's name is `providerName`, so a caller
- * that needs one of them has to say which. See `SavedDeviceId` in the SDK for
- * why that distinction stops being cosmetic the moment an adapter provides two
- * devices.
+ * The descriptor is spread in without its `id` and `name`, because those two
+ * belong to the catalog here. The vendor's are `providerDeviceId` and
+ * `providerName`, so a caller that wants one of them has to say which — a
+ * distinction that matters the moment one adapter provides two devices.
  */
 export type SavedDeviceView = Omit<DeviceDescriptor, 'id' | 'name'> & {
   /** The catalog id: stable, the route segment, and what history is keyed by. */

@@ -48,13 +48,6 @@ export default function AddDeviceScreen() {
     };
   }, [types]);
 
-  /*
-    Nothing is blocked any more. The server used to hold one station link, so a
-    second one was refused before it could be created; it now opens a link per
-    saved station, and adding another is an ordinary row.
-  */
-  void devices;
-
   const choose = useCallback((option: DeviceTypeOption) => {
     haptic();
     setChosen(option);

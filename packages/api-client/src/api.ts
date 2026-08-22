@@ -448,3 +448,31 @@ export function describeError(error: unknown): string {
   }
   return error instanceof Error ? error.message : 'Unknown error';
 }
+
+// --- resetting everything ---------------------------------------------------
+
+/**
+ * Whether this server will accept a reset.
+ *
+ * Asked before the control is offered, so nobody is shown a button that cannot
+ * work. It reveals only that a passphrase exists, never any part of it.
+ */
+export async function fetchResetAvailability(signal?: AbortSignal) {
+  const { data } = await api.get<{ available: boolean; secretFile: string }>('/admin/reset', {
+    signal,
+  });
+  return data;
+}
+
+/**
+ * Empties the database: devices, history, plugin configuration, secrets, grants
+ * and the audit timeline. There is no undo, and no copy kept anywhere.
+ */
+export async function resetDatabase(secret: string, signal?: AbortSignal) {
+  const { data } = await api.post<{ ok: true; tables: string[]; rows: number }>(
+    '/admin/reset',
+    { secret },
+    { signal }
+  );
+  return data;
+}

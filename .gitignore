@@ -7,9 +7,16 @@ node_modules/
 *.pem
 *.key
 
-# Runtime state written by the server: chosen device binding, station settings
-# cache, register baselines. Machine- and device-specific, never committed.
+# Runtime state written by the server: the database, chosen device binding,
+# station settings cache, register baselines. Machine- and device-specific,
+# never committed.
 server/data/
+
+# The passphrase that authorises wiping the database. Already inside
+# server/data/, but named separately so it survives that rule ever being
+# relaxed: committing it would hand anyone who can read the repository the
+# ability to empty a running server.
+**/reset-secret
 
 # Expo / Metro
 .expo/

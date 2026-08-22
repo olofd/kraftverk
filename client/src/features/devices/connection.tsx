@@ -23,11 +23,9 @@ import { useDirectLink } from '../../state/DirectLinkProvider';
 /**
  * One device's live connection.
  *
- * This is what replaced the global station state. The app used to hold a
- * single `status`, a single `settings` and one set of write functions, and
- * every screen read them — which meant the station was not a device, it was the
- * application, and a second station would have shown the first one's numbers on
- * both dashboards.
+ * One device, one connection. Telemetry, settings and the write functions all
+ * belong to the device they describe, so two stations on screen at once are two
+ * independent sets of numbers rather than one shared by both.
  *
  * Everything here is scoped to the device you name. Where the answer comes from
  * is a fact about the link, not about the device: through a server it is that

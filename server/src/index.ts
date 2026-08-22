@@ -17,7 +17,15 @@ import { LegacyStationImport } from './devices/legacy.ts';
 import { DeviceRegistry } from './devices/registry.ts';
 import { savedDeviceId, stationId, type SavedDeviceId } from '@kraftverk/plugin-sdk';
 
-import { appState, audit, recentAudit, secretsAreEncrypted, setAppState } from './history/db.ts';
+import {
+  appState,
+  audit,
+  recentAudit,
+  resetDatabase,
+  secretsAreEncrypted,
+  setAppState,
+} from './history/db.ts';
+import { resetSecret, resetSecretPath, secretMatches } from './admin/reset.ts';
 import { Sampler, series } from './history/sampler.ts';
 import { PluginHost, type PluginInstance } from './plugins/host.ts';
 import { DeviceDriver, ReadOnlyError } from './drivers/device.ts';
@@ -90,10 +98,9 @@ const connections = new ConnectionManager({
   host: () => (LINK === 'ble' ? new BleHost() : new MqttHost(broker, MQTT_PORT, MQTT_HOST)),
   simulator: () => new SimulatorDriver(),
   /*
-    Where a device is reached is a property of that device. The old code kept it
-    in `data/binding.json`, one per server, which is exactly why a second
-    station could not be represented — so the answer is written back onto the
-    record instead.
+    Where a device is reached is a property of that device, so the answer is
+    written onto its own record. A file shared by the whole server could only
+    ever describe one station.
   */
   onBound: (deviceId, kind, boundId) => {
     catalog.update(deviceId, { config: { transport: kind, boundId } });
@@ -200,11 +207,11 @@ app.use('*', async (c, next) => (c.req.path === '/api/status' ? next() : logger(
 /**
  * Which browsers may talk to this server.
  *
- * It used to reflect whatever origin asked. That is the same as no policy at
- * all: this server has no authentication, it is on the user's LAN, and one of
- * its routes switches mains power — so any page in any tab could have listed
- * the devices and thrown the relay, because the browser was being told the
- * answer was fine to read.
+ * Reflecting whatever origin asks is the same as no policy at all: this server
+ * has no authentication, it sits on the user's LAN, and one of its routes
+ * switches mains power. Any page in any tab could list the devices and throw
+ * the relay, because the browser would have been told the answer was fine to
+ * read.
  *
  * Loopback and private ranges are allowed because that is where this app
  * legitimately runs: Metro on `localhost:8081`, and the same app opened from a
@@ -293,19 +300,18 @@ api.get('/version', (c) => {
 // --- station transports ---------------------------------------------------
 //
 // Which stations the current transport can see, and which one we are bound to.
-// This used to be `/api/devices`; that name now belongs to the unified device
-// list, because "device" should mean "a thing you own", not "a station this
-// particular radio noticed".
+// Distinct from `/api/devices`: "device" means a thing you own, not a station
+// this particular radio happened to notice.
 
 api.get('/station/transports', (c) => {
   const host = connections.transport;
   const linked = host?.openIds() ?? [];
 
   /*
-    `boundId` and `connected` used to be here, describing "the" session — which
-    meant the first one. A screen that renders them is a screen that shows one
-    station's state under a heading that implies it is the only one. `links` is
-    the whole answer: one entry per saved station, each naming its device.
+    `links` is the whole answer: one entry per saved station, each naming the
+    device that holds it. There is deliberately no top-level `boundId` — a
+    single one would describe one station under a heading implying it is the
+    only one.
   */
   return c.json({
     transport: host?.kind ?? null,
@@ -334,10 +340,9 @@ api.get('/station/transports', (c) => {
  * more than one saved station it is required, because "the station" has stopped
  * being a thing the server can guess.
  *
- * Binding with nothing saved at all is no longer possible. It used to bind the
- * one transport transiently, which meant something when the transport *was* the
- * link; now a link belongs to a saved device, and a link nothing polls would be
- * a connection held for no reason — while taking the station away from the app.
+ * Binding with nothing saved at all is not possible: a link belongs to a saved
+ * device, and one that nothing polls would be a connection held for no reason
+ * while taking the station away from the app.
  */
 /** Which saved device a bind acts on. Named, never inferred. */
 const bindTarget = (deviceId: string | undefined): SavedDeviceId => stationSession(deviceId).deviceId;
@@ -835,6 +840,77 @@ api.post('/grid/relay', async (c) => {
   return c.json(result, result.outcome === 'refused' ? 409 : 200);
 });
 
+// --- resetting everything --------------------------------------------------
+
+/**
+ * Whether this server will accept a reset at all.
+ *
+ * The app asks before offering the control, so somebody who has not put a
+ * secret on the server never sees a button that cannot work. It reports only
+ * *that* a secret exists, never any part of it.
+ */
+api.get('/admin/reset', async (c) =>
+  c.json({ available: (await resetSecret()) !== null, secretFile: resetSecretPath() })
+);
+
+/**
+ * Empties the database.
+ *
+ * Every device, every sample, every plugin's configuration and secrets, the
+ * capability grants and the whole audit timeline. It is the blank canvas a
+ * fresh install starts from, and it cannot be undone from here.
+ *
+ * Guarded by a passphrase kept in a file on the server, because the API has no
+ * authentication of its own and this is the most destructive thing it can do.
+ * Anyone who can edit that file could delete the database directly, so the
+ * secret is not pretending to be a security boundary against them — it is there
+ * so that reaching this route needs something more than reaching the network.
+ */
+api.post('/admin/reset', async (c) => {
+  const expected = await resetSecret();
+  if (!expected) {
+    throw new HTTPException(404, {
+      message:
+        `Resetting is not enabled. Write a passphrase of at least 8 characters to ` +
+        `${resetSecretPath()} on the server to enable it.`,
+    });
+  }
+
+  const { secret } = await body(c, z.object({ secret: z.string() }));
+  if (!secretMatches(secret, expected)) {
+    // Deliberately says nothing about length or how close it was.
+    throw new HTTPException(403, { message: 'That is not the reset passphrase' });
+  }
+
+  /*
+    Order matters. Sessions are closed first so nothing is mid-poll against a
+    device that is about to stop existing, and the sampler is stopped so it
+    cannot write a row into the table being emptied.
+  */
+  sampler.stop();
+  await connections.closeAll();
+
+  const { tables, rows } = resetDatabase();
+
+  // The first entry in the new timeline, because the old one is gone. Written
+  // after the wipe on purpose: an entry written before it would have been
+  // deleted by the very act it was recording.
+  audit({
+    at: new Date().toISOString(),
+    kind: 'database.reset',
+    actor: 'user',
+    summary: `The database was reset: ${rows} rows across ${tables.length} tables`,
+    detail: { tables },
+  });
+  console.log(`[admin] database reset — ${rows} rows across ${tables.length} tables`);
+
+  // Back to the state a fresh install boots into: no devices, so no sessions.
+  await connections.sync(catalog.list());
+  sampler.start();
+
+  return c.json({ ok: true, tables, rows });
+});
+
 api.get('/audit', (c) => {
   // `Number(c.req.query('limit'))` was passed straight to SQL, so `?limit=abc`
   // bound NaN and the route answered 500 "Internal server error" — the one
@@ -949,13 +1025,6 @@ api.post('/devices', async (c) => {
     })
   );
 
-  /*
-    A second station used to be refused here, because the server held one link
-    and a second entry would have been a promise it could not keep. It can keep
-    it now: `TransportHost` carries a link per saved station, so adding another
-    one is a row, not a conflict.
-  */
-
   const record = catalog.add({
     type: input.type,
     driver: input.driver,
@@ -1053,8 +1122,7 @@ api.get('/devices/:id/p280/state', (c) => {
   return c.json({
     status: session.driver.status(),
     settings: session.driver.settings(),
-    // Facts about *this* connection, which used to be read off a global
-    // `/api/version` that described the whole server.
+    // Facts about *this* connection rather than about the server as a whole.
     readOnly: connections.readOnly,
     link: session.kind,
   });

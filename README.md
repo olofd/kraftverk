@@ -414,6 +414,7 @@ only ever have one. Use the device-scoped routes above.
 | `KRAFTVERK_DB` | — | `server/data/kraftverk.db` | Where the database lives. **Required under `NODE_ENV=test`** — the server refuses to open the default file from a test run |
 | `KRAFTVERK_BINDING_FILE` | — | `server/data/binding.json` | The legacy pre-catalog binding, read-only now |
 | `KRAFTVERK_BASELINE_FILE` | — | `server/data/baseline.json` | The register baseline the Protocol diff compares against. Overridable so a container can keep it on a volume |
+| `KRAFTVERK_RESET_SECRET_FILE` | — | `server/data/reset-secret` | A passphrase of 8+ characters here lets the app empty the database from **App settings → Danger zone**. No file means the route does not exist; the app shows how to enable it rather than a dead button. Gitignored |
 | `KRAFTVERK_SECRET_KEY` | — | — | Passphrase for AES-256-GCM plugin secrets. Without it they are stored as given, and the UI says so |
 
 ---

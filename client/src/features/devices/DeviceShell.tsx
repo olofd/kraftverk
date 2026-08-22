@@ -29,10 +29,10 @@ const DOT: Record<ConnectionStatus, Connection> = {
  * The frame around one device.
  *
  * Two primary destinations and no more: **Dashboard** is what it is doing,
- * **Settings** is what it remembers and what you can change. Everything the app
- * used to show as a global tab — the station's dashboard, its settings, its
- * register diagnostics — is one of these for one device, because a tab bar with
- * "Dashboard" in it is a claim that one device is the application.
+ * **Settings** is what it remembers and what you can change. Everything a
+ * device can show — its dashboard, its settings, its register diagnostics —
+ * belongs to that device, because a global tab named "Dashboard" would be a
+ * claim that one device is the application.
  *
  * They are real routes rather than local state, so a device can be bookmarked,
  * pinned or opened directly, and so the back button behaves.
@@ -128,9 +128,9 @@ export function DeviceShell({
       title={device.record.name}
       subtitle={device.description}
       /*
-        This device's state, not the app's. A reachable server was reporting
-        "Online" above a station that had never connected — the header was
-        answering a question nobody on this screen was asking.
+        This device's state, not the app's. A reachable server says nothing
+        about whether *this* station has connected, and the header is a claim
+        about the device whose name is above it.
       */
       status={{ connection: DOT[device.health.status], label: device.health.detail }}
     >

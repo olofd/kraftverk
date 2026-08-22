@@ -12,15 +12,10 @@ import type { DiscoveredDevice, ServerLink, TransportHost } from './types.ts';
  * pointed at this machine) and we exchange MODBUS frames over its
  * request/response topics.
  *
- * There was never a reason this could only serve one station. `DeviceBroker`
- * has always been per-MAC — `send(mac, frame)`, `request(mac, …)` — and has
- * always tracked every station that connects. The old transport read all of
- * their frames off the broker and then threw away everything that did not match
- * a single `boundId`. A second station's telemetry was arriving and being
- * discarded by one line.
- *
- * So the host is a thin thing: the broker plus a directory of who has been
- * heard. The links are thinner still — a MAC, and a filter.
+ * One broker serves every station that connects to it, so the host is a thin
+ * thing: the broker, plus a directory of who has been heard. `DeviceBroker` is
+ * per-MAC throughout — `send(mac, frame)`, `request(mac, …)` — which is what
+ * makes the links thinner still. A link is a MAC and a mailbox.
  */
 export class MqttHost extends EventEmitter implements TransportHost {
   readonly kind = 'mqtt' as const;

@@ -35,9 +35,9 @@ import { useDevices } from '../../state/DevicesProvider';
  * next year lands on these panels with no code written for it.
  *
  * A device model rich enough to deserve its own screens replaces the panels it
- * wants and keeps the rest. These moved out of the old single device route when
- * that route became a Dashboard and a Settings screen, because the split is
- * between *what is shown*, not between generic and specific.
+ * wants and keeps the rest. They are grouped by *what is shown* — Dashboard or
+ * Settings — rather than by generic versus specific, so replacing one is a
+ * choice about a section rather than about a whole screen.
  */
 
 export function Overview({ device }: { device: SavedDeviceView }) {
@@ -392,12 +392,11 @@ export function Manage({ device }: { device: SavedDeviceView }) {
   /**
    * Why the last thing you asked for did not happen.
    *
-   * Both writes here used to be `void promise.finally(…)` with no catch: the
-   * provider's own error state only reaches the banner when the *server* is
-   * unreachable, which a refused rename is not. So a failure showed nothing at
-   * all — the button stopped spinning and the old name stayed. Worse for
-   * Forget, where the user had already confirmed a warning that said the device
-   * was about to be destroyed, and then watched nothing happen.
+   * The provider's error state only reaches the banner when the *server* is
+   * unreachable, which a refused rename is not. Without this a failure would
+   * show nothing at all: the button stops spinning and the old name stays — and
+   * for Forget, the user has already confirmed a warning saying the device is
+   * about to be destroyed.
    */
   const [error, setError] = useState<string | null>(null);
   const theme = useTheme();
@@ -471,8 +470,8 @@ export function Manage({ device }: { device: SavedDeviceView }) {
           </XStack>
           {/*
             Only when there is a second name to contrast with. `device.name` is
-            the catalog's — the very name in the box above — so this sentence
-            used to promise the vendor's and print the user's back at them.
+            the catalog's — the very name in the box above — so without
+            `providerName` this sentence would print it straight back.
           */}
           <Text fontSize={12} color="$muted" lineHeight={17}>
             {device.providerName

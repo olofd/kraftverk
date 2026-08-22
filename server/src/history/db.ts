@@ -213,6 +213,46 @@ function migrate(handle: Db): void {
   }
 }
 
+/**
+ * Empties every table, keeping the schema.
+ *
+ * `migration` is the one exception: dropping those rows would make the next
+ * boot try to create tables that already exist. Everything else goes —
+ * devices, samples, plugin configuration, secrets, grants and the audit
+ * timeline — which is the point. This is "back to a blank canvas" without
+ * asking anyone to find and delete a file on the server.
+ *
+ * Deliberately not `DROP TABLE`: the schema is the migrations' business, and
+ * recreating it here would be a second definition to drift.
+ */
+export function resetDatabase(): { tables: string[]; rows: number } {
+  const handle = db();
+  const tables = handle
+    .query<{ name: string }, []>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name <> 'migration' ORDER BY name"
+    )
+    .all()
+    .map((row) => row.name);
+
+  let rows = 0;
+
+  handle.transaction(() => {
+    for (const table of tables) {
+      rows += handle.query<{ n: number }, []>(`SELECT COUNT(*) n FROM ${table}`).get()?.n ?? 0;
+      handle.query(`DELETE FROM ${table}`).run();
+    }
+    // AUTOINCREMENT keeps its high-water mark in this table; clearing it means
+    // a reset database really does start from one rather than from wherever
+    // the last one left off.
+    handle.query("DELETE FROM sqlite_sequence WHERE name <> 'migration'").run();
+  })();
+
+  // Reclaims the space rather than leaving a 20 MB file describing nothing.
+  handle.exec('VACUUM');
+
+  return { tables, rows };
+}
+
 // --- app state -------------------------------------------------------------
 
 /** A decision the app has already made, or null if it never has. */

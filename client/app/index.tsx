@@ -29,9 +29,8 @@ import { useDirectLink } from '../src/state/DirectLinkProvider';
  *
  * Root is the canvas even when you own one device, so the shape of the app does
  * not change as you add the second. The station's dashboard, settings and
- * register tools used to be the top-level tabs; they are now that device's own
- * screens, because a global Dashboard tab is a claim that one device is the
- * whole application.
+ * register tools are that device's own screens, because a global Dashboard tab
+ * would be a claim that one device is the whole application.
  */
 export default function DevicesScreen() {
   const { devices, editable, loading, error, refresh } = useDevices();
@@ -146,11 +145,9 @@ export default function DevicesScreen() {
               </>
             ) : null}
             {/*
-              Always reachable, not only from the empty state. A server that
-              already holds a station blocks "Power station" in the add flow,
-              which used to leave someone who wanted a Bluetooth one with no
-              route at all — the two are different connections, not a choice
-              you make once.
+              Always reachable, not only from the empty state: a server-held link
+              and one this device holds are different connections rather than a
+              choice you make once.
             */}
             <Pressable onPress={() => router.push('/link?connection=direct')}>
               <Row
@@ -186,10 +183,10 @@ export default function DevicesScreen() {
 /**
  * The station you bound before there was a device catalog.
  *
- * The server used to adopt it at startup. It no longer does — a device exists
- * because you added it — so the one case that would otherwise lose something is
- * offered here instead: a previous installation's binding, imported once, by
- * you. Dismissing it is permanent, and the station can still be added by hand.
+ * A device exists because you added it, and nothing is adopted at startup. The
+ * one case that would otherwise lose something is offered here instead: a
+ * previous installation's binding, imported once, by you. Dismissing it is
+ * permanent, and the station can still be added by hand.
  */
 function LegacyStationBanner({ onImported }: { onImported: () => Promise<void> }) {
   const [offer, setOffer] = useState<LegacyStationOffer | null>(null);

@@ -253,8 +253,7 @@ export type LegacyStationOffer = {
  * The station's telemetry does not fit the generic `Reading[]` shape — the
  * energy-flow view needs ports, firmware and link state in the model's own
  * units — so it has a device-scoped route of its own. `readOnly` and `link`
- * describe *this* connection, which used to be read off a global version
- * endpoint that described the whole server.
+ * describe *this* connection rather than the server as a whole.
  */
 export type StationDeviceState = {
   status: import('@kraftverk/protocol').StationStatus;

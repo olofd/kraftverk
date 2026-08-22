@@ -1,10 +1,17 @@
 import { useEffect, useState } from 'react';
+import { Alert, Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Button, Input, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { Card, Row, RowSeparator, SectionLabel, haptic } from '@kraftverk/ui';
-import { getApiBaseUrl, fetchVersion } from '@kraftverk/api-client';
+import {
+  describeError,
+  fetchResetAvailability,
+  fetchVersion,
+  getApiBaseUrl,
+  resetDatabase,
+} from '@kraftverk/api-client';
 import type { VersionInfo } from '@kraftverk/api-client';
 
 import { completeUrl } from '../src/lib/servers';
@@ -120,6 +127,8 @@ export default function AppSettingsScreen() {
           ) : null}
         </Card>
       </YStack>
+
+      {editable ? <ResetEverything /> : null}
     </Screen>
   );
 }
@@ -289,6 +298,160 @@ function Servers() {
         >
           Add a server
         </Button>
+      )}
+    </YStack>
+  );
+}
+
+/**
+ * Emptying the database.
+ *
+ * The blank canvas a fresh install starts from, without asking anyone to find
+ * and delete a file on the server. It takes everything: devices, their recorded
+ * history, plugin configuration and secrets, capability grants, and the audit
+ * timeline that would otherwise be the record of it happening.
+ *
+ * Guarded by a passphrase kept in a file on the server, because this API has no
+ * authentication of its own and this is the most destructive thing it offers.
+ * When no such file exists the control is not shown as a disabled button — it is
+ * shown as instructions, because "not enabled" is a thing the user can fix and
+ * a greyed-out button does not say how.
+ */
+function ResetEverything() {
+  const { refresh } = useDevices();
+
+  const [availability, setAvailability] = useState<{ available: boolean; secretFile: string } | null>(
+    null
+  );
+  const [secret, setSecret] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchResetAvailability(controller.signal)
+      .then(setAvailability)
+      .catch(() => setAvailability(null));
+    return () => controller.abort();
+  }, []);
+
+  const wipe = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await resetDatabase(secret.trim());
+      setSecret('');
+      setDone(`Removed ${result.rows} rows across ${result.tables.length} tables.`);
+      await refresh();
+    } catch (err) {
+      setError(describeError(err) || 'That did not work');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmed = () => {
+    const message =
+      'Every device, all recorded history, plugin configuration and secrets will be deleted. ' +
+      'This cannot be undone.';
+    if (Platform.OS === 'web') {
+      // eslint-disable-next-line no-alert
+      return typeof confirm === 'function' && confirm(message);
+    }
+    return true; // native goes through Alert below
+  };
+
+  const ask = () => {
+    haptic();
+    const message =
+      'Every device, all recorded history, plugin configuration and secrets will be deleted. ' +
+      'This cannot be undone.';
+
+    if (Platform.OS === 'web') {
+      if (confirmed()) void wipe();
+      return;
+    }
+    Alert.alert('Erase everything?', message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Erase', style: 'destructive', onPress: () => void wipe() },
+    ]);
+  };
+
+  // Nothing to say until the server has answered.
+  if (!availability) return null;
+
+  return (
+    <YStack gap="$2">
+      <SectionLabel>Danger zone</SectionLabel>
+
+      {availability.available ? (
+        <Card gap="$3" borderColor="$danger">
+          <YStack gap="$2">
+            <Text fontSize={15} fontWeight="700" color="$danger">
+              Erase everything
+            </Text>
+            <Text fontSize={13} color="$muted" lineHeight={19}>
+              Removes every device, all recorded history, plugin configuration and secrets, and the
+              audit timeline. The server keeps running and comes back as a blank canvas.
+            </Text>
+          </YStack>
+
+          <XStack gap="$2">
+            <Input
+              flex={1}
+              size="$3"
+              value={secret}
+              placeholder="Reset passphrase"
+              secureTextEntry
+              autoCapitalize="none"
+              onChangeText={setSecret}
+              backgroundColor="$background"
+              borderColor="$borderColor"
+            />
+            <Button
+              size="$3"
+              borderColor="$danger"
+              color="$danger"
+              disabled={busy || secret.trim().length === 0}
+              onPress={ask}
+            >
+              {busy ? 'Erasing…' : 'Erase'}
+            </Button>
+          </XStack>
+
+          {error ? (
+            <Text fontSize={12} color="$danger" lineHeight={18}>
+              {error}
+            </Text>
+          ) : null}
+          {done ? (
+            <Text fontSize={12} color="$muted" lineHeight={18}>
+              {done}
+            </Text>
+          ) : null}
+        </Card>
+      ) : (
+        /*
+          Instructions rather than a disabled control. Not being enabled is
+          something the user can change, and a greyed-out button would not say
+          how — nor that the fix is on the server rather than in the app.
+        */
+        <Card gap="$2">
+          <Text fontSize={15} fontWeight="700" color="$color">
+            Erasing is not enabled
+          </Text>
+          <Text fontSize={13} color="$muted" lineHeight={19}>
+            To allow this app to empty the database, write a passphrase of at least 8 characters to
+            this file on the server and restart nothing — it is read on each attempt:
+          </Text>
+          <Text fontSize={12} color="$color" fontFamily="$mono" lineHeight={18}>
+            {availability.secretFile}
+          </Text>
+          <Text fontSize={12} color="$muted" lineHeight={18}>
+            The file is gitignored and never leaves the server. Delete it again to switch this off.
+          </Text>
+        </Card>
       )}
     </YStack>
   );

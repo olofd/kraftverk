@@ -222,11 +222,10 @@ export class StationClient {
   /**
    * Points this client at a different link.
    *
-   * Rebinding used to mean telling one transport to bind elsewhere, because
-   * there was only ever one. With a link per station, changing which station a
-   * saved device means is changing which link it holds — and the frame
-   * subscription has to move with it, or the client would go on listening to
-   * the station the user just walked away from.
+   * There is a link per station, so changing which station a saved device means
+   * is changing which link it holds. The frame subscription moves with it: a
+   * client left listening to its previous link would go on decoding the station
+   * the user just walked away from.
    *
    * Callers almost always want `reset()` too: the cached telemetry describes
    * the old station.

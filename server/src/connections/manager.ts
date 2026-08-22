@@ -8,26 +8,20 @@ import type { ServerLink, ServerTransportKind, TransportHost } from '../transpor
 /**
  * Who is talking to what.
  *
- * The server used to hold one `driver`, one `transport` and one binding, all of
- * them module-level. That is workable while there is exactly one station and
- * fatal the moment there are two: every route reached the same globals, so
- * "edit this device" and "delete this device" could not mean anything specific.
- * The server could not say *whose* link it was holding, because it only had one.
+ * A session belongs to a saved device id, and there is one per saved station.
+ * The catalog says what you own; the manager says what is currently reachable;
+ * a route that wants to read or write a device asks for *that device's*
+ * session. There is no such thing here as "the station".
  *
- * A session belongs to a saved device id. That is the whole idea: the catalog
- * says what you own, the manager says what is currently reachable, and a route
- * that wants to read or write a device asks for that device's session rather
- * than for "the station".
+ * What the process has exactly one of is the `TransportHost` — the radio, or
+ * the broker. Links are not scarce in the same way: a broker serves every
+ * station that connects to it, and a BLE central holds several peripherals at
+ * once. So the host carries as many links as there are saved stations.
  *
- * It no longer refuses the second station. That refusal was honest about the
- * old transport and wrong about the hardware: one broker serves every station
- * that connects to it, and a BLE central holds several peripherals at once.
- * What the process has one of is the *host* — the radio, the broker — and
- * `TransportHost` now carries as many links as there are saved stations.
- *
- * The constraint that remains is real, and it is per station rather than per
- * server: a station accepts one connection at a time, so opening it here is
- * still taking it away from the app, or from BrightEMS.
+ * The scarcity that is real belongs to the station rather than to the server: a
+ * station accepts one connection at a time, so opening it here takes it away
+ * from the app, and from BrightEMS. That is why two saved devices may not name
+ * the same station, and why the refusal says which one already has it.
  */
 
 /** How a session reaches its device. `sim` is the built-in simulator. */
@@ -136,15 +130,13 @@ export class ConnectionManager {
   }
 
   /**
-   * `station()` was here, returning the first open session.
+   * Every open session.
    *
-   * It is deliberately gone rather than deprecated. "The station" is a question
-   * with no correct answer once a server holds several, and an accessor that
-   * answers it anyway is a standing invitation to act on the wrong machine —
-   * which is precisely the bug this whole model exists to make impossible.
-   * Every caller names a device: `get(deviceId)`.
+   * For counting and listing only. There is deliberately no accessor that
+   * returns "the" station: it is a question with no correct answer, and one
+   * that answered it anyway would be a standing invitation to act on the wrong
+   * machine. Callers that mean a particular device use `get(deviceId)`.
    */
-
   get sessions(): StationSession[] {
     return [...this.#sessions.values()];
   }
@@ -232,14 +224,14 @@ export class ConnectionManager {
     const saved = boundStation(record);
 
     /*
-      The one conflict that survives, and it is a real one: a station accepts a
-      single connection, so two saved devices naming the same station cannot
-      both have it. This is what `refusal` means now — not "the server is full",
-      which was never true, but "another device you own already has this unit".
+      A station accepts a single connection, so two saved devices naming the
+      same one cannot both have it. That is what a `refusal` means: not "the
+      server is full", but "another device you own already has this unit".
 
-      Claimed here, before the first `await`. Sessions are opened concurrently,
-      so a check that straddles an await would let both of them see the station
-      free and both take it.
+      The claim is made here, before the first `await`. Sessions open
+      concurrently, and a check separated from its write by an await is not a
+      claim at all — both callers would look, both would see the station free,
+      and both would take it.
     */
     const clash = saved ? this.#ownerOf(saved, record.id) : null;
     if (clash) this.#refuse(record.id, `Another saved device is already bound to ${saved}`);

@@ -21,16 +21,15 @@ import type { DiscoveredDevice, ServerLink, TransportHost } from './types.ts';
  * notification on another. No handshake is needed after connecting.
  *
  * Split in two, because the adapter and a connection are different things. One
- * noble instance owns the radio and the scan — there is genuinely only one of
+ * noble instance owns the radio and the scan, and there is genuinely one of
  * those per process. A *connection* is not scarce in the same way: a BLE
- * central holds several peripherals at once, commonly around seven. The old
- * single class conflated them, keeping one set of characteristics, one frame
- * assembler and one reconnect loop, which is why a second station could not be
- * held rather than why it *should* not be.
+ * central holds several peripherals at once, commonly around seven. So the host
+ * scans and the links connect, each owning the state a connection actually has
+ * — its characteristics, its frame assembler, its own reconnect loop.
  *
- * The constraint that survives is real but different: a given station accepts
- * one connection at a time, so the server still competes with the app and with
- * BrightEMS for any single unit.
+ * The scarcity that is real belongs to the station: it accepts one connection
+ * at a time, so the server competes with the app and with BrightEMS for any
+ * single unit.
  */
 
 type Noble = typeof import('@stoprocent/noble').default;
@@ -204,10 +203,10 @@ export class BleHost extends EventEmitter implements TransportHost {
 /**
  * One station's GATT connection.
  *
- * Everything here used to be a singleton field on the transport: the write
- * characteristic, the frame assembler that reassembles a 168-byte response from
- * several notifications, and the reconnect loop. Per-station is where they
- * belong — two stations reassembling into one buffer would interleave into
+ * Everything a connection actually owns lives here rather than on the host: the
+ * write characteristic, the frame assembler that reassembles a 168-byte
+ * response from several notifications, and the reconnect loop. Per station,
+ * because two stations reassembling into one buffer would interleave into
  * nonsense.
  */
 export class BleLink extends EventEmitter implements ServerLink {

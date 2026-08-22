@@ -30,20 +30,17 @@ export interface ServerLink extends StationLink {
 /**
  * The radio, or the broker — one per process, carrying many links.
  *
- * This is the distinction the old `Transport` interface did not draw, and the
- * reason the server could only ever hold one station. Discovery, binding and
- * frame-carrying were a single object with a single `boundId`, so a second
- * station had nowhere to go: over MQTT its frames were read off the broker and
- * then dropped on the floor by an identity check, and over BLE its connection
- * would have overwritten the first one's characteristics.
+ * The distinction this draws is between the radio and a conversation on it.
+ * There is genuinely one host per process — noble owns the adapter, the broker
+ * owns its port — and it is the thing that scans. A **link** is not scarce in
+ * the same way: a broker serves every station that connects to it, and a BLE
+ * central holds several peripherals at once.
  *
- * There genuinely is only one of *this* per process — noble owns the adapter,
- * and the broker owns its port. What there is not is only one **link**. A
- * broker serves every station that connects to it; a BLE central can hold
- * several peripherals at once. What remains true, and is a property of the
- * hardware rather than of this code, is that a *given* station accepts one
- * connection at a time — so the server still competes with the app and with the
- * vendor's own for any single unit.
+ * Keeping them apart is what lets discovery, binding and frame-carrying stop
+ * being one object with one `boundId`. What remains scarce is a property of the
+ * hardware rather than of this code: a *given* station accepts one connection
+ * at a time, so the server competes with the app and with the vendor's own for
+ * any single unit.
  */
 export interface TransportHost {
   readonly kind: ServerTransportKind;
