@@ -593,7 +593,29 @@ diag.post('/raw', async (c) => {
 
 const gateway = new ActionGateway({
   host,
-  readStation: () => connections.station()?.driver.status() ?? null,
+  /*
+    Which station the relay is proved against.
+
+    Deliberately refuses to guess. The gateway's second proof is the station's
+    own AC input agreeing that mains came or went; read from the wrong station
+    it proves nothing, and would happily report `verified` because some other
+    station has power. Nothing yet records which station a plug actually feeds
+    — that pairing is the next piece of the automation model — so with several
+    saved the honest answer is "I cannot tell", not a coin toss.
+  */
+  readStation: () => {
+    const stations = connections.sessions;
+    if (stations.length === 1) return { status: stations[0]!.driver.status() };
+    if (stations.length === 0) {
+      return { status: null, reason: 'No station telemetry: refusing to switch blind' };
+    }
+    return {
+      status: null,
+      reason:
+        `${stations.length} stations are connected and none is recorded as the one this plug ` +
+        `feeds, so its effect cannot be verified. Refusing to switch blind.`,
+    };
+  },
   isReadOnly: () => connections.readOnly,
 });
 

@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 
 import type { ParsedFrame } from '@kraftverk/protocol';
 
-import { DeviceBroker } from '../mqtt/broker.ts';
+import { DeviceBroker, type DeviceMessage } from '../mqtt/broker.ts';
 import type { DiscoveredDevice, ServerLink, TransportHost } from './types.ts';
 
 /**
@@ -40,10 +40,13 @@ export class MqttHost extends EventEmitter implements TransportHost {
     return this.#broker;
   }
 
+  /** Kept so `stop` can detach it rather than leaving it on a shared broker. */
+  #onMessage: ((message: DeviceMessage) => void) | null = null;
+
   async start(): Promise<void> {
     await this.#broker.start(this.#port, this.#host);
 
-    this.#broker.on('message', (message) => {
+    this.#onMessage = (message) => {
       const now = new Date();
       const existing = this.#devices.get(message.mac);
       const device: DiscoveredDevice = {
@@ -63,11 +66,18 @@ export class MqttHost extends EventEmitter implements TransportHost {
       // and one that nothing is linked to is still recorded as discovered so it
       // can be added.
       this.#links.get(message.mac)?.receive(now, message.frame);
-    });
+    };
+
+    this.#broker.on('message', this.#onMessage);
   }
 
   async stop(): Promise<void> {
     for (const link of [...this.#links.values()]) await link.close();
+    // Detached explicitly: the broker outlives this host, so a handler left
+    // behind would keep routing frames into a stopped host's link map — and a
+    // second `start` would then deliver every frame twice.
+    if (this.#onMessage) this.#broker.off('message', this.#onMessage);
+    this.#onMessage = null;
     await this.#broker.stop();
   }
 

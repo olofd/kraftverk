@@ -21,6 +21,16 @@ const RETAIN_DAYS = 14;
 export class Sampler {
   #timer: ReturnType<typeof setInterval> | null = null;
   #pruneTimer: ReturnType<typeof setInterval> | null = null;
+  /**
+   * Stops a slow round from overlapping the next one.
+   *
+   * The interval fires regardless of whether the previous sample finished, so a
+   * round that outran a minute would have a second one starting on top of it —
+   * two passes over every device, and two write transactions racing for the
+   * same table. A skipped sample is a one-minute gap in a chart; overlapping
+   * ones are load that grows with every device added.
+   */
+  #sampling = false;
 
   constructor(private registry: DeviceRegistry) {}
 
@@ -38,11 +48,16 @@ export class Sampler {
   }
 
   async sample(): Promise<void> {
+    if (this.#sampling) return;
+    this.#sampling = true;
+
     let devices;
     try {
       devices = await this.registry.all();
     } catch {
       return; // a failed read is a missing sample, not a crashed server
+    } finally {
+      this.#sampling = false;
     }
 
     const at = new Date().toISOString();

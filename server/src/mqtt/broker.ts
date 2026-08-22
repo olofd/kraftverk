@@ -36,6 +36,20 @@ export type BrokerEvents = {
 const RESPONSE_TOPIC = /^([0-9A-Fa-f]{12})\/device\/response\/(?:client\/)?(\w+)$/;
 
 export class DeviceBroker extends EventEmitter<BrokerEvents> {
+  constructor() {
+    super();
+    /*
+      No cap on `message` listeners.
+
+      `request` attaches one for the duration of each in-flight exchange, and
+      every linked station has one in flight while it polls. Node warns at ten
+      and calls it a leak — which was unreachable when the server held a single
+      station, and is simply Tuesday now that it holds as many as you have
+      saved. The listeners are removed on resolve, reject and timeout alike.
+    */
+    this.setMaxListeners(0);
+  }
+
   #aedes: Aedes | null = null;
   #server: Server | null = null;
   #devices = new Map<string, Date>();

@@ -62,7 +62,8 @@ function harness(options: { granted?: boolean; provider?: string | null; relay?:
 
   const gateway = new ActionGateway({
     host,
-    readStation: () => current,
+    readStation: () =>
+      current ? { status: current } : { status: null, reason: 'No station telemetry' },
     isReadOnly: () => options.readOnly === true,
     record: (entry) => events.push(entry.kind),
     // Short timeouts: these tests are about the decisions, not the clock.
@@ -123,6 +124,34 @@ describe('freshness', () => {
     const result = await gateway.execute({ desired: false, reason: 'x', actor: 'controller' });
     expect(result.outcome).toBe('refused');
     expect(result.detail).toContain('No station telemetry');
+    expect(relay.commands).toHaveLength(0);
+  });
+
+  /*
+    The reason has to survive, not just the refusal. Once a server can hold
+    several stations, "no telemetry" and "several, and nobody said which one
+    this plug feeds" are different problems with different fixes — and the
+    second is the one that would otherwise be papered over by picking a station
+    at random, making the whole second proof meaningless.
+  */
+  test('surfaces why there is no station to verify against', async () => {
+    const relay = new StubRelay();
+    const events: string[] = [];
+    const gateway = new ActionGateway({
+      host: { activeProvider: () => 'stub', capability: () => relay, isGranted: () => true },
+      readStation: () => ({
+        status: null,
+        reason: '2 stations are connected and none is recorded as the one this plug feeds',
+      }),
+      isReadOnly: () => false,
+      record: (entry) => events.push(entry.kind),
+      policy: { verifyTimeoutMs: 300, userDwellMs: 50, controllerDwellMs: 10_000 },
+    });
+
+    const result = await gateway.execute({ desired: false, reason: 'x', actor: 'controller' });
+
+    expect(result.outcome).toBe('refused');
+    expect(result.detail).toContain('none is recorded as the one this plug feeds');
     expect(relay.commands).toHaveLength(0);
   });
 
@@ -195,5 +224,28 @@ describe('dwell', () => {
     expect(second.detail).toContain('Too soon');
     // One command reached the plug: no relay chatter.
     expect(relay.commands).toEqual([false]);
+  });
+
+  /*
+    The dwell check reads a timestamp that is only written several awaits later,
+    at step 6. Two requests arriving together therefore both look, both see the
+    window clear, and both send — which is the one thing this class promises
+    never to do. Sequentially it is impossible, which is why it survived.
+  */
+  test('two commands arriving at once still send exactly one', async () => {
+    const { gateway, relay } = harness();
+
+    const [first, second] = await Promise.all([
+      gateway.execute({ desired: false, reason: 'a', actor: 'controller' }),
+      gateway.execute({ desired: false, reason: 'b', actor: 'controller' }),
+    ]);
+
+    expect(relay.commands).toHaveLength(1);
+    // The loser is told why rather than silently duplicating the winner. The
+    // winner's own outcome depends on whether the station agrees, which is a
+    // different test's subject.
+    const refused = [first, second].filter((r) => r.outcome === 'refused');
+    expect(refused).toHaveLength(1);
+    expect(refused[0]!.detail).toContain('Too soon');
   });
 });

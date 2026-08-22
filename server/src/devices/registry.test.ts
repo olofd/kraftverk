@@ -79,6 +79,8 @@ type Plugin = {
   readings?: Reading[];
   /** Every id `readDevice` was called with, so the wrong one is visible. */
   asked: string[];
+  /** Never resolves, like an adapter waiting on a socket nobody will answer. */
+  hangs?: boolean;
 };
 
 const hostWith = (plugins: Record<string, Plugin>) =>
@@ -92,6 +94,7 @@ const hostWith = (plugins: Record<string, Plugin>) =>
           devices: () => (plugin.descriptor ? [plugin.descriptor] : []),
           readDevice: async (deviceId: string) => {
             plugin.asked.push(deviceId);
+            if (plugin.hangs) return new Promise<Reading[]>(() => {});
             return plugin.readings ?? [];
           },
         },
@@ -332,4 +335,36 @@ describe('connection health, which is not a boolean', () => {
 
     expect((await registry.find(record.id))!.providerDeviceId).toBe('AA:BB:CC:00:11:22');
   });
+});
+
+/*
+  `all()` is on the path of every GET /api/devices, which the app polls
+  continuously, and of every sampler round. An extension that never answers
+  must not be able to take the catalog down with it.
+*/
+describe('one badly behaved adapter', () => {
+  test('cannot hang the whole device list', async () => {
+    const stuck = plug('com.slow.adapter', 'Stuck');
+    const fine = station('Living room');
+
+    const registry = new DeviceRegistry(
+      catalog,
+      hostWith({
+        'com.slow.adapter': {
+          descriptor: plugDescriptor(),
+          health: { status: 'healthy' },
+          hangs: true,
+          asked: [],
+        },
+      }),
+      managerWith({ [fine.id]: stationStatus({}) })
+    );
+
+    const views = await registry.all();
+
+    expect(views).toHaveLength(2);
+    expect(views.find((v) => v.id === stuck.id)!.health.status).toBe('offline');
+    // The station beside it is unaffected, which is the point.
+    expect(views.find((v) => v.id === fine.id)!.health.status).toBe('connected');
+  }, 10_000);
 });

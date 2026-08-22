@@ -69,10 +69,22 @@ export type RelayHost = {
   isGranted(id: string, capability: 'gridRelay.switch'): boolean;
 };
 
+/**
+ * The station this relay is verified against, or why there isn't one.
+ *
+ * A bare `StationStatus | null` could not tell "nothing is connected" from
+ * "several stations are, and nobody has said which one this plug feeds". The
+ * second is the dangerous case: picking one arbitrarily would make the whole
+ * second proof meaningless — a relay could be reported `verified` because a
+ * *different* station happens to have mains, while the one it actually feeds
+ * sat dark.
+ */
+export type StationReading = { status: StationStatus } | { status: null; reason: string };
+
 export type GatewayDeps = {
   host: RelayHost;
-  /** Current station telemetry, or null when nothing is connected. */
-  readStation: () => StationStatus | null;
+  /** Current station telemetry, or the reason there is none to verify against. */
+  readStation: () => StationReading;
   /** True when the server refuses every hardware write. */
   isReadOnly: () => boolean;
   /** Where the timeline goes. Swapped out in tests so they touch no database. */
@@ -86,6 +98,8 @@ export class ActionGateway {
   #record: (entry: AuditEntry) => void;
   #lastSwitchAt = 0;
   #everSwitched = false;
+  /** Serialises `execute`, so "exactly one command" survives concurrent callers. */
+  #gate: Promise<void> = Promise.resolve();
 
   constructor(deps: GatewayDeps) {
     this.#deps = deps;
@@ -111,7 +125,32 @@ export class ActionGateway {
     }
   }
 
+  /**
+   * One at a time, whatever arrives together.
+   *
+   * The dwell check reads `#lastSwitchAt`, which is not written until step 6 —
+   * several awaits later. Two requests arriving in the same tick therefore both
+   * looked, both saw the window clear, and both sent: two commands to the mains
+   * relay from the one class that promises exactly one. Sequentially it cannot
+   * happen, which is why it went unnoticed.
+   *
+   * Serialising rather than rejecting outright means the second request still
+   * gets a real answer — it runs after the first and is refused by the dwell
+   * check, which is the honest reason.
+   */
   async execute(intent: RelayIntent): Promise<GatewayResult> {
+    const run = this.#gate.then(
+      () => this.#execute(intent),
+      () => this.#execute(intent)
+    );
+    this.#gate = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }
+
+  async #execute(intent: RelayIntent): Promise<GatewayResult> {
     const at = new Date().toISOString();
     const refuse = (detail: string): GatewayResult => {
       this.#record({ at, kind: 'relay.refused', actor: intent.actor, resource: 'gridRelay', summary: detail, detail: intent });
@@ -144,14 +183,15 @@ export class ActionGateway {
 
     // 4. Freshness. Acting on stale readings is how a controller cuts mains at
     //    exactly the wrong moment.
-    const station = this.#deps.readStation();
+    const reading = this.#deps.readStation();
     const relayBefore = await provider.impl.getState().catch(() => null);
 
     if (!relayBefore || !relayBefore.reachable) return refuse('The plug is not answering');
     if (this.#ageOf(relayBefore.updatedAt) > this.#policy.maxDataAgeMs) {
       return refuse('The plug state is stale');
     }
-    if (!station) return refuse('No station telemetry: refusing to switch blind');
+    if (!reading.status) return refuse(reading.reason);
+    const station = reading.status;
     if (this.#ageOf(station.lastUpdated) > this.#policy.maxDataAgeMs) {
       return refuse('Station telemetry is stale: refusing to switch blind');
     }
@@ -221,8 +261,8 @@ export class ActionGateway {
   async #stationAgrees(desired: boolean): Promise<boolean> {
     const deadline = Date.now() + this.#policy.verifyTimeoutMs;
     while (Date.now() < deadline) {
-      const station = this.#deps.readStation();
-      if (station && station.gridConnected === desired) return true;
+      const { status } = this.#deps.readStation();
+      if (status && status.gridConnected === desired) return true;
       await new Promise((resolve) => setTimeout(resolve, 1_000));
     }
     return false;

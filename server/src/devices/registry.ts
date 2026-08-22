@@ -53,6 +53,41 @@ export type SavedDeviceView = Omit<DeviceDescriptor, 'id' | 'name'> & {
   readings: Reading[];
 };
 
+/**
+ * How long one adapter may take to hand over its readings.
+ *
+ * Adapters are expected to answer from cache — the Tuya driver keeps the last
+ * datapoints it received — so this is generous. It exists because `all()` is on
+ * the path of *every* `GET /api/devices`, which the app polls continuously, and
+ * a `readDevice` that never settles would hang the device list for every client
+ * and stall the sampler with it. An extension is not allowed to take the
+ * catalog down with it.
+ */
+const READ_TIMEOUT_MS = 2_000;
+
+const readWithin = async (
+  read: () => Promise<Reading[]> | undefined,
+  timeoutMs: number
+): Promise<Reading[]> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const pending = read();
+    if (!pending) return [];
+    // An empty list is what a device that will not answer looks like, and the
+    // caller already renders that honestly as "not answering".
+    return await Promise.race([
+      pending,
+      new Promise<Reading[]>((resolve) => {
+        timer = setTimeout(() => resolve([]), timeoutMs);
+      }),
+    ]);
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 /** The freshest reading's timestamp — when the device last actually spoke. */
 const lastReadingAt = (readings: readonly Reading[]): string | null => {
   let latest: string | null = null;
@@ -71,12 +106,16 @@ export class DeviceRegistry {
     private connections: ConnectionManager
   ) {}
 
+  /**
+   * Every saved device, joined to what it is doing.
+   *
+   * Concurrent rather than one after another: each view may wait on its own
+   * adapter, and serialising them made the whole list as slow as the sum of its
+   * devices. With one device that was invisible; it is the difference between a
+   * responsive canvas and a stalling one by the tenth.
+   */
   async all(): Promise<SavedDeviceView[]> {
-    const views: SavedDeviceView[] = [];
-    for (const record of this.catalog.list()) {
-      views.push(await this.#view(record));
-    }
-    return views;
+    return Promise.all(this.catalog.list().map((record) => this.#view(record)));
   }
 
   async find(id: SavedDeviceId): Promise<SavedDeviceView | null> {
@@ -120,7 +159,10 @@ export class DeviceRegistry {
     // The vendor's identity, and the only id the adapter will recognise.
     const providerDeviceId: ProviderDeviceId = descriptor.id;
     const health = this.host.health(record.driver);
-    const readings = (await instance.plugin.readDevice?.(providerDeviceId).catch(() => [])) ?? [];
+    const readings = await readWithin(
+      () => instance.plugin.readDevice?.(providerDeviceId),
+      READ_TIMEOUT_MS
+    );
     const answering = readings.some((reading) => reading.value !== null);
 
     return {
