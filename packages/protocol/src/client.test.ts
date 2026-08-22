@@ -96,3 +96,44 @@ describe('read-only mode', () => {
     expect(transport.sent.length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * Which station a write actually reaches.
+ *
+ * Writes are queued so only one MODBUS exchange is in flight at a time, and the
+ * queue defers them by a microtask. A server holding several stations can
+ * retarget a client in that gap — and a task that reads the link when it *runs*
+ * would send the write to whichever station the client points at by then. One
+ * of these registers permanently bricks the hardware, so "the wrong station" is
+ * not an acceptable outcome for a write.
+ */
+describe('retargeting a client mid-flight', () => {
+  test('a write queued before a rebind is refused, not sent to the new station', async () => {
+    const first = new SpyTransport();
+    const second = new SpyTransport();
+    second.boundId = 'FFEEDDCCBBAA';
+
+    const client = new StationClient({ transport: first, readOnly: false });
+
+    // Not awaited: the write is now sitting on the queue, pinned to `first`.
+    const pending = client.applySettings({ chargeLimit: 80 });
+    // The station is swapped out from under it before the queue drains.
+    client.retarget(second);
+
+    await expect(pending).rejects.toThrow(/station changed/i);
+    expect(second.sent).toHaveLength(0);
+  });
+
+  test('the link a client reports is the one it was retargeted to', () => {
+    const first = new SpyTransport();
+    const second = new SpyTransport();
+    second.boundId = 'FFEEDDCCBBAA';
+
+    const client = new StationClient({ transport: first });
+    expect(client.mac).toBe('AABBCCDDEEFF');
+
+    client.retarget(second);
+    expect(client.mac).toBe('FFEEDDCCBBAA');
+    expect(client.transport).toBe(second);
+  });
+});

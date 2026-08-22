@@ -143,13 +143,35 @@ function stationOr404(): StationSession {
   return session;
 }
 
-/** Register-level access, which only real hardware has. */
-function hardwareOr400(): DeviceDriver {
-  const session = connections.station();
-  if (!session?.device) {
-    throw new HTTPException(400, { message: 'Needs a hardware driver (STATION_DRIVER=device or ble)' });
+/**
+ * Register-level access, which only real hardware has.
+ *
+ * `?deviceId=` names which station. It used to be safe to leave out because
+ * there could only be one; with several, picking the first would silently dump
+ * — or worse, write to — a machine the caller never named. So it is inferred
+ * only when the answer is unambiguous, and demanded otherwise.
+ */
+function hardwareOr400(c: Context): DeviceDriver {
+  const requested = c.req.query('deviceId');
+  const stations = connections.sessions.filter((session) => session.device);
+
+  if (requested) {
+    const session = connections.get(decodeURIComponent(requested));
+    if (!session?.device) {
+      throw new HTTPException(404, { message: 'That device has no hardware link' });
+    }
+    return session.device;
   }
-  return session.device;
+
+  if (stations.length === 1) return stations[0]!.device!;
+  if (stations.length === 0) {
+    throw new HTTPException(400, {
+      message: 'Needs a hardware driver (STATION_DRIVER=device or ble)',
+    });
+  }
+  throw new HTTPException(400, {
+    message: `${stations.length} stations are connected; name one with ?deviceId=`,
+  });
 }
 
 const app = new Hono();
@@ -451,7 +473,7 @@ let baseline: Baseline | null = await readFile(BASELINE_FILE, 'utf8')
   .catch(() => null);
 
 diag.post('/snapshot', async (c) => {
-  const device = hardwareOr400();
+  const device = hardwareOr400(c);
   const [input, holding] = await Promise.all([device.readAllInput(), device.readAllHolding()]);
   baseline = { at: new Date().toISOString(), input, holding };
   await mkdir(dirname(BASELINE_FILE), { recursive: true });
@@ -469,7 +491,7 @@ diag.get('/blocked', (c) => c.json(connections.station()?.device?.blockedWrites 
  * probing outside the documented window cannot change anything.
  */
 diag.get('/scan', async (c) => {
-  const device = hardwareOr400();
+  const device = hardwareOr400(c);
 
   const { fn, start, count } = z
     .object({
@@ -511,7 +533,7 @@ diag.get('/scan', async (c) => {
 
 /** Every input register, raw and decoded, with the documented name where known. */
 diag.get('/registers', async (c) => {
-  const device = hardwareOr400();
+  const device = hardwareOr400(c);
   const [input, holding] = await Promise.all([
     device.readAllInput().catch(() => [] as number[]),
     device.readAllHolding().catch(() => [] as number[]),

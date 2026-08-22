@@ -169,14 +169,29 @@ export async function fetchTraffic(signal?: AbortSignal) {
   return data;
 }
 
-export async function fetchRegisters(signal?: AbortSignal) {
-  const { data } = await api.get<RegisterDump>('/diagnostics/registers', { signal });
+/**
+ * A register dump, from one station.
+ *
+ * `deviceId` is optional only because a server holding exactly one station can
+ * still answer without it. With several the server refuses to guess, which is
+ * the right answer: a register dump names a machine, and writing to the wrong
+ * one is how hardware dies.
+ */
+export async function fetchRegisters(deviceId?: string, signal?: AbortSignal) {
+  const { data } = await api.get<RegisterDump>('/diagnostics/registers', {
+    params: deviceId ? { deviceId } : undefined,
+    signal,
+  });
   return data;
 }
 
 /** Captures a baseline so the next dump can show what moved. */
-export async function snapshotRegisters(signal?: AbortSignal) {
-  const { data } = await api.post<{ at: string }>('/diagnostics/snapshot', {}, { signal });
+export async function snapshotRegisters(deviceId?: string, signal?: AbortSignal) {
+  const { data } = await api.post<{ at: string }>(
+    '/diagnostics/snapshot',
+    {},
+    { params: deviceId ? { deviceId } : undefined, signal }
+  );
   return data;
 }
 

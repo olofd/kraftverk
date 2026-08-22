@@ -86,8 +86,12 @@ export class MqttHost extends EventEmitter implements TransportHost {
 
   async open(stationId: string): Promise<ServerLink> {
     const mac = stationId.toUpperCase();
-    const existing = this.#links.get(mac);
-    if (existing) return existing;
+    // Refused rather than shared. Handing the same link to two owners means two
+    // drivers polling one station and whichever closes first taking it from the
+    // other — a corruption that would show up as a device going quiet for no
+    // stated reason. The manager claims stations before opening them, so this
+    // is a guard against a bug here, not an expected outcome.
+    if (this.#links.has(mac)) throw new Error(`${mac} is already linked`);
 
     const link = new MqttLink(mac, this.#broker, () => this.#links.delete(mac));
     this.#links.set(mac, link);

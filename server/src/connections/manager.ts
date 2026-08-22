@@ -79,6 +79,13 @@ export class ConnectionManager {
    * on preferring the station the user just moved away from.
    */
   #bound = new Map<string, string | null>();
+  /**
+   * Devices whose station the user let go of on purpose.
+   *
+   * Distinct from "has no station yet", which auto-bind is allowed to fill.
+   * Cleared by an explicit bind, and by forgetting the device.
+   */
+  #released = new Set<string>();
   #host: TransportHost | null = null;
   #starting: Promise<TransportHost> | null = null;
 
@@ -162,10 +169,28 @@ export class ConnectionManager {
       if (!wanted.has(deviceId)) this.#refusals.delete(deviceId);
     }
 
-    for (const record of stations) {
-      if (this.#sessions.has(record.id)) continue;
-      await this.open(record);
-    }
+    /*
+      Concurrently, and each one isolated.
+
+      Opening a BLE link means a GATT connect, which for a station that is
+      asleep or out of range takes its time and then fails. Serially that cost
+      is paid once per saved station before the HTTP listener comes up, so a
+      handful of quiet stations would hold the whole server down; and one that
+      threw took every station after it with it.
+
+      Safe to run at once because each `open` makes its claim synchronously
+      before its first await — see `#hardware`.
+    */
+    await Promise.all(
+      stations
+        .filter((record) => !this.#sessions.has(record.id))
+        .map((record) =>
+          this.open(record).catch((error: unknown) => {
+            this.#refuse(record.id, (error as Error).message);
+            return null;
+          })
+        )
+    );
   }
 
   /**
@@ -202,8 +227,7 @@ export class ConnectionManager {
   }
 
   async #hardware(record: DeviceRecord): Promise<StationSession> {
-    const host = (await this.link())!;
-    const kind = host.kind;
+    const kind = this.deps.kind as ServerTransportKind;
 
     // What the record already knows, which is how a restart reconnects to the
     // same unit instead of whichever station answers first.
@@ -214,16 +238,16 @@ export class ConnectionManager {
       single connection, so two saved devices naming the same station cannot
       both have it. This is what `refusal` means now — not "the server is full",
       which was never true, but "another device you own already has this unit".
+
+      Claimed here, before the first `await`. Sessions are opened concurrently,
+      so a check that straddles an await would let both of them see the station
+      free and both take it.
     */
-    const clash =
-      saved &&
-      [...this.#bound.entries()].find(([id, bound]) => id !== record.id && bound === saved);
-
-    if (clash) {
-      this.#refuse(record.id, `Another saved device is already bound to ${saved}`);
-    }
-
+    const clash = saved ? this.#ownerOf(saved, record.id) : null;
+    if (clash) this.#refuse(record.id, `Another saved device is already bound to ${saved}`);
     this.#bound.set(record.id, clash ? null : saved);
+
+    const host = (await this.link())!;
 
     // A link with no station yet is a real thing: it exists, it is disconnected,
     // and the discovery watcher below is what gives it one.
@@ -245,9 +269,17 @@ export class ConnectionManager {
       const preferred = this.#bound.get(record.id) ?? null;
       if (preferred) return; // it has its station; the link's own loop reconnects
 
-      // Never take a station another saved device is already linked to, and
-      // never auto-connect to something that cannot be identified as a station.
-      if (host.openIds().includes(found.id)) return;
+      // A deliberate unbind means stop. Without this, auto-bind — which is on
+      // by default — reads "no preferred station" as "free to take the first
+      // one it sees", and takes back the station the user just released on its
+      // very next advertisement.
+      if (this.#released.has(record.id)) return;
+
+      // Never take a station another saved device is already linked to or has
+      // claimed, and never auto-connect to something that cannot be identified
+      // as a station.
+      if (this.#ownerOf(found.id, record.id)) return;
+      if (host.openIds().some((id) => same(id, found.id))) return;
       if (!(this.deps.autoBind && found.likelyStation)) return;
 
       void this.bind(record.id, found.id)
@@ -275,24 +307,37 @@ export class ConnectionManager {
       throw new Error('That device has no hardware link to bind');
     }
 
-    const host = (await this.link())!;
-
-    // Two saved devices pointing at one station would fight over a connection
-    // the station only offers once. Refusing names the winner.
-    const taken = [...this.#bound.entries()].find(
-      ([id, bound]) => id !== deviceId && bound === stationId
-    );
+    /*
+      Claimed before the first await, and rolled back if opening fails.
+      Every waiting session's discovery watcher fires in the same turn, so a
+      check followed by an `await` and only then a write is not a claim: each
+      caller looks, sees the station free, and takes it. One station, two
+      owners, both drivers polling one link, and whichever closes first takes
+      it away from the other.
+    */
+    const taken = this.#ownerOf(stationId, deviceId);
     if (taken) throw new Error(`Another saved device is already bound to ${stationId}`);
 
-    await session.link?.close();
-
-    const link = await host.open(stationId);
+    const previous = this.#bound.get(deviceId) ?? null;
     this.#bound.set(deviceId, stationId);
-    session.device?.retarget(link);
-    session.device?.reset();
+    this.#released.delete(deviceId);
 
-    this.#sessions.set(deviceId, { ...session, link });
-    this.deps.onBound?.(deviceId, session.kind, stationId);
+    try {
+      const host = (await this.link())!;
+      await session.link?.close();
+
+      const link = await host.open(stationId);
+      session.device?.retarget(link);
+      session.device?.reset();
+
+      this.#sessions.set(deviceId, { ...session, link });
+      this.deps.onBound?.(deviceId, session.kind, stationId);
+    } catch (error) {
+      // Releasing the claim matters as much as making it: a station left
+      // reserved by a bind that failed is one nothing else may ever take.
+      this.#bound.set(deviceId, previous);
+      throw error;
+    }
   }
 
   async unbind(deviceId: string): Promise<void> {
@@ -303,6 +348,9 @@ export class ConnectionManager {
 
     await session.link?.close();
     this.#bound.set(deviceId, null);
+    // Remembered, because "no station" and "the user let this one go" are not
+    // the same thing to auto-bind.
+    this.#released.add(deviceId);
     session.device?.retarget(idleLink(session.kind));
     session.device?.reset();
 
@@ -316,6 +364,7 @@ export class ConnectionManager {
 
     this.#sessions.delete(deviceId);
     this.#bound.delete(deviceId);
+    this.#released.delete(deviceId);
     // Stop watching before releasing the station: an unclaimed station is
     // exactly what this session's discovery listener would rush to bind again.
     this.#watchers.get(deviceId)?.();
@@ -335,7 +384,25 @@ export class ConnectionManager {
     this.#refusals.set(deviceId, reason);
     this.deps.log?.(`No link for ${deviceId}: ${reason}`);
   }
+
+  /** Which other saved device has claimed this station, if any. */
+  #ownerOf(stationId: string, except: string): string | null {
+    for (const [id, bound] of this.#bound) {
+      if (id !== except && bound && same(bound, stationId)) return id;
+    }
+    return null;
+  }
 }
+
+/**
+ * Station ids compared without regard to case.
+ *
+ * The two transports disagree, and quietly: `MqttHost` upper-cases MACs, while
+ * a noble peripheral id is lower-case hex. A record written by one and checked
+ * against the other would compare unequal, and the ownership check that stops
+ * two devices sharing a station would wave the second one through.
+ */
+const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
 /**
  * A link to nothing, for a saved station that has not been given one yet.

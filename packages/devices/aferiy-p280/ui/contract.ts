@@ -29,6 +29,15 @@ import type {
  */
 export type ProtocolScreenProps = {
   status: StationStatus | null;
+  /**
+   * Which saved device's registers these are.
+   *
+   * The screen has always been about one station; it simply never had to say
+   * which, because a server could only hold one. Now that it can hold several,
+   * a dump that does not name its subject is a dump of whichever station the
+   * server happened to list first.
+   */
+  deviceId: string;
   /** Only `readOnly` is used, but the app already has the whole thing. */
   version: { readOnly: boolean } | null;
   /** Whether the app is talking through the server or holding the link itself. */

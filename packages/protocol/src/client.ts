@@ -286,20 +286,31 @@ export class StationClient {
   async #poll(): Promise<void> {
     if (!this.#transport.boundId) return;
 
+    /*
+      Pinned for the whole poll.
+
+      `#enqueue` runs its task later, and a task that reads `this.#transport`
+      when it *runs* reads whatever the link is by then. Rebinding between the
+      two halves of a poll would therefore decode one station's input registers
+      and the other's holding registers into a single cache — station A's charge
+      level under station B's name, until the next poll corrected it.
+    */
+    const link = this.#transport;
+    const ingestFrom = async (frame: ParsedFrame) => {
+      if (link !== this.#transport) return; // retargeted mid-flight; not ours
+      this.#ingest(frame);
+    };
+
     try {
       await this.#enqueue(async () =>
-        this.#ingest(
-          await this.#transport.request(readInputRegisters(0, INPUT_REGISTER_COUNT), 'input')
-        )
+        ingestFrom(await link.request(readInputRegisters(0, INPUT_REGISTER_COUNT), 'input'))
       );
 
       await this.#enqueue(async () =>
-        this.#ingest(
-          await this.#transport.request(readHoldingRegisters(0, HOLDING_REGISTER_COUNT), 'holding')
-        )
+        ingestFrom(await link.request(readHoldingRegisters(0, HOLDING_REGISTER_COUNT), 'holding'))
       );
 
-      this.#emit();
+      if (link === this.#transport) this.#emit();
     } catch (error) {
       // Expected whenever the station is asleep or out of range.
       this.#onError?.(error);
@@ -319,8 +330,23 @@ export class StationClient {
       throw new ReadOnlyError(register, value);
     }
 
+    /*
+      Pinned, and refused if it moved.
+
+      The queue defers this, so reading `this.#transport` when the task runs
+      would send the write to whatever station the client points at *by then*.
+      A write meant for the station in the van, applied to the one in the shed,
+      is the worst outcome this codebase has — one of these registers bricks the
+      hardware. Refusing is the only safe answer; the caller can retry against
+      the station it meant.
+    */
+    const link = this.#transport;
+
     await this.#enqueue(async () => {
-      await this.#transport.send(writeRegister(register, value));
+      if (link !== this.#transport) {
+        throw new Error('The station changed before this write was sent, so it was not applied.');
+      }
+      await link.send(writeRegister(register, value));
       // The device drops frames sent back to back.
       await new Promise((r) => setTimeout(r, 150));
     });

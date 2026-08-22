@@ -40,7 +40,7 @@ const SECONDARY = {
  * screen exists to check the documented meaning of each register against what
  * your unit actually reports.
  */
-export function StationProtocol({ status, version, source, direct }: ProtocolScreenProps) {
+export function StationProtocol({ status, deviceId, version, source, direct }: ProtocolScreenProps) {
   const [link, setLink] = useState<LinkDiagnostics | null>(null);
   const [traffic, setTraffic] = useState<TrafficEntry[]>([]);
   const [registers, setRegisters] = useState<RegisterDump | null>(null);
@@ -80,7 +80,7 @@ export function StationProtocol({ status, version, source, direct }: ProtocolScr
   const dumpRegisters = useCallback(async () => {
     setBusy(true);
     try {
-      setRegisters(isDirect ? await direct.dump() : await fetchRegisters());
+      setRegisters(isDirect ? await direct.dump() : await fetchRegisters(deviceId));
       setError(null);
     } catch (err) {
       const message = describeError(err);
@@ -88,7 +88,7 @@ export function StationProtocol({ status, version, source, direct }: ProtocolScr
     } finally {
       setBusy(false);
     }
-  }, [direct, isDirect]);
+  }, [deviceId, direct, isDirect]);
 
   const snapshot = useCallback(async () => {
     setBusy(true);
@@ -96,8 +96,8 @@ export function StationProtocol({ status, version, source, direct }: ProtocolScr
       if (isDirect) {
         setRegisters(await direct.snapshot());
       } else {
-        await snapshotRegisters();
-        setRegisters(await fetchRegisters());
+        await snapshotRegisters(deviceId);
+        setRegisters(await fetchRegisters(deviceId));
       }
       setOnlyChanged(true);
       setError(null);
@@ -107,7 +107,7 @@ export function StationProtocol({ status, version, source, direct }: ProtocolScr
     } finally {
       setBusy(false);
     }
-  }, [direct, isDirect]);
+  }, [deviceId, direct, isDirect]);
 
   const simulated = !isDirect && status?.link.mode === 'simulator';
   /** The broker card and the frame log only mean anything on the MQTT link. */

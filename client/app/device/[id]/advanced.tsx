@@ -49,6 +49,7 @@ export default function DeviceAdvancedScreen() {
     >
       <Panel
         status={connection.status}
+        deviceId={device.id}
         version={connection.version}
         source={source}
         direct={direct}

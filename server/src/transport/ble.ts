@@ -182,8 +182,11 @@ export class BleHost extends EventEmitter implements TransportHost {
   }
 
   async open(stationId: string): Promise<ServerLink> {
-    const existing = this.#links.get(stationId);
-    if (existing) return existing;
+    // Refused rather than shared: two owners of one link means two drivers
+    // polling one station, and whichever closes first disconnects it under the
+    // other. The manager claims a station before opening it, so reaching this
+    // is a bug worth hearing about rather than a case to absorb.
+    if (this.#links.has(stationId)) throw new Error(`${stationId} is already linked`);
 
     const link = new BleLink(stationId, this, () => this.#links.delete(stationId));
     this.#links.set(stationId, link);

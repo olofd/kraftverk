@@ -82,8 +82,12 @@ class StubHost implements TransportHost {
   openIds(): string[] {
     return [...this.links.keys()];
   }
+  /** Set to a station id to make opening it fail, as an out-of-range one does. */
+  failOn: string | null = null;
+
   async open(stationId: string): Promise<ServerLink> {
     this.opened.push(stationId);
+    if (stationId === this.failOn) throw new Error(`${stationId} is not in range`);
     const existing = this.links.get(stationId);
     if (existing) return existing;
     const link = new StubLink(stationId, () => this.links.delete(stationId));
@@ -360,6 +364,61 @@ describe('the connection manager', () => {
       await settle();
 
       expect(host.opened).toEqual([]);
+    });
+
+    /*
+      Every waiting session's watcher fires in the same turn, so a claim that is
+      only recorded after an `await` is not a claim at all: each one looks and
+      sees the station free. One station, two owners, and both drivers polling
+      the same link — with whichever closed first taking it away from the other.
+
+      Only possible once the server could hold more than one station, which is
+      exactly why it needs a test rather than an argument.
+    */
+    test('two waiting devices do not both claim the same discovered station', async () => {
+      const { connections, catalog, station, host, bound } = harness('ble', { autoBind: true });
+      station('First');
+      station('Second');
+      await connections.sync(catalog.list());
+
+      host.announce({ id: 'EE:FF' });
+      await settle();
+
+      expect(host.openIds()).toEqual(['EE:FF']);
+      expect(bound.filter((entry) => entry.boundId === 'EE:FF')).toHaveLength(1);
+      const owners = connections.sessions.filter((s) => s.link?.boundId === 'EE:FF');
+      expect(owners).toHaveLength(1);
+    });
+
+    /*
+      A deliberate unbind means stop. Auto-bind is on by default, and the
+      watcher treats "no preferred station" as "free to take the first one it
+      sees" — which is the station the user just released, a second later.
+    */
+    test('an explicit unbind survives auto-bind, not just a quiet radio', async () => {
+      const { connections, catalog, station, host } = harness('ble', { autoBind: true });
+      const record = station('Mine', { boundId: 'AA:BB' });
+      await connections.sync(catalog.list());
+
+      await connections.unbind(record.id);
+      host.announce({ id: 'AA:BB' });
+      await settle();
+
+      expect(connections.get(record.id)?.link).toBeNull();
+      expect(host.openIds()).toEqual([]);
+    });
+
+    /* One unreachable station must not stop the others from ever opening. */
+    test('a station that fails to open does not abort the rest of the sync', async () => {
+      const { connections, catalog, station, host } = harness('ble');
+      host.failOn = 'AA:BB';
+      station('Broken', { boundId: 'AA:BB' });
+      const good = station('Fine', { boundId: 'CC:DD' });
+
+      await connections.sync(catalog.list());
+
+      expect(connections.get(good.id)?.link?.boundId).toBe('CC:DD');
+      expect(connections.sessions).toHaveLength(2);
     });
 
     /*
