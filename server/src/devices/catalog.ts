@@ -35,6 +35,19 @@ export const boundStation = (record: DeviceRecord): StationId | null =>
   typeof record.config.boundId === 'string' ? stationId(record.config.boundId) : null;
 
 /**
+ * Which radio this device is reached over.
+ *
+ * A property of the device, not of the server: one machine can hold a
+ * Bluetooth station and a WiFi one at the same time, and each record says
+ * which it is. Null means "not decided yet" — a device saved before it was
+ * ever bound — and the server offers it the first transport it has.
+ */
+export const transportOf = (record: DeviceRecord): 'mqtt' | 'ble' | null =>
+  record.config.transport === 'ble' || record.config.transport === 'mqtt'
+    ? record.config.transport
+    : null;
+
+/**
  * Station models, and how far each one is actually trusted.
  *
  * The register map was derived from FOSSiBOT hardware and verified only on a

@@ -41,6 +41,13 @@ const SOURCES = [
   { value: 'direct', label: 'This device' },
 ] as const satisfies readonly { value: LinkSource; label: string }[];
 
+/** What to call each radio on screen. */
+const TRANSPORT_LABEL: Record<string, string> = {
+  ble: 'Bluetooth LE',
+  mqtt: 'WiFi / MQTT',
+  sim: 'Simulator',
+};
+
 export default function LinkScreen() {
   const { status, refresh, source, setSource, direct } = useDirectLink();
   const { connection } = useLocalSearchParams<{ connection?: string }>();
@@ -187,17 +194,38 @@ function ServerLink({
         </Card>
       ) : null}
 
-      {simulated ? (
+      {/*
+        Which radio this server actually has.
+
+        The transport is fixed when the server process starts, and nothing on
+        this screen can change it — so a server started for WiFi will never
+        discover a Bluetooth station no matter how long you watch the empty
+        list. Saying which one is running, and naming the command that starts
+        the other, is the difference between that and a screen that looks
+        broken.
+      */}
+      {list && !list.transports.some((t) => t.kind === 'ble' && t.running) ? (
         <Card borderColor="$warning" gap="$2">
           <XStack alignItems="center" gap="$2">
-            <Feather name="cpu" size={15} color={theme.warning?.val} />
+            <Feather name={simulated ? 'cpu' : 'bluetooth'} size={15} color={theme.warning?.val} />
             <Text fontSize={14} fontWeight="700" color="$warning">
-              Running the simulator
+              {simulated ? 'This server is running the simulator' : 'This server has no Bluetooth'}
             </Text>
           </XStack>
           <Text fontSize={12} color="$muted" lineHeight={18}>
-            Start the server with STATION_DRIVER=device for WiFi, or STATION_DRIVER=ble for
-            Bluetooth, to discover real hardware.
+            {simulated
+              ? 'It is not talking to real hardware, so nothing will be discovered here.'
+              : (list.transports.find((t) => t.kind === 'ble')?.error ??
+                'It was not started with the Bluetooth transport, so it never scans for stations — that is why none appear below.')}
+          </Text>
+          <Text fontSize={12} color="$muted" lineHeight={18}>
+            Restart it with{' '}
+            <Text fontFamily="$mono" color="$color">
+              npm run dev:all
+            </Text>{' '}
+            to run Bluetooth and WiFi together. To use Bluetooth from this{' '}
+            {Platform.OS === 'web' ? 'browser' : 'phone'} instead, no server is involved at all —
+            switch Connection to This device.
           </Text>
         </Card>
       ) : null}
@@ -205,15 +233,22 @@ function ServerLink({
       <YStack gap="$2">
         <SectionLabel>Link</SectionLabel>
         <Card inset>
+          {/*
+            Transports run together, so this lists them rather than naming one.
+            Which radio a *station* uses is on its own row below.
+          */}
           <Row
-            title="Transport"
+            title="Transports"
+            subtitle="What this server can reach hardware with"
             accessory={
               <Text fontSize={15} fontWeight="700" color="$color">
-                {list?.transport === 'ble'
-                  ? 'Bluetooth LE'
-                  : list?.transport === 'mqtt'
-                    ? 'WiFi / MQTT'
-                    : 'Simulator'}
+                {(list?.transports ?? []).length === 0
+                  ? '—'
+                  : list!.transports
+                      .map((t) =>
+                        `${TRANSPORT_LABEL[t.kind] ?? t.kind}${t.running ? '' : ' (failed)'}`
+                      )
+                      .join(', ')}
               </Text>
             }
           />
@@ -315,10 +350,20 @@ function ServerLink({
           ) : list.devices.length === 0 ? (
             <Row
               title="Nothing found yet"
+              /* Advice for whichever transports are actually scanning. */
               subtitle={
-                list.transport === 'ble'
-                  ? 'Make sure the P280 is powered on and Bluetooth is enabled on it.'
-                  : 'Point mqtt.sydpower.com at this machine, then power-cycle the P280.'
+                simulated
+                  ? 'The simulator discovers nothing: it has no radio to scan with.'
+                  : [
+                      list.transports.some((t) => t.kind === 'ble' && t.running)
+                        ? 'Make sure the P280 is powered on and Bluetooth is enabled on it.'
+                        : null,
+                      list.transports.some((t) => t.kind === 'mqtt' && t.running)
+                        ? 'For WiFi, point mqtt.sydpower.com at this machine and power-cycle the P280.'
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' ')
               }
             />
           ) : (

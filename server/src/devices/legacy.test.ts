@@ -42,7 +42,11 @@ function subject(options: { transport?: 'ble' | 'mqtt' | null; binding?: Binding
   const catalog = new DeviceCatalog();
   const importer = new LegacyStationImport({
     catalog,
-    transport: () => (options.transport === undefined ? 'ble' : options.transport),
+    // A server runs a set of transports; null in a test means it runs none.
+    transport: () => {
+      const running = options.transport === undefined ? 'ble' : options.transport;
+      return running ? [running] : [];
+    },
     stationName: () => 'POWER-1234',
     binding: async () => (options.binding === undefined ? BOUND : options.binding),
   });

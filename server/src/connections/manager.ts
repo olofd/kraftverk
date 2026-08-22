@@ -1,6 +1,6 @@
 import { sameStation, stationId, type SavedDeviceId, type StationId } from '@kraftverk/plugin-sdk';
 
-import { boundStation, type DeviceRecord } from '../devices/catalog.ts';
+import { boundStation, transportOf, type DeviceRecord } from '../devices/catalog.ts';
 import { DeviceDriver } from '../drivers/device.ts';
 import type { StationDriver } from '../drivers/types.ts';
 import type { ServerLink, ServerTransportKind, TransportHost } from '../transport/types.ts';
@@ -42,11 +42,22 @@ export type StationSession = {
 };
 
 export type ConnectionManagerDeps = {
-  /** Which link this process can hold, decided by the launch flag. */
-  kind: LinkKind;
+  /**
+   * Which transports this server offers, in preference order.
+   *
+   * Plural, because they are independent resources: the broker is a TCP
+   * listener and noble is a radio, and nothing stops a server holding both.
+   * Which one a *station* is reached over is a property of that station's
+   * record, not of the process — so a station on Bluetooth and one on WiFi can
+   * be owned by the same server at the same time, and adding the second does
+   * not disturb the first.
+   */
+  transports: ServerTransportKind[];
+  /** Every station is simulated and no radio runs. */
+  simulate: boolean;
   readOnly: boolean;
-  /** Built once, on first use: the radio and the broker are process-wide. */
-  host: () => TransportHost;
+  /** Builds one transport. Started on first use, and at most once each. */
+  host: (kind: ServerTransportKind) => TransportHost;
   simulator: () => StationDriver;
   /** Told when a session binds, so the record stops lying about its link. */
   onBound?: (deviceId: SavedDeviceId, kind: LinkKind, boundId: StationId | null) => void;
@@ -82,13 +93,28 @@ export class ConnectionManager {
    * Cleared by an explicit bind, and by forgetting the device.
    */
   #released = new Set<SavedDeviceId>();
-  #host: TransportHost | null = null;
-  #starting: Promise<TransportHost> | null = null;
+  /** One per transport, started on demand and at most once each. */
+  #hosts = new Map<ServerTransportKind, TransportHost>();
+  #starting = new Map<ServerTransportKind, Promise<TransportHost>>();
+  /**
+   * Why a transport is unavailable.
+   *
+   * A machine with no Bluetooth adapter should still serve its WiFi stations,
+   * so a host that fails to start is recorded and reported rather than thrown:
+   * one absent radio is not a reason for the server not to come up.
+   */
+  #hostErrors = new Map<ServerTransportKind, string>();
 
   constructor(private deps: ConnectionManagerDeps) {}
 
-  get kind(): LinkKind {
-    return this.deps.kind;
+  /** The transports this server offers, whether or not they have started. */
+  get transports(): ServerTransportKind[] {
+    return this.deps.simulate ? [] : this.deps.transports;
+  }
+
+  /** Why a transport is not available, if it isn't. */
+  transportError(kind: ServerTransportKind): string | null {
+    return this.#hostErrors.get(kind) ?? null;
   }
 
   get readOnly(): boolean {
@@ -96,28 +122,51 @@ export class ConnectionManager {
   }
 
   /**
-   * The host itself, started on demand.
+   * One transport, started on demand.
    *
-   * Discovery needs one before any device exists — you cannot bind the station
-   * you have not found yet — so this is reachable without a session.
+   * Discovery needs a host before any device exists — you cannot bind the
+   * station you have not found yet — so this is reachable without a session.
+   * A transport this server does not offer returns null rather than starting
+   * a radio nobody asked for.
    */
-  async link(): Promise<TransportHost | null> {
-    if (this.deps.kind === 'sim') return null;
-    if (this.#host) return this.#host;
+  async hostFor(kind: ServerTransportKind): Promise<TransportHost | null> {
+    if (!this.transports.includes(kind)) return null;
 
-    this.#starting ??= (async () => {
-      const host = this.deps.host();
-      await host.start();
-      this.#host = host;
-      return host;
-    })();
+    const started = this.#hosts.get(kind);
+    if (started) return started;
 
-    return this.#starting;
+    let pending = this.#starting.get(kind);
+    if (!pending) {
+      pending = (async () => {
+        const host = this.deps.host(kind);
+        await host.start();
+        this.#hosts.set(kind, host);
+        this.#hostErrors.delete(kind);
+        return host;
+      })();
+      this.#starting.set(kind, pending);
+    }
+
+    try {
+      return await pending;
+    } catch (error) {
+      // Recorded, not thrown: a machine with no Bluetooth adapter must still
+      // serve the stations it reaches over WiFi.
+      this.#hostErrors.set(kind, (error as Error).message);
+      this.#starting.delete(kind);
+      this.deps.log?.(`${kind} is unavailable: ${(error as Error).message}`);
+      return null;
+    }
   }
 
-  /** The host if it has already been started, without starting one. */
-  get transport(): TransportHost | null {
-    return this.#host;
+  /** Starts every offered transport, reporting rather than throwing. */
+  async startTransports(): Promise<void> {
+    await Promise.all(this.transports.map((kind) => this.hostFor(kind)));
+  }
+
+  /** The hosts already started, for discovery and diagnostics. */
+  get hosts(): { kind: ServerTransportKind; host: TransportHost }[] {
+    return [...this.#hosts.entries()].map(([kind, host]) => ({ kind, host }));
   }
 
   get(deviceId: SavedDeviceId): StationSession | null {
@@ -198,8 +247,9 @@ export class ConnectionManager {
     // rather than in conflict with another device you own.
     this.#refusals.delete(record.id);
 
-    const session =
-      this.deps.kind === 'sim' ? this.#simulated(record) : await this.#hardware(record);
+    const session = this.deps.simulate
+      ? this.#simulated(record)
+      : await this.#hardware(record);
 
     await session.driver.start();
     this.#sessions.set(record.id, session);
@@ -217,7 +267,16 @@ export class ConnectionManager {
   }
 
   async #hardware(record: DeviceRecord): Promise<StationSession> {
-    const kind = this.deps.kind as ServerTransportKind;
+    /*
+      Which radio *this station* is reached over, from its own record.
+
+      A server can hold several transports at once, so this is a property of
+      the device rather than of the process: a station on Bluetooth and one on
+      WiFi are both ordinary saved devices, and neither has to know the other
+      exists. A record with no transport yet takes the first one offered, which
+      is what a station gets when it is discovered rather than configured.
+    */
+    const kind = transportOf(record) ?? this.transports[0] ?? 'mqtt';
 
     // What the record already knows, which is how a restart reconnects to the
     // same unit instead of whichever station answers first.
@@ -237,19 +296,27 @@ export class ConnectionManager {
     if (clash) this.#refuse(record.id, `Another saved device is already bound to ${saved}`);
     this.#bound.set(record.id, clash ? null : saved);
 
-    const host = (await this.link())!;
+    const host = await this.hostFor(kind);
+    if (!host) {
+      // The transport this station is configured for is not available on this
+      // machine. It stays a device you own, greyed and saying why.
+      this.#refuse(
+        record.id,
+        this.transportError(kind) ?? `This server does not offer the ${kind} transport`
+      );
+    }
 
     // A link with no station yet is a real thing: it exists, it is disconnected,
     // and the discovery watcher below is what gives it one.
-    const link = saved && !clash ? await host.open(saved).catch(() => null) : null;
-    if (link) this.deps.log?.(`Linked ${record.name} to ${saved}`);
+    const link = host && saved && !clash ? await host.open(saved).catch(() => null) : null;
+    if (link) this.deps.log?.(`Linked ${record.name} to ${saved} over ${kind}`);
 
     const device = new DeviceDriver({
       transport: link ?? idleLink(kind),
       readOnly: this.deps.readOnly,
     });
 
-    const stop = host.onDiscovery((found) => {
+    const stop = host?.onDiscovery((found) => {
       // Gone: this session was closed, and a forgotten device must not quietly
       // take a station back the moment something advertises.
       if (!this.#sessions.has(record.id)) return;
@@ -280,7 +347,7 @@ export class ConnectionManager {
         });
     });
 
-    this.#watchers.set(record.id, stop);
+    if (stop) this.#watchers.set(record.id, stop);
 
     return { deviceId: record.id, kind, driver: device, device, link };
   }
@@ -314,7 +381,12 @@ export class ConnectionManager {
     this.#released.delete(deviceId);
 
     try {
-      const host = (await this.link())!;
+      // The session already knows which transport this device uses; a bind
+      // moves it to a different station on the same radio, not to a different
+      // radio. Changing transport is `rebind`.
+      const host = await this.hostFor(session.kind as ServerTransportKind);
+      if (!host) throw new Error(`The ${session.kind} transport is not available`);
+
       await session.link?.close();
 
       const link = await host.open(station);

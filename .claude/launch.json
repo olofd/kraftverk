@@ -20,6 +20,12 @@
       "port": 3333
     },
     {
+      "name": "server:all:write",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "server:all:write"],
+      "port": 3333
+    },
+    {
       "name": "web",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "web"],

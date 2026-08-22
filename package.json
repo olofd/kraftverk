@@ -36,7 +36,13 @@
     "ios": "npm run ios --workspace client",
     "android": "npm run android --workspace client",
     "start": "npm run start --workspace client",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "predev:all": "npm run free-ports",
+    "dev:all": "concurrently -n server,client -c magenta,cyan \"npm run server:all\" \"npm run web\"",
+    "predev:all:write": "npm run free-ports",
+    "dev:all:write": "concurrently -n server,client -c magenta,cyan \"npm run server:all:write\" \"npm run web\"",
+    "server:all": "npm run dev:all --workspace server",
+    "server:all:write": "npm run dev:all:write --workspace server"
   },
   "devDependencies": {
     "concurrently": "^10.0.4",

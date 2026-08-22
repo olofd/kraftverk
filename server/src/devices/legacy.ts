@@ -48,8 +48,8 @@ const NOTHING: LegacyStationOffer = {
 
 export type LegacyStationDeps = {
   catalog: DeviceCatalog;
-  /** The transport this server is running, or null on the simulator. */
-  transport: () => ServerTransportKind | null;
+  /** The transports this server runs. Empty on the simulator. */
+  transport: () => ServerTransportKind[];
   /** What to call it, given the id it was bound to. The user can rename it. */
   stationName: (boundId: string) => string;
   /** Injected so a test can supply a binding without a data directory. */
@@ -71,7 +71,9 @@ export class LegacyStationImport {
     if (this.deps.catalog.find((record) => record.type === 'power-station')) return NOTHING;
 
     const binding = await this.#binding();
-    if (!binding || binding.kind !== this.deps.transport()) return NOTHING;
+    // Only offered when this server still runs the transport the binding names:
+    // a BLE binding is not something an MQTT-only server can honour.
+    if (!binding || !this.deps.transport().includes(binding.kind)) return NOTHING;
 
     return {
       state: 'offered',

@@ -177,7 +177,8 @@ function harness(kind: LinkKind = 'sim', options: { autoBind?: boolean } = {}): 
   const bound: Harness['bound'] = [];
 
   const connections = new ConnectionManager({
-    kind,
+    transports: kind === 'sim' ? [] : [kind],
+    simulate: kind === 'sim',
     readOnly: false,
     autoBind: options.autoBind,
     host: () => host,
@@ -313,7 +314,7 @@ describe('the connection manager', () => {
       const { connections, catalog, station, host } = harness('ble');
       station();
       await connections.sync(catalog.list());
-      await connections.link();
+      await connections.hostFor('ble');
 
       expect(host.started).toBe(1);
     });
@@ -508,7 +509,7 @@ describe('the connection manager', () => {
 
       expect(host.openIds()).toEqual([stationId('CC:DD')]);
       expect(connections.get(second.id)?.link?.connected).toBe(true);
-      expect(connections.transport).toBe(host);
+      expect(connections.hosts.map((entry) => entry.host)).toEqual([host]);
     });
   });
 });

@@ -11,7 +11,9 @@
     "dev:ble": "node ../scripts/run-bun.mjs --hot src/index.ts --driver=ble --read-only",
     "dev:ble:write": "node ../scripts/run-bun.mjs --hot src/index.ts --driver=ble",
     "start": "node ../scripts/run-bun.mjs src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev:all": "node ../scripts/run-bun.mjs --hot src/index.ts --driver=ble,mqtt --read-only",
+    "dev:all:write": "node ../scripts/run-bun.mjs --hot src/index.ts --driver=ble,mqtt"
   },
   "dependencies": {
     "@kraftverk/plugin-sdk": "*",

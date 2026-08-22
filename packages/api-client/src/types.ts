@@ -41,6 +41,8 @@ export type BoundableDevice = DiscoveredDevice & { bound: boolean };
 export type StationLinkView = {
   deviceId: string;
   name: string;
+  /** Which radio this station is reached over. Its own, not the server's. */
+  transport: TransportKind | 'sim';
   /** The station it is bound to — a MAC or peripheral id. Null until bound. */
   stationId: string | null;
   connected: boolean;
@@ -49,7 +51,15 @@ export type StationLinkView = {
 };
 
 export type StationTransports = {
-  transport: TransportKind | null;
+  /**
+   * Every transport this server offers, and whether it came up.
+   *
+   * Plural because they run together: the MQTT broker is a TCP listener and
+   * Bluetooth is a radio, so a server can hold a station on each. A transport
+   * that failed to start — no Bluetooth adapter, say — appears here with the
+   * reason rather than silently missing.
+   */
+  transports: { kind: TransportKind | 'sim'; running: boolean; error: string | null }[];
   autoBind: boolean;
   /** BLE only: why the last connect attempt failed, and how many were made. */
   lastError: string | null;

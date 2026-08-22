@@ -11,8 +11,7 @@ import { isActuator, validateConfig as validatePluginConfig } from '@kraftverk/p
 
 import pkg from '../package.json' with { type: 'json' };
 import { ActionGateway, CONFIRMATION_PHRASE } from './actions/gateway.ts';
-import { ConnectionManager, type StationSession } from './connections/manager.ts';
-import type { ServerTransportKind } from './transport/types.ts';
+import { ConnectionManager, type LinkKind, type StationSession } from './connections/manager.ts';
 import { DeviceCatalog, STATION_MODELS } from './devices/catalog.ts';
 import { LegacyStationImport } from './devices/legacy.ts';
 import { DeviceRegistry } from './devices/registry.ts';
@@ -308,8 +307,8 @@ api.get('/version', (c) => {
     startedAt: startedAt.toISOString(),
     uptimeSeconds: Math.round((Date.now() - startedAt.getTime()) / 1000),
     // A launch decision, not a property of whichever session opened first.
-    link: SIMULATE ? 'simulator' : 'device',
-    transport: connections.transports[0],
+    link: LINK === 'sim' ? 'simulator' : 'device',
+    transport: connections.transport?.kind,
     readOnly: connections.readOnly,
   };
   return c.json(info);
@@ -335,14 +334,8 @@ api.get('/version', (c) => {
 // this particular radio happened to notice.
 
 api.get('/station/transports', (c) => {
-  /*
-    Every transport this server offers, and everything all of them can see.
-    A discovered station carries its own `kind`, so a Bluetooth peripheral and
-    a station on the broker sit in one list without either pretending to be the
-    other.
-  */
-  const seen = connections.hosts.flatMap(({ host }) => host.discovered());
-  const linked = connections.hosts.flatMap(({ host }) => host.openIds());
+  const host = connections.transport;
+  const linked = host?.openIds() ?? [];
 
   /*
     `links` is the whole answer: one entry per saved station, each naming the
@@ -350,29 +343,21 @@ api.get('/station/transports', (c) => {
     single one would describe one station under a heading implying it is the
     only one.
   */
-  const ble = connections.hosts.find(({ kind }) => kind === 'ble')?.host;
-
   return c.json({
-    /** Every transport offered, whether or not it started, and why if it didn't. */
-    transports: (SIMULATE ? ['sim'] : connections.transports).map((kind) => ({
-      kind,
-      running: kind === 'sim' || connections.hosts.some((entry) => entry.kind === kind),
-      error: kind === 'sim' ? null : connections.transportError(kind as ServerTransportKind),
-    })),
+    transport: host?.kind ?? null,
     autoBind: AUTO_BIND,
-    lastError: ble instanceof BleHost ? ble.lastError : null,
-    attempts: ble instanceof BleHost ? ble.attempts : null,
+    lastError: host instanceof BleHost ? host.lastError : null,
+    attempts: host instanceof BleHost ? host.attempts : null,
     links: connections.sessions
       .filter((session) => session.kind !== 'sim')
       .map((session) => ({
         deviceId: session.deviceId,
         name: catalog.get(session.deviceId)?.name ?? session.deviceId,
-        transport: session.kind,
         stationId: session.link?.boundId ?? null,
         connected: session.link?.connected ?? false,
         refusal: connections.refusal(session.deviceId),
       })),
-    devices: seen.map((d) => ({ ...d, bound: linked.includes(stationId(d.id)) })),
+    devices: (host?.discovered() ?? []).map((d) => ({ ...d, bound: linked.includes(stationId(d.id)) })),
   });
 });
 
@@ -393,7 +378,8 @@ api.get('/station/transports', (c) => {
 const bindTarget = (deviceId: string | undefined): SavedDeviceId => stationSession(deviceId).deviceId;
 
 api.post('/station/bind', async (c) => {
-  if (SIMULATE) throw new HTTPException(400, { message: 'Binding requires a hardware driver' });
+  const host = await connections.link();
+  if (!host) throw new HTTPException(400, { message: 'Binding requires a hardware driver' });
   const { id, deviceId } = await body(
     c,
     z.object({ id: z.string().min(1), deviceId: z.string().optional() })
@@ -411,7 +397,8 @@ api.post('/station/bind', async (c) => {
 });
 
 api.post('/station/unbind', async (c) => {
-  if (SIMULATE) throw new HTTPException(400, { message: 'Binding requires a hardware driver' });
+  const host = await connections.link();
+  if (!host) throw new HTTPException(400, { message: 'Binding requires a hardware driver' });
   const { deviceId } = await body(c, z.object({ deviceId: z.string().optional() }).catch({}));
 
   const target = bindTarget(deviceId);
@@ -429,15 +416,15 @@ api.post('/station/unbind', async (c) => {
 const diag = new Hono();
 
 diag.get('/link', (c) => {
-  const linked = connections.hosts.flatMap(({ host }) => host.openIds());
-  const seen = connections.hosts.flatMap(({ host }) => host.discovered());
+  const host = connections.transport;
+  const linked = host?.openIds() ?? [];
 
   return c.json({
-    driver: SIMULATE ? 'simulator' : 'device',
-    transports: connections.hosts.map(({ kind }) => kind),
+    driver: LINK === 'sim' ? 'simulator' : 'device',
+    transport: host?.kind ?? null,
     brokerListening: broker.listening,
     mqtt: { host: MQTT_HOST, port: MQTT_PORT },
-    devices: seen.map((d) => ({ ...d, bound: linked.includes(stationId(d.id)) })),
+    devices: (host?.discovered() ?? []).map((d) => ({ ...d, bound: linked.includes(stationId(d.id)) })),
     // Which stations are held, and by whom. No "the" station: that word was
     // what let a diagnostic describe one machine while implying all of them.
     linkedStations: connections.sessions
@@ -451,7 +438,7 @@ diag.get('/traffic', (c) => c.json(broker.recentMessages.map(describeMessage)));
 
 /** What the BLE GATT enumeration actually returned on the last connect. */
 diag.get('/gatt', (c) => {
-  const host = connections.hosts.find(({ kind }) => kind === 'ble')?.host;
+  const host = connections.transport;
   return c.json(
     host instanceof BleHost
       ? {
@@ -993,14 +980,11 @@ const auditDevice = (kind: string, id: string, summary: string, detail?: unknown
 */
 const legacyStation = new LegacyStationImport({
   catalog,
-  // A legacy binding names the transport it was made over; the import is
-  // offered only when this server still runs that one.
-  transport: () => connections.hosts.map(({ kind }) => kind),
+  transport: () => connections.transport?.kind ?? null,
   // What the radio calls the station it found, rather than a placeholder.
   stationName: (boundId) =>
-    connections.hosts
-      .flatMap(({ host }) => host.discovered())
-      .find((d) => d.id.toUpperCase() === boundId.toUpperCase())?.name ?? 'Power station',
+    connections.transport?.discovered().find((d) => d.id.toUpperCase() === boundId.toUpperCase())
+      ?.name ?? 'Power station',
 });
 
 const sampler = new Sampler(registry);
@@ -1365,8 +1349,7 @@ app.onError((err, c) => {
 const open = connections.sessions.length;
 console.log(
   `Aferiy API listening on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT} ` +
-    `(${SIMULATE ? 'simulator' : TRANSPORTS.join(' + ')}, ` +
-    `${open === 1 ? '1 station open' : `${open} stations open`})`
+    `(link: ${LINK}, ${open === 1 ? '1 station open' : `${open} stations open`})`
 );
 
 export default { port: PORT, hostname: HOST, fetch: app.fetch };
