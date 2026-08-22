@@ -48,8 +48,12 @@ export default function AddDeviceScreen() {
     };
   }, [types]);
 
-  /** One station at a time: the driver holds a single link. */
-  const stationTaken = devices.some((device) => device.record.type === 'power-station');
+  /*
+    Nothing is blocked any more. The server used to hold one station link, so a
+    second one was refused before it could be created; it now opens a link per
+    saved station, and adding another is an ordinary row.
+  */
+  void devices;
 
   const choose = useCallback((option: DeviceTypeOption) => {
     haptic();
@@ -98,25 +102,15 @@ export default function AddDeviceScreen() {
           <SectionLabel>Type</SectionLabel>
           <Card inset>
             {options.map((option, index) => {
-              const blocked = option.id === 'power-station' && stationTaken;
               const active = chosen?.id === option.id;
 
               return (
-                <YStack key={option.id} opacity={blocked ? 0.45 : 1}>
+                <YStack key={option.id}>
                   {index > 0 ? <RowSeparator /> : null}
-                  <Pressable
-                    disabled={blocked}
-                    selected={active}
-                    label={`${option.label}${blocked ? ', already added' : ''}`}
-                    onPress={() => choose(option)}
-                  >
+                  <Pressable selected={active} label={option.label} onPress={() => choose(option)}>
                     <Row
                       title={option.label}
-                      subtitle={
-                        blocked
-                          ? 'Already added — the server holds one station link at a time'
-                          : (option.note ?? option.description)
-                      }
+                      subtitle={option.note ?? option.description}
                       accessory={
                         <Feather
                           name={active ? 'check-circle' : featherName(option.icon)}

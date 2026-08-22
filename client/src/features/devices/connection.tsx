@@ -61,7 +61,8 @@ export type DeviceConnection = {
    * Why there is nothing to show, when the server can explain it.
    *
    * Distinct from `error`: nothing went wrong, the server simply is not holding
-   * a link to this device — it can serve one station at a time, or its
+   * a link to this device — another saved device may already hold that very
+   * station, which accepts one connection at a time, or its
    * transport never started. A screen should say that rather than spin.
    */
   reason: string | null;

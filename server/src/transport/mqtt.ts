@@ -3,22 +3,31 @@ import { EventEmitter } from 'node:events';
 import type { ParsedFrame } from '@kraftverk/protocol';
 
 import { DeviceBroker } from '../mqtt/broker.ts';
-import type { DiscoveredDevice, Transport } from './types.ts';
+import type { DiscoveredDevice, ServerLink, TransportHost } from './types.ts';
 
 /**
- * MQTT transport: the station connects to our embedded broker (after
- * mqtt.sydpower.com is pointed at this machine) and we exchange MODBUS frames
- * over its request/response topics.
+ * MQTT: the station connects to our embedded broker (after mqtt.sydpower.com is
+ * pointed at this machine) and we exchange MODBUS frames over its
+ * request/response topics.
+ *
+ * There was never a reason this could only serve one station. `DeviceBroker`
+ * has always been per-MAC — `send(mac, frame)`, `request(mac, …)` — and has
+ * always tracked every station that connects. The old transport read all of
+ * their frames off the broker and then threw away everything that did not match
+ * a single `boundId`. A second station's telemetry was arriving and being
+ * discarded by one line.
+ *
+ * So the host is a thin thing: the broker plus a directory of who has been
+ * heard. The links are thinner still — a MAC, and a filter.
  */
-export class MqttTransport extends EventEmitter implements Transport {
+export class MqttHost extends EventEmitter implements TransportHost {
   readonly kind = 'mqtt' as const;
 
   #broker: DeviceBroker;
   #port: number;
   #host: string;
   #devices = new Map<string, DiscoveredDevice>();
-  #boundId: string | null = null;
-  #lastSeen: Date | null = null;
+  #links = new Map<string, MqttLink>();
 
   constructor(broker: DeviceBroker, port: number, host: string) {
     super();
@@ -29,16 +38,6 @@ export class MqttTransport extends EventEmitter implements Transport {
 
   get broker(): DeviceBroker {
     return this.#broker;
-  }
-
-  get boundId(): string | null {
-    return this.#boundId;
-  }
-
-  /** Considered live if the bound station has spoken in the last two minutes. */
-  get connected(): boolean {
-    if (!this.#boundId || !this.#lastSeen) return false;
-    return Date.now() - this.#lastSeen.getTime() < 120_000;
   }
 
   async start(): Promise<void> {
@@ -60,13 +59,15 @@ export class MqttTransport extends EventEmitter implements Transport {
       this.#devices.set(message.mac, device);
       if (!existing) this.emit('discovery', device);
 
-      if (message.mac !== this.#boundId) return;
-      this.#lastSeen = now;
-      if (message.frame) this.emit('frame', message.frame);
+      // Routed, not filtered: every station that speaks reaches its own link,
+      // and one that nothing is linked to is still recorded as discovered so it
+      // can be added.
+      this.#links.get(message.mac)?.receive(now, message.frame);
     });
   }
 
   async stop(): Promise<void> {
+    for (const link of [...this.#links.values()]) await link.close();
     await this.#broker.stop();
   }
 
@@ -74,19 +75,59 @@ export class MqttTransport extends EventEmitter implements Transport {
     return [...this.#devices.values()];
   }
 
-  async bind(id: string): Promise<void> {
-    this.#boundId = id.toUpperCase();
-    this.#lastSeen = null;
+  onDiscovery(listener: (device: DiscoveredDevice) => void): () => void {
+    this.on('discovery', listener);
+    return () => this.off('discovery', listener);
   }
 
-  async unbind(): Promise<void> {
-    this.#boundId = null;
-    this.#lastSeen = null;
+  openIds(): string[] {
+    return [...this.#links.keys()];
+  }
+
+  async open(stationId: string): Promise<ServerLink> {
+    const mac = stationId.toUpperCase();
+    const existing = this.#links.get(mac);
+    if (existing) return existing;
+
+    const link = new MqttLink(mac, this.#broker, () => this.#links.delete(mac));
+    this.#links.set(mac, link);
+    return link;
+  }
+}
+
+/** One station on the broker. Everything about it is its MAC. */
+export class MqttLink extends EventEmitter implements ServerLink {
+  readonly kind = 'mqtt' as const;
+
+  #mac: string;
+  #broker: DeviceBroker;
+  #release: () => void;
+  #lastSeen: Date | null = null;
+
+  constructor(mac: string, broker: DeviceBroker, release: () => void) {
+    super();
+    this.#mac = mac;
+    this.#broker = broker;
+    this.#release = release;
+  }
+
+  get boundId(): string {
+    return this.#mac;
+  }
+
+  /** Considered live if this station has spoken in the last two minutes. */
+  get connected(): boolean {
+    return this.#lastSeen !== null && Date.now() - this.#lastSeen.getTime() < 120_000;
+  }
+
+  /** Called by the host when a frame for this station arrives. */
+  receive(at: Date, frame: ParsedFrame | null | undefined): void {
+    this.#lastSeen = at;
+    if (frame) this.emit('frame', frame);
   }
 
   async send(frame: Uint8Array): Promise<void> {
-    if (!this.#boundId) throw new Error('No station bound');
-    await this.#broker.send(this.#boundId, frame);
+    await this.#broker.send(this.#mac, frame);
   }
 
   async request(
@@ -94,9 +135,8 @@ export class MqttTransport extends EventEmitter implements Transport {
     expect: 'input' | 'holding',
     timeoutMs = 5000
   ): Promise<ParsedFrame> {
-    if (!this.#boundId) throw new Error('No station bound');
     // Telemetry lands on .../client/04; everything else on .../client/data.
-    return this.#broker.request(this.#boundId, frame, expect === 'input' ? '04' : 'data', timeoutMs);
+    return this.#broker.request(this.#mac, frame, expect === 'input' ? '04' : 'data', timeoutMs);
   }
 
   onFrame(listener: (frame: ParsedFrame) => void): () => void {
@@ -104,8 +144,8 @@ export class MqttTransport extends EventEmitter implements Transport {
     return () => this.off('frame', listener);
   }
 
-  onDiscovery(listener: (device: DiscoveredDevice) => void): () => void {
-    this.on('discovery', listener);
-    return () => this.off('discovery', listener);
+  async close(): Promise<void> {
+    this.removeAllListeners();
+    this.#release();
   }
 }

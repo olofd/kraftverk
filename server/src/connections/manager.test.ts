@@ -8,7 +8,7 @@ import type { DiscoveredDevice, ParsedFrame } from '@kraftverk/protocol';
 import { ConnectionManager, type LinkKind } from './manager.ts';
 import { DeviceCatalog, type DeviceRecord } from '../devices/catalog.ts';
 import type { StationDriver } from '../drivers/types.ts';
-import type { Transport } from '../transport/types.ts';
+import type { ServerLink, TransportHost } from '../transport/types.ts';
 import { closeDb, db } from '../history/db.ts';
 
 /**
@@ -16,19 +16,60 @@ import { closeDb, db } from '../history/db.ts';
  *
  * The server used to answer "the station's", because it held exactly one of
  * everything. These tests are about the questions that could not be asked
- * before: which saved device this session belongs to, what happens to it when
- * that device is forgotten, and what the second station is told when there is
- * only one radio to go round.
+ * before: which saved device a session belongs to, what happens to it when that
+ * device is forgotten, and — since the host/link split — what happens when there
+ * are two stations rather than one.
+ *
+ * The second station used to be refused outright. It is not any more, and that
+ * is the point: one broker serves every station that connects to it, and a BLE
+ * central holds several peripherals at once. What is still refused is two saved
+ * devices claiming the *same* station, because a station really does accept one
+ * connection at a time.
  */
 
 const dir = mkdtempSync(join(tmpdir(), 'kraftverk-connections-'));
 
-class StubTransport implements Transport {
+/**
+ * Lets the discovery handler finish.
+ *
+ * Deliberately a macrotask rather than a counted number of `Promise.resolve()`s:
+ * auto-binding now awaits the host and the link as well as the record, and a
+ * test that counts microtasks silently starts asserting on a half-finished bind
+ * the moment that chain gets one link longer.
+ */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** One station's link. Several of these can be open on one host. */
+class StubLink implements ServerLink {
   readonly kind = 'ble' as const;
-  boundId: string | null = null;
-  connected = false;
+  connected = true;
+  closed = false;
+
+  constructor(
+    readonly boundId: string,
+    private release: () => void
+  ) {}
+
+  async send() {}
+  async request(): Promise<ParsedFrame> {
+    throw new Error('not used');
+  }
+  onFrame() {
+    return () => {};
+  }
+  async close() {
+    this.closed = true;
+    this.connected = false;
+    this.release();
+  }
+}
+
+class StubHost implements TransportHost {
+  readonly kind = 'ble' as const;
   started = 0;
-  bindings: string[] = [];
+  /** Every station id ever opened, in order. */
+  opened: string[] = [];
+  links = new Map<string, StubLink>();
   #listeners: ((device: DiscoveredDevice) => void)[] = [];
 
   async start() {
@@ -38,21 +79,16 @@ class StubTransport implements Transport {
   discovered(): DiscoveredDevice[] {
     return [];
   }
-  async bind(id: string) {
-    this.bindings.push(id);
-    this.boundId = id;
-    this.connected = true;
+  openIds(): string[] {
+    return [...this.links.keys()];
   }
-  async unbind() {
-    this.boundId = null;
-    this.connected = false;
-  }
-  async send() {}
-  async request(): Promise<ParsedFrame> {
-    throw new Error('not used');
-  }
-  onFrame() {
-    return () => {};
+  async open(stationId: string): Promise<ServerLink> {
+    this.opened.push(stationId);
+    const existing = this.links.get(stationId);
+    if (existing) return existing;
+    const link = new StubLink(stationId, () => this.links.delete(stationId));
+    this.links.set(stationId, link);
+    return link;
   }
   onDiscovery(listener: (device: DiscoveredDevice) => void) {
     this.#listeners.push(listener);
@@ -122,7 +158,7 @@ beforeEach(() => {
 type Harness = {
   catalog: DeviceCatalog;
   connections: ConnectionManager;
-  transport: StubTransport;
+  host: StubHost;
   drivers: StubDriver[];
   bound: { deviceId: string; kind: LinkKind; boundId: string | null }[];
   station: (name?: string, config?: Record<string, unknown>) => DeviceRecord;
@@ -130,7 +166,7 @@ type Harness = {
 
 function harness(kind: LinkKind = 'sim', options: { autoBind?: boolean } = {}): Harness {
   const catalog = new DeviceCatalog();
-  const transport = new StubTransport();
+  const host = new StubHost();
   const drivers: StubDriver[] = [];
   const bound: Harness['bound'] = [];
 
@@ -138,7 +174,7 @@ function harness(kind: LinkKind = 'sim', options: { autoBind?: boolean } = {}): 
     kind,
     readOnly: false,
     autoBind: options.autoBind,
-    transport: () => transport,
+    host: () => host,
     simulator: () => {
       const driver = new StubDriver();
       drivers.push(driver);
@@ -150,7 +186,7 @@ function harness(kind: LinkKind = 'sim', options: { autoBind?: boolean } = {}): 
   return {
     catalog,
     connections,
-    transport,
+    host,
     drivers,
     bound,
     station: (name = 'Station', config = {}) =>
@@ -187,19 +223,33 @@ describe('the connection manager', () => {
   });
 
   /*
-    The honest half of the single-link constraint. Two records cannot share one
-    radio, so the second is told why in words the device card can show — rather
-    than being handed the first one's link and appearing to work.
+    The refusal this replaced was the whole reason for the host/link split. The
+    server told the second station it had no room, which was true of the old
+    transport and untrue of the hardware.
   */
-  test('refuses a second station, and says why', async () => {
+  test('opens a session for every saved station, not just the first', async () => {
     const { connections, catalog, station } = harness();
     const first = station('First');
     const second = station('Second');
+    const third = station('Third');
     await connections.sync(catalog.list());
 
     expect(connections.get(first.id)).not.toBeNull();
-    expect(connections.get(second.id)).toBeNull();
-    expect(connections.refusal(second.id)).toContain('one station link at a time');
+    expect(connections.get(second.id)).not.toBeNull();
+    expect(connections.get(third.id)).not.toBeNull();
+    expect(connections.sessions).toHaveLength(3);
+    expect(connections.refusal(second.id)).toBeNull();
+  });
+
+  test('each station gets its own driver, so none reads another one’s numbers', async () => {
+    const { connections, catalog, station, drivers } = harness();
+    station('First');
+    station('Second');
+    await connections.sync(catalog.list());
+
+    expect(drivers).toHaveLength(2);
+    expect(drivers[0]).not.toBe(drivers[1]);
+    expect(drivers.every((driver) => driver.started === 1)).toBe(true);
   });
 
   test('forgetting a device closes its session', async () => {
@@ -225,10 +275,27 @@ describe('the connection manager', () => {
     expect(drivers[0]?.started).toBe(1);
   });
 
+  /*
+    The conflict that is real, and the only one left: a station accepts one
+    connection, so two saved devices naming the same unit cannot both have it.
+  */
+  test('refuses the second device that names a station another one already holds', async () => {
+    const { connections, catalog, station, host } = harness('ble');
+    const first = station('Mine', { boundId: 'AA:BB' });
+    const second = station('Also mine', { boundId: 'AA:BB' });
+    await connections.sync(catalog.list());
+
+    expect(connections.get(first.id)?.link?.boundId).toBe('AA:BB');
+    expect(connections.get(second.id)?.link).toBeNull();
+    expect(connections.refusal(second.id)).toContain('already bound to AA:BB');
+    // One link, not two fighting over one connection.
+    expect(host.openIds()).toEqual(['AA:BB']);
+  });
+
   test('the refusal clears once the device it belonged to is gone', async () => {
-    const { connections, catalog, station } = harness();
-    station('First');
-    const second = station('Second');
+    const { connections, catalog, station } = harness('ble');
+    station('First', { boundId: 'AA:BB' });
+    const second = station('Second', { boundId: 'AA:BB' });
     await connections.sync(catalog.list());
     expect(connections.refusal(second.id)).not.toBeNull();
 
@@ -238,21 +305,21 @@ describe('the connection manager', () => {
   });
 
   describe('on a hardware link', () => {
-    test('starts the transport once, however many syncs run', async () => {
-      const { connections, catalog, station, transport } = harness('ble');
+    test('starts the host once, however many syncs run', async () => {
+      const { connections, catalog, station, host } = harness('ble');
       station();
       await connections.sync(catalog.list());
       await connections.link();
 
-      expect(transport.started).toBe(1);
+      expect(host.started).toBe(1);
     });
 
     test('reconnects to the station the record already names', async () => {
-      const { connections, catalog, station, transport } = harness('ble');
+      const { connections, catalog, station, host } = harness('ble');
       station('Mine', { transport: 'ble', boundId: 'AA:BB' });
       await connections.sync(catalog.list());
 
-      expect(transport.bindings).toEqual(['AA:BB']);
+      expect(host.opened).toEqual(['AA:BB']);
     });
 
     /*
@@ -273,116 +340,116 @@ describe('the connection manager', () => {
     });
 
     test('auto-binds a discovered station to the device that is waiting for one', async () => {
-      const { connections, catalog, station, transport, bound } = harness('ble', { autoBind: true });
+      const { connections, catalog, station, host, bound } = harness('ble', { autoBind: true });
       const record = station();
       await connections.sync(catalog.list());
 
-      transport.announce({ id: 'EE:FF' });
-      await Promise.resolve();
-      await Promise.resolve();
+      host.announce({ id: 'EE:FF' });
+      await settle();
 
-      expect(transport.bindings).toEqual(['EE:FF']);
+      expect(host.opened).toEqual(['EE:FF']);
       expect(bound[0]?.deviceId).toBe(record.id);
     });
 
     test('never auto-binds something it cannot identify as a station', async () => {
-      const { connections, catalog, station, transport } = harness('ble', { autoBind: true });
+      const { connections, catalog, station, host } = harness('ble', { autoBind: true });
       station();
       await connections.sync(catalog.list());
 
-      transport.announce({ id: 'EE:FF', likelyStation: false });
-      await Promise.resolve();
+      host.announce({ id: 'EE:FF', likelyStation: false });
+      await settle();
 
-      expect(transport.bindings).toEqual([]);
+      expect(host.opened).toEqual([]);
     });
 
     /*
       The failure this prevents is nasty: closing a session unbinds the radio,
       and a listener left behind by the closed session would see an unbound
-      transport and bind the very station the user just forgot.
+      host and bind the very station the user just forgot.
     */
     test('a forgotten device stops watching for stations', async () => {
-      const { connections, catalog, station, transport, bound } = harness('ble', {
+      const { connections, catalog, station, host, bound } = harness('ble', {
         autoBind: true,
       });
       const record = station();
       await connections.sync(catalog.list());
-      expect(transport.watchers).toBe(1);
+      expect(host.watchers).toBe(1);
 
       catalog.remove(record.id);
       await connections.sync(catalog.list());
-      expect(transport.watchers).toBe(0);
+      expect(host.watchers).toBe(0);
 
-      transport.announce({ id: 'EE:FF' });
-      await Promise.resolve();
-      await Promise.resolve();
+      host.announce({ id: 'EE:FF' });
+      await settle();
 
-      expect(transport.bindings).toEqual([]);
+      expect(host.opened).toEqual([]);
       expect(bound).toEqual([]);
     });
 
     test('opening and closing repeatedly leaves one watcher, not a pile', async () => {
-      const { connections, catalog, station, transport } = harness('ble');
+      const { connections, catalog, station, host } = harness('ble');
 
       for (let round = 0; round < 3; round += 1) {
         const record = station(`Round ${round}`);
         await connections.sync(catalog.list());
-        expect(transport.watchers).toBe(1);
+        expect(host.watchers).toBe(1);
         catalog.remove(record.id);
         await connections.sync(catalog.list());
       }
 
-      expect(transport.watchers).toBe(0);
+      expect(host.watchers).toBe(0);
     });
 
     /*
-      The record is the authority on which station is this device's. A session
-      that kept preferring the id it opened with would drag the user back to the
-      station they had just moved away from.
+      The record is the authority on which station is this device's. Rebinding
+      has to release the old link as well as take the new one, or the server
+      would quietly keep a connection to the station the user walked away from —
+      and that station would go on refusing everything else.
     */
-    test('after a rebind, a dropped link comes back to the new station', async () => {
-      const { connections, catalog, station, transport } = harness('ble', { autoBind: false });
+    test('rebinding releases the old station and takes the new one', async () => {
+      const { connections, catalog, station, host } = harness('ble', { autoBind: false });
       const record = station('Mine', { boundId: 'AA:BB' });
       await connections.sync(catalog.list());
 
+      const before = host.links.get('AA:BB');
       await connections.bind(record.id, 'CC:DD');
-      // The link drops on its own — the radio loses it, nobody asked it to.
-      await transport.unbind();
 
-      // The station it was moved *away* from advertises. Auto-bind is off, so
-      // only this device's own station may be taken, and this is not it.
-      transport.announce({ id: 'AA:BB' });
-      await Promise.resolve();
-      expect(transport.boundId).toBeNull();
-
-      transport.announce({ id: 'CC:DD' });
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(transport.boundId).toBe('CC:DD');
+      expect(before?.closed).toBe(true);
+      expect(host.openIds()).toEqual(['CC:DD']);
+      expect(connections.get(record.id)?.link?.boundId).toBe('CC:DD');
     });
 
     /** A deliberate unbind means stop, not "reconnect at the first chance". */
     test('an explicit unbind is not undone by the station reappearing', async () => {
-      const { connections, catalog, station, transport } = harness('ble', { autoBind: false });
+      const { connections, catalog, station, host } = harness('ble', { autoBind: false });
       const record = station('Mine', { boundId: 'AA:BB' });
       await connections.sync(catalog.list());
 
       await connections.unbind(record.id);
-      transport.announce({ id: 'AA:BB' });
-      await Promise.resolve();
-      await Promise.resolve();
+      host.announce({ id: 'AA:BB' });
+      await settle();
 
-      expect(transport.boundId).toBeNull();
+      expect(host.openIds()).toEqual([]);
+      expect(connections.get(record.id)?.link).toBeNull();
     });
 
-    test('closing a session releases the station but keeps the radio', async () => {
-      const { connections, catalog, station, transport } = harness('ble');
-      const record = station('Mine', { boundId: 'AA:BB' });
+    /*
+      The point of the split, stated as a test: closing one device's session
+      must not disturb another's station, and must not take down the radio that
+      both of them share.
+    */
+    test('closing one session leaves the other station and the radio alone', async () => {
+      const { connections, catalog, station, host } = harness('ble');
+      const first = station('First', { boundId: 'AA:BB' });
+      const second = station('Second', { boundId: 'CC:DD' });
       await connections.sync(catalog.list());
+      expect(host.openIds()).toEqual(['AA:BB', 'CC:DD']);
 
-      await connections.close(record.id);
-      expect(transport.boundId).toBeNull();
-      expect(connections.transport).toBe(transport);
+      await connections.close(first.id);
+
+      expect(host.openIds()).toEqual(['CC:DD']);
+      expect(connections.get(second.id)?.link?.connected).toBe(true);
+      expect(connections.transport).toBe(host);
     });
   });
 });

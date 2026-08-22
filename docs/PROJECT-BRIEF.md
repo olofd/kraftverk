@@ -175,7 +175,8 @@ rule engine with a loaded gun.
 | `@kraftverk/ui` and `@kraftverk/api-client` extracted | **Built** |
 | Devices canvas and device detail | **Built.** Root is the canvas; each device has Dashboard and Settings and nothing else |
 | Add-device wizard | **Next** — Milestone B. Adding still writes the record before the connection is configured |
-| `ConnectionManager`, one session per saved station | **Built.** No route reaches a global driver; a second station is refused with a reason |
+| `ConnectionManager`, one session per saved station | **Built.** No route reaches a global driver |
+| More than one station at once | **Built.** `TransportHost` is the radio or the broker — one per process — carrying a `ServerLink` per saved station. The old "one station at a time" was a property of the interface, not the hardware: a broker is per-MAC, and a BLE central holds several peripherals. A *station* still accepts one connection, so two devices naming the same unit is refused |
 | Per-saved-device adapter instances | **Next** — Milestone C |
 | Global station tabs | **Removed** |
 | Global `StationProvider` | **Removed.** It is now `DirectLinkProvider` — the app's own Bluetooth link, nothing more. Station telemetry comes from `useDeviceConnection(device)`, per device |

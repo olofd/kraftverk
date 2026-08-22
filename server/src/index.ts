@@ -21,8 +21,8 @@ import { PluginHost, type PluginInstance } from './plugins/host.ts';
 import { DeviceDriver, ReadOnlyError } from './drivers/device.ts';
 import { SimulatorDriver } from './drivers/simulator.ts';
 import { describeMessage, DeviceBroker } from './mqtt/broker.ts';
-import { BleTransport } from './transport/ble.ts';
-import { MqttTransport } from './transport/mqtt.ts';
+import { BleHost, BleLink } from './transport/ble.ts';
+import { MqttHost } from './transport/mqtt.ts';
 import {
   describeRegisters,
   fromHex,
@@ -76,8 +76,7 @@ const connections = new ConnectionManager({
   kind: LINK,
   readOnly: READ_ONLY,
   autoBind: AUTO_BIND,
-  transport: () =>
-    LINK === 'ble' ? new BleTransport() : new MqttTransport(broker, MQTT_PORT, MQTT_HOST),
+  host: () => (LINK === 'ble' ? new BleHost() : new MqttHost(broker, MQTT_PORT, MQTT_HOST)),
   simulator: () => new SimulatorDriver(),
   /*
     Where a device is reached is a property of that device. The old code kept it
@@ -126,9 +125,11 @@ if (LINK !== 'sim') {
 await connections.sync(catalog.list());
 
 if (DEVICE_ID) {
-  const station = connections.station();
+  // Only meaningful for a saved station: a link belongs to a device now, so
+  // there is nothing to pin this to before one exists.
+  const station = connections.sessions.find((session) => session.kind !== 'sim');
   if (station) await connections.bind(station.deviceId, DEVICE_ID).catch(() => undefined);
-  else await connections.link().then((link) => link?.bind(DEVICE_ID)).catch(() => undefined);
+  else console.log(`[link] --device=${DEVICE_ID} ignored: no station has been added yet`);
 }
 
 /** The station session, or an honest 404. The global station routes end here. */
@@ -273,52 +274,95 @@ api.post('/simulator/grid', async (c) => {
 // particular radio noticed".
 
 api.get('/station/transports', (c) => {
-  const link = connections.transport;
+  const host = connections.transport;
+  const linked = host?.openIds() ?? [];
+
+  /*
+    `boundId` and `connected` describe the first session, because this route and
+    the screen above it were built when there could only be one. They are kept
+    so the Station link screen keeps working; `links` is the honest answer now
+    that a host carries one per saved station.
+  */
+  const first = connections.sessions.find((session) => session.link);
+
   return c.json({
-    transport: link?.kind ?? null,
-    boundId: link?.boundId ?? null,
-    connected: link?.connected ?? false,
+    transport: host?.kind ?? null,
+    boundId: first?.link?.boundId ?? null,
+    connected: first?.link?.connected ?? false,
     autoBind: AUTO_BIND,
-    lastError: link instanceof BleTransport ? link.lastError : null,
-    attempts: link instanceof BleTransport ? link.attempts : null,
-    devices: (link?.discovered() ?? []).map((d) => ({ ...d, bound: d.id === link?.boundId })),
+    lastError: host instanceof BleHost ? host.lastError : null,
+    attempts: host instanceof BleHost ? host.attempts : null,
+    links: connections.sessions
+      .filter((session) => session.kind !== 'sim')
+      .map((session) => ({
+        deviceId: session.deviceId,
+        stationId: session.link?.boundId ?? null,
+        connected: session.link?.connected ?? false,
+      })),
+    devices: (host?.discovered() ?? []).map((d) => ({ ...d, bound: linked.includes(d.id) })),
   });
 });
 
 /**
- * Binds the station a saved device points at.
+ * Binds a saved device to a station.
  *
- * The choice used to go to `data/binding.json`, one per server. It now goes to
- * the device's own record, so a restart reconnects *that* device rather than
- * whatever the file last said. Binding with nothing saved yet is still allowed
- * and still deliberately transient: it is commissioning, which Milestone B
- * turns into a wizard that ends in a saved device.
+ * The choice goes to the device's own record, so a restart reconnects *that*
+ * device rather than whatever a shared file last said. `deviceId` is optional
+ * only for the single-station case the Station link screen still assumes; with
+ * more than one saved station it is required, because "the station" has stopped
+ * being a thing the server can guess.
+ *
+ * Binding with nothing saved at all is no longer possible. It used to bind the
+ * one transport transiently, which meant something when the transport *was* the
+ * link; now a link belongs to a saved device, and a link nothing polls would be
+ * a connection held for no reason — while taking the station away from the app.
  */
-api.post('/station/bind', async (c) => {
-  const link = await connections.link();
-  if (!link) throw new HTTPException(400, { message: 'Binding requires a hardware driver' });
-  const { id } = await body(c, z.object({ id: z.string().min(1) }));
+const bindTarget = (deviceId: string | undefined): string => {
+  if (deviceId) {
+    if (!connections.get(deviceId)) throw new HTTPException(404, { message: 'No such device' });
+    return deviceId;
+  }
 
-  const session = connections.station();
-  if (session) await connections.bind(session.deviceId, id);
-  else await link.bind(id);
+  const stations = connections.sessions.filter((session) => session.kind !== 'sim');
+  if (stations.length === 1) return stations[0]!.deviceId;
+  if (stations.length === 0) {
+    throw new HTTPException(400, {
+      message: 'Add a power station first — a link belongs to a saved device',
+    });
+  }
+  throw new HTTPException(400, {
+    message: `${stations.length} stations are saved; say which one with deviceId`,
+  });
+};
+
+api.post('/station/bind', async (c) => {
+  const host = await connections.link();
+  if (!host) throw new HTTPException(400, { message: 'Binding requires a hardware driver' });
+  const { id, deviceId } = await body(
+    c,
+    z.object({ id: z.string().min(1), deviceId: z.string().optional() })
+  );
+
+  const target = bindTarget(deviceId);
+  await connections.bind(target, id);
+  const session = connections.get(target);
 
   return c.json({
-    deviceId: session?.deviceId ?? null,
-    boundId: link.boundId,
-    connected: link.connected,
+    deviceId: target,
+    boundId: session?.link?.boundId ?? null,
+    connected: session?.link?.connected ?? false,
   });
 });
 
 api.post('/station/unbind', async (c) => {
-  const link = await connections.link();
-  if (!link) throw new HTTPException(400, { message: 'Binding requires a hardware driver' });
+  const host = await connections.link();
+  if (!host) throw new HTTPException(400, { message: 'Binding requires a hardware driver' });
+  const { deviceId } = await body(c, z.object({ deviceId: z.string().optional() }).catch({}));
 
-  const session = connections.station();
-  if (session) await connections.unbind(session.deviceId);
-  else await link.unbind();
+  const target = bindTarget(deviceId);
+  await connections.unbind(target);
 
-  return c.json({ deviceId: session?.deviceId ?? null, boundId: null, connected: false });
+  return c.json({ deviceId: target, boundId: null, connected: false });
 });
 
 // --- diagnostics ----------------------------------------------------------
@@ -330,15 +374,19 @@ api.post('/station/unbind', async (c) => {
 const diag = new Hono();
 
 diag.get('/link', (c) => {
-  const link = connections.transport;
+  const host = connections.transport;
+  const linked = host?.openIds() ?? [];
+  const first = connections.sessions.find((session) => session.link);
+
   return c.json({
     driver: connections.station()?.driver.mode ?? (LINK === 'sim' ? 'simulator' : 'device'),
-    transport: link?.kind ?? null,
+    transport: host?.kind ?? null,
     brokerListening: broker.listening,
     mqtt: { host: MQTT_HOST, port: MQTT_PORT },
-    devices: (link?.discovered() ?? []).map((d) => ({ ...d, bound: d.id === link?.boundId })),
-    boundId: link?.boundId ?? null,
-    connected: link?.connected ?? false,
+    devices: (host?.discovered() ?? []).map((d) => ({ ...d, bound: linked.includes(d.id) })),
+    boundId: first?.link?.boundId ?? null,
+    connected: first?.link?.connected ?? false,
+    linkedStations: linked,
     configuredId: DEVICE_ID ?? null,
   });
 });
@@ -347,10 +395,30 @@ diag.get('/traffic', (c) => c.json(broker.recentMessages.map(describeMessage)));
 
 /** What the BLE GATT enumeration actually returned on the last connect. */
 diag.get('/gatt', (c) => {
-  const link = connections.transport;
+  const host = connections.transport;
   return c.json(
-    link instanceof BleTransport
-      ? { lastError: link.lastError, attempts: link.attempts, discovery: link.lastDiscovery }
+    host instanceof BleHost
+      ? {
+          lastError: host.lastError,
+          attempts: host.attempts,
+          discovery: host.lastDiscovery,
+          // Per station, now that there can be several. The three above are the
+          // most recent across all of them, which is what this route used to
+          // mean when "all of them" was one.
+          links: connections.sessions
+            .filter((session) => session.link instanceof BleLink)
+            .map((session) => {
+              const link = session.link as BleLink;
+              return {
+                deviceId: session.deviceId,
+                stationId: link.boundId,
+                connected: link.connected,
+                lastError: link.lastError,
+                attempts: link.attempts,
+                discovery: link.lastDiscovery,
+              };
+            }),
+        }
       : { error: 'Not on the BLE transport' }
   );
 });
@@ -474,9 +542,16 @@ diag.post('/raw', async (c) => {
       message: 'Set ALLOW_RAW_MODBUS=1 to enable raw frames. Bad writes can brick the device.',
     });
   }
-  const { hex } = await body(c, z.object({ hex: z.string().regex(/^[0-9a-fA-F]+$/) }));
-  const link = connections.transport;
-  if (!link?.boundId) throw new HTTPException(400, { message: 'No device bound' });
+  const { hex, deviceId } = await body(
+    c,
+    z.object({ hex: z.string().regex(/^[0-9a-fA-F]+$/), deviceId: z.string().optional() })
+  );
+
+  // A raw frame goes down one station's link, so it has to name one. With a
+  // single station it is still inferred; with several, guessing which unit
+  // receives an undocumented write is exactly the wrong thing to do.
+  const link = connections.get(bindTarget(deviceId))?.link;
+  if (!link?.boundId) throw new HTTPException(400, { message: 'No station bound' });
 
   const frame = fromHex(hex);
   await link.send(frame);
@@ -802,12 +877,12 @@ api.post('/devices', async (c) => {
     })
   );
 
-  // One station for now: this process holds one link, so a second entry would
-  // be a promise the server cannot keep. The manager would refuse it honestly;
-  // refusing to create it at all is clearer until the wizard can offer a choice.
-  if (input.type === 'power-station' && catalog.find((record) => record.type === 'power-station')) {
-    throw new HTTPException(409, { message: 'A power station is already added' });
-  }
+  /*
+    A second station used to be refused here, because the server held one link
+    and a second entry would have been a promise it could not keep. It can keep
+    it now: `TransportHost` carries a link per saved station, so adding another
+    one is a row, not a conflict.
+  */
 
   const record = catalog.add({
     type: input.type,

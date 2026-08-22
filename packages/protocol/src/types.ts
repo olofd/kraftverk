@@ -54,7 +54,12 @@ export type PortState = {
   watts: number;
 };
 
-export type StationLink = {
+/**
+ * How the link is *doing* — not the link itself, which is `StationLink` in
+ * `client.ts`. The two were both called `StationLink`, which was survivable
+ * only while there was no such thing as a link object.
+ */
+export type StationLinkState = {
   mode: LinkMode;
   state: LinkState;
   transport?: TransportKind;
@@ -68,7 +73,7 @@ export type StationStatus = {
   model: string;
   firmware: FirmwareVersions | null;
   state: StationState;
-  link: StationLink;
+  link: StationLinkState;
 
   level: number;
   expansionSoc: number[];

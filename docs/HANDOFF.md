@@ -128,10 +128,26 @@ settled design:
 - ~~The server holds one `driver`, one `transport`, one binding.~~ **Fixed.**
   `server/src/connections/manager.ts` opens one session per saved station,
   keyed by catalog id, and is the only thing that knows about live drivers and
-  transports. This process still holds one radio, so a second station is
-  *refused with a reason* rather than handed the first one's link — the honest
-  version of the same constraint. `binding.json` is legacy and read-only now;
-  where a device is reached lives on its record.
+  links. `binding.json` is legacy and read-only now; where a device is reached
+  lives on its record.
+- ~~A second station is refused, because the process holds one radio.~~
+  **Fixed, and the reasoning was wrong.** `StationTransport` conflated three
+  jobs — discover, bind, carry frames — so one `boundId` capped the whole
+  server. Over MQTT there was never any constraint at all: `DeviceBroker` has
+  always been per-MAC, and the transport read every station's frames off the
+  broker and then dropped all but one with a single identity check. Over BLE a
+  central holds several peripherals at once; the code kept one set of
+  characteristics and one frame assembler.
+
+  It is now a `TransportHost` (the radio or the broker — genuinely one per
+  process) carrying a `ServerLink` per saved station. The app is unaffected: it
+  implements `StationTransport`, which now extends the smaller `StationLink`
+  that `StationClient` actually needs.
+
+  **What remains true is per station, not per server**: a station accepts one
+  connection at a time, so the server still competes with the app and BrightEMS
+  for any single unit — and two saved devices naming the *same* station is
+  refused, which is what `refusal()` means now.
 - **`PluginHost` keeps one configuration per package** and the registry reads
   `plugin.devices()[0]`, so one adapter cannot serve two plugs.
 - ~~**`DeviceDescriptor.id` and `DeviceView.id` mean different things.**~~

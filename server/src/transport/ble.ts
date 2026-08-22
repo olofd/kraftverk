@@ -9,68 +9,71 @@ import {
   type ParsedFrame,
 } from '@kraftverk/protocol';
 
-import type { DiscoveredDevice, Transport } from './types.ts';
+import type { DiscoveredDevice, ServerLink, TransportHost } from './types.ts';
 
 /**
- * Bluetooth LE transport, over noble.
+ * Bluetooth LE, over noble.
  *
  * The station exposes a GATT service carrying the same MODBUS frames the MQTT
  * bridge uses: write a request to one characteristic, receive the response as a
  * notification on another. No handshake is needed after connecting.
  *
- * The GATT layout, the advertisement heuristics, the write spacing and the
- * frame reassembly are all in `@kraftverk/protocol`, shared with the app's Web
- * Bluetooth and react-native-ble-plx transports. Only noble's API is here.
+ * Split in two, because the adapter and a connection are different things. One
+ * noble instance owns the radio and the scan — there is genuinely only one of
+ * those per process. A *connection* is not scarce in the same way: a BLE
+ * central holds several peripherals at once, commonly around seven. The old
+ * single class conflated them, keeping one set of characteristics, one frame
+ * assembler and one reconnect loop, which is why a second station could not be
+ * held rather than why it *should* not be.
+ *
+ * The constraint that survives is real but different: a given station accepts
+ * one connection at a time, so the server still competes with the app and with
+ * BrightEMS for any single unit.
  */
 
 type Noble = typeof import('@stoprocent/noble').default;
 type Peripheral = Awaited<ReturnType<Noble['startScanningAsync']>> extends never ? never : any;
 
-export class BleTransport extends EventEmitter implements Transport {
+export type GattDiscovery = {
+  at: string;
+  services: string[];
+  characteristics: { uuid: string; properties: string[] }[];
+};
+
+export class BleHost extends EventEmitter implements TransportHost {
   readonly kind = 'ble' as const;
 
   #noble: Noble | null = null;
   #devices = new Map<string, DiscoveredDevice>();
   #peripherals = new Map<string, Peripheral>();
-  #boundId: string | null = null;
-  #writeChar: any = null;
-  #connected = false;
-  #lastWrite = 0;
-  /** Notifications can arrive split across packets. */
-  #assembler = new FrameAssembler();
+  #links = new Map<string, BleLink>();
 
-  // Connection keep-alive. BLE links drop routinely — especially at weak
-  // signal — so binding sets a target and a loop works to keep it connected.
-  #reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  #backoffMs = 2000;
-  #connecting = false;
+  /**
+   * Diagnostics, aggregated across links.
+   *
+   * The GATT enumeration and the last failure belong to a connection, not to
+   * the adapter — but `/api/diagnostics/gatt` is still a global route, so the
+   * host keeps the most recent of each. Per-link detail is on the link.
+   */
   #lastError: string | null = null;
   #attempts = 0;
-  /** What the last GATT enumeration actually returned, for diagnostics. */
-  #lastDiscovery: {
-    at: string;
-    services: string[];
-    characteristics: { uuid: string; properties: string[] }[];
-  } | null = null;
+  #lastDiscovery: GattDiscovery | null = null;
 
   get lastError(): string | null {
     return this.#lastError;
-  }
-
-  get lastDiscovery() {
-    return this.#lastDiscovery;
   }
 
   get attempts(): number {
     return this.#attempts;
   }
 
-  get boundId(): string | null {
-    return this.#boundId;
+  get lastDiscovery(): GattDiscovery | null {
+    return this.#lastDiscovery;
   }
 
+  /** True when any link is up. The global routes ask this; a link knows better. */
   get connected(): boolean {
-    return this.#connected;
+    return [...this.#links.values()].some((link) => link.connected);
   }
 
   async start(): Promise<void> {
@@ -108,6 +111,10 @@ export class BleTransport extends EventEmitter implements Transport {
       this.#devices.set(id, device);
       // Only announce the first sighting; duplicates just refresh rssi/lastSeen.
       if (!existing) this.emit('discovery', device);
+
+      // A link waiting for this peripheral can now try: this is what makes
+      // opening a link before the station is in range a normal thing to do.
+      this.#links.get(id)?.noteInRange();
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -133,7 +140,7 @@ export class BleTransport extends EventEmitter implements Transport {
   #prune(): void {
     const cutoff = Date.now() - STALE_AFTER_MS;
     for (const [id, device] of this.#devices) {
-      if (id === this.#boundId) continue; // keep the target visible
+      if (this.#links.has(id)) continue; // keep every linked station visible
       if (new Date(device.lastSeen).getTime() < cutoff) {
         this.#devices.delete(id);
         this.#peripherals.delete(id);
@@ -142,7 +149,7 @@ export class BleTransport extends EventEmitter implements Transport {
   }
 
   async stop(): Promise<void> {
-    await this.unbind();
+    for (const link of [...this.#links.values()]) await link.close();
     await this.#noble?.stopScanningAsync().catch(() => {});
     this.#noble = null;
   }
@@ -153,55 +160,142 @@ export class BleTransport extends EventEmitter implements Transport {
     return [...this.#devices.values()].sort((a, b) => (b.rssi ?? -999) - (a.rssi ?? -999));
   }
 
-  /**
-   * Targets a station and keeps it connected.
-   *
-   * One connect attempt runs inline so the caller gets immediate feedback, but
-   * a failure is not fatal: a backoff loop keeps retrying, and reconnects if
-   * the link drops later. At weak signal that is the difference between working
-   * and not.
-   */
-  async bind(id: string): Promise<void> {
-    if (!this.#peripherals.has(id)) throw new Error(`No BLE device with id ${id}. Scan first.`);
+  onDiscovery(listener: (device: DiscoveredDevice) => void): () => void {
+    this.on('discovery', listener);
+    return () => this.off('discovery', listener);
+  }
 
-    await this.unbind();
-    this.#boundId = id;
-    this.#backoffMs = 2000;
+  openIds(): string[] {
+    return [...this.#links.keys()];
+  }
 
-    try {
-      await this.#connect();
-    } catch (error) {
-      // Keep the binding and let the loop retry; report the first failure.
-      this.#scheduleReconnect();
-      throw error;
-    }
+  /** The peripheral for an id, if it has been seen. Used by links. */
+  peripheral(id: string): Peripheral | null {
+    return this.#peripherals.get(id) ?? null;
+  }
+
+  /** Links report here so the global diagnostics routes still have an answer. */
+  report(update: { error?: string | null; attempt?: boolean; discovery?: GattDiscovery }): void {
+    if (update.attempt) this.#attempts += 1;
+    if (update.error !== undefined) this.#lastError = update.error;
+    if (update.discovery) this.#lastDiscovery = update.discovery;
+  }
+
+  async open(stationId: string): Promise<ServerLink> {
+    const existing = this.#links.get(stationId);
+    if (existing) return existing;
+
+    const link = new BleLink(stationId, this, () => this.#links.delete(stationId));
+    this.#links.set(stationId, link);
+
+    // One attempt inline so the caller gets immediate feedback; failing is not
+    // fatal, because the link's own backoff loop keeps working at it. At weak
+    // signal that is the difference between working and not.
+    await link.connect().catch(() => undefined);
+    return link;
+  }
+}
+
+/**
+ * One station's GATT connection.
+ *
+ * Everything here used to be a singleton field on the transport: the write
+ * characteristic, the frame assembler that reassembles a 168-byte response from
+ * several notifications, and the reconnect loop. Per-station is where they
+ * belong — two stations reassembling into one buffer would interleave into
+ * nonsense.
+ */
+export class BleLink extends EventEmitter implements ServerLink {
+  readonly kind = 'ble' as const;
+
+  #id: string;
+  #host: BleHost;
+  #release: () => void;
+
+  #writeChar: any = null;
+  #connected = false;
+  #lastWrite = 0;
+  /** Notifications can arrive split across packets. */
+  #assembler = new FrameAssembler();
+
+  #reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  #backoffMs = 2000;
+  #connecting = false;
+  #closed = false;
+  #lastError: string | null = null;
+  #attempts = 0;
+  #lastDiscovery: GattDiscovery | null = null;
+
+  constructor(id: string, host: BleHost, release: () => void) {
+    super();
+    this.#id = id;
+    this.#host = host;
+    this.#release = release;
+  }
+
+  get boundId(): string {
+    return this.#id;
+  }
+
+  get connected(): boolean {
+    return this.#connected;
+  }
+
+  get lastError(): string | null {
+    return this.#lastError;
+  }
+
+  get attempts(): number {
+    return this.#attempts;
+  }
+
+  get lastDiscovery(): GattDiscovery | null {
+    return this.#lastDiscovery;
+  }
+
+  /** The host saw this station advertise. Worth another try straight away. */
+  noteInRange(): void {
+    if (this.#connected || this.#connecting || this.#closed) return;
+    if (this.#reconnectTimer) return;
+    void this.connect().catch(() => this.#scheduleReconnect());
   }
 
   #scheduleReconnect(): void {
-    if (this.#reconnectTimer || !this.#boundId) return;
+    if (this.#reconnectTimer || this.#closed) return;
     const delay = this.#backoffMs;
     this.#backoffMs = Math.min(this.#backoffMs * 2, 30_000);
     this.#reconnectTimer = setTimeout(() => {
       this.#reconnectTimer = null;
-      void this.#connect().catch(() => this.#scheduleReconnect());
+      void this.connect().catch(() => this.#scheduleReconnect());
     }, delay);
   }
 
-  async #connect(): Promise<void> {
-    const id = this.#boundId;
-    if (!id || this.#connecting || this.#connected) return;
+  async connect(): Promise<void> {
+    if (this.#closed || this.#connecting || this.#connected) return;
 
-    const peripheral = this.#peripherals.get(id);
-    if (!peripheral) throw new Error(`Device ${id} is no longer in range`);
+    const peripheral = this.#host.peripheral(this.#id);
+    if (!peripheral) {
+      // Not an error worth throwing at startup: a saved station is routinely
+      // out of range when the server boots, and the scan will bring it back.
+      const message = `Device ${this.#id} is not in range`;
+      this.#lastError = message;
+      this.#host.report({ error: message });
+      this.#scheduleReconnect();
+      throw new Error(message);
+    }
 
     this.#connecting = true;
     this.#attempts += 1;
+    this.#host.report({ attempt: true });
     try {
       await this.#openGatt(peripheral);
       this.#lastError = null;
+      this.#host.report({ error: null });
       this.#backoffMs = 2000;
     } catch (error) {
       this.#lastError = (error as Error).message;
+      this.#host.report({ error: this.#lastError });
+      this.#scheduleReconnect();
       throw error;
     } finally {
       this.#connecting = false;
@@ -239,6 +333,7 @@ export class BleTransport extends EventEmitter implements Transport {
         properties: c.properties ?? [],
       })),
     };
+    this.#host.report({ discovery: this.#lastDiscovery });
 
     const find = (want: string) =>
       characteristics.find((c: any) => {
@@ -306,24 +401,12 @@ export class BleTransport extends EventEmitter implements Transport {
       this.#writeChar = null;
       this.#assembler.reset();
       this.#lastError = 'Link dropped';
-      // Still bound — keep trying to get it back.
+      // Still this link's station — keep trying to get it back.
       this.#scheduleReconnect();
     });
 
     this.#writeChar = writeChar;
     this.#connected = true;
-  }
-
-  async unbind(): Promise<void> {
-    if (this.#reconnectTimer) clearTimeout(this.#reconnectTimer);
-    this.#reconnectTimer = null;
-
-    const current = this.#boundId ? this.#peripherals.get(this.#boundId) : null;
-    if (current) await current.disconnectAsync().catch(() => {});
-    this.#boundId = null;
-    this.#writeChar = null;
-    this.#connected = false;
-    this.#assembler.reset();
   }
 
   /**
@@ -337,7 +420,7 @@ export class BleTransport extends EventEmitter implements Transport {
 
   async send(frame: Uint8Array): Promise<void> {
     const characteristic = this.#writeChar;
-    if (!characteristic) throw new Error('No BLE device bound');
+    if (!characteristic) throw new Error(`No BLE connection to ${this.#id}`);
 
     const wait = WRITE_SPACING_MS - (Date.now() - this.#lastWrite);
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
@@ -382,8 +465,18 @@ export class BleTransport extends EventEmitter implements Transport {
     return () => this.off('frame', listener);
   }
 
-  onDiscovery(listener: (device: DiscoveredDevice) => void): () => void {
-    this.on('discovery', listener);
-    return () => this.off('discovery', listener);
+  async close(): Promise<void> {
+    this.#closed = true;
+    if (this.#reconnectTimer) clearTimeout(this.#reconnectTimer);
+    this.#reconnectTimer = null;
+
+    const peripheral = this.#host.peripheral(this.#id);
+    if (peripheral) await peripheral.disconnectAsync().catch(() => {});
+
+    this.#writeChar = null;
+    this.#connected = false;
+    this.#assembler.reset();
+    this.removeAllListeners();
+    this.#release();
   }
 }

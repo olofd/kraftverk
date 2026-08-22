@@ -56,27 +56,25 @@ export type DiscoveredDevice = {
 };
 
 /**
- * A way to exchange MODBUS frames with a station.
+ * A way to exchange MODBUS frames with **one** station.
  *
  * Every transport carries byte-identical frames — the GATT link and the MQTT
  * bridge speak the same protocol — so everything above this interface is shared.
+ *
+ * This is deliberately the smaller half of what a transport does, and it is
+ * exactly what `StationClient` needs: it polls, decodes and writes, and never
+ * asks who else is out there. Splitting it out is what lets a server hold
+ * several of these at once — one per station — while the app, which really does
+ * hold a single link, keeps implementing the whole `StationTransport` below and
+ * needs no changes at all.
  */
-export interface StationTransport {
+export interface StationLink {
   readonly kind: TransportKind;
 
-  start(): Promise<void>;
-  stop(): Promise<void>;
-
-  /** Devices seen so far. */
-  discovered(): DiscoveredDevice[];
-
-  /** The device we are currently talking to, if any. */
+  /** The station this link talks to, if it has one yet. */
   readonly boundId: string | null;
 
-  bind(id: string): Promise<void>;
-  unbind(): Promise<void>;
-
-  /** True when the bound device is reachable right now. */
+  /** True when that station is reachable right now. */
   readonly connected: boolean;
 
   send(frame: Uint8Array): Promise<void>;
@@ -89,6 +87,26 @@ export interface StationTransport {
   request(frame: Uint8Array, expect: 'input' | 'holding', timeoutMs?: number): Promise<ParsedFrame>;
 
   onFrame(listener: (frame: ParsedFrame) => void): () => void;
+}
+
+/**
+ * A link that also owns the radio: it scans, and it binds to one station.
+ *
+ * The app's transports are these — a browser or a phone holds one station at a
+ * time, so discovery and the link belong together there. The server's are not:
+ * see `TransportHost` in `server/src/transport/types.ts`, which separates the
+ * one radio from the several links it can carry.
+ */
+export interface StationTransport extends StationLink {
+  start(): Promise<void>;
+  stop(): Promise<void>;
+
+  /** Devices seen so far. */
+  discovered(): DiscoveredDevice[];
+
+  bind(id: string): Promise<void>;
+  unbind(): Promise<void>;
+
   onDiscovery(listener: (device: DiscoveredDevice) => void): () => void;
 }
 
@@ -107,7 +125,8 @@ export class ReadOnlyError extends Error {
 export type BlockedWrite = { at: string; register: number; value: number };
 
 export type StationClientOptions = {
-  transport: StationTransport;
+  /** Only the link half is needed: this class never asks what else is out there. */
+  transport: StationLink;
   pollMs?: number;
   /**
    * Refuse every write, at the lowest level that still knows a frame is a
@@ -123,7 +142,7 @@ export type StationClientOptions = {
 };
 
 export class StationClient {
-  #transport: StationTransport;
+  #transport: StationLink;
   #pollMs: number;
   #readOnly: boolean;
   #model: string | undefined;
@@ -163,7 +182,7 @@ export class StationClient {
     return this.#blocked;
   }
 
-  get transport(): StationTransport {
+  get transport(): StationLink {
     return this.#transport;
   }
 
@@ -198,6 +217,31 @@ export class StationClient {
     this.#timer = null;
     this.#unsubscribe?.();
     this.#unsubscribe = null;
+  }
+
+  /**
+   * Points this client at a different link.
+   *
+   * Rebinding used to mean telling one transport to bind elsewhere, because
+   * there was only ever one. With a link per station, changing which station a
+   * saved device means is changing which link it holds — and the frame
+   * subscription has to move with it, or the client would go on listening to
+   * the station the user just walked away from.
+   *
+   * Callers almost always want `reset()` too: the cached telemetry describes
+   * the old station.
+   */
+  retarget(link: StationLink): void {
+    const running = this.#unsubscribe !== null;
+    this.#unsubscribe?.();
+    this.#unsubscribe = null;
+    this.#transport = link;
+    if (running) {
+      this.#unsubscribe = this.#transport.onFrame((frame) => {
+        this.#lastSeen = new Date();
+        if (this.#ingest(frame)) this.#emit();
+      });
+    }
   }
 
   /** Drops cached telemetry, e.g. after binding a different station. */

@@ -39,12 +39,21 @@ export type BoundableDevice = DiscoveredDevice & { bound: boolean };
  */
 export type StationTransports = {
   transport: TransportKind | null;
+  /**
+   * The first session's station.
+   *
+   * Kept because this shape predates the server holding more than one, and the
+   * Station link screen still reads it. `links` is the honest answer — one
+   * entry per saved station — and is what new UI should use.
+   */
   boundId: string | null;
   connected: boolean;
   autoBind: boolean;
   /** BLE only: why the last connect attempt failed, and how many were made. */
   lastError: string | null;
   attempts: number | null;
+  /** Every saved station and the link it holds. Empty on the simulator. */
+  links: { deviceId: string; stationId: string | null; connected: boolean }[];
   devices: BoundableDevice[];
 };
 
