@@ -3,6 +3,8 @@ import { EventEmitter } from 'node:events';
 import type { ParsedFrame } from '@kraftverk/protocol';
 
 import { DeviceBroker, type DeviceMessage } from '../mqtt/broker.ts';
+import { stationId, type StationId } from '@kraftverk/plugin-sdk';
+
 import type { DiscoveredDevice, ServerLink, TransportHost } from './types.ts';
 
 /**
@@ -27,7 +29,7 @@ export class MqttHost extends EventEmitter implements TransportHost {
   #port: number;
   #host: string;
   #devices = new Map<string, DiscoveredDevice>();
-  #links = new Map<string, MqttLink>();
+  #links = new Map<StationId, MqttLink>();
 
   constructor(broker: DeviceBroker, port: number, host: string) {
     super();
@@ -65,7 +67,8 @@ export class MqttHost extends EventEmitter implements TransportHost {
       // Routed, not filtered: every station that speaks reaches its own link,
       // and one that nothing is linked to is still recorded as discovered so it
       // can be added.
-      this.#links.get(message.mac)?.receive(now, message.frame);
+      // The broker hands over a raw MAC; this is where it becomes a station id.
+      this.#links.get(stationId(message.mac))?.receive(now, message.frame);
     };
 
     this.#broker.on('message', this.#onMessage);
@@ -90,12 +93,12 @@ export class MqttHost extends EventEmitter implements TransportHost {
     return () => this.off('discovery', listener);
   }
 
-  openIds(): string[] {
+  openIds(): StationId[] {
     return [...this.#links.keys()];
   }
 
-  async open(stationId: string): Promise<ServerLink> {
-    const mac = stationId.toUpperCase();
+  async open(station: StationId): Promise<ServerLink> {
+    const mac = stationId(station.toUpperCase());
     // Refused rather than shared. Handing the same link to two owners means two
     // drivers polling one station and whichever closes first taking it from the
     // other — a corruption that would show up as a device going quiet for no
@@ -113,19 +116,19 @@ export class MqttHost extends EventEmitter implements TransportHost {
 export class MqttLink extends EventEmitter implements ServerLink {
   readonly kind = 'mqtt' as const;
 
-  #mac: string;
+  #mac: StationId;
   #broker: DeviceBroker;
   #release: () => void;
   #lastSeen: Date | null = null;
 
-  constructor(mac: string, broker: DeviceBroker, release: () => void) {
+  constructor(mac: StationId, broker: DeviceBroker, release: () => void) {
     super();
     this.#mac = mac;
     this.#broker = broker;
     this.#release = release;
   }
 
-  get boundId(): string {
+  get boundId(): StationId {
     return this.#mac;
   }
 

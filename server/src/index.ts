@@ -15,6 +15,8 @@ import { ConnectionManager, type LinkKind, type StationSession } from './connect
 import { DeviceCatalog, STATION_MODELS } from './devices/catalog.ts';
 import { LegacyStationImport } from './devices/legacy.ts';
 import { DeviceRegistry } from './devices/registry.ts';
+import { savedDeviceId, stationId, type SavedDeviceId } from '@kraftverk/plugin-sdk';
+
 import { appState, audit, recentAudit, secretsAreEncrypted, setAppState } from './history/db.ts';
 import { Sampler, series } from './history/sampler.ts';
 import { PluginHost, type PluginInstance } from './plugins/host.ts';
@@ -142,7 +144,7 @@ if (DEVICE_ID) {
   */
   const forDevice = flag('for') ?? process.env.DEVICE_FOR;
   const stations = connections.sessions.filter((session) => session.kind !== 'sim');
-  const target = forDevice ?? (stations.length === 1 ? stations[0]!.deviceId : null);
+  const target = forDevice ? savedDeviceId(forDevice) : (stations.length === 1 ? stations[0]!.deviceId : null);
 
   if (!target) {
     console.log(
@@ -152,7 +154,7 @@ if (DEVICE_ID) {
             `Add --for=<saved device id> to say which one should hold it.`
     );
   } else {
-    await connections.bind(target, DEVICE_ID).catch((error: unknown) => {
+    await connections.bind(target, stationId(DEVICE_ID)).catch((error: unknown) => {
       console.log(`[link] --device=${DEVICE_ID} could not be bound: ${(error as Error).message}`);
     });
   }
@@ -171,7 +173,8 @@ function stationSession(deviceId: string | undefined): StationSession {
     throw new HTTPException(400, { message: 'Name the device with deviceId' });
   }
 
-  const session = connections.get(decodeURIComponent(deviceId));
+  // The HTTP boundary: a path or query string becomes an identity here.
+  const session = connections.get(savedDeviceId(decodeURIComponent(deviceId)));
   if (!session) {
     throw new HTTPException(404, { message: 'No such device, or it has no open session' });
   }
@@ -318,7 +321,7 @@ api.get('/station/transports', (c) => {
         connected: session.link?.connected ?? false,
         refusal: connections.refusal(session.deviceId),
       })),
-    devices: (host?.discovered() ?? []).map((d) => ({ ...d, bound: linked.includes(d.id) })),
+    devices: (host?.discovered() ?? []).map((d) => ({ ...d, bound: linked.includes(stationId(d.id)) })),
   });
 });
 
@@ -337,7 +340,7 @@ api.get('/station/transports', (c) => {
  * a connection held for no reason — while taking the station away from the app.
  */
 /** Which saved device a bind acts on. Named, never inferred. */
-const bindTarget = (deviceId: string | undefined): string => stationSession(deviceId).deviceId;
+const bindTarget = (deviceId: string | undefined): SavedDeviceId => stationSession(deviceId).deviceId;
 
 api.post('/station/bind', async (c) => {
   const host = await connections.link();
@@ -348,7 +351,7 @@ api.post('/station/bind', async (c) => {
   );
 
   const target = bindTarget(deviceId);
-  await connections.bind(target, id);
+  await connections.bind(target, stationId(id));
   const session = connections.get(target);
 
   return c.json({
@@ -386,7 +389,7 @@ diag.get('/link', (c) => {
     transport: host?.kind ?? null,
     brokerListening: broker.listening,
     mqtt: { host: MQTT_HOST, port: MQTT_PORT },
-    devices: (host?.discovered() ?? []).map((d) => ({ ...d, bound: linked.includes(d.id) })),
+    devices: (host?.discovered() ?? []).map((d) => ({ ...d, bound: linked.includes(stationId(d.id)) })),
     // Which stations are held, and by whom. No "the" station: that word was
     // what let a diagnostic describe one machine while implying all of them.
     linkedStations: connections.sessions
@@ -599,7 +602,7 @@ const gateway = new ActionGateway({
       };
     }
 
-    const session = connections.get(deviceId);
+    const session = connections.get(savedDeviceId(deviceId));
     if (!session) {
       return {
         status: null,
@@ -776,7 +779,7 @@ api.route('/plugins', plugins);
 api.get('/grid', async (c) => {
   const state = await gateway.state();
   // `app_state` stores '' for "cleared"; the API should say null.
-  const stationId = appState(RELAY_STATION_KEY) || null;
+  const paired = appState(RELAY_STATION_KEY) ? savedDeviceId(appState(RELAY_STATION_KEY)!) : null;
   return c.json({
     provider: host.activeProvider('gridRelay'),
     granted: (() => {
@@ -784,8 +787,8 @@ api.get('/grid', async (c) => {
       return id ? host.isGranted(id, 'gridRelay.switch') : false;
     })(),
     /** The station this relay feeds, by saved-device id. Null until paired. */
-    stationDeviceId: stationId,
-    stationPresent: stationId ? connections.get(stationId) !== null : false,
+    stationDeviceId: paired,
+    stationPresent: paired ? connections.get(paired) !== null : false,
     state,
   });
 });
@@ -807,7 +810,7 @@ api.post('/grid/station', async (c) => {
     return c.json({ stationDeviceId: null });
   }
 
-  const record = catalog.get(deviceId);
+  const record = catalog.get(savedDeviceId(deviceId));
   if (!record) throw new HTTPException(404, { message: 'No such device' });
   if (record.type !== 'power-station') {
     throw new HTTPException(400, { message: 'A relay is paired with a power station' });
@@ -985,13 +988,13 @@ api.post('/devices', async (c) => {
 });
 
 api.get('/devices/:id', async (c) => {
-  const found = await registry.find(decodeURIComponent(c.req.param('id')));
+  const found = await registry.find(savedDeviceId(decodeURIComponent(c.req.param('id'))));
   if (!found) throw new HTTPException(404, { message: 'No such device' });
   return c.json(found);
 });
 
 api.patch('/devices/:id', async (c) => {
-  const id = decodeURIComponent(c.req.param('id'));
+  const id = savedDeviceId(decodeURIComponent(c.req.param('id')));
   const changes = await body(
     c,
     z.object({
@@ -1029,7 +1032,7 @@ api.patch('/devices/:id', async (c) => {
 
 /** Resolves a saved station and its live session, or explains which is missing. */
 function stationDevice(c: Context): StationSession {
-  const id = decodeURIComponent(c.req.param('id') ?? '');
+  const id = savedDeviceId(decodeURIComponent(c.req.param('id') ?? ''));
   const record = catalog.get(id);
   if (!record) throw new HTTPException(404, { message: 'No such device' });
   if (record.driver !== 'core.station') {
@@ -1074,7 +1077,7 @@ api.patch('/devices/:id/p280/settings', async (c) => {
  * app.
  */
 api.get('/devices/:id/settings', async (c) => {
-  const id = decodeURIComponent(c.req.param('id'));
+  const id = savedDeviceId(decodeURIComponent(c.req.param('id')));
   const found = await registry.find(id);
   if (!found) throw new HTTPException(404, { message: 'No such device' });
   if (!found.settings) return c.json({ schema: null, values: {}, dangerous: [] });
@@ -1087,7 +1090,7 @@ api.get('/devices/:id/settings', async (c) => {
 });
 
 api.patch('/devices/:id/settings', async (c) => {
-  const id = decodeURIComponent(c.req.param('id'));
+  const id = savedDeviceId(decodeURIComponent(c.req.param('id')));
   const found = await registry.find(id);
   if (!found?.settings) throw new HTTPException(404, { message: 'That device has no settings' });
 
@@ -1110,7 +1113,7 @@ api.patch('/devices/:id/settings', async (c) => {
 });
 
 api.delete('/devices/:id', async (c) => {
-  const id = decodeURIComponent(c.req.param('id'));
+  const id = savedDeviceId(decodeURIComponent(c.req.param('id')));
   const record = catalog.get(id);
   if (!record) throw new HTTPException(404, { message: 'No such device' });
 
@@ -1146,7 +1149,7 @@ api.delete('/devices/:id', async (c) => {
  * do arithmetic it cannot display.
  */
 api.get('/devices/:id/history', (c) => {
-  const id = decodeURIComponent(c.req.param('id'));
+  const id = savedDeviceId(decodeURIComponent(c.req.param('id')));
   // An unknown device answered 200 with an empty series, which is indis-
   // tinguishable from a device that simply has not recorded anything yet.
   if (!catalog.get(id)) throw new HTTPException(404, { message: 'No such device' });
@@ -1184,7 +1187,7 @@ api.get('/devices/:id/history', (c) => {
 api.post('/devices/:id/control/:control', async (c) => {
   const deviceId = decodeURIComponent(c.req.param('id'));
   const controlId = c.req.param('control');
-  const found = await registry.find(deviceId);
+  const found = await registry.find(savedDeviceId(deviceId));
   if (!found) throw new HTTPException(404, { message: 'No such device' });
 
   const control = found.controls.find((candidate) => candidate.id === controlId);
@@ -1198,10 +1201,12 @@ api.post('/devices/:id/control/:control', async (c) => {
   // The station's own ports are core business and keep their existing path —
   // but through *this device's* session, not a global driver.
   if (found.record.driver === 'core.station') {
-    const session = connections.get(deviceId);
+    const session = connections.get(savedDeviceId(deviceId));
     if (!session) {
       throw new HTTPException(409, {
-        message: connections.refusal(deviceId) ?? 'The server is not holding a link to that device',
+        message:
+          connections.refusal(savedDeviceId(deviceId)) ??
+          'The server is not holding a link to that device',
       });
     }
     const port = PortIdSchema.parse(controlId);

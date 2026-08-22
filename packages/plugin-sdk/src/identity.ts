@@ -1,19 +1,21 @@
 /**
  * Which id is which, and how well a device is answering.
  *
- * Three different identities were all called `id`, and the core silently
- * overwrote one with another: `DeviceDescriptor.id` is the vendor's identity
- * for a thing, and the registry replaced it with the catalog's. That works only
- * while one adapter provides exactly one device — the moment a Home Assistant
- * adapter provides thirty, the id in a DTO no longer says which of the two
- * questions it answers, and the code that reads it cannot be told apart from
- * the code that got it wrong.
+ * A device has several identities at once — the one you gave it, the one its
+ * vendor stamped on it, the one a scan produced before it was yours — and they
+ * are all strings. Left as plain aliases they interchange silently, and the
+ * failure is not a type error but a command sent to the wrong power station.
  *
- * These aliases are documentation the compiler will not enforce — they are all
- * `string` — but a signature that says `SavedDeviceId` cannot be misread, and
- * `Omit<DeviceDescriptor, 'id'>` in `SavedDeviceView` is what actually stops
- * the overwrite coming back.
+ * So they are branded: distinct types the compiler will not substitute for one
+ * another. Crossing into them is deliberate and happens only at the edges —
+ * where a database row, an HTTP parameter or a radio advertisement arrives —
+ * through the parse functions below. Everywhere inside, the signature is the
+ * guarantee.
  */
+
+declare const brand: unique symbol;
+
+type Branded<Name extends string> = string & { readonly [brand]: Name };
 
 /**
  * The core's own id for a device you added.
@@ -22,7 +24,7 @@
  * every connection detail: rebinding a station to a different unit, or moving a
  * plug to a new address, must not change it, or the charts lose their subject.
  */
-export type SavedDeviceId = string;
+export type SavedDeviceId = Branded<'SavedDeviceId'>;
 
 /**
  * A temporary identity, alive only during commissioning.
@@ -31,7 +33,7 @@ export type SavedDeviceId = string;
  * reachable. It never reaches the database under this id: completing the wizard
  * mints a `SavedDeviceId`, and this one is forgotten.
  */
-export type CandidateId = string;
+export type CandidateId = Branded<'CandidateId'>;
 
 /**
  * The adapter's or vendor's identity for the same thing.
@@ -40,7 +42,33 @@ export type CandidateId = string;
  * why it can never be the primary key, and why it must be passed explicitly to
  * an adapter rather than inferred from whatever id happened to be at hand.
  */
-export type ProviderDeviceId = string;
+export type ProviderDeviceId = Branded<'ProviderDeviceId'>;
+
+/**
+ * A station as a radio or a broker knows it: a MAC, a peripheral id.
+ *
+ * What a link binds to, and deliberately not a `SavedDeviceId`. `bind` takes
+ * both — the device that will hold the link, and the station it reaches — and
+ * they are the two arguments most worth being unable to swap.
+ */
+export type StationId = Branded<'StationId'>;
+
+/**
+ * Where a raw string becomes an identity.
+ *
+ * Every one of these is a boundary: a row out of SQLite, a path segment off an
+ * HTTP request, an advertisement off the air. Naming the crossing is what keeps
+ * it rare and reviewable, and what makes `id as SavedDeviceId` sprinkled
+ * through the middle of the code stand out as the mistake it would be.
+ */
+export const savedDeviceId = (raw: string): SavedDeviceId => raw as SavedDeviceId;
+export const candidateId = (raw: string): CandidateId => raw as CandidateId;
+export const providerDeviceId = (raw: string): ProviderDeviceId => raw as ProviderDeviceId;
+export const stationId = (raw: string): StationId => raw as StationId;
+
+/** Station ids are compared without regard to case: MACs and peripheral ids disagree. */
+export const sameStation = (a: StationId | null, b: StationId | null): boolean =>
+  a !== null && b !== null && a.toLowerCase() === b.toLowerCase();
 
 /**
  * Why a device is or is not answering.

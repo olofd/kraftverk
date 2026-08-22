@@ -1,3 +1,4 @@
+import type { StationId } from '@kraftverk/plugin-sdk';
 import type { DiscoveredDevice, StationLink, StationTransport } from '@kraftverk/protocol';
 
 /**
@@ -19,6 +20,8 @@ export type ServerTransportKind = 'mqtt' | 'ble';
  * why a server can hold several of these at once.
  */
 export interface ServerLink extends StationLink {
+  /** The station this link reaches. Narrower than the app-facing string. */
+  readonly boundId: StationId | null;
   readonly kind: ServerTransportKind;
   /** Releases this station. The host and its other links carry on. */
   close(): Promise<void>;
@@ -59,8 +62,8 @@ export interface TransportHost {
    * link's own retry loop is what gets it. A link that is not connected is a
    * normal resting state, not a failure — `connected` says which.
    */
-  open(stationId: string): Promise<ServerLink>;
+  open(station: StationId): Promise<ServerLink>;
 
   /** The station ids currently linked, so nothing claims one twice. */
-  openIds(): string[];
+  openIds(): StationId[];
 }

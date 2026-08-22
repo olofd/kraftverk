@@ -9,6 +9,8 @@ import {
   type ParsedFrame,
 } from '@kraftverk/protocol';
 
+import { stationId, type StationId } from '@kraftverk/plugin-sdk';
+
 import type { DiscoveredDevice, ServerLink, TransportHost } from './types.ts';
 
 /**
@@ -46,7 +48,7 @@ export class BleHost extends EventEmitter implements TransportHost {
   #noble: Noble | null = null;
   #devices = new Map<string, DiscoveredDevice>();
   #peripherals = new Map<string, Peripheral>();
-  #links = new Map<string, BleLink>();
+  #links = new Map<StationId, BleLink>();
 
   /**
    * Diagnostics, aggregated across links.
@@ -114,7 +116,7 @@ export class BleHost extends EventEmitter implements TransportHost {
 
       // A link waiting for this peripheral can now try: this is what makes
       // opening a link before the station is in range a normal thing to do.
-      this.#links.get(id)?.noteInRange();
+      this.#links.get(stationId(id))?.noteInRange();
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -140,7 +142,7 @@ export class BleHost extends EventEmitter implements TransportHost {
   #prune(): void {
     const cutoff = Date.now() - STALE_AFTER_MS;
     for (const [id, device] of this.#devices) {
-      if (this.#links.has(id)) continue; // keep every linked station visible
+      if (this.#links.has(stationId(id))) continue; // keep every linked station visible
       if (new Date(device.lastSeen).getTime() < cutoff) {
         this.#devices.delete(id);
         this.#peripherals.delete(id);
@@ -165,12 +167,12 @@ export class BleHost extends EventEmitter implements TransportHost {
     return () => this.off('discovery', listener);
   }
 
-  openIds(): string[] {
+  openIds(): StationId[] {
     return [...this.#links.keys()];
   }
 
   /** The peripheral for an id, if it has been seen. Used by links. */
-  peripheral(id: string): Peripheral | null {
+  peripheral(id: StationId): Peripheral | null {
     return this.#peripherals.get(id) ?? null;
   }
 
@@ -181,15 +183,15 @@ export class BleHost extends EventEmitter implements TransportHost {
     if (update.discovery) this.#lastDiscovery = update.discovery;
   }
 
-  async open(stationId: string): Promise<ServerLink> {
+  async open(station: StationId): Promise<ServerLink> {
     // Refused rather than shared: two owners of one link means two drivers
     // polling one station, and whichever closes first disconnects it under the
     // other. The manager claims a station before opening it, so reaching this
     // is a bug worth hearing about rather than a case to absorb.
-    if (this.#links.has(stationId)) throw new Error(`${stationId} is already linked`);
+    if (this.#links.has(station)) throw new Error(`${station} is already linked`);
 
-    const link = new BleLink(stationId, this, () => this.#links.delete(stationId));
-    this.#links.set(stationId, link);
+    const link = new BleLink(station, this, () => this.#links.delete(station));
+    this.#links.set(station, link);
 
     // One attempt inline so the caller gets immediate feedback; failing is not
     // fatal, because the link's own backoff loop keeps working at it. At weak
@@ -211,7 +213,7 @@ export class BleHost extends EventEmitter implements TransportHost {
 export class BleLink extends EventEmitter implements ServerLink {
   readonly kind = 'ble' as const;
 
-  #id: string;
+  #id: StationId;
   #host: BleHost;
   #release: () => void;
 
@@ -229,14 +231,14 @@ export class BleLink extends EventEmitter implements ServerLink {
   #attempts = 0;
   #lastDiscovery: GattDiscovery | null = null;
 
-  constructor(id: string, host: BleHost, release: () => void) {
+  constructor(id: StationId, host: BleHost, release: () => void) {
     super();
     this.#id = id;
     this.#host = host;
     this.#release = release;
   }
 
-  get boundId(): string {
+  get boundId(): StationId {
     return this.#id;
   }
 

@@ -20,6 +20,8 @@ import {
   patchDeviceSettings,
   removeDevice as apiRemoveDevice,
   updateDevice as apiUpdateDevice,
+  providerDeviceId,
+  savedDeviceId,
 } from '@kraftverk/api-client';
 import type {
   ConfigValues,
@@ -322,8 +324,10 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
    */
   const linked = useMemo<SavedDeviceView | null>(() => {
     if (editable || !status) return null;
-    const mac = status.link.mac;
-    const id = `station:${mac ?? 'direct'}`;
+    // A direct link has no catalog behind it, so this is the one place the app
+    // mints an identity of its own rather than receiving one from the server.
+    const mac = status.link.mac ? providerDeviceId(status.link.mac) : null;
+    const id = savedDeviceId(`station:${mac ?? 'direct'}`);
     const { id: _providerId, name: _providerName, ...descriptor } = stationDescriptor(
       id,
       status.name,

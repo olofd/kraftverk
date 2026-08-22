@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import type { DeviceDescriptor, PluginHealth, Reading } from '@kraftverk/plugin-sdk';
 import type { StationStatus } from '@kraftverk/protocol';
 
+import { providerDeviceId } from '@kraftverk/plugin-sdk';
+
 import { DeviceCatalog } from './catalog.ts';
 import { DeviceRegistry } from './registry.ts';
 import type { ConnectionManager } from '../connections/manager.ts';
@@ -153,8 +155,8 @@ describe('a saved device and the two identities it carries', () => {
     const view = (await registry.find(record.id))!;
 
     expect(view.id).toBe(record.id);
-    expect(view.id).not.toBe('tuya:bf8dc9aabbcc');
-    expect(view.providerDeviceId).toBe('tuya:bf8dc9aabbcc');
+    expect(view.id).not.toBe(providerDeviceId('tuya:bf8dc9aabbcc'));
+    expect(view.providerDeviceId).toBe(providerDeviceId('tuya:bf8dc9aabbcc'));
   });
 
   test('the adapter is asked using its own id, never the catalog id', async () => {
@@ -169,7 +171,7 @@ describe('a saved device and the two identities it carries', () => {
 
     await registry.find(record.id);
 
-    expect(plugin.asked).toEqual(['tuya:bf8dc9aabbcc']);
+    expect(plugin.asked).toEqual([providerDeviceId('tuya:bf8dc9aabbcc')]);
     expect(plugin.asked).not.toContain(record.id);
   });
 
@@ -310,7 +312,7 @@ describe('connection health, which is not a boolean', () => {
       transport: 'ble',
       lastReadingAt: NOW,
     });
-    expect(view.providerDeviceId).toBe('AA:BB:CC:DD:EE:FF');
+    expect(view.providerDeviceId).toBe(providerDeviceId('AA:BB:CC:DD:EE:FF'));
     expect(view.readings.find((reading) => reading.key === 'soc')?.value).toBe(82);
   });
 
@@ -333,7 +335,7 @@ describe('connection health, which is not a boolean', () => {
     const record = station('Van', { boundId: 'AA:BB:CC:00:11:22' });
     const registry = new DeviceRegistry(catalog, hostWith({}), managerWith({}));
 
-    expect((await registry.find(record.id))!.providerDeviceId).toBe('AA:BB:CC:00:11:22');
+    expect((await registry.find(record.id))!.providerDeviceId).toBe(providerDeviceId('AA:BB:CC:00:11:22'));
   });
 });
 

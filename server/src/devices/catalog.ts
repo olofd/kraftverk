@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import { savedDeviceId, stationId, type SavedDeviceId, type StationId } from '@kraftverk/plugin-sdk';
+
 import { db } from '../history/db.ts';
 
 /**
@@ -16,16 +18,21 @@ import { db } from '../history/db.ts';
 export type DeviceType = 'power-station' | 'smart-plug';
 
 export type DeviceRecord = {
-  id: string;
+  id: SavedDeviceId;
   type: DeviceType;
   /** Which hardware it is. Decides how it is read; see MODELS. */
   model: string | null;
   /** 'core.station', or a plugin id. */
   driver: string;
   name: string;
+  /** Adapter-specific, including `boundId`: the station this device reaches. */
   config: Record<string, unknown>;
   addedAt: string;
 };
+
+/** The station a record is bound to, if it has been given one. */
+export const boundStation = (record: DeviceRecord): StationId | null =>
+  typeof record.config.boundId === 'string' ? stationId(record.config.boundId) : null;
 
 /**
  * Station models, and how far each one is actually trusted.
@@ -62,7 +69,8 @@ type Row = {
 };
 
 const toRecord = (row: Row): DeviceRecord => ({
-  id: row.id,
+  // The database row is a boundary: this is where a string becomes an identity.
+  id: savedDeviceId(row.id),
   type: row.type as DeviceType,
   model: row.model,
   driver: row.driver,
@@ -79,7 +87,7 @@ export class DeviceCatalog {
       .map(toRecord);
   }
 
-  get(id: string): DeviceRecord | null {
+  get(id: SavedDeviceId): DeviceRecord | null {
     const row = db().query<Row, [string]>('SELECT * FROM device WHERE id = ?').get(id);
     return row ? toRecord(row) : null;
   }
@@ -96,7 +104,7 @@ export class DeviceCatalog {
     config?: Record<string, unknown>;
   }): DeviceRecord {
     const record: DeviceRecord = {
-      id: `${input.type}:${randomUUID().slice(0, 8)}`,
+      id: savedDeviceId(`${input.type}:${randomUUID().slice(0, 8)}`),
       type: input.type,
       model: input.model ?? null,
       driver: input.driver,
@@ -120,7 +128,7 @@ export class DeviceCatalog {
     return record;
   }
 
-  update(id: string, changes: Partial<Pick<DeviceRecord, 'name' | 'model' | 'config'>>): DeviceRecord | null {
+  update(id: SavedDeviceId, changes: Partial<Pick<DeviceRecord, 'name' | 'model' | 'config'>>): DeviceRecord | null {
     const existing = this.get(id);
     if (!existing) return null;
 
@@ -145,7 +153,7 @@ export class DeviceCatalog {
    * the user has said they no longer own, and a slow leak of rows nobody can
    * see or delete.
    */
-  remove(id: string): void {
+  remove(id: SavedDeviceId): void {
     db().transaction(() => {
       db().query('DELETE FROM device WHERE id = ?').run(id);
       db().query('DELETE FROM sample WHERE device_id = ?').run(id);

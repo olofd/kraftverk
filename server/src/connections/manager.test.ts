@@ -8,6 +8,8 @@ import type { DiscoveredDevice, ParsedFrame } from '@kraftverk/protocol';
 import { ConnectionManager, type LinkKind } from './manager.ts';
 import { DeviceCatalog, type DeviceRecord } from '../devices/catalog.ts';
 import type { StationDriver } from '../drivers/types.ts';
+import { savedDeviceId, stationId, type SavedDeviceId, type StationId } from '@kraftverk/plugin-sdk';
+
 import type { ServerLink, TransportHost } from '../transport/types.ts';
 import { closeDb, db } from '../history/db.ts';
 
@@ -46,7 +48,7 @@ class StubLink implements ServerLink {
   closed = false;
 
   constructor(
-    readonly boundId: string,
+    readonly boundId: StationId,
     private release: () => void
   ) {}
 
@@ -68,8 +70,8 @@ class StubHost implements TransportHost {
   readonly kind = 'ble' as const;
   started = 0;
   /** Every station id ever opened, in order. */
-  opened: string[] = [];
-  links = new Map<string, StubLink>();
+  opened: StationId[] = [];
+  links = new Map<StationId, StubLink>();
   #listeners: ((device: DiscoveredDevice) => void)[] = [];
 
   async start() {
@@ -79,19 +81,19 @@ class StubHost implements TransportHost {
   discovered(): DiscoveredDevice[] {
     return [];
   }
-  openIds(): string[] {
+  openIds(): StationId[] {
     return [...this.links.keys()];
   }
   /** Set to a station id to make opening it fail, as an out-of-range one does. */
-  failOn: string | null = null;
+  failOn: StationId | null = null;
 
-  async open(stationId: string): Promise<ServerLink> {
-    this.opened.push(stationId);
-    if (stationId === this.failOn) throw new Error(`${stationId} is not in range`);
-    const existing = this.links.get(stationId);
+  async open(station: StationId): Promise<ServerLink> {
+    this.opened.push(station);
+    if (station === this.failOn) throw new Error(`${station} is not in range`);
+    const existing = this.links.get(station);
     if (existing) return existing;
-    const link = new StubLink(stationId, () => this.links.delete(stationId));
-    this.links.set(stationId, link);
+    const link = new StubLink(station, () => this.links.delete(station));
+    this.links.set(station, link);
     return link;
   }
   onDiscovery(listener: (device: DiscoveredDevice) => void) {
@@ -283,21 +285,21 @@ describe('the connection manager', () => {
   */
   test('refuses the second device that names a station another one already holds', async () => {
     const { connections, catalog, station, host } = harness('ble');
-    const first = station('Mine', { boundId: 'AA:BB' });
-    const second = station('Also mine', { boundId: 'AA:BB' });
+    const first = station('Mine', { boundId: stationId('AA:BB') });
+    const second = station('Also mine', { boundId: stationId('AA:BB') });
     await connections.sync(catalog.list());
 
-    expect(connections.get(first.id)?.link?.boundId).toBe('AA:BB');
+    expect(connections.get(first.id)?.link?.boundId).toBe(stationId('AA:BB'));
     expect(connections.get(second.id)?.link).toBeNull();
     expect(connections.refusal(second.id)).toContain('already bound to AA:BB');
     // One link, not two fighting over one connection.
-    expect(host.openIds()).toEqual(['AA:BB']);
+    expect(host.openIds()).toEqual([stationId('AA:BB')]);
   });
 
   test('the refusal clears once the device it belonged to is gone', async () => {
     const { connections, catalog, station } = harness('ble');
-    station('First', { boundId: 'AA:BB' });
-    const second = station('Second', { boundId: 'AA:BB' });
+    station('First', { boundId: stationId('AA:BB') });
+    const second = station('Second', { boundId: stationId('AA:BB') });
     await connections.sync(catalog.list());
     expect(connections.refusal(second.id)).not.toBeNull();
 
@@ -318,10 +320,10 @@ describe('the connection manager', () => {
 
     test('reconnects to the station the record already names', async () => {
       const { connections, catalog, station, host } = harness('ble');
-      station('Mine', { transport: 'ble', boundId: 'AA:BB' });
+      station('Mine', { transport: 'ble', boundId: stationId('AA:BB') });
       await connections.sync(catalog.list());
 
-      expect(host.opened).toEqual(['AA:BB']);
+      expect(host.opened).toEqual([stationId('AA:BB')]);
     });
 
     /*
@@ -334,8 +336,8 @@ describe('the connection manager', () => {
       const record = station();
       await connections.sync(catalog.list());
 
-      await connections.bind(record.id, 'CC:DD');
-      expect(bound).toEqual([{ deviceId: record.id, kind: 'ble', boundId: 'CC:DD' }]);
+      await connections.bind(record.id, stationId('CC:DD'));
+      expect(bound).toEqual([{ deviceId: record.id, kind: 'ble', boundId: stationId('CC:DD') }]);
 
       await connections.unbind(record.id);
       expect(bound[1]).toEqual({ deviceId: record.id, kind: 'ble', boundId: null });
@@ -346,10 +348,10 @@ describe('the connection manager', () => {
       const record = station();
       await connections.sync(catalog.list());
 
-      host.announce({ id: 'EE:FF' });
+      host.announce({ id: stationId('EE:FF') });
       await settle();
 
-      expect(host.opened).toEqual(['EE:FF']);
+      expect(host.opened).toEqual([stationId('EE:FF')]);
       expect(bound[0]?.deviceId).toBe(record.id);
     });
 
@@ -358,7 +360,7 @@ describe('the connection manager', () => {
       station();
       await connections.sync(catalog.list());
 
-      host.announce({ id: 'EE:FF', likelyStation: false });
+      host.announce({ id: stationId('EE:FF'), likelyStation: false });
       await settle();
 
       expect(host.opened).toEqual([]);
@@ -379,12 +381,12 @@ describe('the connection manager', () => {
       station('Second');
       await connections.sync(catalog.list());
 
-      host.announce({ id: 'EE:FF' });
+      host.announce({ id: stationId('EE:FF') });
       await settle();
 
-      expect(host.openIds()).toEqual(['EE:FF']);
-      expect(bound.filter((entry) => entry.boundId === 'EE:FF')).toHaveLength(1);
-      const owners = connections.sessions.filter((s) => s.link?.boundId === 'EE:FF');
+      expect(host.openIds()).toEqual([stationId('EE:FF')]);
+      expect(bound.filter((entry) => entry.boundId === stationId('EE:FF'))).toHaveLength(1);
+      const owners = connections.sessions.filter((s) => s.link?.boundId === stationId('EE:FF'));
       expect(owners).toHaveLength(1);
     });
 
@@ -395,11 +397,11 @@ describe('the connection manager', () => {
     */
     test('an explicit unbind survives auto-bind, not just a quiet radio', async () => {
       const { connections, catalog, station, host } = harness('ble', { autoBind: true });
-      const record = station('Mine', { boundId: 'AA:BB' });
+      const record = station('Mine', { boundId: stationId('AA:BB') });
       await connections.sync(catalog.list());
 
       await connections.unbind(record.id);
-      host.announce({ id: 'AA:BB' });
+      host.announce({ id: stationId('AA:BB') });
       await settle();
 
       expect(connections.get(record.id)?.link).toBeNull();
@@ -409,13 +411,13 @@ describe('the connection manager', () => {
     /* One unreachable station must not stop the others from ever opening. */
     test('a station that fails to open does not abort the rest of the sync', async () => {
       const { connections, catalog, station, host } = harness('ble');
-      host.failOn = 'AA:BB';
-      station('Broken', { boundId: 'AA:BB' });
-      const good = station('Fine', { boundId: 'CC:DD' });
+      host.failOn = stationId('AA:BB');
+      station('Broken', { boundId: stationId('AA:BB') });
+      const good = station('Fine', { boundId: stationId('CC:DD') });
 
       await connections.sync(catalog.list());
 
-      expect(connections.get(good.id)?.link?.boundId).toBe('CC:DD');
+      expect(connections.get(good.id)?.link?.boundId).toBe(stationId('CC:DD'));
       expect(connections.sessions).toHaveLength(2);
     });
 
@@ -436,7 +438,7 @@ describe('the connection manager', () => {
       await connections.sync(catalog.list());
       expect(host.watchers).toBe(0);
 
-      host.announce({ id: 'EE:FF' });
+      host.announce({ id: stationId('EE:FF') });
       await settle();
 
       expect(host.opened).toEqual([]);
@@ -465,25 +467,25 @@ describe('the connection manager', () => {
     */
     test('rebinding releases the old station and takes the new one', async () => {
       const { connections, catalog, station, host } = harness('ble', { autoBind: false });
-      const record = station('Mine', { boundId: 'AA:BB' });
+      const record = station('Mine', { boundId: stationId('AA:BB') });
       await connections.sync(catalog.list());
 
-      const before = host.links.get('AA:BB');
-      await connections.bind(record.id, 'CC:DD');
+      const before = host.links.get(stationId('AA:BB'));
+      await connections.bind(record.id, stationId('CC:DD'));
 
       expect(before?.closed).toBe(true);
-      expect(host.openIds()).toEqual(['CC:DD']);
-      expect(connections.get(record.id)?.link?.boundId).toBe('CC:DD');
+      expect(host.openIds()).toEqual([stationId('CC:DD')]);
+      expect(connections.get(record.id)?.link?.boundId).toBe(stationId('CC:DD'));
     });
 
     /** A deliberate unbind means stop, not "reconnect at the first chance". */
     test('an explicit unbind is not undone by the station reappearing', async () => {
       const { connections, catalog, station, host } = harness('ble', { autoBind: false });
-      const record = station('Mine', { boundId: 'AA:BB' });
+      const record = station('Mine', { boundId: stationId('AA:BB') });
       await connections.sync(catalog.list());
 
       await connections.unbind(record.id);
-      host.announce({ id: 'AA:BB' });
+      host.announce({ id: stationId('AA:BB') });
       await settle();
 
       expect(host.openIds()).toEqual([]);
@@ -497,14 +499,14 @@ describe('the connection manager', () => {
     */
     test('closing one session leaves the other station and the radio alone', async () => {
       const { connections, catalog, station, host } = harness('ble');
-      const first = station('First', { boundId: 'AA:BB' });
-      const second = station('Second', { boundId: 'CC:DD' });
+      const first = station('First', { boundId: stationId('AA:BB') });
+      const second = station('Second', { boundId: stationId('CC:DD') });
       await connections.sync(catalog.list());
-      expect(host.openIds()).toEqual(['AA:BB', 'CC:DD']);
+      expect(host.openIds()).toEqual([stationId('AA:BB'), stationId('CC:DD')]);
 
       await connections.close(first.id);
 
-      expect(host.openIds()).toEqual(['CC:DD']);
+      expect(host.openIds()).toEqual([stationId('CC:DD')]);
       expect(connections.get(second.id)?.link?.connected).toBe(true);
       expect(connections.transport).toBe(host);
     });

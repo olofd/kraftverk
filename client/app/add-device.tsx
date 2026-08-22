@@ -224,7 +224,7 @@ function ConnectionOwner() {
           icon={<Feather name="bluetooth" size={14} color={theme.color?.val} />}
           onPress={() => {
             haptic();
-            router.push('/link');
+            router.push('/link?connection=direct');
           }}
         >
           Connect over Bluetooth instead

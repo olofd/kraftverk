@@ -105,7 +105,7 @@ export default function DevicesScreen() {
               icon={<Feather name="bluetooth" size={14} color={theme.color?.val} />}
               onPress={() => {
                 haptic();
-                router.push('/link');
+                router.push('/link?connection=direct');
               }}
             >
               {editable ? 'Use one over Bluetooth' : 'Connect a station'}
@@ -152,7 +152,7 @@ export default function DevicesScreen() {
               route at all — the two are different connections, not a choice
               you make once.
             */}
-            <Pressable onPress={() => router.push('/link')}>
+            <Pressable onPress={() => router.push('/link?connection=direct')}>
               <Row
                 title="Connect over Bluetooth"
                 subtitle="Use a station from this device directly, while the app is open"

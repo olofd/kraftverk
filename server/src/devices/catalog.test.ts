@@ -13,6 +13,8 @@ import { join } from 'node:path';
  * test devices in the owner's own list.
  */
 
+import { savedDeviceId } from '@kraftverk/plugin-sdk';
+
 import { DeviceCatalog } from './catalog.ts';
 import { closeDb, db } from '../history/db.ts';
 
@@ -87,8 +89,8 @@ describe('the device catalog', () => {
   });
 
   test('updating something that is not there says so', () => {
-    expect(catalog.update('power-station:nope', { name: 'x' })).toBeNull();
-    expect(catalog.get('power-station:nope')).toBeNull();
+    expect(catalog.update(savedDeviceId('power-station:nope'), { name: 'x' })).toBeNull();
+    expect(catalog.get(savedDeviceId('power-station:nope'))).toBeNull();
   });
 
   test('forgetting a device takes its samples with it', () => {

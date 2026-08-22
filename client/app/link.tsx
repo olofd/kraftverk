@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { Card, SectionLabel } from '@kraftverk/ui';
 import { ModeRow, Row, RowSeparator, ToggleRow } from '@kraftverk/ui';
+import { useLocalSearchParams } from 'expo-router';
 import { Screen } from '../src/components/Screen';
 import { SegmentedControl } from '@kraftverk/ui';
 import {
@@ -42,6 +43,26 @@ const SOURCES = [
 
 export default function LinkScreen() {
   const { status, refresh, source, setSource, direct } = useDirectLink();
+  const { connection } = useLocalSearchParams<{ connection?: string }>();
+
+  /*
+    Arriving from "Connect over Bluetooth" means this device, not the server.
+
+    Without it the screen opens on whichever side is currently active — so
+    pressing a button that says Bluetooth landed you on a panel reporting
+    "Transport: WiFi / MQTT", which reads as a broken screen rather than as the
+    server's honest answer to a different question.
+
+    Applied here rather than at the button because switching sides deselects
+    the active server, and this is the screen where that is visible and one tap
+    from being undone.
+  */
+  const applied = useRef(false);
+  useEffect(() => {
+    if (applied.current || connection !== 'direct') return;
+    applied.current = true;
+    setSource('direct');
+  }, [connection, setSource]);
 
   return (
     <Screen back="Your devices" title="Station link" subtitle="How this app reaches your power station">

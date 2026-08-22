@@ -1,4 +1,6 @@
-import type { DeviceRecord } from '../devices/catalog.ts';
+import { sameStation, stationId, type SavedDeviceId, type StationId } from '@kraftverk/plugin-sdk';
+
+import { boundStation, type DeviceRecord } from '../devices/catalog.ts';
 import { DeviceDriver } from '../drivers/device.ts';
 import type { StationDriver } from '../drivers/types.ts';
 import type { ServerLink, ServerTransportKind, TransportHost } from '../transport/types.ts';
@@ -33,7 +35,7 @@ export type LinkKind = ServerTransportKind | 'sim';
 
 export type StationSession = {
   /** The catalog id. Sessions are keyed by it, and so is history. */
-  readonly deviceId: string;
+  readonly deviceId: SavedDeviceId;
   readonly kind: LinkKind;
   readonly driver: StationDriver;
   /**
@@ -53,16 +55,16 @@ export type ConnectionManagerDeps = {
   host: () => TransportHost;
   simulator: () => StationDriver;
   /** Told when a session binds, so the record stops lying about its link. */
-  onBound?: (deviceId: string, kind: LinkKind, boundId: string | null) => void;
+  onBound?: (deviceId: SavedDeviceId, kind: LinkKind, boundId: StationId | null) => void;
   /** Bind the first station discovered instead of waiting for a choice. */
   autoBind?: boolean;
   log?: (message: string) => void;
 };
 
 export class ConnectionManager {
-  #sessions = new Map<string, StationSession>();
+  #sessions = new Map<SavedDeviceId, StationSession>();
   /** Why a saved device has no session, in words a user can act on. */
-  #refusals = new Map<string, string>();
+  #refusals = new Map<SavedDeviceId, string>();
   /**
    * How to stop listening for discoveries on a session's behalf.
    *
@@ -70,7 +72,7 @@ export class ConnectionManager {
    * session keeps running — and would happily auto-bind a station again on
    * behalf of a device that has just been forgotten.
    */
-  #watchers = new Map<string, () => void>();
+  #watchers = new Map<SavedDeviceId, () => void>();
   /**
    * Which station each session is meant to be on.
    *
@@ -78,14 +80,14 @@ export class ConnectionManager {
    * free of the database — but it must follow a rebind, or a session would go
    * on preferring the station the user just moved away from.
    */
-  #bound = new Map<string, string | null>();
+  #bound = new Map<SavedDeviceId, StationId | null>();
   /**
    * Devices whose station the user let go of on purpose.
    *
    * Distinct from "has no station yet", which auto-bind is allowed to fill.
    * Cleared by an explicit bind, and by forgetting the device.
    */
-  #released = new Set<string>();
+  #released = new Set<SavedDeviceId>();
   #host: TransportHost | null = null;
   #starting: Promise<TransportHost> | null = null;
 
@@ -124,12 +126,12 @@ export class ConnectionManager {
     return this.#host;
   }
 
-  get(deviceId: string): StationSession | null {
+  get(deviceId: SavedDeviceId): StationSession | null {
     return this.#sessions.get(deviceId) ?? null;
   }
 
   /** Why this saved device has no live session. */
-  refusal(deviceId: string): string | null {
+  refusal(deviceId: SavedDeviceId): string | null {
     return this.#refusals.get(deviceId) ?? null;
   }
 
@@ -227,7 +229,7 @@ export class ConnectionManager {
 
     // What the record already knows, which is how a restart reconnects to the
     // same unit instead of whichever station answers first.
-    const saved = typeof record.config.boundId === 'string' ? record.config.boundId : null;
+    const saved = boundStation(record);
 
     /*
       The one conflict that survives, and it is a real one: a station accepts a
@@ -274,11 +276,12 @@ export class ConnectionManager {
       // Never take a station another saved device is already linked to or has
       // claimed, and never auto-connect to something that cannot be identified
       // as a station.
-      if (this.#ownerOf(found.id, record.id)) return;
-      if (host.openIds().some((id) => same(id, found.id))) return;
+      const candidate = stationId(found.id);
+      if (this.#ownerOf(candidate, record.id)) return;
+      if (host.openIds().some((id) => sameStation(id, candidate))) return;
       if (!(this.deps.autoBind && found.likelyStation)) return;
 
-      void this.bind(record.id, found.id)
+      void this.bind(record.id, candidate)
         .then(() => this.deps.log?.(`Auto-bound ${record.name} to ${found.id}`))
         .catch((error: unknown) => {
           this.deps.log?.(`Auto-bind failed: ${(error as Error).message}`);
@@ -297,7 +300,7 @@ export class ConnectionManager {
    * where a device is reached is a property of that device — not of a file the
    * whole server shares.
    */
-  async bind(deviceId: string, stationId: string): Promise<void> {
+  async bind(deviceId: SavedDeviceId, station: StationId): Promise<void> {
     const session = this.#sessions.get(deviceId);
     if (!session || session.kind === 'sim') {
       throw new Error('That device has no hardware link to bind');
@@ -311,23 +314,23 @@ export class ConnectionManager {
       owners, both drivers polling one link, and whichever closes first takes
       it away from the other.
     */
-    const taken = this.#ownerOf(stationId, deviceId);
-    if (taken) throw new Error(`Another saved device is already bound to ${stationId}`);
+    const taken = this.#ownerOf(station, deviceId);
+    if (taken) throw new Error(`Another saved device is already bound to ${station}`);
 
     const previous = this.#bound.get(deviceId) ?? null;
-    this.#bound.set(deviceId, stationId);
+    this.#bound.set(deviceId, station);
     this.#released.delete(deviceId);
 
     try {
       const host = (await this.link())!;
       await session.link?.close();
 
-      const link = await host.open(stationId);
+      const link = await host.open(station);
       session.device?.retarget(link);
       session.device?.reset();
 
       this.#sessions.set(deviceId, { ...session, link });
-      this.deps.onBound?.(deviceId, session.kind, stationId);
+      this.deps.onBound?.(deviceId, session.kind, station);
     } catch (error) {
       // Releasing the claim matters as much as making it: a station left
       // reserved by a bind that failed is one nothing else may ever take.
@@ -336,7 +339,7 @@ export class ConnectionManager {
     }
   }
 
-  async unbind(deviceId: string): Promise<void> {
+  async unbind(deviceId: SavedDeviceId): Promise<void> {
     const session = this.#sessions.get(deviceId);
     if (!session || session.kind === 'sim') {
       throw new Error('That device has no hardware link to unbind');
@@ -354,7 +357,7 @@ export class ConnectionManager {
     this.deps.onBound?.(deviceId, session.kind, null);
   }
 
-  async close(deviceId: string): Promise<void> {
+  async close(deviceId: SavedDeviceId): Promise<void> {
     const session = this.#sessions.get(deviceId);
     if (!session) return;
 
@@ -376,30 +379,19 @@ export class ConnectionManager {
     for (const deviceId of [...this.#sessions.keys()]) await this.close(deviceId);
   }
 
-  #refuse(deviceId: string, reason: string): void {
+  #refuse(deviceId: SavedDeviceId, reason: string): void {
     this.#refusals.set(deviceId, reason);
     this.deps.log?.(`No link for ${deviceId}: ${reason}`);
   }
 
   /** Which other saved device has claimed this station, if any. */
-  #ownerOf(stationId: string, except: string): string | null {
+  #ownerOf(station: StationId, except: SavedDeviceId): SavedDeviceId | null {
     for (const [id, bound] of this.#bound) {
-      if (id !== except && bound && same(bound, stationId)) return id;
+      if (id !== except && bound && sameStation(bound, station)) return id;
     }
     return null;
   }
 }
-
-/**
- * Station ids compared without regard to case.
- *
- * The two transports disagree, and quietly: `MqttHost` upper-cases MACs, while
- * a noble peripheral id is lower-case hex. A record written by one and checked
- * against the other would compare unequal, and the ownership check that stops
- * two devices sharing a station would wave the second one through.
- */
-const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
-
 /**
  * A link to nothing, for a saved station that has not been given one yet.
  *

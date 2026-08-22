@@ -4,6 +4,7 @@ import {
   settingsToValues,
   valuesToSettings,
 } from '@kraftverk/device-aferiy-p280';
+import { providerDeviceId } from '@kraftverk/plugin-sdk';
 import type {
   ConfigValues,
   ConnectionHealth,
@@ -13,7 +14,7 @@ import type {
   SavedDeviceId,
 } from '@kraftverk/plugin-sdk';
 
-import { modelLabel, type DeviceCatalog, type DeviceRecord } from './catalog.ts';
+import { boundStation, modelLabel, type DeviceCatalog, type DeviceRecord } from './catalog.ts';
 import type { ConnectionManager } from '../connections/manager.ts';
 import type { PluginHost } from '../plugins/host.ts';
 
@@ -156,11 +157,12 @@ export class DeviceRegistry {
       };
     }
 
-    // The vendor's identity, and the only id the adapter will recognise.
-    const providerDeviceId: ProviderDeviceId = descriptor.id;
+    // The adapter is a boundary: its descriptor carries the vendor's identity,
+    // and this is where that string becomes one.
+    const vendorId = providerDeviceId(descriptor.id);
     const health = this.host.health(record.driver);
     const readings = await readWithin(
-      () => instance.plugin.readDevice?.(providerDeviceId),
+      () => instance.plugin.readDevice?.(vendorId),
       READ_TIMEOUT_MS
     );
     const answering = readings.some((reading) => reading.value !== null);
@@ -168,7 +170,7 @@ export class DeviceRegistry {
     return {
       ...withoutIdentity(descriptor),
       id: record.id,
-      providerDeviceId,
+      providerDeviceId: vendorId,
       record,
       name: record.name,
       providerName: descriptor.name === record.name ? null : descriptor.name,
@@ -192,7 +194,14 @@ export class DeviceRegistry {
   #stationView(record: DeviceRecord): SavedDeviceView {
     const session = this.connections.get(record.id);
     const label = record.model ? modelLabel(record.model) : 'Power station';
-    const saved = typeof record.config.boundId === 'string' ? record.config.boundId : null;
+    /*
+      For a station these two identities are the same MAC wearing different
+      hats: the id the radio binds to, and the id the vendor stamped on it. The
+      conversion is written out rather than assumed, because they are the same
+      only for this device kind.
+     */
+    const bound = boundStation(record);
+    const saved = bound ? providerDeviceId(bound) : null;
 
     /*
       A station with no session is still a station you own. It keeps its name,
@@ -231,7 +240,8 @@ export class DeviceRegistry {
     return {
       ...withoutIdentity(p280Descriptor(record.id, record.name, record.model ? label : status.model)),
       id: record.id,
-      providerDeviceId: status.link.mac ?? saved,
+      // The live MAC when the link has one, else what the record was bound to.
+      providerDeviceId: status.link.mac ? providerDeviceId(status.link.mac) : saved,
       record,
       name: record.name,
       providerName: status.name === record.name ? null : status.name,

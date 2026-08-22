@@ -170,7 +170,7 @@ export type {
   Reading,
   SavedDeviceId,
 } from '@kraftverk/plugin-sdk';
-export { isOnline } from '@kraftverk/plugin-sdk';
+export { isOnline, providerDeviceId, savedDeviceId, stationId, candidateId, sameStation } from '@kraftverk/plugin-sdk';
 
 export type DeviceRecord = {
   id: string;
