@@ -134,18 +134,14 @@ export class ConnectionManager {
   }
 
   /**
-   * The first station session.
+   * `station()` was here, returning the first open session.
    *
-   * Only the deprecated global routes — `/api/status`, `/api/settings` — still
-   * ask this question, and it is the wrong question now that there can be
-   * several. It returns the first rather than inventing one, and goes when they
-   * do. Device-scoped routes must use `get(deviceId)`.
-   *
-   * @deprecated Ask for a device's session by id.
+   * It is deliberately gone rather than deprecated. "The station" is a question
+   * with no correct answer once a server holds several, and an accessor that
+   * answers it anyway is a standing invitation to act on the wrong machine —
+   * which is precisely the bug this whole model exists to make impossible.
+   * Every caller names a device: `get(deviceId)`.
    */
-  station(): StationSession | null {
-    return this.#sessions.values().next().value ?? null;
-  }
 
   get sessions(): StationSession[] {
     return [...this.#sessions.values()];

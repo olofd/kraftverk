@@ -141,19 +141,26 @@ export async function fetchStationTransports(signal?: AbortSignal) {
   return data;
 }
 
-export async function bindStation(id: string, signal?: AbortSignal) {
-  const { data } = await api.post<{ boundId: string | null; connected: boolean }>(
+/**
+ * Binds one saved device to one station.
+ *
+ * Both ids are required. The server used to infer the device when only one was
+ * saved, which is the kind of convenience that works until the day it silently
+ * picks the wrong machine.
+ */
+export async function bindStation(deviceId: string, stationId: string, signal?: AbortSignal) {
+  const { data } = await api.post<{ deviceId: string; boundId: string | null; connected: boolean }>(
     '/station/bind',
-    { id },
+    { deviceId, id: stationId },
     { signal }
   );
   return data;
 }
 
-export async function unbindStation(signal?: AbortSignal) {
-  const { data } = await api.post<{ boundId: null; connected: false }>(
+export async function unbindStation(deviceId: string, signal?: AbortSignal) {
+  const { data } = await api.post<{ deviceId: string; boundId: null; connected: false }>(
     '/station/unbind',
-    {},
+    { deviceId },
     { signal }
   );
   return data;

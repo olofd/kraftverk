@@ -204,7 +204,6 @@ describe('the connection manager', () => {
     await connections.sync(catalog.list());
 
     expect(connections.sessions).toEqual([]);
-    expect(connections.station()).toBeNull();
   });
 
   test('opens one session per saved station, keyed by its catalog id', async () => {
@@ -214,7 +213,6 @@ describe('the connection manager', () => {
 
     const session = connections.get(record.id);
     expect(session?.deviceId).toBe(record.id);
-    expect(connections.station()?.deviceId).toBe(record.id);
     expect(drivers[0]?.started).toBe(1);
   });
 

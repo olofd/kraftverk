@@ -4,7 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { Card, SectionLabel } from '@kraftverk/ui';
-import { Row, RowSeparator, ToggleRow } from '@kraftverk/ui';
+import { ModeRow, Row, RowSeparator, ToggleRow } from '@kraftverk/ui';
 import { Screen } from '../src/components/Screen';
 import { SegmentedControl } from '@kraftverk/ui';
 import {
@@ -105,11 +105,11 @@ function ServerLink({
   }, [load]);
 
   const bind = useCallback(
-    async (id: string) => {
+    async (deviceId: string, stationId: string) => {
       haptic();
       setBusy(true);
       try {
-        await bindStation(id);
+        await bindStation(deviceId, stationId);
         await Promise.all([load(), refresh()]);
         setError(null);
       } catch (err) {
@@ -122,11 +122,11 @@ function ServerLink({
     [load, refresh]
   );
 
-  const unbind = useCallback(async () => {
+  const unbind = useCallback(async (deviceId: string) => {
     haptic();
     setBusy(true);
     try {
-      await unbindStation();
+      await unbindStation(deviceId);
       await Promise.all([load(), refresh()]);
     } catch (err) {
       const message = describeError(err);
@@ -137,6 +137,24 @@ function ServerLink({
   }, [load, refresh]);
 
   const simulated = status?.link.mode === 'simulator';
+
+  const links = list?.links ?? [];
+
+  /**
+   * Which saved device a bind is for.
+   *
+   * Explicit, and shown. The server no longer accepts a bind that does not name
+   * its device, which is right: "the station" stopped being a thing the moment
+   * a second one could exist. Defaults to the one still waiting for a link, and
+   * is chosen below when more than one is.
+   */
+  const [chosen, setChosen] = useState<string | null>(null);
+  const target = chosen ?? links.find((entry) => !entry.stationId)?.deviceId ?? links[0]?.deviceId ?? null;
+
+  /** Which saved device holds a given station, so Unbind knows whose link it is. */
+  const ownerOf = (stationId: string) =>
+    links.find((entry) => entry.stationId?.toLowerCase() === stationId.toLowerCase())?.deviceId ??
+    null;
 
   return (
     <>
@@ -179,23 +197,38 @@ function ServerLink({
             }
           />
           <RowSeparator />
-          <Row
-            title="Bound station"
-            subtitle={list?.boundId ?? 'None'}
-            accessory={
-              <XStack alignItems="center" gap="$2">
-                <YStack
-                  width={8}
-                  height={8}
-                  borderRadius={999}
-                  backgroundColor={list?.connected ? '$success' : '$muted'}
-                />
-                <Text fontSize={13} color="$muted">
-                  {list?.connected ? 'live' : 'no data'}
-                </Text>
-              </XStack>
-            }
-          />
+          {/*
+            One row per saved station, each naming its own device.
+
+            This was a single "Bound station" row showing whichever session the
+            server happened to list first — which reads as "the" station even
+            when you own three, and would show one of them holding a link while
+            the others looked like they had none.
+          */}
+          {(list?.links ?? []).length === 0 ? (
+            <Row title="Bound stations" subtitle="No power station has been added yet" />
+          ) : (
+            (list?.links ?? []).map((entry) => (
+              <Row
+                key={entry.deviceId}
+                title={entry.name}
+                subtitle={entry.refusal ?? entry.stationId ?? 'Not bound to a station yet'}
+                accessory={
+                  <XStack alignItems="center" gap="$2">
+                    <YStack
+                      width={8}
+                      height={8}
+                      borderRadius={999}
+                      backgroundColor={entry.connected ? '$success' : '$muted'}
+                    />
+                    <Text fontSize={13} color="$muted">
+                      {entry.connected ? 'live' : 'no data'}
+                    </Text>
+                  </XStack>
+                }
+              />
+            ))
+          )}
           <RowSeparator />
           <Row
             title="Auto-bind"
@@ -224,6 +257,35 @@ function ServerLink({
 
       <YStack gap="$2">
         <SectionLabel>Discovered</SectionLabel>
+
+        {/*
+          Binding needs a subject. With one saved station this says which, so
+          nothing is implied; with several it is a choice, because the server
+          will not guess and neither should this screen.
+        */}
+        {links.length === 0 ? (
+          <Card>
+            <Text fontSize={12} color="$muted" lineHeight={18}>
+              Add a power station under Your devices first — a link belongs to a saved device, so
+              there is nothing to bind these to yet.
+            </Text>
+          </Card>
+        ) : links.length === 1 ? (
+          <Text fontSize={12} color="$muted" lineHeight={18} paddingHorizontal="$1">
+            Binding attaches the station to {links[0]!.name}.
+          </Text>
+        ) : (
+          <Card inset>
+            <ModeRow
+              title="Bind to"
+              subtitle="Which of your saved stations this link belongs to"
+              value={target ?? ''}
+              options={links.map((entry) => ({ value: entry.deviceId, label: entry.name }))}
+              onChange={setChosen}
+            />
+          </Card>
+        )}
+
         <Card inset>
           {!list ? (
             <YStack padding="$5" alignItems="center">
@@ -254,7 +316,14 @@ function ServerLink({
                     active={found.bound}
                     action={
                       found.bound ? (
-                        <Button size="$2" disabled={busy} onPress={() => void unbind()}>
+                        <Button
+                          size="$2"
+                          disabled={busy || !ownerOf(found.id)}
+                          onPress={() => {
+                            const owner = ownerOf(found.id);
+                            if (owner) void unbind(owner);
+                          }}
+                        >
                           Unbind
                         </Button>
                       ) : (
@@ -262,8 +331,10 @@ function ServerLink({
                           size="$2"
                           backgroundColor={found.likelyStation ? '$accent' : undefined}
                           color={found.likelyStation ? '$background' : undefined}
-                          disabled={busy}
-                          onPress={() => void bind(found.id)}
+                          // Nothing to bind it *to* is a real state, and one the
+                          // subtitle above explains rather than a dead button.
+                          disabled={busy || !target}
+                          onPress={() => target && void bind(target, found.id)}
                         >
                           {found.likelyStation ? 'Bind' : 'Try anyway'}
                         </Button>

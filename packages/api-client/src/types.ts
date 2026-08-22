@@ -37,23 +37,32 @@ export type BoundableDevice = DiscoveredDevice & { bound: boolean };
  * radio can see it. The server draws the same line — this is `/station/…`, and
  * `/devices` belongs to the catalog.
  */
+/** One saved station and the link it holds, named by its catalog id. */
+export type StationLinkView = {
+  deviceId: string;
+  name: string;
+  /** The station it is bound to — a MAC or peripheral id. Null until bound. */
+  stationId: string | null;
+  connected: boolean;
+  /** Why it has no link, when another saved device already holds that station. */
+  refusal: string | null;
+};
+
 export type StationTransports = {
   transport: TransportKind | null;
-  /**
-   * The first session's station.
-   *
-   * Kept because this shape predates the server holding more than one, and the
-   * Station link screen still reads it. `links` is the honest answer — one
-   * entry per saved station — and is what new UI should use.
-   */
-  boundId: string | null;
-  connected: boolean;
   autoBind: boolean;
   /** BLE only: why the last connect attempt failed, and how many were made. */
   lastError: string | null;
   attempts: number | null;
-  /** Every saved station and the link it holds. Empty on the simulator. */
-  links: { deviceId: string; stationId: string | null; connected: boolean }[];
+  /**
+   * Every saved station and the link it holds. Empty on the simulator.
+   *
+   * There is deliberately no top-level `boundId`/`connected`. They described
+   * whichever session was first, which is a fact about nothing — a screen
+   * rendering them shows one station's state under a heading that implies it is
+   * the only one.
+   */
+  links: StationLinkView[];
   devices: BoundableDevice[];
 };
 

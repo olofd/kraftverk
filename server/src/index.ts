@@ -15,7 +15,7 @@ import { ConnectionManager, type LinkKind, type StationSession } from './connect
 import { DeviceCatalog, STATION_MODELS } from './devices/catalog.ts';
 import { LegacyStationImport } from './devices/legacy.ts';
 import { DeviceRegistry } from './devices/registry.ts';
-import { audit, recentAudit, secretsAreEncrypted } from './history/db.ts';
+import { appState, audit, recentAudit, secretsAreEncrypted, setAppState } from './history/db.ts';
 import { Sampler, series } from './history/sampler.ts';
 import { PluginHost, type PluginInstance } from './plugins/host.ts';
 import { DeviceDriver, ReadOnlyError } from './drivers/device.ts';
@@ -53,6 +53,15 @@ const READ_ONLY = process.argv.includes('--read-only') || process.env.READ_ONLY 
 const DEVICE_ID = flag('device') ?? process.env.DEVICE_ID ?? process.env.DEVICE_MAC;
 /** Bind the first station discovered instead of waiting for a choice. */
 const AUTO_BIND = process.env.AUTO_BIND !== '0';
+
+/**
+ * Which saved station the grid relay feeds.
+ *
+ * Stored, not derived. A rule like "the only station" is a fact that stops
+ * being true the moment a second one is added, and what it decides here is
+ * whether cutting mains is verified against the right machine.
+ */
+const RELAY_STATION_KEY = 'gridRelay.stationDeviceId';
 
 const startedAt = new Date();
 
@@ -125,53 +134,59 @@ if (LINK !== 'sim') {
 await connections.sync(catalog.list());
 
 if (DEVICE_ID) {
-  // Only meaningful for a saved station: a link belongs to a device now, so
-  // there is nothing to pin this to before one exists.
-  const station = connections.sessions.find((session) => session.kind !== 'sim');
-  if (station) await connections.bind(station.deviceId, DEVICE_ID).catch(() => undefined);
-  else console.log(`[link] --device=${DEVICE_ID} ignored: no station has been added yet`);
+  /*
+    `--device=` names a *station*, so it also has to name the saved device that
+    should hold it. `--for=` is that; without it the flag can only be honoured
+    when there is exactly one saved station, and rather than quietly picking one
+    it says what it did and why.
+  */
+  const forDevice = flag('for') ?? process.env.DEVICE_FOR;
+  const stations = connections.sessions.filter((session) => session.kind !== 'sim');
+  const target = forDevice ?? (stations.length === 1 ? stations[0]!.deviceId : null);
+
+  if (!target) {
+    console.log(
+      stations.length === 0
+        ? `[link] --device=${DEVICE_ID} ignored: no station has been added yet`
+        : `[link] --device=${DEVICE_ID} ignored: ${stations.length} stations are saved. ` +
+            `Add --for=<saved device id> to say which one should hold it.`
+    );
+  } else {
+    await connections.bind(target, DEVICE_ID).catch((error: unknown) => {
+      console.log(`[link] --device=${DEVICE_ID} could not be bound: ${(error as Error).message}`);
+    });
+  }
 }
 
-/** The station session, or an honest 404. The global station routes end here. */
-function stationOr404(): StationSession {
-  const session = connections.station();
+/**
+ * The saved station a request names, or a 404.
+ *
+ * There is no inference here, deliberately — not even "when there is only one".
+ * A route that guesses correctly while you own one device is a route that
+ * guesses *wrongly* the day you own two, and it does so silently, having worked
+ * fine for months. Every caller says which device it means.
+ */
+function stationSession(deviceId: string | undefined): StationSession {
+  if (!deviceId) {
+    throw new HTTPException(400, { message: 'Name the device with deviceId' });
+  }
+
+  const session = connections.get(decodeURIComponent(deviceId));
   if (!session) {
-    throw new HTTPException(404, {
-      message: 'No station has been added yet. Add one from Devices.',
-    });
+    throw new HTTPException(404, { message: 'No such device, or it has no open session' });
   }
   return session;
 }
 
-/**
- * Register-level access, which only real hardware has.
- *
- * `?deviceId=` names which station. It used to be safe to leave out because
- * there could only be one; with several, picking the first would silently dump
- * — or worse, write to — a machine the caller never named. So it is inferred
- * only when the answer is unambiguous, and demanded otherwise.
- */
+/** Register-level access, which only real hardware has. Always by device id. */
 function hardwareOr400(c: Context): DeviceDriver {
-  const requested = c.req.query('deviceId');
-  const stations = connections.sessions.filter((session) => session.device);
-
-  if (requested) {
-    const session = connections.get(decodeURIComponent(requested));
-    if (!session?.device) {
-      throw new HTTPException(404, { message: 'That device has no hardware link' });
-    }
-    return session.device;
-  }
-
-  if (stations.length === 1) return stations[0]!.device!;
-  if (stations.length === 0) {
+  const session = stationSession(c.req.query('deviceId'));
+  if (!session.device) {
     throw new HTTPException(400, {
-      message: 'Needs a hardware driver (STATION_DRIVER=device or ble)',
+      message: 'That device has no hardware link (STATION_DRIVER=device or ble)',
     });
   }
-  throw new HTTPException(400, {
-    message: `${stations.length} stations are connected; name one with ?deviceId=`,
-  });
+  return session.device;
 }
 
 const app = new Hono();
@@ -251,7 +266,8 @@ api.get('/version', (c) => {
     runtime: typeof Bun !== 'undefined' ? `bun ${Bun.version}` : `node ${process.versions.node}`,
     startedAt: startedAt.toISOString(),
     uptimeSeconds: Math.round((Date.now() - startedAt.getTime()) / 1000),
-    link: connections.station()?.driver.mode ?? (LINK === 'sim' ? 'simulator' : 'device'),
+    // A launch decision, not a property of whichever session opened first.
+    link: LINK === 'sim' ? 'simulator' : 'device',
     transport: connections.transport?.kind,
     readOnly: connections.readOnly,
   };
@@ -259,34 +275,17 @@ api.get('/version', (c) => {
 });
 
 /*
-  The global station routes. Every one of them now resolves through the single
-  open session rather than a module-level driver, which is why they can answer
-  "there is no station" instead of inventing one. They are deprecated: their
-  replacements are the device-scoped `/api/devices/:id/...` routes, and they go
-  when the app's global tabs do.
+  `/status`, `/settings`, `/ports/:id` and `/simulator/grid` were here.
+
+  They resolved "the station" — the first open session — which is a question
+  with no correct answer once a server can hold several. Nothing in the app
+  called them; the device-scoped `/api/devices/:id/...` routes replaced them.
+  Keeping them would have meant keeping a way to read and *write* a station
+  nobody named.
+
+  The simulator's grid toggle went with them and returns under a device id when
+  something needs it again.
 */
-api.get('/status', (c) => c.json(stationOr404().driver.status()));
-api.get('/settings', (c) => c.json(stationOr404().driver.settings()));
-
-api.patch('/settings', async (c) =>
-  c.json(await stationOr404().driver.applySettings(await body(c, StationSettingsPatchSchema)))
-);
-
-api.post('/ports/:id', async (c) => {
-  const { id } = z.object({ id: PortIdSchema }).parse(c.req.param());
-  const { enabled } = await body(c, PortPatchSchema);
-  return c.json(await stationOr404().driver.setPort(id, enabled));
-});
-
-/** Simulator-only: pretend the mains came or went. `/grid` belongs to the relay. */
-api.post('/simulator/grid', async (c) => {
-  const { driver } = stationOr404();
-  if (!driver.setGridConnected) {
-    throw new HTTPException(400, { message: 'Only the simulator can fake the grid connection' });
-  }
-  const { connected } = await body(c, z.object({ connected: z.boolean() }));
-  return c.json(await driver.setGridConnected(connected));
-});
 
 // --- station transports ---------------------------------------------------
 //
@@ -300,17 +299,13 @@ api.get('/station/transports', (c) => {
   const linked = host?.openIds() ?? [];
 
   /*
-    `boundId` and `connected` describe the first session, because this route and
-    the screen above it were built when there could only be one. They are kept
-    so the Station link screen keeps working; `links` is the honest answer now
-    that a host carries one per saved station.
+    `boundId` and `connected` used to be here, describing "the" session — which
+    meant the first one. A screen that renders them is a screen that shows one
+    station's state under a heading that implies it is the only one. `links` is
+    the whole answer: one entry per saved station, each naming its device.
   */
-  const first = connections.sessions.find((session) => session.link);
-
   return c.json({
     transport: host?.kind ?? null,
-    boundId: first?.link?.boundId ?? null,
-    connected: first?.link?.connected ?? false,
     autoBind: AUTO_BIND,
     lastError: host instanceof BleHost ? host.lastError : null,
     attempts: host instanceof BleHost ? host.attempts : null,
@@ -318,8 +313,10 @@ api.get('/station/transports', (c) => {
       .filter((session) => session.kind !== 'sim')
       .map((session) => ({
         deviceId: session.deviceId,
+        name: catalog.get(session.deviceId)?.name ?? session.deviceId,
         stationId: session.link?.boundId ?? null,
         connected: session.link?.connected ?? false,
+        refusal: connections.refusal(session.deviceId),
       })),
     devices: (host?.discovered() ?? []).map((d) => ({ ...d, bound: linked.includes(d.id) })),
   });
@@ -339,23 +336,8 @@ api.get('/station/transports', (c) => {
  * link; now a link belongs to a saved device, and a link nothing polls would be
  * a connection held for no reason — while taking the station away from the app.
  */
-const bindTarget = (deviceId: string | undefined): string => {
-  if (deviceId) {
-    if (!connections.get(deviceId)) throw new HTTPException(404, { message: 'No such device' });
-    return deviceId;
-  }
-
-  const stations = connections.sessions.filter((session) => session.kind !== 'sim');
-  if (stations.length === 1) return stations[0]!.deviceId;
-  if (stations.length === 0) {
-    throw new HTTPException(400, {
-      message: 'Add a power station first — a link belongs to a saved device',
-    });
-  }
-  throw new HTTPException(400, {
-    message: `${stations.length} stations are saved; say which one with deviceId`,
-  });
-};
+/** Which saved device a bind acts on. Named, never inferred. */
+const bindTarget = (deviceId: string | undefined): string => stationSession(deviceId).deviceId;
 
 api.post('/station/bind', async (c) => {
   const host = await connections.link();
@@ -398,17 +380,18 @@ const diag = new Hono();
 diag.get('/link', (c) => {
   const host = connections.transport;
   const linked = host?.openIds() ?? [];
-  const first = connections.sessions.find((session) => session.link);
 
   return c.json({
-    driver: connections.station()?.driver.mode ?? (LINK === 'sim' ? 'simulator' : 'device'),
+    driver: LINK === 'sim' ? 'simulator' : 'device',
     transport: host?.kind ?? null,
     brokerListening: broker.listening,
     mqtt: { host: MQTT_HOST, port: MQTT_PORT },
     devices: (host?.discovered() ?? []).map((d) => ({ ...d, bound: linked.includes(d.id) })),
-    boundId: first?.link?.boundId ?? null,
-    connected: first?.link?.connected ?? false,
-    linkedStations: linked,
+    // Which stations are held, and by whom. No "the" station: that word was
+    // what let a diagnostic describe one machine while implying all of them.
+    linkedStations: connections.sessions
+      .filter((session) => session.link)
+      .map((session) => ({ deviceId: session.deviceId, stationId: session.link!.boundId })),
     configuredId: DEVICE_ID ?? null,
   });
 });
@@ -481,7 +464,8 @@ diag.post('/snapshot', async (c) => {
   return c.json({ at: baseline.at, input: input.length, holding: holding.length });
 });
 
-diag.get('/blocked', (c) => c.json(connections.station()?.device?.blockedWrites ?? []));
+/** Writes this station refused while read-only. Its own, not somebody else's. */
+diag.get('/blocked', (c) => c.json(hardwareOr400(c).blockedWrites));
 
 /**
  * Read an arbitrary register range, and show it decoded as ASCII too.
@@ -594,27 +578,35 @@ diag.post('/raw', async (c) => {
 const gateway = new ActionGateway({
   host,
   /*
-    Which station the relay is proved against.
+    Which station the relay is proved against — by recorded id, never by
+    whichever session happens to be open.
 
-    Deliberately refuses to guess. The gateway's second proof is the station's
-    own AC input agreeing that mains came or went; read from the wrong station
-    it proves nothing, and would happily report `verified` because some other
-    station has power. Nothing yet records which station a plug actually feeds
-    — that pairing is the next piece of the automation model — so with several
-    saved the honest answer is "I cannot tell", not a coin toss.
+    The gateway's second proof is *the* station's AC input agreeing that mains
+    came or went. Read from the wrong station it proves nothing, and would
+    happily report `verified` because some other station has power while the one
+    this plug feeds sat dark. So the pairing is a stored `SavedDeviceId`
+    (`RELAY_STATION_KEY`), and if the station it names is gone or has no
+    session, the answer is "I cannot verify" rather than a substitute.
   */
   readStation: () => {
-    const stations = connections.sessions;
-    if (stations.length === 1) return { status: stations[0]!.driver.status() };
-    if (stations.length === 0) {
-      return { status: null, reason: 'No station telemetry: refusing to switch blind' };
+    const deviceId = appState(RELAY_STATION_KEY);
+    if (!deviceId) {
+      return {
+        status: null,
+        reason:
+          'No station is paired with the grid relay, so switching it cannot be verified. ' +
+          'Pair one with POST /api/grid/station.',
+      };
     }
-    return {
-      status: null,
-      reason:
-        `${stations.length} stations are connected and none is recorded as the one this plug ` +
-        `feeds, so its effect cannot be verified. Refusing to switch blind.`,
-    };
+
+    const session = connections.get(deviceId);
+    if (!session) {
+      return {
+        status: null,
+        reason: `The station paired with the relay (${deviceId}) has no open session.`,
+      };
+    }
+    return { status: session.driver.status() };
   },
   isReadOnly: () => connections.readOnly,
 });
@@ -783,14 +775,47 @@ api.route('/plugins', plugins);
 
 api.get('/grid', async (c) => {
   const state = await gateway.state();
+  // `app_state` stores '' for "cleared"; the API should say null.
+  const stationId = appState(RELAY_STATION_KEY) || null;
   return c.json({
     provider: host.activeProvider('gridRelay'),
     granted: (() => {
       const id = host.activeProvider('gridRelay');
       return id ? host.isGranted(id, 'gridRelay.switch') : false;
     })(),
+    /** The station this relay feeds, by saved-device id. Null until paired. */
+    stationDeviceId: stationId,
+    stationPresent: stationId ? connections.get(stationId) !== null : false,
     state,
   });
+});
+
+/**
+ * Records which station this relay actually feeds.
+ *
+ * The pairing is a `SavedDeviceId` on disk rather than a rule evaluated at
+ * switch time, because "the only station" is a fact that silently stops being
+ * true the day a second one is added — and the thing it decides is whether
+ * cutting mains gets verified against the right machine.
+ */
+api.post('/grid/station', async (c) => {
+  const { deviceId } = await body(c, z.object({ deviceId: z.string().min(1).nullable() }));
+
+  if (deviceId === null) {
+    setAppState(RELAY_STATION_KEY, '');
+    auditDevice('relay.unpaired', '', 'The grid relay is no longer paired with a station');
+    return c.json({ stationDeviceId: null });
+  }
+
+  const record = catalog.get(deviceId);
+  if (!record) throw new HTTPException(404, { message: 'No such device' });
+  if (record.type !== 'power-station') {
+    throw new HTTPException(400, { message: 'A relay is paired with a power station' });
+  }
+
+  setAppState(RELAY_STATION_KEY, record.id);
+  auditDevice('relay.paired', record.id, `The grid relay now feeds "${record.name}"`);
+  return c.json({ stationDeviceId: record.id });
 });
 
 api.post('/grid/relay', async (c) => {
@@ -941,6 +966,19 @@ api.post('/devices', async (c) => {
     model: record.model,
   });
 
+  /*
+    Pair the relay with the first station added, and record the id.
+
+    This is the one moment the answer is unambiguous, so it is the moment to
+    write it down — rather than re-deriving "the only station" at every switch,
+    which would quietly become the wrong station the day a second is added. The
+    user can repoint it with POST /api/grid/station.
+  */
+  if (record.type === 'power-station' && !appState(RELAY_STATION_KEY)) {
+    setAppState(RELAY_STATION_KEY, record.id);
+    auditDevice('relay.paired', record.id, `The grid relay is assumed to feed "${record.name}"`);
+  }
+
   // Adding a station opens its link, rather than waiting for a restart.
   await connections.sync(catalog.list());
   return c.json(await registry.find(record.id));
@@ -1086,6 +1124,14 @@ api.delete('/devices/:id', async (c) => {
   });
 
   catalog.remove(id);
+
+  // A pairing that points at a device you no longer own is worse than none:
+  // the gateway would go looking for a session that can never appear.
+  if (appState(RELAY_STATION_KEY) === id) {
+    setAppState(RELAY_STATION_KEY, '');
+    auditDevice('relay.unpaired', id, 'The station the grid relay fed was forgotten');
+  }
+
   // Forgetting a device closes its link. Leaving a session open for a record
   // that no longer exists is how a deleted device keeps polling the hardware.
   await connections.sync(catalog.list());
