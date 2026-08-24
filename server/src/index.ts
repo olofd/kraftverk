@@ -67,8 +67,13 @@ const flag = (name: string) =>
  * record, so a server holding one of each is an ordinary state rather than a
  * configuration nobody chose.
  *
- * `device` is accepted as a name for `mqtt`, which is what the npm scripts and
- * the docs have always called it.
+ * `device` means "the real station, however it is reachable" — it expands to
+ * both radios rather than to `mqtt` alone. Which transport a given station
+ * answers on is a property of that station, not of the command you typed, so
+ * asking for hardware and then silently getting only half of it is a trap: the
+ * Bluetooth station never appears and the screen looks broken. A machine
+ * without a radio is not a problem here, because a transport that fails to
+ * start is recorded and reported rather than thrown.
  */
 const DRIVER = flag('driver') ?? process.env.STATION_DRIVER ?? 'sim';
 
@@ -79,7 +84,7 @@ const TRANSPORTS: ServerTransportKind[] =
         ...new Set(
           DRIVER.split(',')
             .map((name) => name.trim())
-            .map((name) => (name === 'device' ? 'mqtt' : name))
+            .flatMap((name) => (name === 'device' ? ['ble', 'mqtt'] : [name]))
             .filter((name): name is ServerTransportKind => name === 'ble' || name === 'mqtt')
         ),
       ];
@@ -162,8 +167,19 @@ if (!SIMULATE) {
     }
   }
 
+  /*
+    Both modes announce themselves. Read-only saying so and write mode saying
+    nothing would mean the dangerous state is the silent one, and the state you
+    most want to notice you are in is the one you are about to change hardware
+    from.
+  */
   if (READ_ONLY) {
     console.log('READ-ONLY: every write will be refused. Nothing can change on the station.');
+  } else {
+    console.warn(
+      'WRITES ALLOWED: this process can change settings on a real station. ' +
+        'The wrong register can destroy it permanently — see the hardware warning in the README.'
+    );
   }
 }
 

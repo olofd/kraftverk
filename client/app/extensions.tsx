@@ -275,6 +275,7 @@ function PluginSetup({
   */
   const [actionInputs, setActionInputs] = useState<Record<string, ConfigValues>>({});
   const [actionResults, setActionResults] = useState<Record<string, SetupActionResult>>({});
+  const theme = useTheme();
 
   const load = useCallback(async () => {
     try {
@@ -433,7 +434,7 @@ function PluginSetup({
                   backgroundColor={step.done ? '$success' : open ? '$accent' : '$backgroundPress'}
                 >
                   {step.done ? (
-                    <Feather name="check" size={13} color="#0b0f16" />
+                    <Feather name="check" size={13} color={theme.background?.val} />
                   ) : (
                     <Text fontSize={12} fontWeight="800" color={open ? '$background' : '$muted'}>
                       {index + 1}
@@ -450,7 +451,7 @@ function PluginSetup({
                     </Text>
                   ) : null}
                 </YStack>
-                <Feather name={open ? 'chevron-up' : 'chevron-down'} size={16} color="#64748b" />
+                <Feather name={open ? 'chevron-up' : 'chevron-down'} size={16} color={theme.muted?.val} />
               </XStack>
 
               {open ? (

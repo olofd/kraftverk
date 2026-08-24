@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { router } from 'expo-router';
 import { Card, haptic } from '@kraftverk/ui';
-import { Spinner, Text, XStack, YStack } from 'tamagui';
+import { Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import type { ConnectionStatus, SavedDeviceView } from '@kraftverk/api-client';
 
@@ -53,6 +53,17 @@ const TABS: { value: DeviceTab; label: string }[] = [
  * no label because the screen title above it already says whose device it is.
  */
 function DeviceTabs({ tab, onChange }: { tab: DeviceTab; onChange: (next: DeviceTab) => void }) {
+  /*
+    The resolved value, not the token.
+
+    `backgroundColor="$card"` inside a styled() definition compiles to the theme's
+    CSS variable and follows light and dark correctly. Written inline as a
+    conditional it does not: it resolves against a baked-in default instead, which
+    in the light theme paints a dark slate behind the near-black selected label and
+    makes it unreadable. Reading the value off the theme keeps both schemes honest.
+  */
+  const theme = useTheme();
+
   return (
     <XStack backgroundColor="$backgroundPress" borderRadius="$3" padding={3} gap={3} role="tablist">
       {TABS.map((option) => {
@@ -67,7 +78,7 @@ function DeviceTabs({ tab, onChange }: { tab: DeviceTab; onChange: (next: Device
             paddingVertical="$2"
             borderRadius="$2"
             cursor="pointer"
-            backgroundColor={selected ? '$card' : 'transparent'}
+            backgroundColor={selected ? theme.card?.val : 'transparent'}
             hoverStyle={selected ? undefined : { backgroundColor: '$backgroundHover' }}
             pressStyle={{ opacity: 0.7 }}
             onPress={() => {

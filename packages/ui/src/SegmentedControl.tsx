@@ -1,4 +1,4 @@
-import { Text, XStack, YStack } from 'tamagui';
+import { Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { haptic } from './haptics';
 
@@ -19,6 +19,17 @@ export function SegmentedControl<T extends string | number>({
   options,
   onChange,
 }: Props<T>) {
+  /*
+    The resolved value, not the token.
+
+    `backgroundColor="$card"` inside a styled() definition compiles to the theme's
+    CSS variable and follows light and dark correctly. Written inline as a
+    conditional it does not: it resolves against a baked-in default instead, which
+    in the light theme paints a dark slate behind the near-black selected label and
+    makes it unreadable. Reading the value off the theme keeps both schemes honest.
+  */
+  const theme = useTheme();
+
   return (
     <YStack gap="$3" paddingHorizontal="$4" paddingVertical="$3">
       <YStack gap={2}>
@@ -51,7 +62,7 @@ export function SegmentedControl<T extends string | number>({
               paddingVertical="$2"
               borderRadius="$2"
               cursor="pointer"
-              backgroundColor={selected ? '$card' : 'transparent'}
+              backgroundColor={selected ? theme.card?.val : 'transparent'}
               transition="fast"
               hoverStyle={selected ? undefined : { backgroundColor: '$backgroundHover' }}
               pressStyle={{ opacity: 0.7 }}

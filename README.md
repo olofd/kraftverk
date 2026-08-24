@@ -251,21 +251,66 @@ npm run dev
 That starts the simulator and the web app — no hardware needed. Open
 `http://localhost:8081`.
 
-Against a real station, **read-only by default**:
+### Which command to run
+
+Against a real station you choose **how to reach it** and **whether writes are
+allowed**. Those are the only two decisions, and they are the two halves of the
+script name:
+
+| Command | Reaches the station over | Writes |
+| --- | --- | --- |
+| `npm run dev` | nothing — the simulator | — |
+| `npm run dev:device` | Bluetooth **and** WiFi | refused |
+| `npm run dev:ble` | Bluetooth only | refused |
+| `npm run dev:wifi` | WiFi only (MQTT on `:1883`) | refused |
+| `npm run dev:device:write` | Bluetooth **and** WiFi | **allowed** |
+| `npm run dev:ble:write` | Bluetooth only | **allowed** |
+| `npm run dev:wifi:write` | WiFi only (MQTT on `:1883`) | **allowed** |
+
+**`dev:device` is the one to reach for.** A station is reachable over whichever
+transport it happens to be using, and starting both radios means you do not have
+to know which one in advance. A machine with no Bluetooth adapter is fine here —
+a transport that cannot start is reported on the Connection screen, and the
+other one carries on.
+
+Narrow it only when you want exactly one radio: `dev:ble` leaves the MQTT port
+closed, and `dev:wifi` does not touch the Bluetooth adapter.
+
+Everything without `:write` **refuses every write at the driver**. Reach for a
+`:write` variant only once you have verified reads against your own unit and
+have decided to accept the risk described above.
+
+Each of these frees ports `3333`, `1883` and `8081` before starting, so a server
+left running from last time is not something you have to think about.
+
+To run the server on its own, without Metro, the same names work with a
+`server:` prefix — `npm run server:device`, `npm run server:ble:write`, and so
+on.
+
+### Running it for real
+
+Everything above is a *development* command: the app is served unminified and
+both sides restart the moment a file changes. When you want to **use** the
+thing rather than work on it — left running on the machine next to the station
+— there is one command:
 
 ```bash
-npm run dev:ble
+npm run start:prod
 ```
 
-```bash
-npm run dev:device
-```
+Both radios, writes allowed, the app bundled in production mode, and neither
+side restarting under you. It is `dev:device:write` with the development parts
+taken out.
 
-Only when you have verified reads and decided to accept the risk:
+It is also **the most dangerous way to run this software**, and the server says
+so on startup: full hardware access with writes enabled and no read-only net.
+Do not reach for it until you have read the hardware warning above and verified
+reads against your own unit.
 
-```bash
-npm run dev:ble:write
-```
+`start:prod` runs on the **host**, not in Docker. A container has no honest
+access to a Bluetooth radio — which is why the image leaves noble out
+altogether — so "all transports" is something only a host process can offer.
+For an always-on server reaching stations over WiFi, use Docker instead.
 
 ### Running the server in Docker
 

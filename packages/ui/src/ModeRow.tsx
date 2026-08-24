@@ -1,4 +1,4 @@
-import { Text, XStack, YStack } from 'tamagui';
+import { Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { haptic } from './haptics';
 
@@ -27,6 +27,18 @@ export function ModeRow<T extends string | number>({
   disabled,
   onChange,
 }: Props<T>) {
+  /*
+    The resolved value, not the token.
+
+    `backgroundColor="$card"` inside a styled() definition compiles to the
+    theme's CSS variable and follows light and dark correctly. Written inline as
+    a conditional it does not: it resolves against a baked-in default instead,
+    which in the light theme paints a dark slate behind the near-black selected
+    label and makes it unreadable. Reading the value off the theme keeps both
+    schemes honest.
+  */
+  const theme = useTheme();
+
   return (
     // Always stacked. A side-by-side layout looked tidier with two options but
     // clipped the title once a control had five, so the label always gets its
@@ -58,7 +70,7 @@ export function ModeRow<T extends string | number>({
               paddingVertical="$2"
               borderRadius="$2"
               cursor={disabled ? 'default' : 'pointer'}
-              backgroundColor={selected ? '$card' : 'transparent'}
+              backgroundColor={selected ? theme.card?.val : 'transparent'}
               transition="fast"
               hoverStyle={selected || disabled ? undefined : { backgroundColor: '$backgroundHover' }}
               pressStyle={disabled ? undefined : { opacity: 0.7 }}

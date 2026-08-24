@@ -5,15 +5,18 @@
   "type": "module",
   "module": "src/index.ts",
   "scripts": {
+    "//dev": "device starts both radios; ble and wifi narrow it to one. Without :write the driver refuses every write.",
     "dev": "node ../scripts/run-bun.mjs --hot src/index.ts",
     "dev:device": "node ../scripts/run-bun.mjs --hot src/index.ts --driver=device --read-only",
     "dev:device:write": "node ../scripts/run-bun.mjs --hot src/index.ts --driver=device",
     "dev:ble": "node ../scripts/run-bun.mjs --hot src/index.ts --driver=ble --read-only",
     "dev:ble:write": "node ../scripts/run-bun.mjs --hot src/index.ts --driver=ble",
+    "dev:wifi": "node ../scripts/run-bun.mjs --hot src/index.ts --driver=mqtt --read-only",
+    "dev:wifi:write": "node ../scripts/run-bun.mjs --hot src/index.ts --driver=mqtt",
+    "//start": "Not a dev server: no --hot, so the process does not restart under you. Both radios, and writes are ALLOWED.",
+    "start:prod": "node ../scripts/run-bun.mjs src/index.ts --driver=device",
     "start": "node ../scripts/run-bun.mjs src/index.ts",
-    "typecheck": "tsc --noEmit",
-    "dev:all": "node ../scripts/run-bun.mjs --hot src/index.ts --driver=ble,mqtt --read-only",
-    "dev:all:write": "node ../scripts/run-bun.mjs --hot src/index.ts --driver=ble,mqtt"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@kraftverk/plugin-sdk": "*",

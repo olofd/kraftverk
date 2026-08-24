@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Pressable } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { Card, SectionLabel } from '@kraftverk/ui';
 import { ModeRow, Row, RowSeparator, ToggleRow } from '@kraftverk/ui';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Screen } from '../src/components/Screen';
 import { SegmentedControl } from '@kraftverk/ui';
 import {
@@ -114,7 +114,10 @@ function ServerLink({
   const [list, setList] = useState<StationTransports | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /* Peripherals that never announced themselves as a station, folded away. */
+  const [showOther, setShowOther] = useState(false);
   const theme = useTheme();
+  const router = useRouter();
 
   const load = useCallback(async () => {
     try {
@@ -177,12 +180,95 @@ function ServerLink({
    * is chosen below when more than one is.
    */
   const [chosen, setChosen] = useState<string | null>(null);
-  const target = chosen ?? links.find((entry) => !entry.stationId)?.deviceId ?? links[0]?.deviceId ?? null;
+  /*
+    A choice only counts while the device it names is still on the list. Sessions
+    come and go, so the device picked here can leave — and preferring a stale id
+    would bind the station to a device this screen has stopped naming, which is
+    worse than quietly falling back to the one it does name.
+  */
+  const target =
+    (chosen && links.some((entry) => entry.deviceId === chosen) ? chosen : null) ??
+    links.find((entry) => !entry.stationId)?.deviceId ??
+    links[0]?.deviceId ??
+    null;
 
   /** Which saved device holds a given station, so Unbind knows whose link it is. */
   const ownerOf = (stationId: string) =>
     links.find((entry) => entry.stationId?.toLowerCase() === stationId.toLowerCase())?.deviceId ??
     null;
+
+  /*
+    Two lists, not one dimmed sequence.
+
+    A power station announces itself; everything else in radio range — headphones,
+    a watch, a neighbour's television — does not, and in a flat where that is a
+    dozen devices they bury the one row that matters. Sorting them to the bottom
+    was not enough: they still had to be read past, and each still offered a
+    button. Folded away, the question this screen answers is "here is your
+    station", not "which of these fourteen is it".
+  */
+  const discovered = list?.devices ?? [];
+  const stations = discovered.filter((found) => found.likelyStation);
+  const others = discovered.filter((found) => !found.likelyStation);
+
+  /** Advice for whichever transports are actually scanning. */
+  const nothingYet = simulated
+    ? 'The simulator discovers nothing: it has no radio to scan with.'
+    : [
+        list?.transports.some((t) => t.kind === 'ble' && t.running)
+          ? 'Make sure the station is powered on and Bluetooth is enabled on it.'
+          : null,
+        list?.transports.some((t) => t.kind === 'mqtt' && t.running)
+          ? 'For WiFi, point mqtt.sydpower.com at this machine and power-cycle the station.'
+          : null,
+      ]
+        .filter(Boolean)
+        .join(' ');
+
+  /** One discovered device, with whatever it is you can do with it. */
+  const deviceRow = (found: (typeof discovered)[number]) => (
+    <DeviceRow
+      name={found.name}
+      detail={`${found.mac ?? found.id}${found.rssi !== undefined ? ` · ${found.rssi} dBm` : ''}`}
+      icon={found.kind === 'mqtt' ? 'wifi' : 'bluetooth'}
+      active={found.bound}
+      action={
+        found.bound ? (
+          <Button
+            size="$2"
+            disabled={busy || !ownerOf(found.id)}
+            onPress={() => {
+              const owner = ownerOf(found.id);
+              if (owner) void unbind(owner);
+            }}
+          >
+            Unbind
+          </Button>
+        ) : !target ? (
+          /*
+            Nothing to bind to. This used to be a disabled Bind button, which on
+            the web does not even change the cursor — it just failed to respond.
+            The way out is to add a device, and the card directly above this list
+            says so and offers it; repeating that button on all thirty rows would
+            imply each one leads somewhere different. So the rows stay
+            informational, which is still worth reading: seeing the station in
+            range is how you know the radio is working before you add anything.
+          */
+          null
+        ) : (
+          <Button
+            size="$2"
+            backgroundColor={found.likelyStation ? '$accent' : undefined}
+            color={found.likelyStation ? '$background' : undefined}
+            disabled={busy}
+            onPress={() => void bind(target, found.id)}
+          >
+            {found.likelyStation ? 'Bind' : 'Try anyway'}
+          </Button>
+        )
+      }
+    />
+  );
 
   return (
     <>
@@ -221,7 +307,7 @@ function ServerLink({
           <Text fontSize={12} color="$muted" lineHeight={18}>
             Restart it with{' '}
             <Text fontFamily="$mono" color="$color">
-              npm run dev:all
+              npm run dev:device
             </Text>{' '}
             to run Bluetooth and WiFi together. To use Bluetooth from this{' '}
             {Platform.OS === 'web' ? 'browser' : 'phone'} instead, no server is involved at all —
@@ -320,11 +406,23 @@ function ServerLink({
           will not guess and neither should this screen.
         */}
         {links.length === 0 ? (
-          <Card>
+          <Card gap="$3">
             <Text fontSize={12} color="$muted" lineHeight={18}>
-              Add a power station under Your devices first — a link belongs to a saved device, so
-              there is nothing to bind these to yet.
+              A link belongs to a saved device, so there is nothing to bind these to yet. Add the
+              station under Your devices and it becomes somewhere to bind.
             </Text>
+            <Button
+              size="$3"
+              backgroundColor="$accent"
+              color="$background"
+              icon={<Feather name="plus" size={15} color={theme.background?.val} />}
+              onPress={() => {
+                haptic();
+                router.push('/add-device');
+              }}
+            >
+              Add a power station
+            </Button>
           </Card>
         ) : links.length === 1 ? (
           <Text fontSize={12} color="$muted" lineHeight={18} paddingHorizontal="$1">
@@ -347,68 +445,69 @@ function ServerLink({
             <YStack padding="$5" alignItems="center">
               <Spinner color="$accent" />
             </YStack>
-          ) : list.devices.length === 0 ? (
-            <Row
-              title="Nothing found yet"
-              /* Advice for whichever transports are actually scanning. */
-              subtitle={
-                simulated
-                  ? 'The simulator discovers nothing: it has no radio to scan with.'
-                  : [
-                      list.transports.some((t) => t.kind === 'ble' && t.running)
-                        ? 'Make sure the P280 is powered on and Bluetooth is enabled on it.'
-                        : null,
-                      list.transports.some((t) => t.kind === 'mqtt' && t.running)
-                        ? 'For WiFi, point mqtt.sydpower.com at this machine and power-cycle the P280.'
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join(' ')
-              }
-            />
           ) : (
-            // Stations first; unidentified peripherals sink to the bottom.
-            [...list.devices]
-              .sort((a, b) => Number(b.likelyStation) - Number(a.likelyStation))
-              .map((found, index) => (
-                <YStack key={found.id} opacity={found.likelyStation ? 1 : 0.55}>
-                  {index > 0 ? <RowSeparator /> : null}
-                  <DeviceRow
-                    name={found.name}
-                    detail={`${found.mac ?? found.id}${
-                      found.rssi !== undefined ? ` · ${found.rssi} dBm` : ''
-                    }${found.likelyStation ? '' : ' · not identified as a station'}`}
-                    icon={found.kind === 'mqtt' ? 'wifi' : 'bluetooth'}
-                    active={found.bound}
-                    action={
-                      found.bound ? (
-                        <Button
-                          size="$2"
-                          disabled={busy || !ownerOf(found.id)}
-                          onPress={() => {
-                            const owner = ownerOf(found.id);
-                            if (owner) void unbind(owner);
-                          }}
-                        >
-                          Unbind
-                        </Button>
-                      ) : (
-                        <Button
-                          size="$2"
-                          backgroundColor={found.likelyStation ? '$accent' : undefined}
-                          color={found.likelyStation ? '$background' : undefined}
-                          // Nothing to bind it *to* is a real state, and one the
-                          // subtitle above explains rather than a dead button.
-                          disabled={busy || !target}
-                          onPress={() => target && void bind(target, found.id)}
-                        >
-                          {found.likelyStation ? 'Bind' : 'Try anyway'}
-                        </Button>
-                      )
-                    }
-                  />
-                </YStack>
-              ))
+            <>
+              {stations.length === 0 ? (
+                <Row
+                  title={
+                    discovered.length === 0 ? 'Nothing found yet' : 'No power station among them'
+                  }
+                  subtitle={
+                    discovered.length === 0
+                      ? nothingYet
+                      : `Nothing in range announced itself as a power station. ${nothingYet}`
+                  }
+                />
+              ) : (
+                stations.map((found, index) => (
+                  <YStack key={found.id}>
+                    {index > 0 ? <RowSeparator /> : null}
+                    {deviceRow(found)}
+                  </YStack>
+                ))
+              )}
+
+              {others.length > 0 ? (
+                <>
+                  <RowSeparator />
+                  <Pressable
+                    onPress={() => {
+                      haptic();
+                      setShowOther((open) => !open);
+                    }}
+                  >
+                    <Row
+                      title={
+                        others.length === 1
+                          ? '1 other Bluetooth device'
+                          : `${others.length} other Bluetooth devices`
+                      }
+                      subtitle={
+                        showOther
+                          ? 'None of these announced itself as a power station.'
+                          : 'Open this only if your station is missing above.'
+                      }
+                      accessory={
+                        <Feather
+                          name={showOther ? 'chevron-up' : 'chevron-down'}
+                          size={16}
+                          color={theme.muted?.val}
+                        />
+                      }
+                    />
+                  </Pressable>
+
+                  {showOther
+                    ? others.map((found) => (
+                        <YStack key={found.id} opacity={0.65}>
+                          <RowSeparator />
+                          {deviceRow(found)}
+                        </YStack>
+                      ))
+                    : null}
+                </>
+              ) : null}
+            </>
           )}
         </Card>
       </YStack>
@@ -421,6 +520,7 @@ function DirectLink({ direct }: { direct: ReturnType<typeof useDirectLink>['dire
   const { support, devices, boundId, connected, readOnly, busy, scanning, error } = direct;
   const { remembered, resuming } = direct;
   const isWeb = Platform.OS === 'web';
+  const theme = useTheme();
 
   /** The station's advertised name beats an opaque per-origin id in the UI. */
   const boundName =
@@ -431,7 +531,7 @@ function DirectLink({ direct }: { direct: ReturnType<typeof useDirectLink>['dire
     return (
       <Card borderColor="$warning" gap="$2">
         <XStack alignItems="center" gap="$2">
-          <Feather name="bluetooth" size={15} color="$warning" />
+          <Feather name="bluetooth" size={15} color={theme.warning?.val} />
           <Text fontSize={14} fontWeight="700" color="$warning">
             Direct Bluetooth is not available here
           </Text>
