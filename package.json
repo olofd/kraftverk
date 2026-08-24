@@ -45,7 +45,20 @@
     "server:all:write": "npm run dev:all:write --workspace server"
   },
   "devDependencies": {
+    "bun": "1.4.0",
     "concurrently": "^10.0.4",
     "kill-port": "^1.6.1"
+  },
+  "volta": {
+    "node": "24.19.0",
+    "npm": "11.17.0"
+  },
+  "allowScripts": {
+    "bun": true,
+    "esbuild": true,
+    "usb": true,
+    "@serialport/bindings-cpp": true,
+    "@stoprocent/noble": true,
+    "@stoprocent/bluetooth-hci-socket": true
   }
 }

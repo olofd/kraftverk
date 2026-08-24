@@ -1,23 +1,47 @@
 #!/usr/bin/env node
 /**
- * Runs the server under Bun, finding Bun even when it isn't on PATH.
+ * Runs the server under Bun, using the copy this project pins.
  *
- * Installing Bun updates the persisted PATH, but already-running shells (and
- * anything they spawn — notably a VS Code integrated terminal, whose tabs
- * inherit the environment VS Code launched with) keep the old one. That
- * produces "'bun' is not recognized" long after a successful install.
+ * Bun is a devDependency (`bun` on npm, which pulls the right
+ * `@oven/bun-<platform>` binary), so `npm install` is the only setup step and
+ * everyone gets the same version on macOS and Windows alike. We resolve that
+ * binary ourselves because npm scripts run under Node, and a globally
+ * installed Bun — if one exists at all — may be a different, older version.
  *
- * npm scripts run under Node, which is on PATH by definition, so we resolve
- * Bun ourselves and exec it.
+ * A global install is still honoured as a fallback, which keeps working for
+ * anyone who set the project up before Bun was vendored. That path also covers
+ * the stale-PATH case: installing Bun updates the persisted PATH, but
+ * already-running shells (notably a VS Code integrated terminal, whose tabs
+ * inherit the environment VS Code launched with) keep the old one.
  */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, parse } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const exe = process.platform === 'win32' ? 'bun.exe' : 'bun';
 
-/** Well-known install locations, in the order we prefer them. */
+/**
+ * The pinned binary, found by walking up from this script to the workspace
+ * root. The npm package names it `bun.exe` on every platform, so this one path
+ * works everywhere — and pointing at it directly avoids `node_modules/.bin`,
+ * whose Windows entry is a `.cmd` shim that `spawn` cannot exec without a
+ * shell.
+ */
+function localBun() {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  const { root } = parse(dir);
+
+  while (true) {
+    const candidate = join(dir, 'node_modules', 'bun', 'bin', 'bun.exe');
+    if (existsSync(candidate)) return candidate;
+    if (dir === root) return null;
+    dir = dirname(dir);
+  }
+}
+
+/** Well-known global install locations, in the order we prefer them. */
 function candidates() {
   const home = homedir();
   const local = process.env.LOCALAPPDATA ?? join(home, 'AppData', 'Local');
@@ -43,7 +67,7 @@ function candidates() {
   ];
 }
 
-/** First existing install location, or null. PATH is tried before this. */
+/** First existing global install location, or null. */
 function resolveBun() {
   return candidates().find((candidate) => existsSync(candidate)) ?? null;
 }
@@ -66,12 +90,17 @@ function run(command) {
           '',
           'Bun is required to run the server, and it could not be found.',
           '',
-          'Install it:   winget install Oven-sh.Bun',
+          'It ships with the project, so this usually means dependencies are',
+          'not installed yet. From the repository root:',
           '',
-          'If you have already installed it, this shell is using a stale PATH.',
-          'Restart the terminal — and if you are in VS Code, restart VS Code',
-          'itself, because its terminal tabs inherit the environment VS Code',
-          'started with.',
+          '    npm install',
+          '',
+          'If that has already been run, the install scripts may have been',
+          'declined — npm 11 blocks them by default. Re-run:',
+          '',
+          '    npm install',
+          '',
+          'and approve, or run `npm approve-scripts bun`.',
           '',
         ].join('\n')
       );
@@ -86,5 +115,5 @@ function run(command) {
   });
 }
 
-// Try PATH first; the error handler falls back to known locations.
-run(exe);
+// The pinned copy wins; otherwise try PATH, then known global locations.
+run(localBun() ?? exe);

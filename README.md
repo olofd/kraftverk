@@ -200,17 +200,49 @@ and an explicit list of what remains unverified, is in
 
 ## Getting started
 
+kraftverk is developed on **macOS and Windows**, and both are expected to work
+for the full loop — server, web app and BLE. The server also runs on Linux in
+Docker; that path is covered in [**docs/DOCKER.md**](docs/DOCKER.md).
+
 ### Prerequisites
 
-- **Node 20.19+** (22 or 24 recommended) for Expo and Metro
-- **Bun** — `winget install Oven-sh.Bun`, or see [bun.sh](https://bun.sh)
-- On Windows you cannot run the iOS Simulator; use **Expo Go** on a phone
+**Node is the only thing you install.** The rest of the toolchain — the Node
+version itself, npm, and Bun — is pinned in `package.json` and comes down with
+`npm install`.
+
+- **Node 20.19+**. The project pins **24.19.0**; if you use
+  [Volta](https://volta.sh), the `volta` field in `package.json` selects that
+  version automatically the moment you `cd` into the repo, and you can skip
+  thinking about it.
+- **Bun** is a devDependency, not a machine-wide install. `npm install` fetches
+  the correct `@oven/bun-<platform>` binary for you. There is no separate
+  install step and no `bun upgrade` to keep in sync — the version everyone runs
+  is the one in the lockfile.
+- **Git**, to clone the thing.
+
+Platform notes:
+
+- **macOS** — for the iOS Simulator you also need Xcode and its Command Line
+  Tools (`xcode-select --install`). Everything else works without them.
+- **Windows** — you cannot run the iOS Simulator; use **Expo Go** on a phone
+  against the same network, or just the web app.
 
 ### Install and run
 
 ```bash
 npm install
 ```
+
+That single command installs dependencies, downloads the pinned Bun, and builds
+the native modules for BLE, serial and USB.
+
+> **On install scripts.** npm 11 refuses to run dependency install scripts
+> unless they are approved, which is a good default — but this project genuinely
+> needs a few of them, so the packages are listed under `allowScripts` in
+> `package.json` and are approved for you. They are the native radio/serial
+> bindings (`@stoprocent/noble`, `@stoprocent/bluetooth-hci-socket`,
+> `@serialport/bindings-cpp`, `usb`), the bundler (`esbuild`), and Bun itself.
+> Nothing else is trusted, and you can see the whole list in one place.
 
 ```bash
 npm run dev
