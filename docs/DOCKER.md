@@ -1,9 +1,12 @@
 # Running the server in Docker
 
-One container, one volume, and an app in a browser pointed at it.
+Two containers from one image, one volume, and an app in a browser pointed at it.
 
-This image runs **the server only** — the API, the MQTT broker, history sampling,
-the plugin host and the action gateway. It does not serve the app, and does not
+This image runs **the server only** — the API, history sampling, the plugin host
+and the action gateway — and, as a second service from the same image, **the
+MQTT broker** stations connect to. The broker is its own container so that
+restarting or upgrading the server does not drop the station; see
+[BROKER.md](BROKER.md) for why that matters on a P280. It does not serve the app, and does not
 need to: the app is a browser client that you point at a server's address under
 **App settings**, which is exactly what that flow was built for. Running the
 server on a machine that is always on is the whole reason it exists — history and
@@ -30,8 +33,8 @@ To check it came up:
 curl http://localhost:3333/api/health
 ```
 
-`{"ok":true}` and you are running. The container also has a `HEALTHCHECK`, so
-`docker ps` will show `healthy` once it has answered.
+`{"ok":true}` and you are running. Both containers have health checks, so
+`docker ps` will show `healthy` once they have answered.
 
 ---
 
@@ -54,27 +57,30 @@ decided to accept the risk — not before.
 | `STATION_DRIVER` | What it is | Works in this image |
 | --- | --- | --- |
 | `sim` | The built-in simulator | ✅ Default. No hardware needed |
-| `device` | Real hardware over Wi-Fi, through the embedded MQTT broker | ✅ The one to use for a real deployment |
+| `device` | Real hardware over Wi-Fi, through the `broker` service | ✅ The one to use for a real deployment |
 | `ble` | Real hardware over Bluetooth LE | ❌ Not in this image — see below |
 
 ### Wi-Fi / MQTT — the one that suits a server
 
-The station will not speak to your server until its DNS is redirected, because
-it is hard-coded to reach the vendor's broker.
+The station connects to the vendor's broker until it is told otherwise.
 
 1. Set `STATION_DRIVER: device` in `docker-compose.yml` and restart.
-2. In your router, Pi-hole, or whatever resolves DNS on that network:
-
-   ```
-   mqtt.sydpower.com  ->  <the Docker host's LAN IP>
-   ```
-
-3. Power-cycle the station so it re-resolves.
+2. Point the station at the Docker host, one of two ways:
+   - **BrightEMS 1.6.0+**: *Me → Settings → Local MQTT Broker Settings*, and
+     enter the Docker host's LAN IP. Only the master account can change it.
+   - **Older firmware**: in your router, Pi-hole, or whatever resolves DNS on
+     that network, point `mqtt.sydpower.com` at the Docker host's LAN IP, then
+     power-cycle the station so it re-resolves.
+3. `docker compose logs -f broker` shows it arrive: the TCP connection, the
+   MQTT handshake, its first frames.
 4. Add it in the app under **Your devices → Add a device → Power station**.
 
 Port `1883` must be reachable **on the host's LAN address**, not just from
 localhost — the station is a separate device on the network. The compose file
-publishes it; check your host firewall separately.
+publishes it from the `broker` service; check your host firewall separately.
+
+The two services share the volume: the broker keeps its journal, the stations it
+has seen and the token the server proves itself with in `/data/broker`.
 
 The station still needs internet on its first connect: it fetches MQTT
 credentials from the vendor cloud before connecting. Only the MQTT traffic is
@@ -117,7 +123,8 @@ beside it.
 | `AUTO_BIND` | on | `0` waits for an explicit bind instead of taking the first station found |
 | `DEVICE_ID` | — | Bind this station rather than auto-binding |
 | `PORT` / `HOST` | `3333` / `0.0.0.0` | The API. Both are set in the image |
-| `MQTT_PORT` / `MQTT_HOST` | `1883` / `0.0.0.0` | The embedded broker |
+| `MQTT_PORT` / `MQTT_HOST` | `1883` / `0.0.0.0` | Where the `broker` service listens |
+| `BROKER_SPAWN` / `BROKER_HOST` / `BROKER_ADMIN_URL` | `0` / `broker` / `http://broker:3883` in compose | How the server finds the broker service, and that it must not start its own. The rest is in [BROKER.md](BROKER.md#environment) |
 | `ALLOW_RAW_MODBUS` | — | `1` enables arbitrary frames. Bad writes can brick the station |
 | `KRAFTVERK_DB` | `/data/kraftverk.db` | Set in the image; leave it |
 | `KRAFTVERK_BASELINE_FILE` | `/data/baseline.json` | Set in the image, so a register baseline survives a restart |
@@ -191,7 +198,10 @@ this from the network takes more than reaching the network.
 
 ```bash
 docker compose logs -f          # what it is doing
-docker compose restart          # after changing environment
+docker compose restart kraftverk   # after changing the server's environment; the station stays connected
+docker compose logs -f broker      # what the station is doing, as it happens
+docker compose exec broker bun run server/src/broker/cli.ts status   # stations, clients, why the last one left
+docker compose restart broker      # only when you mean it: this drops the station
 docker compose up -d --build    # after pulling new code
 docker compose down             # stop; the volume survives
 ```
@@ -224,12 +234,15 @@ this repository yet; treat it as a starting point rather than a supported path.
 listening address on the first line. If the port is already taken on the host,
 the container will keep restarting.
 
-**The station never appears with `STATION_DRIVER=device`.** In order: is
-`mqtt.sydpower.com` actually resolving to the Docker host from *the station's*
-network, has the station been power-cycled since, is `1883` reachable from
-another machine on the LAN, and did the station have internet on first connect.
-`GET /api/diagnostics/traffic` shows frames as they arrive, which distinguishes
-"nothing is connecting" from "connecting but not understood".
+**The station never appears with `STATION_DRIVER=device`.** Start with
+`docker compose logs broker`: the broker records every TCP connection before any
+MQTT, so it distinguishes "nothing is connecting" from "connecting but failing
+the handshake" from "connected but not understood". If nothing is connecting, in
+order: is the Local MQTT Broker setting in BrightEMS the Docker host's LAN IP —
+or `mqtt.sydpower.com` resolving to it from *the station's* network — has the
+station been power-cycled since, is `1883` reachable from another machine on the
+LAN, and did the station have internet on first connect.
+[BROKER.md](BROKER.md#when-the-station-does-not-come-back) has the rest.
 
 **The app says it cannot reach the server.** Check the address you added includes
 the scheme and port — `http://192.168.1.50:3333` — and that you are reaching it

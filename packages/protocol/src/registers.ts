@@ -12,6 +12,8 @@
  * before trusting any value marked `unverified`.
  */
 
+import { parseCommand } from './modbus.ts';
+
 /** Input registers (function 0x04) — read-only telemetry. */
 export const INPUT = {
   AC_CHARGING_RATE: 2,
@@ -382,6 +384,38 @@ export function assertWritable(register: number, value: number): void {
       `Register ${register}: ${value} out of range ${rule.min}-${rule.max}`
     );
   }
+}
+
+/**
+ * Why these bytes must never reach a station, whoever built them — or null.
+ *
+ * `assertWritable` guards writes this code *composes*. This guards frames it
+ * only *carries*: the raw-MODBUS diagnostics route, and anything the MQTT
+ * broker is asked to forward. Those are arbitrary bytes, so the whitelist as a
+ * whole cannot apply — raw frames exist precisely to reach registers it does
+ * not list — but one rule is absolute: register 68 is never set outside its
+ * permitted values, because 0 there permanently bricks the station.
+ *
+ * Checked whatever the CRC says. A frame with a bad CRC is one the station
+ * should drop; a guard that relied on that would be trusting the firmware to
+ * protect the hardware from the firmware.
+ */
+export function commandRefusal(frame: Uint8Array): string | null {
+  const command = parseCommand(frame);
+  if (!command) return null;
+
+  const sleep = HOLDING.SLEEP_MINUTES;
+  if (command.kind === 'write' && command.register === sleep) {
+    try {
+      assertWritable(sleep, command.value);
+    } catch (error) {
+      return `Refused: ${(error as Error).message}. Register ${sleep} set to 0 permanently bricks the station.`;
+    }
+  }
+  if (command.kind === 'writeMany' && command.start <= sleep && sleep < command.start + command.count) {
+    return `Refused: a multi-register write spanning register ${sleep}, which bricks the station if set to 0.`;
+  }
+  return null;
 }
 
 // --- decoding -------------------------------------------------------------

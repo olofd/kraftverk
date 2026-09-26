@@ -1,4 +1,4 @@
-import { DEFAULT_API_BASE_URL } from '@kraftverk/api-client';
+import { API_PORT } from '@kraftverk/api-client';
 
 import { readPreference, writePreference, clearPreference } from './preferences';
 
@@ -52,9 +52,11 @@ export function completeUrl(input: string): string {
   if (!/\/api$/i.test(url)) {
     // A bare host means the default port too, since that is where a kraftverk
     // server listens unless its owner moved it.
+    // The API's own port, not this page's: an app served from the web
+    // container is on 443 or 8080, and a bare address typed here means a
+    // kraftverk server, which listens on 3333.
     const hasPort = /^https?:\/\/[^/]+:\d+/i.test(url);
-    const port = new URL(DEFAULT_API_BASE_URL).port;
-    if (!hasPort && port) url = `${url}:${port}`;
+    if (!hasPort) url = `${url}:${API_PORT}`;
     url = `${url}/api`;
   }
   return url;

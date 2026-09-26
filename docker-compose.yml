@@ -1,32 +1,75 @@
-# kraftverk server.
+# kraftverk server, and the MQTT broker stations connect to.
 #
 # Defaults are the safe ones: the simulator, and writes refused. Read
 # docs/DOCKER.md before changing either — the second one is the difference
 # between a dashboard and something that can switch mains power.
+#
+# Two services from one image. The broker is its own container so that
+# restarting or upgrading the server does not drop the station: a P280 that
+# loses its broker for long enough stops trying to reconnect, and then only a
+# power-cycle brings it back. See docs/BROKER.md.
 
 services:
+  broker:
+    build: .
+    image: kraftverk-server
+    container_name: kraftverk-broker
+    restart: unless-stopped
+    command: ["bun", "run", "server/src/broker/main.ts"]
+
+    ports:
+      # The port stations connect to. It must be reachable on the host's LAN
+      # address — the station is a separate device on the network.
+      - "1883:1883"
+      # The admin API (3883) is deliberately not published: it is for the
+      # server container, which reaches it over the compose network.
+
+    environment:
+      # Listen on the container's network, so the server's container can reach
+      # the admin API. Still not reachable from outside: the port is not published.
+      BROKER_ADMIN_HOST: "0.0.0.0"
+
+    volumes:
+      # Shared with the server: the token it proves itself with, the broker's
+      # journal, and the stations it has seen.
+      - kraftverk-data:/data
+
+    healthcheck:
+      test: ["CMD", "bun", "--eval", "process.exit((await fetch('http://127.0.0.1:3883/health').catch(() => null))?.ok ? 0 : 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
   kraftverk:
     build: .
     image: kraftverk-server
     container_name: kraftverk
     restart: unless-stopped
+    depends_on:
+      - broker
 
     ports:
       - "3333:3333"
-      # The MQTT broker the station connects to instead of the vendor cloud.
-      # Only needed with STATION_DRIVER=device, and it must be reachable on the
-      # LAN at the address mqtt.sydpower.com resolves to.
-      - "1883:1883"
 
     environment:
       # sim | device — the simulator, or real hardware over WiFi/MQTT.
-      # `ble` is deliberately absent: see docs/DOCKER.md.
-      STATION_DRIVER: sim
+      # `ble` is deliberately absent: see docs/DOCKER.md. Overridable without
+      # editing this file: `STATION_DRIVER=device docker compose up -d`, or a
+      # line in `.env` beside it.
+      STATION_DRIVER: ${STATION_DRIVER:-sim}
 
       # 1 refuses every write at the driver. The npm scripts pass --read-only
       # for the hardware modes; nothing passes it for you here, so it is set
       # explicitly rather than left to a default that means "writes allowed".
-      READ_ONLY: "1"
+      # Only an explicit READ_ONLY=0 turns writes on.
+      READ_ONLY: ${READ_ONLY:-1}
+
+      # The broker is the service above. The server connects to it, and never
+      # starts one of its own.
+      BROKER_SPAWN: "0"
+      BROKER_HOST: broker
+      BROKER_ADMIN_URL: http://broker:3883
 
       # Without this, plugin secrets — a Tuya plug's local key — are stored as
       # given. The app says so plainly on the Extensions screen. Set it to a

@@ -144,6 +144,73 @@ export function parseFrame(payload: Uint8Array): ParsedFrame | null {
   return null;
 }
 
+/**
+ * A frame travelling *to* a station, as the station would read it.
+ *
+ * `parseFrame` reads responses, and cannot read requests: a read request's
+ * start address sits where a response keeps its byte count, so the same eight
+ * bytes decode as nonsense. Anything that watches the command direction — the
+ * broker's journal, a guard on the wire — needs this one instead.
+ *
+ * `crcValid` is reported rather than required. A frame with a wrong CRC is one
+ * the station *should* drop, but a guard that let it through on that basis
+ * would be trusting the firmware's CRC check to protect the hardware.
+ */
+export type ParsedCommand = { crcValid: boolean; address: number } & (
+  | { kind: 'read'; fn: typeof FN.READ_HOLDING | typeof FN.READ_INPUT; start: number; count: number }
+  | { kind: 'write'; register: number; value: number }
+  /** `values` may be shorter than `count` when the frame is truncated. */
+  | { kind: 'writeMany'; start: number; count: number; values: number[] }
+  | { kind: 'other'; fn: number }
+);
+
+/** Function 0x10. Never built here; recognised so a guard can refuse it. */
+const WRITE_MULTIPLE = 0x10;
+
+export function parseCommand(payload: Uint8Array): ParsedCommand | null {
+  if (payload.length < 4) return null;
+
+  const address = payload[0]!;
+  const fn = payload[1]!;
+  const expected = crc16(payload.subarray(0, payload.length - 2));
+  const actual = (payload[payload.length - 2]! << 8) | payload[payload.length - 1]!;
+  const common = { crcValid: expected === actual, address };
+  const word = (index: number) => (payload[index]! << 8) | payload[index + 1]!;
+
+  if ((fn === FN.READ_HOLDING || fn === FN.READ_INPUT) && payload.length >= 6) {
+    return { ...common, kind: 'read', fn, start: word(2), count: word(4) };
+  }
+  if (fn === FN.WRITE_SINGLE && payload.length >= 6) {
+    return { ...common, kind: 'write', register: word(2), value: word(4) };
+  }
+  if (fn === WRITE_MULTIPLE && payload.length >= 6) {
+    const start = word(2);
+    const count = word(4);
+    const values: number[] = [];
+    // [addr][fn][start:2][count:2][byteCount][data...][crc:2]
+    for (let i = 0; i < count && 7 + i * 2 + 1 < payload.length; i++) values.push(word(7 + i * 2));
+    return { ...common, kind: 'writeMany', start, count, values };
+  }
+  return { ...common, kind: 'other', fn };
+}
+
+/** One line a person can read: "write holding 26 = 1", "read input 0+80". */
+export function describeCommand(payload: Uint8Array): string {
+  const command = parseCommand(payload);
+  if (!command) return `${payload.length}-byte fragment`;
+  const suffix = command.crcValid ? '' : ' (bad CRC)';
+  switch (command.kind) {
+    case 'read':
+      return `read ${command.fn === FN.READ_INPUT ? 'input' : 'holding'} ${command.start}+${command.count}${suffix}`;
+    case 'write':
+      return `write holding ${command.register} = ${command.value}${suffix}`;
+    case 'writeMany':
+      return `write holding ${command.start}..${command.start + command.count - 1} = [${command.values.join(', ')}]${suffix}`;
+    case 'other':
+      return `function 0x${command.fn.toString(16).padStart(2, '0')}${suffix}`;
+  }
+}
+
 export const toHex = (bytes: Uint8Array) =>
   [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
 

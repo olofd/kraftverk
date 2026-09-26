@@ -2,81 +2,92 @@ import { EventEmitter } from 'node:events';
 
 import type { ParsedFrame } from '@kraftverk/protocol';
 
-import { DeviceBroker, type DeviceMessage } from '../mqtt/broker.ts';
+import type { StationPresence } from '../broker/shared.ts';
+import { BrokerBus, type DeviceMessage } from '../mqtt/bus.ts';
 import { stationId, type StationId } from '@kraftverk/plugin-sdk';
 
 import type { DiscoveredDevice, ServerLink, TransportHost } from './types.ts';
 
 /**
- * MQTT: the station connects to our embedded broker (after mqtt.sydpower.com is
- * pointed at this machine) and we exchange MODBUS frames over its
- * request/response topics.
+ * MQTT: stations connect to the kraftverk broker, and we exchange MODBUS
+ * frames with them over its request/response topics.
  *
- * One broker serves every station that connects to it, so the host is a thin
- * thing: the broker, plus a directory of who has been heard. `DeviceBroker` is
- * per-MAC throughout — `send(mac, frame)`, `request(mac, …)` — which is what
- * makes the links thinner still. A link is a MAC and a mailbox.
+ * The broker is a separate process (`src/broker/`), so that restarting the
+ * server does not drop the station. This host is the server's side of that:
+ * the bus it is connected over, plus a directory of who has been heard. The
+ * bus is per-MAC throughout — `send(mac, frame)`, `request(mac, …)` — which is
+ * what makes the links thin. A link is a MAC and a mailbox.
  */
 export class MqttHost extends EventEmitter implements TransportHost {
   readonly kind = 'mqtt' as const;
 
-  #broker: DeviceBroker;
-  #port: number;
-  #host: string;
+  #bus: BrokerBus;
   #devices = new Map<string, DiscoveredDevice>();
   #links = new Map<StationId, MqttLink>();
+  /** Kept so `stop` can detach them rather than leaving them on a shared bus. */
+  #detach: (() => void)[] = [];
 
-  constructor(broker: DeviceBroker, port: number, host: string) {
+  constructor(bus: BrokerBus) {
     super();
-    this.#broker = broker;
-    this.#port = port;
-    this.#host = host;
+    this.#bus = bus;
   }
 
-  get broker(): DeviceBroker {
-    return this.#broker;
+  get bus(): BrokerBus {
+    return this.#bus;
   }
 
-  /** Kept so `stop` can detach it rather than leaving it on a shared broker. */
-  #onMessage: ((message: DeviceMessage) => void) | null = null;
-
+  /**
+   * Starts connecting to the broker, and returns once connected or after a
+   * short wait. Not connecting is not a failure: the bus keeps trying, and a
+   * link that is not connected is a normal resting state.
+   */
   async start(): Promise<void> {
-    await this.#broker.start(this.#port, this.#host);
-
-    this.#onMessage = (message) => {
-      const now = new Date();
-      const existing = this.#devices.get(message.mac);
-      const device: DiscoveredDevice = {
-        id: message.mac,
-        kind: 'mqtt',
-        name: `Station ${message.mac}`,
-        mac: message.mac,
-        firstSeen: existing?.firstSeen ?? now.toISOString(),
-        lastSeen: now.toISOString(),
-        // Anything speaking this protocol on our broker is a station.
-        likelyStation: true,
-      };
-      this.#devices.set(message.mac, device);
-      if (!existing) this.emit('discovery', device);
-
+    const onMessage = (message: DeviceMessage) => {
+      this.#heard(message.mac, message.at);
       // Routed, not filtered: every station that speaks reaches its own link,
       // and one that nothing is linked to is still recorded as discovered so it
-      // can be added.
-      // The broker hands over a raw MAC; this is where it becomes a station id.
-      this.#links.get(stationId(message.mac))?.receive(now, message.frame);
+      // can be added. The bus hands over a raw MAC; here it becomes a station id.
+      this.#links.get(stationId(message.mac))?.receive(message.at, message.frame);
+    };
+    // The broker remembers stations across its own restarts and tells us on
+    // connect, so a station that is offline right now can still be added.
+    const onPresence = (presence: StationPresence) => {
+      const seen = presence.lastMessageAt ?? presence.connectedAt ?? presence.disconnectedAt;
+      this.#heard(presence.station, seen ? new Date(seen) : new Date());
     };
 
-    this.#broker.on('message', this.#onMessage);
+    this.#bus.on('message', onMessage);
+    this.#bus.on('presence', onPresence);
+    this.#detach = [() => this.#bus.off('message', onMessage), () => this.#bus.off('presence', onPresence)];
+
+    this.#bus.start();
+    // A moment more after connecting, for the retained presence messages that
+    // follow the subscription: then the startup log can say who is connected.
+    if (await this.#bus.waitForConnect(3000)) await new Promise((resolve) => setTimeout(resolve, 200));
   }
 
   async stop(): Promise<void> {
     for (const link of [...this.#links.values()]) await link.close();
-    // Detached explicitly: the broker outlives this host, so a handler left
-    // behind would keep routing frames into a stopped host's link map — and a
-    // second `start` would then deliver every frame twice.
-    if (this.#onMessage) this.#broker.off('message', this.#onMessage);
-    this.#onMessage = null;
-    await this.#broker.stop();
+    for (const detach of this.#detach) detach();
+    this.#detach = [];
+    // The server lets go of the broker. The broker — and the station — stay.
+    await this.#bus.stop();
+  }
+
+  #heard(mac: string, at: Date): void {
+    const existing = this.#devices.get(mac);
+    const device: DiscoveredDevice = {
+      id: mac,
+      kind: 'mqtt',
+      name: `Station ${mac}`,
+      mac,
+      firstSeen: existing?.firstSeen ?? at.toISOString(),
+      lastSeen: existing && Date.parse(existing.lastSeen) > at.getTime() ? existing.lastSeen : at.toISOString(),
+      // Anything speaking this protocol on our broker is a station.
+      likelyStation: true,
+    };
+    this.#devices.set(mac, device);
+    if (!existing) this.emit('discovery', device);
   }
 
   discovered(): DiscoveredDevice[] {
@@ -101,7 +112,7 @@ export class MqttHost extends EventEmitter implements TransportHost {
     // is a guard against a bug here, not an expected outcome.
     if (this.#links.has(mac)) throw new Error(`${mac} is already linked`);
 
-    const link = new MqttLink(mac, this.#broker, () => this.#links.delete(mac));
+    const link = new MqttLink(mac, this.#bus, () => this.#links.delete(mac));
     this.#links.set(mac, link);
     return link;
   }
@@ -112,14 +123,14 @@ export class MqttLink extends EventEmitter implements ServerLink {
   readonly kind = 'mqtt' as const;
 
   #mac: StationId;
-  #broker: DeviceBroker;
+  #bus: BrokerBus;
   #release: () => void;
   #lastSeen: Date | null = null;
 
-  constructor(mac: StationId, broker: DeviceBroker, release: () => void) {
+  constructor(mac: StationId, bus: BrokerBus, release: () => void) {
     super();
     this.#mac = mac;
-    this.#broker = broker;
+    this.#bus = bus;
     this.#release = release;
   }
 
@@ -127,8 +138,17 @@ export class MqttLink extends EventEmitter implements ServerLink {
     return this.#mac;
   }
 
-  /** Considered live if this station has spoken in the last two minutes. */
+  /**
+   * Whether this station is reachable right now.
+   *
+   * The broker knows for certain — it holds the station's socket — and says so
+   * on the presence topic. Only when it has not said anything about this
+   * station does the old rule apply: live if heard in the last two minutes.
+   */
   get connected(): boolean {
+    if (!this.#bus.connected) return false;
+    const presence = this.#bus.presence(this.#mac);
+    if (presence) return presence.online;
     return this.#lastSeen !== null && Date.now() - this.#lastSeen.getTime() < 120_000;
   }
 
@@ -139,7 +159,7 @@ export class MqttLink extends EventEmitter implements ServerLink {
   }
 
   async send(frame: Uint8Array): Promise<void> {
-    await this.#broker.send(this.#mac, frame);
+    await this.#bus.send(this.#mac, frame);
   }
 
   async request(
@@ -148,7 +168,7 @@ export class MqttLink extends EventEmitter implements ServerLink {
     timeoutMs = 5000
   ): Promise<ParsedFrame> {
     // Telemetry lands on .../client/04; everything else on .../client/data.
-    return this.#broker.request(this.#mac, frame, expect === 'input' ? '04' : 'data', timeoutMs);
+    return this.#bus.request(this.#mac, frame, expect === 'input' ? '04' : 'data', timeoutMs);
   }
 
   onFrame(listener: (frame: ParsedFrame) => void): () => void {

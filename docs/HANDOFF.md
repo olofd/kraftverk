@@ -143,6 +143,13 @@ settled design:
   process) carrying a `ServerLink` per saved station. The app is unaffected: it
   implements `StationTransport`, which now extends the smaller `StationLink`
   that `StationClient` actually needs.
+- ~~The MQTT broker lives inside the server, so every restart drops the
+  station.~~ **Fixed.** A P280 that loses its broker for long enough stops
+  reconnecting until it is power-cycled, and `--watch` restarted the server —
+  and the broker in it — on every edit. `DeviceBroker` is gone: the broker is
+  its own process (`server/src/broker/`), which the server attaches to, starts
+  when absent and never stops, and which journals everything the station does.
+  See [BROKER.md](BROKER.md).
 
   **What remains true is per station, not per server**: a station accepts one
   connection at a time, so the server still competes with the app and BrightEMS

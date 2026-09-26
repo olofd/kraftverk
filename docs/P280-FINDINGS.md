@@ -37,6 +37,52 @@ disable Bluetooth on the phone; the services appear immediately.**
 Signal matters: at **-89 dBm** connections dropped mid-enumeration. At
 **-60 dBm** (after attaching antennas) it bound on the first attempt.
 
+## Connection over Wi-Fi
+
+Established 2026-09-26 using BrightEMS's own **Local MQTT Broker Settings**
+(*Me → Settings*, app 1.6.0+, master account only), pointed at the machine
+running the kraftverk server. No DNS redirect was involved.
+
+| Fact | Status |
+| --- | --- |
+| The P280 honours BrightEMS's local-broker setting — it is not on ha-fossibot's tested list, which names the P210 and P310 | ✅ |
+| Plain MQTT on TCP 1883; the station dials out to the configured address from its own Wi-Fi IP | ✅ |
+| The id in its topics is its **Bluetooth** MAC, `AC276E629BEA` — the same id it has over BLE | ✅ |
+| Its Wi-Fi interface has its own MAC, `AC:27:6E:62:9B:E8`: two below the Bluetooth one, the ESP32 pattern | ✅ |
+| On connecting it publishes `"1"` (`0x31`) to `<id>/device/response/state` | ✅ |
+| It pushes all 80 input registers (`0x04`) on `<id>/device/response/client/04` **unprompted** — two blocks within a second of first connecting, before anything had asked | ✅ |
+| It answers holding reads (`0x03`) and write acknowledgements on `<id>/device/response/client/data` | ✅ |
+| It takes commands on `<id>/client/request/data` — reads and writes | ✅ |
+| A write's acknowledgement is the request echoed back: `1106001a00015d6b` for holding 26 → 1 | ✅ |
+| How often it pushes unprompted (BrightEMS calls it the *Wi-Fi Upload Interval*) | ❓ |
+
+### ⚠️ It does not reliably come back after the broker goes away
+
+The broker runs inside the kraftverk server, so restarting the server drops the
+station's connection. Of three restarts on 2026-09-26:
+
+- after two, the station reconnected by itself — once within **two seconds**;
+- after the third it made **no connection attempt at all** for six minutes,
+  while still answering pings on Wi-Fi. Power-cycling the station brought it
+  back at once, and the saved device re-bound itself without being re-added.
+
+The pattern fits a station that retries only briefly after losing its broker,
+so a quick restart is survived and a slower one is not. That is a hypothesis:
+the outage lengths were not measured, and whether the station falls back to the
+vendor cloud or simply stops trying is not known. Checking BrightEMS with the
+phone's Bluetooth off, while the station is lost, would tell.
+
+Until then: treat a long broker outage as needing a power-cycle, and keep the
+broker's lifetime separate from anything that restarts often.
+
+**Done, the same day:** the broker is now a process of its own that server
+restarts do not touch — see [BROKER.md](BROKER.md). It also journals every TCP
+connection before any MQTT, so the next time the station seems not to come
+back, whether it is even opening a socket is a fact on file rather than a
+guess. Seen again on 2026-09-26 at 20:58: after a restart of the old combined
+server, nothing connected to 1883 for 25 minutes and counting while the station
+answered pings at its Wi-Fi address.
+
 ---
 
 ## Framing
@@ -532,6 +578,11 @@ been read-only: the register map, the decoding and the safety guards were all
 verified, but nothing had proven that a frame *we* build is accepted by the
 station. It is.
 
+**Confirmed again over Wi-Fi on 2026-09-26**: holding 26 (AC output) switched on
+and then off through the local MQTT broker, each write acknowledged by the
+station and the output observed switching. The same frames, the same guards, a
+different transport.
+
 ### Still open: the registers 25/26 toggle question
 
 The published notes warn that registers 25 and 26 *toggle* on any write rather
@@ -571,7 +622,7 @@ Whatever moved is the register behind that control. One change at a time, or
 the diff stops being evidence.
 
 The baseline persists to `server/data/baseline.json`, so a server restart — and
-`--hot` reloads on every edit — no longer throws away the comparison you were
+`--watch` restarts on every edit — no longer throws away the comparison you were
 in the middle of making. Re-snapshot whenever you want a new reference point.
 
 Note the standby timers while testing: USB switches itself off after about

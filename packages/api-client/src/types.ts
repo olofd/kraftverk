@@ -76,24 +76,92 @@ export type StationTransports = {
   devices: BoundableDevice[];
 };
 
+/** A station as the MQTT broker sees it — the broker holds its socket, so this is certain. */
+export type BrokerStation = {
+  station: string;
+  online: boolean;
+  clientId: string | null;
+  /** Where it connected from, `ip:port`. */
+  remote: string | null;
+  connectedAt: string | null;
+  disconnectedAt: string | null;
+  /** Why its last session ended, in words. */
+  lastDisconnect: string | null;
+  lastMessageAt: string | null;
+  keepalive: number | null;
+  /** Subscribed to its command topic. Without that, commands to it go nowhere. */
+  subscribed: boolean;
+  sessions: number;
+};
+
+/**
+ * The MQTT broker, which runs as its own process so that restarting the server
+ * does not drop the station.
+ */
+export type BrokerView = {
+  /** `foreign`: the port is held by something that is not a kraftverk broker. */
+  status: 'running' | 'starting' | 'down' | 'foreign';
+  error: string | null;
+  pid: number | null;
+  startedAt: string | null;
+  build: string | null;
+  expectedBuild: string;
+  /** False when the running broker is older code than the server's. */
+  buildMatches: boolean | null;
+  /** Whether this server starts a broker when none runs. False when it is its own service. */
+  spawns: boolean;
+  listen: { host: string; port: number; listening: boolean };
+  /** Whether the server itself is connected to the broker. */
+  serverConnected: boolean;
+  serverConnectedAt: string | null;
+  serverError: string | null;
+  stations: BrokerStation[];
+};
+
 /** `GET /api/diagnostics/link`, as the server actually sends it. */
 export type LinkDiagnostics = {
   driver: LinkMode;
-  transport: TransportKind | null;
+  /** Every transport running on the server. Several can run at once. */
+  transports: TransportKind[];
+  /** True when the server has a live connection to the MQTT broker. */
   brokerListening: boolean;
   mqtt: { host: string; port: number };
+  /** Null when the server does not run the MQTT transport. */
+  broker: BrokerView | null;
   devices: BoundableDevice[];
-  boundId: string | null;
-  connected: boolean;
+  linkedStations: { deviceId: string; stationId: string | null }[];
   configuredId: string | null;
 };
 
+/** One event in the broker's journal. */
+export type BrokerJournalEntry = {
+  /** Increasing within one broker run; starts again when the broker restarts. */
+  seq: number;
+  at: string;
+  level: 'debug' | 'info' | 'warn' | 'error';
+  /** Stable event name: `station.online`, `mqtt.disconnected`, `command`… */
+  kind: string;
+  /** A sentence that stands on its own. */
+  message: string;
+  station?: string;
+  clientId?: string;
+  remote?: string;
+  data?: Record<string, unknown>;
+};
+
+/** One frame on the broker, in either direction. The broker's record, not the server's. */
 export type TrafficEntry = {
   at: string;
+  /** `in`: the station said it. `out`: the server sent it. */
+  direction: 'in' | 'out';
   mac: string;
   topic: string;
   bytes: number;
   hex: string;
+  /** The frame in words: "write holding 26 = 1", "input registers 0+80, reply in 180 ms". */
+  summary: string;
+  /** False for a command nothing was subscribed to receive. */
+  delivered: boolean;
 };
 
 /**

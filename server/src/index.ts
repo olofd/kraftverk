@@ -31,10 +31,14 @@ import { Sampler, series } from './history/sampler.ts';
 import { PluginHost, type PluginInstance } from './plugins/host.ts';
 import { DeviceDriver, ReadOnlyError } from './drivers/device.ts';
 import { SimulatorDriver } from './drivers/simulator.ts';
-import { describeMessage, DeviceBroker } from './mqtt/broker.ts';
+import { duration, formatEntry } from './broker/journal.ts';
+import { brokerDir, brokerToken, DEFAULTS as BROKER_DEFAULTS } from './broker/shared.ts';
+import { BrokerSupervisor } from './broker/supervisor.ts';
+import { BrokerBus } from './mqtt/bus.ts';
 import { BleHost, BleLink } from './transport/ble.ts';
 import { MqttHost } from './transport/mqtt.ts';
 import {
+  commandRefusal,
   describeRegisters,
   fromHex,
   parseFrame,
@@ -46,8 +50,21 @@ import { PortIdSchema, PortPatchSchema, StationSettingsPatchSchema, type Version
 
 const PORT = Number(process.env.PORT ?? 3333);
 const HOST = process.env.HOST ?? '0.0.0.0';
-const MQTT_PORT = Number(process.env.MQTT_PORT ?? 1883);
-const MQTT_HOST = process.env.MQTT_HOST ?? '0.0.0.0';
+/** Where the broker listens for stations. Passed to a broker this server starts. */
+const MQTT_PORT = Number(process.env.MQTT_PORT ?? BROKER_DEFAULTS.mqttPort);
+const MQTT_HOST = process.env.MQTT_HOST ?? BROKER_DEFAULTS.mqttHost;
+/**
+ * Where this server reaches the broker. The same machine unless the broker is
+ * its own container, in which case compose sets it. Loopback when the broker
+ * listens on every interface — but a broker bound to one LAN address is not on
+ * loopback at all, and has to be reached where it is.
+ */
+const BROKER_HOST =
+  process.env.BROKER_HOST ?? (['0.0.0.0', '::', ''].includes(MQTT_HOST) ? '127.0.0.1' : MQTT_HOST);
+const BROKER_ADMIN_PORT = Number(process.env.BROKER_ADMIN_PORT ?? BROKER_DEFAULTS.adminPort);
+const BROKER_ADMIN_URL = process.env.BROKER_ADMIN_URL ?? `http://127.0.0.1:${BROKER_ADMIN_PORT}`;
+/** Start a broker when none is running. `0` where it runs as its own service. */
+const BROKER_SPAWN = process.env.BROKER_SPAWN !== '0';
 /**
  * STATION_DRIVER:
  *   sim    - built-in simulator (default)
@@ -108,7 +125,104 @@ const RELAY_STATION_KEY = 'gridRelay.stationDeviceId';
 
 const startedAt = new Date();
 
-const broker = new DeviceBroker();
+/**
+ * The MQTT broker, which is a process of its own.
+ *
+ * Restarting the server — every edit, under `--watch` — used to restart the
+ * broker inside it, and a P280 that loses its broker for long enough stops
+ * trying to come back. So the broker outlives the server: this attaches to one
+ * already running, or starts one detached, and on the way out leaves it be.
+ * See `src/broker/`.
+ */
+const USES_MQTT = TRANSPORTS.includes('mqtt');
+const BROKER_DIR = brokerDir();
+
+const supervisor = USES_MQTT
+  ? new BrokerSupervisor({
+      adminUrl: BROKER_ADMIN_URL,
+      mqtt: { host: BROKER_HOST, port: MQTT_PORT },
+      spawn: BROKER_SPAWN,
+      dir: BROKER_DIR,
+      env: {
+        MQTT_HOST,
+        MQTT_PORT: String(MQTT_PORT),
+        BROKER_ADMIN_PORT: String(BROKER_ADMIN_PORT),
+        // Its console goes to a file nobody watches, and the journal already
+        // holds everything; errors are enough there to explain a crash.
+        BROKER_LOG_LEVEL: process.env.BROKER_LOG_LEVEL ?? 'error',
+      },
+      log: (message, level = 'info') => console[level === 'info' ? 'log' : level](`[broker] ${message}`),
+    })
+  : null;
+
+const bus = USES_MQTT
+  ? new BrokerBus({ host: BROKER_HOST, port: MQTT_PORT, token: () => brokerToken(BROKER_DIR) })
+  : null;
+
+async function brokerAdmin<T>(path: string): Promise<T | null> {
+  try {
+    const response = await fetch(`${BROKER_ADMIN_URL}${path}`, {
+      headers: { authorization: `Bearer ${brokerToken(BROKER_DIR)}` },
+      signal: AbortSignal.timeout(2000),
+    });
+    return response.ok ? ((await response.json()) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+if (bus) {
+  bus.on('connected', () => console.log(`[broker] Connected to the broker at ${BROKER_HOST}:${MQTT_PORT}`));
+  bus.on('disconnected', (error) =>
+    console.warn(`[broker] Lost the broker${error ? `: ${error.message}` : ''}. Reconnecting…`)
+  );
+  // Why it cannot connect — refused token, nothing listening, no handshake —
+  // or a subscription it was refused: once per distinct reason, not per retry.
+  bus.on('failed', (error) => console.warn(`[broker] Problem with the broker connection: ${error.message}`));
+
+  /*
+    What the station does, in this terminal. The broker publishes its journal's
+    notable entries — connections, subscriptions, writes, disconnects and why —
+    and the server prints them, so the one window you are watching says whether
+    the station is there. Polls and telemetry stay in the broker's own journal.
+  */
+  bus.on('journal', (entry) => {
+    // Only info and above arrive here, and the broker journals the server's
+    // own session below that — so this is the station's story, not ours.
+    const line = `[broker] ${formatEntry(entry)}`;
+    if (entry.level === 'error') console.error(line);
+    else if (entry.level === 'warn') console.warn(line);
+    else console.log(line);
+  });
+
+  /*
+    Something on the network tried to command a station through the broker, and
+    was cut off. That is either a misconfigured integration or an attack, and it
+    is worth a durable record either way — the frame it carried could have been
+    the one that bricks the station.
+
+    One audit row per client per minute: a client that reconnects in a loop to
+    retry should not be able to fill the timeline. The console hears every one,
+    through the journal above.
+  */
+  const lastRefusalAudit = new Map<string, number>();
+  bus.on('journal', (entry) => {
+    if (entry.kind !== 'mqtt.refused') return;
+    const key = entry.clientId ?? '';
+    const now = Date.now();
+    if (now - (lastRefusalAudit.get(key) ?? 0) < 60_000) return;
+    lastRefusalAudit.set(key, now);
+
+    audit({
+      at: entry.at,
+      kind: 'mqtt.refused',
+      actor: entry.clientId ?? 'unknown',
+      resource: entry.station ?? String(entry.data?.topic ?? '').split('/')[0],
+      summary: entry.message,
+      detail: entry.data,
+    });
+  });
+}
 
 /**
  * What this process can reach, and what it is reaching right now.
@@ -125,7 +239,7 @@ const connections = new ConnectionManager({
   simulate: SIMULATE,
   readOnly: READ_ONLY,
   autoBind: AUTO_BIND,
-  host: (kind) => (kind === 'ble' ? new BleHost() : new MqttHost(broker, MQTT_PORT, MQTT_HOST)),
+  host: (kind) => (kind === 'ble' ? new BleHost() : new MqttHost(bus!)),
   simulator: () => new SimulatorDriver(),
   /*
     Where a device is reached is a property of that device, so the answer is
@@ -150,7 +264,24 @@ if (!SIMULATE) {
     has to work before there is a device to bind. One that fails is reported
     rather than fatal: a machine with no Bluetooth adapter should still serve
     the stations it reaches over WiFi.
+
+    The broker comes first: attached if it is already running — the station
+    has been connected to it all along — or started if not. Then watched, so a
+    broker that dies is replaced while this server runs.
   */
+  if (supervisor) {
+    const state = await supervisor.ensure();
+    // A broker this server started has already been announced by the supervisor.
+    if (state.status === 'running' && state.health && !state.started) {
+      const { health } = state;
+      console.log(
+        `[broker] Attached to the running broker (pid ${health.pid}, up ${duration(health.uptimeMs)}): ` +
+          `${health.stationsOnline} station(s) online, stations connect to ${health.mqtt.host}:${health.mqtt.port}`
+      );
+    }
+    supervisor.watch();
+  }
+
   await connections.startTransports();
 
   for (const kind of TRANSPORTS) {
@@ -161,9 +292,11 @@ if (!SIMULATE) {
     }
     if (kind === 'ble') {
       console.log('Scanning for Bluetooth stations…');
-    } else {
-      console.log(`MQTT broker listening on ${MQTT_HOST}:${MQTT_PORT}`);
-      console.log('Point mqtt.sydpower.com at this machine so the station connects here.');
+    } else if (bus) {
+      if (!bus.connected) {
+        // The reason has just been printed by the `failed` handler.
+        console.warn('[broker] Not connected to the broker yet; retrying in the background');
+      }
     }
   }
 
@@ -188,6 +321,26 @@ if (!SIMULATE) {
   the catalog, and for nothing else — a blank installation opens no links at all.
 */
 await connections.sync(catalog.list());
+
+/*
+  Where each saved Wi-Fi station stands with the broker, said once at startup:
+  after a restart, the first question is whether the station is still there.
+*/
+if (bus?.connected) {
+  for (const session of connections.sessions.filter((s) => s.kind === 'mqtt' && s.link?.boundId)) {
+    const mac = session.link!.boundId!;
+    const station = bus.presence(mac);
+    const name = catalog.get(session.deviceId)?.name ?? session.deviceId;
+    console.log(
+      `[broker] ${name} (${mac}): ` +
+        (!station
+          ? 'has not connected to the broker yet'
+          : station.online
+            ? `connected from ${station.remote} since ${new Date(station.connectedAt!).toLocaleTimeString()}`
+            : `not connected; its last session ended at ${new Date(station.disconnectedAt ?? Date.now()).toLocaleTimeString()}: ${station.lastDisconnect ?? 'reason unknown'}`)
+    );
+  }
+}
 
 if (DEVICE_ID) {
   /*
@@ -444,6 +597,30 @@ api.post('/station/unbind', async (c) => {
 
 const diag = new Hono();
 
+/**
+ * The broker, as the server sees it: whether it is running, whether the server
+ * is connected to it, and which stations it holds. Null without MQTT.
+ */
+function brokerView() {
+  if (!supervisor || !bus) return null;
+  const { state } = supervisor;
+  return {
+    status: state.status,
+    error: state.error,
+    pid: state.health?.pid ?? null,
+    startedAt: state.health?.startedAt ?? null,
+    build: state.health?.build ?? null,
+    expectedBuild: state.expectedBuild,
+    buildMatches: state.buildMatches,
+    spawns: state.spawns,
+    listen: state.health?.mqtt ?? { host: MQTT_HOST, port: MQTT_PORT, listening: false },
+    serverConnected: bus.connected,
+    serverConnectedAt: bus.connectedAt?.toISOString() ?? null,
+    serverError: bus.connected ? null : bus.lastError,
+    stations: bus.stations,
+  };
+}
+
 diag.get('/link', (c) => {
   const linked = connections.hosts.flatMap(({ host }) => host.openIds());
   const seen = connections.hosts.flatMap(({ host }) => host.discovered());
@@ -451,8 +628,10 @@ diag.get('/link', (c) => {
   return c.json({
     driver: SIMULATE ? 'simulator' : 'device',
     transports: connections.hosts.map(({ kind }) => kind),
-    brokerListening: broker.listening,
+    // Kept for older clients: true when the server has a live broker connection.
+    brokerListening: bus?.connected ?? false,
     mqtt: { host: MQTT_HOST, port: MQTT_PORT },
+    broker: brokerView(),
     devices: seen.map((d) => ({ ...d, bound: linked.includes(stationId(d.id)) })),
     // Which stations are held, and by whom. No "the" station: that word was
     // what let a diagnostic describe one machine while implying all of them.
@@ -463,7 +642,36 @@ diag.get('/link', (c) => {
   });
 });
 
-diag.get('/traffic', (c) => c.json(broker.recentMessages.map(describeMessage)));
+/**
+ * Frames in both directions, oldest first — the broker's record, not the
+ * server's, so it includes what happened while the server was restarting.
+ */
+diag.get('/traffic', async (c) => {
+  if (!bus) return c.json([]);
+  const limit = Number(c.req.query('limit') ?? 100);
+  return c.json((await brokerAdmin<unknown[]>(`/traffic?limit=${limit}`)) ?? []);
+});
+
+/** Everything the broker reports about itself: clients, stations, counters, refusals. */
+diag.get('/broker', async (c) => {
+  if (!bus) throw new HTTPException(404, { message: 'This server does not run the MQTT transport' });
+  // `detail`, not spread in: the broker's own report has fields — `status`
+  // among them — that would silently overwrite the server's view of it.
+  return c.json({ ...brokerView(), detail: await brokerAdmin('/status') });
+});
+
+/**
+ * The broker's journal: every connection, subscription, write and disconnect,
+ * with the reason. `?level=debug` adds every poll and telemetry frame;
+ * `?after=<seq>` continues from where the last call left off.
+ */
+diag.get('/broker/journal', async (c) => {
+  if (!bus) throw new HTTPException(404, { message: 'This server does not run the MQTT transport' });
+  const query = new URLSearchParams(c.req.query()).toString();
+  const journal = await brokerAdmin(`/journal${query ? `?${query}` : ''}`);
+  if (!journal) throw new HTTPException(503, { message: supervisor?.state.error ?? 'The broker is not answering' });
+  return c.json(journal);
+});
 
 /** What the BLE GATT enumeration actually returned on the last connect. */
 diag.get('/gatt', (c) => {
@@ -515,7 +723,7 @@ const BASELINE_FILE =
 
 /**
  * Persisted, because the server restarts constantly during protocol work —
- * `--hot` reloads on every edit — and losing the baseline mid-experiment throws
+ * `--watch` restarts it on every edit — and losing the baseline mid-experiment throws
  * away the comparison you were in the middle of making.
  */
 let baseline: Baseline | null = await readFile(BASELINE_FILE, 'utf8')
@@ -627,6 +835,10 @@ diag.post('/raw', async (c) => {
   if (!link?.boundId) throw new HTTPException(400, { message: 'No station bound' });
 
   const frame = fromHex(hex);
+  // Raw frames skip the whitelist by design — reaching undocumented registers
+  // is what they are for — but never this one rule, on either transport.
+  const refusal = commandRefusal(frame);
+  if (refusal) throw new HTTPException(400, { message: refusal });
   await link.send(frame);
   return c.json({
     sent: toHex(frame),

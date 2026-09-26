@@ -8,6 +8,7 @@ import { ACTUATOR_CONFIRMATION, type CapabilityName, type ConfigValues, type Set
 import type { RegisterDump } from '@kraftverk/protocol';
 
 import type {
+  BrokerJournalEntry,
   DeviceHistory,
   DeviceSettings,
   DeviceTypeOption,
@@ -40,7 +41,17 @@ export const API_PORT = Number(process.env.EXPO_PUBLIC_API_PORT ?? 3333);
  */
 function resolveApiBaseUrl(): string {
   const explicit = process.env.EXPO_PUBLIC_API_URL;
-  if (explicit) return explicit.replace(/\/$/, '');
+
+  /*
+    `same-origin`: the app is served by the same host that proxies `/api` to a
+    server — the web container. Resolved at runtime rather than baked in, so
+    one build works at a LAN address and at a public name alike, and over
+    HTTPS without a mixed-content refusal.
+  */
+  if (explicit === 'same-origin' && typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}/api`;
+  }
+  if (explicit && explicit !== 'same-origin') return explicit.replace(/\/$/, '');
 
   if (Platform.OS === 'web') {
     // Served from the same machine that runs Metro, so its hostname is correct
@@ -173,6 +184,21 @@ export async function fetchLinkDiagnostics(signal?: AbortSignal) {
 
 export async function fetchTraffic(signal?: AbortSignal) {
   const { data } = await api.get<TrafficEntry[]>('/diagnostics/traffic', { signal });
+  return data;
+}
+
+/**
+ * The MQTT broker's journal: connections, subscriptions, writes and every
+ * disconnect with its reason. `level: 'debug'` adds each poll and frame.
+ */
+export async function fetchBrokerJournal(
+  options: { after?: number; limit?: number; level?: BrokerJournalEntry['level']; station?: string } = {},
+  signal?: AbortSignal
+) {
+  const { data } = await api.get<{ lastSeq: number; entries: BrokerJournalEntry[] }>('/diagnostics/broker/journal', {
+    params: options,
+    signal,
+  });
   return data;
 }
 

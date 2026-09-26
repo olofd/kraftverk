@@ -46,6 +46,7 @@ WORKDIR /app
 ENV NODE_ENV=production \
     KRAFTVERK_DB=/data/kraftverk.db \
     KRAFTVERK_BASELINE_FILE=/data/baseline.json \
+    KRAFTVERK_BROKER_DIR=/data/broker \
     PORT=3333 \
     HOST=0.0.0.0
 
@@ -67,14 +68,16 @@ RUN mkdir -p /data && chown bun:bun /data
 
 USER bun
 
-# 3333 is the API. 1883 is the MQTT broker, and only matters with
-# STATION_DRIVER=device — see docs/DOCKER.md for the DNS redirect it needs.
+# 3333 is the API. 1883 is the MQTT broker, which runs from this same image as
+# its own container (`bun run server/src/broker/main.ts`) — see
+# docker-compose.yml and docs/BROKER.md.
 EXPOSE 3333 1883
 
 VOLUME ["/data"]
 
 # `bun` directly, not `npm start`: that script goes through scripts/run-bun.mjs,
 # which exists to find Bun on a developer's machine and needs Node to do it.
+# The broker's service replaces this check with its own in docker-compose.yml.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD bun --eval "process.exit((await fetch('http://127.0.0.1:' + (process.env.PORT ?? 3333) + '/api/health').catch(() => null))?.ok ? 0 : 1)"
 

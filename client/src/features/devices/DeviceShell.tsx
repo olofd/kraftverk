@@ -26,6 +26,17 @@ const DOT: Record<ConnectionStatus, Connection> = {
 };
 
 /**
+ * The header status for any screen that belongs to one device: that device's
+ * health, not the server's. A reachable server says nothing about whether
+ * *this* station has connected, and every screen under a device is a claim
+ * about the device whose name is on it.
+ */
+export const deviceStatus = (device: SavedDeviceView) => ({
+  connection: DOT[device.health.status],
+  label: device.health.detail,
+});
+
+/**
  * The frame around one device.
  *
  * Two primary destinations and no more: **Dashboard** is what it is doing,
@@ -138,12 +149,7 @@ export function DeviceShell({
       back="Your devices"
       title={device.record.name}
       subtitle={device.description}
-      /*
-        This device's state, not the app's. A reachable server says nothing
-        about whether *this* station has connected, and the header is a claim
-        about the device whose name is above it.
-      */
-      status={{ connection: DOT[device.health.status], label: device.health.detail }}
+      status={deviceStatus(device)}
     >
       <DeviceTabs
         tab={tab}

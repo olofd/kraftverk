@@ -2,6 +2,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { Card, Text } from 'tamagui';
 
 import { Screen } from '../../../src/components/Screen';
+import { deviceStatus } from '../../../src/features/devices/DeviceShell';
 import { useDeviceConnection } from '../../../src/features/devices/connection';
 import { screensFor } from '../../../src/devices/screens';
 import { useDevice } from '../../../src/state/DevicesProvider';
@@ -46,6 +47,7 @@ export default function DeviceAdvancedScreen() {
       backTo={settingsPath}
       title="Protocol"
       subtitle={`Verify the register map against ${device.record.name}`}
+      status={deviceStatus(device)}
     >
       <Panel
         status={connection.status}

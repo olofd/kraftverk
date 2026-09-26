@@ -152,7 +152,7 @@ The station is a **MODBUS RTU slave at address `0x11`**, reachable two ways:
 
 | Transport | Who holds the link | Requires |
 | --- | --- | --- |
-| `mqtt` | The server — the station connects to a broker embedded in it | Redirecting `mqtt.sydpower.com` to your machine |
+| `mqtt` | The server — through a broker that runs as its own process, so server restarts do not drop the station ([docs/BROKER.md](docs/BROKER.md)) | BrightEMS's *Local MQTT Broker* setting pointed at your machine, or `mqtt.sydpower.com` redirected to it |
 | `ble` | The server — Bluetooth LE GATT | A Bluetooth adapter on the server machine |
 | Web Bluetooth | The browser, directly | Chrome or Edge, on `localhost` or HTTPS |
 | react-native-ble-plx | The phone, directly | An iOS/Android development build (see below) |
@@ -280,8 +280,13 @@ Everything without `:write` **refuses every write at the driver**. Reach for a
 `:write` variant only once you have verified reads against your own unit and
 have decided to accept the risk described above.
 
-Each of these frees ports `3333`, `1883` and `8081` before starting, so a server
-left running from last time is not something you have to think about.
+Each of these frees ports `3333` and `8081` before starting, so a server left
+running from last time is not something you have to think about. Port `1883` is
+deliberately left alone: that is the MQTT broker, which runs as its own process
+and survives server restarts so the station stays connected. The Wi-Fi commands
+start it if it is not running. `npm run broker:status` shows it, and
+`npm run broker:logs` follows everything the station does —
+see [**docs/BROKER.md**](docs/BROKER.md).
 
 To run the server on its own, without Metro, the same names work with a
 `server:` prefix — `npm run server:device`, `npm run server:ble:write`, and so
@@ -330,20 +335,29 @@ choice, secrets, CORS, backups and the DNS redirect Wi-Fi needs.
 
 ### Connecting over Wi-Fi
 
-1. Start with `npm run dev:device`; the server listens for MQTT on `:1883`.
-2. Redirect the vendor hostname to your machine in your router or Pi-hole:
-
-   ```
-   mqtt.sydpower.com  ->  <your machine's LAN IP>
-   ```
-
-3. Power-cycle the station so it re-resolves DNS.
+1. Start with `npm run dev:device` (or `dev:wifi`). The server starts the MQTT
+   broker on `:1883` if one is not already running.
+2. Point the station at your machine, one of two ways:
+   - **BrightEMS 1.6.0+**: *Me → Settings → Local MQTT Broker Settings*, and
+     enter your machine's LAN IP. Only the master account can change it. This is
+     how the P280 in [P280-FINDINGS.md](docs/P280-FINDINGS.md#connection-over-wi-fi)
+     was connected.
+   - **Older firmware**: redirect the vendor hostname in your router or Pi-hole —
+     `mqtt.sydpower.com -> <your machine's LAN IP>` — and power-cycle the
+     station so it re-resolves DNS.
+3. Watch it arrive: `npm run broker:logs` shows the TCP connection, the MQTT
+   handshake and the station's first frames as they happen.
 4. Add it under **Your devices → Add a device → Power station**. Nothing is
    adopted for you: a device exists because you added it. Once saved, the server
    opens its link and binds to the station it finds.
 
 The station still needs internet on first connect — it fetches MQTT credentials
 from the vendor cloud before connecting. Only the MQTT traffic is redirected.
+
+**Keep the broker running.** A P280 that loses its broker for more than a short
+while can stop trying to reconnect until it is power-cycled. That is why the
+broker is a separate process that server restarts do not touch;
+`npm run broker:stop` and `broker:restart` are the only things that stop it.
 
 Windows Firewall usually blocks the inbound connection:
 
@@ -462,7 +476,8 @@ not a boolean: `health.status` is one of `connected`, `connecting`, `offline`,
 | `GET` | `/diagnostics/registers` | Full register dump, raw and named |
 | `POST` | `/diagnostics/snapshot` | Capture a baseline for diffing |
 | `GET` | `/diagnostics/scan` | Read an arbitrary register range (read-only) |
-| `GET` | `/diagnostics/traffic` · `/gatt` · `/blocked` | Frames, GATT, refused writes |
+| `GET` | `/diagnostics/traffic` · `/gatt` · `/blocked` | Frames (both directions, from the broker's record), GATT, refused writes |
+| `GET` | `/diagnostics/broker` · `/diagnostics/broker/journal` | The MQTT broker: process, stations, clients, counters; and its journal (`?after=`, `?level=debug`) |
 | `POST` | `/diagnostics/raw` | Arbitrary frame — needs `ALLOW_RAW_MODBUS=1` |
 | `GET` | `/plugins` | Installed extensions: status, health, data age, grants |
 | `GET` `PATCH` | `/plugins/:id/config` | Setup form schema and values; secrets are write-only |
@@ -485,7 +500,9 @@ only ever have one. Use the device-scoped routes above.
 | `DEVICE_ID` | `--device=` | — | Bind this station instead of auto-binding |
 | `AUTO_BIND` | — | on | `0` waits for an explicit bind instead of taking the first station found |
 | `PORT` / `HOST` | — | `3333` / `0.0.0.0` | HTTP API |
-| `MQTT_PORT` / `MQTT_HOST` | — | `1883` / `0.0.0.0` | Embedded broker |
+| `MQTT_PORT` / `MQTT_HOST` | — | `1883` / `0.0.0.0` | Where the MQTT broker listens for stations |
+| `BROKER_HOST` / `BROKER_ADMIN_URL` | — | `127.0.0.1` / `http://127.0.0.1:3883` | Where the server reaches the broker |
+| `BROKER_SPAWN` | — | on | `0` stops the server starting a broker, for when it runs as its own service. The rest of the broker's settings are in [docs/BROKER.md](docs/BROKER.md#environment) |
 | `ALLOWED_ORIGINS` | — | — | Extra browser origins, comma-separated. Loopback and private ranges are already allowed; `*` restores the old reflect-anything behaviour |
 | `ALLOW_RAW_MODBUS` | — | — | `1` enables raw frames |
 | `KRAFTVERK_DB` | — | `server/data/kraftverk.db` | Where the database lives. **Required under `NODE_ENV=test`** — the server refuses to open the default file from a test run |
