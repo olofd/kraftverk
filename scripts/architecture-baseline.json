@@ -1,0 +1,142 @@
+{
+  "$comment": "Where the architecture is still broken, file by file. May only shrink. See docs/ARCHITECTURE.md section 7; update with npm run check:architecture -- --update.",
+  "imports": {
+    "client/src/devices/screens.ts": [
+      "@kraftverk/device-aferiy-p280/ui/dashboard",
+      "@kraftverk/device-aferiy-p280/ui/protocol",
+      "@kraftverk/device-aferiy-p280/ui/settings"
+    ],
+    "client/src/lib/preferences.ts": [
+      "@kraftverk/protocol"
+    ],
+    "client/src/link/base.ts": [
+      "@kraftverk/protocol"
+    ],
+    "client/src/link/index.ts": [
+      "@kraftverk/protocol"
+    ],
+    "client/src/link/nativeBle.ts": [
+      "@kraftverk/protocol"
+    ],
+    "client/src/link/webBle.ts": [
+      "@kraftverk/protocol"
+    ],
+    "client/src/plugins/panels.ts": [
+      "@kraftverk/plugin-tuya-local-grid-relay/ui/panel"
+    ],
+    "client/src/state/DevicesProvider.tsx": [
+      "@kraftverk/device-aferiy-p280"
+    ],
+    "client/src/state/DirectLinkProvider.tsx": [
+      "@kraftverk/protocol"
+    ],
+    "packages/api-client/src/api.ts": [
+      "@kraftverk/protocol"
+    ],
+    "packages/api-client/src/types.ts": [
+      "@kraftverk/protocol"
+    ],
+    "packages/ui/src/format.ts": [
+      "@kraftverk/protocol"
+    ],
+    "server/src/app.ts": [
+      "@kraftverk/protocol"
+    ],
+    "server/src/broker/broker.test.ts": [
+      "@kraftverk/protocol"
+    ],
+    "server/src/broker/broker.ts": [
+      "@kraftverk/protocol"
+    ],
+    "server/src/broker/policy.ts": [
+      "@kraftverk/protocol"
+    ],
+    "server/src/connections/manager.test.ts": [
+      "@kraftverk/protocol"
+    ],
+    "server/src/devices/registry.test.ts": [
+      "@kraftverk/protocol"
+    ],
+    "server/src/devices/registry.ts": [
+      "@kraftverk/device-aferiy-p280"
+    ],
+    "server/src/drivers/device.ts": [
+      "@kraftverk/protocol"
+    ],
+    "server/src/mqtt/bus.ts": [
+      "@kraftverk/protocol"
+    ],
+    "server/src/routes/diagnostics.ts": [
+      "@kraftverk/protocol"
+    ],
+    "server/src/transport/ble.ts": [
+      "@kraftverk/protocol"
+    ],
+    "server/src/transport/mqtt.ts": [
+      "@kraftverk/protocol"
+    ],
+    "server/src/transport/types.ts": [
+      "@kraftverk/protocol"
+    ],
+    "server/src/types.ts": [
+      "@kraftverk/protocol"
+    ]
+  },
+  "leaks": {
+    "client/app/add-device.tsx": 4,
+    "client/app/app-settings.tsx": 1,
+    "client/app/device/[id]/index.tsx": 2,
+    "client/app/device/[id]/settings.tsx": 2,
+    "client/app/extensions.tsx": 1,
+    "client/src/devices/screens.ts": 8,
+    "client/src/features/devices/connection.tsx": 10,
+    "client/src/state/DevicesProvider.tsx": 5,
+    "client/src/state/DirectLinkProvider.tsx": 9,
+    "packages/api-client/src/api.ts": 12,
+    "packages/api-client/src/types.ts": 9,
+    "packages/plugin-sdk/src/capabilities.ts": 7,
+    "packages/plugin-sdk/src/device.ts": 2,
+    "packages/plugins/fake-grid-relay/src/index.ts": 5,
+    "packages/plugins/tuya-local-grid-relay/src/index.ts": 6,
+    "packages/plugins/tuya-local-grid-relay/ui/panel.tsx": 1,
+    "packages/protocol/src/ble.ts": 2,
+    "packages/protocol/src/client.test.ts": 1,
+    "packages/protocol/src/client.ts": 11,
+    "packages/protocol/src/command.test.ts": 1,
+    "packages/protocol/src/confirmed.test.ts": 8,
+    "packages/protocol/src/diagnostics.ts": 1,
+    "packages/protocol/src/link.test.ts": 2,
+    "packages/protocol/src/registers.ts": 38,
+    "packages/protocol/src/station.ts": 11,
+    "packages/protocol/src/types.ts": 4,
+    "packages/ui/src/format.ts": 3,
+    "packages/ui/src/measurement.test.ts": 1,
+    "server/src/actions/gateway.test.ts": 5,
+    "server/src/actions/gateway.ts": 13,
+    "server/src/app.test.ts": 15,
+    "server/src/broker/broker.test.ts": 3,
+    "server/src/broker/broker.ts": 4,
+    "server/src/broker/policy.ts": 3,
+    "server/src/broker/shared.ts": 2,
+    "server/src/connections/identity.types.ts": 2,
+    "server/src/connections/manager.test.ts": 2,
+    "server/src/connections/manager.ts": 1,
+    "server/src/devices/catalog.test.ts": 8,
+    "server/src/devices/catalog.ts": 7,
+    "server/src/devices/legacy.test.ts": 4,
+    "server/src/devices/legacy.ts": 3,
+    "server/src/devices/registry.test.ts": 9,
+    "server/src/devices/registry.ts": 13,
+    "server/src/devices/relay-pairing.ts": 1,
+    "server/src/drivers/simulator.ts": 18,
+    "server/src/drivers/types.ts": 9,
+    "server/src/history/db.ts": 1,
+    "server/src/index.ts": 1,
+    "server/src/plugins/host.ts": 2,
+    "server/src/routes/devices.ts": 17,
+    "server/src/routes/diagnostics.ts": 1,
+    "server/src/routes/grid.ts": 3,
+    "server/src/routes/plugins.ts": 4,
+    "server/src/types.ts": 14
+  }
+}

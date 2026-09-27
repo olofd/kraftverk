@@ -64,7 +64,7 @@ export function db(): Db {
   // The recovery CLI may write while the server does: wait for the lock
   // rather than failing at once with SQLITE_BUSY.
   handle.exec('PRAGMA busy_timeout = 5000');
-  migrate(handle);
+  migrate(handle, path);
   database = handle;
   return handle;
 }
@@ -86,7 +86,7 @@ export function closeDb(): void {
  * Deliberately plain: a numbered list and a table of what has been applied. A
  * migration framework would be more code than the thing it manages.
  */
-const MIGRATIONS: { id: number; sql: string }[] = [
+const MIGRATIONS: Migration[] = [
   {
     id: 1,
     sql: `
@@ -236,22 +236,64 @@ const MIGRATIONS: { id: number; sql: string }[] = [
   },
 ];
 
-function migrate(handle: Db): void {
+/**
+ * One step of the schema's history.
+ *
+ * `sql` for a change of shape; `run` as well when data has to move in ways SQL
+ * alone says badly — both inside the same transaction, so a migration that
+ * fails part-way leaves nothing behind.
+ */
+export type Migration = { id: number; sql: string; run?: (handle: Db) => void };
+
+/**
+ * Brings a database up to date, copying it first if it holds anything.
+ *
+ * The copy is the way back. Migrations change the owner's only record of their
+ * devices and everything they measured, on a server nobody is watching when it
+ * restarts after a deploy — so before the first pending migration touches a
+ * database that has already been migrated, the whole file is copied beside
+ * itself. Rolling back is stopping the server and putting the copy in place.
+ *
+ * A copy that cannot be made stops the migration, and with it the server:
+ * starting on the old schema is safe, changing data with no way back is not.
+ *
+ * Exported for tests, which bring their own list.
+ */
+export function migrate(handle: Db, path: string, migrations: readonly Migration[] = MIGRATIONS): string | null {
   handle.exec('CREATE TABLE IF NOT EXISTS migration (id INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)');
   const applied = new Set(
     handle.query<{ id: number }, []>('SELECT id FROM migration').all().map((row) => row.id)
   );
 
-  for (const migration of MIGRATIONS) {
-    if (applied.has(migration.id)) continue;
+  const pending = migrations.filter((migration) => !applied.has(migration.id));
+  if (pending.length === 0) return null;
+
+  // A fresh database has nothing to lose, and one in memory nowhere to copy to.
+  const backup = applied.size > 0 && path !== ':memory:' ? copyBefore(handle, path, pending[0]!.id) : null;
+
+  for (const migration of pending) {
     handle.transaction(() => {
       handle.exec(migration.sql);
+      migration.run?.(handle);
       handle.query('INSERT INTO migration (id, applied_at) VALUES (?, ?)').run(
         migration.id,
         new Date().toISOString()
       );
     })();
   }
+
+  return backup;
+}
+
+/** `kraftverk.db` → `kraftverk.db.before-migration-6.2026-09-27T10-15-00Z` */
+function copyBefore(handle: Db, path: string, id: number): string {
+  const stamp = new Date().toISOString().replace(/\.\d+Z$/, 'Z').replaceAll(':', '-');
+  const target = `${path}.before-migration-${id}.${stamp}`;
+  // A consistent copy of a live WAL database in one statement, unlike copying
+  // the file, which can catch it half-written.
+  handle.query('VACUUM INTO ?').run(target);
+  console.log(`[db] Copied the database to ${target} before migrating it. To roll back, stop the server and put that file in place of ${path}.`);
+  return target;
 }
 
 /**

@@ -16,7 +16,9 @@ the other is a bug in CI, not a difference of opinion.
 
 ## What the checks are
 
-1. **validate** — `npm ci`, `npm run typecheck`, `npm test`, and the web app
+1. **validate** — `npm ci`, `npm run check:architecture` (the dependency rule
+   and the product-identifier ratchet, [ARCHITECTURE.md §7](ARCHITECTURE.md#7-guardrails-in-ci)),
+   `npm run typecheck`, `npm test`, and the web app
    exported the way the web container builds it
    (`EXPO_PUBLIC_API_URL=same-origin`).
 2. **stack** — both images built from the `Dockerfile`, the three services

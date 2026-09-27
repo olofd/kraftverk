@@ -1,9 +1,9 @@
 # Extensions, and the grid relay that is their first consumer
 
-> **Current implementation authority:** read
-> [`DEVICE-FIRST-REFACTOR.md`](DEVICE-FIRST-REFACTOR.md) first. In particular,
-> plugin-wide configuration and `devices()[0]` are interim architecture; the target
-> is a per-saved-device adapter instance commissioned through the Add-device wizard.
+> **Superseded for the device model** by [ARCHITECTURE.md](ARCHITECTURE.md), which
+> is the authority on devices, protocols, capabilities, services, links and
+> automations, and on the words for them. Kept for its research and history;
+> where the two disagree, ARCHITECTURE.md is right.
 
 Design document and research log for the plugin system described in
 [`PROJECT-BRIEF.md`](PROJECT-BRIEF.md). Read that first for the product goal; this document

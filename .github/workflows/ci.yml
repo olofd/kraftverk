@@ -31,6 +31,7 @@ jobs:
           node-version-file: package.json
           cache: npm
       - run: npm ci
+      - run: npm run check:architecture
       - run: npm run typecheck
       - run: npm test
       - name: Build the app for the web

@@ -198,12 +198,19 @@ Everything that outlives a restart is in the `kraftverk-data` volume, mounted at
 | `broker/logs/broker-YYYY-MM-DD.jsonl` | The broker's journal: every connection, frame and disconnect |
 | `broker/` | The broker's token and the stations it has seen |
 | `baseline.json` | A register baseline, if one was taken |
+| `kraftverk.db.before-migration-N.<time>` | The database as it was before an upgrade changed its schema: the way back from a bad one |
 
 Back it up:
 
 ```bash
 docker run --rm -v kraftverk_kraftverk-data:/data -v "$PWD:/backup" busybox tar czf /backup/kraftverk-data.tgz -C /data .
 ```
+
+**Upgrades copy the database first.** Before a new version changes the
+database's schema, the server copies it beside itself and logs where. Rolling
+back is stopping the stack, putting that copy in place of `kraftverk.db`, and
+starting the previous image. The copies are not removed automatically; delete
+old ones once the new version has been running for a while.
 
 (The volume is named after the compose project: `kraftverk_kraftverk-data` when
 the project is `kraftverk`. `docker volume ls` shows it.)

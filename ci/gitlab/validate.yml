@@ -26,6 +26,7 @@ validate:
     npm_config_cache: $CI_PROJECT_DIR/.npm
   script:
     - npm ci
+    - npm run check:architecture
     - npm run typecheck
     - npm test
     - EXPO_PUBLIC_API_URL=same-origin npm run build:web

@@ -1,11 +1,8 @@
 # kraftverk
 
-> **Architecture:** the app is a **device catalog first**. Root is *Your devices*;
-> there is no global tab bar, and the station is one saved device among others.
-> The target, the remaining milestones and the reasoning are in
-> [`docs/DEVICE-FIRST-REFACTOR.md`](docs/DEVICE-FIRST-REFACTOR.md);
-> [`docs/MODULAR-CODE-ARCHITECTURE.md`](docs/MODULAR-CODE-ARCHITECTURE.md) defines the
-> protocol/device/adapter/server/API boundaries, and
+> **Architecture:** everything you add is a device, and each kind of device is a
+> package of its own. The model, the words for it and the plan are in
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md);
 > [`docs/HANDOFF.md`](docs/HANDOFF.md) is where things actually stand today.
 
 Local control for **Sydpower-stack portable power stations** — monitor and
@@ -138,7 +135,7 @@ under its Settings, never as a global tab.
 
 > The screenshots predate the device-first restructuring and still show the old
 > tab bar. The screens themselves are the same; where you reach them from is
-> not. See [`DEVICE-FIRST-REFACTOR.md`](docs/DEVICE-FIRST-REFACTOR.md).
+> not.
 
 ---
 
@@ -559,7 +556,7 @@ Two things that workflow taught us, worth knowing before you trust a hypothesis:
 npm test
 ```
 
-321 tests. The protocol ones — frame construction, response parsing, telemetry
+325 tests. The protocol ones — frame construction, response parsing, telemetry
 decoding against captured traffic from real hardware, plus the write-safety
 whitelist and the behaviours confirmed on a P280 — live with the protocol
 package, so they cover every link equally: a direct Bluetooth connection from
@@ -570,7 +567,10 @@ themselves, through `createApp` in `server/src/app.ts`, which builds the whole
 API around the simulator and a throwaway database without starting a radio or
 a broker.
 
-Every push also builds both Docker images, starts the stack and attacks it —
+Every push also checks the architecture — no device-specific code may leak
+into the core, and the count of what already has may only fall
+([docs/ARCHITECTURE.md §7](docs/ARCHITECTURE.md#7-guardrails-in-ci)) — and
+builds both Docker images, starts the stack and attacks it —
 on GitHub and on GitLab alike. See [docs/CI.md](docs/CI.md).
 
 **Server tests must set `KRAFTVERK_DB`.** Bun runs every test file in one
@@ -617,8 +617,7 @@ server/
   src/history/           sqlite: config, secrets, audit timeline, samples
 docs/HANDOFF.md          state of play, and the traps worth knowing — start here
 docs/DOCKER.md           running the server in a container
-docs/DEVICE-FIRST-REFACTOR.md   the device-first target and its milestones
-docs/MODULAR-CODE-ARCHITECTURE.md  package, protocol, server and API boundaries
+docs/ARCHITECTURE.md     the device model, its words and the plan: the authority
 docs/PROJECT-BRIEF.md    long-term plan and architecture brief
 docs/P280-FINDINGS.md    evidence log: confirmed vs. assumed
 docs/PLUGIN-ARCHITECTURE.md  extension system design, and the smart-plug research

@@ -1,5 +1,10 @@
 # Modular code architecture: protocols, devices, adapters, server and APIs
 
+> **Superseded for the device model** by [ARCHITECTURE.md](ARCHITECTURE.md), which
+> is the authority on devices, protocols, capabilities, services, links and
+> automations, and on the words for them. Kept for its research and history;
+> where the two disagree, ARCHITECTURE.md is right.
+
 ## Purpose
 
 This is the package-boundary companion to

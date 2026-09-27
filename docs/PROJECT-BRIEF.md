@@ -36,10 +36,8 @@ observed direct-sun peak is about 300 W.
 
 ## The end goal: devices you own, wired together
 
-> **The authoritative target and implementation order is
-> [`DEVICE-FIRST-REFACTOR.md`](DEVICE-FIRST-REFACTOR.md)**, with package
-> boundaries in [`MODULAR-CODE-ARCHITECTURE.md`](MODULAR-CODE-ARCHITECTURE.md).
-> Where this brief and that document disagree about sequencing or navigation,
+> **The authoritative target, vocabulary and implementation order are in
+> [`ARCHITECTURE.md`](ARCHITECTURE.md).** Where this brief disagrees with it,
 > that document wins. This section states the product intent behind it.
 
 Three decisions settled with the owner, which the rest of the documentation must
@@ -53,10 +51,10 @@ control — and it is not diagnostics-only. But automations and background histo
 require the server component, and the app must say so rather than implying a
 client-only device is durable.
 
-**Services are out of scope until they are built.** Weather, price and Home
-Assistant remain plugins, not devices, and do not appear on the device canvas.
-Where their own configuration lives — automation, app settings, or somewhere
-else — is deliberately unanswered until the first one is written.
+**Services are devices without hardware.** Weather and price are added the same
+way as a plug and expose telemetry and capabilities the same way, shown in a
+section of their own. This replaces the earlier position that they were plugins
+kept off the canvas (ARCHITECTURE.md §9).
 
 **Root is always the canvas; every device also has its own address.** Opening the
 app lands on *Your devices* regardless of how many you own, so the shape never
@@ -65,18 +63,13 @@ so it can be bookmarked or pinned and opened directly.
 
 ### Vocabulary
 
-Three words, used precisely from here on:
-
-```text
-adapter   code that knows a protocol            "Tuya Local"        installed
-device    a saved thing you own, named          "Hallway plug"      added
-plugin    a service with no hardware behind it  SMHI weather        optional
-```
-
-An adapter is not a device: you add a plug, not a plugin. The Tuya relay work
-built as `packages/plugins/tuya-local-grid-relay` is therefore a **device
-adapter**, and needs per-saved-device instances rather than one configuration
-per package — see the refactor document's Milestone C.
+The glossary is [ARCHITECTURE.md §2](ARCHITECTURE.md#2-vocabulary): **device
+type** (a package that knows a product), **protocol** (a shared package that
+knows a wire format), **device** (one thing you added), **service** (a device
+with no hardware), **capability**, **telemetry**, **setting**, **setup guide**,
+**link** and **automation**. Adapter, driver, provider and extension are
+retired as names, and plugin is never shown on screen. Older sections below
+still use them; read them through that glossary.
 
 Everything below this section describes the station and its extensions. This section
 describes what the whole thing is becoming, and every design decision should be read

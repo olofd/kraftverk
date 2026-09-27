@@ -1,8 +1,13 @@
-# Device-first refactor: authoritative target architecture
+# Device-first refactor
+
+> **Superseded for the device model** by [ARCHITECTURE.md](ARCHITECTURE.md), which
+> is the authority on devices, protocols, capabilities, services, links and
+> automations, and on the words for them. Kept for its research and history;
+> where the two disagree, ARCHITECTURE.md is right.
 
 ## Decision
 
-This document supersedes earlier UI sequencing in `DEVICES-AND-AUTOMATION.md`,
+This document superseded earlier UI sequencing in `DEVICES-AND-AUTOMATION.md`,
 `PLUGIN-ARCHITECTURE.md`, `PROJECT-BRIEF.md`, and `HANDOFF.md` where they conflict.
 The application is a **device catalog first**, not a station dashboard with extra
 features bolted on.

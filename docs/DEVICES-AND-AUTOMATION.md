@@ -1,10 +1,9 @@
 # Devices, and wiring them together
 
-> **Current implementation authority:** read
-> [`DEVICE-FIRST-REFACTOR.md`](DEVICE-FIRST-REFACTOR.md) first. It defines the
-> required blank-canvas setup flow, commissioning wizard, persisted-device model,
-> device-scoped navigation and refactor order. This document is supporting design
-> background and contains older status/route assumptions.
+> **Superseded for the device model** by [ARCHITECTURE.md](ARCHITECTURE.md), which
+> is the authority on devices, protocols, capabilities, services, links and
+> automations, and on the words for them. Kept for its research and history;
+> where the two disagree, ARCHITECTURE.md is right.
 
 Design for the next layer: one list of the things you own, a screen per thing, and a way to
 connect them that feels like assembling Lego rather than programming.

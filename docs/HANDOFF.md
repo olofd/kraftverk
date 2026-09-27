@@ -1,9 +1,9 @@
 # Handover
 
-State of play, and the things that would otherwise cost you a day. The vision and
-the architecture are in [`PROJECT-BRIEF.md`](PROJECT-BRIEF.md) — read its end-goal
-section first; the device-first target and its milestones are in
-[`DEVICE-FIRST-REFACTOR.md`](DEVICE-FIRST-REFACTOR.md). This document is only what
+State of play, and the things that would otherwise cost you a day. The vision is in
+[`PROJECT-BRIEF.md`](PROJECT-BRIEF.md) — read its end-goal section first; the
+architecture, its vocabulary and the plan are in
+[`ARCHITECTURE.md`](ARCHITECTURE.md). This document is only what
 those cannot tell you: where things stand right now, and what has already been
 learned the hard way.
 
@@ -73,45 +73,14 @@ Built and verified in earlier sessions:
 - **Tuya LAN driver** — 3.3/3.4/3.5 framing with protocol detection, UDP
   discovery, cloud helper for local keys, setup wizard in the app.
 
-## Active work: Milestone A
+## Active work: the device architecture
 
-The plan is [`DEVICE-FIRST-REFACTOR.md`](DEVICE-FIRST-REFACTOR.md). **Milestone A
-— make the blank canvas real** is the current milestone, and nothing from D
-(automations, weather, autonomous switching) starts until A–C are done.
-
-Milestone A, in order:
-
-1. ~~**Remove `DeviceRegistry.adoptStation()` from startup.**~~ **Done.** Nothing
-   is adopted now; a fresh database renders an empty canvas. The one case that
-   would otherwise lose something is `server/src/devices/legacy.ts`: a station
-   bound before the catalog existed is *offered* as an import behind a banner on
-   the Devices screen, and only when the server is running the transport the
-   binding names — a BLE binding under the simulator would create a record the
-   server cannot operate. Taking it or dismissing it is remembered in the new
-   `app_state` table, so the banner asks once.
-2. ~~**Root becomes `Your devices`.**~~ **Done.** There is no tab bar at all.
-   Root is the canvas; `/device/:id` and `/device/:id/settings` are that
-   device's only two primary destinations, and the register tools sit at
-   `/device/:id/advanced`, reached from its Settings under Advanced. Extensions
-   and the station link moved to `/app-settings`, one level down. The P280's
-   panels are rendered from the device route through `src/devices/screens.ts`;
-   a device with no panels of its own gets the generic ones in
-   `src/features/devices/panels.tsx` and loses nothing.
-3. ~~**`/devices` returns `SavedDeviceView`**~~ **Done.** `id` is always the
-   catalog's, `providerDeviceId` carries the vendor's, and `providerName` the
-   vendor's name — the descriptor is spread in with `id` and `name` *omitted*,
-   so `Omit<DeviceDescriptor, 'id' | 'name'>` is what stops the old overwrite
-   coming back rather than a convention someone has to remember. `online:
-   boolean` became `health: ConnectionHealth`, whose five states each carry a
-   sentence; the aliases and that type live in `packages/plugin-sdk/src/
-   identity.ts`, which the server and the API client both import.
-4. **Migrations** for `updated_at`, connection records, device-scoped secrets and
-   automation references, with CRUD tests.
-5. **Deleting a device** must reject or explicitly cascade when an automation
-   references it.
-
-Then B (commission one P280 through the wizard) and C (the same shape for a
-plug, with per-saved-device adapter instances).
+The plan is [ARCHITECTURE.md §8](ARCHITECTURE.md#8-the-plan): eleven steps from
+today's code to "everything is a device", each shipped on its own with the
+deployed station working throughout. Its status table says which step is
+current. The earlier milestones A–D of the device-first refactor are folded into
+it: A is done (the blank canvas, root as Your devices, `SavedDeviceView`), and
+B–D are steps 3–9.
 
 ## Known limitations to correct, not preserve
 
@@ -193,10 +162,10 @@ under one device's Advanced.
 
 ## Vocabulary
 
-`adapter` = code that knows a protocol. `device` = a saved thing you own.
-`plugin` = a service with no hardware, like weather. Tuya is an **adapter**; the
-relay is a **device**. Services do not appear on the device canvas at all until
-that work begins.
+See [ARCHITECTURE.md §2](ARCHITECTURE.md#2-vocabulary). In short: a **device
+type** is a package that knows a product, a **protocol** is shared wire-format
+code, a **device** is one thing you added, and a **service** is a device with no
+hardware, like weather.
 
 ## Traps
 
