@@ -11,15 +11,13 @@ import {
   findUserByName,
   listUsers,
   setPassword,
-  setTrustLan,
-  trustLan,
 } from './store.ts';
 
 /**
  * `npm run users -- <command>` — accounts, from a shell on the server.
  *
- * For the day the app cannot help: every password forgotten, or "require a
- * login everywhere" switched on with nobody able to log in. Having a shell on
+ * For the day the app cannot help: every password forgotten, and nobody
+ * able to log in. Having a shell on
  * the server is the proof of ownership here — in Docker:
  *
  *   docker compose exec kraftverk bun run server/src/auth/cli.ts <command>
@@ -29,7 +27,6 @@ import {
  *   password <name>           a new password for an account; signs it out everywhere
  *   remove <name>             delete an account (not the last one)
  *   signout <name>            end every session of an account
- *   trust-lan on|off          whether the home network may skip the login
  *
  * A password is never taken as an argument, where shell history and the process
  * list would keep it. By default one is generated and printed once; to choose
@@ -66,7 +63,6 @@ try {
       for (const user of users) {
         console.log(`${user.username.padEnd(24)} created ${user.createdAt.slice(0, 10)}${user.lastLoginAt ? `, last login ${user.lastLoginAt.slice(0, 16).replace('T', ' ')}` : ', never logged in'}`);
       }
-      console.log(`\nThe home network ${trustLan() ? 'may use the app without logging in' : 'must log in too'}.`);
       break;
     }
     case 'add': {
@@ -101,16 +97,8 @@ try {
       console.log(`Ended ${ended} session(s) for ${user.username}.`);
       break;
     }
-    case 'trust-lan': {
-      const value = rest[0];
-      if (value !== 'on' && value !== 'off') fail('trust-lan on|off');
-      setTrustLan(value === 'on');
-      record('auth.trust-lan', value === 'on' ? 'The home network may use the app without logging in (server console)' : 'A login is required on every network (server console)');
-      console.log(value === 'on' ? 'The home network may now use the app without logging in.' : 'A login is now required on every network.');
-      break;
-    }
     default:
-      fail('Commands: list, add <name>, password <name>, remove <name>, signout <name>, trust-lan on|off');
+      fail('Commands: list, add <name>, password <name>, remove <name>, signout <name>');
   }
 } catch (error) {
   if (error instanceof AccountError) fail(error.message);

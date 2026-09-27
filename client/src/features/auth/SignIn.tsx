@@ -15,8 +15,8 @@ import { Field, passwordProblem, PASSWORD_MIN } from './fields';
  *
  * Three cases, and each says plainly which one it is:
  *
- * - **Sign in** — the server has accounts, and this device is not on a network
- *   it trusts (or the owner requires a login everywhere).
+ * - **Sign in** — the server has accounts. Every device signs in, at home too:
+ *   devices belong to accounts, and a visitor with no account has no view.
  * - **Create the first administrator** — a fresh server, reached from the home
  *   network. Accounts are what make it reachable from outside.
  * - **Set it up at home** — a fresh server reached from outside. Nothing can be
@@ -96,9 +96,9 @@ function SignIn() {
   );
 }
 
-/** Also used on the Accounts screen, where a trusted home network still needs a real login. */
+/** Username and password, for an existing account. */
 export function LoginForm({ submitLabel = 'Log in' }: { submitLabel?: string }) {
-  const { logIn, state } = useAuth();
+  const { logIn } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -120,11 +120,6 @@ export function LoginForm({ submitLabel = 'Log in' }: { submitLabel?: string }) 
 
   return (
     <Card gap="$3">
-      {state && !state.user && state.onHomeNetwork && !state.trustLan ? (
-        <Text fontSize={12} color="$muted" lineHeight={18}>
-          This server requires a login on the home network too.
-        </Text>
-      ) : null}
       <Field label="Username" kind="username" value={username} onChange={setUsername} autoFocus />
       <Field label="Password" kind="current-password" value={password} onChange={setPassword} onSubmit={() => void submit()} />
       {problem ? (

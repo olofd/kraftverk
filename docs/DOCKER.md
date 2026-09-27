@@ -30,11 +30,13 @@ nothing is adopted for you.
 To check it came up:
 
 ```bash
-curl http://localhost:3333/api/health
+curl http://localhost:3333/api/auth/state
 ```
 
-`{"ok":true}` and you are running. Both containers have health checks, so
-`docker ps` will show `healthy` once they have answered.
+An answer with `"setupRequired": true` and you are running, with no accounts
+yet. (`/api/health` is only for the container's own healthcheck, and answers
+nothing else.) Both containers have health checks, so `docker ps` will show
+`healthy` once they have answered.
 
 ---
 
@@ -147,11 +149,9 @@ changing it later makes existing secrets unreadable — they must be re-entered.
 ### Accounts and CORS
 
 The first time the app reaches a fresh server from the home network, it asks you
-to create an administrator. After that, the home network may use the app
-without logging in (switch that off under *App settings → Accounts*), and
-anywhere else needs an account. See [SECURITY.md](SECURITY.md) for the model,
-and for recovering access with `bun run server/src/auth/cli.ts` inside the
-container.
+to create an administrator. After that everyone signs in, at home too. See
+[SECURITY.md](SECURITY.md) for the model, and for recovering access with
+`bun run server/src/auth/cli.ts` inside the container.
 
 CORS is restricted to loopback and private ranges, which covers a phone or
 laptop on the same network, so the common case needs nothing. Name any other

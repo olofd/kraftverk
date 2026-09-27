@@ -134,6 +134,18 @@ export function getApiBaseUrl(): string {
 /** Is a kraftverk server actually there? Used before trusting an address. */
 export async function probeServer(url?: string, signal?: AbortSignal): Promise<boolean> {
   const base = (url ?? getApiBaseUrl()).replace(/\/$/, '');
+  /*
+    `/auth/state`, not `/health`: the health check answers only the server's
+    own machine now, and the sign-in state is the one thing a server tells
+    anyone. A server from before accounts has no such route, and is still asked
+    the old way.
+  */
+  try {
+    const { data } = await axios.get<{ setupRequired?: unknown }>(`${base}/auth/state`, { timeout: 3000, signal, withCredentials: true });
+    return typeof data?.setupRequired === 'boolean';
+  } catch (error) {
+    if (!(axios.isAxiosError(error) && error.response?.status === 404)) return false;
+  }
   try {
     const { data } = await axios.get<{ ok: boolean }>(`${base}/health`, { timeout: 3000, signal });
     return data?.ok === true;
@@ -565,12 +577,6 @@ export async function logOut() {
 /** Your own password. Needs the current one; signs you out everywhere else. */
 export async function changeOwnPassword(current: string, next: string) {
   await api.post('/auth/password', { current, next });
-}
-
-/** Whether the home network may use the app without logging in. */
-export async function setTrustHomeNetwork(trustLan: boolean) {
-  const { data } = await api.patch<{ trustLan: boolean }>('/auth/settings', { trustLan });
-  return data.trustLan;
 }
 
 export async function fetchAccounts(signal?: AbortSignal) {

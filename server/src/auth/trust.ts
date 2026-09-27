@@ -2,8 +2,11 @@ import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 
 /**
- * Whether a request comes from the home network — and so, when the owner has
- * chosen to trust it, needs no login.
+ * Whether a request comes from the home network.
+ *
+ * It no longer lets anyone skip the login — everyone signs in. It decides one
+ * thing: who may create the *first* account on a fresh server. That must be
+ * someone at home, never whoever finds the server on the internet first.
  *
  * The obvious rule, "the caller's address is private", is the dangerous one.
  * Through a reverse proxy every request arrives from the proxy, and the proxy
@@ -23,7 +26,7 @@ import { isIP } from 'node:net';
  *   know, and a proxy it does not know could be forwarding the internet.
  *
  * Everything ambiguous is untrusted. The cost of being wrong in that direction
- * is a login prompt; in the other, it is the station.
+ * is setting the server up from home; in the other, it is the station.
  */
 
 export type Exposure = 'lan' | 'public';
@@ -34,7 +37,7 @@ export const EXPOSURE_HEADER = 'x-kraftverk-exposure';
 export const CLIENT_IP_HEADER = 'x-kraftverk-client-ip';
 
 /** Headers that mean "a proxy handled this" when a proxy we know did not. */
-const FORWARDING_HEADERS = ['x-forwarded-for', 'forwarded', 'x-real-ip', 'x-forwarded-host', EXPOSURE_HEADER];
+export const FORWARDING_HEADERS = ['x-forwarded-for', 'forwarded', 'x-real-ip', 'x-forwarded-host', EXPOSURE_HEADER];
 
 export type TrustInput = {
   /** The address of whatever opened the TCP connection. */

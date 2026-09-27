@@ -18,7 +18,6 @@ import {
   deleteUser,
   readSession,
   setPassword,
-  setTrustLan,
   verifyLogin,
 } from './store.ts';
 import { assessTrust, CLIENT_IP_HEADER, EXPOSURE_HEADER, isPrivate, normaliseIp, ProxyDirectory } from './trust.ts';
@@ -305,8 +304,17 @@ describe('the gate', () => {
   const viaPublicEntrance = { from: PROXY, headers: { [EXPOSURE_HEADER]: 'public', [CLIENT_IP_HEADER]: PUBLIC }, host: 'home.example.net' };
   const viaLanEntrance = { from: PROXY, headers: { [EXPOSURE_HEADER]: 'lan', [CLIENT_IP_HEADER]: '192.168.50.58' }, host: '192.168.50.140:8080' };
 
-  test('the health check is open to anyone', async () => {
-    expect((await call('/health', { from: PUBLIC })).status).toBe(200);
+  test('the health check answers this machine and a session — not the network', async () => {
+    expect((await call('/health', { from: '127.0.0.1', host: '127.0.0.1:3333' })).status).toBe(200);
+    expect((await call('/health', { from: '::1', host: 'localhost:3333' })).status).toBe(200);
+    expect((await call('/health', { from: PUBLIC })).status).toBe(401);
+    expect((await call('/health')).status).toBe(401); // the LAN
+    expect((await call('/health', viaLanEntrance)).status).toBe(401);
+    // Loopback that came through a proxy is not this machine asking.
+    expect((await call('/health', { from: '127.0.0.1', headers: { 'x-forwarded-for': PUBLIC } })).status).toBe(401);
+    await createFirstUser('olof', PASSWORD);
+    const login = await call('/auth/login', { method: 'POST', body: { username: 'olof', password: PASSWORD } });
+    expect((await call('/health', { cookie: login.token })).status).toBe(200);
   });
 
   test('a fresh server cannot be claimed from the internet', async () => {
@@ -316,6 +324,15 @@ describe('the gate', () => {
     const state = await call('/auth/state', viaPublicEntrance);
     expect(state.body).toMatchObject({ setupRequired: true, canSetup: false, onHomeNetwork: false });
     expect((await call('/devices', viaPublicEntrance)).body).toMatchObject({ loginRequired: true, setupRequired: true });
+  });
+
+  test('a fresh server is set up before it is used — the home network included', async () => {
+    const before = await call('/devices');
+    expect(before.status).toBe(401);
+    expect(before.body).toMatchObject({ loginRequired: true, setupRequired: true });
+    expect((await call('/auth/state')).body).toMatchObject({ onHomeNetwork: true, canSetup: true });
+    // Reads as well as writes: nothing but the way in.
+    expect((await call('/grid/relay', { method: 'POST', body: { on: false } })).status).toBe(401);
   });
 
   test('from the home network, the first account is created and signed in', async () => {
@@ -329,17 +346,14 @@ describe('the gate', () => {
     expect(again.status).toBe(400);
   });
 
-  test('the home network needs no login while trusted — directly or through the LAN entrance', async () => {
+  test('the home network needs a login too — reads as well as writes, every way in', async () => {
     await createFirstUser('olof', PASSWORD);
-    expect((await call('/devices')).status).toBe(200);
-    expect((await call('/devices', viaLanEntrance)).status).toBe(200);
-  });
-
-  test('…and does once the owner requires a login everywhere', async () => {
-    await createFirstUser('olof', PASSWORD);
-    setTrustLan(false);
-    expect((await call('/devices')).status).toBe(401);
-    setTrustLan(true);
+    for (const via of [{}, viaLanEntrance, { from: '127.0.0.1', host: 'localhost:3333' }]) {
+      expect((await call('/devices', via)).status).toBe(401);
+      expect((await call('/grid/relay', { ...via, method: 'POST', body: { on: false } })).status).toBe(401);
+    }
+    const login = await call('/auth/login', { method: 'POST', body: { username: 'olof', password: PASSWORD } });
+    expect((await call('/devices', { cookie: login.token })).status).toBe(200);
   });
 
   test('the internet needs a login, however it dresses up', async () => {
@@ -418,7 +432,6 @@ describe('the gate', () => {
     await createFirstUser('olof', PASSWORD);
     expect((await call('/users')).status).toBe(401);
     expect((await call('/users', { method: 'POST', body: { username: 'backdoor', password: PASSWORD } })).status).toBe(401);
-    expect((await call('/auth/settings', { method: 'PATCH', body: { trustLan: true } })).status).toBe(401);
 
     const login = await call('/auth/login', { method: 'POST', body: { username: 'olof', password: PASSWORD } });
     const added = await call('/users', { method: 'POST', cookie: login.token, body: { username: 'anna', password: PASSWORD } });

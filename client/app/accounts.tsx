@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Feather } from '@expo/vector-icons';
 import { Button, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { Card, Row, RowSeparator, SectionLabel, ToggleRow, haptic } from '@kraftverk/ui';
+import { Card, Row, RowSeparator, SectionLabel, haptic } from '@kraftverk/ui';
 import {
   addAccount,
   changeOwnPassword,
@@ -10,28 +10,25 @@ import {
   fetchAccounts,
   removeAccount,
   resetAccountPassword,
-  setTrustHomeNetwork,
 } from '@kraftverk/api-client';
 import type { AccountDetail } from '@kraftverk/api-client';
 
 import { Screen } from '../src/components/Screen';
 import { Field, passwordProblem, suggestPassword, PASSWORD_MIN } from '../src/features/auth/fields';
-import { LoginForm, SetupForm } from '../src/features/auth/SignIn';
 import { useAuth } from '../src/state/AuthProvider';
 
 /**
- * Who may use this server, and from where.
+ * Who may use this server.
  *
- * Every account is an administrator. Everything here needs a real login — even
- * on a home network trusted to use the app without one — because the thing
- * being managed is who may get in from the internet, and "any device on the
- * LAN may add itself an account" is not what trusting the LAN was for.
+ * Reached only signed in: the sign-in gate stands in front of the whole app,
+ * so the cases below the first two are the signed-in one. Every account is an
+ * administrator for now.
  */
 export default function AccountsScreen() {
   const { applies, state } = useAuth();
 
   return (
-    <Screen back="App settings" backTo="/app-settings" title="Accounts" subtitle="Who may use this server, and from where">
+    <Screen back="App settings" backTo="/app-settings" title="Accounts" subtitle="Who may use this server">
       {!applies ? (
         <Card>
           <Text fontSize={13} color="$muted" lineHeight={19}>
@@ -39,48 +36,21 @@ export default function AccountsScreen() {
             to log in to.
           </Text>
         </Card>
-      ) : !state ? (
+      ) : !state?.user ? (
         <Card>
           <Text fontSize={13} color="$muted" lineHeight={19}>
             This server does not have accounts. It may be older than them — update it to use sign-in.
           </Text>
         </Card>
-      ) : state.user ? (
-        <SignedIn />
-      ) : state.setupRequired ? (
-        /*
-          A trusted home network never sees the sign-in gate, so this is where
-          the first account gets made. Until it exists, the server can only be
-          used from home.
-        */
-        <YStack gap="$3">
-          <SectionLabel>No accounts yet</SectionLabel>
-          {state.canSetup ? (
-            <SetupForm />
-          ) : (
-            <Card>
-              <Text fontSize={13} color="$muted" lineHeight={19}>
-                The first account can only be created from the home network.
-              </Text>
-            </Card>
-          )}
-        </YStack>
       ) : (
-        <YStack gap="$3">
-          <SectionLabel>Log in to manage accounts</SectionLabel>
-          <Text fontSize={13} color="$muted" lineHeight={19} paddingHorizontal="$1">
-            You are using this server from the home network without logging in. Managing accounts needs a
-            real login all the same: it decides who can reach the server from outside.
-          </Text>
-          <LoginForm />
-        </YStack>
+        <SignedIn />
       )}
     </Screen>
   );
 }
 
 function SignedIn() {
-  const { state, logOut, refresh } = useAuth();
+  const { state, logOut } = useAuth();
   const theme = useTheme();
   const [accounts, setAccounts] = useState<AccountDetail[]>([]);
   const [problem, setProblem] = useState<string | null>(null);
@@ -126,38 +96,6 @@ function SignedIn() {
         <ChangeOwnPassword />
       </YStack>
 
-      <YStack gap="$2">
-        <SectionLabel>Home network</SectionLabel>
-        <Card inset>
-          <ToggleRow
-            title="Use without logging in at home"
-            subtitle={
-              state.trustLan
-                ? 'Devices on the home network use the app without an account. From anywhere else, a login is required.'
-                : 'Every device logs in, at home too.'
-            }
-            checked={state.trustLan}
-            onCheckedChange={async (next) => {
-              haptic();
-              try {
-                await setTrustHomeNetwork(next);
-                await refresh();
-              } catch (error) {
-                setProblem(describeError(error));
-              }
-            }}
-          />
-          <RowSeparator />
-          <Row
-            title={state.onHomeNetwork ? 'This device is on the home network' : 'This device is not on the home network'}
-            subtitle={`${state.reason}.`}
-          />
-        </Card>
-        <Text fontSize={12} color="$muted" lineHeight={18} paddingHorizontal="$1">
-          “Home network” is decided by how a request reaches the server, not just its address: anything that
-          came in through the public entrance, or through a proxy the server does not know, needs a login.
-        </Text>
-      </YStack>
 
       <YStack gap="$2">
         <SectionLabel>Accounts</SectionLabel>

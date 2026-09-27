@@ -4,12 +4,17 @@ import { isIP } from 'node:net';
 /**
  * Refuses requests addressed to a name this server does not answer to.
  *
- * The attack this stops is DNS rebinding, and it is the one that matters for
- * a server that trusts its home network. A page on `evil.example` makes its
+ * The attack this stops is DNS rebinding. A page on `evil.example` makes its
  * own name resolve to this machine's LAN address. The browser then considers
  * requests to it same-origin — no CORS, no preflight, custom headers allowed —
- * and they arrive from the victim's own LAN address, which is trusted. The
- * only thing that gives the game away is the `Host` header: it still says
+ * and they arrive from the victim's own LAN address.
+ *
+ * It cannot ride a session: browsers keep cookies by host name, and this
+ * server's cookie is not `evil.example`'s. What it *can* do is act as the home
+ * network — and the home network is what may create the first account. On a
+ * fresh server, a rebinding page in any browser on the LAN could claim it.
+ *
+ * The only thing that gives the game away is the `Host` header: it still says
  * `evil.example`, because that is the name the browser thinks it is talking to.
  *
  * So a request must name this server as one of:

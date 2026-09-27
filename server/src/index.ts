@@ -1198,10 +1198,8 @@ api.get('/admin/reset', async (c) =>
  */
 api.post('/admin/reset', async (c) => {
   /*
-    A real login, even on the trusted home network: this deletes every
-    account along with everything else, and "anything on the LAN may erase
-    the server" is not what trusting the LAN was meant to buy. The name is
-    taken now, because the account it belongs to is about to be deleted.
+    The gate has already required a login; this takes the name now, because
+    the account it belongs to is about to be deleted along with everything else.
   */
   const who = accounts.requireUser(c).username;
   const expected = await resetSecret();

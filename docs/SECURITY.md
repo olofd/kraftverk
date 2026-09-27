@@ -5,34 +5,39 @@ wrong value destroys it — and it can switch mains power through a grid relay.
 This document is what stands between that and anyone who should not have it,
 and it is written so each layer can be checked rather than taken on trust.
 
-> **Short version.** The home network may use the app without logging in, if
-> the owner allows it. Everywhere else needs an account. Every account is an
-> administrator. The station's own guards — the register whitelist, register 68
-> never set to 0 — apply to everyone, signed in or not.
+> **Short version.** Everyone signs in — at home too, for reads as well as
+> writes. Every account is an administrator, for now. The first account can
+> only be created from the home network. The station's own guards — the
+> register whitelist, register 68 never set to 0 — apply to everyone.
 
 ---
 
 ## Who may use the API
 
-One gate stands in front of every `/api` route (`server/src/auth/routes.ts`). A
-request passes if it carries a valid session, or if it comes from the **home
-network** and the owner lets the home network in without a login. `/api/health`
-and the sign-in routes are the only exceptions.
+One gate stands in front of every `/api` route (`server/src/auth/routes.ts`),
+and it asks one question: is there a valid session? The only routes open
+without one are the way in — `/auth/state`, `/auth/setup`, `/auth/login` and
+`/auth/logout` — each of which touches nothing but its own session.
+`/api/health` answers the server's own machine (the container healthcheck) and
+signed-in sessions; not the network.
 
-**Managing accounts always needs a real login**, even on a trusted home network:
-adding, removing and resetting accounts, changing the trust setting, and
-erasing the database. Otherwise any device on the LAN could quietly give itself
-a way in from the internet.
+The home network gets no exemption. Devices belong to accounts, so every
+request has to say whose view it wants, and an anonymous visitor — however
+local — has no answer. Sessions last 30 days and renew as they are used, so a
+browser in regular use stays signed in.
 
-The first account can only be created from the home network — whatever the
-trust setting says — so a fresh server that is already reachable from outside
-cannot be claimed by whoever finds it first.
+A fresh server with no accounts refuses everything but setup, from anywhere.
 
-## What counts as the home network
+## Creating the first account
 
-This is the part that is easy to get wrong, so it is decided in one pure
-function, `assessTrust` in `server/src/auth/trust.ts`, and tested against every
-spoofing attempt we could think of.
+The first account can only be created from the **home network**, so a fresh
+server that is already reachable from outside cannot be claimed by whoever
+finds it first. After that, accounts are added from the app by a signed-in
+account, or with the recovery CLI.
+
+Deciding "home network" is the part that is easy to get wrong, so it is done
+in one pure function, `assessTrust` in `server/src/auth/trust.ts`, and tested
+against every spoofing attempt we could think of.
 
 The tempting rule — "the caller's address is private" — is wrong behind a
 reverse proxy: every request then arrives from the proxy, which is on the LAN,
@@ -49,14 +54,14 @@ and the whole internet looks like the living room. So:
   stamp, from anything but the web container, came through a proxy the server
   does not know — and is not trusted.
 
-Anything ambiguous is untrusted. Being wrong in that direction costs a login
-prompt.
+Anything ambiguous is untrusted. Being wrong in that direction costs setting
+the server up from home.
 
 The web container — which serves the app and proxies `/api`, and is being
 added alongside this — carries two tripwires of its own on the home-network
 entrance: a request whose `Host` is a real domain name, or that already carries
 proxy headers, is stamped `public` anyway. A reverse proxy pointed at the wrong
-entrance by mistake then asks for a login rather than letting the internet in.
+entrance by mistake then cannot create the first account from the internet.
 Until it exists, only the direct rules above apply.
 
 ## Sessions and passwords
@@ -82,7 +87,9 @@ asking this server, and CORS refuses.
 **DNS rebinding.** A page on `evil.example` can make its own name resolve to
 your server's LAN address. The browser then treats requests to it as
 same-origin — no CORS, custom headers allowed — and they arrive from your LAN
-address. The `Host` header gives it away: it still says `evil.example`. The
+address. It cannot ride your session (cookies are kept by host name), but it can
+act as the home network, which may create the first account on a fresh server.
+The `Host` header gives it away: it still says `evil.example`. The
 server answers only to IP addresses, `localhost`, `.local` names, single-label
 names such as Docker service names, and names listed in
 `KRAFTVERK_ALLOWED_HOSTS` — anything else gets `421` before any other code runs
@@ -107,18 +114,18 @@ Unchanged by any of this, and applied to every caller:
   diagnostics route, which is itself off unless `ALLOW_RAW_MODBUS=1`.
 - Only the server may publish commands on the broker; see
   [BROKER.md](BROKER.md#who-may-do-what).
-- Physical actions go through the action gateway, which records *who* in the
-  audit timeline — an account name, or "home network (address)".
+- Physical actions go through the action gateway, which records *who* — the
+  account — in the audit timeline.
 
 ## Recovering access
 
-If nobody can log in — every password forgotten, or a login required
-everywhere by mistake — a shell on the server is the proof of ownership:
+If nobody can log in — every password forgotten — a shell on the server is the
+proof of ownership:
 
 ```bash
 npm run users -- list
 npm run users -- password <name>      # generates one and shows it once
-npm run users -- trust-lan on
+npm run users -- add <name>           # a new account, the same way
 # In Docker:
 docker compose exec kraftverk bun run server/src/auth/cli.ts password <name>
 ```
@@ -131,8 +138,7 @@ the process list would keep them: they are generated, or piped in with
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `KRAFTVERK_TRUST_LAN` | on | The default for "the home network may skip the login", until an administrator changes it in the app |
-| `KRAFTVERK_TRUSTED_PROXIES` | — | The web container, by name or address. Its entrance stamp is believed; nothing else's is |
+| `KRAFTVERK_TRUSTED_PROXIES` | — | The web container, by name or address. Its entrance stamp is believed — for first-account setup — and nothing else's is |
 | `KRAFTVERK_ALLOWED_HOSTS` | — | Names the server answers to besides addresses and local names — a public DDNS name, say |
 | `ALLOWED_ORIGINS` | — | Extra browser origins. `*` is refused |
 
@@ -140,12 +146,12 @@ the process list would keep them: they are generated, or piped in with
 
 Stated plainly, so nobody assumes otherwise:
 
-- **A compromised device on a trusted home network** can use the app as fully
-  as you can, except for managing accounts. That is what trusting the network
-  means; switch it off under *App settings → Accounts* if that is not the
-  trade you want.
+- **Every account is an administrator**, for now: anyone you give an account
+  can use and change everything, and manage accounts. Accounts owning their own
+  devices is the next step — see [ACCOUNTS.md](ACCOUNTS.md).
 - **Traffic on the home network is plain HTTP.** A login made there crosses the
-  LAN unencrypted. From outside, HTTPS is terminated before the web container.
+  LAN unencrypted, and anyone able to watch the LAN could take the session.
+  From outside, HTTPS is terminated before the web container.
 - **The MQTT broker accepts any connection** — a station authenticates with
   cloud-issued credentials nobody can predict. What a connection may *publish*
   is restricted. Keep port 1883 off the internet.

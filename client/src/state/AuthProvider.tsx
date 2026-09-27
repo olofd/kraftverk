@@ -31,7 +31,7 @@ type AuthContextValue = {
    * server has no login to show.
    */
   unknown: boolean;
-  /** This device may use the app: signed in, or on a trusted home network. */
+  /** This device may use the app: signed in — or talking to a server from before accounts. */
   allowed: boolean;
   refresh: () => Promise<void>;
   logIn: (username: string, password: string) => Promise<void>;
@@ -114,7 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       state,
       loading,
       unknown,
-      allowed: !applies || unknown || Boolean(state && (state.user || state.trusted)),
+      allowed: !applies || unknown || Boolean(state?.user),
       refresh,
       logIn,
       setup,

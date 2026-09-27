@@ -20,21 +20,22 @@ import {
   readSession,
   SESSION_LIFETIME_MS,
   setPassword,
-  setTrustLan,
-  trustLan,
   verifyLogin,
   type User,
 } from './store.ts';
-import { assessTrust, EXPOSURE_HEADER, normaliseIp, type ProxyDirectory, type Trust } from './trust.ts';
+import { assessTrust, EXPOSURE_HEADER, FORWARDING_HEADERS as FORWARDED, normaliseIp, type ProxyDirectory, type Trust } from './trust.ts';
 
 /**
- * Logging in, and who may use the API without doing so.
+ * Logging in.
  *
- * One gate in front of every `/api` route: a request passes with a valid
- * session, or — when the owner has chosen to trust it — from the home network,
- * decided as `trust.ts` explains. Managing accounts always needs a real login:
- * otherwise any device on the LAN could quietly give itself a way in from the
- * internet.
+ * One gate in front of every `/api` route, and it asks one question: is there a
+ * valid session? Reads and writes alike, from the home network and from
+ * anywhere else. Devices belong to accounts, so every request has to say whose
+ * view it wants — and an anonymous visitor, however local, has no answer.
+ *
+ * The home network still matters in exactly one place: the first account can
+ * only be created from it (see `trust.ts`), so a fresh server already reachable
+ * from the internet cannot be claimed by whoever finds it first.
  *
  * And one rule for every request that changes anything: it must carry an
  * `X-Kraftverk-Client` header. A web page on another site cannot add a custom
@@ -47,24 +48,42 @@ import { assessTrust, EXPOSURE_HEADER, normaliseIp, type ProxyDirectory, type Tr
 export const SESSION_COOKIE = 'kraftverk_session';
 export const CLIENT_HEADER = 'x-kraftverk-client';
 
-/** Paths anyone may reach: the health check, and the way in. */
-const OPEN = new Set(['/api/health', '/api/auth/state', '/api/auth/setup', '/api/auth/login', '/api/auth/logout']);
+/**
+ * The only paths reachable without a session: the way in. Each does one narrow
+ * thing, and none reads or changes anything but its own session.
+ */
+const OPEN = new Set(['/api/auth/state', '/api/auth/setup', '/api/auth/login', '/api/auth/logout']);
+
+/**
+ * The health check, for the container's own healthcheck — which runs inside
+ * the container, on loopback. Open to that and to a session; not to the
+ * network, which has no need to know the server is up.
+ */
+const HEALTH = '/api/health';
 
 export type Access = {
   trust: Trust;
-  /** Home network and trusted: no login needed. */
-  trusted: boolean;
   user: User | null;
 };
 
 const accessByRequest = new WeakMap<Request, Access>();
 
-/** Who is acting, for the audit log: the account, or the home network. */
+/**
+ * The signed-in account behind a request that passed the gate.
+ *
+ * Throws rather than returning null: every route behind the gate has an
+ * account by construction, and one that somehow did not must not carry on as
+ * nobody in particular — least of all once data is scoped to its owner.
+ */
+export function userOf(c: Context): User {
+  const user = accessByRequest.get(c.req.raw)?.user;
+  if (!user) throw new HTTPException(401, { message: 'Log in to use this server.' });
+  return user;
+}
+
+/** Who is acting, for the audit log. */
 export function actorOf(c: Context): string {
-  const access = accessByRequest.get(c.req.raw);
-  if (access?.user) return access.user.username;
-  if (access?.trusted) return `home network (${access.trust.clientIp ?? 'unknown'})`;
-  return 'unknown';
+  return accessByRequest.get(c.req.raw)?.user?.username ?? 'unknown';
 }
 
 export type AuthDeps = {
@@ -80,6 +99,14 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
 
   const trustOf = (c: Context): Trust =>
     assessTrust({ socketIp: socketIp(c), headers: c.req.raw.headers, proxies: proxies.addresses });
+
+  /** This machine, directly — not something it forwarded. */
+  const localCaller = (c: Context): boolean => {
+    const socket = socketIp(c);
+    if (!socket || proxies.addresses.has(socket)) return false;
+    if (FORWARDED.some((name) => c.req.raw.headers.has(name))) return false;
+    return socket === '::1' || socket.startsWith('127.');
+  };
 
   /** Served over HTTPS as far as the browser is concerned — through the public entrance, or directly. */
   const secure = (c: Context): boolean => {
@@ -103,17 +130,17 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
   const access = (c: Context): Access => {
     const known = accessByRequest.get(c.req.raw);
     if (known) return known;
-    const trust = trustOf(c);
     const session = readSession(getCookie(c, SESSION_COOKIE));
+    // Renewed sessions send the cookie again, so its own expiry moves with it.
     if (session?.renewed) writeCookie(c, getCookie(c, SESSION_COOKIE)!);
-    const result: Access = { trust, trusted: trust.onHomeNetwork && trustLan(), user: session?.user ?? null };
+    const result: Access = { trust: trustOf(c), user: session?.user ?? null };
     accessByRequest.set(c.req.raw, result);
     return result;
   };
 
   const requireUser = (c: Context): User => {
     const { user } = access(c);
-    if (!user) throw new HTTPException(401, { message: 'Log in to manage accounts — even on the home network' });
+    if (!user) throw new HTTPException(401, { message: 'Log in to use this server.' });
     return user;
   };
 
@@ -131,8 +158,8 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
   /** The gate in front of every `/api` route. */
   const gate: MiddlewareHandler = async (c, next) => {
     if (c.req.method === 'OPTIONS' || OPEN.has(c.req.path)) return next();
-    const { user, trusted } = access(c);
-    if (user || trusted) return next();
+    if (access(c).user) return next();
+    if (c.req.path === HEALTH && localCaller(c)) return next();
     const setupRequired = countUsers() === 0;
     return c.json(
       {
@@ -161,13 +188,12 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
 
   /** Everything the app needs to decide what to show: who, where, and whether setup is due. */
   auth.get('/state', (c) => {
-    const { user, trust, trusted } = access(c);
+    const { user, trust } = access(c);
     const users = countUsers();
     return c.json({
       user: user ? { id: user.id, username: user.username } : null,
+      // Only consulted for setup: signing in is required everywhere.
       onHomeNetwork: trust.onHomeNetwork,
-      trustLan: trustLan(),
-      trusted,
       reason: trust.reason,
       setupRequired: users === 0,
       canSetup: users === 0 && trust.onHomeNetwork,
@@ -175,9 +201,8 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
   });
 
   /**
-   * The first administrator. From the home network only, whatever the trust
-   * setting says: a fresh install reachable from the internet must not be
-   * claimable by whoever finds it first.
+   * The first administrator. From the home network only: a fresh install
+   * reachable from the internet must not be claimable by whoever finds it first.
    */
   auth.post('/setup', async (c) => {
     const { trust } = access(c);
@@ -237,20 +262,6 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
     await setPassword(user.id, password, getCookie(c, SESSION_COOKIE)).catch(rethrow);
     audit({ at: now(), kind: 'user.password', actor: user.username, resource: user.id, summary: `${user.username} changed their password; their other sessions were signed out` });
     return c.json({ ok: true });
-  });
-
-  /** Whether the home network may skip the login. A security setting, so it needs a login to change. */
-  auth.patch('/settings', async (c) => {
-    const user = requireUser(c);
-    const { trustLan: next } = await parse(c, z.object({ trustLan: z.boolean() }));
-    setTrustLan(next);
-    audit({
-      at: now(),
-      kind: 'auth.trust-lan',
-      actor: user.username,
-      summary: next ? `${user.username} let the home network use the app without logging in` : `${user.username} required a login on every network`,
-    });
-    return c.json({ trustLan: next });
   });
 
   const users = new Hono();

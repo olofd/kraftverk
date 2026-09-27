@@ -372,12 +372,11 @@ export type AccountDetail = Account & {
 /** `GET /api/auth/state`: who this is, from where, and what the app should show. */
 export type AuthState = {
   user: Account | null;
-  /** This request came from the home network, by the server's rules. */
+  /**
+   * This request came from the home network, by the server's rules. Only
+   * matters for creating the first account; signing in is required everywhere.
+   */
   onHomeNetwork: boolean;
-  /** The owner lets the home network use the app without logging in. */
-  trustLan: boolean;
-  /** Both: this device may use the app without logging in. */
-  trusted: boolean;
   /** Why the server decided what it did about the network, in words. */
   reason: string;
   /** No accounts exist yet. */

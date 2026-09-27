@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
-import { appState, db, setAppState } from '../history/db.ts';
+import { db } from '../history/db.ts';
 
 /**
  * Accounts and sessions, in the server's own database.
@@ -279,20 +279,4 @@ export function endAllSessions(userId: string): number {
 export function findUserByName(username: string): User | null {
   const row = db().query<UserRow, [string]>('SELECT * FROM users WHERE username = ?').get(username);
   return row ? toUser(row) : null;
-}
-
-// --- trusting the home network -------------------------------------------------
-
-/** Where the owner's choice is kept. `KRAFTVERK_TRUST_LAN` supplies the default. */
-const TRUST_LAN_KEY = 'auth.trustLan';
-
-/** Whether the home network may use the app without logging in. */
-export function trustLan(): boolean {
-  const stored = appState(TRUST_LAN_KEY);
-  if (stored !== null) return stored === '1';
-  return process.env.KRAFTVERK_TRUST_LAN !== '0';
-}
-
-export function setTrustLan(value: boolean): void {
-  setAppState(TRUST_LAN_KEY, value ? '1' : '0');
 }
