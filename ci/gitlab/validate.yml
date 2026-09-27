@@ -47,7 +47,10 @@ stack:
   before_script:
     - apk add --no-cache bash curl coreutils
     - echo "$CI_REGISTRY_PASSWORD" | docker login --username "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-    - docker buildx create --use --driver docker-container --name kraftverk > /dev/null
+    # buildx will not take the dind service's TLS settings from the environment;
+    # a context carries them.
+    - docker context create kraftverk-ci > /dev/null
+    - docker buildx create --use --driver docker-container --name kraftverk kraftverk-ci > /dev/null
   script:
     # BuildKit, with its cache kept in the registry: an unchanged lockfile
     # means the dependency layers are not rebuilt — and are pushed as the very
