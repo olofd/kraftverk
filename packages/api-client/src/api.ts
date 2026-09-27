@@ -15,7 +15,7 @@ import type {
   ServerLogLine,
   DeviceHistory,
   DeviceSettings,
-  DeviceTypeOption,
+  DeviceTypeList,
   SavedDeviceView,
   GridStatus,
   LegacyStationOffer,
@@ -366,20 +366,15 @@ export async function fetchDevice(id: string, signal?: AbortSignal) {
   return data;
 }
 
-/** What can be added, and what each one needs. */
+/** What can be added: every device type installed on the server. */
 export async function fetchDeviceTypes(signal?: AbortSignal) {
-  const { data } = await api.get<{ types: DeviceTypeOption[] }>('/device-types', { signal });
+  const { data } = await api.get<DeviceTypeList>('/device-types', { signal });
   return data.types;
 }
 
+/** Adds a device of an installed type. Its config is validated against the type's own schema. */
 export async function addDevice(
-  input: {
-    type: 'power-station' | 'smart-plug';
-    driver: string;
-    name: string;
-    model?: string | null;
-    config?: Record<string, unknown>;
-  },
+  input: { typeId: string; name: string; config?: Record<string, unknown> },
   signal?: AbortSignal
 ) {
   const { data } = await api.post<SavedDeviceView>('/devices', input, { signal });
@@ -388,7 +383,7 @@ export async function addDevice(
 
 export async function updateDevice(
   id: string,
-  changes: { name?: string; model?: string | null; config?: Record<string, unknown> },
+  changes: { name: string },
   signal?: AbortSignal
 ) {
   const { data } = await api.patch<SavedDeviceView>(devicePath(id), changes, { signal });

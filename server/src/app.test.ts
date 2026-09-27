@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { ConfigSchema, KraftverkPlugin, PluginManifest, SetupActionResult, StationId } from '@kraftverk/device-sdk';
+import { savedDeviceId, type ConfigSchema, type KraftverkPlugin, type PluginManifest, type SetupActionResult, type StationId } from '@kraftverk/device-sdk';
 
 import { ActionGateway, CONFIRMATION_PHRASE } from './actions/gateway.ts';
 import { corsOrigin, createApp } from './app.ts';
@@ -13,11 +13,13 @@ import { CLIENT_HEADER, SESSION_COOKIE } from './auth/routes.ts';
 import { CLIENT_IP_HEADER, EXPOSURE_HEADER, ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
 import { ConnectionManager } from './connections/manager.ts';
+import { serverTransports } from './connections/station-links.ts';
+import { DeviceSessionManager } from './devices/sessions.ts';
+import { DeviceTypeRegistry } from './devices/types.ts';
 import { DeviceCatalog } from './devices/catalog.ts';
 import { LegacyStationImport } from './devices/legacy.ts';
 import { DeviceRegistry } from './devices/registry.ts';
 import { relayStation } from './devices/relay-pairing.ts';
-import { SimulatorDriver } from './drivers/simulator.ts';
 import { closeDb, db, openSecret } from './history/db.ts';
 import { Sampler } from './history/sampler.ts';
 import { PluginHost } from './plugins/host.ts';
@@ -126,6 +128,7 @@ function keysPlugin(): KraftverkPlugin {
 
 let app: ReturnType<typeof createApp>['app'];
 let connections: ConnectionManager;
+let sessions: DeviceSessionManager;
 let host: PluginHost;
 /** A station bound before the catalog existed, for the tests that offer one. */
 let legacyBinding: Binding | null = null;
@@ -143,21 +146,25 @@ beforeAll(async () => {
     host: () => {
       throw new Error('no radios in these tests');
     },
-    simulator: () => new SimulatorDriver({ settingsFile: join(dir, 'sim-settings.json') }),
     onBound: () => {},
   });
   host = new PluginHost();
   await host.discover();
   host.install(relayPlugin('test.second-relay'));
   host.install(keysPlugin());
-  const registry = new DeviceRegistry(catalog, host, connections);
-  const gateway = new ActionGateway({ host, readStation: () => relayStation(connections), isReadOnly: () => false });
+  const types = new DeviceTypeRegistry();
+  await types.discover();
+  sessions = new DeviceSessionManager({ types, simulate: true, readOnly: false, transports: serverTransports(connections) });
+  const registry = new DeviceRegistry(catalog, host, sessions);
+  const gateway = new ActionGateway({ host, readStation: () => relayStation(sessions), isReadOnly: () => false });
   const proxies = new ProxyDirectory(PROXY);
   await proxies.refresh();
 
   ({ app } = createApp({
     config,
     catalog,
+    types,
+    sessions,
     connections,
     host,
     registry,
@@ -177,6 +184,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await sessions.closeAll();
   await connections.closeAll();
   await host.stopAll();
   closeDb();
@@ -217,14 +225,14 @@ let session: string;
 beforeEach(async () => {
   db().exec('DELETE FROM device; DELETE FROM sample; DELETE FROM users; DELETE FROM sessions; DELETE FROM app_state; DELETE FROM plugin_config; DELETE FROM plugin_secret; DELETE FROM audit;');
   legacyBinding = null;
-  await connections.sync([]);
+  await sessions.sync([]);
   await createFirstUser('olof', PASSWORD);
   session = (await call('/auth/login', { method: 'POST', body: { username: 'olof', password: PASSWORD } })).token!;
 });
 
 const as = (path: string, options: Call = {}) => call(path, { cookie: session, ...options });
 const addStation = async () =>
-  (await as('/devices', { method: 'POST', body: { type: 'power-station', driver: 'core.station', name: 'Station', model: 'aferiy-p280' } })).body as {
+  (await as('/devices', { method: 'POST', body: { typeId: 'aferiy.p280', name: 'Station' } })).body as {
     id: string;
   };
 
@@ -239,7 +247,7 @@ describe('everything needs a session', () => {
 describe('devices', () => {
   test('a station is added, opened, paired with the relay, and forgotten', async () => {
     const station = await addStation();
-    expect(connections.sessions).toHaveLength(1);
+    expect(sessions.get(savedDeviceId(station.id))).not.toBeNull();
     expect((await as('/grid')).body?.stationDeviceId).toBe(station.id);
 
     const state = await as(`/devices/${encodeURIComponent(station.id)}/p280/state`);
@@ -247,7 +255,7 @@ describe('devices', () => {
     expect(state.body?.status).toBeTruthy();
 
     expect((await as(`/devices/${encodeURIComponent(station.id)}`, { method: 'DELETE' })).status).toBe(200);
-    expect(connections.sessions).toHaveLength(0);
+    expect(sessions.get(savedDeviceId(station.id))).toBeNull();
     expect((await as('/grid')).body?.stationDeviceId).toBeNull();
   });
 
@@ -278,16 +286,27 @@ describe('devices', () => {
     expect((await as('/grid')).body?.stationDeviceId).toBe(first.id);
   });
 
-  test('nothing is stored that no driver provides', async () => {
+  test('nothing is stored that no installed type provides', async () => {
     const refused = [
-      { type: 'power-station', driver: 'something-else', name: 'Ghost' },
-      { type: 'power-station', driver: 'core.station', name: 'S', model: 'not-a-model' },
-      { type: 'smart-plug', driver: 'not-installed', name: 'P' },
-      { type: 'power-station', driver: 'core.station', name: 'S', config: { anything: 1 } },
+      { typeId: 'something-else', name: 'Ghost' },
+      { typeId: 'aferiy.p280', name: 'S', model: 'not-a-model' },
+      { typeId: 'not-installed', name: 'P' },
+      { typeId: 'aferiy.p280', name: 'S', config: { anything: 1 } },
+      // The old shape, which named a driver and a model, is refused outright.
+      { type: 'power-station', driver: 'core.station', name: 'S' },
     ];
     for (const body of refused) expect((await as('/devices', { method: 'POST', body })).status).toBe(400);
     expect((await as('/devices')).body?.devices).toEqual([]);
-    expect(connections.sessions).toHaveLength(0);
+  });
+
+  test('what can be added is every installed type, found rather than listed', async () => {
+    const { body } = await as('/device-types');
+    const types = (body as { types: { id: string; setup: unknown[]; extension?: boolean }[] }).types;
+    expect(types.map((type) => type.id)).toContain('aferiy.p280');
+    // Setup guides are sent as data, their functions left on the server.
+    const station = types.find((type) => type.id === 'aferiy.p280')!;
+    expect(station.setup.length).toBeGreaterThan(0);
+    expect(JSON.stringify(station.setup)).not.toContain('=>');
   });
 
   test('a device is renamed, but its binding is not rewritten', async () => {
@@ -308,7 +327,8 @@ describe('devices', () => {
     const station = await addStation();
     const result = await as(`/devices/${encodeURIComponent(station.id)}/control/usb`, { method: 'POST', body: { value: false } });
     expect(result.status).toBe(200);
-    const ports = (result.body as { ports: { id: string; enabled: boolean }[] }).ports;
+    const state = await as(`/devices/${encodeURIComponent(station.id)}/p280/state`);
+    const ports = (state.body as { status: { ports: { id: string; enabled: boolean }[] } }).status.ports;
     expect(ports.find((port) => port.id === 'usb')?.enabled).toBe(false);
   });
 });
@@ -322,7 +342,7 @@ describe('the grid relay', () => {
     await as(`/plugins/${fake}/grants`, { method: 'POST', body: { capability: 'gridRelay.switch', granted: true, confirmation: CONFIRMATION_PHRASE } });
     await as(`/plugins/${fake}/provider`, { method: 'POST' });
 
-    const other = (await as('/devices', { method: 'POST', body: { type: 'smart-plug', driver: 'test.second-relay', name: 'Other plug' } })).body as { id: string };
+    const other = (await as('/devices', { method: 'POST', body: { typeId: 'test.second-relay', name: 'Other plug' } })).body as { id: string };
     const refused = await as(`/devices/${encodeURIComponent(other.id)}/control/relay`, {
       method: 'POST',
       body: { value: false, confirmation: CONFIRMATION_PHRASE },
@@ -462,18 +482,28 @@ describe('raw frames', () => {
       simulate: false,
       readOnly: config.readOnly,
       host: () => radio,
-      simulator: () => new SimulatorDriver({ settingsFile: join(dir, 'sim-settings.json') }),
+    });
+    const types = new DeviceTypeRegistry();
+    await types.discover();
+    const devices = new DeviceSessionManager({
+      types,
+      simulate: false,
+      readOnly: config.readOnly,
+      transports: serverTransports(hardware),
+      beforeSync: (records) => hardware.sync(records),
     });
     const record = catalog.add({ type: 'power-station', driver: 'core.station', name: 'Bench', config: { transport: 'ble', boundId: 'AABBCCDDEEFF' } });
-    await hardware.sync(catalog.list());
-    const registry = new DeviceRegistry(catalog, host, hardware);
+    await devices.sync(catalog.list());
+    const registry = new DeviceRegistry(catalog, host, devices);
     const { app: server } = createApp({
       config,
       catalog,
+      types,
+      sessions: devices,
       connections: hardware,
       host,
       registry,
-      gateway: new ActionGateway({ host, readStation: () => relayStation(hardware), isReadOnly: () => hardware.readOnly }),
+      gateway: new ActionGateway({ host, readStation: () => relayStation(devices), isReadOnly: () => hardware.readOnly }),
       sampler: new Sampler(registry),
       legacyStation: new LegacyStationImport({ catalog, transport: () => [], stationName: () => 'Power station' }),
       proxies: new ProxyDirectory(PROXY),
@@ -492,7 +522,7 @@ describe('raw frames', () => {
       );
       return response.status;
     };
-    return { send, close: () => hardware.closeAll() };
+    return { send, close: async () => { await devices.closeAll(); await hardware.closeAll(); } };
   }
 
   test('a read-only server sends no write, however the frame is spelled', async () => {

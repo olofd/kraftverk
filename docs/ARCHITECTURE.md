@@ -92,27 +92,35 @@ The rule, checked in CI by `npm run check:architecture` (§7):
 
 - **The core** — `server/src`, `client/src`, `client/app`,
   `packages/api-client`, `packages/ui`, the SDK — never imports a device type,
-  a service or a protocol package. The exceptions are one generated registry
-  file per side (`server/src/generated/`, `client/src/generated/`), written by
-  `npm run gen:devices` from the installed packages.
+  a service or a protocol package. The server finds device types at runtime
+  (`server/src/devices/types.ts`) and loads them by path. The app cannot —
+  Metro bundles what is imported, and a store build must not download code —
+  so `npm run gen:devices` writes `client/src/generated/device-types.ts` from
+  the installed packages, and that one file is the app's exception. CI checks
+  it is current.
 - **A device type** imports the SDK, protocols, and — in its `ui/` folder only —
   `@kraftverk/ui`, `@kraftverk/api-client`, React and Tamagui (peer
   dependencies). Never the server or the app.
 - **A protocol** imports nothing from kraftverk but other protocols. It has no
   idea what a P280 is.
+- **No third-party runtime dependencies** in a device type or protocol without
+  a review: they run inside the server with everything it can do (§5), and the
+  server image installs its own dependencies, not every package's.
 
 ### A device type package
 
 ```
 packages/devices/atorch-s1w/
-  package.json          "kraftverk": { "deviceType": "./src/index.ts", "ui": "./ui/index.ts" }
-  src/index.ts          export default defineDeviceType({...})   server-safe, no React
+  package.json          "kraftverk": { "deviceType": "./src/type.ts", "ui": "./ui/index.ts" },
+                        and both entries listed in "exports"
+  src/type.ts           export default defineDeviceType({...})   server-safe, no React
   src/session.ts        talks to the device through its protocol package
   src/setup.ts          the setup guide
   src/simulator.ts      a fake device: tests, and "try without hardware"
-  ui/index.ts           optional custom panels; the generic view is used otherwise
+  ui/index.ts           optional screens, export default { dashboard, settings, … };
+                        the generic ones are used otherwise
   assets/               icon.svg, product.webp
-  test/contract.test.ts the shared contract suite, run against this type
+  test/contract.test.ts checkDeviceTypeContract(type) from @kraftverk/device-sdk/testing
 ```
 
 ---
@@ -403,8 +411,8 @@ once the model has carried two real device types.
 | 0 | Words and one authority | S | done |
 | 1 | Guardrails | S | done |
 | 2 | Contracts: `device-sdk` | M | done |
-| 3 | Discover device types | M | |
-| 4 | Per-device sessions, config, secrets and links | L | |
+| 3 | Discover device types; a session for every device | M | done |
+| 4 | The data model: type ids, per-device config and secrets, links | L | |
 | 5 | Tuya as a protocol; the ATORCH and the generic plug as device types | M | |
 | 6 | One gateway for every command | M | |
 | 7 | The P280 as an ordinary device type | L | |
@@ -445,11 +453,16 @@ plugins are gone. Controls already speak the new capability names — the P280's
 ports are `outlets`, a plug's relay is `switch` — and telemetry carries its
 standard ids.
 
-### Step 3 — Discover device types
+### Step 3 — Discover device types; a session for every device
 - **Server:** a `DeviceTypeRegistry` finds `kraftverk.deviceType` in
   `packages/devices/*` and `packages/services/*`, checks the API version and
   loads the type. The P280 is registered as a type from here on, through a
   thin session over today's station code — nothing about how it runs changes.
+- **Sessions:** a `DeviceSessionManager` opens `type.createSession(ctx)` — or
+  `createSimulator(ctx)` without hardware — for every saved device of an
+  installed type, with its own validated config and its own store
+  (`device_kv`). Merged in from step 4, because the P280 cannot be a type
+  without a session and a simulator of its own.
 - **API:** `GET /api/device-types` returns every installed type: meta, support,
   capabilities, config schema and setup steps without their functions.
 - **Deleted:** `STATION_MODELS`, the hand-built list. Unverified models are
@@ -460,17 +473,31 @@ standard ids.
 
 **Done when** adding a package with no other edit makes it appear in the app.
 
-### Step 4 — Per-device sessions, config, secrets and links
-- A `DeviceSessionManager` opens `type.createSession(ctx)` for **every** saved
-  device, with that device's own config and secrets. Shared runtimes — the BLE
-  radio, the broker, UDP — come through `ctx.transports`.
+*Done.* `server/src/devices/types.ts` discovers and validates;
+`server/src/devices/sessions.ts` opens one session per device;
+`server/src/devices/registry.ts` builds every typed device's view from its
+type and session, and names no product. The P280 package now holds its
+`DeviceType` (`src/type.ts`), its simulator (moved from the server, settings
+kept in its device store) and its session adapter (`src/station.ts`: readings,
+`battery`, `outlets`, `acInput`, settings checked against its own schema before
+the driver's whitelist), and passes the contract suite. On real hardware the
+session borrows its driver from the connection manager through the
+`sydpower.station-links` transport — the bridge step 7 removes. The gateway's
+second proof reads the paired device's `acInput` rather than P280 status. New
+devices are added by `typeId` and get opaque ids; the station model list is
+gone. Outlet controls act through the `outlets` capability.
+
+### Step 4 — The data model: type ids, per-device config and secrets, links
 - The migration (rehearsed first): `driver` and `type` become `type_id`; each
   plugin's config and secrets become its device's; the relay pairing becomes a
   `feeds` link; the retired tables go (§4.5).
+- Secrets per device (`device_secret`), handed to sessions through
+  `ctx.secrets`, with the held-placeholder rule for setup steps.
 - Links: the table, the API and a screen to set "this plug feeds that station".
 
-**Done when** the registry has no `if (driver === …)` and two devices of one
-type run side by side.
+**Done when** the catalog stores what each device is, two devices of one type
+run side by side with their own config and secrets, and the relay's station is
+a link.
 
 ### Step 5 — Tuya as a protocol; the ATORCH and the generic plug
 - `protocol-tuya-local`: frame, session, crypto, discovery and the cloud key

@@ -46,7 +46,8 @@ describe('the device catalog', () => {
   test('remembers what was added, and hands back the same record', () => {
     const record = add('Living room');
 
-    expect(record.id).toStartWith('power-station:');
+    // Opaque: an id that said what a device is would invite code that reads it.
+    expect(record.id).toMatch(/^d-[0-9a-f]{12}$/);
     expect(catalog.get(record.id)).toEqual(record);
     expect(catalog.list().map((entry) => entry.id)).toEqual([record.id]);
   });

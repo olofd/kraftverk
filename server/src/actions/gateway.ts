@@ -1,7 +1,6 @@
 import { ACTUATOR_CONFIRMATION, type GridRelayProvider, type RelayState } from '@kraftverk/device-sdk';
 
 import { audit, type AuditEntry } from '../history/db.ts';
-import type { StationStatus } from '../types.ts';
 
 /**
  * The only thing in this codebase allowed to switch mains.
@@ -77,16 +76,30 @@ export type RelayHost = {
 };
 
 /**
- * The station this relay is verified against, or why there isn't one.
+ * What the device the relay feeds says about its AC input.
  *
- * A bare `StationStatus | null` could not tell "nothing is connected" from
- * "several stations are, and nobody has said which one this plug feeds". The
- * second is the dangerous case: picking one arbitrarily would make the whole
- * second proof meaningless — a relay could be reported `verified` because a
- * *different* station happens to have mains, while the one it actually feeds
- * sat dark.
+ * Read through the `acInput` capability, so it is the same question for any
+ * station that offers one. `present` and `at` are null until the device has
+ * said — unknown, which is never read as "no mains".
  */
-export type StationReading = { status: StationStatus } | { status: null; reason: string };
+export type AcInputReading = {
+  /** The device's session is connected and answering. */
+  connected: boolean;
+  present: boolean | null;
+  /** When the device itself took the reading. */
+  at: string | null;
+};
+
+/**
+ * The reading this relay is verified against, or why there isn't one.
+ *
+ * A bare reading-or-null could not tell "nothing is connected" from "several
+ * stations are, and nobody has said which one this plug feeds". The second is
+ * the dangerous case: picking one arbitrarily would make the whole second proof
+ * meaningless — a relay could be reported `verified` because a *different*
+ * station happens to have mains, while the one it actually feeds sat dark.
+ */
+export type StationReading = { reading: AcInputReading } | { reading: null; reason: string };
 
 export type GatewayDeps = {
   host: RelayHost;
@@ -223,17 +236,17 @@ export class ActionGateway {
     if (this.#ageOf(relayBefore.updatedAt) > this.#policy.maxDataAgeMs) {
       return refuse('The plug state is stale');
     }
-    if (!reading.status) return refuse(reading.reason);
-    const station = reading.status;
-    if (station.link.state !== 'connected' || station.lastUpdated === null || station.gridConnected === null) {
+    if (!reading.reading) return refuse(reading.reason);
+    const station = reading.reading;
+    if (!station.connected || station.at === null || station.present === null) {
       return refuse('The station is not answering: refusing to switch without its own reading of mains');
     }
-    if (this.#ageOf(station.lastUpdated) > this.#policy.maxDataAgeMs) {
+    if (this.#ageOf(station.at) > this.#policy.maxDataAgeMs) {
       return refuse('Station telemetry is stale: refusing to switch blind');
     }
 
     if (relayBefore.relayOn === intent.desired) {
-      const stationAgreed = station.gridConnected === intent.desired;
+      const stationAgreed = station.present === intent.desired;
       return {
         outcome: stationAgreed ? 'verified' : 'unverified',
         detail: stationAgreed
@@ -252,7 +265,7 @@ export class ActionGateway {
       actor: intent.by ?? intent.actor,
       resource: 'gridRelay',
       summary: `Requested grid AC ${intent.desired ? 'on' : 'off'}: ${intent.reason}`,
-      detail: { provider: provider.id, before: relayBefore, stationAc: station.gridConnected },
+      detail: { provider: provider.id, before: relayBefore, stationAc: station.present },
     });
 
     // 6. Exactly one command.
@@ -311,9 +324,9 @@ export class ActionGateway {
   async #stationAgrees(desired: boolean, switchedAt: number): Promise<boolean> {
     const deadline = Date.now() + this.#policy.verifyTimeoutMs;
     while (Date.now() < deadline) {
-      const { status } = this.#deps.readStation();
-      const readAt = status?.lastUpdated ? Date.parse(status.lastUpdated) : Number.NaN;
-      if (status && status.link.state === 'connected' && readAt > switchedAt && status.gridConnected === desired) return true;
+      const { reading } = this.#deps.readStation();
+      const readAt = reading?.at ? Date.parse(reading.at) : Number.NaN;
+      if (reading && reading.connected && readAt > switchedAt && reading.present === desired) return true;
       // Only a look at what is cached, so cheap: often enough to answer soon
       // after the station does, even when the window is short.
       await new Promise((resolve) => setTimeout(resolve, Math.min(1_000, this.#policy.verifyTimeoutMs / 5)));

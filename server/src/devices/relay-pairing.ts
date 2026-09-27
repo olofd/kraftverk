@@ -1,7 +1,7 @@
 import { savedDeviceId, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import type { StationReading } from '../actions/gateway.ts';
-import type { ConnectionManager } from '../connections/manager.ts';
+import type { DeviceSessionManager } from './sessions.ts';
 import { appState, setAppState } from '../history/db.ts';
 
 /**
@@ -33,16 +33,21 @@ export function pairStation(id: SavedDeviceId | null): void {
  * this plug feeds sat dark. So if the station it names is gone or has no
  * session, the answer is "I cannot verify" rather than a substitute.
  */
-export function relayStation(connections: ConnectionManager): StationReading {
+export function relayStation(sessions: DeviceSessionManager): StationReading {
   const deviceId = pairedStation();
   if (!deviceId) {
     return {
-      status: null,
+      reading: null,
       reason:
         'No station is paired with the grid relay, so switching it cannot be verified. Choose the station it feeds in the relay’s setup, under Extensions.',
     };
   }
-  const session = connections.get(deviceId);
-  if (!session) return { status: null, reason: `The station paired with the relay (${deviceId}) has no open session.` };
-  return { status: session.driver.status() };
+  const session = sessions.get(deviceId);
+  if (!session) return { reading: null, reason: `The station paired with the relay (${deviceId}) has no open session.` };
+  const input = session.capability('acInput');
+  if (!input) return { reading: null, reason: 'The device paired with the relay does not report its AC input.' };
+  const read = input.read();
+  return {
+    reading: { connected: session.health().status === 'connected', present: read?.present ?? null, at: read?.at ?? null },
+  };
 }

@@ -53,8 +53,10 @@
     "free-ports": "kill-port 3333 8081",
     "test": "node scripts/run-bun.mjs test",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "//check:architecture": "The dependency rule and the product-identifier ratchet: docs/ARCHITECTURE.md section 7. Add -- --update to record an improvement.",
-    "check:architecture": "node scripts/architecture.mjs",
+    "//check:architecture": "The dependency rule, the product-identifier ratchet (docs/ARCHITECTURE.md section 7) and a current device registry. Add -- --update to record an improvement.",
+    "check:architecture": "node scripts/architecture.mjs && node scripts/run-bun.mjs scripts/gen-devices.ts --check",
+    "//gen:devices": "Writes the app's registry of device screens from the installed packages (client/src/generated/device-types.ts). Run it after adding a device package; CI checks it is current.",
+    "gen:devices": "node scripts/run-bun.mjs scripts/gen-devices.ts",
     "scan:tuya": "node scripts/run-bun.mjs packages/plugins/tuya-local-grid-relay/src/scan.ts",
     "keys:tuya": "node scripts/run-bun.mjs packages/plugins/tuya-local-grid-relay/src/wizard.ts"
   },

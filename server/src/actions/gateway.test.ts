@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { GridRelayProvider, RelayState } from '@kraftverk/device-sdk';
 
 import { ActionGateway, CONFIRMATION_PHRASE, type RelayHost } from './gateway.ts';
-import type { StationStatus } from '../types.ts';
+import type { AcInputReading } from './gateway.ts';
 
 /**
  * The guards that stand between a web request and the mains.
@@ -49,12 +49,12 @@ const station = (
   gridConnected: boolean | null,
   lastUpdated: string | null = now(),
   state: 'connected' | 'offline' = 'connected'
-): StationStatus => ({ gridConnected, lastUpdated, link: { state } }) as StationStatus;
+): AcInputReading => ({ present: gridConnected, at: lastUpdated, connected: state === 'connected' });
 
 /** A station reading live: a fresh reading on every look, of whatever the plug lets through. */
 const following = (relay: StubRelay) => () => station(relay.on);
 
-type StationSource = StationStatus | null | (() => StationStatus | null);
+type StationSource = AcInputReading | null | (() => AcInputReading | null);
 
 type Harness = {
   gateway: ActionGateway;
@@ -79,8 +79,8 @@ function harness(options: { granted?: boolean; provider?: string | null; relay?:
   const gateway = new ActionGateway({
     host,
     readStation: () => {
-      const status = typeof current === 'function' ? current() : current;
-      return status ? { status } : { status: null, reason: 'No station telemetry' };
+      const reading = typeof current === 'function' ? current() : current;
+      return reading ? { reading } : { reading: null, reason: 'No station telemetry' };
     },
     isReadOnly: () => options.readOnly === true,
     record: (entry) => events.push(entry.kind),
@@ -158,7 +158,7 @@ describe('freshness', () => {
     const gateway = new ActionGateway({
       host: { activeProvider: () => 'stub', capability: () => relay, isGranted: () => true },
       readStation: () => ({
-        status: null,
+        reading: null,
         reason: '2 stations are connected and none is recorded as the one this plug feeds',
       }),
       isReadOnly: () => false,
@@ -295,7 +295,7 @@ describe('dwell', () => {
     const gateway = () =>
       new ActionGateway({
         host: { activeProvider: () => active, capability: (id) => plugs[id]!, isGranted: () => true },
-        readStation: () => ({ status: station(true) }),
+        readStation: () => ({ reading: station(true) }),
         isReadOnly: () => false,
         record: () => {},
         memory,

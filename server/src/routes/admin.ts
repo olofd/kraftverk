@@ -10,7 +10,7 @@ import { body, type AppDeps } from './shared.ts';
 
 /** Erasing everything, and the audit timeline. */
 export function adminRoutes(
-  { catalog, connections, host, sampler }: AppDeps,
+  { catalog, sessions, connections, host, sampler }: AppDeps,
   accounts: ReturnType<typeof createAuth>
 ): Hono {
   const admin = new Hono();
@@ -73,6 +73,7 @@ export function adminRoutes(
       configuration the reset had just deleted.
     */
     sampler.stop();
+    await sessions.closeAll();
     await connections.closeAll();
     await host.stopAll();
 
@@ -84,7 +85,7 @@ export function adminRoutes(
 
     // Back to the state a fresh install boots into: no devices, so no
     // sessions, and no plugin configured, so none running.
-    await connections.sync(catalog.list());
+    await sessions.sync(catalog.list());
     await host.startEnabled();
     sampler.start();
 

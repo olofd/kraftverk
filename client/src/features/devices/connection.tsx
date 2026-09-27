@@ -100,8 +100,12 @@ export function useDeviceConnection(device: SavedDeviceView | null): DeviceConne
     anything else — correctly — but a plug's screens should not be asking it
     twice a second to be told so, and a device that is not a station is not a
     broken device: it has no station telemetry, which is a different thing.
+
+    Keyed by the device type. This hook is the station's, living in the app
+    until the station's screens fetch their own state (docs/ARCHITECTURE.md,
+    step 7), and it goes with them.
   */
-  const isStation = device?.record.driver === 'core.station';
+  const isStation = device?.typeId === 'aferiy.p280';
   const served = link.source === 'server';
   /** Only a station has station state to fetch. */
   // And only while signed in: a signed-out poll is a stream of 401s.

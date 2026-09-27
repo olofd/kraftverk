@@ -234,6 +234,25 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX sessions_user ON sessions (user_id);
     `,
   },
+  {
+    id: 6,
+    sql: `
+      /*
+        Each device's own storage: what its session keeps between runs — a
+        simulated station's settings, a plug's detected protocol version.
+
+        Keyed by the device, not by the code that wrote it, so two plugs of the
+        same type cannot read each other's; and it goes with the device when the
+        device is forgotten. See docs/ARCHITECTURE.md §4.5.
+      */
+      CREATE TABLE device_kv (
+        device_id TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
+        key       TEXT NOT NULL,
+        value     TEXT NOT NULL,
+        PRIMARY KEY (device_id, key)
+      );
+    `,
+  },
 ];
 
 /**

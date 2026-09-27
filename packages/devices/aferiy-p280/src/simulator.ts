@@ -1,24 +1,27 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { validateConfig, type DeviceStore } from '@kraftverk/device-sdk';
+import type {
+  PortId,
+  PortState,
+  StationSettings,
+  StationSettingsPatch,
+  StationStatus,
+} from '@kraftverk/protocol';
 
-import {
-  StationSettingsSchema,
-  type PortId,
-  type PortState,
-  type StationSettings,
-  type StationSettingsPatch,
-  type StationStatus,
-} from '../types.ts';
-import type { StationDriver } from './types.ts';
+import { SETTINGS_SCHEMA, settingsToValues, valuesToSettings } from './index.ts';
+import type { StationDriverLike } from './station.ts';
 
 /**
- * A simulated AFERIY P280, so the app is usable without hardware on the
- * network. It models the same quantities the real driver reports.
+ * A P280 that is not there: the app is usable without hardware, the contract
+ * suite has something to exercise, and a test can switch outlets without a
+ * station in the room. It models the quantities the real station reports.
+ *
+ * Its settings are kept in the device's own store, so each simulated station
+ * remembers its own, and none of them leaves a file behind.
  */
 
 const BASE_CAPACITY_WH = 2048;
 const MODEL = 'AFERIY P280 (simulated)';
-const SETTINGS_FILE = resolve(import.meta.dirname, '../../data/settings.json');
+const SETTINGS_KEY = 'simulator.settings';
 
 const DEFAULTS: StationSettings = {
   chargeLimit: 90,
@@ -51,16 +54,20 @@ const round = (v: number, places = 0) => {
   return Math.round(v * f) / f;
 };
 
-export class SimulatorDriver implements StationDriver {
-  readonly mode = 'simulator' as const;
+/**
+ * Settings the P280's own schema accepts, or null.
+ *
+ * The same schema the app renders and the server validates writes against —
+ * so the simulator cannot drift into accepting a value the real station would
+ * be refused, least of all the one that bricks it.
+ */
+function checked(settings: StationSettings): StationSettings | null {
+  const result = validateConfig(SETTINGS_SCHEMA, settingsToValues(settings));
+  return result.ok ? (valuesToSettings(result.value) as StationSettings) : null;
+}
 
-  /** Where its settings are kept between runs. Tests pass their own. */
-  #file: string;
-
-  constructor(options: { settingsFile?: string } = {}) {
-    this.#file = options.settingsFile ?? SETTINGS_FILE;
-  }
-
+export class SimulatedStation implements StationDriverLike {
+  #store: DeviceStore | null;
   #settings: StationSettings = { ...DEFAULTS };
   #level = 68;
   #expansion = [82.5];
@@ -75,26 +82,20 @@ export class SimulatorDriver implements StationDriver {
   #lastTick = Date.now();
   #timer: ReturnType<typeof setInterval> | null = null;
 
-  async start(): Promise<void> {
-    try {
-      const raw = await readFile(this.#file, 'utf8');
-      const parsed = StationSettingsSchema.safeParse(JSON.parse(raw));
-      if (parsed.success) this.#settings = parsed.data;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException)?.code;
-      if (code !== 'ENOENT') console.warn('[sim] could not read settings.json:', error);
-    }
+  /** `store` keeps its settings between runs; without one they last as long as it does. */
+  constructor(store: DeviceStore | null = null) {
+    this.#store = store;
+  }
+
+  start(): void {
+    const saved = this.#store?.get<StationSettings>(SETTINGS_KEY);
+    if (saved) this.#settings = checked({ ...DEFAULTS, ...saved }) ?? { ...DEFAULTS };
     this.#timer = setInterval(() => this.#tick(), 1000);
   }
 
-  async stop(): Promise<void> {
+  stop(): void {
     if (this.#timer) clearInterval(this.#timer);
     this.#timer = null;
-  }
-
-  async #persist(): Promise<void> {
-    await mkdir(dirname(this.#file), { recursive: true });
-    await writeFile(this.#file, `${JSON.stringify(this.#settings, null, 2)}\n`, 'utf8');
   }
 
   #tick(): void {
@@ -102,10 +103,7 @@ export class SimulatorDriver implements StationDriver {
     const hours = (now - this.#lastTick) / 3_600_000;
     this.#lastTick = now;
 
-    for (const [id, port] of Object.entries(this.#ports) as [
-      PortId,
-      { enabled: boolean; watts: number },
-    ][]) {
+    for (const [id, port] of Object.entries(this.#ports) as [PortId, { enabled: boolean; watts: number }][]) {
       if (!port.enabled) {
         port.watts = 0;
         continue;
@@ -114,11 +112,11 @@ export class SimulatorDriver implements StationDriver {
       port.watts = round(clamp(base + (Math.random() - 0.5) * base * 0.35, 0, 2800));
     }
 
-    const net = this.#inputWatts - this.outputWatts;
+    const net = this.#inputWatts - this.#outputWatts;
     const capacity = BASE_CAPACITY_WH * (1 + this.#expansion.length);
     this.#level = clamp(this.#level + ((net * hours) / capacity) * 100, 0, 100);
 
-    if (this.#level <= this.#settings.dischargeFloor && this.outputWatts > 0) {
+    if (this.#level <= this.#settings.dischargeFloor && this.#outputWatts > 0) {
       for (const port of Object.values(this.#ports)) {
         port.enabled = false;
         port.watts = 0;
@@ -126,7 +124,7 @@ export class SimulatorDriver implements StationDriver {
     }
   }
 
-  get outputWatts(): number {
+  get #outputWatts(): number {
     return round(Object.values(this.#ports).reduce((sum, p) => sum + p.watts, 0));
   }
 
@@ -147,7 +145,7 @@ export class SimulatorDriver implements StationDriver {
 
   status(): StationStatus {
     const input = this.#inputWatts;
-    const output = this.outputWatts;
+    const output = this.#outputWatts;
     const net = input - output;
     const capacity = BASE_CAPACITY_WH * (1 + this.#expansion.length);
 
@@ -165,12 +163,13 @@ export class SimulatorDriver implements StationDriver {
       watts: this.#ports[id].watts,
     }));
 
+    const now = new Date().toISOString();
     return {
       name: 'Aferiy Powerstation',
       model: MODEL,
       firmware: { ac: '1.8', controllerA: '1.4', controllerB: '1.4', panel: '2.8' },
       state,
-      link: { mode: 'simulator', state: 'connected', mac: null, lastSeen: new Date().toISOString() },
+      link: { mode: 'simulator', state: 'connected', mac: null, lastSeen: now },
       level: round(this.#level, 1),
       expansionSoc: this.#expansion,
       capacityWh: capacity,
@@ -188,7 +187,7 @@ export class SimulatorDriver implements StationDriver {
       minutesRemaining: output > 5 ? Math.round(((wh - floorWh) / output) * 60) : null,
       chargeBookingMinutes: this.#settings.stopChargeAfterMinutes,
       ports,
-      lastUpdated: new Date().toISOString(),
+      lastUpdated: now,
     };
   }
 
@@ -206,8 +205,10 @@ export class SimulatorDriver implements StationDriver {
     if (patch.dcInputType && patch.dcInputType !== this.#settings.dcInputType) {
       next.maxChargingCurrent = patch.dcInputType === 'dc' ? 8 : 20;
     }
-    this.#settings = StationSettingsSchema.parse(next);
-    await this.#persist();
+    const valid = checked(next);
+    if (!valid) throw new Error('The station would refuse those settings');
+    this.#settings = valid;
+    this.#store?.set(SETTINGS_KEY, this.#settings);
     return this.settings();
   }
 
@@ -217,8 +218,8 @@ export class SimulatorDriver implements StationDriver {
     return this.status();
   }
 
-  async setGridConnected(connected: boolean): Promise<StationStatus> {
+  /** Mains coming and going, for tests of what depends on it. Real hardware has no such thing. */
+  setGridConnected(connected: boolean): void {
     this.#gridConnected = connected;
-    return this.status();
   }
 }

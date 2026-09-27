@@ -30,7 +30,7 @@ import {
 import type {
   ConfigValues,
   DeviceSettings,
-  DeviceTypeOption,
+  AddableType,
   SavedDeviceView,
   PortId,
 } from '@kraftverk/api-client';
@@ -92,16 +92,9 @@ type DevicesContextValue = {
   error: string | null;
   refresh: () => Promise<void>;
   /** What can be added. Fetched on demand — the add flow is the only reader. */
-  types: () => Promise<DeviceTypeOption[]>;
-  add: (input: {
-    type: 'power-station' | 'smart-plug';
-    driver: string;
-    name: string;
-    model?: string | null;
-    config?: Record<string, unknown>;
-  }) => Promise<SavedDeviceView>;
+  types: () => Promise<AddableType[]>;
+  add: (input: { typeId: string; name: string; config?: Record<string, unknown> }) => Promise<SavedDeviceView>;
   rename: (id: string, name: string) => Promise<void>;
-  setModel: (id: string, model: string | null) => Promise<void>;
   remove: (id: string) => Promise<void>;
 
   /**
@@ -279,13 +272,6 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     [mutate]
   );
 
-  const setModel = useCallback(
-    async (id: string, model: string | null) => {
-      await mutate(() => apiUpdateDevice(id, { model }));
-    },
-    [mutate]
-  );
-
   const remove = useCallback(
     async (id: string) => {
       await mutate(() => apiRemoveDevice(id));
@@ -402,6 +388,9 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     return {
       ...descriptor,
       id,
+      // The one device type a direct link can hold (in-app Bluetooth is frozen
+      // until the station is an ordinary device type: docs/ARCHITECTURE.md §9).
+      typeId: 'aferiy.p280',
       // The station's MAC *is* the provider identity here, and with no catalog
       // it is also standing in as the saved id — which is exactly the conflation
       // the two fields exist to make visible rather than hide.
@@ -471,7 +460,6 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       types,
       add,
       rename,
-      setModel,
       remove,
       readSettings,
       writeSettings,
@@ -491,7 +479,6 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       reachability,
       remove,
       rename,
-      setModel,
       station,
       types,
       unreachable,

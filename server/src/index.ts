@@ -8,11 +8,13 @@ import { brokerDir, brokerToken } from './broker/shared.ts';
 import { BrokerSupervisor } from './broker/supervisor.ts';
 import { loadConfig } from './config.ts';
 import { ConnectionManager } from './connections/manager.ts';
+import { serverTransports } from './connections/station-links.ts';
 import { DeviceCatalog } from './devices/catalog.ts';
 import { LegacyStationImport } from './devices/legacy.ts';
 import { DeviceRegistry } from './devices/registry.ts';
 import { relayStation } from './devices/relay-pairing.ts';
-import { SimulatorDriver } from './drivers/simulator.ts';
+import { DeviceSessionManager } from './devices/sessions.ts';
+import { DeviceTypeRegistry } from './devices/types.ts';
 import { appState, audit, closeDb, setAppState } from './history/db.ts';
 import { Sampler } from './history/sampler.ts';
 import { keepConsole } from './log.ts';
@@ -180,7 +182,6 @@ const connections = new ConnectionManager({
   readOnly: config.readOnly,
   autoBind: config.autoBind,
   host: (kind) => (kind === 'ble' ? new BleHost() : new MqttHost(bus!)),
-  simulator: () => new SimulatorDriver(),
   // Where a device is reached is a property of that device, so the answer is
   // written onto its own record.
   onBound: (deviceId, kind, boundId) => {
@@ -193,7 +194,29 @@ const host = new PluginHost();
 await host.discover();
 await host.startEnabled();
 
-const registry = new DeviceRegistry(catalog, host, connections);
+/**
+ * What each saved device is, and one open session for each.
+ *
+ * Device types are packages, found at startup. Every saved device of one gets
+ * a session with its own config — its type's simulator when this server runs
+ * without hardware. A real station's link is still opened and bound by the
+ * connection manager above, and lent to its session (see
+ * `connections/station-links.ts`) until the station's package holds its own.
+ */
+const types = new DeviceTypeRegistry();
+await types.discover();
+console.log(`[devices] Device types installed: ${types.all().map((type) => type.id).join(', ') || 'none'}`);
+
+const sessions = new DeviceSessionManager({
+  types,
+  simulate: config.simulate,
+  readOnly: config.readOnly,
+  transports: serverTransports(connections),
+  beforeSync: config.simulate ? undefined : (records) => connections.sync(records),
+  log: (message) => console.log(`[devices] ${message}`),
+});
+
+const registry = new DeviceRegistry(catalog, host, sessions);
 
 if (!config.simulate) {
   /*
@@ -241,8 +264,8 @@ if (!config.simulate) {
   }
 }
 
-// Sessions for the stations already in the catalog, and nothing else.
-await connections.sync(catalog.list());
+// Sessions for the devices already in the catalog, and nothing else.
+await sessions.sync(catalog.list());
 
 // Where each saved Wi-Fi station stands with the broker, said once at startup.
 if (bus?.connected) {
@@ -288,7 +311,7 @@ if (config.deviceId) {
  */
 const gateway = new ActionGateway({
   host,
-  readStation: () => relayStation(connections),
+  readStation: () => relayStation(sessions),
   isReadOnly: () => connections.readOnly,
   memory: { get: appState, set: setAppState },
 });
@@ -316,6 +339,8 @@ proxies.start();
 const { app } = createApp({
   config,
   catalog,
+  types,
+  sessions,
   connections,
   host,
   registry,
@@ -331,16 +356,17 @@ const { app } = createApp({
 // Everything is running: from here on, stopping also closes what was opened.
 onStop(
   () => sampler.stop(),
+  () => sessions.closeAll(),
   () => connections.closeAll(),
   () => bus?.stop(),
   () => host.stopAll()
 );
 
-const open = connections.sessions.length;
+const saved = catalog.list().length;
 console.log(
-  `Aferiy API listening on http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port} ` +
+  `kraftverk API listening on http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port} ` +
     `(${config.simulate ? 'simulator' : config.transports.join(' + ')}, ` +
-    `${open === 1 ? '1 station open' : `${open} stations open`})`
+    `${saved === 1 ? '1 device' : `${saved} devices`})`
 );
 
 /*

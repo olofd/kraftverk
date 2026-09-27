@@ -10,7 +10,9 @@ import { providerDeviceId } from '@kraftverk/device-sdk';
 
 import { DeviceCatalog } from './catalog.ts';
 import { DeviceRegistry } from './registry.ts';
-import type { ConnectionManager } from '../connections/manager.ts';
+import { DeviceSessionManager } from './sessions.ts';
+import { DeviceTypeRegistry } from './types.ts';
+import { STATION_LINKS } from '../connections/station-links.ts';
 import type { PluginHost } from '../plugins/host.ts';
 import { closeDb, db } from '../history/db.ts';
 
@@ -65,15 +67,28 @@ const stationStatus = (
     },
   }) as unknown as StationStatus;
 
-/** A manager holding whatever the test says it holds, and nothing more. */
-const managerWith = (sessions: Record<string, StationStatus>, refusals: Record<string, string> = {}) =>
-  ({
-    get: (deviceId: string) =>
-      sessions[deviceId]
-        ? { deviceId, kind: 'ble', driver: { status: () => sessions[deviceId] }, device: null, transport: null }
-        : null,
-    refusal: (deviceId: string) => refusals[deviceId] ?? null,
-  }) as unknown as ConnectionManager;
+/**
+ * Device sessions over station links holding whatever the test says they hold,
+ * and nothing more: the real device type and session manager, with only the
+ * radio replaced.
+ */
+const sessionsWith = async (stations: Record<string, StationStatus>, refusals: Record<string, string> = {}) => {
+  const links = {
+    lookup: (deviceId: string) =>
+      stations[deviceId]
+        ? { driver: { status: () => stations[deviceId], settings: () => null }, transport: 'ble' }
+        : { driver: null, reason: refusals[deviceId] ?? null },
+    discovered: () => [],
+  };
+  const sessions = new DeviceSessionManager({
+    types,
+    simulate: false,
+    readOnly: true,
+    transports: { get: <T>(name: string) => (name === STATION_LINKS ? (links as T) : null) },
+  });
+  await sessions.sync(catalog.list());
+  return sessions;
+};
 
 type Plugin = {
   descriptor?: DeviceDescriptor;
@@ -116,8 +131,10 @@ const plugDescriptor = (over: Partial<DeviceDescriptor> = {}): DeviceDescriptor 
 });
 
 let catalog: DeviceCatalog;
+const types = new DeviceTypeRegistry();
 
-beforeAll(() => {
+beforeAll(async () => {
+  await types.discover();
   process.env.KRAFTVERK_DB = join(dir, 'test.db');
   closeDb();
   catalog = new DeviceCatalog();
@@ -150,7 +167,7 @@ describe('a saved device and the two identities it carries', () => {
       readings: [{ key: 'watts', value: 240, at: NOW }],
       asked: [],
     };
-    const registry = new DeviceRegistry(catalog, hostWith({ 'com.tuya.local-relay': plugin }), managerWith({}));
+    const registry = new DeviceRegistry(catalog, hostWith({ 'com.tuya.local-relay': plugin }), await sessionsWith({}));
 
     const view = (await registry.find(record.id))!;
 
@@ -167,7 +184,7 @@ describe('a saved device and the two identities it carries', () => {
       readings: [{ key: 'watts', value: 12, at: NOW }],
       asked: [],
     };
-    const registry = new DeviceRegistry(catalog, hostWith({ 'com.tuya.local-relay': plugin }), managerWith({}));
+    const registry = new DeviceRegistry(catalog, hostWith({ 'com.tuya.local-relay': plugin }), await sessionsWith({}));
 
     await registry.find(record.id);
 
@@ -182,7 +199,7 @@ describe('a saved device and the two identities it carries', () => {
       hostWith({
         'com.tuya.local-relay': { descriptor: plugDescriptor(), health: { status: 'healthy' }, asked: [] },
       }),
-      managerWith({})
+      await sessionsWith({})
     );
 
     const view = (await registry.find(record.id))!;
@@ -198,7 +215,7 @@ describe('a saved device and the two identities it carries', () => {
       hostWith({
         'com.tuya.local-relay': { descriptor: plugDescriptor(), health: { status: 'healthy' }, asked: [] },
       }),
-      managerWith({})
+      await sessionsWith({})
     );
 
     expect((await registry.find(record.id))!.providerName).toBeNull();
@@ -208,7 +225,7 @@ describe('a saved device and the two identities it carries', () => {
 describe('connection health, which is not a boolean', () => {
   test('an uninstalled driver is unconfigured, not offline', async () => {
     const record = plug('com.nobody.missing');
-    const registry = new DeviceRegistry(catalog, hostWith({}), managerWith({}));
+    const registry = new DeviceRegistry(catalog, hostWith({}), await sessionsWith({}));
 
     const view = (await registry.find(record.id))!;
 
@@ -228,7 +245,7 @@ describe('connection health, which is not a boolean', () => {
           asked: [],
         },
       }),
-      managerWith({})
+      await sessionsWith({})
     );
 
     const view = (await registry.find(record.id))!;
@@ -249,7 +266,7 @@ describe('connection health, which is not a boolean', () => {
           asked: [],
         },
       }),
-      managerWith({})
+      await sessionsWith({})
     );
 
     expect((await registry.find(record.id))!.health).toMatchObject({
@@ -261,7 +278,7 @@ describe('connection health, which is not a boolean', () => {
   test('a station the server is refusing to open says why, as an error', async () => {
     const record = station();
     const refusal = 'The server holds one Bluetooth station at a time, and another is already open';
-    const registry = new DeviceRegistry(catalog, hostWith({}), managerWith({}, { [record.id]: refusal }));
+    const registry = new DeviceRegistry(catalog, hostWith({}), await sessionsWith({}, { [record.id]: refusal }));
 
     const view = (await registry.find(record.id))!;
 
@@ -271,7 +288,7 @@ describe('connection health, which is not a boolean', () => {
 
   test('a station with no session and no refusal is simply quiet', async () => {
     const record = station();
-    const registry = new DeviceRegistry(catalog, hostWith({}), managerWith({}));
+    const registry = new DeviceRegistry(catalog, hostWith({}), await sessionsWith({}));
 
     const view = (await registry.find(record.id))!;
 
@@ -287,7 +304,7 @@ describe('connection health, which is not a boolean', () => {
     const registry = new DeviceRegistry(
       catalog,
       hostWith({}),
-      managerWith({ [record.id]: stationStatus({ link: { state: 'waiting', mac: null, lastSeen: EARLIER } }) })
+      await sessionsWith({ [record.id]: stationStatus({ link: { state: 'waiting', mac: null, lastSeen: EARLIER } }) })
     );
 
     const view = (await registry.find(record.id))!;
@@ -301,7 +318,7 @@ describe('connection health, which is not a boolean', () => {
     const registry = new DeviceRegistry(
       catalog,
       hostWith({}),
-      managerWith({ [record.id]: stationStatus({}) })
+      await sessionsWith({ [record.id]: stationStatus({}) })
     );
 
     const view = (await registry.find(record.id))!;
@@ -321,7 +338,7 @@ describe('connection health, which is not a boolean', () => {
     const registry = new DeviceRegistry(
       catalog,
       hostWith({}),
-      managerWith({ [record.id]: stationStatus({ link: { mode: 'simulator', state: 'offline' } }) })
+      await sessionsWith({ [record.id]: stationStatus({ link: { mode: 'simulator', state: 'offline' } }) })
     );
 
     expect((await registry.find(record.id))!.health).toMatchObject({
@@ -333,7 +350,7 @@ describe('connection health, which is not a boolean', () => {
 
   test('a station with no live link falls back to the id it was bound to', async () => {
     const record = station('Van', { boundId: 'AA:BB:CC:00:11:22' });
-    const registry = new DeviceRegistry(catalog, hostWith({}), managerWith({}));
+    const registry = new DeviceRegistry(catalog, hostWith({}), await sessionsWith({}));
 
     expect((await registry.find(record.id))!.providerDeviceId).toBe(providerDeviceId('AA:BB:CC:00:11:22'));
   });
@@ -359,7 +376,7 @@ describe('one badly behaved adapter', () => {
           asked: [],
         },
       }),
-      managerWith({ [fine.id]: stationStatus({}) })
+      await sessionsWith({ [fine.id]: stationStatus({}) })
     );
 
     const views = await registry.all();

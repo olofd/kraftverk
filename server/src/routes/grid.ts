@@ -9,7 +9,7 @@ import { pairedStation, pairStation } from '../devices/relay-pairing.ts';
 import { auditDevice, body, type AppDeps } from './shared.ts';
 
 /** The grid relay: its state, which station it feeds, and switching it. */
-export function gridRoutes({ catalog, connections, host, gateway }: AppDeps): Hono {
+export function gridRoutes({ catalog, sessions, host, gateway }: AppDeps): Hono {
   const grid = new Hono();
 
   grid.get('/', async (c) => {
@@ -20,7 +20,7 @@ export function gridRoutes({ catalog, connections, host, gateway }: AppDeps): Ho
       granted: provider ? host.isGranted(provider, 'gridRelay.switch') : false,
       /** The station this relay feeds, by saved-device id. Null until paired. */
       stationDeviceId: paired,
-      stationPresent: paired ? connections.get(paired) !== null : false,
+      stationPresent: paired ? sessions.get(paired) !== null : false,
       state: await gateway.state(),
     });
   });
@@ -44,7 +44,10 @@ export function gridRoutes({ catalog, connections, host, gateway }: AppDeps): Ho
 
     const record = catalog.get(savedDeviceId(deviceId));
     if (!record) throw new HTTPException(404, { message: 'No such device' });
-    if (record.type !== 'power-station') throw new HTTPException(400, { message: 'A relay is paired with a power station' });
+    // Whatever it is, the relay is verified by its AC input, so it has to report one.
+    if (!sessions.typeOf(record)?.capabilities.includes('acInput')) {
+      throw new HTTPException(400, { message: 'A relay is paired with a device that reports its AC input' });
+    }
 
     pairStation(record.id);
     auditDevice(c, 'relay.paired', record.id, `The grid relay now feeds "${record.name}"`);

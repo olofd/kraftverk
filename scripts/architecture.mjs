@@ -169,7 +169,7 @@ function measure() {
       when the route moves into the station's package. The dependency rule
       above still applies to tests.
     */
-    if (!file.startsWith(LEAK_HOME) && !TEST.test(file)) {
+    if (!file.startsWith(LEAK_HOME) && area.kind !== 'generated' && !TEST.test(file)) {
       const count = source.match(LEAK)?.length ?? 0;
       if (count) leaks[file] = count;
     }

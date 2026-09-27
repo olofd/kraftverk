@@ -15,6 +15,8 @@ import type { ConnectionManager, StationSession } from '../connections/manager.t
 import type { DeviceCatalog } from '../devices/catalog.ts';
 import type { LegacyStationImport } from '../devices/legacy.ts';
 import type { DeviceRegistry } from '../devices/registry.ts';
+import type { DeviceSessionManager } from '../devices/sessions.ts';
+import type { DeviceTypeRegistry } from '../devices/types.ts';
 import type { DeviceDriver } from '../drivers/device.ts';
 import { audit } from '../history/db.ts';
 import type { Sampler } from '../history/sampler.ts';
@@ -39,6 +41,11 @@ export type BrokerDeps = {
 export type AppDeps = {
   config: ServerConfig;
   catalog: DeviceCatalog;
+  /** The device types installed on this server. */
+  types: DeviceTypeRegistry;
+  /** One open session per saved device. Syncing it also syncs the station links. */
+  sessions: DeviceSessionManager;
+  /** The station links, until a station session holds its own (step 7). */
   connections: ConnectionManager;
   host: PluginHost;
   registry: DeviceRegistry;

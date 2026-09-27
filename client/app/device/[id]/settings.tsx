@@ -12,7 +12,7 @@ import { DeviceShell } from '../../../src/features/devices/DeviceShell';
 import { useDeviceConnection, type DeviceConnection } from '../../../src/features/devices/connection';
 import { GenericSettings, Manage } from '../../../src/features/devices/panels';
 import { WriteRefused } from '../../../src/features/devices/WriteRefused';
-import { screensFor } from '../../../src/devices/screens';
+import { screensFor } from '../../../src/devices/ui';
 import { useDevices } from '../../../src/state/DevicesProvider';
 
 /**
@@ -96,7 +96,7 @@ function Settings({ device, connection }: { device: SavedDeviceView; connection:
   const screens = screensFor(device);
   // No model panel, or nothing answering yet: the generic form is drawn from
   // the schema the device publishes, and works for anything.
-  if (!screens || !connection.status) return <GenericSettings device={device} />;
+  if (!screens?.settings || !connection.status) return <GenericSettings device={device} />;
 
   const Panel = screens.settings;
 

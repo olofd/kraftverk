@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
+import { Button, Input, Spinner, Text, useTheme, YStack } from 'tamagui';
 
 import { describeError } from '@kraftverk/api-client';
-import type { DeviceModelOption, DeviceTypeOption } from '@kraftverk/api-client';
+import type { AddableType, SupportLevel } from '@kraftverk/api-client';
 import { Card, Row, RowSeparator, SectionLabel, haptic } from '@kraftverk/ui';
 
 import { Pressable } from '../src/components/Pressable';
@@ -15,23 +15,25 @@ import { useDevices } from '../src/state/DevicesProvider';
 /**
  * Adding a device.
  *
- * The list of what can be added comes from the server, which builds it from the
- * core's own device types plus whatever the installed extensions provide. So a
- * driver installed next week appears here without this screen changing — the
- * whole point of the exercise, and the thing that would be quietly untrue if
- * this file contained a list of its own.
- *
- * How a driver *reaches* its device — addresses, keys, pairing — is the
- * extension's business and is configured on the Extensions screen. What is
- * decided here is only what the core owns: that you have one, and what it is.
+ * The list of what can be added comes from the server, which finds every
+ * device type installed on it (docs/ARCHITECTURE.md §3). So a device type added
+ * next year appears here without this screen changing — the whole point, and
+ * the thing that would be quietly untrue if this file contained a list of its
+ * own. Each says how far it is trusted, in its own words.
  */
-export default function AddDeviceScreen() {
-  const { types, add, devices } = useDevices();
-  const theme = useTheme();
 
-  const [options, setOptions] = useState<DeviceTypeOption[] | null>(null);
-  const [chosen, setChosen] = useState<DeviceTypeOption | null>(null);
-  const [model, setModel] = useState<string | null>(null);
+/** How far a type is trusted, in a few words. */
+const SUPPORT: Record<SupportLevel, string> = {
+  verified: 'Verified',
+  community: 'Community',
+  experimental: 'Experimental',
+};
+
+export default function AddDeviceScreen() {
+  const { types, add } = useDevices();
+
+  const [options, setOptions] = useState<AddableType[] | null>(null);
+  const [chosen, setChosen] = useState<AddableType | null>(null);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,11 +50,10 @@ export default function AddDeviceScreen() {
     };
   }, [types]);
 
-  const choose = useCallback((option: DeviceTypeOption) => {
+  const choose = useCallback((option: AddableType) => {
     haptic();
     setChosen(option);
-    setModel(option.models.find((candidate) => candidate.verified)?.id ?? option.models[0]?.id ?? null);
-    setName(option.label);
+    setName(option.meta.name);
     setError(null);
   }, []);
 
@@ -61,18 +62,16 @@ export default function AddDeviceScreen() {
     setBusy(true);
     setError(null);
     try {
-      const created = await add({
-        type: chosen.id === 'power-station' ? 'power-station' : 'smart-plug',
-        driver: chosen.driver,
-        name: name.trim() || chosen.label,
-        model,
-      });
+      const created = await add({ typeId: chosen.id, name: name.trim() || chosen.meta.name });
       router.replace(`/device/${encodeURIComponent(created.id)}`);
     } catch (err) {
       setError(describeError(err) || 'That device could not be added');
       setBusy(false);
     }
-  }, [add, chosen, model, name]);
+  }, [add, chosen, name]);
+
+  const hardware = useMemo(() => options?.filter((option) => option.kind === 'hardware') ?? [], [options]);
+  const services = useMemo(() => options?.filter((option) => option.kind === 'service') ?? [], [options]);
 
   return (
     <Screen back="Your devices" title="Add a device" subtitle="What have you got?">
@@ -91,50 +90,20 @@ export default function AddDeviceScreen() {
           </YStack>
         </Card>
       ) : (
-        <YStack gap="$2">
-          <SectionLabel>Type</SectionLabel>
-          <Card inset>
-            {options.map((option, index) => {
-              const active = chosen?.id === option.id;
-
-              return (
-                <YStack key={option.id}>
-                  {index > 0 ? <RowSeparator /> : null}
-                  <Pressable selected={active} label={option.label} onPress={() => choose(option)}>
-                    <Row
-                      title={option.label}
-                      subtitle={option.note ?? option.description}
-                      accessory={
-                        <Feather
-                          name={active ? 'check-circle' : featherName(option.icon)}
-                          size={16}
-                          color={active ? theme.accent?.val : theme.muted?.val}
-                        />
-                      }
-                    />
-                  </Pressable>
-                </YStack>
-              );
-            })}
-          </Card>
-        </YStack>
+        <>
+          <Choices label="Devices" options={hardware} chosen={chosen} onChoose={choose} />
+          {services.length ? <Choices label="Services" options={services} chosen={chosen} onChoose={choose} /> : null}
+        </>
       )}
 
-      {chosen?.id === 'power-station' ? <ConnectionOwner /> : null}
+      {/*
+        In-app Bluetooth — the app holding a station itself — is frozen
+        (docs/ARCHITECTURE.md §9), so it is offered beside the types that can use it.
+      */}
+      {chosen?.protocols.includes('sydpower') ? <ConnectionOwner /> : null}
 
       {chosen ? (
         <>
-          {chosen.models.length > 0 ? (
-            <Models
-              models={chosen.models}
-              value={model}
-              onChange={(next) => {
-                haptic();
-                setModel(next);
-              }}
-            />
-          ) : null}
-
           <YStack gap="$2">
             <SectionLabel>Name</SectionLabel>
             <Card gap="$2">
@@ -142,7 +111,7 @@ export default function AddDeviceScreen() {
                 size="$3"
                 value={name}
                 maxLength={60}
-                placeholder={chosen.label}
+                placeholder={chosen.meta.name}
                 onChangeText={setName}
                 backgroundColor="$background"
                 borderColor="$borderColor"
@@ -163,18 +132,69 @@ export default function AddDeviceScreen() {
               void submit();
             }}
           >
-            {busy ? 'Adding…' : `Add ${name.trim() || chosen.label}`}
+            {busy ? 'Adding…' : `Add ${name.trim() || chosen.meta.name}`}
           </Button>
 
-          {chosen.driver !== 'core.station' ? (
+          {chosen.extension ? (
             <Text fontSize={12} color="$muted" lineHeight={18} paddingHorizontal="$1">
-              How this driver reaches the device — its address and keys — is set up on the
-              Extensions screen. Until that is done it will sit here greyed out, saying why.
+              How this reaches the device — its address and keys — is set up on the Extensions
+              screen for now. Until that is done it will sit here greyed out, saying why.
             </Text>
           ) : null}
         </>
       ) : null}
     </Screen>
+  );
+}
+
+/** One section of things that can be added. */
+function Choices({
+  label,
+  options,
+  chosen,
+  onChoose,
+}: {
+  label: string;
+  options: AddableType[];
+  chosen: AddableType | null;
+  onChoose: (option: AddableType) => void;
+}) {
+  const theme = useTheme();
+
+  return (
+    <YStack gap="$2">
+      <SectionLabel>{label}</SectionLabel>
+      <Card inset>
+        {options.length === 0 ? (
+          <Text fontSize={13} color="$muted" padding="$4">
+            Nothing of this kind is installed on the server.
+          </Text>
+        ) : null}
+        {options.map((option, index) => {
+          const active = chosen?.id === option.id;
+          const support = [SUPPORT[option.meta.support], option.meta.supportNote].filter(Boolean).join(' · ');
+
+          return (
+            <YStack key={option.id}>
+              {index > 0 ? <RowSeparator /> : null}
+              <Pressable selected={active} label={option.meta.name} onPress={() => onChoose(option)}>
+                <Row
+                  title={option.meta.name}
+                  subtitle={[option.meta.description, support].filter(Boolean).join('\n')}
+                  accessory={
+                    <Feather
+                      name={active ? 'check-circle' : featherName(option.meta.icon)}
+                      size={16}
+                      color={active ? theme.accent?.val : theme.muted?.val}
+                    />
+                  }
+                />
+              </Pressable>
+            </YStack>
+          );
+        })}
+      </Card>
+    </YStack>
   );
 }
 
@@ -192,7 +212,7 @@ export default function AddDeviceScreen() {
  * a user who finds that screen and one who adds a station the server cannot
  * reach and is left with a permanently grey card.
  *
- * The wizard that offers both in one flow is Milestone B; until it exists, this
+ * A device type's setup guide will offer both in one flow; until then, this
  * points at the screen that already works rather than pretending.
  */
 function ConnectionOwner() {
@@ -222,60 +242,6 @@ function ConnectionOwner() {
         >
           Connect over Bluetooth instead
         </Button>
-      </Card>
-    </YStack>
-  );
-}
-
-/**
- * Which hardware it is, and how far each option is actually trusted.
- *
- * The register map was verified on one machine. Saying so at the point of
- * choosing is the difference between a user who knows their numbers are
- * approximate and one who finds out when the numbers look odd.
- */
-function Models({
-  models,
-  value,
-  onChange,
-}: {
-  models: DeviceModelOption[];
-  value: string | null;
-  onChange: (id: string) => void;
-}) {
-  const theme = useTheme();
-
-  return (
-    <YStack gap="$2">
-      <SectionLabel>Model</SectionLabel>
-      <Card inset>
-        {models.map((option, index) => (
-          <YStack key={option.id}>
-            {index > 0 ? <RowSeparator /> : null}
-            <Pressable
-              selected={option.id === value}
-              label={`${option.label}${option.verified ? ', verified' : ', untested'}`}
-              onPress={() => onChange(option.id)}
-            >
-              <Row
-                title={option.label}
-                subtitle={option.note}
-                accessory={
-                  <XStack alignItems="center" gap="$2">
-                    {option.verified ? (
-                      <Feather name="check" size={13} color={theme.success?.val} />
-                    ) : null}
-                    <Feather
-                      name={option.id === value ? 'disc' : 'circle'}
-                      size={16}
-                      color={option.id === value ? theme.accent?.val : theme.muted?.val}
-                    />
-                  </XStack>
-                }
-              />
-            </Pressable>
-          </YStack>
-        ))}
       </Card>
     </YStack>
   );

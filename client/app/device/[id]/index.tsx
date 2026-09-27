@@ -10,7 +10,7 @@ import { DeviceShell } from '../../../src/features/devices/DeviceShell';
 import { useDeviceConnection } from '../../../src/features/devices/connection';
 import { Controls, History, Overview, Readings } from '../../../src/features/devices/panels';
 import { WriteRefused } from '../../../src/features/devices/WriteRefused';
-import { screensFor } from '../../../src/devices/screens';
+import { screensFor } from '../../../src/devices/ui';
 import { useDirectLink } from '../../../src/state/DirectLinkProvider';
 
 /**
@@ -41,7 +41,7 @@ function Dashboard({ device }: { device: SavedDeviceView }) {
 
   const screens = screensFor(device);
 
-  if (!screens) {
+  if (!screens?.dashboard) {
     return (
       <>
         <Overview device={device} />

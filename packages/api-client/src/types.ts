@@ -266,10 +266,11 @@ export { isOnline, providerDeviceId, savedDeviceId, stationId, candidateId, same
 
 export type DeviceRecord = {
   id: string;
-  type: 'power-station' | 'smart-plug';
-  /** Which hardware it is. Decides how it is read. */
+  /** A category, for display. Behaviour comes from the device type and its capabilities. */
+  type: string;
+  /** Unused since models became device types. */
   model: string | null;
-  /** `core.station`, or a plugin id. */
+  /** How the server files it. Read `SavedDeviceView.typeId` instead. */
   driver: string;
   name: string;
   config: Record<string, unknown>;
@@ -293,7 +294,9 @@ export type SavedDeviceView = Omit<
 > & {
   /** The catalog id: stable, the route segment, and what history is keyed by. */
   id: import('@kraftverk/device-sdk').SavedDeviceId;
-  /** The adapter's own identity — a MAC, a Tuya id. Null before commissioning. */
+  /** Its device type, when an installed one claims it: what decides its screens. */
+  typeId: string | null;
+  /** The vendor's own identity — a MAC, a Tuya id. Null until known. */
   providerDeviceId: import('@kraftverk/device-sdk').ProviderDeviceId | null;
   /** What the user called it. */
   name: string;
@@ -304,25 +307,20 @@ export type SavedDeviceView = Omit<
   readings: import('@kraftverk/device-sdk').Reading[];
 };
 
-/** A model of a device type, and how far it is actually trusted. */
-export type DeviceModelOption = {
-  id: string;
-  label: string;
-  verified: boolean;
-  note: string;
+/**
+ * Something that can be added: an installed device type, described without its
+ * code — or, until the extensions become device types (step 5), an extension
+ * that provides a device, which is set up under Extensions rather than by a guide.
+ */
+export type AddableType = import('@kraftverk/device-sdk').DeviceTypeView & { extension?: true };
+
+export type DeviceTypeList = {
+  types: AddableType[];
+  /** Packages found and refused, and why: for whoever is writing one. */
+  refused: { source: string; problems: string[] }[];
 };
 
-/** What can be added, and what each one needs. Drives the add-device flow. */
-export type DeviceTypeOption = {
-  id: string;
-  label: string;
-  description: string;
-  icon: string;
-  driver: string;
-  models: DeviceModelOption[];
-  available: boolean;
-  note?: string;
-};
+export type { DeviceTypeView, DeviceTypeMeta, SetupStepView, SupportLevel } from '@kraftverk/device-sdk';
 
 /**
  * A station bound before the device catalog existed.

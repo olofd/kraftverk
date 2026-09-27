@@ -33,7 +33,7 @@ import type {
   SetupActionResult,
 } from '@kraftverk/api-client';
 import { Pressable } from '../src/components/Pressable';
-import { panelFor } from '../src/plugins/panels';
+import { panelFor } from '../src/devices/ui';
 import { useAuth } from '../src/state/AuthProvider';
 import { useDevices } from '../src/state/DevicesProvider';
 

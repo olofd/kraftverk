@@ -15,14 +15,13 @@ import { db } from '../history/db.ts';
  * subject.
  */
 
-export type DeviceType = 'power-station' | 'smart-plug';
-
 export type DeviceRecord = {
   id: SavedDeviceId;
-  type: DeviceType;
-  /** Which hardware it is. Decides how it is read; see MODELS. */
+  /** A category, for display. Retired by the catalog migration (step 4), which gives every record a type id. */
+  type: string;
+  /** Unused since models became device types; kept until the catalog migration (step 4). */
   model: string | null;
-  /** 'core.station', or a plugin id. */
+  /** The device type's id — or a v1 plugin's, or `core.station`. See `typeIdOf`. */
   driver: string;
   name: string;
   /** Adapter-specific, including `boundId`: the station this device reaches. */
@@ -48,31 +47,21 @@ export const transportOf = (record: DeviceRecord): 'mqtt' | 'ble' | null =>
     : null;
 
 /**
- * Station models, and how far each one is actually trusted.
+ * Which device type a record is.
  *
- * The register map was derived from FOSSiBOT hardware and verified only on a
- * P280, so the picker says so rather than implying they are equal. Someone
- * choosing an untested model should know that before their numbers look odd,
- * not after.
+ * Transitional, until the catalog has a type column (docs/ARCHITECTURE.md,
+ * step 4): a record keeps its type's id in `driver`. The first stations ever
+ * saved say `core.station` there instead, and every one of them is a P280 —
+ * the only station the old model list could decode.
  */
-export const STATION_MODELS = [
-  { id: 'aferiy-p280', label: 'AFERIY P280', verified: true, note: 'Every setting confirmed on real hardware' },
-  { id: 'aferiy-p210', label: 'AFERIY P210', verified: false, note: 'Same stack, untested' },
-  { id: 'aferiy-p310', label: 'AFERIY P310', verified: false, note: 'Same stack, untested' },
-  { id: 'fossibot-f2400', label: 'FOSSiBOT F2400', verified: false, note: 'AC charging scale differs' },
-  { id: 'fossibot-f3600', label: 'FOSSiBOT F3600', verified: false, note: 'Same stack, untested' },
-  { id: 'ecoplay-syd2400', label: 'Eco Play SYD2400', verified: false, note: 'Same stack, untested' },
-  { id: 'abok-ark3600', label: 'ABOK Power Ark3600', verified: false, note: 'Same stack, untested' },
-  { id: 'other', label: 'Something else', verified: false, note: 'Decoded as a P280 until told otherwise' },
-] as const;
-
-export const DEFAULT_STATION_MODEL = 'aferiy-p280';
-
-export const modelLabel = (id: string | null): string =>
-  STATION_MODELS.find((model) => model.id === id)?.label ?? 'Power station';
+export const typeIdOf = (record: Pick<DeviceRecord, 'driver'>, installed: (id: string) => boolean): string | null => {
+  if (record.driver === 'core.station') return 'aferiy.p280';
+  return installed(record.driver) ? record.driver : null;
+};
 
 type Row = {
   id: string;
+  /** A category, for display. Retired by the catalog migration (step 4), which gives every record a type id. */
   type: string;
   model: string | null;
   driver: string;
@@ -84,7 +73,7 @@ type Row = {
 const toRecord = (row: Row): DeviceRecord => ({
   // The database row is a boundary: this is where a string becomes an identity.
   id: savedDeviceId(row.id),
-  type: row.type as DeviceType,
+  type: row.type,
   model: row.model,
   driver: row.driver,
   name: row.name,
@@ -110,14 +99,19 @@ export class DeviceCatalog {
   }
 
   add(input: {
-    type: DeviceType;
+    type: string;
     model?: string | null;
     driver: string;
     name: string;
     config?: Record<string, unknown>;
   }): DeviceRecord {
     const record: DeviceRecord = {
-      id: savedDeviceId(`${input.type}:${randomUUID().slice(0, 8)}`),
+      /*
+        Opaque: an id that says what the device is invites code that reads it,
+        and what it says can stop being true. Ids already saved keep their old
+        form — history is keyed by them (docs/ARCHITECTURE.md §4.5).
+      */
+      id: savedDeviceId(`d-${randomUUID().replaceAll('-', '').slice(0, 12)}`),
       type: input.type,
       model: input.model ?? null,
       driver: input.driver,

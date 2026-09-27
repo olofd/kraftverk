@@ -1,7 +1,7 @@
 import type { CapabilityImpl, CapabilityName } from './capabilities.ts';
 import type { ConnectionHealth, SavedDeviceId } from './identity.ts';
 import type { ConfigSchema, ConfigValues } from './schema.ts';
-import type { SetupGuide } from './setup.ts';
+import { describeSetup, type SetupGuide, type SetupStepView } from './setup.ts';
 import type { MetricSpec, Reading } from './telemetry.ts';
 
 /**
@@ -142,6 +142,11 @@ export interface DeviceSession {
    * readback, not an echo, because writing one setting can move another.
    */
   writeSettings?(patch: ConfigValues): Promise<ConfigValues | null>;
+  /**
+   * What the device calls itself: the vendor's id for it — a MAC, a Tuya id —
+   * and the name it reports. Never the user's name for it, which the core keeps.
+   */
+  identity?(): { id: string | null; name: string | null };
   close(): Promise<void>;
 }
 
@@ -206,3 +211,35 @@ export interface DeviceContext<Config extends ConfigValues = ConfigValues> {
 
 /** Declares a device type, keeping its config type through to its session. */
 export const defineDeviceType = <Config extends ConfigValues>(type: DeviceType<Config>): DeviceType<Config> => type;
+
+/**
+ * A device type as the app sees it: every declaration, and none of the code.
+ *
+ * What `GET /api/device-types` returns, and all the add screen and the setup
+ * wizard need to draw a type they have never heard of.
+ */
+export type DeviceTypeView = {
+  id: string;
+  kind: 'hardware' | 'service';
+  meta: DeviceTypeMeta;
+  protocols: readonly string[];
+  capabilities: readonly CapabilityName[];
+  telemetry: readonly MetricSpec[];
+  controls: readonly ControlSpec[];
+  settings: SettingsSpec | null;
+  config: ConfigSchema;
+  setup: SetupStepView[];
+};
+
+export const describeDeviceType = (type: DeviceType<any>): DeviceTypeView => ({
+  id: type.id,
+  kind: type.kind,
+  meta: type.meta,
+  protocols: type.protocols,
+  capabilities: type.capabilities,
+  telemetry: type.telemetry,
+  controls: type.controls ?? [],
+  settings: type.settings ?? null,
+  config: type.config,
+  setup: describeSetup(type.setup),
+});

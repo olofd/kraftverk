@@ -1,48 +1,43 @@
-import {
-  descriptor as p280Descriptor,
-  readings as p280Readings,
-  settingsToValues,
-  valuesToSettings,
-} from '@kraftverk/device-aferiy-p280';
 import { providerDeviceId } from '@kraftverk/device-sdk';
 import type {
   ConfigValues,
   ConnectionHealth,
   DeviceDescriptor,
+  DeviceType,
   ProviderDeviceId,
   Reading,
   SavedDeviceId,
 } from '@kraftverk/device-sdk';
 
-import { boundStation, modelLabel, type DeviceCatalog, type DeviceRecord } from './catalog.ts';
-import type { ConnectionManager } from '../connections/manager.ts';
+import type { DeviceCatalog, DeviceRecord } from './catalog.ts';
+import type { DeviceSessionManager } from './sessions.ts';
 import type { PluginHost } from '../plugins/host.ts';
-import { StationSettingsPatchSchema } from '../types.ts';
 
 /**
- * Joins the devices you added to whatever is currently answering.
+ * Joins the devices you added to what they are and what they are doing.
  *
- * The catalog says what exists; the drivers say what it is doing. Keeping those
- * separate is what lets an unplugged device stay in the list, greyed and
- * honest, instead of vanishing and taking its history with it.
+ * The catalog says what exists; the device type says what it is; its session
+ * says what it is doing. Keeping those apart is what lets an unplugged device
+ * stay in the list, greyed and honest, instead of vanishing with its history.
  *
- * The station is described here rather than by a plugin — it is built in — but
- * it is described the *same way*, so the app has one card, one detail screen
- * and one chart for everything it will ever show.
+ * Every device is described the same way, from its type's declarations and its
+ * session's answers, so the app has one card, one detail screen and one chart
+ * for everything it will ever show — and this file names no product.
  */
 
 /**
  * A saved device, joined to what it is doing right now.
  *
- * The descriptor is spread in without its `id` and `name`, because those two
- * belong to the catalog here. The vendor's are `providerDeviceId` and
- * `providerName`, so a caller that wants one of them has to say which — a
- * distinction that matters the moment one adapter provides two devices.
+ * The descriptor's `id` and `name` are left out, because those two belong to
+ * the catalog here. The vendor's are `providerDeviceId` and `providerName`, so
+ * a caller that wants one of them has to say which.
  */
 export type SavedDeviceView = Omit<DeviceDescriptor, 'id' | 'name'> & {
   /** The catalog id: stable, the route segment, and what history is keyed by. */
   id: SavedDeviceId;
-  /** The adapter's own identity for it — a MAC, a Tuya id. Null before commissioning. */
+  /** The device type, when an installed one claims this device. */
+  typeId: string | null;
+  /** The vendor's own identity for it — a MAC, a Tuya id. Null until known. */
   providerDeviceId: ProviderDeviceId | null;
   /** What the user called it. */
   name: string;
@@ -54,33 +49,21 @@ export type SavedDeviceView = Omit<DeviceDescriptor, 'id' | 'name'> & {
 };
 
 /**
- * How long one adapter may take to hand over its readings.
+ * How long a v1 plugin may take to hand over its readings.
  *
- * Adapters are expected to answer from cache — the Tuya driver keeps the last
- * datapoints it received — so this is generous. It exists because `all()` is on
- * the path of *every* `GET /api/devices`, which the app polls continuously, and
- * a `readDevice` that never settles would hang the device list for every client
- * and stall the sampler with it. An extension is not allowed to take the
- * catalog down with it.
+ * Plugins answer from cache, so this is generous; it exists because `all()` is
+ * on the path of every `GET /api/devices`, and one `readDevice` that never
+ * settles would otherwise hang the list for every client and stall the sampler.
+ * A device session is never waited on: its reads are synchronous.
  */
 const READ_TIMEOUT_MS = 2_000;
 
-const readWithin = async (
-  read: () => Promise<Reading[]> | undefined,
-  timeoutMs: number
-): Promise<Reading[]> => {
+const readWithin = async (read: () => Promise<Reading[]> | undefined, timeoutMs: number): Promise<Reading[]> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const pending = read();
     if (!pending) return [];
-    // An empty list is what a device that will not answer looks like, and the
-    // caller already renders that honestly as "not answering".
-    return await Promise.race([
-      pending,
-      new Promise<Reading[]>((resolve) => {
-        timer = setTimeout(() => resolve([]), timeoutMs);
-      }),
-    ]);
+    return await Promise.race([pending, new Promise<Reading[]>((resolve) => (timer = setTimeout(() => resolve([]), timeoutMs)))]);
   } catch {
     return [];
   } finally {
@@ -102,18 +85,10 @@ export class DeviceRegistry {
   constructor(
     private catalog: DeviceCatalog,
     private host: PluginHost,
-    /** Live links, keyed by the same catalog id the records use. */
-    private connections: ConnectionManager
+    private sessions: DeviceSessionManager
   ) {}
 
-  /**
-   * Every saved device, joined to what it is doing.
-   *
-   * Concurrent rather than one after another: each view may wait on its own
-   * adapter, and serialising them made the whole list as slow as the sum of its
-   * devices. With one device that was invisible; it is the difference between a
-   * responsive canvas and a stalling one by the tenth.
-   */
+  /** Every saved device, joined to what it is doing. */
   async all(): Promise<SavedDeviceView[]> {
     return Promise.all(this.catalog.list().map((record) => this.#view(record)));
   }
@@ -124,31 +99,64 @@ export class DeviceRegistry {
   }
 
   async #view(record: DeviceRecord): Promise<SavedDeviceView> {
-    if (record.driver === 'core.station') return this.#stationView(record);
+    const type = this.sessions.typeOf(record);
+    return type ? this.#typedView(record, type) : this.#pluginView(record);
+  }
 
+  /** A device of an installed type: its declarations, and its session's answers. */
+  #typedView(record: DeviceRecord, type: DeviceType<any>): SavedDeviceView {
+    const session = this.sessions.get(record.id);
+    const identity = session?.identity?.() ?? null;
+    const readings = session?.readings() ?? [];
+
+    return {
+      id: record.id,
+      typeId: type.id,
+      name: record.name,
+      providerDeviceId: identity?.id ? providerDeviceId(identity.id) : null,
+      providerName: identity?.name && identity.name !== record.name ? identity.name : null,
+      record,
+      category: type.meta.category,
+      icon: type.meta.icon,
+      description: type.meta.name,
+      measurements: type.telemetry,
+      controls: type.controls ?? [],
+      settings: type.settings,
+      capabilities: type.capabilities,
+      readings,
+      health: this.sessions.health(record),
+    };
+  }
+
+  /**
+   * A device provided by a v1 plugin: one configuration per plugin, so one
+   * device per plugin (`devices()[0]`). Goes when the plugins become device
+   * types (step 5).
+   */
+  async #pluginView(record: DeviceRecord): Promise<SavedDeviceView> {
     const instance = this.host.instance(record.driver);
     const descriptor = instance?.plugin.devices?.()[0];
 
     if (!instance || !descriptor) {
       return {
         id: record.id,
+        typeId: null,
         providerDeviceId: null,
         record,
         name: record.name,
         providerName: null,
-        category: 'smart-plug',
-        icon: 'power',
+        category: 'unknown',
+        icon: 'help-circle',
         measurements: [],
         controls: [],
         readings: [],
         health: {
-          // Not offline: nothing has been configured that *could* go offline,
-          // and "install the driver" is a different instruction from "check
-          // whether it is plugged in".
+          // Not offline: nothing is installed that *could* go offline, and
+          // "install it" is a different instruction from "is it plugged in".
           status: 'unconfigured',
           detail: instance
-            ? 'Its driver is installed but is not providing this device yet'
-            : `Driver ${record.driver} is not installed`,
+            ? 'Its extension is installed but is not providing this device yet'
+            : `Nothing installed here knows what "${record.driver}" is`,
           owner: 'server',
           transport: null,
           lastReadingAt: null,
@@ -156,19 +164,16 @@ export class DeviceRegistry {
       };
     }
 
-    // The adapter is a boundary: its descriptor carries the vendor's identity,
-    // and this is where that string becomes one.
     const vendorId = providerDeviceId(descriptor.id);
     const health = this.host.health(record.driver);
-    const readings = await readWithin(
-      () => instance.plugin.readDevice?.(vendorId),
-      READ_TIMEOUT_MS
-    );
+    const readings = await readWithin(() => instance.plugin.readDevice?.(vendorId), READ_TIMEOUT_MS);
     const answering = readings.some((reading) => reading.value !== null);
+    const { id: _id, name: _name, ...described } = descriptor;
 
     return {
-      ...withoutIdentity(descriptor),
+      ...described,
       id: record.id,
+      typeId: null,
       providerDeviceId: vendorId,
       record,
       name: record.name,
@@ -176,135 +181,37 @@ export class DeviceRegistry {
       readings,
       health: {
         status: pluginStatus(health.status, answering),
-        detail:
-          health.status === 'healthy' && answering
-            ? 'Answering'
-            : (health.detail ?? 'Not answering'),
+        detail: health.status === 'healthy' && answering ? 'Answering' : (health.detail ?? 'Not answering'),
         owner: 'server',
-        // Null rather than guessed. A plugin does not declare how it reaches
-        // its device yet; that belongs to the connection record, and inventing
-        // `tuya-lan` here would put a word on screen nothing had verified.
         transport: null,
         lastReadingAt: lastReadingAt(readings),
       },
     };
   }
 
-  #stationView(record: DeviceRecord): SavedDeviceView {
-    const session = this.connections.get(record.id);
-    const label = record.model ? modelLabel(record.model) : 'Power station';
-    /*
-      For a station these two identities are the same MAC wearing different
-      hats: the id the radio binds to, and the id the vendor stamped on it. The
-      conversion is written out rather than assumed, because they are the same
-      only for this device kind.
-     */
-    const bound = boundStation(record);
-    const saved = bound ? providerDeviceId(bound) : null;
-
-    /*
-      A station with no session is still a station you own. It keeps its name,
-      its model and its place in the list, and says why it is not answering —
-      which is the difference between a device catalog and a scan result.
-    */
-    if (!session) {
-      const refusal = this.connections.refusal(record.id);
-      return {
-        ...withoutIdentity(p280Descriptor(record.id, record.name, label)),
-        id: record.id,
-        providerDeviceId: saved,
-        record,
-        name: record.name,
-        providerName: null,
-        readings: [],
-        health: {
-          // A refusal is something the user has to resolve — the radio is held
-          // by another device — while a plain absent link is just quiet.
-          status: refusal ? 'error' : 'offline',
-          detail: refusal ?? 'The server is not holding a link to it',
-          owner: 'server',
-          transport: null,
-          lastReadingAt: null,
-        },
-      };
-    }
-
-    const status = session.driver.status();
-    const simulated = status.link.mode === 'simulator';
-    const connected = simulated || status.link.state === 'connected';
-    const readings = p280Readings(status);
-
-    // The description of what a P280 is lives in its own package: what it
-    // measures, what it can be told to do, and what it remembers.
-    return {
-      ...withoutIdentity(p280Descriptor(record.id, record.name, record.model ? label : status.model)),
-      id: record.id,
-      // The live MAC when the link has one, else what the record was bound to.
-      providerDeviceId: status.link.mac ? providerDeviceId(status.link.mac) : saved,
-      record,
-      name: record.name,
-      providerName: status.name === record.name ? null : status.name,
-      readings,
-      health: {
-        status: connected ? 'connected' : status.link.state === 'waiting' ? 'connecting' : 'offline',
-        detail: connected
-          ? simulated
-            ? 'Simulated'
-            : 'Connected'
-          : status.link.state === 'waiting'
-            ? 'Looking for the station'
-            : 'The station has not connected',
-        owner: 'server',
-        transport: simulated ? 'sim' : (status.link.transport ?? session.kind),
-        lastReadingAt: connected ? lastReadingAt(readings) : status.link.lastSeen,
-      },
-    };
-  }
-
-  /**
-   * The station's own settings, in the schema language the app renders —
-   * empty until they have been read from it, never defaults in their place.
-   */
+  /** A device's own settings, as last read from it. Empty until they have been. */
   readSettings(record: DeviceRecord): ConfigValues {
-    const session = this.connections.get(record.id);
-    if (record.driver !== 'core.station' || !session) return {};
-    const settings = session.driver.settings();
-    return settings ? settingsToValues(settings) : {};
+    return this.sessions.get(record.id)?.readSettings?.() ?? {};
   }
 
+  /** Applies settings through the device's session, and returns what it reports afterwards. */
   async writeSettings(record: DeviceRecord, patch: ConfigValues): Promise<ConfigValues> {
-    const session = this.connections.get(record.id);
-    if (record.driver !== 'core.station' || !session) return {};
-    // A readback, not an echo: writing the DC input type moves the charging
-    // current ceiling on this hardware, so the caller is told what happened.
-    // The same schema as the P280 route, so both ways of writing a station's
-    // settings are held to the same bounds before the register whitelist.
-    const applied = await session.driver.applySettings(StationSettingsPatchSchema.parse(valuesToSettings(patch)));
-    return applied ? settingsToValues(applied) : {};
+    const session = this.sessions.get(record.id);
+    if (!session?.writeSettings) return {};
+    return (await session.writeSettings(patch)) ?? {};
   }
 }
 
-/**
- * The descriptor without the two fields the catalog owns.
- *
- * Dropping them here rather than letting the spread overwrite them is the whole
- * mechanism: `SavedDeviceView` cannot carry a vendor id in `id` again without
- * the compiler noticing.
- */
-const withoutIdentity = (descriptor: DeviceDescriptor): Omit<DeviceDescriptor, 'id' | 'name'> => {
-  const { id: _id, name: _name, ...rest } = descriptor;
-  return rest;
-};
-
-/** A driver's health, in the vocabulary a connection speaks. */
+/** A v1 plugin's health, in the vocabulary a connection speaks. */
 const pluginStatus = (
   status: import('@kraftverk/device-sdk').PluginHealth['status'],
   answering: boolean
 ): ConnectionHealth['status'] => {
   switch (status) {
     case 'healthy':
-      // Healthy but silent is offline, not connected: the driver is fine and
-      // the thing at the other end is not talking.
+    case 'degraded':
+      // Healthy but silent is offline: the plugin is fine and the thing at the
+      // other end is not talking.
       return answering ? 'connected' : 'offline';
     case 'starting':
       return 'connecting';
@@ -312,7 +219,5 @@ const pluginStatus = (
       return 'unconfigured';
     case 'failed':
       return 'error';
-    case 'degraded':
-      return answering ? 'connected' : 'offline';
   }
 };

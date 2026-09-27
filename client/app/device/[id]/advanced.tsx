@@ -4,7 +4,7 @@ import { Card, Text } from 'tamagui';
 import { Screen } from '../../../src/components/Screen';
 import { deviceStatus } from '../../../src/features/devices/DeviceShell';
 import { useDeviceConnection } from '../../../src/features/devices/connection';
-import { screensFor } from '../../../src/devices/screens';
+import { screensFor } from '../../../src/devices/ui';
 import { useDevice } from '../../../src/state/DevicesProvider';
 import { useDirectLink } from '../../../src/state/DirectLinkProvider';
 

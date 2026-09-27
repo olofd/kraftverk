@@ -1,0 +1,15 @@
+import { StationDashboard } from './dashboard.tsx';
+import { StationProtocol } from './protocol.tsx';
+import { StationSettings } from './settings.tsx';
+
+/**
+ * The P280's own screens, found by the app through `kraftverk.ui` in this
+ * package's package.json and bound in its generated registry. Every other
+ * device gets the app's generic screens; a device with screens of its own
+ * adds them here, and the app shell learns nothing about it.
+ */
+export default {
+  dashboard: StationDashboard,
+  settings: StationSettings,
+  protocol: StationProtocol,
+};

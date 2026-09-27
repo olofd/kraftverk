@@ -1,6 +1,6 @@
 import { audit, appState, setAppState } from '../history/db.ts';
 import { loadBinding, type Binding } from '../binding.ts';
-import { DEFAULT_STATION_MODEL, type DeviceCatalog, type DeviceRecord } from './catalog.ts';
+import type { DeviceCatalog, DeviceRecord } from './catalog.ts';
 import type { ServerTransportKind } from '../transport/types.ts';
 
 /**
@@ -97,9 +97,7 @@ export class LegacyStationImport {
 
     const record = this.deps.catalog.add({
       type: 'power-station',
-      // The model the old code assumed. It is a guess the user can correct on
-      // the device's own screen, and the picker says which models are verified.
-      model: DEFAULT_STATION_MODEL,
+      // Filed as the old code filed it; `typeIdOf` knows what that means.
       driver: 'core.station',
       name: name?.trim() || offer.name || 'Power station',
       config: { transport: offer.transport, boundId: offer.boundId },
