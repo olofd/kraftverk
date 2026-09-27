@@ -57,13 +57,30 @@ stack:
     # same blobs, so a host that has them does not download them again.
     # Pushed straight from BuildKit for that reason, and loaded for the smoke
     # test; nothing deploys an image until that test has passed.
+    #
+    # In two steps, and the cache beside its image. Exporting the cache and
+    # pushing the image in one build uploaded the same layers twice at once,
+    # into two repositories, and the image's manifest was refused for a layer
+    # the registry had not finished taking ("blob unknown to registry"). Now
+    # the first build loads the image and writes the cache; the second is all
+    # cache hits and only pushes — retried, since pushing is safe to repeat.
     - |
+      set -e
       for target in server web; do
         if [ "$target" = server ]; then tag="$SERVER_IMAGE"; else tag="$WEB_IMAGE"; fi
-        docker buildx build --target "$target" --tag "$tag" --push --load \
-          --cache-from "type=registry,ref=$CI_REGISTRY_IMAGE/cache:$target" \
-          --cache-to "type=registry,ref=$CI_REGISTRY_IMAGE/cache:$target,mode=max,image-manifest=true,oci-mediatypes=true" \
+        cache="type=registry,ref=$CI_REGISTRY_IMAGE/$target:buildcache"
+        docker buildx build --target "$target" --tag "$tag" --load \
+          --cache-from "$cache" \
+          --cache-to "$cache,mode=max,image-manifest=true,oci-mediatypes=true" \
           .
+        for attempt in 1 2 3; do
+          if docker buildx build --target "$target" --tag "$tag" --push --cache-from "$cache" --quiet . > /dev/null; then
+            break
+          fi
+          [ "$attempt" = 3 ] && { echo "Could not push $tag" >&2; exit 1; }
+          echo "Pushing $tag failed; trying again ($attempt)" >&2
+          sleep 5
+        done
       done
     - SMOKE_BUILD=0 KRAFTVERK_SERVER_IMAGE="$SERVER_IMAGE" KRAFTVERK_WEB_IMAGE="$WEB_IMAGE" bash scripts/ci/smoke-docker.sh
   artifacts:
