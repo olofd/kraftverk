@@ -326,13 +326,23 @@ export function setAppState(key: string, value: string): void {
  * so the UI can say so, because a key kept next to the data it protects would
  * be decoration rather than encryption.
  */
+/*
+  Derived once per passphrase. scrypt is slow on purpose and synchronous here,
+  and it ran on every secret read — and on every poll of the extensions list,
+  just to learn whether a key exists — stalling the whole server each time.
+*/
+let derived: { passphrase: string; key: Buffer } | null = null;
+
 const secretKey = (): Buffer | null => {
   const passphrase = process.env.KRAFTVERK_SECRET_KEY;
   if (!passphrase) return null;
-  return scryptSync(passphrase, 'kraftverk-plugin-secrets', 32);
+  if (derived?.passphrase !== passphrase) {
+    derived = { passphrase, key: scryptSync(passphrase, 'kraftverk-plugin-secrets', 32) };
+  }
+  return derived.key;
 };
 
-export const secretsAreEncrypted = (): boolean => secretKey() !== null;
+export const secretsAreEncrypted = (): boolean => Boolean(process.env.KRAFTVERK_SECRET_KEY);
 
 export function sealSecret(value: string): { value: string; encrypted: boolean } {
   const key = secretKey();

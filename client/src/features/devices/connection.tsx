@@ -18,6 +18,7 @@ import type {
   VersionInfo,
 } from '@kraftverk/api-client';
 
+import { useAuth } from '../../state/AuthProvider';
 import { useDirectLink } from '../../state/DirectLinkProvider';
 
 /**
@@ -80,7 +81,9 @@ export function useDeviceConnection(device: SavedDeviceView | null): DeviceConne
   const isStation = device?.record.driver === 'core.station';
   const served = link.source === 'server';
   /** Only a station has station state to fetch. */
-  const pollable = served && isStation;
+  // And only while signed in: a signed-out poll is a stream of 401s.
+  const { allowed } = useAuth();
+  const pollable = served && isStation && allowed;
   const deviceId = device?.id;
 
   const [status, setStatus] = useState<StationStatus | null>(null);

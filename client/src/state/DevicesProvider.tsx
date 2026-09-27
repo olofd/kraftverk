@@ -156,8 +156,11 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   const load = useCallback(
     async (signal?: AbortSignal) => {
       if (!polling) {
+        // Signed out, or another server: what the last one said is not kept.
+        // (The direct link's device is composed below, not fetched.)
+        setServed([]);
         setLoading(false);
-        return; // the direct link's device is composed below, not fetched
+        return;
       }
       try {
         const next = await fetchDeviceList(signal);

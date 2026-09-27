@@ -32,6 +32,7 @@ import type {
   SetupActionResult,
 } from '@kraftverk/api-client';
 import { panelFor } from '../src/plugins/panels';
+import { useAuth } from '../src/state/AuthProvider';
 
 /**
  * Extensions: what is installed, and getting each one working.
@@ -89,7 +90,10 @@ export default function ExtensionsScreen() {
     }
   }, []);
 
+  // Only while signed in: a signed-out poll is a stream of 401s.
+  const { allowed } = useAuth();
   useEffect(() => {
+    if (!allowed) return;
     const controller = new AbortController();
     void load(controller.signal);
     const timer = setInterval(() => void load(controller.signal), 5000);
@@ -97,7 +101,7 @@ export default function ExtensionsScreen() {
       clearInterval(timer);
       controller.abort();
     };
-  }, [load]);
+  }, [load, allowed]);
 
   const plugin = list?.plugins.find((candidate) => candidate.id === selected);
 

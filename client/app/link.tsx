@@ -17,6 +17,7 @@ import {
 import { formatAgo } from '@kraftverk/ui';
 import { haptic } from '@kraftverk/ui';
 import type { StationTransports } from '@kraftverk/api-client';
+import { useAuth } from '../src/state/AuthProvider';
 import { useDirectLink, type LinkSource } from '../src/state/DirectLinkProvider';
 
 /**
@@ -129,11 +130,14 @@ function ServerLink({
     }
   }, []);
 
+  // Only while signed in: a signed-out poll is a stream of 401s.
+  const { allowed } = useAuth();
   useEffect(() => {
+    if (!allowed) return;
     void load();
     const timer = setInterval(() => void load(), 4000);
     return () => clearInterval(timer);
-  }, [load]);
+  }, [load, allowed]);
 
   const bind = useCallback(
     async (deviceId: string, stationId: string) => {

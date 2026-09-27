@@ -12,7 +12,8 @@
 
 # --- dependencies ------------------------------------------------------------
 
-FROM node:22-bookworm-slim AS deps
+# Node 24, as package.json's volta pin: the lockfile is written by its npm.
+FROM node:24-bookworm-slim AS deps
 
 WORKDIR /app
 
@@ -36,7 +37,9 @@ RUN npm ci --omit=dev --omit=optional --ignore-scripts \
 
 # --- runtime -----------------------------------------------------------------
 
-FROM oven/bun:1 AS runtime
+# The same Bun the tests run on — root package.json pins it — so what CI
+# tested is what the container runs. Bump both together.
+FROM oven/bun:1.4.0 AS runtime
 
 WORKDIR /app
 

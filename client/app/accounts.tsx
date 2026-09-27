@@ -130,7 +130,7 @@ function AccountRow({
   onChanged: () => Promise<void>;
 }) {
   const theme = useTheme();
-  const { refresh } = useAuth();
+  const { logOut } = useAuth();
   const [action, setAction] = useState<'idle' | 'confirm-remove' | 'reset'>('idle');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -200,7 +200,8 @@ function AccountRow({
                 haptic();
                 void run(async () => {
                   await removeAccount(account.id);
-                  if (isMe) await refresh();
+                  // Signed out by the server already; this also clears what the app held.
+                  if (isMe) await logOut();
                 });
               }}
             >

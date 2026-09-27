@@ -35,8 +35,8 @@
       "name": "server:scratch",
       "runtimeExecutable": "node",
       "runtimeArgs": ["scripts/run-bun.mjs", "server/src/index.ts"],
-      "env": { "KRAFTVERK_DB": "server/data/scratch/kraftverk.db" },
-      "port": 3333
+      "env": { "KRAFTVERK_DB": "server/data/scratch/kraftverk.db", "PORT": "3334" },
+      "port": 3334
     },
     {
       "name": "web",

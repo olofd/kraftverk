@@ -35,6 +35,12 @@ type AuthContextValue = {
   allowed: boolean;
   /** A sign-in the server accepted and the browser then dropped, explained. */
   notice: string | null;
+  /**
+   * Moves when the person using the app changes — a sign-out, or a different
+   * account signing in — and never when a session merely expires. The app
+   * underneath is rebuilt on it, so nothing of one account outlives it.
+   */
+  generation: number;
   refresh: () => Promise<AuthState | null>;
   logIn: (username: string, password: string) => Promise<void>;
   setup: (username: string, password: string) => Promise<void>;
@@ -54,6 +60,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Which server an answer is about: switching servers mid-request must not
   // leave one server's answer describing another.
   const asked = useRef<string | null>(null);
+
+  const [generation, setGeneration] = useState(0);
+  /** Server and account last signed in, whatever has happened since. */
+  const lastSignedIn = useRef<string | null>(null);
+  const signedInAs = state?.user && serverUrl ? `${serverUrl} ${state.user.id}` : null;
+  useEffect(() => {
+    if (!signedInAs) return;
+    if (lastSignedIn.current && lastSignedIn.current !== signedInAs) setGeneration((n) => n + 1);
+    lastSignedIn.current = signedInAs;
+  }, [signedInAs]);
 
   const refresh = useCallback(async (): Promise<AuthState | null> => {
     if (!applies || !serverUrl) {
@@ -126,6 +142,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logOut = useCallback(async () => {
     await apiLogOut().catch(() => undefined);
+    lastSignedIn.current = null;
+    setGeneration((n) => n + 1);
     await refresh();
   }, [refresh]);
 
@@ -137,12 +155,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       unknown,
       allowed: !applies || unknown || Boolean(state?.user),
       notice,
+      generation,
       refresh,
       logIn,
       setup,
       logOut,
     }),
-    [applies, state, loading, unknown, notice, refresh, logIn, setup, logOut]
+    [applies, state, loading, unknown, notice, generation, refresh, logIn, setup, logOut]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

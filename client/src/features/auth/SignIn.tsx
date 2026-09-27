@@ -27,7 +27,7 @@ import { Field, passwordProblem, PASSWORD_MIN } from './fields';
  * a login screen you cannot leave is a trap, not a lock.
  */
 export function AuthGate({ children }: { children: React.ReactNode }) {
-  const { applies, loading, allowed, state } = useAuth();
+  const { applies, loading, allowed, state, generation } = useAuth();
   const blocked = applies && !allowed;
 
   /*
@@ -36,10 +36,15 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     Swapping the navigator out for a sign-in screen unmounts it, and a
     navigator mounted again starts from its home route — so every deep link
     and bookmark to a device, and wherever you were when a session expired, was
-    lost. The screens underneath hold no data until the server answers (the
-    device list does not poll while this is up), and the server enforces
-    access regardless; this is presentation, and presentation should not cost
-    the user their place.
+    lost. The device list does not poll while this is up, and the server
+    enforces access regardless; this is presentation, and presentation should
+    not cost the user their place.
+
+    Except when the person changes. Signing out, or another account signing
+    in, throws the tree underneath away (`generation`): otherwise the last
+    account's devices, readings and account list would stay in memory and in
+    the page, readable with the developer tools by whoever sits down next. A
+    session that merely expired keeps its place — it is the same person.
   */
   return (
     <YStack flex={1}>
@@ -49,7 +54,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         keeps it mounted — and the navigator with it — but out of sight,
         focus and the accessibility tree.
       */}
-      <YStack flex={1} display={blocked ? 'none' : 'flex'}>
+      <YStack key={generation} flex={1} display={blocked ? 'none' : 'flex'}>
         {children}
       </YStack>
       {blocked ? (
