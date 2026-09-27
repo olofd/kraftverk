@@ -70,9 +70,10 @@ Until it exists, only the direct rules above apply.
 | --- | --- |
 | Passwords | argon2id (Bun's built-in). At least 12 characters. At most two hashes run at once, so a burst of attempts cannot exhaust a small server's memory |
 | Sessions | 256-bit random tokens in an `HttpOnly`, `SameSite=Lax`, `Path=/api` cookie — `Secure` whenever the browser is on HTTPS. Stored only as a SHA-256 hash, so a copy of the database cannot be replayed as live sessions. 30 days, renewed with use |
-| Changing a password | Needs the current one, and signs the account out everywhere else. An administrator resetting someone else's signs *them* out everywhere |
-| Guessing | Counted per client address and per username. Five failures are free; then each locks for twice as long, from one minute to fifteen. A wrong username takes as long as a wrong password, and gets the same answer |
+| Changing a password | Needs the current one — and wrong guesses at it count like failed logins — and signs the account out everywhere else. An administrator resetting someone else's signs *them* out everywhere |
+| Guessing | Counted per client address (an IPv6 caller's whole /64) and per username. Five failures are free; then each locks for twice as long, from one minute to fifteen. A wrong username takes as long as a wrong password, and gets the same answer. The username count from the internet is kept apart from the one at home, so someone who knows your username cannot lock you out of your own server from outside |
 | The last account | Cannot be deleted |
+| Erasing everything | Needs an account *and* the reset passphrase from a file on the server. Keeps the accounts, so the server is never left waiting to be claimed |
 
 ## Attacks the browser makes possible
 
@@ -115,7 +116,9 @@ Unchanged by any of this, and applied to every caller:
 - Only the server may publish commands on the broker; see
   [BROKER.md](BROKER.md#who-may-do-what).
 - Physical actions go through the action gateway, which records *who* — the
-  account — in the audit timeline.
+  account — in the audit timeline. So do the station's own ports and
+  settings, linking and unlinking it, raw frames, and every extension's
+  configuration and grants.
 
 ## Recovering access
 
@@ -147,12 +150,15 @@ the process list would keep them: they are generated, or piped in with
 Stated plainly, so nobody assumes otherwise:
 
 - **Every account is an administrator**, for now: anyone you give an account
-  can use and change everything, and manage accounts. Accounts owning their own
-  devices is the next step — see [ACCOUNTS.md](ACCOUNTS.md).
+  can use and change everything, and manage accounts. Give one only to someone
+  you would trust with the house. Homes with owners and members are the
+  direction — see [ACCOUNTS.md](ACCOUNTS.md).
 - **Traffic on the home network is plain HTTP.** A login made there crosses the
   LAN unencrypted, and anyone able to watch the LAN could take the session.
   From outside, HTTPS is terminated before the web container.
-- **The MQTT broker accepts any connection** — a station authenticates with
-  cloud-issued credentials nobody can predict. What a connection may *publish*
-  is restricted. Keep port 1883 off the internet.
+- **The MQTT broker accepts any connection** — a P280 connects with no
+  username and no password, so there is nothing to check. What a connection
+  may *publish* is restricted, but anything on the LAN can connect under the
+  station's client id, push the real station off, and report whatever it
+  likes in its place. Plain MQTT, unencrypted. Keep port 1883 off the internet.
 - **Anyone with a shell on the server** owns it, and everything on it.

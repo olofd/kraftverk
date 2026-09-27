@@ -5,9 +5,9 @@ import { join } from 'node:path';
 
 import { Hono } from 'hono';
 
-import { closeDb, db } from '../history/db.ts';
+import { closeDb, db, resetDatabase } from '../history/db.ts';
 import { hostAllowed, hostGuard, hostName } from './host.ts';
-import { LoginLimiter, MAX_ENTRIES } from './limiter.ts';
+import { LoginLimiter, limiterKeys, MAX_ENTRIES } from './limiter.ts';
 import { CLIENT_HEADER, createAuth, SESSION_COOKIE } from './routes.ts';
 import {
   AccountError,
@@ -343,7 +343,8 @@ describe('the gate', () => {
     expect(setup.setCookie).toContain('Path=/api');
     expect(setup.setCookie).not.toContain('Secure'); // plain http on the LAN
     const again = await call('/auth/setup', { method: 'POST', body: { username: 'second', password: PASSWORD } });
-    expect(again.status).toBe(400);
+    expect(again.status).toBe(409);
+    expect(countUsers()).toBe(1);
   });
 
   test('the home network needs a login too — reads as well as writes, every way in', async () => {
@@ -448,5 +449,56 @@ describe('the gate', () => {
     expect(wrong.status).toBe(403);
     const right = await call('/auth/password', { method: 'POST', cookie: login.token, body: { current: PASSWORD, next: 'a brand new passphrase' } });
     expect(right.status).toBe(200);
+  });
+
+  test('a borrowed session cannot guess the current password without limit', async () => {
+    await createFirstUser('pat', PASSWORD);
+    const from = '192.168.50.77';
+    const login = await call('/auth/login', { from, method: 'POST', body: { username: 'pat', password: PASSWORD } });
+    const guess = (current: string) => call('/auth/password', { from, method: 'POST', cookie: login.token, body: { current, next: 'a brand new passphrase' } });
+    for (let i = 0; i < 6; i++) expect((await guess(`guess number ${i}`)).status).toBe(403);
+    // Locked: even the right one is not heard.
+    expect((await guess(PASSWORD)).status).toBe(429);
+  });
+
+  test('someone on the internet who knows your username cannot lock you out at home', async () => {
+    await createFirstUser('kim', PASSWORD);
+    const outside = (ip: string, password: string) =>
+      call('/auth/login', { ...viaPublicEntrance, headers: { ...viaPublicEntrance.headers, [CLIENT_IP_HEADER]: ip }, method: 'POST', body: { username: 'kim', password } });
+    for (let i = 0; i < 6; i++) expect((await outside('203.0.113.9', 'wrong wrong wrong')).status).toBe(401);
+    // Outside, the name is locked — whichever address tries next.
+    expect((await outside('203.0.113.10', PASSWORD)).status).toBe(429);
+    // At home it is not.
+    expect((await call('/auth/login', { from: '192.168.50.90', method: 'POST', body: { username: 'kim', password: PASSWORD } })).status).toBe(200);
+  });
+});
+
+describe('limiterKeys', () => {
+  test('an IPv6 caller is counted by its /64, however the address is written', () => {
+    const [a] = limiterKeys('2001:db8:1:2::5', 'x', false);
+    const [b] = limiterKeys('2001:0db8:0001:0002:ffff:1:2:3', 'x', false);
+    const [c] = limiterKeys('2001:db8:1:3::5', 'x', false);
+    expect(a).toBe('ip:2001:db8:1:2::/64');
+    expect(b).toBe(a);
+    expect(c).not.toBe(a);
+    expect(limiterKeys('::1', 'x', true)[0]).toBe('ip:0:0:0:0::/64');
+    expect(limiterKeys('203.0.113.5', 'x', false)[0]).toBe('ip:203.0.113.5');
+  });
+
+  test('the username is counted apart at home and away', () => {
+    expect(limiterKeys(null, 'Olof', true)[1]).not.toBe(limiterKeys(null, 'olof', false)[1]);
+    expect(limiterKeys(null, 'Olof', false)[1]).toBe(limiterKeys(null, 'olof', false)[1]);
+  });
+});
+
+describe('erasing everything', () => {
+  beforeEach(emptyAccounts);
+
+  test('keeps the accounts and their sessions, so the server is never left unclaimed', async () => {
+    const user = await createFirstUser('olof', PASSWORD);
+    const { token } = createSession(user.id, null, null);
+    resetDatabase();
+    expect(countUsers()).toBe(1);
+    expect(readSession(token)?.user.username).toBe('olof');
   });
 });

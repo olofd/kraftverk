@@ -98,11 +98,12 @@ function SignIn() {
 
 /** Username and password, for an existing account. */
 export function LoginForm({ submitLabel = 'Log in' }: { submitLabel?: string }) {
-  const { logIn } = useAuth();
+  const { logIn, notice } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const shown = problem ?? notice;
 
   const submit = async () => {
     if (!username.trim() || !password || busy) return;
@@ -122,9 +123,9 @@ export function LoginForm({ submitLabel = 'Log in' }: { submitLabel?: string }) 
     <Card gap="$3">
       <Field label="Username" kind="username" value={username} onChange={setUsername} autoFocus />
       <Field label="Password" kind="current-password" value={password} onChange={setPassword} onSubmit={() => void submit()} />
-      {problem ? (
+      {shown ? (
         <Text fontSize={13} color="$danger" lineHeight={18} role="alert">
-          {problem}
+          {shown}
         </Text>
       ) : null}
       <Button
@@ -170,9 +171,9 @@ export function SetupForm() {
   return (
     <YStack gap="$3">
       <Text fontSize={13} color="$muted" lineHeight={19}>
-        This server has no accounts yet. Create the first one now: it is an administrator, and it is how
-        you — and anyone you add later — will reach this server from outside the home network. It can
-        only be created from the home network, which is where you are.
+        This server has no accounts yet. Create the first one now: it is an administrator, and everyone
+        signs in to use this server — at home and away, you and anyone you add later. The first account
+        can only be created from the home network, which is where you are.
       </Text>
       <Card gap="$3">
         <Field label="Username" kind="username" value={username} onChange={setUsername} autoFocus />

@@ -33,7 +33,9 @@ type AuthContextValue = {
   unknown: boolean;
   /** This device may use the app: signed in — or talking to a server from before accounts. */
   allowed: boolean;
-  refresh: () => Promise<void>;
+  /** A sign-in the server accepted and the browser then dropped, explained. */
+  notice: string | null;
+  refresh: () => Promise<AuthState | null>;
   logIn: (username: string, password: string) => Promise<void>;
   setup: (username: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
@@ -53,25 +55,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // leave one server's answer describing another.
   const asked = useRef<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<AuthState | null> => {
     if (!applies || !serverUrl) {
       setState(null);
       setLoading(false);
-      return;
+      return null;
     }
     asked.current = serverUrl;
     try {
       const next = await fetchAuthState();
-      if (asked.current !== serverUrl) return;
+      if (asked.current !== serverUrl) return null;
       setState(next);
       setUnknown(false);
+      return next;
     } catch (error) {
-      if (asked.current !== serverUrl) return;
+      if (asked.current !== serverUrl) return null;
       // 404: a server from before accounts existed. Anything else: unreachable.
       // Neither is a login problem, and neither should lock the app.
       setState(null);
       setUnknown(true);
       if (!axios.isAxiosError(error)) throw error;
+      return null;
     } finally {
       if (asked.current === serverUrl) setLoading(false);
     }
@@ -80,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setLoading(applies);
     setState(null);
+    setNotice(null);
     void refresh();
   }, [applies, serverUrl, refresh]);
 
@@ -87,20 +92,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // asking again is what turns that into the login screen.
   useEffect(() => onLoginRequired(() => void refresh()), [refresh]);
 
+  /*
+    Held here rather than thrown to the form alone: after a first-account
+    setup the setup form is replaced by the login form, and an error thrown to
+    the one that is gone would never be seen.
+  */
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const signedIn = useCallback(
+    async () => {
+      const problem = notKept(await refresh());
+      setNotice(problem);
+      if (problem) throw new Error(problem);
+    },
+    [refresh]
+  );
+
   const logIn = useCallback(
     async (username: string, password: string) => {
       await apiLogIn(username, password);
-      await refresh();
+      await signedIn();
     },
-    [refresh]
+    [signedIn]
   );
 
   const setup = useCallback(
     async (username: string, password: string) => {
       await setupAdministrator(username, password);
-      await refresh();
+      await signedIn();
     },
-    [refresh]
+    [signedIn]
   );
 
   const logOut = useCallback(async () => {
@@ -115,15 +136,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       unknown,
       allowed: !applies || unknown || Boolean(state?.user),
+      notice,
       refresh,
       logIn,
       setup,
       logOut,
     }),
-    [applies, state, loading, unknown, refresh, logIn, setup, logOut]
+    [applies, state, loading, unknown, notice, refresh, logIn, setup, logOut]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+/**
+ * The server said yes, but the browser did not keep the cookie that says so.
+ *
+ * Browsers keep a sign-in only for requests to the same site as the page. The
+ * app opened from one address and pointed at a server on another — two
+ * different IP addresses, say — gets a successful login that is forgotten on
+ * the very next request. Without this, the login form would simply come back,
+ * with no clue why.
+ */
+function notKept(state: AuthState | null): string | null {
+  if (!state || state.user) return null;
+  const here = typeof window !== 'undefined' ? window.location?.host : null;
+  return (
+    'The server accepted the login, but this browser would not keep it' +
+    (here ? ` — the app is open at ${here}, and the server is somewhere else` : '') +
+    '. Open the app from the server’s own address instead.'
+  );
 }
 
 export function useAuth(): AuthContextValue {

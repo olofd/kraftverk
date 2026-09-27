@@ -59,14 +59,16 @@ decided to accept the risk — not before.
 | `STATION_DRIVER` | What it is | Works in this image |
 | --- | --- | --- |
 | `sim` | The built-in simulator | ✅ Default. No hardware needed |
-| `device` | Real hardware over Wi-Fi, through the `broker` service | ✅ The one to use for a real deployment |
+| `mqtt` | Real hardware over Wi-Fi, through the `broker` service | ✅ The one to use for a real deployment |
 | `ble` | Real hardware over Bluetooth LE | ❌ Not in this image — see below |
 
 ### Wi-Fi / MQTT — the one that suits a server
 
 The station connects to the vendor's broker until it is told otherwise.
 
-1. Set `STATION_DRIVER: device` in `docker-compose.yml` and restart.
+1. Set `STATION_DRIVER=mqtt` in a `.env` file beside `docker-compose.yml`, and
+   restart. (`device` means Wi-Fi *and* Bluetooth; this image has no
+   Bluetooth, so it works but reports a failed transport on every start.)
 2. Point the station at the Docker host, one of two ways:
    - **BrightEMS 1.6.0+**: *Me → Settings → Local MQTT Broker Settings*, and
      enter the Docker host's LAN IP. Only the master account can change it.
@@ -118,7 +120,7 @@ beside it.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `STATION_DRIVER` | `sim` | `sim` or `device`. `ble` is not available — see above |
+| `STATION_DRIVER` | `sim` | `sim`, or `mqtt` for a station over Wi-Fi. `ble` is not available — see above |
 | `READ_ONLY` | `1` in compose | `1` refuses every write at the driver |
 | `KRAFTVERK_SECRET_KEY` | — | Passphrase for AES-256-GCM plugin secrets. **Set this.** See below |
 | `ALLOWED_ORIGINS` | — | Extra browser origins, comma-separated. Loopback and private ranges are already allowed |
@@ -183,7 +185,7 @@ to test the add-device flow from scratch.
 
 Write a passphrase of at least eight characters to `/data/reset-secret` and the
 app offers **App settings → Danger zone → Erase everything**, which empties
-every table while the container keeps running:
+every table but the accounts while the container keeps running:
 
 ```bash
 docker compose exec kraftverk sh -c 'printf "%s" "a-long-passphrase" > /data/reset-secret'
@@ -193,9 +195,10 @@ Without that file the route does not exist at all, and the app shows the path to
 create rather than a button that cannot work. Delete the file to switch it off
 again — it is read on each attempt, so nothing needs restarting either way.
 
-The passphrase is not authentication for the API, which has none: anyone who can
-write that file could delete the database directly. It is there so that reaching
-this from the network takes more than reaching the network.
+Erasing needs a signed-in account as well as the passphrase, and keeps the
+accounts themselves. The passphrase is not protection against anyone who can
+write that file — they could delete the database directly. It is there so that
+a stolen session alone cannot erase the house.
 
 ---
 

@@ -61,6 +61,9 @@ export function db(): Db {
   const handle = new Database(path, { create: true });
   handle.exec('PRAGMA journal_mode = WAL');
   handle.exec('PRAGMA foreign_keys = ON');
+  // The recovery CLI may write while the server does: wait for the lock
+  // rather than failing at once with SQLITE_BUSY.
+  handle.exec('PRAGMA busy_timeout = 5000');
   migrate(handle);
   database = handle;
   return handle;
@@ -197,7 +200,7 @@ const MIGRATIONS: { id: number; sql: string }[] = [
     id: 5,
     sql: `
       /*
-        People who may use this server from outside the home network.
+        People who may use this server — from anywhere, the home network included.
 
         Every account is an administrator: there is one kind of person here,
         the owner and whoever they trust with the house. The password is an
@@ -254,8 +257,10 @@ function migrate(handle: Db): void {
 /**
  * Empties every table, keeping the schema.
  *
- * `migration` is the one exception: dropping those rows would make the next
- * boot try to create tables that already exist. Everything else goes —
+ * `migration` is kept: dropping those rows would make the next boot try to
+ * create tables that already exist. So are `users` and `sessions`: erasing
+ * the house is not erasing who may enter it, and a server left with no
+ * accounts is one waiting to be claimed. Everything else goes —
  * devices, samples, plugin configuration, secrets, grants and the audit
  * timeline — which is the point. This is "back to a blank canvas" without
  * asking anyone to find and delete a file on the server.
@@ -267,7 +272,7 @@ export function resetDatabase(): { tables: string[]; rows: number } {
   const handle = db();
   const tables = handle
     .query<{ name: string }, []>(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name <> 'migration' ORDER BY name"
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('migration', 'users', 'sessions') ORDER BY name"
     )
     .all()
     .map((row) => row.name);

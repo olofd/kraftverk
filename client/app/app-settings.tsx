@@ -75,8 +75,8 @@ export default function AppSettingsScreen() {
                   title="Accounts"
                   subtitle={
                     auth.state?.user
-                      ? `Signed in as ${auth.state.user.username}. Who may use this server, and from where.`
-                      : 'Who may use this server, and from where'
+                      ? `Signed in as ${auth.state.user.username}. Who may use this server.`
+                      : 'Who may use this server'
                   }
                   accessory={chevron}
                 />

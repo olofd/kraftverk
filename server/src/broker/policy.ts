@@ -3,8 +3,8 @@ import { commandRefusal } from '@kraftverk/protocol';
 /**
  * Who may publish what on the broker.
  *
- * Anyone may connect: a station authenticates with credentials it fetched from
- * the Sydpower cloud, which we cannot predict. But **no one but the server may
+ * Anyone may connect: a P280 connects with no username and no password, so
+ * there is nothing to check a station by. But **no one but the server may
  * command a station**, and not even the server may send the one frame that
  * destroys it.
  */

@@ -5,6 +5,8 @@
  * attacks look different: one machine trying many names, and many machines
  * trying one. Five failures are free; after that each one locks the key for
  * twice as long as the last, from a minute up to fifteen. A success clears both.
+ * Checking your current password, to change it, is counted the same way: a
+ * borrowed session must not be a way to guess it without limit.
  *
  * In memory, deliberately. A restart forgets the count, which costs an
  * attacker nothing they could not get by waiting, and keeps a login attempt
@@ -90,8 +92,30 @@ export class LoginLimiter {
   }
 }
 
-/** The two keys a login attempt is counted under. */
-export const limiterKeys = (clientIp: string | null, username: string) => [
-  `ip:${clientIp ?? 'unknown'}`,
-  `user:${username.toLowerCase()}`,
+/**
+ * The two keys a login attempt is counted under.
+ *
+ * The address is an IPv6 caller's /64, not the full address: one home
+ * connection is handed a whole /64, so counting single addresses would give
+ * every attacker eighteen quintillion fresh starts.
+ *
+ * The username is counted separately for the home network. Otherwise anyone
+ * on the internet who knows your username could keep it locked, and lock you
+ * out of your own server from your own sofa. Guessing from the home network is
+ * still slowed, by its own count and by the address.
+ */
+export const limiterKeys = (clientIp: string | null, username: string, onHomeNetwork: boolean) => [
+  `ip:${addressKey(clientIp)}`,
+  `user${onHomeNetwork ? '@home' : ''}:${username.toLowerCase()}`,
 ];
+
+function addressKey(ip: string | null): string {
+  if (!ip) return 'unknown';
+  if (!ip.includes(':')) return ip;
+  // Expand `::` so the first four groups are the /64 whatever the spelling.
+  const [head = '', tail = ''] = ip.split('::');
+  const left = head ? head.split(':') : [];
+  const right = ip.includes('::') ? (tail ? tail.split(':') : []) : [];
+  const groups = [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right];
+  return `${groups.slice(0, 4).map((group) => group.replace(/^0+(?=.)/, '')).join(':')}::/64`;
+}

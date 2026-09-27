@@ -17,6 +17,7 @@ import {
   getUser,
   listUsers,
   markLoggedIn,
+  passwordMatches,
   readSession,
   SESSION_LIFETIME_MS,
   setPassword,
@@ -67,19 +68,6 @@ export type Access = {
 };
 
 const accessByRequest = new WeakMap<Request, Access>();
-
-/**
- * The signed-in account behind a request that passed the gate.
- *
- * Throws rather than returning null: every route behind the gate has an
- * account by construction, and one that somehow did not must not carry on as
- * nobody in particular — least of all once data is scoped to its owner.
- */
-export function userOf(c: Context): User {
-  const user = accessByRequest.get(c.req.raw)?.user;
-  if (!user) throw new HTTPException(401, { message: 'Log in to use this server.' });
-  return user;
-}
 
 /** Who is acting, for the audit log. */
 export function actorOf(c: Context): string {
@@ -138,6 +126,13 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
     return result;
   };
 
+  /**
+   * The signed-in account behind a request, or a 401.
+   *
+   * Throws rather than returning null: every route behind the gate has an
+   * account by construction, and one that somehow did not must not carry on as
+   * nobody in particular.
+   */
   const requireUser = (c: Context): User => {
     const { user } = access(c);
     if (!user) throw new HTTPException(401, { message: 'Log in to use this server.' });
@@ -209,6 +204,10 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
     if (!trust.onHomeNetwork) {
       throw new HTTPException(403, { message: `The first account can only be created from the home network. ${trust.reason}.` });
     }
+    // Before the body, and before the slow hash `createFirstUser` starts with:
+    // once there is an account this route has nothing left to do, and must not
+    // be a way to make the server hash passwords for anyone who asks.
+    if (countUsers() > 0) throw new HTTPException(409, { message: 'This server already has an administrator. Log in instead.' });
     const { username, password } = await parse(c, credentials);
     const user = await createFirstUser(username, password).catch(rethrow);
     const { token } = createSession(user.id, trust.clientIp, c.req.header('user-agent') ?? null);
@@ -221,7 +220,7 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
   auth.post('/login', async (c) => {
     const { trust } = access(c);
     const { username, password } = await parse(c, credentials);
-    const keys = limiterKeys(trust.clientIp, username);
+    const keys = limiterKeys(trust.clientIp, username, trust.onHomeNetwork);
 
     const wait = limiter.wait(keys);
     if (wait > 0) {
@@ -238,6 +237,8 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
     }
 
     limiter.succeeded(keys);
+    // Whatever session this browser held before, it holds this one instead.
+    endSession(getCookie(c, SESSION_COOKIE));
     const { token } = createSession(user.id, trust.clientIp, c.req.header('user-agent') ?? null);
     writeCookie(c, token);
     audit({ at: now(), kind: 'auth.login', actor: user.username, resource: user.id, summary: `${user.username} logged in`, detail: { clientIp: trust.clientIp, reason: trust.reason } });
@@ -255,10 +256,21 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
   /** Your own password. Needs the current one: a borrowed, unlocked browser should not be enough. */
   auth.post('/password', async (c) => {
     const user = requireUser(c);
+    const { trust } = access(c);
     const { current, next: password } = await parse(c, z.object({ current: z.string().min(1).max(256), next: z.string().min(1).max(256) }));
-    if (!(await verifyLogin(user.username, current))) {
+    // Counted like a login: otherwise a borrowed session could guess the
+    // current password here without limit, and then keep the account.
+    const keys = limiterKeys(trust.clientIp, user.username, trust.onHomeNetwork);
+    const wait = limiter.wait(keys);
+    if (wait > 0) {
+      c.header('Retry-After', String(Math.ceil(wait / 1000)));
+      return c.json({ error: `Too many wrong passwords. Try again in ${Math.ceil(wait / 60_000)} min.` }, 429);
+    }
+    if (!(await passwordMatches(user.id, current))) {
+      limiter.failed(keys);
       throw new HTTPException(403, { message: 'The current password is not right' });
     }
+    limiter.succeeded(keys);
     await setPassword(user.id, password, getCookie(c, SESSION_COOKIE)).catch(rethrow);
     audit({ at: now(), kind: 'user.password', actor: user.username, resource: user.id, summary: `${user.username} changed their password; their other sessions were signed out` });
     return c.json({ ok: true });

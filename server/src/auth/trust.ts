@@ -48,7 +48,7 @@ export type TrustInput = {
 };
 
 export type Trust = {
-  /** On the home network, by the rules above. Whether that is enough to skip the login is a setting. */
+  /** On the home network, by the rules above. Never enough to skip the login. */
   onHomeNetwork: boolean;
   /** The address to rate-limit and to write in the audit log. Never a basis for trust on its own. */
   clientIp: string | null;

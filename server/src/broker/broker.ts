@@ -211,7 +211,7 @@ export class StationBroker {
             keepalive: packet.keepalive ?? 0,
             clean: packet.clean ?? true,
             username: packet.username ?? null,
-            // Never the password itself: a station's is a Sydpower cloud credential.
+            // Never the password itself. A P280 sends none, but another client may.
             passwordBytes: packet.password?.length ?? 0,
             will: packet.will
               ? {
@@ -263,8 +263,9 @@ export class StationBroker {
           return done(Object.assign(new Error('Identifier rejected'), { returnCode: 2 }), null);
         }
 
-        // Stations authenticate with cloud-issued credentials nobody can
-        // predict, so everyone else is let in — and then held to `policy.ts`.
+        // A P280 connects with no username and no password — seen, not
+        // assumed — so there is nothing to check a station by. Everyone else
+        // is let in, and then held to `policy.ts`.
         done(null, true);
       },
 

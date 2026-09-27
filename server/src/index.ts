@@ -7,7 +7,7 @@ import { logger } from 'hono/logger';
 import { HTTPException } from 'hono/http-exception';
 import { z, ZodError } from 'zod';
 
-import { isActuator, validateConfig as validatePluginConfig } from '@kraftverk/plugin-sdk';
+import { isActuator, secretFields, validateConfig as validatePluginConfig } from '@kraftverk/plugin-sdk';
 
 import pkg from '../package.json' with { type: 'json' };
 import { ActionGateway, CONFIRMATION_PHRASE } from './actions/gateway.ts';
@@ -44,6 +44,7 @@ import { BleHost, BleLink } from './transport/ble.ts';
 import { MqttHost } from './transport/mqtt.ts';
 import {
   commandRefusal,
+  describeCommand,
   describeRegisters,
   fromHex,
   parseFrame,
@@ -412,11 +413,9 @@ app.use('*', async (c, next) => (c.req.path === '/api/status' ? next() : logger(
 /**
  * Which browsers may talk to this server.
  *
- * Reflecting whatever origin asks is the same as no policy at all: the home
- * network may use this server without logging in, and one of its routes
- * switches mains power. Any page in any tab could list the devices and throw
- * the relay, because the browser would have been told the answer was fine to
- * read.
+ * Reflecting whatever origin asks is the same as no policy at all: with the
+ * session a cookie, any page in any tab could act as whoever is signed in —
+ * list the devices, throw the relay — and read the answers.
  *
  * Loopback and private ranges are allowed because that is where this app
  * legitimately runs: Metro on `localhost:8081`, and the same app opened from a
@@ -629,6 +628,7 @@ api.post('/station/bind', async (c) => {
 
   const target = bindTarget(deviceId);
   await connections.bind(target, stationId(id));
+  auditDevice(c, 'station.bound', target, `Linked to station ${id}`);
   const session = connections.get(target);
 
   return c.json({
@@ -644,6 +644,7 @@ api.post('/station/unbind', async (c) => {
 
   const target = bindTarget(deviceId);
   await connections.unbind(target);
+  auditDevice(c, 'station.unbound', target, 'Unlinked from its station');
 
   return c.json({ deviceId: target, boundId: null, connected: false });
 });
@@ -899,6 +900,7 @@ diag.post('/raw', async (c) => {
   const refusal = commandRefusal(frame);
   if (refusal) throw new HTTPException(400, { message: refusal });
   await link.send(frame);
+  auditDevice(c, 'station.raw', bindTarget(deviceId), `Sent a raw frame: ${describeCommand(frame)}`, { hex: toHex(frame) });
   return c.json({
     sent: toHex(frame),
     to: link.boundId,
@@ -1002,7 +1004,7 @@ plugins.patch('/:id/config', async (c) => {
   const id = c.req.param('id');
   if (!host.instance(id)) throw new HTTPException(404, { message: 'No such plugin' });
 
-  await host.setConfig(id, await body(c, z.record(z.string(), z.unknown())));
+  await host.setConfig(id, await body(c, z.record(z.string(), z.unknown())), actorOf(c));
   if (host.enabled(id)) await host.restart(id);
 
   return c.json({ ok: true, status: host.instance(id)?.status, health: host.health(id) });
@@ -1015,7 +1017,7 @@ plugins.post('/:id/enable', async (c) => {
   if (!host.instance(id)) throw new HTTPException(404, { message: 'No such plugin' });
 
   const { enabled } = await body(c, z.object({ enabled: z.boolean() }));
-  await host.setEnabled(id, enabled);
+  await host.setEnabled(id, enabled, actorOf(c));
   return c.json({ ok: true, status: host.instance(id)?.status, health: host.health(id) });
 });
 
@@ -1096,14 +1098,14 @@ plugins.post('/:id/grants', async (c) => {
     });
   }
 
-  host.setGrant(id, name, granted);
+  host.setGrant(id, name, granted, actorOf(c));
   return c.json({ ok: true, grants: host.grants(id) });
 });
 
 plugins.post('/:id/provider', async (c) => {
   const id = c.req.param('id');
   if (!host.instance(id)) throw new HTTPException(404, { message: 'No such plugin' });
-  host.setActiveProvider('gridRelay', id);
+  host.setActiveProvider('gridRelay', id, actorOf(c));
   return c.json({ ok: true, activeProvider: host.activeProvider('gridRelay') });
 });
 
@@ -1187,20 +1189,16 @@ api.get('/admin/reset', async (c) =>
  * Empties the database.
  *
  * Every device, every sample, every plugin's configuration and secrets, the
- * capability grants and the whole audit timeline. It is the blank canvas a
- * fresh install starts from, and it cannot be undone from here.
+ * capability grants and the whole audit timeline. Accounts stay, so the server
+ * is never left unclaimed. It cannot be undone from here.
  *
- * Guarded by a passphrase kept in a file on the server, because the API has no
- * authentication of its own and this is the most destructive thing it can do.
- * Anyone who can edit that file could delete the database directly, so the
- * secret is not pretending to be a security boundary against them — it is there
- * so that reaching this route needs something more than reaching the network.
+ * Needs a signed-in account *and* a passphrase kept in a file on the server:
+ * this is the most destructive thing the API can do, and a stolen session
+ * alone should not be enough to do it. Anyone who can edit that file could
+ * delete the database directly, so the passphrase is not a boundary against
+ * them — it is there so that this takes more than an account.
  */
 api.post('/admin/reset', async (c) => {
-  /*
-    The gate has already required a login; this takes the name now, because
-    the account it belongs to is about to be deleted along with everything else.
-  */
   const who = accounts.requireUser(c).username;
   const expected = await resetSecret();
   if (!expected) {
@@ -1471,7 +1469,9 @@ api.patch('/devices/:id/p280/settings', async (c) => {
   // The same schema the global route used, so the register-68 guard and every
   // other bound still stand on the device-scoped path.
   const patch = await body(c, StationSettingsPatchSchema);
-  return c.json(await session.driver.applySettings(patch));
+  const result = await session.driver.applySettings(patch);
+  auditDevice(c, 'station.settings', session.deviceId, `Changed ${Object.keys(patch).join(', ') || 'nothing'} on the station`, patch);
+  return c.json(result);
 });
 
 /**
@@ -1511,9 +1511,16 @@ api.patch('/devices/:id/settings', async (c) => {
 
   // Only what was asked for is sent: applying the full set would rewrite every
   // register on the station to change one of them.
-  const values = await registry.writeSettings(
-    found.record,
-    Object.fromEntries(Object.keys(patch).map((key) => [key, validated.value[key]]))
+  const changed = Object.fromEntries(Object.keys(patch).map((key) => [key, validated.value[key]]));
+  const values = await registry.writeSettings(found.record, changed);
+  // Secret fields are never written to the timeline, only that they changed.
+  const secret = new Set(secretFields(found.settings.schema));
+  auditDevice(
+    c,
+    'device.settings',
+    id,
+    `Changed ${Object.keys(changed).join(', ')} on "${found.record.name}"`,
+    Object.fromEntries(Object.entries(changed).map(([key, value]) => [key, secret.has(key) ? '(secret)' : value]))
   );
   return c.json({ values });
 });
@@ -1616,7 +1623,9 @@ api.post('/devices/:id/control/:control', async (c) => {
       });
     }
     const port = PortIdSchema.parse(controlId);
-    return c.json(await session.driver.setPort(port, value === true));
+    const result = await session.driver.setPort(port, value === true);
+    auditDevice(c, 'station.port', found.record.id, `Switched ${port} ${value === true ? 'on' : 'off'} on "${found.record.name}"`);
+    return c.json(result);
   }
 
   if (control.capability === 'gridRelay.switch') {

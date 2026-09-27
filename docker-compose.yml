@@ -53,7 +53,7 @@ services:
       - "3333:3333"
 
     environment:
-      # sim | device — the simulator, or real hardware over WiFi/MQTT.
+      # sim | mqtt — the simulator, or real hardware over Wi-Fi through the broker.
       # `ble` is deliberately absent: see docs/DOCKER.md. Overridable without
       # editing this file: `STATION_DRIVER=device docker compose up -d`, or a
       # line in `.env` beside it.

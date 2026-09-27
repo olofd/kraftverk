@@ -253,7 +253,7 @@ export class PluginHost {
    * Persists configuration. Secrets are split off into their own table and are
    * never written into the config JSON, so an export or a log cannot leak them.
    */
-  async setConfig(id: string, values: Record<string, unknown>): Promise<void> {
+  async setConfig(id: string, values: Record<string, unknown>, by = 'user'): Promise<void> {
     const instance = this.#instances.get(id);
     if (!instance) throw new Error(`No plugin ${id}`);
 
@@ -291,10 +291,10 @@ export class PluginHost {
       )
       .run(id, json, id, now);
 
-    audit({ at: now, kind: 'plugin.configured', actor: 'user', summary: `${id} configuration changed` });
+    audit({ at: now, kind: 'plugin.configured', actor: by, summary: `${id} configuration changed` });
   }
 
-  async setEnabled(id: string, enabled: boolean): Promise<void> {
+  async setEnabled(id: string, enabled: boolean, by = 'user'): Promise<void> {
     const now = new Date().toISOString();
     db()
       .query(
@@ -303,7 +303,7 @@ export class PluginHost {
       )
       .run(id, id, enabled ? 1 : 0, now);
 
-    audit({ at: now, kind: enabled ? 'plugin.enabled' : 'plugin.disabled', actor: 'user', summary: id });
+    audit({ at: now, kind: enabled ? 'plugin.enabled' : 'plugin.disabled', actor: by, summary: id });
     if (enabled) await this.start(id);
     else await this.stop(id);
   }
@@ -327,7 +327,7 @@ export class PluginHost {
       .map((row) => row.capability as CapabilityName);
   }
 
-  setGrant(id: string, capability: CapabilityName, granted: boolean): void {
+  setGrant(id: string, capability: CapabilityName, granted: boolean, by = 'user'): void {
     const now = new Date().toISOString();
     if (granted) {
       db()
@@ -340,7 +340,7 @@ export class PluginHost {
     audit({
       at: now,
       kind: granted ? 'grant.given' : 'grant.revoked',
-      actor: 'user',
+      actor: by,
       summary: `${capability} ${granted ? 'granted to' : 'revoked from'} ${id}`,
       detail: { actuator: isActuator(capability) },
     });
@@ -360,7 +360,7 @@ export class PluginHost {
     return candidates.length === 1 ? candidates[0]!.manifest.id : null;
   }
 
-  setActiveProvider(resource: Resource, id: string): void {
+  setActiveProvider(resource: Resource, id: string, by = 'user'): void {
     const now = new Date().toISOString();
     db()
       .query(
@@ -368,7 +368,7 @@ export class PluginHost {
           'ON CONFLICT (resource) DO UPDATE SET plugin_id = excluded.plugin_id, chosen_at = excluded.chosen_at'
       )
       .run(resource, id, now);
-    audit({ at: now, kind: 'provider.chosen', actor: 'user', resource, summary: `${id} now owns ${resource}` });
+    audit({ at: now, kind: 'provider.chosen', actor: by, resource, summary: `${id} now owns ${resource}` });
   }
 
   /** The implementation registered for a capability, if the plugin is running. */

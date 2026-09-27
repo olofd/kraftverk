@@ -103,7 +103,7 @@ evidence rather than a hypothesis:
 | Event | Level | Tells you |
 | --- | --- | --- |
 | `tcp.open` / `tcp.close` | info (debug from loopback) | Whether the station opened a socket **at all** — before any MQTT. A close without a handshake is reported with the bytes exchanged. Loopback is the server or a port check, never a station |
-| `mqtt.connected` | info (debug for the server) | Client id, keepalive, clean session, username, password *length* (never the password — it is a Sydpower cloud credential), will. The server's own session is journalled at debug: it reports its comings and goings itself |
+| `mqtt.connected` | info (debug for the server) | Client id, keepalive, clean session, username, password *length* (never the password; a P280 sends none), will. The server's own session is journalled at debug: it reports its comings and goings itself |
 | `mqtt.subscribe` | info | What it subscribed to. A station that has not subscribed to `<MAC>/client/request/#` cannot receive commands |
 | `station.online` | info | Which station, from where, and **how long it had been away** |
 | `station.offline` | warn | How long the session lasted and **why it ended**: a clean DISCONNECT, the TCP connection closed without one, a keepalive timeout, a socket error, replaced by a new connection with the same client id, or the broker shutting down |
@@ -120,9 +120,9 @@ them.
 
 ## Who may do what
 
-The broker accepts any connection: a station authenticates with credentials it
-fetched from the Sydpower cloud, which cannot be predicted. What a connection
-may *publish* is another matter.
+The broker accepts any connection: a P280 connects with no username and no
+password, so there is nothing to recognise a station by but the client id it
+chooses. What a connection may *publish* is another matter.
 
 - **Only the server may command a station.** Publishing to any topic with
   `client/request` in it — `<MAC>/client/request/...`, and every variation on

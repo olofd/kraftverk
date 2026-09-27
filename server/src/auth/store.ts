@@ -118,12 +118,19 @@ export async function createUser(username: string, password: string, createdBy: 
   const now = new Date().toISOString();
   const id = randomUUID();
   const hash = await hashPassword(password);
-  db()
-    .query(
-      `INSERT INTO users (id, username, password_hash, created_at, created_by, password_changed_at)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    )
-    .run(id, username, hash, now, createdBy, now);
+  try {
+    db()
+      .query(
+        `INSERT INTO users (id, username, password_hash, created_at, created_by, password_changed_at)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(id, username, hash, now, createdBy, now);
+  } catch (error) {
+    // The same name added twice at once: both passed the check above while
+    // the first was still hashing.
+    if (String(error).includes('UNIQUE')) throw new AccountError(`There is already a user called ${username}`);
+    throw error;
+  }
   return getUser(id)!;
 }
 
@@ -174,6 +181,12 @@ export async function verifyLogin(username: string, password: string): Promise<U
   if (!ok) return null;
   db().query('UPDATE users SET last_login_at = ? WHERE id = ?').run(new Date().toISOString(), row.id);
   return toUser({ ...row, last_login_at: new Date().toISOString() });
+}
+
+/** Whether this is the account's password — to confirm a change, which is not a login. */
+export async function passwordMatches(userId: string, password: string): Promise<boolean> {
+  const row = db().query<{ password_hash: string }, [string]>('SELECT password_hash FROM users WHERE id = ?').get(userId);
+  return row ? checkPassword(password, row.password_hash) : false;
 }
 
 /**
