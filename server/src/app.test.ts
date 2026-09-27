@@ -17,7 +17,7 @@ import { LegacyStationImport } from './devices/legacy.ts';
 import { DeviceRegistry } from './devices/registry.ts';
 import { relayStation } from './devices/relay-pairing.ts';
 import { SimulatorDriver } from './drivers/simulator.ts';
-import { closeDb, db } from './history/db.ts';
+import { closeDb, db, openSecret } from './history/db.ts';
 import { Sampler } from './history/sampler.ts';
 import { PluginHost } from './plugins/host.ts';
 
@@ -317,8 +317,12 @@ describe('plugins', () => {
     const stored = await as('/plugins/test.keys/config');
     expect(stored.body?.secretsSet).toContain('apiKey');
     expect(stored.text).not.toContain('the-real-secret-value');
-    const row = db().query("SELECT value FROM plugin_secret WHERE plugin_id = 'test.keys' AND field = 'apiKey'").get() as { value: string };
-    expect(row.value).toContain('the-real-secret-value');
+    // Read back as the server reads it: sealed, where KRAFTVERK_SECRET_KEY is set.
+    const row = db().query("SELECT value, encrypted FROM plugin_secret WHERE plugin_id = 'test.keys' AND field = 'apiKey'").get() as {
+      value: string;
+      encrypted: number;
+    };
+    expect(openSecret(row.value, row.encrypted === 1)).toBe('the-real-secret-value');
 
     // A placeholder is good once, and only for what it was issued for.
     expect((await as('/plugins/test.keys/config', { method: 'PATCH', body: config })).status).toBe(400);
