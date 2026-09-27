@@ -4,9 +4,10 @@
 # which declares `validate` and `image` among its stages, and adds whatever
 # comes after. Nothing here deploys.
 #
-# On the default branch, the images that passed are pushed to this project's
-# own container registry, tagged with the commit, so that what is deployed is
-# exactly what was tested.
+# The images are pushed to this project's own container registry, tagged with
+# the commit, with the build cache beside them. Whatever deploys them must
+# depend on `stack`, whose smoke test is what says they are fit to run — what
+# is deployed is then exactly what was tested.
 
 variables:
   SERVER_IMAGE: $CI_REGISTRY_IMAGE/server:$CI_COMMIT_SHA
@@ -31,7 +32,9 @@ validate:
 
 stack:
   stage: image
-  needs: [validate]
+  # Beside validate, not after it: they are independent, and whatever comes
+  # next needs both.
+  needs: []
   image: docker:29
   services:
     - docker:29-dind
@@ -43,16 +46,23 @@ stack:
     KRAFTVERK_PUBLIC_BIND: 0.0.0.0
   before_script:
     - apk add --no-cache bash curl coreutils
+    - echo "$CI_REGISTRY_PASSWORD" | docker login --username "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - docker buildx create --use --driver docker-container --name kraftverk > /dev/null
   script:
-    - docker build --target server --tag "$SERVER_IMAGE" .
-    - docker build --target web --tag "$WEB_IMAGE" .
-    - SMOKE_BUILD=0 KRAFTVERK_SERVER_IMAGE="$SERVER_IMAGE" KRAFTVERK_WEB_IMAGE="$WEB_IMAGE" bash scripts/ci/smoke-docker.sh
+    # BuildKit, with its cache kept in the registry: an unchanged lockfile
+    # means the dependency layers are not rebuilt — and are pushed as the very
+    # same blobs, so a host that has them does not download them again.
+    # Pushed straight from BuildKit for that reason, and loaded for the smoke
+    # test; nothing deploys an image until that test has passed.
     - |
-      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
-        echo "$CI_REGISTRY_PASSWORD" | docker login --username "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-        docker push "$SERVER_IMAGE"
-        docker push "$WEB_IMAGE"
-      fi
+      for target in server web; do
+        if [ "$target" = server ]; then tag="$SERVER_IMAGE"; else tag="$WEB_IMAGE"; fi
+        docker buildx build --target "$target" --tag "$tag" --push --load \
+          --cache-from "type=registry,ref=$CI_REGISTRY_IMAGE/cache:$target" \
+          --cache-to "type=registry,ref=$CI_REGISTRY_IMAGE/cache:$target,mode=max,image-manifest=true,oci-mediatypes=true" \
+          .
+      done
+    - SMOKE_BUILD=0 KRAFTVERK_SERVER_IMAGE="$SERVER_IMAGE" KRAFTVERK_WEB_IMAGE="$WEB_IMAGE" bash scripts/ci/smoke-docker.sh
   artifacts:
     when: on_failure
     expire_in: 7 days

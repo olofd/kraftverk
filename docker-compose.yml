@@ -56,7 +56,7 @@ services:
 
     healthcheck:
       test: ["CMD", "bun", "--eval", "process.exit((await fetch('http://127.0.0.1:3883/health').catch(() => null))?.ok ? 0 : 1)"]
-      interval: 30s
+      interval: 10s
       timeout: 5s
       start_period: 10s
       retries: 3
@@ -116,7 +116,7 @@ services:
     restart: unless-stopped
     depends_on:
       kraftverk:
-        condition: service_healthy
+        condition: service_started
 
     ports:
       # The home network's entrance: open this in a browser.

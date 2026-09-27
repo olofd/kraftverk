@@ -15,15 +15,17 @@
 # --- dependencies ------------------------------------------------------------
 
 # Node 24, as package.json's volta pin: the lockfile is written by its npm.
-FROM node:24.21.0-bookworm-slim AS deps
+FROM node:24.21.0-bookworm-slim AS manifests
 
 WORKDIR /app
 
 # Every workspace's manifest has to exist for `npm ci` to validate the lockfile,
-# even the ones this image will never run — and only the manifests, so that
-# this stage, and the large layer it produces, is rebuilt when dependencies
-# change rather than whenever any source file does. A workspace added later
-# and missing here makes `npm ci` fail loudly.
+# even the ones an image will never run — and only the manifests, so that both
+# installs below, and the large layers they produce, are rebuilt when
+# dependencies change rather than whenever any source file does. With the build
+# cache CI keeps, an unchanged lockfile then means byte-identical layers, which
+# a host that already has them does not download again. A workspace added
+# later and missing here makes `npm ci` fail loudly.
 COPY package.json package-lock.json ./
 COPY client/package.json ./client/
 COPY server/package.json ./server/
@@ -34,6 +36,8 @@ COPY packages/ui/package.json ./packages/ui/
 COPY packages/devices/aferiy-p280/package.json ./packages/devices/aferiy-p280/
 COPY packages/plugins/fake-grid-relay/package.json ./packages/plugins/fake-grid-relay/
 COPY packages/plugins/tuya-local-grid-relay/package.json ./packages/plugins/tuya-local-grid-relay/
+
+FROM manifests AS deps
 
 # --omit=optional is what leaves Bluetooth out, and it is the whole reason the
 # server declares noble optional. noble drags in four native builds — node-gyp,
@@ -62,14 +66,7 @@ RUN npm ci --omit=dev --omit=optional --ignore-scripts \
 
 # --- the app, built for the web ----------------------------------------------
 
-FROM node:24.21.0-bookworm-slim AS web-build
-
-WORKDIR /app
-
-COPY package.json package-lock.json ./
-COPY client/package.json ./client/
-COPY server/package.json ./server/
-COPY packages ./packages
+FROM manifests AS web-build
 
 # Every workspace, dev tools included — Expo is what does the export, and the
 # app imports extensions' screens from their own packages, which a
@@ -77,6 +74,7 @@ COPY packages ./packages
 # Bluetooth builds out; nothing the export uses needs an install script.
 RUN npm ci --ignore-scripts
 
+COPY packages ./packages
 COPY client ./client
 
 # The app finds its server at whatever address it was loaded from, and asks for
@@ -104,7 +102,7 @@ COPY --from=web-build /app/client/dist /srv
 # in front forwards there. docker-compose.yml publishes 8090 on loopback only.
 EXPOSE 8080 8090
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
   CMD wget -q --spider http://127.0.0.1:8080/ || exit 1
 
 # --- server ------------------------------------------------------------------
@@ -161,7 +159,7 @@ VOLUME ["/data"]
 # `bun` directly, not `npm start`: that script goes through scripts/run-bun.mjs,
 # which exists to find Bun on a developer's machine and needs Node to do it.
 # The broker's service replaces this check with its own in docker-compose.yml.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
   CMD bun --eval "process.exit((await fetch('http://127.0.0.1:' + (process.env.PORT ?? 3333) + '/api/health').catch(() => null))?.ok ? 0 : 1)"
 
 CMD ["bun", "run", "server/src/index.ts"]

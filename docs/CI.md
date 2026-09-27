@@ -8,7 +8,7 @@ Only one of them deploys.
 | Defined in | `.github/workflows/ci.yml` | `ci/gitlab/validate.yml` |
 | Typecheck, tests, the web build | ✅ | ✅ |
 | Both images, the stack started and attacked | ✅ | ✅ |
-| Images pushed to a registry | — | `main` only, to the project's private registry |
+| Images pushed to a registry | — | To the project's private registry, with a build cache so unchanged layers are neither rebuilt nor downloaded again |
 | Deploy | never | `main` only, once everything above has passed |
 
 The checks are the same on purpose: something that passes on one and fails on
