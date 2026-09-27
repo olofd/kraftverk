@@ -267,6 +267,17 @@ describe('devices', () => {
     expect(entries.find((entry) => entry.kind === 'relay.paired')?.actor).toBe('olof');
   });
 
+  test('a second station never takes the relay from the one it already feeds', async () => {
+    const first = await addStation();
+    await addStation();
+    expect((await as('/grid')).body?.stationDeviceId).toBe(first.id);
+
+    // Nor does an import — which is not even offered once a station is saved.
+    legacyBinding = { kind: 'ble', id: 'AABBCCDDEEFF', boundAt: '2026-01-01T00:00:00.000Z' };
+    expect((await as('/migration/station/import', { method: 'POST', body: {} })).status).toBe(409);
+    expect((await as('/grid')).body?.stationDeviceId).toBe(first.id);
+  });
+
   test('nothing is stored that no driver provides', async () => {
     const refused = [
       { type: 'power-station', driver: 'something-else', name: 'Ghost' },

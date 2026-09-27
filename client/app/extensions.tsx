@@ -307,7 +307,8 @@ function PluginSetup({
     app to say which of the others it feeds instead.
   */
   const { devices } = useDevices();
-  const stations = devices.filter((device) => device.record.type === 'power-station');
+  // Whatever reports its AC input: that reading is what a switch is proved by.
+  const stations = devices.filter((device) => device.capabilities?.includes('acInput'));
   const fedStation = stations.find((station) => station.id === grid?.stationDeviceId) ?? null;
   const configured =
     config !== null && isComplete(config.schema, draft, config.secretsSet) && plugin.status !== 'needs-configuration';
