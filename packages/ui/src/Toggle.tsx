@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Animated } from 'react-native';
+import { ActivityIndicator, Animated } from 'react-native';
 import { XStack, useTheme } from 'tamagui';
 
 import { haptic } from './haptics';
@@ -29,16 +29,38 @@ export type ToggleProps = {
   checked: boolean;
   onCheckedChange: (next: boolean) => void;
   disabled?: boolean;
+  /**
+   * The device has not confirmed this position yet.
+   *
+   * Drawn in the position that was asked for, with a spinner in the thumb, and
+   * locked: a second tap before the first is confirmed is a second write to
+   * hardware that is still busy with the first.
+   */
+  pending?: boolean;
 };
 
-export function Toggle({ checked, onCheckedChange, disabled }: ToggleProps) {
+export function Toggle({ checked, onCheckedChange, disabled, pending }: ToggleProps) {
   const theme = useTheme();
+  const locked = disabled || pending;
 
   /*
+    One value moves the thumb *and* colours the track, so the two cannot
+    disagree.
+
+    The track used to be coloured by Tamagui's `transition`, apart from the
+    thumb. That driver animates a colour by flipping a shared value between 0
+    and 1 and rebuilding the interpolation from the colour it last saw, and
+    once that bookkeeping fell out of step it replayed a green-to-grey change
+    on later renders with nothing having changed. Telemetry re-renders the
+    screen every two seconds, so an outlet that was off drew its switch green,
+    then grey, over and over, while the thumb sat still at off. It was
+    reproduced after a change that was set and set back within a moment; with
+    the colour taken from the thumb's own value, no trigger can do it again.
+
     Driven by `Animated` rather than a Tamagui `animation` prop, for the same
     reason `AnimatedNumber` is: the animation types come from the app's own
-    Tamagui config, and a shared package cannot import the app. This works on
-    web and native without either.
+    Tamagui config, and a shared package cannot import the app. Not on the
+    native driver, which cannot animate a colour; this is one small view.
   */
   const slide = useRef(new Animated.Value(checked ? 1 : 0)).current;
 
@@ -46,15 +68,19 @@ export function Toggle({ checked, onCheckedChange, disabled }: ToggleProps) {
     Animated.timing(slide, {
       toValue: checked ? 1 : 0,
       duration: 160,
-      useNativeDriver: true,
+      useNativeDriver: false,
     }).start();
   }, [checked, slide]);
+
+  const off = theme.backgroundPress?.val ?? '#d1d5db';
+  const on = theme.success?.val ?? '#16a34a';
 
   return (
     <XStack
       role="switch"
       aria-checked={checked}
-      aria-disabled={disabled}
+      aria-disabled={locked}
+      aria-busy={pending || undefined}
       /*
         Focusable, and announced correctly — but **not yet operable from a
         keyboard**, which is a known gap rather than an oversight.
@@ -67,40 +93,53 @@ export function Toggle({ checked, onCheckedChange, disabled }: ToggleProps) {
         that looks like support and is not, this keeps the honest semantics and
         the gap is written down.
       */
-      tabIndex={disabled ? -1 : 0}
+      tabIndex={locked ? -1 : 0}
       focusVisibleStyle={{ outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid' }}
       width={TRACK_WIDTH}
       height={TRACK_HEIGHT}
       borderRadius={999}
-      padding={INSET}
-      alignItems="center"
-      justifyContent="flex-start"
-      backgroundColor={checked ? '$success' : '$backgroundPress'}
+      // Dimmed when it cannot be used at all; a pending switch stays bright,
+      // because the position it shows is the one being made true.
       opacity={disabled ? 0.5 : 1}
-      cursor={disabled ? 'default' : 'pointer'}
-      transition="fast"
-      pressStyle={disabled ? undefined : { opacity: 0.8 }}
+      cursor={locked ? 'default' : 'pointer'}
+      pressStyle={locked ? undefined : { opacity: 0.8 }}
       onPress={() => {
-        if (disabled) return;
+        if (locked) return;
         haptic();
         onCheckedChange(!checked);
       }}
     >
-      {/*
-        A transform rather than a layout change: it can be animated on the
-        native driver, and it cannot reflow the row the switch sits in.
-      */}
       <Animated.View
         style={{
-          width: THUMB,
-          height: THUMB,
+          flex: 1,
           borderRadius: 999,
-          backgroundColor: theme.white?.val ?? '#ffffff',
-          transform: [
-            { translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [0, TRAVEL] }) },
-          ],
+          padding: INSET,
+          justifyContent: 'center',
+          backgroundColor: slide.interpolate({ inputRange: [0, 1], outputRange: [off, on] }),
         }}
-      />
+      >
+        {/*
+          A transform rather than a layout change: it cannot reflow the row the
+          switch sits in.
+        */}
+        <Animated.View
+          style={{
+            width: THUMB,
+            height: THUMB,
+            borderRadius: 999,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: theme.white?.val ?? '#ffffff',
+            transform: [
+              { translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [0, TRAVEL] }) },
+            ],
+          }}
+        >
+          {pending ? (
+            <ActivityIndicator size="small" color={theme.muted?.val} style={{ transform: [{ scale: 0.7 }] }} />
+          ) : null}
+        </Animated.View>
+      </Animated.View>
     </XStack>
   );
 }

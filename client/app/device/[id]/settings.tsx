@@ -9,8 +9,9 @@ import { getApiBaseUrl } from '@kraftverk/api-client';
 
 import { Pressable } from '../../../src/components/Pressable';
 import { DeviceShell } from '../../../src/features/devices/DeviceShell';
-import { useDeviceConnection } from '../../../src/features/devices/connection';
+import { useDeviceConnection, type DeviceConnection } from '../../../src/features/devices/connection';
 import { GenericSettings, Manage } from '../../../src/features/devices/panels';
+import { WriteRefused } from '../../../src/features/devices/WriteRefused';
 import { screensFor } from '../../../src/devices/screens';
 import { useDevices } from '../../../src/state/DevicesProvider';
 
@@ -31,15 +32,28 @@ export default function DeviceSettingsScreen() {
 
   return (
     <DeviceShell id={id} tab="settings">
-      {(device) => (
-        <>
-          <WhereWritesGo device={device} />
-          <Settings device={device} />
-          <Advanced device={device} />
-          {editable ? <Manage device={device} /> : null}
-        </>
-      )}
+      {(device) => <DeviceSettings device={device} editable={editable} />}
     </DeviceShell>
+  );
+}
+
+/**
+ * One connection for the whole screen.
+ *
+ * The line saying where writes go and the settings under it each opened their
+ * own, so the screen polled the server twice every two seconds — and only one
+ * of the two knew a write was in flight.
+ */
+function DeviceSettings({ device, editable }: { device: SavedDeviceView; editable: boolean }) {
+  const connection = useDeviceConnection(device);
+
+  return (
+    <>
+      <WhereWritesGo device={device} connection={connection} />
+      <Settings device={device} connection={connection} />
+      <Advanced device={device} />
+      {editable ? <Manage device={device} /> : null}
+    </>
   );
 }
 
@@ -52,8 +66,8 @@ export default function DeviceSettingsScreen() {
  * device-scoped one lost it, on a device where one wrong register permanently
  * bricks the machine. It is one line, and it is worth the space.
  */
-function WhereWritesGo({ device }: { device: SavedDeviceView }) {
-  const { status, readOnly, simulated, direct } = useDeviceConnection(device);
+function WhereWritesGo({ device, connection }: { device: SavedDeviceView; connection: DeviceConnection }) {
+  const { status, readOnly, simulated, direct } = connection;
   const theme = useTheme();
 
   if (!status) return null;
@@ -78,9 +92,7 @@ function WhereWritesGo({ device }: { device: SavedDeviceView }) {
   );
 }
 
-function Settings({ device }: { device: SavedDeviceView }) {
-  const connection = useDeviceConnection(device);
-
+function Settings({ device, connection }: { device: SavedDeviceView; connection: DeviceConnection }) {
   const screens = screensFor(device);
   // No model panel, or nothing answering yet: the generic form is drawn from
   // the schema the device publishes, and works for anything.
@@ -89,16 +101,20 @@ function Settings({ device }: { device: SavedDeviceView }) {
   const Panel = screens.settings;
 
   return (
-    <Panel
-      status={connection.status}
-      settings={connection.settings}
-      readOnly={connection.readOnly}
-      simulated={connection.simulated}
-      direct={connection.direct}
-      apiBaseUrl={getApiBaseUrl()}
-      updateSettings={connection.updateSettings}
-      togglePort={connection.togglePort}
-    />
+    <>
+      <WriteRefused message={connection.writeError} />
+      <Panel
+        status={connection.status}
+        settings={connection.settings}
+        pending={connection.pending}
+        readOnly={connection.readOnly}
+        simulated={connection.simulated}
+        direct={connection.direct}
+        apiBaseUrl={getApiBaseUrl()}
+        updateSettings={connection.updateSettings}
+        togglePort={connection.togglePort}
+      />
+    </>
   );
 }
 

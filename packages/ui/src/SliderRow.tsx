@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Slider, Text, XStack, YStack } from 'tamagui';
 
+import { PendingMark } from './PendingMark';
+
 type Props = {
   title: string;
   subtitle?: string;
@@ -10,6 +12,11 @@ type Props = {
   step?: number;
   format?: (value: number) => string;
   disabled?: boolean;
+  /**
+   * The device has not confirmed `value` yet: the thumb stays where it was
+   * released, and cannot be moved again until it does.
+   */
+  pending?: boolean;
   /** Fired once on release, so we don't PATCH on every pixel of the drag. */
   onCommit: (value: number) => void;
 };
@@ -23,6 +30,7 @@ export function SliderRow({
   step = 1,
   format = (v) => String(v),
   disabled,
+  pending,
   onCommit,
 }: Props) {
   const [local, setLocal] = useState(value);
@@ -46,9 +54,12 @@ export function SliderRow({
             </Text>
           ) : null}
         </YStack>
-        <Text fontSize={15} fontWeight="700" color="$accent" fontVariant={['tabular-nums']}>
-          {format(local)}
-        </Text>
+        <YStack alignItems="flex-end" gap={2}>
+          <Text fontSize={15} fontWeight="700" color="$accent" fontVariant={['tabular-nums']}>
+            {format(local)}
+          </Text>
+          {pending ? <PendingMark /> : null}
+        </YStack>
       </XStack>
 
       <Slider
@@ -56,7 +67,8 @@ export function SliderRow({
         min={min}
         max={max}
         step={step}
-        disabled={disabled}
+        disabled={disabled || pending}
+        aria-busy={pending || undefined}
         value={[local]}
         onValueChange={([next]) => {
           setDragging(true);

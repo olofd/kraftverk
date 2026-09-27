@@ -11,6 +11,7 @@ import {
 import { AppState } from 'react-native';
 import axios from 'axios';
 
+import { useWriteGate } from '../lib/useWriteGate';
 import { useAuth } from './AuthProvider';
 
 import {
@@ -119,12 +120,30 @@ type DevicesContextValue = {
     value: boolean | number | string,
     confirmation?: string
   ) => Promise<void>;
+  /**
+   * The value a control was asked for, while its write is unconfirmed.
+   *
+   * `undefined` when nothing is in flight. While something is, the control
+   * shows this value and stays locked: the device has not said it happened.
+   */
+  pendingControl: (deviceId: string, controlId: string) => { value: unknown } | undefined;
 };
+
+/** One control on one device, as the write gate knows it. */
+const controlKey = (deviceId: string, controlId: string) => `${deviceId}\u0000${controlId}`;
 
 const DevicesContext = createContext<DevicesContextValue | null>(null);
 
 export function DevicesProvider({ children }: { children: ReactNode }) {
-  const { source, status, connection, settings, updateSettings, togglePort } = useDirectLink();
+  const {
+    source,
+    status,
+    connection,
+    settings,
+    updateSettings,
+    togglePort,
+    pending: linkPending,
+  } = useDirectLink();
   const editable = source === 'server';
   // Polls only once the server will answer: a list fetched before signing in
   // is a stream of 401s, which is not news, and not the server being down.
@@ -153,6 +172,13 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
    */
   const pending = useRef(0);
 
+  /*
+    Controls being written. A list asked for before a control's write finished
+    shows the device as it was before it — the relay back in the position it
+    was just switched from — so it is not shown. See `writeGate.ts` in `@kraftverk/ui`.
+  */
+  const [gate, writes] = useWriteGate<string>();
+
   const load = useCallback(
     async (signal?: AbortSignal) => {
       if (!polling) {
@@ -162,9 +188,10 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         setLoading(false);
         return;
       }
+      const askedAt = gate.epoch;
       try {
         const next = await fetchDeviceList(signal);
-        if (pending.current === 0) setServed(next);
+        if (pending.current === 0 && gate.fresh(askedAt)) setServed(next);
         setUnreachable(false);
         setError(null);
       } catch (err) {
@@ -179,7 +206,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         setLoading(false);
       }
     },
-    [polling]
+    [gate, polling]
   );
 
   useEffect(() => {
@@ -313,8 +340,24 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       confirmation?: string
     ) => {
       if (editable) {
-        await invokeDeviceControl(device.id, controlId, value, confirmation);
-        await load();
+        try {
+          await gate.run({ [controlKey(device.id, controlId)]: value }, async () => {
+            // Answered once the device has confirmed it — or refused, or failed.
+            await invokeDeviceControl(device.id, controlId, value, confirmation);
+            /*
+              Then the list as the device reports it now, read *inside* the
+              write: the control stays on the value asked for until this lands.
+              Reading it afterwards left a moment in which the control showed
+              the reading from before the write.
+            */
+            const next = await fetchDeviceList().catch(() => null);
+            if (next && pending.current === 0) setServed(next);
+          });
+        } catch (error) {
+          // Refused or failed: show the device as it is, not as it was asked to be.
+          await load();
+          throw error;
+        }
         return;
       }
 
@@ -322,9 +365,24 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       if (control?.capability !== 'outlets') {
         throw new Error('That control needs the server; this app is holding the link itself.');
       }
+      // The direct link holds its own writes, so its switch is locked the same way.
       await togglePort(controlId as PortId, value === true);
     },
-    [editable, load, togglePort]
+    [editable, gate, load, togglePort]
+  );
+
+  const pendingControl = useCallback<DevicesContextValue['pendingControl']>(
+    (deviceId, controlId) => {
+      if (!editable) {
+        // The one device a direct link owns is its station, and its switches are
+        // held by the link itself, which already shows the asked-for state.
+        const port = status?.ports.find((candidate) => candidate.id === controlId);
+        return port && linkPending.ports.has(port.id) ? { value: port.enabled } : undefined;
+      }
+      const key = controlKey(deviceId, controlId);
+      return writes.pending.has(key) ? { value: writes.pending.get(key) } : undefined;
+    },
+    [editable, linkPending, status, writes.pending]
   );
 
   /**
@@ -424,6 +482,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       readSettings,
       writeSettings,
       invoke,
+      pendingControl,
     }),
     [
       add,
@@ -433,6 +492,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       invoke,
       load,
       loading,
+      pendingControl,
       readSettings,
       reachability,
       remove,

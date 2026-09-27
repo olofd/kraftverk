@@ -16,6 +16,7 @@ import {
   SectionLabel,
   ToggleRow,
   DeviceCard,
+  PendingMark,
   formatMeasurement,
   haptic,
   readingFor,
@@ -67,20 +68,16 @@ export function Overview({ device }: { device: SavedDeviceView }) {
  * demands, so a tap here has exactly the authority a manual switch does.
  */
 export function Controls({ device }: { device: SavedDeviceView }) {
-  const { invoke } = useDevices();
-  const [busy, setBusy] = useState<string | null>(null);
+  const { invoke, pendingControl } = useDevices();
   const [error, setError] = useState<string | null>(null);
 
   const run = useCallback(
     async (control: ControlSpec, value: boolean | number | string) => {
-      setBusy(control.id);
       setError(null);
       try {
         await invoke(device, control.id, value, control.dangerous ? ACTUATOR_CONFIRMATION : undefined);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'That did not work');
-      } finally {
-        setBusy(null);
       }
     },
     [device, invoke]
@@ -108,6 +105,10 @@ export function Controls({ device }: { device: SavedDeviceView }) {
           const reading = control.measurementKey
             ? readingFor(device.readings, control.measurementKey)
             : undefined;
+          // Until the device confirms it, a control shows what was asked for, locked.
+          const pending = pendingControl(device.id, control.id);
+          const value = pending ? pending.value : reading?.value;
+          const unavailable = !isOnline(device.health);
 
           return (
             <YStack key={control.id}>
@@ -116,32 +117,34 @@ export function Controls({ device }: { device: SavedDeviceView }) {
                 <ToggleRow
                   title={control.label}
                   subtitle={control.consequence}
-                  checked={reading?.value === true}
-                  disabled={!isOnline(device.health) || busy === control.id}
+                  checked={value === true}
+                  disabled={unavailable}
+                  pending={pending !== undefined}
                   onCheckedChange={(next) => request(control, next)}
                 />
               ) : control.kind === 'enum' && control.options ? (
                 <ModeRow
                   title={control.label}
                   subtitle={control.consequence}
-                  value={String(reading?.value ?? control.options[0]?.value ?? '')}
+                  value={String(value ?? control.options[0]?.value ?? '')}
                   options={control.options}
-                  disabled={!isOnline(device.health) || busy === control.id}
+                  disabled={unavailable}
+                  pending={pending !== undefined}
                   onChange={(next) => request(control, next)}
                 />
               ) : (
                 <Row
                   title={control.label}
                   subtitle={control.consequence}
-                  disabled={!isOnline(device.health) || busy === control.id}
+                  disabled={unavailable}
                   accessory={
-                    <Button
-                      size="$2"
-                      disabled={!isOnline(device.health) || busy === control.id}
-                      onPress={() => request(control, true)}
-                    >
-                      Run
-                    </Button>
+                    pending ? (
+                      <PendingMark />
+                    ) : (
+                      <Button size="$2" disabled={unavailable} onPress={() => request(control, true)}>
+                        Run
+                      </Button>
+                    )
                   }
                 />
               )}

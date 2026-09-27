@@ -6,7 +6,7 @@ import { Row, RowSeparator, ToggleRow } from '@kraftverk/ui';
 import { SegmentedControl } from '@kraftverk/ui';
 import { SliderRow } from '@kraftverk/ui';
 import { formatDuration } from '@kraftverk/ui';
-import type { LedMode } from '@kraftverk/protocol';
+import type { LedMode, StationSettings as StationSettingsValues } from '@kraftverk/protocol';
 import type { StationScreenProps } from './contract';
 
 const LED_MODES = [
@@ -104,10 +104,14 @@ function nearestDelay(minutes: number): (typeof CHARGE_DELAYS)[number]['value'] 
 export function StationSettings({
   status,
   settings,
+  pending,
   readOnly,
   direct,
   updateSettings,
 }: StationScreenProps) {
+  // Every control is locked from the tap until the station confirms it.
+  const waiting = (key: keyof StationSettingsValues) => pending.settings.has(key);
+
   if (!settings) {
     return (
       <Card alignItems="center" paddingVertical="$8" gap="$4">
@@ -153,6 +157,7 @@ export function StationSettings({
             max={100}
             step={1}
             format={(v) => `${v}%`}
+            pending={waiting('chargeLimit')}
             onCommit={(chargeLimit) => void updateSettings({ chargeLimit })}
           />
           <RowSeparator />
@@ -164,6 +169,7 @@ export function StationSettings({
             max={50}
             step={1}
             format={(v) => `${v}%`}
+            pending={waiting('dischargeFloor')}
             onCommit={(dischargeFloor) => void updateSettings({ dischargeFloor })}
           />
         </Card>
@@ -179,6 +185,7 @@ export function StationSettings({
             subtitle="How hard the station pulls from the wall."
             value={settings.acChargingWatts}
             options={AC_CHARGING_POWER}
+            pending={waiting('acChargingWatts')}
             onChange={(acChargingWatts) => void updateSettings({ acChargingWatts })}
           />
           <RowSeparator />
@@ -186,6 +193,7 @@ export function StationSettings({
             title="Silent AC charging"
             subtitle="Slower, but keeps the fans down."
             checked={settings.acSilentCharging}
+            pending={waiting('acSilentCharging')}
             onCheckedChange={(acSilentCharging) => void updateSettings({ acSilentCharging })}
           />
           <RowSeparator />
@@ -194,6 +202,7 @@ export function StationSettings({
             subtitle="What is plugged into the XT90 input. Changing this also moves the current ceiling below."
             value={settings.dcInputType}
             options={DC_INPUT_TYPES}
+            pending={waiting('dcInputType')}
             onChange={(dcInputType) => void updateSettings({ dcInputType })}
           />
           <RowSeparator />
@@ -211,6 +220,7 @@ export function StationSettings({
             max={settings.dcInputType === 'dc' ? 8 : 20}
             step={1}
             format={(v) => `${v} A`}
+            pending={waiting('maxChargingCurrent')}
             onCommit={(maxChargingCurrent) => void updateSettings({ maxChargingCurrent })}
           />
           <RowSeparator />
@@ -229,6 +239,7 @@ export function StationSettings({
             }
             value={nearestDelay(settings.stopChargeAfterMinutes)}
             options={CHARGE_DELAYS}
+            pending={waiting('stopChargeAfterMinutes')}
             onChange={(stopChargeAfterMinutes) => void updateSettings({ stopChargeAfterMinutes })}
           />
         </Card>
@@ -241,6 +252,7 @@ export function StationSettings({
             title="LED mode"
             value={settings.ledMode}
             options={LED_MODES}
+            pending={waiting('ledMode')}
             onChange={(ledMode) => void updateSettings({ ledMode })}
           />
         </Card>
@@ -254,6 +266,7 @@ export function StationSettings({
             subtitle="Turn the inverter off after this long with no load."
             value={settings.acStandbyMinutes}
             options={STANDBY_LONG}
+            pending={waiting('acStandbyMinutes')}
             onChange={(acStandbyMinutes) => void updateSettings({ acStandbyMinutes })}
           />
           <RowSeparator />
@@ -261,6 +274,7 @@ export function StationSettings({
             title="DC no-load standby"
             value={settings.dcStandbyMinutes}
             options={STANDBY_LONG}
+            pending={waiting('dcStandbyMinutes')}
             onChange={(dcStandbyMinutes) => void updateSettings({ dcStandbyMinutes })}
           />
           <RowSeparator />
@@ -269,6 +283,7 @@ export function StationSettings({
             subtitle="Short by design — USB switches itself off quickly with nothing drawing."
             value={settings.usbStandbyMinutes}
             options={STANDBY_USB}
+            pending={waiting('usbStandbyMinutes')}
             onChange={(usbStandbyMinutes) => void updateSettings({ usbStandbyMinutes })}
           />
           <RowSeparator />
@@ -282,6 +297,7 @@ export function StationSettings({
             subtitle="Idle time before the station powers down completely."
             value={settings.sleepMinutes}
             options={SLEEP}
+            pending={waiting('sleepMinutes')}
             onChange={(sleepMinutes) => void updateSettings({ sleepMinutes })}
           />
         </Card>
@@ -296,12 +312,14 @@ export function StationSettings({
             subtitle="How long the station's own display stays lit."
             value={settings.screenRestSeconds}
             options={SCREEN_TIMEOUTS}
+            pending={waiting('screenRestSeconds')}
             onChange={(screenRestSeconds) => void updateSettings({ screenRestSeconds })}
           />
           <RowSeparator />
           <ToggleRow
             title="Key sound"
             checked={settings.keySound}
+            pending={waiting('keySound')}
             onCheckedChange={(keySound) => void updateSettings({ keySound })}
           />
           <RowSeparator />
@@ -310,6 +328,7 @@ export function StationSettings({
             subtitle="Display preference only — the station has no register for this."
             value={settings.temperatureUnit}
             options={TEMPERATURE_UNITS}
+            pending={waiting('temperatureUnit')}
             onChange={(temperatureUnit) => void updateSettings({ temperatureUnit })}
           />
           {/*

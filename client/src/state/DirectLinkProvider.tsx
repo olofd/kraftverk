@@ -41,6 +41,15 @@ import {
   writeRememberedStation,
   type RememberedStation,
 } from '../lib/preferences';
+import { useWriteGate } from '../lib/useWriteGate';
+import {
+  portKey,
+  settingsKeys,
+  withPending,
+  writesInFlight,
+  type StationWriteKey,
+  type WritesInFlight,
+} from '@kraftverk/device-aferiy-p280';
 import type {
   PortId,
   StationSettings,
@@ -138,6 +147,10 @@ type DirectLinkContextValue = {
   /** The kraftverk servers this app knows about, and which one is in use. */
   servers: Servers;
   direct: DirectLink;
+  /** Writes the station has not confirmed yet; already shown in `status` and `settings`. */
+  pending: WritesInFlight;
+  /** Why the last change did not happen, until the next one is asked for. */
+  writeError: string | null;
   refresh: () => Promise<void>;
   updateSettings: (patch: StationSettingsPatch) => Promise<void>;
   togglePort: (id: PortId, enabled: boolean) => Promise<void>;
@@ -208,6 +221,7 @@ export function DirectLinkProvider({ children }: { children: ReactNode }) {
     initialSource() === 'direct' ? 'idle' : 'connecting'
   );
   const [error, setError] = useState<string | null>(null);
+  const [writeError, setWriteError] = useState<string | null>(null);
   const [source, setSourceState] = useState<LinkSource>(initialSource);
 
   const [serverList, setServerList] = useState<SavedServer[]>(readServers);
@@ -225,9 +239,13 @@ export function DirectLinkProvider({ children }: { children: ReactNode }) {
   const [remembered, setRemembered] = useState<RememberedStation | null>(readRememberedStation);
   const [resuming, setResuming] = useState(false);
 
-  // Settings edits are optimistic; this guards the poll loop from stomping on
-  // a value the user is still dragging.
-  const pendingSettings = useRef(0);
+  /*
+    Writes in flight. While one is, the client's own updates are not shown: a
+    switch reads the station just before it writes, and that reading — the old
+    state — used to reach the screen and flip the switch back for a moment. The
+    write's confirmed readback is shown instead. See `writeGate.ts` in `@kraftverk/ui`.
+  */
+  const [gate, writes] = useWriteGate<StationWriteKey>();
 
   const transportRef = useRef<DirectTransport | null>(null);
   const clientRef = useRef<StationClient | null>(null);
@@ -267,8 +285,10 @@ export function DirectLinkProvider({ children }: { children: ReactNode }) {
         pollMs: DIRECT_POLL_MS,
         readOnly: true,
         onUpdate: (nextStatus, nextSettings) => {
-          setStatus(nextStatus);
-          if (pendingSettings.current === 0) setSettings(nextSettings);
+          if (gate.pending.size === 0) {
+            setStatus(nextStatus);
+            setSettings(nextSettings);
+          }
           setConnection('online');
           setError(null);
           syncDirect();
@@ -284,7 +304,7 @@ export function DirectLinkProvider({ children }: { children: ReactNode }) {
     }
 
     return { transport: transportRef.current, client: clientRef.current! };
-  }, [syncDirect]);
+  }, [gate, syncDirect]);
 
   /** Stores (or clears) which station this app last held a link to. */
   const remember = useCallback((record: RememberedStation | null) => {
@@ -729,48 +749,51 @@ export function DirectLinkProvider({ children }: { children: ReactNode }) {
     await clientRef.current?.poll();
   }, [source]);
 
-  const updateSettings = useCallback(async (patch: StationSettingsPatch) => {
-    const client = clientRef.current;
-    if (!client) throw new Error('No station connected');
+  const updateSettings = useCallback(
+    async (patch: StationSettingsPatch) => {
+      const client = clientRef.current;
+      if (!client) throw new Error('No station connected');
 
-    setSettings((current) => (current ? { ...current, ...patch } : current));
-    pendingSettings.current += 1;
-    try {
-      setSettings(await client.applySettings(patch));
-      setError(null);
-    } catch (err) {
-      const message = describeError(err);
-      if (message) setError(message);
-      // Rejected or unreachable — resync so the UI stops lying.
-      setSettings(client.settings() ?? null);
-    } finally {
-      pendingSettings.current -= 1;
-    }
-  }, []);
+      setWriteError(null);
+      try {
+        // A readback, not an echo: one setting can move another on this hardware.
+        // Stored before the write lets go of the control — see `useWriteGate`.
+        await gate.run(settingsKeys(patch), async () => {
+          setSettings(await client.applySettings(patch));
+        });
+      } catch (err) {
+        const message = describeError(err);
+        if (message) setWriteError(message);
+        // Rejected or unreachable: show what the station says now, not what was asked.
+        setSettings(client.settings() ?? null);
+      }
+    },
+    [gate]
+  );
 
-  const togglePort = useCallback(async (id: PortId, enabled: boolean) => {
-    const client = clientRef.current;
-    if (!client) throw new Error('No station connected');
+  const togglePort = useCallback(
+    async (id: PortId, enabled: boolean) => {
+      const client = clientRef.current;
+      if (!client) throw new Error('No station connected');
 
-    setStatus((current) =>
-      current
-        ? {
-            ...current,
-            ports: current.ports.map((port) =>
-              port.id === id ? { ...port, enabled, watts: enabled ? port.watts : 0 } : port
-            ),
-          }
-        : current
-    );
-    try {
-      setStatus(await client.setPort(id, enabled));
-      setError(null);
-    } catch (err) {
-      const message = describeError(err);
-      if (message) setError(message);
-      setStatus(client.status() ?? null);
-    }
-  }, []);
+      setWriteError(null);
+      try {
+        // Resolves only once the station reports the output in its new state.
+        await gate.run({ [portKey(id)]: enabled }, async () => {
+          setStatus(await client.setPort(id, enabled));
+        });
+      } catch (err) {
+        const message = describeError(err);
+        if (message) setWriteError(message);
+        setStatus(client.status() ?? null);
+      }
+    },
+    [gate]
+  );
+
+  // What is being written, shown as asked until the station confirms it.
+  const shown = useMemo(() => withPending(status, settings, writes.pending), [settings, status, writes.pending]);
+  const pending = useMemo(() => writesInFlight(writes.pending), [writes.pending]);
 
   /**
    * On a direct link there is no server to ask for a version, but the screens
@@ -838,8 +861,10 @@ export function DirectLinkProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<DirectLinkContextValue>(
     () => ({
-      status,
-      settings,
+      status: shown.status,
+      settings: shown.settings,
+      pending,
+      writeError,
       version: directVersion,
       connection,
       error,
@@ -857,13 +882,14 @@ export function DirectLinkProvider({ children }: { children: ReactNode }) {
       directVersion,
       servers,
       error,
+      pending,
       refresh,
       setSource,
-      settings,
+      shown,
       source,
-      status,
       togglePort,
       updateSettings,
+      writeError,
     ]
   );
 

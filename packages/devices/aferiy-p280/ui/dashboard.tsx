@@ -52,6 +52,7 @@ const LED_LABELS: Record<LedMode, string> = {
 export function StationDashboard({
   status,
   settings,
+  pending,
   version,
   apiBaseUrl,
   direct,
@@ -215,6 +216,7 @@ export function StationDashboard({
                   value={settings?.ledMode ?? 'off'}
                   options={LED_MODE_OPTIONS}
                   disabled={!settings}
+                  pending={pending.settings.has('ledMode')}
                   onChange={(ledMode) => void updateSettings({ ledMode })}
                 />
               ) : (
@@ -222,6 +224,7 @@ export function StationDashboard({
                   title={port.label}
                   subtitle={port.enabled ? `Drawing ${formatWatts(port.watts)}` : 'Off'}
                   checked={port.enabled}
+                  pending={pending.ports.has(port.id)}
                   onCheckedChange={(next) => void togglePort(port.id, next)}
                 />
               )}

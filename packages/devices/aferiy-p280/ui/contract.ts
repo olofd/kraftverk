@@ -6,6 +6,10 @@ import type {
   StationStatus,
 } from '@kraftverk/protocol';
 
+import type { WritesInFlight } from '../src/writes';
+
+export type { WritesInFlight };
+
 /**
  * What the app hands a P280 screen.
  *
@@ -61,6 +65,8 @@ export type ProtocolScreenProps = {
 export type StationScreenProps = {
   status: StationStatus | null;
   settings: StationSettings | null;
+  /** Writes the station has not confirmed yet. See `WritesInFlight`. */
+  pending: WritesInFlight;
   /** True when every write is being refused. */
   readOnly: boolean;
   simulated: boolean;

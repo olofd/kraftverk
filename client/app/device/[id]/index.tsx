@@ -9,6 +9,7 @@ import type { SavedDeviceView } from '@kraftverk/api-client';
 import { DeviceShell } from '../../../src/features/devices/DeviceShell';
 import { useDeviceConnection } from '../../../src/features/devices/connection';
 import { Controls, History, Overview, Readings } from '../../../src/features/devices/panels';
+import { WriteRefused } from '../../../src/features/devices/WriteRefused';
 import { screensFor } from '../../../src/devices/screens';
 import { useDirectLink } from '../../../src/state/DirectLinkProvider';
 
@@ -70,9 +71,11 @@ function Dashboard({ device }: { device: SavedDeviceView }) {
 
   return (
     <>
+      <WriteRefused message={connection.writeError} />
       <Panel
         status={connection.status}
         settings={connection.settings}
+        pending={connection.pending}
         version={connection.version}
         readOnly={connection.readOnly}
         simulated={connection.simulated}

@@ -1,6 +1,7 @@
 import { Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { haptic } from './haptics';
+import { PendingMark } from './PendingMark';
 
 type Option<T extends string | number> = { value: T; label: string };
 
@@ -9,6 +10,12 @@ type Props<T extends string | number> = {
   subtitle?: string;
   value: T;
   options: readonly Option<T>[];
+  disabled?: boolean;
+  /**
+   * The device has not confirmed `value` yet: it is shown as chosen, and the
+   * control is locked until it does.
+   */
+  pending?: boolean;
   onChange: (value: T) => void;
 };
 
@@ -17,6 +24,8 @@ export function SegmentedControl<T extends string | number>({
   subtitle,
   value,
   options,
+  disabled,
+  pending,
   onChange,
 }: Props<T>) {
   /*
@@ -29,13 +38,17 @@ export function SegmentedControl<T extends string | number>({
     makes it unreadable. Reading the value off the theme keeps both schemes honest.
   */
   const theme = useTheme();
+  const locked = disabled || pending;
 
   return (
-    <YStack gap="$3" paddingHorizontal="$4" paddingVertical="$3">
+    <YStack gap="$3" paddingHorizontal="$4" paddingVertical="$3" opacity={disabled ? 0.45 : 1}>
       <YStack gap={2}>
-        <Text fontSize={15} fontWeight="600" color="$color">
-          {title}
-        </Text>
+        <XStack alignItems="center" justifyContent="space-between" gap="$2">
+          <Text fontSize={15} fontWeight="600" color="$color" flexShrink={1}>
+            {title}
+          </Text>
+          {pending ? <PendingMark /> : null}
+        </XStack>
         {subtitle ? (
           <Text fontSize={12} color="$muted" lineHeight={17}>
             {subtitle}
@@ -49,6 +62,7 @@ export function SegmentedControl<T extends string | number>({
         padding={3}
         gap={3}
         role="radiogroup"
+        aria-busy={pending || undefined}
       >
         {options.map((option) => {
           const selected = option.value === value;
@@ -58,16 +72,23 @@ export function SegmentedControl<T extends string | number>({
               flex={1}
               role="radio"
               aria-checked={selected}
+              aria-disabled={locked || undefined}
               justifyContent="center"
               paddingVertical="$2"
               borderRadius="$2"
-              cursor="pointer"
+              cursor={locked ? 'default' : 'pointer'}
+              /*
+                No `transition`. Tamagui's driver animates a colour by flipping
+                a shared value and rebuilding the interpolation from the colour
+                it last saw, and once that falls out of step it replays an old
+                colour on later renders — which is what made the switches
+                flash. The choice changes at once instead.
+              */
               backgroundColor={selected ? theme.card?.val : 'transparent'}
-              transition="fast"
-              hoverStyle={selected ? undefined : { backgroundColor: '$backgroundHover' }}
-              pressStyle={{ opacity: 0.7 }}
+              hoverStyle={selected || locked ? undefined : { backgroundColor: '$backgroundHover' }}
+              pressStyle={locked ? undefined : { opacity: 0.7 }}
               onPress={() => {
-                if (selected) return;
+                if (locked || selected) return;
                 haptic();
                 onChange(option.value);
               }}

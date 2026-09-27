@@ -42,15 +42,20 @@ export const RowSeparator = () => <Separator borderColor="$borderColor" marginHo
 type ToggleRowProps = Omit<RowProps, 'accessory'> & {
   checked: boolean;
   onCheckedChange: (next: boolean) => void;
+  /** The device has not confirmed `checked` yet. See `Toggle`. */
+  pending?: boolean;
 };
 
-export function ToggleRow({ checked, onCheckedChange, disabled, ...rest }: ToggleRowProps) {
+export function ToggleRow({ checked, onCheckedChange, disabled, pending, subtitle, ...rest }: ToggleRowProps) {
   return (
     <Row
       {...rest}
+      // Said in words as well as by the spinner: the switch shows where it is
+      // going, and this says it is not there yet.
+      subtitle={pending ? `${checked ? 'Switching on' : 'Switching off'} — waiting for the device` : subtitle}
       disabled={disabled}
       accessory={
-        <Toggle checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
+        <Toggle checked={checked} disabled={disabled} pending={pending} onCheckedChange={onCheckedChange} />
       }
     />
   );

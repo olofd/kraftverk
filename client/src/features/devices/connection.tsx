@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppState } from 'react-native';
 
 import {
@@ -18,6 +18,16 @@ import type {
   VersionInfo,
 } from '@kraftverk/api-client';
 
+import {
+  portKey,
+  settingsKeys,
+  withPending,
+  writesInFlight,
+  type StationWriteKey,
+  type WritesInFlight,
+} from '@kraftverk/device-aferiy-p280';
+
+import { useWriteGate } from '../../lib/useWriteGate';
 import { useAuth } from '../../state/AuthProvider';
 import { useDirectLink } from '../../state/DirectLinkProvider';
 
@@ -57,6 +67,14 @@ export type DeviceConnection = {
   /** Why the last read or write failed, when one did. */
   error: string | null;
   /**
+   * Why the last change did not happen, until the next one is asked for.
+   *
+   * Apart from `error`, which polling also sets and clears: a refused or
+   * unconfirmed write puts its control back where the device says it is, and
+   * without the reason on screen that looks like the control bouncing.
+   */
+  writeError: string | null;
+  /**
    * Why there is nothing to show, when the server can explain it.
    *
    * Distinct from `error`: nothing went wrong, the server simply is not holding
@@ -65,6 +83,11 @@ export type DeviceConnection = {
    * transport never started. A screen should say that rather than spin.
    */
   reason: string | null;
+  /**
+   * Writes the station has not confirmed yet. Their values are already shown in
+   * `status` and `settings`; the controls they touch stay locked until then.
+   */
+  pending: WritesInFlight;
   refresh: () => Promise<void>;
   updateSettings: (patch: StationSettingsPatch) => Promise<void>;
   togglePort: (id: PortId, enabled: boolean) => Promise<void>;
@@ -90,6 +113,7 @@ export function useDeviceConnection(device: SavedDeviceView | null): DeviceConne
   const [settings, setSettings] = useState<StationSettings | null>(null);
   const [readOnly, setReadOnly] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [writeError, setWriteError] = useState<string | null>(null);
   const [version, setVersion] = useState<VersionInfo | null>(null);
 
   useEffect(() => {
@@ -102,16 +126,24 @@ export function useDeviceConnection(device: SavedDeviceView | null): DeviceConne
     return () => controller.abort();
   }, [pollable]);
 
-  /** Guards the poll from stomping on a value the user is still dragging. */
-  const pending = useRef(0);
+  /*
+    Writes in flight, and which answers are too old to show. A poll asked for
+    before a write finished describes the station as it was before the write —
+    the server's own switch reads the outputs just before it writes — and
+    showing it flipped a switch back for a moment after every tap. See
+    `writeGate.ts` in `@kraftverk/ui`.
+  */
+  const [gate, writes] = useWriteGate<StationWriteKey>();
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
       if (!pollable || !deviceId) return;
+      const askedAt = gate.epoch;
       try {
         const state = await fetchStationDevice(deviceId, signal);
+        if (!gate.fresh(askedAt)) return;
         setStatus(state.status);
-        if (pending.current === 0) setSettings(state.settings);
+        setSettings(state.settings);
         setReadOnly(state.readOnly);
         setError(null);
       } catch (err) {
@@ -120,7 +152,7 @@ export function useDeviceConnection(device: SavedDeviceView | null): DeviceConne
         setError(message);
       }
     },
-    [deviceId, pollable]
+    [deviceId, gate, pollable]
   );
 
   useEffect(() => {
@@ -163,24 +195,23 @@ export function useDeviceConnection(device: SavedDeviceView | null): DeviceConne
       if (!served) return link.updateSettings(patch);
       if (!deviceId) throw new Error('No device');
 
-      setSettings((current) => (current ? { ...current, ...patch } : current));
-      pending.current += 1;
+      setWriteError(null);
       try {
         // A readback, not an echo: one setting can move another on this hardware.
-        setSettings(await patchStationDevice(deviceId, patch));
+        // Stored before the write lets go of the control, so it never shows the
+        // value it had before — see `useWriteGate`.
+        await gate.run(settingsKeys(patch), async () => {
+          setSettings(await patchStationDevice(deviceId, patch));
+        });
         setError(null);
       } catch (err) {
         const message = describeError(err);
-        if (message) setError(message);
-        // Rejected or unreachable — resync so the UI stops lying.
-        await fetchStationDevice(deviceId)
-          .then((state) => setSettings(state.settings))
-          .catch(() => undefined);
-      } finally {
-        pending.current -= 1;
+        if (message) setWriteError(message);
+        // Rejected or unreachable: show what the station says now, not what was asked.
+        await load();
       }
     },
-    [deviceId, link, served]
+    [deviceId, gate, link, load, served]
   );
 
   const togglePort = useCallback(
@@ -188,30 +219,29 @@ export function useDeviceConnection(device: SavedDeviceView | null): DeviceConne
       if (!served) return link.togglePort(id, enabled);
       if (!deviceId) throw new Error('No device');
 
-      setStatus((current) =>
-        current
-          ? {
-              ...current,
-              ports: current.ports.map((port) =>
-                port.id === id ? { ...port, enabled, watts: enabled ? port.watts : 0 } : port
-              ),
-            }
-          : current
-      );
+      setWriteError(null);
       try {
         // Through the device's own control route, so a port switch passes the
-        // same gateway every other physical action does.
-        await invokeDeviceControl(deviceId, id, enabled);
+        // same gateway every other physical action does. The server answers
+        // only once the station reports the output in its new state, and with
+        // that status — which is what the switch shows next.
+        await gate.run({ [portKey(id)]: enabled }, async () => {
+          const confirmed = await invokeDeviceControl(deviceId, id, enabled);
+          if ('ports' in confirmed) setStatus(confirmed);
+        });
         setError(null);
       } catch (err) {
         const message = describeError(err);
-        if (message) setError(message);
-      } finally {
+        if (message) setWriteError(message);
         await load();
       }
     },
-    [deviceId, link, load, served]
+    [deviceId, gate, link, load, served]
   );
+
+  // What is being written, shown as asked until the station confirms it.
+  const shown = useMemo(() => withPending(status, settings, writes.pending), [settings, status, writes.pending]);
+  const pending = useMemo(() => writesInFlight(writes.pending), [writes.pending]);
 
   const refresh = useCallback(async () => {
     if (!served) return link.refresh();
@@ -222,13 +252,15 @@ export function useDeviceConnection(device: SavedDeviceView | null): DeviceConne
     () =>
       served
         ? {
-            status,
-            settings,
+            status: shown.status,
+            settings: shown.settings,
+            pending,
             version,
             readOnly,
             simulated: status?.link.mode === 'simulator',
             direct: false,
             error,
+            writeError,
             /*
               The registry already wrote the reason onto the device itself, so
               the card on the canvas and the device's own screen agree.
@@ -239,7 +271,7 @@ export function useDeviceConnection(device: SavedDeviceView | null): DeviceConne
               during the moment before the first telemetry arrives — a reason
               given for something that is not happening.
             */
-            reason: status || !device || isOnline(device.health) ? null : device.health.detail,
+            reason: shown.status || !device || isOnline(device.health) ? null : device.health.detail,
             refresh,
             updateSettings,
             togglePort,
@@ -249,28 +281,18 @@ export function useDeviceConnection(device: SavedDeviceView | null): DeviceConne
             // one station — so this device's state is that link's state.
             status: link.status,
             settings: link.settings,
+            pending: link.pending,
             version: link.version,
             readOnly: link.direct.readOnly,
             simulated: false,
             direct: true,
             error: link.error,
+            writeError: link.writeError,
             reason: null,
             refresh: link.refresh,
             updateSettings: link.updateSettings,
             togglePort: link.togglePort,
           },
-    [
-      device,
-      error,
-      link,
-      readOnly,
-      refresh,
-      served,
-      settings,
-      status,
-      togglePort,
-      updateSettings,
-      version,
-    ]
+    [device, error, link, pending, readOnly, refresh, served, shown, togglePort, updateSettings, version, writeError]
   );
 }
