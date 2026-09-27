@@ -58,6 +58,45 @@ import { PortIdSchema, PortPatchSchema, StationSettingsPatchSchema, type Version
 // First, so everything below is kept as well as printed. See `log.ts`.
 const serverLog = keepConsole(process.env.KRAFTVERK_LOG_DIR || resolve(import.meta.dirname, '../data/logs'));
 
+/*
+  Stopping, when asked to — registered before anything else starts.
+
+  In a container the server is process 1, and process 1 has no default action
+  for SIGTERM: without a handler, every deploy waited out Docker's ten-second
+  grace period and then killed it, database open. Registered this early
+  because startup takes seconds on a small NAS, and a stop that arrives
+  during it must be honoured too.
+
+  The work is whatever has been started by then — sampling, station links,
+  plugins — run together and bounded, so nothing that will not close can hold
+  the exit up; then the database is closed. The broker is left alone: it is
+  not ours to stop, and it keeps the station while we are gone.
+*/
+const stopWork: (() => unknown)[] = [];
+const onStop = (...work: (() => unknown)[]) => stopWork.push(...work);
+let stopping = false;
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  process.on(signal, () => {
+    if (stopping) return;
+    stopping = true;
+    const started = Date.now();
+    console.log(`[server] ${signal}: stopping. The broker keeps running.`);
+    const exit = (how: string) => {
+      console.log(`[server] Stopped ${how} in ${Date.now() - started} ms`);
+      try {
+        closeDb();
+      } finally {
+        process.exit(0);
+      }
+    };
+    const deadline = setTimeout(() => exit('at the deadline, with work unfinished'), 3000);
+    void Promise.allSettled(stopWork.map(async (work) => work())).then(() => {
+      clearTimeout(deadline);
+      exit('cleanly');
+    });
+  });
+}
+
 const PORT = Number(process.env.PORT ?? 3333);
 const HOST = process.env.HOST ?? '0.0.0.0';
 /** Where the broker listens for stations. Passed to a broker this server starts. */
@@ -1700,34 +1739,13 @@ app.onError((err, c) => {
   return c.json({ error: 'Internal server error' }, 500);
 });
 
-/*
-  Stopping, when asked to.
-
-  In a container the server is process 1, and process 1 has no default action
-  for SIGTERM: without this, every deploy waited out Docker's ten-second grace
-  period and then killed it — mid-write, database open. So: stop sampling,
-  close the station links, leave the broker (which is not ours to stop, and
-  keeps the station while we are gone), close the database, go. Bounded, so a
-  link that will not close cannot hold the exit up.
-*/
-let stopping = false;
-for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-  process.on(signal, () => {
-    if (stopping) return;
-    stopping = true;
-    console.log(`[server] ${signal}: stopping. The broker keeps running.`);
-    const exit = () => {
-      try {
-        closeDb();
-      } finally {
-        process.exit(0);
-      }
-    };
-    setTimeout(exit, 4000).unref();
-    sampler.stop();
-    void Promise.allSettled([connections.closeAll(), bus?.stop(), host.stopAll()]).then(exit);
-  });
-}
+// Everything is running: from here on, stopping also closes what was opened.
+onStop(
+  () => sampler.stop(),
+  () => connections.closeAll(),
+  () => bus?.stop(),
+  () => host.stopAll()
+);
 
 const open = connections.sessions.length;
 console.log(
