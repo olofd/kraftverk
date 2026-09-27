@@ -48,10 +48,11 @@ COPY client/package.json ./client/
 COPY server/package.json ./server/
 COPY packages ./packages
 
-# The client's whole tree, dev tools included — Expo is what does the export.
-# --ignore-scripts keeps the native Bluetooth builds out; nothing the export
-# uses needs an install script.
-RUN npm ci --ignore-scripts --workspace client --include-workspace-root
+# Every workspace, dev tools included — Expo is what does the export, and the
+# app imports extensions' screens from their own packages, which a
+# client-only install leaves unlinked. --ignore-scripts keeps the native
+# Bluetooth builds out; nothing the export uses needs an install script.
+RUN npm ci --ignore-scripts
 
 COPY client ./client
 
