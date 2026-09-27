@@ -193,6 +193,44 @@ const MIGRATIONS: { id: number; sql: string }[] = [
       );
     `,
   },
+  {
+    id: 5,
+    sql: `
+      /*
+        People who may use this server from outside the home network.
+
+        Every account is an administrator: there is one kind of person here,
+        the owner and whoever they trust with the house. The password is an
+        argon2id hash; the name is unique regardless of case, because "Olof"
+        and "olof" being two different accounts is a support call, not a
+        feature.
+      */
+      CREATE TABLE users (
+        id                  TEXT PRIMARY KEY,
+        username            TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        password_hash       TEXT NOT NULL,
+        created_at          TEXT NOT NULL,
+        created_by          TEXT,
+        password_changed_at TEXT NOT NULL,
+        last_login_at       TEXT
+      );
+
+      /*
+        Signed-in browsers. The token itself is never stored — only its SHA-256
+        — so a copy of this database cannot be replayed as a live session.
+      */
+      CREATE TABLE sessions (
+        token_hash   TEXT PRIMARY KEY,
+        user_id      TEXT NOT NULL,
+        created_at   TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        expires_at   TEXT NOT NULL,
+        client_ip    TEXT,
+        user_agent   TEXT
+      );
+      CREATE INDEX sessions_user ON sessions (user_id);
+    `,
+  },
 ];
 
 function migrate(handle: Db): void {

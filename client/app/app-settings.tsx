@@ -17,6 +17,7 @@ import type { VersionInfo } from '@kraftverk/api-client';
 import { completeUrl } from '../src/lib/servers';
 import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
+import { useAuth } from '../src/state/AuthProvider';
 import { useDevices } from '../src/state/DevicesProvider';
 import { useDirectLink } from '../src/state/DirectLinkProvider';
 
@@ -33,6 +34,7 @@ import { useDirectLink } from '../src/state/DirectLinkProvider';
 export default function AppSettingsScreen() {
   const { source, version: linkVersion } = useDirectLink();
   const { editable } = useDevices();
+  const auth = useAuth();
   const theme = useTheme();
 
   /*
@@ -68,6 +70,18 @@ export default function AppSettingsScreen() {
           */}
           {editable ? (
             <>
+              <Pressable onPress={() => router.push('/accounts')}>
+                <Row
+                  title="Accounts"
+                  subtitle={
+                    auth.state?.user
+                      ? `Signed in as ${auth.state.user.username}. Who may use this server, and from where.`
+                      : 'Who may use this server, and from where'
+                  }
+                  accessory={chevron}
+                />
+              </Pressable>
+              <RowSeparator />
               <Pressable onPress={() => router.push('/extensions')}>
                 <Row
                   title="Extensions"
@@ -403,7 +417,9 @@ function ResetEverything() {
               size="$3"
               value={secret}
               placeholder="Reset passphrase"
-              secureTextEntry
+              // `type`: Tamagui's web Input ignores `secureTextEntry`, and showed this in the clear.
+              type="password"
+              autoComplete="off"
               autoCapitalize="none"
               onChangeText={setSecret}
               backgroundColor="$background"

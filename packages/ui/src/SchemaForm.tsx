@@ -145,7 +145,10 @@ function Field({
         color="$color"
         placeholderTextColor="$muted"
         disabled={disabled}
-        secureTextEntry={secret}
+        // `type`, not `secureTextEntry`: Tamagui's web Input discards the latter,
+        // which left every secret field — a Tuya local key — readable on screen.
+        type={secret ? 'password' : 'text'}
+        autoComplete={secret ? 'off' : undefined}
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType={numeric ? 'numeric' : 'default'}

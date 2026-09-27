@@ -93,10 +93,12 @@ Additional cautions:
   other availability-critical equipment is connected.
 - Start every session with a new unit in `--read-only`, which is the default for
   the hardware modes.
-- **The API has no authentication.** CORS is restricted to loopback and private
-  ranges, so an arbitrary web page cannot read from it — but that is a browser
-  rule, not a lock. Anything on your LAN can call it directly. Keep it on your
-  LAN and never port-forward it.
+- **The home network is trusted by default.** Accounts are required from
+  anywhere else, but a device on your LAN can use the app — and switch things —
+  without logging in, unless you turn that off under *App settings → Accounts*.
+  Keep the server's own port and the MQTT broker off the internet; reach it from
+  outside only through the web container behind HTTPS. The whole model, and what
+  it does not cover, is in [**docs/SECURITY.md**](docs/SECURITY.md).
 
 ---
 
@@ -447,6 +449,11 @@ drops the app's link for that reason.
 
 Base URL: `http://<host>:3333/api`
 
+Every route but `/health` passes one gate: a session cookie, or — if the owner
+allows it — a request from the home network. Every request that changes
+anything must carry an `X-Kraftverk-Client` header. See
+[docs/SECURITY.md](docs/SECURITY.md).
+
 Everything is device-scoped: a route names the device it acts on, and the server
 resolves that device's own session. `:id` is a catalog id such as
 `power-station:3db445e0`, and it contains a `:`, so it must be URL-encoded.
@@ -459,7 +466,11 @@ not a boolean: `health.status` is one of `connected`, `connecting`, `offline`,
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/health` | Liveness |
+| `GET` | `/health` | Liveness. Open to anyone; everything else passes the sign-in gate |
+| `GET` | `/auth/state` | Who you are, whether this network is trusted, whether setup is due |
+| `POST` | `/auth/setup` · `/auth/login` · `/auth/logout` | The first account (home network only), signing in and out |
+| `POST` `PATCH` | `/auth/password` · `/auth/settings` | Your own password; whether the home network may skip the login |
+| `GET` `POST` `DELETE` | `/users` · `/users/:id` · `/users/:id/password` | Accounts — always needs a real login |
 | `GET` | `/version` | Name, version, runtime, uptime, link mode |
 | `GET` | `/devices` | The devices you have added, with live readings and health |
 | `POST` | `/devices` | Add one |
@@ -503,7 +514,10 @@ only ever have one. Use the device-scoped routes above.
 | `MQTT_PORT` / `MQTT_HOST` | — | `1883` / `0.0.0.0` | Where the MQTT broker listens for stations |
 | `BROKER_HOST` / `BROKER_ADMIN_URL` | — | `127.0.0.1` / `http://127.0.0.1:3883` | Where the server reaches the broker |
 | `BROKER_SPAWN` | — | on | `0` stops the server starting a broker, for when it runs as its own service. The rest of the broker's settings are in [docs/BROKER.md](docs/BROKER.md#environment) |
-| `ALLOWED_ORIGINS` | — | — | Extra browser origins, comma-separated. Loopback and private ranges are already allowed; `*` restores the old reflect-anything behaviour |
+| `ALLOWED_ORIGINS` | — | — | Extra browser origins, comma-separated. Loopback and private ranges are already allowed; `*` is refused |
+| `KRAFTVERK_TRUST_LAN` | — | on | The default for "the home network may use the app without logging in", until changed in the app |
+| `KRAFTVERK_ALLOWED_HOSTS` | — | — | Names the server answers to besides addresses and local names, such as a DDNS name. Others get `421` (DNS-rebinding defence) |
+| `KRAFTVERK_TRUSTED_PROXIES` | — | — | The web container, whose home-network/public entrance stamp is believed. See [docs/SECURITY.md](docs/SECURITY.md) |
 | `ALLOW_RAW_MODBUS` | — | — | `1` enables raw frames |
 | `KRAFTVERK_DB` | — | `server/data/kraftverk.db` | Where the database lives. **Required under `NODE_ENV=test`** — the server refuses to open the default file from a test run |
 | `KRAFTVERK_BINDING_FILE` | — | `server/data/binding.json` | The legacy pre-catalog binding, read-only now |

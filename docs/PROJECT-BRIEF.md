@@ -417,10 +417,11 @@ Before unattended use, document and physically verify all of the following:
    automation hard floor, leaving a recovery buffer. Example: P280 device lower
    limit 10%, automation hard floor 15%, normal reserve 30%. Verify the real P280
    behaviour before depending on it.
-5. The server API is protected before it is allowed to control mains power. The
-   current development API has broad CORS and no authentication. Bind it to the LAN,
-   add authentication/authorisation, store secrets outside the client, and never
-   expose it through router port forwarding.
+5. The server API is protected before it is allowed to control mains power.
+   **Done:** accounts and sessions, a trusted-home-network rule decided by entrance
+   rather than address, CSRF and DNS-rebinding defences, and a recovery CLI — see
+   [SECURITY.md](SECURITY.md). Still true: never expose the server's own port or the
+   MQTT broker through router port forwarding.
 6. The controller cannot distinguish a grid outage from a failed relay solely from
    “P280 AC input absent.” Model and display this as `GRID_UNAVAILABLE` after relay
    ON is confirmed but P280 AC voltage does not return. Do not relay-cycle repeatedly

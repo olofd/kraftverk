@@ -144,18 +144,23 @@ Put it in a `.env` file next to `docker-compose.yml` and uncomment the line that
 reads it. Keep it somewhere other than the repository, and understand that
 changing it later makes existing secrets unreadable — they must be re-entered.
 
-### CORS
+### Accounts and CORS
 
-The API has **no authentication**. CORS is restricted to loopback and private
-ranges, which covers a phone or laptop on the same network reaching a container
-on that network, so the common case needs nothing.
+The first time the app reaches a fresh server from the home network, it asks you
+to create an administrator. After that, the home network may use the app
+without logging in (switch that off under *App settings → Accounts*), and
+anywhere else needs an account. See [SECURITY.md](SECURITY.md) for the model,
+and for recovering access with `bun run server/src/auth/cli.ts` inside the
+container.
 
-Name any other origin the app is served from — a hostname, a reverse proxy — in
-`ALLOWED_ORIGINS`. Setting it to `*` restores the old reflect-anything behaviour
-and is a bad idea on a server whose `/grid/relay` route switches mains power.
+CORS is restricted to loopback and private ranges, which covers a phone or
+laptop on the same network, so the common case needs nothing. Name any other
+origin the app is served from in `ALLOWED_ORIGINS`; `*` is refused, because with
+sign-in it would hand every website your session. A public name the server is
+reached by — a DDNS name — goes in `KRAFTVERK_ALLOWED_HOSTS`, or requests to it
+are refused as a DNS-rebinding defence.
 
-**CORS is a browser rule, not a lock.** Anything on your LAN can call this API
-directly. Keep it on your LAN. Never port-forward it.
+Never port-forward the server's own port or the MQTT broker.
 
 ---
 

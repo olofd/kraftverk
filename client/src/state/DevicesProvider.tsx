@@ -9,6 +9,9 @@ import {
   type ReactNode,
 } from 'react';
 import { AppState } from 'react-native';
+import axios from 'axios';
+
+import { useAuth } from './AuthProvider';
 
 import {
   addDevice as apiAddDevice,
@@ -123,6 +126,10 @@ const DevicesContext = createContext<DevicesContextValue | null>(null);
 export function DevicesProvider({ children }: { children: ReactNode }) {
   const { source, status, connection, settings, updateSettings, togglePort } = useDirectLink();
   const editable = source === 'server';
+  // Polls only once the server will answer: a list fetched before signing in
+  // is a stream of 401s, which is not news, and not the server being down.
+  const { allowed } = useAuth();
+  const polling = editable && allowed;
 
   const [served, setServed] = useState<SavedDeviceView[]>([]);
   const [loading, setLoading] = useState(true);
@@ -148,7 +155,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
-      if (!editable) {
+      if (!polling) {
         setLoading(false);
         return; // the direct link's device is composed below, not fetched
       }
@@ -160,13 +167,16 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         const message = describeError(err);
         if (!message) return; // aborted
+        // "Log in first" is an answer, not an absence: the sign-in screen is
+        // already on its way, and a "can't reach the server" banner would lie.
+        if (axios.isAxiosError(err) && err.response?.status === 401) return;
         setUnreachable(true);
         setError(message);
       } finally {
         setLoading(false);
       }
     },
-    [editable]
+    [polling]
   );
 
   useEffect(() => {
@@ -174,7 +184,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     let timer: ReturnType<typeof setInterval> | undefined;
 
     const start = () => {
-      if (timer || !editable) return;
+      if (timer || !polling) return;
       timer = setInterval(() => void load(controller.signal), POLL_MS);
     };
 
@@ -202,7 +212,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       subscription.remove();
       controller.abort();
     };
-  }, [editable, load]);
+  }, [polling, load]);
 
   /**
    * Runs a change, then reloads.

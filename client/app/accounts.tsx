@@ -1,0 +1,466 @@
+import { useCallback, useEffect, useState } from 'react';
+import { Feather } from '@expo/vector-icons';
+import { Button, Text, useTheme, XStack, YStack } from 'tamagui';
+
+import { Card, Row, RowSeparator, SectionLabel, ToggleRow, haptic } from '@kraftverk/ui';
+import {
+  addAccount,
+  changeOwnPassword,
+  describeError,
+  fetchAccounts,
+  removeAccount,
+  resetAccountPassword,
+  setTrustHomeNetwork,
+} from '@kraftverk/api-client';
+import type { AccountDetail } from '@kraftverk/api-client';
+
+import { Screen } from '../src/components/Screen';
+import { Field, passwordProblem, suggestPassword, PASSWORD_MIN } from '../src/features/auth/fields';
+import { LoginForm, SetupForm } from '../src/features/auth/SignIn';
+import { useAuth } from '../src/state/AuthProvider';
+
+/**
+ * Who may use this server, and from where.
+ *
+ * Every account is an administrator. Everything here needs a real login — even
+ * on a home network trusted to use the app without one — because the thing
+ * being managed is who may get in from the internet, and "any device on the
+ * LAN may add itself an account" is not what trusting the LAN was for.
+ */
+export default function AccountsScreen() {
+  const { applies, state } = useAuth();
+
+  return (
+    <Screen back="App settings" backTo="/app-settings" title="Accounts" subtitle="Who may use this server, and from where">
+      {!applies ? (
+        <Card>
+          <Text fontSize={13} color="$muted" lineHeight={19}>
+            Accounts belong to a server. In local mode this device holds its own links, and there is nobody
+            to log in to.
+          </Text>
+        </Card>
+      ) : !state ? (
+        <Card>
+          <Text fontSize={13} color="$muted" lineHeight={19}>
+            This server does not have accounts. It may be older than them — update it to use sign-in.
+          </Text>
+        </Card>
+      ) : state.user ? (
+        <SignedIn />
+      ) : state.setupRequired ? (
+        /*
+          A trusted home network never sees the sign-in gate, so this is where
+          the first account gets made. Until it exists, the server can only be
+          used from home.
+        */
+        <YStack gap="$3">
+          <SectionLabel>No accounts yet</SectionLabel>
+          {state.canSetup ? (
+            <SetupForm />
+          ) : (
+            <Card>
+              <Text fontSize={13} color="$muted" lineHeight={19}>
+                The first account can only be created from the home network.
+              </Text>
+            </Card>
+          )}
+        </YStack>
+      ) : (
+        <YStack gap="$3">
+          <SectionLabel>Log in to manage accounts</SectionLabel>
+          <Text fontSize={13} color="$muted" lineHeight={19} paddingHorizontal="$1">
+            You are using this server from the home network without logging in. Managing accounts needs a
+            real login all the same: it decides who can reach the server from outside.
+          </Text>
+          <LoginForm />
+        </YStack>
+      )}
+    </Screen>
+  );
+}
+
+function SignedIn() {
+  const { state, logOut, refresh } = useAuth();
+  const theme = useTheme();
+  const [accounts, setAccounts] = useState<AccountDetail[]>([]);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setAccounts(await fetchAccounts());
+      setProblem(null);
+    } catch (error) {
+      setProblem(describeError(error));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (!state?.user) return null;
+  const me = state.user;
+
+  return (
+    <>
+      <YStack gap="$2">
+        <SectionLabel>You</SectionLabel>
+        <Card inset>
+          <Row
+            title={me.username}
+            subtitle="Signed in on this device"
+            accessory={
+              <Button
+                size="$2"
+                icon={<Feather name="log-out" size={12} color={theme.color?.val} />}
+                onPress={() => {
+                  haptic();
+                  void logOut();
+                }}
+              >
+                Sign out
+              </Button>
+            }
+          />
+        </Card>
+        <ChangeOwnPassword />
+      </YStack>
+
+      <YStack gap="$2">
+        <SectionLabel>Home network</SectionLabel>
+        <Card inset>
+          <ToggleRow
+            title="Use without logging in at home"
+            subtitle={
+              state.trustLan
+                ? 'Devices on the home network use the app without an account. From anywhere else, a login is required.'
+                : 'Every device logs in, at home too.'
+            }
+            checked={state.trustLan}
+            onCheckedChange={async (next) => {
+              haptic();
+              try {
+                await setTrustHomeNetwork(next);
+                await refresh();
+              } catch (error) {
+                setProblem(describeError(error));
+              }
+            }}
+          />
+          <RowSeparator />
+          <Row
+            title={state.onHomeNetwork ? 'This device is on the home network' : 'This device is not on the home network'}
+            subtitle={`${state.reason}.`}
+          />
+        </Card>
+        <Text fontSize={12} color="$muted" lineHeight={18} paddingHorizontal="$1">
+          “Home network” is decided by how a request reaches the server, not just its address: anything that
+          came in through the public entrance, or through a proxy the server does not know, needs a login.
+        </Text>
+      </YStack>
+
+      <YStack gap="$2">
+        <SectionLabel>Accounts</SectionLabel>
+        <Card inset>
+          {accounts.map((account, index) => (
+            <YStack key={account.id}>
+              {index > 0 ? <RowSeparator /> : null}
+              <AccountRow account={account} isMe={account.id === me.id} onlyOne={accounts.length === 1} onChanged={load} />
+            </YStack>
+          ))}
+        </Card>
+        {problem ? (
+          <Text fontSize={13} color="$danger" lineHeight={18} paddingHorizontal="$1" role="alert">
+            {problem}
+          </Text>
+        ) : null}
+        <AddAccount onAdded={load} />
+      </YStack>
+    </>
+  );
+}
+
+function AccountRow({
+  account,
+  isMe,
+  onlyOne,
+  onChanged,
+}: {
+  account: AccountDetail;
+  isMe: boolean;
+  onlyOne: boolean;
+  onChanged: () => Promise<void>;
+}) {
+  const theme = useTheme();
+  const { refresh } = useAuth();
+  const [action, setAction] = useState<'idle' | 'confirm-remove' | 'reset'>('idle');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const seen = account.lastLoginAt ? `last login ${new Date(account.lastLoginAt).toLocaleString()}` : 'never logged in';
+
+  const run = async (work: () => Promise<void>) => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      await work();
+      setAction('idle');
+      setPassword('');
+      await onChanged();
+    } catch (error) {
+      setProblem(describeError(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <YStack>
+      <Row
+        title={`${account.username}${isMe ? ' (you)' : ''}`}
+        subtitle={`Added ${new Date(account.createdAt).toLocaleDateString()}${account.createdBy ? ` by ${account.createdBy}` : ''} · ${seen}`}
+        accessory={
+          action === 'idle' ? (
+            <XStack gap="$2">
+              {isMe ? null : (
+                <Button size="$2" onPress={() => setAction('reset')}>
+                  New password
+                </Button>
+              )}
+              {onlyOne ? null : (
+                <Button
+                  size="$2"
+                  borderColor="$danger"
+                  icon={<Feather name="trash-2" size={12} color={theme.danger?.val} />}
+                  onPress={() => setAction('confirm-remove')}
+                >
+                  Remove
+                </Button>
+              )}
+            </XStack>
+          ) : null
+        }
+      />
+      {action === 'confirm-remove' ? (
+        <YStack paddingHorizontal="$4" paddingBottom="$3" gap="$2">
+          <Text fontSize={13} color="$color" lineHeight={19}>
+            Remove {account.username}? They are signed out everywhere and can no longer log in.
+            {isMe ? ' That includes you, on this device.' : ''}
+          </Text>
+          <XStack gap="$2">
+            <Button flex={1} size="$3" disabled={busy} onPress={() => setAction('idle')}>
+              Cancel
+            </Button>
+            <Button
+              flex={1}
+              size="$3"
+              backgroundColor="$danger"
+              color="$background"
+              disabled={busy}
+              onPress={() => {
+                haptic();
+                void run(async () => {
+                  await removeAccount(account.id);
+                  if (isMe) await refresh();
+                });
+              }}
+            >
+              Remove
+            </Button>
+          </XStack>
+        </YStack>
+      ) : null}
+      {action === 'reset' ? (
+        <YStack paddingHorizontal="$4" paddingBottom="$3" gap="$2">
+          <Field
+            label={`New password for ${account.username}`}
+            kind="new-password"
+            value={password}
+            onChange={setPassword}
+            hint={`At least ${PASSWORD_MIN} characters. They are signed out everywhere, and need this to log in again — pass it on somewhere private.`}
+          />
+          <XStack gap="$2" flexWrap="wrap">
+            <Button size="$3" onPress={() => setPassword(suggestPassword())}>
+              Suggest one
+            </Button>
+            <Button size="$3" disabled={busy} onPress={() => setAction('idle')}>
+              Cancel
+            </Button>
+            <Button
+              size="$3"
+              backgroundColor="$accent"
+              color="$background"
+              disabled={busy || passwordProblem(password) !== null}
+              opacity={busy || passwordProblem(password) !== null ? 0.5 : 1}
+              onPress={() => {
+                haptic();
+                void run(() => resetAccountPassword(account.id, password));
+              }}
+            >
+              Set password
+            </Button>
+          </XStack>
+        </YStack>
+      ) : null}
+      {problem ? (
+        <Text fontSize={13} color="$danger" paddingHorizontal="$4" paddingBottom="$3" role="alert">
+          {problem}
+        </Text>
+      ) : null}
+    </YStack>
+  );
+}
+
+function AddAccount({ onAdded }: { onAdded: () => Promise<void> }) {
+  const theme = useTheme();
+  const [open, setOpen] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const invalid = !username.trim() || passwordProblem(password) !== null;
+
+  if (!open) {
+    return (
+      <Button
+        size="$3"
+        alignSelf="flex-start"
+        icon={<Feather name="user-plus" size={14} color={theme.color?.val} />}
+        onPress={() => {
+          haptic();
+          setOpen(true);
+        }}
+      >
+        Add an account
+      </Button>
+    );
+  }
+
+  return (
+    <Card gap="$3">
+      <Text fontSize={13} color="$muted" lineHeight={19}>
+        Every account is an administrator: it can use and change everything, and manage accounts.
+      </Text>
+      <Field label="Username" kind="username" value={username} onChange={setUsername} autoFocus />
+      <Field
+        label="Password"
+        kind="new-password"
+        value={password}
+        onChange={setPassword}
+        hint={`At least ${PASSWORD_MIN} characters. Pass it on somewhere private; they can change it once they are in.`}
+      />
+      {problem ? (
+        <Text fontSize={13} color="$danger" lineHeight={18} role="alert">
+          {problem}
+        </Text>
+      ) : null}
+      <XStack gap="$2" flexWrap="wrap">
+        <Button size="$3" onPress={() => setPassword(suggestPassword())}>
+          Suggest a password
+        </Button>
+        <Button
+          size="$3"
+          disabled={busy}
+          onPress={() => {
+            setOpen(false);
+            setUsername('');
+            setPassword('');
+            setProblem(null);
+          }}
+        >
+          Cancel
+        </Button>
+        <Button
+          size="$3"
+          backgroundColor="$accent"
+          color="$background"
+          disabled={busy || invalid}
+          opacity={busy || invalid ? 0.5 : 1}
+          onPress={async () => {
+            haptic();
+            setBusy(true);
+            setProblem(null);
+            try {
+              await addAccount(username.trim(), password);
+              setOpen(false);
+              setUsername('');
+              setPassword('');
+              await onAdded();
+            } catch (error) {
+              setProblem(describeError(error));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Add account
+        </Button>
+      </XStack>
+    </Card>
+  );
+}
+
+function ChangeOwnPassword() {
+  const [open, setOpen] = useState(false);
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ tone: 'danger' | 'success'; text: string } | null>(null);
+
+  const invalid = !current || passwordProblem(next, confirm) !== null;
+
+  if (!open) {
+    return (
+      <Button size="$3" alignSelf="flex-start" onPress={() => setOpen(true)}>
+        Change your password
+      </Button>
+    );
+  }
+
+  return (
+    <Card gap="$3">
+      <Field label="Current password" kind="current-password" value={current} onChange={setCurrent} autoFocus />
+      <Field label="New password" kind="new-password" value={next} onChange={setNext} hint={`At least ${PASSWORD_MIN} characters.`} />
+      <Field label="New password again" kind="new-password" value={confirm} onChange={setConfirm} />
+      {message ? (
+        <Text fontSize={13} color={message.tone === 'danger' ? '$danger' : '$success'} lineHeight={18} role="alert">
+          {message.text}
+        </Text>
+      ) : null}
+      <XStack gap="$2">
+        <Button flex={1} size="$3" disabled={busy} onPress={() => setOpen(false)}>
+          Cancel
+        </Button>
+        <Button
+          flex={1}
+          size="$3"
+          backgroundColor="$accent"
+          color="$background"
+          disabled={busy || invalid}
+          opacity={busy || invalid ? 0.5 : 1}
+          onPress={async () => {
+            haptic();
+            setBusy(true);
+            setMessage(null);
+            try {
+              await changeOwnPassword(current, next);
+              setCurrent('');
+              setNext('');
+              setConfirm('');
+              setMessage({ tone: 'success', text: 'Changed. Every other device signed in as you has been signed out.' });
+            } catch (error) {
+              setMessage({ tone: 'danger', text: describeError(error) });
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Change password
+        </Button>
+      </XStack>
+    </Card>
+  );
+}

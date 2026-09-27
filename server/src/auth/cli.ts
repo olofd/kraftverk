@@ -1,0 +1,118 @@
+import { randomBytes } from 'node:crypto';
+
+import { audit } from '../history/db.ts';
+import {
+  AccountError,
+  countUsers,
+  createFirstUser,
+  createUser,
+  deleteUser,
+  endAllSessions,
+  findUserByName,
+  listUsers,
+  setPassword,
+  setTrustLan,
+  trustLan,
+} from './store.ts';
+
+/**
+ * `npm run users -- <command>` — accounts, from a shell on the server.
+ *
+ * For the day the app cannot help: every password forgotten, or "require a
+ * login everywhere" switched on with nobody able to log in. Having a shell on
+ * the server is the proof of ownership here — in Docker:
+ *
+ *   docker compose exec kraftverk bun run server/src/auth/cli.ts <command>
+ *
+ *   list                      every account
+ *   add <name>                a new account
+ *   password <name>           a new password for an account; signs it out everywhere
+ *   remove <name>             delete an account (not the last one)
+ *   signout <name>            end every session of an account
+ *   trust-lan on|off          whether the home network may skip the login
+ *
+ * A password is never taken as an argument, where shell history and the process
+ * list would keep it. By default one is generated and printed once; to choose
+ * your own, pipe it in:  echo -n 'a long password' | … password olof --stdin
+ */
+
+const [command, ...rest] = process.argv.slice(2);
+const name = rest.find((arg) => !arg.startsWith('--'));
+const fromStdin = rest.includes('--stdin');
+
+async function newPassword(): Promise<{ password: string; show: boolean }> {
+  if (fromStdin) return { password: (await Bun.stdin.text()).replace(/\r?\n$/, ''), show: false };
+  return { password: randomBytes(18).toString('base64url'), show: true };
+}
+
+function requireName(): string {
+  if (!name) fail(`Name the account: ${command} <name>`);
+  return name!;
+}
+
+function fail(message: string): never {
+  console.error(message);
+  process.exit(1);
+}
+
+const record = (kind: string, summary: string, resource?: string) =>
+  audit({ at: new Date().toISOString(), kind, actor: 'server console', resource, summary });
+
+try {
+  switch (command) {
+    case 'list': {
+      const users = listUsers();
+      if (users.length === 0) console.log('No accounts. The first can be created from the app on the home network, or with `add`.');
+      for (const user of users) {
+        console.log(`${user.username.padEnd(24)} created ${user.createdAt.slice(0, 10)}${user.lastLoginAt ? `, last login ${user.lastLoginAt.slice(0, 16).replace('T', ' ')}` : ', never logged in'}`);
+      }
+      console.log(`\nThe home network ${trustLan() ? 'may use the app without logging in' : 'must log in too'}.`);
+      break;
+    }
+    case 'add': {
+      const username = requireName();
+      const { password, show } = await newPassword();
+      const user = countUsers() === 0 ? await createFirstUser(username, password) : await createUser(username, password, 'server console');
+      record('user.created', `Created ${user.username} from the server console`, user.id);
+      console.log(`Created ${user.username}.`);
+      if (show) console.log(`Password: ${password}\nIt is not stored anywhere readable and will not be shown again.`);
+      break;
+    }
+    case 'password': {
+      const user = findUserByName(requireName()) ?? fail(`No account called ${name}`);
+      const { password, show } = await newPassword();
+      await setPassword(user.id, password);
+      record('user.password', `Set a new password for ${user.username} from the server console; their sessions were signed out`, user.id);
+      console.log(`New password set for ${user.username}; every session it had was signed out.`);
+      if (show) console.log(`Password: ${password}\nIt is not stored anywhere readable and will not be shown again.`);
+      break;
+    }
+    case 'remove': {
+      const user = findUserByName(requireName()) ?? fail(`No account called ${name}`);
+      deleteUser(user.id);
+      record('user.removed', `Removed ${user.username} from the server console`, user.id);
+      console.log(`Removed ${user.username}.`);
+      break;
+    }
+    case 'signout': {
+      const user = findUserByName(requireName()) ?? fail(`No account called ${name}`);
+      const ended = endAllSessions(user.id);
+      record('auth.signout', `Signed ${user.username} out everywhere from the server console`, user.id);
+      console.log(`Ended ${ended} session(s) for ${user.username}.`);
+      break;
+    }
+    case 'trust-lan': {
+      const value = rest[0];
+      if (value !== 'on' && value !== 'off') fail('trust-lan on|off');
+      setTrustLan(value === 'on');
+      record('auth.trust-lan', value === 'on' ? 'The home network may use the app without logging in (server console)' : 'A login is required on every network (server console)');
+      console.log(value === 'on' ? 'The home network may now use the app without logging in.' : 'A login is now required on every network.');
+      break;
+    }
+    default:
+      fail('Commands: list, add <name>, password <name>, remove <name>, signout <name>, trust-lan on|off');
+  }
+} catch (error) {
+  if (error instanceof AccountError) fail(error.message);
+  throw error;
+}

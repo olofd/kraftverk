@@ -27,6 +27,11 @@ import {
   setAppState,
 } from './history/db.ts';
 import { resetSecret, resetSecretPath, secretMatches } from './admin/reset.ts';
+import { bodyLimit } from 'hono/body-limit';
+
+import { hostGuard } from './auth/host.ts';
+import { actorOf, CLIENT_HEADER, createAuth } from './auth/routes.ts';
+import { ProxyDirectory } from './auth/trust.ts';
 import { Sampler, series } from './history/sampler.ts';
 import { PluginHost, type PluginInstance } from './plugins/host.ts';
 import { DeviceDriver, ReadOnlyError } from './drivers/device.ts';
@@ -407,8 +412,8 @@ app.use('*', async (c, next) => (c.req.path === '/api/status' ? next() : logger(
 /**
  * Which browsers may talk to this server.
  *
- * Reflecting whatever origin asks is the same as no policy at all: this server
- * has no authentication, it sits on the user's LAN, and one of its routes
+ * Reflecting whatever origin asks is the same as no policy at all: the home
+ * network may use this server without logging in, and one of its routes
  * switches mains power. Any page in any tab could list the devices and throw
  * the relay, because the browser would have been told the answer was fine to
  * read.
@@ -416,8 +421,8 @@ app.use('*', async (c, next) => (c.req.path === '/api/status' ? next() : logger(
  * Loopback and private ranges are allowed because that is where this app
  * legitimately runs: Metro on `localhost:8081`, and the same app opened from a
  * phone on the house network. Anything else has to be named in
- * `ALLOWED_ORIGINS`, which is the escape hatch for a real deployment rather
- * than a hole left open by default.
+ * `ALLOWED_ORIGINS`. The app served by the web container is same-origin, and
+ * needs no entry at all.
  *
  * Requests with no `Origin` at all — curl, the native app — are not CORS
  * requests and are unaffected.
@@ -425,19 +430,52 @@ app.use('*', async (c, next) => (c.req.path === '/api/status' ? next() : logger(
 const EXTRA_ORIGINS = (process.env.ALLOWED_ORIGINS ?? '')
   .split(',')
   .map((entry) => entry.trim())
-  .filter(Boolean);
+  .filter((entry) => {
+    if (entry !== '*') return Boolean(entry);
+    /*
+      Refused, not honoured. With credentialed CORS, `*` means every website
+      may make requests *as the signed-in user* and read the answers — the
+      session cookie would be anyone's. It used to be merely unwise.
+    */
+    console.error('[server] ALLOWED_ORIGINS=* is ignored: with sign-in, it would hand every website your session.');
+    return false;
+  });
 
 const PRIVATE_HOST =
   /^(localhost|127\.\d+\.\d+\.\d+|\[::1\]|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|[\w-]+\.local)$/;
 
 const allowOrigin = (origin: string): string | null => {
-  if (EXTRA_ORIGINS.includes(origin) || EXTRA_ORIGINS.includes('*')) return origin;
+  if (EXTRA_ORIGINS.includes(origin)) return origin;
   try {
     return PRIVATE_HOST.test(new URL(origin).hostname) ? origin : null;
   } catch {
     return null; // not a URL we can reason about, so not one we trust
   }
 };
+
+/*
+  Before anything else under /api — before CORS, so a rebinding page does not
+  even get a preflight answer. See `auth/host.ts`.
+*/
+app.use('/api/*', hostGuard());
+
+/*
+  No body a client of this API sends comes near this. Without a cap, one
+  request could hold as much memory as it cared to send.
+*/
+app.use('/api/*', bodyLimit({ maxSize: 1024 * 1024, onError: (c) => c.json({ error: 'That request body is too large' }, 413) }));
+
+/*
+  API answers are about one person's house: never cached by anything on the
+  way, never sniffed into something else, never framed.
+*/
+app.use('/api/*', async (c, next) => {
+  await next();
+  c.header('Cache-Control', 'no-store');
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('X-Frame-Options', 'DENY');
+  c.header('Referrer-Policy', 'no-referrer');
+});
 
 app.use(
   '/api/*',
@@ -447,9 +485,24 @@ app.use(
     // The preflight said GET,POST,PATCH,OPTIONS, so every browser blocked the
     // request — and the app, which never caught the failure, showed nothing.
     allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type'],
+    // The forgery header must be allowed, or the app's own writes would fail
+    // their preflight — and it is exactly what a foreign origin cannot send.
+    allowHeaders: ['Content-Type', CLIENT_HEADER],
+    // The session is a cookie, so the answer has to say credentials are fine —
+    // for the origins above only, never with a wildcard.
+    credentials: true,
   })
 );
+
+/**
+ * Accounts, sessions, and the one gate in front of `/api`. See `auth/routes.ts`.
+ *
+ * `KRAFTVERK_TRUSTED_PROXIES` names the web container, the one proxy whose
+ * "this came in through the home-network entrance" stamp is believed.
+ */
+const proxies = new ProxyDirectory(process.env.KRAFTVERK_TRUSTED_PROXIES);
+proxies.start();
+const accounts = createAuth({ proxies });
 
 /**
  * Parses and validates a JSON body.
@@ -466,6 +519,12 @@ async function body<T extends z.ZodType>(c: Context, schema: T): Promise<z.infer
 }
 
 const api = new Hono();
+
+// First, before any route: Hono runs middleware only for routes registered after it.
+api.use('*', accounts.forgery);
+api.use('*', accounts.gate);
+api.route('/auth', accounts.auth);
+api.route('/users', accounts.users);
 
 api.get('/health', (c) => c.json({ ok: true }));
 
@@ -1082,7 +1141,7 @@ api.post('/grid/station', async (c) => {
 
   if (deviceId === null) {
     setAppState(RELAY_STATION_KEY, '');
-    auditDevice('relay.unpaired', '', 'The grid relay is no longer paired with a station');
+    auditDevice(c, 'relay.unpaired', '', 'The grid relay is no longer paired with a station');
     return c.json({ stationDeviceId: null });
   }
 
@@ -1093,7 +1152,7 @@ api.post('/grid/station', async (c) => {
   }
 
   setAppState(RELAY_STATION_KEY, record.id);
-  auditDevice('relay.paired', record.id, `The grid relay now feeds "${record.name}"`);
+  auditDevice(c, 'relay.paired', record.id, `The grid relay now feeds "${record.name}"`);
   return c.json({ stationDeviceId: record.id });
 });
 
@@ -1107,7 +1166,7 @@ api.post('/grid/relay', async (c) => {
     })
   );
 
-  const result = await gateway.execute({ desired: on, reason, actor: 'user', confirmation });
+  const result = await gateway.execute({ desired: on, reason, actor: 'user', by: actorOf(c), confirmation });
   return c.json(result, result.outcome === 'refused' ? 409 : 200);
 });
 
@@ -1138,6 +1197,13 @@ api.get('/admin/reset', async (c) =>
  * so that reaching this route needs something more than reaching the network.
  */
 api.post('/admin/reset', async (c) => {
+  /*
+    A real login, even on the trusted home network: this deletes every
+    account along with everything else, and "anything on the LAN may erase
+    the server" is not what trusting the LAN was meant to buy. The name is
+    taken now, because the account it belongs to is about to be deleted.
+  */
+  const who = accounts.requireUser(c).username;
   const expected = await resetSecret();
   if (!expected) {
     throw new HTTPException(404, {
@@ -1169,7 +1235,7 @@ api.post('/admin/reset', async (c) => {
   audit({
     at: new Date().toISOString(),
     kind: 'database.reset',
-    actor: 'user',
+    actor: who,
     summary: `The database was reset: ${rows} rows across ${tables.length} tables`,
     detail: { tables },
   });
@@ -1210,8 +1276,8 @@ api.get('/audit', (c) => {
  * device nobody can account for afterwards, which is exactly the situation this
  * line was written in.
  */
-const auditDevice = (kind: string, id: string, summary: string, detail?: unknown) =>
-  audit({ at: new Date().toISOString(), kind, actor: 'user', resource: id, summary, detail });
+const auditDevice = (c: Context, kind: string, id: string, summary: string, detail?: unknown) =>
+  audit({ at: new Date().toISOString(), kind, actor: actorOf(c), resource: id, summary, detail });
 
 /*
   Nothing is adopted at startup. A device exists because someone added it, and
@@ -1307,7 +1373,7 @@ api.post('/devices', async (c) => {
     config: input.config,
   });
 
-  auditDevice('device.added', record.id, `Added "${record.name}" (${record.driver})`, {
+  auditDevice(c, 'device.added', record.id, `Added "${record.name}" (${record.driver})`, {
     type: record.type,
     model: record.model,
   });
@@ -1322,7 +1388,7 @@ api.post('/devices', async (c) => {
   */
   if (record.type === 'power-station' && !appState(RELAY_STATION_KEY)) {
     setAppState(RELAY_STATION_KEY, record.id);
-    auditDevice('relay.paired', record.id, `The grid relay is assumed to feed "${record.name}"`);
+    auditDevice(c, 'relay.paired', record.id, `The grid relay is assumed to feed "${record.name}"`);
   }
 
   // Adding a station opens its link, rather than waiting for a restart.
@@ -1354,10 +1420,10 @@ api.patch('/devices/:id', async (c) => {
   // The rename is worth naming both sides of: "Living room" in a log is useless
   // if you cannot tell what it used to be called.
   if (updated.name !== before.name) {
-    auditDevice('device.renamed', id, `Renamed "${before.name}" to "${updated.name}"`);
+    auditDevice(c, 'device.renamed', id, `Renamed "${before.name}" to "${updated.name}"`);
   }
   if (updated.model !== before.model) {
-    auditDevice('device.remodelled', id, `${updated.name} is now a ${updated.model ?? 'unknown model'}`);
+    auditDevice(c, 'device.remodelled', id, `${updated.name} is now a ${updated.model ?? 'unknown model'}`);
   }
 
   return c.json(await registry.find(id));
@@ -1461,7 +1527,7 @@ api.delete('/devices/:id', async (c) => {
 
   // Written before the delete, so the entry survives even if the transaction
   // does not — and so the record's own details are still there to describe.
-  auditDevice('device.forgotten', id, `Forgot "${record.name}" and everything it had recorded`, {
+  auditDevice(c, 'device.forgotten', id, `Forgot "${record.name}" and everything it had recorded`, {
     type: record.type,
     driver: record.driver,
     model: record.model,
@@ -1474,7 +1540,7 @@ api.delete('/devices/:id', async (c) => {
   // the gateway would go looking for a session that can never appear.
   if (appState(RELAY_STATION_KEY) === id) {
     setAppState(RELAY_STATION_KEY, '');
-    auditDevice('relay.unpaired', id, 'The station the grid relay fed was forgotten');
+    auditDevice(c, 'relay.unpaired', id, 'The station the grid relay fed was forgotten');
   }
 
   // Forgetting a device closes its link. Leaving a session open for a record
@@ -1560,6 +1626,7 @@ api.post('/devices/:id/control/:control', async (c) => {
       desired: value === true,
       reason: `${control.label} switched from the device screen`,
       actor: 'user',
+      by: actorOf(c),
       confirmation,
     });
     return c.json(result, result.outcome === 'refused' ? 409 : 200);
@@ -1574,7 +1641,10 @@ app.route('/api', api);
 app.notFound((c) => c.json({ error: 'Not found', path: c.req.path }, 404));
 
 app.onError((err, c) => {
-  if (err instanceof HTTPException) return err.getResponse();
+  // JSON, like every other error here: `getResponse()` answers in plain text,
+  // and the app — which reads `{ error }` — then showed "Server responded
+  // 403" instead of the sentence that said why.
+  if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
   if (err instanceof UnsafeWriteError) return c.json({ error: err.message }, 400);
   if (err instanceof ReadOnlyError) return c.json({ error: err.message, readOnly: true }, 423);
   if (err instanceof ZodError) {

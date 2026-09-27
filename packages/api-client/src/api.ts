@@ -8,6 +8,9 @@ import { ACTUATOR_CONFIRMATION, type CapabilityName, type ConfigValues, type Set
 import type { RegisterDump } from '@kraftverk/protocol';
 
 import type {
+  Account,
+  AccountDetail,
+  AuthState,
   BrokerJournalEntry,
   DeviceHistory,
   DeviceSettings,
@@ -81,7 +84,35 @@ export const DEFAULT_API_BASE_URL = resolveApiBaseUrl();
 export const api = axios.create({
   baseURL: DEFAULT_API_BASE_URL,
   timeout: 6000,
-  headers: { Accept: 'application/json' },
+  /*
+    `X-Kraftverk-Client` on every request: the server refuses writes without
+    it, because a page on another website cannot add it without asking the
+    server first — and the server says no. It is what stops any site you visit
+    from switching the relay through your browser.
+  */
+  headers: { Accept: 'application/json', 'X-Kraftverk-Client': 'app' },
+  // The session is an httpOnly cookie; it only travels if asked to.
+  withCredentials: true,
+});
+
+/**
+ * Told when a server answers "log in first" — a session that expired while
+ * the app was open, or a server that stopped trusting this network. The app
+ * listens once, and shows the login rather than a screen full of errors.
+ */
+const loginListeners = new Set<(detail: { setupRequired: boolean }) => void>();
+
+export function onLoginRequired(listener: (detail: { setupRequired: boolean }) => void): () => void {
+  loginListeners.add(listener);
+  return () => loginListeners.delete(listener);
+}
+
+api.interceptors.response.use(undefined, (error: unknown) => {
+  if (axios.isAxiosError(error) && error.response?.status === 401) {
+    const data = error.response.data as { loginRequired?: boolean; setupRequired?: boolean } | undefined;
+    if (data?.loginRequired) for (const listener of loginListeners) listener({ setupRequired: Boolean(data.setupRequired) });
+  }
+  return Promise.reject(error);
 });
 
 /**
@@ -464,7 +495,9 @@ export function describeError(error: unknown): string {
       if (error.response.status === 423) {
         return 'Read-only mode: the server refused that write. Restart it without --read-only to make changes.';
       }
-      const detail = (error.response.data as { error?: string } | undefined)?.error;
+      const data = error.response.data as { error?: string } | string | undefined;
+      // A sentence from the server, as JSON or — from older servers — plain text.
+      const detail = typeof data === 'string' ? data.trim() || undefined : data?.error;
       return detail ?? `Server responded ${error.response.status}`;
     }
     if (error.code === 'ECONNABORTED') {
@@ -501,4 +534,60 @@ export async function resetDatabase(secret: string, signal?: AbortSignal) {
     { signal }
   );
   return data;
+}
+
+// --- accounts ---------------------------------------------------------------
+//
+// The session is an httpOnly cookie the server sets and reads; the app never
+// sees it. These calls ask who is signed in, sign in and out, and manage
+// accounts — which the server only allows with a real login.
+
+export async function fetchAuthState(signal?: AbortSignal) {
+  const { data } = await api.get<AuthState>('/auth/state', { signal });
+  return data;
+}
+
+/** The first account on a fresh server. Only accepted from the home network. */
+export async function setupAdministrator(username: string, password: string) {
+  const { data } = await api.post<{ user: Account }>('/auth/setup', { username, password });
+  return data.user;
+}
+
+export async function logIn(username: string, password: string) {
+  const { data } = await api.post<{ user: Account }>('/auth/login', { username, password });
+  return data.user;
+}
+
+export async function logOut() {
+  await api.post('/auth/logout', {});
+}
+
+/** Your own password. Needs the current one; signs you out everywhere else. */
+export async function changeOwnPassword(current: string, next: string) {
+  await api.post('/auth/password', { current, next });
+}
+
+/** Whether the home network may use the app without logging in. */
+export async function setTrustHomeNetwork(trustLan: boolean) {
+  const { data } = await api.patch<{ trustLan: boolean }>('/auth/settings', { trustLan });
+  return data.trustLan;
+}
+
+export async function fetchAccounts(signal?: AbortSignal) {
+  const { data } = await api.get<{ users: AccountDetail[] }>('/users', { signal });
+  return data.users;
+}
+
+export async function addAccount(username: string, password: string) {
+  const { data } = await api.post<{ user: AccountDetail }>('/users', { username, password });
+  return data.user;
+}
+
+export async function removeAccount(id: string) {
+  await api.delete(`/users/${encodeURIComponent(id)}`);
+}
+
+/** Someone else's password. Signs them out everywhere. */
+export async function resetAccountPassword(id: string, password: string) {
+  await api.post(`/users/${encodeURIComponent(id)}/password`, { password });
 }

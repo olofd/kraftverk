@@ -357,3 +357,31 @@ export type DeviceHistory = {
   to: string;
   points: SeriesPoint[];
 };
+
+// --- accounts ---------------------------------------------------------------
+
+/** A signed-in account. Every account is an administrator. */
+export type Account = { id: string; username: string };
+
+export type AccountDetail = Account & {
+  createdAt: string;
+  createdBy: string | null;
+  lastLoginAt: string | null;
+};
+
+/** `GET /api/auth/state`: who this is, from where, and what the app should show. */
+export type AuthState = {
+  user: Account | null;
+  /** This request came from the home network, by the server's rules. */
+  onHomeNetwork: boolean;
+  /** The owner lets the home network use the app without logging in. */
+  trustLan: boolean;
+  /** Both: this device may use the app without logging in. */
+  trusted: boolean;
+  /** Why the server decided what it did about the network, in words. */
+  reason: string;
+  /** No accounts exist yet. */
+  setupRequired: boolean;
+  /** No accounts exist, and this device may create the first. */
+  canSetup: boolean;
+};

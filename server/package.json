@@ -18,6 +18,7 @@
     "start:prod": "node ../scripts/run-bun.mjs src/index.ts --driver=device",
     "start": "node ../scripts/run-bun.mjs src/index.ts",
     "broker": "node ../scripts/run-bun.mjs src/broker/cli.ts",
+    "users": "node ../scripts/run-bun.mjs src/auth/cli.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

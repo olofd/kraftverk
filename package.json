@@ -44,6 +44,8 @@
     "web:prod": "npm run web:prod --workspace client",
     "//build:web": "The production web build, as the web container serves it: a static single-page app in client/dist.",
     "build:web": "npm run build:web --workspace client",
+    "//users": "Accounts, from a shell on the server — for when nobody can log in. See server/src/auth/cli.ts.",
+    "users": "npm run users --workspace server --",
     "ios": "npm run ios --workspace client",
     "android": "npm run android --workspace client",
     "start": "npm run start --workspace client",

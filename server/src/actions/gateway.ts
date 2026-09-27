@@ -19,7 +19,14 @@ export const CONFIRMATION_PHRASE = ACTUATOR_CONFIRMATION;
 export type RelayIntent = {
   desired: boolean;
   reason: string;
+  /** The kind of caller. It decides policy — a person must confirm, a controller has its own dwell time. */
   actor: 'user' | 'controller';
+  /**
+   * Who, for the audit trail: an account name, or "home network (…)". Kept
+   * apart from `actor`, which is a kind and drives policy — a person's name
+   * must never be able to change which rules apply.
+   */
+  by?: string;
   /** Required when cutting mains, and for the first switch of a new plug. */
   confirmation?: string;
 };
@@ -153,7 +160,7 @@ export class ActionGateway {
   async #execute(intent: RelayIntent): Promise<GatewayResult> {
     const at = new Date().toISOString();
     const refuse = (detail: string): GatewayResult => {
-      this.#record({ at, kind: 'relay.refused', actor: intent.actor, resource: 'gridRelay', summary: detail, detail: intent });
+      this.#record({ at, kind: 'relay.refused', actor: intent.by ?? intent.actor, resource: 'gridRelay', summary: detail, detail: intent });
       return { outcome: 'refused', detail };
     };
 
@@ -204,7 +211,7 @@ export class ActionGateway {
     this.#record({
       at,
       kind: 'relay.intent',
-      actor: intent.actor,
+      actor: intent.by ?? intent.actor,
       resource: 'gridRelay',
       summary: `Requested grid AC ${intent.desired ? 'on' : 'off'}: ${intent.reason}`,
       detail: { provider: provider.id, before: relayBefore, stationAc: station.gridConnected },
@@ -219,7 +226,7 @@ export class ActionGateway {
       this.#record({
         at: new Date().toISOString(),
         kind: 'relay.failed',
-        actor: intent.actor,
+        actor: intent.by ?? intent.actor,
         resource: 'gridRelay',
         summary: `Command rejected: ${result.error ?? 'unknown error'}`,
       });
@@ -242,7 +249,7 @@ export class ActionGateway {
     this.#record({
       at: new Date().toISOString(),
       kind: `relay.${outcome}`,
-      actor: intent.actor,
+      actor: intent.by ?? intent.actor,
       resource: 'gridRelay',
       summary: detail,
       detail: { relayReported, stationAgreed, after },

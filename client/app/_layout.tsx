@@ -7,6 +7,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TamaguiProvider, Theme } from 'tamagui';
 
 import config, { BACKGROUNDS } from '../tamagui.config';
+import { AuthGate } from '../src/features/auth/SignIn';
+import { AuthProvider } from '../src/state/AuthProvider';
 import { DevicesProvider } from '../src/state/DevicesProvider';
 import { DirectLinkProvider } from '../src/state/DirectLinkProvider';
 
@@ -29,17 +31,26 @@ export default function RootLayout() {
             business.
           */}
           <DirectLinkProvider>
-            <DevicesProvider>
-              <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-              {/*
-                No tab bar. Root is the device canvas, and everything else is
-                pushed on top of it — a device's own screens, the add flow, and
-                the app-level infrastructure pages.
-              */}
-              <Stack screenOptions={{ headerShown: false }}>
-                <Stack.Screen name="index" />
-              </Stack>
-            </DevicesProvider>
+            <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+            {/*
+              Who you are to the chosen server comes before anything that asks
+              it for data. Behind the gate, the device list never starts polling
+              a server that will only answer "log in first".
+            */}
+            <AuthProvider>
+              <AuthGate>
+                <DevicesProvider>
+                  {/*
+                    No tab bar. Root is the device canvas, and everything else is
+                    pushed on top of it — a device's own screens, the add flow, and
+                    the app-level infrastructure pages.
+                  */}
+                  <Stack screenOptions={{ headerShown: false }}>
+                    <Stack.Screen name="index" />
+                  </Stack>
+                </DevicesProvider>
+              </AuthGate>
+            </AuthProvider>
           </DirectLinkProvider>
         </SafeAreaProvider>
       </Theme>
