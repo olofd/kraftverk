@@ -22,15 +22,21 @@
   },
   "dependencies": {
     "@kraftverk/plugin-sdk": "*",
-    "@kraftverk/protocol": "*",
-    "@kraftverk/ui": "*",
-    "@kraftverk/api-client": "*"
+    "@kraftverk/protocol": "*"
   },
   "peerDependencies": {
+    "@kraftverk/api-client": "*",
+    "@kraftverk/ui": "*",
     "react": "*",
     "tamagui": "*"
   },
   "peerDependenciesMeta": {
+    "@kraftverk/api-client": {
+      "optional": true
+    },
+    "@kraftverk/ui": {
+      "optional": true
+    },
     "react": {
       "optional": true
     },

@@ -22,6 +22,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@kraftverk/device-aferiy-p280": "*",
     "@kraftverk/plugin-sdk": "*",
     "@kraftverk/protocol": "*",
     "aedes": "^1.1.1",

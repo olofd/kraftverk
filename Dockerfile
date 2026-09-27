@@ -20,11 +20,20 @@ FROM node:24-bookworm-slim AS deps
 WORKDIR /app
 
 # Every workspace's manifest has to exist for `npm ci` to validate the lockfile,
-# even the ones this image will never run. They are a few hundred bytes each.
+# even the ones this image will never run — and only the manifests, so that
+# this stage, and the large layer it produces, is rebuilt when dependencies
+# change rather than whenever any source file does. A workspace added later
+# and missing here makes `npm ci` fail loudly.
 COPY package.json package-lock.json ./
 COPY client/package.json ./client/
 COPY server/package.json ./server/
-COPY packages ./packages
+COPY packages/protocol/package.json ./packages/protocol/
+COPY packages/plugin-sdk/package.json ./packages/plugin-sdk/
+COPY packages/api-client/package.json ./packages/api-client/
+COPY packages/ui/package.json ./packages/ui/
+COPY packages/devices/aferiy-p280/package.json ./packages/devices/aferiy-p280/
+COPY packages/plugins/fake-grid-relay/package.json ./packages/plugins/fake-grid-relay/
+COPY packages/plugins/tuya-local-grid-relay/package.json ./packages/plugins/tuya-local-grid-relay/
 
 # --omit=optional is what leaves Bluetooth out, and it is the whole reason the
 # server declares noble optional. noble drags in four native builds — node-gyp,
@@ -34,8 +43,22 @@ COPY packages ./packages
 #
 # --ignore-scripts costs nothing here: with dev and optional dependencies gone,
 # nothing left in the tree has an install script.
+#
+# npm nests a package wherever versions disagree: the server's zod v4 lives in
+# server/node_modules, because an Expo dependency holds v3 at the root. The
+# server stage copies the root and that one; a nested node_modules anywhere
+# else would be left behind, so the build stops and says so instead.
+#
+# (The server's tree also carries React, Tamagui and Expo: the device package's
+# screens name them as optional peers, and npm resolves optional peers that
+# the app installs elsewhere in the workspace. Unused by the server, and in a
+# layer that changes only with the lockfile.)
 RUN npm ci --omit=dev --omit=optional --ignore-scripts \
-      --workspace server --include-workspace-root
+      --workspace server --include-workspace-root \
+ && mkdir -p server/node_modules \
+ && if find packages -mindepth 2 -maxdepth 4 -type d -name node_modules | grep .; then \
+      echo "A workspace has its own node_modules; copy it into the server stage." >&2; exit 1; \
+    fi
 
 # --- the app, built for the web ----------------------------------------------
 
@@ -107,13 +130,15 @@ ENV NODE_ENV=production \
     PORT=3333 \
     HOST=0.0.0.0
 
-# The whole installed tree, not just the root node_modules: npm nests a
-# package wherever versions disagree — the server's zod v4 is in
-# server/node_modules, because an Expo dependency holds v3 at the root — and
-# copying only the root left the server unable to start. npm links workspaces
-# as relative symlinks (node_modules/@kraftverk/protocol → ../../packages/
-# protocol), which resolve because both stages build in /app.
-COPY --from=deps /app ./
+# Dependencies first — a large layer that changes only with the lockfile — then
+# the sources, which change with every commit. Both node_modules: see the deps
+# stage. npm links workspaces as relative symlinks (node_modules/@kraftverk/
+# protocol → ../../packages/protocol), which resolve because both stages build
+# in /app and packages/ is copied alongside.
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/server/node_modules ./server/node_modules
+COPY package.json ./
+COPY packages ./packages
 COPY server ./server
 
 # The plugin host reads packages/plugins at runtime rather than importing a

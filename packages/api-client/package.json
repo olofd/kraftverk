@@ -21,6 +21,11 @@
     "expo-constants": "*",
     "react-native": "*"
   },
+  "peerDependenciesMeta": {
+    "axios": { "optional": true },
+    "expo-constants": { "optional": true },
+    "react-native": { "optional": true }
+  },
   "devDependencies": {
     "@types/bun": "^1.3.14",
     "typescript": "^7.0.2"

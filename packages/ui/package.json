@@ -21,6 +21,11 @@
     "react-native": "*",
     "tamagui": "*"
   },
+  "peerDependenciesMeta": {
+    "react": { "optional": true },
+    "react-native": { "optional": true },
+    "tamagui": { "optional": true }
+  },
   "devDependencies": {
     "@types/bun": "^1.3.14",
     "typescript": "^7.0.2"
