@@ -374,7 +374,9 @@ What the review found, and which step fixes it.
 - **the dependency rule** (§3) is broken by a new import;
 - **the leak count** rises: the number of product-specific identifiers —
   `core.station`, `p280`, `StationStatus`, `StationSettings`, `power-station`,
-  `gridRelay` — in files outside `packages/devices/aferiy-p280`.
+  `gridRelay` — in shipped files outside `packages/devices/aferiy-p280`.
+  Tests are held to the dependency rule but not counted: a test that drives
+  the real station through a core route moves with that route.
 
 Both are held by a baseline, `scripts/architecture-baseline.json`, listing
 today's exceptions file by file. It may only shrink: a file whose count falls

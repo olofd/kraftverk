@@ -37,6 +37,8 @@ const LEAK = /core\.station|p280|P280|StationStatus|StationSettings|power-statio
 const LEAK_HOME = 'packages/devices/aferiy-p280/';
 
 const SOURCE = /\.(ts|tsx|mts|js|mjs|jsx)$/;
+/** Test files: held to the dependency rule, but not counted for product identifiers. */
+const TEST = /\.test\.(ts|tsx)$|(^|\/)test\//;
 
 // --- where a file belongs ----------------------------------------------------
 
@@ -161,7 +163,13 @@ function measure() {
       .sort();
     if (broken.length) imports[file] = broken;
 
-    if (!file.startsWith(LEAK_HOME)) {
+    /*
+      Shipped code only. A test that drives the real station through a core
+      route is not the core knowing the station — and it moves with that route
+      when the route moves into the station's package. The dependency rule
+      above still applies to tests.
+    */
+    if (!file.startsWith(LEAK_HOME) && !TEST.test(file)) {
       const count = source.match(LEAK)?.length ?? 0;
       if (count) leaks[file] = count;
     }
