@@ -15,7 +15,7 @@ variables:
 validate:
   stage: validate
   # package.json's volta pin.
-  image: node:24.19.0-bookworm
+  image: node:24.21.0-bookworm
   timeout: 25m
   cache:
     key:

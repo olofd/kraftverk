@@ -15,7 +15,7 @@
 # --- dependencies ------------------------------------------------------------
 
 # Node 24, as package.json's volta pin: the lockfile is written by its npm.
-FROM node:24-bookworm-slim AS deps
+FROM node:24.21.0-bookworm-slim AS deps
 
 WORKDIR /app
 
@@ -62,7 +62,7 @@ RUN npm ci --omit=dev --omit=optional --ignore-scripts \
 
 # --- the app, built for the web ----------------------------------------------
 
-FROM node:24-bookworm-slim AS web-build
+FROM node:24.21.0-bookworm-slim AS web-build
 
 WORKDIR /app
 
@@ -113,7 +113,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
 
 # The same Bun the tests run on — root package.json pins it — so what CI
 # tested is what the container runs. Bump both together.
-FROM oven/bun:1.4.0 AS server
+FROM oven/bun:1.4.2 AS server
 
 LABEL se.kraftverk.image="server"
 
