@@ -71,6 +71,9 @@ pass 'a request that came through a proxy is not the home network'
 request GET "$LAN_URL/api/auth/state" -H "Host: $PUBLIC_HOST"
 body_has '"canSetup":false' || fail 'a request addressed by the public name is not the home network'
 pass 'a request addressed by the public name is not the home network'
+request GET "$LAN_URL/api/auth/state" -H 'Host: 198.51.100.7:8080'
+body_has '"canSetup":false' || fail 'a request addressed by a public address is not the home network (a port forwarded on the router)'
+pass 'a request addressed by a public address is not the home network'
 request GET "$LAN_URL/api/auth/state" -H 'Host: rebound.example'
 expect_status 421 'a name the server does not answer to is refused (DNS rebinding)'
 
@@ -99,6 +102,12 @@ request GET "$LAN_URL/api/devices" -H "$session"
 expect_status 200 'signed in, the devices answer'
 request POST "$LAN_URL/api/grid/relay" -H "$session" -H 'Content-Type: text/plain' --data '{"on":false}'
 expect_status 403 'a forged write is refused even with a session'
+request POST "$LAN_URL/api/users" -H "$session" -H "$CLIENT" -H 'Content-Type: application/json' \
+  --data '{"username":"backdoor","password":"correct horse battery staple"}'
+expect_status 400 'a session alone cannot add an account'
+request POST "$LAN_URL/api/users" -H "$session" -H "$CLIENT" -H 'Content-Type: application/json' \
+  --data "{\"username\":\"backdoor\",\"password\":\"correct horse battery staple\",\"yourPassword\":\"not the password at all\"}"
+expect_status 403 '…nor with a wrong password to confirm it'
 
 echo "Signing in from the internet"
 request POST "$PUBLIC_URL/api/auth/login" -H "Host: $PUBLIC_HOST" -H "$CLIENT" -H 'Content-Type: application/json' \
@@ -109,5 +118,14 @@ pass 'over a Secure cookie'
 request POST "$PUBLIC_URL/api/auth/login" -H "Host: $PUBLIC_HOST" -H "$CLIENT" -H 'Content-Type: application/json' \
   --data '{"username":"smoke","password":"not the password at all"}'
 expect_status 401 'a wrong password is refused'
+# A reverse proxy appends the address it saw to whatever the client sent; the
+# client's own entry, on the left, must not be the one that is counted.
+request POST "$PUBLIC_URL/api/auth/login" -H "Host: $PUBLIC_HOST" -H "$CLIENT" -H 'Content-Type: application/json' \
+  -H 'X-Forwarded-For: 203.0.113.66, 198.51.100.23' --data '{"username":"smoke","password":"a spoofed guess"}'
+expect_status 401 'a guess with a forged forwarding header is refused'
+request GET "$LAN_URL/api/audit?limit=5" -H "$session"
+body_has '198.51.100.23' || fail 'the address the proxy saw is the one recorded'
+! body_has '203.0.113.66' || fail 'the address the client claimed is not recorded'
+pass 'the address the proxy saw is recorded, not the one the client claimed'
 
 echo "$passed checks passed"

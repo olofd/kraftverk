@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 /**
  * The passphrase that authorises wiping the database.
@@ -27,29 +27,24 @@ export async function resetSecret(): Promise<string | null> {
   if (raw === null) return null;
 
   const trimmed = raw.trim();
-  // A short secret is a typo or a placeholder, not a decision.
-  return trimmed.length >= 8 ? trimmed : null;
+  // A short secret is a typo or a placeholder, not a decision — and it guards
+  // the one thing here that cannot be undone.
+  return trimmed.length >= RESET_SECRET_MIN ? trimmed : null;
 }
+
+export const RESET_SECRET_MIN = 16;
 
 /**
  * Compares in constant time.
  *
  * `===` on secrets leaks their length and their common prefix through timing.
- * That matters little on a LAN and costs nothing to avoid, and the habit is
- * worth more than the specific attack: this is the only password-shaped
- * comparison in the codebase, so it is the one that sets the example.
+ * `timingSafeEqual` wants equal lengths, so it compares a digest of each: the
+ * same size whatever was typed, which says nothing about the secret's length
+ * either.
  */
 export function secretMatches(supplied: string, expected: string): boolean {
-  const a = Buffer.from(supplied);
-  const b = Buffer.from(expected);
-  // timingSafeEqual throws on a length mismatch, which would leak the length by
-  // exception rather than by clock. Compare a fixed-size digest of each instead.
-  if (a.length !== b.length) {
-    // Still do the work, so the failure takes the same time either way.
-    timingSafeEqual(b, b);
-    return false;
-  }
-  return timingSafeEqual(a, b);
+  const digest = (value: string) => createHash('sha256').update(value).digest();
+  return timingSafeEqual(digest(supplied), digest(expected));
 }
 
 /** Where the secret is expected, for an error message that can be acted on. */

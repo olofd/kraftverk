@@ -15,7 +15,7 @@ import {
   type DecodedTelemetry,
   type FirmwareVersions,
 } from './registers.ts';
-import { buildSettings, buildStatus, portRegister, settingsWrites } from './station.ts';
+import { buildSettings, buildStatus, PORT_LABELS, portEnabled, portRegister, settingsWrites } from './station.ts';
 import type {
   PortId,
   StationSettings,
@@ -122,6 +122,28 @@ export class ReadOnlyError extends Error {
   }
 }
 
+/**
+ * An output could not be switched safely, or did not switch.
+ *
+ * The station's output registers toggle on any write instead of taking the
+ * value written, so a switch is only safe when the output's state is known at
+ * the moment of writing. When it is not, nothing is sent; when the station
+ * does not report the new state afterwards, that is said rather than
+ * reported as success. The server maps this to HTTP 409.
+ */
+export class PortSwitchError extends Error {}
+
+/**
+ * A write that waited too long behind other work to still be wanted.
+ *
+ * Sending it anyway would change the hardware long after whoever asked for it
+ * was told it failed — and has perhaps tried again.
+ */
+export class StaleWriteError extends Error {}
+
+/** How long a write may wait for its turn before it is dropped instead of sent. */
+export const WRITE_DEADLINE_MS = 15_000;
+
 export type BlockedWrite = { at: string; register: number; value: number };
 
 export type StationClientOptions = {
@@ -153,6 +175,8 @@ export class StationClient {
   #blocked: BlockedWrite[] = [];
   #timer: ReturnType<typeof setInterval> | null = null;
   #queue: Promise<unknown> = Promise.resolve();
+  /** The poll in progress, if any — so the timer never stacks a second behind it. */
+  #polling: Promise<void> | null = null;
   #unsubscribe: (() => void) | null = null;
 
   #telemetry: DecodedTelemetry | null = null;
@@ -204,7 +228,18 @@ export class StationClient {
       if (this.#ingest(frame)) this.#emit();
     });
 
-    this.#timer = setInterval(() => void this.#poll(), this.#pollMs);
+    /*
+      Skipped while the last poll is still running. A station that has gone
+      quiet makes every request wait out its timeout — 8 s over Bluetooth,
+      longer than the interval — and stacking polls behind one another grew
+      the queue without end, with any write waiting at the back of it.
+    */
+    this.#timer = setInterval(() => {
+      if (this.#polling) return;
+      this.#polling = this.#poll().finally(() => {
+        this.#polling = null;
+      });
+    }, this.#pollMs);
     // Deliberately not awaited: a station that is asleep, out of range or not
     // bound yet would otherwise hold up whatever started us — on the server
     // that is the HTTP listener, which must come up regardless. Callers that
@@ -316,7 +351,8 @@ export class StationClient {
     }
   }
 
-  async #write(register: number, value: number): Promise<void> {
+  /** Everything that must hold before a write is even queued. */
+  #checkWrite(register: number, value: number): void {
     if (!this.#transport.boundId) throw new Error('No device bound');
 
     // Whitelist first, so an unsafe value is reported as unsafe even in
@@ -328,27 +364,47 @@ export class StationClient {
       if (this.#blocked.length > 50) this.#blocked.shift();
       throw new ReadOnlyError(register, value);
     }
+  }
 
-    /*
-      Pinned, and refused if it moved.
-
-      The queue defers this, so reading `this.#transport` when the task runs
-      would send the write to whatever station the client points at *by then*.
-      A write meant for the station in the van, applied to the one in the shed,
-      is the worst outcome this codebase has — one of these registers bricks the
-      hardware. Refusing is the only safe answer; the caller can retry against
-      the station it meant.
-    */
+  /**
+   * Runs a write's turn on the queue, on the link it was meant for, while it
+   * is still wanted.
+   *
+   * Pinned, and refused if it moved. The queue defers this, so reading
+   * `this.#transport` when the task runs would send the write to whatever
+   * station the client points at *by then*. A write meant for the station in
+   * the van, applied to the one in the shed, is the worst outcome this codebase
+   * has — one of these registers bricks the hardware. Refusing is the only safe
+   * answer; the caller can retry against the station it meant.
+   *
+   * And dropped if it waited too long: see `StaleWriteError`.
+   */
+  #writeTurn<T>(work: (link: StationLink) => Promise<T>): Promise<T> {
     const link = this.#transport;
-
-    await this.#enqueue(async () => {
+    const queuedAt = Date.now();
+    return this.#enqueue(async () => {
       if (link !== this.#transport) {
         throw new Error('The station changed before this write was sent, so it was not applied.');
       }
-      await link.send(writeRegister(register, value));
-      // The device drops frames sent back to back.
-      await new Promise((r) => setTimeout(r, 150));
+      if (Date.now() - queuedAt > WRITE_DEADLINE_MS) {
+        throw new StaleWriteError(
+          `The station was busy or not answering for over ${WRITE_DEADLINE_MS / 1000} s, so the change was not sent.`
+        );
+      }
+      return work(link);
     });
+  }
+
+  /** One register write on the wire, then the pause the device needs. */
+  async #send(link: StationLink, register: number, value: number): Promise<void> {
+    await link.send(writeRegister(register, value));
+    // The device drops frames sent back to back.
+    await new Promise((r) => setTimeout(r, 150));
+  }
+
+  async #write(register: number, value: number): Promise<void> {
+    this.#checkWrite(register, value);
+    await this.#writeTurn((link) => this.#send(link, register, value));
   }
 
   status(): StationStatus {
@@ -378,15 +434,59 @@ export class StationClient {
     return this.settings();
   }
 
+  /**
+   * Switches an output on or off — and only ever to the state asked for.
+   *
+   * The station's output registers toggle on any write rather than taking the
+   * value written, so the write must be skipped when the output is already
+   * there. Deciding that from the cached reading was the danger: with no
+   * reading yet it said "off", so "on" was sent to outlets that were on, and
+   * turned them off; a button pressed at the unit since the last poll, or a
+   * second tap racing the first, did the same.
+   *
+   * So the state is read fresh, and the decision and the write happen in the
+   * same turn on the queue — nothing can come between them. No answer means
+   * nothing is sent. Afterwards the station must report the new state, or the
+   * caller hears that it did not.
+   */
   async setPort(id: PortId, enabled: boolean): Promise<StationStatus> {
-    // Known firmware quirk: registers 25/26 toggle on any write rather than
-    // honouring the value, so skip the write when we are already in the state.
-    const current = this.status().ports.find((p) => p.id === id);
-    if (current && current.enabled === enabled) return this.status();
+    const register = portRegister(id);
+    const value = enabled ? 1 : 0;
+    this.#checkWrite(register, value);
+    const label = PORT_LABELS[id];
 
-    await this.#write(portRegister(id), enabled ? 1 : 0);
-    await this.#poll();
-    return this.status();
+    const wrote = await this.#writeTurn(async (link) => {
+      let frame: ParsedFrame;
+      try {
+        frame = await link.request(readInputRegisters(0, INPUT_REGISTER_COUNT), 'input');
+      } catch {
+        throw new PortSwitchError(
+          `Did not switch “${label}”: the station did not answer, and an output can only be switched safely when its current state is known.`
+        );
+      }
+      this.#lastSeen = new Date();
+      if (!this.#ingest(frame) || !this.#telemetry) {
+        throw new PortSwitchError(`Did not switch “${label}”: the station's answer could not be read.`);
+      }
+      if (portEnabled(this.#telemetry, id) === enabled) return false;
+      await this.#send(link, register, value);
+      return true;
+    });
+
+    if (!wrote) {
+      this.#emit();
+      return this.status();
+    }
+
+    // The station may take a moment to report the change.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 1000));
+      await this.#poll();
+      if (this.#telemetry && portEnabled(this.#telemetry, id) === enabled) return this.status();
+    }
+    throw new PortSwitchError(
+      `Sent the switch for “${label}”, but the station does not report it ${enabled ? 'on' : 'off'}. Check the station before trying again.`
+    );
   }
 
   /**

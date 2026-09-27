@@ -133,8 +133,16 @@ function AccountRow({
   const { logOut } = useAuth();
   const [action, setAction] = useState<'idle' | 'confirm-remove' | 'reset'>('idle');
   const [password, setPassword] = useState('');
+  const [yours, setYours] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+
+  const cancel = () => {
+    setAction('idle');
+    setPassword('');
+    setYours('');
+    setProblem(null);
+  };
 
   const seen = account.lastLoginAt ? `last login ${new Date(account.lastLoginAt).toLocaleString()}` : 'never logged in';
 
@@ -143,8 +151,7 @@ function AccountRow({
     setProblem(null);
     try {
       await work();
-      setAction('idle');
-      setPassword('');
+      cancel();
       await onChanged();
     } catch (error) {
       setProblem(describeError(error));
@@ -186,8 +193,9 @@ function AccountRow({
             Remove {account.username}? They are signed out everywhere and can no longer log in.
             {isMe ? ' That includes you, on this device.' : ''}
           </Text>
+          <ConfirmWithYours value={yours} onChange={setYours} />
           <XStack gap="$2">
-            <Button flex={1} size="$3" disabled={busy} onPress={() => setAction('idle')}>
+            <Button flex={1} size="$3" disabled={busy} onPress={cancel}>
               Cancel
             </Button>
             <Button
@@ -195,11 +203,12 @@ function AccountRow({
               size="$3"
               backgroundColor="$danger"
               color="$background"
-              disabled={busy}
+              disabled={busy || !yours}
+              opacity={busy || !yours ? 0.5 : 1}
               onPress={() => {
                 haptic();
                 void run(async () => {
-                  await removeAccount(account.id);
+                  await removeAccount(account.id, yours);
                   // Signed out by the server already; this also clears what the app held.
                   if (isMe) await logOut();
                 });
@@ -219,22 +228,23 @@ function AccountRow({
             onChange={setPassword}
             hint={`At least ${PASSWORD_MIN} characters. They are signed out everywhere, and need this to log in again — pass it on somewhere private.`}
           />
+          <ConfirmWithYours value={yours} onChange={setYours} />
           <XStack gap="$2" flexWrap="wrap">
             <Button size="$3" onPress={() => setPassword(suggestPassword())}>
               Suggest one
             </Button>
-            <Button size="$3" disabled={busy} onPress={() => setAction('idle')}>
+            <Button size="$3" disabled={busy} onPress={cancel}>
               Cancel
             </Button>
             <Button
               size="$3"
               backgroundColor="$accent"
               color="$background"
-              disabled={busy || passwordProblem(password) !== null}
-              opacity={busy || passwordProblem(password) !== null ? 0.5 : 1}
+              disabled={busy || !yours || passwordProblem(password) !== null}
+              opacity={busy || !yours || passwordProblem(password) !== null ? 0.5 : 1}
               onPress={() => {
                 haptic();
-                void run(() => resetAccountPassword(account.id, password));
+                void run(() => resetAccountPassword(account.id, password, yours));
               }}
             >
               Set password
@@ -256,10 +266,18 @@ function AddAccount({ onAdded }: { onAdded: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [yours, setYours] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
-  const invalid = !username.trim() || passwordProblem(password) !== null;
+  const invalid = !username.trim() || !yours || passwordProblem(password) !== null;
+  const close = () => {
+    setOpen(false);
+    setUsername('');
+    setPassword('');
+    setYours('');
+    setProblem(null);
+  };
 
   if (!open) {
     return (
@@ -290,6 +308,7 @@ function AddAccount({ onAdded }: { onAdded: () => Promise<void> }) {
         onChange={setPassword}
         hint={`At least ${PASSWORD_MIN} characters. Pass it on somewhere private; they can change it once they are in.`}
       />
+      <ConfirmWithYours value={yours} onChange={setYours} />
       {problem ? (
         <Text fontSize={13} color="$danger" lineHeight={18} role="alert">
           {problem}
@@ -302,12 +321,7 @@ function AddAccount({ onAdded }: { onAdded: () => Promise<void> }) {
         <Button
           size="$3"
           disabled={busy}
-          onPress={() => {
-            setOpen(false);
-            setUsername('');
-            setPassword('');
-            setProblem(null);
-          }}
+          onPress={close}
         >
           Cancel
         </Button>
@@ -322,10 +336,8 @@ function AddAccount({ onAdded }: { onAdded: () => Promise<void> }) {
             setBusy(true);
             setProblem(null);
             try {
-              await addAccount(username.trim(), password);
-              setOpen(false);
-              setUsername('');
-              setPassword('');
+              await addAccount(username.trim(), password, yours);
+              close();
               await onAdded();
             } catch (error) {
               setProblem(describeError(error));
@@ -339,6 +351,14 @@ function AddAccount({ onAdded }: { onAdded: () => Promise<void> }) {
       </XStack>
     </Card>
   );
+}
+
+/**
+ * Your own password, asked for again before changing who may use the server.
+ * A session alone — a phone left unlocked — is not enough for that.
+ */
+function ConfirmWithYours({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return <Field label="Your password" kind="current-password" value={value} onChange={onChange} hint="To confirm it is you." />;
 }
 
 function ChangeOwnPassword() {

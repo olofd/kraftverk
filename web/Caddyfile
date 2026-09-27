@@ -21,6 +21,12 @@
 		# client address it reports is the one to rate-limit and record.
 		trusted_proxies static private_ranges
 		client_ip_headers X-Forwarded-For X-Real-IP
+		# Read X-Forwarded-For from the right. A proxy appends the address it
+		# saw to whatever the client sent, so the left-most entry is the
+		# client's own claim: taking it let anyone pick the address their
+		# login attempts were counted against. From the right, the first
+		# address that is not a proxy is the one that really connected.
+		trusted_proxies_strict
 	}
 }
 

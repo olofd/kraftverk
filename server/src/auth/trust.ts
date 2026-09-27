@@ -61,20 +61,20 @@ export type Trust = {
 export function assessTrust({ socketIp, headers, proxies }: TrustInput): Trust {
   const socket = normaliseIp(socketIp);
   /*
-    Addressed by a public name — the DDNS name, say — which is how the
-    internet reaches a server and never how the home network has to. Whatever
-    else the request says, a proxy somewhere is forwarding it, so it is not
-    home: this is what catches a reverse proxy pointed at the wrong entrance,
-    or at the server itself, that adds no forwarding headers.
+    Addressed by a public name — the DDNS name, say — or by the router's
+    public address, which is how the internet reaches a server and never how
+    the home network has to. Whatever else the request says, something is
+    forwarding it from outside, so it is not home: this is what catches a
+    reverse proxy pointed at the wrong entrance, or a port forwarded on the
+    router, neither of which adds forwarding headers.
   */
-  const named = hostName(headers.get('host'));
-  const publicName = named !== null && !isLocalName(named) ? named : null;
+  const publicName = publicHost(headers.get('host'));
 
   if (socket && proxies.has(socket)) {
     const exposure = headers.get(EXPOSURE_HEADER);
     const clientIp = normaliseIp(headers.get(CLIENT_IP_HEADER)) ?? socket;
     if (exposure === 'lan' && publicName) {
-      return { onHomeNetwork: false, clientIp, reason: `Came through the home-network entrance, but addressed as ${publicName}, a public name` };
+      return { onHomeNetwork: false, clientIp, reason: `Came through the home-network entrance, but addressed as ${publicName}, as the internet would` };
     }
     if (exposure === 'lan') {
       return { onHomeNetwork: true, clientIp, reason: 'Came through the web app’s home-network entrance' };
@@ -92,10 +92,28 @@ export function assessTrust({ socketIp, headers, proxies }: TrustInput): Trust {
   }
   if (!socket) return { onHomeNetwork: false, clientIp: null, reason: 'The caller’s address is unknown' };
   if (publicName) {
-    return { onHomeNetwork: false, clientIp: socket, reason: `Addressed as ${publicName}, a public name, so something is forwarding it` };
+    return { onHomeNetwork: false, clientIp: socket, reason: `Addressed as ${publicName}, as the internet would, so something is forwarding it` };
   }
   if (isPrivate(socket)) return { onHomeNetwork: true, clientIp: socket, reason: `Connected directly from ${socket}, a home-network address` };
   return { onHomeNetwork: false, clientIp: socket, reason: `Connected from ${socket}, which is not a home-network address` };
+}
+
+/**
+ * The name or address in `Host`, if it is one the internet would use: a name
+ * from public DNS, or a public IP address.
+ *
+ * The address matters as much as the name. Port 8080 forwarded on the router —
+ * one checkbox, easily ticked by mistake — lets scanners reach the home
+ * entrance with `Host: <your public IP>` and no forwarding headers at all.
+ * The home network reaches this server by its LAN address, never by the
+ * router's.
+ */
+export function publicHost(header: string | null | undefined): string | null {
+  const host = hostName(header);
+  if (host === null) return null;
+  const ip = normaliseIp(host);
+  if (ip) return isPrivate(ip) ? null : ip;
+  return isLocalName(host) ? null : host;
 }
 
 /** `::ffff:192.168.1.5` → `192.168.1.5`; brackets and zones dropped; anything unparseable → null. */

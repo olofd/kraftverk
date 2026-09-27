@@ -594,16 +594,22 @@ export async function fetchAccounts(signal?: AbortSignal) {
   return data.users;
 }
 
-export async function addAccount(username: string, password: string) {
-  const { data } = await api.post<{ user: AccountDetail }>('/users', { username, password });
+/*
+  Managing accounts needs your own password as well as your session: a
+  borrowed session must not be able to add an account it keeps, or set a
+  password it knows.
+*/
+
+export async function addAccount(username: string, password: string, yourPassword: string) {
+  const { data } = await api.post<{ user: AccountDetail }>('/users', { username, password, yourPassword });
   return data.user;
 }
 
-export async function removeAccount(id: string) {
-  await api.delete(`/users/${encodeURIComponent(id)}`);
+export async function removeAccount(id: string, yourPassword: string) {
+  await api.delete(`/users/${encodeURIComponent(id)}`, { data: { yourPassword } });
 }
 
 /** Someone else's password. Signs them out everywhere. */
-export async function resetAccountPassword(id: string, password: string) {
-  await api.post(`/users/${encodeURIComponent(id)}/password`, { password });
+export async function resetAccountPassword(id: string, password: string, yourPassword: string) {
+  await api.post(`/users/${encodeURIComponent(id)}/password`, { password, yourPassword });
 }

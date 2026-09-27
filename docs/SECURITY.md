@@ -59,12 +59,14 @@ the server up from home.
 
 Two tripwires make a misconfigured reverse proxy fail safe:
 
-- **A request addressed by a public name is never the home network**, however
-  it arrived — through either entrance or directly. The home network reaches
-  the server by an address, a `.local` name or a single-label name; the
-  internet reaches it by its DDNS name. This catches a reverse proxy pointed at
-  the wrong entrance, or straight at the server, that adds no forwarding
-  headers (`assessTrust`).
+- **A request addressed by a public name or a public address is never the home
+  network**, however it arrived — through either entrance or directly. The
+  home network reaches the server by a private address, a `.local` name or a
+  single-label name; the internet reaches it by its DDNS name, or by the
+  router's address. This catches a reverse proxy pointed at the wrong
+  entrance, or straight at the server, and a port forwarded on the router by
+  mistake — none of which add forwarding headers (`publicHost`,
+  `assessTrust`).
 - **The web container's home-network entrance stamps anything that has been
   through a proxy as `public`**: a request arriving with `X-Forwarded-For`,
   `Forwarded`, `X-Real-IP` or `X-Forwarded-Host` (`web/Caddyfile`).
@@ -72,7 +74,10 @@ Two tripwires make a misconfigured reverse proxy fail safe:
 The web container's internet entrance is published on the host's loopback
 only, so the internet reaches it through the host's reverse proxy and nowhere
 else, and that proxy's `X-Forwarded-For` is what gives the client's address
-for rate limits and the audit log.
+for rate limits and the audit log. It is read from the right
+(`trusted_proxies_strict`): a proxy appends the address it saw to whatever the
+client sent, so the left-most entry is the client's own claim, and taking it
+would let anyone choose the address their guesses are counted against.
 
 ## Sessions and passwords
 
@@ -80,10 +85,11 @@ for rate limits and the audit log.
 | --- | --- |
 | Passwords | argon2id (Bun's built-in). At least 12 characters. At most two hashes run at once, so a burst of attempts cannot exhaust a small server's memory |
 | Sessions | 256-bit random tokens in an `HttpOnly`, `SameSite=Lax`, `Path=/api` cookie — `Secure` whenever the browser is on HTTPS. Stored only as a SHA-256 hash, so a copy of the database cannot be replayed as live sessions. 30 days, renewed with use |
-| Changing a password | Needs the current one — and wrong guesses at it count like failed logins — and signs the account out everywhere else. An administrator resetting someone else's signs *them* out everywhere |
+| Changing a password | Needs the current one — and wrong guesses at it count like failed logins — and signs the account out everywhere else. An administrator resetting someone else's signs *them* out everywhere; your own is only ever changed with your current one |
+| Managing accounts | Adding an account, removing one and setting someone else's password need your own password again, not just a session: a borrowed session — an unlocked phone, a copied cookie — must not be able to leave behind an account or a password it knows. Wrong confirmations count like failed logins |
 | Guessing | Counted per client address (an IPv6 caller's whole /64) and per username. Five failures are free; then each locks for twice as long, from one minute to fifteen. A wrong username takes as long as a wrong password, and gets the same answer. The username count from the internet is kept apart from the one at home, so someone who knows your username cannot lock you out of your own server from outside |
 | The last account | Cannot be deleted |
-| Erasing everything | Needs an account *and* the reset passphrase from a file on the server. Keeps the accounts, so the server is never left waiting to be claimed |
+| Erasing everything | Needs an account *and* the reset passphrase — 16 characters or more — from a file on the server. Wrong passphrases are counted and slowed down like logins, on a count of their own. Keeps the accounts, so the server is never left waiting to be claimed |
 
 ## Attacks the browser makes possible
 

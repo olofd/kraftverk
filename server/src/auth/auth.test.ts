@@ -67,8 +67,14 @@ describe('assessTrust', () => {
     expect(judge('172.17.0.1', { host: 'home.example.net' }).onHomeNetwork).toBe(false);
     // …or at the web app's home-network entrance by mistake.
     expect(judge(PROXY, { host: 'home.example.net:8080', [EXPOSURE_HEADER]: 'lan' }).onHomeNetwork).toBe(false);
-    // Local names are still home.
-    for (const host of ['192.168.50.140:8080', 'localhost:3333', 'diskstation.local', 'diskstation', '[fd12::1]:8080']) {
+    // …or by the router's public address: port 8080 forwarded on the router,
+    // reached by a scanner that adds nothing at all.
+    for (const host of ['198.51.100.7:8080','203.0.113.9', '[2001:db8::5]:8080', '[::ffff:203.0.113.9]:8080']) {
+      expect(judge('192.168.50.1', { host }).onHomeNetwork).toBe(false);
+      expect(judge(PROXY, { host, [EXPOSURE_HEADER]: 'lan' }).onHomeNetwork).toBe(false);
+    }
+    // Local names and addresses are still home.
+    for (const host of ['192.168.50.140:8080', '127.0.0.1:3333', '[::1]:3333', 'localhost:3333', 'diskstation.local', 'diskstation', '[fd12::1]:8080']) {
       expect(judge('192.168.50.58', { host }).onHomeNetwork).toBe(true);
       expect(judge(PROXY, { host, [EXPOSURE_HEADER]: 'lan' }).onHomeNetwork).toBe(true);
     }
@@ -454,11 +460,52 @@ describe('the gate', () => {
     expect((await call('/users', { method: 'POST', body: { username: 'backdoor', password: PASSWORD } })).status).toBe(401);
 
     const login = await call('/auth/login', { method: 'POST', body: { username: 'olof', password: PASSWORD } });
-    const added = await call('/users', { method: 'POST', cookie: login.token, body: { username: 'anna', password: PASSWORD } });
+    const added = await call('/users', { method: 'POST', cookie: login.token, body: { username: 'anna', password: PASSWORD, yourPassword: PASSWORD } });
     expect(added.status).toBe(201);
     const list = await call('/users', { cookie: login.token });
     expect((list.body?.users as unknown[]).length).toBe(2);
     expect(JSON.stringify(list.body)).not.toContain('argon2');
+  });
+
+  test('a borrowed session cannot add, remove or take over accounts', async () => {
+    const olof = await createFirstUser('olof', PASSWORD);
+    const anna = await createUser('anna', PASSWORD, 'olof');
+    const login = await call('/auth/login', { method: 'POST', body: { username: 'olof', password: PASSWORD } });
+    const as = (path: string, method: string, body: Record<string, unknown>) => call(path, { method, cookie: login.token, body });
+
+    // Without your own password, nothing.
+    expect((await as('/users', 'POST', { username: 'backdoor', password: PASSWORD })).status).toBe(400);
+    expect((await as('/users', 'POST', { username: 'backdoor', password: PASSWORD, yourPassword: 'a wrong guess' })).status).toBe(403);
+    expect((await as(`/users/${anna.id}/password`, 'POST', { password: 'known to the thief now' })).status).toBe(400);
+    expect((await as(`/users/${anna.id}`, 'DELETE', { yourPassword: 'a wrong guess' })).status).toBe(403);
+    expect(countUsers()).toBe(2);
+
+    // Your own password is never set here, even with the right confirmation:
+    // that is /auth/password, which wants the current one.
+    expect((await as(`/users/${olof.id}/password`, 'POST', { password: 'known to the thief now', yourPassword: PASSWORD })).status).toBe(400);
+
+    // With it, all of them.
+    expect((await as(`/users/${anna.id}/password`, 'POST', { password: 'a brand new passphrase', yourPassword: PASSWORD })).status).toBe(200);
+    expect((await as(`/users/${anna.id}`, 'DELETE', { yourPassword: PASSWORD })).status).toBe(200);
+    expect(countUsers()).toBe(1);
+  });
+
+  test('confirming with your password cannot be used to guess it', async () => {
+    await createFirstUser('sam', PASSWORD);
+    const login = await call('/auth/login', { from: '192.168.50.78', method: 'POST', body: { username: 'sam', password: PASSWORD } });
+    const guess = (yourPassword: string) =>
+      call('/users', { from: '192.168.50.78', method: 'POST', cookie: login.token, body: { username: 'backdoor', password: PASSWORD, yourPassword } });
+    for (let i = 0; i < 6; i++) expect((await guess(`guess number ${i}`)).status).toBe(403);
+    expect((await guess(PASSWORD)).status).toBe(429);
+    expect(countUsers()).toBe(1);
+  });
+
+  test('a fresh server cannot be claimed through a port forwarded on the router', async () => {
+    // A scanner reaching the home-network entrance by the router's public address.
+    const forwarded = { ...viaLanEntrance, host: '198.51.100.7:8080', headers: { ...viaLanEntrance.headers, [CLIENT_IP_HEADER]: PUBLIC } };
+    expect((await call('/auth/state', forwarded)).body).toMatchObject({ canSetup: false, onHomeNetwork: false });
+    expect((await call('/auth/setup', { ...forwarded, method: 'POST', body: { username: 'x', password: PASSWORD } })).status).toBe(403);
+    expect(countUsers()).toBe(0);
   });
 
   test('changing your own password needs the current one', async () => {

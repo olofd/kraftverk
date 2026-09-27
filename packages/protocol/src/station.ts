@@ -35,12 +35,23 @@ import type {
 export const BASE_CAPACITY_WH = 2048;
 export const DEFAULT_MODEL = 'AFERIY P280';
 
-const PORT_LABELS: Record<PortId, string> = {
+export const PORT_LABELS: Record<PortId, string> = {
   ac: 'AC outlets',
   dc: '12V DC / car port',
   usb: 'USB-A + USB-C',
   led: 'Light',
 };
+
+/** Whether an output is on, by the station's own status bits. */
+export function portEnabled(telemetry: DecodedTelemetry, id: PortId): boolean {
+  return id === 'ac'
+    ? telemetry.acOutputEnabled
+    : id === 'dc'
+      ? telemetry.dcOutputEnabled
+      : id === 'usb'
+        ? telemetry.usbOutputEnabled
+        : telemetry.ledEnabled;
+}
 
 export type StatusContext = {
   transport: TransportKind;

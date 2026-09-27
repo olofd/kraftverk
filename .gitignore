@@ -44,3 +44,6 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Written by scripts/ci/smoke-docker.sh
+smoke-logs.txt

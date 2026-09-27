@@ -77,6 +77,10 @@ Synology:
    **Custom Header → Create**: `X-Forwarded-For` = `$proxy_add_x_forwarded_for`
    and `X-Real-IP` = `$remote_addr`, so the server rate-limits and records the
    real client rather than the proxy.
+   **Advanced Settings**: raise the proxy read timeout from 60 to 120 seconds.
+   Setting up an extension can take up to 90 seconds (a network scan, a cloud
+   login), and a proxy that gives up first reports a failure for something that
+   went on to work.
 2. **Control Panel → Security → Certificate → Settings**: give the new entry a
    certificate covering that name. The Let's Encrypt certificate DSM makes for
    a `synology.me` name includes `*.<you>.synology.me`.
@@ -84,7 +88,9 @@ Synology:
    under it.
 4. Forward TCP 443 on the router to the NAS — and nothing else.
 
-Never forward `8080`, `3333` or `1883`.
+Never forward `8080`, `3333` or `1883`. (If `8080` is forwarded by mistake,
+the server still treats whatever arrives by the router's public address as the
+internet — but nothing else about that entrance was made for it.)
 
 ---
 
@@ -204,12 +210,13 @@ the project is `kraftverk`. `docker volume ls` shows it.)
 
 ### Resetting without touching the volume
 
-Write a passphrase of at least eight characters to `/data/reset-secret` and the
-app offers **App settings → Danger zone → Erase everything**, which empties
-every table but the accounts while the container keeps running:
+Write a passphrase of at least sixteen characters to `/data/reset-secret` and
+the app offers **App settings → Danger zone → Erase everything**, which empties
+every table but the accounts while the container keeps running. Wrong
+passphrases are counted like wrong passwords, and slowed down the same way:
 
 ```bash
-docker compose exec kraftverk sh -c 'printf "%s" "a-long-passphrase" > /data/reset-secret'
+docker compose exec kraftverk sh -c 'printf "%s" "a-long-passphrase-of-your-own" > /data/reset-secret'
 ```
 
 Without that file the route does not exist at all. Delete the file to switch it

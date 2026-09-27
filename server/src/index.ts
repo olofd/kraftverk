@@ -26,15 +26,16 @@ import {
   secretsAreEncrypted,
   setAppState,
 } from './history/db.ts';
-import { resetSecret, resetSecretPath, secretMatches } from './admin/reset.ts';
+import { RESET_SECRET_MIN, resetSecret, resetSecretPath, secretMatches } from './admin/reset.ts';
 import { bodyLimit } from 'hono/body-limit';
 
 import { hostGuard } from './auth/host.ts';
+import { LoginLimiter, limiterKeys } from './auth/limiter.ts';
 import { keepConsole } from './log.ts';
 import { actorOf, CLIENT_HEADER, createAuth } from './auth/routes.ts';
 import { ProxyDirectory } from './auth/trust.ts';
 import { Sampler, series } from './history/sampler.ts';
-import { PluginHost, type PluginInstance } from './plugins/host.ts';
+import { ConfigError, PluginHost, type PluginInstance } from './plugins/host.ts';
 import { DeviceDriver, ReadOnlyError } from './drivers/device.ts';
 import { SimulatorDriver } from './drivers/simulator.ts';
 import { duration, formatEntry } from './broker/journal.ts';
@@ -49,6 +50,8 @@ import {
   describeRegisters,
   fromHex,
   parseFrame,
+  PortSwitchError,
+  StaleWriteError,
   toHex,
   UnsafeWriteError,
   type RegisterDump,
@@ -429,8 +432,9 @@ function stationSession(deviceId: string | undefined): StationSession {
     throw new HTTPException(400, { message: 'Name the device with deviceId' });
   }
 
-  // The HTTP boundary: a path or query string becomes an identity here.
-  const session = connections.get(savedDeviceId(decodeURIComponent(deviceId)));
+  // The HTTP boundary: a path or query string becomes an identity here. Hono
+  // has decoded it already; decoding again turned an id with a % into a 500.
+  const session = connections.get(savedDeviceId(deviceId));
   if (!session) {
     throw new HTTPException(404, { message: 'No such device, or it has no open session' });
   }
@@ -1257,6 +1261,9 @@ api.get('/admin/reset', async (c) =>
   c.json({ available: (await resetSecret()) !== null, secretFile: resetSecretPath() })
 );
 
+/** Wrong reset passphrases, counted apart from logins: a typo here should not lock anyone out. */
+const resetGuesses = new LoginLimiter();
+
 /**
  * Empties the database.
  *
@@ -1276,16 +1283,29 @@ api.post('/admin/reset', async (c) => {
   if (!expected) {
     throw new HTTPException(404, {
       message:
-        `Resetting is not enabled. Write a passphrase of at least 8 characters to ` +
+        `Resetting is not enabled. Write a passphrase of at least ${RESET_SECRET_MIN} characters to ` +
         `${resetSecretPath()} on the server to enable it.`,
     });
   }
 
-  const { secret } = await body(c, z.object({ secret: z.string() }));
+  // Guessing is counted, by account and by address, like a login: a wrong
+  // passphrase must cost something on the one route that erases everything.
+  const { trust } = accounts.access(c);
+  const keys = limiterKeys(trust.clientIp, who, trust.onHomeNetwork);
+  const wait = resetGuesses.wait(keys);
+  if (wait > 0) {
+    c.header('Retry-After', String(Math.ceil(wait / 1000)));
+    return c.json({ error: `Too many wrong passphrases. Try again in ${Math.ceil(wait / 60_000)} min.` }, 429);
+  }
+
+  const { secret } = await body(c, z.object({ secret: z.string().max(1024) }));
   if (!secretMatches(secret, expected)) {
+    resetGuesses.failed(keys);
+    audit({ at: new Date().toISOString(), kind: 'database.reset-refused', actor: who, summary: `${who} gave a wrong reset passphrase`, detail: { clientIp: trust.clientIp } });
     // Deliberately says nothing about length or how close it was.
     throw new HTTPException(403, { message: 'That is not the reset passphrase' });
   }
+  resetGuesses.succeeded(keys);
 
   /*
     Order matters. Sessions are closed first so nothing is mid-poll against a
@@ -1465,13 +1485,13 @@ api.post('/devices', async (c) => {
 });
 
 api.get('/devices/:id', async (c) => {
-  const found = await registry.find(savedDeviceId(decodeURIComponent(c.req.param('id'))));
+  const found = await registry.find(savedDeviceId(c.req.param('id')));
   if (!found) throw new HTTPException(404, { message: 'No such device' });
   return c.json(found);
 });
 
 api.patch('/devices/:id', async (c) => {
-  const id = savedDeviceId(decodeURIComponent(c.req.param('id')));
+  const id = savedDeviceId(c.req.param('id'));
   const changes = await body(
     c,
     z.object({
@@ -1509,7 +1529,7 @@ api.patch('/devices/:id', async (c) => {
 
 /** Resolves a saved station and its live session, or explains which is missing. */
 function stationDevice(c: Context): StationSession {
-  const id = savedDeviceId(decodeURIComponent(c.req.param('id') ?? ''));
+  const id = savedDeviceId(c.req.param('id') ?? '');
   const record = catalog.get(id);
   if (!record) throw new HTTPException(404, { message: 'No such device' });
   if (record.driver !== 'core.station') {
@@ -1555,7 +1575,7 @@ api.patch('/devices/:id/p280/settings', async (c) => {
  * app.
  */
 api.get('/devices/:id/settings', async (c) => {
-  const id = savedDeviceId(decodeURIComponent(c.req.param('id')));
+  const id = savedDeviceId(c.req.param('id'));
   const found = await registry.find(id);
   if (!found) throw new HTTPException(404, { message: 'No such device' });
   if (!found.settings) return c.json({ schema: null, values: {}, dangerous: [] });
@@ -1568,7 +1588,7 @@ api.get('/devices/:id/settings', async (c) => {
 });
 
 api.patch('/devices/:id/settings', async (c) => {
-  const id = savedDeviceId(decodeURIComponent(c.req.param('id')));
+  const id = savedDeviceId(c.req.param('id'));
   const found = await registry.find(id);
   if (!found?.settings) throw new HTTPException(404, { message: 'That device has no settings' });
 
@@ -1598,7 +1618,7 @@ api.patch('/devices/:id/settings', async (c) => {
 });
 
 api.delete('/devices/:id', async (c) => {
-  const id = savedDeviceId(decodeURIComponent(c.req.param('id')));
+  const id = savedDeviceId(c.req.param('id'));
   const record = catalog.get(id);
   if (!record) throw new HTTPException(404, { message: 'No such device' });
 
@@ -1634,7 +1654,7 @@ api.delete('/devices/:id', async (c) => {
  * do arithmetic it cannot display.
  */
 api.get('/devices/:id/history', (c) => {
-  const id = savedDeviceId(decodeURIComponent(c.req.param('id')));
+  const id = savedDeviceId(c.req.param('id'));
   // An unknown device answered 200 with an empty series, which is indis-
   // tinguishable from a device that simply has not recorded anything yet.
   if (!catalog.get(id)) throw new HTTPException(404, { message: 'No such device' });
@@ -1670,7 +1690,7 @@ api.get('/devices/:id/history', (c) => {
  * screen has exactly the authority a manual switch does — no more.
  */
 api.post('/devices/:id/control/:control', async (c) => {
-  const deviceId = decodeURIComponent(c.req.param('id'));
+  const deviceId = c.req.param('id');
   const controlId = c.req.param('control');
   const found = await registry.find(savedDeviceId(deviceId));
   if (!found) throw new HTTPException(404, { message: 'No such device' });
@@ -1726,6 +1746,13 @@ app.onError((err, c) => {
   if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
   if (err instanceof UnsafeWriteError) return c.json({ error: err.message }, 400);
   if (err instanceof ReadOnlyError) return c.json({ error: err.message, readOnly: true }, 423);
+  // Nothing was changed, or the station does not confirm it was: the caller
+  // must hear which, in words, rather than "internal server error".
+  if (err instanceof PortSwitchError || err instanceof StaleWriteError) return c.json({ error: err.message }, 409);
+  // A plugin's settings that do not fit its schema: which field, and why.
+  if (err instanceof ConfigError) {
+    return c.json({ error: err.message, issues: err.issues.map((i) => ({ path: i.field, message: i.message })) }, 400);
+  }
   if (err instanceof ZodError) {
     return c.json(
       {
@@ -1754,4 +1781,12 @@ console.log(
     `${open === 1 ? '1 station open' : `${open} stations open`})`
 );
 
-export default { port: PORT, hostname: HOST, fetch: app.fetch };
+/*
+  Bun closes a connection that has been quiet for 10 s by default, and some
+  answers take far longer: switching the grid relay waits for the plug and the
+  station to agree (up to 30 s), and a plugin's setup action may scan the
+  network (up to 90 s). With the default, the switch still happened but the app
+  was told it failed — and a retry toggled it again. Above the longest of those,
+  within Bun's limit of 255.
+*/
+export default { port: PORT, hostname: HOST, fetch: app.fetch, idleTimeout: 120 };

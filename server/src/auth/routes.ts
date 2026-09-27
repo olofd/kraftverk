@@ -177,10 +177,43 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
     const raw = await c.req.json().catch(() => {
       throw new HTTPException(400, { message: 'Expected a JSON body' });
     });
-    return schema.parse(raw);
+    const parsed = schema.safeParse(raw);
+    // The first problem, in words the app can show as they are.
+    if (!parsed.success) throw new HTTPException(400, { message: parsed.error.issues[0]?.message ?? 'Invalid request' });
+    return parsed.data;
   };
 
   const now = () => new Date().toISOString();
+
+  /**
+   * Proves the person at the keyboard is the account signed in: its password,
+   * asked for again.
+   *
+   * For what a borrowed session — an unlocked laptop, a copied cookie — must
+   * not be enough for: your own password, and every account but your own.
+   * Otherwise it could set a password it knows, or add an account it keeps,
+   * and outlast the session it borrowed. Counted like a login, so it cannot
+   * be used to guess the password either.
+   */
+  const confirmIdentity = async (c: Context, user: User, password: string): Promise<Response | null> => {
+    const { trust } = access(c);
+    const keys = limiterKeys(trust.clientIp, user.username, trust.onHomeNetwork);
+    const wait = limiter.wait(keys);
+    if (wait > 0) {
+      c.header('Retry-After', String(Math.ceil(wait / 1000)));
+      return c.json({ error: `Too many wrong passwords. Try again in ${Math.ceil(wait / 60_000)} min.` }, 429);
+    }
+    if (!(await passwordMatches(user.id, password))) {
+      limiter.failed(keys);
+      audit({ at: now(), kind: 'auth.confirm-failed', actor: user.username, resource: user.id, summary: `${user.username} gave a wrong password to confirm a change`, detail: { clientIp: trust.clientIp, path: c.req.path } });
+      throw new HTTPException(403, { message: 'Your password is not right' });
+    }
+    limiter.succeeded(keys);
+    return null;
+  };
+
+  /** The account's own password, sent with changes that need it. */
+  const yourPassword = z.string().min(1, 'Confirm with your password').max(256);
 
   const auth = new Hono();
 
@@ -259,21 +292,9 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
   /** Your own password. Needs the current one: a borrowed, unlocked browser should not be enough. */
   auth.post('/password', async (c) => {
     const user = requireUser(c);
-    const { trust } = access(c);
-    const { current, next: password } = await parse(c, z.object({ current: z.string().min(1).max(256), next: z.string().min(1).max(256) }));
-    // Counted like a login: otherwise a borrowed session could guess the
-    // current password here without limit, and then keep the account.
-    const keys = limiterKeys(trust.clientIp, user.username, trust.onHomeNetwork);
-    const wait = limiter.wait(keys);
-    if (wait > 0) {
-      c.header('Retry-After', String(Math.ceil(wait / 1000)));
-      return c.json({ error: `Too many wrong passwords. Try again in ${Math.ceil(wait / 60_000)} min.` }, 429);
-    }
-    if (!(await passwordMatches(user.id, current))) {
-      limiter.failed(keys);
-      throw new HTTPException(403, { message: 'The current password is not right' });
-    }
-    limiter.succeeded(keys);
+    const { current, next: password } = await parse(c, z.object({ current: yourPassword, next: z.string().min(1).max(256) }));
+    const refused = await confirmIdentity(c, user, current);
+    if (refused) return refused;
     await setPassword(user.id, password, getCookie(c, SESSION_COOKIE)).catch(rethrow);
     audit({ at: now(), kind: 'user.password', actor: user.username, resource: user.id, summary: `${user.username} changed their password; their other sessions were signed out` });
     return c.json({ ok: true });
@@ -288,16 +309,21 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
 
   users.post('/', async (c) => {
     const actor = requireUser(c);
-    const { username, password } = await parse(c, credentials);
+    const { username, password, yourPassword: confirmation } = await parse(c, credentials.extend({ yourPassword }));
+    const refused = await confirmIdentity(c, actor, confirmation);
+    if (refused) return refused;
     const user = await createUser(username, password, actor.username).catch(rethrow);
     audit({ at: now(), kind: 'user.created', actor: actor.username, resource: user.id, summary: `${actor.username} added ${user.username}` });
     return c.json({ user }, 201);
   });
 
-  users.delete('/:id', (c) => {
+  users.delete('/:id', async (c) => {
     const actor = requireUser(c);
     const target = getUser(c.req.param('id'));
     if (!target) throw new HTTPException(404, { message: 'No such user' });
+    const { yourPassword: confirmation } = await parse(c, z.object({ yourPassword }));
+    const refused = await confirmIdentity(c, actor, confirmation);
+    if (refused) return refused;
     try {
       deleteUser(target.id);
     } catch (error) {
@@ -308,14 +334,24 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
     return c.json({ ok: true });
   });
 
-  /** Someone else's password. Signs them out everywhere, which is usually why it is being reset. */
+  /**
+   * Someone else's password. Signs them out everywhere, which is usually why it
+   * is being reset.
+   *
+   * Never your own: that is `/auth/password`, which wants the current one.
+   * This route used to take your own id as well, and was then a way around it.
+   */
   users.post('/:id/password', async (c) => {
     const actor = requireUser(c);
     const target = getUser(c.req.param('id'));
     if (!target) throw new HTTPException(404, { message: 'No such user' });
-    const { password } = await parse(c, z.object({ password: z.string().min(1).max(256) }));
-    const keep = target.id === actor.id ? getCookie(c, SESSION_COOKIE) : undefined;
-    await setPassword(target.id, password, keep).catch(rethrow);
+    if (target.id === actor.id) {
+      throw new HTTPException(400, { message: 'Change your own password under “Change your password”; it needs your current one.' });
+    }
+    const { password, yourPassword: confirmation } = await parse(c, z.object({ password: z.string().min(1).max(256), yourPassword }));
+    const refused = await confirmIdentity(c, actor, confirmation);
+    if (refused) return refused;
+    await setPassword(target.id, password).catch(rethrow);
     audit({ at: now(), kind: 'user.password', actor: actor.username, resource: target.id, summary: `${actor.username} set a new password for ${target.username}; their sessions were signed out` });
     return c.json({ ok: true });
   });

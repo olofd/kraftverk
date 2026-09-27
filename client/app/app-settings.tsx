@@ -462,7 +462,7 @@ function ResetEverything() {
             Erasing is not enabled
           </Text>
           <Text fontSize={13} color="$muted" lineHeight={19}>
-            To allow this app to empty the database, write a passphrase of at least 8 characters to
+            To allow this app to empty the database, write a passphrase of at least 16 characters to
             this file on the server and restart nothing — it is read on each attempt:
           </Text>
           <Text fontSize={12} color="$color" fontFamily="$mono" lineHeight={18}>
