@@ -107,12 +107,13 @@ ENV NODE_ENV=production \
     PORT=3333 \
     HOST=0.0.0.0
 
-# npm links workspaces as relative symlinks — node_modules/@kraftverk/protocol
-# points at ../../packages/protocol — so this only resolves because both stages
-# build in /app and packages/ is copied alongside.
-COPY --from=deps /app/node_modules ./node_modules
-COPY package.json ./
-COPY packages ./packages
+# The whole installed tree, not just the root node_modules: npm nests a
+# package wherever versions disagree — the server's zod v4 is in
+# server/node_modules, because an Expo dependency holds v3 at the root — and
+# copying only the root left the server unable to start. npm links workspaces
+# as relative symlinks (node_modules/@kraftverk/protocol → ../../packages/
+# protocol), which resolve because both stages build in /app.
+COPY --from=deps /app ./
 COPY server ./server
 
 # The plugin host reads packages/plugins at runtime rather than importing a
