@@ -15,6 +15,12 @@ import type { DeviceRegistry } from '../devices/registry.ts';
  */
 
 const INTERVAL_MS = 60_000;
+/**
+ * A reading older than this is not sampled. A device that stops answering
+ * keeps its last reading, and sampling that every minute drew a flat line
+ * through the outage — as confident as the real data either side of it.
+ */
+const STALE_MS = 2 * INTERVAL_MS;
 /** Two weeks of minute samples is a few hundred thousand rows. Plenty, and small. */
 const RETAIN_DAYS = 14;
 
@@ -60,7 +66,13 @@ export class Sampler {
       this.#sampling = false;
     }
 
-    const at = new Date().toISOString();
+    const now = Date.now();
+    const at = new Date(now).toISOString();
+    const fresh = (readingAt: string | null | undefined) => {
+      if (!readingAt) return true; // a reading that does not say when is taken as current
+      const taken = Date.parse(readingAt);
+      return !Number.isFinite(taken) || now - taken <= STALE_MS;
+    };
     const insert = db().query(
       'INSERT OR REPLACE INTO sample (device_id, key, at, value) VALUES (?, ?, ?, ?)'
     );
@@ -69,6 +81,7 @@ export class Sampler {
       for (const device of devices) {
         for (const reading of device.readings) {
           if (reading.value === null || reading.value === undefined) continue;
+          if (!fresh(reading.at)) continue;
           const numeric = typeof reading.value === 'boolean' ? (reading.value ? 1 : 0) : reading.value;
           if (!Number.isFinite(numeric)) continue;
           insert.run(device.id, reading.key, at, numeric);

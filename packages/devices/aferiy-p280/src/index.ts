@@ -227,9 +227,14 @@ export function descriptor(id: string, name: string, model: string): DeviceDescr
   };
 }
 
-/** Station telemetry, flattened into the readings the device model expects. */
+/**
+ * Station telemetry, flattened into the readings the device model expects.
+ * None at all before the station's first reading: the zeros in their place
+ * were charted as a flat battery.
+ */
 export function readings(status: StationStatus): Reading[] {
   const at = status.lastUpdated;
+  if (at === null) return [];
   const port = (id: string) => status.ports.find((candidate) => candidate.id === id);
 
   return [

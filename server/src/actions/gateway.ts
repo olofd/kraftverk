@@ -199,12 +199,24 @@ export class ActionGateway {
     }
     if (!reading.status) return refuse(reading.reason);
     const station = reading.status;
+    if (station.link.state !== 'connected' || station.lastUpdated === null || station.gridConnected === null) {
+      return refuse('The station is not answering: refusing to switch without its own reading of mains');
+    }
     if (this.#ageOf(station.lastUpdated) > this.#policy.maxDataAgeMs) {
       return refuse('Station telemetry is stale: refusing to switch blind');
     }
 
     if (relayBefore.relayOn === intent.desired) {
-      return { outcome: 'verified', detail: 'Already in the requested state', state: relayBefore, relayReported: true, stationAgreed: true };
+      const stationAgreed = station.gridConnected === intent.desired;
+      return {
+        outcome: stationAgreed ? 'verified' : 'unverified',
+        detail: stationAgreed
+          ? 'Already in the requested state'
+          : `The plug is already ${intent.desired ? 'on' : 'off'}, but the station's AC input does not agree`,
+        state: relayBefore,
+        relayReported: true,
+        stationAgreed,
+      };
     }
 
     // 5. Record the intent before anything physical happens.
@@ -221,6 +233,7 @@ export class ActionGateway {
     this.#lastSwitchAt = Date.now();
     this.#everSwitched = true;
     const result = await provider.impl.setRelay(intent.desired, intent.reason);
+    const switchedAt = Date.now();
 
     if (!result.accepted) {
       this.#record({
@@ -236,7 +249,7 @@ export class ActionGateway {
     // 7. Two separate proofs, recorded separately.
     const after = result.readback ?? (await provider.impl.getState().catch(() => null));
     const relayReported = after?.relayOn === intent.desired;
-    const stationAgreed = await this.#stationAgrees(intent.desired);
+    const stationAgreed = await this.#stationAgrees(intent.desired, switchedAt);
 
     const outcome: GatewayOutcome = relayReported && stationAgreed ? 'verified' : 'unverified';
     const detail = relayReported
@@ -264,18 +277,27 @@ export class ActionGateway {
    * This is the half that catches a relay which reports success and does
    * nothing, and — when restoring — the difference between a working relay and
    * an actual grid outage.
+   *
+   * Only a reading the station took *after* the plug switched counts, from a
+   * station that is connected. The cached one says what mains was before —
+   * which, when cutting mains to a station that had already lost it, looked
+   * exactly like agreement.
    */
-  async #stationAgrees(desired: boolean): Promise<boolean> {
+  async #stationAgrees(desired: boolean, switchedAt: number): Promise<boolean> {
     const deadline = Date.now() + this.#policy.verifyTimeoutMs;
     while (Date.now() < deadline) {
       const { status } = this.#deps.readStation();
-      if (status && status.gridConnected === desired) return true;
-      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      const readAt = status?.lastUpdated ? Date.parse(status.lastUpdated) : Number.NaN;
+      if (status && status.link.state === 'connected' && readAt > switchedAt && status.gridConnected === desired) return true;
+      // Only a look at what is cached, so cheap: often enough to answer soon
+      // after the station does, even when the window is short.
+      await new Promise((resolve) => setTimeout(resolve, Math.min(1_000, this.#policy.verifyTimeoutMs / 5)));
     }
     return false;
   }
 
-  #ageOf(iso: string): number {
+  #ageOf(iso: string | null): number {
+    if (iso === null) return Number.POSITIVE_INFINITY;
     const at = new Date(iso).getTime();
     return Number.isFinite(at) ? Date.now() - at : Number.POSITIVE_INFINITY;
   }

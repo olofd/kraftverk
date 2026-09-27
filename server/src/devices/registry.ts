@@ -260,11 +260,15 @@ export class DeviceRegistry {
     };
   }
 
-  /** The station's own settings, in the schema language the app renders. */
+  /**
+   * The station's own settings, in the schema language the app renders —
+   * empty until they have been read from it, never defaults in their place.
+   */
   readSettings(record: DeviceRecord): ConfigValues {
     const session = this.connections.get(record.id);
     if (record.driver !== 'core.station' || !session) return {};
-    return settingsToValues(session.driver.settings());
+    const settings = session.driver.settings();
+    return settings ? settingsToValues(settings) : {};
   }
 
   async writeSettings(record: DeviceRecord, patch: ConfigValues): Promise<ConfigValues> {
@@ -273,7 +277,7 @@ export class DeviceRegistry {
     // A readback, not an echo: writing the DC input type moves the charging
     // current ceiling on this hardware, so the caller is told what happened.
     const applied = await session.driver.applySettings(valuesToSettings(patch) as never);
-    return settingsToValues(applied);
+    return applied ? settingsToValues(applied) : {};
   }
 }
 

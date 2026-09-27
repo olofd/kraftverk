@@ -16,9 +16,10 @@ export interface StationDriver {
   stop(): Promise<void>;
 
   status(): StationStatus;
-  settings(): StationSettings;
+  /** Null until the station's settings have been read from it. */
+  settings(): StationSettings | null;
 
-  applySettings(patch: StationSettingsPatch): Promise<StationSettings>;
+  applySettings(patch: StationSettingsPatch): Promise<StationSettings | null>;
   setPort(id: PortId, enabled: boolean): Promise<StationStatus>;
 
   /** Simulator-only affordance; real hardware ignores it. */

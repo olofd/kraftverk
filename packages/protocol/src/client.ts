@@ -158,7 +158,7 @@ export type StationClientOptions = {
   readOnly?: boolean;
   model?: string;
   /** Called after every successful poll, for UIs that want to re-render. */
-  onUpdate?: (status: StationStatus, settings: StationSettings) => void;
+  onUpdate?: (status: StationStatus, settings: StationSettings | null) => void;
   /** Called when a poll fails, so a UI can show why it went quiet. */
   onError?: (error: unknown) => void;
 };
@@ -183,6 +183,8 @@ export class StationClient {
   #deviceSettings: DecodedSettings | null = null;
   #firmware: FirmwareVersions | null = null;
   #lastSeen: Date | null = null;
+  /** When the last telemetry frame was decoded. */
+  #readingAt: Date | null = null;
   #temperatureUnit: StationSettings['temperatureUnit'] = 'C';
 
   constructor(options: StationClientOptions) {
@@ -284,6 +286,7 @@ export class StationClient {
     this.#deviceSettings = null;
     this.#firmware = null;
     this.#lastSeen = null;
+    this.#readingAt = null;
   }
 
   #emit(): void {
@@ -295,6 +298,7 @@ export class StationClient {
     // Function 0x04 carries telemetry; 0x03 carries settings.
     if (frame.fn === 0x04 && frame.values.length >= 60) {
       this.#telemetry = decodeTelemetry(frame.values);
+      this.#readingAt = new Date();
       return true;
     }
     if (frame.fn === 0x03 && frame.values.length >= 69) {
@@ -413,15 +417,17 @@ export class StationClient {
       connected: this.#transport.connected,
       deviceId: this.#transport.boundId,
       lastSeen: this.#lastSeen,
+      readingAt: this.#readingAt,
       model: this.#model,
     });
   }
 
-  settings(): StationSettings {
+  /** The station's settings, or null until they have been read from it. */
+  settings(): StationSettings | null {
     return buildSettings(this.#deviceSettings, this.#temperatureUnit);
   }
 
-  async applySettings(patch: StationSettingsPatch): Promise<StationSettings> {
+  async applySettings(patch: StationSettingsPatch): Promise<StationSettings | null> {
     // Display preference only — the device has no register for it.
     if (patch.temperatureUnit) this.#temperatureUnit = patch.temperatureUnit;
 

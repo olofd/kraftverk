@@ -85,8 +85,15 @@ export function StationDashboard({
   }
 
   const tint = STATE_TINT[status.state];
-  const storedWh = (status.level / 100) * status.capacityWh;
+  // Nothing measured is shown before the station's first reading: every
+  // figure would be a zero it never reported, and a switch drawn "off" would
+  // be a guess about outlets that may well be on.
+  const hasReading = status.lastUpdated !== null && status.level !== null;
+  const storedWh = ((status.level ?? 0) / 100) * status.capacityWh;
   const waitingForDevice = status.link.mode === 'device' && status.link.state !== 'connected';
+  const lastReading = status.lastUpdated
+    ? new Date(status.lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : null;
 
   const eta =
     status.state === 'charging'
@@ -99,22 +106,26 @@ export function StationDashboard({
 
   return (
     <>
-      {waitingForDevice ? (
+      {waitingForDevice || !hasReading ? (
         <Card borderColor="$warning" gap="$2">
           <XStack alignItems="center" gap="$2">
             <Feather name="radio" size={15} color={theme.warning?.val} />
             <Text fontSize={14} fontWeight="700" color="$warning">
-              {status.link.state === 'waiting' ? 'Waiting for the station' : 'Station offline'}
+              {!hasReading || status.link.state === 'waiting' ? 'Waiting for the station' : 'Station offline'}
             </Text>
           </XStack>
           <Text fontSize={12} color="$muted" lineHeight={18}>
-            {direct
-              ? 'The Bluetooth link is open but no telemetry has arrived yet.'
-              : 'The API is up but the station has not connected yet.'}
+            {!hasReading
+              ? direct
+                ? 'The Bluetooth link is open, but the station has not sent a reading yet.'
+                : 'The server is up, but the station has not sent a reading yet. Its figures and switches appear once it does.'
+              : `Showing its last reading, from ${lastReading}. Switching is refused until it answers again.`}
           </Text>
         </Card>
       ) : null}
 
+      {hasReading ? (
+        <>
       {/* The centrepiece. Totals lead, because "how much in, how much out" is
           the first question; the diagram then answers "from where, to where". */}
       <Card paddingTop="$4" paddingBottom="$4" paddingHorizontal="$3" gap="$2">
@@ -247,6 +258,8 @@ export function StationDashboard({
           />
         </Card>
       </YStack>
+        </>
+      ) : null}
 
       {/* Link + server */}
       <YStack gap="$2">

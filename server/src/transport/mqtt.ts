@@ -167,8 +167,17 @@ export class MqttLink extends EventEmitter implements ServerLink {
     expect: 'input' | 'holding',
     timeoutMs = 5000
   ): Promise<ParsedFrame> {
-    // Telemetry lands on .../client/04; everything else on .../client/data.
-    return this.#bus.request(this.#mac, frame, expect === 'input' ? '04' : 'data', timeoutMs);
+    // Telemetry lands on .../client/04; everything else on .../client/data —
+    // write echoes included, so the answer is matched by its function code,
+    // as over Bluetooth.
+    const wantFn = expect === 'input' ? 0x04 : 0x03;
+    return this.#bus.request(
+      this.#mac,
+      frame,
+      expect === 'input' ? '04' : 'data',
+      timeoutMs,
+      (parsed) => parsed.kind === 'registers' && parsed.fn === wantFn
+    );
   }
 
   onFrame(listener: (frame: ParsedFrame) => void): () => void {

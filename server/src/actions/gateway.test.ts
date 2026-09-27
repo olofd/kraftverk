@@ -26,6 +26,11 @@ class StubRelay implements GridRelayProvider {
     private ignoreCommands = false
   ) {}
 
+  /** Whether mains is physically through, for a station that follows the plug. */
+  get on() {
+    return this.state.relayOn;
+  }
+
   async read() {
     return this.state;
   }
@@ -39,20 +44,31 @@ class StubRelay implements GridRelayProvider {
   }
 }
 
-const station = (gridConnected: boolean, lastUpdated = now()): StationStatus =>
-  ({ gridConnected, lastUpdated }) as StationStatus;
+/** One reading, taken when this is called unless told otherwise. */
+const station = (
+  gridConnected: boolean | null,
+  lastUpdated: string | null = now(),
+  state: 'connected' | 'offline' = 'connected'
+): StationStatus => ({ gridConnected, lastUpdated, link: { state } }) as StationStatus;
+
+/** A station reading live: a fresh reading on every look, of whatever the plug lets through. */
+const following = (relay: StubRelay) => () => station(relay.on);
+
+type StationSource = StationStatus | null | (() => StationStatus | null);
 
 type Harness = {
   gateway: ActionGateway;
   relay: StubRelay;
   events: string[];
-  setStation: (next: StationStatus | null) => void;
+  setStation: (next: StationSource) => void;
 };
 
 function harness(options: { granted?: boolean; provider?: string | null; relay?: StubRelay; readOnly?: boolean } = {}): Harness {
   const relay = options.relay ?? new StubRelay();
   const events: string[] = [];
-  let current: StationStatus | null = station(true);
+  // A reading from just now that never changes: fresh enough to act on, but
+  // nothing that happens afterwards shows up in it.
+  let current: StationSource = station(true);
 
   const host: RelayHost = {
     activeProvider: () => (options.provider === undefined ? 'stub' : options.provider),
@@ -62,8 +78,10 @@ function harness(options: { granted?: boolean; provider?: string | null; relay?:
 
   const gateway = new ActionGateway({
     host,
-    readStation: () =>
-      current ? { status: current } : { status: null, reason: 'No station telemetry' },
+    readStation: () => {
+      const status = typeof current === 'function' ? current() : current;
+      return status ? { status } : { status: null, reason: 'No station telemetry' };
+    },
     isReadOnly: () => options.readOnly === true,
     record: (entry) => events.push(entry.kind),
     // Short timeouts: these tests are about the decisions, not the clock.
@@ -165,6 +183,17 @@ describe('freshness', () => {
     expect(relay.commands).toHaveLength(0);
   });
 
+  test('refuses when the station has never sent a reading, or is not connected', async () => {
+    for (const silent of [station(null, null, 'offline'), station(null, null), station(true, now(), 'offline')]) {
+      const { gateway, relay, setStation } = harness();
+      setStation(silent);
+      const result = await gateway.execute({ desired: false, reason: 'x', actor: 'controller' });
+      expect(result.outcome).toBe('refused');
+      expect(result.detail).toContain('not answering');
+      expect(relay.commands).toHaveLength(0);
+    }
+  });
+
   test('refuses when the plug itself is not answering', async () => {
     const relay = new StubRelay({ relayOn: true, reachable: false, updatedAt: now() });
     const { gateway } = harness({ relay });
@@ -177,19 +206,35 @@ describe('freshness', () => {
 
 describe('verification', () => {
   test('verified needs both the plug and the station to agree', async () => {
-    const { gateway, setStation, events } = harness();
+    const { gateway, events } = harness();
 
     const result = await gateway.execute({ desired: false, reason: 'battery first', actor: 'controller' });
-    // The stub station still reports mains, so agreement never comes.
+    // The station reports nothing new after the switch, so agreement never comes.
     expect(result.outcome).toBe('unverified');
     expect(result.relayReported).toBe(true);
     expect(result.stationAgreed).toBe(false);
     expect(events).toContain('relay.intent');
     expect(events).toContain('relay.unverified');
 
-    setStation(station(false));
-    const second = await harness().gateway.execute({ desired: true, reason: 'restore', actor: 'controller' });
+    const live = harness();
+    live.setStation(following(live.relay));
+    const second = await live.gateway.execute({ desired: false, reason: 'battery first', actor: 'controller' });
     expect(second.outcome).toBe('verified');
+    expect(second.stationAgreed).toBe(true);
+  });
+
+  /*
+    The audit's case: a station whose last reading already said "no mains" —
+    cached from before the switch, and never updated since. It agreed with
+    "mains off" before anything had happened, and that was reported as proof.
+  */
+  test('only a reading taken after the switch counts as the station agreeing', async () => {
+    const { gateway, setStation } = harness();
+    setStation(station(false)); // fresh, but from before the switch, and never again
+
+    const result = await gateway.execute({ desired: false, reason: 'x', actor: 'controller' });
+    expect(result.outcome).toBe('unverified');
+    expect(result.stationAgreed).toBe(false);
   });
 
   test('a plug that accepts commands but never switches is caught', async () => {
@@ -209,6 +254,16 @@ describe('verification', () => {
     const result = await gateway.execute({ desired: true, reason: 'x', actor: 'controller' });
 
     expect(result.outcome).toBe('verified');
+    expect(relay.commands).toHaveLength(0);
+  });
+
+  test('an already-correct plug the station disagrees with is not called verified', async () => {
+    const { gateway, relay, setStation } = harness();
+    setStation(station(false)); // the plug says on; the station sees no mains
+    const result = await gateway.execute({ desired: true, reason: 'x', actor: 'controller' });
+
+    expect(result.outcome).toBe('unverified');
+    expect(result.stationAgreed).toBe(false);
     expect(relay.commands).toHaveLength(0);
   });
 });

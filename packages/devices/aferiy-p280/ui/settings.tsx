@@ -106,7 +106,6 @@ export function StationSettings({
   settings,
   readOnly,
   direct,
-  apiBaseUrl,
   updateSettings,
 }: StationScreenProps) {
   if (!settings) {
@@ -116,7 +115,9 @@ export function StationSettings({
         <Text color="$muted" fontSize={13} textAlign="center" lineHeight={19}>
           {direct
             ? 'No station connected.\nOpen Devices to connect over Bluetooth.'
-            : `Loading settings from ${apiBaseUrl}`}
+            : status?.lastUpdated
+              ? 'Reading the settings from the station…'
+              : 'Waiting for the station. Its settings appear here once it has answered — nothing is shown until then, rather than values it has not reported.'}
         </Text>
       </Card>
     );
@@ -132,8 +133,8 @@ export function StationSettings({
           <Text fontSize={12} color="$muted" lineHeight={18}>
             These controls still show what the station reports, but every write is refused.{' '}
             {direct
-              ? 'Turn on “Allow writes” under Devices when you are ready to make changes.'
-              : 'Restart the server without --read-only when you are ready to make changes.'}
+              ? 'Turn on “Allow writes” on the Station link screen (App settings) when you are ready to make changes.'
+              : 'The server was started read-only. Whoever runs it can allow writes: READ_ONLY=0 for Docker, or starting it without --read-only.'}
           </Text>
         </Card>
       ) : null}

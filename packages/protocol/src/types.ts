@@ -68,6 +68,16 @@ export type StationLinkState = {
   lastSeen: string | null;
 };
 
+/**
+ * What the station last said about itself.
+ *
+ * Before its first reading, the facts that anything *decides* on are `null`,
+ * not a plausible default: an invented "0 %" was charted as a flat battery, an
+ * invented "no mains" confirmed that mains had been cut, and an invented "just
+ * now" made a silent station look fresh. The power figures stay numbers — 0
+ * until a reading says otherwise — and are only meaningful when `lastUpdated`
+ * is set.
+ */
 export type StationStatus = {
   name: string;
   model: string;
@@ -75,12 +85,14 @@ export type StationStatus = {
   state: StationState;
   link: StationLinkState;
 
-  level: number;
+  /** Charge in percent; null before the first reading. */
+  level: number | null;
   expansionSoc: number[];
   capacityWh: number;
 
-  gridConnected: boolean;
-  solarConnected: boolean;
+  /** Whether mains is present at the AC input; null before the first reading. */
+  gridConnected: boolean | null;
+  solarConnected: boolean | null;
 
   acInputWatts: number;
   solarInputWatts: number;
@@ -97,7 +109,8 @@ export type StationStatus = {
   chargeBookingMinutes: number;
 
   ports: PortState[];
-  lastUpdated: string;
+  /** When the station last sent a reading; null if it never has. */
+  lastUpdated: string | null;
 };
 
 export type VersionInfo = {

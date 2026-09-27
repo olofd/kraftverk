@@ -164,11 +164,21 @@ export class BrokerBus extends EventEmitter<Events> {
   }
 
   /**
-   * Sends a frame and waits for the next response on `channel` from that device.
+   * Sends a frame and waits for the next response on `channel` from that device
+   * that `accept` recognises as the answer.
+   *
    * The protocol has no request/response correlation id, so this pairs by
-   * arrival order — keep requests serialised.
+   * arrival order — keep requests serialised — and by kind: a write's echo or
+   * an exception shares the channel with a settings read, and must not be
+   * taken for its answer.
    */
-  request(mac: string, frame: Uint8Array, channel: string, timeoutMs = 5000): Promise<ParsedFrame> {
+  request(
+    mac: string,
+    frame: Uint8Array,
+    channel: string,
+    timeoutMs = 5000,
+    accept: (frame: ParsedFrame) => boolean = () => true
+  ): Promise<ParsedFrame> {
     const target = mac.toUpperCase();
 
     return new Promise<ParsedFrame>((resolve, reject) => {
@@ -180,6 +190,7 @@ export class BrokerBus extends EventEmitter<Events> {
       const onMessage = (message: DeviceMessage) => {
         if (message.mac !== target || message.channel !== channel) return;
         if (!message.frame) return; // malformed or bad CRC — keep waiting
+        if (!accept(message.frame)) return; // something else on the same channel
         clearTimeout(timer);
         this.off('message', onMessage);
         resolve(message.frame);

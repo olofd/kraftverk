@@ -100,9 +100,18 @@ describe('a direct connection decodes what the server would', () => {
     expect(status.ports.map((port) => port.enabled)).toEqual([true, true, false, true]);
 
     const settings = client.settings();
-    expect(settings.chargeLimit).toBe(73);
-    expect(settings.dischargeFloor).toBe(10);
-    expect(settings.acChargingWatts).toBe(1200);
+    expect(settings?.chargeLimit).toBe(73);
+    expect(settings?.dischargeFloor).toBe(10);
+    expect(settings?.acChargingWatts).toBe(1200);
+  });
+
+  test('before the station has answered, nothing is invented', () => {
+    const client = new StationClient({ transport: new FakeStation(input, holding), readOnly: true });
+    const status = client.status();
+    expect(status.lastUpdated).toBeNull();
+    expect(status.level).toBeNull();
+    expect(status.gridConnected).toBeNull();
+    expect(client.settings()).toBeNull();
   });
 
   test('polling reads both banks, telemetry first', async () => {

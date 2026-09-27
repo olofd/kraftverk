@@ -207,8 +207,12 @@ export function EnergyFlow({
   const track = theme.backgroundPress?.val ?? '#1e2430';
   const muted = theme.muted?.val ?? '#64748b';
 
+  // Drawn only once the station has reported (the dashboard waits for that),
+  // so an unknown level is not expected here; empty is the honest picture.
+  const level = status.level ?? 0;
+
   /** Green when healthy, amber then red as the pack empties. */
-  const liquid = levelColour(status.level, accent, load, danger);
+  const liquid = levelColour(level, accent, load, danger);
 
   const ports = Object.fromEntries(status.ports.map((p) => [p.id, p]));
   const charging = status.state === 'charging';
@@ -323,7 +327,7 @@ export function EnergyFlow({
         ))}
 
         <Cell
-          level={status.level}
+          level={level}
           chargeLimit={chargeLimit}
           busy={busy}
           charging={charging}
@@ -355,7 +359,7 @@ export function EnergyFlow({
             letterSpacing={-1.8}
             color="$color"
           >
-            {Math.round(status.level)}
+            {status.level === null ? '—' : Math.round(status.level)}
           </Text>
           <Text fontSize={17 * Math.min(scale, 1.15)} fontWeight="700" color="$color" opacity={0.7}>
             %

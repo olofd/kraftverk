@@ -57,7 +57,10 @@ export type StatusContext = {
   transport: TransportKind;
   connected: boolean;
   deviceId: string | null;
+  /** Any frame from the station — a write acknowledged counts. */
   lastSeen: Date | null;
+  /** The last telemetry frame: what `lastUpdated` reports. */
+  readingAt?: Date | null;
   model?: string;
 };
 
@@ -105,11 +108,11 @@ export function buildStatus(
       mac: context.deviceId,
       lastSeen: context.lastSeen?.toISOString() ?? null,
     },
-    level: t?.socPercent ?? 0,
+    level: t ? t.socPercent : null,
     expansionSoc: t?.expansionSoc ?? [],
     capacityWh: BASE_CAPACITY_WH * packs,
-    gridConnected: t?.acInputConnected ?? false,
-    solarConnected: t?.dcInputConnected ?? false,
+    gridConnected: t ? t.acInputConnected : null,
+    solarConnected: t ? t.dcInputConnected : null,
     acInputWatts: Math.max(0, (t?.totalInputWatts ?? 0) - (t?.dcInputWatts ?? 0)),
     solarInputWatts: t?.dcInputWatts ?? 0,
     totalInputWatts: t?.totalInputWatts ?? 0,
@@ -122,34 +125,43 @@ export function buildStatus(
     minutesRemaining: t?.minutesToEmpty ?? null,
     chargeBookingMinutes: t?.chargingBookingMinutes ?? 0,
     ports,
-    lastUpdated: (context.lastSeen ?? new Date()).toISOString(),
+    // Never "now" by default: that made a station that had sent nothing look
+    // fresh to everything that refuses to act on stale data.
+    lastUpdated: t ? (context.readingAt ?? context.lastSeen)?.toISOString() ?? null : null,
   };
 }
 
 const oneOf = <T extends number>(value: number, allowed: readonly T[], fallback: T): T =>
   (allowed as readonly number[]).includes(value) ? (value as T) : fallback;
 
-/** Builds the settings model from decoded holding registers. */
+/**
+ * Builds the settings model from decoded holding registers — or null before
+ * they have been read. Defaults in their place were shown as the station's own
+ * configuration: a 100 % limit and 1.8 kW it had never reported.
+ */
 export function buildSettings(
   decoded: DecodedSettings | null,
   temperatureUnit: StationSettings['temperatureUnit'] = 'C'
-): StationSettings {
+): StationSettings | null {
   const s = decoded;
+  if (!s) return null;
   return {
-    chargeLimit: Math.round(s?.chargingUpperLimitPercent ?? 100),
-    dischargeFloor: Math.round(s?.dischargeLowerLimitPercent ?? 0),
-    acChargingWatts: (s?.acChargingWatts ?? 1800) as AcChargingWatts,
-    dcInputType: s?.dcInputType ?? 'pv',
-    maxChargingCurrent: s?.maxChargingCurrent || 20,
-    acSilentCharging: s?.acSilentCharging ?? false,
-    stopChargeAfterMinutes: s?.stopChargeAfterMinutes ?? 0,
-    ledMode: LED_MODE_VALUES[s?.ledMode ?? 0] ?? 'off',
-    keySound: s?.keySound ?? true,
-    usbStandbyMinutes: oneOf(s?.usbStandbyMinutes ?? 0, [0, 3, 5, 10, 30] as const, 0),
-    acStandbyMinutes: oneOf(s?.acStandbyMinutes ?? 0, [0, 480, 960, 1440] as const, 0),
-    dcStandbyMinutes: oneOf(s?.dcStandbyMinutes ?? 0, [0, 480, 960, 1440] as const, 0),
-    screenRestSeconds: oneOf(s?.screenRestSeconds ?? 300, [0, 180, 300, 600, 1800] as const, 300),
-    sleepMinutes: oneOf(s?.sleepMinutes ?? 480, [5, 10, 30, 480] as const, 480),
+    chargeLimit: Math.round(s.chargingUpperLimitPercent),
+    dischargeFloor: Math.round(s.dischargeLowerLimitPercent),
+    acChargingWatts: s.acChargingWatts as AcChargingWatts,
+    dcInputType: s.dcInputType,
+    // A value the list does not have falls back to the nearest thing to
+    // "unset" the station itself uses; these come from the station, not us.
+    maxChargingCurrent: s.maxChargingCurrent || 20,
+    acSilentCharging: s.acSilentCharging,
+    stopChargeAfterMinutes: s.stopChargeAfterMinutes,
+    ledMode: LED_MODE_VALUES[s.ledMode] ?? 'off',
+    keySound: s.keySound,
+    usbStandbyMinutes: oneOf(s.usbStandbyMinutes, [0, 3, 5, 10, 30] as const, 0),
+    acStandbyMinutes: oneOf(s.acStandbyMinutes, [0, 480, 960, 1440] as const, 0),
+    dcStandbyMinutes: oneOf(s.dcStandbyMinutes, [0, 480, 960, 1440] as const, 0),
+    screenRestSeconds: oneOf(s.screenRestSeconds, [0, 180, 300, 600, 1800] as const, 300),
+    sleepMinutes: oneOf(s.sleepMinutes, [5, 10, 30, 480] as const, 480),
     temperatureUnit,
   };
 }

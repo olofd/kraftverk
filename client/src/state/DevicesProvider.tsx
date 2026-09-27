@@ -363,7 +363,8 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         driver: 'core.station',
         name: status.name,
         config: {},
-        addedAt: status.lastUpdated,
+        // Nothing was ever added: it is here for as long as the link is.
+        addedAt: status.lastUpdated ?? status.link.lastSeen ?? new Date().toISOString(),
       },
       health: {
         status: connection === 'online' ? 'connected' : connection === 'connecting' ? 'connecting' : 'offline',
