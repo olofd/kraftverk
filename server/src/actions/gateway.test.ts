@@ -287,6 +287,34 @@ describe('dwell', () => {
     window clear, and both send — which is the one thing this class promises
     never to do. Sequentially it is impossible, which is why it survived.
   */
+  test('each plug has its own dwell time, and it survives a restart', async () => {
+    const kept = new Map<string, string>();
+    const memory = { get: (key: string) => kept.get(key) ?? null, set: (key: string, value: string) => void kept.set(key, value) };
+    const plugs: Record<string, StubRelay> = { a: new StubRelay(), b: new StubRelay() };
+    let active = 'a';
+    const gateway = () =>
+      new ActionGateway({
+        host: { activeProvider: () => active, capability: (id) => plugs[id]!, isGranted: () => true },
+        readStation: () => ({ status: station(true) }),
+        isReadOnly: () => false,
+        record: () => {},
+        memory,
+        policy: { verifyTimeoutMs: 50, userDwellMs: 50, controllerDwellMs: 10_000 },
+      });
+
+    await gateway().execute({ desired: false, reason: 'a', actor: 'controller' });
+    expect(plugs.a!.commands).toEqual([false]);
+
+    // A new process, the same database: still too soon for plug a.
+    const restarted = await gateway().execute({ desired: true, reason: 'again', actor: 'controller' });
+    expect(restarted.detail).toContain('Too soon');
+
+    // Plug b has its own clock.
+    active = 'b';
+    await gateway().execute({ desired: false, reason: 'b', actor: 'controller' });
+    expect(plugs.b!.commands).toEqual([false]);
+  });
+
   test('two commands arriving at once still send exactly one', async () => {
     const { gateway, relay } = harness();
 

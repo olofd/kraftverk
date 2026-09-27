@@ -97,14 +97,19 @@ export type GatewayDeps = {
   /** Where the timeline goes. Swapped out in tests so they touch no database. */
   record?: (entry: AuditEntry) => void;
   policy?: Partial<GatewayPolicy>;
+  /**
+   * Where each plug's last switch is remembered. The server passes its
+   * database, so a restart is not a way around the dwell time; tests keep it
+   * in memory.
+   */
+  memory?: { get(key: string): string | null; set(key: string, value: string): void };
 };
 
 export class ActionGateway {
   #deps: GatewayDeps;
   #policy: GatewayPolicy;
   #record: (entry: AuditEntry) => void;
-  #lastSwitchAt = 0;
-  #everSwitched = false;
+  #memory: NonNullable<GatewayDeps['memory']>;
   /** Serialises `execute`, so "exactly one command" survives concurrent callers. */
   #gate: Promise<void> = Promise.resolve();
 
@@ -112,6 +117,26 @@ export class ActionGateway {
     this.#deps = deps;
     this.#policy = { ...DEFAULT_POLICY, ...deps.policy };
     this.#record = deps.record ?? audit;
+    const kept = new Map<string, string>();
+    this.#memory = deps.memory ?? { get: (key) => kept.get(key) ?? null, set: (key, value) => void kept.set(key, value) };
+  }
+
+  /*
+    Per plug, not per gateway. One pair of values shared by every relay let a
+    switch of plug A start plug B's dwell time, and let B's first switch skip
+    the confirmation a new plug needs because A had already been switched.
+  */
+  #lastSwitchAt(provider: string): number {
+    return Number(this.#memory.get(`gateway.lastSwitchAt.${provider}`) ?? 0) || 0;
+  }
+
+  #everSwitched(provider: string): boolean {
+    return this.#memory.get(`gateway.everSwitched.${provider}`) === '1';
+  }
+
+  #switched(provider: string, at: number): void {
+    this.#memory.set(`gateway.lastSwitchAt.${provider}`, String(at));
+    this.#memory.set(`gateway.everSwitched.${provider}`, '1');
   }
 
   /** The provider that currently owns the relay, if it is running and granted. */
@@ -177,13 +202,14 @@ export class ActionGateway {
     if (this.#deps.isReadOnly()) return refuse('The server is in read-only mode');
 
     const dwell = intent.actor === 'controller' ? this.#policy.controllerDwellMs : this.#policy.userDwellMs;
-    const sinceLast = Date.now() - this.#lastSwitchAt;
-    if (this.#lastSwitchAt > 0 && sinceLast < dwell) {
+    const lastSwitchAt = this.#lastSwitchAt(provider.id);
+    const sinceLast = Date.now() - lastSwitchAt;
+    if (lastSwitchAt > 0 && sinceLast < dwell) {
       return refuse(`Too soon: ${Math.ceil((dwell - sinceLast) / 1000)}s of the dwell time remains`);
     }
 
     // Cutting mains, and the first switch of any plug, need a deliberate act.
-    const needsConfirmation = intent.actor === 'user' && (!intent.desired || !this.#everSwitched);
+    const needsConfirmation = intent.actor === 'user' && (!intent.desired || !this.#everSwitched(provider.id));
     if (needsConfirmation && intent.confirmation !== CONFIRMATION_PHRASE) {
       return refuse('This action needs explicit confirmation');
     }
@@ -230,8 +256,7 @@ export class ActionGateway {
     });
 
     // 6. Exactly one command.
-    this.#lastSwitchAt = Date.now();
-    this.#everSwitched = true;
+    this.#switched(provider.id, Date.now());
     const result = await provider.impl.setRelay(intent.desired, intent.reason);
     const switchedAt = Date.now();
 

@@ -35,7 +35,7 @@ import { keepConsole } from './log.ts';
 import { actorOf, CLIENT_HEADER, createAuth } from './auth/routes.ts';
 import { ProxyDirectory } from './auth/trust.ts';
 import { Sampler, series } from './history/sampler.ts';
-import { ConfigError, PluginHost, type PluginInstance } from './plugins/host.ts';
+import { ConfigError, PluginHost, withTimeout, type PluginInstance } from './plugins/host.ts';
 import { DeviceDriver, ReadOnlyError } from './drivers/device.ts';
 import { SimulatorDriver } from './drivers/simulator.ts';
 import { duration, formatEntry } from './broker/journal.ts';
@@ -1025,6 +1025,7 @@ const gateway = new ActionGateway({
     return { status: session.driver.status() };
   },
   isReadOnly: () => connections.readOnly,
+  memory: { get: appState, set: setAppState },
 });
 
 const plugins = new Hono();
@@ -1136,12 +1137,11 @@ plugins.post('/:id/setup/:action', async (c) => {
 
   // A network scan legitimately takes tens of seconds; a hung cloud call must
   // not take the route with it.
-  const result = await Promise.race([
+  const result = await withTimeout(
     instance.plugin.runSetupAction(actionId, input as Record<string, string | number | boolean>),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('The setup action timed out')), 90_000)
-    ),
-  ]).catch((error: unknown) => ({
+    'The setup action',
+    90_000
+  ).catch((error: unknown) => ({
     ok: false,
     detail: error instanceof Error ? error.message : String(error),
   }));
@@ -1310,10 +1310,13 @@ api.post('/admin/reset', async (c) => {
   /*
     Order matters. Sessions are closed first so nothing is mid-poll against a
     device that is about to stop existing, and the sampler is stopped so it
-    cannot write a row into the table being emptied.
+    cannot write a row into the table being emptied. Plugins are stopped too:
+    left running, they went on polling plugs — and reporting "healthy" — on
+    configuration the reset had just deleted.
   */
   sampler.stop();
   await connections.closeAll();
+  await host.stopAll();
 
   const { tables, rows } = resetDatabase();
 
@@ -1329,8 +1332,10 @@ api.post('/admin/reset', async (c) => {
   });
   console.log(`[admin] database reset — ${rows} rows across ${tables.length} tables`);
 
-  // Back to the state a fresh install boots into: no devices, so no sessions.
+  // Back to the state a fresh install boots into: no devices, so no sessions,
+  // and no plugin configured, so none running.
   await connections.sync(catalog.list());
+  await host.startEnabled();
   sampler.start();
 
   return c.json({ ok: true, tables, rows });
@@ -1441,17 +1446,43 @@ api.get('/device-types', (c) =>
   })
 );
 
+const STATION_MODEL_IDS = STATION_MODELS.map((model) => model.id) as [string, ...string[]];
+
+/**
+ * What a new device may be.
+ *
+ * A station's driver is the core; a plug's is an installed grid-relay
+ * extension. Anything else used to be stored as given — and since links are
+ * opened by type alone, `{ type: 'power-station', driver: 'x' }` got a real
+ * hardware session, polling and auto-binding a station, while the list showed
+ * "driver x is not installed". The only configuration accepted is the station
+ * a station reaches and how; a plug's belongs to its extension.
+ */
+const NewDevice = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('power-station'),
+    driver: z.literal('core.station'),
+    name: z.string().trim().min(1).max(60),
+    model: z.enum(STATION_MODEL_IDS).nullish(),
+    config: z
+      .object({ transport: z.enum(['mqtt', 'ble']).optional(), boundId: z.string().min(1).max(64).optional() })
+      .strict()
+      .optional(),
+  }),
+  z.object({
+    type: z.literal('smart-plug'),
+    driver: z.string().refine(
+      (driver) => host.all.some((instance) => instance.manifest.id === driver && instance.manifest.kind === 'grid-relay'),
+      'No installed extension provides that kind of plug'
+    ),
+    name: z.string().trim().min(1).max(60),
+    model: z.null().optional(),
+    config: z.object({}).strict().optional(),
+  }),
+]);
+
 api.post('/devices', async (c) => {
-  const input = await body(
-    c,
-    z.object({
-      type: z.enum(['power-station', 'smart-plug']),
-      driver: z.string().min(1),
-      name: z.string().min(1).max(60),
-      model: z.string().nullish(),
-      config: z.record(z.string(), z.unknown()).optional(),
-    })
-  );
+  const input = await body(c, NewDevice);
 
   const record = catalog.add({
     type: input.type,
@@ -1492,18 +1523,29 @@ api.get('/devices/:id', async (c) => {
 
 api.patch('/devices/:id', async (c) => {
   const id = savedDeviceId(c.req.param('id'));
+  /*
+    A name and a model, and nothing else. Configuration used to be writable
+    here, which rewrote which station a device was bound to without going
+    through `bind` and its check that no other device holds that station —
+    and without it taking effect until a restart.
+  */
   const changes = await body(
     c,
-    z.object({
-      name: z.string().min(1).max(60).optional(),
-      model: z.string().nullish(),
-      config: z.record(z.string(), z.unknown()).optional(),
-    })
+    z
+      .object({
+        name: z.string().trim().min(1).max(60).optional(),
+        model: z.enum(STATION_MODEL_IDS).nullish(),
+      })
+      .strict()
   );
 
   const before = catalog.get(id);
+  if (!before) throw new HTTPException(404, { message: 'No such device' });
+  if (changes.model !== undefined && before.type !== 'power-station') {
+    throw new HTTPException(400, { message: 'Only a power station has a model to choose' });
+  }
   const updated = catalog.update(id, changes);
-  if (!before || !updated) throw new HTTPException(404, { message: 'No such device' });
+  if (!updated) throw new HTTPException(404, { message: 'No such device' });
 
   // The rename is worth naming both sides of: "Living room" in a log is useless
   // if you cannot tell what it used to be called.
@@ -1721,6 +1763,19 @@ api.post('/devices/:id/control/:control', async (c) => {
   }
 
   if (control.capability === 'gridRelay.switch') {
+    /*
+      The gateway switches the relay — whichever plug is set up as it. With two
+      relay extensions, the switch on one plug's card flipped the other; a tap
+      on this card must act on this plug, or not at all.
+    */
+    const relay = gateway.provider();
+    if (!relay || relay.id !== found.record.driver) {
+      throw new HTTPException(409, {
+        message: relay
+          ? `This plug is not the grid relay — ${relay.id} is. Choose the relay under Extensions.`
+          : 'No plug is set up as the grid relay yet.',
+      });
+    }
     const result = await gateway.execute({
       desired: value === true,
       reason: `${control.label} switched from the device screen`,

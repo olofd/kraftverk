@@ -124,8 +124,11 @@ class StubDriver implements StationDriver {
   started = 0;
   stopped = 0;
 
+  constructor(private failToStart = false) {}
+
   async start() {
     this.started += 1;
+    if (this.failToStart) throw new Error('the driver would not start');
   }
   async stop() {
     this.stopped += 1;
@@ -170,7 +173,7 @@ type Harness = {
   station: (name?: string, config?: Record<string, unknown>) => DeviceRecord;
 };
 
-function harness(kind: LinkKind = 'sim', options: { autoBind?: boolean } = {}): Harness {
+function harness(kind: LinkKind = 'sim', options: { autoBind?: boolean; failToStart?: boolean } = {}): Harness {
   const catalog = new DeviceCatalog();
   const host = new StubHost();
   const drivers: StubDriver[] = [];
@@ -183,7 +186,7 @@ function harness(kind: LinkKind = 'sim', options: { autoBind?: boolean } = {}): 
     autoBind: options.autoBind,
     host: () => host,
     simulator: () => {
-      const driver = new StubDriver();
+      const driver = new StubDriver(options.failToStart);
       drivers.push(driver);
       return driver;
     },
@@ -309,7 +312,81 @@ describe('the connection manager', () => {
     expect(connections.refusal(second.id)).toBeNull();
   });
 
+  /*
+    Opening takes awaits, and a session used to be recorded only after all of
+    them. Until then nothing knew it existed — so a second sync opened the
+    same station again, and a device forgotten in the meantime came back.
+  */
+  test('two syncs at once open one session, with one driver', async () => {
+    const { connections, catalog, station, drivers } = harness();
+    station();
+
+    await Promise.all([connections.sync(catalog.list()), connections.sync(catalog.list())]);
+
+    expect(connections.sessions).toHaveLength(1);
+    expect(drivers).toHaveLength(1);
+  });
+
+  test('a device forgotten while its session opens gets no session', async () => {
+    const { connections, station, drivers } = harness();
+    const record = station();
+
+    const opening = connections.open(record);
+    await connections.close(record.id);
+
+    expect(await opening).toBeNull();
+    expect(connections.sessions).toEqual([]);
+    expect(drivers[0]?.stopped).toBe(1);
+  });
+
+  test('a driver that fails to start is stopped, and leaves nothing open', async () => {
+    const { connections, catalog, station, drivers } = harness('sim', { failToStart: true });
+    const record = station();
+
+    await connections.sync(catalog.list());
+
+    expect(connections.sessions).toEqual([]);
+    expect(connections.refusal(record.id)).toContain('would not start');
+    expect(drivers[0]?.stopped).toBe(1);
+  });
+
   describe('on a hardware link', () => {
+    /*
+      The old order closed the station's link first and then opened the new
+      one: a new link that failed left the device on a closed link, offline
+      until the server restarted.
+    */
+    test('a rebind that fails leaves the device on the station it had', async () => {
+      const { connections, catalog, station, host } = harness('ble', { autoBind: false });
+      const record = station('Mine', { boundId: stationId('AA:BB') });
+      await connections.sync(catalog.list());
+      const before = host.links.get(stationId('AA:BB'));
+
+      host.failOn = stationId('CC:DD');
+      await expect(connections.bind(record.id, stationId('CC:DD'))).rejects.toThrow('not in range');
+
+      expect(before?.closed).toBe(false);
+      expect(connections.get(record.id)?.link).toBe(before!);
+      // …and the station it tried for is not left reserved.
+      const other = station('Other');
+      await connections.sync(catalog.list());
+      host.failOn = null;
+      await connections.bind(other.id, stationId('CC:DD'));
+      expect(connections.get(other.id)?.link?.boundId).toBe(stationId('CC:DD'));
+    });
+
+    test('binding to the station it already has keeps the link up', async () => {
+      const { connections, catalog, station, host } = harness('ble', { autoBind: false });
+      const record = station('Mine', { boundId: stationId('AA:BB') });
+      await connections.sync(catalog.list());
+      const before = host.links.get(stationId('AA:BB'));
+
+      await connections.bind(record.id, stationId('AA:BB'));
+
+      expect(before?.closed).toBe(false);
+      expect(connections.get(record.id)?.link).toBe(before!);
+    });
+
     test('starts the host once, however many syncs run', async () => {
       const { connections, catalog, station, host } = harness('ble');
       station();

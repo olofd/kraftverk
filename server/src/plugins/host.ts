@@ -46,13 +46,20 @@ export type PluginInstance = {
   config: ConfigValues;
 };
 
-const withTimeout = async <T>(work: Promise<T>, what: string): Promise<T> =>
-  Promise.race([
-    work,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`${what} did not finish in ${CALL_TIMEOUT_MS}ms`)), CALL_TIMEOUT_MS)
-    ),
-  ]);
+/** Races `work` against a deadline, and clears the deadline either way. */
+export async function withTimeout<T>(work: Promise<T>, what: string, ms = CALL_TIMEOUT_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${what} did not finish in ${Math.round(ms / 1000)} s`)), ms);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export class PluginHost {
   #instances = new Map<string, PluginInstance>();
@@ -170,6 +177,10 @@ export class PluginHost {
       instance.status = 'failed';
       instance.error = error instanceof Error ? error.message : String(error);
       this.#clearTimers(instance);
+      instance.capabilities.clear();
+      // A start that timed out may still be running, and would go on polling
+      // a plug from a plugin reported as failed. Asked to stop, best effort.
+      void withTimeout(Promise.resolve().then(() => instance.plugin.stop()), `${id} stop`).catch(() => undefined);
       audit({
         at: new Date().toISOString(),
         kind: 'plugin.failed',

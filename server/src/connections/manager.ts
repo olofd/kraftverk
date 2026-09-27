@@ -104,6 +104,20 @@ export class ConnectionManager {
    * one absent radio is not a reason for the server not to come up.
    */
   #hostErrors = new Map<ServerTransportKind, string>();
+  /**
+   * Sessions being opened, not yet stored.
+   *
+   * Opening takes awaits — the radio, the driver — and a session was only
+   * recorded once all of them were done. Until then nothing knew it existed:
+   * a second `sync` opened the same station again, leaving a driver polling
+   * forever that nothing could stop, and a device forgotten in the meantime
+   * came back as a session with no record.
+   */
+  #opening = new Map<SavedDeviceId, Promise<StationSession | null>>();
+  /** Opens that were closed before they finished: released instead of stored. */
+  #cancelled = new Set<SavedDeviceId>();
+  /** `sync` calls, one at a time. */
+  #syncing: Promise<unknown> = Promise.resolve();
 
   constructor(private deps: ConnectionManagerDeps) {}
 
@@ -196,12 +210,21 @@ export class ConnectionManager {
    * Called at startup and after the catalog changes, so adding a station opens
    * its link and forgetting one closes it — which is what makes deleting a
    * device an honest act rather than a row disappearing while a socket stays up.
+   *
+   * One at a time: each works from the list it was given, and two interleaved
+   * could each decide the other's work was still to do.
    */
-  async sync(records: DeviceRecord[]): Promise<void> {
+  sync(records: DeviceRecord[]): Promise<void> {
+    const run = this.#syncing.then(() => this.#sync(records));
+    this.#syncing = run.catch(() => undefined);
+    return run;
+  }
+
+  async #sync(records: DeviceRecord[]): Promise<void> {
     const stations = records.filter((record) => record.type === 'power-station');
     const wanted = new Set(stations.map((record) => record.id));
 
-    for (const deviceId of [...this.#sessions.keys()]) {
+    for (const deviceId of [...this.#sessions.keys(), ...this.#opening.keys()]) {
       if (!wanted.has(deviceId)) await this.close(deviceId);
     }
     for (const deviceId of [...this.#refusals.keys()]) {
@@ -239,19 +262,44 @@ export class ConnectionManager {
    * or already claimed by something else is not an error — it is disconnected,
    * and it keeps trying.
    */
-  async open(record: DeviceRecord): Promise<StationSession | null> {
-    if (this.#sessions.has(record.id)) return this.#sessions.get(record.id)!;
+  open(record: DeviceRecord): Promise<StationSession | null> {
+    const open = this.#sessions.get(record.id);
+    if (open) return Promise.resolve(open);
+    // Already on its way: the same session, not a second one.
+    const pending = this.#opening.get(record.id);
+    if (pending) return pending;
 
+    const run = this.#open(record).finally(() => this.#opening.delete(record.id));
+    this.#opening.set(record.id, run);
+    return run;
+  }
+
+  async #open(record: DeviceRecord): Promise<StationSession | null> {
     // Cleared before opening, not after: `#hardware` may set a fresh one, and
     // clearing afterwards threw it away — the device then looked merely quiet
     // rather than in conflict with another device you own.
     this.#refusals.delete(record.id);
+    this.#cancelled.delete(record.id);
 
     const session = this.deps.simulate
       ? this.#simulated(record)
       : await this.#hardware(record);
 
-    await session.driver.start();
+    try {
+      await session.driver.start();
+    } catch (error) {
+      // Its link is open and its watcher registered, and with no session
+      // stored nothing could ever release them.
+      await this.#release(record.id, session);
+      throw error;
+    }
+
+    if (this.#cancelled.delete(record.id)) {
+      // Forgotten while it was opening.
+      await this.#release(record.id, session);
+      return null;
+    }
+
     this.#sessions.set(record.id, session);
     return session;
   }
@@ -377,8 +425,17 @@ export class ConnectionManager {
     if (taken) throw new Error(`Another saved device is already bound to ${station}`);
 
     const previous = this.#bound.get(deviceId) ?? null;
+
+    // Already there, on a live link: nothing to change, and closing the link
+    // to reopen it would only drop the station for a moment.
+    if (previous && sameStation(previous, station) && session.link) {
+      this.#released.delete(deviceId);
+      this.deps.onBound?.(deviceId, session.kind, station);
+      return;
+    }
+
     this.#bound.set(deviceId, station);
-    this.#released.delete(deviceId);
+    const wasReleased = this.#released.delete(deviceId);
 
     try {
       // The session already knows which transport this device uses; a bind
@@ -387,18 +444,26 @@ export class ConnectionManager {
       const host = await this.hostFor(session.kind as ServerTransportKind);
       if (!host) throw new Error(`The ${session.kind} transport is not available`);
 
-      await session.link?.close();
+      /*
+        The new link first, and only then the old one closed.
 
+        The other way round, a new link that failed to open left the device on
+        a link that was already closed: offline until the server restarted,
+        and still recorded as bound to the station it could no longer reach.
+      */
       const link = await host.open(station);
       session.device?.retarget(link);
       session.device?.reset();
+      const current = this.#sessions.get(deviceId) ?? session;
+      this.#sessions.set(deviceId, { ...current, link });
+      await session.link?.close().catch(() => undefined);
 
-      this.#sessions.set(deviceId, { ...session, link });
       this.deps.onBound?.(deviceId, session.kind, station);
     } catch (error) {
       // Releasing the claim matters as much as making it: a station left
       // reserved by a bind that failed is one nothing else may ever take.
       this.#bound.set(deviceId, previous);
+      if (wasReleased) this.#released.add(deviceId);
       throw error;
     }
   }
@@ -422,10 +487,23 @@ export class ConnectionManager {
   }
 
   async close(deviceId: SavedDeviceId): Promise<void> {
+    // Still opening: it is released when it gets there, rather than stored.
+    const pending = this.#opening.get(deviceId);
+    if (pending) {
+      this.#cancelled.add(deviceId);
+      await pending.catch(() => undefined);
+      return;
+    }
+
     const session = this.#sessions.get(deviceId);
     if (!session) return;
 
     this.#sessions.delete(deviceId);
+    await this.#release(deviceId, session);
+  }
+
+  /** Lets go of everything a session holds: its claim, its watcher, its driver and its link. */
+  async #release(deviceId: SavedDeviceId, session: StationSession): Promise<void> {
     this.#bound.delete(deviceId);
     this.#released.delete(deviceId);
     // Stop watching before releasing the station: an unclaimed station is
@@ -440,7 +518,7 @@ export class ConnectionManager {
   }
 
   async closeAll(): Promise<void> {
-    for (const deviceId of [...this.#sessions.keys()]) await this.close(deviceId);
+    for (const deviceId of [...this.#sessions.keys(), ...this.#opening.keys()]) await this.close(deviceId);
   }
 
   #refuse(deviceId: SavedDeviceId, reason: string): void {
