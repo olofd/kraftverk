@@ -10,7 +10,7 @@ import type { ConnectionManager } from './manager.ts';
  * under `sydpower.station-links`. A station session asks it for its driver by
  * device id — and is told why there is none, when there isn't — and its setup
  * guide asks what the radios can see. When the station's session holds its own
- * links (step 7), this lends the radio and the broker themselves instead.
+ * links (step 10), this lends the radio and the broker themselves instead.
  */
 
 export const STATION_LINKS = 'sydpower.station-links';

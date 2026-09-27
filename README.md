@@ -1,9 +1,12 @@
 # kraftverk
 
 > **Architecture:** everything you add is a device, and each kind of device is a
-> package of its own. The model, the words for it and the plan are in
-> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md);
+> package of its own, reached through the connection methods it declares. The
+> model, the words for it and the plan are in
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), the data model in
+> [`docs/DATA-MODEL.md`](docs/DATA-MODEL.md), and
 > [`docs/HANDOFF.md`](docs/HANDOFF.md) is where things actually stand today.
+> This README describes the code as it is now.
 
 Local control for **Sydpower-stack portable power stations** — monitor and
 control them from iOS and the browser, over Wi‑Fi or Bluetooth, **without the
@@ -381,6 +384,8 @@ and the vendor service is invisible. Pairing is *not* required.
 Open **App settings → Station link**, switch **Connection** to **This device**,
 and pick the station. Nothing else needs to be running — this path does not use
 the API at all, and needs no saved device, because nothing is being persisted.
+(This is the path the plan turns into an ordinary connection method,
+"Bluetooth, from this phone or browser", in step 12.)
 
 - **In a browser**: Chrome or Edge, on `localhost` or over HTTPS. The browser
   shows its own device chooser; a page is not allowed to scan. Safari and
@@ -460,10 +465,16 @@ resolves that device's own session. `:id` is a catalog id such as
 `power-station:3db445e0`, and it contains a `:`, so it must be URL-encoded.
 
 **`id` is always the catalog's.** A device also carries `providerDeviceId` — the
-vendor's own identity, a MAC or a Tuya id — as a separate field, because the two
-answer different questions and one adapter may provide many devices. Health is
+device's own identity, a MAC or a Tuya id — as a separate field, because the two
+answer different questions: the catalog id is what history hangs on, and the
+device's own id is how the same device is recognised however it is found
+(`device.identity` from step 5). Health is
 not a boolean: `health.status` is one of `connected`, `connecting`, `offline`,
 `unconfigured` or `error`, and always comes with a sentence in `health.detail`.
+
+Routes the plan retires are marked with the step that replaces them:
+`/station/*` (step 6, the add flow), `/plugins/*` and `/grid/*` (steps 9 and
+11), and `/devices/:id/p280/*` and `/migration/station/*` (step 10).
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -525,7 +536,7 @@ only ever have one. Use the device-scoped routes above.
 | `KRAFTVERK_BINDING_FILE` | — | `server/data/binding.json` | The legacy pre-catalog binding, read-only now |
 | `KRAFTVERK_BASELINE_FILE` | — | `server/data/baseline.json` | The register baseline the Protocol diff compares against. Overridable so a container can keep it on a volume |
 | `KRAFTVERK_RESET_SECRET_FILE` | — | `server/data/reset-secret` | A passphrase of 16+ characters here lets the app empty the database from **App settings → Danger zone**. No file means the route does not exist; the app shows how to enable it rather than a dead button. Gitignored |
-| `KRAFTVERK_SECRET_KEY` | — | — | Passphrase for AES-256-GCM plugin secrets. Without it they are stored as given, and the UI says so |
+| `KRAFTVERK_SECRET_KEY` | — | — | Passphrase for AES-256-GCM secrets, such as a plug's local key. Without it they are stored as given, and the UI says so |
 
 ---
 
@@ -557,7 +568,7 @@ Two things that workflow taught us, worth knowing before you trust a hypothesis:
 npm test
 ```
 
-325 tests. The protocol ones — frame construction, response parsing, telemetry
+The protocol tests — frame construction, response parsing, telemetry
 decoding against captured traffic from real hardware, plus the write-safety
 whitelist and the behaviours confirmed on a P280 — live with the protocol
 package, so they cover every link equally: a direct Bluetooth connection from
@@ -584,17 +595,19 @@ under `NODE_ENV=test`.
 
 ## Project layout
 
+The layout the plan builds is ARCHITECTURE.md §3. Today:
+
 ```
-packages/device-sdk/     the device-type contract: capabilities, telemetry, setup guides, the contract suite
+packages/device-sdk/     the device-type contract: capabilities, telemetry, setup, the contract suite
   src/identity.ts        which id is which, and what "connected" means
 packages/ui/             shared interface primitives, used by the app and by devices
 packages/api-client/     every API endpoint, and the shapes the server sends
 packages/devices/
-  aferiy-p280/           the station: what it measures, and its own four screens
-packages/plugins/        in-repo extensions
+  aferiy-p280/           the station: its type, session, simulator, and its own four screens
+packages/plugins/        the two v1 plugins, until the plugs are device types (step 9)
   tuya-local-grid-relay/   ATORCH S1W and other Tuya sockets, over the LAN
   fake-grid-relay/         an in-memory plug for tests and the simulator
-packages/protocol/       everything that knows the protocol (+ tests)
+packages/protocol/       the Sydpower protocol and the P280's model, until they split (step 8)
   src/modbus.ts          framing and the big-endian CRC
   src/registers.ts       register map, decoding, write whitelist
   src/station.ts         registers -> the model the UI renders
@@ -617,13 +630,17 @@ server/
   src/actions/           the only code allowed to switch mains
   src/history/           sqlite: config, secrets, audit timeline, samples
 docs/HANDOFF.md          state of play, and the traps worth knowing — start here
-docs/DOCKER.md           running the server in a container
-docs/ARCHITECTURE.md     the device model, its words and the plan: the authority
-docs/PROJECT-BRIEF.md    long-term plan and architecture brief
-docs/P280-FINDINGS.md    evidence log: confirmed vs. assumed
-docs/PLUGIN-ARCHITECTURE.md  extension system design, and the smart-plug research
-docs/DEVICES-AND-AUTOMATION.md  one device list, and wiring devices together
+docs/ARCHITECTURE.md     the architecture, its words and the plan: the authority
+docs/DATA-MODEL.md       adding a device screen by screen, and everything stored
+docs/PROJECT-BRIEF.md    what the product is for, its safety rules and the automation
+docs/P280-FINDINGS.md    the station: evidence log, confirmed vs. assumed
+docs/ATORCH-S1W.md       the smart plug and the Tuya local protocol: research and findings
 docs/TUYA-LOCAL-KEY.md   five-minute guide to getting a plug's local key
+docs/BROKER.md           the MQTT broker the station connects to
+docs/DOCKER.md           running the server in a container
+docs/SECURITY.md         accounts, sign-in and every defence, checkably
+docs/ACCOUNTS.md         where accounts are going: homes, sharing, the hosted service
+docs/CI.md               what every push checks
 ```
 
 ### Connecting a smart plug
@@ -640,7 +657,8 @@ npm run keys:tuya
 ```
 
 fetches their local keys, which is the one step that needs a (free) Tuya cloud project. Both are
-also buttons in the app under **Extensions**, driven by the same code.
+also buttons in the app — under **Extensions** today, and part of adding the plug once it is a
+device type (step 9) — driven by the same code.
 [docs/TUYA-LOCAL-KEY.md](docs/TUYA-LOCAL-KEY.md) walks through it.
 
 `packages/protocol` is imported as TypeScript source with no build step, by both

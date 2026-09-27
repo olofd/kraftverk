@@ -10,8 +10,8 @@ and a staged plan. Read it together with the [`README.md`](../README.md) and
 The project began as an app for one power station and is now a local energy
 controller for **the devices you own**, with an AFERIY P280 as the reference
 hardware and the only one verified against real firmware. Read the end-goal
-section next; everything after it describes the station and its extensions in
-detail.
+section next; everything after it describes the station, the devices that work
+with it, and the automation, in detail.
 
 The goal, unchanged since the start:
 
@@ -23,9 +23,10 @@ The goal, unchanged since the start:
 - use solar production and conservative weather/PV forecasts to reduce unnecessary
   AC charging, while never compromising a configured energy reserve.
 
-This must be an open-source **core + extension** product. The station application is
-useful on its own; weather services, smart plugs, electricity prices, Home Assistant,
-and future devices are optional integrations. No feature may assume every user owns the
+This must be an open-source product that is useful with nothing but a station.
+Smart plugs, weather services, electricity prices, Home Assistant and future
+products are all **device types or services you add**, each one package (see
+[`ARCHITECTURE.md`](ARCHITECTURE.md)). No feature may assume every user owns the
 same ATORCH plug, uses SMHI, lives in Sweden, or wants automation enabled.
 
 The owner is in Sweden and primarily uses the P280 at home. It is normally left
@@ -37,24 +38,27 @@ observed direct-sun peak is about 300 W.
 ## The end goal: devices you own, wired together
 
 > **The authoritative target, vocabulary and implementation order are in
-> [`ARCHITECTURE.md`](ARCHITECTURE.md).** Where this brief disagrees with it,
-> that document wins. This section states the product intent behind it.
+> [`ARCHITECTURE.md`](ARCHITECTURE.md), and the data model in
+> [`DATA-MODEL.md`](DATA-MODEL.md).** This section states the product intent
+> behind them, and agrees with them.
 
 Three decisions settled with the owner, which the rest of the documentation must
 not contradict:
 
-**A connection's owner decides what a device can do.** Server-owned links are
-first class: only the server is running when the app is closed, so only it can
-sample history, hold a session and drive an automation. A client-owned Bluetooth
-link is a genuine way to *use* a device — live readings, settings, manual
-control — and it is not diagnostics-only. But automations and background history
-require the server component, and the app must say so rather than implying a
-client-only device is durable.
+**Who holds a connection decides what a device can do.** A device is reached
+through one of the connection methods its type declares — for the P280, Wi-Fi
+through the server's broker, or Bluetooth — and each connection is held either
+by the server or by the app on a phone or in a browser. The same code runs in
+either. Server-held connections are first class: only the server is running when
+the app is closed, so only it can record history in the background and drive an
+automation. A connection held by the app is a genuine way to *use* a device —
+live readings, settings, manual control — and not diagnostics-only; while it is
+held, its readings are recorded on the server if there is one. The app says
+plainly what a phone-held connection cannot do while the phone is away.
 
 **Services are devices without hardware.** Weather and price are added the same
 way as a plug and expose telemetry and capabilities the same way, shown in a
-section of their own. This replaces the earlier position that they were plugins
-kept off the canvas (ARCHITECTURE.md §9).
+section of their own.
 
 **Root is always the canvas; every device also has its own address.** Opening the
 app lands on *Your devices* regardless of how many you own, so the shape never
@@ -63,15 +67,17 @@ so it can be bookmarked or pinned and opened directly.
 
 ### Vocabulary
 
-The glossary is [ARCHITECTURE.md §2](ARCHITECTURE.md#2-vocabulary): **device
-type** (a package that knows a product), **protocol** (a shared package that
-knows a wire format), **device** (one thing you added), **service** (a device
-with no hardware), **capability**, **telemetry**, **setting**, **setup guide**,
-**link** and **automation**. Adapter, driver, provider and extension are
-retired as names, and plugin is never shown on screen. Older sections below
-still use them; read them through that glossary.
+The glossary is [ARCHITECTURE.md §2](ARCHITECTURE.md#2-vocabulary): **category**,
+**device type** (a package that knows a product), **transport** (how bytes reach
+a device), **protocol** (the language spoken over it), **connection method** (a
+protocol over a transport, declared by a type), **device** (one thing you
+added), **connection** (one way a device is reached, and who holds it),
+**identity**, **service** (a device with no hardware), **capability**,
+**telemetry**, **setting**, **setup**, **link** and **automation**. Adapter,
+driver, provider, extension and grid relay are retired as names, and plugin is
+never shown on screen.
 
-Everything below this section describes the station and its extensions. This section
+Everything below this section describes the station and the devices around it. This section
 describes what the whole thing is becoming, and every design decision should be read
 against it.
 
@@ -81,14 +87,14 @@ The product is not "a P280 app with plugins". It is **your devices**, in one lis
 with its own screen, which you can connect to each other.
 
 ```
-driver  = code that knows how to talk to something   "Tuya (local)", "core.station"
-device  = a thing you own, added and named           "Hallway plug", "Aferiy P280"
+device type = a package that knows a product      "ATORCH S1W", "AFERIY P280"
+device      = a thing you own, added and named    "Hallway plug", "Garage P280"
 ```
 
-One driver can provide many devices — a Home Assistant driver would provide dozens —
-and a device outlives its driver's mood: unplug a plug for a week and it stays in the
-list, greyed, with its history intact. Devices are **persisted in the database**, not
-derived from whatever happens to answer a scan.
+One device type serves any number of devices, and a device outlives its connection's
+mood: unplug a plug for a week and it stays in the list, greyed, with its history
+intact. Devices are **persisted in the database**, not derived from whatever happens
+to answer a scan.
 
 The station is a device. That is the load-bearing decision: the moment it is a special
 case, every feature after it has to be built twice.
@@ -96,21 +102,27 @@ case, every feature after it has to be built twice.
 ### Adding, renaming, removing, resetting
 
 A device is something you deliberately **add**, and adding it is where the model gets
-established:
+established. The flow, screen by screen, is [DATA-MODEL.md §1](DATA-MODEL.md):
 
-1. **What kind** — a power station, a smart plug, later a weather source.
-2. **Which model** — AFERIY P280, FOSSiBOT F2400, "something else". This is not
-   cosmetic: the register map differs between them, and the app must not guess. The
-   picker says which models are verified and which are assumed.
-3. **How it connects** — for a station, WiFi/MQTT, the server's Bluetooth, or the
-   browser's; for a plug, its address and key.
+1. **What kind** — a category: Power stations, Smart plugs, and among services, Weather.
+2. **Which one** — a device type, with how well it is supported: verified on real
+   hardware, reported working by others, or experimental. This is not cosmetic: the
+   register map differs between models, and the app must not guess. A model nobody has
+   verified is not offered.
+3. **How it connects** — the type's connection methods, and who would hold the
+   connection: for a station, Wi-Fi through your server, Bluetooth from your server, or
+   Bluetooth from this phone or browser; for a plug, the home network.
+4. **Setup for that method** — get it ready, choose it from what can be seen, give a key
+   if it needs one, and check it answers. The check reads the device's own identity, so
+   the same station found twice is recognised as one.
 
 Full CRUD, with the destructive parts treated as destructive:
 
-- **Rename** freely; the name is yours and survives the driver renaming things upstream.
-- **Remove** with a warning that names what is lost — its history, and any automation
-  that references it. "Used by: Backup reserve" appears on the device screen so that is
-  visible *before* the button is pressed.
+- **Rename** freely; the name is yours and survives the device renaming itself.
+- **Remove** keeps the device's history: adding the same device again offers to bring it
+  back. The warning names any automation that uses it — "Used by: Backup reserve"
+  appears on the device screen so that is visible *before* the button is pressed.
+- **Delete history** is separate, explicit and confirmed, because it cannot be undone.
 - **Reset to a blank slate** — remove everything and start again, because a setup you
   cannot undo is a setup people are afraid to try.
 
@@ -119,11 +131,11 @@ Full CRUD, with the destructive parts treated as destructive:
 The current P280 screens — the energy-flow dashboard, the settings with their
 model-specific charge-power steps, the register diagnostics — are **P280 UI**, not app
 UI. They are excellent, and they are specific. So they belong with the thing they
-describe, exactly as the Tuya plug's panel already lives in its own package:
+describe, in the device type's own package:
 
 ```
-packages/devices/aferiy-p280/       station UI: dashboard, settings, protocol screens
-packages/plugins/tuya-…/ui/         plug UI: live metering and the relay control
+packages/devices/aferiy-p280/ui/    station UI: dashboard, settings, protocol screens
+packages/devices/atorch-s1w/ui/     plug UI, if the generic screens are not enough
 client/                             the shell: device list, wiring, shared primitives
 ```
 
@@ -137,66 +149,64 @@ Two rules keep this from becoming a loophole:
 - **Compile-time only.** A panel ships in a release or it does not exist. No downloaded
   UI, ever — an iOS build must not fetch and execute code.
 - **Data and callbacks, not privileges.** A device's own screen reaches the hardware
-  through the same action gateway as everything else, with the same grants, dwell,
-  freshness checks and two-stage verification.
+  through the same action gateway as everything else, with the same confirmation,
+  dwell, freshness checks and two-stage verification.
 
 ### Wiring: Lego with typed studs
 
-Once two devices exist, you connect them. Two tiers, because "make it programmable" and
-"do not cut mains at 3am" pull against each other:
+Once two devices exist, you connect them. First with **links** — facts about the house,
+such as "this plug feeds that station's AC input", recorded once and read by everything
+(ARCHITECTURE.md §4.4). Then with **automations**, in two tiers, because "make it
+programmable" and "do not cut mains at 3am" pull against each other.
 
-- **Recipes** — whole behaviours the core implements, with **roles** you fill from a
-  dropdown that only offers devices whose capabilities fit. *Backup reserve* wants a
-  station and a grid relay. All the safety lives inside the recipe.
-- **Rules** — one sentence for the long tail: *when the plug draws more than 2 kW for a
-  minute and the pack is above 50 %, turn the plug off*. Built from what devices
-  declare, executed only through the action gateway, dry-run by default.
+**Recipes** (curated, parameterised, the default) are whole behaviours the core
+implements, with **roles** you fill with devices:
 
-An incompatible piece cannot be connected. That is the difference between Lego and a
-rule engine with a loaded gun.
+```
+Backup reserve
+  roles     station       ← needs battery + acInput                 [ Garage P280 ▾ ]
+            feeding plug  ← needs switch, and a feeds link to it    [ Hallway plug ▾ ]
+  settings  reserve 30 %   hard floor 15 %   start at 40 %
+  state     OBSERVE — would have cut mains 12 minutes ago
+```
+
+The dropdowns only offer devices whose capabilities fit the role, so **an incompatible
+piece cannot be connected**: the failure mode is a role you cannot fill, not an
+automation that misbehaves at 3am. Every guard in this brief — dwell, hysteresis,
+freshness, hard floor, two-stage verification, `GRID_UNAVAILABLE`, the arming checklist
+— lives inside the recipe, in the core, not in user configuration. The reserve
+controller is recipe #1. Later: *charge overnight when tomorrow is cloudy*, *avoid the
+expensive hours*.
+
+**Rules** (open, but on rails) cover the long tail in one sentence:
+
+```
+WHEN   [Hallway plug ▾] [power rises above ▾] [ 2000 W ]  for [ 60 s ]
+AND    [Garage P280 ▾]  [battery is above ▾]  [ 50 % ]
+THEN   [Hallway plug ▾] [turn off ▾]
+       because "stop the kettle draining the pack"
+```
+
+Built from what devices declare — the first dropdown lists devices, the second their
+telemetry, the last their capabilities' commands — as a phone-friendly sentence builder,
+not a node graph. **A rule has no more power than you do**: its action goes through the
+action gateway, dwell and freshness still apply, the physical effect is still verified,
+and everything lands in the audit timeline. A rule that would breach the reserve or the
+hard floor is refused at execution, with the reason shown against it. Rules start in
+**dry run**; arming one that touches mains needs the same checklist as the controller.
+
+*Why not just Home Assistant?* Because a Home Assistant automation cannot know that this
+station's AC input must come back before the pack hits its floor, and cannot verify that
+mains actually returned. The recipes encode knowledge that lives in
+[`P280-FINDINGS.md`](P280-FINDINGS.md). Both tiers are optional; the station works with
+neither.
 
 ### Where this stands
 
-| Piece | State |
-| --- | --- |
-| Extension system: SDK, host, action gateway, audit | **Built** |
-| Tuya plug driver, simulated plug, setup wizard UI | **Built** |
-| Device catalog: persisted, CRUD, model selection | **Built (server)** |
-| Auto-adoption of the station at startup | **Removed.** A fresh database is a blank canvas; a station bound under the old code is offered as an explicit one-time import |
-| Per-device history sampling | **Built (server)**; charts pending |
-| **The P280 as a device package** — declarations *and* all four screens | **Built** |
-| `@kraftverk/ui` and `@kraftverk/api-client` extracted | **Built** |
-| Devices canvas and device detail | **Built.** Root is the canvas; each device has Dashboard and Settings and nothing else |
-| Add-device wizard | **Next** — Milestone B. Adding still writes the record before the connection is configured |
-| `ConnectionManager`, one session per saved station | **Built.** No route reaches a global driver |
-| More than one station at once | **Built.** `TransportHost` is the radio or the broker — one per process — carrying a `ServerLink` per saved station. The old "one station at a time" was a property of the interface, not the hardware: a broker is per-MAC, and a BLE central holds several peripherals. A *station* still accepts one connection, so two devices naming the same unit is refused |
-| Per-saved-device adapter instances | **Next** — Milestone C |
-| Global station tabs | **Removed** |
-| Global `StationProvider` | **Removed.** It is now `DirectLinkProvider` — the app's own Bluetooth link, nothing more. Station telemetry comes from `useDeviceConnection(device)`, per device |
-| `SavedDeviceView`: catalog id, vendor id and connection health kept apart | **Built.** `id` is always the catalog's; `providerDeviceId` and `providerName` carry the vendor's; `health` has five states and a sentence, where there used to be a boolean |
-| Device lifecycle in the audit timeline | **Built.** Adding, renaming and forgetting are recorded; forgetting destroys the device's history, and used to leave no trace |
-| Recipes, then rules | Planned |
-
-The package layout this produced:
-
-```
-packages/protocol        MODBUS, register map, station model
-packages/plugin-sdk      the contracts: capabilities, devices, panels, identity, health
-packages/ui              shared primitives; Tamagui as a peer, so one theme context
-packages/api-client      every endpoint, and the shapes the server sends
-packages/devices/aferiy-p280   the station: what it measures, and its own screens
-packages/plugins/*       drivers, one with its own panel
-client                   the shell — 21-to-46-line routes that choose whose screen to render
-```
-
-Dependencies point one way: a device package never imports from the app. Where a device
-needs something from the app, the app passes it — `ProtocolScreenProps.direct` is a
-*structural* type describing what the screen needs, which the app's richer object
-satisfies.
-
-The two design documents that expand this: [`PLUGIN-ARCHITECTURE.md`](PLUGIN-ARCHITECTURE.md)
-for how drivers work, [`DEVICES-AND-AUTOMATION.md`](DEVICES-AND-AUTOMATION.md) for the
-device model and the wiring.
+The status of every piece is kept in one place: the plan's table in
+[ARCHITECTURE.md §8](ARCHITECTURE.md#8-the-plan), with the findings it fixes in §6.
+[`HANDOFF.md`](HANDOFF.md) says what is true right now and what has been learned the
+hard way.
 
 ---
 
@@ -239,69 +249,36 @@ Test first with a small non-critical load.
 
 ### Architecture
 
-Seven packages, plus the app and the server. Dependencies point one way: a
-device or plugin package never imports from the app.
+The packages, the rule for what may import what, and how a device type,
+protocol or transport is added are in [ARCHITECTURE.md §3](ARCHITECTURE.md#3-packages-and-the-dependency-rule);
+where each file lives today is in the README's *Project layout*. Two properties
+matter for everything in this brief:
 
-- `packages/protocol/`: framing, register map, decoding, the write whitelist and
-  the polling client. No dependencies, no build step. The server and the app
-  both import it, so there is exactly one implementation of what a register
-  means and which writes are safe.
-- `packages/plugin-sdk/`: the contracts — capabilities, the device model,
-  config schemas, setup actions, panels. Types and validation only.
-- `packages/ui/`: shared interface primitives. Tamagui is a *peer* dependency:
-  two copies would mean two theme contexts and broken styling.
-- `packages/api-client/`: every API endpoint and the shapes the server sends.
-  Extracted so a device screen can read register dumps without importing the
-  app's HTTP client.
-- `packages/devices/aferiy-p280/`: the station — what it measures, what it can
-  be told to do, what it remembers, and all four of its screens.
-- `packages/plugins/`: drivers. A Tuya LAN grid relay with its own panel, and an
-  in-memory plug with injectable faults for testing the action gateway.
-- `client/`: Expo / React Native / react-native-web with Tamagui and
-  expo-router — now a **shell**. Its tabs are 21–46 lines that choose whose
-  screen to render. It can talk to the server over HTTP or hold the Bluetooth
-  link itself (Web Bluetooth in a browser, react-native-ble-plx on a phone),
-  running the shared `StationClient` locally.
-- `server/`: Hono API on Bun. Station link over redirected MQTT or BLE, plus the
-  plugin host, the action gateway, the device catalog and the history sampler.
+- **One implementation of the protocol.** The server and the app run the same
+  protocol and device-type code, so there is exactly one implementation of what
+  a register means and which writes are safe, wherever the connection is held.
+- **The station is the reference device, not a special case.** Its screens,
+  its settings and its register tools belong to its own package.
 
-Device names are the user's: the catalog stores whatever you rename a device to,
-and it survives a driver renaming things upstream. The owner calls this setup
-“F3” while the protocol research identifies the hardware as an AFERIY P280 —
-which is exactly the split the catalog now models. `model` stays the verified
-identity and decides how the thing is decoded; the name is presentation.
-
-Key implementation files:
-
-| File | Purpose |
-| --- | --- |
-| `packages/protocol/src/modbus.ts` | MODBUS frame build/parse and special CRC handling |
-| `packages/protocol/src/registers.ts` | register map, settings decoding, safety whitelist |
-| `packages/protocol/src/client.ts` | polling, serialised requests, read-only guard, writes |
-| `packages/protocol/src/ble.ts` | GATT layout and frame reassembly, shared by all three BLE stacks |
-| `client/src/link/` | the app's own Web Bluetooth and react-native-ble-plx transports |
-| `server/src/drivers/device.ts` | the shared client, wearing the server's driver interface |
-| `server/src/app.ts`, `server/src/routes/` | the API surface; `server/src/index.ts` starts everything it serves |
-| `server/src/actions/gateway.ts` | **the only code allowed to switch mains** |
-| `server/src/plugins/host.ts` | plugin discovery, lifecycle, config, secrets, grants |
-| `server/src/devices/catalog.ts` | the devices you added, persisted |
-| `server/src/history/sampler.ts` | one sample per measurement per minute, for any device |
-| `packages/devices/aferiy-p280/src/index.ts` | what a P280 measures, controls and remembers |
-| `packages/devices/aferiy-p280/ui/` | its dashboard, settings, protocol and energy-flow screens |
-| `README.md` | protocol research, setup instructions, current API reference |
+Device names are the user's: the catalog stores whatever you rename a device to.
+The owner calls this setup “F3” while the protocol research identifies the
+hardware as an AFERIY P280 — which is exactly the split the catalog models. The
+device type is the verified identity and decides how the thing is decoded; the
+name is presentation.
 
 ### Existing capabilities
 
-- Simulator and real hardware drivers.
-- Real P280 transports: redirected local MQTT broker and BLE.
+- A simulator for every device type, and the real P280.
+- The P280 over Wi-Fi (a local MQTT broker the station is pointed at) and over
+  Bluetooth, from the server or from the app.
 - Polls all 80 input registers and all 80 holding registers.
-- `GET /api/diagnostics/registers` emits raw, hex, named and writable register data.
-- `POST /api/diagnostics/snapshot` establishes a register baseline.
-- Register dumps show changed values after a baseline, enabling one-change-at-a-time
+- The register tools emit raw, hex, named and writable register data, take a
+  baseline, and show what changed since it, enabling one-change-at-a-time
   discovery.
-- `--read-only` / `READ_ONLY=1` blocks every hardware write at the device-driver
-  layer; blocked attempts are logged at `GET /api/diagnostics/blocked`.
-- `GET` and `PATCH /api/settings` read/apply known settings.
+- `--read-only` / `READ_ONLY=1` blocks every hardware write at the station's
+  client; blocked attempts are logged and shown.
+- The station's settings are read and written per device, through its write
+  whitelist.
 - UI already exposes charge limit, discharge floor, charging options, sleep/standby,
   light and panel preferences.
 
@@ -362,7 +339,7 @@ P280-specific candidates requiring confirmation:
 2. Never write an undocumented register.
 3. Do not remove or weaken `WRITABLE`, Zod validation, or tests that reject unsafe
    values.
-4. Never use the raw diagnostics endpoint to probe writes. It is deliberately an
+4. Never use the raw-frame tool to probe writes. It is deliberately an
    escape hatch and must remain disabled unless `ALLOW_RAW_MODBUS=1`.
 5. Treat registers `25` and `26` as toggles until their behaviour is verified on the
    actual P280; do not assume writing `1` makes a port on idempotently.
@@ -375,14 +352,15 @@ P280-specific candidates requiring confirmation:
   Confirmed against the real station in write mode over BLE: LED mode (27),
   AC output (26), DC output (25) and AC charge limit (67) all written from this
   codebase and observed to take effect. Registers 25/26 toggle behaviour remains
-  untested, since the driver skips redundant writes.
+  untested, since the station client skips redundant writes.
 - A write may be sent followed by a poll whose errors are swallowed, so the UI needs
   per-setting acknowledgement and explicit readback verification—not just cached state.
 - The complete register catalog has not yet been evidenced on this device.
 - ~~No smart-plug integration or history database exists yet.~~ **Partly done.**
-  The Tuya LAN driver, the action gateway and per-device history sampling are
-  built; the plug itself is not yet commissioned, because that needs its local
-  key (see [`TUYA-LOCAL-KEY.md`](TUYA-LOCAL-KEY.md)).
+  The Tuya local protocol, the action gateway and per-device history sampling
+  are built; the plug itself is not yet commissioned, because that needs its
+  local key (see [`TUYA-LOCAL-KEY.md`](TUYA-LOCAL-KEY.md)) and the open
+  questions in [`ATORCH-S1W.md`](ATORCH-S1W.md) settled on the unit.
 - No weather source, solar forecast, or automation state machine exists yet.
   The controller is designed but unwritten, and nothing may actuate on its own
   until the arming checklist below passes — including API authentication.
@@ -422,207 +400,117 @@ Before unattended use, document and physically verify all of the following:
 
 ---
 
-## Extension architecture — open-source core, optional plugins
+## Integrations: device types and services
 
-> The detailed design for this section, together with research into existing ATORCH/Tuya
-> implementations that can be reused instead of reverse engineered, is in
-> [`PLUGIN-ARCHITECTURE.md`](PLUGIN-ARCHITECTURE.md).
+Everything beyond the station is something you add as a device, from a package
+of its own: a smart plug is a device type, a weather forecast is a service. How
+they are built is [`ARCHITECTURE.md`](ARCHITECTURE.md); this section is what the
+product requires of them.
 
 ### Product boundary
 
-The core product is **the station**: live status, safe settings, protocol diagnostics,
-history, and manual controls for the owner’s power station. It must operate fully with
-zero extensions.
+The core product is useful with **one station and nothing else**: live status,
+safe settings, protocol diagnostics, history, and manual controls. Everything
+else is optional, and each kind of thing is a category of device type or
+service:
 
-Extensions may provide observation, control, or optimisation inputs:
-
-| Extension category | Examples | Can observe | Can request actions |
+| Category | Examples | Offers | Can it act? |
 | --- | --- | --- | --- |
-| Weather | SMHI, Open-Meteo, Forecast.Solar | forecast/weather/PV estimate | no direct hardware control |
-| Grid relay | ATORCH via HA, Shelly, Tasmota, Tuya Local | relay state, W/V/A/kWh | request grid AC on/off |
-| Energy price | Nord Pool, Tibber | price forecast | influence recharge recommendation |
-| Home automation | Home Assistant | entities/events | selected user-approved actions |
-| Station transport | MQTT, BLE, future vendor driver | station telemetry | core-gated station settings only |
+| Power stations | AFERIY P280 | `battery`, `outlets`, `acInput`, settings | its own outlets and settings, through the gateway |
+| Smart plugs | ATORCH S1W, other Tuya sockets; later Shelly, Tasmota | `switch`, `powerMeter` | switching, through the gateway |
+| Weather (service) | Open-Meteo, SMHI, Forecast.Solar | `weather.forecast`, weather telemetry | no |
+| Energy price (service) | Nord Pool, Tibber | a price forecast | no; it can only inform a recipe |
+| Home automation | Home Assistant | whatever its entities are | only through the gateway, as any device |
 
-The central automation controller is the sole authority that decides whether a requested
-station/relay action is safe. A plugin must never write raw MODBUS, call an arbitrary
-relay endpoint, or bypass user-configured reserve/hard-floor/approval rules.
+The automation controller is the sole authority that decides whether an action
+is safe. No device type may write raw MODBUS, switch anything outside the
+gateway, or bypass the reserve, the hard floor or confirmation. Which plug feeds
+the station is a **link** you record (ARCHITECTURE.md §4.4), not a choice of
+"active provider": a recipe asks for "the plug that feeds this station", and the
+gateway verifies every switch of it against that station's AC input.
 
-### Deployment reality: server plugins versus mobile/web UI plugins
+### What ships with the app, and what does not
 
-Do not promise arbitrary runtime React-code installation in the Expo client. iOS/Expo
-distribution is not an appropriate place to download and execute unreviewed UI code.
-
-Use two extension surfaces:
-
-1. **Server plugins** are installed by the self-hosting user as reviewed npm/workspace
-   packages, discovered at server startup and loaded with a restart. They perform local
-   device/API work and expose only validated data/commands to the core.
-2. **Generic client extension UI** is driven by versioned manifests and JSON Schema:
-   setup forms, health, data cards, consent, and standard controls work for any installed
-   server plugin without shipping arbitrary client code.
-3. **Custom visual panels** are compile-time client contributions. An open-source fork or
-   official release may register a plugin’s React panel, but absence of that panel must
-   never prevent its server integration from being configured/used.
-
-This preserves an extensible self-hosted server while keeping iOS/web builds safe and
-predictable.
-
-### Versioned plugin manifest and lifecycle
-
-**Built.** The SDK is `packages/plugin-sdk`; the manifest below is close to what
-shipped, with `setupActions` and the device model added since. What follows
-records the reasoning, and remains the specification any new capability is held
-to.
-Use stable reverse-DNS IDs, semantic versions, and a compatibility range—not filesystem
-names as identity.
-
-Illustrative manifest:
-
-```ts
-type PluginManifest = {
-  id: string;                 // e.g. "se.smhi.weather"
-  name: string;
-  version: string;
-  apiVersion: "1";
-  kind: "weather" | "grid-relay" | "price" | "home-automation";
-  capabilities: string[];     // e.g. ["weather.forecast.read"]
-  configSchema: JsonSchema;   // no secrets/values in this manifest
-  ui: { icon: string; setupHelp?: string; customPanel?: boolean };
-};
-
-interface AferiyPlugin {
-  manifest: PluginManifest;
-  validateConfig(config: unknown): ValidationResult;
-  start(context: PluginContext): Promise<void>;
-  stop(): Promise<void>;
-  health(): PluginHealth;
-}
-```
-
-`PluginContext` gives scoped facilities only: logger, SQLite namespace/migrations,
-encrypted secret store, scheduler, HTTP client with timeouts, event subscription, and
-typed capability registration. Do not provide unrestricted access to the station driver,
-raw network clients, global database tables, or arbitrary core configuration.
-
-Plugin lifecycle and API endpoints:
-
-- discover installed packages at startup; validate manifest/API compatibility;
-- migrations run transactionally and are namespaced by plugin ID;
-- plugin status: `not-installed`, `installed`, `needs-configuration`, `starting`,
-  `healthy`, `degraded`, `failed`, `disabled`;
-- `GET /api/plugins` lists manifests, capability grants, health and generic UI schema;
-- `GET/PATCH /api/plugins/:id/config` validates config; secret fields are write-only;
-- `POST /api/plugins/:id/test` performs a side-effect-free connection/test read where
-  possible; relay-control tests require explicit user confirmation;
-- plugin events and action results flow to the central audit timeline;
-- an incompatible or failed plugin is disabled without preventing core station control.
-
-Keep plugin configuration in a documented export/import format **without secrets**.
-Back up/restore should include extension version and non-secret configuration so an
-open-source user can reproduce a setup.
+- **Device types are packages in this repository**, found by the server at
+  start-up and built into the app. No code is downloaded at runtime, ever: an
+  iOS build must not fetch and execute code.
+- **Every type works without screens of its own.** Its setup, telemetry,
+  controls and settings are declared, and the app renders them generically. A
+  type may add its own screens — the P280's energy-flow dashboard — compiled
+  into the release; their absence never stops a device from being added and
+  used.
 
 ### Capability and safety model
 
 Separate signals, recommendations, intents, and commands:
 
 ```text
-plugin signal          → weather forecast / relay state / price / availability
-plugin recommendation  → "charge before 05:00" or "solar likely low tomorrow"
+device telemetry       → weather forecast / plug state / price / availability
+recommendation         → "charge before 05:00" or "solar likely low tomorrow"
 core policy decision   → checks reserve, hard floor, freshness, dwell, user mode
 core command intent    → "restore grid AC", reason and required confirmation
-approved plugin action → one typed relay command and verified result
+capability command     → one typed command, through the gateway, verified result
 ```
 
 Examples:
 
-- The SMHI plugin can publish a forecast and confidence, but cannot turn AC off.
-- An ATORCH/Home Assistant relay plugin can expose `gridRelay.set(on)`, but the command
-  is accepted only through the core policy/action gateway.
-- A future price plugin can recommend a cheap charging window, but the core refuses it
-  if it violates the station reserve/hard-floor model.
+- A weather service can publish a forecast and its confidence, but has no
+  capability that switches anything.
+- A smart plug offers `switch`; a command to it is accepted only through the
+  gateway, and switching a plug that feeds the station is verified by the
+  station's AC input as well as the plug's own readback.
+- A price service can recommend a cheap charging window, but the core refuses it
+  if it violates the station's reserve or hard floor.
 
-Capabilities must be explicitly granted in the UI. The first grant for any physical
-actuator requires a clear warning and two-step confirmation. Record grant/revoke changes
-in the audit log. Core rule validation must apply again at execution time, not only when
-the plugin is configured.
+The first command to anything that switches mains needs a clear warning and an
+explicit confirmation. Rules are validated again at execution time, not only
+when configured, and every command is in the audit log.
 
 ### Automation modes and composition
 
-Expose modes owned by the core, not by individual plugins:
+Modes are owned by the core, not by any device type:
 
 ```text
 Manual              Station monitor/settings only; no automatic external actions.
-Observe             Plugins collect data and produce recommendations; no relay changes.
-Reserve             Battery-first / restore-grid behavior using only live station + relay data.
-Reserve + Solar     Reserve mode; actual P280 solar can influence limited hold behavior.
-Forecast-aware      Reserve + Solar with an enabled, healthy weather/PV plugin; conservative only.
-Scheduled / Price   Optional future mode; requires explicit price/schedule plugin and all reserve guards.
+Observe             Devices report; the core produces recommendations; nothing switches.
+Reserve             Battery-first / restore-grid behaviour using live station + plug data.
+Reserve + Solar     Reserve mode; actual P280 solar can influence limited hold behaviour.
+Forecast-aware      Reserve + Solar with a healthy weather service; conservative only.
+Scheduled / Price   Optional future mode; needs a price service and all reserve guards.
 ```
 
-For each mode, render a “requirements” checklist. Example: `Reserve` needs a healthy,
-configured grid-relay plugin; `Forecast-aware` additionally needs a fresh weather/PV
-plugin and sufficient calibration history. If requirements disappear at runtime, degrade
-to the safest compatible core mode—normally `GRID_SUPPORT`/AC restoration—not to an
-unknown plugin-specific state.
+For each mode, render a requirements checklist. Example: `Reserve` needs a
+healthy smart plug linked as feeding the station; `Forecast-aware` additionally
+needs a fresh weather service and enough calibration history. If requirements
+disappear at runtime, degrade to the safest compatible mode — normally
+`GRID_SUPPORT`, AC restored — never to an unknown state.
 
-Multiple plugins of the same category may be installed, but only one active provider
-may control a given physical resource. Allow multiple weather sources for comparison;
-the user chooses the primary forecast source, while the core retains source/provenance
-on every prediction. Do not silently blend or swap providers.
+Several weather services may be added, for comparison; the user chooses which
+one the forecast uses, and the core keeps the source on every prediction. They
+are never silently blended or swapped.
 
-### Built-in reference extensions
+### The first integrations
 
-Implement the first two integrations as separately enabled reference plugins, not
-hard-coded features:
+1. **The ATORCH S1W**, over the Tuya local protocol on the home network: no
+   cloud at runtime, no Home Assistant in the path that restores mains. Its
+   research and open questions are [`ATORCH-S1W.md`](ATORCH-S1W.md).
+2. **A generic Tuya energy socket**, the same protocol with a profile per
+   socket, so the next plug is data rather than code.
+3. **Weather**: Open-Meteo first, because it works anywhere and needs no key,
+   then SMHI, which is the owner's primary forecast (Stage 3 below).
+4. **Home Assistant**, later: a protocol over `https`, so any entity it exposes
+   can be added as a device with the same capabilities — proof that a new
+   protocol needs no change to recipes or the gateway.
 
-1. `se.smhi.weather`
-   - Swedish SNOW point forecast; read-only;
-   - configuration: location, refresh interval, timezone; no secrets;
-   - publishes weather forecast, raw SMHI metadata, freshness and confidence;
-   - optional associated PV-estimator component publishes clearly labelled estimates.
-2. `com.homeassistant.grid-relay`
-   - connects to a selected Home Assistant switch/sensor set, enabling ATORCH S1W via
-     LocalTuya/Tuya Local or any other HA-supported plug;
-   - configuration: server URL, encrypted long-lived token, switch entity, optional
-     power/voltage/current/kWh entities;
-   - must verify state after every command and expose availability/freshness;
-   - must never assume the device is ATORCH-specific.
+### Requirements for every device type and service
 
-The direct ATORCH/Tuya implementation may later be a separate `com.tuya-local.grid-relay`
-plugin. It must use the same capability contract, so users can replace it with Shelly,
-Tasmota, Home Assistant, or another supported actuator without changing automation logic.
-
-### Extensions UI
-
-**Built**, with one revision from the end-goal section: Extensions is where you
-manage *drivers*, while **Devices** is where you add and use the things you own.
-People add a plug, not a plugin. Add an **Extensions** area to the main app:
-
-- catalog of installed and available reference plugins, grouped by category;
-- per-plugin card with icon, description, capability badges, health, data freshness and
-  last error; never show a green “connected” state for stale data;
-- guided setup generated from the plugin schema, with secret inputs masked/write-only;
-- test connection/action controls, activity log, disable/remove and configuration export;
-- explicit capability/actuator consent screen;
-- automation-mode requirements panel identifying exactly which plugin is required and
-  why it is blocked/degraded.
-
-The main Dashboard/Energy Flow stays station-first. It may show small source badges such
-as “Weather: SMHI, updated 12 min ago” and “Grid relay: Home Assistant,” but plugin
-configuration belongs in Extensions rather than cluttering the core station UI.
-
-### Plugin test and documentation requirements
-
-Every reference plugin needs:
-
-- a README with hardware/service prerequisites, permissions, setup, local/cloud
-  implications, and recovery steps;
-- mocked contract tests and a simulator/fake provider for core automation tests;
-- explicit offline/stale/error tests;
-- versioned migration and compatibility tests;
-- a sample non-secret configuration file;
-- privacy documentation: what data leaves the LAN, where it goes, and how to disable it.
+- a simulator, used by tests and by "try without hardware";
+- the contract suite passing (ARCHITECTURE.md §7), plus offline, stale and
+  error tests;
+- its setup steps, including what must be done to the device first;
+- a README: hardware or service prerequisites, what leaves the home network and
+  where it goes, how to recover, and how to remove it;
+- no secret in any config, export or log.
 
 ---
 
@@ -630,7 +518,7 @@ Every reference plugin needs:
 
 Do this before any write or automation work.
 
-1. Run the device driver with `--read-only`.
+1. Run the server with `--read-only`.
 2. Confirm discovery/binding and collect at least one hour of stable reads:
    no malformed frames, reconnect loops, unexplained timeouts, or stale values shown
    as live.
@@ -723,42 +611,25 @@ must verify actual sustained draw and plug/outlet temperature.
 The plug must be only upstream of the P280’s AC charger. Do not route P280 output
 loads, extension strips, heaters, or other large loads through it.
 
-### Integration architecture
+### How it is reached
 
-Implement the reference relay integration as a grid-relay plugin using the shared provider abstraction in the server:
-
-```ts
-interface SmartPlugProvider {
-  getState(): Promise<{
-    relayOn: boolean;
-    reachable: boolean;
-    watts?: number;
-    volts?: number;
-    amps?: number;
-    kwh?: number;
-    updatedAt?: string;
-  }>;
-  setRelay(on: boolean, reason: string): Promise<CommandResult>;
-  health(): Promise<HealthResult>;
-}
-```
-
-Preferred control path:
+The S1W is the `atorch.s1w` device type, in the Smart plugs category. It offers
+`switch` and `powerMeter`, and is reached by one connection method: the Tuya local
+protocol over the home network, held by the server. The server talks to the plug
+directly — no Home Assistant and no vendor cloud in the path that restores mains.
 
 1. Pair the S1W in Tuya Smart or Smart Life on a dedicated **2.4 GHz** IoT SSID.
-2. Add it to Home Assistant.
-3. Prefer a local Tuya integration (Tuya Local / LocalTuya) and confirm that HA has:
-   a switch entity and power sensor; ideally voltage/current/kWh availability too.
-4. Make this application call Home Assistant’s REST API only. Store the HA URL,
-   entity IDs, and long-lived token only in server-side environment variables; never
-   expose tokens to Expo/web clients.
-5. Use Tuya cloud control only as an explicitly labelled fallback if local control
-   cannot be proven. It is not safe to describe a cloud path as local or outage-proof.
+2. Get its local key once, through a free Tuya cloud project
+   ([`TUYA-LOCAL-KEY.md`](TUYA-LOCAL-KEY.md)). The key is stored encrypted on the
+   server, with the plug's connection, and never sent to a browser.
+3. Add it in the app: Smart plugs → ATORCH S1W → found on the network → key → check.
+4. The cloud is used only to fetch the key. It is never a control path: a cloud
+   path is not local, and not outage-proof.
 
-Do not guess Tuya data-point IDs. Their DPs vary by product/firmware. Retrieve actual
-S1W DPs after pairing and record ID, code/name, type, scale, unit and range. This
-normally identifies the relay Boolean plus power, voltage, current, energy and any
-protection/setpoint DPs.
+Do not guess Tuya datapoint ids. They vary by product and firmware, and two published
+sources disagree about this plug's relay ([`ATORCH-S1W.md`](ATORCH-S1W.md)). The check
+step reads every datapoint on the actual unit and records the relay, power, voltage,
+current, energy and any protection datapoints, with their scale and unit.
 
 ### S1W discovery and acceptance checklist
 
@@ -787,7 +658,7 @@ Build this before the controller. Use Bun SQLite and store one-minute samples:
   AC input voltage/frequency and charging state.
 - S1W relay state, W, V, A, kWh, availability and last update.
 - Automation state/mode/reason and every command/ack/readback.
-- Weather/PV forecasts including provider and **issued-at** timestamp.
+- Weather/PV forecasts including their source and **issued-at** timestamp.
 
 Store data in UTC; display Europe/Stockholm. Maintain raw recent data plus hourly/daily
 aggregates. All data should be exportable to CSV/JSON.
@@ -809,20 +680,15 @@ immediately. Require configuration before forecast-driven automation can be enab
 
 ### Weather and PV sources
 
-Use provider interfaces; keep external API details out of the control state machine.
+Weather sources are services offering the `weather.forecast` capability
+(`hourly(hours)`, ARCHITECTURE.md §4.1); a PV estimate is a second capability
+alongside it when a source offers one. Keep external API details inside the
+service, out of the control state machine.
 
-```ts
-interface WeatherForecastProvider {
-  getHourlyForecast(location, start, end): Promise<HourlyWeather[]>;
-}
-interface PvForecastProvider {
-  getHourlyProductionEstimate(system, start, end): Promise<HourlyPvEstimate[]>;
-}
-```
-
-**SMHI is the primary weather provider.** Implement it as the `se.smhi.weather`
-reference plugin, with `SmhiSnowProvider` behind its typed weather capability, against
-SMHI’s official SNOW point-forecast API. This is not a vague lookup: it has a defined JSON
+**SMHI is the owner's primary forecast.** It is a weather service — a device type
+in `packages/services` offering `weather.forecast` — against SMHI’s official SNOW
+point-forecast API. (Open-Meteo is built first, because it works outside Sweden and
+needs no key; the owner chooses SMHI as the forecast the controller uses.) This is not a vague lookup: it has a defined JSON
 contract, reports all times in UTC, exposes `createdTime`/`referenceTime`, selects the
 nearest forecast grid point, and forecasts roughly ten days ahead.
 
@@ -871,10 +737,10 @@ two-layer solar estimator:
 3. Until there is enough data, SMHI affects display and forecast confidence only; it
    cannot defer a required AC recharge.
 
-`Forecast.Solar` can be implemented later as an optional second, independent PV forecast
-for comparison. Do not silently substitute it for SMHI: show which provider/estimator
-produced each estimate and compare forecasts against measured solar before trusting
-either one. Open-Meteo is optional only if a secondary radiation data source is desired.
+`Forecast.Solar` can be added later as an independent PV forecast for comparison. Do
+not silently substitute one source for another: show which service and estimator
+produced each estimate, and compare forecasts against measured solar before trusting
+any of them. Open-Meteo also offers radiation data, useful as a second opinion.
 
 PVGIS remains for commissioning and long-term/seasonal expectation—not for the
 immediate relay decision. It estimates hourly PV production using site/orientation and
@@ -1127,7 +993,7 @@ Required tests:
 - S1W unavailable/command failure/state mismatch;
 - P280 fault and server restart with plug on/off;
 - manual override/emergency restore; no relay chatter.
-- controller/router/Home Assistant outage while S1W is OFF;
+- controller/router outage while S1W is OFF;
 - S1W reboot and Wi-Fi reconnect while OFF and while ON;
 - actual grid outage while S1W is ON (must become `GRID_UNAVAILABLE`, not cycle);
 - wrong/missing time zone and daylight-saving transition;
@@ -1176,7 +1042,7 @@ belongs to the device, because none of it generalises to a plug or a forecast):
    down the page.
 3. **History sparklines.** Once telemetry is logged to SQLite, put a 24-hour SOC
    curve under the ring, and input/output history behind the flow tiles.
-4. **Grid-relay state in the flow.** When the ATORCH plug exists, the grid path
+4. **The feeding plug in the flow.** When a plug is linked as feeding the station, the grid path
    needs a third visual state — connected, disconnected by automation, and
    unavailable — because "no AC input" means something very different in each.
    Do not render an automation-driven disconnect the same as a power cut.
@@ -1186,8 +1052,8 @@ belongs to the device, because none of it generalises to a plug or a forecast):
 7. **Device-first testing.** The animation has only been judged in a desktop
    browser. It has to feel right on a phone, which is where it will be used.
 
-Keep the Dashboard station-first. Forecast, price and relay extensions may add
-small badges, but their configuration belongs in the Extensions area.
+Keep the Dashboard station-first. Forecast, price and plug devices may add small
+badges, but their setup and settings belong on their own device pages.
 
 ## Research links
 

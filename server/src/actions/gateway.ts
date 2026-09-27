@@ -10,7 +10,7 @@ import { audit, type AuditEntry } from '../history/db.ts';
  * more than a wrapper — verification in two stages. The plug saying "done" is
  * not proof; the station's own AC input agreeing is.
  *
- * Design and rationale: docs/PLUGIN-ARCHITECTURE.md §5.
+ * Design and rationale: docs/ARCHITECTURE.md §4.6.
  */
 
 export const CONFIRMATION_PHRASE = ACTUATOR_CONFIRMATION;

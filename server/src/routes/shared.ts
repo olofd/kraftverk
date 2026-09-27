@@ -45,7 +45,7 @@ export type AppDeps = {
   types: DeviceTypeRegistry;
   /** One open session per saved device. Syncing it also syncs the station links. */
   sessions: DeviceSessionManager;
-  /** The station links, until a station session holds its own (step 7). */
+  /** The station links, until a station session holds its own (step 10). */
   connections: ConnectionManager;
   host: PluginHost;
   registry: DeviceRegistry;

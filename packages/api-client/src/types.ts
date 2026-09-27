@@ -309,7 +309,7 @@ export type SavedDeviceView = Omit<
 
 /**
  * Something that can be added: an installed device type, described without its
- * code — or, until the extensions become device types (step 5), an extension
+ * code — or, until the extensions become device types (step 9), an extension
  * that provides a device, which is set up under Extensions rather than by a guide.
  */
 export type AddableType = import('@kraftverk/device-sdk').DeviceTypeView & { extension?: true };

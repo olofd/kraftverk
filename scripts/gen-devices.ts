@@ -93,7 +93,7 @@ const lines = [
   ...screens.map((entry) => `  '${entry.key}': ${entry.local},`),
   '};',
   '',
-  '/** Panels a v1 extension ships, by extension id. Gone with the extensions (step 5). */',
+  '/** Panels a v1 extension ships, by extension id. Gone with the extensions (step 9). */',
   'export const EXTENSION_PANELS: Readonly<Record<string, ComponentType<PluginPanelProps>>> = {',
   ...panels.map((entry) => `  '${entry.key}': ${entry.local},`),
   '};',

@@ -4,6 +4,15 @@ The broker is what a power station connects to over Wi-Fi instead of the vendor
 cloud. It runs as **its own process**, separate from the kraftverk server, and
 it outlives the server on purpose.
 
+In the architecture it is the `mqtt` **transport**: it moves messages and knows
+who is connected, and nothing about what they mean. What a station's topics and
+frames mean — and which commands must be refused, such as a write of 0 to
+register 68 — belongs to the Sydpower **protocol**, which supplies them to the
+broker (ARCHITECTURE.md §4.7). Today the broker lives in `server/src/broker/`
+and has that Sydpower knowledge built in; step 7 moves it to
+`packages/transports/mqtt` and step 8 moves the topics and the guard into
+`protocol-sydpower`. Nothing below changes for the station.
+
 ## Why it is a separate process
 
 A P280 that loses its broker does not reliably come back. On 2026-09-26 it

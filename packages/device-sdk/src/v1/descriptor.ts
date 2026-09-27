@@ -9,7 +9,7 @@ import type { MetricSpec, Reading } from '../telemetry.ts';
  * Transitional. The same facts — telemetry, controls, settings, capabilities —
  * now belong to a `DeviceType`, declared once per product rather than per
  * device, and the view the app receives will be built from that
- * (docs/ARCHITECTURE.md, steps 3–4). Until then the registry assembles one of
+ * (docs/ARCHITECTURE.md, steps 3 and 9). Until then the registry assembles one of
  * these per saved device, and the station package and the two plugins supply them.
  */
 export type DeviceDescriptor = {

@@ -22,7 +22,7 @@ import { auditDevice, body, type AppDeps } from './shared.ts';
 
 /**
  * A v1 extension, listed beside the device types while plugins still provide
- * devices (until step 5). It is set up under Extensions, not by a guide.
+ * devices (until step 9). It is set up under Extensions, not by a guide.
  */
 export type ExtensionTypeView = DeviceTypeView & { extension: true };
 
@@ -122,7 +122,7 @@ export function deviceRoutes({ config, catalog, types, sessions, host, registry,
       /*
         Validated against the type's own config schema. Secrets are refused
         here for now: they need a home per device, which the catalog
-        migration gives them (step 4) — until then a secret sent here would
+        migration gives them (step 5) — until then a secret sent here would
         have nowhere safe to go.
       */
       const secrets = secretFields(type.config);
@@ -209,7 +209,7 @@ export function deviceRoutes({ config, catalog, types, sessions, host, registry,
   // The station dashboard needs more than readings — ports, firmware, link
   // state — so it has routes of its own. Transitional: they reach the station
   // through the one bridge there is (`stationOf`), and become routes the
-  // station's package provides in step 7.
+  // station's package provides in step 10.
 
   /** A saved station's driver, or which of the two is missing. */
   const stationDevice = (c: Context): { id: SavedDeviceId; station: StationDriver } => {
@@ -314,7 +314,7 @@ export function deviceRoutes({ config, catalog, types, sessions, host, registry,
    *
    * A control on a device screen has exactly the authority a manual switch
    * does, and no more. Switching a relay goes through the action gateway; the
-   * rest of the gateway's reach — every command, one path — is step 6.
+   * rest of the gateway's reach — every command, one path — is step 11.
    */
   api.post('/devices/:id/control/:control', async (c) => {
     const deviceId = savedDeviceId(c.req.param('id'));

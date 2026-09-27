@@ -26,7 +26,7 @@ model with sign-up switched on, and one extra piece for reaching stations (see
   [SECURITY.md](SECURITY.md).
 - Everyone signs in, at home too, for reads as well as writes.
 - Every account is an administrator of everything: one server, one set of
-  devices, one set of extensions. Every change to equipment is recorded in the
+  devices. Every change to equipment is recorded in the
   audit timeline under the account that made it.
 
 That is enough for a self-hosted server whose accounts are all people the
@@ -60,8 +60,9 @@ match.
 ### Home
 
 What you create, and then add devices to. A home owns equipment and
-everything about it: devices, their recorded history, extension settings and
-secrets, the grid-relay pairing, the audit timeline.
+everything about it: devices, how each is reached and its secrets, their
+recorded history, the links between them, the audit timeline. How that looks in
+the database is [DATA-MODEL.md §7](DATA-MODEL.md).
 
 A home has one **owner** — the account that created it, who manages who else
 is in it and may delete it — and any number of **members**, who use
@@ -74,7 +75,7 @@ station and two people, and one person may have a house and a cabin.
 ### Operator
 
 Whoever runs the server — a flag on an account, separate from any home. The
-operator adds and removes accounts, decides which extensions are installed,
+operator adds and removes accounts, decides which device types are installed,
 and sees the broker. On a self-hosted server the owner of the first home is
 the operator too. On the hosted service the operator runs the installation and
 has no business in anyone's home.
@@ -158,8 +159,8 @@ Keep the station on the LAN, and let something *on the LAN* speak for it:
   always-on device at home and holds the station, as it does now. It connects
   *outbound* to the hosted service over TLS, with a credential issued when
   the owner pairs it using a one-time code from the app. Being on the LAN with
-  the station is the proof of possession; nothing at home is exposed; LAN-only
-  extensions such as the Tuya plug run there too. A self-hosted server is
+  the station is the proof of possession; nothing at home is exposed; devices
+  reached over the home network, such as the Tuya plug, are held there too. A self-hosted server is
   exactly this edge with the service in the same box.
 - **The phone as the edge**, over Bluetooth. No extra hardware, but only
   while the app is open — no history, no automations while you are away.
@@ -178,12 +179,13 @@ than reset.
    and the operator flag. Existing devices, history and settings move into one
    home owned by the first account, who also becomes operator. Home-scoped
    routes gain their `:home`; the app keeps the home you are looking at.
-   Extensions stay installed per server, configured by the operator until
-   step 3.
+   Device types stay installed per server; each device, with its connections
+   and secrets, belongs to one home.
 2. **Sharing.** Invite an account into a home; owner and member roles; leave,
    remove, hand over. The app switches between homes.
-3. **Extensions per home.** One instance of an extension per home that enables
-   it, with its own settings, secrets and grants; the grid relay per home.
+3. **Links and automations per home.** Links and automations join only
+   devices in the same home, and a recipe's roles offer only that home's
+   devices.
 4. **Signing up, and Apple and Google.** The sign-up setting, OpenID Connect
    with PKCE for both providers, and bearer tokens beside the cookie for the
    native apps. (An iOS app that offers Google sign-in must offer Sign in with

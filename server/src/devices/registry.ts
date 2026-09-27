@@ -131,7 +131,7 @@ export class DeviceRegistry {
   /**
    * A device provided by a v1 plugin: one configuration per plugin, so one
    * device per plugin (`devices()[0]`). Goes when the plugins become device
-   * types (step 5).
+   * types (step 9).
    */
   async #pluginView(record: DeviceRecord): Promise<SavedDeviceView> {
     const instance = this.host.instance(record.driver);

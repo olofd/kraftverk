@@ -20,7 +20,7 @@ import { CAPABILITIES, readings, SETTINGS_SCHEMA, settingsToValues, valuesToSett
  * only where the driver comes from — the simulator is built here; a real
  * station's driver is still opened and bound by the server's connection
  * manager, and lent to this session through `STATION_LINKS` until the P280
- * package holds its own links (docs/ARCHITECTURE.md, step 7).
+ * package holds its own links (docs/ARCHITECTURE.md, step 10).
  */
 
 /** What this session needs from a driver: `StationClient` and the simulator both fit. */

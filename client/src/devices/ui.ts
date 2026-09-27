@@ -15,7 +15,7 @@ import { DEVICE_UI, EXTENSION_PANELS } from '../generated/device-types';
  *
  * The props are loose for now: the station's screens still take station state
  * the app fetches for them (`features/devices/connection.tsx`). They fetch
- * their own when the station becomes an ordinary device type (step 7), and
+ * their own when the station becomes an ordinary device type (step 10), and
  * these become one typed contract every package shares.
  */
 export type DeviceUi = {
@@ -27,6 +27,6 @@ export type DeviceUi = {
 export const screensFor = (device: SavedDeviceView | null): DeviceUi | null =>
   device?.typeId ? (DEVICE_UI[device.typeId] ?? null) : null;
 
-/** A v1 extension's own panel, if it ships one. Gone with the extensions (step 5). */
+/** A v1 extension's own panel, if it ships one. Gone with the extensions (step 9). */
 export const panelFor = (extensionId: string): ComponentType<PluginPanelProps> | null =>
   EXTENSION_PANELS[extensionId] ?? null;

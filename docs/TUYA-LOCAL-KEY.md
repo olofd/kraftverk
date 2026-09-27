@@ -62,8 +62,10 @@ Nothing is written to disk, and the credentials are used for one request each.
 
 ## 4. Give the key to the server
 
-In the app, under **Extensions → Tuya smart plug**, the same two steps exist as buttons — *Find
-plugs on this network* and *Fetch local keys from Tuya* — and picking a device fills the form in.
+In the app, the same two steps exist as buttons — *Find plugs on this network* and *Fetch local
+keys from Tuya* — and picking a device fills the form in. Today they are under **Extensions →
+Tuya smart plug**; once the plugs are device types (ARCHITECTURE.md step 9) they are the
+*Choose your device* and *Credentials* steps of adding the plug.
 
 Or do it over the API, signed in — with the session cookie from your browser,
 and the header every change needs:
@@ -109,4 +111,4 @@ The ATORCH S1 is a BK7231N module, and can be reflashed over Wi-Fi with
 [OpenBeken](https://github.com/openshwprojects/OpenBK7231T_App) using
 [tuya-cloudcutter](https://github.com/tuya-cloudcutter/tuya-cloudcutter) — no soldering, no Tuya
 account, and the plug then speaks plain MQTT to the broker this server already runs. It also risks
-bricking the plug and voids any warranty. See `PLUGIN-ARCHITECTURE.md` §11.5.
+bricking the plug and voids any warranty. See [`ATORCH-S1W.md`](ATORCH-S1W.md) §5.

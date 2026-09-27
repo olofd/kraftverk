@@ -103,7 +103,7 @@ export function useDeviceConnection(device: SavedDeviceView | null): DeviceConne
 
     Keyed by the device type. This hook is the station's, living in the app
     until the station's screens fetch their own state (docs/ARCHITECTURE.md,
-    step 7), and it goes with them.
+    step 10), and it goes with them.
   */
   const isStation = device?.typeId === 'aferiy.p280';
   const served = link.source === 'server';

@@ -18,7 +18,7 @@ export const DEVICE_UI: Readonly<Record<string, DeviceUi>> = {
   'aferiy.p280': deviceAferiyP280,
 };
 
-/** Panels a v1 extension ships, by extension id. Gone with the extensions (step 5). */
+/** Panels a v1 extension ships, by extension id. Gone with the extensions (step 9). */
 export const EXTENSION_PANELS: Readonly<Record<string, ComponentType<PluginPanelProps>>> = {
   'com.tuya-local.grid-relay': pluginTuyaLocalGridRelayPanel,
 };

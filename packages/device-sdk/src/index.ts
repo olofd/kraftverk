@@ -18,7 +18,7 @@ export * from './device-type.ts';
 export * from './setup.ts';
 export * from './validate.ts';
 
-// The v1 extension contract, until the last plugin is a device type (step 5).
+// The v1 extension contract, until the last plugin is a device type (step 9).
 export * from './v1/descriptor.ts';
 export * from './v1/grid-relay.ts';
 export * from './v1/plugin.ts';

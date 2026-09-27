@@ -39,7 +39,7 @@ export type DeviceSessionManagerDeps = {
   transports: TransportRuntime;
   /**
    * Run first on every sync. The server's station links are opened here until
-   * the station's package holds its own (step 7), so a station's link exists before its
+   * the station's package holds its own (step 10), so a station's link exists before its
    * session asks for it.
    */
   beforeSync?: (records: DeviceRecord[]) => Promise<void>;
@@ -155,7 +155,7 @@ export class DeviceSessionManager {
     return {
       deviceId: record.id,
       config,
-      // Per-device secrets arrive with the catalog migration (step 4).
+      // Per-device secrets arrive with the catalog migration (step 5).
       secrets: { get: () => null },
       store: deviceStore(record.id),
       log: { info: log('log'), warn: log('warn'), error: log('error') },

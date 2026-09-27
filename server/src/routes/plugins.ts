@@ -16,7 +16,7 @@ import { body, type AppDeps } from './shared.ts';
  * Plugins provide signals and offer capabilities; they never actuate. Every
  * relay command goes through the action gateway, which checks the grant, the
  * policy and the freshness of the data, then proves the physical effect
- * happened. See docs/PLUGIN-ARCHITECTURE.md.
+ * happened. See docs/ARCHITECTURE.md, step 9, which retires these routes.
  */
 export function pluginRoutes({ host }: AppDeps): Hono {
   const plugins = new Hono();

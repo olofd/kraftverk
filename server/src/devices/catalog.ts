@@ -17,9 +17,9 @@ import { db } from '../history/db.ts';
 
 export type DeviceRecord = {
   id: SavedDeviceId;
-  /** A category, for display. Retired by the catalog migration (step 4), which gives every record a type id. */
+  /** A category, for display. Retired by the catalog migration (step 5), which gives every record a type id. */
   type: string;
-  /** Unused since models became device types; kept until the catalog migration (step 4). */
+  /** Unused since models became device types; kept until the catalog migration (step 5). */
   model: string | null;
   /** The device type's id — or a v1 plugin's, or `core.station`. See `typeIdOf`. */
   driver: string;
@@ -50,7 +50,7 @@ export const transportOf = (record: DeviceRecord): 'mqtt' | 'ble' | null =>
  * Which device type a record is.
  *
  * Transitional, until the catalog has a type column (docs/ARCHITECTURE.md,
- * step 4): a record keeps its type's id in `driver`. The first stations ever
+ * step 5): a record keeps its type's id in `driver`. The first stations ever
  * saved say `core.station` there instead, and every one of them is a P280 —
  * the only station the old model list could decode.
  */
@@ -61,7 +61,7 @@ export const typeIdOf = (record: Pick<DeviceRecord, 'driver'>, installed: (id: s
 
 type Row = {
   id: string;
-  /** A category, for display. Retired by the catalog migration (step 4), which gives every record a type id. */
+  /** A category, for display. Retired by the catalog migration (step 5), which gives every record a type id. */
   type: string;
   model: string | null;
   driver: string;

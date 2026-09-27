@@ -5,7 +5,7 @@ Three containers, two images, one volume — and the app in a browser.
 | Service | Image | What it does |
 | --- | --- | --- |
 | `web` | `--target web` | Serves the app, and forwards `/api` to the server. The only thing you open in a browser |
-| `kraftverk` | `--target server` | The API, history sampling, the plugin host and the action gateway |
+| `kraftverk` | `--target server` | The API, a session for every device, history sampling and the action gateway |
 | `broker` | `--target server` | The MQTT broker stations connect to — its own container, so restarting or upgrading the server does not drop the station. See [BROKER.md](BROKER.md) |
 
 Running this on a machine that is always on — a NAS — is the point: history and
@@ -78,9 +78,9 @@ Synology:
    and `X-Real-IP` = `$remote_addr`, so the server rate-limits and records the
    real client rather than the proxy.
    **Advanced Settings**: raise the proxy read timeout from 60 to 120 seconds.
-   Setting up an extension can take up to 90 seconds (a network scan, a cloud
-   login), and a proxy that gives up first reports a failure for something that
-   went on to work.
+   A setup step can take up to 90 seconds (a network scan, a cloud login), and
+   a proxy that gives up first reports a failure for something that went on to
+   work.
 2. **Control Panel → Security → Certificate → Settings**: give the new entry a
    certificate covering that name. The Let's Encrypt certificate DSM makes for
    a `synology.me` name includes `*.<you>.synology.me`.
@@ -156,7 +156,7 @@ settings and secrets: keep it out of any repository, readable only by you.
 | --- | --- | --- |
 | `STATION_DRIVER` | `sim` | `sim`, or `mqtt` for a station over Wi-Fi. `ble` is not available — see above |
 | `READ_ONLY` | `1` | `1` refuses every write at the driver. Only `0` allows them |
-| `KRAFTVERK_SECRET_KEY` | — | Passphrase for AES-256-GCM plugin secrets. **Set this.** See below |
+| `KRAFTVERK_SECRET_KEY` | — | Passphrase for AES-256-GCM secrets, such as a plug's local key. **Set this.** See below |
 | `KRAFTVERK_ALLOWED_HOSTS` | — | The public name the server is reached by, if any — a DDNS name. Comma-separated |
 | `KRAFTVERK_LAN_PORT` | `8080` | Where the home network opens the app |
 | `KRAFTVERK_PUBLIC_PORT` | `8090` | Where the reverse proxy forwards the internet to, on loopback |
@@ -173,9 +173,9 @@ frames; bad writes can brick the station.
 
 ### Secrets
 
-Without `KRAFTVERK_SECRET_KEY`, plugin secrets — a Tuya plug's local key, for
-instance — are stored **as given**. The app says so plainly on the Extensions
-screen rather than implying a protection it does not have. Set it to a long
+Without `KRAFTVERK_SECRET_KEY`, secrets — a Tuya plug's local key, for
+instance — are stored **as given**. The app says so plainly where the secret is
+entered, rather than implying a protection it does not have. Set it to a long
 random string:
 
 ```bash
@@ -193,7 +193,7 @@ Everything that outlives a restart is in the `kraftverk-data` volume, mounted at
 
 | Path | What |
 | --- | --- |
-| `kraftverk.db` | Devices, recorded history, accounts, plugin configuration and secrets, the audit timeline |
+| `kraftverk.db` | Devices and how each is reached, their secrets, recorded history, accounts, the audit timeline ([DATA-MODEL.md](DATA-MODEL.md)) |
 | `logs/server-YYYY-MM-DD.log` | The server's log, one file a day, two weeks kept |
 | `broker/logs/broker-YYYY-MM-DD.jsonl` | The broker's journal: every connection, frame and disconnect |
 | `broker/` | The broker's token and the stations it has seen |

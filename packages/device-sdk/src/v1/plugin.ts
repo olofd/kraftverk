@@ -6,7 +6,7 @@ import type { PluginCapability, PluginCapabilityImpl } from './grid-relay.ts';
 /**
  * The v1 plugin contract: one configuration per package, capabilities named
  * after the grid relay. Superseded by `DeviceType` (docs/ARCHITECTURE.md §4)
- * and deleted when the last plugin becomes a device type (step 5).
+ * and deleted when the last plugin becomes a device type (step 9).
  *
  * The plugin contract.
  *

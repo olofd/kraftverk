@@ -1,171 +1,50 @@
 # Handover
 
-State of play, and the things that would otherwise cost you a day. The vision is in
-[`PROJECT-BRIEF.md`](PROJECT-BRIEF.md) — read its end-goal section first; the
-architecture, its vocabulary and the plan are in
-[`ARCHITECTURE.md`](ARCHITECTURE.md). This document is only what
-those cannot tell you: where things stand right now, and what has already been
-learned the hard way.
+State of play, and the things that would otherwise cost you a day. The product
+intent is in [`PROJECT-BRIEF.md`](PROJECT-BRIEF.md). The architecture, its
+vocabulary and the plan are in [`ARCHITECTURE.md`](ARCHITECTURE.md), and the
+data model in [`DATA-MODEL.md`](DATA-MODEL.md). This document holds only what
+those cannot: where things stand right now, and what has been learned the hard
+way. Where it describes code that the plan replaces, the plan is the target.
 
-Last updated at commit `95d95ed` on `main`.
+Last updated 2026-09-28.
 
 ---
 
 ## Where things stand
 
-**Merged to `main` and pushed.** `devices-and-extensions` was fast-forwarded into
-`main` at `95d95ed`; the two refs are identical, so the feature branch holds
-nothing extra. Typecheck clean across all nine workspaces — the seven packages,
-the client and the server — and 177 tests passing (`npm test`).
+**The plan's steps 0–3 are done and deployed** (ARCHITECTURE.md §8): one
+authority for the architecture, the guardrails in CI, the device SDK, and device
+types discovered at runtime with a session for every saved device. `main`
+deploys to the owner's NAS through GitLab; GitHub runs CI only. The status of
+every later step is the plan's table — this document does not repeat it.
 
-**The device-first restructuring is done**, in the sense the session set out:
-the P280 works as it did, and it is a saved device that can be added, renamed,
-edited and deleted. Auto-adoption is gone, the `ConnectionManager` owns every
-session, root is the device canvas, and no client code reads a global station.
+**What runs today, and is on its way out.** The core still contains the P280's
+connectivity (`server/src/{broker,mqtt,transport,connections,drivers}`), the
+smart plugs are still the two v1 plugins under `packages/plugins/`, and
+`packages/protocol` still mixes the Sydpower protocol with the P280's model. The
+findings table (ARCHITECTURE.md §6) names each of these with the step that
+removes it.
 
-Two loose ends, both deliberate and both cheap:
+**Local mode.** The app does not need a server. A server is a client-side record
+— address, name — kept in `localStorage` by `client/src/lib/servers.ts`, one
+selected at a time; selecting none *is* local mode, in which the app holds a
+station's Bluetooth link itself. On first run the app probes the build-time
+default address and adopts the server if one answers, so `npm run dev` still
+just works. The API client's base URL is runtime-settable (`setApiBaseUrl`).
 
-- **The global station routes are now dead code.** `/api/status`,
-  `/api/settings`, `/api/ports/:id` and `/api/simulator/grid` still exist and
-  still work — they resolve through the one open session and 404 when there is
-  no station — but nothing in the app calls them. Deleting them (and the
-  matching `fetchStatus`/`patchSettings`/`setPort` in `@kraftverk/api-client`)
-  is a self-contained next commit.
-- **`/api/diagnostics/*` is still global.** The Protocol screen sits under a
-  device's Advanced, but the register dump it reads still resolves to whichever
-  session the server holds. It becomes device-scoped when the P280 adapter moves
-  into its package in Milestone B.
+**Tests and scratch state.** `KRAFTVERK_DB` and `KRAFTVERK_BINDING_FILE` override
+where the database and the legacy station binding live, so tests and a scratch
+server work on their own state instead of the owner's. Under `NODE_ENV=test`,
+`KRAFTVERK_DB` is **required** — see the trap below.
 
-**Local mode and server mode.** The app no longer assumes a server exists. A
-server is a client-side record — address, name — kept in `localStorage` by
-`client/src/lib/servers.ts`, with full CRUD and one selected at a time; selecting
-none *is* local mode. On first run the app probes the build-time default address
-and adopts the server if one answers, so `npm run dev` still just works, and a
-browser-only user is left in local mode with nothing red on screen. The API
-client's base URL is now runtime-settable (`setApiBaseUrl`), not a constant.
-
-`KRAFTVERK_DB` and `KRAFTVERK_BINDING_FILE` now override where the database and
-the station binding live. They exist so tests — and a scratch server — work on
-their own state instead of the owner's devices and real station binding. Under
-`NODE_ENV=test`, `KRAFTVERK_DB` is **required**: see the trap about the suite
-that deleted the real database.
-
-**Browsers are no longer trusted by default.** CORS reflected whatever origin
-asked, which on an unauthenticated LAN server with a route that switches mains
-is the same as no policy. Loopback and private ranges are allowed; anything else
-must be named in `ALLOWED_ORIGINS`. `DELETE` was also missing from
-`allowMethods`, so *Forget this device* was refused by every browser — and the
-app never caught the failure, so it showed nothing at all. Both are fixed, and
-the catalog's own lifecycle (`device.added` / `renamed` / `remodelled` /
-`forgotten`) is now written to the audit timeline, which it never was.
-
-Built and verified in earlier sessions:
-
-- **Extension system** — SDK contracts, plugin host with scoped contexts and
-  failure isolation, capability grants, audit timeline.
-- **Action gateway** (`server/src/actions/gateway.ts`) — the only code that may
-  switch mains. Grant → policy → freshness → one command → *two* proofs (the
-  plug's readback **and** the station's AC input agreeing) → audit.
-- **Device model** — persisted catalog with CRUD and model selection, a registry
-  joining records to live drivers, per-measurement history sampling.
-- **The P280 as a device package** — its declarations and all four of its screens
-  now live in `packages/devices/aferiy-p280`. The app's tabs are 21–46 lines.
-- **Tuya LAN driver** — 3.3/3.4/3.5 framing with protocol detection, UDP
-  discovery, cloud helper for local keys, setup wizard in the app.
-
-## Active work: the device architecture
-
-The plan is [ARCHITECTURE.md §8](ARCHITECTURE.md#8-the-plan): eleven steps from
-today's code to "everything is a device", each shipped on its own with the
-deployed station working throughout. Its status table says which step is
-current. The earlier milestones A–D of the device-first refactor are folded into
-it: A is done (the blank canvas, root as Your devices, `SavedDeviceView`), and
-B–D are steps 3–9.
-
-## Known limitations to correct, not preserve
-
-These are current behaviours the refactor exists to fix. Do not treat them as
-settled design:
-
-- ~~The station is auto-adopted at startup~~ — **fixed**, see Milestone A item 1.
-- ~~`StationProvider` is global~~ — **fixed.** It is now `DirectLinkProvider`,
-  and it owns only the link the *app* holds over Bluetooth. Station telemetry is
-  per device: `useDeviceConnection(device)` reads
-  `GET /api/devices/:id/p280/state` and writes through
-  `PATCH /api/devices/:id/p280/settings` and the device's own control route.
-  Nothing in the client reads "the station" any more.
-- ~~The server holds one `driver`, one `transport`, one binding.~~ **Fixed.**
-  `server/src/connections/manager.ts` opens one session per saved station,
-  keyed by catalog id, and is the only thing that knows about live drivers and
-  links. `binding.json` is legacy and read-only now; where a device is reached
-  lives on its record.
-- ~~A second station is refused, because the process holds one radio.~~
-  **Fixed, and the reasoning was wrong.** `StationTransport` conflated three
-  jobs — discover, bind, carry frames — so one `boundId` capped the whole
-  server. Over MQTT there was never any constraint at all: `DeviceBroker` has
-  always been per-MAC, and the transport read every station's frames off the
-  broker and then dropped all but one with a single identity check. Over BLE a
-  central holds several peripherals at once; the code kept one set of
-  characteristics and one frame assembler.
-
-  It is now a `TransportHost` (the radio or the broker — genuinely one per
-  process) carrying a `ServerLink` per saved station. The app is unaffected: it
-  implements `StationTransport`, which now extends the smaller `StationLink`
-  that `StationClient` actually needs.
-- ~~The MQTT broker lives inside the server, so every restart drops the
-  station.~~ **Fixed.** A P280 that loses its broker for long enough stops
-  reconnecting until it is power-cycled, and `--watch` restarted the server —
-  and the broker in it — on every edit. `DeviceBroker` is gone: the broker is
-  its own process (`server/src/broker/`), which the server attaches to, starts
-  when absent and never stops, and which journals everything the station does.
-  See [BROKER.md](BROKER.md).
-
-  **What remains true is per station, not per server**: a station accepts one
-  connection at a time, so the server still competes with the app and BrightEMS
-  for any single unit — and two saved devices naming the *same* station is
-  refused, which is what `refusal()` means now.
-- **`PluginHost` keeps one configuration per package** and the registry reads
-  `plugin.devices()[0]`, so one adapter cannot serve two plugs.
-- ~~**`DeviceDescriptor.id` and `DeviceView.id` mean different things.**~~
-  **Fixed**, see Milestone A item 3. The rule still stands for everything
-  written from here: `SavedDeviceId`, `CandidateId` and `ProviderDeviceId` are
-  named types in the SDK, and `id` in a public DTO always means the catalog's.
-- **`/api/device-types` flattens every relay adapter to a generic smart plug**
-  and says nothing about connection choices, discovery or verification.
-- **Adding a device writes the record before the connection is configured**, so
-  a permanently grey device can be created.
-
-## Known gaps
-
-**Toggles cannot be operated from a keyboard.** They are focusable and announce
-correctly, but neither a Tamagui `onKeyDown` prop, a listener attached through
-the ref, nor `role="button"` + `aria-pressed` flipped one — the first two never
-fire, and react-native-web's built-in Enter/Space handling did not reach it.
-Everything *else* is keyboard-operable now, so the problem is specific to the
-switch. Unresolved; worth a look at how Tamagui forwards DOM events on web
-before trying again.
-
-Everything else was fixed by giving each tappable a `role`, a `tabIndex` and a
-focus ring — the lesson being that a Tamagui `XStack` with an `onPress` renders
-a plain `div` and is invisible to Tab. Measured before the fix: the device
-canvas offered three focusable elements and **not one was a device**, and *Add a
-device* offered **none at all**. If you add a tappable that is not a `Button`,
-use `src/components/Pressable.tsx`, and pass `selected` when it is one of a set
-of choices so it announces as a radio rather than a fourth identical button.
-
-**The register diagnostics are still global.** `/api/diagnostics/*` resolves to
-whichever session the server holds, even though the Protocol screen now sits
-under one device's Advanced.
-
-**The deprecated global routes are dead code.** `/status`, `/settings`,
-`/ports/:id` and `/simulator/grid` still work; nothing calls them.
-
-## Vocabulary
-
-See [ARCHITECTURE.md §2](ARCHITECTURE.md#2-vocabulary). In short: a **device
-type** is a package that knows a product, a **protocol** is shared wire-format
-code, a **device** is one thing you added, and a **service** is a device with no
-hardware, like weather.
+**Production, 2026-09-27.** Shortly after step 3 was deployed, the station and a
+test plug were removed in the app. Removing a device then deleted its history,
+so the live database has no devices and no samples. The copy the server made
+before migration 6 — `/data/kraftverk.db.before-migration-6.2026-09-27T19-50-30Z`
+on the server's volume — still holds the station and all its history. Whether to
+restore it is the owner's decision. Removing a device will keep its history from
+step 5 (ARCHITECTURE.md, decision 13).
 
 ## Traps
 
@@ -180,66 +59,78 @@ naming the likely cause — but the lesson generalises: a socket that opens prov
 the thing is there and nothing about whether you can read it.
 
 **Two published sources disagree about the ATORCH relay datapoint** — DP 1 in the
-Tuya product spec, DP 131 in the OpenBeken community. Unresolved, and it must be
-settled on the actual unit with the Test button's datapoint dump. Do not pick one.
+Tuya product spec, DP 131 in the OpenBeken community. Unresolved; it must be
+settled on the actual unit. Do not pick one. See [`ATORCH-S1W.md`](ATORCH-S1W.md).
 
-**The MQTT path needs two things that have nothing to do with code**:
-`mqtt.sydpower.com` pointed at this machine, and inbound TCP 1883 allowed. On this
-machine the network profile is Public, so the README's `profile=private` rule does
-not apply. BLE works with neither.
+**The MQTT path needs two things that have nothing to do with code**: the
+station pointed at this machine (BrightEMS's *Local MQTT Broker*, or
+`mqtt.sydpower.com` redirected), and inbound TCP 1883 allowed. On a Windows
+machine whose network profile is Public, the README's `profile=private` firewall
+rule does not apply. Bluetooth needs neither.
 
-**`server/data/` is gitignored and holds the SQLite database.** Deleting it resets
-your devices, plugin config, secrets and history — which is also the fastest way
-back to a blank slate when testing the add-device flow.
+**A test suite once deleted the owner's database, and the tests still passed.**
+Bun runs every test file in one process, sharing `history/db.ts`'s module-level
+handle and `process.env`. Each server suite set `KRAFTVERK_DB` in `beforeAll` and
+cleared it in `afterAll`; the moment one file cleared it, the next file's
+`beforeEach` — several begin `DELETE FROM device; DELETE FROM sample` — reopened
+the real database and truncated it. It cost the owner four devices and ~28,000
+samples. `db()` now throws rather than open the default path under
+`NODE_ENV=test`, and no suite clears the variable. **Do not reintroduce that
+cleanup**, and if you add a suite that touches the database, set `KRAFTVERK_DB`
+before anything calls `db()`.
 
-**A test suite once deleted that database, and the tests still passed.** Bun runs
-every test file in one process, sharing `history/db.ts`'s module-level handle and
-`process.env`. Each server suite set `KRAFTVERK_DB` in `beforeAll` and cleared it
-in `afterAll`; the moment one file cleared it, the next file's `beforeEach` —
-several begin `DELETE FROM device; DELETE FROM sample` — reopened the real
-database and truncated it. It cost the owner four devices and ~28,000 samples.
-`db()` now throws rather than open the default path under `NODE_ENV=test`, and no
-suite clears the variable. **Do not reintroduce that cleanup**, and if you add a
-suite that touches the database, set `KRAFTVERK_DB` before anything calls `db()`.
+**`server/data/` is gitignored** and holds the development database. Deleting it
+resets your devices, secrets and history — the fastest way back to a blank slate
+when testing the add flow. Scratch files for one-off scripts go in
+`server/data/scratch/`.
 
 **Tamagui must stay a `peerDependency`** in `packages/ui` and every device
-package. Two installed copies mean two theme contexts and silently broken styling.
+package. Two installed copies mean two theme contexts and silently broken
+styling.
 
-**Metro needs the workspace globs.** `packages/*` does not reach
-`packages/devices/*` or `packages/plugins/*`; both are listed in the root
-`package.json`. `client/metro.config.js` also stubs optional native modules, which
-is what lets the app build without `react-native-ble-plx` installed.
+**Metro and npm need the workspace globs.** `packages/*` does not reach nested
+package folders (`packages/devices/*`, and the others ARCHITECTURE.md §3 adds);
+each is listed in the root `package.json`. `client/metro.config.js` also stubs
+optional native modules, which is what lets the app build without
+`react-native-ble-plx` installed.
+
+**`npm install --ignore-scripts` leaves a placeholder `bun.exe`.** Fix it with
+`node node_modules/bun/install.js`.
+
+**Toggles cannot be operated from a keyboard.** They are focusable and announce
+correctly, but neither a Tamagui `onKeyDown` prop, a listener attached through
+the ref, nor `role="button"` + `aria-pressed` flipped one. Everything else is
+keyboard-operable: each tappable has a `role`, a `tabIndex` and a focus ring —
+a Tamagui `XStack` with an `onPress` renders a plain `div` and is invisible to
+Tab. If you add a tappable that is not a `Button`, use
+`src/components/Pressable.tsx`, and pass `selected` when it is one of a set of
+choices so it announces as a radio.
+
+**The station link is a launch flag in development.** `npm run dev` is the
+*simulator*, and no screen can change that. Restarting a Bluetooth server with
+the wrong script is an easy way to spend ten minutes wondering why the radio
+vanished. `.claude/launch.json` carries `server`, `server:ble` and
+`server:ble:write` for that reason.
 
 ## Commands worth knowing
 
 ```bash
-npm run dev            # simulator + web app
-npm run dev:ble        # real station over Bluetooth, read-only
-npm run dev:ble:write  # the same, with writes allowed — read the hardware warning
-npm test               # 177 tests, whole repo
-npm run typecheck      # nine workspaces: seven packages, client, server
-npm run scan:tuya      # find Tuya plugs — no credentials needed
-npm run keys:tuya      # fetch their local keys (needs a Tuya cloud project)
+npm run dev                  # simulator + web app
+npm run dev:ble              # real station over Bluetooth, read-only
+npm run dev:ble:write        # the same, with writes allowed — read the hardware warning
+npm test                     # the whole repo
+npm run typecheck            # every workspace
+npm run check:architecture   # the dependency rule, the leak ratchet, the app's generated registry
+npm run gen:devices          # regenerate the app's device registry after adding a device type
+npm run scan:tuya            # find Tuya plugs — no credentials needed
+npm run keys:tuya            # fetch their local keys (needs a Tuya cloud project)
 ```
 
 The server runs on Bun; `scripts/run-bun.mjs` finds it even when PATH is stale.
 
-**The transport is a launch flag, not a setting.** `npm run dev` is the
-*simulator*; the Station link screen will say so and there is no control on it
-that can change that. Restarting a Bluetooth server with the wrong script is an
-easy way to spend ten minutes wondering why the radio vanished.
-`.claude/launch.json` carries `server`, `server:ble` and `server:ble:write` for
-that reason.
-
 ## Waiting on the owner
 
-- **The ATORCH's local key.** Everything else on that path is built and tested
-  against the real API. [`TUYA-LOCAL-KEY.md`](TUYA-LOCAL-KEY.md) is the guide.
-- **Which of the two Tuya devices on the LAN is the plug.** `192.168.50.74`
-  speaks 3.4, `192.168.50.17` speaks 3.3; the ATORCH uses a Beken module and the
-  3.3 device's id embeds an Espressif MAC, so the 3.4 one is the likelier
-  candidate — but it went offline mid-session and was never confirmed.
-
-~~Whether to push this branch.~~ **Decided**: merged to `main` and pushed.
-`origin/devices-and-extensions` is stale and can be deleted; `main` has
-everything.
+- **Whether to restore the station's history** from the pre-migration copy (above).
+- **The ATORCH's local key, and the questions in [`ATORCH-S1W.md`](ATORCH-S1W.md) §7**,
+  settled on the unit: which of the two Tuya devices on the LAN is the plug, and
+  which datapoint switches its relay.

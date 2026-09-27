@@ -4,8 +4,8 @@
  *
  * Kept only while the two plugins in `packages/plugins` still implement it.
  * Their replacements are device types offering `switch` and `powerMeter`
- * (docs/ARCHITECTURE.md, step 5), and this file goes with the gateway's move
- * to capabilities (step 6). Nothing new should use it.
+ * (docs/ARCHITECTURE.md, step 9), and this file goes with the gateway's move
+ * to capabilities (step 11). Nothing new should use it.
  */
 
 export const PLUGIN_CAPABILITIES = [

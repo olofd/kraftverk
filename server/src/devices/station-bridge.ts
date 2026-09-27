@@ -9,7 +9,7 @@ import type { StationDriver } from '../drivers/types.ts';
  * Transitional, and deliberately the only place that asks. A station's session
  * offers `station()` beside the device contract; everything generic uses the
  * contract, and these routes move into the station's own package as
- * type-provided routes in step 7 (docs/ARCHITECTURE.md), taking this with them.
+ * type-provided routes in step 10 (docs/ARCHITECTURE.md), taking this with them.
  */
 export function stationOf(session: DeviceSession | null): StationDriver | null {
   const station = (session as { station?: () => StationDriver | null } | null)?.station;

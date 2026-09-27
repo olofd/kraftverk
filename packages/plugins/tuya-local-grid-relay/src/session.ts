@@ -19,7 +19,7 @@ import {
  *
  * Everything here follows the published protocol description in tinytuya's
  * PROTOCOL.md. The 3.4/3.5 negotiation in particular is implemented from that
- * document — see `docs/PLUGIN-ARCHITECTURE.md` §11.1.
+ * document — see `docs/ATORCH-S1W.md` §1.
  */
 
 const PORT = 6668;

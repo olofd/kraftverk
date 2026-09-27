@@ -63,7 +63,7 @@ export type ConnectionManagerDeps = {
    * it — a simulated station is its device type's simulator, opened by the
    * device session manager — but this manager's own tests exercise its
    * lifecycle with it, until the station links move into the station's
-   * package (docs/ARCHITECTURE.md, step 7).
+   * package (docs/ARCHITECTURE.md, step 10).
    */
   simulator?: () => StationDriver;
   /** Told when a session binds, so the record stops lying about its link. */

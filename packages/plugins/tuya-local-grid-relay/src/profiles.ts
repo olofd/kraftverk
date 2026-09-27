@@ -33,7 +33,7 @@ export type DeviceProfile = {
  * ATORCH S1W / S1WP / S1BW.
  *
  * Datapoints taken from the published Home Assistant work on this exact family
- * (make-all/tuya-local issues #3253 and #1103) — see docs/PLUGIN-ARCHITECTURE.md
+ * (make-all/tuya-local issues #3253 and #1103) — see docs/ATORCH-S1W.md
  * §11.2 for the citations.
  *
  * ⚠️ The relay datapoint is the one thing the sources disagree about: the Tuya
