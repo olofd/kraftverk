@@ -559,12 +559,16 @@ Two things that workflow taught us, worth knowing before you trust a hypothesis:
 npm test
 ```
 
-177 tests. The protocol ones — frame construction, response parsing, telemetry
+283 tests. The protocol ones — frame construction, response parsing, telemetry
 decoding against captured traffic from real hardware, plus the write-safety
 whitelist and the behaviours confirmed on a P280 — live with the protocol
 package, so they cover every link equally: a direct Bluetooth connection from
 the app runs the code these tests exercise. The rest cover the catalog, the
-connection manager, the action gateway and the device registry.
+connection manager, the action gateway, the device registry, the MQTT broker,
+and accounts and sign-in, written as attacks.
+
+Every push also builds both Docker images, starts the stack and attacks it —
+on GitHub and on GitLab alike. See [docs/CI.md](docs/CI.md).
 
 **Server tests must set `KRAFTVERK_DB`.** Bun runs every test file in one
 process, sharing the database handle, and several suites begin by deleting from

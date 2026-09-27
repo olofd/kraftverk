@@ -20,7 +20,6 @@ CLIENT='X-Kraftverk-Client: smoke'
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-jar="$work/cookies"
 
 passed=0
 pass() { passed=$((passed + 1)); printf '  ok  %s\n' "$1"; }
@@ -85,17 +84,20 @@ password=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 24)
 request POST "$LAN_URL/api/auth/setup" -H 'Content-Type: application/json' \
   --data "{\"username\":\"smoke\",\"password\":\"$password\"}"
 expect_status 403 'a write without the client header is refused (forgery)'
-request POST "$LAN_URL/api/auth/setup" -H "$CLIENT" -H 'Content-Type: application/json' -c "$jar" \
+request POST "$LAN_URL/api/auth/setup" -H "$CLIENT" -H 'Content-Type: application/json' \
   --data "{\"username\":\"smoke\",\"password\":\"$password\"}"
 expect_status 201 'the first account is created from home'
 header_has 'set-cookie: kraftverk_session=.*HttpOnly' || fail 'the session is an HttpOnly cookie'
 pass 'the session is an HttpOnly cookie'
+# Sent back by hand rather than through curl's cookie jar, which will not
+# return a cookie to a host with no dot in its name — GitLab's `docker`.
+session="Cookie: $(grep -io 'kraftverk_session=[^;]*' "$work/headers" | head -n 1)"
 request POST "$LAN_URL/api/auth/setup" -H "$CLIENT" -H 'Content-Type: application/json' \
   --data '{"username":"second","password":"correct horse battery staple"}'
 expect_status 409 'there is only ever one first account'
-request GET "$LAN_URL/api/devices" -b "$jar"
+request GET "$LAN_URL/api/devices" -H "$session"
 expect_status 200 'signed in, the devices answer'
-request POST "$LAN_URL/api/grid/relay" -b "$jar" -H 'Content-Type: text/plain' --data '{"on":false}'
+request POST "$LAN_URL/api/grid/relay" -H "$session" -H 'Content-Type: text/plain' --data '{"on":false}'
 expect_status 403 'a forged write is refused even with a session'
 
 echo "Signing in from the internet"
