@@ -1,0 +1,8 @@
+# Read by Linux — CI runners, containers, the NAS — whatever machine checked
+# them out. A carriage return in a shell script's first line, or in the
+# Caddyfile, is an error there.
+*.sh           text eol=lf
+Dockerfile     text eol=lf
+Caddyfile      text eol=lf
+*.yml          text eol=lf
+.dockerignore  text eol=lf

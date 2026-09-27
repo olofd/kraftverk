@@ -1,0 +1,99 @@
+# The web container: serves the app, and forwards /api to the server.
+#
+# Two entrances, and the difference between them is the point. Every request
+# forwarded to the server is stamped with the one it came through, and the
+# server believes that stamp from this container only (KRAFTVERK_TRUSTED_PROXIES).
+# The only thing it decides is who may create the first account on a fresh
+# server: someone at home, never whoever finds it on the internet first.
+#
+#   :8080  the home network. Published on the LAN.
+#   :8090  the internet. Published on the host's loopback only, for the NAS's
+#          own reverse proxy, which terminates HTTPS and forwards here.
+#
+# Plain HTTP on both: TLS belongs to the reverse proxy in front.
+# See docs/DOCKER.md and docs/SECURITY.md.
+
+{
+	admin off
+	auto_https off
+	servers :8090 {
+		# Only the reverse proxy on the host can reach this entrance, so the
+		# client address it reports is the one to rate-limit and record.
+		trusted_proxies static private_ranges
+		client_ip_headers X-Forwarded-For X-Real-IP
+	}
+}
+
+(app) {
+	root * {$KRAFTVERK_WEB_ROOT:/srv}
+	encode zstd gzip
+
+	header {
+		# No inline script anywhere in the build, so none is allowed. Styles
+		# are injected at runtime by React Native Web, so those are.
+		# connect-src 'self': this copy of the app talks to this server.
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+		-Server
+	}
+
+	# Bundles and assets are named by their content, so they can be kept
+	# forever; the page that names them must be asked for again every time.
+	@hashed path /_expo/static/* /assets/*
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+	@page not path /_expo/static/* /assets/*
+	header @page Cache-Control "no-cache"
+
+	# One page, and the app routes inside it: /device/abc is index.html too.
+	try_files {path} /index.html
+	file_server
+}
+
+(api) {
+	handle /api/* {
+		request_body {
+			max_size 1MB
+		}
+		reverse_proxy {$KRAFTVERK_API:kraftverk:3333} {
+			# Set, not appended: whatever the client sent under these names
+			# is replaced.
+			header_up X-Kraftverk-Exposure {args[0]}
+			header_up X-Kraftverk-Client-Ip {client_ip}
+		}
+	}
+}
+
+# --- the home network ---------------------------------------------------------
+
+:8080 {
+	# A tripwire. Nothing on the home network needs a proxy to reach this
+	# entrance, so a request that has been through one — a reverse proxy
+	# pointed here by mistake — is treated as the internet, whatever door it
+	# used. (The server has a second: a request addressed by a public name is
+	# never the home network either.)
+	map {header.X-Forwarded-For}{header.Forwarded}{header.X-Real-IP}{header.X-Forwarded-Host} {exposure} {
+		"" lan
+		default public
+	}
+
+	import api {exposure}
+	handle {
+		import app
+	}
+}
+
+# --- the internet ---------------------------------------------------------------
+
+:8090 {
+	# Reached over HTTPS through the reverse proxy: keep it that way. On every
+	# answer, the API's included.
+	header Strict-Transport-Security "max-age=31536000"
+
+	import api public
+	handle {
+		import app
+	}
+}

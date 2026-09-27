@@ -1,15 +1,14 @@
-# Running the server in Docker
+# Running kraftverk in Docker
 
-Two containers from one image, one volume, and an app in a browser pointed at it.
+Three containers, two images, one volume — and the app in a browser.
 
-This image runs **the server only** — the API, history sampling, the plugin host
-and the action gateway — and, as a second service from the same image, **the
-MQTT broker** stations connect to. The broker is its own container so that
-restarting or upgrading the server does not drop the station; see
-[BROKER.md](BROKER.md) for why that matters on a P280. It does not serve the app, and does not
-need to: the app is a browser client that you point at a server's address under
-**App settings**, which is exactly what that flow was built for. Running the
-server on a machine that is always on is the whole reason it exists — history and
+| Service | Image | What it does |
+| --- | --- | --- |
+| `web` | `--target web` | Serves the app, and forwards `/api` to the server. The only thing you open in a browser |
+| `kraftverk` | `--target server` | The API, history sampling, the plugin host and the action gateway |
+| `broker` | `--target server` | The MQTT broker stations connect to — its own container, so restarting or upgrading the server does not drop the station. See [BROKER.md](BROKER.md) |
+
+Running this on a machine that is always on — a NAS — is the point: history and
 automations need something awake while the app is closed.
 
 > Read the hardware warning in the [README](../README.md#-this-software-can-permanently-destroy-your-power-station)
@@ -23,20 +22,13 @@ automations need something awake while the app is closed.
 docker compose up -d --build
 ```
 
-Then open the app, go to **App settings → Servers**, and add
-`http://<the-docker-host>:3333`. The canvas is blank until you add a device —
-nothing is adopted for you.
+Open `http://<the-docker-host>:8080`. A fresh server asks you to create the
+first administrator — from the home network only — and after that everyone
+signs in. The canvas is blank until you add a device; nothing is adopted for
+you.
 
-To check it came up:
-
-```bash
-curl http://localhost:3333/api/auth/state
-```
-
-An answer with `"setupRequired": true` and you are running, with no accounts
-yet. (`/api/health` is only for the container's own healthcheck, and answers
-nothing else.) Both containers have health checks, so `docker ps` will show
-`healthy` once they have answered.
+`docker compose ps` shows all three `healthy` once they have answered their
+health checks.
 
 ---
 
@@ -47,10 +39,47 @@ deliberate.
 
 `READ_ONLY` matters more than it looks. On a developer's machine the hardware
 modes get `--read-only` from the npm scripts; in a container there are no npm
-scripts, and the server's own default is *writes allowed*. So `READ_ONLY: "1"`
-is set explicitly rather than left to a default that means the opposite of what
-the rest of the project does. Turn it off when you have read your registers and
+scripts, and the server's own default is *writes allowed*. So `READ_ONLY=1` is
+the compose default rather than a default that means the opposite of what the
+rest of the project does. Turn it off when you have read your registers and
 decided to accept the risk — not before.
+
+---
+
+## The two entrances
+
+The web container listens twice, and the difference matters:
+
+| Port | Entrance | Published on |
+| --- | --- | --- |
+| `8080` | the home network | the host's LAN address |
+| `8090` | the internet | the host's **loopback only** — for a reverse proxy on the same machine |
+
+Every request forwarded to the server is stamped with the entrance it came
+through. It decides one thing: the first account on a fresh server can only be
+created through the home network's. Everything else needs a login either way.
+Two tripwires make a mistake fail safe — a request on the home entrance that
+has been through a proxy, or that is addressed by a public name, is treated as
+the internet. See [SECURITY.md](SECURITY.md).
+
+The server's own port, `3333`, is published on the host's loopback only, for
+the recovery CLI and diagnostics there. Browsers go through `web`.
+
+### Reaching it from outside
+
+Put a reverse proxy that terminates HTTPS in front of port `8090`. On a
+Synology:
+
+1. **Control Panel → Login Portal → Advanced → Reverse Proxy → Create.**
+   Source: HTTPS, your DDNS name, port 443. Destination: HTTP, `localhost`,
+   port `8090`.
+2. **Control Panel → Security → Certificate**: a Let's Encrypt certificate for
+   the DDNS name, assigned to that reverse-proxy entry.
+3. Set `KRAFTVERK_ALLOWED_HOSTS` to the DDNS name in `.env`, or the server
+   refuses requests under it.
+4. Forward port 443 on the router to the NAS — and nothing else.
+
+Never forward `8080`, `3333` or `1883`.
 
 ---
 
@@ -80,22 +109,18 @@ The station connects to the vendor's broker until it is told otherwise.
 4. Add it in the app under **Your devices → Add a device → Power station**.
 
 Port `1883` must be reachable **on the host's LAN address**, not just from
-localhost — the station is a separate device on the network. The compose file
-publishes it from the `broker` service; check your host firewall separately.
+localhost — the station is a separate device on the network. Check the host
+firewall separately.
 
-The two services share the volume: the broker keeps its journal, the stations it
-has seen and the token the server proves itself with in `/data/broker`.
-
-The station still needs internet on its first connect: it fetches MQTT
-credentials from the vendor cloud before connecting. Only the MQTT traffic is
-redirected.
+The station still needs internet on its first connect: it fetches its settings
+from the vendor cloud before connecting. Only the MQTT traffic is redirected.
 
 ### Why Bluetooth is not here
 
 `@stoprocent/noble` is declared an **optional dependency** and the image installs
 with `--omit=optional`, which is what keeps four native builds — node-gyp, usb,
 bluetooth-hci-socket, serialport — out of it. The server imports noble lazily, so
-`sim` and `device` never reach for it and nothing is lost.
+`sim` and `mqtt` never reach for it and nothing is lost.
 
 That is not merely a build convenience. A container has no honest access to a
 Bluetooth radio:
@@ -104,34 +129,36 @@ Bluetooth radio:
   Bluetooth passthrough. It cannot work, and no flag makes it work.
 - **On Linux** it is possible in principle — host networking, `CAP_NET_RAW` and
   `CAP_NET_ADMIN`, access to the host's BlueZ stack, and an image rebuilt without
-  `--omit=optional`. It is fiddly, it is one more thing between you and a radio
-  that already only accepts one connection at a time, and it is not something
-  this repository tests.
+  `--omit=optional`. It is fiddly, and not something this repository tests.
 
 If you want Bluetooth, run the server on the host with `npm run dev:ble`, or let
-the app hold the link itself from a browser. Use MQTT for the container.
+the app hold the link itself from a browser.
 
 ---
 
 ## Environment
 
-Set these in `docker-compose.yml` under `environment:`, or in a `.env` file
-beside it.
+In a `.env` file beside `docker-compose.yml`. It holds this installation's
+settings and secrets: keep it out of any repository, readable only by you.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `STATION_DRIVER` | `sim` | `sim`, or `mqtt` for a station over Wi-Fi. `ble` is not available — see above |
-| `READ_ONLY` | `1` in compose | `1` refuses every write at the driver |
+| `READ_ONLY` | `1` | `1` refuses every write at the driver. Only `0` allows them |
 | `KRAFTVERK_SECRET_KEY` | — | Passphrase for AES-256-GCM plugin secrets. **Set this.** See below |
-| `ALLOWED_ORIGINS` | — | Extra browser origins, comma-separated. Loopback and private ranges are already allowed |
-| `AUTO_BIND` | on | `0` waits for an explicit bind instead of taking the first station found |
-| `DEVICE_ID` | — | Bind this station rather than auto-binding |
-| `PORT` / `HOST` | `3333` / `0.0.0.0` | The API. Both are set in the image |
-| `MQTT_PORT` / `MQTT_HOST` | `1883` / `0.0.0.0` | Where the `broker` service listens |
-| `BROKER_SPAWN` / `BROKER_HOST` / `BROKER_ADMIN_URL` | `0` / `broker` / `http://broker:3883` in compose | How the server finds the broker service, and that it must not start its own. The rest is in [BROKER.md](BROKER.md#environment) |
-| `ALLOW_RAW_MODBUS` | — | `1` enables arbitrary frames. Bad writes can brick the station |
-| `KRAFTVERK_DB` | `/data/kraftverk.db` | Set in the image; leave it |
-| `KRAFTVERK_BASELINE_FILE` | `/data/baseline.json` | Set in the image, so a register baseline survives a restart |
+| `KRAFTVERK_ALLOWED_HOSTS` | — | The public name the server is reached by, if any — a DDNS name. Comma-separated |
+| `KRAFTVERK_LAN_PORT` | `8080` | Where the home network opens the app |
+| `KRAFTVERK_PUBLIC_PORT` | `8090` | Where the reverse proxy forwards the internet to, on loopback |
+| `KRAFTVERK_MQTT_PORT` | `1883` | Where stations connect |
+| `KRAFTVERK_API_PORT` | `3333` | The server's own port, on loopback |
+| `KRAFTVERK_SERVER_IMAGE` / `KRAFTVERK_WEB_IMAGE` | `kraftverk-server` / `kraftverk-web` | Images to run — built here by default, or pulled from a registry by a deploy |
+
+Set in the compose file, and best left alone: `BROKER_SPAWN=0`, `BROKER_HOST`,
+`BROKER_ADMIN_URL` (how the server finds the broker service) and
+`KRAFTVERK_TRUSTED_PROXIES=web` (whose entrance stamp is believed). Set in the
+image: `KRAFTVERK_DB`, `KRAFTVERK_BASELINE_FILE`, `KRAFTVERK_BROKER_DIR` and
+`KRAFTVERK_LOG_DIR`, all under `/data`. `ALLOW_RAW_MODBUS=1` enables arbitrary
+frames; bad writes can brick the station.
 
 ### Secrets
 
@@ -144,42 +171,31 @@ random string:
 openssl rand -base64 32
 ```
 
-Put it in a `.env` file next to `docker-compose.yml` and uncomment the line that
-reads it. Keep it somewhere other than the repository, and understand that
-changing it later makes existing secrets unreadable — they must be re-entered.
-
-### Accounts and CORS
-
-The first time the app reaches a fresh server from the home network, it asks you
-to create an administrator. After that everyone signs in, at home too. See
-[SECURITY.md](SECURITY.md) for the model, and for recovering access with
-`bun run server/src/auth/cli.ts` inside the container.
-
-CORS is restricted to loopback and private ranges, which covers a phone or
-laptop on the same network, so the common case needs nothing. Name any other
-origin the app is served from in `ALLOWED_ORIGINS`; `*` is refused, because with
-sign-in it would hand every website your session. A public name the server is
-reached by — a DDNS name — goes in `KRAFTVERK_ALLOWED_HOSTS`, or requests to it
-are refused as a DNS-rebinding defence.
-
-Never port-forward the server's own port or the MQTT broker.
+Changing it later makes existing secrets unreadable — they must be re-entered.
 
 ---
 
 ## Data
 
 Everything that outlives a restart is in the `kraftverk-data` volume, mounted at
-`/data`: your devices, their recorded history, plugin configuration, secrets, the
-audit timeline and any register baseline.
+`/data` in the server and the broker:
+
+| Path | What |
+| --- | --- |
+| `kraftverk.db` | Devices, recorded history, accounts, plugin configuration and secrets, the audit timeline |
+| `logs/server-YYYY-MM-DD.log` | The server's log, one file a day, two weeks kept |
+| `broker/logs/broker-YYYY-MM-DD.jsonl` | The broker's journal: every connection, frame and disconnect |
+| `broker/` | The broker's token and the stations it has seen |
+| `baseline.json` | A register baseline, if one was taken |
 
 Back it up:
 
 ```bash
-docker run --rm -v kraftverk-data:/data -v "$PWD:/backup" busybox tar czf /backup/kraftverk-data.tgz -C /data .
+docker run --rm -v kraftverk_kraftverk-data:/data -v "$PWD:/backup" busybox tar czf /backup/kraftverk-data.tgz -C /data .
 ```
 
-Deleting the volume resets you to a blank canvas, which is also the fastest way
-to test the add-device flow from scratch.
+(The volume is named after the compose project: `kraftverk_kraftverk-data` when
+the project is `kraftverk`. `docker volume ls` shows it.)
 
 ### Resetting without touching the volume
 
@@ -191,71 +207,105 @@ every table but the accounts while the container keeps running:
 docker compose exec kraftverk sh -c 'printf "%s" "a-long-passphrase" > /data/reset-secret'
 ```
 
-Without that file the route does not exist at all, and the app shows the path to
-create rather than a button that cannot work. Delete the file to switch it off
-again — it is read on each attempt, so nothing needs restarting either way.
-
-Erasing needs a signed-in account as well as the passphrase, and keeps the
-accounts themselves. The passphrase is not protection against anyone who can
-write that file — they could delete the database directly. It is there so that
-a stolen session alone cannot erase the house.
+Without that file the route does not exist at all. Delete the file to switch it
+off again — it is read on each attempt, so nothing needs restarting either way.
+Erasing needs a signed-in account as well as the passphrase: a stolen session
+alone cannot erase the house.
 
 ---
 
-## Operating it
+## Diagnosing a problem
+
+Start in the app — **App settings → Server log** for the server, and the
+station's **Protocol** screen for the broker's journal: what the station did,
+and why each connection ended. Both need only a browser.
+
+When the app itself is the problem, or you need more than the last few hundred
+lines, sign in to the machine (`ssh` to the NAS) and go to the directory with
+`docker-compose.yml`:
 
 ```bash
-docker compose logs -f          # what it is doing
-docker compose restart kraftverk   # after changing the server's environment; the station stays connected
-docker compose logs -f broker      # what the station is doing, as it happens
-docker compose exec broker bun run server/src/broker/cli.ts status   # stations, clients, why the last one left
-docker compose restart broker      # only when you mean it: this drops the station
-docker compose up -d --build    # after pulling new code
-docker compose down             # stop; the volume survives
+docker compose ps                        # is everything up and healthy?
+docker compose logs --tail 200 kraftverk # the server's console
+docker compose logs -f broker            # the station's story, live
+docker compose logs --tail 100 web       # the web container: startup, proxy errors
+
+# The broker's own view: stations, clients, why the last one left
+docker compose exec broker bun run server/src/broker/cli.ts status
+# Its journal, from the files — including what happened before a restart
+docker compose exec broker bun run server/src/broker/cli.ts logs
+
+# The server's kept log, older than the container
+docker compose exec kraftverk ls /data/logs
+docker compose exec kraftverk tail -n 300 /data/logs/server-$(date +%F).log
 ```
 
-`STATION_DRIVER` is read once at startup and cannot be changed from any screen —
-the Station link screen reports the transport, it does not choose it. If it says
-`Simulator` and you expected Bluetooth or Wi-Fi, the container was started with
-the wrong `STATION_DRIVER`.
+`docker compose logs` only reaches back to the container's last start, and a
+deploy recreates the containers; the files under `/data/logs` and
+`/data/broker/logs` survive both, for two weeks.
 
----
+### Accounts
 
-## Serving the app
+If nobody can sign in — every password forgotten — a shell on the server is
+the proof of ownership:
 
-Not covered by this image, and worth being straight about: there is no static web
-build wired up yet. Today the app is run from a developer machine with
-`npm run web`, or from a phone. Both can point at a containerised server by
-adding its address under **App settings → Servers** — the address list lives in
-the browser, so one build serves every server you own.
+```bash
+docker compose exec kraftverk bun run server/src/auth/cli.ts list
+docker compose exec kraftverk bun run server/src/auth/cli.ts password <name>
+```
 
-If you want the app served from the same host, `expo export --platform web` in
-`client/` produces a static bundle you can hand to any web server, and
-`EXPO_PUBLIC_API_URL` bakes in a default server address. Neither is exercised by
-this repository yet; treat it as a starting point rather than a supported path.
+See [SECURITY.md](SECURITY.md#recovering-access).
+
+### Operating it
+
+```bash
+# After pulling new code: the server and the app, and nothing else.
+docker compose up -d --build --no-deps kraftverk web
+
+docker compose restart kraftverk   # after changing the server's environment; the station stays connected
+docker compose down                # stop; the volume survives
+```
+
+The broker is left out of updates on purpose. It runs from the same image as
+the server, so a plain `docker compose up -d --build` would recreate it for
+every server change — and every time, drop the station, which may not come
+back without a power-cycle. Update it only when the broker itself changed: the
+Station link screen says so, as *the broker is running an older build*. Then,
+at a moment when losing the station for a minute is fine:
+
+```bash
+docker compose up -d --build broker
+```
+
+`STATION_DRIVER` is read once at startup and cannot be changed from any screen.
+If the Station link screen says `Simulator` and you expected Wi-Fi, the
+container was started with the wrong `STATION_DRIVER`.
 
 ---
 
 ## Troubleshooting
 
-**`healthy` never arrives.** `docker compose logs` — the server prints its
-listening address on the first line. If the port is already taken on the host,
-the container will keep restarting.
+**`healthy` never arrives.** `docker compose logs <service>` — the server prints
+its listening address on the first line. A port already taken on the host keeps
+the container restarting.
 
-**The station never appears with `STATION_DRIVER=device`.** Start with
+**The station never appears with `STATION_DRIVER=mqtt`.** Start with
 `docker compose logs broker`: the broker records every TCP connection before any
 MQTT, so it distinguishes "nothing is connecting" from "connecting but failing
 the handshake" from "connected but not understood". If nothing is connecting, in
-order: is the Local MQTT Broker setting in BrightEMS the Docker host's LAN IP —
-or `mqtt.sydpower.com` resolving to it from *the station's* network — has the
-station been power-cycled since, is `1883` reachable from another machine on the
-LAN, and did the station have internet on first connect.
+order: is the Local MQTT Broker setting in BrightEMS the Docker host's LAN IP,
+has the station been power-cycled since, is `1883` reachable from another
+machine on the LAN, and did the station have internet on first connect.
 [BROKER.md](BROKER.md#when-the-station-does-not-come-back) has the rest.
 
-**The app says it cannot reach the server.** Check the address you added includes
-the scheme and port — `http://192.168.1.50:3333` — and that you are reaching it
-from an origin CORS allows. A browser console error mentioning
-`Access-Control-Allow-Origin` means `ALLOWED_ORIGINS`.
+**The first account cannot be created.** Open the app on the home network, at
+the host's LAN address — `http://192.168.1.50:8080`, not the DDNS name, which
+the server deliberately treats as the internet. The sign-in screen says how the
+server sees your device.
 
-**Writes are refused.** That is `READ_ONLY: "1"`, and it is the default here on
+**"This server does not answer to that name".** The name in the address bar is
+not an IP, a `.local` name or a single-label name, and is not in
+`KRAFTVERK_ALLOWED_HOSTS`. That refusal is the DNS-rebinding defence.
+
+**Writes are refused.** That is `READ_ONLY=1`, and it is the default here on
 purpose.

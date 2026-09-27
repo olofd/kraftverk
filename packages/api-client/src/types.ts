@@ -134,6 +134,13 @@ export type LinkDiagnostics = {
 };
 
 /** One event in the broker's journal. */
+/** One line of the server's own log: what its console said, and when. */
+export type ServerLogLine = {
+  at: string;
+  level: 'debug' | 'info' | 'warn' | 'error';
+  text: string;
+};
+
 export type BrokerJournalEntry = {
   /** Increasing within one broker run; starts again when the broker restarts. */
   seq: number;

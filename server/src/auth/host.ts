@@ -60,13 +60,22 @@ export function hostName(header: string | undefined | null): string | null {
   return parts[0] || null;
 }
 
+/**
+ * A name only this network can resolve: an address, `localhost`, a `.local`
+ * or `.localhost` name, or a single label. Anything else is a name from public
+ * DNS — which is how the internet addresses a server, and never how the home
+ * network has to.
+ */
+export function isLocalName(host: string): boolean {
+  if (isIP(host)) return true;
+  if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.localhost')) return true;
+  return /^[a-z0-9-]+$/.test(host); // single label
+}
+
 export function hostAllowed(header: string | undefined | null, configured: ReadonlySet<string>): boolean {
   const host = hostName(header);
   if (!host) return false;
-  if (isIP(host)) return true;
-  if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.localhost')) return true;
-  if (/^[a-z0-9-]+$/.test(host)) return true; // single label
-  return configured.has(host);
+  return isLocalName(host) || configured.has(host);
 }
 
 export function hostGuard(configured: ReadonlySet<string> = allowedHosts()): MiddlewareHandler {

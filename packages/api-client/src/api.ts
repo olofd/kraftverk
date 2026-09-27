@@ -12,6 +12,7 @@ import type {
   AccountDetail,
   AuthState,
   BrokerJournalEntry,
+  ServerLogLine,
   DeviceHistory,
   DeviceSettings,
   DeviceTypeOption,
@@ -242,6 +243,15 @@ export async function fetchBrokerJournal(
     params: options,
     signal,
   });
+  return data;
+}
+
+/** What the server has said lately, and where its full log files are. */
+export async function fetchServerLog(
+  options: { limit?: number; level?: ServerLogLine['level'] } = {},
+  signal?: AbortSignal
+) {
+  const { data } = await api.get<{ dir: string | null; lines: ServerLogLine[] }>('/diagnostics/log', { params: options, signal });
   return data;
 }
 

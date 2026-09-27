@@ -62,6 +62,18 @@ describe('assessTrust', () => {
     }
   });
 
+  test('a request addressed by a public name is never the home network, however it arrived', () => {
+    // A reverse proxy pointed straight at the server, adding no forwarding headers.
+    expect(judge('172.17.0.1', { host: 'home.example.net' }).onHomeNetwork).toBe(false);
+    // …or at the web app's home-network entrance by mistake.
+    expect(judge(PROXY, { host: 'home.example.net:8080', [EXPOSURE_HEADER]: 'lan' }).onHomeNetwork).toBe(false);
+    // Local names are still home.
+    for (const host of ['192.168.50.140:8080', 'localhost:3333', 'diskstation.local', 'diskstation', '[fd12::1]:8080']) {
+      expect(judge('192.168.50.58', { host }).onHomeNetwork).toBe(true);
+      expect(judge(PROXY, { host, [EXPOSURE_HEADER]: 'lan' }).onHomeNetwork).toBe(true);
+    }
+  });
+
   test('a direct caller on any other address is not', () => {
     for (const ip of ['203.0.113.50', '8.8.8.8', '100.64.1.1', '169.254.1.1', 'fe80::1', '2001:db8::1', '172.32.0.1']) {
       expect(judge(ip).onHomeNetwork).toBe(false);
@@ -324,6 +336,13 @@ describe('the gate', () => {
     const state = await call('/auth/state', viaPublicEntrance);
     expect(state.body).toMatchObject({ setupRequired: true, canSetup: false, onHomeNetwork: false });
     expect((await call('/devices', viaPublicEntrance)).body).toMatchObject({ loginRequired: true, setupRequired: true });
+  });
+
+  test('a fresh server cannot be claimed through the home-network entrance by its public name', async () => {
+    const misrouted = { ...viaLanEntrance, host: 'home.example.net' };
+    expect((await call('/auth/state', misrouted)).body).toMatchObject({ canSetup: false, onHomeNetwork: false });
+    expect((await call('/auth/setup', { ...misrouted, method: 'POST', body: { username: 'x', password: PASSWORD } })).status).toBe(403);
+    expect(countUsers()).toBe(0);
   });
 
   test('a fresh server is set up before it is used — the home network included', async () => {

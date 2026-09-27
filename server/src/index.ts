@@ -3,7 +3,6 @@ import { dirname, resolve } from 'node:path';
 
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
-import { logger } from 'hono/logger';
 import { HTTPException } from 'hono/http-exception';
 import { z, ZodError } from 'zod';
 
@@ -30,6 +29,7 @@ import { resetSecret, resetSecretPath, secretMatches } from './admin/reset.ts';
 import { bodyLimit } from 'hono/body-limit';
 
 import { hostGuard } from './auth/host.ts';
+import { keepConsole } from './log.ts';
 import { actorOf, CLIENT_HEADER, createAuth } from './auth/routes.ts';
 import { ProxyDirectory } from './auth/trust.ts';
 import { Sampler, series } from './history/sampler.ts';
@@ -53,6 +53,9 @@ import {
   type RegisterDump,
 } from '@kraftverk/protocol';
 import { PortIdSchema, PortPatchSchema, StationSettingsPatchSchema, type VersionInfo } from './types.ts';
+
+// First, so everything below is kept as well as printed. See `log.ts`.
+const serverLog = keepConsole(process.env.KRAFTVERK_LOG_DIR || resolve(import.meta.dirname, '../data/logs'));
 
 const PORT = Number(process.env.PORT ?? 3333);
 const HOST = process.env.HOST ?? '0.0.0.0';
@@ -407,8 +410,22 @@ function hardwareOr400(c: Context): DeviceDriver {
 
 const app = new Hono();
 
-// The client polls /status; logging it would drown out everything useful.
-app.use('*', async (c, next) => (c.req.path === '/api/status' ? next() : logger()(c, next)));
+/*
+  Requests worth a line: anything that changed something, and anything that
+  failed. The app polls several routes every few seconds, and a line for each
+  successful read — or each CORS preflight — would bury the one that matters
+  under thousands that do not, in the console and in the kept log alike.
+*/
+app.use('*', async (c, next) => {
+  const started = Date.now();
+  await next();
+  const { method } = c.req;
+  const status = c.res.status;
+  if (method === 'OPTIONS' || ((method === 'GET' || method === 'HEAD') && status < 400)) return;
+  const line = `[http] ${method} ${c.req.path} ${status} ${Date.now() - started}ms`;
+  if (status >= 500) console.error(line);
+  else console.log(line);
+});
 
 /**
  * Which browsers may talk to this server.
@@ -725,6 +742,21 @@ diag.get('/broker', async (c) => {
  * with the reason. `?level=debug` adds every poll and telemetry frame;
  * `?after=<seq>` continues from where the last call left off.
  */
+/**
+ * What the server has said lately — the same lines as its console, which in
+ * a container nobody is watching. `?level=warn` for problems only. The full
+ * record is in daily files, named here, for a shell on the server.
+ */
+diag.get('/log', (c) => {
+  const { limit, level } = z
+    .object({
+      limit: z.coerce.number().int().min(1).max(2000).default(500),
+      level: z.enum(['debug', 'info', 'warn', 'error']).optional(),
+    })
+    .parse({ limit: c.req.query('limit') ?? 500, level: c.req.query('level') });
+  return c.json({ dir: serverLog.dir, lines: serverLog.recent(limit, level) });
+});
+
 diag.get('/broker/journal', async (c) => {
   if (!bus) throw new HTTPException(404, { message: 'This server does not run the MQTT transport' });
   const query = new URLSearchParams(c.req.query()).toString();

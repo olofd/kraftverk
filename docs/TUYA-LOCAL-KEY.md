@@ -65,10 +65,12 @@ Nothing is written to disk, and the credentials are used for one request each.
 In the app, under **Extensions → Tuya smart plug**, the same two steps exist as buttons — *Find
 plugs on this network* and *Fetch local keys from Tuya* — and picking a device fills the form in.
 
-Or do it over the API:
+Or do it over the API, signed in — with the session cookie from your browser,
+and the header every change needs:
 
 ```bash
 curl -X PATCH http://localhost:3333/api/plugins/com.tuya-local.grid-relay/config \
+  -b 'kraftverk_session=<from the browser>' -H 'X-Kraftverk-Client: curl' \
   -H 'Content-Type: application/json' \
   -d '{"host":"192.168.1.50","deviceId":"bf1234…","localKey":"a1b2c3d4e5f6g7h8"}'
 ```

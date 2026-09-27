@@ -85,8 +85,11 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
     return normaliseIp(env?.requestIP?.(c.req.raw)?.address ?? null);
   };
 
-  const trustOf = (c: Context): Trust =>
-    assessTrust({ socketIp: socketIp(c), headers: c.req.raw.headers, proxies: proxies.addresses });
+  const trustOf = (c: Context): Trust => {
+    const socket = socketIp(c);
+    if (socket && !proxies.addresses.has(socket) && c.req.raw.headers.has(EXPOSURE_HEADER)) proxies.refreshSoon();
+    return assessTrust({ socketIp: socket, headers: c.req.raw.headers, proxies: proxies.addresses });
+  };
 
   /** This machine, directly — not something it forwarded. */
   const localCaller = (c: Context): boolean => {

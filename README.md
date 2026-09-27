@@ -327,12 +327,15 @@ automations:
 docker compose up -d --build
 ```
 
-Then add `http://<that-host>:3333` under **App settings → Servers**. The image
-is the server only; the app stays a browser client pointed at it. It ships the
-simulator with writes refused by default, and Bluetooth is deliberately not in
-it — a container has no honest access to a radio, and MQTT is the transport that
-suits a server anyway. [**docs/DOCKER.md**](docs/DOCKER.md) covers the transport
-choice, secrets, CORS, backups and the DNS redirect Wi-Fi needs.
+Then open `http://<that-host>:8080`: the app, served beside the server, which
+asks you to create the first administrator. Three containers — the app, the
+server, and the MQTT broker, kept apart so that updating the server does not
+drop the station. It ships the simulator with writes refused by default, and
+Bluetooth is deliberately not in it — a container has no honest access to a
+radio, and MQTT is the transport that suits a server anyway.
+[**docs/DOCKER.md**](docs/DOCKER.md) covers the transport choice, secrets,
+reaching it from outside over HTTPS, backups, updating without dropping the
+station, and diagnosing a problem.
 
 ### Connecting over Wi-Fi
 
@@ -446,7 +449,8 @@ drops the app's link for that reason.
 
 ## API
 
-Base URL: `http://<host>:3333/api`
+Base URL: `http://<host>:3333/api` — or, in Docker, through the web container:
+`http://<host>:8080/api`.
 
 Every route passes one gate: a session cookie, reads and writes alike, from any
 network. Only the sign-in routes are open, and `/health` answers the server's own
@@ -489,6 +493,7 @@ not a boolean: `health.status` is one of `connected`, `connecting`, `offline`,
 | `GET` | `/diagnostics/scan` | Read an arbitrary register range (read-only) |
 | `GET` | `/diagnostics/traffic` · `/gatt` · `/blocked` | Frames (both directions, from the broker's record), GATT, refused writes |
 | `GET` | `/diagnostics/broker` · `/diagnostics/broker/journal` | The MQTT broker: process, stations, clients, counters; and its journal (`?after=`, `?level=debug`) |
+| `GET` | `/diagnostics/log` | The server's own recent log (`?level=warn`, `?limit=`), and where its daily files are |
 | `POST` | `/diagnostics/raw` | Arbitrary frame — needs `ALLOW_RAW_MODBUS=1` |
 | `GET` | `/plugins` | Installed extensions: status, health, data age, grants |
 | `GET` `PATCH` | `/plugins/:id/config` | Setup form schema and values; secrets are write-only |

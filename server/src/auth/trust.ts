@@ -1,6 +1,8 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 
+import { hostName, isLocalName } from './host.ts';
+
 /**
  * Whether a request comes from the home network.
  *
@@ -58,10 +60,22 @@ export type Trust = {
 
 export function assessTrust({ socketIp, headers, proxies }: TrustInput): Trust {
   const socket = normaliseIp(socketIp);
+  /*
+    Addressed by a public name — the DDNS name, say — which is how the
+    internet reaches a server and never how the home network has to. Whatever
+    else the request says, a proxy somewhere is forwarding it, so it is not
+    home: this is what catches a reverse proxy pointed at the wrong entrance,
+    or at the server itself, that adds no forwarding headers.
+  */
+  const named = hostName(headers.get('host'));
+  const publicName = named !== null && !isLocalName(named) ? named : null;
 
   if (socket && proxies.has(socket)) {
     const exposure = headers.get(EXPOSURE_HEADER);
     const clientIp = normaliseIp(headers.get(CLIENT_IP_HEADER)) ?? socket;
+    if (exposure === 'lan' && publicName) {
+      return { onHomeNetwork: false, clientIp, reason: `Came through the home-network entrance, but addressed as ${publicName}, a public name` };
+    }
     if (exposure === 'lan') {
       return { onHomeNetwork: true, clientIp, reason: 'Came through the web app’s home-network entrance' };
     }
@@ -77,6 +91,9 @@ export function assessTrust({ socketIp, headers, proxies }: TrustInput): Trust {
     return { onHomeNetwork: false, clientIp: socket, reason: `Came through a proxy this server does not know (${forwarded})` };
   }
   if (!socket) return { onHomeNetwork: false, clientIp: null, reason: 'The caller’s address is unknown' };
+  if (publicName) {
+    return { onHomeNetwork: false, clientIp: socket, reason: `Addressed as ${publicName}, a public name, so something is forwarding it` };
+  }
   if (isPrivate(socket)) return { onHomeNetwork: true, clientIp: socket, reason: `Connected directly from ${socket}, a home-network address` };
   return { onHomeNetwork: false, clientIp: socket, reason: `Connected from ${socket}, which is not a home-network address` };
 }
@@ -144,6 +161,20 @@ export class ProxyDirectory {
       }
     }
     this.#addresses = next;
+  }
+
+  #lastAsked = 0;
+
+  /**
+   * Looks again now — at most every few seconds — because something just
+   * arrived stamped by a web container this directory does not recognise.
+   * Usually the container was recreated with a new address. The request that
+   * prompted it is still judged by the old list: untrusted, the safe way.
+   */
+  refreshSoon(now = Date.now()): void {
+    if (this.#names.length === 0 || now - this.#lastAsked < 5_000) return;
+    this.#lastAsked = now;
+    void this.refresh();
   }
 
   start(everyMs = 30_000): void {

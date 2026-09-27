@@ -1,0 +1,59 @@
+# Validation on GitLab — the same checks as .github/workflows/ci.yml.
+#
+# Only jobs, no stages: this file is included by the pipeline that uses it,
+# which declares `validate` and `image` among its stages, and adds whatever
+# comes after. Nothing here deploys.
+#
+# On the default branch, the images that passed are pushed to this project's
+# own container registry, tagged with the commit, so that what is deployed is
+# exactly what was tested.
+
+variables:
+  SERVER_IMAGE: $CI_REGISTRY_IMAGE/server:$CI_COMMIT_SHA
+  WEB_IMAGE: $CI_REGISTRY_IMAGE/web:$CI_COMMIT_SHA
+
+validate:
+  stage: validate
+  # package.json's volta pin.
+  image: node:24.19.0-bookworm
+  timeout: 25m
+  cache:
+    key:
+      files: [package-lock.json]
+    paths: [.npm/]
+  variables:
+    npm_config_cache: $CI_PROJECT_DIR/.npm
+  script:
+    - npm ci
+    - npm run typecheck
+    - npm test
+    - EXPO_PUBLIC_API_URL=same-origin npm run build:web
+
+stack:
+  stage: image
+  needs: [validate]
+  image: docker:29
+  services:
+    - docker:29-dind
+  timeout: 30m
+  variables:
+    DOCKER_TLS_CERTDIR: /certs
+    # The stack runs in the dind service, so its ports are published there.
+    SMOKE_HOST: docker
+    KRAFTVERK_PUBLIC_BIND: 0.0.0.0
+  before_script:
+    - apk add --no-cache bash curl coreutils
+  script:
+    - docker build --target server --tag "$SERVER_IMAGE" .
+    - docker build --target web --tag "$WEB_IMAGE" .
+    - SMOKE_BUILD=0 KRAFTVERK_SERVER_IMAGE="$SERVER_IMAGE" KRAFTVERK_WEB_IMAGE="$WEB_IMAGE" bash scripts/ci/smoke-docker.sh
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+        echo "$CI_REGISTRY_PASSWORD" | docker login --username "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+        docker push "$SERVER_IMAGE"
+        docker push "$WEB_IMAGE"
+      fi
+  artifacts:
+    when: on_failure
+    expire_in: 7 days
+    paths: [smoke-logs.txt]

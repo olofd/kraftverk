@@ -1,14 +1,16 @@
 # syntax=docker/dockerfile:1
 
-# kraftverk server, containerised.
+# kraftverk, containerised: two images from one file.
 #
-# The server only — not the app. The app is a browser client that you point at
-# this container's address under App settings, which is exactly the shape the
-# "add a server" flow was built for. See docs/DOCKER.md.
+#   --target server   the API, and — as a second service from the same image —
+#                     the MQTT broker stations connect to. The default.
+#   --target web      the app, built for the browser and served by Caddy, which
+#                     also forwards /api to the server. See web/Caddyfile.
 #
-# Two stages because the two jobs want different tools: npm resolves the
-# lockfile exactly, and Bun runs the server. Nothing is compiled in between —
-# TypeScript is executed directly, so there is no build output to carry over.
+# docker-compose.yml builds both. See docs/DOCKER.md.
+#
+# The server needs no build step: npm resolves the lockfile exactly, and Bun
+# runs the TypeScript directly. The app is exported to static files by Expo.
 
 # --- dependencies ------------------------------------------------------------
 
@@ -35,11 +37,61 @@ COPY packages ./packages
 RUN npm ci --omit=dev --omit=optional --ignore-scripts \
       --workspace server --include-workspace-root
 
-# --- runtime -----------------------------------------------------------------
+# --- the app, built for the web ----------------------------------------------
+
+FROM node:24-bookworm-slim AS web-build
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY client/package.json ./client/
+COPY server/package.json ./server/
+COPY packages ./packages
+
+# The client's whole tree, dev tools included — Expo is what does the export.
+# --ignore-scripts keeps the native Bluetooth builds out; nothing the export
+# uses needs an install script.
+RUN npm ci --ignore-scripts --workspace client --include-workspace-root
+
+COPY client ./client
+
+# The app finds its server at whatever address it was loaded from, and asks for
+# /api there — one build for the LAN address and the public name alike.
+ENV EXPO_PUBLIC_API_URL=same-origin
+RUN npm run build:web --workspace client
+
+# --- web ---------------------------------------------------------------------
+
+FROM caddy:2.11.4-alpine AS web
+
+# So a host can find — and prune — kraftverk's images and nothing else.
+LABEL se.kraftverk.image="web"
+
+# Not root: both ports are above 1024, and Caddy only needs to write its own
+# small state.
+RUN addgroup -S web && adduser -S -G web web \
+ && mkdir -p /data/caddy /config/caddy && chown -R web:web /data /config
+USER web
+
+COPY web/Caddyfile /etc/caddy/Caddyfile
+COPY --from=web-build /app/client/dist /srv
+
+# 8080 is the home network's entrance, 8090 the internet's — the reverse proxy
+# in front forwards there. docker-compose.yml publishes 8090 on loopback only.
+EXPOSE 8080 8090
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget -q --spider http://127.0.0.1:8080/ || exit 1
+
+# --- server ------------------------------------------------------------------
+#
+# Last, so a plain `docker build .` builds it.
 
 # The same Bun the tests run on — root package.json pins it — so what CI
 # tested is what the container runs. Bump both together.
-FROM oven/bun:1.4.0 AS runtime
+FROM oven/bun:1.4.0 AS server
+
+LABEL se.kraftverk.image="server"
 
 WORKDIR /app
 
@@ -50,6 +102,7 @@ ENV NODE_ENV=production \
     KRAFTVERK_DB=/data/kraftverk.db \
     KRAFTVERK_BASELINE_FILE=/data/baseline.json \
     KRAFTVERK_BROKER_DIR=/data/broker \
+    KRAFTVERK_LOG_DIR=/data/logs \
     PORT=3333 \
     HOST=0.0.0.0
 

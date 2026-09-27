@@ -1,26 +1,46 @@
-# kraftverk server, and the MQTT broker stations connect to.
+# kraftverk: the app, the server, and the MQTT broker stations connect to.
 #
 # Defaults are the safe ones: the simulator, and writes refused. Read
 # docs/DOCKER.md before changing either — the second one is the difference
 # between a dashboard and something that can switch mains power.
 #
-# Two services from one image. The broker is its own container so that
-# restarting or upgrading the server does not drop the station: a P280 that
-# loses its broker for long enough stops trying to reconnect, and then only a
-# power-cycle brings it back. See docs/BROKER.md.
+# Everything a particular installation sets — which station driver, the secret
+# key, the public name it is reached by — goes in a `.env` file beside this one,
+# not in this file. See docs/DOCKER.md#environment.
+#
+# Three services:
+#
+#   web        serves the app and forwards /api to the server. The only thing
+#              anyone opens in a browser: http://<this machine>:8080
+#   kraftverk  the server. Not published beyond this machine's loopback.
+#   broker     where stations connect. Its own container, so restarting or
+#              upgrading the server does not drop the station: a P280 that
+#              loses its broker for long enough stops trying to reconnect, and
+#              then only a power-cycle brings it back. See docs/BROKER.md.
+
+x-logging: &logging
+  # `docker logs`, kept small: a NAS disk is not for filling with console
+  # output. The server and the broker also keep their own dated files on the
+  # data volume, which outlive the container — these do not, and a deploy
+  # recreates it. See docs/DOCKER.md#diagnosing-a-problem.
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   broker:
-    build: .
-    image: kraftverk-server
-    container_name: kraftverk-broker
+    logging: *logging
+    build: { context: ., target: server }
+    image: ${KRAFTVERK_SERVER_IMAGE:-kraftverk-server}
     restart: unless-stopped
     command: ["bun", "run", "server/src/broker/main.ts"]
 
     ports:
       # The port stations connect to. It must be reachable on the host's LAN
-      # address — the station is a separate device on the network.
-      - "1883:1883"
+      # address — the station is a separate device on the network. Never
+      # forward it from the router.
+      - "${KRAFTVERK_MQTT_PORT:-1883}:1883"
       # The admin API (3883) is deliberately not published: it is for the
       # server container, which reaches it over the compose network.
 
@@ -42,21 +62,22 @@ services:
       retries: 3
 
   kraftverk:
-    build: .
-    image: kraftverk-server
-    container_name: kraftverk
+    logging: *logging
+    build: { context: ., target: server }
+    image: ${KRAFTVERK_SERVER_IMAGE:-kraftverk-server}
     restart: unless-stopped
     depends_on:
       - broker
 
     ports:
-      - "3333:3333"
+      # For the recovery CLI and diagnostics on this machine only. Browsers go
+      # through `web`; publishing this on the LAN would be a second way in that
+      # skips it.
+      - "127.0.0.1:${KRAFTVERK_API_PORT:-3333}:3333"
 
     environment:
       # sim | mqtt — the simulator, or real hardware over Wi-Fi through the broker.
-      # `ble` is deliberately absent: see docs/DOCKER.md. Overridable without
-      # editing this file: `STATION_DRIVER=device docker compose up -d`, or a
-      # line in `.env` beside it.
+      # `ble` is deliberately absent: see docs/DOCKER.md.
       STATION_DRIVER: ${STATION_DRIVER:-sim}
 
       # 1 refuses every write at the driver. The npm scripts pass --read-only
@@ -71,20 +92,40 @@ services:
       BROKER_HOST: broker
       BROKER_ADMIN_URL: http://broker:3883
 
-      # Without this, plugin secrets — a Tuya plug's local key — are stored as
-      # given. The app says so plainly on the Extensions screen. Set it to a
-      # long random string and keep it somewhere other than this file.
-      # KRAFTVERK_SECRET_KEY: ${KRAFTVERK_SECRET_KEY:?set this in .env}
+      # The web container, by its service name: the one proxy whose "this came
+      # in through the home-network entrance" is believed.
+      KRAFTVERK_TRUSTED_PROXIES: web
 
-      # Browsers are allowed from loopback and private ranges already, which
-      # covers a phone or laptop on the same network. Name any other origin the
-      # app is served from — a hostname, a reverse proxy — here.
-      # ALLOWED_ORIGINS: "https://kraftverk.example.com"
+      # The public name this server is reached by — a DDNS name — if any.
+      # Requests under any other name are refused (DNS rebinding).
+      KRAFTVERK_ALLOWED_HOSTS: ${KRAFTVERK_ALLOWED_HOSTS:-}
+
+      # Without this, plugin secrets — a Tuya plug's local key — are stored as
+      # given, and the app says so plainly. A long random string, in `.env`.
+      KRAFTVERK_SECRET_KEY: ${KRAFTVERK_SECRET_KEY:-}
 
     volumes:
-      # Devices, history, plugin config, secrets and the audit timeline.
-      # Delete this volume and you are back to a blank canvas.
+      # Devices, history, accounts, plugin config, secrets and the audit
+      # timeline. Delete this volume and you are back to a blank canvas.
       - kraftverk-data:/data
+
+  web:
+    logging: *logging
+    build: { context: ., target: web }
+    image: ${KRAFTVERK_WEB_IMAGE:-kraftverk-web}
+    restart: unless-stopped
+    depends_on:
+      kraftverk:
+        condition: service_healthy
+
+    ports:
+      # The home network's entrance: open this in a browser.
+      - "${KRAFTVERK_LAN_PORT:-8080}:8080"
+      # The internet's entrance, for a reverse proxy on this machine that
+      # terminates HTTPS — DSM's, on a Synology. Loopback only: the internet
+      # reaches it through that proxy and nowhere else. Never publish it wider
+      # (KRAFTVERK_PUBLIC_BIND exists for CI, whose Docker runs elsewhere).
+      - "${KRAFTVERK_PUBLIC_BIND:-127.0.0.1}:${KRAFTVERK_PUBLIC_PORT:-8090}:8090"
 
 volumes:
   kraftverk-data:

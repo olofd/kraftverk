@@ -90,6 +90,10 @@ export default function AppSettingsScreen() {
                 />
               </Pressable>
               <RowSeparator />
+              <Pressable onPress={() => router.push('/server-log')}>
+                <Row title="Server log" subtitle="What the server has said lately — where to look when something is wrong" accessory={chevron} />
+              </Pressable>
+              <RowSeparator />
             </>
           ) : null}
           <Pressable onPress={() => router.push('/link')}>

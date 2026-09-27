@@ -57,12 +57,22 @@ and the whole internet looks like the living room. So:
 Anything ambiguous is untrusted. Being wrong in that direction costs setting
 the server up from home.
 
-The web container — which serves the app and proxies `/api`, and is being
-added alongside this — carries two tripwires of its own on the home-network
-entrance: a request whose `Host` is a real domain name, or that already carries
-proxy headers, is stamped `public` anyway. A reverse proxy pointed at the wrong
-entrance by mistake then cannot create the first account from the internet.
-Until it exists, only the direct rules above apply.
+Two tripwires make a misconfigured reverse proxy fail safe:
+
+- **A request addressed by a public name is never the home network**, however
+  it arrived — through either entrance or directly. The home network reaches
+  the server by an address, a `.local` name or a single-label name; the
+  internet reaches it by its DDNS name. This catches a reverse proxy pointed at
+  the wrong entrance, or straight at the server, that adds no forwarding
+  headers (`assessTrust`).
+- **The web container's home-network entrance stamps anything that has been
+  through a proxy as `public`**: a request arriving with `X-Forwarded-For`,
+  `Forwarded`, `X-Real-IP` or `X-Forwarded-Host` (`web/Caddyfile`).
+
+The web container's internet entrance is published on the host's loopback
+only, so the internet reaches it through the host's reverse proxy and nowhere
+else, and that proxy's `X-Forwarded-For` is what gives the client's address
+for rate limits and the audit log.
 
 ## Sessions and passwords
 
@@ -103,6 +113,12 @@ refused: with sign-in it would hand every website your session.
 **Clickjacking, caching, sniffing.** API responses are `Cache-Control:
 no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and
 `Referrer-Policy: no-referrer`. Request bodies are capped at 1 MB.
+
+**Script injection.** The app is served with a Content-Security-Policy that
+allows scripts from its own origin only — the build has no inline script — and
+connections to its own server only, so injected markup can neither run code
+nor send anything elsewhere. The internet entrance adds
+`Strict-Transport-Security`. See `web/Caddyfile`.
 
 ## The station itself
 

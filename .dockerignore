@@ -13,6 +13,14 @@
 # secrets — into something you might push to a registry.
 server/data
 
+# An installation's settings and secrets live in a .env beside the compose
+# file — on the NAS, in the very directory that is the build context.
+**/.env
+**/.env.*
+
+.github
+ci
+
 client/.expo
 client/dist
 client/web-build
