@@ -288,7 +288,7 @@ Key implementation files:
 | `packages/protocol/src/ble.ts` | GATT layout and frame reassembly, shared by all three BLE stacks |
 | `client/src/link/` | the app's own Web Bluetooth and react-native-ble-plx transports |
 | `server/src/drivers/device.ts` | the shared client, wearing the server's driver interface |
-| `server/src/index.ts` | the API surface |
+| `server/src/app.ts`, `server/src/routes/` | the API surface; `server/src/index.ts` starts everything it serves |
 | `server/src/actions/gateway.ts` | **the only code allowed to switch mains** |
 | `server/src/plugins/host.ts` | plugin discovery, lifecycle, config, secrets, grants |
 | `server/src/devices/catalog.ts` | the devices you added, persisted |

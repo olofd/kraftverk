@@ -54,6 +54,13 @@ const round = (v: number, places = 0) => {
 export class SimulatorDriver implements StationDriver {
   readonly mode = 'simulator' as const;
 
+  /** Where its settings are kept between runs. Tests pass their own. */
+  #file: string;
+
+  constructor(options: { settingsFile?: string } = {}) {
+    this.#file = options.settingsFile ?? SETTINGS_FILE;
+  }
+
   #settings: StationSettings = { ...DEFAULTS };
   #level = 68;
   #expansion = [82.5];
@@ -70,7 +77,7 @@ export class SimulatorDriver implements StationDriver {
 
   async start(): Promise<void> {
     try {
-      const raw = await readFile(SETTINGS_FILE, 'utf8');
+      const raw = await readFile(this.#file, 'utf8');
       const parsed = StationSettingsSchema.safeParse(JSON.parse(raw));
       if (parsed.success) this.#settings = parsed.data;
     } catch (error) {
@@ -86,8 +93,8 @@ export class SimulatorDriver implements StationDriver {
   }
 
   async #persist(): Promise<void> {
-    await mkdir(dirname(SETTINGS_FILE), { recursive: true });
-    await writeFile(SETTINGS_FILE, `${JSON.stringify(this.#settings, null, 2)}\n`, 'utf8');
+    await mkdir(dirname(this.#file), { recursive: true });
+    await writeFile(this.#file, `${JSON.stringify(this.#settings, null, 2)}\n`, 'utf8');
   }
 
   #tick(): void {

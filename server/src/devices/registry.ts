@@ -17,6 +17,7 @@ import type {
 import { boundStation, modelLabel, type DeviceCatalog, type DeviceRecord } from './catalog.ts';
 import type { ConnectionManager } from '../connections/manager.ts';
 import type { PluginHost } from '../plugins/host.ts';
+import { StationSettingsPatchSchema } from '../types.ts';
 
 /**
  * Joins the devices you added to whatever is currently answering.
@@ -276,7 +277,9 @@ export class DeviceRegistry {
     if (record.driver !== 'core.station' || !session) return {};
     // A readback, not an echo: writing the DC input type moves the charging
     // current ceiling on this hardware, so the caller is told what happened.
-    const applied = await session.driver.applySettings(valuesToSettings(patch) as never);
+    // The same schema as the P280 route, so both ways of writing a station's
+    // settings are held to the same bounds before the register whitelist.
+    const applied = await session.driver.applySettings(StationSettingsPatchSchema.parse(valuesToSettings(patch)));
     return applied ? settingsToValues(applied) : {};
   }
 }

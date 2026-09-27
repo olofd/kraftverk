@@ -112,9 +112,21 @@ names such as Docker service names, and names listed in
 `KRAFTVERK_ALLOWED_HOSTS` — anything else gets `421` before any other code runs
 (`server/src/auth/host.ts`).
 
-**CORS.** Only loopback and private-range origins, plus any named in
-`ALLOWED_ORIGINS`, may make credentialed requests. `ALLOWED_ORIGINS=*` is
-refused: with sign-in it would hand every website your session.
+**CORS.** The app the web container serves is same-origin, and the native app
+sends no origin, so neither needs CORS. In production only the origins named
+in `ALLOWED_ORIGINS` may make credentialed requests; in development the Expo
+dev server on a private address is allowed too, on its own ports (8081,
+19006). It used to be every private address on any port — and a browser
+treats another port on the same host as the same site, so the session cookie
+went along: any other web app on the NAS with a script-injection hole could
+have used this server as you. `ALLOWED_ORIGINS=*` is refused: with sign-in it
+would hand every website your session.
+
+**Secrets from setup helpers.** A plugin's setup step that finds a secret —
+fetching a Tuya local key — gives the app a short-lived placeholder, not the
+value. Saving the form turns the placeholder back into the secret on the
+server. No secret is ever sent to a browser, including the one it just asked
+for.
 
 **Clickjacking, caching, sniffing.** API responses are `Cache-Control:
 no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and
@@ -183,4 +195,10 @@ Stated plainly, so nobody assumes otherwise:
   may *publish* is restricted, but anything on the LAN can connect under the
   station's client id, push the real station off, and report whatever it
   likes in its place. Plain MQTT, unencrypted. Keep port 1883 off the internet.
+- **Plugins are trusted code, not sandboxed.** They run in the server's own
+  process, with everything that process can do: the network, the disk, other
+  plugins' memory. A manifest's `allowedHosts` limits `context.http` only —
+  a plugin that calls `fetch` itself, as the Tuya plugin does for its cloud,
+  is not held to it. Every plugin today is part of this repository. One from
+  anyone else would need a process of its own first.
 - **Anyone with a shell on the server** owns it, and everything on it.

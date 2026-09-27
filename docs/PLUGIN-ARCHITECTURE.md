@@ -28,7 +28,7 @@ arming gate, Home Assistant plugin — are still design only.
 | Storage | `server/src/history/db.ts` | `bun:sqlite`; config, secrets, grants, audit timeline |
 | Tuya plugin | `packages/plugins/tuya-local-grid-relay` | 3.3 / 3.4 / 3.5 framing, session handshake, discovery, ATORCH profile |
 | Fake plugin | `packages/plugins/fake-grid-relay` | in-memory relay with injectable faults |
-| API | `server/src/index.ts` | `/api/plugins`, `/api/grid`, `/api/audit` |
+| API | `server/src/routes/plugins.ts`, `grid.ts`, `admin.ts` | `/api/plugins`, `/api/grid`, `/api/audit` |
 
 Verified end to end against the simulator: grant refusal, confirmation requirement, dwell, stale
 telemetry refusal, `verified`, and `unverified` when the plug reports success but the station's AC

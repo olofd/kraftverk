@@ -225,7 +225,10 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
       user: user ? { id: user.id, username: user.username } : null,
       // Only consulted for setup: signing in is required everywhere.
       onHomeNetwork: trust.onHomeNetwork,
-      reason: trust.reason,
+      // The whole reasoning — which proxy, which address — for someone signed
+      // in or at home. A stranger on the internet only needs to know it is
+      // not the home network; the details describe how this server is set up.
+      reason: user || trust.onHomeNetwork ? trust.reason : 'Not on the home network',
       setupRequired: users === 0,
       canSetup: users === 0 && trust.onHomeNetwork,
     });

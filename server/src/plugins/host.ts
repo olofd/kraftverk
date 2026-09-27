@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -17,6 +18,7 @@ import {
   type PluginManifest,
   type PluginStatus,
   type Resource,
+  type SetupActionResult,
 } from '@kraftverk/plugin-sdk';
 
 import { audit, db, openSecret, sealSecret } from '../history/db.ts';
@@ -34,6 +36,9 @@ import { audit, db, openSecret, sealSecret } from '../history/db.ts';
 
 const PLUGIN_ROOT = resolve(import.meta.dirname, '../../../packages/plugins');
 const CALL_TIMEOUT_MS = 10_000;
+/** What a held secret looks like in the browser: a reference, never the value. */
+const HELD_PREFIX = 'held:';
+const HELD_FOR_MS = 30 * 60_000;
 
 export type PluginInstance = {
   manifest: PluginManifest;
@@ -102,28 +107,33 @@ export class PluginHost {
         };
         const plugin = module.default?.();
         if (!plugin) throw new Error('the package has no default export returning a plugin');
-
-        const { manifest } = plugin;
-        if (!isCompatible(manifest.apiVersion)) {
-          console.warn(
-            `[plugins] ${manifest.id} targets API ${manifest.apiVersion}; this server speaks 1. Disabled.`
-          );
-          continue;
-        }
-
-        this.#instances.set(manifest.id, {
-          manifest,
-          plugin,
-          status: 'installed',
-          error: null,
-          capabilities: new Map(),
-          timers: [],
-          config: {},
-        });
+        this.install(plugin);
       } catch (error) {
         console.warn(`[plugins] could not load ${entry}:`, (error as Error).message);
       }
     }
+  }
+
+  /**
+   * Adds one constructed plugin. What discovery does for each package it
+   * finds, and how a test brings its own plugin without a package.
+   */
+  install(plugin: KraftverkPlugin): boolean {
+    const { manifest } = plugin;
+    if (!isCompatible(manifest.apiVersion)) {
+      console.warn(`[plugins] ${manifest.id} targets API ${manifest.apiVersion}; this server speaks 1. Disabled.`);
+      return false;
+    }
+    this.#instances.set(manifest.id, {
+      manifest,
+      plugin,
+      status: 'installed',
+      error: null,
+      capabilities: new Map(),
+      timers: [],
+      config: {},
+    });
+    return true;
   }
 
   /** Starts every plugin the user has enabled and configured. */
@@ -264,18 +274,75 @@ export class PluginHost {
    * Persists configuration. Secrets are split off into their own table and are
    * never written into the config JSON, so an export or a log cannot leak them.
    */
-  async setConfig(id: string, values: Record<string, unknown>, by = 'user'): Promise<void> {
+  /**
+   * Secrets a setup action found, held here rather than sent to the browser.
+   *
+   * Fetching a Tuya key used to return it to the app so the form could be
+   * filled in — while everything else promised a secret never leaves the
+   * server. Now the app is given a placeholder, and saving the form swaps the
+   * real value back in. Held briefly: long enough to pick one and save.
+   */
+  #held = new Map<string, { plugin: string; field: string; value: string; expires: number }>();
+
+  /** Runs a plugin's setup action, keeping any secret it returns on the server. */
+  async runSetupAction(id: string, actionId: string, input: Record<string, string | number | boolean>, by = 'user'): Promise<SetupActionResult> {
+    const instance = this.#instances.get(id);
+    if (!instance?.plugin.runSetupAction) throw new Error(`No setup action "${actionId}"`);
+    const result = await instance.plugin.runSetupAction(actionId, input);
+
+    const secrets = new Set(secretFields(instance.manifest.configSchema));
+    const now = Date.now();
+    for (const [token, held] of this.#held) if (held.expires < now) this.#held.delete(token);
+    const hold = (values: ConfigValues | undefined): ConfigValues | undefined => {
+      if (!values) return values;
+      return Object.fromEntries(
+        Object.entries(values).map(([field, value]) => {
+          if (!secrets.has(field) || typeof value !== 'string' || value.length === 0) return [field, value];
+          const token = `${HELD_PREFIX}${randomBytes(12).toString('hex')}`;
+          this.#held.set(token, { plugin: id, field, value, expires: now + HELD_FOR_MS });
+          return [field, token];
+        })
+      );
+    };
+
+    audit({ at: new Date().toISOString(), kind: 'plugin.setup-action', actor: by, summary: `${id}: ran "${actionId}"`, detail: { ok: result.ok } });
+    return {
+      ...result,
+      choices: result.choices?.map((choice) => ({ ...choice, config: hold(choice.config) ?? {} })),
+      suggestedConfig: hold(result.suggestedConfig),
+    };
+  }
+
+  async setConfig(id: string, raw: Record<string, unknown>, by = 'user'): Promise<void> {
     const instance = this.#instances.get(id);
     if (!instance) throw new Error(`No plugin ${id}`);
 
     const schema = instance.manifest.configSchema;
     const secrets = secretFields(schema);
+
+    // A placeholder from a setup action stands for the secret it held.
+    const values = { ...raw };
+    for (const field of secrets) {
+      const value = values[field];
+      if (typeof value !== 'string' || !value.startsWith(HELD_PREFIX)) continue;
+      const held = this.#held.get(value);
+      if (!held || held.plugin !== id || held.field !== field || held.expires < Date.now()) {
+        throw new ConfigError([{ field, message: 'That value has expired. Run the setup step again to fetch it.' }]);
+      }
+      values[field] = held.value;
+      this.#held.delete(value);
+    }
+
     const merged = { ...this.#storedConfig(id), ...values };
+    const stored = this.secretsSet(id);
+    // null clears a stored secret; absent or empty keeps it.
+    const secretFor = (field: string) =>
+      values[field] === null ? undefined : (values[field] || (stored.includes(field) ? 'kept' : undefined));
 
     // Validate the whole thing, secrets included, before storing any of it.
     const validated = validateConfig(schema, {
       ...merged,
-      ...Object.fromEntries(secrets.map((field) => [field, values[field] ?? (this.secretsSet(id).includes(field) ? 'kept' : undefined)])),
+      ...Object.fromEntries(secrets.map((field) => [field, secretFor(field)])),
     });
     if (!validated.ok) {
       throw new ConfigError(validated.issues);
@@ -284,6 +351,10 @@ export class PluginHost {
     const now = new Date().toISOString();
     for (const field of secrets) {
       const value = values[field];
+      if (value === null) {
+        db().query('DELETE FROM plugin_secret WHERE plugin_id = ? AND field = ?').run(id, field);
+        continue;
+      }
       if (typeof value !== 'string' || value.length === 0) continue;
       const sealed = sealSecret(value);
       db()

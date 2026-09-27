@@ -155,35 +155,17 @@ export async function probeServer(url?: string, signal?: AbortSignal): Promise<b
   }
 }
 
-export async function fetchStatus(signal?: AbortSignal) {
-  const { data } = await api.get<StationStatus>('/status', { signal });
-  return data;
-}
-
 export async function fetchVersion(signal?: AbortSignal) {
   const { data } = await api.get<VersionInfo>('/version', { signal });
   return data;
 }
 
-export async function fetchSettings(signal?: AbortSignal) {
-  const { data } = await api.get<StationSettings>('/settings', { signal });
-  return data;
-}
-
-export async function patchSettings(patch: StationSettingsPatch, signal?: AbortSignal) {
-  const { data } = await api.patch<StationSettings>('/settings', patch, { signal });
-  return data;
-}
-
-export async function setPort(id: PortId, enabled: boolean, signal?: AbortSignal) {
-  const { data } = await api.post<StationStatus>(`/ports/${id}`, { enabled }, { signal });
-  return data;
-}
-
-export async function setGridConnected(connected: boolean, signal?: AbortSignal) {
-  const { data } = await api.post<StationStatus>('/grid', { connected }, { signal });
-  return data;
-}
+/*
+  fetchStatus, fetchSettings, patchSettings, setPort and setGridConnected were
+  here, calling /status, /settings, /ports/:id and /grid as a write — routes
+  for "the" station that the server removed when it learned to hold several.
+  Every station is now reached by its device id: see the device routes below.
+*/
 
 // --- the station's link -----------------------------------------------------
 //

@@ -519,7 +519,7 @@ only ever have one. Use the device-scoped routes above.
 | `MQTT_PORT` / `MQTT_HOST` | — | `1883` / `0.0.0.0` | Where the MQTT broker listens for stations |
 | `BROKER_HOST` / `BROKER_ADMIN_URL` | — | `127.0.0.1` / `http://127.0.0.1:3883` | Where the server reaches the broker |
 | `BROKER_SPAWN` | — | on | `0` stops the server starting a broker, for when it runs as its own service. The rest of the broker's settings are in [docs/BROKER.md](docs/BROKER.md#environment) |
-| `ALLOWED_ORIGINS` | — | — | Extra browser origins, comma-separated. Loopback and private ranges are already allowed; `*` is refused |
+| `ALLOWED_ORIGINS` | — | — | Browser origins allowed to call the API with your session, comma-separated. Not needed for the web container (same origin) or the native app; in development the Expo dev server on a private address is allowed on its own. `*` is refused |
 | `KRAFTVERK_ALLOWED_HOSTS` | — | — | Names the server answers to besides addresses and local names, such as a DDNS name. Others get `421` (DNS-rebinding defence) |
 | `KRAFTVERK_TRUSTED_PROXIES` | — | — | The web container, whose home-network/public entrance stamp is believed. See [docs/SECURITY.md](docs/SECURITY.md) |
 | `ALLOW_RAW_MODBUS` | — | — | `1` enables raw frames |
@@ -559,13 +559,16 @@ Two things that workflow taught us, worth knowing before you trust a hypothesis:
 npm test
 ```
 
-283 tests. The protocol ones — frame construction, response parsing, telemetry
+321 tests. The protocol ones — frame construction, response parsing, telemetry
 decoding against captured traffic from real hardware, plus the write-safety
 whitelist and the behaviours confirmed on a P280 — live with the protocol
 package, so they cover every link equally: a direct Bluetooth connection from
 the app runs the code these tests exercise. The rest cover the catalog, the
 connection manager, the action gateway, the device registry, the MQTT broker,
-and accounts and sign-in, written as attacks.
+history, and accounts and sign-in, written as attacks — and the HTTP routes
+themselves, through `createApp` in `server/src/app.ts`, which builds the whole
+API around the simulator and a throwaway database without starting a radio or
+a broker.
 
 Every push also builds both Docker images, starts the stack and attacks it —
 on GitHub and on GitLab alike. See [docs/CI.md](docs/CI.md).

@@ -161,8 +161,10 @@ export type SetupActionResult = {
   /**
    * A single unambiguous answer, applied without a choice.
    *
-   * Secrets are permitted here — this is a direct response to something the
-   * user just asked for, not something stored or logged.
+   * Secret fields may be filled here and in `choices` — the host keeps their
+   * values and hands the app a short-lived placeholder instead, which saving
+   * the configuration turns back into the secret. The value itself never
+   * reaches a browser.
    */
   suggestedConfig?: ConfigValues;
 };
