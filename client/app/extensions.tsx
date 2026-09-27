@@ -349,7 +349,8 @@ function PluginSetup({
       list.push({
         id: 'station',
         title: 'The station it feeds',
-        done: fedStation !== null,
+        // The pairing belongs to whichever plug is the relay, not to this one.
+        done: isActiveProvider && fedStation !== null,
         hint: 'Every switch is checked against this station’s own mains reading',
       });
     }
@@ -607,7 +608,16 @@ function PluginSetup({
                     </YStack>
                   ) : null}
 
-                  {step.id === 'station' ? (
+                  {step.id === 'station' && !isActiveProvider ? (
+                    <YStack padding="$4">
+                      <Text fontSize={12} color="$muted" lineHeight={18}>
+                        Use this plug as the grid relay first. The station chosen here belongs to
+                        whichever plug is the relay, so choosing one now would change it for that plug.
+                      </Text>
+                    </YStack>
+                  ) : null}
+
+                  {step.id === 'station' && isActiveProvider ? (
                     <YStack>
                       <YStack padding="$4" paddingBottom={stations.length > 0 ? '$2' : '$4'}>
                         <Text fontSize={12} color="$muted" lineHeight={18}>
