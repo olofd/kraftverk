@@ -223,11 +223,16 @@ export function useDeviceConnection(device: SavedDeviceView | null): DeviceConne
       try {
         // Through the device's own control route, so a port switch passes the
         // same gateway every other physical action does. The server answers
-        // only once the station reports the output in its new state, and with
-        // that status — which is what the switch shows next.
+        // only once the station reports the output in its new state.
         await gate.run({ [portKey(id)]: enabled }, async () => {
-          const confirmed = await invokeDeviceControl(deviceId, id, enabled);
-          if ('ports' in confirmed) setStatus(confirmed);
+          await invokeDeviceControl(deviceId, id, enabled);
+          /*
+            The station as it is now, read inside the write, so the switch
+            stays on the asked-for position until this lands — from the
+            station's own route, whatever the control route answers with.
+          */
+          const state = await fetchStationDevice(deviceId).catch(() => null);
+          if (state) setStatus(state.status);
         });
         setError(null);
       } catch (err) {
