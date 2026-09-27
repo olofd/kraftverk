@@ -88,9 +88,10 @@ export class LegacyStationImport {
    * Takes the offer.
    *
    * Returns null when there is nothing to import, so the route can answer 409
-   * rather than quietly creating a second station.
+   * rather than quietly creating a second station. `actor` is who took it, for
+   * the timeline.
    */
-  async accept(name?: string): Promise<DeviceRecord | null> {
+  async accept(name?: string, actor = 'user'): Promise<DeviceRecord | null> {
     const offer = await this.offer();
     if (offer.state !== 'offered' || !offer.transport || !offer.boundId) return null;
 
@@ -108,7 +109,7 @@ export class LegacyStationImport {
     audit({
       at: new Date().toISOString(),
       kind: 'device.imported',
-      actor: 'user',
+      actor,
       resource: record.id,
       summary: `Imported the station bound over ${offer.transport} as "${record.name}"`,
       detail: { boundId: offer.boundId, boundAt: offer.boundAt },

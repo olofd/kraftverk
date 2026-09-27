@@ -40,6 +40,16 @@ describe('parseCommand', () => {
     expect(parseCommand(fromHex('1106001a00010000'))).toMatchObject({ kind: 'write', register: 26, crcValid: false });
   });
 
+  test('reads the standard writes this code never sends as writes, not as unknowns', () => {
+    const mask = framed([0x11, 0x16, 0x00, 0x44, 0x00, 0x00, 0x00, 0x00]);
+    expect(parseCommand(mask)).toMatchObject({ kind: 'maskWrite', register: 68, and: 0, or: 0, crcValid: true });
+    expect(describeCommand(mask)).toBe('mask write holding 68 (and 0, or 0)');
+
+    const readWrite = framed([0x11, 0x17, 0x00, 0x00, 0x00, 0x50, 0x00, 0x1a, 0x00, 0x01, 0x02, 0, 1]);
+    expect(parseCommand(readWrite)).toMatchObject({ kind: 'readWriteMany', readStart: 0, readCount: 80, start: 26, count: 1, values: [1] });
+    expect(describeCommand(readWrite)).toBe('read holding 0+80, write holding 26..26 = [1]');
+  });
+
   test('describes frames in words', () => {
     expect(describeCommand(readInputRegisters(0, 80))).toBe('read input 0+80');
     expect(describeCommand(writeRegister(26, 1))).toBe('write holding 26 = 1');
@@ -69,6 +79,23 @@ describe('commandRefusal: register 68 is never set to 0, whoever built the frame
     expect(commandRefusal(frame)).not.toBeNull();
     // And when the frame is truncated before the value arrives.
     expect(commandRefusal(Uint8Array.from([0x11, 0x10, 0x00, 0x44, 0x00, 0x01]))).not.toBeNull();
+  });
+
+  test('refused when written by a mask write (0x16), which can set it to anything', () => {
+    // AND mask 0, OR mask 0: the register becomes 0, whatever it held.
+    expect(commandRefusal(framed([0x11, 0x16, 0x00, 0x44, 0x00, 0x00, 0x00, 0x00]))).toContain('bricks');
+    // A mask to any other register is not this guard's business.
+    expect(commandRefusal(framed([0x11, 0x16, 0x00, 0x43, 0x00, 0x00, 0x00, 0x00]))).toBeNull();
+  });
+
+  test('refused when the write half of a read/write (0x17) spans it', () => {
+    // Read 0+80, write 66..69 with 68 given 0.
+    const frame = framed([0x11, 0x17, 0x00, 0x00, 0x00, 0x50, 0x00, 0x42, 0x00, 0x04, 0x08, 0, 1, 0, 1, 0, 0, 0, 1]);
+    expect(commandRefusal(frame)).toContain('bricks');
+    // And when the frame is truncated before its values arrive.
+    expect(commandRefusal(Uint8Array.from([0x11, 0x17, 0x00, 0x00, 0x00, 0x50, 0x00, 0x44, 0x00, 0x01]))).not.toBeNull();
+    // Reading 68 while writing elsewhere changes nothing on it.
+    expect(commandRefusal(framed([0x11, 0x17, 0x00, 0x00, 0x00, 0x50, 0x00, 0x1a, 0x00, 0x01, 0x02, 0, 1]))).toBeNull();
   });
 
   test('every other value outside the whitelist for 68 is refused as well', () => {

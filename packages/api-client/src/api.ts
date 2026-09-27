@@ -324,6 +324,17 @@ export async function fetchGrid(signal?: AbortSignal) {
   return data;
 }
 
+/**
+ * Says which saved station the relay feeds, or `null` for none.
+ *
+ * The gateway proves every switch against that station's own AC input, so
+ * until one is paired it refuses to switch at all.
+ */
+export async function pairGridStation(deviceId: string | null) {
+  const { data } = await api.post<{ stationDeviceId: string | null }>('/grid/station', { deviceId });
+  return data;
+}
+
 /** Asks the core to switch mains. The gateway decides whether it may. */
 export async function switchGridRelay(on: boolean, reason: string) {
   const { data } = await api.post<RelayCommandResult>('/grid/relay', {

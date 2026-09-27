@@ -3,11 +3,13 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { ConfigSchema, KraftverkPlugin, PluginManifest, SetupActionResult } from '@kraftverk/device-sdk';
+import type { ConfigSchema, KraftverkPlugin, PluginManifest, SetupActionResult, StationId } from '@kraftverk/device-sdk';
+import { readHoldingRegisters, toHex, writeRegister, type ParsedFrame } from '@kraftverk/protocol';
 
 import { ActionGateway, CONFIRMATION_PHRASE } from './actions/gateway.ts';
 import { corsOrigin, createApp } from './app.ts';
 import { createFirstUser } from './auth/store.ts';
+import type { Binding } from './binding.ts';
 import { CLIENT_HEADER, SESSION_COOKIE } from './auth/routes.ts';
 import { CLIENT_IP_HEADER, EXPOSURE_HEADER, ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
@@ -20,6 +22,7 @@ import { SimulatorDriver } from './drivers/simulator.ts';
 import { closeDb, db, openSecret } from './history/db.ts';
 import { Sampler } from './history/sampler.ts';
 import { PluginHost } from './plugins/host.ts';
+import type { TransportHost } from './transport/types.ts';
 
 /**
  * The server's routes, over HTTP, as the app and an attacker reach them.
@@ -125,6 +128,8 @@ function keysPlugin(): KraftverkPlugin {
 let app: ReturnType<typeof createApp>['app'];
 let connections: ConnectionManager;
 let host: PluginHost;
+/** A station bound before the catalog existed, for the tests that offer one. */
+let legacyBinding: Binding | null = null;
 
 beforeAll(async () => {
   process.env.KRAFTVERK_DB = join(dir, 'test.db');
@@ -159,7 +164,12 @@ beforeAll(async () => {
     registry,
     gateway,
     sampler: new Sampler(registry),
-    legacyStation: new LegacyStationImport({ catalog, transport: () => [], stationName: () => 'Power station' }),
+    legacyStation: new LegacyStationImport({
+      catalog,
+      transport: () => ['ble'],
+      stationName: () => 'Power station',
+      binding: async () => legacyBinding,
+    }),
     proxies,
     serverLog: { dir: null, recent: () => [] },
     broker: null,
@@ -206,7 +216,8 @@ async function call(path: string, { method = 'GET', body, cookie, from = '192.16
 let session: string;
 
 beforeEach(async () => {
-  db().exec('DELETE FROM device; DELETE FROM sample; DELETE FROM users; DELETE FROM sessions; DELETE FROM app_state; DELETE FROM plugin_config; DELETE FROM plugin_secret;');
+  db().exec('DELETE FROM device; DELETE FROM sample; DELETE FROM users; DELETE FROM sessions; DELETE FROM app_state; DELETE FROM plugin_config; DELETE FROM plugin_secret; DELETE FROM audit;');
+  legacyBinding = null;
   await connections.sync([]);
   await createFirstUser('olof', PASSWORD);
   session = (await call('/auth/login', { method: 'POST', body: { username: 'olof', password: PASSWORD } })).token!;
@@ -239,6 +250,22 @@ describe('devices', () => {
     expect((await as(`/devices/${encodeURIComponent(station.id)}`, { method: 'DELETE' })).status).toBe(200);
     expect(connections.sessions).toHaveLength(0);
     expect((await as('/grid')).body?.stationDeviceId).toBeNull();
+  });
+
+  test('a station imported from before the catalog is paired with the relay, as an added one is', async () => {
+    legacyBinding = { kind: 'ble', id: 'AABBCCDDEEFF', boundAt: '2026-01-01T00:00:00.000Z' };
+    expect((await as('/migration/station')).body?.state).toBe('offered');
+
+    const imported = await as('/migration/station/import', { method: 'POST', body: {} });
+    expect(imported.status).toBe(200);
+    const id = (imported.body as { id: string }).id;
+
+    // Otherwise every switch of the relay is refused, and the app offers no way to pair one.
+    expect((await as('/grid')).body?.stationDeviceId).toBe(id);
+    // Both entries name who did it, like every other change to the catalog.
+    const entries = (await as('/audit')).body as unknown as { kind: string; actor: string }[];
+    expect(entries.find((entry) => entry.kind === 'device.imported')?.actor).toBe('olof');
+    expect(entries.find((entry) => entry.kind === 'relay.paired')?.actor).toBe('olof');
   });
 
   test('nothing is stored that no driver provides', async () => {
@@ -367,5 +394,113 @@ describe('the sign-in state', () => {
     expect(outside.body).toMatchObject({ onHomeNetwork: false, reason: 'Not on the home network' });
     const home = await call('/auth/state');
     expect(String(home.body?.reason)).toContain('192.168.50.58');
+  });
+});
+
+describe('raw frames', () => {
+  /** One station's link, recording what reached it. */
+  class RecordingLink {
+    readonly kind = 'ble' as const;
+    readonly connected = true;
+    sent: string[] = [];
+    constructor(readonly boundId: StationId) {}
+    async send(frame: Uint8Array) {
+      this.sent.push(toHex(frame));
+    }
+    async request(): Promise<ParsedFrame> {
+      throw new Error('not answering');
+    }
+    onFrame() {
+      return () => {};
+    }
+    async close() {}
+  }
+
+  let links: RecordingLink[];
+
+  /** A server on real hardware, as protocol work runs it: raw frames on, writes off. */
+  async function hardwareApp(readOnly: boolean) {
+    links = [];
+    const radio: TransportHost = {
+      kind: 'ble',
+      start: async () => {},
+      stop: async () => {},
+      discovered: () => [],
+      onDiscovery: () => () => {},
+      openIds: () => links.map((link) => link.boundId),
+      open: async (station) => {
+        const link = new RecordingLink(station);
+        links.push(link);
+        return link;
+      },
+    };
+    const config = loadConfig(
+      { NODE_ENV: 'test', STATION_DRIVER: 'ble', ALLOW_RAW_MODBUS: '1', READ_ONLY: readOnly ? '1' : '0', KRAFTVERK_BASELINE_FILE: join(dir, 'baseline.json') },
+      []
+    );
+    const catalog = new DeviceCatalog();
+    const hardware = new ConnectionManager({
+      transports: config.transports,
+      simulate: false,
+      readOnly: config.readOnly,
+      host: () => radio,
+      simulator: () => new SimulatorDriver({ settingsFile: join(dir, 'sim-settings.json') }),
+    });
+    const record = catalog.add({ type: 'power-station', driver: 'core.station', name: 'Bench', config: { transport: 'ble', boundId: 'AABBCCDDEEFF' } });
+    await hardware.sync(catalog.list());
+    const registry = new DeviceRegistry(catalog, host, hardware);
+    const { app: server } = createApp({
+      config,
+      catalog,
+      connections: hardware,
+      host,
+      registry,
+      gateway: new ActionGateway({ host, readStation: () => relayStation(hardware), isReadOnly: () => hardware.readOnly }),
+      sampler: new Sampler(registry),
+      legacyStation: new LegacyStationImport({ catalog, transport: () => [], stationName: () => 'Power station' }),
+      proxies: new ProxyDirectory(PROXY),
+      serverLog: { dir: null, recent: () => [] },
+      broker: null,
+      startedAt: new Date(),
+    });
+    const send = async (hex: string) => {
+      const response = await server.fetch(
+        new Request('http://192.168.50.140:3333/api/diagnostics/raw', {
+          method: 'POST',
+          headers: { host: '192.168.50.140:3333', 'content-type': 'application/json', [CLIENT_HEADER]: 'test', cookie: `${SESSION_COOKIE}=${session}` },
+          body: JSON.stringify({ hex, deviceId: record.id }),
+        }),
+        { requestIP: () => ({ address: '192.168.50.58' }) }
+      );
+      return response.status;
+    };
+    return { send, close: () => hardware.closeAll() };
+  }
+
+  test('a read-only server sends no write, however the frame is spelled', async () => {
+    const server = await hardwareApp(true);
+    try {
+      // AC output on: 0x06, and the same change as 0x10, 0x16 and 0x17.
+      for (const hex of [toHex(writeRegister(26, 1)), '1110001a0001020001', '1116001a00000001', '11170000000a001a0001020001']) {
+        expect(await server.send(hex)).toBe(423);
+      }
+      expect(links[0]!.sent).toEqual([]);
+
+      // Reading changes nothing, so read-only is no reason to refuse it.
+      expect(await server.send(toHex(readHoldingRegisters(0, 80)))).toBe(200);
+      expect(links[0]!.sent).toEqual([toHex(readHoldingRegisters(0, 80))]);
+    } finally {
+      await server.close();
+    }
+  });
+
+  test('with writes allowed, a raw write is sent', async () => {
+    const server = await hardwareApp(false);
+    try {
+      expect(await server.send(toHex(writeRegister(26, 1)))).toBe(200);
+      expect(links[0]!.sent).toEqual([toHex(writeRegister(26, 1))]);
+    } finally {
+      await server.close();
+    }
   });
 });

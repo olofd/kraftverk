@@ -6,7 +6,7 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
 import { stationId } from '@kraftverk/device-sdk';
-import { commandRefusal, describeCommand, describeRegisters, fromHex, parseFrame, toHex, type RegisterDump } from '@kraftverk/protocol';
+import { commandRefusal, describeCommand, describeRegisters, fromHex, parseCommand, parseFrame, toHex, type RegisterDump } from '@kraftverk/protocol';
 
 import { BleHost, BleLink } from '../transport/ble.ts';
 import { auditDevice, bindTarget, body, hardwareOr400, stationSession, type AppDeps } from './shared.ts';
@@ -281,6 +281,20 @@ export function diagnosticsRoutes({ config, connections, broker, serverLog }: Ap
     // is what they are for — but never this one rule, on either transport.
     const refusal = commandRefusal(frame);
     if (refusal) throw new HTTPException(400, { message: refusal });
+
+    /*
+      Nor read-only mode. That guard lives in the driver, and a raw frame goes
+      straight to the link past it — so a server started read-only to bring up
+      an unfamiliar unit would still write whatever frame it was handed. Only a
+      frame that is plainly a read can change nothing: anything else, a
+      function this code does not know included, may write.
+    */
+    if (connections.readOnly && parseCommand(frame)?.kind !== 'read') {
+      return c.json(
+        { error: `Refused to send ${describeCommand(frame)}: this server is read-only, and only reads are sent.`, readOnly: true },
+        423
+      );
+    }
     await link.send(frame);
     auditDevice(c, 'station.raw', target, `Sent a raw frame: ${describeCommand(frame)}`, { hex: toHex(frame) });
     return c.json({ sent: toHex(frame), to: link.boundId, parsedAsRequest: parseFrame(frame) });

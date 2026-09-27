@@ -491,11 +491,12 @@ not a boolean: `health.status` is one of `connected`, `connecting`, `offline`,
 | `GET` | `/diagnostics/traffic` · `/gatt` · `/blocked` | Frames (both directions, from the broker's record), GATT, refused writes |
 | `GET` | `/diagnostics/broker` · `/diagnostics/broker/journal` | The MQTT broker: process, stations, clients, counters; and its journal (`?after=`, `?level=debug`) |
 | `GET` | `/diagnostics/log` | The server's own recent log (`?level=warn`, `?limit=`), and where its daily files are |
-| `POST` | `/diagnostics/raw` | Arbitrary frame — needs `ALLOW_RAW_MODBUS=1` |
+| `POST` | `/diagnostics/raw` | Arbitrary frame — needs `ALLOW_RAW_MODBUS=1`; reads only while read-only |
 | `GET` | `/plugins` | Installed extensions: status, health, data age, grants |
 | `GET` `PATCH` | `/plugins/:id/config` | Setup form schema and values; secrets are write-only |
 | `POST` | `/plugins/:id/enable` · `/test` · `/grants` · `/provider` | Lifecycle, side-effect-free probe, capability consent, provider choice |
 | `GET` | `/grid` | Grid-relay state, freshness and active provider |
+| `POST` | `/grid/station` | Which saved station the relay feeds — every switch is verified against it |
 | `POST` | `/grid/relay` | Switch mains — through the action gateway, confirmation required |
 | `GET` | `/audit` | The timeline: intents, commands, verification outcomes |
 

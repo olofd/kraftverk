@@ -225,6 +225,13 @@ export type PluginConfig = {
 export type GridStatus = {
   provider: string | null;
   granted: boolean;
+  /**
+   * The saved station this relay feeds — what a switch is verified against.
+   * Null until paired, and until then every switch is refused.
+   */
+  stationDeviceId: string | null;
+  /** Whether the server holds a live session for that station. */
+  stationPresent: boolean;
   state:
     | (import('@kraftverk/device-sdk').RelayState & { provider: string })
     | null;

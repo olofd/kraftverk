@@ -12,6 +12,7 @@ import {
   fetchGrid,
   fetchPluginConfig,
   fetchPlugins,
+  pairGridStation,
   patchPluginConfig,
   runSetupAction,
   setPluginEnabled,
@@ -31,8 +32,10 @@ import type {
   PluginSummary,
   SetupActionResult,
 } from '@kraftverk/api-client';
+import { Pressable } from '../src/components/Pressable';
 import { panelFor } from '../src/plugins/panels';
 import { useAuth } from '../src/state/AuthProvider';
+import { useDevices } from '../src/state/DevicesProvider';
 
 /**
  * Extensions: what is installed, and getting each one working.
@@ -297,6 +300,15 @@ function PluginSetup({
 
   const actuators = plugin.capabilities.filter(isActuator);
   const granted = actuators.every((capability) => plugin.grants.includes(capability));
+  /*
+    Which station the relay feeds. The gateway proves every switch against that
+    station's own AC input, and refuses outright while there is none — which is
+    where a relay was left after its station was forgotten, with nothing in the
+    app to say which of the others it feeds instead.
+  */
+  const { devices } = useDevices();
+  const stations = devices.filter((device) => device.record.type === 'power-station');
+  const fedStation = stations.find((station) => station.id === grid?.stationDeviceId) ?? null;
   const configured =
     config !== null && isComplete(config.schema, draft, config.secretsSet) && plugin.status !== 'needs-configuration';
 
@@ -334,9 +346,25 @@ function PluginSetup({
         done: isActiveProvider,
         hint: 'Only one plug may own the station’s AC input',
       });
+      list.push({
+        id: 'station',
+        title: 'The station it feeds',
+        done: fedStation !== null,
+        hint: 'Every switch is checked against this station’s own mains reading',
+      });
     }
     return list;
-  }, [actuators.length, configured, granted, isActiveProvider, plugin.enabled, plugin.kind, plugin.setupActions.length, plugin.status]);
+  }, [
+    actuators.length,
+    configured,
+    fedStation,
+    granted,
+    isActiveProvider,
+    plugin.enabled,
+    plugin.kind,
+    plugin.setupActions.length,
+    plugin.status,
+  ]);
 
   const current = steps.find((step) => !step.done)?.id ?? null;
   const expanded = openStep ?? current;
@@ -576,6 +604,50 @@ function PluginSetup({
                           Use this plug
                         </Button>
                       ) : null}
+                    </YStack>
+                  ) : null}
+
+                  {step.id === 'station' ? (
+                    <YStack>
+                      <YStack padding="$4" paddingBottom={stations.length > 0 ? '$2' : '$4'}>
+                        <Text fontSize={12} color="$muted" lineHeight={18}>
+                          {stations.length === 0
+                            ? 'Add the power station this plug feeds under Your devices first. Until one is chosen here, the relay will not be switched.'
+                            : fedStation
+                              ? `Cutting or restoring mains counts as done only once ${fedStation.name} reports its AC input going or coming back.`
+                              : 'Choose the power station plugged into this plug. Cutting or restoring mains counts as done only once that station reports it, so until one is chosen the relay will not be switched.'}
+                        </Text>
+                      </YStack>
+                      {stations.map((station, index) => {
+                        const chosen = station.id === fedStation?.id;
+                        return (
+                          <YStack key={station.id}>
+                            {index > 0 ? <RowSeparator /> : null}
+                            <Pressable
+                              selected={chosen}
+                              label={station.name}
+                              disabled={busy}
+                              onPress={() => {
+                                if (chosen) return;
+                                haptic();
+                                void act(() => pairGridStation(station.id), `The relay now feeds ${station.name}.`);
+                              }}
+                            >
+                              <Row
+                                title={station.name}
+                                subtitle={station.description}
+                                accessory={
+                                  <Feather
+                                    name={chosen ? 'disc' : 'circle'}
+                                    size={16}
+                                    color={chosen ? theme.accent?.val : theme.muted?.val}
+                                  />
+                                }
+                              />
+                            </Pressable>
+                          </YStack>
+                        );
+                      })}
                     </YStack>
                   ) : null}
                 </>

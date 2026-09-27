@@ -412,8 +412,17 @@ export function commandRefusal(frame: Uint8Array): string | null {
       return `Refused: ${(error as Error).message}. Register ${sleep} set to 0 permanently bricks the station.`;
     }
   }
-  if (command.kind === 'writeMany' && command.start <= sleep && sleep < command.start + command.count) {
+  if (
+    (command.kind === 'writeMany' || command.kind === 'readWriteMany') &&
+    command.start <= sleep &&
+    sleep < command.start + command.count
+  ) {
     return `Refused: a multi-register write spanning register ${sleep}, which bricks the station if set to 0.`;
+  }
+  // Whatever the masks: the result depends on a value this guard cannot see,
+  // and AND 0 / OR 0 is the brick write spelled differently.
+  if (command.kind === 'maskWrite' && command.register === sleep) {
+    return `Refused: a mask write to register ${sleep}, which bricks the station if it ends up 0.`;
   }
   return null;
 }

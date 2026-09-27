@@ -38,7 +38,8 @@ export function relayStation(connections: ConnectionManager): StationReading {
   if (!deviceId) {
     return {
       status: null,
-      reason: 'No station is paired with the grid relay, so switching it cannot be verified. Pair one with POST /api/grid/station.',
+      reason:
+        'No station is paired with the grid relay, so switching it cannot be verified. Choose the station it feeds in the relay’s setup, under Extensions.',
     };
   }
   const session = connections.get(deviceId);

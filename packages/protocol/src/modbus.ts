@@ -161,11 +161,25 @@ export type ParsedCommand = { crcValid: boolean; address: number } & (
   | { kind: 'write'; register: number; value: number }
   /** `values` may be shorter than `count` when the frame is truncated. */
   | { kind: 'writeMany'; start: number; count: number; values: number[] }
+  /**
+   * Function 0x16: the register becomes `(current AND and) OR (or AND NOT and)`.
+   * The masks are null when the frame is truncated before them.
+   */
+  | { kind: 'maskWrite'; register: number; and: number | null; or: number | null }
+  /** Function 0x17: one read and one multi-register write, in a single frame. */
+  | { kind: 'readWriteMany'; readStart: number; readCount: number; start: number; count: number; values: number[] }
   | { kind: 'other'; fn: number }
 );
 
-/** Function 0x10. Never built here; recognised so a guard can refuse it. */
+/**
+ * Functions 0x10, 0x16 and 0x17. Never built here; recognised so a guard can
+ * refuse them. All three write holding registers — 0x16 and 0x17 as surely as
+ * 0x10 — and a guard that knew only the ones this code sends would be trusting
+ * the firmware not to implement the rest of the standard.
+ */
 const WRITE_MULTIPLE = 0x10;
+const MASK_WRITE = 0x16;
+const READ_WRITE_MULTIPLE = 0x17;
 
 export function parseCommand(payload: Uint8Array): ParsedCommand | null {
   if (payload.length < 4) return null;
@@ -191,6 +205,18 @@ export function parseCommand(payload: Uint8Array): ParsedCommand | null {
     for (let i = 0; i < count && 7 + i * 2 + 1 < payload.length; i++) values.push(word(7 + i * 2));
     return { ...common, kind: 'writeMany', start, count, values };
   }
+  if (fn === MASK_WRITE && payload.length >= 6) {
+    // [addr][fn][register:2][and:2][or:2][crc:2]
+    const masks = payload.length >= 10;
+    return { ...common, kind: 'maskWrite', register: word(2), and: masks ? word(4) : null, or: masks ? word(6) : null };
+  }
+  if (fn === READ_WRITE_MULTIPLE && payload.length >= 10) {
+    // [addr][fn][readStart:2][readCount:2][writeStart:2][writeCount:2][byteCount][data...][crc:2]
+    const count = word(8);
+    const values: number[] = [];
+    for (let i = 0; i < count && 11 + i * 2 + 1 < payload.length; i++) values.push(word(11 + i * 2));
+    return { ...common, kind: 'readWriteMany', readStart: word(2), readCount: word(4), start: word(6), count, values };
+  }
   return { ...common, kind: 'other', fn };
 }
 
@@ -206,6 +232,14 @@ export function describeCommand(payload: Uint8Array): string {
       return `write holding ${command.register} = ${command.value}${suffix}`;
     case 'writeMany':
       return `write holding ${command.start}..${command.start + command.count - 1} = [${command.values.join(', ')}]${suffix}`;
+    case 'maskWrite':
+      return `mask write holding ${command.register}${
+        command.and === null || command.or === null ? '' : ` (and ${command.and}, or ${command.or})`
+      }${suffix}`;
+    case 'readWriteMany':
+      return `read holding ${command.readStart}+${command.readCount}, write holding ${command.start}..${
+        command.start + command.count - 1
+      } = [${command.values.join(', ')}]${suffix}`;
     case 'other':
       return `function 0x${command.fn.toString(16).padStart(2, '0')}${suffix}`;
   }

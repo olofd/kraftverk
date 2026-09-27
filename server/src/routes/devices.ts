@@ -6,7 +6,7 @@ import { savedDeviceId, secretFields, validateConfig as validatePluginConfig } f
 
 import { actorOf } from '../auth/routes.ts';
 import type { StationSession } from '../connections/manager.ts';
-import { STATION_MODELS } from '../devices/catalog.ts';
+import { STATION_MODELS, type DeviceRecord } from '../devices/catalog.ts';
 import { pairedStation, pairStation } from '../devices/relay-pairing.ts';
 import { series } from '../history/sampler.ts';
 import { PortIdSchema, StationSettingsPatchSchema } from '../types.ts';
@@ -57,6 +57,22 @@ export function deviceRoutes({ catalog, connections, host, registry, gateway, le
     }),
   ]);
 
+  /*
+    Pair the relay with the first station you own, and record the id. This is
+    the one moment the answer is unambiguous, so it is the moment to write it
+    down — rather than re-deriving "the only station" at every switch, which
+    would quietly become the wrong station the day a second is added.
+
+    Both ways a station arrives go through here. An imported one used to be
+    left unpaired, and every switch of the relay was then refused with no
+    control anywhere in the app to put it right.
+  */
+  const pairFirstStation = (c: Context, record: DeviceRecord) => {
+    if (record.type !== 'power-station' || pairedStation()) return;
+    pairStation(record.id);
+    auditDevice(c, 'relay.paired', record.id, `The grid relay is assumed to feed "${record.name}"`);
+  };
+
   api.get('/devices', async (c) => c.json({ devices: await registry.all() }));
 
   // --- the legacy station import ------------------------------------------
@@ -65,9 +81,10 @@ export function deviceRoutes({ catalog, connections, host, registry, gateway, le
 
   api.post('/migration/station/import', async (c) => {
     const { name } = await body(c, z.object({ name: z.string().min(1).max(60).optional() }));
-    const record = await legacyStation.accept(name);
+    const record = await legacyStation.accept(name, actorOf(c));
     if (!record) throw new HTTPException(409, { message: 'There is no station to import' });
-    // The imported station gets its link straight away, as an added one does.
+    // The imported station is paired and gets its link straight away, as an added one does.
+    pairFirstStation(c, record);
     await connections.sync(catalog.list());
     return c.json(await registry.find(record.id));
   });
@@ -113,16 +130,7 @@ export function deviceRoutes({ catalog, connections, host, registry, gateway, le
 
     auditDevice(c, 'device.added', record.id, `Added "${record.name}" (${record.driver})`, { type: record.type, model: record.model });
 
-    /*
-      Pair the relay with the first station added, and record the id. This is
-      the one moment the answer is unambiguous, so it is the moment to write it
-      down — rather than re-deriving "the only station" at every switch, which
-      would quietly become the wrong station the day a second is added.
-    */
-    if (record.type === 'power-station' && !pairedStation()) {
-      pairStation(record.id);
-      auditDevice(c, 'relay.paired', record.id, `The grid relay is assumed to feed "${record.name}"`);
-    }
+    pairFirstStation(c, record);
 
     // Adding a station opens its link, rather than waiting for a restart.
     await connections.sync(catalog.list());
