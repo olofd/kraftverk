@@ -1,4 +1,4 @@
-import { providerDeviceId, savedDeviceId, stationId } from '@kraftverk/plugin-sdk';
+import { providerDeviceId, savedDeviceId, stationId } from '@kraftverk/device-sdk';
 
 import type { ConnectionManager } from './manager.ts';
 

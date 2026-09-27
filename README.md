@@ -584,7 +584,7 @@ under `NODE_ENV=test`.
 ## Project layout
 
 ```
-packages/plugin-sdk/     the extension contract: manifests, capabilities, devices
+packages/device-sdk/     the device-type contract: capabilities, telemetry, setup guides, the contract suite
   src/identity.ts        which id is which, and what "connected" means
 packages/ui/             shared interface primitives, used by the app and by devices
 packages/api-client/     every API endpoint, and the shapes the server sends

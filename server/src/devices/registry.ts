@@ -4,7 +4,7 @@ import {
   settingsToValues,
   valuesToSettings,
 } from '@kraftverk/device-aferiy-p280';
-import { providerDeviceId } from '@kraftverk/plugin-sdk';
+import { providerDeviceId } from '@kraftverk/device-sdk';
 import type {
   ConfigValues,
   ConnectionHealth,
@@ -12,7 +12,7 @@ import type {
   ProviderDeviceId,
   Reading,
   SavedDeviceId,
-} from '@kraftverk/plugin-sdk';
+} from '@kraftverk/device-sdk';
 
 import { boundStation, modelLabel, type DeviceCatalog, type DeviceRecord } from './catalog.ts';
 import type { ConnectionManager } from '../connections/manager.ts';
@@ -136,7 +136,7 @@ export class DeviceRegistry {
         record,
         name: record.name,
         providerName: null,
-        kind: 'smart-plug',
+        category: 'smart-plug',
         icon: 'power',
         measurements: [],
         controls: [],
@@ -298,7 +298,7 @@ const withoutIdentity = (descriptor: DeviceDescriptor): Omit<DeviceDescriptor, '
 
 /** A driver's health, in the vocabulary a connection speaks. */
 const pluginStatus = (
-  status: import('@kraftverk/plugin-sdk').PluginHealth['status'],
+  status: import('@kraftverk/device-sdk').PluginHealth['status'],
   answering: boolean
 ): ConnectionHealth['status'] => {
   switch (status) {

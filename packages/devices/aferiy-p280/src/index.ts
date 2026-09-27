@@ -2,9 +2,9 @@ import type {
   ConfigSchema,
   ControlSpec,
   DeviceDescriptor,
-  MeasurementSpec,
+  MetricSpec,
   Reading,
-} from '@kraftverk/plugin-sdk';
+} from '@kraftverk/device-sdk';
 import type { StationSettings, StationStatus } from '@kraftverk/protocol';
 
 /**
@@ -20,23 +20,30 @@ import type { StationSettings, StationStatus } from '@kraftverk/protocol';
  * screens. Neither needs to know what a P280 is.
  */
 
-export const MEASUREMENTS: MeasurementSpec[] = [
-  { key: 'soc', label: 'Charge', unit: '%', kind: 'percent', precision: 1, primary: true },
-  { key: 'inputWatts', label: 'Input', unit: 'W', kind: 'power', precision: 0 },
-  { key: 'outputWatts', label: 'Output', unit: 'W', kind: 'power', precision: 0 },
-  { key: 'solarWatts', label: 'Solar', unit: 'W', kind: 'power', precision: 0 },
-  { key: 'acInputWatts', label: 'From mains', unit: 'W', kind: 'power', precision: 0 },
-  { key: 'acInputVolts', label: 'Mains voltage', unit: 'V', kind: 'voltage', precision: 1 },
-  { key: 'acOutputVolts', label: 'Inverter voltage', unit: 'V', kind: 'voltage', precision: 1 },
-  { key: 'minutesRemaining', label: 'Runtime left', unit: 'min', kind: 'duration', precision: 0 },
-  { key: 'minutesToFull', label: 'Time to full', unit: 'min', kind: 'duration', precision: 0 },
-  { key: 'gridConnected', label: 'Mains present', unit: '', kind: 'state' },
-  { key: 'acOn', label: 'AC outlets', unit: '', kind: 'state' },
-  { key: 'dcOn', label: '12V DC', unit: '', kind: 'state' },
-  { key: 'usbOn', label: 'USB', unit: '', kind: 'state' },
-  { key: 'acWatts', label: 'AC outlet draw', unit: 'W', kind: 'power', precision: 0 },
-  { key: 'dcWatts', label: 'DC draw', unit: 'W', kind: 'power', precision: 0 },
-  { key: 'usbWatts', label: 'USB draw', unit: 'W', kind: 'power', precision: 0 },
+/**
+ * What the station reports.
+ *
+ * The keys are what history has been stored under since the first release, so
+ * they stay as they are; `metric` is what each one means, in the standard
+ * vocabulary every device shares (docs/ARCHITECTURE.md §4.2).
+ */
+export const MEASUREMENTS: MetricSpec[] = [
+  { key: 'soc', label: 'Charge', unit: '%', kind: 'percent', metric: 'battery.soc', precision: 1, primary: true },
+  { key: 'inputWatts', label: 'Input', unit: 'W', kind: 'power', metric: 'power.in', precision: 0 },
+  { key: 'outputWatts', label: 'Output', unit: 'W', kind: 'power', metric: 'power.out', precision: 0 },
+  { key: 'solarWatts', label: 'Solar', unit: 'W', kind: 'power', metric: 'power.in.solar', precision: 0 },
+  { key: 'acInputWatts', label: 'From mains', unit: 'W', kind: 'power', metric: 'power.in.ac', precision: 0 },
+  { key: 'acInputVolts', label: 'Mains voltage', unit: 'V', kind: 'voltage', metric: 'voltage.ac', precision: 1 },
+  { key: 'acOutputVolts', label: 'Inverter voltage', unit: 'V', kind: 'voltage', metric: 'p280.inverterVolts', precision: 1 },
+  { key: 'minutesRemaining', label: 'Runtime left', unit: 'min', kind: 'duration', metric: 'p280.minutesRemaining', precision: 0 },
+  { key: 'minutesToFull', label: 'Time to full', unit: 'min', kind: 'duration', metric: 'p280.minutesToFull', precision: 0 },
+  { key: 'gridConnected', label: 'Mains present', unit: '', kind: 'state', metric: 'grid.present' },
+  { key: 'acOn', label: 'AC outlets', unit: '', kind: 'state', metric: 'outlet.ac.on' },
+  { key: 'dcOn', label: '12V DC', unit: '', kind: 'state', metric: 'outlet.dc.on' },
+  { key: 'usbOn', label: 'USB', unit: '', kind: 'state', metric: 'outlet.usb.on' },
+  { key: 'acWatts', label: 'AC outlet draw', unit: 'W', kind: 'power', metric: 'outlet.ac.power', precision: 0 },
+  { key: 'dcWatts', label: 'DC draw', unit: 'W', kind: 'power', metric: 'outlet.dc.power', precision: 0 },
+  { key: 'usbWatts', label: 'USB draw', unit: 'W', kind: 'power', metric: 'outlet.usb.power', precision: 0 },
 ];
 
 /**
@@ -54,10 +61,18 @@ export const MEASUREMENTS: MeasurementSpec[] = [
  * cannot honour.
  */
 export const CONTROLS: ControlSpec[] = [
-  { id: 'ac', label: 'AC outlets', kind: 'switch', capability: 'station.ports', measurementKey: 'acOn' },
-  { id: 'dc', label: '12V DC / car port', kind: 'switch', capability: 'station.ports', measurementKey: 'dcOn' },
-  { id: 'usb', label: 'USB-A + USB-C', kind: 'switch', capability: 'station.ports', measurementKey: 'usbOn' },
+  { id: 'ac', label: 'AC outlets', kind: 'switch', capability: 'outlets', target: 'ac', measurementKey: 'acOn' },
+  { id: 'dc', label: '12V DC / car port', kind: 'switch', capability: 'outlets', target: 'dc', measurementKey: 'dcOn' },
+  { id: 'usb', label: 'USB-A + USB-C', kind: 'switch', capability: 'outlets', target: 'usb', measurementKey: 'usbOn' },
 ];
+
+/**
+ * What a P280 can do, in the shared vocabulary: report its battery, switch its
+ * outlets, and say whether mains is reaching it. Not `powerMeter` — that is a
+ * meter on what flows through a device, a plug's; the station's own input and
+ * output are `power.in` and `power.out`.
+ */
+export const CAPABILITIES = ['battery', 'outlets', 'acInput'] as const;
 
 /**
  * The station's own settings.
@@ -217,13 +232,13 @@ export function descriptor(id: string, name: string, model: string): DeviceDescr
   return {
     id,
     name,
-    kind: 'power-station',
+    category: 'power-station',
     icon: 'zap',
     description: model,
     measurements: MEASUREMENTS,
     controls: CONTROLS,
     settings: { schema: SETTINGS_SCHEMA, dangerous: [...DANGEROUS_SETTINGS] },
-    capabilities: ['station.ports'],
+    capabilities: CAPABILITIES,
   };
 }
 

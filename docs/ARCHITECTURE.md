@@ -173,15 +173,22 @@ addition at a time.
 
 | Capability | Interface (sketch) | Safety | Standard telemetry |
 |---|---|---|---|
-| `switch` | `state()`, `set(on)` | confirm when turning off a device declared critical, or feeding a link | `switch.on` |
-| `powerMeter` | `read(): { watts, volts?, amps?, kwh? }` | read-only | `power.draw`, `energy.total` |
-| `battery` | `read(): { socPercent, capacityWh }` | read-only | `battery.soc`, `battery.capacity` |
-| `outlets` | `list()`, `set(outletId, on)` | confirm when turning off a loaded outlet | `outlet.<id>.on`, `outlet.<id>.power` |
-| `acInput` | `read(): { present, watts }` | read-only | `grid.present`, `power.in.ac` |
-| `weather.forecast` | `hourly(hours): WeatherHour[]` | read-only | `weather.temp`, `weather.cloud`, `weather.irradiance` |
+| `switch` | `state()`, `set(on)`, `bootBehaviour()` | confirm turning off when critical | `switch.on` |
+| `powerMeter` | `read(): { watts, volts?, amps?, kwh? }` | read-only | `power.draw` |
+| `battery` | `read(): { socPercent, capacityWh }` | read-only | `battery.soc` |
+| `outlets` | `read()`, `set(outletId, on)` | confirm turning off when critical | `outlet.<id>.on`, `outlet.<id>.power` |
+| `acInput` | `read(): { present, watts }` | read-only | `grid.present` |
+| `weather.forecast` | `hourly(hours): WeatherHour[]` | read-only | — |
 
-A P280 offers `battery`, `outlets`, `acInput` and `powerMeter`. An ATORCH S1W
-offers `switch` and `powerMeter`. A weather service offers `weather.forecast`.
+"Critical" is decided by the gateway at the time: a switch whose device feeds
+another through a link, or an outlet carrying a load. Every read is stamped
+with when the device produced it, and null is unknown — never off, never zero.
+The library lives in `packages/device-sdk/src/capabilities.ts`.
+
+A P280 offers `battery`, `outlets` and `acInput`. Not `powerMeter`: that is a
+meter on what flows *through* a device, a plug's; a station's own input and
+output are its `power.in` and `power.out` telemetry. An ATORCH S1W offers
+`switch` and `powerMeter`. A weather service offers `weather.forecast`.
 Nothing in the core knows any of those products.
 
 ### 4.2 Telemetry: standard names, local keys
@@ -198,8 +205,12 @@ optional `metric`: the standard id it means, when one applies.
 
 Standard ids start small and grow only when something needs them:
 `battery.soc`, `battery.capacity`, `power.in`, `power.in.ac`, `power.in.solar`,
-`power.out`, `power.draw`, `energy.total`, `grid.present`, `switch.on`,
-`weather.temp`, `weather.cloud`, `weather.irradiance`.
+`power.out`, `power.draw`, `energy.total`, `voltage.ac`, `grid.present`,
+`switch.on`, `weather.temp`, `weather.cloud`, and `outlet.<id>.on` and
+`outlet.<id>.power` for each outlet. `weather.irradiance` arrives with step 8,
+with the measurement kind it needs. A standard id has one unit and kind, and a
+type that claims it must use them, so two devices share an axis without
+conversion; `validateDeviceType` checks it.
 
 ### 4.3 Setup guides
 
@@ -368,8 +379,10 @@ What the review found, and which step fixes it.
 Both are held by a baseline, `scripts/architecture-baseline.json`, listing
 today's exceptions file by file. It may only shrink: a file whose count falls
 fails the check too, until `npm run check:architecture -- --update` records the
-lower number, so the baseline always says exactly where the leaks are. At the
-end of step 7 the baseline is empty.
+lower number, so the baseline always says exactly where the leaks are. Moving a
+file moves its leaks, which per file looks like a new one; `-- --rebaseline`
+accepts that, and refuses if either total rose. At the end of step 7 the
+baseline is empty.
 
 ---
 
@@ -385,7 +398,7 @@ once the model has carried two real device types.
 |---|---|---|---|
 | 0 | Words and one authority | S | done |
 | 1 | Guardrails | S | done |
-| 2 | Contracts: `device-sdk` | M | |
+| 2 | Contracts: `device-sdk` | M | done |
 | 3 | Discover device types | M | |
 | 4 | Per-device sessions, config, secrets and links | L | |
 | 5 | Tuya as a protocol; the ATORCH and the generic plug as device types | M | |
@@ -416,6 +429,17 @@ the check.
   capability is implemented, settings round-trip.
 
 **Done when** the SDK builds and the suite passes against an example type.
+
+*Done.* The SDK is `packages/device-sdk`: `DeviceType`, `DeviceSession` and
+`DeviceContext` in `device-type.ts`, the capability library in
+`capabilities.ts`, metric specs and standard ids in `telemetry.ts`, setup
+guides in `setup.ts`, the static checks in `validate.ts`, and the contract
+suite as `@kraftverk/device-sdk/testing` (`checkDeviceTypeContract`). Every
+type must ship a simulator (`createSimulator`). The v1 extension contract
+lives on in `src/v1/`, its capabilities renamed `PluginCapability`, until the
+plugins are gone. Controls already speak the new capability names — the P280's
+ports are `outlets`, a plug's relay is `switch` — and telemetry carries its
+standard ids.
 
 ### Step 3 — Discover device types
 - **Server:** a `DeviceTypeRegistry` finds `kraftverk.deviceType` in

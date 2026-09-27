@@ -100,7 +100,7 @@ dependencies, consumed by Bun and by Metro.
 
 Two rules make the modularity real rather than decorative:
 
-1. **A plugin imports only `@kraftverk/plugin-sdk`.** No station driver, no database handle, no
+1. **A plugin imports only `@kraftverk/device-sdk`.** No station driver, no database handle, no
    `fetch`, no core configuration. Everything arrives through its `PluginContext`.
 2. **A plugin can never actuate directly.** It *registers* a capability; only the core's action
    gateway invokes it.

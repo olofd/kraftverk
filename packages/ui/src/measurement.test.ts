@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { MeasurementSpec } from '@kraftverk/plugin-sdk';
+import type { MetricSpec } from '@kraftverk/device-sdk';
 
 import {
   fixedRange,
@@ -10,7 +10,7 @@ import {
   startsAtZero,
 } from './measurement';
 
-const spec = (over: Partial<MeasurementSpec> = {}): MeasurementSpec => ({
+const spec = (over: Partial<MetricSpec> = {}): MetricSpec => ({
   key: 'x',
   label: 'X',
   unit: 'W',

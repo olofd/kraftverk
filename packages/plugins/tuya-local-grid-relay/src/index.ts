@@ -1,7 +1,7 @@
 import {
   validateConfig,
   type BootBehaviour,
-  type CommandResult,
+  type RelaySwitchResult,
   type ConfigSchema,
   type GridRelayProvider,
   type KraftverkPlugin,
@@ -9,7 +9,7 @@ import {
   type PluginHealth,
   type PluginManifest,
   type RelayState,
-} from '@kraftverk/plugin-sdk';
+} from '@kraftverk/device-sdk';
 
 import { decode, PROFILES, profileById, relayCandidates } from './profiles.ts';
 import { runSetupAction, SETUP_ACTIONS } from './setup.ts';
@@ -236,23 +236,23 @@ class TuyaGridRelay implements KraftverkPlugin, GridRelayProvider {
       {
         id: `tuya:${deviceId}`,
         name: 'Tuya smart plug',
-        kind: 'smart-plug' as const,
+        category: 'smart-plug',
         icon: 'power',
         description: this.#profile.label,
         measurements: [
-          { key: 'watts', label: 'Power', unit: 'W', kind: 'power' as const, precision: 0, primary: true },
-          { key: 'volts', label: 'Voltage', unit: 'V', kind: 'voltage' as const, precision: 1 },
+          { key: 'watts', label: 'Power', unit: 'W', kind: 'power' as const, metric: 'power.draw', precision: 0, primary: true },
+          { key: 'volts', label: 'Voltage', unit: 'V', kind: 'voltage' as const, metric: 'voltage.ac', precision: 1 },
           { key: 'amps', label: 'Current', unit: 'A', kind: 'current' as const, precision: 2 },
-          { key: 'kwh', label: 'Energy', unit: 'kWh', kind: 'energy' as const, precision: 2, cumulative: true },
+          { key: 'kwh', label: 'Energy', unit: 'kWh', kind: 'energy' as const, metric: 'energy.total', precision: 2, cumulative: true },
           { key: 'hz', label: 'Frequency', unit: 'Hz', kind: 'frequency' as const, precision: 1 },
-          { key: 'relay', label: 'Relay', unit: '', kind: 'state' as const },
+          { key: 'relay', label: 'Relay', unit: '', kind: 'state' as const, metric: 'switch.on' },
         ],
         controls: [
           {
             id: 'relay',
             label: 'Relay',
             kind: 'switch' as const,
-            capability: 'gridRelay.switch' as const,
+            capability: 'switch' as const,
             measurementKey: 'relay',
             dangerous: true,
             consequence:
@@ -297,7 +297,7 @@ class TuyaGridRelay implements KraftverkPlugin, GridRelayProvider {
    * not treat that as proof on its own; it also wants the station's AC input to
    * agree.
    */
-  async setRelay(on: boolean, reason: string): Promise<CommandResult> {
+  async setRelay(on: boolean, reason: string): Promise<RelaySwitchResult> {
     const started = Date.now();
     const context = this.#context;
     context?.emit({ level: 'info', message: `Relay ${on ? 'on' : 'off'} requested`, data: { reason } });

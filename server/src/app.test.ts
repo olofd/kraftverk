@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { ConfigSchema, KraftverkPlugin, PluginManifest, SetupActionResult } from '@kraftverk/plugin-sdk';
+import type { ConfigSchema, KraftverkPlugin, PluginManifest, SetupActionResult } from '@kraftverk/device-sdk';
 
 import { ActionGateway, CONFIRMATION_PHRASE } from './actions/gateway.ts';
 import { corsOrigin, createApp } from './app.ts';
@@ -63,10 +63,10 @@ function relayPlugin(id: string): KraftverkPlugin {
       {
         id: `${id}:plug`,
         name: 'Test plug',
-        kind: 'smart-plug',
+        category: 'smart-plug',
         icon: 'power',
         measurements: [{ key: 'relay', label: 'Relay', unit: '', kind: 'state' }],
-        controls: [{ id: 'relay', label: 'Relay', kind: 'switch', capability: 'gridRelay.switch', measurementKey: 'relay' }],
+        controls: [{ id: 'relay', label: 'Relay', kind: 'switch', capability: 'switch', measurementKey: 'relay' }],
       },
     ],
     readDevice: async () => [{ key: 'relay', value: on, at: new Date().toISOString() }],

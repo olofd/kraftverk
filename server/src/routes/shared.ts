@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import { savedDeviceId, type SavedDeviceId } from '@kraftverk/plugin-sdk';
+import { savedDeviceId, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import type { ActionGateway } from '../actions/gateway.ts';
 import { actorOf } from '../auth/routes.ts';

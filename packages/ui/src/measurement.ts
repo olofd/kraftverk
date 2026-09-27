@@ -1,4 +1,4 @@
-import type { MeasurementSpec, Reading } from '@kraftverk/plugin-sdk';
+import type { MetricSpec, Reading } from '@kraftverk/device-sdk';
 
 import { formatDuration, formatWatts, formatWh } from './format';
 
@@ -51,7 +51,7 @@ export const isStale = (at: string | null): boolean =>
   at === null || Date.now() - Date.parse(at) > STALE_AFTER_MS;
 
 /** How many decimals a kind is worth, when the device does not say. */
-const DEFAULT_PRECISION: Record<MeasurementSpec['kind'], number> = {
+const DEFAULT_PRECISION: Record<MetricSpec['kind'], number> = {
   power: 0,
   energy: 0,
   percent: 0,
@@ -70,7 +70,7 @@ const DEFAULT_PRECISION: Record<MeasurementSpec['kind'], number> = {
  * reported is not a device reporting nothing, and the difference matters most
  * exactly when something has gone wrong.
  */
-export function formatMeasurement(spec: MeasurementSpec, value: number | boolean | null): string {
+export function formatMeasurement(spec: MetricSpec, value: number | boolean | null): string {
   if (value === null || value === undefined) return '—';
 
   if (spec.kind === 'state' || typeof value === 'boolean') {
@@ -95,7 +95,7 @@ export function formatMeasurement(spec: MeasurementSpec, value: number | boolean
   }
 }
 
-const withUnit = (spec: MeasurementSpec, value: number): string => {
+const withUnit = (spec: MetricSpec, value: number): string => {
   const digits = spec.precision ?? DEFAULT_PRECISION[spec.kind];
   const number = value.toFixed(digits);
   // Degrees hug their number; every other unit takes a space.
@@ -109,16 +109,16 @@ const withUnit = (spec: MeasurementSpec, value: number): string => {
  * charge. Not for mains voltage or room temperature, where a zero-based axis
  * compresses the whole interesting range into a band a few pixels tall.
  */
-export const startsAtZero = (kind: MeasurementSpec['kind']): boolean =>
+export const startsAtZero = (kind: MetricSpec['kind']): boolean =>
   kind === 'power' || kind === 'energy' || kind === 'percent' || kind === 'current' ||
   kind === 'duration' || kind === 'state';
 
 /** A percentage is 0–100 whatever the data did; nothing else has fixed bounds. */
-export const fixedRange = (kind: MeasurementSpec['kind']): [number, number] | null =>
+export const fixedRange = (kind: MetricSpec['kind']): [number, number] | null =>
   kind === 'percent' ? [0, 100] : kind === 'state' ? [0, 1] : null;
 
 /** The measurement a card should lead with, and a chart should open on. */
 export const primaryMeasurement = (
-  measurements: readonly MeasurementSpec[]
-): MeasurementSpec | null =>
+  measurements: readonly MetricSpec[]
+): MetricSpec | null =>
   measurements.find((measurement) => measurement.primary) ?? measurements[0] ?? null;

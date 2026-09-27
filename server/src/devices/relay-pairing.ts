@@ -1,4 +1,4 @@
-import { savedDeviceId, type SavedDeviceId } from '@kraftverk/plugin-sdk';
+import { savedDeviceId, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import type { StationReading } from '../actions/gateway.ts';
 import type { ConnectionManager } from '../connections/manager.ts';

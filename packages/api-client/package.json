@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@kraftverk/plugin-sdk": "*",
+    "@kraftverk/device-sdk": "*",
     "@kraftverk/protocol": "*"
   },
   "peerDependencies": {

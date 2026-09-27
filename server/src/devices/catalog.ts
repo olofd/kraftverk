@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { savedDeviceId, stationId, type SavedDeviceId, type StationId } from '@kraftverk/plugin-sdk';
+import { savedDeviceId, stationId, type SavedDeviceId, type StationId } from '@kraftverk/device-sdk';
 
 import { db } from '../history/db.ts';
 

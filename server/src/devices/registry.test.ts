@@ -3,10 +3,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { DeviceDescriptor, PluginHealth, Reading } from '@kraftverk/plugin-sdk';
+import type { DeviceDescriptor, PluginHealth, Reading } from '@kraftverk/device-sdk';
 import type { StationStatus } from '@kraftverk/protocol';
 
-import { providerDeviceId } from '@kraftverk/plugin-sdk';
+import { providerDeviceId } from '@kraftverk/device-sdk';
 
 import { DeviceCatalog } from './catalog.ts';
 import { DeviceRegistry } from './registry.ts';
@@ -108,7 +108,7 @@ const hostWith = (plugins: Record<string, Plugin>) =>
 const plugDescriptor = (over: Partial<DeviceDescriptor> = {}): DeviceDescriptor => ({
   id: 'tuya:bf8dc9aabbcc',
   name: 'Smart Socket',
-  kind: 'smart-plug',
+  category: 'smart-plug',
   icon: 'power',
   measurements: [{ key: 'watts', label: 'Power', unit: 'W', kind: 'power', primary: true }],
   controls: [],

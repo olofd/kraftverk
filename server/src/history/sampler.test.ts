@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { Reading } from '@kraftverk/plugin-sdk';
+import type { Reading } from '@kraftverk/device-sdk';
 
 import { closeDb, db } from './db.ts';
 import { Sampler } from './sampler.ts';

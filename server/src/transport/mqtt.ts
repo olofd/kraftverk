@@ -4,7 +4,7 @@ import type { ParsedFrame } from '@kraftverk/protocol';
 
 import type { StationPresence } from '../broker/shared.ts';
 import { BrokerBus, type DeviceMessage } from '../mqtt/bus.ts';
-import { stationId, type StationId } from '@kraftverk/plugin-sdk';
+import { stationId, type StationId } from '@kraftverk/device-sdk';
 
 import type { DiscoveredDevice, ServerLink, TransportHost } from './types.ts';
 

@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react';
-import type { PluginPanelProps } from '@kraftverk/plugin-sdk';
+import type { PluginPanelProps } from '@kraftverk/device-sdk';
 
 import TuyaPanel from '@kraftverk/plugin-tuya-local-grid-relay/ui/panel';
 

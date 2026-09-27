@@ -1,4 +1,4 @@
-import { ACTUATOR_CONFIRMATION, type GridRelayProvider, type RelayState } from '@kraftverk/plugin-sdk';
+import { ACTUATOR_CONFIRMATION, type GridRelayProvider, type RelayState } from '@kraftverk/device-sdk';
 
 import { audit, type AuditEntry } from '../history/db.ts';
 import type { StationStatus } from '../types.ts';

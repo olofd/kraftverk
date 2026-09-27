@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import { stationId } from '@kraftverk/plugin-sdk';
+import { stationId } from '@kraftverk/device-sdk';
 
 import { BleHost } from '../transport/ble.ts';
 import type { ServerTransportKind } from '../transport/types.ts';

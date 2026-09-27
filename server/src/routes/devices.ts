@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import { savedDeviceId, secretFields, validateConfig as validatePluginConfig } from '@kraftverk/plugin-sdk';
+import { savedDeviceId, secretFields, validateConfig as validatePluginConfig } from '@kraftverk/device-sdk';
 
 import { actorOf } from '../auth/routes.ts';
 import type { StationSession } from '../connections/manager.ts';
@@ -320,7 +320,7 @@ export function deviceRoutes({ catalog, connections, host, registry, gateway, le
       return c.json(result);
     }
 
-    if (control.capability === 'gridRelay.switch') {
+    if (control.capability === 'switch') {
       /*
         The gateway switches the relay — whichever plug is set up as it. With
         two relay extensions, the switch on one plug's card flipped the other;

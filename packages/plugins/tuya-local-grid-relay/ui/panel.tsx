@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { PluginPanelProps } from '@kraftverk/plugin-sdk';
+import type { PluginPanelProps } from '@kraftverk/device-sdk';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
 /**

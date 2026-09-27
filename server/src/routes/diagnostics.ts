@@ -5,7 +5,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import { stationId } from '@kraftverk/plugin-sdk';
+import { stationId } from '@kraftverk/device-sdk';
 import { commandRefusal, describeCommand, describeRegisters, fromHex, parseFrame, toHex, type RegisterDump } from '@kraftverk/protocol';
 
 import { BleHost, BleLink } from '../transport/ble.ts';

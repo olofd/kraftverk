@@ -1,4 +1,4 @@
-import type { StationId } from '@kraftverk/plugin-sdk';
+import type { StationId } from '@kraftverk/device-sdk';
 import type { DiscoveredDevice, StationLink, StationTransport } from '@kraftverk/protocol';
 
 /**

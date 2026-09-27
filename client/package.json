@@ -16,7 +16,7 @@
     "@expo/vector-icons": "^15.1.1",
     "@kraftverk/api-client": "*",
     "@kraftverk/device-aferiy-p280": "*",
-    "@kraftverk/plugin-sdk": "*",
+    "@kraftverk/device-sdk": "*",
     "@kraftverk/plugin-tuya-local-grid-relay": "*",
     "@kraftverk/protocol": "*",
     "@kraftverk/ui": "*",

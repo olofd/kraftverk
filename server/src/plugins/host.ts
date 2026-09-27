@@ -9,8 +9,8 @@ import {
   validateConfig,
   secretFields,
   withoutSecrets,
-  type CapabilityImpl,
-  type CapabilityName,
+  type PluginCapability,
+  type PluginCapabilityImpl,
   type ConfigValues,
   type KraftverkPlugin,
   type PluginContext,
@@ -19,7 +19,7 @@ import {
   type PluginStatus,
   type Resource,
   type SetupActionResult,
-} from '@kraftverk/plugin-sdk';
+} from '@kraftverk/device-sdk';
 
 import { audit, db, openSecret, sealSecret } from '../history/db.ts';
 
@@ -45,7 +45,7 @@ export type PluginInstance = {
   plugin: KraftverkPlugin;
   status: PluginStatus;
   error: string | null;
-  capabilities: Map<CapabilityName, unknown>;
+  capabilities: Map<PluginCapability, unknown>;
   timers: ReturnType<typeof setInterval>[];
   /** Non-secret, validated, defaults applied. */
   config: ConfigValues;
@@ -392,7 +392,7 @@ export class PluginHost {
 
   // --- capabilities and grants --------------------------------------------
 
-  isGranted(id: string, capability: CapabilityName): boolean {
+  isGranted(id: string, capability: PluginCapability): boolean {
     return Boolean(
       db()
         .query<{ plugin_id: string }, [string, string]>(
@@ -402,14 +402,14 @@ export class PluginHost {
     );
   }
 
-  grants(id: string): CapabilityName[] {
+  grants(id: string): PluginCapability[] {
     return db()
       .query<{ capability: string }, [string]>('SELECT capability FROM capability_grant WHERE plugin_id = ?')
       .all(id)
-      .map((row) => row.capability as CapabilityName);
+      .map((row) => row.capability as PluginCapability);
   }
 
-  setGrant(id: string, capability: CapabilityName, granted: boolean, by = 'user'): void {
+  setGrant(id: string, capability: PluginCapability, granted: boolean, by = 'user'): void {
     const now = new Date().toISOString();
     if (granted) {
       db()
@@ -454,10 +454,10 @@ export class PluginHost {
   }
 
   /** The implementation registered for a capability, if the plugin is running. */
-  capability<N extends CapabilityName>(id: string, name: N): CapabilityImpl[N] | null {
+  capability<N extends PluginCapability>(id: string, name: N): PluginCapabilityImpl[N] | null {
     const instance = this.#instances.get(id);
     if (!instance || instance.status !== 'healthy') return null;
-    return (instance.capabilities.get(name) as CapabilityImpl[N] | undefined) ?? null;
+    return (instance.capabilities.get(name) as PluginCapabilityImpl[N] | undefined) ?? null;
   }
 
   // --- the scoped context --------------------------------------------------

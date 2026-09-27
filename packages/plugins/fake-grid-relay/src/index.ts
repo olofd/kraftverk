@@ -1,7 +1,7 @@
 import {
   validateConfig,
   type BootBehaviour,
-  type CommandResult,
+  type RelaySwitchResult,
   type ConfigSchema,
   type GridRelayProvider,
   type KraftverkPlugin,
@@ -9,7 +9,7 @@ import {
   type PluginHealth,
   type PluginManifest,
   type RelayState,
-} from '@kraftverk/plugin-sdk';
+} from '@kraftverk/device-sdk';
 
 /**
  * A grid relay that only exists in memory.
@@ -116,22 +116,22 @@ class FakeGridRelay implements KraftverkPlugin, GridRelayProvider {
       {
         id: 'fake:plug',
         name: 'Simulated plug',
-        kind: 'smart-plug' as const,
+        category: 'smart-plug',
         icon: 'cpu',
         description: 'Switches nothing real',
         measurements: [
-          { key: 'watts', label: 'Power', unit: 'W', kind: 'power' as const, precision: 0, primary: true },
-          { key: 'volts', label: 'Voltage', unit: 'V', kind: 'voltage' as const, precision: 1 },
+          { key: 'watts', label: 'Power', unit: 'W', kind: 'power' as const, metric: 'power.draw', precision: 0, primary: true },
+          { key: 'volts', label: 'Voltage', unit: 'V', kind: 'voltage' as const, metric: 'voltage.ac', precision: 1 },
           { key: 'amps', label: 'Current', unit: 'A', kind: 'current' as const, precision: 2 },
-          { key: 'kwh', label: 'Energy', unit: 'kWh', kind: 'energy' as const, precision: 3, cumulative: true },
-          { key: 'relay', label: 'Relay', unit: '', kind: 'state' as const },
+          { key: 'kwh', label: 'Energy', unit: 'kWh', kind: 'energy' as const, metric: 'energy.total', precision: 3, cumulative: true },
+          { key: 'relay', label: 'Relay', unit: '', kind: 'state' as const, metric: 'switch.on' },
         ],
         controls: [
           {
             id: 'relay',
             label: 'Relay',
             kind: 'switch' as const,
-            capability: 'gridRelay.switch' as const,
+            capability: 'switch' as const,
             measurementKey: 'relay',
             dangerous: true,
             consequence: 'Pretends to cut mains to the station. Nothing physical happens.',
@@ -179,7 +179,7 @@ class FakeGridRelay implements KraftverkPlugin, GridRelayProvider {
     };
   }
 
-  async setRelay(on: boolean, reason: string): Promise<CommandResult> {
+  async setRelay(on: boolean, reason: string): Promise<RelaySwitchResult> {
     const started = Date.now();
     this.#context?.emit({ level: 'info', message: `Relay ${on ? 'on' : 'off'}`, data: { reason } });
 

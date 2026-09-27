@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { GridRelayProvider, RelayState } from '@kraftverk/plugin-sdk';
+import type { GridRelayProvider, RelayState } from '@kraftverk/device-sdk';
 
 import { ActionGateway, CONFIRMATION_PHRASE, type RelayHost } from './gateway.ts';
 import type { StationStatus } from '../types.ts';

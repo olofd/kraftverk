@@ -15,27 +15,29 @@
 # --- dependencies ------------------------------------------------------------
 
 # Node 24, as package.json's volta pin: the lockfile is written by its npm.
-FROM node:24.21.0-bookworm-slim AS manifests
-
-WORKDIR /app
+FROM node:24.21.0-bookworm-slim AS sources
 
 # Every workspace's manifest has to exist for `npm ci` to validate the lockfile,
 # even the ones an image will never run — and only the manifests, so that both
 # installs below, and the large layers they produce, are rebuilt when
 # dependencies change rather than whenever any source file does. With the build
 # cache CI keeps, an unchanged lockfile then means byte-identical layers, which
-# a host that already has them does not download again. A workspace added
-# later and missing here makes `npm ci` fail loudly.
-COPY package.json package-lock.json ./
-COPY client/package.json ./client/
-COPY server/package.json ./server/
-COPY packages/protocol/package.json ./packages/protocol/
-COPY packages/plugin-sdk/package.json ./packages/plugin-sdk/
-COPY packages/api-client/package.json ./packages/api-client/
-COPY packages/ui/package.json ./packages/ui/
-COPY packages/devices/aferiy-p280/package.json ./packages/devices/aferiy-p280/
-COPY packages/plugins/fake-grid-relay/package.json ./packages/plugins/fake-grid-relay/
-COPY packages/plugins/tuya-local-grid-relay/package.json ./packages/plugins/tuya-local-grid-relay/
+# a host that already has them does not download again.
+#
+# Found rather than listed: a device type is a package, and adding one must not
+# mean editing this file (docs/ARCHITECTURE.md §1). This stage sees every
+# source change, but what it hands on is only the manifests — so the copy
+# below, and everything after it, stays cached until one of them changes.
+WORKDIR /src
+COPY . .
+RUN mkdir /manifests \
+ && find . -name package.json -not -path '*/node_modules/*' -exec cp --parents {} /manifests \; \
+ && cp package-lock.json /manifests/
+
+FROM node:24.21.0-bookworm-slim AS manifests
+
+WORKDIR /app
+COPY --from=sources /manifests ./
 
 FROM manifests AS deps
 

@@ -174,21 +174,21 @@ export type TrafficEntry = {
 /**
  * Extensions.
  *
- * The shapes come from `@kraftverk/plugin-sdk`, so the setup screen renders
+ * The shapes come from `@kraftverk/device-sdk`, so the setup screen renders
  * from the same declarations the server validates against — that is what lets
  * one screen serve a plugin nobody has written yet.
  */
 export type {
-  CapabilityName,
+  PluginCapability,
   ConfigField,
   ConfigSchema,
   ConfigValues,
   PluginHealth,
   PluginStatus,
-  SetupAction,
+  PluginSetupAction,
   SetupActionResult,
   SetupChoice,
-} from '@kraftverk/plugin-sdk';
+} from '@kraftverk/device-sdk';
 
 export type PluginSummary = {
   id: string;
@@ -197,12 +197,12 @@ export type PluginSummary = {
   version: string;
   kind: string;
   icon: string;
-  capabilities: import('@kraftverk/plugin-sdk').CapabilityName[];
-  setupActions: import('@kraftverk/plugin-sdk').SetupAction[];
-  status: import('@kraftverk/plugin-sdk').PluginStatus;
+  capabilities: import('@kraftverk/device-sdk').PluginCapability[];
+  setupActions: import('@kraftverk/device-sdk').PluginSetupAction[];
+  status: import('@kraftverk/device-sdk').PluginStatus;
   enabled: boolean;
-  health: import('@kraftverk/plugin-sdk').PluginHealth;
-  grants: import('@kraftverk/plugin-sdk').CapabilityName[];
+  health: import('@kraftverk/device-sdk').PluginHealth;
+  grants: import('@kraftverk/device-sdk').PluginCapability[];
   error: string | null;
 };
 
@@ -215,8 +215,8 @@ export type PluginList = {
 
 export type PluginConfig = {
   id: string;
-  schema: import('@kraftverk/plugin-sdk').ConfigSchema;
-  values: import('@kraftverk/plugin-sdk').ConfigValues;
+  schema: import('@kraftverk/device-sdk').ConfigSchema;
+  values: import('@kraftverk/device-sdk').ConfigValues;
   /** Which secret fields hold a value. Never the values themselves. */
   secretsSet: string[];
   enabled: boolean;
@@ -226,7 +226,7 @@ export type GridStatus = {
   provider: string | null;
   granted: boolean;
   state:
-    | (import('@kraftverk/plugin-sdk').RelayState & { provider: string })
+    | (import('@kraftverk/device-sdk').RelayState & { provider: string })
     | null;
 };
 
@@ -239,7 +239,7 @@ export type RelayCommandResult = {
 
 // --- devices ----------------------------------------------------------------
 //
-// The things you own. The descriptor half comes from `@kraftverk/plugin-sdk`,
+// The things you own. The descriptor half comes from `@kraftverk/device-sdk`,
 // which is what a device package or a plugin writes; only the envelope around
 // it — the catalog record and whether the thing is answering — is HTTP.
 
@@ -248,14 +248,14 @@ export type {
   ConnectionHealth,
   ConnectionStatus,
   ControlSpec,
+  CapabilityName,
   DeviceDescriptor,
-  DeviceKind,
-  MeasurementSpec,
+  MetricSpec,
   ProviderDeviceId,
   Reading,
   SavedDeviceId,
-} from '@kraftverk/plugin-sdk';
-export { isOnline, providerDeviceId, savedDeviceId, stationId, candidateId, sameStation } from '@kraftverk/plugin-sdk';
+} from '@kraftverk/device-sdk';
+export { isOnline, providerDeviceId, savedDeviceId, stationId, candidateId, sameStation } from '@kraftverk/device-sdk';
 
 export type DeviceRecord = {
   id: string;
@@ -281,20 +281,20 @@ export type DeviceRecord = {
  * the catalog here, and the vendor's are `providerDeviceId` and `providerName`.
  */
 export type SavedDeviceView = Omit<
-  import('@kraftverk/plugin-sdk').DeviceDescriptor,
+  import('@kraftverk/device-sdk').DeviceDescriptor,
   'id' | 'name'
 > & {
   /** The catalog id: stable, the route segment, and what history is keyed by. */
-  id: import('@kraftverk/plugin-sdk').SavedDeviceId;
+  id: import('@kraftverk/device-sdk').SavedDeviceId;
   /** The adapter's own identity — a MAC, a Tuya id. Null before commissioning. */
-  providerDeviceId: import('@kraftverk/plugin-sdk').ProviderDeviceId | null;
+  providerDeviceId: import('@kraftverk/device-sdk').ProviderDeviceId | null;
   /** What the user called it. */
   name: string;
   /** What the vendor calls it, when that is known and differs. */
   providerName: string | null;
   record: DeviceRecord;
-  health: import('@kraftverk/plugin-sdk').ConnectionHealth;
-  readings: import('@kraftverk/plugin-sdk').Reading[];
+  health: import('@kraftverk/device-sdk').ConnectionHealth;
+  readings: import('@kraftverk/device-sdk').Reading[];
 };
 
 /** A model of a device type, and how far it is actually trusted. */
@@ -349,8 +349,8 @@ export type StationDeviceState = {
 
 /** A device's own settings: the schema it declares, and what it holds now. */
 export type DeviceSettings = {
-  schema: import('@kraftverk/plugin-sdk').ConfigSchema | null;
-  values: import('@kraftverk/plugin-sdk').ConfigValues;
+  schema: import('@kraftverk/device-sdk').ConfigSchema | null;
+  values: import('@kraftverk/device-sdk').ConfigValues;
   /** Settings that can damage the hardware if set wrongly. */
   dangerous: string[];
 };

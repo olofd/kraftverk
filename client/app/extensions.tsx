@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Feather } from '@expo/vector-icons';
-import { isActuator, type CapabilityName } from '@kraftverk/plugin-sdk';
+import { isActuator, type PluginCapability } from '@kraftverk/device-sdk';
 import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { Card, SectionLabel } from '@kraftverk/ui';
@@ -743,12 +743,12 @@ function GrantStep({
   busy,
   onGrant,
 }: {
-  capabilities: CapabilityName[];
-  granted: CapabilityName[];
+  capabilities: PluginCapability[];
+  granted: PluginCapability[];
   busy: boolean;
-  onGrant: (capability: CapabilityName, granted: boolean) => void;
+  onGrant: (capability: PluginCapability, granted: boolean) => void;
 }) {
-  const [confirming, setConfirming] = useState<CapabilityName | null>(null);
+  const [confirming, setConfirming] = useState<PluginCapability | null>(null);
 
   return (
     <YStack>

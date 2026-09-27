@@ -13,7 +13,7 @@ import { join } from 'node:path';
  * test devices in the owner's own list.
  */
 
-import { savedDeviceId } from '@kraftverk/plugin-sdk';
+import { savedDeviceId } from '@kraftverk/device-sdk';
 
 import { DeviceCatalog } from './catalog.ts';
 import { closeDb, db } from '../history/db.ts';

@@ -8,7 +8,7 @@ import type { DiscoveredDevice, ParsedFrame } from '@kraftverk/protocol';
 import { ConnectionManager, type LinkKind } from './manager.ts';
 import { DeviceCatalog, type DeviceRecord } from '../devices/catalog.ts';
 import type { StationDriver } from '../drivers/types.ts';
-import { savedDeviceId, stationId, type SavedDeviceId, type StationId } from '@kraftverk/plugin-sdk';
+import { savedDeviceId, stationId, type SavedDeviceId, type StationId } from '@kraftverk/device-sdk';
 
 import type { ServerLink, TransportHost } from '../transport/types.ts';
 import { closeDb, db } from '../history/db.ts';

@@ -16,8 +16,10 @@
  * baseline then always says exactly where the leaks are, and the number can
  * only go one way.
  *
- *   node scripts/architecture.mjs            check
- *   node scripts/architecture.mjs --update   record improvements (refuses regressions)
+ *   node scripts/architecture.mjs               check
+ *   node scripts/architecture.mjs --update      record improvements (refuses regressions)
+ *   node scripts/architecture.mjs --rebaseline  after moving files: accepts leaks in new
+ *                                               places, but only if neither total rose
  */
 
 import { execFileSync } from 'node:child_process';
@@ -45,7 +47,6 @@ const CORE = [
   'client/app/',
   'packages/api-client/',
   'packages/ui/',
-  'packages/plugin-sdk/',
   'packages/device-sdk/',
 ];
 /** The one file per side allowed to import every device type. */
@@ -225,7 +226,7 @@ function save(current) {
 }
 
 const update = process.argv.includes('--update');
-const init = process.argv.includes('--init');
+const rebaseline = process.argv.includes('--rebaseline');
 const baseline = load();
 const current = measure();
 const { worse, better } = compare(baseline, current);
@@ -234,7 +235,28 @@ const summary =
   `${importCount(current.imports)} boundary exceptions, ` +
   `${total(current.leaks)} product identifiers outside ${LEAK_HOME} in ${Object.keys(current.leaks).length} files`;
 
-if (worse.length && !init) {
+/*
+  Moving a file moves its leaks with it, and per file that looks like a new
+  leak beside a fixed one. A rebaseline accepts the new places — but only when
+  neither total rose, so a move can never smuggle in anything new.
+*/
+if (rebaseline) {
+  const rose = [];
+  if (total(current.leaks) > total(baseline.leaks)) rose.push(`identifiers ${total(baseline.leaks)} → ${total(current.leaks)}`);
+  if (importCount(current.imports) > importCount(baseline.imports)) {
+    rose.push(`boundary exceptions ${importCount(baseline.imports)} → ${importCount(current.imports)}`);
+  }
+  if (rose.length) {
+    console.error(`Refusing to rebaseline: the totals rose (${rose.join(', ')}).`);
+    for (const line of worse) console.error(`  ✗ ${line}`);
+    process.exit(1);
+  }
+  save(current);
+  console.log(`Baseline recorded after a move: ${summary}.`);
+  process.exit(0);
+}
+
+if (worse.length) {
   console.error('The architecture got worse:\n');
   for (const line of worse) console.error(`  ✗ ${line}`);
   console.error(
@@ -244,7 +266,7 @@ if (worse.length && !init) {
   process.exit(1);
 }
 
-if (update || init) {
+if (update) {
   save(current);
   console.log(`Baseline recorded: ${summary}.`);
   process.exit(0);

@@ -1,4 +1,4 @@
-import type { MeasurementSpec } from '@kraftverk/plugin-sdk';
+import type { MetricSpec } from '@kraftverk/device-sdk';
 
 import { fixedRange, startsAtZero } from './measurement';
 
@@ -36,7 +36,7 @@ export type ChartScale = {
  */
 export function chartScale(
   points: readonly SeriesPoint[],
-  measurement: Pick<MeasurementSpec, 'kind'>
+  measurement: Pick<MetricSpec, 'kind'>
 ): ChartScale {
   const values = points.map((point) => point.value).filter((value) => Number.isFinite(value));
   const peak = values.length ? Math.max(...values) : 0;

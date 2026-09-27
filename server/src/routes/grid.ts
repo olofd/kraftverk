@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import { savedDeviceId } from '@kraftverk/plugin-sdk';
+import { savedDeviceId } from '@kraftverk/device-sdk';
 
 import { actorOf } from '../auth/routes.ts';
 import { pairedStation, pairStation } from '../devices/relay-pairing.ts';

@@ -319,7 +319,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       }
 
       const control = device.controls.find((candidate) => candidate.id === controlId);
-      if (control?.capability !== 'station.ports') {
+      if (control?.capability !== 'outlets') {
         throw new Error('That control needs the server; this app is holding the link itself.');
       }
       await togglePort(controlId as PortId, value === true);

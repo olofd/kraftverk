@@ -1,6 +1,7 @@
-import type { CapabilityName, RelayState } from './capabilities.ts';
-import type { ConfigValues } from './schema.ts';
-import type { PluginHealth, SetupActionResult } from './plugin.ts';
+import type { ConfigValues } from '../schema.ts';
+import type { SetupActionResult } from '../setup.ts';
+import type { PluginCapability, RelayState } from './grid-relay.ts';
+import type { PluginHealth } from './plugin.ts';
 
 /**
  * The contract for a plugin's own screen.
@@ -32,8 +33,8 @@ export type PluginPanelProps = {
   health: PluginHealth;
   /** Non-secret configuration, as saved. */
   config: ConfigValues;
-  capabilities: readonly CapabilityName[];
-  grants: readonly CapabilityName[];
+  capabilities: readonly PluginCapability[];
+  grants: readonly PluginCapability[];
 
   /** The grid relay's current state, when this plugin owns that resource. */
   relay?: (RelayState & { provider: string }) | null;

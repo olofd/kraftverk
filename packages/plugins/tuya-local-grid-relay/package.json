@@ -19,7 +19,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@kraftverk/plugin-sdk": "*"
+    "@kraftverk/device-sdk": "*"
   },
   "peerDependencies": {
     "react": "*",

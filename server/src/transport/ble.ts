@@ -9,7 +9,7 @@ import {
   type ParsedFrame,
 } from '@kraftverk/protocol';
 
-import { stationId, type StationId } from '@kraftverk/plugin-sdk';
+import { stationId, type StationId } from '@kraftverk/device-sdk';
 
 import type { DiscoveredDevice, ServerLink, TransportHost } from './types.ts';
 

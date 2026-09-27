@@ -2,7 +2,7 @@ import { Input, Text, XStack, YStack } from 'tamagui';
 
 import { Row, RowSeparator, ToggleRow } from './Row';
 import { haptic } from './haptics';
-import type { ConfigField, ConfigSchema, ConfigValues } from '@kraftverk/plugin-sdk';
+import type { ConfigField, ConfigSchema, ConfigValues } from '@kraftverk/device-sdk';
 
 /**
  * Renders any plugin's settings from its declared schema.

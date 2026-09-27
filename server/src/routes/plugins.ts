@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import { isActuator, validateConfig as validatePluginConfig } from '@kraftverk/plugin-sdk';
+import { isActuator, validateConfig as validatePluginConfig } from '@kraftverk/device-sdk';
 
 import { CONFIRMATION_PHRASE } from '../actions/gateway.ts';
 import { actorOf } from '../auth/routes.ts';

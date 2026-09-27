@@ -1,4 +1,4 @@
-import { savedDeviceId, stationId } from '@kraftverk/plugin-sdk';
+import { savedDeviceId, stationId } from '@kraftverk/device-sdk';
 
 import { ActionGateway } from './actions/gateway.ts';
 import { createApp } from './app.ts';

@@ -1,4 +1,4 @@
-import { sameStation, stationId, type SavedDeviceId, type StationId } from '@kraftverk/plugin-sdk';
+import { sameStation, stationId, type SavedDeviceId, type StationId } from '@kraftverk/device-sdk';
 
 import { boundStation, transportOf, type DeviceRecord } from '../devices/catalog.ts';
 import { DeviceDriver } from '../drivers/device.ts';

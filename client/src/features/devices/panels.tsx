@@ -4,8 +4,8 @@ import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { ACTUATOR_CONFIRMATION } from '@kraftverk/plugin-sdk';
-import type { ConfigValues, ControlSpec, SavedDeviceView, MeasurementSpec } from '@kraftverk/api-client';
+import { ACTUATOR_CONFIRMATION } from '@kraftverk/device-sdk';
+import type { ConfigValues, ControlSpec, SavedDeviceView, MetricSpec } from '@kraftverk/api-client';
 import { describeError, isOnline } from '@kraftverk/api-client';
 import {
   Card,
@@ -222,7 +222,7 @@ export function History({ device }: { device: SavedDeviceView }) {
   const chartable = device.measurements.filter((spec) => spec.kind !== 'state');
   const [key, setKey] = useState<string | null>(null);
 
-  const selected: MeasurementSpec | undefined =
+  const selected: MetricSpec | undefined =
     chartable.find((spec) => spec.key === key) ??
     chartable.find((spec) => spec.primary) ??
     chartable[0];

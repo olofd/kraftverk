@@ -1,10 +1,10 @@
 import {
   validateConfig,
   type ConfigValues,
-  type SetupAction,
+  type PluginSetupAction,
   type SetupActionResult,
   type SetupChoice,
-} from '@kraftverk/plugin-sdk';
+} from '@kraftverk/device-sdk';
 
 import { isRegion, REGIONS, TuyaCloud, TuyaCloudError } from './cloud.ts';
 import { scan } from './discovery.ts';
@@ -61,7 +61,7 @@ const keySchema = {
   },
 };
 
-export const SETUP_ACTIONS: readonly SetupAction[] = [
+export const SETUP_ACTIONS: readonly PluginSetupAction[] = [
   {
     id: 'discover',
     title: 'Find plugs on this network',

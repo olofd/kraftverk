@@ -4,7 +4,7 @@ import axios from 'axios';
 
 // The dump the server returns is built by the shared package, so its shape is
 // declared there rather than described a second time here.
-import { ACTUATOR_CONFIRMATION, type CapabilityName, type ConfigValues, type SetupActionResult } from '@kraftverk/plugin-sdk';
+import { ACTUATOR_CONFIRMATION, type PluginCapability, type ConfigValues, type SetupActionResult } from '@kraftverk/device-sdk';
 import type { RegisterDump } from '@kraftverk/protocol';
 
 import type {
@@ -303,11 +303,11 @@ export async function runSetupAction(id: string, actionId: string, input: Config
 
 export async function setPluginGrant(
   id: string,
-  capability: CapabilityName,
+  capability: PluginCapability,
   granted: boolean,
   confirmation?: string
 ) {
-  const { data } = await api.post<{ ok: boolean; grants: CapabilityName[] }>(
+  const { data } = await api.post<{ ok: boolean; grants: PluginCapability[] }>(
     `/plugins/${id}/grants`,
     { capability, granted, confirmation }
   );

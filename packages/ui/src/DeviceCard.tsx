@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import { Text, XStack, YStack } from 'tamagui';
 
-import type { ConnectionHealth, MeasurementSpec, Reading } from '@kraftverk/plugin-sdk';
-import { isOnline } from '@kraftverk/plugin-sdk';
+import type { ConnectionHealth, MetricSpec, Reading } from '@kraftverk/device-sdk';
+import { isOnline } from '@kraftverk/device-sdk';
 
 import { Card } from './Card';
 import { haptic } from './haptics';
@@ -26,7 +26,7 @@ export type DeviceCardDevice = {
   name: string;
   description?: string;
   health: ConnectionHealth;
-  measurements: readonly MeasurementSpec[];
+  measurements: readonly MetricSpec[];
   readings: readonly Reading[];
 };
 
@@ -50,7 +50,7 @@ type Props = {
   /** Supplied by the app: this package has no icon set of its own. */
   icon?: ReactNode;
   /** Up to two more measurements under the headline. */
-  secondary?: readonly MeasurementSpec[];
+  secondary?: readonly MetricSpec[];
   onPress?: () => void;
 };
 

@@ -1,8 +1,13 @@
-import type { CapabilityImpl, CapabilityName } from './capabilities.ts';
-import type { DeviceProvider } from './device.ts';
-import type { ConfigSchema, ConfigValues, ValidationResult } from './schema.ts';
+import type { ConfigSchema, ConfigValues, ValidationResult } from '../schema.ts';
+import type { SetupActionResult } from '../setup.ts';
+import type { DeviceProvider } from './descriptor.ts';
+import type { PluginCapability, PluginCapabilityImpl } from './grid-relay.ts';
 
 /**
+ * The v1 plugin contract: one configuration per package, capabilities named
+ * after the grid relay. Superseded by `DeviceType` (docs/ARCHITECTURE.md §4)
+ * and deleted when the last plugin becomes a device type (step 5).
+ *
  * The plugin contract.
  *
  * A plugin imports this package and nothing else: no station driver, no
@@ -23,10 +28,10 @@ export type PluginManifest = {
   /** The SDK contract it was written against. */
   apiVersion: '1';
   kind: PluginKind;
-  capabilities: readonly CapabilityName[];
+  capabilities: readonly PluginCapability[];
   configSchema: ConfigSchema;
-  /** Commissioning helpers the app renders generically. See `SetupAction`. */
-  setupActions?: readonly SetupAction[];
+  /** Commissioning helpers the app renders generically. See `PluginSetupAction`. */
+  setupActions?: readonly PluginSetupAction[];
   ui: {
     /** Feather icon name, so the app needs nothing from the plugin to draw it. */
     icon: string;
@@ -105,7 +110,7 @@ export type PluginContext = {
   /** Lands in the audit timeline. */
   emit(event: PluginEvent): void;
   /** Refused unless the capability is declared in the manifest. */
-  registerCapability<N extends CapabilityName>(name: N, implementation: CapabilityImpl[N]): void;
+  registerCapability<N extends PluginCapability>(name: N, implementation: PluginCapabilityImpl[N]): void;
 };
 
 /**
@@ -120,7 +125,7 @@ export type PluginContext = {
  *
  * The result may propose configuration values, which the app offers to apply.
  */
-export type SetupAction = {
+export type PluginSetupAction = {
   id: string;
   title: string;
   description?: string;
@@ -128,45 +133,6 @@ export type SetupAction = {
   input?: ConfigSchema;
   /** Label for the button. */
   actionLabel?: string;
-};
-
-/**
- * One of several things the user might pick.
- *
- * Setup helpers nearly always end the same way — *here are three devices, which
- * is yours?* — so that shape belongs in the contract. The app renders a list
- * and writes the chosen `config` into the form; it needs to know nothing about
- * what is being chosen, which is what makes the same screen work for a Tuya
- * plug, a Home Assistant entity, or a weather station.
- */
-export type SetupChoice = {
-  id: string;
-  label: string;
-  /** A second line: an address, a product name, a distance. */
-  detail?: string;
-  /** Applied to the configuration form when this one is chosen. */
-  config: ConfigValues;
-  /** Marks the option the plugin thinks is right. */
-  recommended?: boolean;
-};
-
-export type SetupActionResult = {
-  ok: boolean;
-  /** One sentence for the user. */
-  detail: string;
-  /** Anything else worth showing: a datapoint dump, raw diagnostics. */
-  data?: Record<string, unknown>;
-  /** Several candidates to choose between. */
-  choices?: readonly SetupChoice[];
-  /**
-   * A single unambiguous answer, applied without a choice.
-   *
-   * Secret fields may be filled here and in `choices` — the host keeps their
-   * values and hands the app a short-lived placeholder instead, which saving
-   * the configuration turns back into the secret. The value itself never
-   * reaches a browser.
-   */
-  suggestedConfig?: ConfigValues;
 };
 
 export interface KraftverkPlugin extends Partial<DeviceProvider> {

@@ -3,7 +3,7 @@ import Svg, { Line, Path } from 'react-native-svg';
 import { Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { describeError, fetchDeviceHistory } from '@kraftverk/api-client';
-import type { MeasurementSpec, SeriesPoint } from '@kraftverk/api-client';
+import type { MetricSpec, SeriesPoint } from '@kraftverk/api-client';
 import {
   chartPath,
   chartScale,
@@ -17,7 +17,7 @@ import {
  * One chart, for every measurement of every device.
  *
  * This is what the device model was for. It is written against a
- * `MeasurementSpec` and a list of points, so a plug added next year is charted
+ * `MetricSpec` and a list of points, so a plug added next year is charted
  * by code that predates it — the kind decides the axis, the unit decides the
  * labels, and nothing here has an opinion about what is being measured.
  *
@@ -38,7 +38,7 @@ export function MeasurementChart({
   measurement,
 }: {
   deviceId: string;
-  measurement: MeasurementSpec;
+  measurement: MetricSpec;
 }) {
   const [hours, setHours] = useState<number>(24);
   const [points, setPoints] = useState<SeriesPoint[] | null>(null);
