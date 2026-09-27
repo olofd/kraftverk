@@ -147,6 +147,11 @@ Unchanged by any of this, and applied to every caller:
   builds, and by `commandRefusal` for frames it merely carries: in the MQTT
   broker for every command (including the server's), and on the raw-MODBUS
   diagnostics route, which is itself off unless `ALLOW_RAW_MODBUS=1`.
+  `commandRefusal` fails closed: it passes only reads, and writes it can read
+  to the end — a function code it does not know, a write cut short, or a
+  multi-register write whose count, byte count and data disagree is refused.
+  A read-only server sends only reads on the raw route, and every frame the
+  route refuses is recorded in the audit timeline.
 - Only the server may publish commands on the broker; see
   [BROKER.md](BROKER.md#who-may-do-what).
 - Physical actions go through the action gateway, which records *who* — the

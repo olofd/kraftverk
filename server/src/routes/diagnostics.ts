@@ -279,8 +279,18 @@ export function diagnosticsRoutes({ config, connections, broker, serverLog }: Ap
     const frame = fromHex(hex);
     // Raw frames skip the whitelist by design — reaching undocumented registers
     // is what they are for — but never this one rule, on either transport.
+    /*
+      A refused frame is recorded as well as refused: an account that tried to
+      send the brick write, or to write past read-only, is exactly what the
+      timeline is for — the broker records its refusals, and so does this.
+    */
+    const refuse = (status: 400 | 423, message: string): never => {
+      auditDevice(c, 'station.raw-refused', target, `Refused a raw frame: ${describeCommand(frame)}`, { hex: toHex(frame), reason: message });
+      throw new HTTPException(status, { message });
+    };
+
     const refusal = commandRefusal(frame);
-    if (refusal) throw new HTTPException(400, { message: refusal });
+    if (refusal) refuse(400, refusal);
 
     /*
       Nor read-only mode. That guard lives in the driver, and a raw frame goes
@@ -290,10 +300,7 @@ export function diagnosticsRoutes({ config, connections, broker, serverLog }: Ap
       function this code does not know included, may write.
     */
     if (connections.readOnly && parseCommand(frame)?.kind !== 'read') {
-      return c.json(
-        { error: `Refused to send ${describeCommand(frame)}: this server is read-only, and only reads are sent.`, readOnly: true },
-        423
-      );
+      refuse(423, `Refused to send ${describeCommand(frame)}: this server is read-only, and only reads are sent.`);
     }
     await link.send(frame);
     auditDevice(c, 'station.raw', target, `Sent a raw frame: ${describeCommand(frame)}`, { hex: toHex(frame) });

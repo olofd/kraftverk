@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { ConfigSchema, KraftverkPlugin, PluginManifest, SetupActionResult, StationId } from '@kraftverk/device-sdk';
-import { readHoldingRegisters, toHex, writeRegister, type ParsedFrame } from '@kraftverk/protocol';
 
 import { ActionGateway, CONFIRMATION_PHRASE } from './actions/gateway.ts';
 import { corsOrigin, createApp } from './app.ts';
@@ -398,6 +397,14 @@ describe('the sign-in state', () => {
 });
 
 describe('raw frames', () => {
+  /*
+    Spelled out rather than built, so these tests hold the route to the frames
+    themselves: AC output on (write holding 26 = 1), and read holding 0+80.
+  */
+  const AC_ON = '1106001a00015d6b';
+  const READ_SETTINGS = '1103000000506647';
+  const hex = (frame: Uint8Array) => Buffer.from(frame).toString('hex');
+
   /** One station's link, recording what reached it. */
   class RecordingLink {
     readonly kind = 'ble' as const;
@@ -405,9 +412,9 @@ describe('raw frames', () => {
     sent: string[] = [];
     constructor(readonly boundId: StationId) {}
     async send(frame: Uint8Array) {
-      this.sent.push(toHex(frame));
+      this.sent.push(hex(frame));
     }
-    async request(): Promise<ParsedFrame> {
+    async request(): Promise<never> {
       throw new Error('not answering');
     }
     onFrame() {
@@ -481,14 +488,21 @@ describe('raw frames', () => {
     const server = await hardwareApp(true);
     try {
       // AC output on: 0x06, and the same change as 0x10, 0x16 and 0x17.
-      for (const hex of [toHex(writeRegister(26, 1)), '1110001a0001020001', '1116001a00000001', '11170000000a001a0001020001']) {
-        expect(await server.send(hex)).toBe(423);
+      for (const frame of [AC_ON, '1110001a0001020001', '1116001a00000001', '11170000000a001a0001020001']) {
+        expect(await server.send(frame)).toBe(423);
       }
       expect(links[0]!.sent).toEqual([]);
 
       // Reading changes nothing, so read-only is no reason to refuse it.
-      expect(await server.send(toHex(readHoldingRegisters(0, 80)))).toBe(200);
-      expect(links[0]!.sent).toEqual([toHex(readHoldingRegisters(0, 80))]);
+      expect(await server.send(READ_SETTINGS)).toBe(200);
+      expect(links[0]!.sent).toEqual([READ_SETTINGS]);
+
+      // Every refusal is on the timeline, under the account that asked.
+      const refused = ((await as('/audit')).body as unknown as { kind: string; actor: string }[]).filter(
+        (entry) => entry.kind === 'station.raw-refused'
+      );
+      expect(refused).toHaveLength(4);
+      expect(refused.every((entry) => entry.actor === 'olof')).toBe(true);
     } finally {
       await server.close();
     }
@@ -497,8 +511,16 @@ describe('raw frames', () => {
   test('with writes allowed, a raw write is sent', async () => {
     const server = await hardwareApp(false);
     try {
-      expect(await server.send(toHex(writeRegister(26, 1)))).toBe(200);
-      expect(links[0]!.sent).toEqual([toHex(writeRegister(26, 1))]);
+      expect(await server.send(AC_ON)).toBe(200);
+      expect(links[0]!.sent).toEqual([AC_ON]);
+
+      // Writes allowed or not, the brick write is refused — and recorded.
+      expect(await server.send('1106004400000000')).toBe(400);
+      expect(links[0]!.sent).toEqual([AC_ON]);
+      const refused = ((await as('/audit')).body as unknown as { kind: string; detail: { hex: string } }[]).find(
+        (entry) => entry.kind === 'station.raw-refused'
+      );
+      expect(refused?.detail.hex).toBe('1106004400000000');
     } finally {
       await server.close();
     }
