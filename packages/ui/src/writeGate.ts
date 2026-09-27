@@ -14,19 +14,26 @@
  *
  * - While it is in flight its keys are *pending*. The control shows the value
  *   that was asked for, and is locked: there is no second tap to race the
- *   first.
- * - Any read asked for before the write finished is discarded when it arrives,
- *   however late. `epoch` moves on every write's start and end, and `fresh`
- *   says whether an answer's epoch is still the current one.
+ *   first. Everything else keeps updating — the caller draws the pending values
+ *   over whatever arrives, so a reading taken mid-write cannot move them.
+ * - Any read asked for before a write *finished* is discarded when it arrives
+ *   after, however late: it may describe the device before the write reached
+ *   it. `epoch` counts finished writes, and `fresh` says whether any finished
+ *   since an answer was asked for.
  * - The write's own answer — a readback, never an echo of what was asked — is
  *   what the screen shows afterwards.
+ *
+ * Only a write's end makes an answer stale, not its start or its duration.
+ * Freezing every reading while anything was in flight stopped a whole screen
+ * for as long as the slowest write — thirty seconds for a relay the station has
+ * to confirm, during which the very reading being waited for could not show.
  *
  * Deliberately free of React, so it is tested on its own and used by every
  * provider the same way.
  */
 
 export type WriteSnapshot<Key extends string> = {
-  /** Moves whenever a write starts or ends. */
+  /** How many writes have finished. An answer asked for before the latest is stale. */
   readonly epoch: number;
   /** What was asked for, per key, while its write is in flight. */
   readonly pending: ReadonlyMap<Key, unknown>;
@@ -47,7 +54,7 @@ export class WriteGate<Key extends string = string> {
     return this.#snapshot.pending;
   }
 
-  /** The current state, replaced rather than mutated, for `useSyncExternalStore`. */
+  /** The current state, replaced rather than mutated, so every change is a new value to render. */
   snapshot = (): WriteSnapshot<Key> => this.#snapshot;
 
   subscribe = (listener: () => void): (() => void) => {
@@ -58,12 +65,13 @@ export class WriteGate<Key extends string = string> {
   /**
    * Whether an answer to a read asked for at `askedAt` may be shown.
    *
-   * Not if any write started or ended since it was asked: the device may have
-   * answered before the write reached it. And not while a write is in flight,
-   * because the write's own readback is on its way and is the better answer.
+   * Not if a write finished since it was asked: the device may have answered
+   * before the write reached it, and the write's own readback is the better
+   * answer. One that arrives while a write is still in flight may be shown —
+   * the caller draws the pending values over it.
    */
   fresh(askedAt: number): boolean {
-    return askedAt === this.#snapshot.epoch && this.#snapshot.pending.size === 0;
+    return askedAt === this.#snapshot.epoch;
   }
 
   /**
@@ -78,22 +86,22 @@ export class WriteGate<Key extends string = string> {
     const busy = keys.filter((key) => this.#snapshot.pending.has(key));
     if (busy.length) throw new WriteInFlightError(`Still waiting for the device to confirm ${busy.join(', ')}`);
 
-    this.#update((pending) => {
+    this.#update(false, (pending) => {
       for (const key of keys) pending.set(key, values[key]);
     });
     try {
       return await write();
     } finally {
-      this.#update((pending) => {
+      this.#update(true, (pending) => {
         for (const key of keys) pending.delete(key);
       });
     }
   }
 
-  #update(change: (pending: Map<Key, unknown>) => void): void {
+  #update(finished: boolean, change: (pending: Map<Key, unknown>) => void): void {
     const pending = new Map(this.#snapshot.pending);
     change(pending);
-    this.#snapshot = { epoch: this.#snapshot.epoch + 1, pending };
+    this.#snapshot = { epoch: this.#snapshot.epoch + (finished ? 1 : 0), pending };
     for (const listener of this.#listeners) listener();
   }
 }

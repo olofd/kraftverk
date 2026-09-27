@@ -240,10 +240,11 @@ export function DirectLinkProvider({ children }: { children: ReactNode }) {
   const [resuming, setResuming] = useState(false);
 
   /*
-    Writes in flight. While one is, the client's own updates are not shown: a
-    switch reads the station just before it writes, and that reading — the old
-    state — used to reach the screen and flip the switch back for a moment. The
-    write's confirmed readback is shown instead. See `writeGate.ts` in `@kraftverk/ui`.
+    Writes in flight. A switch reads the station just before it writes, and
+    that reading — the old state — used to reach the screen and flip the switch
+    back for a moment. Now what is being written is drawn over every reading
+    until the write's confirmed readback replaces it. See `writeGate.ts` in
+    `@kraftverk/ui`.
   */
   const [gate, writes] = useWriteGate<StationWriteKey>();
 
@@ -285,10 +286,10 @@ export function DirectLinkProvider({ children }: { children: ReactNode }) {
         pollMs: DIRECT_POLL_MS,
         readOnly: true,
         onUpdate: (nextStatus, nextSettings) => {
-          if (gate.pending.size === 0) {
-            setStatus(nextStatus);
-            setSettings(nextSettings);
-          }
+          // Shown with the pending writes drawn over it (`withPending`), so a
+          // reading taken mid-write cannot move a control that is being set.
+          setStatus(nextStatus);
+          setSettings(nextSettings);
           setConnection('online');
           setError(null);
           syncDirect();

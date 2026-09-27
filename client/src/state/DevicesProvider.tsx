@@ -163,21 +163,16 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
    */
   const [unreachable, setUnreachable] = useState(false);
 
-  /**
-   * Guards the poll from overwriting a list the user just changed.
-   *
-   * Adding or removing a device is answered by the server before the next poll
-   * runs, and without this the in-flight poll's stale list lands afterwards and
-   * the device the user just added blinks out of existence.
-   */
-  const pending = useRef(0);
-
   /*
-    Controls being written. A list asked for before a control's write finished
-    shows the device as it was before it — the relay back in the position it
-    was just switched from — so it is not shown. See `writeGate.ts` in `@kraftverk/ui`.
+    Changes in flight: a control being written, or a device being added,
+    renamed or forgotten. A list asked for before one finished shows things as
+    they were before it — the relay back in the position it was just switched
+    from, the device just added missing — so it is not shown. See
+    `writeGate.ts` in `@kraftverk/ui`.
   */
   const [gate, writes] = useWriteGate<string>();
+  /** Each catalog change is its own write: two of them never wait on each other. */
+  const changes = useRef(0);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -191,7 +186,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       const askedAt = gate.epoch;
       try {
         const next = await fetchDeviceList(signal);
-        if (pending.current === 0 && gate.fresh(askedAt)) setServed(next);
+        if (gate.fresh(askedAt)) setServed(next);
         setUnreachable(false);
         setError(null);
       } catch (err) {
@@ -256,9 +251,9 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       if (!editable) {
         throw new Error('The device list lives on the server; this app is holding the link itself.');
       }
-      pending.current += 1;
       try {
-        const result = await work();
+        changes.current += 1;
+        const result = await gate.run({ [`catalog:${changes.current}`]: true }, work);
         setError(null);
         return result;
       } catch (err) {
@@ -266,7 +261,6 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         if (message) setError(message);
         throw err;
       } finally {
-        pending.current -= 1;
         await load();
       }
     },
@@ -351,7 +345,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
               the reading from before the write.
             */
             const next = await fetchDeviceList().catch(() => null);
-            if (next && pending.current === 0) setServed(next);
+            if (next) setServed(next);
           });
         } catch (error) {
           // Refused or failed: show the device as it is, not as it was asked to be.

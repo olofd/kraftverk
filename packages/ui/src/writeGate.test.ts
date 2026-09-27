@@ -22,17 +22,34 @@ function deferred<T = void>() {
 }
 
 describe('which answers may be shown', () => {
-  test('a poll already on its way when the switch is tapped is not shown, however late it lands', async () => {
+  test('a poll already on its way when the switch is tapped is not shown once the write has finished', async () => {
     const gate = new WriteGate();
     const askedAt = gate.epoch; // the poll goes out: AC is on
 
     const write = deferred();
     const running = gate.run({ 'port:ac': false }, () => write.promise); // tapped off
-    expect(gate.fresh(askedAt)).toBe(false); // the poll lands mid-write: "on" is not shown
+    // Landing mid-write it may be shown: the switch is drawn from `pending`,
+    // which still says off, so "on" cannot reach it.
+    expect(gate.fresh(askedAt)).toBe(true);
+    expect(gate.pending.get('port:ac')).toBe(false);
 
     write.resolve();
     await running;
-    expect(gate.fresh(askedAt)).toBe(false); // nor if it lands after
+    expect(gate.fresh(askedAt)).toBe(false); // landing after, it is not
+  });
+
+  test('a write in flight does not stop other readings arriving', async () => {
+    // A relay the station has to confirm takes up to thirty seconds, and the
+    // station's own mains reading — the thing being waited for — must show.
+    const gate = new WriteGate();
+    const write = deferred();
+    const running = gate.run({ relay: false }, () => write.promise);
+
+    const askedAt = gate.epoch;
+    expect(gate.fresh(askedAt)).toBe(true);
+
+    write.resolve();
+    await running;
   });
 
   test('a poll asked while a setting is written is not shown when it arrives after the write returned', async () => {
