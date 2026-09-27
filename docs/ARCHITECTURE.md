@@ -383,8 +383,10 @@ today's exceptions file by file. It may only shrink: a file whose count falls
 fails the check too, until `npm run check:architecture -- --update` records the
 lower number, so the baseline always says exactly where the leaks are. Moving a
 file moves its leaks, which per file looks like a new one; `-- --rebaseline`
-accepts that, and refuses if either total rose. At the end of step 7 the
-baseline is empty.
+accepts that, and refuses if either total rose. A deliberate exception —
+code that must reach a product for now, and will leave with it — is an edit
+to the baseline made in the open, with its reason in the commit. At the end
+of step 7 the baseline is empty.
 
 ---
 

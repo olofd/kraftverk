@@ -6,6 +6,9 @@
       "@kraftverk/device-aferiy-p280/ui/protocol",
       "@kraftverk/device-aferiy-p280/ui/settings"
     ],
+    "client/src/features/devices/connection.tsx": [
+      "@kraftverk/device-aferiy-p280"
+    ],
     "client/src/lib/preferences.ts": [
       "@kraftverk/protocol"
     ],
@@ -28,6 +31,7 @@
       "@kraftverk/device-aferiy-p280"
     ],
     "client/src/state/DirectLinkProvider.tsx": [
+      "@kraftverk/device-aferiy-p280",
       "@kraftverk/protocol"
     ],
     "packages/api-client/src/api.ts": [
@@ -89,9 +93,9 @@
     "client/app/device/[id]/settings.tsx": 2,
     "client/app/extensions.tsx": 1,
     "client/src/devices/screens.ts": 8,
-    "client/src/features/devices/connection.tsx": 10,
+    "client/src/features/devices/connection.tsx": 11,
     "client/src/state/DevicesProvider.tsx": 5,
-    "client/src/state/DirectLinkProvider.tsx": 9,
+    "client/src/state/DirectLinkProvider.tsx": 10,
     "packages/api-client/src/api.ts": 12,
     "packages/api-client/src/types.ts": 9,
     "packages/device-sdk/src/v1/grid-relay.ts": 6,
