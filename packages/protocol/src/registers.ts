@@ -399,32 +399,54 @@ export function assertWritable(register: number, value: number): void {
  * Checked whatever the CRC says. A frame with a bad CRC is one the station
  * should drop; a guard that relied on that would be trusting the firmware to
  * protect the hardware from the firmware.
+ *
+ * And it fails closed. What passes is what this guard can show is safe: a read,
+ * or a write it has read completely and that leaves 68 within its permitted
+ * values. Everything else is refused — a function code it does not know, which
+ * may well write (a vendor's own, say), and a known write it cannot read to
+ * the end. This code sends only reads and single-register writes, so refusing
+ * the rest costs the server nothing; only the raw route loses the unknown.
  */
 export function commandRefusal(frame: Uint8Array): string | null {
-  const command = parseCommand(frame);
-  if (!command) return null;
-
   const sleep = HOLDING.SLEEP_MINUTES;
-  if (command.kind === 'write' && command.register === sleep) {
-    try {
-      assertWritable(sleep, command.value);
-    } catch (error) {
-      return `Refused: ${(error as Error).message}. Register ${sleep} set to 0 permanently bricks the station.`;
-    }
+  const command = parseCommand(frame);
+  if (!command) return `Refused: ${frame.length} bytes is not a command this guard can read.`;
+
+  switch (command.kind) {
+    case 'read':
+      return null;
+
+    case 'write':
+      if (command.register !== sleep) return null;
+      try {
+        assertWritable(sleep, command.value);
+        return null;
+      } catch (error) {
+        return `Refused: ${(error as Error).message}. Register ${sleep} set to 0 permanently bricks the station.`;
+      }
+
+    case 'writeMany':
+    case 'readWriteMany':
+      if (!command.wellFormed) {
+        return 'Refused: a multi-register write whose register count, byte count and data disagree, so which registers it writes depends on the firmware.';
+      }
+      if (command.start <= sleep && sleep < command.start + command.count) {
+        return `Refused: a multi-register write spanning register ${sleep}, which bricks the station if set to 0.`;
+      }
+      return null;
+
+    case 'maskWrite':
+      // Whatever the masks: the result depends on a value this guard cannot
+      // see, and AND 0 / OR 0 is the brick write spelled differently.
+      if (command.register === sleep) {
+        return `Refused: a mask write to register ${sleep}, which bricks the station if it ends up 0.`;
+      }
+      if (command.and === null || command.or === null) return 'Refused: a mask write cut off before its masks.';
+      return null;
+
+    case 'other':
+      return `Refused: function 0x${command.fn.toString(16).padStart(2, '0')} is not one this guard can check, and it may write.`;
   }
-  if (
-    (command.kind === 'writeMany' || command.kind === 'readWriteMany') &&
-    command.start <= sleep &&
-    sleep < command.start + command.count
-  ) {
-    return `Refused: a multi-register write spanning register ${sleep}, which bricks the station if set to 0.`;
-  }
-  // Whatever the masks: the result depends on a value this guard cannot see,
-  // and AND 0 / OR 0 is the brick write spelled differently.
-  if (command.kind === 'maskWrite' && command.register === sleep) {
-    return `Refused: a mask write to register ${sleep}, which bricks the station if it ends up 0.`;
-  }
-  return null;
 }
 
 // --- decoding -------------------------------------------------------------

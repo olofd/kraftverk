@@ -81,6 +81,33 @@ describe('commandRefusal: register 68 is never set to 0, whoever built the frame
     expect(commandRefusal(Uint8Array.from([0x11, 0x10, 0x00, 0x44, 0x00, 0x01]))).not.toBeNull();
   });
 
+  test('refused when a multi-register write carries more than it says', () => {
+    // "One register at 67", carrying two: register 68 given 0 on any firmware
+    // that goes by the data rather than the count.
+    expect(commandRefusal(framed([0x11, 0x10, 0x00, 0x43, 0x00, 0x01, 0x04, 0, 1, 0, 0]))).toContain('disagree');
+    // The byte count lying instead of the data.
+    expect(commandRefusal(framed([0x11, 0x10, 0x00, 0x43, 0x00, 0x01, 0x04, 0, 1]))).toContain('disagree');
+    // The same for the write half of a read/write.
+    expect(commandRefusal(framed([0x11, 0x17, 0x00, 0x00, 0x00, 0x01, 0x00, 0x43, 0x00, 0x01, 0x04, 0, 1, 0, 0]))).toContain('disagree');
+    // Said three ways alike, one register at 67 is 67's business, with or without its CRC.
+    expect(commandRefusal(framed([0x11, 0x10, 0x00, 0x43, 0x00, 0x01, 0x02, 0, 1]))).toBeNull();
+    expect(commandRefusal(Uint8Array.from([0x11, 0x10, 0x00, 0x43, 0x00, 0x01, 0x02, 0, 1]))).toBeNull();
+  });
+
+  test('fails closed: what the guard cannot read is refused, not waved through', () => {
+    // A function code it does not know — a vendor's own may well write.
+    expect(commandRefusal(framed([0x11, 0x41, 0x00, 0x44, 0x00, 0x00]))).toContain('function 0x41');
+    expect(commandRefusal(framed([0x11, 0x08, 0x00, 0x00, 0x00, 0x00]))).toContain('function 0x08');
+    // Known writes, cut off before they can be read.
+    expect(commandRefusal(Uint8Array.from([0x11, 0x06, 0x00, 0x44]))).not.toBeNull();
+    expect(commandRefusal(Uint8Array.from([0x11, 0x16, 0x00, 0x43, 0x00, 0x00]))).not.toBeNull();
+    expect(commandRefusal(Uint8Array.from([0x11, 0x17, 0x00, 0x00, 0x00, 0x50]))).not.toBeNull();
+    expect(commandRefusal(Uint8Array.from([0x11, 0x06, 0x00]))).not.toBeNull();
+    // What the server itself sends still passes.
+    expect(commandRefusal(readInputRegisters(0, 80))).toBeNull();
+    expect(commandRefusal(writeRegister(26, 1))).toBeNull();
+  });
+
   test('refused when written by a mask write (0x16), which can set it to anything', () => {
     // AND mask 0, OR mask 0: the register becomes 0, whatever it held.
     expect(commandRefusal(framed([0x11, 0x16, 0x00, 0x44, 0x00, 0x00, 0x00, 0x00]))).toContain('bricks');

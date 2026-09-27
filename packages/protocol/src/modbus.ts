@@ -159,15 +159,26 @@ export function parseFrame(payload: Uint8Array): ParsedFrame | null {
 export type ParsedCommand = { crcValid: boolean; address: number } & (
   | { kind: 'read'; fn: typeof FN.READ_HOLDING | typeof FN.READ_INPUT; start: number; count: number }
   | { kind: 'write'; register: number; value: number }
-  /** `values` may be shorter than `count` when the frame is truncated. */
-  | { kind: 'writeMany'; start: number; count: number; values: number[] }
+  /**
+   * `values` may be shorter than `count` when the frame is truncated.
+   * `wellFormed` is false when the frame's parts disagree — see `wellFormed`.
+   */
+  | { kind: 'writeMany'; start: number; count: number; values: number[]; wellFormed: boolean }
   /**
    * Function 0x16: the register becomes `(current AND and) OR (or AND NOT and)`.
    * The masks are null when the frame is truncated before them.
    */
   | { kind: 'maskWrite'; register: number; and: number | null; or: number | null }
   /** Function 0x17: one read and one multi-register write, in a single frame. */
-  | { kind: 'readWriteMany'; readStart: number; readCount: number; start: number; count: number; values: number[] }
+  | {
+      kind: 'readWriteMany';
+      readStart: number;
+      readCount: number;
+      start: number;
+      count: number;
+      values: number[];
+      wellFormed: boolean;
+    }
   | { kind: 'other'; fn: number }
 );
 
@@ -180,6 +191,22 @@ export type ParsedCommand = { crcValid: boolean; address: number } & (
 const WRITE_MULTIPLE = 0x10;
 const MASK_WRITE = 0x16;
 const READ_WRITE_MULTIPLE = 0x17;
+
+/**
+ * Whether a multi-register write says the same thing three ways.
+ *
+ * Its register count, its byte count and the data it actually carries must
+ * agree. A frame that says "one register at 67" and carries two registers'
+ * worth of data writes 68 on any firmware that goes by the data — so a guard
+ * that read only the count would pass the very write it exists to stop. The
+ * frame may arrive with its CRC or without it: those are the only two lengths
+ * that agree.
+ */
+function wellFormed(payload: Uint8Array, header: number, count: number): boolean {
+  if (payload.length <= header - 1) return false;
+  const byteCount = payload[header - 1]!;
+  return byteCount === count * 2 && (payload.length === header + byteCount || payload.length === header + byteCount + 2);
+}
 
 export function parseCommand(payload: Uint8Array): ParsedCommand | null {
   if (payload.length < 4) return null;
@@ -203,11 +230,11 @@ export function parseCommand(payload: Uint8Array): ParsedCommand | null {
     const values: number[] = [];
     // [addr][fn][start:2][count:2][byteCount][data...][crc:2]
     for (let i = 0; i < count && 7 + i * 2 + 1 < payload.length; i++) values.push(word(7 + i * 2));
-    return { ...common, kind: 'writeMany', start, count, values };
+    return { ...common, kind: 'writeMany', start, count, values, wellFormed: wellFormed(payload, 7, count) };
   }
   if (fn === MASK_WRITE && payload.length >= 6) {
-    // [addr][fn][register:2][and:2][or:2][crc:2]
-    const masks = payload.length >= 10;
+    // [addr][fn][register:2][and:2][or:2], then the CRC when it has one
+    const masks = payload.length >= 8;
     return { ...common, kind: 'maskWrite', register: word(2), and: masks ? word(4) : null, or: masks ? word(6) : null };
   }
   if (fn === READ_WRITE_MULTIPLE && payload.length >= 10) {
@@ -215,7 +242,16 @@ export function parseCommand(payload: Uint8Array): ParsedCommand | null {
     const count = word(8);
     const values: number[] = [];
     for (let i = 0; i < count && 11 + i * 2 + 1 < payload.length; i++) values.push(word(11 + i * 2));
-    return { ...common, kind: 'readWriteMany', readStart: word(2), readCount: word(4), start: word(6), count, values };
+    return {
+      ...common,
+      kind: 'readWriteMany',
+      readStart: word(2),
+      readCount: word(4),
+      start: word(6),
+      count,
+      values,
+      wellFormed: wellFormed(payload, 11, count),
+    };
   }
   return { ...common, kind: 'other', fn };
 }
