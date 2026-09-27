@@ -50,7 +50,14 @@ echo "Inside the stack"
 ok() { printf '  ok  %s\n' "$1"; }
 fail() { printf 'FAIL  %s\n' "$1" >&2; exit 1; }
 
-compose logs kraftverk | grep -q 'Connected to the broker' || fail 'the server connects to the broker'
+# The two start together, and the server retries until the broker listens —
+# so give the retry time rather than reading the log once.
+connected=0
+for _ in $(seq 1 30); do
+  if compose logs kraftverk | grep -q 'Connected to the broker'; then connected=1; break; fi
+  sleep 1
+done
+[ "$connected" = 1 ] || fail 'the server connects to the broker'
 ok 'the server connects to the broker'
 
 # A client that is not the server, connecting as a station would and then
