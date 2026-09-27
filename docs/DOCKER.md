@@ -71,13 +71,18 @@ Put a reverse proxy that terminates HTTPS in front of port `8090`. On a
 Synology:
 
 1. **Control Panel → Login Portal → Advanced → Reverse Proxy → Create.**
-   Source: HTTPS, your DDNS name, port 443. Destination: HTTP, `localhost`,
-   port `8090`.
-2. **Control Panel → Security → Certificate**: a Let's Encrypt certificate for
-   the DDNS name, assigned to that reverse-proxy entry.
-3. Set `KRAFTVERK_ALLOWED_HOSTS` to the DDNS name in `.env`, or the server
-   refuses requests under it.
-4. Forward port 443 on the router to the NAS — and nothing else.
+   Source: HTTPS, a name under your DDNS name — `kraftverk.<you>.synology.me`,
+   which Synology's DDNS resolves too, leaving the bare name to DSM — port 443.
+   Destination: HTTP, `localhost`, port `8090`.
+   **Custom Header → Create**: `X-Forwarded-For` = `$proxy_add_x_forwarded_for`
+   and `X-Real-IP` = `$remote_addr`, so the server rate-limits and records the
+   real client rather than the proxy.
+2. **Control Panel → Security → Certificate → Settings**: give the new entry a
+   certificate covering that name. The Let's Encrypt certificate DSM makes for
+   a `synology.me` name includes `*.<you>.synology.me`.
+3. Set `KRAFTVERK_ALLOWED_HOSTS` to that name, or the server refuses requests
+   under it.
+4. Forward TCP 443 on the router to the NAS — and nothing else.
 
 Never forward `8080`, `3333` or `1883`.
 
