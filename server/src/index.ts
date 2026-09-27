@@ -19,6 +19,7 @@ import { savedDeviceId, stationId, type SavedDeviceId } from '@kraftverk/plugin-
 
 import {
   appState,
+  closeDb,
   audit,
   recentAudit,
   resetDatabase,
@@ -1698,6 +1699,35 @@ app.onError((err, c) => {
   console.error('[server]', err);
   return c.json({ error: 'Internal server error' }, 500);
 });
+
+/*
+  Stopping, when asked to.
+
+  In a container the server is process 1, and process 1 has no default action
+  for SIGTERM: without this, every deploy waited out Docker's ten-second grace
+  period and then killed it — mid-write, database open. So: stop sampling,
+  close the station links, leave the broker (which is not ours to stop, and
+  keeps the station while we are gone), close the database, go. Bounded, so a
+  link that will not close cannot hold the exit up.
+*/
+let stopping = false;
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  process.on(signal, () => {
+    if (stopping) return;
+    stopping = true;
+    console.log(`[server] ${signal}: stopping. The broker keeps running.`);
+    const exit = () => {
+      try {
+        closeDb();
+      } finally {
+        process.exit(0);
+      }
+    };
+    setTimeout(exit, 4000).unref();
+    sampler.stop();
+    void Promise.allSettled([connections.closeAll(), bus?.stop(), host.stopAll()]).then(exit);
+  });
+}
 
 const open = connections.sessions.length;
 console.log(
