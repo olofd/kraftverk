@@ -77,7 +77,7 @@ same image, and the server is told not to start one (`BROKER_SPAWN=0`).
 ```bash
 npm run broker:status     # is it running, which build, which stations, why the last one left
 npm run broker:logs       # follow the journal (Ctrl+C to stop following)
-npm run broker -- logs --debug --station=AC276E629BEA -n 200   # every frame, one station
+npm run broker -- logs --debug --station=AABBCC001122 -n 200   # every frame, one station
 npm run broker:start      # start it if it is not running
 npm run broker:stop       # stop it — this drops every station on it
 npm run broker:restart    # load new broker code — also drops the station

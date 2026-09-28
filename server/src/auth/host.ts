@@ -19,7 +19,7 @@ import { isIP } from 'node:net';
  *
  * So a request must name this server as one of:
  *
- * - an IP address — `192.168.50.140:8080`, `127.0.0.1`. Rebinding needs a
+ * - an IP address — `192.168.1.140:8080`, `127.0.0.1`. Rebinding needs a
  *   name; an address cannot be rebound.
  * - `localhost`, or a `.local`/`.localhost` name — resolved on this network
  *   by mDNS or the machine itself, never by an attacker's DNS.

@@ -57,7 +57,7 @@ describe('assessTrust', () => {
     assessTrust({ socketIp, headers: new Headers(headers), proxies });
 
   test('a direct caller on a private address is on the home network', () => {
-    for (const ip of ['192.168.50.58', '10.0.0.4', '172.16.1.1', '127.0.0.1', '::1', '::ffff:192.168.50.58', 'fd12::1']) {
+    for (const ip of ['192.168.1.58', '10.0.0.4', '172.16.1.1', '127.0.0.1', '::1', '::ffff:192.168.1.58', 'fd12::1']) {
       expect(judge(ip).onHomeNetwork).toBe(true);
     }
   });
@@ -70,12 +70,12 @@ describe('assessTrust', () => {
     // …or by the router's public address: port 8080 forwarded on the router,
     // reached by a scanner that adds nothing at all.
     for (const host of ['198.51.100.7:8080','203.0.113.9', '[2001:db8::5]:8080', '[::ffff:203.0.113.9]:8080']) {
-      expect(judge('192.168.50.1', { host }).onHomeNetwork).toBe(false);
+      expect(judge('192.168.1.1', { host }).onHomeNetwork).toBe(false);
       expect(judge(PROXY, { host, [EXPOSURE_HEADER]: 'lan' }).onHomeNetwork).toBe(false);
     }
     // Local names and addresses are still home.
-    for (const host of ['192.168.50.140:8080', '127.0.0.1:3333', '[::1]:3333', 'localhost:3333', 'diskstation.local', 'diskstation', '[fd12::1]:8080']) {
-      expect(judge('192.168.50.58', { host }).onHomeNetwork).toBe(true);
+    for (const host of ['192.168.1.140:8080', '127.0.0.1:3333', '[::1]:3333', 'localhost:3333', 'diskstation.local', 'diskstation', '[fd12::1]:8080']) {
+      expect(judge('192.168.1.58', { host }).onHomeNetwork).toBe(true);
       expect(judge(PROXY, { host, [EXPOSURE_HEADER]: 'lan' }).onHomeNetwork).toBe(true);
     }
   });
@@ -93,12 +93,12 @@ describe('assessTrust', () => {
 
   test('a private caller that came through a proxy nobody vouched for is not trusted', () => {
     for (const header of ['x-forwarded-for', 'forwarded', 'x-real-ip', 'x-forwarded-host']) {
-      expect(judge('192.168.50.1', { [header]: '203.0.113.50' }).onHomeNetwork).toBe(false);
+      expect(judge('192.168.1.1', { [header]: '203.0.113.50' }).onHomeNetwork).toBe(false);
     }
   });
 
   test('a caller cannot stamp itself as the home network', () => {
-    expect(judge('192.168.50.58', { [EXPOSURE_HEADER]: 'lan' }).onHomeNetwork).toBe(false);
+    expect(judge('192.168.1.58', { [EXPOSURE_HEADER]: 'lan' }).onHomeNetwork).toBe(false);
     expect(judge('203.0.113.50', { [EXPOSURE_HEADER]: 'lan' }).onHomeNetwork).toBe(false);
   });
 
@@ -111,7 +111,7 @@ describe('assessTrust', () => {
 
   test('the client address is the web container’s word only when it came from the web container', () => {
     expect(judge(PROXY, { [EXPOSURE_HEADER]: 'public', [CLIENT_IP_HEADER]: '203.0.113.50' }).clientIp).toBe('203.0.113.50');
-    expect(judge('192.168.50.58', { [CLIENT_IP_HEADER]: '1.2.3.4' }).clientIp).toBe('192.168.50.58');
+    expect(judge('192.168.1.58', { [CLIENT_IP_HEADER]: '1.2.3.4' }).clientIp).toBe('192.168.1.58');
   });
 
   test('address helpers', () => {
@@ -135,7 +135,7 @@ describe('host guard', () => {
   const configured = new Set(['home.example.net']);
 
   test('names that cannot be rebound are accepted', () => {
-    for (const host of ['192.168.50.140:8080', '127.0.0.1', '[::1]:3333', 'localhost:3333', 'diskstation.local', 'kraftverk', 'kraftverk:3333', 'app.localhost']) {
+    for (const host of ['192.168.1.140:8080', '127.0.0.1', '[::1]:3333', 'localhost:3333', 'diskstation.local', 'kraftverk', 'kraftverk:3333', 'app.localhost']) {
       expect(hostAllowed(host, configured)).toBe(true);
     }
   });
@@ -146,7 +146,7 @@ describe('host guard', () => {
   });
 
   test('any other name is refused — a rebinding page arrives under its own name', () => {
-    for (const host of ['evil.example', 'home.example.net.evil.example', '192.168.50.140.nip.io', 'sub.home.example.net', '', 'a:b:c']) {
+    for (const host of ['evil.example', 'home.example.net.evil.example', '192.168.1.140.nip.io', 'sub.home.example.net', '', 'a:b:c']) {
       expect(hostAllowed(host, configured)).toBe(false);
     }
     expect(hostAllowed(undefined, configured)).toBe(false);
@@ -300,7 +300,7 @@ describe('the gate', () => {
   type Call = { from?: string; method?: string; body?: unknown; cookie?: string; headers?: Record<string, string>; host?: string };
 
   /** A request as the server would see it, from a given socket address. */
-  async function call(path: string, { from = '192.168.50.58', method = 'GET', body, cookie, headers = {}, host = '192.168.50.140:3333' }: Call = {}) {
+  async function call(path: string, { from = '192.168.1.58', method = 'GET', body, cookie, headers = {}, host = '192.168.1.140:3333' }: Call = {}) {
     const request = new Request(`http://${host}/api${path}`, {
       method,
       headers: {
@@ -320,7 +320,7 @@ describe('the gate', () => {
 
   const PUBLIC = '203.0.113.50';
   const viaPublicEntrance = { from: PROXY, headers: { [EXPOSURE_HEADER]: 'public', [CLIENT_IP_HEADER]: PUBLIC }, host: 'home.example.net' };
-  const viaLanEntrance = { from: PROXY, headers: { [EXPOSURE_HEADER]: 'lan', [CLIENT_IP_HEADER]: '192.168.50.58' }, host: '192.168.50.140:8080' };
+  const viaLanEntrance = { from: PROXY, headers: { [EXPOSURE_HEADER]: 'lan', [CLIENT_IP_HEADER]: '192.168.1.58' }, host: '192.168.1.140:8080' };
 
   test('the health check answers this machine and a session — not the network', async () => {
     expect((await call('/health', { from: '127.0.0.1', host: '127.0.0.1:3333' })).status).toBe(200);
@@ -389,7 +389,7 @@ describe('the gate', () => {
     // Claims to be the LAN entrance, but did not come from the web container.
     expect((await call('/devices', { from: PUBLIC, headers: { [EXPOSURE_HEADER]: 'lan' } })).status).toBe(401);
     // A LAN address that came through some other proxy.
-    expect((await call('/devices', { from: '192.168.50.1', headers: { 'x-forwarded-for': PUBLIC } })).status).toBe(401);
+    expect((await call('/devices', { from: '192.168.1.1', headers: { 'x-forwarded-for': PUBLIC } })).status).toBe(401);
   });
 
   test('logging in from outside works, over a Secure cookie', async () => {
@@ -427,23 +427,23 @@ describe('the gate', () => {
   test('a write without the client header is refused, even with a session and on the LAN', async () => {
     await createFirstUser('olof', PASSWORD);
     const login = await call('/auth/login', { method: 'POST', body: { username: 'olof', password: PASSWORD } });
-    const request = new Request('http://192.168.50.140:3333/api/grid/relay', {
+    const request = new Request('http://192.168.1.140:3333/api/grid/relay', {
       method: 'POST',
-      headers: { host: '192.168.50.140:3333', 'content-type': 'text/plain', cookie: `${SESSION_COOKIE}=${login.token}` },
+      headers: { host: '192.168.1.140:3333', 'content-type': 'text/plain', cookie: `${SESSION_COOKIE}=${login.token}` },
       body: '{"on":false}',
     });
-    const response = await app.fetch(request, { requestIP: () => ({ address: '192.168.50.58' }) });
+    const response = await app.fetch(request, { requestIP: () => ({ address: '192.168.1.58' }) });
     expect(response.status).toBe(403);
   });
 
   test('a login is also a write, and cannot be forged from another site', async () => {
     await createFirstUser('olof', PASSWORD);
-    const request = new Request('http://192.168.50.140:3333/api/auth/login', {
+    const request = new Request('http://192.168.1.140:3333/api/auth/login', {
       method: 'POST',
-      headers: { host: '192.168.50.140:3333', 'content-type': 'text/plain' },
+      headers: { host: '192.168.1.140:3333', 'content-type': 'text/plain' },
       body: JSON.stringify({ username: 'olof', password: PASSWORD }),
     });
-    expect((await app.fetch(request, { requestIP: () => ({ address: '192.168.50.58' }) })).status).toBe(403);
+    expect((await app.fetch(request, { requestIP: () => ({ address: '192.168.1.58' }) })).status).toBe(403);
   });
 
   test('a DNS-rebinding page is refused before anything else happens', async () => {
@@ -492,9 +492,9 @@ describe('the gate', () => {
 
   test('confirming with your password cannot be used to guess it', async () => {
     await createFirstUser('sam', PASSWORD);
-    const login = await call('/auth/login', { from: '192.168.50.78', method: 'POST', body: { username: 'sam', password: PASSWORD } });
+    const login = await call('/auth/login', { from: '192.168.1.78', method: 'POST', body: { username: 'sam', password: PASSWORD } });
     const guess = (yourPassword: string) =>
-      call('/users', { from: '192.168.50.78', method: 'POST', cookie: login.token, body: { username: 'backdoor', password: PASSWORD, yourPassword } });
+      call('/users', { from: '192.168.1.78', method: 'POST', cookie: login.token, body: { username: 'backdoor', password: PASSWORD, yourPassword } });
     for (let i = 0; i < 6; i++) expect((await guess(`guess number ${i}`)).status).toBe(403);
     expect((await guess(PASSWORD)).status).toBe(429);
     expect(countUsers()).toBe(1);
@@ -519,7 +519,7 @@ describe('the gate', () => {
 
   test('a borrowed session cannot guess the current password without limit', async () => {
     await createFirstUser('pat', PASSWORD);
-    const from = '192.168.50.77';
+    const from = '192.168.1.77';
     const login = await call('/auth/login', { from, method: 'POST', body: { username: 'pat', password: PASSWORD } });
     const guess = (current: string) => call('/auth/password', { from, method: 'POST', cookie: login.token, body: { current, next: 'a brand new passphrase' } });
     for (let i = 0; i < 6; i++) expect((await guess(`guess number ${i}`)).status).toBe(403);
@@ -535,7 +535,7 @@ describe('the gate', () => {
     // Outside, the name is locked — whichever address tries next.
     expect((await outside('203.0.113.10', PASSWORD)).status).toBe(429);
     // At home it is not.
-    expect((await call('/auth/login', { from: '192.168.50.90', method: 'POST', body: { username: 'kim', password: PASSWORD } })).status).toBe(200);
+    expect((await call('/auth/login', { from: '192.168.1.90', method: 'POST', body: { username: 'kim', password: PASSWORD } })).status).toBe(200);
   });
 });
 
