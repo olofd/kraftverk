@@ -15,10 +15,8 @@
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
     "@kraftverk/api-client": "*",
-    "@kraftverk/device-aferiy-p280": "*",
     "@kraftverk/device-sdk": "*",
-    "@kraftverk/plugin-tuya-local-grid-relay": "*",
-    "@kraftverk/protocol": "*",
+    "@kraftverk/gateway": "*",
     "@kraftverk/ui": "*",
     "@tamagui/animations-react-native": "^2.7.4",
     "@tamagui/font-inter": "^2.7.4",

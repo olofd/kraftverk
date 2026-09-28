@@ -7,7 +7,7 @@ import { ScrollView, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { ConnectionBanner } from './ConnectionBanner';
 import { useDevices } from '../state/DevicesProvider';
-import type { Connection } from '../state/DirectLinkProvider';
+import type { Connection } from '../state/DevicesProvider';
 
 type Props = {
   title: string;

@@ -1,248 +1,565 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Feather } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { Button, Input, Spinner, Text, useTheme, YStack } from 'tamagui';
+import { router, useLocalSearchParams } from 'expo-router';
+import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { describeError } from '@kraftverk/api-client';
-import type { AddableType, SupportLevel } from '@kraftverk/api-client';
+import {
+  CATEGORIES,
+  describeError,
+  fetchDeviceTypes,
+  LINK_KINDS,
+  type CheckOutcome,
+  type DeviceTypeListing,
+  type DeviceView,
+  type SaveInput,
+} from '@kraftverk/api-client';
+import { describeDeviceType } from '@kraftverk/device-sdk';
 import { Card, Row, RowSeparator, SectionLabel, haptic } from '@kraftverk/ui';
 
 import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
+import { AppFlow, ServerFlow, type SetupFlow } from '../src/features/add/flows';
+import { StepView } from '../src/features/add/steps';
 import { featherName } from '../src/lib/icons';
+import { PLATFORM } from '../src/runtime/registry';
 import { useDevices } from '../src/state/DevicesProvider';
 
 /**
- * Adding a device.
+ * Adding a device (docs/DATA-MODEL.md §1).
  *
- * The list of what can be added comes from the server, which finds every
- * device type installed on it (docs/ARCHITECTURE.md §3). So a device type added
- * next year appears here without this screen changing — the whole point, and
- * the thing that would be quietly untrue if this file contained a list of its
- * own. Each says how far it is trusted, in its own words.
+ * What are you adding → which one → how do you want to connect → the steps
+ * that connection's layers supply → the check → a name and how it fits the
+ * house → saved. Every step that touches the device runs where the connection
+ * will be held: the server, or this app. `?attach=<id>` adds another way to
+ * reach a device you have; `?type=&method=&address=` comes from "Found near you".
  */
 
-/** How far a type is trusted, in a few words. */
-const SUPPORT: Record<SupportLevel, string> = {
-  verified: 'Verified',
-  community: 'Community',
-  experimental: 'Experimental',
-};
+type Stage = 'category' | 'type' | 'method' | 'steps' | 'finish';
+
+/** One way to connect, and who would hold it. */
+type Way = { methodId: string; label: string; description?: string; holder: 'server' | 'this-app'; available: boolean; reason: string | null; recommended: boolean };
+
+const HERE = PLATFORM === 'web' ? 'this browser' : 'this phone';
 
 export default function AddDeviceScreen() {
-  const { types, add } = useDevices();
+  const params = useLocalSearchParams<{ type?: string; method?: string; address?: string; attach?: string }>();
+  const { mode, runtime, devices, refresh } = useDevices();
+  const attachTo = params.attach ? (devices.find((device) => device.id === params.attach) ?? null) : null;
 
-  const [options, setOptions] = useState<AddableType[] | null>(null);
-  const [chosen, setChosen] = useState<AddableType | null>(null);
-  const [name, setName] = useState('');
+  const [types, setTypes] = useState<DeviceTypeListing[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [stage, setStage] = useState<Stage>(params.type ? 'method' : 'category');
+  const [category, setCategory] = useState<string | null>(null);
+  const [typeId, setTypeId] = useState<string | null>(params.type ?? null);
+  const [flow, setFlow] = useState<SetupFlow | null>(null);
+  const [stepIndex, setStepIndex] = useState(0);
+  const [outcome, setOutcome] = useState<CheckOutcome | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const flowRef = useRef<SetupFlow | null>(null);
 
+  // What can be added: the server's installed types, or — in local mode — this app's.
   useEffect(() => {
-    let live = true;
-    void types()
-      .then((loaded) => live && setOptions(loaded))
-      .catch((err: unknown) => {
-        if (live) setError(describeError(err) || 'Could not load what can be added');
-      });
-    return () => {
-      live = false;
-    };
-  }, [types]);
-
-  const choose = useCallback((option: AddableType) => {
-    haptic();
-    setChosen(option);
-    setName(option.meta.name);
-    setError(null);
-  }, []);
-
-  const submit = useCallback(async () => {
-    if (!chosen) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const created = await add({ typeId: chosen.id, name: name.trim() || chosen.meta.name });
-      router.replace(`/device/${encodeURIComponent(created.id)}`);
-    } catch (err) {
-      setError(describeError(err) || 'That device could not be added');
-      setBusy(false);
+    if (mode === 'local') {
+      setTypes(
+        [...runtime.registry.types.values()].map((type) => ({
+          ...describeDeviceType(type),
+          availability: Object.fromEntries(type.connections.map((method) => [method.id, { server: { ok: false as const, reason: 'Local mode: there is no server' } }])),
+          warnings: [],
+        }))
+      );
+      return;
     }
-  }, [add, chosen, name]);
+    fetchDeviceTypes()
+      .then((list) => setTypes(list.types))
+      .catch((err: unknown) => setLoadError(describeError(err) || 'What can be added could not be read'));
+  }, [mode, runtime]);
 
-  const hardware = useMemo(() => options?.filter((option) => option.kind === 'hardware') ?? [], [options]);
-  const services = useMemo(() => options?.filter((option) => option.kind === 'service') ?? [], [options]);
+  // A draft left behind is discarded, so a secret it holds does not outlive the screen.
+  useEffect(() => () => flowRef.current?.discard(), []);
+
+  const type = types?.find((candidate) => candidate.id === typeId) ?? null;
+
+  const ways = useMemo((): Way[] => {
+    if (!type) return [];
+    return type.connections.flatMap((method): Way[] => {
+      const rows: Way[] = [];
+      if (mode === 'server') {
+        const server = type.availability[method.id]?.server;
+        rows.push({
+          methodId: method.id,
+          label: `${method.label}, through your server`,
+          description: method.description,
+          holder: 'server',
+          available: server?.ok ?? false,
+          reason: server && !server.ok ? server.reason : null,
+          recommended: Boolean(method.recommended),
+        });
+      }
+      const definition = runtime.registry.definition(method.transport);
+      if (definition?.platforms.includes(PLATFORM) && runtime.registry.protocols.get(method.protocol)?.bindings[method.transport]) {
+        const here = runtime.registry.available(method.transport);
+        rows.push({
+          methodId: method.id,
+          label: `${method.label}, from ${HERE}`,
+          description: mode === 'server' ? `While ${HERE} has it: readings go to your server when it can reach it.` : method.description,
+          holder: 'this-app',
+          available: here.ok,
+          reason: here.ok ? null : here.reason,
+          recommended: mode === 'local' && Boolean(method.recommended),
+        });
+      }
+      return rows;
+    });
+  }, [mode, runtime, type]);
+
+  const begin = useCallback(
+    async (way: Way) => {
+      if (!type) return;
+      haptic();
+      setBusy(true);
+      setError(null);
+      try {
+        flowRef.current?.discard();
+        let next: SetupFlow;
+        if (way.holder === 'server') {
+          next = await ServerFlow.start(type.id, way.methodId);
+        } else {
+          const local = runtime.registry.types.get(type.id);
+          const method = local?.connections.find((candidate) => candidate.id === way.methodId);
+          const protocol = method ? runtime.registry.protocols.get(method.protocol) : undefined;
+          if (!local || !method || !protocol) throw new Error('This app cannot set that up: update it');
+          next = new AppFlow(runtime, local, method, protocol);
+        }
+        flowRef.current = next;
+        setFlow(next);
+        setStepIndex(0);
+        setOutcome(null);
+        setStage('steps');
+      } catch (err) {
+        setError(describeError(err) || 'That way cannot be used right now');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [runtime, type]
+  );
+
+  // "Found near you" names the method too: start it straight away.
+  const autostarted = useRef(false);
+  useEffect(() => {
+    if (autostarted.current || !params.method || !type) return;
+    const way = ways.find((candidate) => candidate.methodId === params.method && candidate.holder === 'server' && candidate.available);
+    if (!way) return;
+    autostarted.current = true;
+    void begin(way);
+  }, [begin, params.method, type, ways]);
+
+  const title = attachTo ? `Another way to reach ${attachTo.name}` : 'Add a device';
 
   return (
-    <Screen back="Your devices" title="Add a device" subtitle="What have you got?">
-      {error ? (
+    <Screen back={attachTo ? attachTo.name : 'Your devices'} backTo={attachTo ? `/device/${encodeURIComponent(attachTo.id)}/settings` : '/'} title={title} subtitle={type?.meta.name}>
+      {loadError ? (
         <Card borderColor="$danger">
-          <Text fontSize={13} color="$danger" lineHeight={19}>
-            {error}
+          <Text fontSize={13} color="$danger">
+            {loadError}
           </Text>
         </Card>
       ) : null}
+      {!types && !loadError ? <Spinner color="$accent" /> : null}
 
-      {options === null ? (
-        <Card>
-          <YStack padding="$5" alignItems="center">
-            <Spinner color="$accent" />
-          </YStack>
-        </Card>
-      ) : (
+      {types && stage === 'category' ? <Categories types={types} onPick={(id) => (setCategory(id), setStage('type'))} /> : null}
+
+      {types && stage === 'type' ? (
+        <Types
+          types={types.filter((candidate) => candidate.meta.category === category)}
+          onPick={(id) => {
+            setTypeId(id);
+            setStage('method');
+          }}
+          onBack={() => setStage('category')}
+        />
+      ) : null}
+
+      {stage === 'method' && type ? (
+        <Ways ways={ways} busy={busy} onPick={(way) => void begin(way)} onBack={params.type ? undefined : () => setStage('type')} />
+      ) : null}
+
+      {stage === 'steps' && flow ? (
         <>
-          <Choices label="Devices" options={hardware} chosen={chosen} onChoose={choose} />
-          {services.length ? <Choices label="Services" options={services} chosen={chosen} onChoose={choose} /> : null}
+          <Progress plan={flow.plan.map((step) => step.title)} at={stepIndex} />
+          {outcome ? (
+            <Outcome
+              outcome={outcome}
+              attachTo={attachTo}
+              onRetry={() => setOutcome(null)}
+              onContinue={() => setStage('finish')}
+              onOtherType={(id) => {
+                setTypeId(id);
+                setStage('method');
+              }}
+            />
+          ) : (
+            <StepView
+              key={flow.plan[stepIndex]?.id}
+              flow={flow}
+              step={flow.plan[stepIndex]!}
+              presetAddress={params.address}
+              onNext={() => setStepIndex((index) => Math.min(index + 1, flow.plan.length - 1))}
+              onChecked={setOutcome}
+            />
+          )}
         </>
-      )}
+      ) : null}
 
-      {/*
-        In-app Bluetooth — the app holding a station itself — is frozen
-        (docs/ARCHITECTURE.md §9), so it is offered beside the types that can use it.
-      */}
-      {chosen?.protocols.includes('sydpower') ? <ConnectionOwner /> : null}
+      {stage === 'finish' && flow && outcome && type ? (
+        <Finish
+          flow={flow}
+          outcome={outcome}
+          typeName={type.meta.name}
+          capabilities={type.capabilities}
+          attachTo={attachTo}
+          devices={devices}
+          onSaved={async (id) => {
+            flowRef.current = null;
+            await refresh();
+            router.replace(`/device/${encodeURIComponent(id)}`);
+          }}
+        />
+      ) : null}
 
-      {chosen ? (
-        <>
-          <YStack gap="$2">
-            <SectionLabel>Name</SectionLabel>
-            <Card gap="$2">
-              <Input
-                size="$3"
-                value={name}
-                maxLength={60}
-                placeholder={chosen.meta.name}
-                onChangeText={setName}
-                backgroundColor="$background"
-                borderColor="$borderColor"
-              />
-              <Text fontSize={12} color="$muted" lineHeight={17}>
-                What you call it. Changing it later changes nothing but the label.
-              </Text>
-            </Card>
-          </YStack>
-
-          <Button
-            size="$4"
-            backgroundColor="$accent"
-            color="$background"
-            disabled={busy}
-            onPress={() => {
-              haptic();
-              void submit();
-            }}
-          >
-            {busy ? 'Adding…' : `Add ${name.trim() || chosen.meta.name}`}
-          </Button>
-
-          {chosen.extension ? (
-            <Text fontSize={12} color="$muted" lineHeight={18} paddingHorizontal="$1">
-              How this reaches the device — its address and keys — is set up on the Extensions
-              screen for now. Until that is done it will sit here greyed out, saying why.
-            </Text>
-          ) : null}
-        </>
+      {error ? (
+        <Text fontSize={12} color="$danger" lineHeight={18} paddingHorizontal="$1">
+          {error}
+        </Text>
       ) : null}
     </Screen>
   );
 }
 
-/** One section of things that can be added. */
-function Choices({
-  label,
-  options,
-  chosen,
-  onChoose,
-}: {
-  label: string;
-  options: AddableType[];
-  chosen: AddableType | null;
-  onChoose: (option: AddableType) => void;
-}) {
-  const theme = useTheme();
+// --- 1 · what are you adding ------------------------------------------------------
 
+function Categories({ types, onPick }: { types: DeviceTypeListing[]; onPick: (id: string) => void }) {
+  const theme = useTheme();
+  const sections = (['devices', 'services'] as const).map((section) => ({
+    section,
+    categories: Object.entries(CATEGORIES).filter(([, spec]) => spec.section === section),
+  }));
+  return (
+    <>
+      {sections.map(({ section, categories }) => (
+        <YStack key={section} gap="$2">
+          <SectionLabel>{section === 'devices' ? 'Devices' : 'Services'}</SectionLabel>
+          <Card inset>
+            {categories.map(([id, spec], index) => {
+              const count = types.filter((type) => type.meta.category === id).length;
+              return (
+                <YStack key={id}>
+                  {index > 0 ? <RowSeparator /> : null}
+                  <Pressable disabled={count === 0} onPress={() => onPick(id)}>
+                    <XStack alignItems="center" gap="$3" paddingLeft="$4">
+                      <Feather name={featherName(spec.icon)} size={18} color={count ? theme.accent?.val : theme.muted?.val} />
+                      <YStack flex={1}>
+                        <Row title={spec.label} subtitle={count ? `${spec.description} ${count === 1 ? 'One product.' : `${count} products.`}` : 'Nothing installed yet'} disabled={count === 0} />
+                      </YStack>
+                    </XStack>
+                  </Pressable>
+                </YStack>
+              );
+            })}
+          </Card>
+        </YStack>
+      ))}
+    </>
+  );
+}
+
+// --- 2 · which one ------------------------------------------------------------------
+
+const SUPPORT: Record<string, string> = {
+  verified: 'Verified on real hardware',
+  community: 'Reported working by others',
+  experimental: 'Experimental',
+};
+
+function Types({ types, onPick, onBack }: { types: DeviceTypeListing[]; onPick: (id: string) => void; onBack: () => void }) {
+  const theme = useTheme();
   return (
     <YStack gap="$2">
-      <SectionLabel>{label}</SectionLabel>
+      <SectionLabel>Which one?</SectionLabel>
       <Card inset>
-        {options.length === 0 ? (
-          <Text fontSize={13} color="$muted" padding="$4">
-            Nothing of this kind is installed on the server.
-          </Text>
-        ) : null}
-        {options.map((option, index) => {
-          const active = chosen?.id === option.id;
-          const support = [SUPPORT[option.meta.support], option.meta.supportNote].filter(Boolean).join(' · ');
-
-          return (
-            <YStack key={option.id}>
-              {index > 0 ? <RowSeparator /> : null}
-              <Pressable selected={active} label={option.meta.name} onPress={() => onChoose(option)}>
-                <Row
-                  title={option.meta.name}
-                  subtitle={[option.meta.description, support].filter(Boolean).join('\n')}
-                  accessory={
-                    <Feather
-                      name={active ? 'check-circle' : featherName(option.meta.icon)}
-                      size={16}
-                      color={active ? theme.accent?.val : theme.muted?.val}
-                    />
-                  }
-                />
-              </Pressable>
-            </YStack>
-          );
-        })}
+        {types.map((type, index) => (
+          <YStack key={type.id}>
+            {index > 0 ? <RowSeparator /> : null}
+            <Pressable onPress={() => onPick(type.id)}>
+              <Row
+                title={type.meta.name}
+                subtitle={[type.meta.brand, type.meta.description, SUPPORT[type.meta.support], type.meta.models?.length ? `Models: ${type.meta.models.join(', ')}` : null].filter(Boolean).join(' · ')}
+                accessory={<Feather name="chevron-right" size={16} color={theme.muted?.val} />}
+              />
+            </Pressable>
+          </YStack>
+        ))}
       </Card>
+      <Text fontSize={12} color="$muted" lineHeight={18} paddingHorizontal="$1">
+        Don't see yours? Support is added one device type at a time: see docs/ADDING-A-DEVICE.md.
+      </Text>
+      <Button alignSelf="flex-start" size="$2" onPress={onBack}>
+        Back
+      </Button>
     </YStack>
   );
 }
 
-/**
- * Who will hold the link — and the honest admission that this screen only makes
- * one of the two.
- *
- * Adding a device here creates a **server-owned** station: the server holds the
- * link, which is what makes history, background sampling and automations
- * possible, because only the server is running when the app is closed.
- *
- * Driving a station straight from this browser or phone over Bluetooth is a
- * different kind of connection, and it does not need a saved device at all. It
- * is set up on the Station link screen. Saying so here is the difference between
- * a user who finds that screen and one who adds a station the server cannot
- * reach and is left with a permanently grey card.
- *
- * A device type's setup guide will offer both in one flow; until then, this
- * points at the screen that already works rather than pretending.
- */
-function ConnectionOwner() {
-  const theme = useTheme();
+// --- 3 · how do you want to connect -------------------------------------------------
 
+function Ways({ ways, busy, onPick, onBack }: { ways: Way[]; busy: boolean; onPick: (way: Way) => void; onBack?: () => void }) {
+  const theme = useTheme();
   return (
     <YStack gap="$2">
-      <SectionLabel>Connection</SectionLabel>
-      <Card gap="$3" alignItems="flex-start">
-        <Text fontSize={13} color="$muted" lineHeight={19}>
-          The <Text color="$color">server</Text> will hold this station's link, over WiFi or its
-          own Bluetooth. That is what records history and can run automations while the app is
-          closed.
-        </Text>
-        <Text fontSize={13} color="$muted" lineHeight={19}>
-          To drive a station from <Text color="$color">this device</Text> over Bluetooth instead —
-          live readings, settings and manual control while the app is open — you do not add it
-          here. Set that up on the Station link screen.
-        </Text>
-        <Button
-          size="$3"
-          icon={<Feather name="bluetooth" size={14} color={theme.color?.val} />}
-          onPress={() => {
-            haptic();
-            router.push('/link?connection=direct');
-          }}
-        >
-          Connect over Bluetooth instead
-        </Button>
+      <SectionLabel>How do you want to connect?</SectionLabel>
+      <Card inset>
+        {ways.length === 0 ? <Row title="No way to reach it from here" subtitle="Neither your server nor this app has what it needs" /> : null}
+        {ways.map((way, index) => (
+          <YStack key={`${way.methodId}-${way.holder}`}>
+            {index > 0 ? <RowSeparator /> : null}
+            <Pressable disabled={busy || !way.available} onPress={() => onPick(way)}>
+              <Row
+                title={`${way.label}${way.recommended ? ' · recommended' : ''}`}
+                subtitle={way.available ? way.description : (way.reason ?? 'Not available here')}
+                disabled={!way.available}
+                accessory={<Feather name={way.holder === 'server' ? 'server' : PLATFORM === 'web' ? 'monitor' : 'smartphone'} size={16} color={theme.muted?.val} />}
+              />
+            </Pressable>
+          </YStack>
+        ))}
       </Card>
+      {busy ? <Spinner color="$accent" /> : null}
+      {onBack ? (
+        <Button alignSelf="flex-start" size="$2" onPress={onBack}>
+          Back
+        </Button>
+      ) : null}
+    </YStack>
+  );
+}
+
+function Progress({ plan, at }: { plan: string[]; at: number }) {
+  return (
+    <XStack gap="$1.5" flexWrap="wrap">
+      {plan.map((title, index) => (
+        <Text
+          key={`${title}-${index}`}
+          fontSize={11}
+          fontWeight="600"
+          paddingHorizontal="$2"
+          paddingVertical="$1"
+          borderRadius="$2"
+          backgroundColor={index === at ? '$accent' : '$backgroundPress'}
+          color={index === at ? '$background' : index < at ? '$color' : '$muted'}
+        >
+          {index + 1}. {title}
+        </Text>
+      ))}
+    </XStack>
+  );
+}
+
+// --- 7 · what the check found -------------------------------------------------------
+
+function Outcome({
+  outcome,
+  attachTo,
+  onRetry,
+  onContinue,
+  onOtherType,
+}: {
+  outcome: CheckOutcome;
+  attachTo: DeviceView | null;
+  onRetry: () => void;
+  onContinue: () => void;
+  onOtherType: (typeId: string) => void;
+}) {
+  const [tone, heading] =
+    outcome.outcome === 'new'
+      ? (['$success', attachTo ? `It answered. Is it ${attachTo.name}?` : 'It answered'] as const)
+      : outcome.outcome === 'yours'
+        ? (['$accent', attachTo && outcome.device.id === attachTo.id ? `This is ${attachTo.name}` : `You already have this: ${outcome.device.name}`] as const)
+        : outcome.outcome === 'removed'
+          ? (['$accent', 'You had this before'] as const)
+          : outcome.outcome === 'other-model'
+            ? (['$warning', 'That is a different product'] as const)
+            : (['$warning', 'It did not answer'] as const);
+
+  const canContinue =
+    outcome.outcome === 'new' ||
+    outcome.outcome === 'removed' ||
+    (outcome.outcome === 'yours' && attachTo !== null && outcome.device.id === attachTo.id) ||
+    (outcome.outcome === 'no-answer' && Boolean(outcome.saveAnyway));
+
+  return (
+    <Card gap="$3" borderColor={tone}>
+      <Text fontSize={15} fontWeight="700" color={tone}>
+        {heading}
+      </Text>
+      <Text fontSize={13} color="$muted" lineHeight={19}>
+        {outcome.summary}
+        {outcome.outcome === 'no-answer' && outcome.saveAnyway ? ` ${outcome.saveAnyway}` : ''}
+        {outcome.outcome === 'new' && attachTo && outcome.identity === null
+          ? ` It cannot say which device it is from here, so it is taken on your word that it is ${attachTo.name}.`
+          : ''}
+      </Text>
+      <XStack gap="$2" flexWrap="wrap">
+        {canContinue ? (
+          <Button size="$3" backgroundColor="$accent" color="$background" onPress={onContinue}>
+            {outcome.outcome === 'no-answer' ? 'Save it anyway' : 'Continue'}
+          </Button>
+        ) : null}
+        {outcome.outcome === 'yours' && (!attachTo || outcome.device.id !== attachTo.id) ? (
+          <Button size="$3" onPress={() => router.replace(`/device/${encodeURIComponent(outcome.device.id)}`)}>
+            Open {outcome.device.name}
+          </Button>
+        ) : null}
+        {outcome.outcome === 'other-model' && outcome.type ? (
+          <Button size="$3" onPress={() => onOtherType(outcome.type!.id)}>
+            Set it up as {outcome.type.name}
+          </Button>
+        ) : null}
+        <Button size="$3" onPress={onRetry}>
+          Try again
+        </Button>
+      </XStack>
+    </Card>
+  );
+}
+
+// --- 8 · name it, and how it fits the house ------------------------------------------
+
+function Finish({
+  flow,
+  outcome,
+  typeName,
+  capabilities,
+  attachTo,
+  devices,
+  onSaved,
+}: {
+  flow: SetupFlow;
+  outcome: CheckOutcome;
+  typeName: string;
+  capabilities: readonly string[];
+  attachTo: DeviceView | null;
+  devices: DeviceView[];
+  onSaved: (id: string) => Promise<void>;
+}) {
+  const [name, setName] = useState(typeName);
+  const [restore, setRestore] = useState<string | null>(outcome.outcome === 'removed' ? (outcome.devices[0]?.id ?? null) : null);
+  const [links, setLinks] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Questions a link kind asks, where this device fits one end and a device you have the other.
+  const questions = Object.entries(LINK_KINDS).flatMap(([kind, spec]) => {
+    const asSource = capabilities.includes(spec.from) ? devices.filter((other) => other.capabilities.includes(spec.to)) : [];
+    const asTarget = capabilities.includes(spec.to) ? devices.filter((other) => other.capabilities.includes(spec.from)) : [];
+    return [
+      ...(asSource.length ? [{ key: `${kind}:source`, kind, role: 'source' as const, question: spec.question.fromSide, options: asSource }] : []),
+      ...(asTarget.length ? [{ key: `${kind}:target`, kind, role: 'target' as const, question: spec.question.toSide, options: asTarget }] : []),
+    ];
+  });
+
+  const save = async () => {
+    haptic();
+    setBusy(true);
+    setError(null);
+    try {
+      const input: SaveInput = attachTo
+        ? { name: '', mode: 'attach', deviceId: attachTo.id }
+        : restore
+          ? { name, mode: 'restore', deviceId: restore }
+          : {
+              name,
+              mode: 'new',
+              anyway: outcome.outcome === 'no-answer' ? true : undefined,
+              links: Object.entries(links)
+                .filter(([, other]) => other)
+                .map(([key, other]) => {
+                  const [kind, role] = key.split(':') as [string, 'source' | 'target'];
+                  return { kind, other, role };
+                }),
+            };
+      if (attachTo && outcome.outcome === 'no-answer') input.anyway = true;
+      await onSaved(await flow.save(input));
+    } catch (err) {
+      setError(describeError(err) || 'It could not be saved');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <YStack gap="$3">
+      {outcome.outcome === 'removed' && !attachTo ? (
+        <YStack gap="$2">
+          <SectionLabel>Bring it back?</SectionLabel>
+          <Card inset>
+            {outcome.devices.map((device, index) => (
+              <YStack key={device.id}>
+                {index > 0 ? <RowSeparator /> : null}
+                <Pressable selected={restore === device.id} onPress={() => setRestore(device.id)}>
+                  <Row title={`Bring back ${device.name}, with its history`} subtitle={`Removed ${new Date(device.removedAt).toLocaleDateString()}`} />
+                </Pressable>
+              </YStack>
+            ))}
+            <RowSeparator />
+            <Pressable selected={restore === null} onPress={() => setRestore(null)}>
+              <Row title="Start fresh" subtitle="A new device; the old one stays removed, with its history" />
+            </Pressable>
+          </Card>
+        </YStack>
+      ) : null}
+
+      {attachTo ? null : (
+        <YStack gap="$2">
+          <SectionLabel>Name it</SectionLabel>
+          <Card gap="$2">
+            <Input size="$3" value={name} maxLength={60} onChangeText={setName} backgroundColor="$background" borderColor="$borderColor" />
+            <Text fontSize={12} color="$muted">
+              {flow.holder === 'server' ? 'Held by your server.' : `Held by ${HERE}.`}
+            </Text>
+          </Card>
+        </YStack>
+      )}
+
+      {!attachTo && !restore
+        ? questions.map((question) => (
+            <YStack key={question.key} gap="$2">
+              <SectionLabel>{question.question}</SectionLabel>
+              <Card inset>
+                <Pressable selected={!links[question.key]} onPress={() => setLinks((before) => ({ ...before, [question.key]: '' }))}>
+                  <Row title="None of these" />
+                </Pressable>
+                {question.options.map((other) => (
+                  <YStack key={other.id}>
+                    <RowSeparator />
+                    <Pressable selected={links[question.key] === other.id} onPress={() => setLinks((before) => ({ ...before, [question.key]: other.id }))}>
+                      <Row title={other.name} subtitle={other.meta.name} />
+                    </Pressable>
+                  </YStack>
+                ))}
+              </Card>
+            </YStack>
+          ))
+        : null}
+
+      <Button size="$4" backgroundColor="$accent" color="$background" disabled={busy || (!attachTo && !name.trim())} onPress={() => void save()}>
+        {busy ? 'Saving…' : attachTo ? `Add it to ${attachTo.name}` : restore ? 'Bring it back' : 'Save'}
+      </Button>
+      {error ? (
+        <Text fontSize={12} color="$danger" lineHeight={18}>
+          {error}
+        </Text>
+      ) : null}
     </YStack>
   );
 }

@@ -20,7 +20,7 @@ import { db } from '../history/db.ts';
 
 export type DeviceRecord = {
   id: SavedDeviceId;
-  /** The device type: `aferiy.p280`. Stable forever. */
+  /** The device type: `atorch.s1w`. Stable forever. */
   typeId: string;
   /** Its own permanent id, read from the device — `sydpower:AABBCC001122` — or null until it has said. */
   identity: string | null;
@@ -147,6 +147,12 @@ export class DeviceCatalog {
     }
     db().query('UPDATE device SET removed_at = NULL WHERE id = ?').run(id);
     return { ...record, removedAt: null };
+  }
+
+  /** Everything a device's session keeps between runs, by key. */
+  storeOf(id: SavedDeviceId): Record<string, unknown> {
+    const rows = db().query<{ key: string; value: string }, [string]>('SELECT key, value FROM device_kv WHERE device_id = ? ORDER BY key').all(id);
+    return Object.fromEntries(rows.map((row) => [row.key, JSON.parse(row.value) as unknown]));
   }
 
   /**

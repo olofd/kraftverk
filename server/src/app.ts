@@ -13,6 +13,7 @@ import { SetupError } from './devices/setup.ts';
 import { adminRoutes } from './routes/admin.ts';
 import { deviceRoutes } from './routes/devices.ts';
 import { connectionRoutes } from './routes/connections.ts';
+import { heldRoutes } from './routes/held.ts';
 import type { AppDeps } from './routes/shared.ts';
 import { setupRoutes } from './routes/setup.ts';
 import { transportRoutes } from './routes/transports.ts';
@@ -152,6 +153,7 @@ export function createApp(deps: AppDeps) {
   api.route('/', adminRoutes(deps, accounts));
   api.route('/', deviceRoutes(deps));
   api.route('/', connectionRoutes(deps));
+  api.route('/', heldRoutes(deps));
   api.route('/', transportRoutes(deps));
 
   app.route('/api', api);

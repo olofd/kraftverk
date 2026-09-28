@@ -15,6 +15,7 @@ import type { DeviceCatalog, DeviceRecord } from './catalog.ts';
 import type { ClientStore } from './clients.ts';
 import type { ConnectionStore } from './connections.ts';
 import type { LinkStore } from './links.ts';
+import type { RemoteReadings } from './remote.ts';
 import type { DeviceSessionManager } from './sessions.ts';
 import type { DeviceTypeRegistry } from './types.ts';
 
@@ -91,6 +92,8 @@ export class DeviceRegistry {
       links: LinkStore;
       clients: ClientStore;
       transports: TransportHost;
+      /** Readings from connections an app holds. */
+      remote: RemoteReadings;
     }
   ) {}
 
@@ -117,6 +120,7 @@ export class DeviceRegistry {
     const type = this.deps.sessions.typeOf(record);
     const session = record.removedAt ? null : this.deps.sessions.get(record.id);
     const inUse = this.deps.sessions.inUse(record.id);
+    const remote = record.removedAt || session ? null : this.deps.remote.latest(record.id);
 
     const connections = this.deps.connections.forDevice(record.id).map((connection): ConnectionView => {
       const method = type?.connections.find((candidate) => candidate.id === connection.method);
@@ -129,7 +133,7 @@ export class DeviceRegistry {
         heldBy: connection.heldBy ? { kind: 'client', id: connection.heldBy, name: client?.name ?? 'Another app' } : { kind: 'server' },
         address: connection.address,
         priority: connection.priority,
-        inUse: inUse?.id === connection.id,
+        inUse: inUse?.id === connection.id || remote?.connectionId === connection.id,
         lastConnectedAt: connection.lastConnectedAt,
         secrets: this.deps.connections.secretFields(connection.id),
         config: connection.config,
@@ -162,10 +166,18 @@ export class DeviceRegistry {
       connections,
       links,
       advanced: Object.entries(session?.advanced ?? {}).map(([name, action]) => ({ name, writes: action.writes })),
-      readings: session?.readings() ?? [],
+      readings: session?.readings() ?? remote?.readings ?? [],
       health: record.removedAt
         ? { status: 'offline', detail: `Removed ${new Date(record.removedAt).toLocaleDateString()}; its history is kept`, owner: null, transport: null, lastReadingAt: null }
-        : this.deps.sessions.health(record),
+        : remote
+          ? {
+              status: 'connected',
+              detail: `Connected through ${this.deps.clients.get(remote.clientId)?.name ?? 'another app'}`,
+              owner: 'client',
+              transport: connections.find((connection) => connection.id === remote.connectionId)?.transport ?? null,
+              lastReadingAt: remote.at,
+            }
+          : this.deps.sessions.health(record),
     };
   }
 

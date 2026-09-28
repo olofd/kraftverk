@@ -10,7 +10,7 @@ import config, { BACKGROUNDS } from '../tamagui.config';
 import { AuthGate } from '../src/features/auth/SignIn';
 import { AuthProvider } from '../src/state/AuthProvider';
 import { DevicesProvider } from '../src/state/DevicesProvider';
-import { DirectLinkProvider } from '../src/state/DirectLinkProvider';
+import { ServersProvider } from '../src/state/ServersProvider';
 
 export default function RootLayout() {
   // useColorScheme can report values outside light/dark; anything else gets dark.
@@ -25,12 +25,8 @@ export default function RootLayout() {
     <TamaguiProvider config={config} defaultTheme={scheme}>
       <Theme name={scheme}>
         <SafeAreaProvider>
-          {/*
-            Devices sit inside the link, not beside it: the catalog only exists
-            when a server holds it, and whether that is the case is the link's
-            business.
-          */}
-          <DirectLinkProvider>
+          {/* Which server, if any, comes first: everything else depends on it. */}
+          <ServersProvider>
             <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
             {/*
               Who you are to the chosen server comes before anything that asks
@@ -51,7 +47,7 @@ export default function RootLayout() {
                 </DevicesProvider>
               </AuthGate>
             </AuthProvider>
-          </DirectLinkProvider>
+          </ServersProvider>
         </SafeAreaProvider>
       </Theme>
     </TamaguiProvider>

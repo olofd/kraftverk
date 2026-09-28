@@ -291,6 +291,20 @@ const NUMERIC_ENUMS = new Set([
   'sleepMinutes',
 ]);
 
+/**
+ * A partial patch as schema values: only the keys it has. `settingsToValues`
+ * needs the whole set, and given one field would send "undefined" for every
+ * numeric enum it lacks.
+ */
+export function patchToValues(patch: Partial<StationSettings>): Record<string, string | number | boolean> {
+  const values: Record<string, string | number | boolean> = {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined || value === null) continue;
+    values[key] = NUMERIC_ENUMS.has(key) ? String(value) : (value as string | number | boolean);
+  }
+  return values;
+}
+
 /** The reverse: a form's values, back into a settings patch for the driver. */
 export function valuesToSettings(values: Record<string, unknown>): Record<string, unknown> {
   const patch: Record<string, unknown> = {};

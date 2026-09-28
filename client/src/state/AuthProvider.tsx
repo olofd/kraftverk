@@ -10,7 +10,7 @@ import {
 } from '@kraftverk/api-client';
 import type { AuthState } from '@kraftverk/api-client';
 
-import { useDirectLink } from './DirectLinkProvider';
+import { useServers } from './ServersProvider';
 
 /**
  * Who this app is to the server it is pointed at.
@@ -50,8 +50,8 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { source, servers } = useDirectLink();
-  const applies = source === 'server' && Boolean(servers.active);
+  const servers = useServers();
+  const applies = servers.mode === 'server' && Boolean(servers.active);
   const serverUrl = servers.active?.url ?? null;
 
   const [state, setState] = useState<AuthState | null>(null);

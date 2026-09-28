@@ -351,9 +351,11 @@ station, and diagnosing a problem.
      station so it re-resolves DNS.
 3. Watch it arrive: `npm run broker:logs` shows the TCP connection, the MQTT
    handshake and the station's first frames as they happen.
-4. Add it under **Your devices → Add a device → Power station**. Nothing is
-   adopted for you: a device exists because you added it. Once saved, the server
-   opens its link and binds to the station it finds.
+4. Add it under **Your devices → Add a device → Power stations → AFERIY P280 →
+   Wi-Fi, through your server**. The station is listed once it has connected
+   to the broker — it also appears under **Found near you** on the home
+   screen — and the check reads it once before it is saved. Nothing is adopted
+   for you: a device exists because you added it.
 
 The station still needs internet on first connect — it fetches MQTT credentials
 from the vendor cloud before connecting. Only the MQTT traffic is redirected.
@@ -377,33 +379,41 @@ npm run dev:ble
 
 **Close the vendor app first.** These stations accept one BLE connection at a
 time, and while the phone holds it, Windows sees only the generic GATT services
-and the vendor service is invisible. Pairing is *not* required.
+and the vendor service is invisible. Pairing is *not* required. Then add it as
+**Bluetooth, through your server**.
 
-### Connecting from the app itself, with no server
+### Connecting from this phone or browser
 
-Open **App settings → Station link**, switch **Connection** to **This device**,
-and pick the station. Nothing else needs to be running — this path does not use
-the API at all, and needs no saved device, because nothing is being persisted.
-(This is the path the plan turns into an ordinary connection method,
-"Bluetooth, from this phone or browser", in step 12.)
+A connection can be held by the app instead of the server: add the station as
+**Bluetooth, from this browser** (or *from this phone*). The app then runs the
+station's own session — the same device-type and protocol code the server runs,
+with the same register-68 guard — over its own radio, and sends its readings to
+the server, which records them as history while the app has the station. The
+device's **Settings → Connections** says who holds what; a station reached both
+ways uses the connection highest in that list that is reachable, so the server's
+Wi-Fi takes over again when the phone leaves.
+
+With **no server at all** — local mode — the app keeps its own devices and
+reaches them itself. Nothing is recorded, and nothing runs while it is closed.
+It is where the app starts when there is no server beside it; adding one in
+**App settings** switches to it.
 
 - **In a browser**: Chrome or Edge, on `localhost` or over HTTPS. The browser
   shows its own device chooser; a page is not allowed to scan. Safari and
-  Firefox have no Web Bluetooth and the screen says so rather than failing at a
-  tap.
+  Firefox have no Web Bluetooth, and the add screen says so.
 
-  Two refusals come from the browser rather than from this app, and both look
-  like a bug here if you do not know them:
+  Two refusals come from the browser rather than from this app:
 
-  - **"Web Bluetooth API globally disabled."** The feature is switched off.
-    Brave ships it that way — enable `brave://flags/#brave-web-bluetooth-api`.
-    On Chrome or Edge check `chrome://flags/#enable-web-bluetooth`, and
-    `chrome://policy` for a `DefaultWebBluetoothGuardSetting` set by an
-    organisation. The Devices screen now asks the browser up front and shows
-    this instead of leaving you to discover it at the tap.
+  - **"Web Bluetooth API globally disabled."** Brave ships it switched off —
+    enable `brave://flags/#brave-web-bluetooth-api`. On Chrome or Edge check
+    `chrome://flags/#enable-web-bluetooth`, and `chrome://policy` for a
+    `DefaultWebBluetoothGuardSetting` set by an organisation.
   - **The chooser closes instantly, reporting "User cancelled".** Browsers
-    embedded inside another app usually have no chooser UI, so Chromium cancels
-    on your behalf. Open the app in a real Chrome or Edge window.
+    embedded inside another app usually have no chooser UI. Open the app in a
+    real Chrome or Edge window.
+
+  A browser remembers a station it was shown once, so a reload reconnects
+  without the chooser where Chrome keeps that permission.
 - **On a phone**: needs a development build, because Bluetooth is a native
   module and Expo Go cannot load one.
 
@@ -413,39 +423,16 @@ the API at all, and needs no saved device, because nothing is being persisted.
 
   Then add the usage strings iOS requires (`NSBluetoothAlwaysUsageDescription`)
   to `client/app.json` and run `npx expo run:ios`. Without the library the app
-  still builds and runs — Metro resolves it to nothing and the screen explains
-  what is missing.
+  still builds and runs — Metro resolves it to nothing and the add screen
+  explains what is missing.
 
-### Coming back to the same station
+**Writes from the app are refused** until **App settings → Allow writes from
+this app** is turned on, and that switch is off again every time the app
+starts. The whitelist and the brick-value guard apply regardless: they are in
+the station's package and its protocol, not in either front end.
 
-The app remembers which station it last held a link to, and how. On the next
-launch it goes straight back to it:
-
-- **Silently, when the platform allows it.** A browser can only reconnect to a
-  device it still holds permission for — `navigator.bluetooth.getDevices()` is
-  what reveals that, and where Chrome keeps those permissions the reconnect
-  needs no interaction at all. On a phone the app scans for the remembered
-  peripheral id and connects when it appears.
-- **Otherwise in one tap.** The station appears under **Last used** with a
-  Reconnect button, and the chooser it opens is filtered to that station alone,
-  so it is a single click rather than a second hunt through the list.
-
-Two deliberate refusals to be clever:
-
-- **Disconnecting on purpose stops the automatic reconnect.** The station stays
-  on file for one-tap use, but a refreshed tab will not take the link back —
-  these units accept one connection, and grabbing it would lock out whatever
-  you just handed it to.
-- **"Allow writes" is never remembered.** Every launch starts read-only.
-
-Writes are **refused by default** on a direct connection, exactly as they are in
-the server's hardware modes. Turn them on deliberately with the switch on the
-same screen. The whitelist and the brick-value guard apply regardless — they are
-in the shared protocol package, not in either front end.
-
-The single-connection rule still bites: while the app holds the link, the server
-cannot have it, and vice versa. Switching **Connection** back to **Server**
-drops the app's link for that reason.
+The single-connection rule still bites: while the app holds a station's
+Bluetooth, nothing else can.
 
 ---
 
@@ -460,21 +447,15 @@ machine. Every request that changes anything must carry an `X-Kraftverk-Client`
 header. See
 [docs/SECURITY.md](docs/SECURITY.md).
 
-Everything is device-scoped: a route names the device it acts on, and the server
-resolves that device's own session. `:id` is a catalog id such as
-`power-station:3db445e0`, and it contains a `:`, so it must be URL-encoded.
-
-**`id` is always the catalog's.** A device also carries `providerDeviceId` — the
-device's own identity, a MAC or a Tuya id — as a separate field, because the two
-answer different questions: the catalog id is what history hangs on, and the
-device's own id is how the same device is recognised however it is found
-(`device.identity` from step 5). Health is
-not a boolean: `health.status` is one of `connected`, `connecting`, `offline`,
-`unconfigured` or `error`, and always comes with a sentence in `health.detail`.
-
-Routes the plan retires are marked with the step that replaces them:
-`/station/*` (step 6, the add flow), `/plugins/*` and `/grid/*` (steps 9 and
-11), and `/devices/:id/p280/*` and `/migration/station/*` (step 10).
+Everything is device-scoped: a route names the device it acts on. `:id` is an
+opaque catalog id (`d-3db445e0a1b2`; older ones look like
+`power-station:3db445e0`), so URL-encode it. A device's own permanent id — its
+MAC, a Tuya device id — is `identity`, a separate field: it is how the same
+device is recognised however it is found, and why removing one and adding it
+again can bring its history back. Health is not a boolean: `health.status` is
+one of `connected`, `connecting`, `offline`, `unconfigured` or `error`, and
+always comes with a sentence in `health.detail`. Nothing here names a device
+type: a type's own tools are its `advanced` actions.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -483,47 +464,39 @@ Routes the plan retires are marked with the step that replaces them:
 | `POST` | `/auth/setup` · `/auth/login` · `/auth/logout` | The first account (home network only), signing in and out |
 | `POST` | `/auth/password` | Your own password; needs the current one |
 | `GET` `POST` `DELETE` | `/users` · `/users/:id` · `/users/:id/password` | Accounts |
-| `GET` | `/version` | Name, version, runtime, uptime, link mode |
-| `GET` | `/devices` | The devices you have added, with live readings and health |
-| `POST` | `/devices` | Add one |
-| `GET` `PATCH` `DELETE` | `/devices/:id` | Read, rename/re-model, or forget |
+| `GET` | `/version` | Name, version, runtime, uptime; simulator or not, transports, read-only |
+| `GET` | `/device-types` | What can be added: categories, installed types, and whether this server can hold each method |
+| `POST` | `/setup` | Start adding a device over a method this server will hold; the steps follow |
+| `GET` `PATCH` `DELETE` | `/setup/:id` | The draft; values from a form step (secrets stay here); discard it |
+| `GET` | `/setup/:id/sightings` | What the transport sees that this type's protocol recognises, marked when already yours |
+| `POST` | `/setup/:id/choose` · `/steps/:step/actions/:action` · `/steps/:step/discover` | Choose the device; run a step's helper ("fetch the key") on the server |
+| `POST` | `/setup/:id/check` · `/setup/:id/save` | Read it once — new, yours, yours before, another model — then save it all in one go |
+| `POST` | `/setup/app` | A connection this app will hold: what it learnt reading the device itself, never a secret |
+| `GET` | `/devices` · `/devices/removed` | The devices you have, with live readings, health, connections and links; removed ones, with their history |
+| `GET` `PATCH` `DELETE` | `/devices/:id` | Read, rename, or remove — keeping its history |
+| `POST` | `/devices/:id/delete-history` | Delete a removed device and everything it recorded; its name, typed, confirms it |
 | `GET` `PATCH` | `/devices/:id/settings` | A device's own settings, from the schema it publishes |
-| `POST` | `/devices/:id/control/:control` | Invoke a control — physical ones pass the action gateway |
+| `POST` | `/devices/:id/capabilities/:capability/:command` | Every command — through the action gateway; a refusal says `needsConfirmation` when a person only has to confirm |
+| `GET` `POST` | `/devices/:id/advanced/:name` | A device type's own tools: register dump, snapshot, scan, raw frame. Reads are GETs; writes are refused while read-only and audited |
 | `GET` | `/devices/:id/history` | One measurement over time, thinned for a chart |
-| `GET` | `/devices/:id/p280/state` | A station's rich telemetry, settings and link state |
-| `PATCH` | `/devices/:id/p280/settings` | Write station settings, through the write whitelist |
-| `GET` | `/migration/station` | A station bound before the catalog existed, offered for import |
-| `POST` | `/migration/station/import` · `/dismiss` | Take that offer once, or decline it for good |
-| `GET` | `/station/transports` | What the current radio can see, and what it is bound to |
-| `POST` | `/station/bind` · `/station/unbind` | Bind or release a station |
-| `GET` | `/diagnostics/registers` | Full register dump, raw and named |
-| `POST` | `/diagnostics/snapshot` | Capture a baseline for diffing |
-| `GET` | `/diagnostics/scan` | Read an arbitrary register range (read-only) |
-| `GET` | `/diagnostics/traffic` · `/gatt` · `/blocked` | Frames (both directions, from the broker's record), GATT, refused writes |
-| `GET` | `/diagnostics/broker` · `/diagnostics/broker/journal` | The MQTT broker: process, stations, clients, counters; and its journal (`?after=`, `?level=debug`) |
+| `POST` `DELETE` | `/devices/:id/connections/:connection` (`/prefer`) | Prefer one way to reach it, or remove one — not the last |
+| `PUT` | `/devices/:id/connections/:connection/secrets` | Replace a server-held connection's secrets, such as a plug's new local key |
+| `POST` `DELETE` | `/links` · `/links/:id` | Facts about the house: this plug feeds that station |
+| `GET` `POST` `DELETE` | `/clients` · `/clients/:id` | The phones and browsers that hold connections |
+| `POST` | `/devices/:id/readings` · `/clients/:id/audit` | What an app sends for a connection it holds |
+| `GET` `PUT` | `/devices/:id/store` · `/devices/:id/store/:key` | A device's own store, for a session an app runs |
+| `GET` | `/transports` · `/transports/:id/diagnostics/:name` | What this server reaches devices over, and each transport's diagnostics — the broker, its journal, its traffic |
+| `GET` | `/found` | What the transports see that nothing you have is reached by |
 | `GET` | `/diagnostics/log` | The server's own recent log (`?level=warn`, `?limit=`), and where its daily files are |
-| `POST` | `/diagnostics/raw` | Arbitrary frame — needs `ALLOW_RAW_MODBUS=1`; reads only while read-only; refusals are audited |
-| `GET` | `/plugins` | Installed extensions: status, health, data age, grants |
-| `GET` `PATCH` | `/plugins/:id/config` | Setup form schema and values; secrets are write-only |
-| `POST` | `/plugins/:id/enable` · `/test` · `/grants` · `/provider` | Lifecycle, side-effect-free probe, capability consent, provider choice |
-| `GET` | `/grid` | Grid-relay state, freshness and active provider |
-| `POST` | `/grid/station` | Which saved station the relay feeds — every switch is verified against it |
-| `POST` | `/grid/relay` | Switch mains — through the action gateway, confirmation required |
 | `GET` | `/audit` | The timeline: intents, commands, verification outcomes |
-
-**Deprecated, and no longer used by the app.** `/status`, `/settings`,
-`/ports/:id` and `/simulator/grid` still work and still resolve through the one
-open station session, but they describe "the station" as though a server could
-only ever have one. Use the device-scoped routes above.
 
 ### Environment
 
 | Variable | Flag | Default | Meaning |
 | --- | --- | --- | --- |
-| `STATION_DRIVER` | `--driver=` | `sim` | `sim` \| `device` \| `ble` |
+| `STATION_DRIVER` | `--driver=` | `sim` | `sim` reaches no hardware; `device` means Bluetooth and MQTT; or a list, `mqtt`, `ble,mqtt`. Every hardware mode also has the home network (`lan`) and `https` |
+| `KRAFTVERK_TRANSPORTS` | — | — | Names the transports outright instead: `mqtt,lan,https` |
 | `READ_ONLY` | `--read-only` | on for hardware modes | Refuse every write |
-| `DEVICE_ID` | `--device=` | — | Bind this station instead of auto-binding |
-| `AUTO_BIND` | — | on | `0` waits for an explicit bind instead of taking the first station found |
 | `PORT` / `HOST` | — | `3333` / `0.0.0.0` | HTTP API |
 | `MQTT_PORT` / `MQTT_HOST` | — | `1883` / `0.0.0.0` | Where the MQTT broker listens for stations |
 | `BROKER_HOST` / `BROKER_ADMIN_URL` | — | `127.0.0.1` / `http://127.0.0.1:3883` | Where the server reaches the broker |
@@ -531,10 +504,8 @@ only ever have one. Use the device-scoped routes above.
 | `ALLOWED_ORIGINS` | — | — | Browser origins allowed to call the API with your session, comma-separated. Not needed for the web container (same origin) or the native app; in development the Expo dev server on a private address is allowed on its own. `*` is refused |
 | `KRAFTVERK_ALLOWED_HOSTS` | — | — | Names the server answers to besides addresses and local names, such as a DDNS name. Others get `421` (DNS-rebinding defence) |
 | `KRAFTVERK_TRUSTED_PROXIES` | — | — | The web container, whose home-network/public entrance stamp is believed. See [docs/SECURITY.md](docs/SECURITY.md) |
-| `ALLOW_RAW_MODBUS` | — | — | `1` enables raw frames |
+| `ALLOW_RAW_FRAMES` (or `ALLOW_RAW_MODBUS`) | — | — | `1` lets a device type's raw-frame tool send frames nobody has described. The protocol's guard still applies |
 | `KRAFTVERK_DB` | — | `server/data/kraftverk.db` | Where the database lives. **Required under `NODE_ENV=test`** — the server refuses to open the default file from a test run |
-| `KRAFTVERK_BINDING_FILE` | — | `server/data/binding.json` | The legacy pre-catalog binding, read-only now |
-| `KRAFTVERK_BASELINE_FILE` | — | `server/data/baseline.json` | The register baseline the Protocol diff compares against. Overridable so a container can keep it on a volume |
 | `KRAFTVERK_RESET_SECRET_FILE` | — | `server/data/reset-secret` | A passphrase of 16+ characters here lets the app empty the database from **App settings → Danger zone**. No file means the route does not exist; the app shows how to enable it rather than a dead button. Gitignored |
 | `KRAFTVERK_SECRET_KEY` | — | — | Passphrase for AES-256-GCM secrets, such as a plug's local key. Without it they are stored as given, and the UI says so |
 
@@ -595,43 +566,32 @@ under `NODE_ENV=test`.
 
 ## Project layout
 
-The layout the plan builds is ARCHITECTURE.md §3. Today:
+The layout is ARCHITECTURE.md §3:
 
 ```
-packages/device-sdk/     the device-type contract: capabilities, telemetry, setup, the contract suite
-  src/identity.ts        which id is which, and what "connected" means
+packages/device-sdk/     the contract: categories, capabilities, links, connection methods, transports, protocols
+packages/gateway/        the action gateway's rules, run by whoever holds a connection
+packages/protocols/      sydpower (the station), tuya-local (the plugs), open-meteo — pure
+packages/transports/     mqtt (the broker), ble, lan, https — one entry per place it runs
+packages/devices/        aferiy-p280, tuya-plug, atorch-s1w — what each device is
+packages/services/       open-meteo — weather, a service
 packages/ui/             shared interface primitives, used by the app and by devices
 packages/api-client/     every API endpoint, and the shapes the server sends
-packages/devices/
-  aferiy-p280/           the station: its type, session, simulator, and its own four screens
-packages/plugins/        the two v1 plugins, until the plugs are device types (step 9)
-  tuya-local-grid-relay/   ATORCH S1W and other Tuya sockets, over the LAN
-  fake-grid-relay/         an in-memory plug for tests and the simulator
-packages/protocol/       the Sydpower protocol and the P280's model, until they split (step 8)
-  src/modbus.ts          framing and the big-endian CRC
-  src/registers.ts       register map, decoding, write whitelist
-  src/station.ts         registers -> the model the UI renders
-  src/client.ts          poll loop, write guard, transport interface
-  src/ble.ts             GATT layout and frame reassembly, stack-agnostic
 client/                  Expo app (iOS + web)
   app/index.tsx          "Your devices" — the root, always
+  app/add-device.tsx     categories → type → how to connect → steps → check → save
   app/device/[id]/       one device: dashboard, settings, advanced
-  app/app-settings.tsx   extensions, station link, this install
-  src/components/        Screen, Card, Row, ModeRow, …
-  src/features/devices/  device shell, generic panels, per-device connection
-  src/link/              the app's own Bluetooth transports
-  src/state/             the device catalog, and the link the app holds itself
+  src/runtime/           this app as a holder: sessions, gateway, uploads, local mode
+  src/generated/         the installed packages, bound in by npm run gen:devices
 server/
-  src/transport/         mqtt and ble transports
-  src/connections/       one live session per saved device
-  src/devices/           the catalog, the registry that joins it to live drivers
-  src/drivers/           device driver, simulator
-  src/plugins/           extension host: discovery, lifecycle, grants
-  src/actions/           the only code allowed to switch mains
-  src/history/           sqlite: config, secrets, audit timeline, samples
+  src/runtime/           finding packages; the transports this server runs
+  src/devices/           catalog, connections, links, sessions, setup, registry
+  src/routes/            the HTTP API
+  src/history/           sqlite, migrations, samples, the audit timeline
 docs/HANDOFF.md          state of play, and the traps worth knowing — start here
 docs/ARCHITECTURE.md     the architecture, its words and the plan: the authority
 docs/DATA-MODEL.md       adding a device screen by screen, and everything stored
+docs/ADDING-A-DEVICE.md  supporting a new product: the packages, the contract, the rules
 docs/PROJECT-BRIEF.md    what the product is for, its safety rules and the automation
 docs/P280-FINDINGS.md    the station: evidence log, confirmed vs. assumed
 docs/ATORCH-S1W.md       the smart plug and the Tuya local protocol: research and findings
@@ -657,12 +617,12 @@ npm run keys:tuya
 ```
 
 fetches their local keys, which is the one step that needs a (free) Tuya cloud project. Both are
-also buttons in the app — under **Extensions** today, and part of adding the plug once it is a
-device type (step 9) — driven by the same code.
+also part of adding the plug in the app — the plug is found on the home network, and **Fetch it
+with my Tuya account** is a button on its credentials step — driven by the same code.
 [docs/TUYA-LOCAL-KEY.md](docs/TUYA-LOCAL-KEY.md) walks through it.
 
-`packages/protocol` is imported as TypeScript source with no build step, by both
-the server (under Bun) and the app (through Metro).
+Every package is imported as TypeScript source with no build step, by both the
+server (under Bun) and the app (through Metro).
 
 ---
 

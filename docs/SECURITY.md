@@ -147,13 +147,15 @@ Unchanged by any of this, and applied to every caller:
 - **Register 68 is never set outside its permitted values** — 0 bricks the
   station permanently. Enforced in the Sydpower protocol code for writes this
   code builds, and by `commandRefusal` for frames it merely carries: in the MQTT
-  broker for every command (including the server's), and on the raw-MODBUS
-  diagnostics route, which is itself off unless `ALLOW_RAW_MODBUS=1`.
+  broker for every command (including the server's), and in the station's
+  link for every frame it sends, whoever holds the connection — the server or
+  the app. The station's raw-frame tool is off unless the holder was started
+  with `ALLOW_RAW_MODBUS=1`, and an app never is.
   `commandRefusal` fails closed: it passes only reads, and writes it can read
   to the end — a function code it does not know, a write cut short, or a
   multi-register write whose count, byte count and data disagree is refused.
-  A read-only server sends only reads on the raw route, and every frame the
-  route refuses is recorded in the audit timeline.
+  A read-only holder sends only raw frames that are reads, and every write
+  the tool refuses is recorded in the audit timeline.
 - Only the server may publish commands on the broker; see
   [BROKER.md](BROKER.md#who-may-do-what).
 - Physical actions go through the action gateway, which records *who* — the

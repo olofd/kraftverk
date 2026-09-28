@@ -85,6 +85,8 @@ export type SightingView = {
 type Draft = {
   id: string;
   by: string;
+  /** Who will hold the connection: null for this server, or the app that ran the steps itself. */
+  heldBy: string | null;
   type: DeviceType<any>;
   method: ConnectionMethod | null;
   protocol: Protocol | null;
@@ -105,6 +107,8 @@ type Draft = {
 export type DraftView = {
   id: string;
   typeId: string;
+  /** Null when this server will hold the connection; otherwise the app that will. */
+  heldBy: string | null;
   methodId: string | null;
   plan: SetupStepView[];
   address: string | null;
@@ -136,6 +140,8 @@ export type SetupServiceDeps = {
 
 /** The one device a simulated method offers. */
 export const SIMULATED_ADDRESS = 'simulated';
+
+const SIMULATED_VALUES: Readonly<Record<string, string>> = { host: 'this server’s address', port: 'its port' };
 
 export type SaveInput = {
   name: string;
@@ -194,11 +200,13 @@ export class SetupService {
     const draft: Draft = {
       id: `s-${randomBytes(8).toString('hex')}`,
       by: input.by,
+      heldBy: null,
       type,
       method,
       protocol,
       transport: transportDefinition,
-      plan: setupPlan({ type, method, protocol, transport: transportDefinition, platform: 'server', values: transport?.values?.() ?? {} }),
+      // A simulator starts no transport, so its instructions get words where the addresses would be.
+      plan: setupPlan({ type, method, protocol, transport: transportDefinition, platform: 'server', values: transport?.values?.() ?? (simulate ? SIMULATED_VALUES : {}) }),
       address: method.address ?? null,
       identityHint: null,
       device: {},
@@ -222,6 +230,65 @@ export class SetupService {
     }
 
     this.#drafts.set(draft.id, draft);
+    return this.#view(draft);
+  }
+
+  /**
+   * A connection the app will hold (docs/DATA-MODEL.md §1, "held by this
+   * phone"). The app ran every step itself — found the device with its own
+   * radio, read it with the type's `identify` — and sends what it learnt. The
+   * server decides what that means against the devices you have, exactly as
+   * for its own check, and saves the connection held by that app. Its secrets
+   * never come here: they stay in the app.
+   */
+  startHeld(input: {
+    typeId: string;
+    methodId: string;
+    by: string;
+    clientId: string;
+    address: string;
+    /** What the device said; null when it did not answer. */
+    identified: Identified | null;
+    /** Why it did not, when it did not. */
+    failure?: string;
+    device?: ConfigValues;
+    connection?: ConfigValues;
+  }): DraftView {
+    const type = this.deps.types.get(input.typeId);
+    if (!type) throw new SetupError(`Nothing installed here knows what "${input.typeId}" is`, 404);
+    const method = type.connections.find((candidate) => candidate.id === input.methodId);
+    if (!method) throw new SetupError(`${type.meta.name} has no way called "${input.methodId}"`);
+    const protocol = this.deps.protocols.get(method.protocol);
+    const secret = new Set(
+      Object.entries(connectionSchema(method, protocol).fields)
+        .filter(([, spec]) => isSecretField(spec))
+        .map(([field]) => field)
+    );
+    const connection = Object.fromEntries(Object.entries(input.connection ?? {}).filter(([field]) => !secret.has(field)));
+
+    const draft: Draft = {
+      id: `s-${randomBytes(8).toString('hex')}`,
+      by: input.by,
+      heldBy: input.clientId,
+      type,
+      method,
+      protocol,
+      transport: this.deps.transports.definition(method.transport),
+      plan: [],
+      address: input.address,
+      identityHint: null,
+      device: { ...(input.device ?? {}) },
+      connection,
+      secrets: new Map(),
+      placeholders: new Map(),
+      checked: null,
+      sightings: [],
+      stopWatching: null,
+      expiresAt: Date.now() + DRAFT_TTL_MS,
+    };
+    this.#drafts.set(draft.id, draft);
+    if (input.identified) this.#judge(draft, input.identified);
+    else this.#checked(draft, { outcome: 'no-answer', summary: input.failure ?? 'It did not answer.', saveAnyway: type.setup?.saveAnyway ?? null });
     return this.#view(draft);
   }
 
@@ -411,6 +478,11 @@ export class SetupService {
       await channel?.close().catch(() => undefined);
     }
 
+    return this.#judge(draft, identified);
+  }
+
+  /** What a device's answer means, against the devices you have: new, yours, yours before, or another model. */
+  #judge(draft: Draft, identified: Identified): CheckOutcome {
     draft.device = { ...draft.device, ...(identified.config ?? {}) };
 
     // A model this type does not cover, which another installed type does.
@@ -479,7 +551,7 @@ export class SetupService {
     const connection = validateConfig(nonSecret, Object.fromEntries(Object.entries(draft.connection).filter(([field]) => field in nonSecret.fields)));
     if (!connection.ok) throw new SetupError(connection.issues.map((issue) => issue.message).join('; '));
     for (const [field, spec] of Object.entries(schema.fields)) {
-      if (!simulated && isSecretField(spec) && 'required' in spec && spec.required && !draft.secrets.get(field)) throw new SetupError(`${spec.title} is required`);
+      if (!simulated && draft.heldBy === null && isSecretField(spec) && 'required' in spec && spec.required && !draft.secrets.get(field)) throw new SetupError(`${spec.title} is required`);
     }
 
     // All or nothing: a device saved without its connection could never be reached.
@@ -524,9 +596,11 @@ export class SetupService {
       */
       const same = checked.outcome === 'yours' && checked.device.id === existing.id;
       const first = checked.outcome === 'new' && existing.identity === null;
-      if (!same && !first) throw new SetupError(`That is a different device, not ${existing.name}`, 409);
+      // A browser shows no MAC, so its answer cannot say which station it is: then the person says.
+      const onTheirWord = checked.outcome === 'new' && checked.identity === null;
+      if (!same && !first && !onTheirWord) throw new SetupError(`That is a different device, not ${existing.name}`, 409);
       if (first && checked.identity) this.deps.catalog.update(existing.id, { identity: checked.identity });
-      if (this.deps.connections.forDevice(existing.id).some((c) => c.method === method.id && c.heldBy === null)) {
+      if (this.deps.connections.forDevice(existing.id).some((c) => c.method === method.id && c.heldBy === draft.heldBy)) {
         throw new SetupError(`${existing.name} is already reached this way`, 409);
       }
       record = existing;
@@ -546,7 +620,7 @@ export class SetupService {
     }
 
     // An exclusive address belongs to one device.
-    if (draft.transport?.exclusive !== false && !this.deps.simulate) {
+    if (draft.transport?.exclusive !== false && !this.deps.simulate && draft.heldBy === null) {
       const claim = this.deps.connections.claimant(method.transport, address);
       if (claim && claim.deviceId !== record.id) throw new SetupError('Another device you have is already reached at that address', 409);
     }
@@ -555,7 +629,7 @@ export class SetupService {
       deviceId: record.id,
       method: method.id,
       transport: method.transport,
-      heldBy: null,
+      heldBy: draft.heldBy,
       address,
       config: connectionConfig,
     });
@@ -637,6 +711,7 @@ export class SetupService {
   #view(draft: Draft): DraftView {
     return {
       id: draft.id,
+      heldBy: draft.heldBy,
       typeId: draft.type.id,
       methodId: draft.method?.id ?? null,
       plan: draft.plan,

@@ -1,12 +1,14 @@
 /**
- * Writes the app's registry of device screens from the installed packages:
- * client/src/generated/device-types.ts. See docs/ARCHITECTURE.md §3.
+ * Writes the app's registry of installed packages: client/src/generated/registry.ts.
+ * See docs/ARCHITECTURE.md §3.
  *
- * The server finds device types at runtime. The app cannot: Metro bundles what
- * is imported, and an app store build must not download code. So this finds
- * every package that ships screens — `kraftverk.ui` for a device type,
- * `kraftverk.panel` for a v1 extension — and writes one file importing them.
- * That file is the only place the app imports a device package.
+ * The server finds device types, protocols and transports at runtime. The app
+ * cannot: Metro bundles what is imported, and an app store build must not
+ * download code. So this finds every installed package and writes one file
+ * importing them — device types and their screens, protocols, and each
+ * transport's definition with its web and native implementations. The app runs
+ * the same code the server does for connections it holds itself, and that
+ * file is the only place the app imports a device, protocol or transport.
  *
  *   npm run gen:devices              write it
  *   npm run gen:devices -- --check   fail if it is out of date (CI)
@@ -17,15 +19,18 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const ROOT = resolve(import.meta.dirname, '..');
-const OUTPUT = resolve(ROOT, 'client/src/generated/device-types.ts');
+const OUTPUT = resolve(ROOT, 'client/src/generated/registry.ts');
 
 type Manifest = {
   name: string;
   exports?: Record<string, string>;
-  kraftverk?: { deviceType?: string; ui?: string; plugin?: string; panel?: string };
+  kraftverk?: {
+    deviceType?: string;
+    ui?: string;
+    protocol?: string;
+    transport?: { definition?: string; server?: string; web?: string; native?: string };
+  };
 };
-
-type Entry = { key: string; specifier: string; local: string };
 
 /** The import specifier a package exports a file under, or a clear failure. */
 function exported(manifest: Manifest, file: string): string {
@@ -34,7 +39,8 @@ function exported(manifest: Manifest, file: string): string {
   return key === '.' ? manifest.name : `${manifest.name}${key.slice(1)}`;
 }
 
-const local = (name: string) => name.replace(/^@kraftverk\//, '').replace(/[^a-zA-Z0-9]+(.)/g, (_, c: string) => c.toUpperCase());
+const local = (name: string, suffix = '') =>
+  name.replace(/^@kraftverk\//, '').replace(/[^a-zA-Z0-9]+(.)/g, (_, c: string) => c.toUpperCase()) + suffix;
 
 function packages(parent: string): { dir: string; manifest: Manifest }[] {
   const root = resolve(ROOT, parent);
@@ -54,22 +60,44 @@ function packages(parent: string): { dir: string; manifest: Manifest }[] {
   });
 }
 
-const screens: Entry[] = [];
+const imports: string[] = [];
+const types: string[] = [];
+const screens: string[] = [];
+const protocols: string[] = [];
+const transports: string[] = [];
+
 for (const { dir, manifest } of [...packages('packages/devices'), ...packages('packages/services')]) {
   const { deviceType, ui } = manifest.kraftverk ?? {};
-  if (!deviceType || !ui) continue;
+  if (!deviceType) continue;
   const type = ((await import(pathToFileURL(resolve(dir, deviceType)).href)) as { default?: { id?: string } }).default;
   if (!type?.id) throw new Error(`${manifest.name}: its deviceType entry has no default export with an id`);
-  screens.push({ key: type.id, specifier: exported(manifest, ui), local: local(manifest.name) });
+  imports.push(`import ${local(manifest.name, 'Type')} from '${exported(manifest, deviceType)}';`);
+  types.push(`  ${local(manifest.name, 'Type')},`);
+  if (ui) {
+    imports.push(`import ${local(manifest.name, 'Ui')} from '${exported(manifest, ui)}';`);
+    screens.push(`  '${type.id}': ${local(manifest.name, 'Ui')},`);
+  }
 }
 
-const panels: Entry[] = [];
-for (const { dir, manifest } of packages('packages/plugins')) {
-  const { plugin, panel } = manifest.kraftverk ?? {};
-  if (!plugin || !panel) continue;
-  const factory = ((await import(pathToFileURL(resolve(dir, plugin)).href)) as { default?: () => { manifest: { id: string } } }).default;
-  if (!factory) throw new Error(`${manifest.name}: its plugin entry has no default export`);
-  panels.push({ key: factory().manifest.id, specifier: exported(manifest, panel), local: `${local(manifest.name)}Panel` });
+for (const { manifest } of packages('packages/protocols')) {
+  const entry = manifest.kraftverk?.protocol;
+  if (!entry) continue;
+  imports.push(`import ${local(manifest.name)} from '${exported(manifest, entry)}';`);
+  protocols.push(`  ${local(manifest.name)},`);
+}
+
+for (const { manifest } of packages('packages/transports')) {
+  const entry = manifest.kraftverk?.transport;
+  if (!entry?.definition) continue;
+  imports.push(`import ${local(manifest.name)} from '${exported(manifest, entry.definition)}';`);
+  const factory = (platform: 'web' | 'native') => {
+    const file = entry[platform];
+    if (!file) return 'null';
+    const name = local(manifest.name, platform === 'web' ? 'Web' : 'Native');
+    if (!imports.some((line) => line.startsWith(`import ${name} `))) imports.push(`import ${name} from '${exported(manifest, file)}';`);
+    return name;
+  };
+  transports.push(`  { definition: ${local(manifest.name)}, web: ${factory('web')}, native: ${factory('native')} },`);
 }
 
 const lines = [
@@ -77,29 +105,37 @@ const lines = [
   '  Generated by `npm run gen:devices` from the installed packages. Do not edit:',
   '  add a package, and run it again. See scripts/gen-devices.ts.',
   '',
-  '  The only file in the app that imports a device package.',
+  '  The only file in the app that imports a device type, a protocol or a transport.',
   '*/',
   '',
-  "import type { ComponentType } from 'react';",
-  "import type { PluginPanelProps } from '@kraftverk/device-sdk';",
+  "import type { DeviceType, Protocol, TransportDefinition, TransportFactory } from '@kraftverk/device-sdk';",
   '',
   "import type { DeviceUi } from '../devices/ui';",
   '',
-  ...screens.map((entry) => `import ${entry.local} from '${entry.specifier}';`),
-  ...panels.map((entry) => `import ${entry.local} from '${entry.specifier}';`),
+  ...imports,
+  '',
+  '/** Every installed device type: the same code the server runs, for connections this app holds. */',
+  'export const DEVICE_TYPES: readonly DeviceType<any>[] = [',
+  ...types,
+  '];',
   '',
   '/** Screens a device type ships, by device type id. */',
   'export const DEVICE_UI: Readonly<Record<string, DeviceUi>> = {',
-  ...screens.map((entry) => `  '${entry.key}': ${entry.local},`),
+  ...screens,
   '};',
   '',
-  '/** Panels a v1 extension ships, by extension id. Gone with the extensions (step 9). */',
-  'export const EXTENSION_PANELS: Readonly<Record<string, ComponentType<PluginPanelProps>>> = {',
-  ...panels.map((entry) => `  '${entry.key}': ${entry.local},`),
-  '};',
+  'export const PROTOCOLS: readonly Protocol[] = [',
+  ...protocols,
+  '];',
+  '',
+  '/** Every transport, with its implementation for each place the app runs, where it has one. */',
+  'export const TRANSPORTS: readonly { definition: TransportDefinition; web: TransportFactory | null; native: TransportFactory | null }[] = [',
+  ...transports,
+  '];',
   '',
 ];
 const source = lines.join('\n');
+const summary = `${types.length} device type(s), ${screens.length} with screens, ${protocols.length} protocol(s), ${transports.length} transport(s)`;
 
 if (process.argv.includes('--check')) {
   let current = '';
@@ -109,11 +145,11 @@ if (process.argv.includes('--check')) {
     // missing counts as stale
   }
   if (current !== source) {
-    console.error('client/src/generated/device-types.ts is out of date. Run: npm run gen:devices');
+    console.error('client/src/generated/registry.ts is out of date. Run: npm run gen:devices');
     process.exit(1);
   }
-  console.log(`The app's device registry is current: ${screens.length} device type(s) with screens, ${panels.length} extension panel(s).`);
+  console.log(`The app's registry is current: ${summary}.`);
 } else {
   writeFileSync(OUTPUT, source);
-  console.log(`Wrote the app's device registry: ${screens.length} device type(s) with screens, ${panels.length} extension panel(s).`);
+  console.log(`Wrote the app's registry: ${summary}.`);
 }

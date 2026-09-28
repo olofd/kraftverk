@@ -8,6 +8,7 @@ import { ConnectionStore } from './devices/connections.ts';
 import { LinkStore } from './devices/links.ts';
 import { Nearby } from './devices/nearby.ts';
 import { DeviceRegistry } from './devices/registry.ts';
+import { RemoteReadings } from './devices/remote.ts';
 import { DeviceSessionManager } from './devices/sessions.ts';
 import { SetupService } from './devices/setup.ts';
 import { DeviceTypeRegistry } from './devices/types.ts';
@@ -153,7 +154,8 @@ if (!config.simulate) {
 // Sessions for the devices already in the catalog, and nothing else.
 await sessions.sync(catalog.list());
 
-const registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports });
+const remote = new RemoteReadings();
+const registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports, remote });
 
 const setup = new SetupService({ types, protocols, transports, catalog, connections, links, sessions, http: scopedHttp, simulate: config.simulate });
 
@@ -194,6 +196,7 @@ const { app } = createApp({
   registry,
   setup,
   nearby,
+  remote,
   gateway,
   sampler,
   proxies,

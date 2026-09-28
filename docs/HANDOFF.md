@@ -13,38 +13,50 @@ Last updated 2026-09-28.
 
 ## Where things stand
 
-**The plan's steps 0–3 are done and deployed** (ARCHITECTURE.md §8): one
-authority for the architecture, the guardrails in CI, the device SDK, and device
-types discovered at runtime with a session for every saved device. `main`
-deploys to the owner's NAS through GitLab; GitHub runs CI only. The status of
-every later step is the plan's table — this document does not repeat it.
+**The plan's steps 0–13 and 15 are done** (ARCHITECTURE.md §8), on the branch
+`architecture-connections`; steps 0–3 are deployed. `main` deploys to the
+owner's NAS through GitLab; GitHub runs CI only. The architecture baseline is
+empty: the core names no product, and every device is found, not listed.
 
-**What runs today, and is on its way out.** The core still contains the P280's
-connectivity (`server/src/{broker,mqtt,transport,connections,drivers}`), the
-smart plugs are still the two v1 plugins under `packages/plugins/`, and
-`packages/protocol` still mixes the Sydpower protocol with the P280's model. The
-findings table (ARCHITECTURE.md §6) names each of these with the step that
-removes it.
+- **The layers are packages**: `packages/transports` (mqtt with the broker,
+  ble with server, web and native entries, lan, https), `packages/protocols`
+  (sydpower, tuya-local, open-meteo), `packages/devices` (aferiy-p280,
+  tuya-plug, atorch-s1w), `packages/services` (open-meteo) and
+  `packages/gateway`. The server finds them at start; the app binds them in
+  through `client/src/generated/registry.ts`.
+- **Migration 7** turns the old catalog into devices with type ids and
+  identities, connections, sealed connection secrets and links; the Tuya
+  plugin's configuration becomes an ATORCH or generic plug with its key, and
+  the grid pairing a `feeds` link. Removing a device now keeps its history.
+- **The app holds connections too.** "Bluetooth, from this browser" runs the
+  station's own session in the app, sends readings to the server and follows the
+  gateway's rules there (`client/src/runtime`). Web Bluetooth is verified in the
+  browser's add flow up to its chooser; native Bluetooth
+  (`transport-ble/src/native.ts`) has not run on a phone.
+- **Not started**: step 14, automations.
 
 **Local mode.** The app does not need a server. A server is a client-side record
 — address, name — kept in `localStorage` by `client/src/lib/servers.ts`, one
-selected at a time; selecting none *is* local mode, in which the app holds a
-station's Bluetooth link itself. On first run the app probes the build-time
-default address and adopts the server if one answers, so `npm run dev` still
-just works. The API client's base URL is runtime-settable (`setApiBaseUrl`).
+selected at a time; selecting none *is* local mode, in which the app keeps its
+own devices (`client/src/runtime/local.ts`) and holds every connection. On
+first run the app probes the build-time default address and adopts the server if
+one answers, so `npm run dev` still just works.
 
-**Tests and scratch state.** `KRAFTVERK_DB` and `KRAFTVERK_BINDING_FILE` override
-where the database and the legacy station binding live, so tests and a scratch
-server work on their own state instead of the owner's. Under `NODE_ENV=test`,
-`KRAFTVERK_DB` is **required** — see the trap below.
+**Tests and scratch state.** `KRAFTVERK_DB` overrides where the database lives,
+so tests and a scratch server work on their own state instead of the owner's.
+Under `NODE_ENV=test`, `KRAFTVERK_DB` is **required** — see the trap below.
+`.claude/launch.json` has `server:ui-check`: the server on port 3334 with a
+scratch database, for driving the app in a browser.
 
 **Production, 2026-09-27.** Shortly after step 3 was deployed, the station and a
 test plug were removed in the app. Removing a device then deleted its history,
 so the live database has no devices and no samples. The copy the server made
 before migration 6 — `/data/kraftverk.db.before-migration-6.2026-09-27T19-50-30Z`
 on the server's volume — still holds the station and all its history. Whether to
-restore it is the owner's decision. Removing a device will keep its history from
-step 5 (ARCHITECTURE.md, decision 13).
+restore it is the owner's decision. **If it is to be restored, do it before this
+branch deploys**: migration 7 then turns the station into a device with its
+Wi-Fi connection, its identity and all its history, and the grid pairing into a
+link. Restored afterwards, the copy would need migration 7 run on it again.
 
 ## Traps
 
@@ -106,11 +118,15 @@ Tab. If you add a tappable that is not a `Button`, use
 `src/components/Pressable.tsx`, and pass `selected` when it is one of a set of
 choices so it announces as a radio.
 
-**The station link is a launch flag in development.** `npm run dev` is the
-*simulator*, and no screen can change that. Restarting a Bluetooth server with
-the wrong script is an easy way to spend ten minutes wondering why the radio
-vanished. `.claude/launch.json` carries `server`, `server:ble` and
-`server:ble:write` for that reason.
+**What a server can reach is a launch flag.** `npm run dev` is the
+*simulator*, and no screen can change that: **App settings → Transports** says
+which it is. Restarting a Bluetooth server with the wrong script is an easy way
+to spend ten minutes wondering why the radio vanished. `.claude/launch.json`
+carries `server`, `server:ble` and `server:ble:write` for that reason.
+
+**Writes from the app are off every launch.** A connection the app holds is
+read-only until **App settings → Allow writes from this app** is turned on, on
+purpose. A settings screen that silently refuses from a phone is that switch.
 
 ## Commands worth knowing
 
@@ -121,7 +137,8 @@ npm run dev:ble:write        # the same, with writes allowed — read the hardwa
 npm test                     # the whole repo
 npm run typecheck            # every workspace
 npm run check:architecture   # the dependency rule, the leak ratchet, the app's generated registry
-npm run gen:devices          # regenerate the app's device registry after adding a device type
+npm run gen:devices          # regenerate the app's registry after adding a package
+npm run new:device -- name    # start a device type (new:protocol, new:transport too)
 npm run scan:tuya            # find Tuya plugs — no credentials needed
 npm run keys:tuya            # fetch their local keys (needs a Tuya cloud project)
 ```

@@ -98,9 +98,15 @@ internet — but nothing else about that entrance was made for it.)
 
 | `STATION_DRIVER` | What it is | Works in this image |
 | --- | --- | --- |
-| `sim` | The built-in simulator | ✅ Default. No hardware needed |
-| `mqtt` | Real hardware over Wi-Fi, through the `broker` service | ✅ The one to use for a real deployment |
+| `sim` | Every device simulated; no hardware is reached | ✅ Default. No hardware needed |
+| `mqtt` | Real hardware: stations over Wi-Fi through the `broker` service, plus plugs on the home network and web services such as the weather | ✅ The one to use for a real deployment |
 | `ble` | Real hardware over Bluetooth LE | ❌ Not in this image — see below |
+
+Every hardware mode also gets the home network (`lan`) and `https`, which
+need nothing of the machine. `KRAFTVERK_TRANSPORTS=mqtt,lan,https` names them
+outright instead. A plug on the home network is reached from the container over
+TCP; its UDP announcements may not reach a bridged container, so give its IP
+address by hand when it is not found.
 
 ### Wi-Fi / MQTT — the one that suits a server
 
@@ -167,9 +173,9 @@ settings and secrets: keep it out of any repository, readable only by you.
 Set in the compose file, and best left alone: `BROKER_SPAWN=0`, `BROKER_HOST`,
 `BROKER_ADMIN_URL` (how the server finds the broker service) and
 `KRAFTVERK_TRUSTED_PROXIES=web` (whose entrance stamp is believed). Set in the
-image: `KRAFTVERK_DB`, `KRAFTVERK_BASELINE_FILE`, `KRAFTVERK_BROKER_DIR` and
-`KRAFTVERK_LOG_DIR`, all under `/data`. `ALLOW_RAW_MODBUS=1` enables arbitrary
-frames; bad writes can brick the station.
+image: `KRAFTVERK_DB`, `KRAFTVERK_BROKER_DIR` and `KRAFTVERK_LOG_DIR`, all
+under `/data`. `ALLOW_RAW_MODBUS=1` lets the station's raw-frame tool send
+arbitrary frames; bad writes can brick the station.
 
 ### Secrets
 
@@ -250,9 +256,9 @@ docker compose logs -f broker            # the station's story, live
 docker compose logs --tail 100 web       # the web container: startup, proxy errors
 
 # The broker's own view: stations, clients, why the last one left
-docker compose exec broker bun run server/src/broker/cli.ts status
+docker compose exec broker bun run packages/transports/mqtt/src/broker/cli.ts status
 # Its journal, from the files — including what happened before a restart
-docker compose exec broker bun run server/src/broker/cli.ts logs
+docker compose exec broker bun run packages/transports/mqtt/src/broker/cli.ts logs
 
 # The server's kept log, older than the container
 docker compose exec kraftverk ls /data/logs
@@ -297,8 +303,8 @@ docker compose up -d --build broker
 ```
 
 `STATION_DRIVER` is read once at startup and cannot be changed from any screen.
-If the Station link screen says `Simulator` and you expected Wi-Fi, the
-container was started with the wrong `STATION_DRIVER`.
+If **App settings → Transports** says the server runs the simulator and you
+expected Wi-Fi, the container was started with the wrong `STATION_DRIVER`.
 
 ---
 

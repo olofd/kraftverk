@@ -7,7 +7,8 @@ import { SegmentedControl } from '@kraftverk/ui';
 import { SliderRow } from '@kraftverk/ui';
 import { formatDuration } from '@kraftverk/ui';
 import type { LedMode, StationSettings as StationSettingsValues } from '../src/model/types';
-import type { StationScreenProps } from './contract';
+import type { DeviceScreenProps, StationView } from './contract';
+import { useStation } from './station';
 
 const LED_MODES = [
   { value: 'off', label: 'Off' },
@@ -101,27 +102,27 @@ function nearestDelay(minutes: number): (typeof CHARGE_DELAYS)[number]['value'] 
  *
  * Content only — the page frame belongs to the app.
  */
-export function StationSettings({
+function SettingsView({
   status,
   settings,
   pending,
   readOnly,
   direct,
+  waitingFor,
+  writeError,
   updateSettings,
-}: StationScreenProps) {
+}: StationView) {
   // Every control is locked from the tap until the station confirms it.
   const waiting = (key: keyof StationSettingsValues) => pending.settings.has(key);
 
   if (!settings) {
     return (
       <Card alignItems="center" paddingVertical="$8" gap="$4">
-        {direct ? null : <Spinner size="large" color="$accent" />}
+        <Spinner size="large" color="$accent" />
         <Text color="$muted" fontSize={13} textAlign="center" lineHeight={19}>
-          {direct
-            ? 'No station connected.\nOpen Devices to connect over Bluetooth.'
-            : status?.lastUpdated
-              ? 'Reading the settings from the station…'
-              : 'Waiting for the station. Its settings appear here once it has answered — nothing is shown until then, rather than values it has not reported.'}
+          {status?.lastUpdated
+            ? 'Reading the settings from the station…'
+            : `${waitingFor} Its settings appear here once it has answered — nothing is shown until then, rather than values it has not reported.`}
         </Text>
       </Card>
     );
@@ -137,8 +138,16 @@ export function StationSettings({
           <Text fontSize={12} color="$muted" lineHeight={18}>
             These controls still show what the station reports, but every write is refused.{' '}
             {direct
-              ? 'Turn on “Allow writes” on the Station link screen (App settings) when you are ready to make changes.'
+              ? 'This app holds the connection and is set to read-only: turn on “Allow writes from this app” in App settings when you are ready to make changes.'
               : 'The server was started read-only. Whoever runs it can allow writes: READ_ONLY=0 for Docker, or starting it without --read-only.'}
+          </Text>
+        </Card>
+      ) : null}
+
+      {writeError ? (
+        <Card borderColor="$danger">
+          <Text fontSize={13} color="$danger">
+            {writeError}
           </Text>
         </Card>
       ) : null}
@@ -341,4 +350,9 @@ export function StationSettings({
       </YStack>
     </>
   );
+}
+
+/** The settings, for whichever holder has the station: see `useStation`. */
+export function StationSettings(props: DeviceScreenProps) {
+  return <SettingsView {...useStation(props)} />;
 }

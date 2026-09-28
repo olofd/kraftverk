@@ -3,24 +3,45 @@ import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
 import { Card, SectionLabel } from '@kraftverk/ui';
 import { Row, RowSeparator } from '@kraftverk/ui';
-import type { ProtocolScreenProps } from './contract';
-import {
-  describeError,
-  fetchBrokerJournal,
-  fetchLinkDiagnostics,
-  fetchRegisters,
-  fetchTraffic,
-  snapshotRegisters,
-} from '@kraftverk/api-client';
-import type {
-  BrokerJournalEntry,
-  BrokerView,
-  LinkDiagnostics,
-  RegisterDump,
-  RegisterRow,
-  TrafficEntry,
-} from '@kraftverk/api-client';
+import { describeError } from '@kraftverk/api-client';
 
+import type { RegisterDump, RegisterRow } from '../src/model/diagnostics';
+import type { DeviceScreenProps } from './contract';
+import { useStation } from './station';
+
+/*
+  What the MQTT transport's diagnostics say, as far as this screen reads them.
+  Declared here, not imported: a device type never imports a transport, and
+  the shapes arrive as data through whoever holds the connection.
+*/
+type BrokerDevice = {
+  protocol: string;
+  address: string;
+  online: boolean;
+  remote: string | null;
+  connectedAt: string | null;
+  disconnectedAt: string | null;
+  lastDisconnect: string | null;
+  keepalive: number | null;
+  subscribed: boolean;
+};
+type BrokerView = {
+  status: 'running' | 'starting' | 'down' | 'foreign';
+  error: string | null;
+  pid: number | null;
+  startedAt: string | null;
+  build: string | null;
+  expectedBuild: string;
+  buildMatches: boolean | null;
+  listen: { host: string; port: number; listening: boolean };
+  serverConnected: boolean;
+  serverConnectedAt: string | null;
+  serverError: string | null;
+  devices: BrokerDevice[];
+};
+type JournalEntry = { seq: number; at: string; level: 'debug' | 'info' | 'warn' | 'error'; message: string; device?: string };
+type TrafficEntry = { at: string; direction: 'in' | 'out'; address: string; topic: string; bytes: number; hex: string; summary: string; delivered: boolean };
+type LinkState = { transport: string; address: string; connected: boolean };
 
 /**
  * A button sitting on the page rather than on a card needs its own surface.
@@ -41,50 +62,45 @@ const SECONDARY = {
  * The published register map was derived from FOSSiBOT F2400/F3600 hardware.
  * The P280 runs the same Sydpower stack but is a different machine, so this
  * screen exists to check the documented meaning of each register against what
- * your unit actually reports.
+ * your unit actually reports. The registers are read by the station's own
+ * tools, through whoever holds its connection — the server, or this app.
  */
-export function StationProtocol({ status, deviceId, version, source, direct }: ProtocolScreenProps) {
-  const [link, setLink] = useState<LinkDiagnostics | null>(null);
+export function StationProtocol(props: DeviceScreenProps) {
+  const { device, actions, holder, readOnly } = props;
+  const { status } = useStation(props);
+  const [link, setLink] = useState<LinkState | null>(null);
+  const [broker, setBroker] = useState<BrokerView | null>(null);
   const [traffic, setTraffic] = useState<TrafficEntry[]>([]);
-  const [journal, setJournal] = useState<BrokerJournalEntry[]>([]);
+  const [journal, setJournal] = useState<JournalEntry[]>([]);
   const [registers, setRegisters] = useState<RegisterDump | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [onlyChanged, setOnlyChanged] = useState(false);
 
-  /**
-   * On a direct link the app reads the registers itself, so there is no server
-   * to ask — but the workflow is the same, because both sides build the dump
-   * with the same code from the protocol package.
-   */
-  const isDirect = source === 'direct';
-  /** This station's id on the broker, for narrowing what is shown to this device. */
-  const mac = status?.link.mac?.toUpperCase() ?? null;
+  const reachable = holder === 'server' || holder === 'this-app';
+  const inUse = device.connections.find((connection) => connection.inUse) ?? null;
+  /** The broker, its journal and its traffic exist only for a Wi-Fi connection the server holds. */
+  const onMqtt = holder === 'server' && inUse?.transport === 'mqtt' && actions.diagnostic !== null;
+  const simulated = status?.link.mode === 'simulator';
+  const hasLink = device.advanced.some((tool) => tool.name === 'link');
+  const hasRegisters = device.advanced.some((tool) => tool.name === 'registers');
 
   const refresh = useCallback(async () => {
-    // The broker and its traffic log belong to the server; there is nothing to
-    // refresh when the app holds the link.
-    if (isDirect) return;
+    if (!reachable) return;
     setBusy(true);
     try {
-      const nextLink = await fetchLinkDiagnostics();
-      setLink(nextLink);
-      if (nextLink.broker) {
-        // The journal is the broker's, so a broker that is down has none to give;
-        // the card above already says why, and that is not this screen's error.
-        const [nextTraffic, nextJournal] = await Promise.all([
-          fetchTraffic().catch(() => []),
-          fetchBrokerJournal({ limit: 60 }).catch(() => null),
+      if (hasLink) setLink(await actions.tool<LinkState>('link'));
+      if (onMqtt && actions.diagnostic) {
+        const address = inUse!.address.toUpperCase();
+        // The broker's, so a broker that is down has none to give: its card says why.
+        const [nextBroker, nextTraffic, nextJournal] = await Promise.all([
+          actions.diagnostic<BrokerView>('broker').catch(() => null),
+          actions.diagnostic<TrafficEntry[]>('traffic', { device: address, limit: 12 }).catch(() => []),
+          actions.diagnostic<{ entries: JournalEntry[] }>('journal', { device: address, limit: 15 }).catch(() => null),
         ]);
-        /*
-          This device's, not the broker's. Entries that name another station
-          go; entries that name none stay — a TCP connection from an address
-          nobody has identified yet is exactly how a station coming back first
-          shows up, and the broker's own start and stop belong to everyone.
-        */
-        const ours = (station: string | undefined) => !mac || !station || station.toUpperCase() === mac;
-        setTraffic(nextTraffic.filter((entry) => ours(entry.mac)).slice(-12).reverse());
-        setJournal(nextJournal ? nextJournal.entries.filter((entry) => ours(entry.station)).slice(-15).reverse() : []);
+        setBroker(nextBroker);
+        setTraffic([...nextTraffic].reverse());
+        setJournal(nextJournal ? [...nextJournal.entries].reverse() : []);
       }
       setError(null);
     } catch (err) {
@@ -93,7 +109,7 @@ export function StationProtocol({ status, deviceId, version, source, direct }: P
     } finally {
       setBusy(false);
     }
-  }, [isDirect, mac]);
+  }, [actions, hasLink, inUse, onMqtt, reachable]);
 
   useEffect(() => {
     void refresh();
@@ -102,7 +118,7 @@ export function StationProtocol({ status, deviceId, version, source, direct }: P
   const dumpRegisters = useCallback(async () => {
     setBusy(true);
     try {
-      setRegisters(isDirect ? await direct.dump() : await fetchRegisters(deviceId));
+      setRegisters(await actions.tool<RegisterDump>('registers'));
       setError(null);
     } catch (err) {
       const message = describeError(err);
@@ -110,17 +126,13 @@ export function StationProtocol({ status, deviceId, version, source, direct }: P
     } finally {
       setBusy(false);
     }
-  }, [deviceId, direct, isDirect]);
+  }, [actions]);
 
   const snapshot = useCallback(async () => {
     setBusy(true);
     try {
-      if (isDirect) {
-        setRegisters(await direct.snapshot());
-      } else {
-        await snapshotRegisters(deviceId);
-        setRegisters(await fetchRegisters(deviceId));
-      }
+      await actions.tool('snapshot');
+      setRegisters(await actions.tool<RegisterDump>('registers'));
       setOnlyChanged(true);
       setError(null);
     } catch (err) {
@@ -129,32 +141,12 @@ export function StationProtocol({ status, deviceId, version, source, direct }: P
     } finally {
       setBusy(false);
     }
-  }, [deviceId, direct, isDirect]);
+  }, [actions]);
 
-  const simulated = !isDirect && status?.link.mode === 'simulator';
-  /**
-   * The broker card and the frame log only mean anything on the MQTT link.
-   *
-   * Read from `transports`, a list: the server has sent that rather than a
-   * single `transport` since it learned to run Bluetooth and Wi-Fi at once, and
-   * a check against the old field hid this card on every server since.
-   */
-  const onMqtt =
-    !isDirect &&
-    (link?.transports.includes('mqtt') ?? false) &&
-    // This device's own transport, when it is known: a server running both
-    // radios would otherwise show the broker on a Bluetooth station's screen.
-    (status?.link.transport ?? 'mqtt') === 'mqtt';
-  const broker = onMqtt ? (link?.broker ?? null) : null;
-  /**
-   * Nothing to dump until there is a station on the other end — on either kind
-   * of link. Through the server that means its own link state: a dump sent to a
-   * station that is not there just fails, after a bright button invited it.
-   */
-  const noStation = isDirect ? !direct.connected : !simulated && status?.link.state !== 'connected';
+  /** Nothing to dump until there is a station on the other end, and a simulator has no registers. */
+  const noStation = !reachable || simulated || !hasRegisters || status?.link.state !== 'connected';
   /** Dimmed as well as inert: a bright button that ignores taps reads as broken. */
-  const cannotRead = busy || simulated || noStation;
-  const readOnly = version?.readOnly ?? false;
+  const cannotRead = busy || noStation;
 
   return (
     <>
@@ -178,72 +170,26 @@ export function StationProtocol({ status, deviceId, version, source, direct }: P
         </Card>
       ) : null}
 
-      {isDirect ? (
-        <YStack gap="$2">
-          <SectionLabel>Link</SectionLabel>
-          <Card inset>
-            <Row
-              title="Reading directly"
-              subtitle="Registers come straight off the Bluetooth link — no server involved"
-              accessory={<Mono>{direct.support.label}</Mono>}
-            />
-            <RowSeparator />
-            <Row
-              title="Station"
-              accessory={<Mono>{direct.connected ? 'connected' : 'none'}</Mono>}
-              subtitle={
-                direct.connected
-                  ? (direct.boundId ?? undefined)
-                  : 'Connect one under Devices to dump its registers'
-              }
-            />
-          </Card>
-        </YStack>
-      ) : (
-        <YStack gap="$2">
-          {/*
-            The broker only exists on the MQTT transport. Showing "Listening:
-            no" during a Bluetooth session made a healthy link look broken, and
-            the empty frame log below it made it look doubly so.
-          */}
-          <SectionLabel>Link</SectionLabel>
-          <Card inset>
-            <Row
-              title="Driver"
-              accessory={<Mono>{link?.driver ?? '—'}</Mono>}
-              subtitle={simulated ? 'Set STATION_DRIVER=device to talk to hardware' : undefined}
-            />
-            <RowSeparator />
-            <Row
-              title="Transports"
-              accessory={<Mono>{link ? link.transports.join(' + ') || 'none' : '—'}</Mono>}
-              subtitle={
-                link?.linkedStations.length
-                  ? `Holding ${link.linkedStations.map((held) => held.stationId ?? 'no station yet').join(', ')}`
-                  : undefined
-              }
-            />
-            {broker ? null : (
-              <>
-                <RowSeparator />
-                <Row
-                  title="Stations seen"
-                  accessory={<Mono>{link?.devices.length ?? 0}</Mono>}
-                  subtitle={
-                    link?.devices.length
-                      ? link.devices.map((device) => device.name || device.mac || device.id).join(', ')
-                      : 'None yet'
-                  }
-                />
-              </>
-            )}
-          </Card>
-          {broker ? <BrokerCard broker={broker} /> : null}
-        </YStack>
-      )}
+      <YStack gap="$2">
+        <SectionLabel>Link</SectionLabel>
+        <Card inset>
+          <Row
+            title="Held by"
+            accessory={<Mono>{holder === 'server' ? 'the server' : holder === 'this-app' ? 'this app' : holder === 'other-app' ? 'another app' : 'nobody'}</Mono>}
+            subtitle={inUse ? `${inUse.methodLabel} · ${inUse.address}` : device.health.detail}
+          />
+          <RowSeparator />
+          <Row
+            title="Station"
+            accessory={<Mono>{simulated ? 'simulated' : link ? (link.connected ? 'connected' : 'not connected') : '—'}</Mono>}
+            subtitle={simulated ? 'A simulator has no registers to read' : undefined}
+          />
+        </Card>
+        {broker ? <BrokerCard broker={broker} /> : null}
+      </YStack>
 
       <XStack gap="$3" flexWrap="wrap">
-        {isDirect ? null : (
+        {!reachable ? null : (
           <Button flex={1} size="$3" {...SECONDARY} onPress={() => void refresh()} disabled={busy}>
             Refresh
           </Button>
@@ -293,7 +239,6 @@ export function StationProtocol({ status, deviceId, version, source, direct }: P
         <Text fontSize={12} color="$muted" paddingHorizontal="$1">
           Baseline captured {new Date(registers.baselineAt).toLocaleTimeString()}. Change something
           on the station or in BrightEMS, then dump again to see which registers moved.
-          {isDirect ? ' Held in memory here, so a reload starts over.' : ''}
         </Text>
       ) : null}
 
@@ -506,7 +451,7 @@ function hms(iso: string): string {
  * The broker, and the stations on it.
  *
  * It runs as a process of its own so that restarting the server does not drop
- * the station — a P280 that loses its broker for long enough stops trying to
+ * the station — a station that loses its broker for long enough stops trying to
  * come back. So this card has two connections to report, and they fail
  * separately: the station to the broker, and the server to the broker.
  */
@@ -547,7 +492,7 @@ function BrokerCard({ broker }: { broker: BrokerView }) {
               : (broker.serverError ?? 'Connecting…')
           }
         />
-        {broker.stations.length === 0 ? (
+        {broker.devices.length === 0 ? (
           <>
             <RowSeparator />
             <Row
@@ -560,11 +505,11 @@ function BrokerCard({ broker }: { broker: BrokerView }) {
             />
           </>
         ) : (
-          broker.stations.map((station) => (
-            <YStack key={station.station}>
+          broker.devices.map((station) => (
+            <YStack key={station.address}>
               <RowSeparator />
               <Row
-                title={station.station}
+                title={station.address}
                 accessory={<Mono>{station.online ? 'online' : 'offline'}</Mono>}
                 subtitle={
                   station.online

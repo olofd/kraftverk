@@ -1,158 +1,105 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { ACTUATOR_CONFIRMATION } from '@kraftverk/device-sdk';
-import type { ConfigValues, ControlSpec, SavedDeviceView, MetricSpec } from '@kraftverk/api-client';
-import { describeError, isOnline } from '@kraftverk/api-client';
+import { describeError, isOnline, LINK_KINDS } from '@kraftverk/api-client';
+import type { ConfigValues, ConnectionView, ControlSpec, DeviceView, LinkView, MetricSpec } from '@kraftverk/api-client';
 import {
   Card,
-  ModeRow,
+  DeviceCard,
   Row,
   RowSeparator,
   SchemaForm,
   SectionLabel,
   ToggleRow,
-  DeviceCard,
-  PendingMark,
   formatMeasurement,
   haptic,
   readingFor,
+  useWriteGate,
 } from '@kraftverk/ui';
 
 import { MeasurementChart } from '../../components/MeasurementChart';
+import { Pressable } from '../../components/Pressable';
+import { confirmAction } from '../../lib/confirm';
 import { featherName } from '../../lib/icons';
 import { useDevices } from '../../state/DevicesProvider';
 
 /**
  * What every device gets for free.
  *
- * Written entirely against declarations: the controls come from what the device
- * says it can be told to do, the rows from what it says it measures, and the
- * settings form from the schema it publishes. Nothing here knows what a power
- * station is, which is the test the device model has to pass — a plug added
- * next year lands on these panels with no code written for it.
- *
- * A device model rich enough to deserve its own screens replaces the panels it
- * wants and keeps the rest. They are grouped by *what is shown* — Dashboard or
- * Settings — rather than by generic versus specific, so replacing one is a
- * choice about a section rather than about a whole screen.
+ * Written against declarations: the controls come from what the device says
+ * it can be told to do, the rows from what it says it measures, the settings
+ * form from the schema it publishes, and its connections and links from the
+ * data model. Nothing here knows what a power station is — a plug added next
+ * year lands on these panels with no code written for it.
  */
 
-export function Overview({ device }: { device: SavedDeviceView }) {
+export function DeviceIcon({ device, size = 16 }: { device: DeviceView; size?: number }) {
   const theme = useTheme();
-
-  return (
-    <DeviceCard
-      device={device}
-      icon={
-        <Feather
-          name={featherName(device.icon, 'zap')}
-          size={16}
-          color={isOnline(device.health) ? theme.accent?.val : theme.muted?.val}
-        />
-      }
-    />
-  );
+  return <Feather name={featherName(device.meta.icon, 'zap')} size={size} color={isOnline(device.health) ? theme.accent?.val : theme.muted?.val} />;
 }
 
-// --- controls ---------------------------------------------------------------
+export function Overview({ device }: { device: DeviceView }) {
+  return <DeviceCard device={device} icon={<DeviceIcon device={device} />} />;
+}
+
+// --- controls -----------------------------------------------------------------
 
 /**
- * What this device can be told to do.
- *
- * A control that is `dangerous` asks twice and says what will happen first —
- * and the confirmation it then sends is the same token the action gateway
- * demands, so a tap here has exactly the authority a manual switch does.
+ * What this device can be told to do. Every control is a capability command
+ * through the holder's gateway — which asks the person to confirm when it
+ * matters, and says why — so a tap here has exactly a manual switch's authority.
  */
-export function Controls({ device }: { device: SavedDeviceView }) {
-  const { invoke, pendingControl } = useDevices();
+export function Controls({ device }: { device: DeviceView }) {
+  const { actionsFor } = useDevices();
+  const [gate, writes] = useWriteGate<string>();
   const [error, setError] = useState<string | null>(null);
 
   const run = useCallback(
-    async (control: ControlSpec, value: boolean | number | string) => {
+    async (control: ControlSpec, value: boolean) => {
       setError(null);
-      try {
-        await invoke(device, control.id, value, control.dangerous ? ACTUATOR_CONFIRMATION : undefined);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'That did not work');
-      }
-    },
-    [device, invoke]
-  );
-
-  const request = useCallback(
-    (control: ControlSpec, value: boolean | number | string) => {
       haptic();
-      if (!control.dangerous) {
-        void run(control, value);
-        return;
+      try {
+        await gate.run({ [control.id]: value }, async () => {
+          const result = await actionsFor(device).command({ capability: control.capability, command: control.command, target: control.target, value, reason: `${control.label} from the device screen` });
+          if (result.outcome === 'refused' || result.outcome === 'failed') throw new Error(result.detail);
+          if (result.outcome === 'unverified') setError(result.detail);
+        });
+      } catch (err) {
+        setError(describeError(err) || 'That did not work');
       }
-      confirmDangerous(control, () => void run(control, value));
     },
-    [run]
+    [actionsFor, device, gate]
   );
 
-  if (device.controls.length === 0) return null;
+  const switches = device.controls.filter((control) => control.kind === 'switch');
+  if (switches.length === 0) return null;
+  const unavailable = !isOnline(device.health);
 
   return (
     <YStack gap="$2">
       <SectionLabel>Controls</SectionLabel>
       <Card inset>
-        {device.controls.map((control, index) => {
-          const reading = control.measurementKey
-            ? readingFor(device.readings, control.measurementKey)
-            : undefined;
-          // Until the device confirms it, a control shows what was asked for, locked.
-          const pending = pendingControl(device.id, control.id);
-          const value = pending ? pending.value : reading?.value;
-          const unavailable = !isOnline(device.health);
-
+        {switches.map((control, index) => {
+          const reading = control.measurementKey ? readingFor(device.readings, control.measurementKey) : undefined;
+          const pending = writes.pending.has(control.id);
+          const value = pending ? writes.pending.get(control.id) : reading?.value;
           return (
             <YStack key={control.id}>
               {index > 0 ? <RowSeparator /> : null}
-              {control.kind === 'switch' ? (
-                <ToggleRow
-                  title={control.label}
-                  subtitle={control.consequence}
-                  checked={value === true}
-                  disabled={unavailable}
-                  pending={pending !== undefined}
-                  onCheckedChange={(next) => request(control, next)}
-                />
-              ) : control.kind === 'enum' && control.options ? (
-                <ModeRow
-                  title={control.label}
-                  subtitle={control.consequence}
-                  value={String(value ?? control.options[0]?.value ?? '')}
-                  options={control.options}
-                  disabled={unavailable}
-                  pending={pending !== undefined}
-                  onChange={(next) => request(control, next)}
-                />
-              ) : (
-                <Row
-                  title={control.label}
-                  subtitle={control.consequence}
-                  disabled={unavailable}
-                  accessory={
-                    pending ? (
-                      <PendingMark />
-                    ) : (
-                      <Button size="$2" disabled={unavailable} onPress={() => request(control, true)}>
-                        Run
-                      </Button>
-                    )
-                  }
-                />
-              )}
+              <ToggleRow
+                title={control.label}
+                subtitle={control.consequence}
+                checked={value === true}
+                disabled={unavailable}
+                pending={pending}
+                onCheckedChange={(next) => void run(control, next)}
+              />
             </YStack>
           );
         })}
       </Card>
-
       {error ? (
         <Text fontSize={12} color="$danger" lineHeight={18} paddingHorizontal="$1">
           {error}
@@ -162,33 +109,11 @@ export function Controls({ device }: { device: SavedDeviceView }) {
   );
 }
 
-/**
- * Asks before something physical happens.
- *
- * `Alert` is not available on web, where a browser `confirm` is the honest
- * equivalent — both block until the user has actually decided.
- */
-function confirmDangerous(control: ControlSpec, proceed: () => void): void {
-  const message = control.consequence ?? `${control.label} moves real hardware. Continue?`;
-
-  if (Platform.OS === 'web') {
-    // eslint-disable-next-line no-alert
-    if (typeof confirm === 'function' && confirm(`${control.label}\n\n${message}`)) proceed();
-    return;
-  }
-
-  Alert.alert(control.label, message, [
-    { text: 'Cancel', style: 'cancel' },
-    { text: 'Continue', style: 'destructive', onPress: proceed },
-  ]);
-}
-
-// --- readings ---------------------------------------------------------------
+// --- readings -----------------------------------------------------------------
 
 /** Everything the device declared it measures, and what it last said. */
-export function Readings({ device }: { device: SavedDeviceView }) {
+export function Readings({ device }: { device: DeviceView }) {
   if (device.measurements.length === 0) return null;
-
   return (
     <YStack gap="$2">
       <SectionLabel>Readings</SectionLabel>
@@ -211,27 +136,19 @@ export function Readings({ device }: { device: SavedDeviceView }) {
   );
 }
 
-// --- history ----------------------------------------------------------------
+// --- history ------------------------------------------------------------------
 
 /**
- * One chart, and a way to point it at any measurement.
- *
- * The sampler records everything a device declares, so the picker is simply the
- * declaration list — which is why this section needs no knowledge of what is
- * being charted.
+ * One chart, and a way to point it at any measurement. The server records
+ * everything a device declares — whoever holds it — so the picker is simply
+ * the declaration list. Local mode keeps no history, and says nothing.
  */
-export function History({ device }: { device: SavedDeviceView }) {
-  const { editable } = useDevices();
+export function History({ device }: { device: DeviceView }) {
+  const { history } = useDevices();
   const chartable = device.measurements.filter((spec) => spec.kind !== 'state');
   const [key, setKey] = useState<string | null>(null);
-
-  const selected: MetricSpec | undefined =
-    chartable.find((spec) => spec.key === key) ??
-    chartable.find((spec) => spec.primary) ??
-    chartable[0];
-
-  // No server, no sampler, no history. Saying so beats an empty chart.
-  if (!editable || !selected) return null;
+  const selected: MetricSpec | undefined = chartable.find((spec) => spec.key === key) ?? chartable.find((spec) => spec.primary) ?? chartable[0];
+  if (!history || !selected) return null;
 
   return (
     <YStack gap="$2">
@@ -239,8 +156,6 @@ export function History({ device }: { device: SavedDeviceView }) {
       <Card gap="$3">
         <XStack flexWrap="wrap" gap="$1.5">
           {chartable.map((spec) => (
-            // A chip is a choice, not a decoration: `radio` is what makes a
-            // screen reader say which of the twelve is currently charted.
             <Text
               key={spec.key}
               role="radio"
@@ -265,62 +180,61 @@ export function History({ device }: { device: SavedDeviceView }) {
             </Text>
           ))}
         </XStack>
-
         <MeasurementChart deviceId={device.id} measurement={selected} />
       </Card>
     </YStack>
   );
 }
 
-// --- settings ---------------------------------------------------------------
+// --- settings -----------------------------------------------------------------
 
 /**
- * The device's own settings, rendered from the schema it publishes.
- *
- * Edits are held locally until Save: writing a register per keystroke would put
- * the station through a dozen writes to reach one value, and every one of them
- * is a real write to real hardware.
+ * The device's own settings, from the schema it publishes. Edits are held until
+ * Save: writing a register per keystroke would put the hardware through a dozen
+ * writes to reach one value.
  */
-export function GenericSettings({ device }: { device: SavedDeviceView }) {
-  const { readSettings, writeSettings } = useDevices();
+export function GenericSettings({ device }: { device: DeviceView }) {
+  const { actionsFor } = useDevices();
   const [values, setValues] = useState<ConfigValues | null>(null);
   const [draft, setDraft] = useState<ConfigValues>({});
   const [dangerous, setDangerous] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const schema = device.settings?.schema;
 
   useEffect(() => {
+    if (!schema) return;
     let live = true;
-    void readSettings(device)
+    void actionsFor(device)
+      .readSettings()
       .then((loaded) => {
         if (!live) return;
         setValues(loaded.values);
         setDangerous(loaded.dangerous);
       })
       .catch((err: unknown) => {
-        if (live) setError(err instanceof Error ? err.message : 'Could not read settings');
+        if (live) setError(describeError(err) || 'Could not read its settings');
       });
     return () => {
       live = false;
     };
-    // Re-reading on every poll would fight the form; the device id is what matters.
-  }, [device.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Re-reading on every poll would fight the form; the device is what matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [device.id, Boolean(schema)]);
 
-  const schema = device.settings?.schema;
   if (!schema) return null;
-
   const pending = Object.keys(draft).length > 0;
 
   const save = async () => {
     setBusy(true);
     setError(null);
     try {
-      // The reply is a readback: one setting can move another on this hardware.
-      const applied = await writeSettings(device, draft);
+      // The reply is a readback: one setting can move another.
+      const applied = await actionsFor(device).writeSettings(draft);
       setValues((current) => ({ ...current, ...applied }));
       setDraft({});
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'That write was refused');
+      setError(describeError(err) || 'That write was refused');
     } finally {
       setBusy(false);
     }
@@ -329,38 +243,37 @@ export function GenericSettings({ device }: { device: SavedDeviceView }) {
   return (
     <YStack gap="$2">
       <SectionLabel>Settings</SectionLabel>
-
       {dangerous.length > 0 ? (
         <Text fontSize={12} color="$muted" lineHeight={18} paddingHorizontal="$1">
-          {dangerous.length === 1 ? 'One setting here can' : `${dangerous.length} settings here can`}{' '}
-          damage the hardware if set wrongly. The device says which; their descriptions explain what
-          happens.
+          {dangerous.length === 1 ? 'One setting here can' : `${dangerous.length} settings here can`} damage the hardware if set wrongly. The device
+          says which; their descriptions explain what happens.
         </Text>
       ) : null}
-
       <Card inset>
         {values === null ? (
           <YStack padding="$5" alignItems="center">
-            <Spinner color="$accent" />
+            {error ? (
+              <Text fontSize={13} color="$muted" textAlign="center">
+                {error}
+              </Text>
+            ) : (
+              <Spinner color="$accent" />
+            )}
           </YStack>
         ) : (
           <SchemaForm
             schema={schema}
             values={{ ...values, ...draft }}
             disabled={busy || !isOnline(device.health)}
-            onChange={(name, value) =>
-              setDraft((current) => ({ ...current, [name]: value as ConfigValues[string] }))
-            }
+            onChange={(name, value) => setDraft((current) => ({ ...current, [name]: value as ConfigValues[string] }))}
           />
         )}
       </Card>
-
-      {error ? (
+      {error && values !== null ? (
         <Text fontSize={12} color="$danger" lineHeight={18} paddingHorizontal="$1">
           {error}
         </Text>
       ) : null}
-
       {pending ? (
         <XStack gap="$2">
           <Button flex={1} size="$3" disabled={busy} onPress={() => setDraft({})}>
@@ -385,51 +298,234 @@ export function GenericSettings({ device }: { device: SavedDeviceView }) {
   );
 }
 
-// --- manage -----------------------------------------------------------------
+// --- connections ------------------------------------------------------------------
 
-/** Its name, and whether you still own it. Both belong to the catalog. */
-export function Manage({ device }: { device: SavedDeviceView }) {
-  const { rename, remove } = useDevices();
-  const [name, setName] = useState(device.record.name);
+const heldByLabel = (connection: ConnectionView, clientId: string | null) =>
+  connection.heldBy.kind === 'server'
+    ? 'through your server'
+    : connection.heldBy.id === clientId || connection.heldBy.id === 'this-app'
+      ? 'from this app'
+      : `from ${connection.heldBy.name}`;
+
+/**
+ * How this device is reached (docs/DATA-MODEL.md §4): one connection in use,
+ * the rest standing by in order. Another way to reach it is added through the
+ * same steps as the device itself, and must reach this device.
+ */
+export function Connections({ device }: { device: DeviceView }) {
+  const { prefer, removeConnection, runtime } = useDevices();
   const [busy, setBusy] = useState(false);
-  /**
-   * Why the last thing you asked for did not happen.
-   *
-   * The provider's error state only reaches the banner when the *server* is
-   * unreachable, which a refused rename is not. Without this a failure would
-   * show nothing at all: the button stops spinning and the old name stays — and
-   * for Forget, the user has already confirmed a warning saying the device is
-   * about to be destroyed.
-   */
   const [error, setError] = useState<string | null>(null);
   const theme = useTheme();
 
-  const dirty = name.trim() !== device.record.name && name.trim().length > 0;
-
-  const forget = () => {
+  const act = async (work: () => Promise<void>) => {
     haptic();
-    const message = `${device.record.name} and its recorded history will be removed. This cannot be undone.`;
-
-    const proceed = () => {
-      setBusy(true);
-      setError(null);
-      remove(device.id)
-        .then(() => router.replace('/'))
-        .catch((err: unknown) => {
-          setError(describeError(err) || 'That device could not be forgotten');
-        })
-        .finally(() => setBusy(false));
-    };
-
-    if (Platform.OS === 'web') {
-      // eslint-disable-next-line no-alert
-      if (typeof confirm === 'function' && confirm(message)) proceed();
-      return;
+    setBusy(true);
+    setError(null);
+    try {
+      await work();
+    } catch (err) {
+      setError(describeError(err) || 'That did not work');
+    } finally {
+      setBusy(false);
     }
-    Alert.alert('Forget this device?', message, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Forget', style: 'destructive', onPress: proceed },
-    ]);
+  };
+
+  const ordered = [...device.connections].sort((a, b) => a.priority - b.priority);
+
+  return (
+    <YStack gap="$2">
+      <SectionLabel>Connections</SectionLabel>
+      <Card inset>
+        {ordered.length === 0 ? (
+          <Row title="Nothing can reach this device" subtitle="Add a way to reach it" />
+        ) : (
+          ordered.map((connection, index) => (
+            <YStack key={connection.id}>
+              {index > 0 ? <RowSeparator /> : null}
+              <YStack paddingHorizontal="$4" paddingVertical="$3" gap="$2">
+                <XStack alignItems="center" justifyContent="space-between" gap="$2">
+                  <YStack flex={1} gap={2}>
+                    <Text fontSize={15} fontWeight="600" color="$color">
+                      {connection.methodLabel}, {heldByLabel(connection, runtime.clientId)}
+                    </Text>
+                    <Text fontSize={12} color="$muted">
+                      {connection.inUse
+                        ? 'In use'
+                        : connection.lastConnectedAt
+                          ? `Standing by · last connected ${new Date(connection.lastConnectedAt).toLocaleString()}`
+                          : 'Standing by'}
+                      {` · ${connection.address}`}
+                      {connection.secrets.length ? ` · ${connection.secrets.join(', ')} kept` : ''}
+                    </Text>
+                  </YStack>
+                  {connection.inUse ? <Feather name="check-circle" size={16} color={theme.success?.val} /> : null}
+                </XStack>
+                {ordered.length > 1 ? (
+                  <XStack gap="$2">
+                    {index > 0 ? (
+                      <Button size="$2" disabled={busy} onPress={() => void act(() => prefer(device, connection))}>
+                        Make preferred
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="$2"
+                      disabled={busy}
+                      onPress={() =>
+                        void act(async () => {
+                          if (await confirmAction('Remove this connection?', `${device.name} will no longer be reached ${connection.methodLabel.toLowerCase()}, ${heldByLabel(connection, runtime.clientId)}.`, 'Remove')) {
+                            await removeConnection(device, connection);
+                          }
+                        })
+                      }
+                    >
+                      Remove
+                    </Button>
+                  </XStack>
+                ) : null}
+              </YStack>
+            </YStack>
+          ))
+        )}
+        <RowSeparator />
+        <Pressable onPress={() => router.push(`/add-device?attach=${encodeURIComponent(device.id)}&type=${encodeURIComponent(device.typeId)}`)}>
+          <Row title="Add another way to reach it" accessory={<Feather name="plus" size={16} color={theme.muted?.val} />} />
+        </Pressable>
+      </Card>
+      {error ? (
+        <Text fontSize={12} color="$danger" lineHeight={18} paddingHorizontal="$1">
+          {error}
+        </Text>
+      ) : null}
+    </YStack>
+  );
+}
+
+// --- links ------------------------------------------------------------------------
+
+/**
+ * Facts about the house (docs/ARCHITECTURE.md §4.4): this plug feeds that
+ * station. Offered only between devices a link kind fits.
+ */
+export function Links({ device }: { device: DeviceView }) {
+  const { devices, addLink, removeLink } = useDevices();
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const theme = useTheme();
+
+  const candidates = Object.entries(LINK_KINDS).flatMap(([kind, spec]) => {
+    const asSource = device.capabilities.includes(spec.from)
+      ? devices.filter((other) => other.id !== device.id && other.capabilities.includes(spec.to)).map((other) => ({ kind, role: 'source' as const, other }))
+      : [];
+    const asTarget = device.capabilities.includes(spec.to)
+      ? devices.filter((other) => other.id !== device.id && other.capabilities.includes(spec.from)).map((other) => ({ kind, role: 'target' as const, other }))
+      : [];
+    return [...asSource, ...asTarget];
+  });
+  const linked = (kind: string, role: 'source' | 'target', otherId: string) =>
+    device.links.some((link) => link.kind === kind && link.role === role && link.other.id === otherId);
+
+  if (device.links.length === 0 && candidates.length === 0) return null;
+
+  const act = async (work: () => Promise<void>) => {
+    haptic();
+    setBusy(true);
+    setError(null);
+    try {
+      await work();
+    } catch (err) {
+      setError(describeError(err) || 'That did not work');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sentence = (link: { kind: string; role: 'source' | 'target' }, otherName: string) => {
+    const verb = (LINK_KINDS as Record<string, { verb: string }>)[link.kind]?.verb ?? link.kind;
+    return link.role === 'source' ? `${capitalise(verb)} ${otherName}` : `${otherName} ${verb} it`;
+  };
+
+  return (
+    <YStack gap="$2">
+      <SectionLabel>How it fits the house</SectionLabel>
+      <Card inset>
+        {device.links.map((link: LinkView, index) => (
+          <YStack key={link.id}>
+            {index > 0 ? <RowSeparator /> : null}
+            <Row
+              title={sentence(link, link.other.name)}
+              accessory={
+                <Button size="$2" disabled={busy} onPress={() => void act(() => removeLink(link))}>
+                  Remove
+                </Button>
+              }
+            />
+          </YStack>
+        ))}
+        {candidates
+          .filter((candidate) => !linked(candidate.kind, candidate.role, candidate.other.id))
+          .map((candidate, index) => (
+            <YStack key={`${candidate.kind}-${candidate.role}-${candidate.other.id}`}>
+              {index > 0 || device.links.length > 0 ? <RowSeparator /> : null}
+              <Pressable
+                onPress={() =>
+                  void act(() =>
+                    candidate.role === 'source' ? addLink(candidate.kind, device.id, candidate.other.id) : addLink(candidate.kind, candidate.other.id, device.id)
+                  )
+                }
+              >
+                <Row
+                  title={sentence(candidate, candidate.other.name)}
+                  subtitle={(LINK_KINDS as Record<string, { description: string }>)[candidate.kind]?.description}
+                  accessory={<Feather name="plus" size={16} color={theme.muted?.val} />}
+                />
+              </Pressable>
+            </YStack>
+          ))}
+      </Card>
+      {error ? (
+        <Text fontSize={12} color="$danger" lineHeight={18} paddingHorizontal="$1">
+          {error}
+        </Text>
+      ) : null}
+    </YStack>
+  );
+}
+
+const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+// --- manage -----------------------------------------------------------------------
+
+/**
+ * Its name, and removing it. Removing keeps its history on the server, so
+ * adding the same device again can bring it back; in local mode there is no
+ * history, and it is simply gone.
+ */
+export function Manage({ device }: { device: DeviceView }) {
+  const { rename, remove, mode } = useDevices();
+  const [name, setName] = useState(device.name);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const theme = useTheme();
+  const dirty = name.trim() !== device.name && name.trim().length > 0;
+
+  const removeIt = async () => {
+    haptic();
+    const message =
+      mode === 'server'
+        ? `${device.name} leaves your list, and its connections go. Its history is kept: add the same device again to bring it back.`
+        : `${device.name} and how it is reached are deleted from this app.`;
+    if (!(await confirmAction('Remove this device?', message, 'Remove'))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await remove(device.id);
+      router.replace('/');
+    } catch (err) {
+      setError(describeError(err) || 'It could not be removed');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -441,15 +537,7 @@ export function Manage({ device }: { device: SavedDeviceView }) {
             Name
           </Text>
           <XStack gap="$2">
-            <Input
-              flex={1}
-              size="$3"
-              value={name}
-              maxLength={60}
-              onChangeText={setName}
-              backgroundColor="$background"
-              borderColor="$borderColor"
-            />
+            <Input flex={1} size="$3" value={name} maxLength={60} onChangeText={setName} backgroundColor="$background" borderColor="$borderColor" />
             {dirty ? (
               <Button
                 size="$3"
@@ -461,9 +549,7 @@ export function Manage({ device }: { device: SavedDeviceView }) {
                   setBusy(true);
                   setError(null);
                   rename(device.id, name.trim())
-                    .catch((err: unknown) => {
-                      setError(describeError(err) || 'That name could not be saved');
-                    })
+                    .catch((err: unknown) => setError(describeError(err) || 'That name could not be saved'))
                     .finally(() => setBusy(false));
                 }}
               >
@@ -471,37 +557,22 @@ export function Manage({ device }: { device: SavedDeviceView }) {
               </Button>
             ) : null}
           </XStack>
-          {/*
-            Only when there is a second name to contrast with. `device.name` is
-            the catalog's — the very name in the box above — so without
-            `providerName` this sentence would print it straight back.
-          */}
           <Text fontSize={12} color="$muted" lineHeight={17}>
-            {device.providerName
-              ? `Yours, not the vendor’s. The device keeps reporting ${device.providerName}.`
-              : 'Yours alone. Changing it later changes nothing but the label.'}
+            Yours alone: changing it changes nothing but the label. {device.meta.name}
+            {device.identity ? ` · ${device.identity}` : ''}
           </Text>
         </YStack>
-
         <RowSeparator />
-
         <Row
-          title="Forget this device"
-          subtitle="Removes it from the list, along with everything it has recorded"
+          title="Remove this device"
+          subtitle={mode === 'server' ? 'Its history is kept, to bring back or delete later' : 'Deleted from this app'}
           accessory={
-            <Button
-              size="$2"
-              disabled={busy}
-              borderColor="$danger"
-              icon={<Feather name="trash-2" size={13} color={theme.danger?.val} />}
-              onPress={forget}
-            >
-              Forget
+            <Button size="$2" disabled={busy} borderColor="$danger" icon={<Feather name="trash-2" size={13} color={theme.danger?.val} />} onPress={() => void removeIt()}>
+              Remove
             </Button>
           }
         />
       </Card>
-
       {error ? (
         <Text fontSize={12} color="$danger" lineHeight={18} paddingHorizontal="$1">
           {error}

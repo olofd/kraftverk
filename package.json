@@ -59,6 +59,10 @@
     "check:architecture": "node scripts/architecture.mjs && node scripts/run-bun.mjs scripts/gen-devices.ts --check",
     "//gen:devices": "Writes the app's registry of device screens from the installed packages (client/src/generated/device-types.ts). Run it after adding a device package; CI checks it is current.",
     "gen:devices": "node scripts/run-bun.mjs scripts/gen-devices.ts",
+    "//new": "Starts a device type, protocol or transport that already keeps its contract. See docs/ADDING-A-DEVICE.md.",
+    "new:device": "node scripts/run-bun.mjs scripts/new-package.ts device",
+    "new:protocol": "node scripts/run-bun.mjs scripts/new-package.ts protocol",
+    "new:transport": "node scripts/run-bun.mjs scripts/new-package.ts transport",
     "scan:tuya": "node scripts/run-bun.mjs packages/protocols/tuya-local/tools/scan.ts",
     "keys:tuya": "node scripts/run-bun.mjs packages/protocols/tuya-local/tools/keys.ts"
   },

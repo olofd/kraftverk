@@ -62,27 +62,26 @@ Nothing is written to disk, and the credentials are used for one request each.
 
 ## 4. Give the key to the server
 
-In the app, the same two steps exist as buttons — *Find plugs on this network* and *Fetch local
-keys from Tuya* — and picking a device fills the form in. Today they are under **Extensions →
-Tuya smart plug**; once the plugs are device types (ARCHITECTURE.md step 9) they are the
-*Choose your device* and *Credentials* steps of adding the plug.
+In the app, the same two steps are part of adding the plug: **Add a device →
+Smart plugs → ATORCH S1W** (or *Tuya smart plug*) **→ Home network, through your
+server**. The plug is listed once it has been seen on the network — or type its
+IP address — and the **Credentials** step has **Fetch it with my Tuya account**,
+which fills in the key. The key stays on the server: the app is handed a
+placeholder, never the key. The check then reads the plug once, and says which
+protocol version answered and which datapoint is the relay.
 
-Or do it over the API, signed in — with the session cookie from your browser,
-and the header every change needs:
+A plug's key changes when it is paired again. Replace it on the plug's
+**Settings → Connections**, or over the API, signed in — with the session
+cookie from your browser and the header every change needs:
 
 ```bash
-curl -X PATCH http://localhost:3333/api/plugins/com.tuya-local.grid-relay/config \
+curl -X PUT 'http://localhost:3333/api/devices/<device id>/connections/<connection id>/secrets' \
   -b 'kraftverk_session=<from the browser>' -H 'X-Kraftverk-Client: curl' \
   -H 'Content-Type: application/json' \
-  -d '{"host":"192.168.1.50","deviceId":"bf1234…","localKey":"a1b2c3d4e5f6g7h8"}'
+  -d '{"localKey":"a1b2c3d4e5f6g7h8"}'
 ```
 
-Then enable it and press **Test**. A working plug reports which protocol version answered, how
-many datapoints came back, and which one is the relay:
-
-```
-Connected over protocol 3.4. 9 datapoints. Relay reads false on DP 1; other boolean datapoints: 131
-```
+The device and connection ids are in `GET /api/devices`.
 
 ---
 

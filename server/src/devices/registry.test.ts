@@ -11,6 +11,7 @@ import { ClientStore } from './clients.ts';
 import { ConnectionStore } from './connections.ts';
 import { LinkStore } from './links.ts';
 import { DeviceRegistry } from './registry.ts';
+import { RemoteReadings } from './remote.ts';
 import { DeviceSessionManager } from './sessions.ts';
 import { busDefinition, FakeBus, lampProtocol, lampType } from './testing.ts';
 import { DeviceTypeRegistry } from './types.ts';
@@ -45,7 +46,7 @@ beforeAll(() => {
   const types = new DeviceTypeRegistry();
   types.install(lampType);
   sessions = new DeviceSessionManager({ types, protocols, transports, connections, simulate: false, readOnly: false, allowRawFrames: false, clientName: (id) => clients.get(id)?.name ?? null });
-  registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports });
+  registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports, remote: new RemoteReadings() });
 });
 
 afterAll(async () => {

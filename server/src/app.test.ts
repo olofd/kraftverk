@@ -17,6 +17,7 @@ import { ConnectionStore } from './devices/connections.ts';
 import { LinkStore } from './devices/links.ts';
 import { Nearby } from './devices/nearby.ts';
 import { DeviceRegistry } from './devices/registry.ts';
+import { RemoteReadings } from './devices/remote.ts';
 import { DeviceSessionManager } from './devices/sessions.ts';
 import { SetupService } from './devices/setup.ts';
 import { busDefinition, FakeBus, lampProtocol, lampType } from './devices/testing.ts';
@@ -85,7 +86,8 @@ async function build(options: { simulate: boolean; readOnly?: boolean }): Promis
     allowRawFrames: false,
     clientName: (id) => clients.get(id)?.name ?? null,
   });
-  const registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports });
+  const remote = new RemoteReadings();
+  const registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports, remote });
   const setup = new SetupService({
     types,
     protocols,
@@ -124,6 +126,7 @@ async function build(options: { simulate: boolean; readOnly?: boolean }): Promis
     registry,
     setup,
     nearby,
+    remote,
     gateway,
     sampler: new Sampler(registry),
     proxies,
@@ -534,6 +537,101 @@ describe('connections and links', () => {
     expect((await as(`/devices/${enc(station.id)}`)).body.links).toEqual([expect.objectContaining({ kind: 'feeds', role: 'target', other: { id: plug.id, name: 'Heater plug' } })]);
     expect((await as(`/links/${link.body.id}`, { method: 'DELETE' })).status).toBe(200);
     expect((await as(`/devices/${enc(station.id)}`)).body.links).toEqual([]);
+  });
+});
+
+describe('a connection a browser holds', () => {
+  const browser = async () =>
+    (await onBusAs('/clients', { method: 'POST', body: { name: 'Olof’s laptop', platform: 'web', transports: ['bus'] } })).body as { id: string };
+
+  const heldSetup = async (clientId: string, identified: unknown, extra: Record<string, unknown> = {}) =>
+    onBusAs('/setup/app', {
+      method: 'POST',
+      body: { clientId, typeId: 'test.lamp', methodId: 'bus', address: 'browser-handle-1', identified, device: { room: 'Desk' }, ...extra },
+    });
+
+  test('is saved from what the app learnt, held by it, with no secret on the server', async () => {
+    const client = await browser();
+    const started = await heldSetup(client.id, { identity: 'lampish:DESK', model: 'L1', summary: 'It is on.' }, { connection: { pin: 'never-here' } });
+    expect(started.status).toBe(200);
+    expect(started.body).toMatchObject({ heldBy: client.id, checked: { outcome: 'new', identity: 'lampish:DESK' } });
+
+    const saved = await onBusAs(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: 'Desk lamp' } });
+    expect(saved.status).toBe(200);
+    expect(saved.body.connections).toEqual([expect.objectContaining({ heldBy: { kind: 'client', id: client.id, name: 'Olof’s laptop' }, secrets: [] })]);
+    expect(saved.text).not.toContain('never-here');
+    // The server does not hold it, and says who does.
+    expect(saved.body.health.detail).toBe('Held by Olof’s laptop, not by this server');
+  });
+
+  test('sends its readings: live ones are the device’s state, queued ones become history', async () => {
+    const client = await browser();
+    const started = await heldSetup(client.id, { identity: 'lampish:DESK', model: 'L1', summary: 'On.' });
+    const device = (await onBusAs(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: 'Desk lamp' } })).body;
+    const connectionId = device.connections[0].id;
+
+    const past = new Date(Date.now() - 3_600_000).toISOString();
+    const sent = await onBusAs(`/devices/${enc(device.id)}/readings`, {
+      method: 'POST',
+      body: { clientId: client.id, connectionId, readings: [{ key: 'on', value: true, at: new Date().toISOString() }, { key: 'on', value: false, at: past }] },
+    });
+    expect(sent.body).toEqual({ live: 1, history: 1, refused: 0 });
+
+    const view = (await onBusAs(`/devices/${enc(device.id)}`)).body;
+    expect(view.readings).toEqual([expect.objectContaining({ key: 'on', value: true })]);
+    expect(view.health).toMatchObject({ status: 'connected', detail: 'Connected through Olof’s laptop', owner: 'client' });
+    expect(view.connections[0].inUse).toBe(true);
+    expect(db().query<{ n: number }, [string]>('SELECT COUNT(*) n FROM sample WHERE device_id = ?').get(device.id)!.n).toBe(1);
+  });
+
+  test('speaks only for its own connections, and only for its own account', async () => {
+    const client = await browser();
+    lampAt('lamp-1');
+    const serverHeld = await added('Hall lamp');
+    const connectionId = (await onBusAs(`/devices/${enc(serverHeld.id)}`)).body.connections[0].id;
+    const reading = { key: 'on', value: true, at: new Date().toISOString() };
+
+    // A connection this server holds is not the app's to report on.
+    expect((await onBusAs(`/devices/${enc(serverHeld.id)}/readings`, { method: 'POST', body: { clientId: client.id, connectionId, readings: [reading] } })).status).toBe(403);
+
+    await createUser('guest', PASSWORD, 'olof');
+    const guest = await login('guest', onBus);
+    const other = await call('/setup/app', {
+      method: 'POST',
+      cookie: guest,
+      server: onBus,
+      body: { clientId: client.id, typeId: 'test.lamp', methodId: 'bus', address: 'x', identified: null },
+    });
+    expect(other.status).toBe(404);
+  });
+
+  test('a browser that cannot tell which station it reached attaches on the person’s word', async () => {
+    lampAt('lamp-1');
+    const lamp = await added('Hall lamp');
+    const client = await browser();
+    const started = await heldSetup(client.id, { identity: null, model: 'L1', summary: 'On.' }, { methodId: 'backup' });
+    expect(started.body.checked).toMatchObject({ outcome: 'new', identity: null });
+    const attached = await onBusAs(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: '', mode: 'attach', deviceId: lamp.id } });
+    expect(attached.status).toBe(200);
+    expect(attached.body.connections.map((connection: { heldBy: { kind: string } }) => connection.heldBy.kind)).toEqual(['server', 'client']);
+  });
+
+  test('keeps the device’s store on the server, and its audit entries under the account', async () => {
+    const client = await browser();
+    const started = await heldSetup(client.id, { identity: 'lampish:DESK', model: 'L1', summary: 'On.' });
+    const device = (await onBusAs(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: 'Desk lamp' } })).body;
+    const connectionId = device.connections[0].id;
+
+    await onBusAs(`/devices/${enc(device.id)}/store/brightness`, { method: 'PUT', body: { clientId: client.id, connectionId, value: 80 } });
+    expect((await onBusAs(`/devices/${enc(device.id)}/store`)).body.values).toEqual({ brightness: 80 });
+
+    const recorded = await onBusAs(`/clients/${client.id}/audit`, {
+      method: 'POST',
+      body: { entries: [{ at: new Date().toISOString(), kind: 'command.verified', resource: device.id, summary: 'Desk lamp: switched off' }] },
+    });
+    expect(recorded.body).toEqual({ recorded: 1 });
+    const entry = ((await onBusAs('/audit')).body as { kind: string; actor: string; detail: { from: { name: string } } }[]).find((e) => e.kind === 'command.verified');
+    expect(entry).toMatchObject({ actor: 'olof', detail: { from: { name: 'Olof’s laptop' } } });
   });
 });
 

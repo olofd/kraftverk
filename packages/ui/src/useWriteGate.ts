@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { WriteGate, type WriteSnapshot } from '@kraftverk/ui';
+import { WriteGate, type WriteSnapshot } from './writeGate';
 
 /**
  * A write gate for one provider, and a re-render whenever its writes change.

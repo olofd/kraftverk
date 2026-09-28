@@ -164,6 +164,20 @@ export function stationSession(driver: StationDriverLike, options: StationSessio
   };
 }
 
+// --- the station's own view --------------------------------------------------------
+
+/**
+ * Everything the station's own screens draw: ports, firmware, link, settings,
+ * in the station's own units. The shared readings are a projection of this;
+ * the energy-flow view needs the whole of it. Offered by a real station and
+ * the simulator alike, and served by whoever holds the connection.
+ */
+export function stationTools(driver: StationDriverLike): Record<string, AdvancedAction> {
+  return {
+    state: { writes: false, run: async () => ({ status: driver.status(), settings: driver.settings() }) },
+  };
+}
+
 // --- the register tools ----------------------------------------------------------
 
 /**

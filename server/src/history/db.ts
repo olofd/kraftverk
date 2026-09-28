@@ -151,7 +151,7 @@ export const MIGRATIONS: Migration[] = [
         and taking its charts with it.
 
         The model is stored because it changes how the thing is read: the
-        register map differs between a P280 and an F2400, so it must not be
+        register map differs between two models of one stack, so it must not be
         guessed.
       */
       CREATE TABLE device (

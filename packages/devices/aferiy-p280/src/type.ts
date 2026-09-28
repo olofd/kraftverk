@@ -5,7 +5,7 @@ import { CAPABILITIES, CONTROLS, DANGEROUS_SETTINGS, MEASUREMENTS, SETTINGS_SCHE
 import { StationClient } from './model/client.ts';
 import { INPUT_REGISTER_COUNT, decodeTelemetry } from './model/registers.ts';
 import { SimulatedStation } from './simulator.ts';
-import { registerTools, stationSession } from './station.ts';
+import { registerTools, stationSession, stationTools } from './station.ts';
 
 /**
  * The AFERIY P280, as a device type: what the holder of its connection
@@ -105,7 +105,7 @@ export default defineDeviceType({
       identity: identityFrom(connection.address),
       transport: connection.transport,
       connected: () => link.connected,
-      advanced: registerTools(client, link, ctx),
+      advanced: { ...stationTools(client), ...registerTools(client, link, ctx) },
       close: async () => {
         await client.stop();
         await link.close();
@@ -120,6 +120,7 @@ export default defineDeviceType({
       identity: 'sydpower:SIMULATED',
       transport: 'sim',
       connected: () => true,
+      advanced: stationTools(station),
       close: () => station.stop(),
     });
   },

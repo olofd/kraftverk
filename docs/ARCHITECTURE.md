@@ -449,7 +449,10 @@ green at every commit.
 
 ## 6. Where the code stands
 
-What the review found, and which step fixes it.
+What the review found, and which step fixes it. Every finding below is fixed
+as of step 13 (2026-09-28): the architecture baseline is empty — no boundary
+exceptions, and no product identifier outside the P280's package. The table is
+kept as the record of why the layout is what it is.
 
 | | Finding | Step |
 |---|---|---|
@@ -527,18 +530,18 @@ holders and identity were added to the model (DATA-MODEL.md).
 | 1 | Guardrails | S | done |
 | 2 | Contracts: `device-sdk` | M | done |
 | 3 | Discover device types; a session for every device | M | done |
-| 4 | Contracts for connections: categories, methods, transports, protocols, identity | M | |
-| 5 | The data model: type ids, identities, connections, secrets, links, clients | L | |
-| 6 | Adding a device: category → type → method → setup; a device's connections | M–L | |
-| 7 | Transports as packages; the core loses its connectivity code | L | |
-| 8 | Protocols as packages: Sydpower and Tuya local | M | |
-| 9 | Smart plugs: the ATORCH and the generic Tuya plug as device types | M | |
-| 10 | The P280 as an ordinary device type | M | |
-| 11 | One gateway for every command, in shared code | M | |
-| 12 | Connections held by the app | L | |
-| 13 | Services: weather first | S–M | |
+| 4 | Contracts for connections: categories, methods, transports, protocols, identity | M | done |
+| 5 | The data model: type ids, identities, connections, secrets, links, clients | L | done |
+| 6 | Adding a device: category → type → method → setup; a device's connections | M–L | done |
+| 7 | Transports as packages; the core loses its connectivity code | L | done |
+| 8 | Protocols as packages: Sydpower and Tuya local | M | done |
+| 9 | Smart plugs: the ATORCH and the generic Tuya plug as device types | M | done |
+| 10 | The P280 as an ordinary device type | M | done |
+| 11 | One gateway for every command, in shared code | M | done |
+| 12 | Connections held by the app | L | done, native Bluetooth untested |
+| 13 | Services: weather first | S–M | done; SMHI next |
 | 14 | Automations | L | |
-| 15 | Make contributing easy | S | |
+| 15 | Make contributing easy | S | done |
 
 ### Step 0 — Words and one authority
 This document; banners on the ones it replaces. **Done when** there is one
