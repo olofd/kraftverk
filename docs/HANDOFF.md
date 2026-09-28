@@ -141,7 +141,7 @@ npm run check:architecture   # the dependency rule, the leak ratchet, the app's 
 npm run gen:devices          # regenerate the app's registry after adding a package
 npm run new:device -- name    # start a device type (new:protocol, new:transport too)
 npm run scan:tuya            # find Tuya plugs — no credentials needed
-npm run keys:tuya            # fetch their local keys (needs a Tuya cloud project)
+npm run keys:tuya            # fetch their local keys (scan a QR code with the Smart Life app)
 ```
 
 The server runs on Bun; `scripts/run-bun.mjs` finds it even when PATH is stale.

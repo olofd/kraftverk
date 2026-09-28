@@ -28,6 +28,7 @@ export * from './cloud.ts';
 export * from './discovery.ts';
 export * from './frame.ts';
 export * from './session.ts';
+export * from './smartlife.ts';
 export * from './socket.ts';
 export { aesEcbDecrypt, aesEcbEncrypt, aesGcmDecrypt, aesGcmEncrypt } from './crypto/aes.ts';
 export { crc32, hmacSha256, md5, sha256 } from './crypto/hash.ts';

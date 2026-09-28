@@ -105,8 +105,9 @@ runtime dependencies, as ARCHITECTURE.md §3 requires, and covers 3.4/3.5.
 
 ## 4. Commissioning: key, discovery, datapoints
 
-- **Local key and device id.** `npm run keys:tuya` fetches them through a free Tuya cloud
-  project; [`TUYA-LOCAL-KEY.md`](TUYA-LOCAL-KEY.md) is the five-minute guide. The plug must first
+- **Local key and device id.** `npm run keys:tuya` fetches them by signing in with the Smart Life
+  app's QR code, or through a free Tuya cloud project with `--developer`;
+  [`TUYA-LOCAL-KEY.md`](TUYA-LOCAL-KEY.md) is the guide. The plug must first
   be activated in the Smart Life app. `python -m tinytuya wizard` does the same.
 - **LAN scan.** `npm run scan:tuya` (or `python -m tinytuya scan`) prints each device's address,
   id and **protocol version** from its UDP broadcast, with no credentials.

@@ -29,6 +29,9 @@ const RANGES = [
   { hours: 6, label: '6h' },
   { hours: 24, label: '24h' },
   { hours: 24 * 7, label: '7d' },
+  // Hourly means from here on: kept for two years.
+  { hours: 24 * 30, label: '30d' },
+  { hours: 24 * 365, label: '1y' },
 ] as const;
 
 const HEIGHT = 140;

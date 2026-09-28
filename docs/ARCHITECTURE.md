@@ -383,7 +383,8 @@ connection_secret (connection_id → device_connection ON DELETE CASCADE, field,
 client            (id PK, user_id → users, name, platform, transports JSON, created_at, last_seen_at)
 device_kv         (device_id → device ON DELETE CASCADE, key, value)
 device_link       (id PK, kind, source_id → device, target_id → device, created_at)
-sample            (device_id → device ON DELETE CASCADE, key, at, value)
+sample            (device_id → device ON DELETE CASCADE, key, at, value)            -- 14 days
+sample_hour       (device_id → device ON DELETE CASCADE, key, hour, min, avg, max, n) -- 2 years
 automation        (id PK, name, recipe, roles JSON, params JSON, time_zone, mode, created_at,
                    updated_at, last_run_at, last_result JSON)                  -- migration 8
 audit, app_state, users                                                       -- unchanged
@@ -601,7 +602,7 @@ holders and identity were added to the model (DATA-MODEL.md).
 | 16 | One API contract | S | done |
 | 17 | One holder core, and the app tested | L | done |
 | 18 | The gateway knows capabilities, not names; settings go through it | M | done |
-| 19 | History that lasts | M | |
+| 19 | History that lasts | M | done |
 | 20 | App and server agree on what they speak | S | later |
 | 21 | Secrets at rest in the app | S | |
 | 22 | Loose ends: configuration words, big modules, accessibility | M | later |
@@ -922,6 +923,14 @@ the forecast* switches a plug, or one of a station's outlets.
 ### Step 19 — History that lasts (G7)
 Hourly roll-ups kept for two years beside 14 days of raw samples; the audit
 timeline kept for a year. **Done when** a 30-day chart draws from the roll-ups.
+
+*Done.* Migration 9 adds `sample_hour` (min, mean, max and count per device,
+key and hour), filled from the samples already kept. The sampler rolls up
+the last two days every ten minutes — idempotently, so late readings correct
+an hour rather than count twice — and a late batch from an app rolls up its
+own hours. Pruning rolls up before it deletes minutes. `/history` answers a
+span over two days, or older than the minutes kept, from the hours, and says
+which (`resolution`); charts reach back a month and a year.
 
 ### Step 20 — App and server agree on what they speak (G8)
 An API version and the installed types in `/version`; an app that lacks a

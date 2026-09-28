@@ -167,6 +167,8 @@ export type DeviceHistory = {
   key: string;
   from: string;
   to: string;
+  /** Minute samples for a short span; hourly means, kept for two years, for a long one. */
+  resolution: 'minute' | 'hour';
   points: SeriesPoint[];
 };
 

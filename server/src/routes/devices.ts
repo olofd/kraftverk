@@ -2,11 +2,11 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import type { DeviceTypeListing, SettingsWrite } from '@kraftverk/api-contract';
+import type { DeviceHistory, DeviceTypeListing, SettingsWrite } from '@kraftverk/api-contract';
 import { CATEGORIES, describeDeviceType, secretFields, type Availability } from '@kraftverk/device-sdk';
 
 import { actorOf } from '../auth/routes.ts';
-import { series } from '../history/sampler.ts';
+import { resolutionOf, series } from '../history/sampler.ts';
 import { auditDevice, body, deviceOr404, type AppDeps } from './shared.ts';
 
 /**
@@ -149,14 +149,15 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
     const { key, hours, points } = z
       .object({
         key: z.string().min(1).max(64),
-        hours: z.coerce.number().min(0.5).max(24 * 14).default(24),
+        hours: z.coerce.number().min(0.5).max(24 * 730).default(24),
         points: z.coerce.number().int().min(20).max(1000).default(240),
       })
       .parse({ key: c.req.query('key'), hours: c.req.query('hours') ?? 24, points: c.req.query('points') ?? 240 });
 
-    const to = new Date();
-    const from = new Date(to.getTime() - hours * 3_600_000);
-    return c.json({ deviceId: record.id, key, from: from.toISOString(), to: to.toISOString(), points: series(record.id, key, from.toISOString(), to.toISOString(), points) });
+    const to = new Date().toISOString();
+    const from = new Date(Date.now() - hours * 3_600_000).toISOString();
+    const history: DeviceHistory = { deviceId: record.id, key, from, to, resolution: resolutionOf(from, to), points: series(record.id, key, from, to, points) };
+    return c.json(history);
   });
 
   /**

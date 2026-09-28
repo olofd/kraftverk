@@ -616,7 +616,9 @@ protocol version.
 npm run keys:tuya
 ```
 
-fetches their local keys, which is the one step that needs a (free) Tuya cloud project. Both are
+fetches their local keys, which is the one step that touches Tuya's cloud: you scan a QR code with
+the Smart Life app, and no developer account is needed (`--developer` uses a Tuya cloud project
+instead). Both are
 also part of adding the plug in the app — the plug is found on the home network, and **Fetch it
 with my Tuya account** is a button on its credentials step — driven by the same code.
 [docs/TUYA-LOCAL-KEY.md](docs/TUYA-LOCAL-KEY.md) walks through it.

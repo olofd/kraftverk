@@ -1,6 +1,7 @@
 import type { Reading, SavedDeviceId } from '@kraftverk/device-sdk';
 
 import { db } from '../history/db.ts';
+import { rollUp } from '../history/sampler.ts';
 
 /**
  * Readings from connections an app holds (docs/DATA-MODEL.md §4, "When a
@@ -36,6 +37,8 @@ export class RemoteReadings {
     let history = 0;
     let refused = 0;
     const insert = db().query('INSERT OR REPLACE INTO sample (device_id, key, at, value) VALUES (?, ?, ?, ?)');
+    let earliest = Number.POSITIVE_INFINITY;
+    let latest = 0;
 
     db().transaction(() => {
       for (const reading of readings) {
@@ -57,8 +60,12 @@ export class RemoteReadings {
         const minute = new Date(Math.floor(taken / 60_000) * 60_000).toISOString();
         insert.run(deviceId, reading.key, minute, value);
         history += 1;
+        earliest = Math.min(earliest, taken);
+        latest = Math.max(latest, taken);
       }
     })();
+    // The hours they landed in may be rolled up already: again, with them in.
+    if (history) rollUp(new Date(earliest).toISOString(), new Date(latest + 3_600_000).toISOString());
     this.#held.set(deviceId, held);
     return { live, history, refused };
   }

@@ -285,6 +285,34 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    id: 9,
+    sql: `
+      /*
+        History that lasts: each measurement's hours, rolled up — the lowest,
+        the mean, the highest and how many samples — kept for two years beside
+        two weeks of minute samples. A month's chart reads 720 rows instead of
+        43 000, and the calibration a forecast needs has months to learn from.
+
+        Filled from the samples already kept, so nothing recorded is lost; and
+        it goes with its device, as its samples do.
+      */
+      CREATE TABLE sample_hour (
+        device_id TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
+        key       TEXT NOT NULL,
+        hour      TEXT NOT NULL,
+        min       REAL NOT NULL,
+        avg       REAL NOT NULL,
+        max       REAL NOT NULL,
+        n         INTEGER NOT NULL,
+        PRIMARY KEY (device_id, key, hour)
+      );
+      INSERT INTO sample_hour (device_id, key, hour, min, avg, max, n)
+        SELECT device_id, key, substr(at, 1, 13) || ':00:00.000Z', min(value), avg(value), max(value), count(*)
+        FROM sample WHERE value IS NOT NULL
+        GROUP BY device_id, key, substr(at, 1, 13);
+    `,
+  },
 ];
 
 /**

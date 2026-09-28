@@ -6,7 +6,7 @@ Tuya's cloud, to the account the plug is paired with.
 
 So this project is local-only at runtime, and needs the cloud exactly once: now.
 
-**Time:** about five minutes. **Cost:** nothing. **Repeat:** never, unless you re-pair the plug.
+**Time:** about a minute. **Cost:** nothing. **Repeat:** never, unless you re-pair the plug.
 
 ---
 
@@ -17,7 +17,36 @@ paired it yet, do that first — a plug that has never been paired has no key to
 
 ---
 
-## 1. Create a Tuya cloud project
+## 1. Sign in with the app — the easy way
+
+From the repository root:
+
+```bash
+npm run keys:tuya
+```
+
+1. It asks for your **User Code**. In the app: **Me → Settings (gear, top right) → Account and
+   Security → User Code**. Or pass it: `--userCode=…`, or `TUYA_USERCODE`.
+2. A QR code appears in the terminal. In the app: **Me → the scan icon (top right)**, scan it,
+   and confirm.
+3. Every device on the account is printed with its local key; the ones broadcasting on this
+   network are marked, with their address and protocol version.
+
+No developer account, no cloud project, and no subscription to expire. This is the login Home
+Assistant's Tuya integration uses, so the phone asks you to authorise **"Home Assistant"** — that
+is the name Tuya registered for it, and there is no way to register another. The token it grants
+is used for the one listing and never kept.
+
+If that route is ever closed, the cloud project below still works.
+
+---
+
+## Or: through a Tuya cloud project
+
+The original route, and what the app's **Fetch it with my Tuya account** button uses. It needs a
+developer account whose **IoT Core** trial lapses after a month or so (see the table at the end).
+
+### 1. Create a Tuya cloud project
 
 1. Sign up at [iot.tuya.com](https://iot.tuya.com) and log in.
 2. **Cloud → Development → Create Cloud Project**.
@@ -30,7 +59,7 @@ paired it yet, do that first — a plug that has never been paired has no key to
 4. On the project's **Service API** tab, make sure **IoT Core** is subscribed. It is free, and
    without it every request is refused.
 
-## 2. Link your app account to the project
+### 2. Link your app account to the project
 
 1. Open the project → **Devices** → **Link App Account** → **Add App Account**.
 2. A QR code appears. In the Smart Life app: **Me → ⌐ (top right, scan)** and scan it.
@@ -38,19 +67,20 @@ paired it yet, do that first — a plug that has never been paired has no key to
 
 That link is what lets the project read your plug's key. Nothing else is granted by it.
 
-## 3. Fetch the key
+### 3. Fetch the key
 
 From the repository root:
 
 ```bash
-npm run keys:tuya
+npm run keys:tuya -- --developer
 ```
 
 It scans your network first and offers any plugs it finds, so you do not have to type a device id
 by hand. Then it asks for the data centre, Access ID and Access Secret, and prints every device on
 the account with its local key.
 
-Prefer not to type them interactively? Pass them instead:
+Prefer not to type them interactively? Pass them instead — giving a client id selects this route
+without `--developer`:
 
 ```bash
 npm run keys:tuya -- --region=eu --clientId=xxxx --clientSecret=yyyy
@@ -60,7 +90,9 @@ They are also read from `TUYA_REGION`, `TUYA_CLIENTID` and `TUYA_CLIENTSECRET`.
 
 Nothing is written to disk, and the credentials are used for one request each.
 
-## 4. Give the key to the server
+---
+
+## Give the key to the server
 
 In the app, the same two steps are part of adding the plug: **Add a device →
 Smart plugs → ATORCH S1W** (or *Tuya smart plug*) **→ Home network, through your
@@ -94,12 +126,14 @@ The device and connection ids are in `GET /api/devices`.
 | `permission denied` / `not in the project's linked account` | Step 2 did not complete, or the plug is in a different Smart Life account. |
 | `no API subscription` | Subscribe **IoT Core** on the project's Service API tab. |
 | The scan finds nothing | The plug must be on the same LAN segment, and some Wi-Fi networks block client-to-client broadcast traffic. Guest networks usually do. |
-| Trial expired after a year | Tuya's free tier needs renewing in the console. Your key does not change; you only need the cloud again if you re-pair. |
+| `IoT Core service subscription has expired` | The cloud project's trial ran out — it lasts about a month. **Cloud → Cloud Services → IoT Core → Extend Trial Period** asks for more; "subscribe to trial" is refused a second time. Or skip the project: `npm run keys:tuya` without `--developer`. |
+| `check the User Code` | The Smart Life route: the code is in **Me → Settings → Account and Security**, and belongs to the account the plug is paired with. |
+| `Nobody scanned the code within three minutes` | Run it again for a fresh code. Scan with the Smart Life app's own scanner, not the phone camera. |
 
 ## What this means for privacy
 
-The Access ID and Secret are yours and stay on this machine. The one cloud call asks Tuya for the
-keys of devices you already own. After this, the plug is driven entirely over your LAN — the
+The User Code, the login token, and the Access ID and Secret all stay on this machine. The one
+cloud call asks Tuya for the keys of devices you already own. After this, the plug is driven entirely over your LAN — the
 server never contacts Tuya again, and the plug does not need internet access at all.
 
 Treat the local key like a password: anyone on your network who has it can switch the plug.

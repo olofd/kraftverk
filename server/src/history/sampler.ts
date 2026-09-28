@@ -25,10 +25,19 @@ const INTERVAL_MS = 60_000;
 const STALE_MS = 2 * INTERVAL_MS;
 /** Two weeks of minute samples is a few hundred thousand rows. Plenty, and small. */
 const RETAIN_DAYS = 14;
+/** Hourly roll-ups: two years, for charts that reach back and for calibrating forecasts. */
+const RETAIN_HOURLY_DAYS = 730;
+/** The audit timeline: a year of who did what. */
+const RETAIN_AUDIT_DAYS = 365;
+/** How far back each roll-up looks: late readings from an app that was offline land in hours already rolled up. */
+const ROLLUP_WINDOW_MS = 48 * 3_600_000;
+/** Spans longer than this are drawn from the hourly roll-ups. */
+const HOURLY_ABOVE_HOURS = 48;
 
 export class Sampler {
   #timer: ReturnType<typeof setInterval> | null = null;
   #pruneTimer: ReturnType<typeof setInterval> | null = null;
+  #rollupTimer: ReturnType<typeof setInterval> | null = null;
   /**
    * Stops a slow round from overlapping the next one.
    *
@@ -45,14 +54,18 @@ export class Sampler {
   start(): void {
     this.#timer ??= setInterval(() => void this.sample(), INTERVAL_MS);
     this.#pruneTimer ??= setInterval(() => this.prune(), 6 * 60 * 60_000);
+    this.#rollupTimer ??= setInterval(() => rollUp(), 10 * 60_000);
     void this.sample();
+    rollUp();
   }
 
   stop(): void {
     if (this.#timer) clearInterval(this.#timer);
     if (this.#pruneTimer) clearInterval(this.#pruneTimer);
+    if (this.#rollupTimer) clearInterval(this.#rollupTimer);
     this.#timer = null;
     this.#pruneTimer = null;
+    this.#rollupTimer = null;
   }
 
   async sample(): Promise<void> {
@@ -98,10 +111,40 @@ export class Sampler {
     write();
   }
 
-  prune(): void {
-    const cutoff = new Date(Date.now() - RETAIN_DAYS * 86_400_000).toISOString();
-    db().query('DELETE FROM sample WHERE at < ?').run(cutoff);
+  /** Minute samples go after two weeks — rolled up first — hourly ones after two years, the audit after one. */
+  prune(now = Date.now()): void {
+    const before = (days: number) => new Date(now - days * 86_400_000).toISOString();
+    rollUp(before(RETAIN_DAYS + 2), before(RETAIN_DAYS - 1));
+    db().query('DELETE FROM sample WHERE at < ?').run(before(RETAIN_DAYS));
+    db().query('DELETE FROM sample_hour WHERE hour < ?').run(before(RETAIN_HOURLY_DAYS));
+    db().query('DELETE FROM audit WHERE at < ?').run(before(RETAIN_AUDIT_DAYS));
   }
+}
+
+/** The start of the hour an ISO time falls in, as the roll-ups key it. */
+const hourOf = (iso: string) => `${iso.slice(0, 13)}:00:00.000Z`;
+
+/**
+ * Rolls minute samples up into hours, between two times — by default the last
+ * two days. Idempotent: an hour is recomputed from its samples, so rolling it
+ * up again after late readings arrived corrects it rather than counting twice.
+ */
+export function rollUp(fromIso = new Date(Date.now() - ROLLUP_WINDOW_MS).toISOString(), toIso = new Date().toISOString()): void {
+  db()
+    .query(
+      `INSERT OR REPLACE INTO sample_hour (device_id, key, hour, min, avg, max, n)
+         SELECT device_id, key, substr(at, 1, 13) || ':00:00.000Z', min(value), avg(value), max(value), count(*)
+         FROM sample WHERE value IS NOT NULL AND at >= ? AND at < ?
+         GROUP BY device_id, key, substr(at, 1, 13)`
+    )
+    .run(hourOf(fromIso), toIso);
+}
+
+/** Minute samples for a short span; hourly roll-ups for a long one, and for anything older than the minutes kept. */
+export function resolutionOf(fromIso: string, toIso: string): 'minute' | 'hour' {
+  const span = (Date.parse(toIso) - Date.parse(fromIso)) / 3_600_000;
+  const oldest = Date.now() - RETAIN_DAYS * 86_400_000;
+  return span > HOURLY_ABOVE_HOURS || Date.parse(fromIso) < oldest ? 'hour' : 'minute';
 }
 
 /**
@@ -118,11 +161,17 @@ export function series(
   toIso: string,
   points = 240
 ): SeriesPoint[] {
-  const rows = db()
-    .query<{ at: string; value: number }, [string, string, string, string]>(
-      'SELECT at, value FROM sample WHERE device_id = ? AND key = ? AND at >= ? AND at <= ? ORDER BY at'
-    )
-    .all(deviceId, key, fromIso, toIso);
+  const rows = resolutionOf(fromIso, toIso) === 'hour'
+    ? db()
+        .query<{ at: string; value: number }, [string, string, string, string]>(
+          'SELECT hour AS at, avg AS value FROM sample_hour WHERE device_id = ? AND key = ? AND hour >= ? AND hour <= ? ORDER BY hour'
+        )
+        .all(deviceId, key, hourOf(fromIso), toIso)
+    : db()
+        .query<{ at: string; value: number }, [string, string, string, string]>(
+          'SELECT at, value FROM sample WHERE device_id = ? AND key = ? AND at >= ? AND at <= ? ORDER BY at'
+        )
+        .all(deviceId, key, fromIso, toIso);
 
   if (rows.length <= points) return rows;
 
