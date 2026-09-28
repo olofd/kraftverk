@@ -1,5 +1,6 @@
 import type { ConnectionView, DeviceView, LinkView } from '@kraftverk/api-contract';
 import type { ConfigValues, SavedDeviceId } from '@kraftverk/device-sdk';
+import { activeConnection } from '@kraftverk/holder';
 
 import type { TransportHost } from '../runtime/transports.ts';
 import type { DeviceCatalog, DeviceRecord } from './catalog.ts';
@@ -74,7 +75,11 @@ export class DeviceRegistry {
       return opened?.id === connection.id ? this.deps.sessions.reachable(record.id) : null;
     };
     const ordered = [...this.deps.connections.forDevice(record.id)].sort((a, b) => a.priority - b.priority);
-    const active = ordered.find((connection) => reachable(connection) === true) ?? opened ?? null;
+    const activeId = activeConnection(
+      ordered.map((connection) => ({ id: connection.id, priority: connection.priority, reachable: reachable(connection) })),
+      opened?.id ?? null
+    );
+    const active = ordered.find((connection) => connection.id === activeId) ?? null;
     // An app's readings count only while its connection is the one in use; a simulator is always its session's.
     const remote = latest && active?.id === latest.connectionId && (opened !== null || !session) ? latest : null;
 

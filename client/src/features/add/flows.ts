@@ -21,6 +21,7 @@ import {
   findStep,
   isSecretField,
   openChannel,
+  savedDeviceId,
   setupPlan,
   type Channel,
   type ConnectionMethod,
@@ -30,6 +31,7 @@ import {
   type Protocol,
   type Sighting,
 } from '@kraftverk/device-sdk';
+import { judgeCheck } from '@kraftverk/holder';
 
 import { PLATFORM } from '../../runtime/registry';
 import type { AppRuntime } from '../../runtime/runtime';
@@ -318,14 +320,17 @@ export class AppFlow implements SetupFlow {
     // Local mode: judged against this app's own devices.
     this.#identity = identified?.identity ?? null;
     if (!identified) return { outcome: 'no-answer', summary: failure ?? 'It did not answer.', saveAnyway: this.type.setup?.saveAnyway ?? null };
-    const models = this.type.meta.models ?? [];
-    if (identified.model && models.length && !models.some((model) => model.toLowerCase() === identified.model!.toLowerCase())) {
-      const other = [...this.runtime.registry.types.values()].find((type) => type.meta.models?.some((model) => model.toLowerCase() === identified.model!.toLowerCase()));
-      return { outcome: 'other-model', summary: `This is a ${identified.model}, not a ${this.type.meta.name}.`, model: identified.model, type: other ? { id: other.id, name: other.meta.name } : null };
-    }
-    const known = identified.identity ? this.runtime.local.byIdentity(identified.identity) : null;
-    if (known) return { outcome: 'yours', summary: `This is your ${known.name}. ${identified.summary}`, device: { id: known.id as never, name: known.name } };
-    return { outcome: 'new', summary: identified.summary, identity: identified.identity };
+    // The server's judgement, against this app's own devices. Removing one here forgets it, so none is "yours before".
+    return judgeCheck(identified, {
+      type: this.type,
+      types: this.runtime.registry.types.values(),
+      known: {
+        byIdentity: (identity) => {
+          const known = this.runtime.local.byIdentity(identity);
+          return { active: known ? { id: savedDeviceId(known.id), name: known.name } : null, removed: [] };
+        },
+      },
+    });
   }
 
   async save(input: SaveInput): Promise<string> {

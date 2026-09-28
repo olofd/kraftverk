@@ -1,16 +1,5 @@
-import {
-  openChannel,
-  validateConfig,
-  type Channel,
-  type ConfigValues,
-  type ConnectionHealth,
-  type DeviceContext,
-  type DeviceEvent,
-  type DeviceSession,
-  type DeviceStore,
-  type OpenConnection,
-  type SavedDeviceId,
-} from '@kraftverk/device-sdk';
+import type { ConnectionHealth, DeviceEvent, DeviceSession, DeviceStore, SavedDeviceId } from '@kraftverk/device-sdk';
+import { Failover, identityVerdict, openDevice, OpenRefused, type OpenedDevice } from '@kraftverk/holder';
 
 import { PLATFORM, type AppRegistry } from './registry';
 
@@ -18,10 +7,11 @@ import { PLATFORM, type AppRegistry } from './registry';
  * Sessions for the connections this app holds (docs/DATA-MODEL.md §4).
  *
  * The same device-type and protocol code the server runs, opened over this
- * app's own radio: a station on this browser's Bluetooth runs its type's own
- * session, with the protocol's guard in its link. Like the server's manager it
- * knows no product: it opens what it is told to hold, reopens what changed,
- * and closes what it no longer holds.
+ * app's own radio — and opened, watched and failed over by the same holder
+ * core (`@kraftverk/holder`) as the server's: the open timeout, the protocol's
+ * guard on the channel, the refusal of a connection that reaches a different
+ * device. What is the app's here is what it is told to hold, and where it
+ * says a device changed.
  */
 
 /** A connection this app holds, and the device it reaches. */
@@ -29,6 +19,8 @@ export type HeldDevice = {
   deviceId: SavedDeviceId;
   name: string;
   typeId: string;
+  /** Who the device is, when known: a connection that reaches another device is refused. */
+  identity: string | null;
   config: Record<string, unknown>;
   connection: { id: string; method: string; transport: string; address: string; config: Record<string, unknown> };
   secrets: Record<string, string>;
@@ -37,10 +29,8 @@ export type HeldDevice = {
 
 type Open = {
   held: HeldDevice;
-  session: DeviceSession;
-  channel: Channel;
+  opened: OpenedDevice;
   fingerprint: string;
-  timers: ReturnType<typeof setInterval>[];
   detach: () => void;
 };
 
@@ -52,8 +42,12 @@ export type HeldSessionsOptions = {
   emit: (held: HeldDevice, event: DeviceEvent) => void;
   /** The connection answered. */
   onConnected?: (held: HeldDevice) => void;
+  /** A connection reached a different device from the one it was added as. */
+  onMismatch?: (held: HeldDevice, said: string) => void;
   /** Something changed that a screen shows. */
   onChange?: () => void;
+  /** Tracks when each held connection went down, for failing over. */
+  failover?: Failover;
 };
 
 const fingerprintOf = (held: HeldDevice, readOnly: boolean) =>
@@ -67,7 +61,7 @@ export class HeldSessions {
   constructor(private options: HeldSessionsOptions) {}
 
   get(deviceId: string): DeviceSession | null {
-    return this.#open.get(deviceId)?.session ?? null;
+    return this.#open.get(deviceId)?.opened.session ?? null;
   }
 
   held(deviceId: string): HeldDevice | null {
@@ -82,7 +76,7 @@ export class HeldSessions {
   /** How a device this app holds is doing, or null when it holds no session for it. */
   health(deviceId: string): ConnectionHealth | null {
     const open = this.#open.get(deviceId);
-    if (open) return { ...open.session.health(), owner: 'client' };
+    if (open) return { ...open.opened.session.health(), owner: 'client' };
     const refusal = this.#refusals.get(deviceId);
     return refusal ? { status: 'error', detail: refusal, owner: 'client', transport: null, lastReadingAt: null } : null;
   }
@@ -109,81 +103,70 @@ export class HeldSessions {
   async #openOne(held: HeldDevice, readOnly: boolean): Promise<void> {
     const { registry } = this.options;
     const type = registry.types.get(held.typeId);
-    let channel: Channel | null = null;
-    const timers: ReturnType<typeof setInterval>[] = [];
+    if (!type) {
+      this.#refusals.set(held.deviceId, `This app does not know what "${held.typeId}" is: update it`);
+      return;
+    }
+    const log = (level: 'log' | 'warn' | 'error') => (message: string) => console[level](`[${held.name}] ${message}`);
     try {
-      if (!type) throw new Error(`This app does not know what "${held.typeId}" is: update it`);
-      const method = type.connections.find((candidate) => candidate.id === held.connection.method);
-      if (!method) throw new Error(`${type.meta.name} has no way called "${held.connection.method}"`);
-      channel = await openChannel(registry, registry.protocols.get(method.protocol), held.connection);
-
-      const known = Object.fromEntries(Object.entries(held.config).filter(([field]) => field in type.config.fields));
-      const config = validateConfig(type.config, known);
-      if (!config.ok) throw new Error(`Needs setting up: ${config.issues.map((issue) => issue.message).join('; ')}`);
-
-      const connection: OpenConnection = {
-        method: method.id,
-        protocol: method.protocol,
-        transport: held.connection.transport,
-        address: held.connection.address,
-        channel,
-        config: held.connection.config as ConfigValues,
-        secrets: { get: (field) => held.secrets[field] ?? null },
-        platform: PLATFORM,
-      };
-      const log = (level: 'log' | 'warn' | 'error') => (message: string) => console[level](`[${held.name}] ${message}`);
-      const context: DeviceContext = {
-        deviceId: held.deviceId,
-        config: config.value,
-        connection,
+      const opened = await openDevice({
+        type,
+        device: { id: held.deviceId, name: held.name, config: held.config },
+        connection: held.connection,
+        secret: (field) => held.secrets[field] ?? null,
+        protocols: registry.protocols,
+        transports: registry,
         store: held.store,
-        log: { info: log('log'), warn: log('warn'), error: log('error') },
+        platform: PLATFORM,
         readOnly,
         // Frames nobody has described are for a server started to bring up a unit, never for an app.
         allowRawFrames: false,
-        platform: PLATFORM,
-        schedule: (everyMs, task) => {
-          let running = false;
-          timers.push(
-            setInterval(() => {
-              if (running) return;
-              running = true;
-              void Promise.resolve()
-                .then(task)
-                .catch((error: unknown) => console.warn(`[${held.name}] scheduled work failed:`, (error as Error).message))
-                .finally(() => {
-                  running = false;
-                  this.options.onChange?.();
-                });
-            }, everyMs)
-          );
-        },
+        log: { info: log('log'), warn: log('warn'), error: log('error') },
         emit: (event) => this.options.emit(held, event),
-      };
-      const session = await type.createSession(context);
-      const opened = channel;
-      const detach = opened.onConnectedChange((connected) => {
+        afterScheduled: () => {
+          this.#checkIdentity(held.deviceId);
+          this.options.onChange?.();
+        },
+      });
+      const channel = opened.channel!;
+      const noteState = (connected: boolean) => {
+        this.options.failover?.note(held.connection.id, connected);
         if (connected) this.options.onConnected?.(held);
+      };
+      const detach = channel.onConnectedChange((connected) => {
+        noteState(connected);
         this.options.onChange?.();
       });
-      if (opened.connected) this.options.onConnected?.(held);
-      this.#open.set(held.deviceId, { held, session, channel: opened, fingerprint: fingerprintOf(held, readOnly), timers, detach });
+      noteState(channel.connected);
+      this.#open.set(held.deviceId, { held, opened, fingerprint: fingerprintOf(held, readOnly), detach });
       this.#refusals.delete(held.deviceId);
     } catch (error) {
-      for (const timer of timers) clearInterval(timer);
-      await channel?.close().catch(() => undefined);
-      this.#refusals.set(held.deviceId, (error as Error).message);
+      this.#refusals.set(held.deviceId, error instanceof OpenRefused ? error.message : (error as Error).message);
     }
+  }
+
+  /**
+   * The wrong-device check, as the server makes it: a connection whose device
+   * says it is another one is closed, and nothing it says is kept as this one's.
+   */
+  #checkIdentity(deviceId: string): void {
+    const open = this.#open.get(deviceId);
+    if (!open) return;
+    const said = open.opened.session.identity?.().id ?? null;
+    if (identityVerdict(open.held.identity, said) !== 'mismatch') return;
+    this.options.onMismatch?.(open.held, said!);
+    void this.close(deviceId).then(() => {
+      this.#refusals.set(deviceId, `That connection reaches a different device (${said}), not the one you added`);
+      this.options.onChange?.();
+    });
   }
 
   async close(deviceId: string): Promise<void> {
     const open = this.#open.get(deviceId);
     this.#open.delete(deviceId);
     if (!open) return;
-    for (const timer of open.timers) clearInterval(timer);
     open.detach();
-    await open.session.close().catch(() => undefined);
-    await open.channel.close().catch(() => undefined);
+    await open.opened.close();
   }
 
   async closeAll(): Promise<void> {

@@ -28,7 +28,8 @@ export class Uplink {
   #audit: QueuedAudit[];
   #store: { deviceId: string; connectionId: string; key: string; value: unknown }[] = [];
   #timer: ReturnType<typeof setInterval> | null = null;
-  #flushing = false;
+  #running: Promise<void> | null = null;
+  #again = false;
 
   constructor(
     private options: {
@@ -91,12 +92,31 @@ export class Uplink {
     this.#readings.set(deviceId, queued);
   }
 
-  async flush(): Promise<void> {
+  /**
+   * Sends what is queued. One run at a time; asked again while one runs, it
+   * runs once more when that one ends — so an audit entry queued mid-run goes
+   * up then, not at the next timer — and the promise covers both.
+   */
+  flush(): Promise<void> {
+    if (this.#running) {
+      this.#again = true;
+      return this.#running;
+    }
+    this.#running = (async () => {
+      do {
+        this.#again = false;
+        await this.#flushOnce();
+      } while (this.#again);
+    })().finally(() => {
+      this.#running = null;
+    });
+    return this.#running;
+  }
+
+  async #flushOnce(): Promise<void> {
     const clientId = this.options.clientId();
-    if (this.#flushing) return;
     for (const { deviceId, connectionId, identity, readings } of this.options.collect()) this.#queue(deviceId, connectionId, identity, readings);
     if (!clientId) return;
-    this.#flushing = true;
     // Each on its own: one device this app no longer holds must not keep the rest from going up.
     const attempt = async (work: () => Promise<void>) => {
       try {
@@ -105,31 +125,27 @@ export class Uplink {
         // Kept for the next try: the server is away, or this app no longer holds that connection.
       }
     };
-    try {
-      if (this.#audit.length) {
-        await attempt(async () => {
-          const sending = this.#audit.slice(0, 500);
-          await uploadAudit(clientId, sending);
-          this.#audit = this.#audit.slice(sending.length);
-          writePreference(this.options.key, JSON.stringify(this.#audit));
-        });
-      }
-      for (const [deviceId, queued] of [...this.#readings]) {
-        if (!queued.readings.size) continue;
-        await attempt(async () => {
-          const sending = [...queued.readings.entries()].slice(0, 2000);
-          await uploadReadings(deviceId, { clientId, connectionId: queued.connectionId, identity: queued.identity, readings: sending.map(([, reading]) => reading) });
-          for (const [key] of sending) queued.readings.delete(key);
-        });
-      }
-      for (const write of [...this.#store]) {
-        await attempt(async () => {
-          await putDeviceStore(write.deviceId, write.key, { clientId, connectionId: write.connectionId, value: write.value });
-          this.#store = this.#store.filter((pending) => pending !== write);
-        });
-      }
-    } finally {
-      this.#flushing = false;
+    if (this.#audit.length) {
+      await attempt(async () => {
+        const sending = this.#audit.slice(0, 500);
+        await uploadAudit(clientId, sending);
+        this.#audit = this.#audit.slice(sending.length);
+        writePreference(this.options.key, JSON.stringify(this.#audit));
+      });
+    }
+    for (const [deviceId, queued] of [...this.#readings]) {
+      if (!queued.readings.size) continue;
+      await attempt(async () => {
+        const sending = [...queued.readings.entries()].slice(0, 2000);
+        await uploadReadings(deviceId, { clientId, connectionId: queued.connectionId, identity: queued.identity, readings: sending.map(([, reading]) => reading) });
+        for (const [key] of sending) queued.readings.delete(key);
+      });
+    }
+    for (const write of [...this.#store]) {
+      await attempt(async () => {
+        await putDeviceStore(write.deviceId, write.key, { clientId, connectionId: write.connectionId, value: write.value });
+        this.#store = this.#store.filter((pending) => pending !== write);
+      });
     }
   }
 }

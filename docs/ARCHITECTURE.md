@@ -112,6 +112,7 @@ packages/
   services/open-meteo/   @kraftverk/service-open-meteo   weather, a service
   gateway/               @kraftverk/gateway              the action gateway's rules: pure, run by whichever holder has the connection
   api-contract/          @kraftverk/api-contract         the HTTP API's shapes, types only: declared once, imported by the server and the app
+  holder/                @kraftverk/holder               what every holder does with a device: open, watch, fail over, judge a check; pure
   api-client/  ui/       shared by the app; know no device type
 server/  client/         the core; know no transport, protocol or device type by name
 ```
@@ -598,7 +599,7 @@ holders and identity were added to the model (DATA-MODEL.md).
 | 14 | Automations | L | done: recipes; rules next |
 | 15 | Make contributing easy | S | done |
 | 16 | One API contract | S | done |
-| 17 | One holder core, and the app tested | L | |
+| 17 | One holder core, and the app tested | L | done |
 | 18 | The gateway knows capabilities, not names; settings go through it | M | |
 | 19 | History that lasts | M | |
 | 20 | App and server agree on what they speak | S | later |
@@ -889,6 +890,17 @@ connection that reaches a different device, fail over after two minutes, the
 hold rule, and the check's judgement. The server and the app inject only what
 differs — where the store, secrets and audit go. **Done when** both holders
 run devices through the same code and `client/src/runtime` has tests.
+
+*Done.* `@kraftverk/holder`: `openDevice` (the guarded channel, the context,
+skip-if-running schedules, the open timeout, closing), `identityVerdict`,
+`Failover`, the hold rule (`activeConnection`, `toHold`, `withInUse`) and
+`judgeCheck`. The server's session manager, its setup and its registry use
+them, and so do the app's held sessions, runtime and setup flow — the app
+gained the open timeout and the wrong-device check, and its failover now
+follows the channel rather than polling. Tests: the package's own, and the
+app's first (`LocalCatalog`, `Uplink`), which found that a flush asked for
+during another was dropped until the next timer. `check:architecture` holds
+the shared core — contract, SDK, gateway, holder — to no platform built-in.
 
 ### Step 18 — The gateway knows capabilities, not names (G5, G4)
 Each actuating command in the capability library says how it is read and

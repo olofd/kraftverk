@@ -59,7 +59,13 @@ const CORE = [
   'packages/ui/',
   'packages/device-sdk/',
   'packages/gateway/',
+  'packages/holder/',
 ];
+/**
+ * The core both holders run: the server and the app. Pure, like a protocol —
+ * no platform built-in — or the app could not run it.
+ */
+const SHARED_CORE = /^packages\/(api-contract|device-sdk|gateway|holder)\/src\//;
 /** The one file per side allowed to import every device type. */
 const GENERATED = ['server/src/generated/', 'client/src/generated/'];
 
@@ -121,6 +127,7 @@ function violation(file, area, specifier) {
     case 'core':
       if (PRODUCT_PACKAGE.test(specifier)) return 'the core imports a device type, service, protocol or transport';
       if (target && PRODUCT_PATH.test(target)) return 'the core reaches into a product package';
+      if (SHARED_CORE.test(file) && shipped && BUILT_IN.test(specifier)) return 'shared core imports a platform built-in: the app runs it too';
       return null;
 
     case 'device': {

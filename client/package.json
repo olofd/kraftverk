@@ -17,6 +17,7 @@
     "@kraftverk/api-client": "*",
     "@kraftverk/device-sdk": "*",
     "@kraftverk/gateway": "*",
+    "@kraftverk/holder": "*",
     "@kraftverk/ui": "*",
     "@tamagui/animations-react-native": "^2.7.4",
     "@tamagui/font-inter": "^2.7.4",

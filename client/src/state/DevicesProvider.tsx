@@ -35,6 +35,7 @@ import {
   type VersionInfo,
 } from '@kraftverk/api-client';
 import { CATEGORIES, savedDeviceId, type DeviceType } from '@kraftverk/device-sdk';
+import { toHold, withInUse } from '@kraftverk/holder';
 
 import { confirmAction } from '../lib/confirm';
 import type { LocalDevice } from '../runtime/local';
@@ -148,33 +149,6 @@ function describeLocal(runtime: AppRuntime, device: LocalDevice, names: Map<stri
   };
 }
 
-/**
- * Which connection this app should hold for a device, if any: its own
- * connection highest in the list, and only while nothing above it reaches the
- * device (docs/DATA-MODEL.md §4, decision 12). A connection lower down takes
- * over while those above are unreachable, and lets go when one comes back: a
- * station takes one Bluetooth connection at a time, and two holders writing
- * to one device would race.
- */
-function toHold(device: DeviceView, clientId: string | null): ConnectionView | null {
-  const ordered = [...device.connections].sort((a, b) => a.priority - b.priority);
-  for (const connection of ordered) {
-    if (connection.heldBy.kind === 'client' && connection.heldBy.id === clientId) return connection;
-    if (connection.reachable) return null;
-  }
-  return null;
-}
-
-/**
- * The server's rule, with what this app knows added: the reachable connection
- * highest in the list is in use; with none reachable, the one being tried.
- */
-function inUseByRule(connections: ConnectionView[], trying: string | null): ConnectionView[] {
-  const active = [...connections].sort((a, b) => a.priority - b.priority).find((connection) => connection.reachable === true);
-  const inUse = active?.id ?? trying ?? connections.find((connection) => connection.inUse)?.id ?? null;
-  return connections.map((connection) => ({ ...connection, inUse: connection.id === inUse }));
-}
-
 export function DevicesProvider({ children }: { children: ReactNode }) {
   const servers = useServers();
   const { allowed } = useAuth();
@@ -274,6 +248,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
             deviceId: savedDeviceId(device.id),
             name: device.name,
             typeId: device.typeId,
+            identity: device.identity,
             config: device.config,
             connection: { id: connection.id, method: connection.method, transport: connection.transport, address: connection.address, config: connection.config },
             secrets: runtime.local.secrets(connection.id),
@@ -290,6 +265,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
           deviceId: device.id,
           name: device.name,
           typeId: device.typeId,
+          identity: device.identity,
           config: device.config,
           connection: { id: connection.id, method: connection.method, transport: connection.transport, address: connection.address, config: connection.config },
           // Secrets of a connection this app holds live here, never on the server.
@@ -335,7 +311,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         readings: session?.readings() ?? device.readings,
         health: health ?? device.health,
         advanced: session ? Object.entries(session.advanced ?? {}).map(([name, action]) => ({ name, writes: action.writes })) : device.advanced,
-        connections: inUseByRule(
+        connections: withInUse(
           // What this app holds, it knows first: whether its own connection reaches the device.
           connections.map((connection) => (held && connection.id === held.connection.id ? { ...connection, reachable: health?.status === 'connected' } : connection)),
           held?.connection.id ?? null

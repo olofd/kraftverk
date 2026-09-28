@@ -27,10 +27,10 @@ import {
   type Sighting,
   type TransportDefinition,
 } from '@kraftverk/device-sdk';
+import { judgeCheck, withTimeout } from '@kraftverk/holder';
 
 import { audit, db } from '../history/db.ts';
 import type { ProtocolRegistry } from '../runtime/protocols.ts';
-import { withTimeout } from '../runtime/timeout.ts';
 import type { TransportHost } from '../runtime/transports.ts';
 import type { DeviceCatalog, DeviceRecord } from './catalog.ts';
 import type { ConnectionStore } from './connections.ts';
@@ -431,39 +431,19 @@ export class SetupService {
   /** What a device's answer means, against the devices you have: new, yours, yours before, or another model. */
   #judge(draft: Draft, identified: Identified): CheckOutcome {
     draft.device = { ...draft.device, ...(identified.config ?? {}) };
-
-    // A model this type does not cover, which another installed type does.
-    const models = draft.type.meta.models ?? [];
-    if (identified.model && models.length && !models.some((model) => model.toLowerCase() === identified.model!.toLowerCase())) {
-      const other = this.deps.types.all().find((type) => type.meta.models?.some((model) => model.toLowerCase() === identified.model!.toLowerCase()));
-      return this.#checked(draft, {
-        outcome: 'other-model',
-        summary: `This is a ${identified.model}, not a ${draft.type.meta.name}.`,
-        model: identified.model,
-        type: other ? { id: other.id, name: other.meta.name } : null,
-      });
-    }
-
-    const identity = identified.identity ?? draft.identityHint;
-    if (identity) {
-      const known = this.deps.catalog.byIdentity(identity);
-      if (known.active) {
-        return this.#checked(draft, { outcome: 'yours', summary: `This is your ${known.active.name}. ${identified.summary}`, device: { id: known.active.id, name: known.active.name } }, identified);
-      }
-      if (known.removed.length) {
-        return this.#checked(
-          draft,
-          {
-            outcome: 'removed',
-            summary: `You had this before. ${identified.summary}`,
-            identity,
-            devices: known.removed.map((record) => ({ id: record.id, name: record.name, removedAt: record.removedAt! })),
-          },
-          identified
-        );
-      }
-    }
-    return this.#checked(draft, { outcome: 'new', summary: identified.summary, identity }, identified);
+    const outcome = judgeCheck(identified, {
+      type: draft.type,
+      types: this.deps.types.all(),
+      identityHint: draft.identityHint,
+      known: {
+        byIdentity: (identity) => {
+          const known = this.deps.catalog.byIdentity(identity);
+          return { active: known.active, removed: known.removed.map((record) => ({ id: record.id, name: record.name, removedAt: record.removedAt! })) };
+        },
+      },
+    });
+    // Another model is not this device: what it said is not kept for the save.
+    return this.#checked(draft, outcome, outcome.outcome === 'other-model' ? undefined : identified);
   }
 
   /**

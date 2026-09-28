@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 
 import type { CapabilityImpl, CapabilityName, DeviceSession, DeviceStore, SavedDeviceId } from '@kraftverk/device-sdk';
 import { ActionGateway, type AuditEntry } from '@kraftverk/gateway';
+import { Failover } from '@kraftverk/holder';
 import { fetchDeviceStore, registerClient, type DeviceView } from '@kraftverk/api-client';
 
 import { readPreference, writePreference } from '../lib/preferences';
@@ -23,9 +24,6 @@ import { Uplink } from './uplink';
  * Writes from this app start refused, every launch, and are allowed only by
  * someone who says so: a phone should not be the easiest way to switch mains.
  */
-
-/** How long a connection may be down before the next one is tried: the server's rule too. */
-const FAILOVER_MS = 2 * 60_000;
 
 const clientKey = (server: string) => `kraftverk.client.${server}`;
 const storeKey = (deviceId: string) => `kraftverk.store.${deviceId}`;
@@ -76,8 +74,8 @@ export class AppRuntime {
   #listeners = new Set<() => void>();
   #view = new Map<string, DeviceView>();
   #stores = new Map<string, Record<string, unknown>>();
-  #down = new Map<string, number>();
-  #avoid = new Map<string, number>();
+  /** The holder core's failover: the same two minutes as the server. */
+  #failover = new Failover();
   #failoverTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private options: { mode: Mode; server: string | null }) {
@@ -110,7 +108,10 @@ export class AppRuntime {
       onConnected: (held) => {
         if (options.mode === 'local') this.local.touch(held.connection.id);
       },
+      onMismatch: (held, said) =>
+        audit({ at: new Date().toISOString(), kind: 'device.mismatch', resource: held.deviceId, summary: `${held.name}'s connection from this app reaches ${said} instead`, detail: { expected: held.identity } }),
       onChange: () => this.#changed(),
+      failover: this.#failover,
     });
     this.gateway = new ActionGateway({
       device: (id: SavedDeviceId) => {
@@ -125,7 +126,7 @@ export class AppRuntime {
       memory: { get: (key) => readPreference(`kraftverk.gateway.${key}`), set: (key, value) => writePreference(`kraftverk.gateway.${key}`, value) },
     });
     this.uplink?.start();
-    if (options.mode === 'local') this.#failoverTimer = setInterval(() => this.#failover(), 15_000);
+    if (options.mode === 'local') this.#failoverTimer = setInterval(() => this.#failOver(), 15_000);
   }
 
   get mode(): Mode {
@@ -255,27 +256,15 @@ export class AppRuntime {
    * a connection down for two minutes, on a device with another, is passed
    * over for a while and the next one tried — as the server does with its own.
    */
-  #failover(): void {
-    const now = Date.now();
+  #failOver(): void {
     for (const held of this.sessions.all()) {
-      const id = held.connection.id;
-      if (this.sessions.health(held.deviceId)?.status === 'connected') {
-        this.#down.delete(id);
-        continue;
-      }
-      const since = this.#down.get(id) ?? now;
-      this.#down.set(id, since);
-      if (now - since > FAILOVER_MS && this.local.connections(held.deviceId).length > 1) {
-        this.#avoid.set(id, now + FAILOVER_MS);
-        this.#down.delete(id);
-        this.#changed();
-      }
+      if (this.#failover.due(held.connection.id, this.local.connections(held.deviceId).length > 1)) this.#changed();
     }
   }
 
   /** Whether a connection is being passed over after failing, in local mode. */
   avoided(connectionId: string): boolean {
-    return (this.#avoid.get(connectionId) ?? 0) > Date.now();
+    return this.#failover.avoided(connectionId);
   }
 
   async stop(): Promise<void> {
