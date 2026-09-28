@@ -2,34 +2,28 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import axios from 'axios';
 
-// The dump the server returns is built by the shared package, so its shape is
-// declared there rather than described a second time here.
-import { ACTUATOR_CONFIRMATION, type PluginCapability, type ConfigValues, type SetupActionResult } from '@kraftverk/device-sdk';
-import type { RegisterDump } from '@kraftverk/protocol';
+import type { ConfigValues, Reading, SetupActionResult } from '@kraftverk/device-sdk';
+import type { GatewayResult } from '@kraftverk/gateway';
 
 import type {
   Account,
   AccountDetail,
+  AuditEntry,
   AuthState,
-  BrokerJournalEntry,
-  ServerLogLine,
+  CheckOutcome,
+  ClientRecord,
   DeviceHistory,
   DeviceSettings,
   DeviceTypeList,
-  SavedDeviceView,
-  GridStatus,
-  LegacyStationOffer,
-  PluginConfig,
-  PluginList,
-  RelayCommandResult,
-  LinkDiagnostics,
-  PortId,
-  StationSettings,
-  StationDeviceState,
-  StationSettingsPatch,
-  StationStatus,
-  StationTransports,
-  TrafficEntry,
+  DeviceView,
+  DraftView,
+  FoundView,
+  HeldSetupInput,
+  LinkRecord,
+  SaveInput,
+  ServerLogLine,
+  SightingView,
+  TransportList,
   VersionInfo,
 } from './types';
 
@@ -160,283 +154,49 @@ export async function fetchVersion(signal?: AbortSignal) {
   return data;
 }
 
-/*
-  fetchStatus, fetchSettings, patchSettings, setPort and setGridConnected were
-  here, calling /status, /settings, /ports/:id and /grid as a write — routes
-  for "the" station that the server removed when it learned to hold several.
-  Every station is now reached by its device id: see the device routes below.
-*/
-
-// --- the station's link -----------------------------------------------------
+// --- devices ------------------------------------------------------------------
 //
-// Which stations the server's radio can see, and which one it is bound to.
-// Deliberately not `/devices`: that name belongs to the catalog of things you
-// own, and a peripheral a radio noticed is not yet one of them.
+// One list of the things you have, each described the same way, whatever it
+// is and however it is reached. Nothing here names a device type.
 
-export async function fetchStationTransports(signal?: AbortSignal) {
-  const { data } = await api.get<StationTransports>('/station/transports', { signal });
-  return data;
-}
-
-/**
- * Binds one saved device to one station.
- *
- * Both ids are required. The server used to infer the device when only one was
- * saved, which is the kind of convenience that works until the day it silently
- * picks the wrong machine.
- */
-export async function bindStation(deviceId: string, stationId: string, signal?: AbortSignal) {
-  const { data } = await api.post<{ deviceId: string; boundId: string | null; connected: boolean }>(
-    '/station/bind',
-    { deviceId, id: stationId },
-    { signal }
-  );
-  return data;
-}
-
-export async function unbindStation(deviceId: string, signal?: AbortSignal) {
-  const { data } = await api.post<{ deviceId: string; boundId: null; connected: false }>(
-    '/station/unbind',
-    { deviceId },
-    { signal }
-  );
-  return data;
-}
-
-export async function fetchLinkDiagnostics(signal?: AbortSignal) {
-  const { data } = await api.get<LinkDiagnostics>('/diagnostics/link', { signal });
-  return data;
-}
-
-export async function fetchTraffic(signal?: AbortSignal) {
-  const { data } = await api.get<TrafficEntry[]>('/diagnostics/traffic', { signal });
-  return data;
-}
-
-/**
- * The MQTT broker's journal: connections, subscriptions, writes and every
- * disconnect with its reason. `level: 'debug'` adds each poll and frame.
- */
-export async function fetchBrokerJournal(
-  options: { after?: number; limit?: number; level?: BrokerJournalEntry['level']; station?: string } = {},
-  signal?: AbortSignal
-) {
-  const { data } = await api.get<{ lastSeq: number; entries: BrokerJournalEntry[] }>('/diagnostics/broker/journal', {
-    params: options,
-    signal,
-  });
-  return data;
-}
-
-/** What the server has said lately, and where its full log files are. */
-export async function fetchServerLog(
-  options: { limit?: number; level?: ServerLogLine['level'] } = {},
-  signal?: AbortSignal
-) {
-  const { data } = await api.get<{ dir: string | null; lines: ServerLogLine[] }>('/diagnostics/log', { params: options, signal });
-  return data;
-}
-
-/**
- * A register dump, from one station.
- *
- * `deviceId` is optional only because a server holding exactly one station can
- * still answer without it. With several the server refuses to guess, which is
- * the right answer: a register dump names a machine, and writing to the wrong
- * one is how hardware dies.
- */
-export async function fetchRegisters(deviceId?: string, signal?: AbortSignal) {
-  const { data } = await api.get<RegisterDump>('/diagnostics/registers', {
-    params: deviceId ? { deviceId } : undefined,
-    signal,
-  });
-  return data;
-}
-
-/** Captures a baseline so the next dump can show what moved. */
-export async function snapshotRegisters(deviceId?: string, signal?: AbortSignal) {
-  const { data } = await api.post<{ at: string }>(
-    '/diagnostics/snapshot',
-    {},
-    { params: deviceId ? { deviceId } : undefined, signal }
-  );
-  return data;
-}
-
-// --- extensions -------------------------------------------------------------
-
-export async function fetchPlugins(signal?: AbortSignal) {
-  const { data } = await api.get<PluginList>('/plugins', { signal });
-  return data;
-}
-
-export async function fetchPluginConfig(id: string, signal?: AbortSignal) {
-  const { data } = await api.get<PluginConfig>(`/plugins/${id}/config`, { signal });
-  return data;
-}
-
-export async function patchPluginConfig(id: string, values: ConfigValues) {
-  const { data } = await api.patch<{ ok: boolean }>(`/plugins/${id}/config`, values);
-  return data;
-}
-
-export async function setPluginEnabled(id: string, enabled: boolean) {
-  const { data } = await api.post<{ ok: boolean }>(`/plugins/${id}/enable`, { enabled });
-  return data;
-}
-
-export async function testPlugin(id: string) {
-  const { data } = await api.post<{ ok: boolean; detail: string; data?: Record<string, unknown> }>(
-    `/plugins/${id}/test`,
-    {}
-  );
-  return data;
-}
-
-/** Runs a commissioning helper the plugin declared. Slow by nature — a LAN scan takes seconds. */
-export async function runSetupAction(id: string, actionId: string, input: ConfigValues) {
-  const { data } = await api.post<SetupActionResult>(`/plugins/${id}/setup/${actionId}`, input, {
-    timeout: 95_000,
-  });
-  return data;
-}
-
-export async function setPluginGrant(
-  id: string,
-  capability: PluginCapability,
-  granted: boolean,
-  confirmation?: string
-) {
-  const { data } = await api.post<{ ok: boolean; grants: PluginCapability[] }>(
-    `/plugins/${id}/grants`,
-    { capability, granted, confirmation }
-  );
-  return data;
-}
-
-export async function setPluginProvider(id: string) {
-  const { data } = await api.post<{ ok: boolean }>(`/plugins/${id}/provider`, {});
-  return data;
-}
-
-export async function fetchGrid(signal?: AbortSignal) {
-  const { data } = await api.get<GridStatus>('/grid', { signal });
-  return data;
-}
-
-/**
- * Says which saved station the relay feeds, or `null` for none.
- *
- * The gateway proves every switch against that station's own AC input, so
- * until one is paired it refuses to switch at all.
- */
-export async function pairGridStation(deviceId: string | null) {
-  const { data } = await api.post<{ stationDeviceId: string | null }>('/grid/station', { deviceId });
-  return data;
-}
-
-/** Asks the core to switch mains. The gateway decides whether it may. */
-export async function switchGridRelay(on: boolean, reason: string) {
-  const { data } = await api.post<RelayCommandResult>('/grid/relay', {
-    on,
-    reason,
-    confirmation: ACTUATOR_CONFIRMATION,
-    // Verification waits for the station to agree, which is deliberately slow.
-    }, { timeout: 45_000 });
-  return data;
-}
-
-// --- devices ----------------------------------------------------------------
-//
-// One list of the things you own, described identically whether the core
-// provides them or a plugin does. Every call here is device-shaped rather than
-// station-shaped, which is what lets one screen serve a device nobody has
-// written yet.
-
-/** Catalog ids carry a `:` — `power-station:ab12cd34` — so they must be escaped. */
+/** Catalog ids may carry a `:` from before they were opaque, so they are always escaped. */
 const devicePath = (id: string, suffix = '') => `/devices/${encodeURIComponent(id)}${suffix}`;
 
 export async function fetchDeviceList(signal?: AbortSignal) {
-  const { data } = await api.get<{ devices: SavedDeviceView[] }>('/devices', { signal });
+  const { data } = await api.get<{ devices: DeviceView[] }>('/devices', { signal });
+  return data.devices;
+}
+
+/** Removed devices, kept with their history: to bring back by adding again, or to delete. */
+export async function fetchRemovedDevices(signal?: AbortSignal) {
+  const { data } = await api.get<{ devices: DeviceView[] }>('/devices/removed', { signal });
   return data.devices;
 }
 
 export async function fetchDevice(id: string, signal?: AbortSignal) {
-  const { data } = await api.get<SavedDeviceView>(devicePath(id), { signal });
+  const { data } = await api.get<DeviceView>(devicePath(id), { signal });
   return data;
 }
 
-/** What can be added: every device type installed on the server. */
+/** What can be added: every installed type, by category, with whether this server can hold each method. */
 export async function fetchDeviceTypes(signal?: AbortSignal) {
   const { data } = await api.get<DeviceTypeList>('/device-types', { signal });
-  return data.types;
-}
-
-/** Adds a device of an installed type. Its config is validated against the type's own schema. */
-export async function addDevice(
-  input: { typeId: string; name: string; config?: Record<string, unknown> },
-  signal?: AbortSignal
-) {
-  const { data } = await api.post<SavedDeviceView>('/devices', input, { signal });
   return data;
 }
 
-export async function updateDevice(
-  id: string,
-  changes: { name: string },
-  signal?: AbortSignal
-) {
-  const { data } = await api.patch<SavedDeviceView>(devicePath(id), changes, { signal });
+export async function renameDevice(id: string, name: string, signal?: AbortSignal) {
+  const { data } = await api.patch<DeviceView>(devicePath(id), { name }, { signal });
   return data;
 }
 
-/** Forgets a device. Its samples go with it — see the server's note on why. */
+/** Removes a device, keeping its history: adding it again offers to bring it back. */
 export async function removeDevice(id: string, signal?: AbortSignal) {
-  const { data } = await api.delete<{ ok: boolean }>(devicePath(id), { signal });
-  return data;
+  await api.delete(devicePath(id), { signal });
 }
 
-// --- one P280, by device id -------------------------------------------------
-//
-// The model-specific half of the device surface. A P280 panel calls these with
-// the id of the device it is drawing, so it cannot accidentally read or write
-// whichever station the server happens to be holding.
-
-export async function fetchStationDevice(id: string, signal?: AbortSignal) {
-  const { data } = await api.get<StationDeviceState>(devicePath(id, '/p280/state'), { signal });
-  return data;
-}
-
-/** Writes the station's own settings. The reply is a readback, not an echo. */
-export async function patchStationDevice(
-  id: string,
-  patch: StationSettingsPatch,
-  signal?: AbortSignal
-) {
-  const { data } = await api.patch<StationSettings>(devicePath(id, '/p280/settings'), patch, {
-    signal,
-  });
-  return data;
-}
-
-// --- the legacy station import ---------------------------------------------
-//
-// The server no longer adopts a station at startup, so a binding made before
-// the catalog existed is offered to the user instead of acted on. Three calls:
-// what is on offer, take it, or wave it away for good.
-
-export async function fetchStationImport(signal?: AbortSignal) {
-  const { data } = await api.get<LegacyStationOffer>('/migration/station', { signal });
-  return data;
-}
-
-export async function importLegacyStation(name?: string, signal?: AbortSignal) {
-  const { data } = await api.post<SavedDeviceView>('/migration/station/import', { name }, { signal });
-  return data;
-}
-
-export async function dismissStationImport(signal?: AbortSignal) {
-  const { data } = await api.post<{ ok: boolean }>('/migration/station/dismiss', {}, { signal });
+/** Deletes a removed device and everything it recorded. Its name, typed back, is the confirmation. */
+export async function deleteDeviceHistory(id: string, name: string, signal?: AbortSignal) {
+  const { data } = await api.post<{ ok: true; samples: number }>(devicePath(id, '/delete-history'), { name }, { signal });
   return data;
 }
 
@@ -446,26 +206,16 @@ export async function fetchDeviceSettings(id: string, signal?: AbortSignal) {
 }
 
 /**
- * Writes a device's own settings.
- *
- * Only the changed keys are sent. The reply is a readback rather than an echo —
- * writing one setting can move another on this hardware — so callers should
- * take the values it returns over the ones they asked for.
+ * Writes a device's own settings. Only the changed keys are sent, and the
+ * reply is a readback rather than an echo: writing one setting can move another.
  */
 export async function patchDeviceSettings(id: string, patch: ConfigValues, signal?: AbortSignal) {
-  const { data } = await api.patch<{ values: ConfigValues }>(devicePath(id, '/settings'), patch, {
-    signal,
-  });
+  const { data } = await api.patch<{ values: ConfigValues }>(devicePath(id, '/settings'), patch, { signal, timeout: 20_000 });
   return data.values;
 }
 
 /** One measurement over a window, already thinned to something a chart can draw. */
-export async function fetchDeviceHistory(
-  id: string,
-  key: string,
-  options: { hours?: number; points?: number } = {},
-  signal?: AbortSignal
-) {
+export async function fetchDeviceHistory(id: string, key: string, options: { hours?: number; points?: number } = {}, signal?: AbortSignal) {
   const { data } = await api.get<DeviceHistory>(devicePath(id, '/history'), {
     params: { key, hours: options.hours ?? 24, points: options.points ?? 240 },
     signal,
@@ -474,24 +224,192 @@ export async function fetchDeviceHistory(
 }
 
 /**
- * Invokes a control on a device.
+ * A capability command, through the server's action gateway.
  *
- * What comes back depends on what was switched: the station's own ports answer
- * with its status, while anything that moves mains goes through the action
- * gateway and answers with its verdict.
+ * A refusal is an answer, not an error: the gateway's verdict comes back
+ * either way, and `needsConfirmation` says when a person only has to confirm.
  */
-export async function invokeDeviceControl(
+export async function sendCommand(
   id: string,
-  controlId: string,
-  value: boolean | number | string,
-  confirmation?: string
-) {
-  const { data } = await api.post<StationStatus | RelayCommandResult>(
-    devicePath(id, `/control/${encodeURIComponent(controlId)}`),
-    { value, confirmation },
-    // A verified switch waits for the station to agree, which is slow on purpose.
-    { timeout: 45_000 }
-  );
+  command: { capability: string; command?: string; target?: string; value: boolean; confirmation?: string; reason?: string }
+): Promise<GatewayResult> {
+  const { capability, command: name = 'set', ...rest } = command;
+  const response = await api.post<GatewayResult>(devicePath(id, `/capabilities/${encodeURIComponent(capability)}/${encodeURIComponent(name)}`), rest, {
+    // Verification waits for the device, and the station a plug feeds, to agree.
+    timeout: 45_000,
+    validateStatus: (status) => status === 200 || status === 409,
+  });
+  return response.data;
+}
+
+/**
+ * One of a device type's own tools: a register dump, a raw frame. Reads are a
+ * GET, anything that writes a POST — the server refuses and audits accordingly.
+ */
+export async function runDeviceTool<T = unknown>(id: string, name: string, options: { input?: Record<string, unknown>; writes?: boolean } = {}, signal?: AbortSignal): Promise<T> {
+  const path = devicePath(id, `/advanced/${encodeURIComponent(name)}`);
+  if (options.writes) {
+    const { data } = await api.post<T>(path, options.input ?? {}, { signal, timeout: 30_000 });
+    return data;
+  }
+  const { data } = await api.get<T>(path, { params: options.input, signal, timeout: 30_000 });
+  return data;
+}
+
+// --- connections and links ------------------------------------------------------
+
+export async function preferConnection(deviceId: string, connectionId: string) {
+  const { data } = await api.post<DeviceView>(devicePath(deviceId, `/connections/${connectionId}/prefer`), {});
+  return data;
+}
+
+/** Removes one way to reach a device. Not the last one: that is removing the device. */
+export async function removeConnection(deviceId: string, connectionId: string) {
+  const { data } = await api.delete<DeviceView>(devicePath(deviceId, `/connections/${connectionId}`));
+  return data;
+}
+
+/** Replaces a server-held connection's secrets — a plug's new local key. Write-only. */
+export async function setConnectionSecrets(deviceId: string, connectionId: string, secrets: Record<string, string>) {
+  const { data } = await api.put<DeviceView>(devicePath(deviceId, `/connections/${connectionId}/secrets`), secrets);
+  return data;
+}
+
+/** Records a fact about the house: this plug feeds that station. */
+export async function addLink(kind: string, sourceId: string, targetId: string) {
+  const { data } = await api.post<LinkRecord>('/links', { kind, sourceId, targetId });
+  return data;
+}
+
+export async function removeLink(id: string) {
+  await api.delete(`/links/${encodeURIComponent(id)}`);
+}
+
+// --- adding a device, held by the server ----------------------------------------
+
+export async function startSetup(typeId: string, methodId: string) {
+  const { data } = await api.post<DraftView>('/setup', { typeId, methodId });
+  return data;
+}
+
+export async function fetchSetup(id: string, signal?: AbortSignal) {
+  const { data } = await api.get<DraftView>(`/setup/${id}`, { signal });
+  return data;
+}
+
+export async function discardSetup(id: string) {
+  await api.delete(`/setup/${id}`).catch(() => undefined);
+}
+
+export async function fetchSightings(id: string, signal?: AbortSignal) {
+  const { data } = await api.get<{ sightings: SightingView[] }>(`/setup/${id}/sightings`, { signal });
+  return data.sightings;
+}
+
+/** The physical device: one the transport saw, or an address typed by hand. */
+export async function chooseInSetup(id: string, choice: { address: string } | { manual: string }) {
+  const { data } = await api.post<DraftView>(`/setup/${id}/choose`, choice);
+  return data;
+}
+
+/** Values from a form step. Secrets stay on the server; placeholders it handed out stand for them. */
+export async function updateSetup(id: string, values: { device?: ConfigValues; connection?: ConfigValues }) {
+  const { data } = await api.patch<DraftView>(`/setup/${id}`, values);
+  return data;
+}
+
+/** A step's helper, run on the server: "Fetch it with my Tuya account". Slow by nature. */
+export async function runSetupAction(id: string, stepId: string, actionId: string, input: ConfigValues = {}) {
+  const { data } = await api.post<SetupActionResult>(`/setup/${id}/steps/${stepId}/actions/${actionId}`, { input }, { timeout: 95_000 });
+  return data;
+}
+
+export async function runSetupDiscover(id: string, stepId: string) {
+  const { data } = await api.post<SetupActionResult>(`/setup/${id}/steps/${stepId}/discover`, {}, { timeout: 95_000 });
+  return data;
+}
+
+/** Reads the device once, and says what it is against the devices you have. */
+export async function checkSetup(id: string) {
+  const { data } = await api.post<CheckOutcome>(`/setup/${id}/check`, {}, { timeout: 30_000 });
+  return data;
+}
+
+export async function saveSetup(id: string, input: SaveInput) {
+  const { data } = await api.post<DeviceView>(`/setup/${id}/save`, input, { timeout: 30_000 });
+  return data;
+}
+
+/** A connection this app will hold: what it learnt reading the device itself, never a secret. */
+export async function startHeldSetup(input: HeldSetupInput) {
+  const { data } = await api.post<DraftView>('/setup/app', input);
+  return data;
+}
+
+// --- what this app sends for connections it holds -------------------------------
+
+/** Says who this app is and what it can reach devices over. Every start. */
+export async function registerClient(input: { id?: string; name: string; platform: 'web' | 'native'; transports: string[] }) {
+  const { data } = await api.post<ClientRecord>('/clients', input);
+  return data;
+}
+
+export async function fetchClients(signal?: AbortSignal) {
+  const { data } = await api.get<{ clients: ClientRecord[] }>('/clients', { signal });
+  return data.clients;
+}
+
+/** Forgets a phone or browser, and every connection it held. */
+export async function forgetClient(id: string) {
+  await api.delete(`/clients/${encodeURIComponent(id)}`);
+}
+
+export async function uploadReadings(deviceId: string, input: { clientId: string; connectionId: string; identity?: string | null; readings: readonly Reading[] }) {
+  const { data } = await api.post<{ live: number; history: number; refused: number }>(devicePath(deviceId, '/readings'), input);
+  return data;
+}
+
+export async function fetchDeviceStore(deviceId: string, signal?: AbortSignal) {
+  const { data } = await api.get<{ values: Record<string, unknown> }>(devicePath(deviceId, '/store'), { signal });
+  return data.values;
+}
+
+export async function putDeviceStore(deviceId: string, key: string, input: { clientId: string; connectionId: string; value: unknown }) {
+  await api.put(devicePath(deviceId, `/store/${encodeURIComponent(key)}`), input);
+}
+
+export async function uploadAudit(clientId: string, entries: readonly Omit<AuditEntry, 'actor' | 'id'>[]) {
+  const { data } = await api.post<{ recorded: number }>(`/clients/${encodeURIComponent(clientId)}/audit`, { entries });
+  return data;
+}
+
+// --- transports and the server ------------------------------------------------
+
+export async function fetchTransports(signal?: AbortSignal) {
+  const { data } = await api.get<TransportList>('/transports', { signal });
+  return data;
+}
+
+/** "Found near you": what the server's transports see that nothing you have is reached by. */
+export async function fetchFound(signal?: AbortSignal) {
+  const { data } = await api.get<{ found: FoundView[] }>('/found', { signal });
+  return data.found;
+}
+
+/** One of a transport's read-only diagnostics: the broker's journal, its traffic. */
+export async function fetchTransportDiagnostic<T = unknown>(transport: string, name: string, query: Record<string, string | number> = {}, signal?: AbortSignal) {
+  const { data } = await api.get<T>(`/transports/${encodeURIComponent(transport)}/diagnostics/${encodeURIComponent(name)}`, { params: query, signal });
+  return data;
+}
+
+/** What the server has said lately, and where its full log files are. */
+export async function fetchServerLog(options: { limit?: number; level?: ServerLogLine['level'] } = {}, signal?: AbortSignal) {
+  const { data } = await api.get<{ dir: string | null; lines: ServerLogLine[] }>('/diagnostics/log', { params: options, signal });
+  return data;
+}
+
+export async function fetchAudit(limit = 100, signal?: AbortSignal) {
+  const { data } = await api.get<AuditEntry[]>('/audit', { params: { limit }, signal });
   return data;
 }
 
@@ -534,7 +452,7 @@ export async function fetchResetAvailability(signal?: AbortSignal) {
 }
 
 /**
- * Empties the database: devices, history, plugin configuration, secrets, grants
+ * Empties the database: devices, their connections and secrets, links, history
  * and the audit timeline. There is no undo, and no copy kept anywhere.
  */
 export async function resetDatabase(secret: string, signal?: AbortSignal) {

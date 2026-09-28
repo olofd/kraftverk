@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { StationSettings, StationStatus } from '@kraftverk/protocol';
+import type { StationSettings, StationStatus } from './model/types.ts';
 
 import { portKey, settingsKeys, withPending, writesInFlight, type StationWriteKey } from './writes.ts';
 

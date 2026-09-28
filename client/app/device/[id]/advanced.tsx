@@ -3,31 +3,21 @@ import { Card, Text } from 'tamagui';
 
 import { Screen } from '../../../src/components/Screen';
 import { deviceStatus } from '../../../src/features/devices/DeviceShell';
-import { useDeviceConnection } from '../../../src/features/devices/connection';
 import { screensFor } from '../../../src/devices/ui';
-import { useDevice } from '../../../src/state/DevicesProvider';
-import { useDirectLink } from '../../../src/state/DirectLinkProvider';
+import { useDevice, useDevices } from '../../../src/state/DevicesProvider';
 
 /**
- * One device's advanced tools.
- *
- * The register map, the snapshot-and-diff workflow and everything it knows
- * about Sydpower framing belong to the device package. What is here is the
- * page, and the fact that it is *this* device's page: reached from its Settings
- * screen, under Advanced, rather than from a global tab that implied every
- * install has exactly one station worth diagnosing.
+ * One device's advanced tools: its type's own screen, reached from its
+ * Settings. The page is the app's; what is on it is the device package's.
  */
 export default function DeviceAdvancedScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const device = useDevice(id);
-  const connection = useDeviceConnection(device);
-  const { source, direct } = useDirectLink();
-
-  const screens = screensFor(device);
-
+  const { screenProps } = useDevices();
+  const advanced = screensFor(device)?.advanced;
   const settingsPath = device ? `/device/${encodeURIComponent(device.id)}/settings` : '/';
 
-  if (!device || !screens?.protocol) {
+  if (!device || !advanced) {
     return (
       <Screen back="Settings" backTo={settingsPath} title="Advanced">
         <Card padding="$4">
@@ -39,23 +29,9 @@ export default function DeviceAdvancedScreen() {
     );
   }
 
-  const Panel = screens.protocol;
-
   return (
-    <Screen
-      back="Settings"
-      backTo={settingsPath}
-      title="Protocol"
-      subtitle={`Verify the register map against ${device.record.name}`}
-      status={deviceStatus(device)}
-    >
-      <Panel
-        status={connection.status}
-        deviceId={device.id}
-        version={connection.version}
-        source={source}
-        direct={direct}
-      />
+    <Screen back="Settings" backTo={settingsPath} title={advanced.label} subtitle={device.name} status={deviceStatus(device)}>
+      <advanced.Screen {...screenProps(device)} />
     </Screen>
   );
 }

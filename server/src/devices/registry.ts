@@ -1,223 +1,217 @@
-import { providerDeviceId } from '@kraftverk/device-sdk';
 import type {
+  CapabilityName,
   ConfigValues,
   ConnectionHealth,
-  DeviceDescriptor,
-  DeviceType,
-  ProviderDeviceId,
+  ControlSpec,
+  DeviceTypeMeta,
+  MetricSpec,
   Reading,
   SavedDeviceId,
+  SettingsSpec,
 } from '@kraftverk/device-sdk';
 
+import type { TransportHost } from '../runtime/transports.ts';
 import type { DeviceCatalog, DeviceRecord } from './catalog.ts';
+import type { ClientStore } from './clients.ts';
+import type { ConnectionRecord, ConnectionStore } from './connections.ts';
+import type { LinkStore } from './links.ts';
+import type { RemoteReadings } from './remote.ts';
 import type { DeviceSessionManager } from './sessions.ts';
-import type { PluginHost } from '../plugins/host.ts';
+import type { DeviceTypeRegistry } from './types.ts';
 
 /**
- * Joins the devices you added to what they are and what they are doing.
+ * Joins the devices you added to what they are, how they are reached, and
+ * what they are doing.
  *
- * The catalog says what exists; the device type says what it is; its session
- * says what it is doing. Keeping those apart is what lets an unplugged device
- * stay in the list, greyed and honest, instead of vanishing with its history.
- *
- * Every device is described the same way, from its type's declarations and its
- * session's answers, so the app has one card, one detail screen and one chart
- * for everything it will ever show — and this file names no product.
+ * The catalog says what exists; the device type says what it is; its
+ * connections say how it is reached and its links how it fits the house; its
+ * session says what it is doing. Every device is described the same way, so
+ * the app has one card, one detail screen and one chart for everything it will
+ * ever show — and this file names no product.
  */
 
-/**
- * A saved device, joined to what it is doing right now.
- *
- * The descriptor's `id` and `name` are left out, because those two belong to
- * the catalog here. The vendor's are `providerDeviceId` and `providerName`, so
- * a caller that wants one of them has to say which.
- */
-export type SavedDeviceView = Omit<DeviceDescriptor, 'id' | 'name'> & {
+export type ConnectionView = {
+  id: string;
+  method: string;
+  /** "Wi-Fi", from the type. */
+  methodLabel: string;
+  transport: string;
+  /** Who holds it: the server, or one phone or browser. */
+  heldBy: { kind: 'server' } | { kind: 'client'; id: string; name: string };
+  address: string;
+  priority: number;
+  /**
+   * Whether it reaches the device right now: true, false, or null when nobody
+   * is trying it — a standby the server has not opened.
+   */
+  reachable: boolean | null;
+  /** The one the device is using right now: the reachable one highest in the list (docs/DATA-MODEL.md §4). */
+  inUse: boolean;
+  lastConnectedAt: string | null;
+  /** Which secrets it has, by field — never their values. */
+  secrets: string[];
+  config: Record<string, unknown>;
+};
+
+export type LinkView = {
+  id: string;
+  kind: string;
+  /** Whether this device is the link's source or its target. */
+  role: 'source' | 'target';
+  other: { id: SavedDeviceId; name: string };
+};
+
+/** A saved device, joined to what it is doing right now. */
+export type DeviceView = {
   /** The catalog id: stable, the route segment, and what history is keyed by. */
   id: SavedDeviceId;
-  /** The device type, when an installed one claims this device. */
-  typeId: string | null;
-  /** The vendor's own identity for it — a MAC, a Tuya id. Null until known. */
-  providerDeviceId: ProviderDeviceId | null;
-  /** What the user called it. */
+  typeId: string;
+  /** Whether an installed type claims it. */
+  installed: boolean;
   name: string;
-  /** What the vendor calls it, when that is known and differs. */
-  providerName: string | null;
-  record: DeviceRecord;
-  health: ConnectionHealth;
+  identity: string | null;
+  addedAt: string;
+  removedAt: string | null;
+  kind: 'hardware' | 'service';
+  meta: Pick<DeviceTypeMeta, 'name' | 'brand' | 'icon' | 'support'> & { category: string };
+  capabilities: readonly CapabilityName[];
+  measurements: readonly MetricSpec[];
+  controls: readonly ControlSpec[];
+  settings: SettingsSpec | null;
+  config: Record<string, unknown>;
+  connections: ConnectionView[];
+  links: LinkView[];
+  /** What the device's own tools are, by name, and which of them change it. */
+  advanced: { name: string; writes: boolean }[];
   readings: Reading[];
-};
-
-/**
- * How long a v1 plugin may take to hand over its readings.
- *
- * Plugins answer from cache, so this is generous; it exists because `all()` is
- * on the path of every `GET /api/devices`, and one `readDevice` that never
- * settles would otherwise hang the list for every client and stall the sampler.
- * A device session is never waited on: its reads are synchronous.
- */
-const READ_TIMEOUT_MS = 2_000;
-
-const readWithin = async (read: () => Promise<Reading[]> | undefined, timeoutMs: number): Promise<Reading[]> => {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    const pending = read();
-    if (!pending) return [];
-    return await Promise.race([pending, new Promise<Reading[]>((resolve) => (timer = setTimeout(() => resolve([]), timeoutMs)))]);
-  } catch {
-    return [];
-  } finally {
-    clearTimeout(timer);
-  }
-};
-
-/** The freshest reading's timestamp — when the device last actually spoke. */
-const lastReadingAt = (readings: readonly Reading[]): string | null => {
-  let latest: string | null = null;
-  for (const reading of readings) {
-    if (reading.value === null) continue;
-    if (!latest || reading.at > latest) latest = reading.at;
-  }
-  return latest;
+  health: ConnectionHealth;
 };
 
 export class DeviceRegistry {
   constructor(
-    private catalog: DeviceCatalog,
-    private host: PluginHost,
-    private sessions: DeviceSessionManager
+    private deps: {
+      catalog: DeviceCatalog;
+      types: DeviceTypeRegistry;
+      sessions: DeviceSessionManager;
+      connections: ConnectionStore;
+      links: LinkStore;
+      clients: ClientStore;
+      transports: TransportHost;
+      /** Readings from connections an app holds. */
+      remote: RemoteReadings;
+    }
   ) {}
 
-  /** Every saved device, joined to what it is doing. */
-  async all(): Promise<SavedDeviceView[]> {
-    return Promise.all(this.catalog.list().map((record) => this.#view(record)));
+  /** Every device you have, joined to what it is doing. */
+  all(): DeviceView[] {
+    const records = this.deps.catalog.list();
+    const names = new Map(records.map((record) => [record.id, record.name]));
+    return records.map((record) => this.#view(record, names));
   }
 
-  async find(id: SavedDeviceId): Promise<SavedDeviceView | null> {
-    const record = this.catalog.get(id);
-    return record ? this.#view(record) : null;
+  /** Removed devices, kept with their history, to bring back or delete. */
+  removed(): DeviceView[] {
+    const names = new Map(this.deps.catalog.list().map((record) => [record.id, record.name]));
+    return this.deps.catalog.removed().map((record) => this.#view(record, names));
   }
 
-  async #view(record: DeviceRecord): Promise<SavedDeviceView> {
-    const type = this.sessions.typeOf(record);
-    return type ? this.#typedView(record, type) : this.#pluginView(record);
+  find(id: SavedDeviceId): DeviceView | null {
+    const record = this.deps.catalog.get(id);
+    if (!record) return null;
+    return this.#view(record, new Map(this.deps.catalog.list().map((candidate) => [candidate.id, candidate.name])));
   }
 
-  /** A device of an installed type: its declarations, and its session's answers. */
-  #typedView(record: DeviceRecord, type: DeviceType<any>): SavedDeviceView {
-    const session = this.sessions.get(record.id);
-    const identity = session?.identity?.() ?? null;
-    const readings = session?.readings() ?? [];
+  #view(record: DeviceRecord, names: Map<SavedDeviceId, string>): DeviceView {
+    const type = this.deps.sessions.typeOf(record);
+    const session = record.removedAt ? null : this.deps.sessions.get(record.id);
+    const opened = record.removedAt ? null : this.deps.sessions.inUse(record.id);
+    const latest = record.removedAt ? null : this.deps.remote.latest(record.id);
 
-    return {
-      id: record.id,
-      typeId: type.id,
-      name: record.name,
-      providerDeviceId: identity?.id ? providerDeviceId(identity.id) : null,
-      providerName: identity?.name && identity.name !== record.name ? identity.name : null,
-      record,
-      category: type.meta.category,
-      icon: type.meta.icon,
-      description: type.meta.name,
-      measurements: type.telemetry,
-      controls: type.controls ?? [],
-      settings: type.settings,
-      capabilities: type.capabilities,
-      readings,
-      health: this.sessions.health(record),
+    /*
+      The active-connection rule (docs/DATA-MODEL.md §4, decision 12): of the
+      connections that reach the device now — the server's open one, or an
+      app's that is sending fresh readings — the one highest in the list is in
+      use, and its readings are the device's. With none reachable, the one the
+      server is trying.
+    */
+    const reachable = (connection: ConnectionRecord): boolean | null => {
+      if (connection.heldBy) return latest?.connectionId === connection.id ? true : null;
+      return opened?.id === connection.id ? this.deps.sessions.reachable(record.id) : null;
     };
-  }
+    const ordered = [...this.deps.connections.forDevice(record.id)].sort((a, b) => a.priority - b.priority);
+    const active = ordered.find((connection) => reachable(connection) === true) ?? opened ?? null;
+    // An app's readings count only while its connection is the one in use; a simulator is always its session's.
+    const remote = latest && active?.id === latest.connectionId && (opened !== null || !session) ? latest : null;
 
-  /**
-   * A device provided by a v1 plugin: one configuration per plugin, so one
-   * device per plugin (`devices()[0]`). Goes when the plugins become device
-   * types (step 5).
-   */
-  async #pluginView(record: DeviceRecord): Promise<SavedDeviceView> {
-    const instance = this.host.instance(record.driver);
-    const descriptor = instance?.plugin.devices?.()[0];
-
-    if (!instance || !descriptor) {
+    const connections = ordered.map((connection): ConnectionView => {
+      const method = type?.connections.find((candidate) => candidate.id === connection.method);
+      const client = connection.heldBy ? this.deps.clients.get(connection.heldBy) : null;
       return {
-        id: record.id,
-        typeId: null,
-        providerDeviceId: null,
-        record,
-        name: record.name,
-        providerName: null,
-        category: 'unknown',
-        icon: 'help-circle',
-        measurements: [],
-        controls: [],
-        readings: [],
-        health: {
-          // Not offline: nothing is installed that *could* go offline, and
-          // "install it" is a different instruction from "is it plugged in".
-          status: 'unconfigured',
-          detail: instance
-            ? 'Its extension is installed but is not providing this device yet'
-            : `Nothing installed here knows what "${record.driver}" is`,
-          owner: 'server',
-          transport: null,
-          lastReadingAt: null,
-        },
+        id: connection.id,
+        method: connection.method,
+        methodLabel: method?.label ?? connection.method,
+        transport: connection.transport,
+        heldBy: connection.heldBy ? { kind: 'client', id: connection.heldBy, name: client?.name ?? 'Another app' } : { kind: 'server' },
+        address: connection.address,
+        priority: connection.priority,
+        reachable: reachable(connection),
+        inUse: active?.id === connection.id,
+        lastConnectedAt: connection.lastConnectedAt,
+        secrets: this.deps.connections.secretFields(connection.id),
+        config: connection.config,
       };
-    }
+    });
 
-    const vendorId = providerDeviceId(descriptor.id);
-    const health = this.host.health(record.driver);
-    const readings = await readWithin(() => instance.plugin.readDevice?.(vendorId), READ_TIMEOUT_MS);
-    const answering = readings.some((reading) => reading.value !== null);
-    const { id: _id, name: _name, ...described } = descriptor;
+    const links = this.deps.links.forDevice(record.id).map((link): LinkView => {
+      const role = link.sourceId === record.id ? 'source' : 'target';
+      const otherId = role === 'source' ? link.targetId : link.sourceId;
+      return { id: link.id, kind: link.kind, role, other: { id: otherId, name: names.get(otherId) ?? 'A removed device' } };
+    });
 
     return {
-      ...described,
       id: record.id,
-      typeId: null,
-      providerDeviceId: vendorId,
-      record,
+      typeId: record.typeId,
+      installed: type !== null,
       name: record.name,
-      providerName: descriptor.name === record.name ? null : descriptor.name,
-      readings,
-      health: {
-        status: pluginStatus(health.status, answering),
-        detail: health.status === 'healthy' && answering ? 'Answering' : (health.detail ?? 'Not answering'),
-        owner: 'server',
-        transport: null,
-        lastReadingAt: lastReadingAt(readings),
-      },
+      identity: record.identity,
+      addedAt: record.addedAt,
+      removedAt: record.removedAt,
+      kind: type?.kind ?? 'hardware',
+      meta: type
+        ? { name: type.meta.name, brand: type.meta.brand, icon: type.meta.icon, support: type.meta.support, category: type.meta.category }
+        : { name: record.typeId, icon: 'help-circle', support: 'experimental', category: 'unknown' },
+      capabilities: type?.capabilities ?? [],
+      measurements: type?.telemetry ?? [],
+      controls: type?.controls ?? [],
+      settings: type?.settings ?? null,
+      config: record.config,
+      connections,
+      links,
+      advanced: remote ? [] : Object.entries(session?.advanced ?? {}).map(([name, action]) => ({ name, writes: action.writes })),
+      readings: remote?.readings ?? session?.readings() ?? [],
+      health: record.removedAt
+        ? { status: 'offline', detail: `Removed ${new Date(record.removedAt).toLocaleDateString()}; its history is kept`, owner: null, transport: null, lastReadingAt: null }
+        : remote
+          ? {
+              status: 'connected',
+              detail: `Connected through ${this.deps.clients.get(remote.clientId)?.name ?? 'another app'}`,
+              owner: 'client',
+              transport: connections.find((connection) => connection.id === remote.connectionId)?.transport ?? null,
+              lastReadingAt: remote.at,
+            }
+          : this.deps.sessions.health(record),
     };
   }
 
   /** A device's own settings, as last read from it. Empty until they have been. */
   readSettings(record: DeviceRecord): ConfigValues {
-    return this.sessions.get(record.id)?.readSettings?.() ?? {};
+    return this.deps.sessions.get(record.id)?.readSettings?.() ?? {};
   }
 
   /** Applies settings through the device's session, and returns what it reports afterwards. */
   async writeSettings(record: DeviceRecord, patch: ConfigValues): Promise<ConfigValues> {
-    const session = this.sessions.get(record.id);
+    const session = this.deps.sessions.get(record.id);
     if (!session?.writeSettings) return {};
     return (await session.writeSettings(patch)) ?? {};
   }
 }
-
-/** A v1 plugin's health, in the vocabulary a connection speaks. */
-const pluginStatus = (
-  status: import('@kraftverk/device-sdk').PluginHealth['status'],
-  answering: boolean
-): ConnectionHealth['status'] => {
-  switch (status) {
-    case 'healthy':
-    case 'degraded':
-      // Healthy but silent is offline: the plugin is fine and the thing at the
-      // other end is not talking.
-      return answering ? 'connected' : 'offline';
-    case 'starting':
-      return 'connecting';
-    case 'needs-configuration':
-      return 'unconfigured';
-    case 'failed':
-      return 'error';
-  }
-};

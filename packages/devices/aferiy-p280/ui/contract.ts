@@ -1,84 +1,38 @@
-import type {
-  PortId,
-  RegisterDump,
-  StationSettings,
-  StationSettingsPatch,
-  StationStatus,
-} from '@kraftverk/protocol';
+import type { DeviceScreenProps } from '@kraftverk/api-client';
 
+import type { PortId, StationSettings, StationSettingsPatch, StationStatus } from '../src/model/types';
 import type { WritesInFlight } from '../src/writes';
 
-export type { WritesInFlight };
+export type { DeviceScreenProps, WritesInFlight };
 
 /**
- * What the app hands a P280 screen.
- *
- * The device package draws the screens; it does not know how the app talks to
- * anything. No provider, no HTTP client, no Bluetooth — just the current state
- * and functions to ask for changes. That is what lets these screens work
- * whether the app is talking to a server or holding the station's Bluetooth
- * link itself, and what stops a device package reaching into the app that
- * renders it.
+ * What the P280's screens draw from: the station's own state, and ways to
+ * change it — built by `useStation` from what the app hands every device's
+ * screens (`DeviceScreenProps`). The app never sees this shape.
  *
  * Screens return *content*. The frame around it — page padding, the offline
  * banner, the status dot — is the app's chrome and stays there.
  */
-/**
- * What the protocol screen needs.
- *
- * The device package draws the register table; it does not know how the bytes
- * are fetched. The app injects those calls, which is what lets the same screen
- * work whether the registers came over HTTP from a server or straight off a
- * Bluetooth link the app is holding itself.
- */
-export type ProtocolScreenProps = {
-  status: StationStatus | null;
-  /**
-   * Which saved device's registers these are.
-   *
-   * The screen has always been about one station; it simply never had to say
-   * which, because a server could only hold one. Now that it can hold several,
-   * a dump that does not name its subject is a dump of whichever station the
-   * server happened to list first.
-   */
-  deviceId: string;
-  /** Only `readOnly` is used, but the app already has the whole thing. */
-  version: { readOnly: boolean } | null;
-  /** Whether the app is talking through the server or holding the link itself. */
-  source: 'server' | 'direct';
-  /**
-   * The direct link, when the app is holding one.
-   *
-   * Structural rather than imported: the device package describes what it needs
-   * — read the registers, take a baseline — and the app's richer object
-   * satisfies it. That keeps the dependency pointing one way.
-   */
-  direct: {
-    connected: boolean;
-    boundId: string | null;
-    support: { label: string };
-    dump: () => Promise<RegisterDump>;
-    snapshot: () => Promise<RegisterDump>;
-  };
-};
-
-export type StationScreenProps = {
+export type StationView = {
   status: StationStatus | null;
   settings: StationSettings | null;
-  /** Writes the station has not confirmed yet. See `WritesInFlight`. */
+  /** Writes the station has not confirmed yet. Their values are already shown above. */
   pending: WritesInFlight;
   /** True when every write is being refused. */
   readOnly: boolean;
   simulated: boolean;
-  /** Whether the app is talking through the server or straight to the station. */
+  /** This app holds the station's connection itself, over its own radio. */
   direct: boolean;
-  apiBaseUrl: string;
-  /** Only shown when a server is in the path; a direct link has none. */
-  version?: { version: string; runtime: string; uptimeSeconds: number; readOnly: boolean } | null;
-  /** What the app calls the link, e.g. "Bluetooth LE, straight from this browser". */
-  linkLabel?: string;
-  /** True while the app is still reconnecting to a remembered station. */
-  resuming?: boolean;
+  /** What the screen is waiting for, before the station has said anything. */
+  waitingFor: string;
+  /** Only when a server is in the path. */
+  version: { version: string; runtime: string; uptimeSeconds: number; readOnly: boolean } | null;
+  /** How the connection in use is described: "Wi-Fi, through the server". */
+  linkLabel: string | null;
+  /** Never true now: a connection this app holds reconnects by itself. */
+  resuming: boolean;
+  /** Why the last change did not happen, until the next one is asked for. */
+  writeError: string | null;
   updateSettings: (patch: StationSettingsPatch) => Promise<void>;
   togglePort: (id: PortId, enabled: boolean) => Promise<void>;
 };

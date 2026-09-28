@@ -25,6 +25,7 @@ export { SliderRow } from './SliderRow';
 
 export { haptic } from './haptics';
 export { WriteGate, WriteInFlightError, type WriteSnapshot } from './writeGate';
+export { useWriteGate } from './useWriteGate';
 export {
   fixedRange,
   formatMeasurement,
@@ -52,6 +53,4 @@ export {
   formatUptime,
   formatWatts,
   formatWh,
-  STATE_LABELS,
-  STATE_TINT,
 } from './format';

@@ -7,7 +7,7 @@ import { describeError } from '@kraftverk/api-client';
 
 import { Pressable } from '../../components/Pressable';
 import { useAuth } from '../../state/AuthProvider';
-import { useDirectLink } from '../../state/DirectLinkProvider';
+import { useServers } from '../../state/ServersProvider';
 import { Field, passwordProblem, PASSWORD_MIN } from './fields';
 
 /**
@@ -74,7 +74,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
 function SignIn() {
   const { state } = useAuth();
-  const { servers } = useDirectLink();
+  const servers = useServers();
   const server = servers.active;
 
   const mode = state?.setupRequired ? (state.canSetup ? 'setup' : 'setup-elsewhere') : 'login';
@@ -244,7 +244,7 @@ function SetupElsewhere() {
 
 /** Another saved server, or none. Never trapped behind a login you cannot give. */
 function WayOut() {
-  const { servers } = useDirectLink();
+  const servers = useServers();
   const others = servers.all.filter((server) => server.id !== servers.active?.id);
 
   return (

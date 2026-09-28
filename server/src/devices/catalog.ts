@@ -1,169 +1,171 @@
 import { randomUUID } from 'node:crypto';
 
-import { savedDeviceId, stationId, type SavedDeviceId, type StationId } from '@kraftverk/device-sdk';
+import { savedDeviceId, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import { db } from '../history/db.ts';
 
 /**
- * The devices you have added.
+ * The devices you have added (docs/DATA-MODEL.md §3).
  *
  * This is a *catalog*, not a scan result. A device exists because you added it
- * and named it, and it keeps existing when it is unplugged, out of range, or
- * its driver is having a bad day — greyed out, with its history intact. The
- * alternative, a list derived from whatever answers right now, means your
- * devices disappear whenever your network hiccups, and charts lose their
- * subject.
+ * and named it, and it keeps existing when it is unplugged or out of range —
+ * greyed out, with its history intact. It keeps existing after you remove it,
+ * too, until you delete its history on purpose: removing a device is something
+ * people do to tidy up, and it must not be the thing that destroys years of
+ * measurements (docs/ARCHITECTURE.md, decision 13).
+ *
+ * How a device is reached is not here: that is its connections
+ * (`connections.ts`). What it is, is its type — which never changes.
  */
 
 export type DeviceRecord = {
   id: SavedDeviceId;
-  /** A category, for display. Retired by the catalog migration (step 4), which gives every record a type id. */
-  type: string;
-  /** Unused since models became device types; kept until the catalog migration (step 4). */
-  model: string | null;
-  /** The device type's id — or a v1 plugin's, or `core.station`. See `typeIdOf`. */
-  driver: string;
+  /** The device type: `atorch.s1w`. Stable forever. */
+  typeId: string;
+  /** Its own permanent id, read from the device — `sydpower:AABBCC001122` — or null until it has said. */
+  identity: string | null;
   name: string;
-  /** Adapter-specific, including `boundId`: the station this device reaches. */
+  /** The type's own choices for this device: a profile, a location. Never secrets. */
   config: Record<string, unknown>;
   addedAt: string;
-};
-
-/** The station a record is bound to, if it has been given one. */
-export const boundStation = (record: DeviceRecord): StationId | null =>
-  typeof record.config.boundId === 'string' ? stationId(record.config.boundId) : null;
-
-/**
- * Which radio this device is reached over.
- *
- * A property of the device, not of the server: one machine can hold a
- * Bluetooth station and a WiFi one at the same time, and each record says
- * which it is. Null means "not decided yet" — a device saved before it was
- * ever bound — and the server offers it the first transport it has.
- */
-export const transportOf = (record: DeviceRecord): 'mqtt' | 'ble' | null =>
-  record.config.transport === 'ble' || record.config.transport === 'mqtt'
-    ? record.config.transport
-    : null;
-
-/**
- * Which device type a record is.
- *
- * Transitional, until the catalog has a type column (docs/ARCHITECTURE.md,
- * step 4): a record keeps its type's id in `driver`. The first stations ever
- * saved say `core.station` there instead, and every one of them is a P280 —
- * the only station the old model list could decode.
- */
-export const typeIdOf = (record: Pick<DeviceRecord, 'driver'>, installed: (id: string) => boolean): string | null => {
-  if (record.driver === 'core.station') return 'aferiy.p280';
-  return installed(record.driver) ? record.driver : null;
+  /** When it was removed; its history is kept. Null while it is yours. */
+  removedAt: string | null;
 };
 
 type Row = {
   id: string;
-  /** A category, for display. Retired by the catalog migration (step 4), which gives every record a type id. */
-  type: string;
-  model: string | null;
-  driver: string;
+  type_id: string | null;
+  identity: string | null;
   name: string;
   config: string;
   added_at: string;
+  removed_at: string | null;
 };
 
 const toRecord = (row: Row): DeviceRecord => ({
   // The database row is a boundary: this is where a string becomes an identity.
   id: savedDeviceId(row.id),
-  type: row.type,
-  model: row.model,
-  driver: row.driver,
+  typeId: row.type_id ?? '',
+  identity: row.identity,
   name: row.name,
   config: JSON.parse(row.config) as Record<string, unknown>,
   addedAt: row.added_at,
+  removedAt: row.removed_at,
 });
 
 export class DeviceCatalog {
+  /** The devices you have: not removed. */
   list(): DeviceRecord[] {
-    return db()
-      .query<Row, []>('SELECT * FROM device ORDER BY added_at')
-      .all()
-      .map(toRecord);
+    return db().query<Row, []>('SELECT * FROM device WHERE removed_at IS NULL ORDER BY added_at').all().map(toRecord);
   }
 
+  /** Devices removed and kept, newest first: what can be brought back. */
+  removed(): DeviceRecord[] {
+    return db().query<Row, []>('SELECT * FROM device WHERE removed_at IS NOT NULL ORDER BY removed_at DESC').all().map(toRecord);
+  }
+
+  /** Any device, removed or not. Callers that mean "one you have" check `removedAt`. */
   get(id: SavedDeviceId): DeviceRecord | null {
     const row = db().query<Row, [string]>('SELECT * FROM device WHERE id = ?').get(id);
     return row ? toRecord(row) : null;
   }
 
-  find(predicate: (record: DeviceRecord) => boolean): DeviceRecord | null {
-    return this.list().find(predicate) ?? null;
+  /** A device you have, or null — including when it has been removed. */
+  active(id: SavedDeviceId): DeviceRecord | null {
+    const record = this.get(id);
+    return record && !record.removedAt ? record : null;
   }
 
-  add(input: {
-    type: string;
-    model?: string | null;
-    driver: string;
-    name: string;
-    config?: Record<string, unknown>;
-  }): DeviceRecord {
+  /** Who has this identity: the device you have with it, and removed ones that had it. */
+  byIdentity(identity: string): { active: DeviceRecord | null; removed: DeviceRecord[] } {
+    const rows = db().query<Row, [string]>('SELECT * FROM device WHERE identity = ? ORDER BY removed_at DESC').all(identity).map(toRecord);
+    return { active: rows.find((record) => !record.removedAt) ?? null, removed: rows.filter((record) => record.removedAt) };
+  }
+
+  add(input: { typeId: string; name: string; identity?: string | null; config?: Record<string, unknown> }): DeviceRecord {
     const record: DeviceRecord = {
       /*
         Opaque: an id that says what the device is invites code that reads it,
         and what it says can stop being true. Ids already saved keep their old
-        form — history is keyed by them (docs/ARCHITECTURE.md §4.5).
+        form — history is keyed by them (docs/DATA-MODEL.md §3).
       */
       id: savedDeviceId(`d-${randomUUID().replaceAll('-', '').slice(0, 12)}`),
-      type: input.type,
-      model: input.model ?? null,
-      driver: input.driver,
+      typeId: input.typeId,
+      identity: input.identity ?? null,
       name: input.name,
       config: input.config ?? {},
       addedAt: new Date().toISOString(),
+      removedAt: null,
     };
-
     db()
-      .query('INSERT INTO device (id, type, model, driver, name, config, added_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(
-        record.id,
-        record.type,
-        record.model,
-        record.driver,
-        record.name,
-        JSON.stringify(record.config),
-        record.addedAt
-      );
-
+      .query('INSERT INTO device (id, type_id, identity, name, config, added_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(record.id, record.typeId, record.identity, record.name, JSON.stringify(record.config), record.addedAt);
     return record;
   }
 
-  update(id: SavedDeviceId, changes: Partial<Pick<DeviceRecord, 'name' | 'model' | 'config'>>): DeviceRecord | null {
+  update(id: SavedDeviceId, changes: { name?: string; config?: Record<string, unknown>; identity?: string | null }): DeviceRecord | null {
     const existing = this.get(id);
     if (!existing) return null;
-
     const next: DeviceRecord = {
       ...existing,
       name: changes.name?.trim() || existing.name,
-      model: changes.model === undefined ? existing.model : changes.model,
-      config: changes.config ? { ...existing.config, ...changes.config } : existing.config,
+      config: changes.config ?? existing.config,
+      identity: changes.identity === undefined ? existing.identity : changes.identity,
     };
-
     db()
-      .query('UPDATE device SET name = ?, model = ?, config = ? WHERE id = ?')
-      .run(next.name, next.model, JSON.stringify(next.config), id);
-
+      .query('UPDATE device SET name = ?, config = ?, identity = ? WHERE id = ?')
+      .run(next.name, JSON.stringify(next.config), next.identity, id);
     return next;
   }
 
   /**
-   * Forgets a device.
+   * Removes a device, keeping its history.
    *
-   * Its samples go too. Keeping orphaned history would mean charts for a thing
-   * the user has said they no longer own, and a slow leak of rows nobody can
-   * see or delete.
+   * Its connections go — with their secrets, which frees the addresses for
+   * something else — and so do its links, which are facts about a house it is
+   * no longer part of. Its samples, its store and its identity stay, so adding
+   * the same device again can bring it all back.
    */
-  remove(id: SavedDeviceId): void {
+  remove(id: SavedDeviceId): DeviceRecord | null {
+    const record = this.active(id);
+    if (!record) return null;
+    const removedAt = new Date().toISOString();
     db().transaction(() => {
-      db().query('DELETE FROM device WHERE id = ?').run(id);
-      db().query('DELETE FROM sample WHERE device_id = ?').run(id);
+      db().query('DELETE FROM device_connection WHERE device_id = ?').run(id);
+      db().query('DELETE FROM device_link WHERE source_id = ? OR target_id = ?').run(id, id);
+      db().query('UPDATE device SET removed_at = ? WHERE id = ?').run(removedAt, id);
     })();
+    return { ...record, removedAt };
+  }
+
+  /** Brings a removed device back, with its history. It needs a connection again. */
+  restore(id: SavedDeviceId): DeviceRecord | null {
+    const record = this.get(id);
+    if (!record?.removedAt) return null;
+    if (record.identity && this.byIdentity(record.identity).active) {
+      throw new Error('You already have that device');
+    }
+    db().query('UPDATE device SET removed_at = NULL WHERE id = ?').run(id);
+    return { ...record, removedAt: null };
+  }
+
+  /** Everything a device's session keeps between runs, by key. */
+  storeOf(id: SavedDeviceId): Record<string, unknown> {
+    const rows = db().query<{ key: string; value: string }, [string]>('SELECT key, value FROM device_kv WHERE device_id = ? ORDER BY key').all(id);
+    return Object.fromEntries(rows.map((row) => [row.key, JSON.parse(row.value) as unknown]));
+  }
+
+  /**
+   * Deletes a removed device and everything it recorded. Irreversible, and
+   * only ever asked for explicitly: samples first, then the row, whose store,
+   * connections and links go with it.
+   */
+  deleteForever(id: SavedDeviceId): { samples: number } {
+    let samples = 0;
+    db().transaction(() => {
+      samples = db().query('DELETE FROM sample WHERE device_id = ?').run(id).changes;
+      db().query('DELETE FROM device WHERE id = ?').run(id);
+    })();
+    return { samples };
   }
 }

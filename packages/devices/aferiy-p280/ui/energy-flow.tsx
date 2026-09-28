@@ -13,7 +13,7 @@ import Svg, {
 } from 'react-native-svg';
 import { Text, useTheme, XStack, YStack } from 'tamagui';
 
-import type { StationStatus } from '@kraftverk/protocol';
+import type { StationStatus } from '../src/model/types';
 
 /**
  * Lives in the device package, not the app.

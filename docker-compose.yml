@@ -34,7 +34,7 @@ services:
     build: { context: ., target: server }
     image: ${KRAFTVERK_SERVER_IMAGE:-kraftverk-server}
     restart: unless-stopped
-    command: ["bun", "run", "server/src/broker/main.ts"]
+    command: ["bun", "run", "packages/transports/mqtt/src/broker/main.ts"]
 
     ports:
       # The port stations connect to. It must be reachable on the host's LAN
@@ -76,8 +76,9 @@ services:
       - "127.0.0.1:${KRAFTVERK_API_PORT:-3333}:3333"
 
     environment:
-      # sim | mqtt — the simulator, or real hardware over Wi-Fi through the broker.
-      # `ble` is deliberately absent: see docs/DOCKER.md.
+      # sim | mqtt — the simulator, or real hardware: stations over Wi-Fi through
+      # the broker, plus plugs on the home network and web services, which need
+      # nothing of the machine. `ble` is deliberately absent: see docs/DOCKER.md.
       STATION_DRIVER: ${STATION_DRIVER:-sim}
 
       # 1 refuses every write at the driver. The npm scripts pass --read-only

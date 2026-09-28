@@ -3,19 +3,14 @@ import { router } from 'expo-router';
 import { Card, haptic } from '@kraftverk/ui';
 import { Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import type { ConnectionStatus, SavedDeviceView } from '@kraftverk/api-client';
+import type { ConnectionStatus, DeviceView } from '@kraftverk/api-client';
 
-import type { Connection } from '../../state/DirectLinkProvider';
 import { Screen } from '../../components/Screen';
-import { useDevice, useDevices } from '../../state/DevicesProvider';
+import { useDevice, useDevices, type Connection } from '../../state/DevicesProvider';
 
 /**
- * A device's health, as the header's one dot.
- *
- * Five states collapse into four colours, and the pair that share one are the
- * pair that mean the same thing to a person looking at a header: nothing is
- * connected and nothing is wrong. The *reason* they differ is not lost — it is
- * the label beside the dot, which is always the health's own sentence.
+ * A device's health, as the header's one dot. Five states collapse into four
+ * colours, and the label beside the dot is always the health's own sentence.
  */
 const DOT: Record<ConnectionStatus, Connection> = {
   connected: 'online',
@@ -25,29 +20,11 @@ const DOT: Record<ConnectionStatus, Connection> = {
   error: 'offline',
 };
 
-/**
- * The header status for any screen that belongs to one device: that device's
- * health, not the server's. A reachable server says nothing about whether
- * *this* station has connected, and every screen under a device is a claim
- * about the device whose name is on it.
- */
-export const deviceStatus = (device: SavedDeviceView) => ({
+/** The header status for any screen about one device: that device's health, not the server's. */
+export const deviceStatus = (device: DeviceView) => ({
   connection: DOT[device.health.status],
   label: device.health.detail,
 });
-
-/**
- * The frame around one device.
- *
- * Two primary destinations and no more: **Dashboard** is what it is doing,
- * **Settings** is what it remembers and what you can change. Everything a
- * device can show — its dashboard, its settings, its register diagnostics —
- * belongs to that device, because a global tab named "Dashboard" would be a
- * claim that one device is the application.
- *
- * They are real routes rather than local state, so a device can be bookmarked,
- * pinned or opened directly, and so the back button behaves.
- */
 
 export type DeviceTab = 'dashboard' | 'settings';
 
@@ -56,22 +33,13 @@ const TABS: { value: DeviceTab; label: string }[] = [
   { value: 'settings', label: 'Settings' },
 ];
 
-/**
- * The device's own two-item navigation.
- *
- * Deliberately not the shared `SegmentedControl`: that one is a settings *row*,
- * with a title and a description above it. This is navigation, and it carries
- * no label because the screen title above it already says whose device it is.
- */
+/** The device's own two-item navigation. */
 function DeviceTabs({ tab, onChange }: { tab: DeviceTab; onChange: (next: DeviceTab) => void }) {
   /*
-    The resolved value, not the token.
-
-    `backgroundColor="$card"` inside a styled() definition compiles to the theme's
-    CSS variable and follows light and dark correctly. Written inline as a
-    conditional it does not: it resolves against a baked-in default instead, which
-    in the light theme paints a dark slate behind the near-black selected label and
-    makes it unreadable. Reading the value off the theme keeps both schemes honest.
+    The resolved value, not the token. Written inline as a conditional,
+    `backgroundColor="$card"` resolves against a baked-in default rather than
+    the theme, and in the light theme paints a dark slate behind the near-black
+    selected label.
   */
   const theme = useTheme();
 
@@ -98,11 +66,7 @@ function DeviceTabs({ tab, onChange }: { tab: DeviceTab; onChange: (next: Device
               onChange(option.value);
             }}
           >
-            <Text
-              fontSize={13}
-              fontWeight={selected ? '700' : '500'}
-              color={selected ? '$color' : '$muted'}
-            >
+            <Text fontSize={13} fontWeight={selected ? '700' : '500'} color={selected ? '$color' : '$muted'}>
               {option.label}
             </Text>
           </XStack>
@@ -112,15 +76,12 @@ function DeviceTabs({ tab, onChange }: { tab: DeviceTab; onChange: (next: Device
   );
 }
 
-export function DeviceShell({
-  id,
-  tab,
-  children,
-}: {
-  id: string | undefined;
-  tab: DeviceTab;
-  children: (device: SavedDeviceView) => ReactNode;
-}) {
+/**
+ * The frame around one device: **Dashboard** is what it is doing, **Settings**
+ * is what it remembers, how it is reached and how it fits the house. Real
+ * routes, so a device can be bookmarked and the back button behaves.
+ */
+export function DeviceShell({ id, tab, children }: { id: string | undefined; tab: DeviceTab; children: (device: DeviceView) => ReactNode }) {
   const device = useDevice(id);
   const { loading } = useDevices();
 
@@ -145,20 +106,14 @@ export function DeviceShell({
   const path = `/device/${encodeURIComponent(device.id)}`;
 
   return (
-    <Screen
-      back="Your devices"
-      title={device.record.name}
-      subtitle={device.description}
-      status={deviceStatus(device)}
-    >
-      <DeviceTabs
-        tab={tab}
-        onChange={(next) =>
-          // Replace, not push: the two tabs are one destination, and pushing
-          // would make Back walk through every tab the user glanced at.
-          router.replace(next === 'dashboard' ? path : `${path}/settings`)
-        }
-      />
+    <Screen back="Your devices" title={device.name} subtitle={device.meta.name} status={deviceStatus(device)}>
+      {device.removedAt ? null : (
+        <DeviceTabs
+          tab={tab}
+          // Replace, not push: the two tabs are one destination.
+          onChange={(next) => router.replace(next === 'dashboard' ? path : `${path}/settings`)}
+        />
+      )}
       {children(device)}
     </Screen>
   );

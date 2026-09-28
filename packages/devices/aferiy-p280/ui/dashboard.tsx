@@ -7,22 +7,16 @@ import { Card, SectionLabel } from '@kraftverk/ui';
 import { EnergyFlow } from './energy-flow';
 import { ModeRow } from '@kraftverk/ui';
 import { Row, RowSeparator, ToggleRow } from '@kraftverk/ui';
-import {
-  formatDuration,
-  formatUptime,
-  formatWatts,
-  formatWh,
-  STATE_TINT,
-} from '@kraftverk/ui';
-import type { LedMode, TransportKind } from '@kraftverk/api-client';
-import type { StationScreenProps } from './contract';
+import { formatDuration, formatUptime, formatWatts, formatWh } from '@kraftverk/ui';
+import type { LedMode } from '../src/model/types';
+import type { DeviceScreenProps, StationView } from './contract';
+import { STATE_TINT } from './format';
+import { useStation } from './station';
 
-/** How each link describes itself. The app can hold two of these four itself. */
-const TRANSPORT_LABELS: Partial<Record<TransportKind, string>> = {
-  mqtt: 'Local MQTT over WiFi',
-  ble: 'Bluetooth LE, via the server',
-  'direct-web-ble': 'Bluetooth LE, straight from this browser',
-  'direct-native-ble': 'Bluetooth LE, straight from this device',
+/** How a link describes itself when nothing better is known. */
+const TRANSPORT_LABELS: Record<string, string> = {
+  mqtt: 'Local MQTT over Wi-Fi',
+  ble: 'Bluetooth LE',
 };
 
 /** All four values confirmed against a real P280: 0 off, 1 on, 2 SOS, 3 flash. */
@@ -49,24 +43,23 @@ const LED_LABELS: Record<LedMode, string> = {
  * firmware versions read from registers nobody documented. It belongs to the
  * device, not to the app.
  */
-export function StationDashboard({
+function DashboardView({
   status,
   settings,
   pending,
   version,
-  apiBaseUrl,
+  waitingFor,
   direct,
   resuming,
   linkLabel,
+  writeError,
   togglePort,
   updateSettings,
-}: StationScreenProps) {
+}: StationView) {
   const theme = useTheme();
 
   if (!status) {
-    // On a direct link there is nothing to wait for until a station is picked,
-    // so say what to do rather than spinning at a server that isn't involved —
-    // unless we are busy reconnecting to the one from last time.
+    // Whoever holds the connection has not answered yet: say what is awaited.
     return (
       <Card alignItems="center" paddingVertical="$8" gap="$4">
         {direct && !resuming ? (
@@ -75,11 +68,7 @@ export function StationDashboard({
           <Spinner size="large" color="$accent" />
         )}
         <Text color="$muted" fontSize={13} textAlign="center" lineHeight={19}>
-          {!direct
-            ? `Connecting to ${apiBaseUrl}`
-            : resuming
-              ? 'Reconnecting to your station…'
-              : 'No station connected.\nOpen Devices to connect over Bluetooth.'}
+          {waitingFor}
         </Text>
       </Card>
     );
@@ -107,6 +96,14 @@ export function StationDashboard({
 
   return (
     <>
+      {writeError ? (
+        <Card borderColor="$danger">
+          <Text fontSize={13} color="$danger">
+            {writeError}
+          </Text>
+        </Card>
+      ) : null}
+
       {waitingForDevice || !hasReading ? (
         <Card borderColor="$warning" gap="$2">
           <XStack alignItems="center" gap="$2">
@@ -341,4 +338,9 @@ function Value({ children }: { children: ReactNode }) {
       {children}
     </Text>
   );
+}
+
+/** The dashboard, for whichever holder has the station: see `useStation`. */
+export function StationDashboard(props: DeviceScreenProps) {
+  return <DashboardView {...useStation(props)} />;
 }

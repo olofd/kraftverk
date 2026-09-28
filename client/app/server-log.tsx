@@ -12,9 +12,9 @@ import { useAuth } from '../src/state/AuthProvider';
  * What the server has said lately.
  *
  * In a container nobody watches the console, so this is where to look first
- * when something is wrong: the same lines, newest first. The station's own
- * story — connections, disconnects and why — is the broker's journal, on the
- * station's Protocol screen.
+ * when something is wrong: the same lines, newest first. A device's own
+ * story — connections, disconnects and why — is the broker's journal, a
+ * diagnostic on the Connectivity screen.
  */
 
 const LEVELS = [
@@ -104,7 +104,7 @@ export default function ServerLogScreen() {
           {dir
             ? `Every day's log, for the last two weeks, is on the server in ${dir}.`
             : 'This server keeps no log files.'}{' '}
-          The station's connections and disconnects are in the broker journal, on the station's Protocol screen.
+          When devices connected and disconnected, and why, is in the broker's journal, under App settings → Connectivity.
         </Text>
       </YStack>
     </Screen>

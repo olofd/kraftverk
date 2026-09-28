@@ -4,6 +4,16 @@ The broker is what a power station connects to over Wi-Fi instead of the vendor
 cloud. It runs as **its own process**, separate from the kraftverk server, and
 it outlives the server on purpose.
 
+In the architecture it is the `mqtt` **transport**: it moves messages and knows
+who is connected, and nothing about what they mean. What a station's topics and
+frames mean — and which commands must be refused, such as a write of 0 to
+register 68 — belongs to the Sydpower **protocol**, which supplies them to the
+broker (ARCHITECTURE.md §4.7). The broker lives in
+`packages/transports/mqtt/src/broker/` and loads every installed protocol's
+policy from `packages/protocols` at start — it refuses to start if one fails
+to load, rather than run without a guard. A device's presence and messages are
+filed under its protocol; nothing below changes for the station.
+
 ## Why it is a separate process
 
 A P280 that loses its broker does not reliably come back. On 2026-09-26 it
@@ -67,7 +77,7 @@ same image, and the server is told not to start one (`BROKER_SPAWN=0`).
 ```bash
 npm run broker:status     # is it running, which build, which stations, why the last one left
 npm run broker:logs       # follow the journal (Ctrl+C to stop following)
-npm run broker -- logs --debug --station=AC276E629BEA -n 200   # every frame, one station
+npm run broker -- logs --debug --station=AABBCC001122 -n 200   # every frame, one station
 npm run broker:start      # start it if it is not running
 npm run broker:stop       # stop it — this drops every station on it
 npm run broker:restart    # load new broker code — also drops the station
@@ -82,7 +92,7 @@ when a server is connected. To keep it stopped, stop the server first.
 
 The server fingerprints the broker's source files and compares that with what
 the running broker reports. If you have edited broker code since it started,
-the server says so — on startup, and on the Protocol screen — and **leaves it
+the server says so — on startup, and on the station's Registers screen — and **leaves it
 running**. Replacing it would drop the station, which is the decision this whole
 design exists to keep in your hands. Run `npm run broker:restart` when that is
 acceptable, and watch `npm run broker:logs` to see the station come back.

@@ -1,7 +1,7 @@
 # Security model
 
 kraftverk controls hardware: it writes to a power station's registers — one
-wrong value destroys it — and it can switch mains power through a grid relay.
+wrong value destroys it — and it can switch mains power through a smart plug.
 This document is what stands between that and anyone who should not have it,
 and it is written so each layer can be checked rather than taken on trust.
 
@@ -122,11 +122,13 @@ went along: any other web app on the NAS with a script-injection hole could
 have used this server as you. `ALLOWED_ORIGINS=*` is refused: with sign-in it
 would hand every website your session.
 
-**Secrets from setup helpers.** A plugin's setup step that finds a secret —
-fetching a Tuya local key — gives the app a short-lived placeholder, not the
-value. Saving the form turns the placeholder back into the secret on the
-server. No secret is ever sent to a browser, including the one it just asked
-for.
+**Secrets from setup steps.** A setup step that finds a secret — fetching a
+Tuya local key — gives the app a short-lived placeholder, not the value.
+Saving turns the placeholder back into the secret on the server, where it is
+stored encrypted with the connection it belongs to. No secret is ever sent to a
+browser, including the one it just asked for. The one exception is by design: a
+connection held by the app itself keeps its secrets in that app's own secure
+storage, and they never reach the server (DATA-MODEL.md §3).
 
 **Clickjacking, caching, sniffing.** API responses are `Cache-Control:
 no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and
@@ -143,21 +145,24 @@ nor send anything elsewhere. The internet entrance adds
 Unchanged by any of this, and applied to every caller:
 
 - **Register 68 is never set outside its permitted values** — 0 bricks the
-  station permanently. Enforced in the protocol package for writes this code
-  builds, and by `commandRefusal` for frames it merely carries: in the MQTT
-  broker for every command (including the server's), and on the raw-MODBUS
-  diagnostics route, which is itself off unless `ALLOW_RAW_MODBUS=1`.
+  station permanently. Enforced in the Sydpower protocol code for writes this
+  code builds, and by `commandRefusal` for frames it merely carries: in the MQTT
+  broker for every command (including the server's), and in the station's
+  link for every frame it sends, whoever holds the connection — the server or
+  the app. The station's raw-frame tool is off unless the holder was started
+  with `ALLOW_RAW_MODBUS=1`, and an app never is.
   `commandRefusal` fails closed: it passes only reads, and writes it can read
   to the end — a function code it does not know, a write cut short, or a
   multi-register write whose count, byte count and data disagree is refused.
-  A read-only server sends only reads on the raw route, and every frame the
-  route refuses is recorded in the audit timeline.
+  A read-only holder sends only raw frames that are reads, and every write
+  the tool refuses is recorded in the audit timeline.
 - Only the server may publish commands on the broker; see
   [BROKER.md](BROKER.md#who-may-do-what).
 - Physical actions go through the action gateway, which records *who* — the
-  account — in the audit timeline. So do the station's own ports and
-  settings, linking and unlinking it, raw frames, and every extension's
-  configuration and grants.
+  account, or the automation — in the audit timeline. So do the station's own
+  ports and settings, adding, removing and linking devices, raw frames, and
+  every change to a device's setup. Where the app holds a connection itself,
+  the same rules run there and the audit entry is sent to the server.
 
 ## Recovering access
 
@@ -200,10 +205,12 @@ Stated plainly, so nobody assumes otherwise:
   may *publish* is restricted, but anything on the LAN can connect under the
   station's client id, push the real station off, and report whatever it
   likes in its place. Plain MQTT, unencrypted. Keep port 1883 off the internet.
-- **Plugins are trusted code, not sandboxed.** They run in the server's own
-  process, with everything that process can do: the network, the disk, other
-  plugins' memory. A manifest's `allowedHosts` limits `context.http` only —
-  a plugin that calls `fetch` itself, as the Tuya plugin does for its cloud,
-  is not held to it. Every plugin today is part of this repository. One from
-  anyone else would need a process of its own first.
+- **Device types, protocols and transports are trusted code, not
+  sandboxed.** They run in the server's own process (and device types and
+  protocols in the app too), with everything that process can do: the network,
+  the disk, each other's memory. A scoped HTTP client limits what a device
+  type asks of it, not what it could do by calling `fetch` itself — as the
+  Tuya plugin does today for its cloud. Every one is part of this repository
+  (ARCHITECTURE.md §5). One from anyone else would need a process of its own
+  first.
 - **Anyone with a shell on the server** owns it, and everything on it.

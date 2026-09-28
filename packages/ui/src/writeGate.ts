@@ -29,7 +29,7 @@
  * to confirm, during which the very reading being waited for could not show.
  *
  * Deliberately free of React, so it is tested on its own and used by every
- * provider the same way.
+ * screen the same way.
  */
 
 export type WriteSnapshot<Key extends string> = {

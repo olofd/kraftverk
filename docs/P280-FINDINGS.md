@@ -47,8 +47,8 @@ running the kraftverk server. No DNS redirect was involved.
 | --- | --- |
 | The P280 honours BrightEMS's local-broker setting — it is not on ha-fossibot's tested list, which names the P210 and P310 | ✅ |
 | Plain MQTT on TCP 1883; the station dials out to the configured address from its own Wi-Fi IP | ✅ |
-| The id in its topics is its **Bluetooth** MAC, `AC276E629BEA` — the same id it has over BLE | ✅ |
-| Its Wi-Fi interface has its own MAC, `AC:27:6E:62:9B:E8`: two below the Bluetooth one, the ESP32 pattern | ✅ |
+| The id in its topics is its **Bluetooth** MAC, `AABBCC001122` — the same id it has over BLE | ✅ |
+| Its Wi-Fi interface has its own MAC, `AA:BB:CC:00:11:20`: two below the Bluetooth one, the ESP32 pattern | ✅ |
 | On connecting it publishes `"1"` (`0x31`) to `<id>/device/response/state` | ✅ |
 | It pushes all 80 input registers (`0x04`) on `<id>/device/response/client/04` **unprompted** — two blocks within a second of first connecting, before anything had asked | ✅ |
 | It answers holding reads (`0x03`) and write acknowledgements on `<id>/device/response/client/data` | ✅ |
@@ -611,7 +611,7 @@ read-only.
 
 ## Method
 
-The Protocol screen drives this — it lives under a device's **Settings →
+The Registers screen drives this — it lives under a device's **Settings →
 Advanced**, not as a global tab:
 
 1. **Snapshot baseline** — captures all 160 registers

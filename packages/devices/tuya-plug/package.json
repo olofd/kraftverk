@@ -1,0 +1,27 @@
+{
+  "name": "@kraftverk/device-tuya-plug",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Tuya energy sockets as smart plugs: a relay and a meter, reached over the home network with the Tuya local protocol and no cloud. The generic socket, and the builder other socket types use.",
+  "type": "module",
+  "main": "src/index.ts",
+  "kraftverk": {
+    "deviceType": "./src/type.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./type": "./src/type.ts"
+  },
+  "scripts": {
+    "test": "node ../../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kraftverk/device-sdk": "*",
+    "@kraftverk/protocol-tuya-local": "*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}

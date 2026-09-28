@@ -77,8 +77,12 @@ export class Sampler {
       'INSERT OR REPLACE INTO sample (device_id, key, at, value) VALUES (?, ?, ?, ?)'
     );
 
+    // A device deleted since it was read has no history to add to: skipped, not a failed tick.
+    const exists = db().query('SELECT 1 FROM device WHERE id = ?');
+
     const write = db().transaction(() => {
       for (const device of devices) {
+        if (!exists.get(device.id)) continue;
         for (const reading of device.readings) {
           if (reading.value === null || reading.value === undefined) continue;
           if (!fresh(reading.at)) continue;

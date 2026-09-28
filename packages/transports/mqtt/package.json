@@ -1,0 +1,33 @@
+{
+  "name": "@kraftverk/transport-mqtt",
+  "version": "0.2.0",
+  "private": true,
+  "description": "MQTT through kraftverk's own broker: the broker devices connect to instead of their vendor's cloud (its own process, so the server can restart without dropping them), and the server's privileged connection to it. Knows no protocol: each installed protocol supplies its topics and the commands the broker must refuse.",
+  "type": "module",
+  "main": "src/index.ts",
+  "kraftverk": {
+    "transport": {
+      "definition": "./src/index.ts",
+      "server": "./src/server.ts"
+    }
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./server": "./src/server.ts"
+  },
+  "scripts": {
+    "broker": "node ../../../scripts/run-bun.mjs src/broker/cli.ts",
+    "test": "node ../../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kraftverk/device-sdk": "*",
+    "aedes": "^1.1.1",
+    "hono": "^4.13.1",
+    "mqtt-packet": "^9.0.2"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}

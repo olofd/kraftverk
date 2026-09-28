@@ -5,8 +5,8 @@
   "type": "module",
   "module": "src/index.ts",
   "scripts": {
-    "//dev": "device starts both radios; ble and wifi narrow it to one. Without :write the driver refuses every write.",
-    "//watch": "--watch, not --hot. --hot re-runs the code inside the same process and nothing closes the previous run's sockets, radio or timers. --watch restarts the process, so the OS releases all of it. The MQTT broker is not in this process at all: it runs detached (src/broker) and survives every restart, so the station stays connected.",
+    "//dev": "device starts both radios; ble and wifi narrow it to one, and every hardware server also has the home network and HTTPS. Without :write every write is refused.",
+    "//watch": "--watch, not --hot. --hot re-runs the code inside the same process and nothing closes the previous run's sockets, radio or timers. --watch restarts the process, so the OS releases all of it. The MQTT broker is not in this process at all: it runs detached (packages/transports/mqtt) and survives every restart, so the station stays connected.",
     "dev": "node ../scripts/run-bun.mjs --watch src/index.ts",
     "dev:device": "node ../scripts/run-bun.mjs --watch src/index.ts --driver=device --read-only",
     "dev:device:write": "node ../scripts/run-bun.mjs --watch src/index.ts --driver=device",
@@ -17,28 +17,15 @@
     "//start": "Not a dev server: no --watch, so the process does not restart under you. Both radios, and writes are ALLOWED.",
     "start:prod": "node ../scripts/run-bun.mjs src/index.ts --driver=device",
     "start": "node ../scripts/run-bun.mjs src/index.ts",
-    "broker": "node ../scripts/run-bun.mjs src/broker/cli.ts",
+    "broker": "node ../scripts/run-bun.mjs ../packages/transports/mqtt/src/broker/cli.ts",
     "users": "node ../scripts/run-bun.mjs src/auth/cli.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@kraftverk/device-aferiy-p280": "*",
     "@kraftverk/device-sdk": "*",
-    "@kraftverk/protocol": "*",
-    "aedes": "^1.1.1",
+    "@kraftverk/gateway": "*",
     "hono": "^4.13.1",
-    "mqtt-packet": "^9.0.2",
     "zod": "^4.4.3"
-  },
-  "//optional": [
-    "noble is only reached by --driver=ble, and it is imported lazily, so the",
-    "simulator and the MQTT transport never load it. Declaring it optional lets",
-    "a container install with --omit=optional and skip four native builds",
-    "(node-gyp, usb, bluetooth-hci-socket, serialport) for a radio it cannot",
-    "have anyway. A normal `npm install` still installs it."
-  ],
-  "optionalDependencies": {
-    "@stoprocent/noble": "^2.7.1"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

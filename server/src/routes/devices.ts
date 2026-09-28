@@ -1,247 +1,126 @@
-import { Hono, type Context } from 'hono';
+import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
 import {
+  CATEGORIES,
   describeDeviceType,
-  savedDeviceId,
   secretFields,
   validateConfig,
+  type Availability,
   type DeviceTypeView,
-  type SavedDeviceId,
 } from '@kraftverk/device-sdk';
 
 import { actorOf } from '../auth/routes.ts';
-import type { DeviceRecord } from '../devices/catalog.ts';
-import { pairedStation, pairStation } from '../devices/relay-pairing.ts';
-import { stationOf } from '../devices/station-bridge.ts';
-import type { StationDriver } from '../drivers/types.ts';
 import { series } from '../history/sampler.ts';
-import { StationSettingsPatchSchema } from '../types.ts';
-import { auditDevice, body, type AppDeps } from './shared.ts';
+import { auditDevice, body, deviceOr404, type AppDeps } from './shared.ts';
 
-/**
- * A v1 extension, listed beside the device types while plugins still provide
- * devices (until step 5). It is set up under Extensions, not by a guide.
- */
-export type ExtensionTypeView = DeviceTypeView & { extension: true };
+/** A connection method as the add screen needs it: and whether this server can hold it. */
+export type MethodAvailability = { server: Availability };
+
+export type DeviceTypeListing = DeviceTypeView & {
+  /** Per method id: whether this server can hold such a connection, and if not, why. */
+  availability: Record<string, MethodAvailability>;
+  /** Found while checking the type, not serious enough to refuse it. */
+  warnings: readonly string[];
+};
 
 /**
  * The devices you own, whatever they are. Described identically, so the app has
  * one card, one detail screen and one chart for all of them.
  */
-export function deviceRoutes({ config, catalog, types, sessions, host, registry, gateway, legacyStation }: AppDeps): Hono {
+export function deviceRoutes({ config, catalog, types, protocols, transports, sessions, registry, gateway }: AppDeps): Hono {
   const api = new Hono();
 
-  /** Extensions that provide a device, as types the add screen can list. */
-  const extensionTypes = (): ExtensionTypeView[] =>
-    host.all
-      .filter((instance) => instance.manifest.kind === 'grid-relay')
-      .map(({ manifest }) => ({
-        id: manifest.id,
-        kind: 'hardware',
-        meta: { name: manifest.name, description: manifest.description, category: 'smart-plug', support: 'community', icon: manifest.ui.icon },
-        protocols: [],
-        capabilities: ['switch', 'powerMeter'],
-        telemetry: [],
-        controls: [],
-        settings: null,
-        config: { fields: {} },
-        setup: [],
-        extension: true,
-      }));
-
   /**
-   * What can be added: every installed device type, found rather than listed.
-   * A package added to `packages/devices` appears here with no other change.
+   * Whether this server can hold a connection over a method. With the
+   * simulator every method can be tried; otherwise its protocol must be
+   * installed, and its transport enabled here and running.
    */
-  api.get('/device-types', (c) =>
-    c.json({
-      types: [...types.all().map(describeDeviceType), ...extensionTypes()],
-      /** Packages that were found and refused, and why: for whoever is writing one. */
-      refused: types.refused,
-    })
-  );
-
-  /*
-    Pair the relay with the first device you own that reports an AC input, and
-    record the id. This is the one moment the answer is unambiguous, so it is
-    the moment to write it down — rather than re-deriving "the only station" at
-    every switch, which would quietly become the wrong one the day a second is
-    added.
-
-    Both ways a station arrives go through here. An imported one used to be
-    left unpaired, and every switch of the relay was then refused.
-  */
-  const pairFirstStation = (c: Context, record: DeviceRecord) => {
-    if (!sessions.typeOf(record)?.capabilities.includes('acInput') || pairedStation()) return;
-    pairStation(record.id);
-    auditDevice(c, 'relay.paired', record.id, `The grid relay is assumed to feed "${record.name}"`);
+  const serverHolds = (protocolId: string, transportId: string): Availability => {
+    const protocol = protocols.get(protocolId);
+    if (!protocol?.bindings[transportId]) return { ok: false, reason: 'This server cannot reach devices this way: it needs updating' };
+    if (config.simulate) return { ok: true };
+    return transports.available(transportId);
   };
 
-  api.get('/devices', async (c) => c.json({ devices: await registry.all() }));
-
-  // --- the legacy station import ------------------------------------------
-
-  api.get('/migration/station', async (c) => c.json(await legacyStation.offer()));
-
-  api.post('/migration/station/import', async (c) => {
-    const { name } = await body(c, z.object({ name: z.string().min(1).max(60).optional() }));
-    const record = await legacyStation.accept(name, actorOf(c));
-    if (!record) throw new HTTPException(409, { message: 'There is no station to import' });
-    // The imported station is paired and gets its session straight away, as an added one does.
-    pairFirstStation(c, record);
-    await sessions.sync(catalog.list());
-    return c.json(await registry.find(record.id));
+  /**
+   * What can be added: every installed device type, found rather than listed,
+   * with the categories they are listed under. A package added to
+   * `packages/devices` appears here with no other change.
+   */
+  api.get('/device-types', (c) => {
+    const listing: DeviceTypeListing[] = types.all().map((type) => ({
+      ...describeDeviceType(type),
+      availability: Object.fromEntries(type.connections.map((method) => [method.id, { server: serverHolds(method.protocol, method.transport) }])),
+      warnings: types.warnings(type.id),
+    }));
+    return c.json({
+      categories: CATEGORIES,
+      types: listing,
+      transports: transports.definitions(),
+      /** Packages that were found and refused, and why: for whoever is writing one. */
+      refused: { types: types.refused, protocols: protocols.refused, transports: transports.refused },
+    });
   });
 
-  api.post('/migration/station/dismiss', (c) => {
-    legacyStation.dismiss();
-    return c.json({ ok: true });
-  });
+  api.get('/devices', (c) => c.json({ devices: registry.all() }));
 
-  // --- adding, renaming, forgetting ---------------------------------------
+  /** Removed devices, kept with their history: to bring back by adding again, or to delete. */
+  api.get('/devices/removed', (c) => c.json({ devices: registry.removed() }));
 
-  api.post('/devices', async (c) => {
-    const input = await body(
-      c,
-      z
-        .object({
-          typeId: z.string().min(1).max(80),
-          name: z.string().trim().min(1).max(60),
-          config: z.record(z.string(), z.unknown()).optional(),
-        })
-        .strict()
-    );
-
-    const type = types.get(input.typeId);
-    const extension = type ? null : host.instance(input.typeId);
-    let added;
-
-    if (type) {
-      /*
-        Validated against the type's own config schema. Secrets are refused
-        here for now: they need a home per device, which the catalog
-        migration gives them (step 4) — until then a secret sent here would
-        have nowhere safe to go.
-      */
-      const secrets = secretFields(type.config);
-      const given = input.config ?? {};
-      if (secrets.some((field) => given[field] !== undefined)) {
-        throw new HTTPException(400, { message: 'Secrets cannot be set here yet' });
-      }
-      const validated = validateConfig(type.config, given);
-      if (!validated.ok) throw new HTTPException(400, { message: validated.issues.map((issue) => issue.message).join('; ') });
-
-      added = catalog.add({ type: type.meta.category, driver: type.id, name: input.name, config: validated.value });
-    } else if (extension?.manifest.kind === 'grid-relay') {
-      // A v1 extension's device: its configuration lives with the extension.
-      if (input.config && Object.keys(input.config).length) {
-        throw new HTTPException(400, { message: 'That device is configured under Extensions' });
-      }
-      added = catalog.add({ type: 'smart-plug', driver: extension.manifest.id, name: input.name });
-    } else {
-      throw new HTTPException(400, { message: `Nothing installed here provides "${input.typeId}"` });
-    }
-
-    auditDevice(c, 'device.added', added.id, `Added "${added.name}" (${input.typeId})`, { typeId: input.typeId });
-
-    pairFirstStation(c, added);
-
-    // Adding a device opens its session, rather than waiting for a restart.
-    await sessions.sync(catalog.list());
-    return c.json(await registry.find(added.id));
-  });
-
-  api.get('/devices/:id', async (c) => {
-    const found = await registry.find(savedDeviceId(c.req.param('id')));
+  api.get('/devices/:id', (c) => {
+    const found = registry.find(deviceOr404(catalog, c.req.param('id'), { removed: true }).id);
     if (!found) throw new HTTPException(404, { message: 'No such device' });
     return c.json(found);
   });
 
   api.patch('/devices/:id', async (c) => {
-    const id = savedDeviceId(c.req.param('id'));
+    const before = deviceOr404(catalog, c.req.param('id'));
     /*
       A name, and nothing else. What a device *is* is its type, which does not
-      change; how it is reached is its config, which goes through its own route
-      and its own checks — binding a station through here once skipped the
-      check that no other device already holds it.
+      change; how it is reached is its connections, which have routes of their
+      own and checks of their own.
     */
     const changes = await body(c, z.object({ name: z.string().trim().min(1).max(60) }).strict());
-
-    const before = catalog.get(id);
-    if (!before) throw new HTTPException(404, { message: 'No such device' });
-    const updated = catalog.update(id, changes);
+    const updated = catalog.update(before.id, changes);
     if (!updated) throw new HTTPException(404, { message: 'No such device' });
-
-    if (updated.name !== before.name) auditDevice(c, 'device.renamed', id, `Renamed "${before.name}" to "${updated.name}"`);
-    return c.json(await registry.find(id));
+    if (updated.name !== before.name) auditDevice(c, 'device.renamed', before.id, `Renamed "${before.name}" to "${updated.name}"`);
+    return c.json(registry.find(before.id));
   });
 
+  /**
+   * Removes a device, keeping its history. Its connections and links go; adding
+   * the same device again offers to bring it all back.
+   */
   api.delete('/devices/:id', async (c) => {
-    const id = savedDeviceId(c.req.param('id'));
-    const record = catalog.get(id);
-    if (!record) throw new HTTPException(404, { message: 'No such device' });
-
-    // Written before the delete, so the entry survives even if the transaction
-    // does not — and so the record's own details are still there to describe.
-    auditDevice(c, 'device.forgotten', id, `Forgot "${record.name}" and everything it had recorded`, {
-      type: record.type,
-      driver: record.driver,
-      addedAt: record.addedAt,
-    });
-
-    catalog.remove(id);
-
-    // A pairing that points at a device you no longer own is worse than none.
-    if (pairedStation() === id) {
-      pairStation(null);
-      auditDevice(c, 'relay.unpaired', id, 'The station the grid relay fed was forgotten');
-    }
-
-    // Forgetting a device closes its session.
+    const record = deviceOr404(catalog, c.req.param('id'));
+    catalog.remove(record.id);
+    auditDevice(c, 'device.removed', record.id, `Removed "${record.name}". Its history is kept.`, { typeId: record.typeId, identity: record.identity });
+    // Removing a device closes its session.
     await sessions.sync(catalog.list());
     return c.json({ ok: true });
   });
 
-  // --- a station's own state, by device id --------------------------------
-  //
-  // The station dashboard needs more than readings — ports, firmware, link
-  // state — so it has routes of its own. Transitional: they reach the station
-  // through the one bridge there is (`stationOf`), and become routes the
-  // station's package provides in step 7.
+  /**
+   * Deletes a removed device and everything it recorded. Only a removed one,
+   * and only when its name is typed back: nothing else here is irreversible.
+   */
+  api.post('/devices/:id/delete-history', async (c) => {
+    const record = deviceOr404(catalog, c.req.param('id'), { removed: true });
+    if (!record.removedAt) throw new HTTPException(409, { message: 'Remove the device first' });
+    const { name } = await body(c, z.object({ name: z.string().max(60) }).strict());
+    if (name.trim() !== record.name) throw new HTTPException(400, { message: `Type "${record.name}" to confirm` });
 
-  /** A saved station's driver, or which of the two is missing. */
-  const stationDevice = (c: Context): { id: SavedDeviceId; station: StationDriver } => {
-    const id = savedDeviceId(c.req.param('id') ?? '');
-    const record = catalog.get(id);
-    if (!record) throw new HTTPException(404, { message: 'No such device' });
-    const session = sessions.get(id);
-    if (!session) throw new HTTPException(409, { message: sessions.health(record).detail });
-    if (!('station' in session)) throw new HTTPException(400, { message: 'That device is not a power station' });
-    const station = stationOf(session);
-    if (!station) throw new HTTPException(409, { message: session.health().detail });
-    return { id, station };
-  };
-
-  api.get('/devices/:id/p280/state', (c) => {
-    const { id, station } = stationDevice(c);
-    return c.json({
-      status: station.status(),
-      settings: station.settings(),
-      // Facts about *this* connection rather than about the server as a whole.
-      readOnly: config.readOnly,
-      link: sessions.get(id)?.health().transport ?? null,
+    // Written before the delete, so the entry survives whatever happens to the transaction.
+    auditDevice(c, 'device.history-deleted', record.id, `Deleted "${record.name}" and everything it had recorded`, {
+      typeId: record.typeId,
+      identity: record.identity,
+      addedAt: record.addedAt,
+      removedAt: record.removedAt,
     });
-  });
-
-  api.patch('/devices/:id/p280/settings', async (c) => {
-    const { id, station } = stationDevice(c);
-    // The register-68 guard and every other bound stand on this path.
-    const patch = await body(c, StationSettingsPatchSchema);
-    const result = await station.applySettings(patch);
-    auditDevice(c, 'device.settings', id, `Changed ${Object.keys(patch).join(', ') || 'nothing'} on the station`, patch);
-    return c.json(result);
+    const { samples } = catalog.deleteForever(record.id);
+    return c.json({ ok: true, samples });
   });
 
   // --- settings, history and controls: the same for every device ---------
@@ -252,35 +131,38 @@ export function deviceRoutes({ config, catalog, types, sessions, host, registry,
    * through the same code, and a setting that can damage the hardware is
    * marked as such by the device.
    */
-  api.get('/devices/:id/settings', async (c) => {
-    const found = await registry.find(savedDeviceId(c.req.param('id')));
-    if (!found) throw new HTTPException(404, { message: 'No such device' });
-    if (!found.settings) return c.json({ schema: null, values: {}, dangerous: [] });
-    return c.json({ schema: found.settings.schema, dangerous: found.settings.dangerous ?? [], values: registry.readSettings(found.record) });
+  api.get('/devices/:id/settings', (c) => {
+    const record = deviceOr404(catalog, c.req.param('id'));
+    const settings = sessions.typeOf(record)?.settings;
+    if (!settings) return c.json({ schema: null, values: {}, dangerous: [] });
+    return c.json({ schema: settings.schema, dangerous: settings.dangerous ?? [], values: registry.readSettings(record) });
   });
 
   api.patch('/devices/:id/settings', async (c) => {
-    const id = savedDeviceId(c.req.param('id'));
-    const found = await registry.find(id);
-    if (!found?.settings) throw new HTTPException(404, { message: 'That device has no settings' });
+    const record = deviceOr404(catalog, c.req.param('id'));
+    const settings = sessions.typeOf(record)?.settings;
+    if (!settings) throw new HTTPException(404, { message: 'That device has no settings' });
+    if (config.readOnly) throw new HTTPException(423, { message: 'The server is in read-only mode' });
 
     const patch = await body(c, z.record(z.string(), z.unknown()));
-    const validated = validateConfig(found.settings.schema, { ...registry.readSettings(found.record), ...patch });
+    const unknown = Object.keys(patch).filter((key) => !(key in settings.schema.fields));
+    if (unknown.length) throw new HTTPException(400, { message: `No such setting: ${unknown.join(', ')}` });
+    const validated = validateConfig(settings.schema, { ...registry.readSettings(record), ...patch });
     if (!validated.ok) return c.json({ error: 'Validation failed', issues: validated.issues }, 400);
 
     // Only what was asked for is sent: applying the full set would rewrite
     // every register on a station to change one of them.
     const changed = Object.fromEntries(Object.keys(patch).map((key) => [key, validated.value[key]]));
-    const values = await registry.writeSettings(found.record, changed).catch((error: unknown) => {
+    const values = await registry.writeSettings(record, changed).catch((error: unknown) => {
       throw new HTTPException(409, { message: (error as Error).message });
     });
     // Secret fields are never written to the timeline, only that they changed.
-    const secret = new Set(secretFields(found.settings.schema));
+    const secret = new Set(secretFields(settings.schema));
     auditDevice(
       c,
       'device.settings',
-      id,
-      `Changed ${Object.keys(changed).join(', ')} on "${found.record.name}"`,
+      record.id,
+      `Changed ${Object.keys(changed).join(', ')} on "${record.name}"`,
       Object.fromEntries(Object.entries(changed).map(([key, value]) => [key, secret.has(key) ? '(secret)' : value]))
     );
     return c.json({ values });
@@ -288,14 +170,11 @@ export function deviceRoutes({ config, catalog, types, sessions, host, registry,
 
   /**
    * One measurement over time, thinned server-side: a fortnight of minute
-   * samples is far more points than a phone-sized chart can show.
+   * samples is far more points than a phone-sized chart can show. A removed
+   * device's history is still there to look at.
    */
   api.get('/devices/:id/history', (c) => {
-    const id = savedDeviceId(c.req.param('id'));
-    // An unknown device answered 200 with an empty series, which is
-    // indistinguishable from one that has not recorded anything yet.
-    if (!catalog.get(id)) throw new HTTPException(404, { message: 'No such device' });
-
+    const record = deviceOr404(catalog, c.req.param('id'), { removed: true });
     const { key, hours, points } = z
       .object({
         key: z.string().min(1).max(64),
@@ -306,73 +185,86 @@ export function deviceRoutes({ config, catalog, types, sessions, host, registry,
 
     const to = new Date();
     const from = new Date(to.getTime() - hours * 3_600_000);
-    return c.json({ deviceId: id, key, from: from.toISOString(), to: to.toISOString(), points: series(id, key, from.toISOString(), to.toISOString(), points) });
+    return c.json({ deviceId: record.id, key, from: from.toISOString(), to: to.toISOString(), points: series(record.id, key, from.toISOString(), to.toISOString(), points) });
   });
 
   /**
-   * Invokes a device control: a capability command, on this device.
+   * A capability command, on this device: every one goes through here, and
+   * so through the action gateway. A control on a screen is only a view of
+   * one of these, with exactly the authority a manual switch has.
    *
-   * A control on a device screen has exactly the authority a manual switch
-   * does, and no more. Switching a relay goes through the action gateway; the
-   * rest of the gateway's reach — every command, one path — is step 6.
+   * A refusal is an answer, not an error: 409 with the gateway's verdict, which
+   * says `needsConfirmation` when a person only has to confirm it.
    */
-  api.post('/devices/:id/control/:control', async (c) => {
-    const deviceId = savedDeviceId(c.req.param('id'));
-    const controlId = c.req.param('control');
-    const found = await registry.find(deviceId);
-    if (!found) throw new HTTPException(404, { message: 'No such device' });
+  api.post('/devices/:id/capabilities/:capability/:command', async (c) => {
+    const record = deviceOr404(catalog, c.req.param('id'));
+    const capability = c.req.param('capability');
+    const type = sessions.typeOf(record);
+    if (!type?.capabilities.includes(capability as never)) {
+      throw new HTTPException(404, { message: `${record.name} does not offer ${capability}` });
+    }
 
-    const control = found.controls.find((candidate) => candidate.id === controlId);
-    if (!control) throw new HTTPException(404, { message: 'No such control' });
-
-    const { value, confirmation } = await body(
+    const { target, value, confirmation, reason } = await body(
       c,
-      z.object({ value: z.union([z.boolean(), z.number(), z.string().max(64)]), confirmation: z.string().max(64).optional() })
+      z
+        .object({
+          target: z.string().min(1).max(40).optional(),
+          value: z.boolean(),
+          confirmation: z.string().max(64).optional(),
+          reason: z.string().min(1).max(200).optional(),
+        })
+        .strict()
     );
 
-    if (found.typeId) {
-      const session = sessions.get(deviceId);
-      if (!session) throw new HTTPException(409, { message: found.health.detail });
-      if (config.readOnly) throw new HTTPException(423, { message: 'The server is in read-only mode' });
+    const result = await gateway.execute({
+      deviceId: record.id,
+      capability: capability as never,
+      command: c.req.param('command'),
+      target,
+      value,
+      reason: reason ?? 'From the device screen',
+      actor: 'user',
+      by: actorOf(c),
+      confirmation,
+    });
+    return c.json(result, result.outcome === 'refused' ? 409 : 200);
+  });
 
-      if (control.capability === 'outlets') {
-        const outlets = session.capability('outlets');
-        if (!outlets) throw new HTTPException(409, { message: 'Its outlets cannot be switched right now' });
-        const on = value === true;
-        const result = await outlets.set(control.target ?? control.id, on);
-        if (!result.accepted) throw new HTTPException(409, { message: result.error });
-        auditDevice(c, 'device.outlet', deviceId, `Switched ${control.label} ${on ? 'on' : 'off'} on "${found.name}"`);
-        return c.json({ ok: true });
-      }
+  /**
+   * A device type's own tools: a register dump, a raw frame. The core serves
+   * them, so none of them is a route of its own. Reading is a GET; anything
+   * that `writes` is a POST, refused while read-only, and audited.
+   */
+  const advancedOf = (id: string | undefined, name: string) => {
+    const record = deviceOr404(catalog, id);
+    const session = sessions.get(record.id);
+    if (!session) throw new HTTPException(409, { message: sessions.health(record).detail });
+    const action = session.advanced?.[name];
+    if (!action) throw new HTTPException(404, { message: `${record.name} has no tool called "${name}"` });
+    return { record, action };
+  };
 
-      throw new HTTPException(400, { message: `${control.capability} cannot be invoked here yet` });
+  api.get('/devices/:id/advanced/:name', async (c) => {
+    const name = c.req.param('name');
+    const { action } = advancedOf(c.req.param('id'), name);
+    if (action.writes) throw new HTTPException(405, { message: `${name} changes the device: POST it` });
+    return c.json(await action.run(c.req.query()));
+  });
+
+  api.post('/devices/:id/advanced/:name', async (c) => {
+    const name = c.req.param('name');
+    const { record, action } = advancedOf(c.req.param('id'), name);
+    const input = await body(c, z.record(z.string(), z.unknown()));
+    if (action.writes && !action.honoursReadOnly && config.readOnly) throw new HTTPException(423, { message: 'The server is in read-only mode' });
+    try {
+      const result = await action.run(input);
+      if (action.writes) auditDevice(c, 'device.advanced', record.id, `Ran ${name} on "${record.name}"`, { input });
+      return c.json(result);
+    } catch (error) {
+      // A tool refusing is worth a line too: an attempt at the brick write is what the timeline is for.
+      if (action.writes) auditDevice(c, 'device.advanced-refused', record.id, `${name} on "${record.name}" was refused: ${(error as Error).message}`, { input });
+      throw new HTTPException(409, { message: (error as Error).message });
     }
-
-    if (control.capability === 'switch') {
-      /*
-        The gateway switches the relay — whichever plug is set up as it. With
-        two relay extensions, the switch on one plug's card flipped the other;
-        a tap on this card must act on this plug, or not at all.
-      */
-      const relay = gateway.provider();
-      if (!relay || relay.id !== found.record.driver) {
-        throw new HTTPException(409, {
-          message: relay
-            ? `This plug is not the grid relay — ${relay.id} is. Choose the relay under Extensions.`
-            : 'No plug is set up as the grid relay yet.',
-        });
-      }
-      const result = await gateway.execute({
-        desired: value === true,
-        reason: `${control.label} switched from the device screen`,
-        actor: 'user',
-        by: actorOf(c),
-        confirmation,
-      });
-      return c.json(result, result.outcome === 'refused' ? 409 : 200);
-    }
-
-    throw new HTTPException(400, { message: `${control.capability} cannot be invoked yet` });
   });
 
   return api;

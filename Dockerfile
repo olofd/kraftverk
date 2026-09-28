@@ -41,11 +41,16 @@ COPY --from=sources /manifests ./
 
 FROM manifests AS deps
 
+# The server, and every package it finds at startup: protocols, transports,
+# device types and services each bring their own dependencies — the MQTT
+# transport its broker (aedes). A parent folder selects every workspace in it,
+# so a package added there is installed with no change here.
+#
 # --omit=optional is what leaves Bluetooth out, and it is the whole reason the
-# server declares noble optional. noble drags in four native builds — node-gyp,
-# usb, bluetooth-hci-socket, serialport — for a radio a container has no honest
-# access to, and it is imported lazily, so the simulator and the MQTT transport
-# never reach for it.
+# Bluetooth transport declares noble optional. noble drags in four native
+# builds — node-gyp, usb, bluetooth-hci-socket, serialport — for a radio a
+# container has no honest access to, and it is imported lazily, so nothing
+# else reaches for it.
 #
 # --ignore-scripts costs nothing here: with dev and optional dependencies gone,
 # nothing left in the tree has an install script.
@@ -60,7 +65,10 @@ FROM manifests AS deps
 # the app installs elsewhere in the workspace. Unused by the server, and in a
 # layer that changes only with the lockfile.)
 RUN npm ci --omit=dev --omit=optional --ignore-scripts \
-      --workspace server --include-workspace-root \
+      --workspace server --workspace packages/device-sdk \
+      --workspace packages/protocols --workspace packages/transports \
+      --workspace packages/devices --workspace packages/services \
+      --include-workspace-root \
  && mkdir -p server/node_modules \
  && if find packages -mindepth 2 -maxdepth 4 -type d -name node_modules | grep .; then \
       echo "A workspace has its own node_modules; copy it into the server stage." >&2; exit 1; \
@@ -71,7 +79,7 @@ RUN npm ci --omit=dev --omit=optional --ignore-scripts \
 FROM manifests AS web-build
 
 # Every workspace, dev tools included — Expo is what does the export, and the
-# app imports extensions' screens from their own packages, which a
+# app imports device types' screens from their own packages, which a
 # client-only install leaves unlinked. --ignore-scripts keeps the native
 # Bluetooth builds out; nothing the export uses needs an install script.
 RUN npm ci --ignore-scripts
@@ -124,7 +132,6 @@ WORKDIR /app
 # running container can damage.
 ENV NODE_ENV=production \
     KRAFTVERK_DB=/data/kraftverk.db \
-    KRAFTVERK_BASELINE_FILE=/data/baseline.json \
     KRAFTVERK_BROKER_DIR=/data/broker \
     KRAFTVERK_LOG_DIR=/data/logs \
     PORT=3333 \
@@ -133,17 +140,17 @@ ENV NODE_ENV=production \
 # Dependencies first — a large layer that changes only with the lockfile — then
 # the sources, which change with every commit. Both node_modules: see the deps
 # stage. npm links workspaces as relative symlinks (node_modules/@kraftverk/
-# protocol → ../../packages/protocol), which resolve because both stages build
-# in /app and packages/ is copied alongside.
+# protocol-sydpower → ../../packages/protocols/sydpower), which resolve because
+# both stages build in /app and packages/ is copied alongside.
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/server/node_modules ./server/node_modules
 COPY package.json ./
 COPY packages ./packages
 COPY server ./server
 
-# The plugin host reads packages/plugins at runtime rather than importing a
-# fixed list, so that directory is not optional: without it the container starts
-# with no extensions and no explanation.
+# The server finds its protocols, transports and device types in packages/ at
+# startup rather than importing a fixed list, so that directory is not
+# optional: without it the container starts able to reach nothing.
 # Only /data is writable, and only it is chowned — a recursive chown of /app
 # would copy every node_modules file into a new layer to change one bit of
 # metadata the server never needs changed.
@@ -152,7 +159,7 @@ RUN mkdir -p /data && chown bun:bun /data
 USER bun
 
 # 3333 is the API. 1883 is the MQTT broker, which runs from this same image as
-# its own container (`bun run server/src/broker/main.ts`) — see
+# its own container (`bun run packages/transports/mqtt/src/broker/main.ts`) — see
 # docker-compose.yml and docs/BROKER.md.
 EXPOSE 3333 1883
 

@@ -74,6 +74,11 @@ export function actorOf(c: Context): string {
   return accessByRequest.get(c.req.raw)?.user?.username ?? 'unknown';
 }
 
+/** The signed-in account, once the gate has let the request through. */
+export function userOf(c: Context): User | null {
+  return accessByRequest.get(c.req.raw)?.user ?? null;
+}
+
 export type AuthDeps = {
   proxies: ProxyDirectory;
   limiter?: LoginLimiter;

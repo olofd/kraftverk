@@ -1,8 +1,7 @@
-import { readdir, readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { connectionProblems, validateDeviceType, type DeviceType, type Protocol, type TransportDefinition } from '@kraftverk/device-sdk';
 
-import { validateDeviceType, type DeviceType } from '@kraftverk/device-sdk';
+import { findPackages, load, ROOTS } from '../runtime/packages.ts';
+import type { Refused } from '../runtime/protocols.ts';
 
 /**
  * The device types installed on this server, found rather than listed.
@@ -15,45 +14,25 @@ import { validateDeviceType, type DeviceType } from '@kraftverk/device-sdk';
  * Every type is checked against the contract before it is accepted. One that
  * fails is refused and the reasons kept, so a broken package is a line in the
  * log and on the diagnostics screen rather than a device that half works; and
- * one broken package never stops the others loading.
+ * one broken package never stops the others loading. A method whose protocol
+ * or transport is not installed is a warning, not a refusal: the type's other
+ * methods still work.
  */
-
-const REPOSITORY = resolve(import.meta.dirname, '../../..');
-export const DEVICE_TYPE_ROOTS = ['packages/devices', 'packages/services'].map((root) => resolve(REPOSITORY, root));
-
-export type RefusedType = { source: string; problems: string[] };
 
 export class DeviceTypeRegistry {
   #types = new Map<string, DeviceType<any>>();
-  #refused: RefusedType[] = [];
+  #refused: Refused[] = [];
+  #warnings = new Map<string, string[]>();
 
   /** Loads every device-type package under the roots. Never throws. */
-  async discover(roots: readonly string[] = DEVICE_TYPE_ROOTS): Promise<void> {
-    for (const root of roots) {
-      let entries: string[];
+  async discover(roots: readonly string[] = ROOTS.deviceTypes): Promise<void> {
+    const { found, problems } = await findPackages(roots, 'deviceType');
+    this.#refused.push(...problems);
+    for (const pkg of found) {
       try {
-        entries = await readdir(root);
-      } catch {
-        continue; // no services yet, say: a perfectly good installation
-      }
-
-      for (const entry of entries.sort()) {
-        const dir = resolve(root, entry);
-        let entryPoint: string | undefined;
-        try {
-          const manifest = JSON.parse(await readFile(resolve(dir, 'package.json'), 'utf8')) as {
-            name?: string;
-            kraftverk?: { deviceType?: string };
-          };
-          entryPoint = manifest.kraftverk?.deviceType;
-          if (!entryPoint) continue; // a package that is not a device type — a protocol, say
-
-          const loaded = (await import(pathToFileURL(resolve(dir, entryPoint)).href)) as { default?: DeviceType<any> };
-          if (!loaded.default) throw new Error('its deviceType entry has no default export');
-          this.install(loaded.default, manifest.name ?? entry);
-        } catch (error) {
-          this.#refuse(entry, [(error as Error).message]);
-        }
+        this.install(await load<DeviceType<any>>(pkg, String(pkg.kraftverk.deviceType)), pkg.name);
+      } catch (error) {
+        this.#refuse(pkg.folder, [(error as Error).message]);
       }
     }
   }
@@ -73,6 +52,17 @@ export class DeviceTypeRegistry {
     return [];
   }
 
+  /** Checks every type's methods against what is installed, and keeps what does not fit. */
+  checkConnections(installed: { protocol(id: string): Protocol | null; transport(id: string): TransportDefinition | null }): void {
+    this.#warnings.clear();
+    for (const type of this.#types.values()) {
+      const problems = connectionProblems(type, installed);
+      if (!problems.length) continue;
+      this.#warnings.set(type.id, problems);
+      console.warn(`[devices] ${type.id}:\n  - ${problems.join('\n  - ')}`);
+    }
+  }
+
   get(id: string): DeviceType<any> | null {
     return this.#types.get(id) ?? null;
   }
@@ -86,8 +76,13 @@ export class DeviceTypeRegistry {
   }
 
   /** Packages that were found and turned away, and why. */
-  get refused(): readonly RefusedType[] {
+  get refused(): readonly Refused[] {
     return this.#refused;
+  }
+
+  /** Methods of installed types that name something not installed. */
+  warnings(id: string): readonly string[] {
+    return this.#warnings.get(id) ?? [];
   }
 
   #refuse(source: string, problems: string[]): void {

@@ -1,0 +1,29 @@
+{
+  "name": "@kraftverk/transport-lan",
+  "version": "0.2.0",
+  "private": true,
+  "description": "The home network: TCP connections to devices, kept up, and the UDP broadcasts devices announce themselves with. Reaches private addresses only, and knows no protocol.",
+  "type": "module",
+  "main": "src/index.ts",
+  "kraftverk": {
+    "transport": {
+      "definition": "./src/index.ts",
+      "server": "./src/server.ts"
+    }
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./server": "./src/server.ts"
+  },
+  "scripts": {
+    "test": "node ../../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kraftverk/device-sdk": "*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}

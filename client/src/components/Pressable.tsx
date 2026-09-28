@@ -5,7 +5,7 @@ import { XStack, YStack } from 'tamagui';
  * Tamagui's press styling on a plain wrapper, so a `Row` can be tapped.
  *
  * `Row` is a layout, not a button — which is right, because most rows are not
- * tappable. This is the one-line adapter for the ones that are, and it lives
+ * tappable. This is the one-line bridge for the ones that are, and it lives
  * here because two screens had grown their own identical copy.
  */
 export function Pressable({

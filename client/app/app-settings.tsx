@@ -4,109 +4,92 @@ import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Button, Input, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { Card, Row, RowSeparator, SectionLabel, haptic } from '@kraftverk/ui';
-import {
-  describeError,
-  fetchResetAvailability,
-  fetchVersion,
-  getApiBaseUrl,
-  resetDatabase,
-} from '@kraftverk/api-client';
-import type { VersionInfo } from '@kraftverk/api-client';
+import { Card, Row, RowSeparator, SectionLabel, ToggleRow, haptic } from '@kraftverk/ui';
+import { describeError, fetchResetAvailability, getApiBaseUrl, resetDatabase } from '@kraftverk/api-client';
 
 import { completeUrl } from '../src/lib/servers';
 import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
 import { useAuth } from '../src/state/AuthProvider';
 import { useDevices } from '../src/state/DevicesProvider';
-import { useDirectLink } from '../src/state/DirectLinkProvider';
+import { useServers } from '../src/state/ServersProvider';
 
 /**
- * The app's own settings, as distinct from a device's.
- *
- * Everything here is infrastructure: which drivers are installed, and how the
- * server reaches hardware. None of it is a thing you own, so none of it belongs
- * on the device canvas — people add a plug, not a plugin.
- *
- * This is deliberately one level down. A user who never installs an extension
- * never has to come here, and the primary navigation stays the list of devices.
+ * The app's own settings, as distinct from a device's: which server, who may
+ * use it, what it and this app can reach devices over, and what this app may
+ * do itself. None of it is a thing you have, so none of it sits on the device
+ * canvas.
  */
 export default function AppSettingsScreen() {
-  const { source, version: linkVersion } = useDirectLink();
-  const { editable } = useDevices();
+  const { mode, version, runtime, removed } = useDevices();
   const auth = useAuth();
   const theme = useTheme();
-
-  /*
-    The server's own version, asked for here and nowhere else. It used to arrive
-    with every station poll, which is how a fact about the server ended up
-    inside the station's state — and why the P280's screens read it to decide
-    whether writes were allowed. That belongs to a device's connection now.
-  */
-  const [served, setServed] = useState<VersionInfo | null>(null);
-
-  useEffect(() => {
-    if (!editable) return;
-    const controller = new AbortController();
-    void fetchVersion(controller.signal)
-      .then(setServed)
-      .catch(() => undefined);
-    return () => controller.abort();
-  }, [editable]);
-
-  const version = editable ? served : linkVersion;
-
+  const [allowWrites, setAllowWrites] = useState(runtime.allowWrites);
   const chevron = <Feather name="chevron-right" size={16} color={theme.muted?.val} />;
 
+  useEffect(() => runtime.subscribe(() => setAllowWrites(runtime.allowWrites)), [runtime]);
+
   return (
-    <Screen back="Your devices" title="App settings" subtitle="Drivers, links and this install">
+    <Screen back="Your devices" title="App settings" subtitle="Servers, connectivity and this app">
       <YStack gap="$2">
         <SectionLabel>Infrastructure</SectionLabel>
         <Card inset>
-          {/*
-            Extensions are loaded by a server process, so in local mode there is
-            nothing to show and nowhere for the row to lead. Hiding it beats a
-            screen that can only apologise.
-          */}
-          {editable ? (
+          {mode === 'server' ? (
             <>
               <Pressable onPress={() => router.push('/accounts')}>
                 <Row
                   title="Accounts"
-                  subtitle={
-                    auth.state?.user
-                      ? `Signed in as ${auth.state.user.username}. Who may use this server.`
-                      : 'Who may use this server'
-                  }
+                  subtitle={auth.state?.user ? `Signed in as ${auth.state.user.username}. Who may use this server.` : 'Who may use this server'}
                   accessory={chevron}
                 />
               </Pressable>
               <RowSeparator />
-              <Pressable onPress={() => router.push('/extensions')}>
-                <Row
-                  title="Extensions"
-                  subtitle="Drivers and services the server can load. You add a device, not a driver."
-                  accessory={chevron}
-                />
+            </>
+          ) : null}
+          <Pressable onPress={() => router.push('/connectivity')}>
+            <Row
+              title="Connectivity"
+              subtitle={mode === 'server' ? 'What your server and this app reach devices over, and their diagnostics' : 'What this app can reach devices over'}
+              accessory={chevron}
+            />
+          </Pressable>
+          {mode === 'server' ? (
+            <>
+              <RowSeparator />
+              <Pressable onPress={() => router.push('/removed')}>
+                <Row title="Removed devices" subtitle={removed.length ? `${removed.length} kept with their history` : 'None'} accessory={chevron} />
               </Pressable>
               <RowSeparator />
               <Pressable onPress={() => router.push('/server-log')}>
                 <Row title="Server log" subtitle="What the server has said lately — where to look when something is wrong" accessory={chevron} />
               </Pressable>
-              <RowSeparator />
             </>
           ) : null}
-          <Pressable onPress={() => router.push('/link')}>
-            <Row
-              title="Station link"
-              subtitle={
-                source === 'direct'
-                  ? 'This app holds the station’s Bluetooth connection'
-                  : 'How the server finds and binds a power station'
-              }
-              accessory={chevron}
-            />
-          </Pressable>
+        </Card>
+      </YStack>
+
+      <YStack gap="$2">
+        <SectionLabel>This app</SectionLabel>
+        <Card inset>
+          {/*
+            Off on every launch, on purpose: a phone in a pocket should not be
+            the easiest way to change a station's settings or cut its mains.
+          */}
+          <ToggleRow
+            title="Allow writes from this app"
+            subtitle="For devices this app holds itself. Off every time the app starts: until then, it only reads."
+            checked={allowWrites}
+            onCheckedChange={(next) => {
+              haptic();
+              runtime.setAllowWrites(next);
+            }}
+          />
+          {mode === 'server' ? (
+            <>
+              <RowSeparator />
+              <Row title="Known to the server as" subtitle={runtime.clientId ? `App ${runtime.clientId}` : 'Not registered yet'} />
+            </>
+          ) : null}
         </Card>
       </YStack>
 
@@ -117,19 +100,14 @@ export default function AppSettingsScreen() {
         <Card inset>
           <Row
             title="Mode"
-            subtitle={
-              editable
-                ? 'A server holds your devices, their history and their links'
-                : 'Local only — this device holds its own links, and nothing is stored'
-            }
+            subtitle={mode === 'server' ? 'A server keeps your devices, their history and their links' : 'Local — this app keeps its own devices and holds every connection; nothing is recorded'}
             accessory={
               <Text fontSize={13} color="$muted">
-                {editable ? 'Server' : 'Local'}
+                {mode === 'server' ? 'Server' : 'Local'}
               </Text>
             }
           />
-          {/* Only meaningful when there is a server; in local mode there is none. */}
-          {editable ? (
+          {mode === 'server' ? (
             <>
               <RowSeparator />
               <Row
@@ -146,7 +124,7 @@ export default function AppSettingsScreen() {
         </Card>
       </YStack>
 
-      {editable ? <ResetEverything /> : null}
+      {mode === 'server' ? <ResetEverything /> : null}
     </Screen>
   );
 }
@@ -154,7 +132,7 @@ export default function AppSettingsScreen() {
 /**
  * The kraftverk servers this app knows about.
  *
- * The app works with no server: it can hold a station's Bluetooth link itself.
+ * The app works with no server: in local mode it keeps its own devices.
  * A server is what adds the things only an always-on process can do — history,
  * background sampling, and eventually automations — so it is something you add
  * by address and can forget again, rather than a fact compiled into the build.
@@ -163,7 +141,7 @@ export default function AppSettingsScreen() {
  * like when the app assumed a server and shouted when one was missing.
  */
 function Servers() {
-  const { servers } = useDirectLink();
+  const servers = useServers();
   const theme = useTheme();
 
   const [adding, setAdding] = useState(false);
@@ -209,7 +187,7 @@ function Servers() {
         >
           <Row
             title="Local only"
-            subtitle="This device holds its own links over Bluetooth. No history, and nothing runs while the app is closed."
+            subtitle="This app keeps its own devices and holds every connection. No history, and nothing runs while the app is closed."
             accessory={
               servers.active ? null : <Feather name="check" size={16} color={theme.accent?.val} />
             }
@@ -326,8 +304,8 @@ function Servers() {
  *
  * The blank canvas a fresh install starts from, without asking anyone to find
  * and delete a file on the server. It takes everything: devices, their recorded
- * history, plugin configuration and secrets, capability grants, and the audit
- * timeline that would otherwise be the record of it happening.
+ * history, their connections and secrets, their links, and the audit timeline
+ * that would otherwise be the record of it happening.
  *
  * Guarded by a passphrase kept in a file on the server, because this API has no
  * authentication of its own and this is the most destructive thing it offers.
@@ -371,7 +349,7 @@ function ResetEverything() {
 
   const confirmed = () => {
     const message =
-      'Every device, all recorded history, plugin configuration and secrets will be deleted. ' +
+      'Every device, all recorded history, every connection and its secrets will be deleted. ' +
       'This cannot be undone.';
     if (Platform.OS === 'web') {
       // eslint-disable-next-line no-alert
@@ -383,7 +361,7 @@ function ResetEverything() {
   const ask = () => {
     haptic();
     const message =
-      'Every device, all recorded history, plugin configuration and secrets will be deleted. ' +
+      'Every device, all recorded history, every connection and its secrets will be deleted. ' +
       'This cannot be undone.';
 
     if (Platform.OS === 'web') {
@@ -410,7 +388,7 @@ function ResetEverything() {
               Erase everything
             </Text>
             <Text fontSize={13} color="$muted" lineHeight={19}>
-              Removes every device, all recorded history, plugin configuration and secrets, and the
+              Removes every device, all recorded history, every connection and its secrets, and the
               audit timeline. The server keeps running and comes back as a blank canvas.
             </Text>
           </YStack>

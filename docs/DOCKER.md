@@ -5,7 +5,7 @@ Three containers, two images, one volume — and the app in a browser.
 | Service | Image | What it does |
 | --- | --- | --- |
 | `web` | `--target web` | Serves the app, and forwards `/api` to the server. The only thing you open in a browser |
-| `kraftverk` | `--target server` | The API, history sampling, the plugin host and the action gateway |
+| `kraftverk` | `--target server` | The API, a session for every device, history sampling and the action gateway |
 | `broker` | `--target server` | The MQTT broker stations connect to — its own container, so restarting or upgrading the server does not drop the station. See [BROKER.md](BROKER.md) |
 
 Running this on a machine that is always on — a NAS — is the point: history and
@@ -78,9 +78,9 @@ Synology:
    and `X-Real-IP` = `$remote_addr`, so the server rate-limits and records the
    real client rather than the proxy.
    **Advanced Settings**: raise the proxy read timeout from 60 to 120 seconds.
-   Setting up an extension can take up to 90 seconds (a network scan, a cloud
-   login), and a proxy that gives up first reports a failure for something that
-   went on to work.
+   A setup step can take up to 90 seconds (a network scan, a cloud login), and
+   a proxy that gives up first reports a failure for something that went on to
+   work.
 2. **Control Panel → Security → Certificate → Settings**: give the new entry a
    certificate covering that name. The Let's Encrypt certificate DSM makes for
    a `synology.me` name includes `*.<you>.synology.me`.
@@ -98,9 +98,15 @@ internet — but nothing else about that entrance was made for it.)
 
 | `STATION_DRIVER` | What it is | Works in this image |
 | --- | --- | --- |
-| `sim` | The built-in simulator | ✅ Default. No hardware needed |
-| `mqtt` | Real hardware over Wi-Fi, through the `broker` service | ✅ The one to use for a real deployment |
+| `sim` | Every device simulated; no hardware is reached | ✅ Default. No hardware needed |
+| `mqtt` | Real hardware: stations over Wi-Fi through the `broker` service, plus plugs on the home network and web services such as the weather | ✅ The one to use for a real deployment |
 | `ble` | Real hardware over Bluetooth LE | ❌ Not in this image — see below |
+
+Every hardware mode also gets the home network (`lan`) and `https`, which
+need nothing of the machine. `KRAFTVERK_TRANSPORTS=mqtt,lan,https` names them
+outright instead. A plug on the home network is reached from the container over
+TCP; its UDP announcements may not reach a bridged container, so give its IP
+address by hand when it is not found.
 
 ### Wi-Fi / MQTT — the one that suits a server
 
@@ -156,7 +162,7 @@ settings and secrets: keep it out of any repository, readable only by you.
 | --- | --- | --- |
 | `STATION_DRIVER` | `sim` | `sim`, or `mqtt` for a station over Wi-Fi. `ble` is not available — see above |
 | `READ_ONLY` | `1` | `1` refuses every write at the driver. Only `0` allows them |
-| `KRAFTVERK_SECRET_KEY` | — | Passphrase for AES-256-GCM plugin secrets. **Set this.** See below |
+| `KRAFTVERK_SECRET_KEY` | — | Passphrase for AES-256-GCM secrets, such as a plug's local key. **Set this.** See below |
 | `KRAFTVERK_ALLOWED_HOSTS` | — | The public name the server is reached by, if any — a DDNS name. Comma-separated |
 | `KRAFTVERK_LAN_PORT` | `8080` | Where the home network opens the app |
 | `KRAFTVERK_PUBLIC_PORT` | `8090` | Where the reverse proxy forwards the internet to, on loopback |
@@ -167,15 +173,15 @@ settings and secrets: keep it out of any repository, readable only by you.
 Set in the compose file, and best left alone: `BROKER_SPAWN=0`, `BROKER_HOST`,
 `BROKER_ADMIN_URL` (how the server finds the broker service) and
 `KRAFTVERK_TRUSTED_PROXIES=web` (whose entrance stamp is believed). Set in the
-image: `KRAFTVERK_DB`, `KRAFTVERK_BASELINE_FILE`, `KRAFTVERK_BROKER_DIR` and
-`KRAFTVERK_LOG_DIR`, all under `/data`. `ALLOW_RAW_MODBUS=1` enables arbitrary
-frames; bad writes can brick the station.
+image: `KRAFTVERK_DB`, `KRAFTVERK_BROKER_DIR` and `KRAFTVERK_LOG_DIR`, all
+under `/data`. `ALLOW_RAW_MODBUS=1` lets the station's raw-frame tool send
+arbitrary frames; bad writes can brick the station.
 
 ### Secrets
 
-Without `KRAFTVERK_SECRET_KEY`, plugin secrets — a Tuya plug's local key, for
-instance — are stored **as given**. The app says so plainly on the Extensions
-screen rather than implying a protection it does not have. Set it to a long
+Without `KRAFTVERK_SECRET_KEY`, secrets — a Tuya plug's local key, for
+instance — are stored **as given**. The app says so plainly where the secret is
+entered, rather than implying a protection it does not have. Set it to a long
 random string:
 
 ```bash
@@ -193,7 +199,7 @@ Everything that outlives a restart is in the `kraftverk-data` volume, mounted at
 
 | Path | What |
 | --- | --- |
-| `kraftverk.db` | Devices, recorded history, accounts, plugin configuration and secrets, the audit timeline |
+| `kraftverk.db` | Devices and how each is reached, their secrets, recorded history, accounts, the audit timeline ([DATA-MODEL.md](DATA-MODEL.md)) |
 | `logs/server-YYYY-MM-DD.log` | The server's log, one file a day, two weeks kept |
 | `broker/logs/broker-YYYY-MM-DD.jsonl` | The broker's journal: every connection, frame and disconnect |
 | `broker/` | The broker's token and the stations it has seen |
@@ -250,9 +256,9 @@ docker compose logs -f broker            # the station's story, live
 docker compose logs --tail 100 web       # the web container: startup, proxy errors
 
 # The broker's own view: stations, clients, why the last one left
-docker compose exec broker bun run server/src/broker/cli.ts status
+docker compose exec broker bun run packages/transports/mqtt/src/broker/cli.ts status
 # Its journal, from the files — including what happened before a restart
-docker compose exec broker bun run server/src/broker/cli.ts logs
+docker compose exec broker bun run packages/transports/mqtt/src/broker/cli.ts logs
 
 # The server's kept log, older than the container
 docker compose exec kraftverk ls /data/logs
@@ -297,8 +303,8 @@ docker compose up -d --build broker
 ```
 
 `STATION_DRIVER` is read once at startup and cannot be changed from any screen.
-If the Station link screen says `Simulator` and you expected Wi-Fi, the
-container was started with the wrong `STATION_DRIVER`.
+If **App settings → Connectivity** says the server runs the simulator and you
+expected Wi-Fi, the container was started with the wrong `STATION_DRIVER`.
 
 ---
 

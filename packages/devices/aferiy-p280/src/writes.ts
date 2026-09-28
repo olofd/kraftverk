@@ -1,4 +1,4 @@
-import type { PortId, StationSettings, StationSettingsPatch, StationStatus } from '@kraftverk/protocol';
+import type { PortId, StationSettings, StationSettingsPatch, StationStatus } from './model/types.ts';
 
 /**
  * A station's writes, in the terms of the write gate.

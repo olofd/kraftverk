@@ -3,84 +3,55 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Card, Row, SectionLabel } from '@kraftverk/ui';
 import { Text, useTheme, XStack, YStack } from 'tamagui';
 
-import type { SavedDeviceView } from '@kraftverk/api-client';
-
-import { getApiBaseUrl } from '@kraftverk/api-client';
+import type { DeviceView } from '@kraftverk/api-client';
 
 import { Pressable } from '../../../src/components/Pressable';
 import { DeviceShell } from '../../../src/features/devices/DeviceShell';
-import { useDeviceConnection, type DeviceConnection } from '../../../src/features/devices/connection';
-import { GenericSettings, Manage } from '../../../src/features/devices/panels';
-import { WriteRefused } from '../../../src/features/devices/WriteRefused';
+import { Connections, GenericSettings, Links, Manage } from '../../../src/features/devices/panels';
+import { RemovedDevice } from '../../../src/features/devices/removed';
 import { screensFor } from '../../../src/devices/ui';
 import { useDevices } from '../../../src/state/DevicesProvider';
 
 /**
- * What this device remembers, and what you may change.
- *
- * Three things live here, in the order they matter: the device's own settings,
- * whatever advanced tools its model offers, and the catalog's business — its
- * name, and whether you still own it.
- *
- * The register diagnostics used to be a global tab called Protocol. They are a
- * P280 tool for one P280, so they sit behind Advanced on that device's own
- * settings screen. A plug will never show them, and does not have to say why.
+ * What this device remembers, how it is reached, how it fits the house, and
+ * whether you still have it — in the order they matter.
  */
 export default function DeviceSettingsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { editable } = useDevices();
-
-  return (
-    <DeviceShell id={id} tab="settings">
-      {(device) => <DeviceSettings device={device} editable={editable} />}
-    </DeviceShell>
-  );
+  return <DeviceShell id={id} tab="settings">{(device) => (device.removedAt ? <RemovedDevice device={device} /> : <DeviceSettings device={device} />)}</DeviceShell>;
 }
 
-/**
- * One connection for the whole screen.
- *
- * The line saying where writes go and the settings under it each opened their
- * own, so the screen polled the server twice every two seconds — and only one
- * of the two knew a write was in flight.
- */
-function DeviceSettings({ device, editable }: { device: SavedDeviceView; editable: boolean }) {
-  const connection = useDeviceConnection(device);
-
+function DeviceSettings({ device }: { device: DeviceView }) {
+  const { screenProps } = useDevices();
+  const Panel = screensFor(device)?.settings;
   return (
     <>
-      <WhereWritesGo device={device} connection={connection} />
-      <Settings device={device} connection={connection} />
+      <WhereWritesGo device={device} />
+      {Panel ? <Panel {...screenProps(device)} /> : <GenericSettings device={device} />}
+      <Connections device={device} />
+      <Links device={device} />
       <Advanced device={device} />
-      {editable ? <Manage device={device} /> : null}
+      <Manage device={device} />
     </>
   );
 }
 
 /**
- * Where the values on this screen actually go.
- *
- * Every control below writes to real hardware — or to a simulator, or to
- * nothing at all in read-only mode — and which of the three it is changes what
- * a tap means. The old global Settings tab said so in its subtitle and the
- * device-scoped one lost it, on a device where one wrong register permanently
- * bricks the machine. It is one line, and it is worth the space.
+ * Where the values on this screen go: the hardware, through whom — or nowhere,
+ * while writes are refused. On a device where one wrong register permanently
+ * bricks the machine, that is worth one line.
  */
-function WhereWritesGo({ device, connection }: { device: SavedDeviceView; connection: DeviceConnection }) {
-  const { status, readOnly, simulated, direct } = connection;
+function WhereWritesGo({ device }: { device: DeviceView }) {
+  const { screenProps } = useDevices();
+  const { holder, readOnly } = screenProps(device);
   const theme = useTheme();
-
-  if (!status) return null;
-
   const [tone, icon, message] = readOnly
-    ? (['$warning', 'lock', 'Read-only. Nothing on this screen will reach the station.'] as const)
-    : simulated
-      ? (['$muted', 'cpu', 'Simulator — changes here affect a fake station, not hardware.'] as const)
-      : ([
-          '$muted',
-          direct ? 'bluetooth' : 'server',
-          `Written straight to ${device.record.name} over ${direct ? 'Bluetooth' : 'the server'}.`,
-        ] as const);
+    ? (['$warning', 'lock', holder === 'this-app' ? 'Read-only: writes from this app are off (App settings).' : 'Read-only: the server refuses every write.'] as const)
+    : holder === 'this-app'
+      ? (['$muted', 'smartphone', `Written to ${device.name} from this app.`] as const)
+      : holder === 'server'
+        ? (['$muted', 'server', `Written to ${device.name} through your server.`] as const)
+        : (['$muted', 'link-2', device.health.detail] as const);
 
   return (
     <XStack alignItems="center" gap="$2.5" paddingHorizontal="$1">
@@ -92,48 +63,19 @@ function WhereWritesGo({ device, connection }: { device: SavedDeviceView; connec
   );
 }
 
-function Settings({ device, connection }: { device: SavedDeviceView; connection: DeviceConnection }) {
-  const screens = screensFor(device);
-  // No model panel, or nothing answering yet: the generic form is drawn from
-  // the schema the device publishes, and works for anything.
-  if (!screens?.settings || !connection.status) return <GenericSettings device={device} />;
-
-  const Panel = screens.settings;
-
-  return (
-    <>
-      <WriteRefused message={connection.writeError} />
-      <Panel
-        status={connection.status}
-        settings={connection.settings}
-        pending={connection.pending}
-        readOnly={connection.readOnly}
-        simulated={connection.simulated}
-        direct={connection.direct}
-        apiBaseUrl={getApiBaseUrl()}
-        updateSettings={connection.updateSettings}
-        togglePort={connection.togglePort}
-      />
-    </>
-  );
-}
-
-/** Model-specific tools, for the models that have any. */
-function Advanced({ device }: { device: SavedDeviceView }) {
+/** A device type's own tools, for the types that have any. */
+function Advanced({ device }: { device: DeviceView }) {
   const theme = useTheme();
-  const screens = screensFor(device);
-  if (!screens?.protocol) return null;
-
+  const advanced = screensFor(device)?.advanced;
+  if (!advanced) return null;
   return (
     <YStack gap="$2">
       <SectionLabel>Advanced</SectionLabel>
       <Card inset>
-        <Pressable
-          onPress={() => router.push(`/device/${encodeURIComponent(device.id)}/advanced`)}
-        >
+        <Pressable onPress={() => router.push(`/device/${encodeURIComponent(device.id)}/advanced`)}>
           <Row
-            title="Protocol"
-            subtitle="Register dumps and the snapshot-and-diff workflow, for verifying the map against real hardware"
+            title={advanced.label}
+            subtitle={advanced.description}
             accessory={<Feather name="chevron-right" size={16} color={theme.muted?.val} />}
           />
         </Pressable>
