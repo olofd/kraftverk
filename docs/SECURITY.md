@@ -127,8 +127,13 @@ Tuya local key — gives the app a short-lived placeholder, not the value.
 Saving turns the placeholder back into the secret on the server, where it is
 stored encrypted with the connection it belongs to. No secret is ever sent to a
 browser, including the one it just asked for. The one exception is by design: a
-connection held by the app itself keeps its secrets in that app's own secure
-storage, and they never reach the server (DATA-MODEL.md §3).
+connection held by the app itself keeps its secrets in that app's own storage,
+and they never reach the server (DATA-MODEL.md §3). In a browser they are sealed
+with AES-GCM under a key the browser generated as non-extractable and keeps in
+IndexedDB, so storage holds only ciphertext (`client/src/runtime/vault.ts`);
+where there is no such key — an origin that is not secure, which cannot use Web
+Bluetooth either — they stay in memory and are never written down. A phone keeps
+none across a restart yet.
 
 **Clickjacking, caching, sniffing.** API responses are `Cache-Control:
 no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and

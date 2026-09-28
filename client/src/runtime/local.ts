@@ -2,6 +2,23 @@ import type { ConfigValues } from '@kraftverk/device-sdk';
 
 import { readPreference, writePreference } from '../lib/preferences';
 
+/** Where a connection's secrets are kept: the app's vault — sealed, never in this catalog's plaintext. */
+export type SecretStore = {
+  get(connectionId: string): Record<string, string>;
+  set(connectionId: string, secrets: Record<string, string>): void;
+  delete(connectionId: string): void;
+};
+
+/** Secrets in memory only: for tests, and wherever nothing can be sealed. */
+export function memorySecrets(): SecretStore {
+  const kept = new Map<string, Record<string, string>>();
+  return {
+    get: (connectionId) => kept.get(connectionId) ?? {},
+    set: (connectionId, secrets) => void kept.set(connectionId, { ...(kept.get(connectionId) ?? {}), ...secrets }),
+    delete: (connectionId) => void kept.delete(connectionId),
+  };
+}
+
 /**
  * The devices this app keeps for itself, in local mode (docs/DATA-MODEL.md §6).
  *
@@ -23,20 +40,28 @@ type Stored = {
   devices: LocalDevice[];
   connections: LocalConnection[];
   links: LocalLink[];
-  secrets: Record<string, Record<string, string>>;
+  /** Plaintext, from before the vault: moved into it on first load, and gone from here. */
+  secrets?: Record<string, Record<string, string>>;
   stores: Record<string, Record<string, unknown>>;
 };
 
 const KEY = 'kraftverk.local';
-const empty = (): Stored => ({ devices: [], connections: [], links: [], secrets: {}, stores: {} });
+const empty = (): Stored => ({ devices: [], connections: [], links: [], stores: {} });
 const id = (prefix: string) => `${prefix}-${Math.random().toString(16).slice(2, 14).padEnd(12, '0')}`;
 
 export class LocalCatalog {
   #data: Stored;
   #listeners = new Set<() => void>();
 
-  constructor() {
+  constructor(private vault: SecretStore = memorySecrets()) {
     this.#data = LocalCatalog.#read();
+    const legacy = this.#data.secrets;
+    if (legacy) {
+      for (const [connectionId, secrets] of Object.entries(legacy)) vault.set(connectionId, secrets);
+      const { secrets: _plaintext, ...rest } = this.#data;
+      this.#data = rest;
+      writePreference(KEY, JSON.stringify(this.#data));
+    }
   }
 
   static #read(): Stored {
@@ -79,13 +104,13 @@ export class LocalCatalog {
   }
 
   secrets(connectionId: string): Record<string, string> {
-    return this.#data.secrets[connectionId] ?? {};
+    return this.vault.get(connectionId);
   }
 
-  /** Replaces a connection's secrets: a Tuya plug's local key changes every time it is paired again. */
+  /** Changes a connection's secrets: a Tuya plug's local key changes every time it is paired again. */
   setSecrets(connectionId: string, secrets: Record<string, string>): void {
-    this.#data = { ...this.#data, secrets: { ...this.#data.secrets, [connectionId]: { ...this.secrets(connectionId), ...secrets } } };
-    writePreference(KEY, JSON.stringify(this.#data));
+    this.vault.set(connectionId, secrets);
+    for (const listener of this.#listeners) listener();
   }
 
   store(deviceId: string): Record<string, unknown> {
@@ -141,8 +166,8 @@ export class LocalCatalog {
       connections: [...this.#data.connections, connection],
       // One feeds link per source: a new one replaces the old.
       links: [...this.#data.links.filter((old) => !links.some((link) => link.kind === old.kind && link.sourceId === old.sourceId)), ...links],
-      secrets: Object.keys(input.connection.secrets).length ? { ...this.#data.secrets, [connection.id]: input.connection.secrets } : this.#data.secrets,
     };
+    if (Object.keys(input.connection.secrets).length) this.vault.set(connection.id, input.connection.secrets);
     this.#write();
     return device;
   }
@@ -180,8 +205,8 @@ export class LocalCatalog {
   }
 
   removeConnection(connectionId: string): void {
-    const { [connectionId]: _gone, ...secrets } = this.#data.secrets;
-    this.#data = { ...this.#data, connections: this.#data.connections.filter((connection) => connection.id !== connectionId), secrets };
+    this.vault.delete(connectionId);
+    this.#data = { ...this.#data, connections: this.#data.connections.filter((connection) => connection.id !== connectionId) };
     this.#write();
   }
 
@@ -193,9 +218,9 @@ export class LocalCatalog {
       devices: this.#data.devices.filter((device) => device.id !== deviceId),
       connections: this.#data.connections.filter((connection) => connection.deviceId !== deviceId),
       links: this.#data.links.filter((link) => link.sourceId !== deviceId && link.targetId !== deviceId),
-      secrets: Object.fromEntries(Object.entries(this.#data.secrets).filter(([connectionId]) => !gone.has(connectionId))),
       stores,
     };
+    for (const connectionId of gone) this.vault.delete(connectionId);
     this.#write();
   }
 

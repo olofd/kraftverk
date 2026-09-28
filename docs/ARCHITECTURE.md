@@ -604,7 +604,7 @@ holders and identity were added to the model (DATA-MODEL.md).
 | 18 | The gateway knows capabilities, not names; settings go through it | M | done |
 | 19 | History that lasts | M | done |
 | 20 | App and server agree on what they speak | S | later |
-| 21 | Secrets at rest in the app | S | |
+| 21 | Secrets at rest in the app | S | done |
 | 22 | Loose ends: configuration words, big modules, accessibility | M | later |
 
 ### Step 0 — Words and one authority
@@ -940,6 +940,14 @@ build yet.
 ### Step 21 — Secrets at rest in the app (G9)
 A secure store on a phone, and a non-extractable key on the web, behind one
 vault. **Done when** no secret sits in the app's storage in plaintext.
+
+*Done* for the web, where secrets were kept: `SecretVault` seals every
+connection's secrets with AES-GCM under a non-extractable key in IndexedDB,
+one vault per server and one for local mode, whose catalog keeps its secrets
+there too. Reads come from what was opened at start; plaintext from before
+moves in and is cleared. Where there is no key, nothing is written down. A
+phone persists nothing yet — its preferences are memory — so a secure store
+there (`expo-secure-store`) comes with persisting its preferences at all.
 
 ### Step 22 — Loose ends (G10–G12)
 `KRAFTVERK_TRANSPORTS` as the only documented setting, the app's device

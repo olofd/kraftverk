@@ -8,6 +8,7 @@ import { fetchDeviceStore, registerClient, type DeviceView } from '@kraftverk/ap
 import { readPreference, writePreference } from '../lib/preferences';
 import type { Mode } from '../state/ServersProvider';
 import { LocalCatalog } from './local';
+import { legacySecrets, SecretVault } from './vault';
 import { AppRegistry } from './registry';
 import { HeldSessions, type HeldDevice } from './sessions';
 import { Uplink } from './uplink';
@@ -66,7 +67,8 @@ function viewSession(device: DeviceView): DeviceSession {
 export class AppRuntime {
   readonly registry: AppRegistry;
   readonly sessions: HeldSessions;
-  readonly local = new LocalCatalog();
+  readonly vault: SecretVault;
+  readonly local: LocalCatalog;
   readonly gateway: ActionGateway;
   readonly uplink: Uplink | null;
   clientId: string | null = null;
@@ -79,6 +81,12 @@ export class AppRuntime {
   #failoverTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private options: { mode: Mode; server: string | null }) {
+    // Sealed secrets, one vault per server and one for local mode. The plaintext an older version kept moves in.
+    const place = options.mode === 'local' || !options.server ? 'local' : options.server;
+    this.vault = new SecretVault({ storageKey: `kraftverk.vault.${place}`, ...(options.server ? legacySecrets(`kraftverk.secrets.${options.server}`) : {}) });
+    this.local = new LocalCatalog(this.vault);
+    // Sessions opened before the vault was read reopen with their secrets once it has been.
+    void this.vault.ready().then(() => this.#changed());
     const audit = (entry: Omit<AuditEntry, 'actor'>) => {
       if (this.uplink) this.uplink.audit({ at: entry.at, kind: entry.kind, resource: entry.resource, summary: entry.summary, detail: entry.detail });
       else console.log(`[audit] ${entry.summary}`);
@@ -170,31 +178,17 @@ export class AppRuntime {
   }
 
   /**
-   * The secrets of a connection this app holds: kept here and never sent
-   * anywhere (docs/ARCHITECTURE.md §4.3). In local mode the local catalog
-   * keeps them with the connection; for a server, this app keeps them itself.
+   * The secrets of a connection this app holds: kept here, sealed, and never
+   * sent anywhere (docs/ARCHITECTURE.md §4.3, step 21). One vault per server,
+   * and one for local mode, which its catalog keeps its secrets in too.
    */
   heldSecrets(connectionId: string): Record<string, string> {
-    if (this.options.mode === 'local') return this.local.secrets(connectionId);
-    return this.#serverSecrets()[connectionId] ?? {};
+    return this.vault.get(connectionId);
   }
 
   setHeldSecrets(connectionId: string, secrets: Record<string, string>): void {
-    if (this.options.mode === 'local') {
-      this.local.setSecrets(connectionId, secrets);
-    } else if (this.options.server) {
-      const all = this.#serverSecrets();
-      writePreference(`kraftverk.secrets.${this.options.server}`, JSON.stringify({ ...all, [connectionId]: { ...(all[connectionId] ?? {}), ...secrets } }));
-    }
+    this.vault.set(connectionId, secrets);
     this.#changed();
-  }
-
-  #serverSecrets(): Record<string, Record<string, string>> {
-    try {
-      return this.options.server ? (JSON.parse(readPreference(`kraftverk.secrets.${this.options.server}`) ?? '{}') as Record<string, Record<string, string>>) : {};
-    } catch {
-      return {};
-    }
   }
 
   /** The devices the list shows, for what the gateway checks against. */

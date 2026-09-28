@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { clearPreference } from '../lib/preferences';
-import { LocalCatalog } from './local';
+import { clearPreference, readPreference, writePreference } from '../lib/preferences';
+import { LocalCatalog, memorySecrets } from './local';
 
 /*
   Local mode's catalog: the same records a server keeps — devices,
@@ -18,8 +18,9 @@ const lamp = (catalog: LocalCatalog, options: { id?: string; method?: string; se
 
 describe('the local catalog', () => {
   test('keeps a device with its connection and secrets, across a restart', () => {
-    const device = lamp(new LocalCatalog(), { secrets: { pin: '1234' } });
-    const again = new LocalCatalog();
+    const vault = memorySecrets();
+    const device = lamp(new LocalCatalog(vault), { secrets: { pin: '1234' } });
+    const again = new LocalCatalog(vault);
     expect(again.device(device.id)).toMatchObject({ name: 'Hall lamp', identity: 'lampish:A' });
     const [connection] = again.connections(device.id);
     expect(connection).toMatchObject({ method: 'ble', priority: 0 });
@@ -71,6 +72,14 @@ describe('the local catalog', () => {
       links: [{ kind: 'feeds', other: 'd-station-2', role: 'source' }],
     });
     expect(catalog.links(plug.id).map((link) => link.targetId)).toEqual(['d-station-2']);
+  });
+
+  test('secrets an older version kept in plaintext move into the vault, and leave the catalog', () => {
+    writePreference('kraftverk.local', JSON.stringify({ devices: [], connections: [], links: [], stores: {}, secrets: { 'c-old': { localKey: 'plain' } } }));
+    const vault = memorySecrets();
+    new LocalCatalog(vault);
+    expect(vault.get('c-old')).toEqual({ localKey: 'plain' });
+    expect(readPreference('kraftverk.local')).not.toContain('plain');
   });
 
   test('removing a device takes its connections, secrets, links and store with it', () => {
