@@ -66,7 +66,7 @@ describe('migration 7', () => {
     const { handle, path } = beforeSeven();
     const backup = migrate(handle, path, MIGRATIONS);
     expect(backup).toContain('before-migration-7');
-    expect(all<{ id: number }>(handle, 'SELECT id FROM migration ORDER BY id').map((row) => row.id)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(all<{ id: number }>(handle, 'SELECT id FROM migration ORDER BY id').map((row) => row.id)).toEqual(MIGRATIONS.map((migration) => migration.id));
     handle.close();
   });
 

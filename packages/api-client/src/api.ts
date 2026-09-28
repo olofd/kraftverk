@@ -10,6 +10,9 @@ import type {
   AccountDetail,
   AuditEntry,
   AuthState,
+  AutomationMode,
+  AutomationRun,
+  AutomationView,
   CheckOutcome,
   ClientRecord,
   DeviceHistory,
@@ -20,6 +23,7 @@ import type {
   FoundView,
   HeldSetupInput,
   LinkRecord,
+  RecipeView,
   SaveInput,
   ServerLogLine,
   SightingView,
@@ -283,6 +287,54 @@ export async function addLink(kind: string, sourceId: string, targetId: string) 
 
 export async function removeLink(id: string) {
   await api.delete(`/links/${encodeURIComponent(id)}`);
+}
+
+// --- automations ----------------------------------------------------------------
+
+export async function fetchRecipes(signal?: AbortSignal) {
+  const { data } = await api.get<{ recipes: RecipeView[] }>('/automations/recipes', { signal });
+  return data.recipes;
+}
+
+export async function fetchAutomations(signal?: AbortSignal) {
+  const { data } = await api.get<{ automations: AutomationView[] }>('/automations', { signal });
+  return data.automations;
+}
+
+export async function createAutomation(input: { name: string; recipe: string; roles: Record<string, string>; params: ConfigValues; timeZone: string }) {
+  const { data } = await api.post<AutomationView>('/automations', input);
+  return data;
+}
+
+/**
+ * Changes an automation. Arming one — or changing what an armed one does —
+ * comes back asking for confirmation, which is an answer, not an error: send
+ * it again with `confirmation` once the person has said yes.
+ */
+export async function updateAutomation(
+  id: string,
+  changes: { name?: string; roles?: Record<string, string>; params?: ConfigValues; timeZone?: string; mode?: AutomationMode; confirmation?: string }
+): Promise<{ automation: AutomationView } | { needsConfirmation: true; reason: string }> {
+  const response = await api.patch<AutomationView | { error: string; needsConfirmation?: boolean }>(`/automations/${encodeURIComponent(id)}`, changes, {
+    validateStatus: (status) => status === 200 || status === 409,
+  });
+  const data = response.data;
+  if (response.status === 409) {
+    const refusal = data as { error: string; needsConfirmation?: boolean };
+    if (refusal.needsConfirmation) return { needsConfirmation: true, reason: refusal.error };
+    throw new Error(refusal.error);
+  }
+  return { automation: data as AutomationView };
+}
+
+export async function deleteAutomation(id: string) {
+  await api.delete(`/automations/${encodeURIComponent(id)}`);
+}
+
+/** What it would do right now: decided, never acted on. */
+export async function checkAutomation(id: string) {
+  const { data } = await api.post<AutomationRun>(`/automations/${encodeURIComponent(id)}/check`, {}, { timeout: 30_000 });
+  return data;
 }
 
 // --- adding a device, held by the server ----------------------------------------

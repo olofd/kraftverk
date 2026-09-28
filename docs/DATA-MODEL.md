@@ -373,12 +373,16 @@ erDiagram
     real value "87"
   }
   automation {
-    text id PK "a-71c2d0e5f9a3 · built with automations"
-    text name "Charge when sunny"
-    text recipe "charge-when-sunny"
-    json params "{plug: d-5b2e90c4a1d3, station: d-3f9a2c61b0e4, cloudBelow: 30}"
-    int enabled "1"
+    text id PK "a-71c2d0e5f9a3 · migration 8"
+    text name "Sunny heater"
+    text recipe "forecast-switch"
+    json roles "{forecast: d-8e1d44a0f2b7, switch: d-5b2e90c4a1d3} · not foreign keys"
+    json params "{at: 07:00, day: tomorrow, condition: sunny, cloudMax: 40, action: on}"
+    text time_zone "Europe/Stockholm · the owner's clock"
+    text mode "off · observe · armed"
     text created_at "2026-10-15T08:00:00Z"
+    text last_run_at "2026-10-16T05:00:12Z"
+    json last_result "{outcome: acted, summary: Turn Heater plug on…}"
   }
   audit {
     int id PK "4812"

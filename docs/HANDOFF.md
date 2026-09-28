@@ -13,9 +13,10 @@ Last updated 2026-09-28.
 
 ## Where things stand
 
-**The plan's steps 0–13 and 15 are done** (ARCHITECTURE.md §8), on the branch
-`architecture-connections`; steps 0–3 are deployed. `main` deploys to the
-owner's NAS through GitLab; GitHub runs CI only. The architecture baseline is
+**The plan's steps 0–15 are done** (ARCHITECTURE.md §8) and deployed: work
+happens on `main`, and pushing it to GitLab deploys to the owner's NAS (GitHub
+runs CI only; see [CI.md](CI.md)). The broker container is updated by the
+manual `broker` job, which drops the station for about a minute. The architecture baseline is
 empty: the core names no product, and every device is found, not listed.
 
 - **The layers are packages**: `packages/transports` (mqtt with the broker,
@@ -33,7 +34,10 @@ empty: the core names no product, and every device is found, not listed.
   gateway's rules there (`client/src/runtime`). Web Bluetooth is verified in the
   browser's add flow up to its chooser; native Bluetooth
   (`transport-ble/src/native.ts`) has not run on a phone.
-- **Not started**: step 14, automations.
+- **Automations** (step 14): recipes with roles filled by devices, observing
+  until armed, run by the server through the gateway and audited
+  (`server/src/automations`, the app's Automations screen). The first recipe
+  switches by the forecast; the backup reserve and rules are next.
 
 **Local mode.** The app does not need a server. A server is a client-side record
 — address, name — kept in `localStorage` by `client/src/lib/servers.ts`, one
@@ -53,10 +57,11 @@ test plug were removed in the app. Removing a device then deleted its history,
 so the live database has no devices and no samples. The copy the server made
 before migration 6 — `/data/kraftverk.db.before-migration-6.2026-09-27T19-50-30Z`
 on the server's volume — still holds the station and all its history. Whether to
-restore it is the owner's decision. **If it is to be restored, do it before this
-branch deploys**: migration 7 then turns the station into a device with its
-Wi-Fi connection, its identity and all its history, and the grid pairing into a
-link. Restored afterwards, the copy would need migration 7 run on it again.
+restore it is the owner's decision. Migration 7 was deployed on 2026-09-28, so
+restoring now means: stop the server, put that copy in place of
+`/data/kraftverk.db`, and start it — migrations 6, 7 and 8 then run on it, each
+after its own backup, and the station comes back as a device with its Wi-Fi
+connection, identity and history. Anything recorded since the deploy is lost.
 
 ## Traps
 

@@ -17,6 +17,7 @@ import { heldRoutes } from './routes/held.ts';
 import type { AppDeps } from './routes/shared.ts';
 import { setupRoutes } from './routes/setup.ts';
 import { transportRoutes } from './routes/transports.ts';
+import { automationRoutes } from './routes/automations.ts';
 
 export type { AppDeps } from './routes/shared.ts';
 
@@ -155,6 +156,7 @@ export function createApp(deps: AppDeps) {
   api.route('/', connectionRoutes(deps));
   api.route('/', heldRoutes(deps));
   api.route('/', transportRoutes(deps));
+  api.route('/', automationRoutes(deps));
 
   app.route('/api', api);
 

@@ -99,6 +99,18 @@ export default function DevicesScreen() {
               accessory={<Feather name="plus" size={16} color={theme.muted?.val} />}
             />
           </Pressable>
+          {mode === 'server' ? (
+            <>
+              <RowSeparator />
+              <Pressable onPress={() => router.push('/automations')}>
+                <Row
+                  title="Automations"
+                  subtitle="What happens on its own: “if tomorrow is sunny, turn the plug on”"
+                  accessory={<Feather name="chevron-right" size={16} color={theme.muted?.val} />}
+                />
+              </Pressable>
+            </>
+          ) : null}
           {removed.length > 0 ? (
             <>
               <RowSeparator />

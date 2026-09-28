@@ -7,6 +7,8 @@ import { savedDeviceId } from '@kraftverk/device-sdk';
 
 import { ActionGateway } from '@kraftverk/gateway';
 import { corsOrigin, createApp } from './app.ts';
+import { AutomationEngine, serverDevices } from './automations/engine.ts';
+import { AutomationStore } from './automations/store.ts';
 import { CLIENT_HEADER, SESSION_COOKIE } from './auth/routes.ts';
 import { createFirstUser, createUser } from './auth/store.ts';
 import { CLIENT_IP_HEADER, EXPOSURE_HEADER, ProxyDirectory } from './auth/trust.ts';
@@ -22,7 +24,7 @@ import { DeviceSessionManager } from './devices/sessions.ts';
 import { SetupService } from './devices/setup.ts';
 import { busDefinition, FakeBus, lampProtocol, lampType } from './devices/testing.ts';
 import { DeviceTypeRegistry } from './devices/types.ts';
-import { closeDb, db, openSecret } from './history/db.ts';
+import { audit, closeDb, db, openSecret } from './history/db.ts';
 import { Sampler } from './history/sampler.ts';
 import { ProtocolRegistry } from './runtime/protocols.ts';
 import { TransportHost } from './runtime/transports.ts';
@@ -112,6 +114,8 @@ async function build(options: { simulate: boolean; readOnly?: boolean }): Promis
   });
   const proxies = new ProxyDirectory(PROXY);
   await proxies.refresh();
+  const automations = new AutomationStore();
+  const engine = new AutomationEngine({ store: automations, device: serverDevices(catalog, sessions), gateway, record: audit });
 
   const { app } = createApp({
     config,
@@ -128,6 +132,8 @@ async function build(options: { simulate: boolean; readOnly?: boolean }): Promis
     nearby,
     remote,
     gateway,
+    automations,
+    engine,
     sampler: new Sampler(registry),
     proxies,
     serverLog: { dir: null, recent: () => [] },
@@ -202,7 +208,7 @@ const login = async (username: string, server = simulated) =>
   (await call('/auth/login', { method: 'POST', body: { username, password: PASSWORD }, server })).token!;
 
 beforeEach(async () => {
-  db().exec('DELETE FROM device; DELETE FROM sample; DELETE FROM client; DELETE FROM users; DELETE FROM sessions; DELETE FROM app_state; DELETE FROM audit;');
+  db().exec('DELETE FROM device; DELETE FROM sample; DELETE FROM client; DELETE FROM users; DELETE FROM sessions; DELETE FROM app_state; DELETE FROM audit; DELETE FROM automation;');
   await simulated.sessions.sync([]);
   await onBus.sessions.sync([]);
   onBus.bus.lamps.clear();
@@ -705,6 +711,72 @@ describe('phones and browsers', () => {
 
     expect((await as(`/clients/${registered.body.id}`, { method: 'DELETE' })).status).toBe(200);
     expect((await as('/clients')).body.clients).toEqual([]);
+  });
+});
+
+describe('automations', () => {
+  /** A weather service and a plug, simulated: what "if tomorrow is sunny, turn the plug on" needs. */
+  const weatherAndPlug = async () => {
+    const started = await as('/setup', { method: 'POST', body: { typeId: 'open-meteo.weather', methodId: 'api' } });
+    await as(`/setup/${started.body.id}`, { method: 'PATCH', body: { device: { place: 'Home', latitude: 59.3, longitude: 18.1 } } });
+    await as(`/setup/${started.body.id}/check`, { method: 'POST' });
+    const weather = (await as(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: 'Weather' } })).body as { id: string };
+    const plug = await added('Heater plug', { server: simulated, typeId: 'atorch.s1w', methodId: 'lan' });
+    return { weather, plug };
+  };
+  const make = (roles: Record<string, string>) =>
+    as('/automations', {
+      method: 'POST',
+      body: { name: 'Sunny heater', recipe: 'forecast-switch', roles, params: { day: 'tomorrow', at: '07:00' }, timeZone: 'Europe/Stockholm' },
+    });
+
+  test('lists its recipes, with the roles each needs', async () => {
+    const { recipes } = (await as('/automations/recipes')).body;
+    expect(recipes).toEqual([expect.objectContaining({ id: 'forecast-switch', roles: expect.objectContaining({ forecast: expect.objectContaining({ capabilities: ['weather.forecast'] }) }) })]);
+  });
+
+  test('a role takes only a device that fits it', async () => {
+    const { weather, plug } = await weatherAndPlug();
+    const wrong = await make({ forecast: plug.id, switch: weather.id });
+    expect(wrong.status).toBe(400);
+    expect(wrong.body.error).toContain('cannot do that');
+  });
+
+  test('is made observing, says what it does, and is armed only when confirmed', async () => {
+    const { weather, plug } = await weatherAndPlug();
+    const created = await make({ forecast: weather.id, switch: plug.id });
+    expect(created.status).toBe(200);
+    expect(created.body).toMatchObject({ mode: 'observe', problems: [], sentence: 'At 07:00, if tomorrow looks sunny by Weather, turn Heater plug on.' });
+    const path = `/automations/${created.body.id}`;
+
+    const unconfirmed = await as(path, { method: 'PATCH', body: { mode: 'armed' } });
+    expect(unconfirmed.status).toBe(409);
+    expect(unconfirmed.body.needsConfirmation).toBe(true);
+    expect((await as(path, { method: 'PATCH', body: { mode: 'armed', confirmation: 'confirm' } })).body.mode).toBe('armed');
+    // Changing what an armed one does is confirmed again.
+    expect((await as(path, { method: 'PATCH', body: { params: { day: 'today', at: '08:00' } } })).status).toBe(409);
+
+    const audit = (await as('/audit')).body as { kind: string; actor: string }[];
+    expect(audit.find((entry) => entry.kind === 'automation.armed')).toMatchObject({ actor: 'olof' });
+  });
+
+  test('checks what it would do now without doing it, and is deleted', async () => {
+    const { weather, plug } = await weatherAndPlug();
+    const created = (await make({ forecast: weather.id, switch: plug.id })).body;
+    const check = await as(`/automations/${created.id}/check`, { method: 'POST' });
+    expect(check.status).toBe(200);
+    expect(['would-act', 'idle']).toContain(check.body.outcome);
+    expect((await as(`/automations/${created.id}`)).status).toBe(404); // no GET by id: the list is the view
+    expect((await as(`/automations/${created.id}`, { method: 'DELETE' })).status).toBe(200);
+    expect((await as('/automations')).body.automations).toEqual([]);
+  });
+
+  test('says when a device it uses has been removed', async () => {
+    const { weather, plug } = await weatherAndPlug();
+    await make({ forecast: weather.id, switch: plug.id });
+    await as(`/devices/${enc(plug.id)}`, { method: 'DELETE' });
+    const [automation] = (await as('/automations')).body.automations;
+    expect(automation.problems).toEqual(['What to switch: Heater plug has been removed']);
   });
 });
 

@@ -382,7 +382,8 @@ client            (id PK, user_id → users, name, platform, transports JSON, cr
 device_kv         (device_id → device ON DELETE CASCADE, key, value)
 device_link       (id PK, kind, source_id → device, target_id → device, created_at)
 sample            (device_id → device ON DELETE CASCADE, key, at, value)
-automation        (id PK, name, recipe, params JSON, enabled, created_at)      -- automations step
+automation        (id PK, name, recipe, roles JSON, params JSON, time_zone, mode, created_at,
+                   updated_at, last_run_at, last_result JSON)                  -- migration 8
 audit, app_state, users                                                       -- unchanged
 sessions          (… as today, + client_id → client)
 ```
@@ -574,7 +575,7 @@ holders and identity were added to the model (DATA-MODEL.md).
 | 11 | One gateway for every command, in shared code | M | done |
 | 12 | Connections held by the app | L | done, native Bluetooth untested |
 | 13 | Services: weather first | S–M | done; SMHI next |
-| 14 | Automations | L | not started |
+| 14 | Automations | L | done: recipes; rules next |
 | 15 | Make contributing easy | S | done |
 
 ### Step 0 — Words and one authority
@@ -820,6 +821,23 @@ Recipes first ("charge when sunny", "keep the station above X % from the
 grid"), rules after. **Done when** "if tomorrow is sunny, turn on the ATORCH"
 is created in the app and runs with an audit trail.
 
+*Done* with the first recipe. `server/src/automations`: recipes (`recipes.ts`,
+with roles by capability and settings as a schema), the store (migration 8),
+and the `AutomationEngine`, which asks each automation whether it is due, lets
+its recipe decide, and sends what it decided through the gateway as
+`actor: 'automation'` — dwell, freshness, read-only mode and verification
+apply, and every run is audited under `automation:<name>` and kept as its last
+result. A new automation **observes**: it says what it would have done.
+**Arming** it is confirmed, as is changing what an armed one does. Times are
+the owner's clock, carried from the app that made it, whatever zone the
+server runs in. The first recipe is *Switch by the forecast*: once a day, at
+the hour chosen, today's or tomorrow's average cloud cover between 09:00 and
+17:00 decides whether to switch; a forecast with gaps decides nothing. The
+app's Automations screen makes one — each role offers only the devices that
+fit — and shows the last run and what it would do now. Verified end to end
+against a simulated weather service and plug. Next: the backup-reserve
+recipe (PROJECT-BRIEF.md), which needs the arming checklist, and rules.
+
 ### Step 15 — Make contributing easy
 `npm run new:device`, `new:protocol` and `new:transport` scaffolds, a
 `docs/ADDING-A-DEVICE.md` guide, and the contract suite run in CI for every
@@ -902,7 +920,7 @@ is said beside it.
       test, and one test checks every installed package
       (`server/src/runtime/packages.test.ts`).
 - [x] Weather is a service offering `weather.forecast`.
-- [ ] An automation connecting a forecast to a switch runs end to end, audited
-      (step 14).
+- [x] An automation connecting a forecast to a switch runs end to end, audited
+      (step 14). *Against simulated devices; the ATORCH waits on its local key.*
 - [x] The app never says extension, plugin, driver, adapter, bind, transport or
       protocol.

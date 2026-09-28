@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { savedDeviceId } from '@kraftverk/device-sdk';
 
 import type { ActionGateway } from '@kraftverk/gateway';
+import type { AutomationEngine } from '../automations/engine.ts';
+import type { AutomationStore } from '../automations/store.ts';
 import { actorOf, userOf } from '../auth/routes.ts';
 import type { LoginLimiter } from '../auth/limiter.ts';
 import type { ProxyDirectory } from '../auth/trust.ts';
@@ -51,6 +53,8 @@ export type AppDeps = {
   /** Readings from connections an app holds. */
   remote: RemoteReadings;
   gateway: ActionGateway;
+  automations: AutomationStore;
+  engine: AutomationEngine;
   sampler: Sampler;
   proxies: ProxyDirectory;
   serverLog: Pick<ServerLog, 'dir' | 'recent'>;

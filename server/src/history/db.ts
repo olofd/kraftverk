@@ -257,6 +257,33 @@ export const MIGRATIONS: Migration[] = [
   },
   // Devices reached through connections; the plugin tables go. See the file.
   { id: 7, sql: connections.SQL, run: connections.run },
+  {
+    id: 8,
+    sql: `
+      /*
+        Automations: a recipe, the devices that fill its roles, its settings and
+        the owner's clock (docs/ARCHITECTURE.md step 14). Devices are named in
+        roles, not by foreign key: an automation whose device is removed stays,
+        and says it cannot run, rather than vanishing with it.
+
+        mode: off, observe (decides and says what it would have done), armed
+        (acts, through the gateway). A new one observes.
+      */
+      CREATE TABLE automation (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL,
+        recipe      TEXT NOT NULL,
+        roles       TEXT NOT NULL DEFAULT '{}',
+        params      TEXT NOT NULL DEFAULT '{}',
+        time_zone   TEXT NOT NULL,
+        mode        TEXT NOT NULL DEFAULT 'observe' CHECK (mode IN ('off', 'observe', 'armed')),
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL,
+        last_run_at TEXT,
+        last_result TEXT
+      );
+    `,
+  },
 ];
 
 /**

@@ -1,5 +1,7 @@
 import { ActionGateway } from '@kraftverk/gateway';
 import { createApp } from './app.ts';
+import { AutomationEngine, serverDevices } from './automations/engine.ts';
+import { AutomationStore } from './automations/store.ts';
 import { ProxyDirectory } from './auth/trust.ts';
 import { loadConfig, transportEnabled } from './config.ts';
 import { DeviceCatalog } from './devices/catalog.ts';
@@ -184,6 +186,11 @@ const gateway = new ActionGateway({
 const sampler = new Sampler(registry);
 sampler.start();
 
+/** Automations: decided here, acted on only through the gateway. */
+const automations = new AutomationStore();
+const engine = new AutomationEngine({ store: automations, device: serverDevices(catalog, sessions), gateway, record: audit });
+engine.start();
+
 /** The web container, the one proxy whose "home-network entrance" stamp is believed. */
 const proxies = new ProxyDirectory(config.trustedProxies);
 proxies.start();
@@ -203,6 +210,8 @@ const { app } = createApp({
   nearby,
   remote,
   gateway,
+  automations,
+  engine,
   sampler,
   proxies,
   serverLog,
@@ -211,6 +220,7 @@ const { app } = createApp({
 
 // Everything is running: from here on, stopping also closes what was opened.
 onStop(
+  () => engine.stop(),
   () => sampler.stop(),
   () => setup.stop(),
   () => nearby.stop(),

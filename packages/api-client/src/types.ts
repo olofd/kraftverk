@@ -293,4 +293,43 @@ export type AuthState = {
   setupRequired: boolean;
   canSetup: boolean;
 };
+// --- automations ----------------------------------------------------------------
+
+/** A recipe the server offers: roles to fill with devices, and its settings. */
+export type RecipeView = {
+  id: string;
+  label: string;
+  description: string;
+  roles: Record<string, { label: string; description: string; capabilities: CapabilityName[] }>;
+  params: ConfigSchema;
+};
+
+/** off: nothing; observe: decides and says what it would have done; armed: acts, through the gateway. */
+export type AutomationMode = 'off' | 'observe' | 'armed';
+
+export type AutomationRun = {
+  at: string;
+  outcome: 'acted' | 'unverified' | 'would-act' | 'idle' | 'unknown' | 'refused' | 'failed';
+  summary: string;
+};
+
+export type AutomationView = {
+  id: string;
+  name: string;
+  recipe: string;
+  recipeLabel: string;
+  /** What it does, in a sentence: "At 07:00, if tomorrow looks sunny by Weather, turn Heater plug on." */
+  sentence: string;
+  roles: Record<string, SavedDeviceId>;
+  params: ConfigValues;
+  timeZone: string;
+  mode: AutomationMode;
+  createdAt: string;
+  updatedAt: string;
+  lastRunAt: string | null;
+  lastResult: AutomationRun | null;
+  /** Why it cannot run as it is: a removed device. Empty when it can. */
+  problems: string[];
+};
+
 export { CONFIRMATION as CONFIRMATION_TOKEN } from '@kraftverk/gateway';
