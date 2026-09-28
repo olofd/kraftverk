@@ -105,11 +105,11 @@ async function build(options: { simulate: boolean; readOnly?: boolean }): Promis
   const gateway = new ActionGateway({
     device: (id) => {
       const record = catalog.active(id);
-      return record ? { name: record.name, session: sessions.get(id), offline: sessions.health(record).detail } : null;
+      return record ? { name: record.name, session: sessions.get(id), offline: sessions.health(record).detail, settings: sessions.typeOf(record)?.settings ?? null } : null;
     },
     feeds: (id) => links.targetOf('feeds', id),
     isReadOnly: () => config.readOnly,
-    record: () => {},
+    record: audit,
     policy: { verifyTimeoutMs: 300 },
   });
   const proxies = new ProxyDirectory(PROXY);
@@ -714,6 +714,30 @@ describe('phones and browsers', () => {
   });
 });
 
+describe('settings, through the gateway', () => {
+  test('a setting is written, read back and audited; one that can damage the hardware is confirmed first', async () => {
+    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280', methodId: 'wifi' });
+    const path = `/devices/${enc(station.id)}/settings`;
+
+    const led = await as(path, { method: 'PATCH', body: { patch: { ledMode: 'sos' } } });
+    expect(led.status).toBe(200);
+    expect(led.body).toMatchObject({ outcome: 'verified', values: expect.objectContaining({ ledMode: 'sos' }) });
+
+    const unknown = await as(path, { method: 'PATCH', body: { patch: { turbo: true } } });
+    expect(unknown.status).toBe(409);
+    expect(unknown.body).toMatchObject({ outcome: 'refused', detail: 'No such setting: turbo' });
+
+    const risky = await as(path, { method: 'PATCH', body: { patch: { sleepMinutes: '480' } } });
+    expect(risky.status).toBe(409);
+    expect(risky.body.needsConfirmation).toBe(true);
+    const confirmed = await as(path, { method: 'PATCH', body: { patch: { sleepMinutes: '480' }, confirmation: 'confirm' } });
+    expect(confirmed.body.outcome).toBe('verified');
+
+    const kinds = ((await as('/audit')).body as { kind: string; actor: string }[]).map((entry) => entry.kind);
+    expect(kinds).toEqual(expect.arrayContaining(['settings.intent', 'settings.verified', 'settings.refused']));
+  });
+});
+
 describe('automations', () => {
   /** A weather service and a plug, simulated: what "if tomorrow is sunny, turn the plug on" needs. */
   const weatherAndPlug = async () => {
@@ -769,6 +793,27 @@ describe('automations', () => {
     expect((await as(`/automations/${created.id}`)).status).toBe(404); // no GET by id: the list is the view
     expect((await as(`/automations/${created.id}`, { method: 'DELETE' })).status).toBe(200);
     expect((await as('/automations')).body.automations).toEqual([]);
+  });
+
+  test('a station fills the switch role through the outlet it is told, and only one it has', async () => {
+    const started = await as('/setup', { method: 'POST', body: { typeId: 'open-meteo.weather', methodId: 'api' } });
+    await as(`/setup/${started.body.id}`, { method: 'PATCH', body: { device: { place: 'Home', latitude: 59.3, longitude: 18.1 } } });
+    await as(`/setup/${started.body.id}/check`, { method: 'POST' });
+    const weather = (await as(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: 'Weather' } })).body as { id: string };
+    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280', methodId: 'wifi' });
+    const make = (params: Record<string, string>) =>
+      as('/automations', {
+        method: 'POST',
+        body: { name: 'Sunny lights', recipe: 'forecast-switch', roles: { forecast: weather.id, switch: station.id }, params: { day: 'today', ...params }, timeZone: 'Europe/Stockholm' },
+      });
+
+    const unsaid = await make({});
+    expect(unsaid.status).toBe(400);
+    expect(unsaid.body.error).toContain('choose which');
+    expect((await make({ outlet: 'garage-door' })).status).toBe(400);
+    const made = await make({ outlet: 'dc' });
+    expect(made.status).toBe(200);
+    expect(made.body.sentence).toContain("Garage P280's dc outlet");
   });
 
   test('says when a device it uses has been removed', async () => {

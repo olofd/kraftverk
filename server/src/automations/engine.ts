@@ -1,4 +1,4 @@
-import type { CapabilityName, SavedDeviceId } from '@kraftverk/device-sdk';
+import { meetsNeed, type SavedDeviceId } from '@kraftverk/device-sdk';
 import type { ActionGateway, AuditEntry, GatewayResult } from '@kraftverk/gateway';
 
 import type { DeviceCatalog } from '../devices/catalog.ts';
@@ -7,7 +7,7 @@ import { recipeOf, type AutomationRecord, type Decision, type RecipeDevice, type
 import type { AutomationStore } from './store.ts';
 
 /** A device as the engine sees it: enough to check a role and to hand a recipe. */
-export type EngineDevice = RecipeDevice & { capabilities: readonly CapabilityName[]; removed: boolean };
+export type EngineDevice = RecipeDevice & { removed: boolean };
 
 export type AutomationEngineDeps = {
   store: AutomationStore;
@@ -140,8 +140,7 @@ export class AutomationEngine {
       const device = id ? this.deps.device(id) : null;
       if (!id || !device) return [`${spec.label}: no device`];
       if (device.removed) return [`${spec.label}: ${device.name} has been removed`];
-      const missing = spec.capabilities.filter((capability) => !device.capabilities.includes(capability));
-      return missing.length ? [`${spec.label}: ${device.name} cannot ${missing.join(', ')}`] : [];
+      return meetsNeed(spec, device.capabilities) ? [] : [`${spec.label}: ${device.name} cannot do that`];
     });
   }
 

@@ -147,11 +147,5 @@ export class DeviceRegistry {
   readSettings(record: DeviceRecord): ConfigValues {
     return this.deps.sessions.get(record.id)?.readSettings?.() ?? {};
   }
-
-  /** Applies settings through the device's session, and returns what it reports afterwards. */
-  async writeSettings(record: DeviceRecord, patch: ConfigValues): Promise<ConfigValues> {
-    const session = this.deps.sessions.get(record.id);
-    if (!session?.writeSettings) return {};
-    return (await session.writeSettings(patch)) ?? {};
-  }
+  // Writing them is the gateway's (ActionGateway.writeSettings): the same checks as a command.
 }

@@ -57,7 +57,7 @@ export type {
   SupportLevel,
   TransportDefinition,
 } from '@kraftverk/device-sdk';
-export type { GatewayResult, GatewayOutcome } from '@kraftverk/gateway';
+export type { GatewayResult, GatewayOutcome, SettingsResult } from '@kraftverk/gateway';
 
 /** `GET /api/version`. */
 export type VersionInfo = {
@@ -152,6 +152,13 @@ export type DeviceSettings = {
   /** Settings that can damage the hardware if set wrongly. */
   dangerous: string[];
 };
+
+/**
+ * `PATCH /devices/:id/settings`: only what should change. A setting in
+ * `dangerous` needs `confirmation`; the answer is the gateway's verdict either
+ * way, with what the device reports afterwards.
+ */
+export type SettingsWrite = { patch: ConfigValues; confirmation?: string };
 
 export type SeriesPoint = { at: string; value: number };
 
@@ -308,7 +315,18 @@ export type RecipeView = {
   id: string;
   label: string;
   description: string;
-  roles: Record<string, { label: string; description: string; capabilities: readonly CapabilityName[] }>;
+  /** What each role asks of a device: every one of `capabilities`, and one of `oneOf` when given. */
+  roles: Record<
+    string,
+    {
+      label: string;
+      description: string;
+      capabilities: readonly CapabilityName[];
+      oneOf?: readonly CapabilityName[];
+      /** Filled through this capability, the part chosen — an outlet — is kept in the setting `param`. */
+      target?: { param: string; capability: CapabilityName };
+    }
+  >;
   params: ConfigSchema;
 };
 

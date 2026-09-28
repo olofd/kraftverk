@@ -2,8 +2,8 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import type { DeviceTypeListing } from '@kraftverk/api-contract';
-import { CATEGORIES, describeDeviceType, secretFields, validateConfig, type Availability } from '@kraftverk/device-sdk';
+import type { DeviceTypeListing, SettingsWrite } from '@kraftverk/api-contract';
+import { CATEGORIES, describeDeviceType, secretFields, type Availability } from '@kraftverk/device-sdk';
 
 import { actorOf } from '../auth/routes.ts';
 import { series } from '../history/sampler.ts';
@@ -122,34 +122,21 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
     return c.json({ schema: settings.schema, dangerous: settings.dangerous ?? [], values: registry.readSettings(record) });
   });
 
+  /**
+   * A settings write goes through the gateway, like a command: held to the
+   * type's schema, refused while read-only, confirmed for a setting that can
+   * damage the hardware, verified by reading it back, and audited. A refusal
+   * is an answer (409), with `needsConfirmation` when a person only has to say yes.
+   */
   api.patch('/devices/:id/settings', async (c) => {
     const record = deviceOr404(catalog, c.req.param('id'));
-    const settings = sessions.typeOf(record)?.settings;
-    if (!settings) throw new HTTPException(404, { message: 'That device has no settings' });
-    if (config.readOnly) throw new HTTPException(423, { message: 'The server is in read-only mode' });
-
-    const patch = await body(c, z.record(z.string(), z.unknown()));
-    const unknown = Object.keys(patch).filter((key) => !(key in settings.schema.fields));
-    if (unknown.length) throw new HTTPException(400, { message: `No such setting: ${unknown.join(', ')}` });
-    const validated = validateConfig(settings.schema, { ...registry.readSettings(record), ...patch });
-    if (!validated.ok) return c.json({ error: 'Validation failed', issues: validated.issues }, 400);
-
-    // Only what was asked for is sent: applying the full set would rewrite
-    // every register on a station to change one of them.
-    const changed = Object.fromEntries(Object.keys(patch).map((key) => [key, validated.value[key]]));
-    const values = await registry.writeSettings(record, changed).catch((error: unknown) => {
-      throw new HTTPException(409, { message: (error as Error).message });
-    });
-    // Secret fields are never written to the timeline, only that they changed.
-    const secret = new Set(secretFields(settings.schema));
-    auditDevice(
+    if (!sessions.typeOf(record)?.settings) throw new HTTPException(404, { message: 'That device has no settings' });
+    const input: SettingsWrite = await body(
       c,
-      'device.settings',
-      record.id,
-      `Changed ${Object.keys(changed).join(', ')} on "${record.name}"`,
-      Object.fromEntries(Object.entries(changed).map(([key, value]) => [key, secret.has(key) ? '(secret)' : value]))
+      z.object({ patch: z.record(z.string().max(64), z.union([z.string().max(4096), z.number(), z.boolean()])), confirmation: z.string().max(20).optional() }).strict()
     );
-    return c.json({ values });
+    const result = await gateway.writeSettings({ deviceId: record.id, patch: input.patch, actor: 'user', by: actorOf(c), confirmation: input.confirmation });
+    return c.json(result, result.outcome === 'verified' || result.outcome === 'unverified' ? 200 : 409);
   });
 
   /**

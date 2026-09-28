@@ -190,5 +190,16 @@ export type CapabilityImpl = {
 
 export const isCapability = (name: string): name is CapabilityName => Object.hasOwn(CAPABILITIES, name);
 
+/**
+ * What a slot asks of a device — an automation's role: every capability in
+ * `capabilities`, and at least one of `oneOf` when there is one ("a switch, or
+ * one of a station's outlets").
+ */
+export type CapabilityNeed = { capabilities: readonly CapabilityName[]; oneOf?: readonly CapabilityName[] };
+
+/** Whether a device offering these capabilities meets the need. */
+export const meetsNeed = (need: CapabilityNeed, offered: readonly CapabilityName[]): boolean =>
+  need.capabilities.every((capability) => offered.includes(capability)) && (!need.oneOf?.length || need.oneOf.some((capability) => offered.includes(capability)));
+
 /** Whether a capability can change anything in the world. */
 export const isActuating = (name: CapabilityName): boolean => Object.keys(CAPABILITIES[name].commands).length > 0;

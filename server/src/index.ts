@@ -175,7 +175,7 @@ const nearby = new Nearby({ types, protocols, transports, connections });
 const gateway = new ActionGateway({
   device: (id) => {
     const record = catalog.active(id);
-    return record ? { name: record.name, session: sessions.get(id), offline: sessions.health(record).detail } : null;
+    return record ? { name: record.name, session: sessions.get(id), offline: sessions.health(record).detail, settings: sessions.typeOf(record)?.settings ?? null } : null;
   },
   feeds: (id) => links.targetOf('feeds', id),
   isReadOnly: () => config.readOnly,

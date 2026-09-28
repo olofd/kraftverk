@@ -3,7 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
 import type { AutomationChanges, AutomationView, NewAutomation, RecipeView } from '@kraftverk/api-contract';
-import { savedDeviceId, validateConfig, type ConfigValues, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { meetsNeed, outletsOf, savedDeviceId, validateConfig, type ConfigValues, type SavedDeviceId } from '@kraftverk/device-sdk';
 import { CONFIRMATION } from '@kraftverk/gateway';
 
 import { RECIPES, recipeOf, type AutomationRecord } from '../automations/recipes.ts';
@@ -50,8 +50,16 @@ export function automationRoutes({ automations, engine, catalog, sessions }: App
       const device = id ? catalog.active(savedDeviceId(id)) : null;
       if (!device) throw new HTTPException(400, { message: `${spec.label}: choose one of your devices` });
       const type = sessions.typeOf(device);
-      const missing = spec.capabilities.filter((capability) => !type?.capabilities.includes(capability));
-      if (missing.length) throw new HTTPException(400, { message: `${spec.label}: ${device.name} cannot do that` });
+      if (!meetsNeed(spec, type?.capabilities ?? [])) throw new HTTPException(400, { message: `${spec.label}: ${device.name} cannot do that` });
+      // Filled through a part — a station's outlet — the part must be one it has.
+      const others = (spec.oneOf ?? []).filter((capability) => capability !== spec.target?.capability);
+      if (spec.target && type && !others.some((capability) => type.capabilities.includes(capability))) {
+        const chosen = input.params[spec.target.param];
+        const parts = outletsOf(type.telemetry).map((outlet) => outlet.id);
+        if (typeof chosen !== 'string' || !parts.includes(chosen)) {
+          throw new HTTPException(400, { message: `${spec.label}: choose which of ${device.name}'s outlets (${parts.join(', ')})` });
+        }
+      }
       filled[role] = device.id;
     }
     const extra = Object.keys(input.roles).filter((role) => !recipe.roles[role]);

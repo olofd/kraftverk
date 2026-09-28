@@ -30,6 +30,7 @@ import {
   type DeviceSettings,
   type DeviceView,
   type GatewayResult,
+  type SettingsResult,
   type LinkView,
   type SavedDeviceId,
   type VersionInfo,
@@ -336,14 +337,23 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     [mode, runtime]
   );
 
-  /** Sends a command, and when the gateway only wants a person to confirm, asks them. */
-  const confirmed = useCallback(async (send: (confirmation?: string) => Promise<GatewayResult>): Promise<GatewayResult> => {
-    const first = await send();
-    if (!first.needsConfirmation) return first;
-    const yes = await confirmAction('Confirm', first.detail.replace(/^This action needs explicit confirmation\. /, ''), 'Do it');
-    if (!yes) return { outcome: 'refused', detail: 'Not confirmed' };
-    return send(CONFIRMATION_TOKEN);
-  }, []);
+  /** Sends a command or a settings write, and when the gateway only wants a person to confirm, asks them. */
+  const confirmed = useCallback(
+    async <R extends { outcome: GatewayResult['outcome']; detail: string; needsConfirmation?: true }>(send: (confirmation?: string) => Promise<R>): Promise<R> => {
+      const first = await send();
+      if (!first.needsConfirmation) return first;
+      const yes = await confirmAction('Confirm', first.detail.replace(/^This (action )?needs explicit confirmation\. /, ''), 'Do it');
+      if (!yes) return { ...first, detail: 'Not confirmed', needsConfirmation: undefined };
+      return send(CONFIRMATION_TOKEN);
+    },
+    []
+  );
+
+  /** A settings write's verdict, as the screens take it: what the device reports, or why not. */
+  const settled = (result: SettingsResult): ConfigValues => {
+    if (result.outcome === 'refused' || result.outcome === 'failed') throw new Error(result.detail);
+    return result.values ?? {};
+  };
 
   const actionsFor = useCallback(
     (device: DeviceView): DeviceActions => {
@@ -368,12 +378,19 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
             dangerous: [...(device.settings?.dangerous ?? [])],
             values: session().readSettings?.() ?? {},
           }),
-          writeSettings: async (patch: ConfigValues) => {
-            if (!runtime.allowWrites) throw new Error('Writes from this app are off: allow them in App settings');
-            const values = (await session().writeSettings?.(patch)) ?? {};
-            runtime.uplink?.audit({ at: new Date().toISOString(), kind: 'device.settings', resource: device.id, summary: `Changed ${Object.keys(patch).join(', ')} on "${device.name}"`, detail: patch });
-            return values;
-          },
+          // The gateway's settings write, here as on the server: schema, confirmation, read-back, audit.
+          writeSettings: async (patch: ConfigValues) =>
+            settled(
+              await confirmed((confirmation) =>
+                runtime.gateway.writeSettings({
+                  deviceId: device.id as SavedDeviceId,
+                  patch,
+                  actor: 'user',
+                  by: runtime.clientId ? `app:${runtime.clientId}` : 'this app',
+                  confirmation,
+                })
+              )
+            ),
           command: (input: CommandInput) =>
             confirmed((confirmation) =>
               runtime.gateway.execute({
@@ -397,7 +414,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
           tool: <T,>(name: string, input?: Record<string, unknown>) =>
             runDeviceTool<T>(device.id, name, { input, writes: device.advanced.find((tool) => tool.name === name)?.writes ?? false }),
           readSettings: () => fetchDeviceSettings(device.id),
-          writeSettings: (patch) => patchDeviceSettings(device.id, patch),
+          writeSettings: async (patch) => settled(await confirmed((confirmation) => patchDeviceSettings(device.id, { patch, confirmation }))),
           command: (input) => confirmed((confirmation) => sendCommand(device.id, { ...input, confirmation })),
           diagnostic: inUse ? <T,>(name: string, query?: Record<string, string | number>) => fetchTransportDiagnostic<T>(inUse.transport, name, query) : null,
         };

@@ -51,7 +51,7 @@ function forecastSession(cloud: (at: Date) => number | null, now: Date): DeviceS
   };
 }
 
-function setup(options: { cloud: (at: Date) => number | null; now: Date; plugRemoved?: boolean; forecastSession?: boolean }) {
+function setup(options: { cloud: (at: Date) => number | null; now: Date; plugRemoved?: boolean; forecastSession?: boolean; plugOutlets?: boolean }) {
   const sent: CommandIntent[] = [];
   const recorded: AuditEntry[] = [];
   const devices: Record<string, EngineDevice> = {
@@ -62,7 +62,7 @@ function setup(options: { cloud: (at: Date) => number | null; now: Date; plugRem
       offline: 'Not answering',
       capabilities: ['weather.forecast'],
     },
-    [PLUG]: { name: 'Heater plug', removed: options.plugRemoved ?? false, session: null, offline: 'n/a', capabilities: ['switch', 'powerMeter'] },
+    [PLUG]: { name: 'Heater plug', removed: options.plugRemoved ?? false, session: null, offline: 'n/a', capabilities: options.plugOutlets ? ['outlets', 'battery'] : ['switch', 'powerMeter'] },
   };
   const store = new AutomationStore();
   const engine = new AutomationEngine({
@@ -157,6 +157,14 @@ describe('forecast switch', () => {
 
     const silent = setup({ cloud: () => 5, now: MORNING, forecastSession: false });
     expect(await silent.engine.run(silent.make({}, 'armed'))).toMatchObject({ outcome: 'unknown', summary: 'Weather is not answering: Not answering' });
+  });
+
+  test('a station fills the switch role through one of its outlets', async () => {
+    const { engine, make, sent } = setup({ cloud: () => 5, now: MORNING, plugOutlets: true });
+    expect((await engine.run(make({ outlet: 'ac' }, 'armed'))).outcome).toBe('acted');
+    expect(sent[0]).toMatchObject({ capability: 'outlets', target: 'ac', value: true });
+    // Without saying which outlet, nothing is switched.
+    expect((await engine.run(make({}, 'armed'))).outcome).toBe('unknown');
   });
 
   test('a removed device stops it, and says so', async () => {

@@ -1,5 +1,5 @@
 import type { AutomationMode, AutomationRun } from '@kraftverk/api-contract';
-import type { CapabilityName, ConfigSchema, ConfigValues, DeviceSession, SavedDeviceId, WeatherHour } from '@kraftverk/device-sdk';
+import type { CapabilityName, CapabilityNeed, ConfigSchema, ConfigValues, DeviceSession, SavedDeviceId, WeatherHour } from '@kraftverk/device-sdk';
 
 import { dayAfter, localTime, zonedInstant } from './time.ts';
 
@@ -35,15 +35,19 @@ export type AutomationRecord = {
   lastResult: RunResult | null;
 };
 
-export type RoleSpec = {
+/** A role: what a device must offer to fill it (`meetsNeed`), and what it is for. */
+export type RoleSpec = CapabilityNeed & {
   label: string;
   description: string;
-  /** What a device must offer to fill the role. */
-  capabilities: readonly CapabilityName[];
+  /**
+   * When a device fills the role through this capability — a station, through
+   * `outlets` — which part of it: the chosen outlet is kept in the setting `param`.
+   */
+  target?: { param: string; capability: CapabilityName };
 };
 
 /** A device, as a recipe may see it. */
-export type RecipeDevice = { name: string; session: DeviceSession | null; offline: string };
+export type RecipeDevice = { name: string; session: DeviceSession | null; offline: string; capabilities: readonly CapabilityName[] };
 
 export type RecipeContext = {
   automation: AutomationRecord;
@@ -96,7 +100,13 @@ export const forecastSwitch: Recipe = {
   description: 'Once a day, switch something on or off depending on whether the day looks sunny.',
   roles: {
     forecast: { label: 'Forecast', description: 'Where the forecast comes from', capabilities: ['weather.forecast'] },
-    switch: { label: 'What to switch', description: 'A plug, or anything else that switches', capabilities: ['switch'] },
+    switch: {
+      label: 'What to switch',
+      description: 'A plug, or one outlet of a station',
+      capabilities: [],
+      oneOf: ['switch', 'outlets'],
+      target: { param: 'outlet', capability: 'outlets' },
+    },
   },
   params: {
     fields: {
@@ -134,6 +144,11 @@ export const forecastSwitch: Recipe = {
         max: 100,
         step: 5,
         default: 40,
+      },
+      outlet: {
+        type: 'string',
+        title: 'Which outlet',
+        description: 'For a station: the outlet to switch. A plug has only one.',
       },
       action: {
         type: 'enum',
@@ -181,12 +196,18 @@ export const forecastSwitch: Recipe = {
     const wanted = params.condition === 'cloudy' ? 'cloudy' : 'sunny';
     const reason = `${capitalise(which)} looks ${looks}: ${cloud} % cloud on average between 09:00 and 17:00`;
     if (looks !== wanted) return { kind: 'idle', reason };
-    return { kind: 'act', role: 'switch', capability: 'switch', command: 'set', value: params.action !== 'off', reason };
+    const value = params.action !== 'off';
+    const target = device('switch');
+    if (target?.capabilities.includes('switch')) return { kind: 'act', role: 'switch', capability: 'switch', command: 'set', value, reason };
+    const outlet = typeof params.outlet === 'string' && params.outlet ? params.outlet : null;
+    if (!outlet) return { kind: 'unknown', reason: 'It does not say which outlet to switch' };
+    return { kind: 'act', role: 'switch', capability: 'outlets', command: 'set', target: outlet, value, reason };
   },
 
   describe(automation, name) {
     const params = automation.params;
-    return `At ${params.at ?? '07:00'}, if ${params.day === 'tomorrow' ? 'tomorrow' : 'today'} looks ${params.condition === 'cloudy' ? 'cloudy' : 'sunny'} by ${name('forecast')}, turn ${name('switch')} ${params.action === 'off' ? 'off' : 'on'}.`;
+    const what = params.outlet ? `${name('switch')}'s ${params.outlet} outlet` : name('switch');
+    return `At ${params.at ?? '07:00'}, if ${params.day === 'tomorrow' ? 'tomorrow' : 'today'} looks ${params.condition === 'cloudy' ? 'cloudy' : 'sunny'} by ${name('forecast')}, turn ${what} ${params.action === 'off' ? 'off' : 'on'}.`;
   },
 };
 

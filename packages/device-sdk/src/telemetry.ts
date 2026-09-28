@@ -122,6 +122,13 @@ export const STANDARD_NAMESPACES: readonly string[] = [
   ...new Set([...Object.keys(STANDARD_METRICS).map((id) => id.split('.')[0]!), 'outlet']),
 ];
 
+/** A device's outlets, as its telemetry declares them (`outlet.<id>.on`): what a command's target can be. */
+export const outletsOf = <T extends Pick<MetricSpec, 'metric' | 'label'>>(telemetry: readonly T[]): { id: string; label: string }[] =>
+  telemetry.flatMap((spec) => {
+    const match = spec.metric ? OUTLET_METRIC.exec(spec.metric) : null;
+    return match?.[2] === 'on' ? [{ id: match[1]!, label: spec.label }] : [];
+  });
+
 /** The measurement of a device's telemetry that means `metric`, if it has one. */
 export const metricOf = <T extends Pick<MetricSpec, 'metric'>>(telemetry: readonly T[], metric: string): T | null =>
   telemetry.find((spec) => spec.metric === metric) ?? null;

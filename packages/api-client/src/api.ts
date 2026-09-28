@@ -26,6 +26,8 @@ import type {
   LinkRecord,
   RecipeView,
   SaveInput,
+  SettingsResult,
+  SettingsWrite,
   ServerLogLine,
   SightingView,
   TransportList,
@@ -214,9 +216,18 @@ export async function fetchDeviceSettings(id: string, signal?: AbortSignal) {
  * Writes a device's own settings. Only the changed keys are sent, and the
  * reply is a readback rather than an echo: writing one setting can move another.
  */
-export async function patchDeviceSettings(id: string, patch: ConfigValues, signal?: AbortSignal) {
-  const { data } = await api.patch<{ values: ConfigValues }>(devicePath(id, '/settings'), patch, { signal, timeout: 20_000 });
-  return data.values;
+/**
+ * A settings write, through the server's gateway. A refusal is an answer, not
+ * an error: `needsConfirmation` says a person only has to confirm.
+ */
+export async function patchDeviceSettings(id: string, write: SettingsWrite, signal?: AbortSignal): Promise<SettingsResult> {
+  const response = await api.patch<SettingsResult>(devicePath(id, '/settings'), write, {
+    signal,
+    // Verification reads the device back until it agrees.
+    timeout: 45_000,
+    validateStatus: (status) => status === 200 || status === 409,
+  });
+  return response.data;
 }
 
 /** One measurement over a window, already thinned to something a chart can draw. */

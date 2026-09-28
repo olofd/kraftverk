@@ -1,11 +1,16 @@
 import {
+  actuatorOf,
   CAPABILITIES,
-  type AcInputCapability,
+  LINK_EVIDENCE,
+  LINK_KINDS,
+  secretFields,
+  validateConfig,
   type CapabilityName,
+  type ConfigValues,
   type DeviceSession,
-  type OutletsCapability,
+  type LinkEvidence,
   type SavedDeviceId,
-  type SwitchCapability,
+  type SettingsSpec,
 } from '@kraftverk/device-sdk';
 
 /** One line in the audit timeline, wherever the holder keeps it. */
@@ -96,7 +101,33 @@ export const DEFAULT_POLICY: GatewayPolicy = {
 };
 
 /** What the gateway needs of a device: its session, and its name for the timeline. */
-export type GatewayDevice = { name: string; session: DeviceSession | null; offline: string };
+export type GatewayDevice = {
+  name: string;
+  session: DeviceSession | null;
+  offline: string;
+  /** What its type says about its settings: the schema they are held to, and which can damage it. */
+  settings?: SettingsSpec | null;
+};
+
+/** A change to a device's own settings: what it remembers across a power cycle. */
+export type SettingsIntent = {
+  deviceId: SavedDeviceId;
+  /** Only what should change: writing the full set would rewrite every register to change one. */
+  patch: ConfigValues;
+  actor: 'user' | 'automation';
+  by: string;
+  /** Required when the patch touches a setting that can damage the hardware. */
+  confirmation?: string;
+};
+
+export type SettingsResult = {
+  outcome: GatewayOutcome;
+  detail: string;
+  /** What the device reports afterwards. */
+  values?: ConfigValues;
+  /** Refused only because a person has to confirm it. */
+  needsConfirmation?: true;
+};
 
 export type GatewayDeps = {
   device: (id: SavedDeviceId) => GatewayDevice | null;
@@ -104,6 +135,8 @@ export type GatewayDeps = {
   feeds: (id: SavedDeviceId) => SavedDeviceId | null;
   /** True when every hardware write is refused. */
   isReadOnly: () => boolean;
+  /** What read-only is called where this holder runs: the server's mode, or an app's switch. */
+  readOnlyReason?: string;
   /**
    * Where the timeline goes: the server's database, or — for a connection an
    * app holds — a queue that goes up to the server.
@@ -118,7 +151,6 @@ export type GatewayDeps = {
   memory?: { get(key: string): string | null; set(key: string, value: string): void };
 };
 
-type Current = { on: boolean | null; at: string | null; watts: number | null };
 
 export class ActionGateway {
   #deps: GatewayDeps;
@@ -185,14 +217,16 @@ export class ActionGateway {
     // 1. A device that is here, and can do this.
     if (!device) return refuse('No such device');
     const spec = (CAPABILITIES[intent.capability]?.commands as Record<string, { safety: string }> | undefined)?.[intent.command];
-    if (!spec) return refuse(`${intent.capability} has no command "${intent.command}"`);
+    const actuator = spec ? actuatorOf(intent.capability, intent.command) : null;
+    if (!spec || !actuator) return refuse(`${intent.capability} has no command "${intent.command}"`);
+    if (actuator.targeted && !intent.target) return refuse(`Say which part of it: ${intent.capability} needs a target`);
     const session = device.session;
     if (!session) return refuse(device.offline);
-    const current = this.#read(session, intent);
-    if (!current) return refuse(`It cannot ${intent.capability === 'outlets' ? 'switch that outlet' : `do ${intent.capability}`} right now`);
+    const current = actuator.read(session, intent.target);
+    if (!current) return refuse(`It cannot ${intent.target ? `switch ${intent.target}` : `do ${intent.capability}`} right now`);
 
     // 2. Policy, evaluated now rather than when anything was configured.
-    if (this.#deps.isReadOnly()) return refuse('The server is in read-only mode');
+    if (this.#deps.isReadOnly()) return refuse(this.#deps.readOnlyReason ?? 'The server is in read-only mode');
 
     const key = this.#key(intent);
     const dwell = intent.actor === 'automation' ? this.#policy.automationDwellMs : this.#policy.userDwellMs;
@@ -205,7 +239,7 @@ export class ActionGateway {
     if (current.on === null || current.at === null) return refuse('Its current state is not known, so it is not switched blind');
     if (this.#ageOf(current.at) > this.#policy.maxDataAgeMs) return refuse('Its reading is stale: refusing to switch blind');
 
-    const fed = intent.capability === 'switch' ? this.#deps.feeds(intent.deviceId) : null;
+    const fed = LINK_KINDS.feeds.from === intent.capability ? this.#deps.feeds(intent.deviceId) : null;
     const station = fed ? this.#station(fed) : null;
     if (fed) {
       if (!station) return refuse('The station this plug feeds is not answering: refusing to switch without its own reading of mains');
@@ -259,17 +293,14 @@ export class ActionGateway {
     // 6. Exactly one command.
     this.#switched(key, Date.now());
     const switchedAt = Date.now();
-    const result = await this.#send(session, intent);
+    const result = await actuator.send(session, intent.target, intent.value);
     if (!result.accepted) {
       note('command.failed', `${device.name}: ${what} failed: ${result.error}`);
       return { outcome: 'failed', detail: result.error };
     }
 
     // 7. The proofs, recorded separately.
-    const deviceAgreed = await this.#eventually(() => {
-      const now = this.#read(session, intent);
-      return now?.on === intent.value;
-    });
+    const deviceAgreed = await this.#eventually(() => actuator.read(session, intent.target)?.on === intent.value);
     const stationAgreed = fed
       ? await this.#eventually(() => {
           const reading = this.#station(fed);
@@ -295,40 +326,10 @@ export class ActionGateway {
     return { outcome, detail, deviceAgreed, stationAgreed };
   }
 
-  /** What the part being switched reads now. Null when it cannot be switched. */
-  #read(session: DeviceSession, intent: CommandIntent): Current | null {
-    if (intent.capability === 'switch') {
-      const impl = session.capability('switch') as SwitchCapability | null;
-      if (!impl) return null;
-      const state = impl.state();
-      const meter = session.capability('powerMeter')?.read() ?? null;
-      return { on: state?.on ?? null, at: state?.at ?? null, watts: meter?.watts ?? null };
-    }
-    if (intent.capability === 'outlets') {
-      const impl = session.capability('outlets') as OutletsCapability | null;
-      if (!impl || !intent.target) return null;
-      const reading = impl.read();
-      const outlet = reading?.outlets.find((candidate) => candidate.id === intent.target);
-      if (reading && !outlet) return null;
-      return { on: outlet?.on ?? null, at: reading?.at ?? null, watts: outlet?.watts ?? null };
-    }
-    return null;
-  }
-
-  #send(session: DeviceSession, intent: CommandIntent) {
-    if (intent.capability === 'switch') return (session.capability('switch') as SwitchCapability).set(intent.value);
-    return (session.capability('outlets') as OutletsCapability).set(intent.target!, intent.value);
-  }
-
-  /** What a station says about its AC input, from its own session. */
-  #station(id: SavedDeviceId): { connected: boolean; present: boolean | null; at: string | null } | null {
-    const target = this.#deps.device(id);
-    const session = target?.session;
-    if (!session) return null;
-    const acInput = session.capability('acInput') as AcInputCapability | null;
-    if (!acInput) return null;
-    const reading = acInput.read();
-    return { connected: session.health().status === 'connected', present: reading?.present ?? null, at: reading?.at ?? null };
+  /** What a station a plug feeds says about its mains, from its own session: the link's evidence. */
+  #station(id: SavedDeviceId): LinkEvidence | null {
+    const session = this.#deps.device(id)?.session;
+    return session ? LINK_EVIDENCE.feeds(session) : null;
   }
 
   /** Waits for `check`, looking at what is cached — cheap, so often enough to answer soon. */
@@ -339,6 +340,84 @@ export class ActionGateway {
       await new Promise((resolve) => setTimeout(resolve, Math.min(1_000, this.#policy.verifyTimeoutMs / 5)));
     }
     return check();
+  }
+
+  /**
+   * A settings write, with the same care as a command (docs/ARCHITECTURE.md
+   * §4.6): only settings its type declares, held to its schema; refused while
+   * read-only; a setting that can damage the hardware confirmed by a person
+   * and never changed by an automation; then verified by reading it back, and
+   * audited — the intent before anything is sent, and the outcome.
+   */
+  writeSettings(intent: SettingsIntent): Promise<SettingsResult> {
+    const run = this.#gate.then(
+      () => this.#writeSettings(intent),
+      () => this.#writeSettings(intent)
+    );
+    this.#gate = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }
+
+  async #writeSettings(intent: SettingsIntent): Promise<SettingsResult> {
+    const device = this.#deps.device(intent.deviceId);
+    const keys = Object.keys(intent.patch);
+    const refuse = (detail: string, extra: Partial<SettingsResult> = {}): SettingsResult => {
+      this.#record({ at: new Date().toISOString(), kind: 'settings.refused', actor: intent.by, resource: intent.deviceId, summary: `Changing ${keys.join(', ')} refused: ${detail}` });
+      return { outcome: 'refused', detail, ...extra };
+    };
+
+    if (!device) return refuse('No such device');
+    const spec = device.settings;
+    const session = device.session;
+    if (!spec || !session?.writeSettings) return refuse('It has no settings to change');
+    if (!keys.length) return refuse('Nothing to change');
+    const unknown = keys.filter((key) => !(key in spec.schema.fields));
+    if (unknown.length) return refuse(`No such setting: ${unknown.join(', ')}`);
+
+    const current = session.readSettings?.() ?? {};
+    const validated = validateConfig(spec.schema, { ...current, ...intent.patch });
+    if (!validated.ok) return refuse(validated.issues.map((issue) => issue.message).join('; '));
+    // Only what was asked for is sent, as the schema reads it.
+    const changed = Object.fromEntries(keys.map((key) => [key, validated.value[key]])) as ConfigValues;
+
+    if (this.#deps.isReadOnly()) return refuse(this.#deps.readOnlyReason ?? 'The server is in read-only mode');
+
+    const risky = keys.filter((key) => spec.dangerous?.includes(key));
+    if (risky.length && intent.actor === 'automation') return refuse(`An automation may not change ${risky.join(', ')}: it can damage the hardware`);
+    if (risky.length && intent.confirmation !== CONFIRMATION) {
+      const labels = risky.map((key) => spec.schema.fields[key]?.title ?? key).join(', ');
+      return refuse(`This needs explicit confirmation. ${labels} can damage the hardware if set wrongly.`, { needsConfirmation: true });
+    }
+
+    // Secret fields reach the timeline only as having changed.
+    const secret = new Set(secretFields(spec.schema));
+    const shown = Object.fromEntries(Object.entries(changed).map(([key, value]) => [key, secret.has(key) ? '(secret)' : value]));
+    const note = (kind: string, summary: string, detail?: unknown) =>
+      this.#record({ at: new Date().toISOString(), kind, actor: intent.by, resource: intent.deviceId, summary, detail });
+    note('settings.intent', `${device.name}: changing ${keys.join(', ')}`, { patch: shown });
+
+    let values: ConfigValues;
+    try {
+      values = (await session.writeSettings(changed)) ?? {};
+    } catch (error) {
+      const detail = (error as Error).message;
+      note('settings.failed', `${device.name}: changing ${keys.join(', ')} failed: ${detail}`);
+      return { outcome: 'failed', detail };
+    }
+
+    // The device's own word, read back: what it reports now, not what was sent.
+    const agrees = () => {
+      const now = session.readSettings?.() ?? values;
+      return keys.every((key) => String(now[key]) === String(changed[key]));
+    };
+    const verified = agrees() || (await this.#eventually(agrees));
+    const readBack = session.readSettings?.() ?? values;
+    const detail = verified ? `Changed ${keys.join(', ')}, confirmed by the device` : `It accepted the change, but does not report ${keys.join(', ')} as set`;
+    note(`settings.${verified ? 'verified' : 'unverified'}`, `${device.name}: ${detail}`, { patch: shown });
+    return { outcome: verified ? 'verified' : 'unverified', detail, values: readBack };
   }
 
   #ageOf(iso: string | null): number {

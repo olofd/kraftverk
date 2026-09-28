@@ -116,12 +116,16 @@ export class AppRuntime {
     this.gateway = new ActionGateway({
       device: (id: SavedDeviceId) => {
         const held = this.sessions.held(id);
-        if (held) return { name: held.name, session: this.sessions.get(id), offline: this.sessions.health(id)?.detail ?? 'Not connected' };
+        if (held) {
+          const settings = this.registry.types.get(held.typeId)?.settings ?? null;
+          return { name: held.name, session: this.sessions.get(id), offline: this.sessions.health(id)?.detail ?? 'Not connected', settings };
+        }
         const seen = this.#view.get(id);
         return seen ? { name: seen.name, session: viewSession(seen), offline: seen.health.detail } : null;
       },
       feeds: (id) => (this.#view.get(id)?.links.find((link) => link.kind === 'feeds' && link.role === 'source')?.other.id as SavedDeviceId | undefined) ?? null,
       isReadOnly: () => !this.#allowWrites,
+      readOnlyReason: 'Writes from this app are off: allow them in App settings',
       record: (entry) => audit(entry),
       memory: { get: (key) => readPreference(`kraftverk.gateway.${key}`), set: (key, value) => writePreference(`kraftverk.gateway.${key}`, value) },
     });

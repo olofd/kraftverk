@@ -600,7 +600,7 @@ holders and identity were added to the model (DATA-MODEL.md).
 | 15 | Make contributing easy | S | done |
 | 16 | One API contract | S | done |
 | 17 | One holder core, and the app tested | L | done |
-| 18 | The gateway knows capabilities, not names; settings go through it | M | |
+| 18 | The gateway knows capabilities, not names; settings go through it | M | done |
 | 19 | History that lasts | M | |
 | 20 | App and server agree on what they speak | S | later |
 | 21 | Secrets at rest in the app | S | |
@@ -908,6 +908,16 @@ sent; the gateway calls that. Settings writes become a gateway intent:
 validated against the schema, refused while read-only, confirmed for
 dangerous fields, verified by reading back, audited — from either holder.
 **Done when** `gateway.ts` names no capability.
+
+*Done.* `device-sdk/src/actuators.ts`: each actuating command's `read` and
+`send` (`switch.set`, `outlets.set`), and each link kind's evidence (a station
+a plug `feeds` sees its mains). `ActionGateway.writeSettings` holds a patch to
+the type's schema, refuses it while read-only, asks a person to confirm a
+setting in `dangerous` and never lets an automation change one, then verifies
+by reading back; the server's route and the app's own writes both use it, and
+each holder says what read-only means there. A role in a recipe may be filled
+by one of several capabilities (`meetsNeed`), and through a part: *Switch by
+the forecast* switches a plug, or one of a station's outlets.
 
 ### Step 19 — History that lasts (G7)
 Hourly roll-ups kept for two years beside 14 days of raw samples; the audit
