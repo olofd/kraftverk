@@ -4,26 +4,34 @@ import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { ZodError } from 'zod';
 
-import { UnsafeWriteError } from '@kraftverk/protocol';
-
 import pkg from '../package.json' with { type: 'json' };
 import { hostGuard } from './auth/host.ts';
 import { CLIENT_HEADER, createAuth } from './auth/routes.ts';
 import { isPrivate, normaliseIp } from './auth/trust.ts';
 import type { ServerConfig } from './config.ts';
-import { ReadOnlyError } from './drivers/device.ts';
-import { ConfigError } from './plugins/host.ts';
-import { PortSwitchError, StaleWriteError } from '@kraftverk/protocol';
+import { SetupError } from './devices/setup.ts';
 import { adminRoutes } from './routes/admin.ts';
 import { deviceRoutes } from './routes/devices.ts';
-import { diagnosticsRoutes } from './routes/diagnostics.ts';
-import { gridRoutes } from './routes/grid.ts';
-import { pluginRoutes } from './routes/plugins.ts';
+import { connectionRoutes } from './routes/connections.ts';
 import type { AppDeps } from './routes/shared.ts';
-import { stationRoutes } from './routes/station.ts';
-import type { VersionInfo } from './types.ts';
+import { setupRoutes } from './routes/setup.ts';
+import { transportRoutes } from './routes/transports.ts';
 
 export type { AppDeps } from './routes/shared.ts';
+
+/** What `GET /api/version` says about this server. */
+export type VersionInfo = {
+  name: string;
+  version: string;
+  runtime: string;
+  startedAt: string;
+  uptimeSeconds: number;
+  /** Every device is simulated: no hardware is reached. A launch decision. */
+  simulate: boolean;
+  /** Which transports this server may use. */
+  transports: string[];
+  readOnly: boolean;
+};
 
 /** Ports the Expo dev server serves the web app on. */
 const DEV_PORTS = new Set(['8081', '19006']);
@@ -67,7 +75,7 @@ export function corsOrigin(config: Pick<ServerConfig, 'allowedOrigins' | 'develo
  * routes with `app.request()`.
  */
 export function createApp(deps: AppDeps) {
-  const { config, connections, startedAt } = deps;
+  const { config, startedAt } = deps;
   const app = new Hono();
 
   /*
@@ -133,20 +141,18 @@ export function createApp(deps: AppDeps) {
       runtime: typeof Bun !== 'undefined' ? `bun ${Bun.version}` : `node ${process.versions.node}`,
       startedAt: startedAt.toISOString(),
       uptimeSeconds: Math.round((Date.now() - startedAt.getTime()) / 1000),
-      // A launch decision, not a property of whichever session opened first.
-      link: config.simulate ? 'simulator' : 'device',
-      transport: connections.transports[0],
-      readOnly: connections.readOnly,
+      simulate: config.simulate,
+      transports: config.transports,
+      readOnly: config.readOnly,
     };
     return c.json(info);
   });
 
-  api.route('/station', stationRoutes(deps));
-  api.route('/diagnostics', diagnosticsRoutes(deps));
-  api.route('/plugins', pluginRoutes(deps));
-  api.route('/grid', gridRoutes(deps));
+  api.route('/setup', setupRoutes(deps));
   api.route('/', adminRoutes(deps, accounts));
   api.route('/', deviceRoutes(deps));
+  api.route('/', connectionRoutes(deps));
+  api.route('/', transportRoutes(deps));
 
   app.route('/api', api);
 
@@ -155,15 +161,8 @@ export function createApp(deps: AppDeps) {
   app.onError((err, c) => {
     // JSON, like every other answer here: the app reads `{ error }`.
     if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
-    if (err instanceof UnsafeWriteError) return c.json({ error: err.message }, 400);
-    if (err instanceof ReadOnlyError) return c.json({ error: err.message, readOnly: true }, 423);
-    // Nothing was changed, or the station does not confirm it was: the caller
-    // must hear which, in words, rather than "internal server error".
-    if (err instanceof PortSwitchError || err instanceof StaleWriteError) return c.json({ error: err.message }, 409);
-    // A plugin's settings that do not fit its schema: which field, and why.
-    if (err instanceof ConfigError) {
-      return c.json({ error: err.message, issues: err.issues.map((i) => ({ path: i.field, message: i.message })) }, 400);
-    }
+    // Adding a device went wrong in a way the person can act on: in words.
+    if (err instanceof SetupError) return c.json({ error: err.message }, err.status);
     if (err instanceof ZodError) {
       return c.json({ error: 'Validation failed', issues: err.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) }, 400);
     }

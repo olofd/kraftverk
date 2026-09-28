@@ -1,0 +1,23 @@
+{
+  "name": "@kraftverk/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The action gateway: the only path a capability command takes to hardware, with its safety rules — read-only, dwell, freshness, confirmation, verification against the device and the station a plug feeds. Pure, so it runs in whichever holder has a device's connection: the server, or the app.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node ../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kraftverk/device-sdk": "*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}

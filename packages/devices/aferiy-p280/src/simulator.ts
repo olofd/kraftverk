@@ -5,7 +5,7 @@ import type {
   StationSettings,
   StationSettingsPatch,
   StationStatus,
-} from '@kraftverk/protocol';
+} from './model/types.ts';
 
 import { SETTINGS_SCHEMA, settingsToValues, valuesToSettings } from './index.ts';
 import type { StationDriverLike } from './station.ts';

@@ -3,198 +3,171 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { savedDeviceId, type ConfigSchema, type KraftverkPlugin, type PluginManifest, type SetupActionResult, type StationId } from '@kraftverk/device-sdk';
+import { savedDeviceId } from '@kraftverk/device-sdk';
 
-import { ActionGateway, CONFIRMATION_PHRASE } from './actions/gateway.ts';
+import { ActionGateway } from '@kraftverk/gateway';
 import { corsOrigin, createApp } from './app.ts';
-import { createFirstUser } from './auth/store.ts';
-import type { Binding } from './binding.ts';
 import { CLIENT_HEADER, SESSION_COOKIE } from './auth/routes.ts';
+import { createFirstUser, createUser } from './auth/store.ts';
 import { CLIENT_IP_HEADER, EXPOSURE_HEADER, ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
-import { ConnectionManager } from './connections/manager.ts';
-import { serverTransports } from './connections/station-links.ts';
-import { DeviceSessionManager } from './devices/sessions.ts';
-import { DeviceTypeRegistry } from './devices/types.ts';
 import { DeviceCatalog } from './devices/catalog.ts';
-import { LegacyStationImport } from './devices/legacy.ts';
+import { ClientStore } from './devices/clients.ts';
+import { ConnectionStore } from './devices/connections.ts';
+import { LinkStore } from './devices/links.ts';
+import { Nearby } from './devices/nearby.ts';
 import { DeviceRegistry } from './devices/registry.ts';
-import { relayStation } from './devices/relay-pairing.ts';
+import { DeviceSessionManager } from './devices/sessions.ts';
+import { SetupService } from './devices/setup.ts';
+import { busDefinition, FakeBus, lampProtocol, lampType } from './devices/testing.ts';
+import { DeviceTypeRegistry } from './devices/types.ts';
 import { closeDb, db, openSecret } from './history/db.ts';
 import { Sampler } from './history/sampler.ts';
-import { PluginHost } from './plugins/host.ts';
-import type { TransportHost } from './transport/types.ts';
+import { ProtocolRegistry } from './runtime/protocols.ts';
+import { TransportHost } from './runtime/transports.ts';
 
 /**
  * The server's routes, over HTTP, as the app and an attacker reach them.
  *
- * Until `createApp` existed none of these could be tested: importing the
- * server started radios and a broker. The route-level bugs the audit found —
- * unvalidated devices, a double-decoded id, a 500 for a mistyped plugin
- * setting, a relay switch acting on the wrong plug, a secret sent back to the
- * browser — all lived in the untested half. They are pinned here.
+ * Two servers, built the way `index.ts` builds one. The *simulated* one has
+ * every installed package — the P280, the plugs, the weather — and reaches no
+ * hardware. The *bus* one holds lamps on a pretend bus (`devices/testing.ts`),
+ * so the paths that touch a device — finding it, checking who it is, claiming
+ * its address, switching it — run for real.
  */
 
 const dir = mkdtempSync(join(tmpdir(), 'kraftverk-app-'));
 const PASSWORD = 'correct horse battery staple';
 const PROXY = '172.20.0.9';
 
-/** A second grid relay, to show which plug a switch acts on. */
-function relayPlugin(id: string): KraftverkPlugin {
-  let on = true;
-  const manifest: PluginManifest = {
-    id,
-    name: 'Test relay',
-    description: 'A relay for these tests',
-    version: '0.0.0',
-    apiVersion: '1',
-    kind: 'grid-relay',
-    capabilities: ['gridRelay.read', 'gridRelay.switch'],
-    configSchema: { fields: {} },
-    ui: { icon: 'power' },
-  };
-  const state = () => ({ relayOn: on, reachable: true, updatedAt: new Date().toISOString() });
+type Server = {
+  app: ReturnType<typeof createApp>['app'];
+  sessions: DeviceSessionManager;
+  setup: SetupService;
+  bus: FakeBus;
+  close(): Promise<void>;
+};
+
+async function build(options: { simulate: boolean; readOnly?: boolean }): Promise<Server> {
+  const config = loadConfig(
+    {
+      NODE_ENV: 'test',
+      ...(options.simulate ? {} : { KRAFTVERK_TRANSPORTS: 'bus' }),
+      READ_ONLY: options.readOnly ? '1' : '0',
+    },
+    []
+  );
+  const bus = new FakeBus();
+  const protocols = new ProtocolRegistry();
+  const transports = new TransportHost({ enabled: () => ({ ok: true }), context: { env: {}, log: () => {}, audit: () => {} } });
+  const types = new DeviceTypeRegistry();
+  if (options.simulate) {
+    await protocols.discover();
+    await transports.discover();
+    await types.discover();
+  }
+  protocols.install(lampProtocol);
+  transports.install(busDefinition, { create: () => bus });
+  types.install(lampType);
+  if (!options.simulate) await transports.startAll(['bus']);
+
+  const catalog = new DeviceCatalog();
+  const connections = new ConnectionStore();
+  const links = new LinkStore();
+  const clients = new ClientStore();
+  const sessions = new DeviceSessionManager({
+    types,
+    protocols,
+    transports,
+    connections,
+    simulate: options.simulate,
+    readOnly: config.readOnly,
+    allowRawFrames: false,
+    clientName: (id) => clients.get(id)?.name ?? null,
+  });
+  const registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports });
+  const setup = new SetupService({
+    types,
+    protocols,
+    transports,
+    catalog,
+    connections,
+    links,
+    sessions,
+    http: () => Promise.reject(new Error('no network in these tests')),
+    simulate: options.simulate,
+  });
+  const nearby = new Nearby({ types, protocols, transports, connections });
+  const gateway = new ActionGateway({
+    device: (id) => {
+      const record = catalog.active(id);
+      return record ? { name: record.name, session: sessions.get(id), offline: sessions.health(record).detail } : null;
+    },
+    feeds: (id) => links.targetOf('feeds', id),
+    isReadOnly: () => config.readOnly,
+    record: () => {},
+    policy: { verifyTimeoutMs: 300 },
+  });
+  const proxies = new ProxyDirectory(PROXY);
+  await proxies.refresh();
+
+  const { app } = createApp({
+    config,
+    catalog,
+    connections,
+    links,
+    clients,
+    types,
+    protocols,
+    transports,
+    sessions,
+    registry,
+    setup,
+    nearby,
+    gateway,
+    sampler: new Sampler(registry),
+    proxies,
+    serverLog: { dir: null, recent: () => [] },
+    startedAt: new Date(),
+  });
   return {
-    manifest,
-    validateConfig: (config: unknown) => ({ ok: true, value: (config ?? {}) as Record<string, never> }),
-    async start(context: { registerCapability: (name: string, impl: unknown) => void }) {
-      context.registerCapability('gridRelay.read', this as never);
-      context.registerCapability('gridRelay.switch', this as never);
+    app,
+    sessions,
+    setup,
+    bus,
+    close: async () => {
+      setup.stop();
+      nearby.stop();
+      await sessions.closeAll();
+      await transports.stopAll();
     },
-    async stop() {},
-    health: () => ({ status: 'healthy' }),
-    devices: () => [
-      {
-        id: `${id}:plug`,
-        name: 'Test plug',
-        category: 'smart-plug',
-        icon: 'power',
-        measurements: [{ key: 'relay', label: 'Relay', unit: '', kind: 'state' }],
-        controls: [{ id: 'relay', label: 'Relay', kind: 'switch', capability: 'switch', measurementKey: 'relay' }],
-      },
-    ],
-    readDevice: async () => [{ key: 'relay', value: on, at: new Date().toISOString() }],
-    ...{
-      bootBehaviour: 'last',
-      read: async () => state(),
-      getState: async () => state(),
-      setRelay: async (next: boolean) => {
-        on = next;
-        return { accepted: true, readback: state(), tookMs: 0 };
-      },
-    },
-  } as unknown as KraftverkPlugin;
+  };
 }
 
-/** A plugin whose setup action finds a secret, as fetching a Tuya key does. */
-function keysPlugin(): KraftverkPlugin {
-  const configSchema: ConfigSchema = {
-    fields: {
-      name: { type: 'string', title: 'Name', required: true },
-      apiKey: { type: 'secret', title: 'Key', required: true },
-      note: { type: 'secret', title: 'An optional secret' },
-    },
-  };
-  return {
-    manifest: {
-      id: 'test.keys',
-      name: 'Keys',
-      description: 'Finds a key',
-      version: '0.0.0',
-      apiVersion: '1',
-      kind: 'home-automation',
-      capabilities: [],
-      configSchema,
-      setupActions: [{ id: 'fetch', title: 'Fetch the key' }],
-      ui: { icon: 'key' },
-    },
-    validateConfig: (config: unknown) => {
-      const values = (config ?? {}) as Record<string, unknown>;
-      const missing = ['name', 'apiKey'].filter((field) => !values[field]);
-      return missing.length
-        ? { ok: false, issues: missing.map((field) => ({ field, message: 'Required' })) }
-        : { ok: true, value: values };
-    },
-    async start() {},
-    async stop() {},
-    health: () => ({ status: 'healthy' }),
-    runSetupAction: async (): Promise<SetupActionResult> => ({
-      ok: true,
-      detail: 'Found one',
-      choices: [{ id: 'a', label: 'The one', config: { name: 'kitchen', apiKey: 'the-real-secret-value' } }],
-    }),
-  } as unknown as KraftverkPlugin;
-}
-
-let app: ReturnType<typeof createApp>['app'];
-let connections: ConnectionManager;
-let sessions: DeviceSessionManager;
-let host: PluginHost;
-/** A station bound before the catalog existed, for the tests that offer one. */
-let legacyBinding: Binding | null = null;
+let simulated: Server;
+let onBus: Server;
 
 beforeAll(async () => {
   process.env.KRAFTVERK_DB = join(dir, 'test.db');
   closeDb();
-
-  const config = loadConfig({ NODE_ENV: 'test', KRAFTVERK_BASELINE_FILE: join(dir, 'baseline.json') }, []);
-  const catalog = new DeviceCatalog();
-  connections = new ConnectionManager({
-    transports: [],
-    simulate: true,
-    readOnly: false,
-    host: () => {
-      throw new Error('no radios in these tests');
-    },
-    onBound: () => {},
-  });
-  host = new PluginHost();
-  await host.discover();
-  host.install(relayPlugin('test.second-relay'));
-  host.install(keysPlugin());
-  const types = new DeviceTypeRegistry();
-  await types.discover();
-  sessions = new DeviceSessionManager({ types, simulate: true, readOnly: false, transports: serverTransports(connections) });
-  const registry = new DeviceRegistry(catalog, host, sessions);
-  const gateway = new ActionGateway({ host, readStation: () => relayStation(sessions), isReadOnly: () => false });
-  const proxies = new ProxyDirectory(PROXY);
-  await proxies.refresh();
-
-  ({ app } = createApp({
-    config,
-    catalog,
-    types,
-    sessions,
-    connections,
-    host,
-    registry,
-    gateway,
-    sampler: new Sampler(registry),
-    legacyStation: new LegacyStationImport({
-      catalog,
-      transport: () => ['ble'],
-      stationName: () => 'Power station',
-      binding: async () => legacyBinding,
-    }),
-    proxies,
-    serverLog: { dir: null, recent: () => [] },
-    broker: null,
-    startedAt: new Date(),
-  }));
+  simulated = await build({ simulate: true });
+  onBus = await build({ simulate: false });
 });
 
 afterAll(async () => {
-  await sessions.closeAll();
-  await connections.closeAll();
-  await host.stopAll();
+  await simulated.close();
+  await onBus.close();
   closeDb();
   rmSync(dir, { recursive: true, force: true });
 });
 
-type Call = { method?: string; body?: unknown; cookie?: string; from?: string; headers?: Record<string, string>; host?: string };
+type Call = { method?: string; body?: unknown; cookie?: string; from?: string; headers?: Record<string, string>; host?: string; server?: Server };
 
-async function call(path: string, { method = 'GET', body, cookie, from = '192.168.50.58', headers = {}, host: hostHeader = '192.168.50.140:3333' }: Call = {}) {
-  const response = await app.fetch(
+async function call(
+  path: string,
+  { method = 'GET', body, cookie, from = '192.168.1.58', headers = {}, host: hostHeader = '192.168.1.140:3333', server = simulated }: Call = {}
+) {
+  const response = await server.app.fetch(
     new Request(`http://${hostHeader}/api${path}`, {
       method,
       headers: {
@@ -211,9 +184,9 @@ async function call(path: string, { method = 'GET', body, cookie, from = '192.16
   const setCookie = response.headers.get('set-cookie') ?? '';
   const token = /kraftverk_session=([^;]*)/.exec(setCookie)?.[1] || undefined;
   const text = await response.text();
-  let json: Record<string, unknown> | null = null;
+  let json: any = null;
   try {
-    json = JSON.parse(text) as Record<string, unknown>;
+    json = JSON.parse(text);
   } catch {
     // not JSON
   }
@@ -222,100 +195,230 @@ async function call(path: string, { method = 'GET', body, cookie, from = '192.16
 
 let session: string;
 
+const login = async (username: string, server = simulated) =>
+  (await call('/auth/login', { method: 'POST', body: { username, password: PASSWORD }, server })).token!;
+
 beforeEach(async () => {
-  db().exec('DELETE FROM device; DELETE FROM sample; DELETE FROM users; DELETE FROM sessions; DELETE FROM app_state; DELETE FROM plugin_config; DELETE FROM plugin_secret; DELETE FROM audit;');
-  legacyBinding = null;
-  await sessions.sync([]);
+  db().exec('DELETE FROM device; DELETE FROM sample; DELETE FROM client; DELETE FROM users; DELETE FROM sessions; DELETE FROM app_state; DELETE FROM audit;');
+  await simulated.sessions.sync([]);
+  await onBus.sessions.sync([]);
+  onBus.bus.lamps.clear();
   await createFirstUser('olof', PASSWORD);
-  session = (await call('/auth/login', { method: 'POST', body: { username: 'olof', password: PASSWORD } })).token!;
+  session = await login('olof');
 });
 
 const as = (path: string, options: Call = {}) => call(path, { cookie: session, ...options });
-const addStation = async () =>
-  (await as('/devices', { method: 'POST', body: { typeId: 'aferiy.p280', name: 'Station' } })).body as {
-    id: string;
-  };
+const onBusAs = (path: string, options: Call = {}) => as(path, { server: onBus, ...options });
+const enc = encodeURIComponent;
+
+/** A lamp on the bus, answering. */
+const lampAt = (address: string, lamp: Partial<{ serial: string; model: string; on: boolean; answers: boolean }> = {}) => {
+  onBus.bus.lamps.set(address, { serial: address.toUpperCase(), model: 'L1', on: true, answers: true, ...lamp });
+  onBus.bus.announce();
+};
+
+/** Walks setup to the check step, and returns the draft and what the check found. */
+async function checked(options: { typeId?: string; methodId?: string; address?: string; server?: Server } = {}) {
+  const server = options.server ?? onBus;
+  const started = await as('/setup', { method: 'POST', body: { typeId: options.typeId ?? 'test.lamp', methodId: options.methodId ?? 'bus' }, server });
+  expect(started.status).toBe(200);
+  const id = started.body.id as string;
+  const address = options.address ?? (server === onBus ? 'lamp-1' : 'simulated');
+  expect((await as(`/setup/${id}/choose`, { method: 'POST', body: { address }, server })).status).toBe(200);
+  const check = await as(`/setup/${id}/check`, { method: 'POST', server });
+  return { id, check: check.body };
+}
+
+async function added(name: string, options: Parameters<typeof checked>[0] = {}) {
+  const server = options.server ?? onBus;
+  const { id } = await checked(options);
+  const saved = await as(`/setup/${id}/save`, { method: 'POST', body: { name }, server });
+  expect(saved.status).toBe(200);
+  return saved.body as { id: string; name: string; identity: string | null };
+}
 
 describe('everything needs a session', () => {
-  test('devices, plugins, the grid and the audit log answer 401 without one', async () => {
-    for (const path of ['/devices', '/plugins', '/grid', '/audit', '/diagnostics/link', '/version']) {
+  test('every route answers 401 without one', async () => {
+    for (const path of ['/devices', '/devices/removed', '/device-types', '/transports', '/found', '/audit', '/version', '/diagnostics/log', '/clients']) {
       expect((await call(path)).status).toBe(401);
     }
+    expect((await call('/setup', { method: 'POST', body: { typeId: 'test.lamp' } })).status).toBe(401);
   });
 });
 
-describe('devices', () => {
-  test('a station is added, opened, paired with the relay, and forgotten', async () => {
-    const station = await addStation();
-    expect(sessions.get(savedDeviceId(station.id))).not.toBeNull();
-    expect((await as('/grid')).body?.stationDeviceId).toBe(station.id);
-
-    const state = await as(`/devices/${encodeURIComponent(station.id)}/p280/state`);
-    expect(state.status).toBe(200);
-    expect(state.body?.status).toBeTruthy();
-
-    expect((await as(`/devices/${encodeURIComponent(station.id)}`, { method: 'DELETE' })).status).toBe(200);
-    expect(sessions.get(savedDeviceId(station.id))).toBeNull();
-    expect((await as('/grid')).body?.stationDeviceId).toBeNull();
-  });
-
-  test('a station imported from before the catalog is paired with the relay, as an added one is', async () => {
-    legacyBinding = { kind: 'ble', id: 'AABBCCDDEEFF', boundAt: '2026-01-01T00:00:00.000Z' };
-    expect((await as('/migration/station')).body?.state).toBe('offered');
-
-    const imported = await as('/migration/station/import', { method: 'POST', body: {} });
-    expect(imported.status).toBe(200);
-    const id = (imported.body as { id: string }).id;
-
-    // Otherwise every switch of the relay is refused, and the app offers no way to pair one.
-    expect((await as('/grid')).body?.stationDeviceId).toBe(id);
-    // Both entries name who did it, like every other change to the catalog.
-    const entries = (await as('/audit')).body as unknown as { kind: string; actor: string }[];
-    expect(entries.find((entry) => entry.kind === 'device.imported')?.actor).toBe('olof');
-    expect(entries.find((entry) => entry.kind === 'relay.paired')?.actor).toBe('olof');
-  });
-
-  test('a second station never takes the relay from the one it already feeds', async () => {
-    const first = await addStation();
-    await addStation();
-    expect((await as('/grid')).body?.stationDeviceId).toBe(first.id);
-
-    // Nor does an import — which is not even offered once a station is saved.
-    legacyBinding = { kind: 'ble', id: 'AABBCCDDEEFF', boundAt: '2026-01-01T00:00:00.000Z' };
-    expect((await as('/migration/station/import', { method: 'POST', body: {} })).status).toBe(409);
-    expect((await as('/grid')).body?.stationDeviceId).toBe(first.id);
-  });
-
-  test('nothing is stored that no installed type provides', async () => {
-    const refused = [
-      { typeId: 'something-else', name: 'Ghost' },
-      { typeId: 'aferiy.p280', name: 'S', model: 'not-a-model' },
-      { typeId: 'not-installed', name: 'P' },
-      { typeId: 'aferiy.p280', name: 'S', config: { anything: 1 } },
-      // The old shape, which named a driver and a model, is refused outright.
-      { type: 'power-station', driver: 'core.station', name: 'S' },
-    ];
-    for (const body of refused) expect((await as('/devices', { method: 'POST', body })).status).toBe(400);
-    expect((await as('/devices')).body?.devices).toEqual([]);
-  });
-
-  test('what can be added is every installed type, found rather than listed', async () => {
+describe('what can be added', () => {
+  test('every installed type, by category, with how it can be reached and whether this server can', async () => {
     const { body } = await as('/device-types');
-    const types = (body as { types: { id: string; setup: unknown[]; extension?: boolean }[] }).types;
-    expect(types.map((type) => type.id)).toContain('aferiy.p280');
-    // Setup guides are sent as data, their functions left on the server.
-    const station = types.find((type) => type.id === 'aferiy.p280')!;
-    expect(station.setup.length).toBeGreaterThan(0);
-    expect(JSON.stringify(station.setup)).not.toContain('=>');
+    expect(Object.keys(body.categories)).toEqual(['power-station', 'smart-plug', 'weather']);
+    const p280 = body.types.find((type: { id: string }) => type.id === 'aferiy.p280');
+    expect(p280.meta.category).toBe('power-station');
+    expect(p280.connections.map((method: { id: string }) => method.id)).toEqual(['wifi', 'bluetooth']);
+    expect(p280.availability.wifi.server).toEqual({ ok: true });
+    for (const id of ['tuya.plug', 'atorch.s1w', 'open-meteo.weather']) expect(body.types.map((type: { id: string }) => type.id)).toContain(id);
+    // Declarations only: every function stays on the server.
+    expect(JSON.stringify(body)).not.toContain('=>');
+    expect(body.refused).toEqual({ types: [], protocols: [], transports: [] });
   });
 
-  test('a device is renamed, but its binding is not rewritten', async () => {
-    const station = await addStation();
-    const path = `/devices/${encodeURIComponent(station.id)}`;
-    expect((await as(path, { method: 'PATCH', body: { config: { boundId: 'AABBCCDDEEFF' } } })).status).toBe(400);
-    const renamed = await as(path, { method: 'PATCH', body: { name: 'Shed' } });
-    expect(renamed.status).toBe(200);
-    expect(renamed.body?.name).toBe('Shed');
+  test('a method whose transport this server cannot use says why', async () => {
+    const { body } = await onBusAs('/device-types');
+    const lamp = body.types.find((type: { id: string }) => type.id === 'test.lamp');
+    expect(lamp.availability.bus.server).toEqual({ ok: true });
+  });
+});
+
+describe('adding a device', () => {
+  test('simulated: a P280 is set up over Wi-Fi from the steps its layers supply, and opened', async () => {
+    const started = await as('/setup', { method: 'POST', body: { typeId: 'aferiy.p280', methodId: 'wifi' } });
+    expect(started.status).toBe(200);
+    expect(started.body.plan.map((step: { kind: string }) => step.kind)).toEqual(['instructions', 'choose', 'check']);
+
+    const id = started.body.id;
+    const sightings = await as(`/setup/${id}/sightings`);
+    expect(sightings.body.sightings).toEqual([expect.objectContaining({ address: 'simulated', claimedBy: null })]);
+    await as(`/setup/${id}/choose`, { method: 'POST', body: { address: 'simulated' } });
+    expect((await as(`/setup/${id}/check`, { method: 'POST' })).body.outcome).toBe('new');
+
+    const saved = await as(`/setup/${id}/save`, { method: 'POST', body: { name: 'Garage P280' } });
+    expect(saved.status).toBe(200);
+    expect(saved.body).toMatchObject({ name: 'Garage P280', typeId: 'aferiy.p280', connections: [expect.objectContaining({ method: 'wifi', transport: 'mqtt' })] });
+    expect(simulated.sessions.get(savedDeviceId(saved.body.id))).not.toBeNull();
+
+    // The draft is gone, and the timeline says who added what.
+    expect((await as(`/setup/${id}`)).status).toBe(404);
+    const entries = (await as('/audit')).body as { kind: string; actor: string }[];
+    expect(entries.find((entry) => entry.kind === 'device.added')?.actor).toBe('olof');
+  });
+
+  test('a lamp found on the bus is checked, told apart by its identity, and saved with what the check learnt', async () => {
+    lampAt('lamp-1');
+    const started = await onBusAs('/setup', { method: 'POST', body: { typeId: 'test.lamp', methodId: 'bus' } });
+    // The transport's values fill the instructions: where to connect it.
+    expect(started.body.plan[0]).toMatchObject({ kind: 'instructions', body: 'Connect it to bus.test.' });
+    expect((await onBusAs(`/setup/${started.body.id}/sightings`)).body.sightings).toEqual([
+      expect.objectContaining({ address: 'lamp-1', name: 'Lamp lamp-1', claimedBy: null }),
+    ]);
+
+    const lamp = await added('Hall lamp');
+    expect(lamp.identity).toBe('lampish:LAMP-1');
+    const view = (await onBusAs(`/devices/${enc(lamp.id)}`)).body;
+    expect(view.config).toEqual({ room: 'Hall' });
+    expect(view.connections[0]).toMatchObject({ method: 'bus', address: 'lamp-1', heldBy: { kind: 'server' } });
+  });
+
+  test('the same lamp again is yours: its address is marked, and it is not added twice', async () => {
+    lampAt('lamp-1');
+    const lamp = await added('Hall lamp');
+    const { id, check } = await checked();
+    expect(check).toMatchObject({ outcome: 'yours', device: { id: lamp.id, name: 'Hall lamp' } });
+    expect((await onBusAs(`/setup/${id}/sightings`)).body.sightings[0].claimedBy).toEqual({ id: lamp.id, name: 'Hall lamp' });
+    expect((await onBusAs(`/setup/${id}/save`, { method: 'POST', body: { name: 'Again' } })).status).toBe(409);
+  });
+
+  test('a removed lamp is offered back, with its history', async () => {
+    lampAt('lamp-1');
+    const lamp = await added('Hall lamp');
+    db().query('INSERT INTO sample (device_id, key, at, value) VALUES (?, ?, ?, ?)').run(lamp.id, 'on', new Date().toISOString(), 1);
+    expect((await onBusAs(`/devices/${enc(lamp.id)}`, { method: 'DELETE' })).status).toBe(200);
+
+    const { id, check } = await checked();
+    expect(check).toMatchObject({ outcome: 'removed', identity: 'lampish:LAMP-1', devices: [expect.objectContaining({ id: lamp.id, name: 'Hall lamp' })] });
+    const back = await onBusAs(`/setup/${id}/save`, { method: 'POST', body: { name: 'Hall lamp', mode: 'restore', deviceId: lamp.id } });
+    expect(back.status).toBe(200);
+    expect(back.body.id).toBe(lamp.id);
+    expect(back.body.removedAt).toBeNull();
+    expect(db().query<{ n: number }, [string]>('SELECT COUNT(*) n FROM sample WHERE device_id = ?').get(lamp.id)!.n).toBe(1);
+  });
+
+  test('another way to reach a device must reach that device', async () => {
+    lampAt('lamp-1');
+    lampAt('lamp-1b', { serial: 'LAMP-1' });
+    lampAt('lamp-2');
+    const lamp = await added('Hall lamp');
+
+    const other = await checked({ methodId: 'backup', address: 'lamp-2' });
+    expect(other.check.outcome).toBe('new');
+    const refused = await onBusAs(`/setup/${other.id}/save`, { method: 'POST', body: { name: '', mode: 'attach', deviceId: lamp.id } });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toContain('different device');
+
+    const same = await checked({ methodId: 'backup', address: 'lamp-1b' });
+    expect(same.check.outcome).toBe('yours');
+    const attached = await onBusAs(`/setup/${same.id}/save`, { method: 'POST', body: { name: '', mode: 'attach', deviceId: lamp.id } });
+    expect(attached.status).toBe(200);
+    expect(attached.body.connections.map((connection: { method: string }) => connection.method)).toEqual(['bus', 'backup']);
+  });
+
+  test('a model this type does not cover cannot be saved as it', async () => {
+    lampAt('lamp-1', { model: 'X9' });
+    const { id, check } = await checked();
+    expect(check).toMatchObject({ outcome: 'other-model', model: 'X9', type: null });
+    expect((await onBusAs(`/setup/${id}/save`, { method: 'POST', body: { name: 'Odd' } })).status).toBe(409);
+  });
+
+  test('a lamp that does not answer is saved only when asked to, and without an identity', async () => {
+    lampAt('lamp-1', { answers: false });
+    const { id, check } = await checked();
+    expect(check).toMatchObject({ outcome: 'no-answer', saveAnyway: lampType.setup!.saveAnyway });
+    expect((await onBusAs(`/setup/${id}/save`, { method: 'POST', body: { name: 'Dark' } })).status).toBe(409);
+    const saved = await onBusAs(`/setup/${id}/save`, { method: 'POST', body: { name: 'Dark', anyway: true } });
+    expect(saved.status).toBe(200);
+    expect(saved.body.identity).toBeNull();
+  });
+
+  test('an address typed by hand is normalised by the protocol, or refused', async () => {
+    const started = await onBusAs('/setup', { method: 'POST', body: { typeId: 'test.lamp', methodId: 'bus' } });
+    expect((await onBusAs(`/setup/${started.body.id}/choose`, { method: 'POST', body: { manual: 'Lamp 5!' } })).status).toBe(400);
+    const chosen = await onBusAs(`/setup/${started.body.id}/choose`, { method: 'POST', body: { manual: '  lamp-5 ' } });
+    expect(chosen.body.address).toBe('lamp-5');
+  });
+
+  test('a secret a step finds never reaches the browser, is stored sealed, and a placeholder is only good for its draft', async () => {
+    lampAt('lamp-1');
+    const started = await onBusAs('/setup', { method: 'POST', body: { typeId: 'test.lamp', methodId: 'bus' } });
+    const id = started.body.id;
+    const found = await onBusAs(`/setup/${id}/steps/credentials/actions/fetch`, { method: 'POST', body: {} });
+    expect(found.status).toBe(200);
+    expect(found.text).not.toContain('the-real-secret-value');
+    const pin = found.body.choices[0].config.pin as string;
+    expect(pin).toStartWith('held:');
+
+    expect((await onBusAs(`/setup/${id}`, { method: 'PATCH', body: { connection: { pin: 'held:0000000000000000' } } })).status).toBe(400);
+    const updated = await onBusAs(`/setup/${id}`, { method: 'PATCH', body: { connection: { pin } } });
+    expect(updated.body.secrets).toEqual(['pin']);
+    expect(updated.text).not.toContain('the-real-secret-value');
+
+    await onBusAs(`/setup/${id}/choose`, { method: 'POST', body: { address: 'lamp-1' } });
+    await onBusAs(`/setup/${id}/check`, { method: 'POST' });
+    const saved = await onBusAs(`/setup/${id}/save`, { method: 'POST', body: { name: 'Keyed' } });
+    expect(saved.body.connections[0].secrets).toEqual(['pin']);
+    expect(saved.text).not.toContain('the-real-secret-value');
+    const row = db()
+      .query<{ value: string; encrypted: number }, [string]>('SELECT value, encrypted FROM connection_secret WHERE connection_id = ?')
+      .get(saved.body.connections[0].id)!;
+    expect(openSecret(row.value, row.encrypted === 1)).toBe('the-real-secret-value');
+  });
+
+  test('a draft is only its own account’s, and nothing unknown is set up', async () => {
+    await createUser('guest', PASSWORD, 'olof');
+    const guest = await login('guest', onBus);
+    const started = await onBusAs('/setup', { method: 'POST', body: { typeId: 'test.lamp', methodId: 'bus' } });
+    expect((await call(`/setup/${started.body.id}`, { cookie: guest, server: onBus })).status).toBe(404);
+
+    expect((await onBusAs('/setup', { method: 'POST', body: { typeId: 'nobody.knows' } })).status).toBe(404);
+    expect((await onBusAs('/setup', { method: 'POST', body: { typeId: 'test.lamp', methodId: 'carrier-pigeon' } })).status).toBe(400);
+    // Saving before the check says what is missing.
+    expect((await onBusAs(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: 'x' } })).status).toBe(400);
+  });
+});
+
+describe('a device you have', () => {
+  test('is renamed, and nothing else about it is changed through that route', async () => {
+    lampAt('lamp-1');
+    const lamp = await added('Hall lamp');
+    const path = `/devices/${enc(lamp.id)}`;
+    expect((await onBusAs(path, { method: 'PATCH', body: { typeId: 'aferiy.p280' } })).status).toBe(400);
+    expect((await onBusAs(path, { method: 'PATCH', body: { name: 'Shed' } })).body.name).toBe('Shed');
   });
 
   test('an id with a percent sign is a 404, not a 500', async () => {
@@ -323,85 +426,164 @@ describe('devices', () => {
     expect((await as('/devices/abc%25def/history?key=soc')).status).toBe(404);
   });
 
-  test('a station output is switched through its own session', async () => {
-    const station = await addStation();
-    const result = await as(`/devices/${encodeURIComponent(station.id)}/control/usb`, { method: 'POST', body: { value: false } });
+  test('removing keeps its history; deleting it takes the name typed back', async () => {
+    lampAt('lamp-1');
+    const lamp = await added('Hall lamp');
+    const path = `/devices/${enc(lamp.id)}`;
+    expect((await onBusAs(`${path}/delete-history`, { method: 'POST', body: { name: 'Hall lamp' } })).status).toBe(409);
+    await onBusAs(path, { method: 'DELETE' });
+
+    expect((await onBusAs('/devices')).body.devices).toEqual([]);
+    expect((await onBusAs('/devices/removed')).body.devices.map((device: { id: string }) => device.id)).toEqual([lamp.id]);
+    expect((await onBusAs(`${path}/history?key=on`)).status).toBe(200);
+
+    expect((await onBusAs(`${path}/delete-history`, { method: 'POST', body: { name: 'hall' } })).status).toBe(400);
+    expect((await onBusAs(`${path}/delete-history`, { method: 'POST', body: { name: 'Hall lamp' } })).status).toBe(200);
+    expect((await onBusAs(path)).status).toBe(404);
+    const entries = (await onBusAs('/audit')).body as { kind: string }[];
+    expect(entries.map((entry) => entry.kind)).toEqual(expect.arrayContaining(['device.removed', 'device.history-deleted']));
+  });
+
+  test('a capability command goes through the gateway, and switches the lamp', async () => {
+    lampAt('lamp-1');
+    const lamp = await added('Hall lamp');
+    await new Promise((resolve) => setTimeout(resolve, 30)); // its first reading
+    const result = await onBusAs(`/devices/${enc(lamp.id)}/capabilities/switch/set`, { method: 'POST', body: { value: false } });
     expect(result.status).toBe(200);
-    const state = await as(`/devices/${encodeURIComponent(station.id)}/p280/state`);
-    const ports = (state.body as { status: { ports: { id: string; enabled: boolean }[] } }).status.ports;
-    expect(ports.find((port) => port.id === 'usb')?.enabled).toBe(false);
+    expect(result.body.outcome).toBe('verified');
+    expect(onBus.bus.lamps.get('lamp-1')!.on).toBe(false);
+    expect((await onBusAs(`/devices/${enc(lamp.id)}/capabilities/battery/set`, { method: 'POST', body: { value: true } })).status).toBe(404);
+    expect((await onBusAs(`/devices/${enc(lamp.id)}/capabilities/switch/explode`, { method: 'POST', body: { value: true } })).status).toBe(409);
   });
-});
 
-describe('the grid relay', () => {
-  test("a plug's switch acts on that plug, or not at all", async () => {
-    await addStation();
-    const fake = 'dev.kraftverk.fake-grid-relay';
-    await as(`/plugins/${fake}/config`, { method: 'PATCH', body: {} });
-    await as(`/plugins/${fake}/enable`, { method: 'POST', body: { enabled: true } });
-    await as(`/plugins/${fake}/grants`, { method: 'POST', body: { capability: 'gridRelay.switch', granted: true, confirmation: CONFIRMATION_PHRASE } });
-    await as(`/plugins/${fake}/provider`, { method: 'POST' });
+  test('cutting mains to a station a plug feeds asks for confirmation, naming the station', async () => {
+    const plug = await added('Heater plug', { server: simulated, typeId: 'atorch.s1w', methodId: 'lan' });
+    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280', methodId: 'wifi' });
+    await as('/links', { method: 'POST', body: { kind: 'feeds', sourceId: plug.id, targetId: station.id } });
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
-    const other = (await as('/devices', { method: 'POST', body: { typeId: 'test.second-relay', name: 'Other plug' } })).body as { id: string };
-    const refused = await as(`/devices/${encodeURIComponent(other.id)}/control/relay`, {
-      method: 'POST',
-      body: { value: false, confirmation: CONFIRMATION_PHRASE },
-    });
+    const refused = await as(`/devices/${enc(plug.id)}/capabilities/switch/set`, { method: 'POST', body: { value: false } });
     expect(refused.status).toBe(409);
-    expect(String(refused.body?.error)).toContain('not the grid relay');
-    // The relay that is the provider was not touched.
-    expect(((await as('/grid')).body?.state as { relayOn: boolean }).relayOn).toBe(true);
+    expect(refused.body).toMatchObject({ outcome: 'refused', needsConfirmation: true });
+    expect(refused.body.detail).toContain('Garage P280');
+  });
+
+  test('its type’s tools: a read is a GET, a write is a POST and is audited, refusals too', async () => {
+    lampAt('lamp-1');
+    const lamp = await added('Hall lamp');
+    const base = `/devices/${enc(lamp.id)}/advanced`;
+    expect((await onBusAs(`${base}/ping`)).body).toEqual({ pong: true, room: 'Hall' });
+    expect((await onBusAs(`${base}/blink`)).status).toBe(405);
+    expect((await onBusAs(`${base}/nothing`)).status).toBe(404);
+    expect((await onBusAs(`${base}/blink`, { method: 'POST', body: { times: 2 } })).body).toEqual({ blinked: 2 });
+    const refused = await onBusAs(`${base}/blink`, { method: 'POST', body: { times: 99 } });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toContain('overheat');
+    const kinds = ((await onBusAs('/audit')).body as { kind: string; actor: string }[]).filter((entry) => entry.kind.startsWith('device.advanced'));
+    expect(kinds.map((entry) => entry.kind).sort()).toEqual(['device.advanced', 'device.advanced-refused']);
+    expect(kinds.every((entry) => entry.actor === 'olof')).toBe(true);
+  });
+
+  test('a read-only server refuses a tool that writes before it runs', async () => {
+    const readOnly = await build({ simulate: true, readOnly: true });
+    try {
+      const lamp = await added('Sim lamp', { server: readOnly, address: 'simulated' });
+      const result = await as(`/devices/${enc(lamp.id)}/advanced/blink`, { method: 'POST', body: {}, server: readOnly });
+      expect(result.status).toBe(423);
+    } finally {
+      await readOnly.close();
+    }
   });
 });
 
-describe('plugins', () => {
-  test('a configuration that does not fit says which field, as a 400', async () => {
-    const result = await as('/plugins/test.keys/config', { method: 'PATCH', body: { name: '' } });
-    expect(result.status).toBe(400);
-    expect(JSON.stringify(result.body)).toContain('apiKey');
+describe('connections and links', () => {
+  test('the last way to reach a device cannot be removed; another can, and can be preferred', async () => {
+    lampAt('lamp-1');
+    lampAt('lamp-1b', { serial: 'LAMP-1' });
+    const lamp = await added('Hall lamp');
+    const base = `/devices/${enc(lamp.id)}/connections`;
+    const only = (await onBusAs(`/devices/${enc(lamp.id)}`)).body.connections[0].id;
+    expect((await onBusAs(`${base}/${only}`, { method: 'DELETE' })).status).toBe(409);
+
+    const second = await checked({ methodId: 'backup', address: 'lamp-1b' });
+    await onBusAs(`/setup/${second.id}/save`, { method: 'POST', body: { name: '', mode: 'attach', deviceId: lamp.id } });
+    const backup = (await onBusAs(`/devices/${enc(lamp.id)}`)).body.connections[1].id;
+    const preferred = await onBusAs(`${base}/${backup}/prefer`, { method: 'POST' });
+    expect(preferred.body.connections[0]).toMatchObject({ id: backup, inUse: true });
+    expect((await onBusAs(`${base}/${only}`, { method: 'DELETE' })).body.connections.map((c: { id: string }) => c.id)).toEqual([backup]);
   });
 
-  test('a secret found by a setup action never reaches the browser, and is stored when saved', async () => {
-    const found = await as('/plugins/test.keys/setup/fetch', { method: 'POST', body: {} });
-    expect(found.status).toBe(200);
-    expect(found.text).not.toContain('the-real-secret-value');
-    const config = (found.body?.choices as { config: Record<string, string> }[])[0]!.config;
-    expect(config.name).toBe('kitchen');
-    expect(config.apiKey).toStartWith('held:');
-
-    const saved = await as('/plugins/test.keys/config', { method: 'PATCH', body: config });
-    expect(saved.status).toBe(200);
-    const stored = await as('/plugins/test.keys/config');
-    expect(stored.body?.secretsSet).toContain('apiKey');
-    expect(stored.text).not.toContain('the-real-secret-value');
-    // Read back as the server reads it: sealed, where KRAFTVERK_SECRET_KEY is set.
-    const row = db().query("SELECT value, encrypted FROM plugin_secret WHERE plugin_id = 'test.keys' AND field = 'apiKey'").get() as {
-      value: string;
-      encrypted: number;
-    };
-    expect(openSecret(row.value, row.encrypted === 1)).toBe('the-real-secret-value');
-
-    // A placeholder is good once, and only for what it was issued for.
-    expect((await as('/plugins/test.keys/config', { method: 'PATCH', body: config })).status).toBe(400);
-    expect((await as('/plugins/test.keys/config', { method: 'PATCH', body: { apiKey: 'held:made-up' } })).status).toBe(400);
+  test('secrets are replaced write-only, and only fields that are secrets', async () => {
+    lampAt('lamp-1');
+    const lamp = await added('Hall lamp');
+    const connection = (await onBusAs(`/devices/${enc(lamp.id)}`)).body.connections[0].id;
+    const path = `/devices/${enc(lamp.id)}/connections/${connection}/secrets`;
+    expect((await onBusAs(path, { method: 'PUT', body: { room: 'x' } })).status).toBe(400);
+    const changed = await onBusAs(path, { method: 'PUT', body: { pin: '4321' } });
+    expect(changed.body.connections[0].secrets).toEqual(['pin']);
+    expect(changed.text).not.toContain('4321');
   });
 
-  test('a stored secret can be cleared', async () => {
-    await as('/plugins/test.keys/config', { method: 'PATCH', body: { name: 'x', apiKey: 'one', note: 'two' } });
-    expect((await as('/plugins/test.keys/config')).body?.secretsSet).toContain('note');
-    expect((await as('/plugins/test.keys/config', { method: 'PATCH', body: { note: null } })).status).toBe(200);
-    const after = (await as('/plugins/test.keys/config')).body?.secretsSet as string[];
-    expect(after).not.toContain('note');
-    expect(after).toContain('apiKey');
+  test('a plug feeds a station, and not the other way round', async () => {
+    const plug = await added('Heater plug', { server: simulated, typeId: 'atorch.s1w', methodId: 'lan' });
+    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280', methodId: 'wifi' });
+
+    expect((await as('/links', { method: 'POST', body: { kind: 'feeds', sourceId: station.id, targetId: plug.id } })).status).toBe(400);
+    const link = await as('/links', { method: 'POST', body: { kind: 'feeds', sourceId: plug.id, targetId: station.id } });
+    expect(link.status).toBe(200);
+    expect((await as(`/devices/${enc(station.id)}`)).body.links).toEqual([expect.objectContaining({ kind: 'feeds', role: 'target', other: { id: plug.id, name: 'Heater plug' } })]);
+    expect((await as(`/links/${link.body.id}`, { method: 'DELETE' })).status).toBe(200);
+    expect((await as(`/devices/${enc(station.id)}`)).body.links).toEqual([]);
+  });
+});
+
+describe('phones and browsers', () => {
+  test('register, are listed for their own account only, and can be forgotten', async () => {
+    const registered = await as('/clients', { method: 'POST', body: { name: 'Olof’s iPhone', platform: 'native', transports: ['ble'] } });
+    expect(registered.status).toBe(200);
+    expect((await as('/clients')).body.clients.map((client: { name: string }) => client.name)).toEqual(['Olof’s iPhone']);
+
+    await createUser('guest', PASSWORD, 'olof');
+    const guest = await login('guest');
+    expect((await call('/clients', { cookie: guest })).body.clients).toEqual([]);
+    // Nor can another account claim this phone's id.
+    const claimed = await call('/clients', { method: 'POST', cookie: guest, body: { id: registered.body.id, name: 'Mine now', platform: 'web', transports: [] } });
+    expect(claimed.body.id).not.toBe(registered.body.id);
+    expect((await call(`/clients/${registered.body.id}`, { method: 'DELETE', cookie: guest })).status).toBe(404);
+
+    expect((await as(`/clients/${registered.body.id}`, { method: 'DELETE' })).status).toBe(200);
+    expect((await as('/clients')).body.clients).toEqual([]);
+  });
+});
+
+describe('the server', () => {
+  test('says what it is running as', async () => {
+    expect((await as('/version')).body).toMatchObject({ simulate: true, transports: [], readOnly: false });
+    expect((await onBusAs('/version')).body).toMatchObject({ simulate: false, transports: ['bus'] });
+  });
+
+  test('lists its transports, and what they can see that nothing you have is reached by', async () => {
+    lampAt('lamp-1');
+    lampAt('lamp-2');
+    const transports = (await onBusAs('/transports')).body;
+    expect(transports.transports).toEqual([expect.objectContaining({ id: 'bus', enabled: true, running: true, availability: { ok: true } })]);
+
+    await onBusAs('/found'); // starts watching
+    const found = (await onBusAs('/found')).body.found;
+    expect(found.map((entry: { address: string }) => entry.address).sort()).toEqual(['lamp-1', 'lamp-2']);
+    // Each way it could be added as: the type, by each method that reaches it.
+    expect(found[0].types.map((type: { methodId: string }) => type.methodId)).toEqual(['bus', 'backup']);
+
+    await added('Hall lamp');
+    expect((await onBusAs('/found')).body.found.map((entry: { address: string }) => entry.address)).toEqual(['lamp-2']);
   });
 });
 
 describe('browsers from elsewhere', () => {
-  const preflight = (origin: string) =>
-    call('/devices', { method: 'OPTIONS', headers: { origin, 'access-control-request-method': 'GET' } });
+  const preflight = (origin: string) => call('/devices', { method: 'OPTIONS', headers: { origin, 'access-control-request-method': 'GET' } });
 
   test('another web app on the same box gets no credentialed access', async () => {
-    for (const origin of ['http://192.168.50.140:5000', 'http://192.168.50.140', 'http://diskstation.local:5001', 'https://evil.example']) {
+    for (const origin of ['http://192.168.1.140:5000', 'http://192.168.1.140', 'http://diskstation.local:5001', 'https://evil.example']) {
       expect((await preflight(origin)).headers.get('access-control-allow-origin')).toBeNull();
     }
   });
@@ -409,8 +591,8 @@ describe('browsers from elsewhere', () => {
   test('the Expo dev server is allowed in development, and nothing but named origins in production', () => {
     const development = corsOrigin({ allowedOrigins: [], development: true });
     expect(development('http://localhost:8081')).toBe('http://localhost:8081');
-    expect(development('http://192.168.50.58:8081')).toBe('http://192.168.50.58:8081');
-    expect(development('http://192.168.50.58:5000')).toBeNull();
+    expect(development('http://192.168.1.58:8081')).toBe('http://192.168.1.58:8081');
+    expect(development('http://192.168.1.58:5000')).toBeNull();
 
     const production = corsOrigin({ allowedOrigins: ['https://app.example.test'], development: false });
     expect(production('http://localhost:8081')).toBeNull();
@@ -423,147 +605,6 @@ describe('the sign-in state', () => {
     const outside = await call('/auth/state', { from: PROXY, headers: { [EXPOSURE_HEADER]: 'public', [CLIENT_IP_HEADER]: '203.0.113.5' } });
     expect(outside.body).toMatchObject({ onHomeNetwork: false, reason: 'Not on the home network' });
     const home = await call('/auth/state');
-    expect(String(home.body?.reason)).toContain('192.168.50.58');
-  });
-});
-
-describe('raw frames', () => {
-  /*
-    Spelled out rather than built, so these tests hold the route to the frames
-    themselves: AC output on (write holding 26 = 1), and read holding 0+80.
-  */
-  const AC_ON = '1106001a00015d6b';
-  const READ_SETTINGS = '1103000000506647';
-  const hex = (frame: Uint8Array) => Buffer.from(frame).toString('hex');
-
-  /** One station's link, recording what reached it. */
-  class RecordingLink {
-    readonly kind = 'ble' as const;
-    readonly connected = true;
-    sent: string[] = [];
-    constructor(readonly boundId: StationId) {}
-    async send(frame: Uint8Array) {
-      this.sent.push(hex(frame));
-    }
-    async request(): Promise<never> {
-      throw new Error('not answering');
-    }
-    onFrame() {
-      return () => {};
-    }
-    async close() {}
-  }
-
-  let links: RecordingLink[];
-
-  /** A server on real hardware, as protocol work runs it: raw frames on, writes off. */
-  async function hardwareApp(readOnly: boolean) {
-    links = [];
-    const radio: TransportHost = {
-      kind: 'ble',
-      start: async () => {},
-      stop: async () => {},
-      discovered: () => [],
-      onDiscovery: () => () => {},
-      openIds: () => links.map((link) => link.boundId),
-      open: async (station) => {
-        const link = new RecordingLink(station);
-        links.push(link);
-        return link;
-      },
-    };
-    const config = loadConfig(
-      { NODE_ENV: 'test', STATION_DRIVER: 'ble', ALLOW_RAW_MODBUS: '1', READ_ONLY: readOnly ? '1' : '0', KRAFTVERK_BASELINE_FILE: join(dir, 'baseline.json') },
-      []
-    );
-    const catalog = new DeviceCatalog();
-    const hardware = new ConnectionManager({
-      transports: config.transports,
-      simulate: false,
-      readOnly: config.readOnly,
-      host: () => radio,
-    });
-    const types = new DeviceTypeRegistry();
-    await types.discover();
-    const devices = new DeviceSessionManager({
-      types,
-      simulate: false,
-      readOnly: config.readOnly,
-      transports: serverTransports(hardware),
-      beforeSync: (records) => hardware.sync(records),
-    });
-    const record = catalog.add({ type: 'power-station', driver: 'core.station', name: 'Bench', config: { transport: 'ble', boundId: 'AABBCCDDEEFF' } });
-    await devices.sync(catalog.list());
-    const registry = new DeviceRegistry(catalog, host, devices);
-    const { app: server } = createApp({
-      config,
-      catalog,
-      types,
-      sessions: devices,
-      connections: hardware,
-      host,
-      registry,
-      gateway: new ActionGateway({ host, readStation: () => relayStation(devices), isReadOnly: () => hardware.readOnly }),
-      sampler: new Sampler(registry),
-      legacyStation: new LegacyStationImport({ catalog, transport: () => [], stationName: () => 'Power station' }),
-      proxies: new ProxyDirectory(PROXY),
-      serverLog: { dir: null, recent: () => [] },
-      broker: null,
-      startedAt: new Date(),
-    });
-    const send = async (hex: string) => {
-      const response = await server.fetch(
-        new Request('http://192.168.50.140:3333/api/diagnostics/raw', {
-          method: 'POST',
-          headers: { host: '192.168.50.140:3333', 'content-type': 'application/json', [CLIENT_HEADER]: 'test', cookie: `${SESSION_COOKIE}=${session}` },
-          body: JSON.stringify({ hex, deviceId: record.id }),
-        }),
-        { requestIP: () => ({ address: '192.168.50.58' }) }
-      );
-      return response.status;
-    };
-    return { send, close: async () => { await devices.closeAll(); await hardware.closeAll(); } };
-  }
-
-  test('a read-only server sends no write, however the frame is spelled', async () => {
-    const server = await hardwareApp(true);
-    try {
-      // AC output on: 0x06, and the same change as 0x10, 0x16 and 0x17.
-      for (const frame of [AC_ON, '1110001a0001020001', '1116001a00000001', '11170000000a001a0001020001']) {
-        expect(await server.send(frame)).toBe(423);
-      }
-      expect(links[0]!.sent).toEqual([]);
-
-      // Reading changes nothing, so read-only is no reason to refuse it.
-      expect(await server.send(READ_SETTINGS)).toBe(200);
-      expect(links[0]!.sent).toEqual([READ_SETTINGS]);
-
-      // Every refusal is on the timeline, under the account that asked.
-      const refused = ((await as('/audit')).body as unknown as { kind: string; actor: string }[]).filter(
-        (entry) => entry.kind === 'station.raw-refused'
-      );
-      expect(refused).toHaveLength(4);
-      expect(refused.every((entry) => entry.actor === 'olof')).toBe(true);
-    } finally {
-      await server.close();
-    }
-  });
-
-  test('with writes allowed, a raw write is sent', async () => {
-    const server = await hardwareApp(false);
-    try {
-      expect(await server.send(AC_ON)).toBe(200);
-      expect(links[0]!.sent).toEqual([AC_ON]);
-
-      // Writes allowed or not, the brick write is refused — and recorded.
-      expect(await server.send('1106004400000000')).toBe(400);
-      expect(links[0]!.sent).toEqual([AC_ON]);
-      const refused = ((await as('/audit')).body as unknown as { kind: string; detail: { hex: string } }[]).find(
-        (entry) => entry.kind === 'station.raw-refused'
-      );
-      expect(refused?.detail.hex).toBe('1106004400000000');
-    } finally {
-      await server.close();
-    }
+    expect(String(home.body?.reason)).toContain('192.168.1.58');
   });
 });

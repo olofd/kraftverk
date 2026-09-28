@@ -1,0 +1,39 @@
+{
+  "name": "@kraftverk/transport-ble",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Bluetooth LE: the server's radio (noble), the browser's Web Bluetooth and the phone's. Opens the GATT layout a protocol asks for and hands back the bytes; knows no protocol.",
+  "type": "module",
+  "main": "src/index.ts",
+  "kraftverk": {
+    "transport": {
+      "definition": "./src/index.ts",
+      "server": "./src/server.ts"
+    }
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./server": "./src/server.ts"
+  },
+  "scripts": {
+    "test": "node ../../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kraftverk/device-sdk": "*"
+  },
+  "//optional": [
+    "noble is only reached when the server starts Bluetooth, and it is imported",
+    "lazily, so a server without it still runs everything else. Optional, so a",
+    "container can install with --omit=optional and skip four native builds",
+    "(node-gyp, usb, bluetooth-hci-socket, serialport) for a radio it cannot",
+    "have anyway. A normal `npm install` still installs it."
+  ],
+  "optionalDependencies": {
+    "@stoprocent/noble": "^2.7.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}

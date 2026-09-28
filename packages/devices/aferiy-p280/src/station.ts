@@ -1,26 +1,30 @@
 import {
   validateConfig,
+  type AdvancedAction,
   type CapabilityImpl,
   type CapabilityName,
   type CommandResult,
   type ConfigValues,
   type ConnectionHealth,
+  type DeviceContext,
   type DeviceSession,
   type Reading,
 } from '@kraftverk/device-sdk';
-import type { PortId, StationSettings, StationSettingsPatch, StationStatus } from '@kraftverk/protocol';
+import { commandRefusal, describeCommand, fromHex, parseCommand, toHex, type SydpowerLink } from '@kraftverk/protocol-sydpower';
 
 import { CAPABILITIES, readings, SETTINGS_SCHEMA, settingsToValues, valuesToSettings } from './index.ts';
+import type { StationClient } from './model/client.ts';
+import { describeRegisters, type RegisterDump } from './model/diagnostics.ts';
+import type { PortId, StationSettings, StationSettingsPatch, StationStatus } from './model/types.ts';
 
 /**
- * A P280, as a device session: what the station driver reports, in the shared
+ * A P280, as a device session: what its station client reports, in the shared
  * vocabulary of readings, capabilities and settings.
  *
- * The same adapter serves the real station and the simulator. What differs is
- * only where the driver comes from — the simulator is built here; a real
- * station's driver is still opened and bound by the server's connection
- * manager, and lent to this session through `STATION_LINKS` until the P280
- * package holds its own links (docs/ARCHITECTURE.md, step 10).
+ * The same adapter serves a real station and the simulator, and the same code
+ * runs wherever the connection is held. What differs is only the driver: a
+ * `StationClient` over the link the protocol builds on the connection it was
+ * handed, or the simulator.
  */
 
 /** What this session needs from a driver: `StationClient` and the simulator both fit. */
@@ -32,27 +36,6 @@ export interface StationDriverLike {
   setPort(id: PortId, enabled: boolean): Promise<StationStatus>;
 }
 
-/**
- * The server's station links, by name in `ctx.transports`.
- *
- * Transitional: the connection manager in the server still decides which
- * station a saved device is bound to, and holds the link. This is how a P280
- * session asks it for the driver — and why there is none, when there isn't.
- */
-export const STATION_LINKS = 'sydpower.station-links';
-
-export type StationLookup =
-  | { driver: StationDriverLike; transport: string }
-  | { driver: null; reason: string | null };
-
-export type StationLinks = { lookup(deviceId: string): StationLookup };
-
-/** A session that can also hand over its driver, for the core's remaining P280 routes. */
-export type StationSession = DeviceSession & {
-  /** The driver behind this session, while one is open. Transitional: see `STATION_LINKS`. */
-  station(): StationDriverLike | null;
-};
-
 /** The outlets a P280 has. The light is a setting, not an outlet: see `CONTROLS`. */
 const OUTLETS: readonly PortId[] = ['ac', 'dc', 'usb'];
 
@@ -61,22 +44,22 @@ const failed = (error: unknown): CommandResult => ({
   error: error instanceof Error ? error.message : String(error),
 });
 
-export function stationSession(
-  lookup: () => StationLookup,
-  options: {
-    /** The station the device is bound to, for identity while no link is open. */
-    boundId?: string | null;
-    close?: () => void | Promise<void>;
-  } = {}
-): StationSession {
-  const open = () => {
-    const found = lookup();
-    return found.driver ? found : null;
-  };
+export type StationSessionOptions = {
+  /** The station's permanent identity, when it is known. */
+  identity: string | null;
+  /** How it is reached: `mqtt`, `ble`, `sim`. */
+  transport: string;
+  /** Whether the connection underneath is up; the simulator's always is. */
+  connected: () => boolean;
+  advanced?: Record<string, AdvancedAction>;
+  close?: () => void | Promise<void>;
+};
+
+export function stationSession(driver: StationDriverLike, options: StationSessionOptions): DeviceSession {
   /** The latest status, but only once the station has actually reported. */
   const reported = (): StationStatus | null => {
-    const status = open()?.driver.status() ?? null;
-    return status && status.lastUpdated !== null ? status : null;
+    const status = driver.status();
+    return status.lastUpdated !== null ? status : null;
   };
 
   const battery: CapabilityImpl['battery'] = {
@@ -106,11 +89,9 @@ export function stationSession(
       };
     },
     set: async (outletId, on) => {
-      const link = open();
-      if (!link) return { accepted: false, error: 'The station is not connected' };
       if (!OUTLETS.includes(outletId as PortId)) return { accepted: false, error: `A P280 has no outlet "${outletId}"` };
       try {
-        await link.driver.setPort(outletId as PortId, on);
+        await driver.setPort(outletId as PortId, on);
         return { accepted: true };
       } catch (error) {
         return failed(error);
@@ -122,39 +103,26 @@ export function stationSession(
 
   return {
     health(): ConnectionHealth {
-      const found = lookup();
-      if (!found.driver) {
-        return {
-          // A reason is something the user has to resolve — the station is held
-          // by another saved device — while no link at all is just quiet.
-          status: found.reason ? 'error' : 'offline',
-          detail: found.reason ?? 'The server is not holding a link to it',
-          owner: 'server',
-          transport: null,
-          lastReadingAt: null,
-        };
-      }
-      const status = found.driver.status();
+      const status = driver.status();
       const simulated = status.link.mode === 'simulator';
-      const connected = simulated || status.link.state === 'connected';
+      const connected = simulated || (options.connected() && status.link.state === 'connected');
       return {
-        status: connected ? 'connected' : status.link.state === 'waiting' ? 'connecting' : 'offline',
+        status: connected ? 'connected' : options.connected() ? 'connecting' : 'offline',
         detail: connected
           ? simulated
             ? 'Simulated'
             : 'Connected'
-          : status.link.state === 'waiting'
-            ? 'Looking for the station'
+          : options.connected()
+            ? 'Reached, waiting for the station’s first reading'
             : 'The station has not connected',
         owner: 'server',
-        transport: simulated ? 'sim' : (status.link.transport ?? found.transport),
+        transport: options.transport,
         lastReadingAt: connected ? status.lastUpdated : status.link.lastSeen,
       };
     },
 
     readings(): Reading[] {
-      const status = open()?.driver.status();
-      return status ? readings(status) : [];
+      return readings(driver.status());
     },
 
     capability<N extends CapabilityName>(name: N): CapabilityImpl[N] | null {
@@ -163,40 +131,161 @@ export function stationSession(
     },
 
     readSettings(): ConfigValues | null {
-      const settings = open()?.driver.settings() ?? null;
+      const settings = driver.settings();
       return settings ? settingsToValues(settings) : null;
     },
 
     async writeSettings(patch: ConfigValues): Promise<ConfigValues | null> {
-      const link = open();
-      if (!link) throw new Error('The station is not connected');
-      const current = link.driver.settings();
+      const current = driver.settings();
       if (!current) throw new Error('The station’s settings have not been read yet');
       /*
         Checked against the schema the app draws from, whoever calls: the
         bounds, the enum steps, and above all "Whole machine unused time", whose
-        schema has no zero because zero destroys the station. The driver's
-        register whitelist checks again below this.
+        schema has no zero because zero destroys the station. The client's
+        register whitelist checks again below this, and the protocol's guard
+        below that.
       */
       const merged = validateConfig(SETTINGS_SCHEMA, { ...settingsToValues(current), ...patch });
       if (!merged.ok) throw new Error(merged.issues.map((issue) => issue.message).join('; '));
       const changed = Object.fromEntries(Object.keys(patch).map((key) => [key, merged.value[key]]));
-      const applied = await link.driver.applySettings(valuesToSettings(changed) as StationSettingsPatch);
+      const applied = await driver.applySettings(valuesToSettings(changed) as StationSettingsPatch);
       return applied ? settingsToValues(applied) : null;
     },
 
     identity() {
-      const status = open()?.driver.status();
-      return {
-        id: status?.link.mac ?? options.boundId ?? null,
-        name: status?.name ?? null,
-      };
+      return { id: options.identity, name: driver.status().name ?? null };
     },
 
-    station: () => open()?.driver ?? null,
+    advanced: options.advanced,
 
     async close() {
       await options.close?.();
+    },
+  };
+}
+
+// --- the register tools ----------------------------------------------------------
+
+/**
+ * A baseline for the register diff.
+ *
+ * Snapshot, change one thing on the station (or in BrightEMS), then read again:
+ * whatever moved is the register behind that control. This is how the map gets
+ * confirmed on hardware it was not derived from. Kept in the device's own store,
+ * so each station has its own and it survives a restart mid-experiment.
+ */
+type Baseline = { at: string; input: number[]; holding: number[] };
+const BASELINE_KEY = 'registers.baseline';
+
+const integer = (value: unknown, fallback: number, min: number, max: number, name: string): number => {
+  const numeric = value === undefined || value === '' ? fallback : Number(value);
+  if (!Number.isInteger(numeric) || numeric < min || numeric > max) throw new Error(`${name} must be a whole number from ${min} to ${max}`);
+  return numeric;
+};
+
+/**
+ * Tools for confirming the register map against real hardware. The published
+ * map came from FOSSiBOT F2400/F3600 units; the P280 is the same stack but a
+ * different machine, so a value is verified before it is trusted.
+ */
+export function registerTools(
+  client: StationClient,
+  link: SydpowerLink,
+  ctx: Pick<DeviceContext, 'store' | 'readOnly' | 'allowRawFrames'>
+): Record<string, AdvancedAction> {
+  return {
+    /** Every register, raw and decoded, diffed against this station's own baseline. */
+    registers: {
+      writes: false,
+      async run(): Promise<RegisterDump> {
+        const [input, holding] = await Promise.all([
+          client.readAllInput().catch(() => [] as number[]),
+          client.readAllHolding().catch(() => [] as number[]),
+        ]);
+        const baseline = ctx.store.get<Baseline>(BASELINE_KEY);
+        return {
+          mac: client.mac,
+          readOnly: client.readOnly,
+          baselineAt: baseline?.at ?? null,
+          input: describeRegisters(input, 'input', baseline?.input),
+          holding: describeRegisters(holding, 'holding', baseline?.holding),
+        };
+      },
+    },
+
+    /** Takes the baseline the next dump is compared with. Changes nothing on the station. */
+    snapshot: {
+      writes: false,
+      async run() {
+        const [input, holding] = await Promise.all([client.readAllInput(), client.readAllHolding()]);
+        const baseline: Baseline = { at: new Date().toISOString(), input, holding };
+        ctx.store.set(BASELINE_KEY, baseline);
+        return { at: baseline.at, input: input.length, holding: holding.length };
+      },
+    },
+
+    /**
+     * Reads an arbitrary register range, and shows it as ASCII too.
+     *
+     * Strings the station stores — a Wi-Fi SSID, say — would be packed two
+     * characters per register and are invisible in a numeric dump. Reads only,
+     * so probing outside the documented window cannot change anything.
+     */
+    scan: {
+      writes: false,
+      async run(input) {
+        const fn = integer(input.fn, 3, 3, 4, 'fn') as 3 | 4;
+        const start = integer(input.start, 0, 0, 65535, 'start');
+        const count = integer(input.count, 40, 1, 125, 'count');
+        const values = await client.readRange(fn, start, count).catch(() => [] as number[]);
+        const ch = (b: number) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : '.');
+        return {
+          fn,
+          start,
+          count,
+          ok: values.length > 0,
+          values: values.map((raw, i) => ({ register: start + i, raw, hex: raw.toString(16).padStart(4, '0') })),
+          ascii: values.map((v) => ch((v >> 8) & 0xff) + ch(v & 0xff)).join(''),
+        };
+      },
+    },
+
+    /** Writes this station refused while read-only. Its own, not somebody else's. */
+    blocked: { writes: false, run: async () => client.blockedWrites },
+
+    /** How the link is doing: what it rides, and what the transport reports about it. */
+    link: {
+      writes: false,
+      run: async () => ({ transport: link.transport, address: link.address, connected: link.connected, status: client.status().link }),
+    },
+
+    /**
+     * Sends an arbitrary frame: the escape hatch for protocol work.
+     *
+     * Only when the holder was started with raw access, because writing an
+     * undocumented register can damage the station. Raw frames skip the
+     * whitelist by design — reaching undocumented registers is what they are
+     * for — but never the protocol's guard, and never read-only mode: only a
+     * frame that is plainly a read can change nothing.
+     */
+    raw: {
+      writes: true,
+      honoursReadOnly: true,
+      async run(input) {
+        if (!ctx.allowRawFrames) {
+          throw new Error('Raw frames are off. Start the server with ALLOW_RAW_MODBUS=1 to send them; bad writes can brick the station.');
+        }
+        const hex = typeof input.hex === 'string' ? input.hex : '';
+        if (!/^[0-9a-fA-F]{2,512}$/.test(hex) || hex.length % 2) throw new Error('hex must be whole bytes of hexadecimal');
+        const frame = fromHex(hex);
+        const refusal = commandRefusal(frame);
+        if (refusal) throw new Error(refusal);
+        if (ctx.readOnly && parseCommand(frame)?.kind !== 'read') {
+          throw new Error(`Refused to send ${describeCommand(frame)}: this holder is read-only, and only reads are sent.`);
+        }
+        await link.send(frame);
+        return { sent: toHex(frame), to: link.address, described: describeCommand(frame) };
+      },
     },
   };
 }

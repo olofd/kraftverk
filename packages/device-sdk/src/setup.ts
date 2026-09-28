@@ -1,21 +1,25 @@
+import type { ConnectionMethod, Platform, Protocol, TransportDefinition } from './connection.ts';
+import type { DeviceLogger, DeviceType, ScopedHttp } from './device-type.ts';
 import type { ConfigSchema, ConfigValues } from './schema.ts';
-import type { DeviceLogger, ScopedHttp, TransportRuntime } from './device-type.ts';
 
 /**
- * Setup guides: how a device type turns "I have one of these" into a working
- * device, written in code by the type and rendered by the app with one wizard.
+ * Setup: how "I have one of these" becomes a device (docs/DATA-MODEL.md §1).
  *
- * The steps run against a **draft** — config not yet saved, secrets held by the
- * server — and the device is created only when a `verify` step passes, or when
- * the user takes the guide's "save anyway" for a failure it expects (a station
- * that is asleep). So a saved device is one that has worked, or one the user
- * knowingly saved before it could.
+ * A method's setup is **assembled from its layers**, not written whole by each
+ * device type. The protocol's binding says what to do to the device first; the
+ * transport finds it; the protocol asks for its credentials; the device type
+ * adds what is its own and reads the device once to check it. So a device type
+ * mostly declares "sydpower over mqtt", and improving a layer improves every
+ * device that uses it.
  *
- * Nothing here is UI. A step is data the app can draw — a title, some text, a
- * list of fields from the type's config schema — plus, for the steps that do
- * something, a function the server runs. The app receives the steps without
- * their functions (`describeSetup`), which is how a guide added next year needs
- * no new screen.
+ * Every step runs in the holder: on the server for a connection the server will
+ * hold, in the app for one the app will. The save is always the server's — or,
+ * in local mode, the app's own storage — in one go.
+ *
+ * Nothing here is UI. A step is data the app can draw, plus, for steps that do
+ * something, a function run where the connection will be held. The app receives
+ * the steps without their functions (`setupPlan`), which is how a type added
+ * next year needs no new screen.
  */
 
 /**
@@ -23,17 +27,16 @@ import type { DeviceLogger, ScopedHttp, TransportRuntime } from './device-type.t
  *
  * Discovery nearly always ends the same way — *here are three devices, which is
  * yours?* — so that shape belongs in the contract. The app renders a list and
- * writes the chosen `config` into the draft; it needs to know nothing about
- * what is being chosen.
+ * applies the chosen values to the draft.
  */
 export type SetupChoice = {
   id: string;
   label: string;
   /** A second line: an address, a product name, a signal strength. */
   detail?: string;
-  /** Applied to the draft when this one is chosen. */
+  /** Applied to the draft when this one is chosen, to whichever part the step fills. */
   config: ConfigValues;
-  /** Marks the option the device type thinks is right. */
+  /** Marks the option the step thinks is right. */
   recommended?: boolean;
 };
 
@@ -55,17 +58,22 @@ export type SetupActionResult = {
   suggestedConfig?: ConfigValues;
 };
 
-/** What a step's function can reach: the draft, and the server's facilities. */
+/** What a step's function can reach. */
 export type SetupContext<Config extends ConfigValues = ConfigValues> = {
-  /** Everything entered or chosen so far. Secrets are not in it; see `secrets`. */
+  /** The device's own config entered so far. Secrets are not in it. */
   draft: Partial<Config>;
-  /** Secrets entered or fetched so far, by config field. */
+  /** The connection's config entered or chosen so far. */
+  connection: ConfigValues;
+  /** The address chosen, once one has been. */
+  address: string | null;
+  /** Secrets entered or fetched so far, by field. */
   secrets: { get(field: string): string | null };
+  /** For helpers that call a vendor's API once — fetching a key. Not for the device. */
   http: ScopedHttp;
-  transports: TransportRuntime;
   log: DeviceLogger;
-  /** Aborted when the user leaves the guide, or the step runs too long. */
+  /** Aborted when the user leaves the flow, or the step runs too long. */
   signal: AbortSignal;
+  platform: Platform;
 };
 
 /** A button inside a step: "Fetch the key from the Tuya cloud". */
@@ -79,67 +87,164 @@ export type SetupAction<Config extends ConfigValues = ConfigValues> = {
 };
 
 type StepBase = {
-  /** Unique within the guide; how the app and the server refer to the step. */
+  /** Unique within the flow; how the app and the server refer to the step. */
   id: string;
   title: string;
   description?: string;
 };
 
+/** Which part of the draft a form or a discovery fills. */
+export type SetupTarget = 'device' | 'connection';
+
+/** A step a device type or a protocol writes. */
 export type SetupStep<Config extends ConfigValues = ConfigValues> =
   /** Something the user does with their hands: "put the plug in pairing mode". */
   | (StepBase & { kind: 'instructions'; body: string; image?: string })
-  /** Finds candidates — on the network, on the radio — and offers them as choices. */
-  | (StepBase & { kind: 'discover'; run(ctx: SetupContext<Config>): Promise<SetupActionResult> })
-  /** Asks for some of the config fields, with helper actions beside them. */
+  /** Finds candidates and offers them as choices. */
+  | (StepBase & {
+      kind: 'discover';
+      target: SetupTarget;
+      run(ctx: SetupContext<Config>): Promise<SetupActionResult>;
+    })
+  /** Asks for some fields, with helper actions beside them. */
   | (StepBase & {
       kind: 'form';
-      fields: readonly (keyof Config & string)[];
+      target: SetupTarget;
+      /** The fields asked for. The device type's config, or the connection's. */
+      schema: ConfigSchema;
       actions?: readonly SetupAction<Config>[];
-    })
-  /**
-   * Proves the draft works: connect, read once, switch nothing.
-   *
-   * `saveAnyway`, when present, is the sentence explaining why saving after a
-   * failure is reasonable for this type — and its presence is what offers it.
-   */
-  | (StepBase & {
-      kind: 'verify';
-      run(ctx: SetupContext<Config>): Promise<SetupActionResult>;
-      saveAnyway?: string;
     });
 
-export type SetupGuide<Config extends ConfigValues = ConfigValues> = {
-  steps: readonly SetupStep<Config>[];
-};
-
-// --- what the app is sent -----------------------------------------------------
+// --- what the app is sent ------------------------------------------------------
 
 export type SetupActionView = Omit<SetupAction, 'run'>;
 
-/** A step as data: everything but the functions. */
+/**
+ * A step as data: everything but the functions.
+ *
+ * Two kinds only the core writes. `choose` is the transport's: find the one
+ * physical device — a live list, the platform's own chooser, or an address
+ * typed by hand. `check` reads the device once through the type's `identify`,
+ * and is always last.
+ */
 export type SetupStepView =
   | (StepBase & { kind: 'instructions'; body: string; image?: string })
-  | (StepBase & { kind: 'discover' })
-  | (StepBase & { kind: 'form'; fields: readonly string[]; actions: readonly SetupActionView[] })
-  | (StepBase & { kind: 'verify'; saveAnyway: string | null });
+  | (StepBase & { kind: 'discover'; target: SetupTarget })
+  | (StepBase & { kind: 'form'; target: SetupTarget; schema: ConfigSchema; actions: readonly SetupActionView[] })
+  | (StepBase & {
+      kind: 'choose';
+      transport: string;
+      discovery: 'list' | 'chooser' | 'none';
+      /** When an address may be typed, what it is called: "IP address". */
+      manual: string | null;
+    })
+  | (StepBase & {
+      kind: 'check';
+      /** Present when saving after a failed check is reasonable for this type, and why. */
+      saveAnyway: string | null;
+    });
 
-export function describeSetup(guide: SetupGuide<any>): SetupStepView[] {
-  return guide.steps.map((step): SetupStepView => {
-    const base = { id: step.id, title: step.title, ...(step.description ? { description: step.description } : {}) };
-    switch (step.kind) {
-      case 'instructions':
-        return { ...base, kind: 'instructions', body: step.body, ...(step.image ? { image: step.image } : {}) };
-      case 'discover':
-        return { ...base, kind: 'discover' };
-      case 'form':
-        return {
-          ...base,
-          kind: 'form',
-          fields: [...step.fields],
-          actions: (step.actions ?? []).map(({ run: _run, ...action }) => action),
-        };
-      case 'verify':
-        return { ...base, kind: 'verify', saveAnyway: step.saveAnyway ?? null };
-    }
+const viewOf = (step: SetupStep<any>): SetupStepView => {
+  const base = { id: step.id, title: step.title, ...(step.description ? { description: step.description } : {}) };
+  switch (step.kind) {
+    case 'instructions':
+      return { ...base, kind: 'instructions', body: step.body, ...(step.image ? { image: step.image } : {}) };
+    case 'discover':
+      return { ...base, kind: 'discover', target: step.target };
+    case 'form':
+      return {
+        ...base,
+        kind: 'form',
+        target: step.target,
+        schema: step.schema,
+        actions: (step.actions ?? []).map(({ run: _run, ...action }) => action),
+      };
+  }
+};
+
+/** Fills `{name}` placeholders from a transport's values; unknown names stay as they are. */
+export const fillValues = (text: string, values: Readonly<Record<string, string>>): string =>
+  text.replace(/\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole);
+
+export type SetupPlanInput = {
+  type: DeviceType<any>;
+  /** Null for a type that has no connection to set up. */
+  method: ConnectionMethod | null;
+  protocol: Protocol | null;
+  transport: TransportDefinition | null;
+  /** Where the connection will be held: decides how the device is chosen. */
+  platform: Platform;
+  /** The transport's values, for instructions: the broker's address. */
+  values?: Readonly<Record<string, string>>;
+};
+
+/**
+ * Every step of setting up one method, in order, as the app draws them.
+ *
+ * Get it ready (the binding's instructions) → choose the device (the transport)
+ * → credentials (the protocol) → the method's own config and steps → the type's
+ * own steps → check (the type's `identify`). Naming the device and linking it
+ * come after, and are the core's.
+ */
+export function setupPlan(input: SetupPlanInput): SetupStepView[] {
+  const { type, method, protocol, transport, platform } = input;
+  const steps: SetupStepView[] = [];
+  const binding = method && protocol ? protocol.bindings[method.transport] : undefined;
+
+  if (binding?.instructions) {
+    steps.push({
+      id: 'ready',
+      kind: 'instructions',
+      title: binding.instructions.title,
+      body: fillValues(binding.instructions.body, input.values ?? {}),
+    });
+  }
+
+  if (method && transport && !method.address) {
+    const discovery = transport.discovery[platform] ?? 'none';
+    steps.push({
+      id: 'choose',
+      kind: 'choose',
+      title: `Choose your ${type.meta.name}`,
+      transport: transport.id,
+      discovery,
+      manual: binding?.parseAddress ? (binding.addressLabel ?? 'Address') : null,
+    });
+  }
+
+  if (protocol?.credentials && Object.keys(protocol.credentials.schema.fields).length) {
+    steps.push(
+      viewOf({
+        id: 'credentials',
+        kind: 'form',
+        target: 'connection',
+        title: 'Credentials',
+        schema: protocol.credentials.schema,
+        actions: protocol.credentials.actions,
+      })
+    );
+  }
+
+  if (method?.config && Object.keys(method.config.fields).length) {
+    steps.push(viewOf({ id: 'connection', kind: 'form', target: 'connection', title: 'Connection', schema: method.config }));
+  }
+
+  for (const step of method?.steps ?? []) steps.push(viewOf(step));
+  for (const step of type.setup?.steps ?? []) steps.push(viewOf(step));
+
+  steps.push({
+    id: 'check',
+    kind: 'check',
+    title: 'Check that it answers',
+    saveAnyway: type.setup?.saveAnyway ?? null,
   });
+  return steps;
+}
+
+/** The step with this id among a type's own steps and a method's, with its function. */
+export function findStep(type: DeviceType<any>, method: ConnectionMethod | null, protocol: Protocol | null, id: string) {
+  if (id === 'credentials' && protocol?.credentials) {
+    return { kind: 'form' as const, id, title: 'Credentials', target: 'connection' as const, schema: protocol.credentials.schema, actions: protocol.credentials.actions };
+  }
+  return [...(method?.steps ?? []), ...(type.setup?.steps ?? [])].find((step) => step.id === id) ?? null;
 }

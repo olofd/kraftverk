@@ -4,6 +4,8 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:
 
 import { Database } from 'bun:sqlite';
 
+import * as connections from './migrations/007-connections.ts';
+
 /**
  * One SQLite file for everything that has to outlive a restart: plugin
  * configuration, secrets, capability grants and the audit timeline.
@@ -86,7 +88,7 @@ export function closeDb(): void {
  * Deliberately plain: a numbered list and a table of what has been applied. A
  * migration framework would be more code than the thing it manages.
  */
-const MIGRATIONS: Migration[] = [
+export const MIGRATIONS: Migration[] = [
   {
     id: 1,
     sql: `
@@ -253,6 +255,8 @@ const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  // Devices reached through connections; the plugin tables go. See the file.
+  { id: 7, sql: connections.SQL, run: connections.run },
 ];
 
 /**
@@ -333,7 +337,7 @@ export function resetDatabase(): { tables: string[]; rows: number } {
   const handle = db();
   const tables = handle
     .query<{ name: string }, []>(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('migration', 'users', 'sessions') ORDER BY name"
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('migration', 'users', 'sessions', 'client') ORDER BY name"
     )
     .all()
     .map((row) => row.name);

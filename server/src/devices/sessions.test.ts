@@ -3,73 +3,70 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { defineDeviceType, type DeviceContext, type DeviceSession } from '@kraftverk/device-sdk';
-
 import { closeDb, db } from '../history/db.ts';
+import { ProtocolRegistry } from '../runtime/protocols.ts';
+import { TransportHost } from '../runtime/transports.ts';
 import { DeviceCatalog } from './catalog.ts';
+import { ClientStore } from './clients.ts';
+import { ConnectionStore } from './connections.ts';
 import { DeviceSessionManager } from './sessions.ts';
+import { busDefinition, FakeBus, lampControl, lampProtocol, lampType, opened } from './testing.ts';
 import { DeviceTypeRegistry } from './types.ts';
 
 /**
- * One session per saved device, whatever it is.
+ * One session per saved device, whatever it is, over the connection it is
+ * reached by.
  *
- * The manager knows no product, so these use a type of their own: a lamp with
- * an address. What is pinned down is the part that makes "a device type" more
- * than one global driver — each device gets its own config, its own store and
- * its own lifecycle — and that a device which cannot open says why.
+ * The manager knows no product, protocol or transport, so these use a lamp on
+ * a pretend bus. What is pinned down: each device gets its own config, store
+ * and lifecycle; the connection in use is the preferred one this server can
+ * reach; a device that cannot open says why; and a connection that turns out
+ * to reach a different device is refused.
  */
 
 const dir = mkdtempSync(join(tmpdir(), 'kraftverk-sessions-'));
 
-type LampConfig = { host: string };
-
-/** Every context the type was opened with, and whether each session was closed. */
-const opened: { ctx: DeviceContext<LampConfig>; closed: boolean }[] = [];
-let failOpen = false;
-
-const lampSession = (ctx: DeviceContext<LampConfig>): DeviceSession => {
-  const entry = { ctx, closed: false };
-  opened.push(entry);
-  const at = new Date().toISOString();
-  return {
-    health: () => ({ status: 'connected', detail: `Lamp at ${ctx.config.host}`, owner: 'server', transport: 'test', lastReadingAt: at }),
-    readings: () => [{ key: 'on', value: true, at }],
-    capability: () => null,
-    close: async () => {
-      entry.closed = true;
-    },
-  };
-};
-
-const lamp = defineDeviceType<LampConfig>({
-  id: 'test.lamp',
-  apiVersion: '2',
-  kind: 'hardware',
-  meta: { name: 'Test lamp', category: 'light', support: 'experimental', icon: 'sun' },
-  protocols: [],
-  capabilities: [],
-  telemetry: [{ key: 'on', label: 'On', unit: '', kind: 'state' }],
-  config: { fields: { host: { type: 'host', title: 'Address', required: true } } },
-  setup: { steps: [{ id: 'check', kind: 'verify', title: 'Check', run: async () => ({ ok: true, detail: 'fine' }) }] },
-  async createSession(ctx) {
-    if (failOpen) throw new Error('The lamp refused the connection');
-    return lampSession(ctx);
-  },
-  async createSimulator(ctx) {
-    return lampSession(ctx);
-  },
-});
-
 let catalog: DeviceCatalog;
+let connections: ConnectionStore;
+let clients: ClientStore;
 let sessions: DeviceSessionManager;
+let bus: FakeBus;
+let identified: [string, string][];
+let busEnabled: boolean;
+
+const build = (options: { simulate?: boolean } = {}) => {
+  const protocols = new ProtocolRegistry();
+  expect(protocols.install(lampProtocol)).toEqual([]);
+  const transports = new TransportHost({
+    enabled: () => (busEnabled ? { ok: true } : { ok: false, reason: 'This server was not started with bus' }),
+    context: { env: {}, log: () => {}, audit: () => {} },
+  });
+  expect(transports.install(busDefinition, { create: () => bus })).toEqual([]);
+  const types = new DeviceTypeRegistry();
+  expect(types.install(lampType)).toEqual([]);
+  return new DeviceSessionManager({
+    types,
+    protocols,
+    transports,
+    connections,
+    simulate: options.simulate ?? false,
+    readOnly: false,
+    allowRawFrames: false,
+    clientName: (id) => clients.get(id)?.name ?? null,
+    onIdentified: (deviceId, identity) => identified.push([deviceId, identity]),
+  });
+};
 
 beforeAll(() => {
   process.env.KRAFTVERK_DB = join(dir, 'test.db');
   closeDb();
   catalog = new DeviceCatalog();
+  connections = new ConnectionStore();
+  clients = new ClientStore();
 });
 
-afterAll(() => {
+afterAll(async () => {
+  await sessions?.closeAll();
   closeDb();
   rmSync(dir, { recursive: true, force: true });
 });
@@ -78,39 +75,48 @@ beforeEach(async () => {
   await sessions?.closeAll();
   db().exec('DELETE FROM device');
   opened.length = 0;
-  failOpen = false;
-  const types = new DeviceTypeRegistry();
-  expect(types.install(lamp)).toEqual([]);
-  sessions = new DeviceSessionManager({ types, simulate: false, readOnly: false, transports: { get: () => null } });
+  lampControl.failOpen = false;
+  identified = [];
+  busEnabled = true;
+  bus = new FakeBus();
+  sessions = build();
 });
 
-const addLamp = (name: string, config: Record<string, unknown>) =>
-  catalog.add({ type: 'light', driver: 'test.lamp', name, config });
+/** A lamp on the bus, saved, with its connection. */
+const addLamp = (name: string, address: string, config: Record<string, unknown> = { room: name }, identity: string | null = null) => {
+  bus.lamps.set(address, { serial: address.toUpperCase(), model: 'L1', on: true, answers: true });
+  const record = catalog.add({ typeId: 'test.lamp', name, config, identity });
+  const connection = connections.add({ deviceId: record.id, method: 'bus', transport: 'bus', heldBy: null, address });
+  return { record, connection };
+};
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
 describe('one session per device', () => {
-  test('two devices of one type run side by side, each with its own config', async () => {
-    const hall = addLamp('Hall', { host: '192.0.2.1' });
-    const porch = addLamp('Porch', { host: '192.0.2.2' });
+  test('two devices of one type run side by side, each with its own config and connection', async () => {
+    const hall = addLamp('Hall', 'lamp-1').record;
+    const porch = addLamp('Porch', 'lamp-2').record;
     await sessions.sync(catalog.list());
 
-    expect(sessions.get(hall.id)!.health().detail).toBe('Lamp at 192.0.2.1');
-    expect(sessions.get(porch.id)!.health().detail).toBe('Lamp at 192.0.2.2');
+    expect(sessions.get(hall.id)!.health().detail).toBe('Lamp in Hall');
+    expect(sessions.get(porch.id)!.health().detail).toBe('Lamp in Porch');
+    expect(opened.map((entry) => entry.ctx.connection?.address).sort()).toEqual(['lamp-1', 'lamp-2']);
+    expect(sessions.inUse(hall.id)?.address).toBe('lamp-1');
   });
 
   test('each device has a store of its own', async () => {
-    const hall = addLamp('Hall', { host: '192.0.2.1' });
-    const porch = addLamp('Porch', { host: '192.0.2.2' });
+    addLamp('Hall', 'lamp-1');
+    addLamp('Porch', 'lamp-2');
     await sessions.sync(catalog.list());
 
     const [first, second] = opened.map((entry) => entry.ctx);
     first!.store.set('brightness', 80);
     expect(first!.store.get<number>('brightness')).toBe(80);
     expect(second!.store.get('brightness')).toBeNull();
-    expect([hall.id, porch.id]).toContain(first!.deviceId);
   });
 
-  test('forgetting a device closes its session, and its store goes with it', async () => {
-    const hall = addLamp('Hall', { host: '192.0.2.1' });
+  test('removing a device closes its session, and keeps its store', async () => {
+    const hall = addLamp('Hall', 'lamp-1').record;
     await sessions.sync(catalog.list());
     opened[0]!.ctx.store.set('brightness', 80);
 
@@ -119,60 +125,111 @@ describe('one session per device', () => {
 
     expect(sessions.get(hall.id)).toBeNull();
     expect(opened[0]!.closed).toBe(true);
-    expect(db().query('SELECT COUNT(*) AS n FROM device_kv').get()).toEqual({ n: 0 });
+    // Kept with its history, so bringing it back brings its store back too.
+    expect(db().query('SELECT COUNT(*) AS n FROM device_kv').get()).toEqual({ n: 1 });
   });
 
   test('a changed config reopens the device with the new one', async () => {
-    const hall = addLamp('Hall', { host: '192.0.2.1' });
+    const hall = addLamp('Hall', 'lamp-1').record;
     await sessions.sync(catalog.list());
-    catalog.update(hall.id, { config: { host: '192.0.2.9' } });
+    catalog.update(hall.id, { config: { room: 'Kitchen' } });
     await sessions.sync(catalog.list());
 
     expect(opened[0]!.closed).toBe(true);
-    expect(sessions.get(hall.id)!.health().detail).toBe('Lamp at 192.0.2.9');
+    expect(sessions.get(hall.id)!.health().detail).toBe('Lamp in Kitchen');
+  });
+
+  test('preferring another connection reopens the device over it', async () => {
+    const { record } = addLamp('Hall', 'lamp-1');
+    bus.lamps.set('lamp-9', { serial: 'LAMP-1', model: 'L1', on: true, answers: true });
+    const second = connections.add({ deviceId: record.id, method: 'backup', transport: 'bus', heldBy: null, address: 'lamp-9' });
+    await sessions.sync(catalog.list());
+    expect(sessions.inUse(record.id)?.address).toBe('lamp-1');
+
+    connections.prefer(second.id);
+    await sessions.sync(catalog.list());
+    expect(sessions.inUse(record.id)?.address).toBe('lamp-9');
+  });
+
+  test('simulated, every device is opened through its type’s simulator, with no connection', async () => {
+    const simulated = build({ simulate: true });
+    const record = catalog.add({ typeId: 'test.lamp', name: 'Hall', config: { room: 'Hall' } });
+    await simulated.sync(catalog.list());
+    expect(simulated.get(record.id)).not.toBeNull();
+    expect(opened.at(-1)!.ctx.connection).toBeNull();
+    await simulated.closeAll();
   });
 });
 
 describe('a device that cannot open is still a device, saying why', () => {
-  test('a config its type rejects is "needs setting up", not an error', async () => {
-    const record = addLamp('Hall', {});
-    await sessions.sync(catalog.list());
-
-    expect(sessions.get(record.id)).toBeNull();
-    expect(sessions.health(record)).toMatchObject({ status: 'unconfigured' });
-    expect(sessions.health(record).detail).toContain('Address is required');
-  });
-
   test('a key its type no longer knows does not stop it opening', async () => {
-    const record = addLamp('Hall', { host: '192.0.2.1', retiredField: 'from an older version' });
+    const { record } = addLamp('Hall', 'lamp-1', { room: 'Hall', retiredField: 'from an older version' });
     await sessions.sync(catalog.list());
-
     expect(sessions.get(record.id)).not.toBeNull();
-    expect(opened[0]!.ctx.config).toEqual({ host: '192.0.2.1' });
+    expect(opened[0]!.ctx.config).toEqual({ room: 'Hall' });
   });
 
   test('a session that fails to open is an error, with the reason', async () => {
-    failOpen = true;
-    const record = addLamp('Hall', { host: '192.0.2.1' });
+    lampControl.failOpen = true;
+    const { record } = addLamp('Hall', 'lamp-1');
     await sessions.sync(catalog.list());
-
     expect(sessions.health(record)).toMatchObject({ status: 'error', detail: 'The lamp refused the connection' });
   });
 
   test('a device no installed type claims gets no session at all', async () => {
-    const record = catalog.add({ type: 'light', driver: 'nobody.knows', name: 'Mystery' });
+    const record = catalog.add({ typeId: 'nobody.knows', name: 'Mystery' });
     await sessions.sync(catalog.list());
     expect(sessions.typeOf(record)).toBeNull();
     expect(sessions.get(record.id)).toBeNull();
+    expect(sessions.health(record).detail).toContain('nobody.knows');
+  });
+
+  test('a device with no connection says nothing can reach it', async () => {
+    const record = catalog.add({ typeId: 'test.lamp', name: 'Unreachable' });
+    await sessions.sync(catalog.list());
+    expect(sessions.health(record)).toMatchObject({ status: 'unconfigured' });
+    expect(sessions.health(record).detail).toContain('Nothing can reach');
+  });
+
+  test('a transport this server may not use is the reason given', async () => {
+    busEnabled = false;
+    const { record } = addLamp('Hall', 'lamp-1');
+    await sessions.sync(catalog.list());
+    expect(sessions.get(record.id)).toBeNull();
+    expect(sessions.health(record).detail).toContain('not started with bus');
+  });
+
+  test('a device held only by a phone has no session here, and says who holds it', async () => {
+    const user = db().query<{ id: string }, []>('SELECT id FROM users LIMIT 1').get();
+    const userId = user?.id ?? (db().exec("INSERT INTO users (id, username, password_hash, created_at, password_changed_at) VALUES ('u-test', 'tester', 'x', '2026-01-01', '2026-01-01')"), 'u-test');
+    const phone = clients.register({ userId, name: 'Olof’s iPhone', platform: 'native', transports: ['ble'] });
+    const record = catalog.add({ typeId: 'test.lamp', name: 'Pocket lamp' });
+    connections.add({ deviceId: record.id, method: 'bus', transport: 'bus', heldBy: phone.id, address: 'lamp-7' });
+    await sessions.sync(catalog.list());
+
+    expect(sessions.get(record.id)).toBeNull();
+    expect(sessions.health(record).detail).toBe('Held by Olof’s iPhone, not by this server');
   });
 });
 
-test('simulated, every device is opened through its type’s simulator', async () => {
-  const types = new DeviceTypeRegistry();
-  types.install({ ...lamp, createSession: async () => { throw new Error('no hardware here'); } });
-  const simulated = new DeviceSessionManager({ types, simulate: true, readOnly: false, transports: { get: () => null } });
-  const record = addLamp('Hall', { host: '192.0.2.1' });
-  await simulated.sync(catalog.list());
-  expect(simulated.get(record.id)).not.toBeNull();
-  await simulated.closeAll();
+describe('who a device is', () => {
+  test('a device saved before it answered learns its identity the first time it does', async () => {
+    const { record } = addLamp('Hall', 'lamp-1');
+    await sessions.sync(catalog.list());
+    await settle();
+    await sessions.check();
+    expect(identified).toEqual([[record.id, 'lampish:LAMP-1']]);
+  });
+
+  test('a connection that now reaches a different device is refused, and recorded', async () => {
+    const { record } = addLamp('Hall', 'lamp-1', { room: 'Hall' }, 'lampish:SOMEONE-ELSE');
+    await sessions.sync(catalog.list());
+    await settle();
+    await sessions.check();
+
+    expect(sessions.get(record.id)).toBeNull();
+    expect(sessions.health(record).detail).toContain('different device');
+    const audit = db().query<{ kind: string }, [string]>("SELECT kind FROM audit WHERE resource = ? AND kind = 'device.mismatch'").all(record.id);
+    expect(audit).toHaveLength(1);
+  });
 });

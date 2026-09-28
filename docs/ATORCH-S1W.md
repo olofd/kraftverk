@@ -31,7 +31,15 @@ directly, with no third-party runtime dependency.
 | Handshake | none | none | 3-way | 3-way |
 
 - **Frame layout:** prefix, 32-bit sequence, 32-bit command, length, payload,
-  integrity, suffix.
+  integrity, suffix. On 3.5: prefix, two zero bytes, sequence, command, length
+  (counting IV, payload and tag), a 12-byte IV, the payload, a 16-byte GCM tag,
+  suffix; the header after the prefix is the GCM additional data.
+- **The version header** (`3.x` and twelve zero bytes) goes in front of the
+  encrypted payload on 3.3, and inside the encryption on 3.4 and 3.5 — only on
+  commands that carry one, not on queries, heartbeats or the handshake. An
+  earlier version of this code had the 3.5 layout and the 3.4 header placement
+  wrong; both now follow tinytuya's implementation, and are tested against a
+  scripted device. Neither is yet confirmed on real hardware.
 - **Session negotiation (3.4/3.5):** `START 0x03` sends the client nonce;
   `RESP 0x04` returns the device nonce plus HMAC-SHA256; `FINISH 0x05`
   completes it. The session key is the XOR of both nonces, then AES: ECB for

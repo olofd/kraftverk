@@ -10,7 +10,7 @@ import { body, type AppDeps } from './shared.ts';
 
 /** Erasing everything, and the audit timeline. */
 export function adminRoutes(
-  { catalog, sessions, connections, host, sampler }: AppDeps,
+  { catalog, sessions, sampler }: AppDeps,
   accounts: ReturnType<typeof createAuth>
 ): Hono {
   const admin = new Hono();
@@ -28,8 +28,8 @@ export function adminRoutes(
   /**
    * Empties the database.
    *
-   * Every device, every sample, every plugin's configuration and secrets, the
-   * capability grants and the whole audit timeline. Accounts stay, so the
+   * Every device, every sample, every connection and its secrets, every link
+   * and the whole audit timeline. Accounts stay, so the
    * server is never left unclaimed. It cannot be undone from here.
    *
    * Needs a signed-in account *and* a passphrase kept in a file on the server:
@@ -68,14 +68,10 @@ export function adminRoutes(
     /*
       Order matters. Sessions are closed first so nothing is mid-poll against a
       device that is about to stop existing, and the sampler is stopped so it
-      cannot write a row into the table being emptied. Plugins are stopped too:
-      left running, they went on polling plugs — and reporting "healthy" — on
-      configuration the reset had just deleted.
+      cannot write a row into the table being emptied.
     */
     sampler.stop();
     await sessions.closeAll();
-    await connections.closeAll();
-    await host.stopAll();
 
     const { tables, rows } = resetDatabase();
 
@@ -83,10 +79,8 @@ export function adminRoutes(
     audit({ at: new Date().toISOString(), kind: 'database.reset', actor: who, summary: `The database was reset: ${rows} rows across ${tables.length} tables`, detail: { tables } });
     console.log(`[admin] database reset — ${rows} rows across ${tables.length} tables`);
 
-    // Back to the state a fresh install boots into: no devices, so no
-    // sessions, and no plugin configured, so none running.
+    // Back to the state a fresh install boots into: no devices, so no sessions.
     await sessions.sync(catalog.list());
-    await host.startEnabled();
     sampler.start();
 
     return c.json({ ok: true, tables, rows });

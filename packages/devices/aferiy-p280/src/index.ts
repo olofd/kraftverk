@@ -1,11 +1,6 @@
-import type {
-  ConfigSchema,
-  ControlSpec,
-  DeviceDescriptor,
-  MetricSpec,
-  Reading,
-} from '@kraftverk/device-sdk';
-import type { StationSettings, StationStatus } from '@kraftverk/protocol';
+import type { ConfigSchema, ControlSpec, MetricSpec, Reading } from '@kraftverk/device-sdk';
+
+import type { StationSettings, StationStatus } from './model/types.ts';
 
 /**
  * The AFERIY P280, described in the device model.
@@ -16,8 +11,10 @@ import type { StationSettings, StationStatus } from '@kraftverk/protocol';
  * settings can permanently brick the station. None of that is knowledge the
  * core should carry — it is knowledge about *this device*.
  *
- * The server turns these declarations into the API; the app turns them into
- * screens. Neither needs to know what a P280 is.
+ * The core turns these declarations into the API and the app into screens;
+ * neither needs to know what a P280 is. The station model below them — the
+ * register map, the decode, the polling client — is in `./model`, and is this
+ * package's too: the protocol package knows the wire, not the machine.
  */
 
 /**
@@ -228,20 +225,6 @@ export const SETTINGS_SCHEMA: ConfigSchema = {
 /** Settings where a wrong value damages hardware rather than annoying you. */
 export const DANGEROUS_SETTINGS = ['sleepMinutes'] as const;
 
-export function descriptor(id: string, name: string, model: string): DeviceDescriptor {
-  return {
-    id,
-    name,
-    category: 'power-station',
-    icon: 'zap',
-    description: model,
-    measurements: MEASUREMENTS,
-    controls: CONTROLS,
-    settings: { schema: SETTINGS_SCHEMA, dangerous: [...DANGEROUS_SETTINGS] },
-    capabilities: CAPABILITIES,
-  };
-}
-
 /**
  * Station telemetry, flattened into the readings the device model expects.
  * None at all before the station's first reading: the zeros in their place
@@ -317,6 +300,12 @@ export function valuesToSettings(values: Record<string, unknown>): Record<string
   }
   return patch;
 }
+
+export * from './model/types.ts';
+export { AC_CHARGING_WATTS, HOLDING, INPUT, LED_MODE_VALUES, WRITABLE, type WriteRule } from './model/registers.ts';
+export { describeRegisters, type RegisterDump, type RegisterRow } from './model/diagnostics.ts';
+export { PORT_LABELS, buildSettings, buildStatus } from './model/station.ts';
+export { PortSwitchError, ReadOnlyError, StaleWriteError, StationClient, type StationLink } from './model/client.ts';
 
 export {
   NO_WRITES_IN_FLIGHT,

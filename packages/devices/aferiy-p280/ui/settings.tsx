@@ -6,7 +6,7 @@ import { Row, RowSeparator, ToggleRow } from '@kraftverk/ui';
 import { SegmentedControl } from '@kraftverk/ui';
 import { SliderRow } from '@kraftverk/ui';
 import { formatDuration } from '@kraftverk/ui';
-import type { LedMode, StationSettings as StationSettingsValues } from '@kraftverk/protocol';
+import type { LedMode, StationSettings as StationSettingsValues } from '../src/model/types';
 import type { StationScreenProps } from './contract';
 
 const LED_MODES = [

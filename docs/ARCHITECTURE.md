@@ -106,6 +106,7 @@ packages/
   devices/atorch-s1w/    @kraftverk/device-atorch-s1w    smart-plug
   devices/tuya-plug/     @kraftverk/device-tuya-plug     smart-plug: the generic Tuya energy socket, with profiles
   services/open-meteo/   @kraftverk/service-open-meteo   weather, a service
+  gateway/               @kraftverk/gateway              the action gateway's rules: pure, run by whichever holder has the connection
   api-client/  ui/       shared by the app; know no device type
 server/  client/         the core; know no transport, protocol or device type by name
 ```
@@ -113,7 +114,7 @@ server/  client/         the core; know no transport, protocol or device type by
 The rule, checked in CI by `npm run check:architecture` (§7):
 
 - **The core** — `server/src`, `client/src`, `client/app`,
-  `packages/api-client`, `packages/ui`, the SDK — never imports a device type,
+  `packages/api-client`, `packages/ui`, `packages/gateway`, the SDK — never imports a device type,
   a service, a protocol or a transport package. The server finds them at
   runtime and loads them by path, and starts only the transports its installed
   device types need. The app cannot — Metro bundles what is imported, and a
@@ -131,7 +132,9 @@ The rule, checked in CI by `npm run check:architecture` (§7):
   only — `@kraftverk/ui`, `@kraftverk/api-client`, React and Tamagui (peer
   dependencies). Never a transport, the server or the app: it is handed an
   open connection. It is pure too, because it runs in whichever holder has
-  its connection.
+  its connection. A **family** may build on another device type's package, by
+  its name and never by a path: the ATORCH S1W is `@kraftverk/device-tuya-plug`'s
+  generic socket with a profile of its own.
 - **No third-party runtime dependencies** in a device type, protocol or
   transport without a review: they run inside the server with everything it
   can do (§5), and the server image installs its own dependencies, not every
@@ -476,10 +479,13 @@ What the review found, and which step fixes it.
 
 - **the dependency rule** (§3) is broken by a new import;
 - **the leak count** rises: the number of product-specific identifiers —
-  `core.station`, `p280`, `StationStatus`, `StationSettings`, `power-station`,
-  `gridRelay` — in shipped files outside `packages/devices/aferiy-p280`.
-  Tests are held to the dependency rule but not counted: a test that drives
-  the real station through a core route moves with that route;
+  `core.station`, `p280`, `StationStatus`, `StationSettings`, `gridRelay` — in
+  shipped files outside `packages/devices/aferiy-p280`. (`power-station` is a
+  category now, and belongs in the SDK.) Tests are held to the dependency rule
+  but not counted: a test that drives the real station through a core route
+  moves with that route. Nor are database migrations, which must name what
+  stored data used to be called and never change once shipped, or a pointer to
+  a document such as `docs/P280-FINDINGS.md`;
 - **purity** is broken, from step 4: a protocol or a device type's `src/`
   imports a Node or Bun built-in (`node:*`, `bun:*`), or a transport, or
   anything else that does I/O. Those packages run in the app as well as on the

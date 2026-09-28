@@ -25,7 +25,7 @@
   },
   "dependencies": {
     "@kraftverk/device-sdk": "*",
-    "@kraftverk/protocol": "*"
+    "@kraftverk/protocol-sydpower": "*"
   },
   "peerDependencies": {
     "@kraftverk/api-client": "*",

@@ -4,10 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 /**
- * The catalog is what makes a device *yours*: it exists because you added it,
- * and it keeps existing when the thing itself stops answering. These cover the
- * lifecycle the device-first refactor depends on — add, rename, re-model,
- * forget — and the one destructive part, which takes the history with it.
+ * The catalog, the connections and the links: what you have, how each is
+ * reached, and how they fit the house (docs/DATA-MODEL.md §3). These cover the
+ * lifecycle — add, rename, remove keeping history, bring back, delete for good
+ * — and the rules the data model depends on: one device per identity, one
+ * device per exclusive address, one `feeds` link per source.
  *
  * The database is a throwaway. Running these against `server/data` would put
  * test devices in the owner's own list.
@@ -15,16 +16,22 @@ import { join } from 'node:path';
 
 import { savedDeviceId } from '@kraftverk/device-sdk';
 
-import { DeviceCatalog } from './catalog.ts';
 import { closeDb, db } from '../history/db.ts';
+import { DeviceCatalog } from './catalog.ts';
+import { ConnectionStore } from './connections.ts';
+import { LinkStore } from './links.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'kraftverk-catalog-'));
 let catalog: DeviceCatalog;
+let connections: ConnectionStore;
+let links: LinkStore;
 
 beforeAll(() => {
   process.env.KRAFTVERK_DB = join(dir, 'test.db');
   closeDb();
   catalog = new DeviceCatalog();
+  connections = new ConnectionStore();
+  links = new LinkStore();
 });
 
 afterAll(() => {
@@ -35,8 +42,12 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const add = (name: string) =>
-  catalog.add({ type: 'power-station', model: 'aferiy-p280', driver: 'core.station', name });
+const add = (name: string, identity: string | null = null) => catalog.add({ typeId: 'aferiy.p280', name, identity });
+
+const sample = (id: string) =>
+  db().query('INSERT INTO sample (device_id, key, at, value) VALUES (?, ?, ?, ?)').run(id, 'soc', new Date().toISOString(), 50);
+
+const samplesOf = (id: string) => db().query<{ n: number }, [string]>('SELECT COUNT(*) n FROM sample WHERE device_id = ?').get(id)!.n;
 
 describe('the device catalog', () => {
   test('starts empty, because nothing is adopted', () => {
@@ -49,68 +60,131 @@ describe('the device catalog', () => {
     // Opaque: an id that said what a device is would invite code that reads it.
     expect(record.id).toMatch(/^d-[0-9a-f]{12}$/);
     expect(catalog.get(record.id)).toEqual(record);
-    expect(catalog.list().map((entry) => entry.id)).toEqual([record.id]);
+    expect(catalog.list().map((entry) => entry.id)).toContain(record.id);
   });
 
-  test('renaming changes only the label', () => {
+  test('renaming changes only the label, and an empty rename is refused', () => {
     const record = add('Before');
-    const updated = catalog.update(record.id, { name: '  After  ' });
-
-    expect(updated?.name).toBe('After');
-    expect(updated?.model).toBe(record.model);
-    expect(catalog.get(record.id)?.name).toBe('After');
-  });
-
-  test('an empty rename is refused rather than blanking the name', () => {
-    const record = add('Keep me');
-    expect(catalog.update(record.id, { name: '   ' })?.name).toBe('Keep me');
-  });
-
-  test('the model can be corrected, including back to unknown', () => {
-    const record = add('Mystery');
-
-    expect(catalog.update(record.id, { model: 'fossibot-f2400' })?.model).toBe('fossibot-f2400');
-    expect(catalog.update(record.id, { model: null })?.model).toBeNull();
-    // Absent is not the same as null: it must leave the model alone.
-    expect(catalog.update(record.id, { name: 'Mystery' })?.model).toBeNull();
-  });
-
-  test('config is merged, so one key does not erase the rest', () => {
-    const record = catalog.add({
-      type: 'power-station',
-      driver: 'core.station',
-      name: 'Merged',
-      config: { transport: 'ble', boundId: 'AA:BB' },
-    });
-
-    expect(catalog.update(record.id, { config: { boundId: 'CC:DD' } })?.config).toEqual({
-      transport: 'ble',
-      boundId: 'CC:DD',
-    });
+    expect(catalog.update(record.id, { name: '  After  ' })?.name).toBe('After');
+    expect(catalog.update(record.id, { name: '   ' })?.name).toBe('After');
+    expect(catalog.get(record.id)?.typeId).toBe('aferiy.p280');
   });
 
   test('updating something that is not there says so', () => {
-    expect(catalog.update(savedDeviceId('power-station:nope'), { name: 'x' })).toBeNull();
-    expect(catalog.get(savedDeviceId('power-station:nope'))).toBeNull();
+    expect(catalog.update(savedDeviceId('d-nope'), { name: 'x' })).toBeNull();
+    expect(catalog.get(savedDeviceId('d-nope'))).toBeNull();
   });
 
-  test('forgetting a device takes its samples with it', () => {
-    const record = add('Doomed');
-    const other = add('Spared');
+  test('a device is found by its identity', () => {
+    const record = add('Garage', 'sydpower:AABBCC000001');
+    expect(catalog.byIdentity('sydpower:AABBCC000001').active?.id).toBe(record.id);
+    expect(catalog.byIdentity('sydpower:FFFFFF000000')).toEqual({ active: null, removed: [] });
+  });
 
-    for (const id of [record.id, other.id]) {
-      db()
-        .query('INSERT INTO sample (device_id, key, at, value) VALUES (?, ?, ?, ?)')
-        .run(id, 'soc', new Date().toISOString(), 50);
-    }
+  test('two devices you have cannot share an identity', () => {
+    add('One', 'sydpower:AABBCC000002');
+    expect(() => add('Two', 'sydpower:AABBCC000002')).toThrow();
+  });
+});
 
+describe('removing a device', () => {
+  test('keeps its history, and drops its connections, their secrets and its links', () => {
+    const station = add('Doomed', 'sydpower:AABBCC000003');
+    const plug = catalog.add({ typeId: 'atorch.s1w', name: 'Plug' });
+    const connection = connections.add({ deviceId: station.id, method: 'wifi', transport: 'mqtt', heldBy: null, address: 'AABBCC000003' });
+    connections.setSecrets(connection.id, { localKey: 'k' });
+    links.add({ kind: 'feeds', sourceId: plug.id, targetId: station.id });
+    sample(station.id);
+
+    catalog.remove(station.id);
+
+    expect(catalog.active(station.id)).toBeNull();
+    expect(catalog.get(station.id)?.removedAt).not.toBeNull();
+    expect(catalog.list().map((record) => record.id)).not.toContain(station.id);
+    expect(catalog.removed().map((record) => record.id)).toContain(station.id);
+    expect(samplesOf(station.id)).toBe(1);
+    expect(connections.forDevice(station.id)).toEqual([]);
+    expect(connections.secretFields(connection.id)).toEqual([]);
+    expect(links.forDevice(plug.id)).toEqual([]);
+    // Its address is free for something else.
+    expect(connections.claimant('mqtt', 'AABBCC000003')).toBeNull();
+  });
+
+  test('frees its identity, and can be brought back with its history', () => {
+    const record = add('Returning', 'sydpower:AABBCC000004');
+    sample(record.id);
     catalog.remove(record.id);
 
-    expect(catalog.get(record.id)).toBeNull();
-    const left = db()
-      .query<{ device_id: string }, []>('SELECT device_id FROM sample')
-      .all()
-      .map((row) => row.device_id);
-    expect(left).toEqual([other.id]);
+    expect(catalog.byIdentity('sydpower:AABBCC000004')).toEqual({ active: null, removed: [expect.objectContaining({ id: record.id })] });
+    expect(catalog.restore(record.id)?.removedAt).toBeNull();
+    expect(catalog.active(record.id)?.name).toBe('Returning');
+    expect(samplesOf(record.id)).toBe(1);
+  });
+
+  test('is not brought back over one you already have with the same identity', () => {
+    const old = add('Old', 'sydpower:AABBCC000005');
+    catalog.remove(old.id);
+    add('New', 'sydpower:AABBCC000005');
+    expect(() => catalog.restore(old.id)).toThrow('You already have that device');
+  });
+
+  test('deleting its history takes the samples, and nobody else’s', () => {
+    const doomed = add('Doomed for good');
+    const spared = add('Spared');
+    sample(doomed.id);
+    sample(spared.id);
+    catalog.remove(doomed.id);
+
+    expect(catalog.deleteForever(doomed.id)).toEqual({ samples: 1 });
+    expect(catalog.get(doomed.id)).toBeNull();
+    expect(samplesOf(spared.id)).toBe(1);
+  });
+});
+
+describe('connections', () => {
+  test('a new one comes after the ones a device already has, and can be preferred', () => {
+    const record = add('Two ways');
+    const wifi = connections.add({ deviceId: record.id, method: 'wifi', transport: 'mqtt', heldBy: null, address: 'AABBCC000010' });
+    const ble = connections.add({ deviceId: record.id, method: 'bluetooth', transport: 'ble', heldBy: null, address: 'AA:BB:CC:00:00:10' });
+    expect([wifi.priority, ble.priority]).toEqual([0, 1]);
+
+    connections.prefer(ble.id);
+    expect(connections.forDevice(record.id).map((connection) => connection.method)).toEqual(['bluetooth', 'wifi']);
+  });
+
+  test('an exclusive address is claimed whatever its case', () => {
+    const record = add('Claimed');
+    connections.add({ deviceId: record.id, method: 'wifi', transport: 'mqtt', heldBy: null, address: 'AABBCC000011' });
+    expect(connections.claimant('mqtt', 'aabbcc000011')?.deviceId).toBe(record.id);
+    expect(connections.claimant('ble', 'AABBCC000011')).toBeNull();
+  });
+
+  test('secrets are sealed at rest, listed by field, and opened only on request', () => {
+    const record = add('Keyed');
+    const connection = connections.add({ deviceId: record.id, method: 'lan', transport: 'lan', heldBy: null, address: '192.0.2.10' });
+    connections.setSecrets(connection.id, { localKey: 'abcdefghijklmnop' });
+
+    expect(connections.secretFields(connection.id)).toEqual(['localKey']);
+    expect(connections.secret(connection.id, 'localKey')).toBe('abcdefghijklmnop');
+    const stored = db().query<{ value: string }, [string]>('SELECT value FROM connection_secret WHERE connection_id = ?').get(connection.id)!.value;
+    if (process.env.KRAFTVERK_SECRET_KEY) expect(stored).not.toContain('abcdefghijklmnop');
+  });
+});
+
+describe('links', () => {
+  test('a source feeds one thing: a second feeds link replaces the first', () => {
+    const plug = catalog.add({ typeId: 'atorch.s1w', name: 'Feeder' });
+    const first = add('First station');
+    const second = add('Second station');
+    links.add({ kind: 'feeds', sourceId: plug.id, targetId: first.id });
+    links.add({ kind: 'feeds', sourceId: plug.id, targetId: second.id });
+
+    expect(links.targetOf('feeds', plug.id)).toBe(second.id);
+    expect(links.forDevice(first.id)).toEqual([]);
+  });
+
+  test('a device cannot feed itself', () => {
+    const plug = catalog.add({ typeId: 'atorch.s1w', name: 'Loop' });
+    expect(() => links.add({ kind: 'feeds', sourceId: plug.id, targetId: plug.id })).toThrow();
   });
 });

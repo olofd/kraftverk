@@ -1,4 +1,5 @@
 import { CAPABILITY_NAMES, type CapabilityName } from './capabilities.ts';
+import type { ByteChannel, ChannelMessage, MessageChannel, OpenConnection } from './connection.ts';
 import type { DeviceContext, DeviceSession, DeviceType } from './device-type.ts';
 import { savedDeviceId } from './identity.ts';
 import { validateConfig, type ConfigValues } from './schema.ts';
@@ -7,36 +8,41 @@ import { validateDeviceType } from './validate.ts';
 
 /**
  * The contract suite: what every device type must do, checked against its
- * simulator (docs/ARCHITECTURE.md §8, step 2).
+ * simulator (docs/ARCHITECTURE.md §7).
  *
  * `validateDeviceType` checks what a type declares; this checks that its
  * sessions keep those declarations — that the telemetry it reports is the
  * telemetry it declared, that every capability it claims is really there and
- * behaves, and that its settings survive a round trip. A type passes when the
- * returned list is empty:
+ * behaves, and that its settings survive a round trip. Given a connection to a
+ * fake device, it checks `identify` too. A type passes when the returned list
+ * is empty:
  *
  *   test('keeps the device-type contract', async () => {
  *     expect(await checkDeviceTypeContract(myType)).toEqual([]);
  *   });
  *
  * Deliberately free of any test framework, so it runs under whichever one a
- * package uses.
+ * package uses. The fake channels below let a protocol or a device type be
+ * tested against scripted bytes and messages, with no transport at all.
  */
 
 export type ContractOptions = {
   /** Config for the simulated device. Defaults from the type's schema otherwise. */
   config?: ConfigValues;
-  /** Secrets for it, by config field. */
-  secrets?: Record<string, string>;
   /** How long the simulator may take to produce its first readings. */
   settleMs?: number;
+  /**
+   * A connection to a fake device, one per method the test covers, to check
+   * `identify` against. Built from the channels below.
+   */
+  connections?: readonly (() => OpenConnection | Promise<OpenConnection>)[];
 };
 
 /** A context with nothing real behind it: memory for storage, no network, no radios. */
-export function simulatorContext(
-  type: DeviceType<any>,
+export function simulatorContext<Config extends ConfigValues = ConfigValues>(
+  type: DeviceType<Config>,
   options: ContractOptions = {}
-): { context: DeviceContext; stop: () => void; events: string[] } {
+): { context: DeviceContext<Config>; stop: () => void; events: string[] } {
   const timers: ReturnType<typeof setInterval>[] = [];
   const store = new Map<string, unknown>();
   const events: string[] = [];
@@ -45,21 +51,20 @@ export function simulatorContext(
   const validated = validateConfig(type.config, options.config ?? {});
   const config = validated.ok ? validated.value : { ...(options.config ?? {}) };
 
-  const context: DeviceContext = {
+  const context: DeviceContext<Config> = {
     deviceId: savedDeviceId(`contract:${type.id}`),
-    config,
-    secrets: { get: (field) => options.secrets?.[field] ?? null },
+    // Validated against the type's own schema, so it is the type's config.
+    config: config as Config,
+    connection: null,
     store: {
       get: <T>(key: string) => (store.has(key) ? (store.get(key) as T) : null),
       set: (key, value) => void store.set(key, value),
       delete: (key) => void store.delete(key),
     },
     log: { info: quiet, warn: quiet, error: quiet },
-    http: async (url) => {
-      throw new Error(`A simulator may not reach the network (asked for ${url})`);
-    },
-    transports: { get: () => null },
     readOnly: false,
+    allowRawFrames: false,
+    platform: 'server',
     schedule: (everyMs, task) => {
       let running = false;
       timers.push(
@@ -262,5 +267,166 @@ export async function checkDeviceTypeContract(type: DeviceType<any>, options: Co
     stop();
   }
 
+  for (const connect of options.connections ?? []) {
+    problems.push(...(await identifyProblems(type, await connect(), context.config)));
+  }
   return problems;
+}
+
+/** Runs `identify` against a fake device, the way the check step will. */
+async function identifyProblems(type: DeviceType<any>, connection: OpenConnection, config: ConfigValues): Promise<string[]> {
+  const where = `identify over ${connection.method}`;
+  const quiet = () => undefined;
+  try {
+    const found = await Promise.race([
+      type.identify(connection, { config, log: { info: quiet, warn: quiet, error: quiet }, signal: AbortSignal.timeout(10_000) }),
+      sleep(10_000).then(() => {
+        throw new Error('did not answer within 10 s');
+      }),
+    ]);
+    const problems: string[] = [];
+    if (type.kind === 'hardware' && !found.identity) problems.push(`${where}: a device must say who it is, and gave no identity`);
+    if (found.identity && !found.identity.startsWith(`${connection.protocol}:`)) {
+      problems.push(`${where}: identity "${found.identity}" is not namespaced by its protocol "${connection.protocol}"`);
+    }
+    if (!found.summary?.trim()) problems.push(`${where}: no sentence to show the user`);
+    return problems;
+  } catch (error) {
+    return [`${where} failed: ${(error as Error).message}`];
+  } finally {
+    await connection.channel.close().catch(() => undefined);
+  }
+}
+
+// --- fake channels: a device on the other end, scripted -----------------------
+
+/** Listeners, and how to tell them all. */
+function listeners<T>() {
+  const set = new Set<(value: T) => void>();
+  return {
+    add(listener: (value: T) => void) {
+      set.add(listener);
+      return () => void set.delete(listener);
+    },
+    emit(value: T) {
+      for (const listener of [...set]) listener(value);
+    },
+  };
+}
+
+/**
+ * A bytes channel with a device on the other end: `respond` is given each
+ * write and returns what the device sends back, if anything.
+ */
+export function fakeByteChannel(respond: (bytes: Uint8Array) => Uint8Array | readonly Uint8Array[] | null): ByteChannel & {
+  written: Uint8Array[];
+  /** Sends bytes as if the device had spoken unprompted. */
+  push(bytes: Uint8Array): void;
+  setConnected(connected: boolean): void;
+} {
+  const data = listeners<Uint8Array>();
+  const state = listeners<boolean>();
+  let connected = true;
+  const written: Uint8Array[] = [];
+  return {
+    kind: 'bytes',
+    written,
+    get connected() {
+      return connected;
+    },
+    onConnectedChange: state.add,
+    onData: data.add,
+    async write(bytes) {
+      if (!connected) throw new Error('Not connected');
+      written.push(bytes);
+      const answer = respond(bytes);
+      if (!answer) return;
+      const chunks = answer instanceof Uint8Array ? [answer] : answer;
+      // Answered on a later turn, as a device would.
+      setTimeout(() => chunks.forEach((chunk) => data.emit(chunk)), 0);
+    },
+    push: (bytes) => data.emit(bytes),
+    setConnected(next) {
+      connected = next;
+      state.emit(next);
+    },
+    async close() {
+      connected = false;
+    },
+  };
+}
+
+/**
+ * A messages channel with a device on the other end: `respond` is given each
+ * publish and returns the messages the device publishes back.
+ */
+export function fakeMessageChannel(
+  respond: (topic: string, payload: Uint8Array) => readonly { topic: string; payload: Uint8Array }[]
+): MessageChannel & { published: { topic: string; payload: Uint8Array }[]; setConnected(connected: boolean): void } {
+  const subscriptions: { filter: string; listener: (message: ChannelMessage) => void }[] = [];
+  const state = listeners<boolean>();
+  let connected = true;
+  const published: { topic: string; payload: Uint8Array }[] = [];
+  const matches = (filter: string, topic: string): boolean => {
+    const f = filter.split('/');
+    const t = topic.split('/');
+    for (let i = 0; i < f.length; i++) {
+      if (f[i] === '#') return true;
+      if (f[i] !== '+' && f[i] !== t[i]) return false;
+    }
+    return f.length === t.length;
+  };
+  return {
+    kind: 'messages',
+    published,
+    get connected() {
+      return connected;
+    },
+    onConnectedChange: state.add,
+    subscribe(filter, listener) {
+      const entry = { filter, listener };
+      subscriptions.push(entry);
+      return () => void subscriptions.splice(subscriptions.indexOf(entry), 1);
+    },
+    async publish(topic, payload) {
+      if (!connected) throw new Error('Not connected');
+      published.push({ topic, payload });
+      const replies = respond(topic, payload);
+      setTimeout(() => {
+        for (const reply of replies) {
+          const message = { ...reply, at: new Date().toISOString() };
+          for (const { filter, listener } of [...subscriptions]) if (matches(filter, reply.topic)) listener(message);
+        }
+      }, 0);
+    },
+    setConnected(next) {
+      connected = next;
+      state.emit(next);
+    },
+    async close() {
+      connected = false;
+    },
+  };
+}
+
+/** An open connection over a fake channel, for `identify` and a session. */
+export function fakeConnection(input: {
+  method: string;
+  protocol: string;
+  transport: string;
+  address: string;
+  channel: OpenConnection['channel'];
+  config?: ConfigValues;
+  secrets?: Record<string, string>;
+}): OpenConnection {
+  return {
+    method: input.method,
+    protocol: input.protocol,
+    transport: input.transport,
+    address: input.address,
+    channel: input.channel,
+    config: input.config ?? {},
+    secrets: { get: (field) => input.secrets?.[field] ?? null },
+    platform: 'server',
+  };
 }

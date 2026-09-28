@@ -1,10 +1,5 @@
-import type {
-  PortId,
-  RegisterDump,
-  StationSettings,
-  StationSettingsPatch,
-  StationStatus,
-} from '@kraftverk/protocol';
+import type { RegisterDump } from '../src/model/diagnostics';
+import type { PortId, StationSettings, StationSettingsPatch, StationStatus } from '../src/model/types';
 
 import type { WritesInFlight } from '../src/writes';
 

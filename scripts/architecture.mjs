@@ -4,9 +4,10 @@
  *
  * Two checks, each held by a baseline that may only shrink:
  *
- * - **The dependency rule.** The core never imports a device type, a service or
- *   a protocol; a device type never reaches into the app; a protocol knows no
- *   product. A new import that breaks it fails the build.
+ * - **The dependency rule.** The core never imports a device type, a service, a
+ *   protocol or a transport; a device type never reaches into the app or a
+ *   transport; a protocol knows no product; protocols and device code import no
+ *   platform built-in. A new import that breaks it fails the build.
  * - **The leak count.** Product-specific identifiers — `core.station`, `p280`,
  *   `StationStatus` and the rest — outside the P280's own package, counted per
  *   file. A count that rises fails the build.
@@ -32,13 +33,19 @@ const BASELINE = resolve(ROOT, 'scripts/architecture-baseline.json');
 const SELF = ['scripts/architecture.mjs', 'scripts/architecture-baseline.json'];
 
 /** The identifiers that mean one product, and so belong in its package only. */
-const LEAK = /core\.station|p280|P280|StationStatus|StationSettings|power-station|gridRelay/g;
+const LEAK = /core\.station|p280|P280|StationStatus|StationSettings|gridRelay/g;
 /** Where they are allowed. */
 const LEAK_HOME = 'packages/devices/aferiy-p280/';
 
 const SOURCE = /\.(ts|tsx|mts|js|mjs|jsx)$/;
 /** Test files: held to the dependency rule, but not counted for product identifiers. */
 const TEST = /\.test\.(ts|tsx)$|(^|\/)test\//;
+/**
+ * Database migrations: held to the dependency rule, but not counted. A
+ * migration has to name what stored data used to be called — `core.station`
+ * becoming `aferiy.p280` — and never changes once it has shipped.
+ */
+const MIGRATION = /^server\/src\/history\/migrations\//;
 
 // --- where a file belongs ----------------------------------------------------
 
@@ -50,6 +57,7 @@ const CORE = [
   'packages/api-client/',
   'packages/ui/',
   'packages/device-sdk/',
+  'packages/gateway/',
 ];
 /** The one file per side allowed to import every device type. */
 const GENERATED = ['server/src/generated/', 'client/src/generated/'];
@@ -64,27 +72,31 @@ const packageRoot = (file, parents) => {
   return null;
 };
 
-const DEVICE_PARENTS = ['packages/devices/', 'packages/services/', 'packages/plugins/'];
+const DEVICE_PARENTS = ['packages/devices/', 'packages/services/'];
 const PROTOCOL_PARENTS = ['packages/protocols/'];
+const TRANSPORT_PARENTS = ['packages/transports/'];
 
 function areaOf(file) {
   if (GENERATED.some((prefix) => file.startsWith(prefix))) return { kind: 'generated' };
   if (CORE.some((prefix) => file.startsWith(prefix))) return { kind: 'core' };
   const device = packageRoot(file, DEVICE_PARENTS);
   if (device) return { kind: 'device', root: device };
-  if (file.startsWith('packages/protocol/')) return { kind: 'protocol', root: 'packages/protocol/' };
   const protocol = packageRoot(file, PROTOCOL_PARENTS);
   if (protocol) return { kind: 'protocol', root: protocol };
+  const transport = packageRoot(file, TRANSPORT_PARENTS);
+  if (transport) return { kind: 'transport', root: transport };
   return { kind: 'other' };
 }
 
 // --- the dependency rule ---------------------------------------------------
 
-/** Workspace packages that are device types, services or protocols. */
-const PRODUCT_PACKAGE = /^@kraftverk\/(device-(?!sdk)|service-|protocol|plugin-(?!sdk))/;
-const PRODUCT_PATH = /^packages\/(devices|services|plugins|protocols?)\//;
+/** Workspace packages that are device types, services, protocols or transports. */
+const PRODUCT_PACKAGE = /^@kraftverk\/(device-(?!sdk)|service-|protocol-|transport-)/;
+const PRODUCT_PATH = /^packages\/(devices|services|protocols|transports)\//;
 /** What server-safe device code may not pull in: it runs inside the server. */
 const UI_ONLY = /^(react|react-native|tamagui|@tamagui\/|expo|@expo\/|@kraftverk\/(ui|api-client))(\/|$)/;
+/** Platform built-ins: I/O. Pure code runs in the app as well as on the server. */
+const BUILT_IN = /^(node:|bun:|bun$)/;
 
 function importsOf(source) {
   const found = new Set();
@@ -102,27 +114,43 @@ function importsOf(source) {
 function violation(file, area, specifier) {
   const relative = specifier.startsWith('.');
   const target = relative ? posix.normalize(posix.join(posix.dirname(file), specifier)) : null;
+  const shipped = !TEST.test(file);
 
   switch (area.kind) {
     case 'core':
-      if (PRODUCT_PACKAGE.test(specifier)) return 'the core imports a product package';
+      if (PRODUCT_PACKAGE.test(specifier)) return 'the core imports a device type, service, protocol or transport';
       if (target && PRODUCT_PATH.test(target)) return 'the core reaches into a product package';
       return null;
 
     case 'device': {
       if (target && !target.startsWith(area.root)) return 'a device type reaches outside its package';
       if (/^@kraftverk\/(server|client)(\/|$)/.test(specifier)) return 'a device type imports the app';
+      if (/^@kraftverk\/transport-/.test(specifier)) return 'a device type imports a transport: it is handed a connection';
       const serverSafe = file.startsWith(`${area.root}src/`);
       if (serverSafe && UI_ONLY.test(specifier)) return 'server-side device code imports UI';
+      if (serverSafe && shipped && BUILT_IN.test(specifier)) return 'device code imports a platform built-in: it runs in the app too';
+      // The SDK, protocols, and a family's base type by name (the ATORCH S1W is a Tuya socket).
       return null;
     }
 
     case 'protocol':
       if (target && !target.startsWith(area.root)) return 'a protocol reaches outside its package';
-      if (specifier.startsWith('@kraftverk/') && !/^@kraftverk\/protocol/.test(specifier)) {
-        return 'a protocol imports something other than a protocol';
+      if (specifier.startsWith('@kraftverk/') && !/^@kraftverk\/(device-sdk|protocol-)/.test(specifier)) {
+        return 'a protocol imports something other than the SDK or a protocol';
       }
+      if (file.startsWith(`${area.root}src/`) && shipped && BUILT_IN.test(specifier)) return 'a protocol imports a platform built-in: it must stay pure';
       return null;
+
+    case 'transport': {
+      if (target && !target.startsWith(area.root)) return 'a transport reaches outside its package';
+      if (specifier.startsWith('@kraftverk/') && !/^@kraftverk\/device-sdk(\/|$)/.test(specifier)) {
+        return 'a transport imports something from kraftverk other than the SDK';
+      }
+      // The app bundles a transport's web and native entries: they must never pull in its server one.
+      const appEntry = /\/src\/(web|native)(\.tsx?|\/)/.test(file);
+      if (appEntry && target && /\/src\/server(\.tsx?|\/|$)/.test(target)) return "a transport's app entry reaches its server entry";
+      return null;
+    }
 
     default:
       return null;
@@ -169,8 +197,9 @@ function measure() {
       when the route moves into the station's package. The dependency rule
       above still applies to tests.
     */
-    if (!file.startsWith(LEAK_HOME) && area.kind !== 'generated' && !TEST.test(file)) {
-      const count = source.match(LEAK)?.length ?? 0;
+    if (!file.startsWith(LEAK_HOME) && area.kind !== 'generated' && !TEST.test(file) && !MIGRATION.test(file)) {
+      // A pointer to a document is not knowledge in code: docs/P280-FINDINGS.md is where a finding lives.
+      const count = source.replace(/docs\/[\w.-]+\.md/g, '').match(LEAK)?.length ?? 0;
       if (count) leaks[file] = count;
     }
   }
