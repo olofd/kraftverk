@@ -82,6 +82,12 @@ export class LocalCatalog {
     return this.#data.secrets[connectionId] ?? {};
   }
 
+  /** Replaces a connection's secrets: a Tuya plug's local key changes every time it is paired again. */
+  setSecrets(connectionId: string, secrets: Record<string, string>): void {
+    this.#data = { ...this.#data, secrets: { ...this.#data.secrets, [connectionId]: { ...this.secrets(connectionId), ...secrets } } };
+    writePreference(KEY, JSON.stringify(this.#data));
+  }
+
   store(deviceId: string): Record<string, unknown> {
     return this.#data.stores[deviceId] ?? {};
   }

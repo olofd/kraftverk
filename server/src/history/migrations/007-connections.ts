@@ -230,6 +230,41 @@ export function run(handle: Db): void {
     }
   }
 
+  // --- history belongs to a device --------------------------------------------------
+  /*
+    The sample table gets its foreign key, so a device's history can only ever
+    go with it. Readings whose device row is already gone — deleted by the old
+    "forget" — are not dropped to make that true: they are kept under a removed
+    device of their own, where deleting them is a choice like any other.
+  */
+  const orphans = handle
+    .query<{ device_id: string; first: string; count: number }, []>(
+      'SELECT device_id, MIN(at) AS first, COUNT(*) AS count FROM sample WHERE device_id NOT IN (SELECT id FROM device) GROUP BY device_id'
+    )
+    .all();
+  for (const orphan of orphans) {
+    handle
+      .query(
+        "INSERT INTO device (id, type, model, driver, name, config, added_at, type_id, identity, removed_at) VALUES (?, 'unknown', NULL, 'unknown', ?, '{}', ?, 'unknown', NULL, ?)"
+      )
+      .run(orphan.device_id, `Earlier device ${orphan.device_id}`, orphan.first, now);
+    audit('migration.history', orphan.device_id, `${orphan.count} readings of a device that was no longer there are kept, as a removed device`);
+  }
+  if (orphans.length) notes.push(`history of ${orphans.length} device(s) no longer there is kept as removed devices`);
+  handle.exec(`
+    CREATE TABLE sample_new (
+      device_id TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
+      key       TEXT NOT NULL,
+      at        TEXT NOT NULL,
+      value     REAL,
+      PRIMARY KEY (device_id, key, at)
+    );
+    INSERT INTO sample_new (device_id, key, at, value) SELECT device_id, key, at, value FROM sample;
+    DROP TABLE sample;
+    ALTER TABLE sample_new RENAME TO sample;
+    CREATE INDEX sample_lookup ON sample (device_id, key, at);
+  `);
+
   // --- the old shape goes ------------------------------------------------------------
   handle.exec(`
     DROP TABLE plugin_config;

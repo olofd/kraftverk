@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { WriteGate, type WriteSnapshot } from './writeGate';
 
 /**
- * A write gate for one provider, and a re-render whenever its writes change.
+ * A write gate for one screen, and a re-render whenever its writes change.
  *
  * The gate itself is stable for the life of the component, so callbacks can
  * close over it without listing it; the snapshot is what a render reads.

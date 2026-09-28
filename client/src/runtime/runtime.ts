@@ -24,6 +24,9 @@ import { Uplink } from './uplink';
  * someone who says so: a phone should not be the easiest way to switch mains.
  */
 
+/** How long a connection may be down before the next one is tried: the server's rule too. */
+const FAILOVER_MS = 2 * 60_000;
+
 const clientKey = (server: string) => `kraftverk.client.${server}`;
 const storeKey = (deviceId: string) => `kraftverk.store.${deviceId}`;
 
@@ -73,6 +76,9 @@ export class AppRuntime {
   #listeners = new Set<() => void>();
   #view = new Map<string, DeviceView>();
   #stores = new Map<string, Record<string, unknown>>();
+  #down = new Map<string, number>();
+  #avoid = new Map<string, number>();
+  #failoverTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private options: { mode: Mode; server: string | null }) {
     const audit = (entry: Omit<AuditEntry, 'actor'>) => {
@@ -92,7 +98,8 @@ export class AppRuntime {
             collect: () =>
               this.sessions.all().flatMap((held) => {
                 const session = this.sessions.get(held.deviceId);
-                return session ? [{ deviceId: held.deviceId, connectionId: held.connection.id, readings: session.readings() }] : [];
+                // Who it says it is, so a device saved before it answered learns its identity (§4.3).
+                return session ? [{ deviceId: held.deviceId, connectionId: held.connection.id, identity: session.identity?.().id ?? null, readings: session.readings() }] : [];
               }),
           })
         : null;
@@ -118,6 +125,7 @@ export class AppRuntime {
       memory: { get: (key) => readPreference(`kraftverk.gateway.${key}`), set: (key, value) => writePreference(`kraftverk.gateway.${key}`, value) },
     });
     this.uplink?.start();
+    if (options.mode === 'local') this.#failoverTimer = setInterval(() => this.#failover(), 15_000);
   }
 
   get mode(): Mode {
@@ -154,6 +162,34 @@ export class AppRuntime {
     this.#changed();
     void this.uplink?.flush();
     return client.id;
+  }
+
+  /**
+   * The secrets of a connection this app holds: kept here and never sent
+   * anywhere (docs/ARCHITECTURE.md §4.3). In local mode the local catalog
+   * keeps them with the connection; for a server, this app keeps them itself.
+   */
+  heldSecrets(connectionId: string): Record<string, string> {
+    if (this.options.mode === 'local') return this.local.secrets(connectionId);
+    return this.#serverSecrets()[connectionId] ?? {};
+  }
+
+  setHeldSecrets(connectionId: string, secrets: Record<string, string>): void {
+    if (this.options.mode === 'local') {
+      this.local.setSecrets(connectionId, secrets);
+    } else if (this.options.server) {
+      const all = this.#serverSecrets();
+      writePreference(`kraftverk.secrets.${this.options.server}`, JSON.stringify({ ...all, [connectionId]: { ...(all[connectionId] ?? {}), ...secrets } }));
+    }
+    this.#changed();
+  }
+
+  #serverSecrets(): Record<string, Record<string, string>> {
+    try {
+      return this.options.server ? (JSON.parse(readPreference(`kraftverk.secrets.${this.options.server}`) ?? '{}') as Record<string, Record<string, string>>) : {};
+    } catch {
+      return {};
+    }
   }
 
   /** The devices the list shows, for what the gateway checks against. */
@@ -214,7 +250,36 @@ export class AppRuntime {
     return this.sessions.sync(devices);
   }
 
+  /**
+   * Local mode's half of the active-connection rule (docs/DATA-MODEL.md §4):
+   * a connection down for two minutes, on a device with another, is passed
+   * over for a while and the next one tried — as the server does with its own.
+   */
+  #failover(): void {
+    const now = Date.now();
+    for (const held of this.sessions.all()) {
+      const id = held.connection.id;
+      if (this.sessions.health(held.deviceId)?.status === 'connected') {
+        this.#down.delete(id);
+        continue;
+      }
+      const since = this.#down.get(id) ?? now;
+      this.#down.set(id, since);
+      if (now - since > FAILOVER_MS && this.local.connections(held.deviceId).length > 1) {
+        this.#avoid.set(id, now + FAILOVER_MS);
+        this.#down.delete(id);
+        this.#changed();
+      }
+    }
+  }
+
+  /** Whether a connection is being passed over after failing, in local mode. */
+  avoided(connectionId: string): boolean {
+    return (this.#avoid.get(connectionId) ?? 0) > Date.now();
+  }
+
   async stop(): Promise<void> {
+    if (this.#failoverTimer) clearInterval(this.#failoverTimer);
     this.uplink?.stop();
     await this.uplink?.flush();
     await this.sessions.closeAll();

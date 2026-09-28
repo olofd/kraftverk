@@ -115,7 +115,7 @@ export default function DevicesScreen() {
           <Pressable onPress={() => router.push('/app-settings')}>
             <Row
               title="App settings"
-              subtitle={mode === 'local' ? 'Servers, and what this app may do' : 'Accounts, transports, servers and this install'}
+              subtitle={mode === 'local' ? 'Servers, and what this app may do' : 'Accounts, connectivity, servers and this install'}
               accessory={<Feather name="chevron-right" size={16} color={theme.muted?.val} />}
             />
           </Pressable>

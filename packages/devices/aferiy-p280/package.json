@@ -15,7 +15,7 @@
     "./ui": "./ui/index.ts",
     "./ui/energy-flow": "./ui/energy-flow.tsx",
     "./ui/settings": "./ui/settings.tsx",
-    "./ui/protocol": "./ui/protocol.tsx",
+    "./ui/registers": "./ui/registers.tsx",
     "./ui/contract": "./ui/contract.ts",
     "./ui/dashboard": "./ui/dashboard.tsx"
   },

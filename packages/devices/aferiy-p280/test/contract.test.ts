@@ -4,7 +4,7 @@ import { checkDeviceTypeContract, fakeByteChannel, fakeConnection, fakeMessageCh
 import { crc16 } from '@kraftverk/protocol-sydpower';
 
 import p280 from '../src/type.ts';
-import { stationSession, type StationDriverLike } from '../src/station.ts';
+import { stationSession, type StationSource } from '../src/station.ts';
 import { SimulatedStation } from '../src/simulator.ts';
 import { INPUT, INPUT_REGISTER_COUNT } from '../src/model/registers.ts';
 
@@ -81,11 +81,11 @@ describe('the P280 device type', () => {
 });
 
 describe('writing a P280’s settings through its session', () => {
-  /** A driver that records what reaches it, so a refusal can be shown to happen first. */
+  /** A source that records what reaches it, so a refusal can be shown to happen first. */
   const recording = () => {
     const station = new SimulatedStation();
     const applied: unknown[] = [];
-    const driver: StationDriverLike = {
+    const source: StationSource = {
       status: () => station.status(),
       settings: () => station.settings(),
       setPort: (id, on) => station.setPort(id, on),
@@ -94,7 +94,7 @@ describe('writing a P280’s settings through its session', () => {
         return station.applySettings(patch);
       },
     };
-    return { session: stationSession(driver, { identity: null, transport: 'sim', connected: () => true }), applied };
+    return { session: stationSession(source, { identity: null, transport: 'sim', connected: () => true }), applied };
   };
 
   test('a whole-machine sleep time of zero never reaches the station — it destroys it', async () => {

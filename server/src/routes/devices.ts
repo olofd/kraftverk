@@ -39,7 +39,7 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
    */
   const serverHolds = (protocolId: string, transportId: string): Availability => {
     const protocol = protocols.get(protocolId);
-    if (!protocol?.bindings[transportId]) return { ok: false, reason: `${protocolId} is not installed on this server` };
+    if (!protocol?.bindings[transportId]) return { ok: false, reason: 'This server cannot reach devices this way: it needs updating' };
     if (config.simulate) return { ok: true };
     return transports.available(transportId);
   };

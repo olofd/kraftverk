@@ -20,6 +20,7 @@ import {
 import {
   findStep,
   isSecretField,
+  openChannel,
   setupPlan,
   type Channel,
   type ConnectionMethod,
@@ -164,7 +165,7 @@ export class AppFlow implements SetupFlow {
 
   #binding() {
     const binding = this.protocol.bindings[this.method.transport];
-    if (!binding) throw new Error(`This app cannot speak ${this.protocol.label} over ${this.method.transport}`);
+    if (!binding) throw new Error(`This app cannot reach a ${this.type.meta.name} by ${this.method.label}: update it`);
     return binding;
   }
 
@@ -253,12 +254,7 @@ export class AppFlow implements SetupFlow {
   async #identify(): Promise<{ identified: Identified | null; failure?: string }> {
     let channel: Channel | null = null;
     try {
-      const transport = await this.runtime.registry.start(this.method.transport);
-      if (!transport) {
-        const why = this.runtime.registry.available(this.method.transport);
-        throw new Error(why.ok ? 'Its transport did not start' : why.reason);
-      }
-      channel = await transport.open(this.address!, this.#binding().open(this.address!));
+      channel = await openChannel(this.runtime.registry, this.protocol, { transport: this.method.transport, address: this.address! });
       // A channel connects in the background; the device gets a moment to answer.
       const opened = channel;
       if (!opened.connected) {
@@ -335,7 +331,13 @@ export class AppFlow implements SetupFlow {
   async save(input: SaveInput): Promise<string> {
     if (this.runtime.mode === 'server') {
       if (!this.#draftId) throw new Error('Check that it answers first');
-      return (await saveSetup(this.#draftId, input)).id;
+      const saved = await saveSetup(this.#draftId, input);
+      // The connection's secrets stay in this app, with the connection it holds.
+      const held = saved.connections.find(
+        (connection) => connection.heldBy.kind === 'client' && connection.heldBy.id === this.runtime.clientId && connection.method === this.method.id
+      );
+      if (held && this.#secrets.size) this.runtime.setHeldSecrets(held.id, Object.fromEntries(this.#secrets));
+      return saved.id;
     }
     const identity = this.#identity;
     if (input.mode === 'attach' && input.deviceId && identity && !this.runtime.local.device(input.deviceId)?.identity) {

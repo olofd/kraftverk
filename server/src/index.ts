@@ -125,14 +125,19 @@ const sessions = new DeviceSessionManager({
 
 if (!config.simulate) {
   /*
-    Every transport this server may use starts now, before any session:
-    finding a device has to work before there is one to open. MQTT attaches to
-    the broker that is already running — the stations have been connected to it
-    all along — or starts one. One that cannot start here, Bluetooth in a
-    container, is reported and left out.
+    Every transport this server may use, and an installed device type needs,
+    starts now, before any session: finding a device has to work before there
+    is one to open. One no type reaches anything over stays stopped. MQTT
+    attaches to the broker that is already running — the stations have been
+    connected to it all along — or starts one. One that cannot start here,
+    Bluetooth in a container, is reported and left out.
   */
-  await transports.startAll(config.transports);
-  for (const id of config.transports) {
+  const needed = new Set(types.all().flatMap((type) => type.connections.map((method) => method.transport)));
+  const starting = config.transports.filter((id) => needed.has(id));
+  const unneeded = config.transports.filter((id) => !needed.has(id));
+  if (unneeded.length) console.log(`[transports] Not started, no installed device type needs them: ${unneeded.join(', ')}`);
+  await transports.startAll(starting);
+  for (const id of starting) {
     const available = transports.available(id);
     if (!available.ok) console.error(`[transports] ${id} is unavailable: ${available.reason}`);
   }

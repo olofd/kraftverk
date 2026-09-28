@@ -58,7 +58,7 @@ export const CREDENTIALS: ConfigSchema = {
     localKey: { type: 'secret', title: 'Local key', description: '16 characters. It never leaves the server.', required: true },
     protocolVersion: {
       type: 'enum',
-      title: 'Protocol',
+      title: 'Version',
       description: 'Leave on Detect unless you have a reason not to: a wrong choice looks exactly like a wrong key.',
       default: 'auto',
       options: [
@@ -147,7 +147,7 @@ const protocol: Protocol = {
           name: device.productKey ? `Tuya device (${device.productKey})` : 'Tuya device',
           identity: tuyaIdentity(device.gwId),
           ...(device.productKey ? { model: device.productKey } : {}),
-          detail: `${sighting.address} · protocol ${device.version}${device.active === false ? ' · not paired yet' : ''}`,
+          detail: `${sighting.address} · Tuya ${device.version}${device.active === false ? ' · not paired yet' : ''}`,
           // The broadcast is authoritative about the version, so it is taken
           // rather than rediscovered on every connect.
           config: {
@@ -177,7 +177,7 @@ export default protocol;
  * version and local key setup stored with it.
  */
 export function linkOver(connection: OpenConnection, log?: (message: string) => void): TuyaLink {
-  if (connection.channel.kind !== 'bytes') throw new Error('The Tuya local protocol speaks over a byte stream');
+  if (connection.channel.kind !== 'bytes') throw new Error('Tuya local needs a byte stream');
   const localKey = connection.secrets.get('localKey');
   if (!localKey) throw new Error('No local key: add it in the plug’s connection settings');
   const deviceId = String(connection.config.deviceId ?? '');

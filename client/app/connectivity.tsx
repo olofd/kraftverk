@@ -15,9 +15,10 @@ import { useDevices } from '../src/state/DevicesProvider';
  * The server's transports — the MQTT broker stations connect to, its
  * Bluetooth radio, the home network — each with whether it runs and why not,
  * and its own read-only diagnostics. Then this app's: what it can hold a
- * connection over, where it runs. Nothing here names a device.
+ * connection over, where it runs. Nothing here names a device, and on screen
+ * this is "connectivity": the app never says transport (§2).
  */
-export default function TransportsScreen() {
+export default function ConnectivityScreen() {
   const { mode, runtime } = useDevices();
   const [list, setList] = useState<TransportList | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -27,13 +28,13 @@ export default function TransportsScreen() {
     if (mode !== 'server') return;
     fetchTransports()
       .then(setList)
-      .catch((err: unknown) => setError(describeError(err) || 'The server’s transports could not be read'));
+      .catch((err: unknown) => setError(describeError(err) || 'The server did not say what it can reach'));
   }, [mode]);
 
   const here = runtime.registry.held();
 
   return (
-    <Screen back="App settings" backTo="/app-settings" title="Transports" subtitle="What devices are reached over">
+    <Screen back="App settings" backTo="/app-settings" title="Connectivity" subtitle="How devices are reached">
       {mode === 'server' ? (
         <YStack gap="$2">
           <SectionLabel>Your server</SectionLabel>
@@ -48,8 +49,8 @@ export default function TransportsScreen() {
           {list?.simulate ? (
             <Card>
               <Text fontSize={13} color="$muted" lineHeight={19}>
-                This server runs the simulator: every device is simulated and no transport is started. Start it with
-                STATION_DRIVER=mqtt (or KRAFTVERK_TRANSPORTS) to reach hardware.
+                This server runs the simulator: every device is simulated and nothing real is reached. Start it
+                for hardware to reach real devices.
               </Text>
             </Card>
           ) : null}
@@ -63,9 +64,6 @@ export default function TransportsScreen() {
                 />
                 <Text flex={1} fontSize={15} fontWeight="700" color="$color">
                   {capitalise(transport.label)}
-                </Text>
-                <Text fontSize={12} color="$muted">
-                  {transport.id}
                 </Text>
               </XStack>
               <Text fontSize={12} color="$muted" lineHeight={18}>

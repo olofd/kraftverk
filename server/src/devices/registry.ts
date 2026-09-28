@@ -13,7 +13,7 @@ import type {
 import type { TransportHost } from '../runtime/transports.ts';
 import type { DeviceCatalog, DeviceRecord } from './catalog.ts';
 import type { ClientStore } from './clients.ts';
-import type { ConnectionStore } from './connections.ts';
+import type { ConnectionRecord, ConnectionStore } from './connections.ts';
 import type { LinkStore } from './links.ts';
 import type { RemoteReadings } from './remote.ts';
 import type { DeviceSessionManager } from './sessions.ts';
@@ -40,7 +40,12 @@ export type ConnectionView = {
   heldBy: { kind: 'server' } | { kind: 'client'; id: string; name: string };
   address: string;
   priority: number;
-  /** The one the device is using right now. */
+  /**
+   * Whether it reaches the device right now: true, false, or null when nobody
+   * is trying it — a standby the server has not opened.
+   */
+  reachable: boolean | null;
+  /** The one the device is using right now: the reachable one highest in the list (docs/DATA-MODEL.md §4). */
   inUse: boolean;
   lastConnectedAt: string | null;
   /** Which secrets it has, by field — never their values. */
@@ -119,10 +124,26 @@ export class DeviceRegistry {
   #view(record: DeviceRecord, names: Map<SavedDeviceId, string>): DeviceView {
     const type = this.deps.sessions.typeOf(record);
     const session = record.removedAt ? null : this.deps.sessions.get(record.id);
-    const inUse = this.deps.sessions.inUse(record.id);
-    const remote = record.removedAt || session ? null : this.deps.remote.latest(record.id);
+    const opened = record.removedAt ? null : this.deps.sessions.inUse(record.id);
+    const latest = record.removedAt ? null : this.deps.remote.latest(record.id);
 
-    const connections = this.deps.connections.forDevice(record.id).map((connection): ConnectionView => {
+    /*
+      The active-connection rule (docs/DATA-MODEL.md §4, decision 12): of the
+      connections that reach the device now — the server's open one, or an
+      app's that is sending fresh readings — the one highest in the list is in
+      use, and its readings are the device's. With none reachable, the one the
+      server is trying.
+    */
+    const reachable = (connection: ConnectionRecord): boolean | null => {
+      if (connection.heldBy) return latest?.connectionId === connection.id ? true : null;
+      return opened?.id === connection.id ? this.deps.sessions.reachable(record.id) : null;
+    };
+    const ordered = [...this.deps.connections.forDevice(record.id)].sort((a, b) => a.priority - b.priority);
+    const active = ordered.find((connection) => reachable(connection) === true) ?? opened ?? null;
+    // An app's readings count only while its connection is the one in use; a simulator is always its session's.
+    const remote = latest && active?.id === latest.connectionId && (opened !== null || !session) ? latest : null;
+
+    const connections = ordered.map((connection): ConnectionView => {
       const method = type?.connections.find((candidate) => candidate.id === connection.method);
       const client = connection.heldBy ? this.deps.clients.get(connection.heldBy) : null;
       return {
@@ -133,7 +154,8 @@ export class DeviceRegistry {
         heldBy: connection.heldBy ? { kind: 'client', id: connection.heldBy, name: client?.name ?? 'Another app' } : { kind: 'server' },
         address: connection.address,
         priority: connection.priority,
-        inUse: inUse?.id === connection.id || remote?.connectionId === connection.id,
+        reachable: reachable(connection),
+        inUse: active?.id === connection.id,
         lastConnectedAt: connection.lastConnectedAt,
         secrets: this.deps.connections.secretFields(connection.id),
         config: connection.config,
@@ -165,8 +187,8 @@ export class DeviceRegistry {
       config: record.config,
       connections,
       links,
-      advanced: Object.entries(session?.advanced ?? {}).map(([name, action]) => ({ name, writes: action.writes })),
-      readings: session?.readings() ?? remote?.readings ?? [],
+      advanced: remote ? [] : Object.entries(session?.advanced ?? {}).map(([name, action]) => ({ name, writes: action.writes })),
+      readings: remote?.readings ?? session?.readings() ?? [],
       health: record.removedAt
         ? { status: 'offline', detail: `Removed ${new Date(record.removedAt).toLocaleDateString()}; its history is kept`, owner: null, transport: null, lastReadingAt: null }
         : remote

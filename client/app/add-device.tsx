@@ -50,6 +50,7 @@ export default function AddDeviceScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage>(params.type ? 'method' : 'category');
   const [category, setCategory] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
   const [typeId, setTypeId] = useState<string | null>(params.type ?? null);
   const [flow, setFlow] = useState<SetupFlow | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
@@ -168,7 +169,32 @@ export default function AddDeviceScreen() {
       ) : null}
       {!types && !loadError ? <Spinner color="$accent" /> : null}
 
-      {types && stage === 'category' ? <Categories types={types} onPick={(id) => (setCategory(id), setStage('type'))} /> : null}
+      {types && stage === 'category' ? (
+        <>
+          <Input
+            size="$3"
+            value={query}
+            placeholder="Search by brand or model"
+            autoCapitalize="none"
+            onChangeText={setQuery}
+            backgroundColor="$background"
+            borderColor="$borderColor"
+            accessibilityLabel="Search by brand or model"
+          />
+          {query.trim() ? (
+            <Types
+              types={types.filter((candidate) => matches(candidate, query))}
+              onPick={(id) => {
+                setTypeId(id);
+                setStage('method');
+              }}
+              onBack={() => setQuery('')}
+            />
+          ) : (
+            <Categories types={types} onPick={(id) => (setCategory(id), setStage('type'))} />
+          )}
+        </>
+      ) : null}
 
       {types && stage === 'type' ? (
         <Types
@@ -239,6 +265,19 @@ export default function AddDeviceScreen() {
 
 // --- 1 · what are you adding ------------------------------------------------------
 
+/** Whether a type answers to what was typed: every word somewhere in its name, brand, models or description. */
+function matches(type: DeviceTypeListing, query: string): boolean {
+  const text = [type.meta.name, type.meta.brand, ...(type.meta.models ?? []), type.meta.description, (CATEGORIES as Record<string, { label: string }>)[type.meta.category]?.label]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((word) => text.includes(word));
+}
+
 function Categories({ types, onPick }: { types: DeviceTypeListing[]; onPick: (id: string) => void }) {
   const theme = useTheme();
   const sections = (['devices', 'services'] as const).map((section) => ({
@@ -288,6 +327,7 @@ function Types({ types, onPick, onBack }: { types: DeviceTypeListing[]; onPick: 
     <YStack gap="$2">
       <SectionLabel>Which one?</SectionLabel>
       <Card inset>
+        {types.length === 0 ? <Row title="Nothing installed matches that" subtitle="Try the brand, or the model printed on it" /> : null}
         {types.map((type, index) => (
           <YStack key={type.id}>
             {index > 0 ? <RowSeparator /> : null}

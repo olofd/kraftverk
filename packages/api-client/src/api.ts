@@ -364,7 +364,7 @@ export async function forgetClient(id: string) {
   await api.delete(`/clients/${encodeURIComponent(id)}`);
 }
 
-export async function uploadReadings(deviceId: string, input: { clientId: string; connectionId: string; readings: readonly Reading[] }) {
+export async function uploadReadings(deviceId: string, input: { clientId: string; connectionId: string; identity?: string | null; readings: readonly Reading[] }) {
   const { data } = await api.post<{ live: number; history: number; refused: number }>(devicePath(deviceId, '/readings'), input);
   return data;
 }

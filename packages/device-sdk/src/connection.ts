@@ -400,3 +400,69 @@ export type Identified = {
 
 /** Namespaces a device's own id by the protocol that read it. */
 export const identityOf = (protocol: string, id: string): string => `${protocol}:${id}`;
+
+// --- opening a connection, the same in every holder ----------------------------
+
+/**
+ * A channel whose every outgoing frame passes the protocol's guard first.
+ *
+ * The guard is the one rule nobody may get around (docs/ARCHITECTURE.md §5),
+ * so it is applied where the channel is opened, by every holder alike, rather
+ * than trusted to each protocol's own code: a device type that wrote to the
+ * channel directly would meet it all the same. A refusal is thrown, and nothing
+ * reaches the transport.
+ */
+export function guardChannel(channel: Channel, protocol: Pick<Protocol, 'guard'>): Channel {
+  const guard = protocol.guard?.bind(protocol);
+  if (!guard || channel.kind === 'http') return channel;
+  const check = (payload: Uint8Array) => {
+    const refusal = guard(payload);
+    if (refusal) throw new Error(refusal);
+  };
+  return new Proxy(channel, {
+    get(target, key) {
+      if (key === 'write' && target.kind === 'bytes') {
+        return async (bytes: Uint8Array) => {
+          check(bytes);
+          await target.write(bytes);
+        };
+      }
+      if (key === 'publish' && target.kind === 'messages') {
+        return async (topic: string, payload: Uint8Array) => {
+          check(payload);
+          await target.publish(topic, payload);
+        };
+      }
+      // Bound to the channel itself, so its getters and private state still work.
+      const value: unknown = Reflect.get(target, key, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
+/** Where transports are started: the server's host, or the app's registry. */
+export type TransportSource = {
+  start(id: string): Promise<Transport | null>;
+  available(id: string): Availability;
+};
+
+/**
+ * Opens a channel for one connection: the protocol's binding, over the
+ * holder's transport, guarded. What every holder does before `identify` or a
+ * session, written once. Its errors are sentences for the person adding or
+ * using the device, and never name a transport or a protocol (§2).
+ */
+export async function openChannel(
+  source: TransportSource,
+  protocol: Protocol | null | undefined,
+  connection: { transport: string; address: string }
+): Promise<Channel> {
+  const binding = protocol?.bindings[connection.transport];
+  if (!protocol || !binding) throw new Error('This device cannot be reached this way here: an update is needed');
+  const transport = await source.start(connection.transport);
+  if (!transport) {
+    const why = source.available(connection.transport);
+    throw new Error(why.ok ? 'This way of reaching devices did not start here' : why.reason);
+  }
+  return guardChannel(await transport.open(connection.address, binding.open(connection.address)), protocol);
+}

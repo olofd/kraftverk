@@ -14,8 +14,8 @@ import { formatMeasurement, primaryMeasurement, readingFor } from './measurement
  * There is exactly one of these, and it is written against declarations rather
  * than against any particular device: a name, an icon, what it measures, and
  * what it last read. A station and a plug differ only in what they declared,
- * which is the point — the grid stops needing new code the moment a driver
- * starts providing something new.
+ * which is the point — the grid stops needing new code the moment a device
+ * type starts providing something new.
  *
  * Offline is drawn, not hidden. A device you own that is unplugged is greyed
  * with its last state and a reason, because a card that vanishes is a card that

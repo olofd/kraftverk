@@ -49,7 +49,7 @@ export class AppRegistry {
   /** Whether this app can hold a connection over a transport, and if not, why. */
   available(id: string): Availability {
     const entry = this.#transports.get(id);
-    if (!entry) return { ok: false, reason: `This app has no ${id} transport` };
+    if (!entry) return { ok: false, reason: 'This app cannot reach devices this way: update it' };
     if (!entry.factory || !entry.definition.platforms.includes(PLATFORM)) {
       return { ok: false, reason: `${capitalise(entry.definition.label)} is not available ${PLATFORM === 'web' ? 'in a browser' : 'in this app'}` };
     }

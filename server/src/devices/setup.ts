@@ -6,6 +6,7 @@ import {
   isSecretField,
   LINK_KINDS,
   linkFits,
+  openChannel,
   setupPlan,
   validateConfig,
   type Channel,
@@ -189,7 +190,7 @@ export class SetupService {
 
     const protocol = this.deps.protocols.get(method.protocol);
     const transportDefinition = this.deps.transports.definition(method.transport);
-    if (!protocol || !protocol.bindings[method.transport]) throw new SetupError(`${method.protocol} is not installed on this server`, 409);
+    if (!protocol || !protocol.bindings[method.transport]) throw new SetupError(`This server cannot reach a ${type.meta.name} by ${method.label}: it needs updating`, 409);
     const simulate = this.deps.simulate ?? false;
     const transport = simulate ? null : await this.deps.transports.start(method.transport);
     if (!simulate) {
@@ -453,9 +454,7 @@ export class SetupService {
     let channel: Channel | null = null;
     let identified: Identified;
     try {
-      const transport = await this.deps.transports.start(method.transport);
-      if (!transport) throw new Error('Its transport is not available here');
-      channel = await transport.open(draft.address, draft.protocol!.bindings[method.transport]!.open(draft.address));
+      channel = await openChannel(this.deps.transports, draft.protocol, { transport: method.transport, address: draft.address });
       const connection: OpenConnection = {
         method: method.id,
         protocol: method.protocol,

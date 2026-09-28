@@ -1,4 +1,5 @@
 import {
+  openChannel,
   validateConfig,
   type Channel,
   type ConnectionHealth,
@@ -97,6 +98,12 @@ export class DeviceSessionManager {
   /** The connection a device is using right now. Null for a simulator or when none is open. */
   inUse(deviceId: SavedDeviceId): ConnectionRecord | null {
     return this.#open.get(deviceId)?.connection ?? null;
+  }
+
+  /** Whether the connection a device's session has open reaches it right now. */
+  reachable(deviceId: SavedDeviceId): boolean {
+    const open = this.#open.get(deviceId);
+    return open?.connection != null && open.channel?.connected === true;
   }
 
   /** How a device is doing: its session's own answer, or why it has none. */
@@ -222,15 +229,7 @@ export class DeviceSessionManager {
     try {
       if (connection) {
         const method = type.connections.find((candidate) => candidate.id === connection.method)!;
-        const protocol = this.deps.protocols.get(method.protocol);
-        const binding = protocol?.bindings[connection.transport];
-        if (!protocol || !binding) throw new Error(`${method.protocol} is not installed on this server`);
-        const transport = await this.deps.transports.start(connection.transport);
-        if (!transport) {
-          const why = this.deps.transports.available(connection.transport);
-          throw new Error(why.ok ? 'Its transport did not start' : why.reason);
-        }
-        channel = await transport.open(connection.address, binding.open(connection.address));
+        channel = await openChannel(this.deps.transports, this.deps.protocols.get(method.protocol), connection);
         open = {
           method: connection.method,
           protocol: method.protocol,

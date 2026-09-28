@@ -7,8 +7,8 @@ import { Database } from 'bun:sqlite';
 import * as connections from './migrations/007-connections.ts';
 
 /**
- * One SQLite file for everything that has to outlive a restart: plugin
- * configuration, secrets, capability grants and the audit timeline.
+ * One SQLite file for everything that has to outlive a restart: devices,
+ * their connections and sealed secrets, history, links and the audit timeline.
  *
  * `bun:sqlite` is built into the runtime, so this adds no dependency. The file
  * lives beside the station's other state in `server/data/`, which is gitignored.
@@ -326,7 +326,7 @@ function copyBefore(handle: Db, path: string, id: number): string {
  * create tables that already exist. So are `users` and `sessions`: erasing
  * the house is not erasing who may enter it, and a server left with no
  * accounts is one waiting to be claimed. Everything else goes —
- * devices, samples, plugin configuration, secrets, grants and the audit
+ * devices, samples, connections, secrets, links and the audit
  * timeline — which is the point. This is "back to a blank canvas" without
  * asking anyone to find and delete a file on the server.
  *
@@ -393,7 +393,7 @@ export function setAppState(key: string, value: string): void {
  */
 /*
   Derived once per passphrase. scrypt is slow on purpose and synchronous here,
-  and it ran on every secret read — and on every poll of the extensions list,
+  and it ran on every secret read — and on every poll of a list of devices,
   just to learn whether a key exists — stalling the whole server each time.
 */
 let derived: { passphrase: string; key: Buffer } | null = null;
@@ -402,6 +402,8 @@ const secretKey = (): Buffer | null => {
   const passphrase = process.env.KRAFTVERK_SECRET_KEY;
   if (!passphrase) return null;
   if (derived?.passphrase !== passphrase) {
+    // The salt keeps its old name: changing it would make every stored secret unreadable.
+    // The salt keeps its old name: changing it would make every stored secret unreadable.
     derived = { passphrase, key: scryptSync(passphrase, 'kraftverk-plugin-secrets', 32) };
   }
   return derived.key;

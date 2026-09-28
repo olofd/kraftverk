@@ -105,6 +105,7 @@ function describeLocal(runtime: AppRuntime, device: LocalDevice, names: Map<stri
       heldBy: { kind: 'client', id: 'this-app', name: 'This app' },
       address: connection.address,
       priority: connection.priority,
+      reachable: held?.connection.id === connection.id ? runtime.sessions.health(device.id)?.status === 'connected' : null,
       inUse: held?.connection.id === connection.id,
       lastConnectedAt: connection.lastConnectedAt,
       secrets: Object.keys(runtime.local.secrets(connection.id)),
@@ -149,17 +150,29 @@ function describeLocal(runtime: AppRuntime, device: LocalDevice, names: Map<stri
 
 /**
  * Which connection this app should hold for a device, if any: its own
- * connection highest in the list, and only while nothing above it is in use
- * (docs/DATA-MODEL.md §4). A station takes one Bluetooth connection at a time,
- * and two holders writing to one device would race.
+ * connection highest in the list, and only while nothing above it reaches the
+ * device (docs/DATA-MODEL.md §4, decision 12). A connection lower down takes
+ * over while those above are unreachable, and lets go when one comes back: a
+ * station takes one Bluetooth connection at a time, and two holders writing
+ * to one device would race.
  */
 function toHold(device: DeviceView, clientId: string | null): ConnectionView | null {
   const ordered = [...device.connections].sort((a, b) => a.priority - b.priority);
   for (const connection of ordered) {
     if (connection.heldBy.kind === 'client' && connection.heldBy.id === clientId) return connection;
-    if (connection.inUse) return null;
+    if (connection.reachable) return null;
   }
   return null;
+}
+
+/**
+ * The server's rule, with what this app knows added: the reachable connection
+ * highest in the list is in use; with none reachable, the one being tried.
+ */
+function inUseByRule(connections: ConnectionView[], trying: string | null): ConnectionView[] {
+  const active = [...connections].sort((a, b) => a.priority - b.priority).find((connection) => connection.reachable === true);
+  const inUse = active?.id ?? trying ?? connections.find((connection) => connection.inUse)?.id ?? null;
+  return connections.map((connection) => ({ ...connection, inUse: connection.id === inUse }));
 }
 
 export function DevicesProvider({ children }: { children: ReactNode }) {
@@ -252,7 +265,9 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   const heldList = useMemo((): HeldDevice[] => {
     if (mode === 'local') {
       return (localDevices ?? []).flatMap((device): HeldDevice[] => {
-        const connection = runtime.local.connections(device.id)[0];
+        // Highest in the list, unless it has been down long enough to try the next (§4).
+        const all = runtime.local.connections(device.id);
+        const connection = all.find((candidate) => !runtime.avoided(candidate.id)) ?? all[0];
         if (!connection) return [];
         return [
           {
@@ -278,7 +293,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
           config: device.config,
           connection: { id: connection.id, method: connection.method, transport: connection.transport, address: connection.address, config: connection.config },
           // Secrets of a connection this app holds live here, never on the server.
-          secrets: {},
+          secrets: runtime.heldSecrets(connection.id),
           store: runtime.storeFor(device.id, connection.id),
         },
       ];
@@ -309,13 +324,22 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       const session = runtime.sessions.get(device.id);
       const health = runtime.sessions.health(device.id);
       const held = runtime.sessions.held(device.id);
-      if (!session && !health) return device;
+      // Which secrets a connection this app holds has: the server never knows.
+      const mine = (connection: ConnectionView) => connection.heldBy.kind === 'client' && connection.heldBy.id === runtime.clientId;
+      const connections = device.connections.map((connection) =>
+        mine(connection) ? { ...connection, secrets: Object.keys(runtime.heldSecrets(connection.id)) } : connection
+      );
+      if (!session && !health) return { ...device, connections };
       return {
         ...device,
         readings: session?.readings() ?? device.readings,
         health: health ?? device.health,
         advanced: session ? Object.entries(session.advanced ?? {}).map(([name, action]) => ({ name, writes: action.writes })) : device.advanced,
-        connections: device.connections.map((connection) => ({ ...connection, inUse: held ? connection.id === held.connection.id : connection.inUse })),
+        connections: inUseByRule(
+          // What this app holds, it knows first: whether its own connection reaches the device.
+          connections.map((connection) => (held && connection.id === held.connection.id ? { ...connection, reachable: health?.status === 'connected' } : connection)),
+          held?.connection.id ?? null
+        ),
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -476,6 +500,12 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         } else await mutate(() => apiRemoveConnection(device.id, connection.id));
       },
       setSecrets: async (device, connection, secrets) => {
+        // A connection an app holds keeps its secrets in that app: they are never sent (§4.3).
+        if (mode === 'local' || (connection.heldBy.kind === 'client' && connection.heldBy.id === runtime.clientId)) {
+          runtime.setHeldSecrets(connection.id, secrets);
+          return;
+        }
+        if (connection.heldBy.kind === 'client') throw new Error(`Its secrets are kept by ${connection.heldBy.name}: change them there`);
         await mutate(() => setConnectionSecrets(device.id, connection.id, secrets));
       },
       addLink: async (kind, sourceId, targetId) => {

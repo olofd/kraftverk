@@ -37,7 +37,7 @@ export function transportRoutes({ config, transports, serverLog, nearby }: AppDe
   api.get('/transports/:id/diagnostics/:name', async (c) => {
     const transport = transports.get(c.req.param('id'));
     const diagnostic = transport?.diagnostics?.[c.req.param('name')];
-    if (!diagnostic) throw new HTTPException(404, { message: 'No such diagnostic, or its transport is not running' });
+    if (!diagnostic) throw new HTTPException(404, { message: 'No such diagnostic, or it is not running' });
     const result = await diagnostic(c.req.query());
     if (result === null || result === undefined) throw new HTTPException(503, { message: 'It is not answering' });
     return c.json(result);

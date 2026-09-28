@@ -584,6 +584,28 @@ describe('a connection a browser holds', () => {
     expect(db().query<{ n: number }, [string]>('SELECT COUNT(*) n FROM sample WHERE device_id = ?').get(device.id)!.n).toBe(1);
   });
 
+  test('a device saved before it answered learns who it is from the app, and a different device adds nothing', async () => {
+    const client = await browser();
+    // A browser cannot always read an identity during setup: saved without one.
+    const started = await heldSetup(client.id, { identity: null, model: 'L1', summary: 'On.' });
+    const device = (await onBusAs(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: 'Desk lamp' } })).body;
+    const connectionId = device.connections[0].id;
+    const identity = () => db().query<{ identity: string | null }, [string]>('SELECT identity FROM device WHERE id = ?').get(device.id)!.identity;
+    const send = (said: string) =>
+      onBusAs(`/devices/${enc(device.id)}/readings`, {
+        method: 'POST',
+        body: { clientId: client.id, connectionId, identity: said, readings: [{ key: 'on', value: true, at: new Date().toISOString() }] },
+      });
+    expect(identity()).toBeNull();
+
+    expect((await send('lampish:DESK')).status).toBe(200);
+    expect(identity()).toBe('lampish:DESK');
+
+    const other = await send('lampish:ELSEWHERE');
+    expect(other.status).toBe(409);
+    expect(identity()).toBe('lampish:DESK');
+  });
+
   test('speaks only for its own connections, and only for its own account', async () => {
     const client = await browser();
     lampAt('lamp-1');
@@ -614,6 +636,38 @@ describe('a connection a browser holds', () => {
     const attached = await onBusAs(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: '', mode: 'attach', deviceId: lamp.id } });
     expect(attached.status).toBe(200);
     expect(attached.body.connections.map((connection: { heldBy: { kind: string } }) => connection.heldBy.kind)).toEqual(['server', 'client']);
+  });
+
+  test('the reachable connection highest in the list is in use: the app takes over while the server cannot reach it, and gives it back', async () => {
+    lampAt('lamp-1');
+    const lamp = await added('Hall lamp');
+    const client = await browser();
+    const started = await heldSetup(client.id, { identity: null, model: 'L1', summary: 'On.' }, { methodId: 'backup' });
+    const attached = (await onBusAs(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: '', mode: 'attach', deviceId: lamp.id } })).body;
+    const [serverSide, appSide] = attached.connections as { id: string }[];
+    const view = async () => (await onBusAs(`/devices/${enc(lamp.id)}`)).body as { readings: { key: string; value: unknown }[]; connections: { id: string; inUse: boolean; reachable: boolean | null }[] };
+    const fromApp = () =>
+      onBusAs(`/devices/${enc(lamp.id)}/readings`, {
+        method: 'POST',
+        body: { clientId: client.id, connectionId: appSide!.id, readings: [{ key: 'on', value: false, at: new Date().toISOString() }] },
+      });
+    const inUse = async () => (await view()).connections.find((connection) => connection.inUse)?.id;
+
+    // Both reach it: the server's is higher in the list, so it is the one in use.
+    await fromApp();
+    expect(await inUse()).toBe(serverSide!.id);
+    expect((await view()).connections.map((connection) => connection.reachable)).toEqual([true, true]);
+
+    // The server loses it: the app's connection takes over, and its readings are the device's.
+    const channel = onBus.bus.channels.at(-1)!;
+    channel.setConnected(false);
+    await fromApp();
+    expect(await inUse()).toBe(appSide!.id);
+    expect((await view()).readings).toEqual([expect.objectContaining({ key: 'on', value: false })]);
+
+    // It comes back: the server's connection is in use again.
+    channel.setConnected(true);
+    expect(await inUse()).toBe(serverSide!.id);
   });
 
   test('keeps the device’s store on the server, and its audit entries under the account', async () => {

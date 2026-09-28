@@ -57,7 +57,7 @@ const SECONDARY = {
 } as const;
 
 /**
- * Ground truth for protocol work.
+ * Ground truth for register work.
  *
  * The published register map was derived from FOSSiBOT F2400/F3600 hardware.
  * The P280 runs the same Sydpower stack but is a different machine, so this
@@ -65,7 +65,7 @@ const SECONDARY = {
  * your unit actually reports. The registers are read by the station's own
  * tools, through whoever holds its connection — the server, or this app.
  */
-export function StationProtocol(props: DeviceScreenProps) {
+export function StationRegisters(props: DeviceScreenProps) {
   const { device, actions, holder, readOnly } = props;
   const { status } = useStation(props);
   const [link, setLink] = useState<LinkState | null>(null);

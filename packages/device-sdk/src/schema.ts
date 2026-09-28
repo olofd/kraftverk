@@ -1,8 +1,8 @@
 /**
  * A deliberately small config-schema language.
  *
- * Every plugin describes its settings with this, and the app renders a setup
- * form from it with no plugin-supplied code. Keeping the vocabulary tiny is the
+ * Every device type describes its settings with this, and the app renders a
+ * form from it with no code of the type's own. Keeping the vocabulary tiny is the
  * whole point: an iOS build cannot download and run arbitrary UI, so the set of
  * things a form can contain has to be closed and known in advance.
  *
@@ -53,7 +53,7 @@ export type ValidationResult =
 
 export const isSecretField = (field: ConfigField): boolean => field.type === 'secret';
 
-/** The fields a plugin keeps in the secret store rather than in config. */
+/** The fields kept as connection secrets rather than in config. */
 export function secretFields(schema: ConfigSchema): string[] {
   return Object.entries(schema.fields)
     .filter(([, field]) => isSecretField(field))

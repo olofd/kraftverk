@@ -122,7 +122,7 @@ export const SETTINGS_SCHEMA: ConfigSchema = {
       description: 'What is plugged into the XT90 input. Changing this also moves the current ceiling.',
       options: [
         { value: 'pv', label: 'Solar (PV)' },
-        { value: 'dc', label: 'DC adapter' },
+        { value: 'dc', label: 'DC charger' },
       ],
     },
     maxChargingCurrent: {
@@ -305,7 +305,7 @@ export function patchToValues(patch: Partial<StationSettings>): Record<string, s
   return values;
 }
 
-/** The reverse: a form's values, back into a settings patch for the driver. */
+/** The reverse: a form's values, back into a settings patch for the station. */
 export function valuesToSettings(values: Record<string, unknown>): Record<string, unknown> {
   const patch: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(values)) {

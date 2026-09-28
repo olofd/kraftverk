@@ -66,15 +66,16 @@ function WhereWritesGo({ device }: { device: DeviceView }) {
 /** A device type's own tools, for the types that have any. */
 function Advanced({ device }: { device: DeviceView }) {
   const theme = useTheme();
-  if (!screensFor(device)?.protocol) return null;
+  const advanced = screensFor(device)?.advanced;
+  if (!advanced) return null;
   return (
     <YStack gap="$2">
       <SectionLabel>Advanced</SectionLabel>
       <Card inset>
         <Pressable onPress={() => router.push(`/device/${encodeURIComponent(device.id)}/advanced`)}>
           <Row
-            title="Protocol"
-            subtitle="Register dumps and the snapshot-and-diff workflow, for verifying the map against real hardware"
+            title={advanced.label}
+            subtitle={advanced.description}
             accessory={<Feather name="chevron-right" size={16} color={theme.muted?.val} />}
           />
         </Pressable>

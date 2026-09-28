@@ -81,7 +81,9 @@ export type ConnectionView = {
   heldBy: { kind: 'server' } | { kind: 'client'; id: string; name: string };
   address: string;
   priority: number;
-  /** The one the device is using right now. */
+  /** Whether it reaches the device right now; null when nobody is trying it. */
+  reachable: boolean | null;
+  /** The one the device is using right now: the reachable one highest in the list. */
   inUse: boolean;
   lastConnectedAt: string | null;
   /** Which secrets it has, by field — never their values. */

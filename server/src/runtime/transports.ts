@@ -106,7 +106,7 @@ export class TransportHost {
    */
   available(id: string): Availability {
     const entry = this.#entries.get(id);
-    if (!entry) return { ok: false, reason: `Nothing installed on this server carries ${id}` };
+    if (!entry) return { ok: false, reason: 'This server cannot reach devices this way: it needs updating' };
     if (!entry.definition.platforms.includes('server') || !entry.factory) {
       return { ok: false, reason: `A server cannot use ${entry.definition.label}` };
     }

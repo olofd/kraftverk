@@ -42,9 +42,34 @@ export function heldRoutes({ catalog, connections, clients, remote }: AppDeps): 
   api.post('/devices/:id/readings', async (c) => {
     const input = await body(
       c,
-      z.object({ clientId: z.string().min(1).max(40), connectionId: z.string().min(1).max(40), readings: z.array(reading).max(2000) }).strict()
+      z
+        .object({
+          clientId: z.string().min(1).max(40),
+          connectionId: z.string().min(1).max(40),
+          // Who the device said it is, read by the app's session.
+          identity: z.string().min(1).max(120).nullable().optional(),
+          readings: z.array(reading).max(2000),
+        })
+        .strict()
     );
     const { record, client, connection } = heldBy(c, input);
+
+    /*
+      The same rule as a connection the server holds (sessions.ts, check): a
+      device saved before it ever answered learns who it is the first time it
+      does, and a connection that now reaches a different device adds nothing
+      to this one's history.
+    */
+    const said = input.identity ?? null;
+    if (said && record.identity && said.toLowerCase() !== record.identity.toLowerCase()) {
+      audit({ at: new Date().toISOString(), kind: 'device.mismatch', actor: actorOf(c), resource: record.id, summary: `${record.name}'s connection from ${client.name} reaches ${said} instead`, detail: { expected: record.identity } });
+      throw new HTTPException(409, { message: 'That connection reaches a different device, not the one you added' });
+    }
+    if (said && !record.identity && !catalog.byIdentity(said).active) {
+      catalog.update(record.id, { identity: said });
+      audit({ at: new Date().toISOString(), kind: 'device.identified', actor: actorOf(c), resource: record.id, summary: `${record.name} answered for the first time, as ${said}` });
+    }
+
     const counts = remote.accept(record.id, { clientId: client.id, connectionId: connection.id }, input.readings);
     connections.touch(connection.id);
     return c.json(counts);

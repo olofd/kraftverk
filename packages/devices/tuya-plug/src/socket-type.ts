@@ -199,7 +199,7 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
       const fresh = lastOk !== null && Date.now() - lastOk < pollMs * 2.5;
       return {
         status: fresh ? 'connected' : lastError ? (link.connected || connection.channel.connected ? 'error' : 'offline') : 'connecting',
-        detail: fresh ? `Answering over protocol ${link.version}` : (lastError ?? 'Connecting'),
+        detail: fresh ? `Answering, Tuya ${link.version}` : (lastError ?? 'Connecting'),
         owner: 'server',
         transport: connection.transport,
         lastReadingAt: state?.at ?? null,
@@ -331,7 +331,7 @@ export function defineTuyaSocket(definition: SocketTypeDefinition): DeviceType<S
           // A socket does not say what model it is; the layout is a guess the
           // relay check above confirms or corrects.
           model: null,
-          summary: `Answering over protocol ${link.version}: ${relay}${drawing}.${moved}`,
+          summary: `Answering, Tuya ${link.version}: ${relay}${drawing}.${moved}`,
           ...(relayDp !== profile.relay.dp ? { config: { relayDp } } : {}),
         };
       } finally {

@@ -57,7 +57,7 @@ const SWITCHED_OFF =
   'and chrome://policy for a DefaultWebBluetoothGuardSetting your organisation has set. A browser embedded ' +
   'in another app usually blocks it: open the app in Chrome or Edge itself.';
 
-const NO_ADAPTER = 'No Bluetooth adapter is available to this browser. Check it is present and switched on, then reload.';
+const NO_ADAPTER = 'No Bluetooth radio is available to this browser. Check it is present and switched on, then reload.';
 
 /** Why Web Bluetooth cannot be used here, or null when it can. */
 export function blockedReason(): string | null {

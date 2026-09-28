@@ -14,10 +14,10 @@ export default function DeviceAdvancedScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const device = useDevice(id);
   const { screenProps } = useDevices();
-  const Panel = screensFor(device)?.protocol;
+  const advanced = screensFor(device)?.advanced;
   const settingsPath = device ? `/device/${encodeURIComponent(device.id)}/settings` : '/';
 
-  if (!device || !Panel) {
+  if (!device || !advanced) {
     return (
       <Screen back="Settings" backTo={settingsPath} title="Advanced">
         <Card padding="$4">
@@ -30,8 +30,8 @@ export default function DeviceAdvancedScreen() {
   }
 
   return (
-    <Screen back="Settings" backTo={settingsPath} title="Protocol" subtitle={`Verify the register map against ${device.name}`} status={deviceStatus(device)}>
-      <Panel {...screenProps(device)} />
+    <Screen back="Settings" backTo={settingsPath} title={advanced.label} subtitle={device.name} status={deviceStatus(device)}>
+      <advanced.Screen {...screenProps(device)} />
     </Screen>
   );
 }

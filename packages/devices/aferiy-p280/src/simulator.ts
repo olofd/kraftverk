@@ -8,7 +8,7 @@ import type {
 } from './model/types.ts';
 
 import { SETTINGS_SCHEMA, settingsToValues, valuesToSettings } from './index.ts';
-import type { StationDriverLike } from './station.ts';
+import type { StationSource } from './station.ts';
 
 /**
  * A P280 that is not there: the app is usable without hardware, the contract
@@ -66,7 +66,7 @@ function checked(settings: StationSettings): StationSettings | null {
   return result.ok ? (valuesToSettings(result.value) as StationSettings) : null;
 }
 
-export class SimulatedStation implements StationDriverLike {
+export class SimulatedStation implements StationSource {
   #store: DeviceStore | null;
   #settings: StationSettings = { ...DEFAULTS };
   #level = 68;

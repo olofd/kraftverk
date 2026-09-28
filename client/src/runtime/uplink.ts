@@ -21,7 +21,7 @@ const MAX_QUEUED_READINGS = 20_000;
 const MAX_QUEUED_AUDIT = 1000;
 
 type QueuedAudit = Omit<AuditEntry, 'actor' | 'id'>;
-type QueuedReadings = { deviceId: string; connectionId: string; readings: Map<string, Reading> };
+type QueuedReadings = { deviceId: string; connectionId: string; identity: string | null; readings: Map<string, Reading> };
 
 export class Uplink {
   #readings = new Map<string, QueuedReadings>();
@@ -37,7 +37,7 @@ export class Uplink {
       /** Where the audit queue is kept across a reload: one per server. */
       key: string;
       /** The readings to send now, from every session this app holds. */
-      collect: () => { deviceId: string; connectionId: string; readings: readonly Reading[] }[];
+      collect: () => { deviceId: string; connectionId: string; identity: string | null; readings: readonly Reading[] }[];
     }
   ) {
     try {
@@ -74,8 +74,9 @@ export class Uplink {
     return count + this.#audit.length;
   }
 
-  #queue(deviceId: string, connectionId: string, readings: readonly Reading[]): void {
-    const queued = this.#readings.get(deviceId) ?? { deviceId, connectionId, readings: new Map<string, Reading>() };
+  #queue(deviceId: string, connectionId: string, identity: string | null, readings: readonly Reading[]): void {
+    const queued = this.#readings.get(deviceId) ?? { deviceId, connectionId, identity, readings: new Map<string, Reading>() };
+    queued.identity = identity ?? queued.identity;
     queued.connectionId = connectionId;
     for (const reading of readings) {
       if (!reading.at || reading.value === null) continue;
@@ -93,7 +94,7 @@ export class Uplink {
   async flush(): Promise<void> {
     const clientId = this.options.clientId();
     if (this.#flushing) return;
-    for (const { deviceId, connectionId, readings } of this.options.collect()) this.#queue(deviceId, connectionId, readings);
+    for (const { deviceId, connectionId, identity, readings } of this.options.collect()) this.#queue(deviceId, connectionId, identity, readings);
     if (!clientId) return;
     this.#flushing = true;
     // Each on its own: one device this app no longer holds must not keep the rest from going up.
@@ -117,7 +118,7 @@ export class Uplink {
         if (!queued.readings.size) continue;
         await attempt(async () => {
           const sending = [...queued.readings.entries()].slice(0, 2000);
-          await uploadReadings(deviceId, { clientId, connectionId: queued.connectionId, readings: sending.map(([, reading]) => reading) });
+          await uploadReadings(deviceId, { clientId, connectionId: queued.connectionId, identity: queued.identity, readings: sending.map(([, reading]) => reading) });
           for (const [key] of sending) queued.readings.delete(key);
         });
       }

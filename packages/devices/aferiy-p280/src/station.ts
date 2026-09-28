@@ -21,14 +21,14 @@ import type { PortId, StationSettings, StationSettingsPatch, StationStatus } fro
  * A P280, as a device session: what its station client reports, in the shared
  * vocabulary of readings, capabilities and settings.
  *
- * The same adapter serves a real station and the simulator, and the same code
- * runs wherever the connection is held. What differs is only the driver: a
+ * The same session serves a real station and the simulator, and the same code
+ * runs wherever the connection is held. What differs is only the source: a
  * `StationClient` over the link the protocol builds on the connection it was
  * handed, or the simulator.
  */
 
-/** What this session needs from a driver: `StationClient` and the simulator both fit. */
-export interface StationDriverLike {
+/** What this session reads and commands: `StationClient` and the simulator both fit. */
+export interface StationSource {
   status(): StationStatus;
   /** Null until the station's settings have been read from it. */
   settings(): StationSettings | null;
@@ -55,10 +55,10 @@ export type StationSessionOptions = {
   close?: () => void | Promise<void>;
 };
 
-export function stationSession(driver: StationDriverLike, options: StationSessionOptions): DeviceSession {
+export function stationSession(source: StationSource, options: StationSessionOptions): DeviceSession {
   /** The latest status, but only once the station has actually reported. */
   const reported = (): StationStatus | null => {
-    const status = driver.status();
+    const status = source.status();
     return status.lastUpdated !== null ? status : null;
   };
 
@@ -91,7 +91,7 @@ export function stationSession(driver: StationDriverLike, options: StationSessio
     set: async (outletId, on) => {
       if (!OUTLETS.includes(outletId as PortId)) return { accepted: false, error: `A P280 has no outlet "${outletId}"` };
       try {
-        await driver.setPort(outletId as PortId, on);
+        await source.setPort(outletId as PortId, on);
         return { accepted: true };
       } catch (error) {
         return failed(error);
@@ -103,7 +103,7 @@ export function stationSession(driver: StationDriverLike, options: StationSessio
 
   return {
     health(): ConnectionHealth {
-      const status = driver.status();
+      const status = source.status();
       const simulated = status.link.mode === 'simulator';
       const connected = simulated || (options.connected() && status.link.state === 'connected');
       return {
@@ -122,7 +122,7 @@ export function stationSession(driver: StationDriverLike, options: StationSessio
     },
 
     readings(): Reading[] {
-      return readings(driver.status());
+      return readings(source.status());
     },
 
     capability<N extends CapabilityName>(name: N): CapabilityImpl[N] | null {
@@ -131,12 +131,12 @@ export function stationSession(driver: StationDriverLike, options: StationSessio
     },
 
     readSettings(): ConfigValues | null {
-      const settings = driver.settings();
+      const settings = source.settings();
       return settings ? settingsToValues(settings) : null;
     },
 
     async writeSettings(patch: ConfigValues): Promise<ConfigValues | null> {
-      const current = driver.settings();
+      const current = source.settings();
       if (!current) throw new Error('The station’s settings have not been read yet');
       /*
         Checked against the schema the app draws from, whoever calls: the
@@ -148,12 +148,12 @@ export function stationSession(driver: StationDriverLike, options: StationSessio
       const merged = validateConfig(SETTINGS_SCHEMA, { ...settingsToValues(current), ...patch });
       if (!merged.ok) throw new Error(merged.issues.map((issue) => issue.message).join('; '));
       const changed = Object.fromEntries(Object.keys(patch).map((key) => [key, merged.value[key]]));
-      const applied = await driver.applySettings(valuesToSettings(changed) as StationSettingsPatch);
+      const applied = await source.applySettings(valuesToSettings(changed) as StationSettingsPatch);
       return applied ? settingsToValues(applied) : null;
     },
 
     identity() {
-      return { id: options.identity, name: driver.status().name ?? null };
+      return { id: options.identity, name: source.status().name ?? null };
     },
 
     advanced: options.advanced,
@@ -172,9 +172,9 @@ export function stationSession(driver: StationDriverLike, options: StationSessio
  * the energy-flow view needs the whole of it. Offered by a real station and
  * the simulator alike, and served by whoever holds the connection.
  */
-export function stationTools(driver: StationDriverLike): Record<string, AdvancedAction> {
+export function stationTools(source: StationSource): Record<string, AdvancedAction> {
   return {
-    state: { writes: false, run: async () => ({ status: driver.status(), settings: driver.settings() }) },
+    state: { writes: false, run: async () => ({ status: source.status(), settings: source.settings() }) },
   };
 }
 

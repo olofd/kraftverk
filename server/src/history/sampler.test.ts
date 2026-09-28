@@ -29,9 +29,13 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-/** A registry holding one device with the given readings. */
-const registry = (id: string, readings: Reading[]) =>
-  ({ all: async () => [{ id, readings }] }) as unknown as DeviceRegistry;
+/** A registry holding one device with the given readings, saved as history needs it to be. */
+const registry = (id: string, readings: Reading[]) => {
+  db()
+    .query("INSERT OR IGNORE INTO device (id, name, config, added_at, type_id) VALUES (?, ?, '{}', ?, 'test.device')")
+    .run(id, id, new Date().toISOString());
+  return { all: async () => [{ id, readings }] } as unknown as DeviceRegistry;
+};
 
 const stored = (id: string) =>
   db().query('SELECT key, value FROM sample WHERE device_id = ? ORDER BY key').all(id) as { key: string; value: number }[];

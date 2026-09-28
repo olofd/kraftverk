@@ -60,7 +60,7 @@ const SCREEN_TIMEOUTS = [
 
 const DC_INPUT_TYPES = [
   { value: 'pv', label: 'Solar (PV)' },
-  { value: 'dc', label: 'DC adapter' },
+  { value: 'dc', label: 'DC charger' },
 ] as const;
 
 /** Confirmed on a P280: register 13 steps 1-5 map to these watts. */

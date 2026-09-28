@@ -18,7 +18,11 @@ import { DEVICE_UI } from '../generated/registry';
 export type DeviceUi = {
   dashboard?: ComponentType<DeviceScreenProps>;
   settings?: ComponentType<DeviceScreenProps>;
-  protocol?: ComponentType<DeviceScreenProps>;
+  /**
+   * Tools of the type's own — a register dump — reached from the device's
+   * Settings. The package names them, so the app never has to.
+   */
+  advanced?: { label: string; description: string; Screen: ComponentType<DeviceScreenProps> };
 };
 
 export const screensFor = (device: DeviceView | null): DeviceUi | null => (device ? (DEVICE_UI[device.typeId] ?? null) : null);

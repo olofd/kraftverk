@@ -22,7 +22,7 @@ export const readingFor = (readings: readonly Reading[], key: string): Reading |
  * When the device last actually said something.
  *
  * The most recent `at` across every reading — which is the device's own clock,
- * not ours. A driver that is answering happily while reporting a timestamp from
+ * not ours. A device that is answering happily while reporting a timestamp from
  * ten minutes ago is exactly the failure this exists to catch.
  */
 export function freshestAt(readings: readonly Reading[]): string | null {
@@ -42,7 +42,7 @@ export function freshestAt(readings: readonly Reading[]): string | null {
 /**
  * How long a reading may go unrefreshed before it stops counting as live.
  *
- * Generous on purpose: the sampler runs every minute and a slow driver can miss
+ * Generous on purpose: the sampler runs every minute and a slow device can miss
  * one. Two of them is a device that has stopped talking.
  */
 export const STALE_AFTER_MS = 150_000;

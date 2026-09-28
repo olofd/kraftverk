@@ -5,13 +5,13 @@ import { haptic } from './haptics';
 import type { ConfigField, ConfigSchema, ConfigValues } from '@kraftverk/device-sdk';
 
 /**
- * Renders any plugin's settings from its declared schema.
+ * Renders any device type's settings from its declared schema.
  *
- * This is the component that makes the extension system's promise true: a
- * plugin written next year gets a working setup form with no change here and no
+ * This is the component that makes the device model's promise true: a
+ * device type written next year gets a working setup form with no change here and no
  * UI code of its own. That only holds because the schema language is small and
  * closed — six field types, all of which map onto controls this app already
- * has. Adding a seventh is a decision about every plugin at once, which is
+ * has. Adding a seventh is a decision about every device type at once, which is
  * exactly the friction that keeps it small.
  *
  * Secrets are write-only by construction: the server never sends their values,

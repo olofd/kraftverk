@@ -39,6 +39,9 @@ function beforeSeven() {
   const sample = handle.query('INSERT INTO sample (device_id, key, at, value) VALUES (?, ?, ?, ?)');
   for (let minute = 0; minute < 5; minute++) sample.run('power-station:16757b71', 'soc', `2026-09-27T19:4${minute}:00.000Z`, 80 + minute);
   sample.run('smart-plug:fake', 'watts', '2026-09-27T19:40:00.000Z', 240);
+  // History of a device the old "forget" deleted, left behind.
+  sample.run('power-station:gone', 'soc', '2026-09-20T08:00:00.000Z', 55);
+  sample.run('power-station:gone', 'soc', '2026-09-20T08:01:00.000Z', 56);
 
   handle
     .query('INSERT INTO plugin_config (plugin_id, json, enabled, updated_at) VALUES (?, ?, 1, ?)')
@@ -145,6 +148,24 @@ describe('migration 7', () => {
     expect(one<Row>(handle, 'SELECT 1 x FROM device WHERE id = ?', 'smart-plug:fake')).toBeNull();
     expect(one<{ n: number }>(handle, 'SELECT COUNT(*) n FROM sample WHERE device_id = ?', 'smart-plug:fake')?.n).toBe(0);
     expect(one<{ summary: string }>(handle, "SELECT summary FROM audit WHERE kind = 'device.removed'")?.summary).toContain('Simulated plug');
+    handle.close();
+  });
+
+  test('history belongs to its device: samples go with it, and none left behind are lost', () => {
+    const { handle, path } = beforeSeven();
+    migrate(handle, path, MIGRATIONS);
+
+    // What a deleted device left behind is kept, under a removed device of its own.
+    expect(one<Row>(handle, 'SELECT type_id, added_at, removed_at IS NOT NULL removed FROM device WHERE id = ?', 'power-station:gone')).toEqual({
+      type_id: 'unknown',
+      added_at: '2026-09-20T08:00:00.000Z',
+      removed: 1,
+    });
+    expect(one<{ n: number }>(handle, 'SELECT COUNT(*) n FROM sample WHERE device_id = ?', 'power-station:gone')?.n).toBe(2);
+
+    expect(() => handle.query("INSERT INTO sample (device_id, key, at, value) VALUES ('nobody', 'soc', '2026-09-28T00:00:00Z', 1)").run()).toThrow();
+    handle.query('DELETE FROM device WHERE id = ?').run('power-station:gone');
+    expect(one<{ n: number }>(handle, 'SELECT COUNT(*) n FROM sample WHERE device_id = ?', 'power-station:gone')?.n).toBe(0);
     handle.close();
   });
 

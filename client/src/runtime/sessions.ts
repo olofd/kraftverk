@@ -1,4 +1,5 @@
 import {
+  openChannel,
   validateConfig,
   type Channel,
   type ConfigValues,
@@ -114,14 +115,7 @@ export class HeldSessions {
       if (!type) throw new Error(`This app does not know what "${held.typeId}" is: update it`);
       const method = type.connections.find((candidate) => candidate.id === held.connection.method);
       if (!method) throw new Error(`${type.meta.name} has no way called "${held.connection.method}"`);
-      const binding = registry.protocols.get(method.protocol)?.bindings[held.connection.transport];
-      if (!binding) throw new Error(`This app cannot speak ${method.protocol} over ${held.connection.transport}`);
-      const transport = await registry.start(held.connection.transport);
-      if (!transport) {
-        const why = registry.available(held.connection.transport);
-        throw new Error(why.ok ? 'Its transport did not start' : why.reason);
-      }
-      channel = await transport.open(held.connection.address, binding.open(held.connection.address));
+      channel = await openChannel(registry, registry.protocols.get(method.protocol), held.connection);
 
       const known = Object.fromEntries(Object.entries(held.config).filter(([field]) => field in type.config.fields));
       const config = validateConfig(type.config, known);

@@ -16,7 +16,7 @@ import definition, { fullUuid, matchesFilter } from './index.ts';
 /**
  * Bluetooth LE on the server, over noble.
  *
- * Split in two, because the adapter and a connection are different things. One
+ * Split in two, because the radio and a connection are different things. One
  * noble instance owns the radio and the scan, and there is genuinely one of
  * those per process. A *connection* is not scarce in the same way: a central
  * holds several peripherals at once, commonly around seven. So the transport
@@ -88,10 +88,10 @@ class BleServerTransport extends EventEmitter implements Transport {
       noble.on('discover', (peripheral: Peripheral) => this.#discovered(peripheral));
       await new Promise<void>((resolve, reject) => {
         if (noble.state === 'poweredOn') return resolve();
-        const timer = setTimeout(() => reject(new Error('No Bluetooth adapter became available')), 8000);
+        const timer = setTimeout(() => reject(new Error('No Bluetooth radio became available')), 8000);
         noble.once('stateChange', (state: string) => {
           clearTimeout(timer);
-          state === 'poweredOn' ? resolve() : reject(new Error(`The Bluetooth adapter is ${state}`));
+          state === 'poweredOn' ? resolve() : reject(new Error(`The Bluetooth radio is ${state}`));
         });
       });
       // allowDuplicates: repeated advertisements are what keep the signal
@@ -102,7 +102,7 @@ class BleServerTransport extends EventEmitter implements Transport {
       this.#availability = { ok: true };
       this.context.log('info', '[ble] Scanning for Bluetooth devices');
     } catch (error) {
-      // Recorded, not thrown: a machine with no Bluetooth adapter still serves
+      // Recorded, not thrown: a machine with no Bluetooth radio still serves
       // everything it reaches another way.
       const message = (error as Error).message;
       this.#availability = {
@@ -337,7 +337,7 @@ class BleChannel implements ByteChannel {
           ? `Only the standard GATT services are visible (${svc}). On Windows this means the ` +
               'device is not paired: WinRT hides custom services from unpaired peripherals. Pair it in ' +
               'Settings > Bluetooth & devices > Add device, then retry.'
-          : `None of the GATT layouts its protocol speaks is there. Services: ${svc}. Characteristics: ${chr}`
+          : `None of the GATT layouts this device is reached by is there. Services: ${svc}. Characteristics: ${chr}`
       );
     }
 

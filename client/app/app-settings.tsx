@@ -30,7 +30,7 @@ export default function AppSettingsScreen() {
   useEffect(() => runtime.subscribe(() => setAllowWrites(runtime.allowWrites)), [runtime]);
 
   return (
-    <Screen back="Your devices" title="App settings" subtitle="Servers, transports and this app">
+    <Screen back="Your devices" title="App settings" subtitle="Servers, connectivity and this app">
       <YStack gap="$2">
         <SectionLabel>Infrastructure</SectionLabel>
         <Card inset>
@@ -46,9 +46,9 @@ export default function AppSettingsScreen() {
               <RowSeparator />
             </>
           ) : null}
-          <Pressable onPress={() => router.push('/transports')}>
+          <Pressable onPress={() => router.push('/connectivity')}>
             <Row
-              title="Transports"
+              title="Connectivity"
               subtitle={mode === 'server' ? 'What your server and this app reach devices over, and their diagnostics' : 'What this app can reach devices over'}
               accessory={chevron}
             />
