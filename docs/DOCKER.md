@@ -303,7 +303,7 @@ docker compose up -d --build broker
 ```
 
 `STATION_DRIVER` is read once at startup and cannot be changed from any screen.
-If **App settings → Transports** says the server runs the simulator and you
+If **App settings → Connectivity** says the server runs the simulator and you
 expected Wi-Fi, the container was started with the wrong `STATION_DRIVER`.
 
 ---

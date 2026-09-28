@@ -119,7 +119,7 @@ Tab. If you add a tappable that is not a `Button`, use
 choices so it announces as a radio.
 
 **What a server can reach is a launch flag.** `npm run dev` is the
-*simulator*, and no screen can change that: **App settings → Transports** says
+*simulator*, and no screen can change that: **App settings → Connectivity** says
 which it is. Restarting a Bluetooth server with the wrong script is an easy way
 to spend ten minutes wondering why the radio vanished. `.claude/launch.json`
 carries `server`, `server:ble` and `server:ble:write` for that reason.

@@ -84,7 +84,9 @@ anything, **plugin** on screen, and the **grid relay** as a thing: it was a
 role, and is now a smart plug with a `feeds` link. "Plugin" survives only in
 prose, for "an installable package". The app never says extension, plugin,
 driver, adapter, bind, transport or protocol. It names methods the way people
-do: "Wi-Fi, through your server", "Bluetooth, from this phone".
+do: "Wi-Fi, through your server", "Bluetooth, from this phone"; the screen
+about them is *Connectivity*. Hardware keeps its own names — a DC charger, a
+Bluetooth radio — and so do the ones people know, such as MQTT.
 
 ---
 
@@ -96,12 +98,14 @@ packages/
                          DeviceType, ConnectionMethod, Transport, Protocol, DeviceSession
   transports/mqtt/       @kraftverk/transport-mqtt       the broker (its own process) and the server's client; server only
   transports/ble/        @kraftverk/transport-ble        server (noble), web (Web Bluetooth), native (the phone)
-  transports/lan/        @kraftverk/transport-lan        TCP and UDP on the home network; server and native
+  transports/lan/        @kraftverk/transport-lan        TCP and UDP on the home network; server only for now —
+                                                         a native entry needs a socket library, a reviewed dependency
   transports/https/      @kraftverk/transport-https      the internet, address-scoped; everywhere
   protocols/sydpower/    @kraftverk/protocol-sydpower    MODBUS-style frames, CRC, register blocks, the register-68 rule;
                                                          bindings for mqtt (topics, broker policy) and ble (service, framing)
   protocols/tuya-local/  @kraftverk/protocol-tuya-local  frames, crypto, handshake, discovery packets, the local key;
                                                          a binding for lan
+  protocols/open-meteo/  @kraftverk/protocol-open-meteo  the Open-Meteo API's requests and answers; a binding for https
   devices/aferiy-p280/   @kraftverk/device-aferiy-p280   a device type: power-station
   devices/atorch-s1w/    @kraftverk/device-atorch-s1w    smart-plug
   devices/tuya-plug/     @kraftverk/device-tuya-plug     smart-plug: the generic Tuya energy socket, with profiles
@@ -119,9 +123,9 @@ The rule, checked in CI by `npm run check:architecture` (§7):
   runtime and loads them by path, and starts only the transports its installed
   device types need. The app cannot — Metro bundles what is imported, and a
   store build must not download code — so `npm run gen:devices` writes
-  `client/src/generated/device-types.ts` from the installed packages (with the
-  transports' web and native implementations), and that one file is the app's
-  exception. CI checks it is current.
+  `client/src/generated/registry.ts` from the installed packages (device types,
+  protocols, the transports' web and native implementations, and screens), and
+  that one file is the app's exception. CI checks it is current.
 - **A transport** imports the SDK only. It is the one place for platform code
   — sockets, radios, the broker — with a separate entry for each place it runs
   (`server`, `web`, `native`), so the app never bundles server code.
@@ -146,12 +150,10 @@ The rule, checked in CI by `npm run check:architecture` (§7):
 packages/devices/atorch-s1w/
   package.json          "kraftverk": { "deviceType": "./src/type.ts", "ui": "./ui/index.ts" },
                         and both entries listed in "exports"
-  src/type.ts           export default defineDeviceType({...})   pure, no React
-  src/session.ts        talks to the device through its protocol, over the connection it is handed
-  src/identify.ts       reads the device's identity and model, over any of its methods
-  src/setup.ts          steps of its own, if any, on top of what its methods' layers supply
-  src/simulator.ts      a fake device: tests, and "try without hardware"
-  ui/index.ts           optional screens, export default { dashboard, settings, … };
+  src/type.ts           export default defineDeviceType({...})   pure, no React: identify,
+                        createSession, createSimulator and any setup steps of its own —
+                        in this file, or split beside it as the type grows
+  ui/index.ts           optional screens, export default { dashboard, settings, advanced };
                         the generic ones are used otherwise
   assets/               icon.svg, product.webp
   test/contract.test.ts checkDeviceTypeContract(type) from @kraftverk/device-sdk/testing
@@ -161,9 +163,8 @@ packages/devices/atorch-s1w/
 
 ## 4. The contract: `@kraftverk/device-sdk`
 
-The target contract. Step 4 (§8) moves today's SDK to it: `category` becomes
-a fixed id, and `protocols`, `config.transport`/`boundId` and the one `setup`
-guide give way to `connections`.
+The contract, API version 3, in `packages/device-sdk/src` (`device-type.ts`,
+`connection.ts`). Abridged: the comments in the code say the rest.
 
 ```ts
 export interface DeviceType<Config extends ConfigValues = ConfigValues> {
@@ -171,9 +172,9 @@ export interface DeviceType<Config extends ConfigValues = ConfigValues> {
   apiVersion: '3';
   kind: 'hardware' | 'service';
   meta: {
-    name: string; brand?: string; models?: string[];
+    name: string; brand?: string; models?: string[]; description?: string;
     category: CategoryId;            // from the SDK's fixed list: 'power-station', 'smart-plug', 'weather'
-    support: 'verified' | 'community' | 'experimental';
+    support: 'verified' | 'community' | 'experimental'; supportNote?: string;
     icon: string; image?: string; docsUrl?: string;
   };
   capabilities: CapabilityName[];    // what every device of this type offers
@@ -182,9 +183,10 @@ export interface DeviceType<Config extends ConfigValues = ConfigValues> {
   settings?: SettingsSpec;           // what the device remembers, read and written live
   config: ConfigSchema;              // the type's own per-device choices, e.g. a profile; never secrets
   connections: ConnectionMethod[];   // at least one; §4.3
-  identify(conn: OpenConnection): Promise<{ identity: string; model: string } | null>;
+  setup?: { steps?: SetupStep[]; saveAnyway?: string };   // steps of its own, whatever the method
+  identify(connection: OpenConnection, ctx: IdentifyContext): Promise<Identified>;  // { identity, model, summary }
   createSession(ctx: DeviceContext<Config>): Promise<DeviceSession>;
-  createSimulator(ctx: DeviceContext<Config>): Promise<DeviceSession>;
+  createSimulator(ctx: DeviceContext<Config>): Promise<DeviceSession>;   // ctx.connection is null
 }
 
 export type ConnectionMethod = {
@@ -193,26 +195,46 @@ export type ConnectionMethod = {
   protocol: string;                  // 'sydpower'
   transport: string;                 // 'mqtt' — where it may run follows from this, never declared
   recommended?: boolean;
+  address?: string;                  // a fixed one — a web API's origin — so nothing is chosen
   config?: ConfigSchema;             // the method's own choices; secrets come from the protocol
   steps?: SetupStep[];               // the type's additions to what the layers supply
 };
 
-export interface Transport {        // one package per transport, one entry per place it runs
+export type TransportDefinition = { // what a transport is, as data, the same on every platform
   id: string;                        // 'ble'
+  label: string;                     // 'Bluetooth'
+  channel: 'bytes' | 'messages' | 'http';
   exclusive: boolean;                // an address is one physical thing
-  available(): { ok: true } | { ok: false; reason: string };   // 'This server has no Bluetooth radio'
-  sightings?(filter: SightingFilter): AsyncIterable<Sighting[]>;  // server and native: a live list
-  choose?(filter: SightingFilter): Promise<Sighting | null>;      // web: the browser's own chooser
-  open(address: string, options: OpenOptions): Promise<Channel>;
-}
+  platforms: Platform[];             // where it has an implementation: 'server', 'web', 'native'
+  discovery: Partial<Record<Platform, 'list' | 'chooser' | 'none'>>;
+};
 
-export interface Protocol {         // pure: no I/O, no product meaning
-  id: string;                        // 'sydpower'
-  bindings: Record<string, Binding>; // per transport: topics, GATT service, framing, filter, instructions
-  recognise(sighting: Sighting): { name: string; identity?: string; model?: string } | null;
-  credentials?: ConfigSchema;        // what setup asks for; stored as connection secrets
-  guard?(frame: Uint8Array): string | null;  // a refusal, applied by every holder and the broker
-}
+export type Transport = {           // one running on one platform: a package entry per place
+  definition: TransportDefinition;
+  available(): Availability;         // { ok: false, reason: 'This server has no Bluetooth radio' }
+  start(): Promise<void>; stop(): Promise<void>;
+  watch?(filter, listener: (sightings: Sighting[]) => void): () => void;  // server and native: a live list
+  choose?(filter): Promise<Sighting | null>;                              // web: the browser's own chooser
+  open(address: string, options: OpenOptions): Promise<Channel>;         // bytes, messages or http
+  values?(): Record<string, string>;                                      // the broker's address, for instructions
+  diagnostics?: Record<string, (query) => Promise<unknown>>;              // read-only
+};
+
+export type Protocol = {            // pure: no I/O, no product meaning
+  id: string; label: string;         // 'sydpower'
+  bindings: Record<string, Binding>; // per transport: open options, filter, recognise, instructions,
+                                     // parseAddress, and a message broker's policy
+  credentials?: { schema: ConfigSchema; actions?: SetupAction[] };  // stored as connection secrets
+  guard?(payload: Uint8Array): string | null;  // a refusal, applied by every holder and the broker
+};
+
+export type OpenConnection = {      // what identify and a session are handed, wherever it is held
+  method: string; protocol: string; transport: string; address: string;
+  channel: Channel;                  // opened by openChannel(): the binding, guarded
+  config: ConfigValues;              // the method's config and the protocol's non-secret credentials
+  secrets: { get(field: string): string | null };  // the connection's own, from wherever it is held
+  platform: Platform;
+};
 
 export interface DeviceSession {
   health(): ConnectionHealth;
@@ -220,20 +242,29 @@ export interface DeviceSession {
   capability<N extends CapabilityName>(name: N): CapabilityImpl[N] | null;
   readSettings?(): ConfigValues | null;                    // null until read — never defaults
   writeSettings?(patch: ConfigValues): Promise<ConfigValues | null>;
+  identity?(): { id: string | null; name: string | null };  // what the device says it is, once it has
+  advanced?: Record<string, AdvancedAction>;               // a register dump: /devices/:id/advanced/:name
   close(): Promise<void>;
 }
 
 export interface DeviceContext<Config> {
   deviceId: SavedDeviceId;
   config: Config;                    // this device's own, validated
-  connection: OpenConnection;        // the method in use, already open, speaking its protocol
-  secrets: { get(field: string): string | null };  // the connection's own, from wherever it is held
-  store: KeyValueStore;              // this device's own
-  log: Logger;
-  schedule(everyMs: number, task: () => Promise<void>): void;  // cancelled on close
+  connection: OpenConnection | null; // the method in use, already open; null for a simulator
+  store: DeviceStore;                // this device's own
+  log: DeviceLogger;
+  schedule(everyMs: number, task: () => void | Promise<void>): void;  // cancelled on close
+  emit(event: DeviceEvent): void;    // lands in the audit timeline
   readOnly: boolean;                 // every hardware write is refused
+  allowRawFrames: boolean;           // bringing up an unfamiliar unit; the guard still applies
+  platform: Platform;
 }
 ```
+
+Every holder opens a connection the same way, with the SDK's `openChannel`:
+the protocol's binding, over the holder's own transport, and the channel
+wrapped by `guardChannel`, so the protocol's guard sees every frame whatever
+code sends it.
 
 Three properties carry the design: everything is **per device** and **per
 connection**, a session exposes **capabilities** and never product methods, and
@@ -281,8 +312,9 @@ Standard ids start small and grow only when something needs them:
 `battery.soc`, `battery.capacity`, `power.in`, `power.in.ac`, `power.in.solar`,
 `power.out`, `power.draw`, `energy.total`, `voltage.ac`, `grid.present`,
 `switch.on`, `weather.temp`, `weather.cloud`, and `outlet.<id>.on` and
-`outlet.<id>.power` for each outlet. `weather.irradiance` arrives with step 13,
-with the measurement kind it needs. A standard id has one unit and kind, and a
+`outlet.<id>.power` for each outlet. `weather.irradiance`, with the measurement
+kind it needs, comes with the first recipe that needs it (step 14), not before:
+nothing reads it yet. A standard id has one unit and kind, and a
 type that claims it must use them, so two devices share an axis without
 conversion; `validateDeviceType` checks it.
 
@@ -367,7 +399,7 @@ sessions          (… as today, + client_id → client)
 - **Retired by the migrations** (§8, steps 5 and 9): `device.type`, `device.model`,
   `device.driver`, `device.config.transport` and `.boundId`, `plugin_config`,
   `plugin_secret`, `plugin_kv`, `capability_grant`, `active_provider`, and the
-  `relay.stationDeviceId` app-state key.
+  `gridRelay.stationDeviceId` app-state key.
 
 **Every migration is safe for the owner's real data:**
 
@@ -377,7 +409,9 @@ sessions          (… as today, + client_id → client)
 2. Each migration runs in one transaction; a failure changes nothing.
 3. A migration that moves data is rehearsed against a copy of the real
    database before it ships (`npm run db:rehearse -- <copy>`), on the owner's
-   machine — the data never leaves it.
+   machine — the data never leaves it. The file named is only read; the report
+   gives every table's and every device's rows before and after, and fails on
+   history lost without a note in the audit timeline.
 
 ### 4.6 The gateway: every command, one path
 
@@ -531,16 +565,16 @@ holders and identity were added to the model (DATA-MODEL.md).
 | 2 | Contracts: `device-sdk` | M | done |
 | 3 | Discover device types; a session for every device | M | done |
 | 4 | Contracts for connections: categories, methods, transports, protocols, identity | M | done |
-| 5 | The data model: type ids, identities, connections, secrets, links, clients | L | done |
+| 5 | The data model: type ids, identities, connections, secrets, links, clients | L | code done, rehearsed on a development copy; production migrates at the deploy |
 | 6 | Adding a device: category → type → method → setup; a device's connections | M–L | done |
-| 7 | Transports as packages; the core loses its connectivity code | L | done |
+| 7 | Transports as packages; the core loses its connectivity code | L | code done; the station staying connected is checked at the deploy |
 | 8 | Protocols as packages: Sydpower and Tuya local | M | done |
 | 9 | Smart plugs: the ATORCH and the generic Tuya plug as device types | M | done |
 | 10 | The P280 as an ordinary device type | M | done |
 | 11 | One gateway for every command, in shared code | M | done |
 | 12 | Connections held by the app | L | done, native Bluetooth untested |
 | 13 | Services: weather first | S–M | done; SMHI next |
-| 14 | Automations | L | |
+| 14 | Automations | L | not started |
 | 15 | Make contributing easy | S | done |
 
 ### Step 0 — Words and one authority
@@ -571,8 +605,8 @@ the check.
 guides in `setup.ts`, the static checks in `validate.ts`, and the contract
 suite as `@kraftverk/device-sdk/testing` (`checkDeviceTypeContract`). Every
 type must ship a simulator (`createSimulator`). The v1 extension contract
-lives on in `src/v1/`, its capabilities renamed `PluginCapability`, until the
-plugins are gone. Controls already speak the new capability names — the P280's
+lived on in `src/v1/`, its capabilities renamed `PluginCapability`, until the
+plugins went in step 9. Controls already speak the new capability names — the P280's
 ports are `outlets`, a plug's relay is `switch` — and telemetry carries its
 standard ids.
 
@@ -590,7 +624,7 @@ standard ids.
   capabilities, config schema and setup steps without their functions.
 - **Deleted:** `STATION_MODELS`, the hand-built list. Unverified models are
   gone until someone with the hardware writes their type.
-- **App:** `npm run gen:devices` writes `client/src/generated/device-types.ts`,
+- **App:** `npm run gen:devices` writes `client/src/generated/registry.ts`,
   the only place the app imports device packages, replacing `screens.ts` and
   `plugins/panels.ts`. The add screen renders from `/api/device-types`.
 
@@ -799,8 +833,7 @@ device type, protocol, transport and service.
    about the house that the gateway, the energy-flow view and automations all
    read — not part of either device, and not inside one automation.
 2. **In-app Bluetooth** is not a special path. It is a connection held by the
-   app (step 12). Until then the existing path is frozen: it keeps working as
-   it is, and nothing new is built on it.
+   app (step 12), and the old path is gone.
 3. **Unverified station models** are removed. One comes back as its own type,
    reusing the P280's code, when someone with the hardware writes it.
 4. **Services** live in `packages/services/*`, found by the same discovery.
@@ -829,37 +862,47 @@ device type, protocol, transport and service.
     station's history in production.
 14. **Categories are a fixed list in the SDK.** A simulator is never something
     you can add: every type has one, for tests and "try without hardware".
-15. **Local mode stays: the app works with no server.** It exists today — the
-    app holds a station over Bluetooth itself, with no server selected (see the
-    README). In the model it is simply a client that is the only holder: it
-    offers the methods whose transports it has, and keeps the same records —
-    devices, connections — in its own storage instead of on a server. What it
-    cannot do is what only an always-running server can: history while the app
-    is closed, and automations. Until step 12 local mode is the existing in-app
-    Bluetooth path, frozen (decision 2); step 12 moves it onto the model.
+15. **Local mode stays: the app works with no server.** In the model it is
+    simply a client that is the only holder: it offers the methods whose
+    transports it has, and keeps the same records — devices, connections, their
+    secrets, links — in its own storage instead of on a server
+    (`client/src/runtime/local.ts`). What it cannot do is what only an
+    always-running server can: history while the app is closed, and
+    automations.
 
 ---
 
 ## 10. The architecture is done when…
 
-- [ ] Adding a device type means adding one package: no edits to `server/src`,
-      `client/src`, `packages/api-client` or `packages/ui`. The same for a
-      protocol or a transport.
-- [ ] `GET /api/device-types` lists exactly the installed packages, and the add
-      flow renders from it: category → type → method → setup.
-- [ ] Two devices of one type, each with its own connection and secrets, run at
-      once.
-- [ ] One device reached two ways (server Wi-Fi, phone Bluetooth) is one device
-      with one history.
-- [ ] Removing a device keeps its history; adding it again brings it back.
-- [ ] The core has no connectivity code; protocols and device types are pure,
+Ticked where the code does it and a test shows it; what only hardware can show
+is said beside it.
+
+- [x] Adding a device type means adding one package: no edits to `server/src`,
+      `client/src`, `packages/api-client` or `packages/ui` — only
+      `npm run gen:devices`, which rewrites the app's generated registry. The
+      same for a protocol or a transport (`npm run new:device` and its siblings
+      prove it on every run).
+- [x] `GET /api/device-types` lists exactly the installed packages, and the add
+      flow renders from it: category (or a search) → type → method → setup.
+- [x] Two devices of one type, each with its own connection and secrets, run at
+      once. *Shown with simulated devices; two real plugs side by side wait on
+      the ATORCH's local key.*
+- [x] One device reached two ways (server Wi-Fi, phone Bluetooth) is one device
+      with one history, and the reachable connection highest in the list is the
+      one in use. *Web Bluetooth is verified up to the browser's chooser; a phone
+      has not run it.*
+- [x] Removing a device keeps its history; adding it again brings it back.
+- [x] The core has no connectivity code; protocols and device types are pure,
       enforced in CI.
-- [ ] The leak baseline is empty, enforced in CI.
-- [ ] Every command goes through `/devices/:id/capabilities/…` and the gateway's
-      rules, wherever the connection is held.
-- [ ] Every device type has its methods, a simulator and a passing contract
-      test.
-- [ ] Weather is a service offering `weather.forecast`.
-- [ ] An automation connecting a forecast to a switch runs end to end, audited.
-- [ ] The app never says extension, plugin, driver, adapter, bind, transport or
+- [x] The leak baseline is empty, enforced in CI.
+- [x] Every command goes through `/devices/:id/capabilities/…` and the gateway's
+      rules, wherever the connection is held; every holder applies the
+      protocol's guard where it opens the channel.
+- [x] Every device type has its methods, a simulator and a passing contract
+      test, and one test checks every installed package
+      (`server/src/runtime/packages.test.ts`).
+- [x] Weather is a service offering `weather.forecast`.
+- [ ] An automation connecting a forecast to a switch runs end to end, audited
+      (step 14).
+- [x] The app never says extension, plugin, driver, adapter, bind, transport or
       protocol.

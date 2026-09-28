@@ -611,7 +611,7 @@ read-only.
 
 ## Method
 
-The Protocol screen drives this — it lives under a device's **Settings →
+The Registers screen drives this — it lives under a device's **Settings →
 Advanced**, not as a global tab:
 
 1. **Snapshot baseline** — captures all 160 registers

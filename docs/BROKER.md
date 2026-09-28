@@ -92,7 +92,7 @@ when a server is connected. To keep it stopped, stop the server first.
 
 The server fingerprints the broker's source files and compares that with what
 the running broker reports. If you have edited broker code since it started,
-the server says so — on startup, and on the Protocol screen — and **leaves it
+the server says so — on startup, and on the station's Registers screen — and **leaves it
 running**. Replacing it would drop the station, which is the decision this whole
 design exists to keep in your hands. Run `npm run broker:restart` when that is
 acceptable, and watch `npm run broker:logs` to see the station come back.

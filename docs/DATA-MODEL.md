@@ -574,7 +574,7 @@ erDiagram
     text chosen_at "2026-09-10T12:00:00Z"
   }
   app_state {
-    text key PK "relay.stationDeviceId · becomes a feeds link"
+    text key PK "gridRelay.stationDeviceId · becomes a feeds link"
     text value "power-station:16757b71"
     text updated_at "2026-09-27T19:45:00Z"
   }
@@ -606,7 +606,7 @@ erDiagram
 | `plugin_config` for `tuya-local-grid-relay` | a `device` of type `atorch.s1w`, config `{profile}`, with a `device_connection` (`lan`, `192.0.2.41`) |
 | `plugin_secret` | that connection's `connection_secret` |
 | `plugin_kv` | that device's `device_kv` |
-| `app_state['relay.stationDeviceId']` | a `device_link` of kind `feeds` |
+| `app_state['gridRelay.stationDeviceId']` | a `device_link` of kind `feeds` |
 | `capability_grant`, `active_provider` | dropped: a device's capabilities come from its type, and "which relay" is a link |
 | the fake grid relay plugin | the ATORCH type's simulator. A saved fake relay is dropped, with a line in the audit log. |
 | in-app Bluetooth, remembered only by the app | a `device_connection` held by that client |
