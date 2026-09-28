@@ -52,16 +52,12 @@ Under `NODE_ENV=test`, `KRAFTVERK_DB` is **required** — see the trap below.
 `.claude/launch.json` has `server:ui-check`: the server on port 3334 with a
 scratch database, for driving the app in a browser.
 
-**Production, 2026-09-27.** Shortly after step 3 was deployed, the station and a
-test plug were removed in the app. Removing a device then deleted its history,
-so the live database has no devices and no samples. The copy the server made
-before migration 6 — `/data/kraftverk.db.before-migration-6.2026-09-27T19-50-30Z`
-on the server's volume — still holds the station and all its history. Whether to
-restore it is the owner's decision. Migration 7 was deployed on 2026-09-28, so
-restoring now means: stop the server, put that copy in place of
-`/data/kraftverk.db`, and start it — migrations 6, 7 and 8 then run on it, each
-after its own backup, and the station comes back as a device with its Wi-Fi
-connection, identity and history. Anything recorded since the deploy is lost.
+**Production starts afresh.** The live database had no devices after
+2026-09-27, when removing a device still deleted its history. The owner decided
+not to restore the older copy: it is early in the project, and history from
+before the new data model is not worth keeping. The `.before-migration-*`
+copies on the server's volume can be deleted by the owner. Add the station
+again through the add flow.
 
 ## Traps
 
@@ -152,7 +148,6 @@ The server runs on Bun; `scripts/run-bun.mjs` finds it even when PATH is stale.
 
 ## Waiting on the owner
 
-- **Whether to restore the station's history** from the pre-migration copy (above).
 - **The ATORCH's local key, and the questions in [`ATORCH-S1W.md`](ATORCH-S1W.md) §7**,
   settled on the unit: which of the two Tuya devices on the LAN is the plug, and
   which datapoint switches its relay.
