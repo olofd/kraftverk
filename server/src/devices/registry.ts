@@ -1,14 +1,5 @@
-import type {
-  CapabilityName,
-  ConfigValues,
-  ConnectionHealth,
-  ControlSpec,
-  DeviceTypeMeta,
-  MetricSpec,
-  Reading,
-  SavedDeviceId,
-  SettingsSpec,
-} from '@kraftverk/device-sdk';
+import type { ConnectionView, DeviceView, LinkView } from '@kraftverk/api-contract';
+import type { ConfigValues, SavedDeviceId } from '@kraftverk/device-sdk';
 
 import type { TransportHost } from '../runtime/transports.ts';
 import type { DeviceCatalog, DeviceRecord } from './catalog.ts';
@@ -27,65 +18,9 @@ import type { DeviceTypeRegistry } from './types.ts';
  * connections say how it is reached and its links how it fits the house; its
  * session says what it is doing. Every device is described the same way, so
  * the app has one card, one detail screen and one chart for everything it will
- * ever show — and this file names no product.
+ * ever show — and this file names no product. The shapes it builds are the
+ * API contract's (`@kraftverk/api-contract`), shared with the app.
  */
-
-export type ConnectionView = {
-  id: string;
-  method: string;
-  /** "Wi-Fi", from the type. */
-  methodLabel: string;
-  transport: string;
-  /** Who holds it: the server, or one phone or browser. */
-  heldBy: { kind: 'server' } | { kind: 'client'; id: string; name: string };
-  address: string;
-  priority: number;
-  /**
-   * Whether it reaches the device right now: true, false, or null when nobody
-   * is trying it — a standby the server has not opened.
-   */
-  reachable: boolean | null;
-  /** The one the device is using right now: the reachable one highest in the list (docs/DATA-MODEL.md §4). */
-  inUse: boolean;
-  lastConnectedAt: string | null;
-  /** Which secrets it has, by field — never their values. */
-  secrets: string[];
-  config: Record<string, unknown>;
-};
-
-export type LinkView = {
-  id: string;
-  kind: string;
-  /** Whether this device is the link's source or its target. */
-  role: 'source' | 'target';
-  other: { id: SavedDeviceId; name: string };
-};
-
-/** A saved device, joined to what it is doing right now. */
-export type DeviceView = {
-  /** The catalog id: stable, the route segment, and what history is keyed by. */
-  id: SavedDeviceId;
-  typeId: string;
-  /** Whether an installed type claims it. */
-  installed: boolean;
-  name: string;
-  identity: string | null;
-  addedAt: string;
-  removedAt: string | null;
-  kind: 'hardware' | 'service';
-  meta: Pick<DeviceTypeMeta, 'name' | 'brand' | 'icon' | 'support'> & { category: string };
-  capabilities: readonly CapabilityName[];
-  measurements: readonly MetricSpec[];
-  controls: readonly ControlSpec[];
-  settings: SettingsSpec | null;
-  config: Record<string, unknown>;
-  connections: ConnectionView[];
-  links: LinkView[];
-  /** What the device's own tools are, by name, and which of them change it. */
-  advanced: { name: string; writes: boolean }[];
-  readings: Reading[];
-  health: ConnectionHealth;
-};
 
 export class DeviceRegistry {
   constructor(

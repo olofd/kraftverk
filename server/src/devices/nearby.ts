@@ -1,3 +1,4 @@
+import type { FoundView } from '@kraftverk/api-contract';
 import type { Sighting, SightingFilter } from '@kraftverk/device-sdk';
 
 import type { ProtocolRegistry } from '../runtime/protocols.ts';
@@ -15,19 +16,6 @@ import type { DeviceTypeRegistry } from './types.ts';
  */
 
 const IDLE_MS = 60_000;
-
-export type FoundView = {
-  transport: string;
-  protocol: string;
-  address: string;
-  name: string;
-  detail: string | null;
-  identity: string | null;
-  model: string | null;
-  seenAt: string;
-  /** The installed types it could be added as, by the method that reaches it. */
-  types: { typeId: string; methodId: string; name: string; category: string }[];
-};
 
 type Watching = { stop: () => void; sightings: readonly Sighting[] };
 

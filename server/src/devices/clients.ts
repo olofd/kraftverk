@@ -1,3 +1,4 @@
+import type { ClientRecord } from '@kraftverk/api-contract';
 import { randomBytes } from 'node:crypto';
 
 import { db } from '../history/db.ts';
@@ -12,16 +13,7 @@ import { db } from '../history/db.ts';
  * Firefox — so the add flow can offer what that client can hold.
  */
 
-export type ClientRecord = {
-  id: string;
-  userId: string;
-  name: string;
-  platform: 'web' | 'native';
-  /** What it said it can reach devices over, the last time it said. */
-  transports: string[];
-  createdAt: string;
-  lastSeenAt: string;
-};
+export type { ClientRecord };
 
 type Row = { id: string; user_id: string; name: string; platform: string; transports: string; created_at: string; last_seen_at: string };
 

@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto';
 
+import type { CheckOutcome, DraftView, HeldSetupInput, SaveInput, SightingView } from '@kraftverk/api-contract';
+
 import {
   findStep,
   isLinkKind,
@@ -64,25 +66,6 @@ export class SetupError extends Error {
   }
 }
 
-/** What the check step found. */
-export type CheckOutcome =
-  | { outcome: 'new'; summary: string; identity: string | null }
-  | { outcome: 'yours'; summary: string; device: { id: SavedDeviceId; name: string } }
-  | { outcome: 'removed'; summary: string; identity: string; devices: { id: SavedDeviceId; name: string; removedAt: string }[] }
-  | { outcome: 'other-model'; summary: string; model: string; type: { id: string; name: string } | null }
-  | { outcome: 'no-answer'; summary: string; saveAnyway: string | null };
-
-export type SightingView = {
-  address: string;
-  name: string;
-  detail: string | null;
-  identity: string | null;
-  seenAt: string;
-  rssi: number | null;
-  /** A device you already have is reached at this address. */
-  claimedBy: { id: SavedDeviceId; name: string } | null;
-};
-
 type Draft = {
   id: string;
   by: string;
@@ -103,22 +86,6 @@ type Draft = {
   sightings: readonly Sighting[];
   stopWatching: (() => void) | null;
   expiresAt: number;
-};
-
-export type DraftView = {
-  id: string;
-  typeId: string;
-  /** Null when this server will hold the connection; otherwise the app that will. */
-  heldBy: string | null;
-  methodId: string | null;
-  plan: SetupStepView[];
-  address: string | null;
-  device: Record<string, unknown>;
-  connection: Record<string, unknown>;
-  /** Secret fields held so far, by name. */
-  secrets: string[];
-  checked: CheckOutcome | null;
-  expiresAt: string;
 };
 
 export type SetupServiceDeps = {
@@ -144,15 +111,8 @@ export const SIMULATED_ADDRESS = 'simulated';
 
 const SIMULATED_VALUES: Readonly<Record<string, string>> = { host: 'this server’s address', port: 'its port' };
 
-export type SaveInput = {
-  name: string;
-  /** Add a new device; attach this connection to one you have; or bring a removed one back. */
-  mode: 'new' | 'attach' | 'restore';
-  deviceId?: string;
-  /** Save after a check the type expects to fail sometimes: a sleeping station. */
-  anyway?: boolean;
-  links?: { kind: string; other: string; role: 'source' | 'target' }[];
-};
+/** A save as the route has parsed it (`SaveInput` with its defaults applied). */
+export type SaveRequest = SaveInput & Required<Pick<SaveInput, 'name' | 'mode'>>;
 
 /** The schema of everything a connection stores for a method: its own config and its protocol's credentials. */
 export function connectionSchema(method: ConnectionMethod | null, protocol: Protocol | null): ConfigSchema {
@@ -242,19 +202,7 @@ export class SetupService {
    * for its own check, and saves the connection held by that app. Its secrets
    * never come here: they stay in the app.
    */
-  startHeld(input: {
-    typeId: string;
-    methodId: string;
-    by: string;
-    clientId: string;
-    address: string;
-    /** What the device said; null when it did not answer. */
-    identified: Identified | null;
-    /** Why it did not, when it did not. */
-    failure?: string;
-    device?: ConfigValues;
-    connection?: ConfigValues;
-  }): DraftView {
+  startHeld(input: HeldSetupInput & { by: string }): DraftView {
     const type = this.deps.types.get(input.typeId);
     if (!type) throw new SetupError(`Nothing installed here knows what "${input.typeId}" is`, 404);
     const method = type.connections.find((candidate) => candidate.id === input.methodId);
@@ -522,7 +470,7 @@ export class SetupService {
    * Saves: in one go, the device (or the one it turned out to be), its
    * connection, that connection's secrets, and its links. Then its session opens.
    */
-  async save(id: string, input: SaveInput): Promise<DeviceRecord> {
+  async save(id: string, input: SaveRequest): Promise<DeviceRecord> {
     const draft = this.#draft(id);
     const method = draft.method!;
     const checked = draft.checked;
@@ -575,7 +523,7 @@ export class SetupService {
     return record;
   }
 
-  #write(draft: Draft, input: SaveInput, deviceConfig: ConfigValues, connectionConfig: ConfigValues): { record: DeviceRecord; kind: string } {
+  #write(draft: Draft, input: SaveRequest, deviceConfig: ConfigValues, connectionConfig: ConfigValues): { record: DeviceRecord; kind: string } {
     const method = draft.method!;
     const checked = draft.checked!;
     const type = draft.type;

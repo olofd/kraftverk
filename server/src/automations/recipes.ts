@@ -1,3 +1,4 @@
+import type { AutomationMode, AutomationRun } from '@kraftverk/api-contract';
 import type { CapabilityName, ConfigSchema, ConfigValues, DeviceSession, SavedDeviceId, WeatherHour } from '@kraftverk/device-sdk';
 
 import { dayAfter, localTime, zonedInstant } from './time.ts';
@@ -14,7 +15,9 @@ import { dayAfter, localTime, zonedInstant } from './time.ts';
  * screen — dwell, freshness, read-only mode, verification and the audit.
  */
 
-export type AutomationMode = 'off' | 'observe' | 'armed';
+/** One run's result, as the API shows it. */
+export type RunResult = AutomationRun;
+export type { AutomationMode };
 
 export type AutomationRecord = {
   id: string;
@@ -56,17 +59,6 @@ export type Decision =
   | { kind: 'idle'; reason: string }
   /** It cannot tell — a forecast that is not there is not a sunny one. Nothing is done. */
   | { kind: 'unknown'; reason: string };
-
-export type RunOutcome =
-  | 'acted' // the gateway carried it out, verified
-  | 'unverified' // the gateway sent it, but the effect is not proven
-  | 'would-act' // observing: it would have acted
-  | 'idle' // the condition was not met
-  | 'unknown' // it could not tell
-  | 'refused' // the gateway said no
-  | 'failed'; // the command errored
-
-export type RunResult = { at: string; outcome: RunOutcome; summary: string };
 
 export type Recipe = {
   id: string;

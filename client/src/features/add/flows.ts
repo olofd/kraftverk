@@ -347,7 +347,7 @@ export class AppFlow implements SetupFlow {
       device: {
         id: input.mode === 'attach' ? input.deviceId : undefined,
         typeId: this.type.id,
-        name: input.name.trim() || this.type.meta.name,
+        name: input.name?.trim() || this.type.meta.name,
         identity,
         config: this.device as ConfigValues,
       },

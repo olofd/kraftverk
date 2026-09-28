@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@kraftverk/api-contract": "*",
     "@kraftverk/device-sdk": "*",
     "@kraftverk/gateway": "*"
   },

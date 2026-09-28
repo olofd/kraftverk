@@ -55,6 +55,7 @@ const CORE = [
   'client/src/',
   'client/app/',
   'packages/api-client/',
+  'packages/api-contract/',
   'packages/ui/',
   'packages/device-sdk/',
   'packages/gateway/',
@@ -207,6 +208,35 @@ function measure() {
   return { imports, leaks };
 }
 
+// --- one API contract ----------------------------------------------------------
+
+/**
+ * The server's HTTP shapes are declared once, in the contract, and imported by
+ * both sides. A shape declared again beside it is how the two drift apart
+ * silently — a field added on one side only — so it fails outright, with no
+ * baseline: there were never any to keep.
+ */
+const CONTRACT = 'packages/api-contract/src/index.ts';
+const CONTRACT_USERS = /^(server\/src|client\/src|client\/app|packages\/api-client\/src)\//;
+
+function contractCopies() {
+  const declared = new Set([...readFileSync(resolve(ROOT, CONTRACT), 'utf8').matchAll(/^export (?:type|interface) (\w+)\b/gm)].map((match) => match[1]));
+  const copies = [];
+  for (const file of sourceFiles()) {
+    if (!CONTRACT_USERS.test(file) || TEST.test(file)) continue;
+    let source;
+    try {
+      source = readFileSync(resolve(ROOT, file), 'utf8');
+    } catch {
+      continue;
+    }
+    for (const match of source.matchAll(/^export (?:type|interface) (\w+)\b/gm)) {
+      if (declared.has(match[1])) copies.push(`${file}: declares ${match[1]}, which ${CONTRACT} declares — import it from @kraftverk/api-contract`);
+    }
+  }
+  return copies;
+}
+
 // --- comparing with the baseline ------------------------------------------
 
 function compare(baseline, current) {
@@ -267,6 +297,13 @@ const rebaseline = process.argv.includes('--rebaseline');
 const baseline = load();
 const current = measure();
 const { worse, better } = compare(baseline, current);
+
+const copies = contractCopies();
+if (copies.length) {
+  console.error('An API shape is declared twice:\n');
+  for (const line of copies) console.error(`  ✗ ${line}`);
+  process.exit(1);
+}
 
 const summary =
   `${importCount(current.imports)} boundary exceptions, ` +

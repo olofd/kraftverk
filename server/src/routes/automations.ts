@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
+import type { AutomationChanges, AutomationView, NewAutomation, RecipeView } from '@kraftverk/api-contract';
 import { savedDeviceId, validateConfig, type ConfigValues, type SavedDeviceId } from '@kraftverk/device-sdk';
 import { CONFIRMATION } from '@kraftverk/gateway';
 
@@ -25,7 +26,7 @@ const params = z.record(z.string().min(1).max(40), z.union([z.string().max(200),
 export function automationRoutes({ automations, engine, catalog, sessions }: AppDeps): Hono {
   const api = new Hono();
 
-  const view = (automation: AutomationRecord) => {
+  const view = (automation: AutomationRecord): AutomationView => {
     const recipe = recipeOf(automation.recipe);
     const name = (role: string) => {
       const id = automation.roles[role];
@@ -61,13 +62,15 @@ export function automationRoutes({ automations, engine, catalog, sessions }: App
   };
 
   api.get('/automations/recipes', (c) =>
-    c.json({ recipes: RECIPES.map(({ id, label, description, roles: recipeRoles, params: schema }) => ({ id, label, description, roles: recipeRoles, params: schema })) })
+    c.json({
+      recipes: RECIPES.map(({ id, label, description, roles: recipeRoles, params: schema }): RecipeView => ({ id, label, description, roles: recipeRoles, params: schema })),
+    })
   );
 
   api.get('/automations', (c) => c.json({ automations: automations.list().map(view) }));
 
   api.post('/automations', async (c) => {
-    const input = await body(
+    const input: NewAutomation = await body(
       c,
       z.object({ name: z.string().trim().min(1).max(80), recipe: z.string().min(1).max(40), roles, params, timeZone: z.string().min(1).max(64) }).strict()
     );
@@ -81,7 +84,7 @@ export function automationRoutes({ automations, engine, catalog, sessions }: App
   api.patch('/automations/:id', async (c) => {
     const current = automations.get(c.req.param('id'));
     if (!current) throw new HTTPException(404, { message: 'No such automation' });
-    const input = await body(
+    const input: AutomationChanges = await body(
       c,
       z
         .object({

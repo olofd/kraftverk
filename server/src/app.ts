@@ -4,6 +4,8 @@ import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { ZodError } from 'zod';
 
+import type { VersionInfo } from '@kraftverk/api-contract';
+
 import pkg from '../package.json' with { type: 'json' };
 import { hostGuard } from './auth/host.ts';
 import { CLIENT_HEADER, createAuth } from './auth/routes.ts';
@@ -22,19 +24,6 @@ import { automationRoutes } from './routes/automations.ts';
 export type { AppDeps } from './routes/shared.ts';
 
 /** What `GET /api/version` says about this server. */
-export type VersionInfo = {
-  name: string;
-  version: string;
-  runtime: string;
-  startedAt: string;
-  uptimeSeconds: number;
-  /** Every device is simulated: no hardware is reached. A launch decision. */
-  simulate: boolean;
-  /** Which transports this server may use. */
-  transports: string[];
-  readOnly: boolean;
-};
-
 /** Ports the Expo dev server serves the web app on. */
 const DEV_PORTS = new Set(['8081', '19006']);
 

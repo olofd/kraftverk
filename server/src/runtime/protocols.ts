@@ -1,3 +1,4 @@
+import type { Refused } from '@kraftverk/api-contract';
 import { validateProtocol, type Protocol } from '@kraftverk/device-sdk';
 
 import { findPackages, load, ROOTS } from './packages.ts';
@@ -11,7 +12,7 @@ import { findPackages, load, ROOTS } from './packages.ts';
  * credentials say what setup must ask for. The device types speak it themselves.
  */
 
-export type Refused = { source: string; problems: string[] };
+export type { Refused };
 
 export class ProtocolRegistry {
   #protocols = new Map<string, Protocol>();

@@ -111,6 +111,7 @@ packages/
   devices/tuya-plug/     @kraftverk/device-tuya-plug     smart-plug: the generic Tuya energy socket, with profiles
   services/open-meteo/   @kraftverk/service-open-meteo   weather, a service
   gateway/               @kraftverk/gateway              the action gateway's rules: pure, run by whichever holder has the connection
+  api-contract/          @kraftverk/api-contract         the HTTP API's shapes, types only: declared once, imported by the server and the app
   api-client/  ui/       shared by the app; know no device type
 server/  client/         the core; know no transport, protocol or device type by name
 ```
@@ -509,6 +510,25 @@ kept as the record of why the layout is what it is.
 | F16 | The smart plugs are plugins playing a "grid relay" role: device, protocol and role in one package, one plug per install | 9 |
 | F17 | In-app Bluetooth is a separate code path that the server knows nothing about | 12 |
 
+**A second audit, 2026-09-28**, after steps 0–15 were deployed. The layering
+held; what it found is inside the layers — things written twice, and promises
+the code kept only in part.
+
+| | Finding | Step |
+|---|---|---|
+| G1 | Two holder runtimes: the server's and the app's session lifecycles are written twice and have drifted — only the server has the open timeout and the wrong-device check | 17 |
+| G2 | Two setup engines: the check's judgement (new, yours, another model) is written twice | 17 |
+| G3 | The API's shapes are declared twice, by hand, on the server and in the app | 16 |
+| G4 | Settings writes bypass the gateway; the app's path skips the schema and the dangerous-field confirmation, and nothing verifies them | 18 |
+| G5 | The gateway names `switch` and `outlets`: a new actuating capability means editing it | 18 |
+| G6 | The app has no tests, though it now runs sessions, the gateway, setup and failover | 17 |
+| G7 | History is 14 days of raw samples and nothing after; the audit timeline grows forever | 19 |
+| G8 | No app–server compatibility check: a store build can lag the server's installed types | 20 |
+| G9 | App-held secrets are stored in plaintext in the app | 21 |
+| G10 | Retired vocabulary in configuration: `STATION_DRIVER`, `--driver` | 22 |
+| G11 | The app's device state and add screen are too big to change safely | 22 |
+| G12 | Segmented controls cannot be operated from a keyboard or a screen reader | 22 |
+
 ---
 
 ## 7. Guardrails in CI
@@ -577,6 +597,13 @@ holders and identity were added to the model (DATA-MODEL.md).
 | 13 | Services: weather first | S–M | done; SMHI next |
 | 14 | Automations | L | done: recipes; rules next |
 | 15 | Make contributing easy | S | done |
+| 16 | One API contract | S | done |
+| 17 | One holder core, and the app tested | L | |
+| 18 | The gateway knows capabilities, not names; settings go through it | M | |
+| 19 | History that lasts | M | |
+| 20 | App and server agree on what they speak | S | later |
+| 21 | Secrets at rest in the app | S | |
+| 22 | Loose ends: configuration words, big modules, accessibility | M | later |
 
 ### Step 0 — Words and one authority
 This document; banners on the ones it replaces. **Done when** there is one
@@ -842,6 +869,50 @@ recipe (PROJECT-BRIEF.md), which needs the arming checklist, and rules.
 `npm run new:device`, `new:protocol` and `new:transport` scaffolds, a
 `docs/ADDING-A-DEVICE.md` guide, and the contract suite run in CI for every
 device type, protocol, transport and service.
+
+### Step 16 — One API contract (G3)
+`packages/api-contract`: every shape the HTTP API takes and answers, types
+only, imported by the server and by `@kraftverk/api-client`. The server
+validates bodies with its own schemas, typed against the contract's inputs.
+`npm run check:architecture` fails when a shape the contract declares is
+declared again in the server or the app. **Done when** each shape is declared
+once, and a changed field fails the typecheck on both sides.
+
+*Done.* It caught two drifts on the way in: `SaveInput.mode` was required on
+one side and optional on the other, and a recipe's role capabilities were
+read-only on one side only.
+
+### Step 17 — One holder core, and the app tested (G1, G2, G6)
+A pure `packages/holder` with what every holder does: open a connection,
+build the device's context, schedule its work, time out an open, refuse a
+connection that reaches a different device, fail over after two minutes, the
+hold rule, and the check's judgement. The server and the app inject only what
+differs — where the store, secrets and audit go. **Done when** both holders
+run devices through the same code and `client/src/runtime` has tests.
+
+### Step 18 — The gateway knows capabilities, not names (G5, G4)
+Each actuating command in the capability library says how it is read and
+sent; the gateway calls that. Settings writes become a gateway intent:
+validated against the schema, refused while read-only, confirmed for
+dangerous fields, verified by reading back, audited — from either holder.
+**Done when** `gateway.ts` names no capability.
+
+### Step 19 — History that lasts (G7)
+Hourly roll-ups kept for two years beside 14 days of raw samples; the audit
+timeline kept for a year. **Done when** a 30-day chart draws from the roll-ups.
+
+### Step 20 — App and server agree on what they speak (G8)
+An API version and the installed types in `/version`; an app that lacks a
+type shows that one device as needing an update. Later: there is no store
+build yet.
+
+### Step 21 — Secrets at rest in the app (G9)
+A secure store on a phone, and a non-extractable key on the web, behind one
+vault. **Done when** no secret sits in the app's storage in plaintext.
+
+### Step 22 — Loose ends (G10–G12)
+`KRAFTVERK_TRANSPORTS` as the only documented setting, the app's device
+state and add screen split, and segmented controls a keyboard can reach.
 
 ---
 

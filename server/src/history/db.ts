@@ -1,3 +1,4 @@
+import type { AuditEntry } from '@kraftverk/api-contract';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
@@ -471,7 +472,8 @@ export function openSecret(stored: string, encrypted: boolean): string | null {
 
 // --- audit -----------------------------------------------------------------
 
-export type AuditEntry = {
+/** One line to add to the audit timeline. What the API returns is the contract's `AuditEntry`. */
+export type AuditInput = {
   at: string;
   kind: string;
   actor: string;
@@ -480,7 +482,7 @@ export type AuditEntry = {
   detail?: unknown;
 };
 
-export function audit(entry: AuditEntry): void {
+export function audit(entry: AuditInput): void {
   db()
     .query('INSERT INTO audit (at, kind, actor, resource, summary, detail) VALUES (?, ?, ?, ?, ?, ?)')
     .run(

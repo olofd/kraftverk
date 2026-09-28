@@ -22,6 +22,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@kraftverk/api-contract": "*",
     "@kraftverk/device-sdk": "*",
     "@kraftverk/gateway": "*",
     "hono": "^4.13.1",

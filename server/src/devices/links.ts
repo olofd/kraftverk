@@ -1,3 +1,4 @@
+import type { LinkRecord } from '@kraftverk/api-contract';
 import { randomBytes } from 'node:crypto';
 
 import { LINK_KINDS, type LinkKind, type SavedDeviceId } from '@kraftverk/device-sdk';
@@ -11,13 +12,7 @@ import { db } from '../history/db.ts';
  * AC input; the energy view; any number of automations.
  */
 
-export type LinkRecord = {
-  id: string;
-  kind: LinkKind;
-  sourceId: SavedDeviceId;
-  targetId: SavedDeviceId;
-  createdAt: string;
-};
+export type { LinkRecord };
 
 type Row = { id: string; kind: string; source_id: string; target_id: string; created_at: string };
 

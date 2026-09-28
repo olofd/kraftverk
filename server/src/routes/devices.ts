@@ -2,28 +2,12 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import {
-  CATEGORIES,
-  describeDeviceType,
-  secretFields,
-  validateConfig,
-  type Availability,
-  type DeviceTypeView,
-} from '@kraftverk/device-sdk';
+import type { DeviceTypeListing } from '@kraftverk/api-contract';
+import { CATEGORIES, describeDeviceType, secretFields, validateConfig, type Availability } from '@kraftverk/device-sdk';
 
 import { actorOf } from '../auth/routes.ts';
 import { series } from '../history/sampler.ts';
 import { auditDevice, body, deviceOr404, type AppDeps } from './shared.ts';
-
-/** A connection method as the add screen needs it: and whether this server can hold it. */
-export type MethodAvailability = { server: Availability };
-
-export type DeviceTypeListing = DeviceTypeView & {
-  /** Per method id: whether this server can hold such a connection, and if not, why. */
-  availability: Record<string, MethodAvailability>;
-  /** Found while checking the type, not serious enough to refuse it. */
-  warnings: readonly string[];
-};
 
 /**
  * The devices you own, whatever they are. Described identically, so the app has

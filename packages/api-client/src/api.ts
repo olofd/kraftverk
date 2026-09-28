@@ -10,9 +10,10 @@ import type {
   AccountDetail,
   AuditEntry,
   AuthState,
-  AutomationMode,
+  AutomationChanges,
   AutomationRun,
   AutomationView,
+  NewAutomation,
   CheckOutcome,
   ClientRecord,
   DeviceHistory,
@@ -301,7 +302,7 @@ export async function fetchAutomations(signal?: AbortSignal) {
   return data.automations;
 }
 
-export async function createAutomation(input: { name: string; recipe: string; roles: Record<string, string>; params: ConfigValues; timeZone: string }) {
+export async function createAutomation(input: NewAutomation) {
   const { data } = await api.post<AutomationView>('/automations', input);
   return data;
 }
@@ -313,7 +314,7 @@ export async function createAutomation(input: { name: string; recipe: string; ro
  */
 export async function updateAutomation(
   id: string,
-  changes: { name?: string; roles?: Record<string, string>; params?: ConfigValues; timeZone?: string; mode?: AutomationMode; confirmation?: string }
+  changes: AutomationChanges
 ): Promise<{ automation: AutomationView } | { needsConfirmation: true; reason: string }> {
   const response = await api.patch<AutomationView | { error: string; needsConfirmation?: boolean }>(`/automations/${encodeURIComponent(id)}`, changes, {
     validateStatus: (status) => status === 200 || status === 409,

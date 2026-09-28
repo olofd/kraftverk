@@ -1,3 +1,5 @@
+import type { SeriesPoint } from '@kraftverk/api-contract';
+
 import { db } from './db.ts';
 import type { DeviceRegistry } from '../devices/registry.ts';
 
@@ -101,8 +103,6 @@ export class Sampler {
     db().query('DELETE FROM sample WHERE at < ?').run(cutoff);
   }
 }
-
-export type SeriesPoint = { at: string; value: number };
 
 /**
  * One measurement over a window, thinned to at most `points`.
