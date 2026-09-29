@@ -13,9 +13,11 @@
  */
 
 export * from './identity.ts';
+export * from './values.ts';
 export * from './schema.ts';
 export * from './telemetry.ts';
 export * from './capabilities.ts';
+export * from './standards.ts';
 export * from './actuators.ts';
 export * from './categories.ts';
 export * from './links.ts';

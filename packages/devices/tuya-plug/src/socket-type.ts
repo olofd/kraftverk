@@ -42,9 +42,9 @@ type SocketConfig = {
 const TELEMETRY: MetricSpec[] = [
   { key: 'watts', label: 'Power', unit: 'W', kind: 'power', metric: 'power.draw', precision: 0, primary: true },
   { key: 'volts', label: 'Voltage', unit: 'V', kind: 'voltage', metric: 'voltage.ac', precision: 1 },
-  { key: 'amps', label: 'Current', unit: 'A', kind: 'current', precision: 2 },
-  { key: 'kwh', label: 'Energy', unit: 'kWh', kind: 'energy', metric: 'energy.total', precision: 2, cumulative: true },
-  { key: 'hz', label: 'Frequency', unit: 'Hz', kind: 'frequency', precision: 1 },
+  { key: 'amps', label: 'Current', unit: 'A', kind: 'current', metric: 'current.ac', precision: 2 },
+  { key: 'kwh', label: 'Energy', unit: 'kWh', kind: 'energy', metric: 'energy.total', precision: 2, stateClass: 'total_increasing' },
+  { key: 'hz', label: 'Frequency', unit: 'Hz', kind: 'frequency', metric: 'frequency.ac', precision: 1 },
   { key: 'relay', label: 'Relay', unit: '', kind: 'state', metric: 'switch.on' },
 ];
 

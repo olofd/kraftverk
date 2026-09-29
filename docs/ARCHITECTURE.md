@@ -274,18 +274,31 @@ nothing a device type runs knows **where** it is running.
 
 ### 4.1 Capabilities: a small standard library
 
-Each capability has a typed interface, a safety level the gateway enforces, and
-the standard telemetry it implies. The set grows deliberately, one reviewed
-addition at a time.
+A capability is **declared the way a Matter cluster is** (step 23): the
+attributes it binds, each to a standard meaning; the commands it accepts, each
+with typed arguments from the one value system (`values.ts`), a safety level
+the gateway enforces, and the attribute it `sets` — which is how the gateway
+verifies it; and queries for data that is not a value now. Each also has a
+typed interface its sessions implement, until devices are made of parts
+(step 26). The set grows deliberately, one reviewed addition at a time, and a
+new capability borrows a Matter cluster's meaning where one exists.
 
-| Capability | Interface (sketch) | Safety | Standard telemetry |
+| Capability | Attributes (meaning) | Commands | Safety |
 |---|---|---|---|
-| `switch` | `state()`, `set(on)`, `bootBehaviour()` | confirm turning off when critical | `switch.on` |
-| `powerMeter` | `read(): { watts, volts?, amps?, kwh? }` | read-only | `power.draw` |
-| `battery` | `read(): { socPercent, capacityWh }` | read-only | `battery.soc` |
-| `outlets` | `read()`, `set(outletId, on)` | confirm turning off when critical | `outlet.<id>.on`, `outlet.<id>.power` |
-| `acInput` | `read(): { present, watts }` | read-only | `grid.present` |
-| `weather.forecast` | `hourly(hours): WeatherHour[]` | read-only | — |
+| `switch` | `on` (`switch.on`, required) | `set(on)` sets `on` | confirm turning off when critical |
+| `powerMeter` | `watts` (`power.draw`, required), `volts`, `amps`, `hz`, `kwh` | — | read-only |
+| `battery` | `soc` (`battery.soc`, required), `capacity` | — | read-only |
+| `outlets` | per outlet, `outlet.<id>.on` and `.power` — retires in step 26 | `set(outlet, on)` | confirm turning off when critical |
+| `acInput` | `present` (`grid.present`, required), `watts` | — | read-only |
+| `weather.forecast` | — | query `hourly(hours)` | read-only |
+
+**Projections** (`standards.ts`): every standard meaning, quantity, state class
+and capability says what it is in Home Assistant (platform, device class,
+state class, unit) and in Matter (cluster, attribute, scale) — or, where
+there is no counterpart, why. The maps are typed over the whole vocabulary, so
+a meaning or capability without a projection does not compile, and tests
+check the units and clusters agree. A bridge to either standard is a lookup
+in this table.
 
 "Critical" is decided by the gateway at the time: a switch whose device feeds
 another through a link, or an outlet carrying a load. Every read is stamped
@@ -301,7 +314,12 @@ Nothing in the core knows any of those products.
 ### 4.2 Telemetry: standard names, local keys
 
 A `MetricSpec` is a measurement (`key`, label, unit, kind, precision) plus an
-optional `metric`: the standard id it means, when one applies.
+optional `metric`, the standard id it means when one applies, and a **state
+class** — `measurement`, `total` (a running amount that may restart, today's
+energy) or `total_increasing` (a lifetime counter) — the same three Home
+Assistant uses. The kinds are the quantities a value can be of: power, energy,
+percent, voltage, current, temperature, frequency, duration, humidity,
+illuminance, signal, and on/off state.
 
 - **`key` is what is stored.** History is keyed by `(device, key)`, and a key
   never changes once a type has shipped — renaming one would orphan its
@@ -312,11 +330,12 @@ optional `metric`: the standard id it means, when one applies.
 
 Standard ids start small and grow only when something needs them:
 `battery.soc`, `battery.capacity`, `power.in`, `power.in.ac`, `power.in.solar`,
-`power.out`, `power.draw`, `energy.total`, `voltage.ac`, `grid.present`,
+`power.out`, `power.draw`, `energy.total`, `voltage.ac`, `current.ac`,
+`frequency.ac`, `grid.present`,
 `switch.on`, `weather.temp`, `weather.cloud`, and `outlet.<id>.on` and
 `outlet.<id>.power` for each outlet. `weather.irradiance`, with the measurement
 kind it needs, comes with the first recipe that needs it (step 14), not before:
-nothing reads it yet. A standard id has one unit and kind, and a
+nothing reads it yet. A standard id has one unit, kind and state class, and a
 type that claims it must use them, so two devices share an axis without
 conversion; `validateDeviceType` checks it.
 
@@ -478,7 +497,7 @@ standard most devices will speak.
 | **A device** | Identity read from the device; a type; a name; config | Device registry: identifiers, connections, manufacturer, model, firmware, serial, `via_device` | A node: Basic Information (vendor, product, serial, versions) |
 | **Its parts** | Flat. Outlets are a name pattern, `outlet.<id>.on` | Many entities on one device | **Endpoints**, each with its own clusters |
 | **What it can do** | Capabilities, from a small library | Entity platforms (switch, sensor, light…) and `supported_features` | **Clusters**: attributes, commands, events |
-| **What it measures** | `MetricSpec`: stable key, standard metric, kind, unit, `cumulative` | Sensor: `device_class`, `state_class`, unit, `entity_category`; enum and text states | Attributes, typed, enums included |
+| **What it measures** | `MetricSpec`: stable key, standard metric, kind, unit, state class (since step 23) | Sensor: `device_class`, `state_class`, unit, `entity_category`; enum and text states | Attributes, typed, enums included |
 | **Where the description comes from** | Declared by the type, fixed | Integrations create entities at runtime from what the device reports | Read from the node's descriptor |
 | **Things that happen** | Log lines to the timeline | Events, event entities, device triggers | Events |
 | **Reaching it** | Connection methods — protocol over transport — several per device, failover across holders | One config entry per device; `iot_class`; discovery matchers in the manifest | Operational discovery over IP; commissioning over BLE |
@@ -595,18 +614,18 @@ What it found is in the data model.
 
 | | Finding | Step |
 |---|---|---|
-| H1 | Parts are encoded in names. Outlets exist only as the metric pattern `outlet.<id>.on`, an `outlets` capability with its own `set(id, on)`, and a `target` parameter; nothing else a device has several of — battery packs, solar inputs, a strip's sockets — can be said | 23 |
-| H2 | A device's description is fixed per type. The P280's expansion batteries (none to several) exist only in its own screen: no history, nothing an automation or a bridge can see. Every standard describes its devices at runtime, so none of them can be a type today | 25 |
-| H3 | Values are numbers or booleans (`Reading.value`, `sample.value REAL`): no enum — a station's mode, a fault — and no text | 24 |
+| H1 | Parts are encoded in names. Outlets exist only as the metric pattern `outlet.<id>.on`, an `outlets` capability with its own `set(id, on)`, and a `target` parameter; nothing else a device has several of — battery packs, solar inputs, a strip's sockets — can be said | 24, 26 |
+| H2 | A device's description is fixed per type. The P280's expansion batteries (none to several) exist only in its own screen: no history, nothing an automation or a bridge can see. Every standard describes its devices at runtime, so none of them can be a type today | 24, 25 |
+| H3 | Values are numbers or booleans (`Reading.value`, `sample.value REAL`): no enum — a station's mode, a fault — and no text | 23, 24 |
 | H4 | No device information: firmware, hardware revision and serial are not in the model; the P280's firmware versions are a register tool | 24 |
-| H5 | No events: a device cannot say that something happened — a button, an overload trip, a fault — except as a log line nothing can trigger on | 26 |
-| H6 | Thin measurement semantics: `cumulative` cannot say a counter that resets daily; nothing marks a diagnostic value (signal strength) to keep it off the dashboard; nine kinds, none for the first sensor that arrives | 24 |
-| H7 | Automations belong to the core (`server/src/automations/recipes.ts`): a package cannot bring the automations its device is for | 28 |
-| H8 | Types cannot evolve: no version, no migration of a saved device's config or store when its type changes | 29 |
-| H9 | No shared vocabulary with the standards: capabilities and kinds map to nothing in Home Assistant or Matter, so every bridge would invent its own | 27 |
+| H5 | No events: a device cannot say that something happened — a button, an overload trip, a fault — except as a log line nothing can trigger on | 24, 29 |
+| H6 | Thin measurement semantics: `cumulative` cannot say a counter that resets daily; nothing marks a diagnostic value (signal strength) to keep it off the dashboard; nine kinds, none for the first sensor that arrives | 23, 24 |
+| H7 | Automations belong to the core (`server/src/automations/recipes.ts`): a package cannot bring the automations its device is for | 29 |
+| H8 | Types cannot evolve: no version, no migration of a saved device's config or store when its type changes | 24 |
+| H9 | No shared vocabulary with the standards: capabilities and kinds map to nothing in Home Assistant or Matter, so every bridge would invent its own | 23 |
 | H10 | Refinement exists only inside the Tuya package: its profiles make the ATORCH a layout over the generic socket — standards the floor, packages the ceiling — but nothing lets a package refine a device another protocol found | 30 |
-| H11 | Discovery and reach under-declared: filters know Bluetooth services, name prefixes and UDP ports, not manufacturer ids, mDNS, DHCP or USB; nothing declares whether a method needs a cloud, though the README promises nothing leaves the network unless setup needs it | 31 |
-| H12 | Transports keep no state: a Matter fabric, a Bluetooth bond or a broker's credentials have nowhere to live | 31 |
+| H11 | Discovery and reach under-declared: filters know Bluetooth services, name prefixes and UDP ports, not manufacturer ids, mDNS, DHCP or USB; nothing declares whether a method needs a cloud, though the README promises nothing leaves the network unless setup needs it | 30 |
+| H12 | Transports keep no state: a Matter fabric, a Bluetooth bond or a broker's credentials have nowhere to live | 30 |
 | H13 | Quality is implicit: the support level is the only signal; no checklist a package can be measured against, no diagnostics bundle for a *My device differs* report | 32 |
 
 ---
@@ -684,16 +703,18 @@ holders and identity were added to the model (DATA-MODEL.md).
 | 20 | App and server agree on what they speak | S | later |
 | 21 | Secrets at rest in the app | S | done |
 | 22 | Loose ends: configuration words, big modules, accessibility | M | later |
-| 23 | Parts: a device is made of parts (H1) | M | |
-| 24 | Richer values, and what a device says about itself (H3, H4, H6) | M | |
-| 25 | Devices describe themselves (H2) | M–L | |
-| 26 | Events (H5) | S–M | |
-| 27 | One vocabulary with the standards (H9) | S–M | |
-| 28 | Packages bring their automations (H7) | M | |
-| 29 | Types that evolve (H8) | S | |
-| 30 | Refinement: standards the floor, packages the ceiling (H10) | M | |
-| 31 | Discovery and reach declared; transports keep state (H11, H12) | S–M | |
-| 32 | Rails for contributors (H13) | S–M | |
+| 23 | The model, 1: one value system; declarative capabilities; projections into Home Assistant and Matter | M | done |
+| 24 | The model, 2: parts, attributes, device information, events, type versions; the v3 adapter | L | |
+| 25 | Storage and holders carry descriptions | M–L | |
+| 26 | Packages on the new model; the gateway typed and generic | L | |
+| 27 | API v4: descriptions, typed commands, a live stream, the handshake | M | |
+| 28 | The app: pages from descriptions, slots, a kit for packages, live | L | |
+| 29 | Automations from packages; event and threshold triggers | M | |
+| 30 | Refinement, discovery, reach, transport state | M | |
+| 31 | The Home Assistant bridge | S–M | |
+| 32 | Packages from outside the repository, and rails for contributors | M | |
+| 33 | The first standard floor: BTHome, then Shelly and ESPHome | M | |
+| 34 | A Matter spike | M | |
 
 ### Step 0 — Words and one authority
 This document; banners on the ones it replaces. **Done when** there is one
@@ -1041,120 +1062,166 @@ there (`expo-secure-store`) comes with persisting its preferences at all.
 `KRAFTVERK_TRANSPORTS` as the only documented setting, the app's device
 state and add screen split, and segmented controls a keyboard can reach.
 
-### Steps 23–32 — The model, for every device and every standard
+### Steps 23–34 — The model first, then everything above it
 
-The order matters more than usual: **23, 24, 25 and 27 change the model every
-package is written against, so they come first — while there are four
-packages to move, not forty.** The rest build on them.
+Planned 2026-09-29, from the review in §4.8 and findings H1–H13. The idea:
+**the device model is the foundation everything else is a projection of** —
+what is stored, what the API says, the pages the app draws, what the gateway
+checks, what automations need and what the bridges publish. Make it right, and
+each layer above becomes simple and generic; a package's deep integration and a
+standard's generic one become the same thing at different depths.
 
-### Step 23 — Parts (H1)
-A device is made of **parts**, as a Matter node is made of endpoints: `main`,
-and whatever it has several of — `outlet.ac`, `pack.1`, `pv.2`. A part has an
-id stable forever, a label, a kind, and capabilities of its own; metrics,
-controls and settings name the part they belong to (`main` when they do not
-say). `session.capability(name, part)` answers per part, and a command's
-target is a part. The `outlets` capability retires: each outlet is a part
-offering `switch` and `powerMeter`, so a recipe that switches "a switch"
-switches a plug or a station's outlet with no special case. Stored keys do not
-change — the part is metadata over them. The P280's outlets move first; the
-automation that names an outlet migrates to its part.
-**Done when** the `outlet.<id>` pattern, `OutletsCapability` and `outletsOf`
-are gone, and the gateway, recipes and screens address parts.
+```
+  description = info + parts + attributes + commands + events
+  source      = declared by the type | reported by the device | refined by another package
+```
 
-### Step 24 — Richer values, and what a device says about itself (H3, H4, H6)
-- Readings may be **enums** (with their options) and **text**; history keeps
-  them in a text column beside the numeric one (migration), and roll-ups skip
-  them.
-- `stateClass` — `measurement`, `total`, `total_increasing` — replaces
-  `cumulative`; a metric may be `diagnostic`, kept off the dashboard.
-- Kinds are added as devices need them — humidity, illuminance, signal — each
-  with its projection (step 27).
+One vocabulary, borrowed from Matter: a **part** (an endpoint) offers
+**capabilities** (clusters) made of **attributes**, **commands** and
+**events**. Steps 23–25 are the foundation and change nothing anyone sees; from
+26 on, each step changes what people see and stays green on its own. The old
+step 20 folds into 27; step 22 goes alongside 28.
+
+### Step 23 — One value system, declarative capabilities, projections (H3, H6, H9)
+- **`values.ts`: one value system** — number (unit, range, step, precision),
+  boolean, enum (options), string — used by attributes, command arguments,
+  event data and config alike. Config fields become a value type plus
+  presentation (`secret` and `host` are strings shown their own way).
+  `null` is unknown, never off or zero.
+- **Capabilities are declared like clusters**: the attributes they bind — each
+  to a standard meaning (`battery.soc`, `power.draw`) — the commands they
+  accept, with typed arguments, a safety level, and which attribute each one
+  `sets`, and queries for data that is not a current value (a forecast). The
+  hand-written capability interfaces stay until step 26.
+- **`standards.ts`: projections.** Every quantity, state class and capability
+  maps to Home Assistant (platform, device class, state class, unit) and to
+  Matter (cluster, attribute or command, scale), or says `none` and why. A
+  test keeps the table complete. From here on a new capability borrows a Matter
+  cluster's meaning where one exists.
+
+**Done when** every capability and quantity has its projections under test,
+and config is validated by the value system.
+
+*Done.* `values.ts` holds the value system and `checkValue`; a config field is
+a value type plus presentation, validated by it. Capabilities declare their
+attributes (by standard meaning), commands (typed arguments, safety, what they
+set) and queries; `requiredMeanings` replaces the old `requires` list.
+`stateClass` replaced `cumulative` outright — one package used it. New
+meanings `current.ac` and `frequency.ac` give a plug's current and frequency a
+standard name, and the quantities gained humidity, illuminance and signal.
+`standards.ts` projects every meaning, quantity, state class and capability
+into Home Assistant and Matter, with `homeAssistantEntityOf` as the one call a
+bridge needs. `energyMeter` stays inside `powerMeter` (its `kwh`) until a
+device measures energy without power.
+
+### Step 24 — Parts, attributes, information, events, versions (H1, H2, H3, H4, H5, H8)
+The device-type contract, version 4:
+- A **description** — parts, attributes, events — that a type declares
+  (`describe(config)`) and a session may report and change
+  (`session.description()`): a pack plugged in is a new part. Keys of parts
+  that come and go derive from the device (`pack.1.soc`).
+- **Parts**: `main`, and whatever a device has several of, each with a kind and
+  a role — source, storage, load — so an energy flow can be drawn for any
+  device. A part's capabilities are derived from its attributes' meanings and
+  the commands the type implements, never declared twice.
+- **Attributes** replace telemetry, settings and controls: a key stable
+  forever, a part, a value type, a meaning, a quantity, a state class
+  (`measurement`, `total`, `total_increasing`), `read` or `write` (a setting
+  the device remembers), a category (`primary`, `config`, `diagnostic`), a
+  section, `dangerous`.
 - **Device information** — manufacturer, model, model id, serial, hardware,
-  firmware — comes from `identify` and `session.info()`, is kept with the
-  device, and is shown under *Settings → About*.
+  firmware — from `identify` and `session.info()`.
+- **Events**, declared, raised with `ctx.event`; `ctx.changed()` for devices
+  that push; **`version` and `migrate`**.
+- The session: `readings()`, `command({ part, capability, command, args })`,
+  `write(patch)`, `query(…)`, `advanced`.
+- **An adapter** turns a version-3 type into a version-4 one, so the four
+  packages keep working and move one at a time.
 
-**Done when** the P280's operating mode is an enum with history, its firmware
-versions are device information, and a plug's signal strength is diagnostic.
+**Done when** all four packages pass the version-4 contract through the
+adapter, with no change in behaviour.
 
-### Step 25 — Devices describe themselves (H2)
-A device's **description** — its information, parts, metrics, controls,
-settings and events — is what the app, the gateway, automations and bridges
-read, per device. A type may declare it outright, as all four do today, or its
-session may report it (`session.description()`) and change it at runtime.
-The core keeps the last one with the device, and the app draws from the
-device's description, not the type's. Keys of parts that come and go are
-derived from the device (`pack.1.soc`), so their history survives a restart.
-**Done when** the P280's expansion batteries are parts with charge history,
-appearing when a pack is connected, and a test type whose metrics come from
-the device passes the contract.
+### Step 25 — Storage and holders carry descriptions (H2)
+Migration 10: a device keeps its information, description (and its hash) and
+the type version it was last opened with; **`device_attribute`** records every
+attribute a device ever had, so a pack's history keeps its name after the pack
+is unplugged; `sample` gains a text column for enums and strings;
+**`device_event`**, with retention, joins the timeline; links and automation
+roles name parts. The holder keeps descriptions and information current,
+records changes, runs `migrate`, and publishes readings and events on a live
+bus. **Done when** the migration is rehearsed and every device's description,
+information and attribute history is kept and served.
 
-### Step 26 — Events (H5)
-A type declares the **events** its devices raise — `{ id, label, level, part,
-data }` — and a session raises them through `ctx.event(id, data)`, checked
-against the declaration. They land on the timeline, can start an automation,
-and become Home Assistant event entities. Log lines stay log lines.
-**Done when** a station's overload or fault is an event with a trigger.
+### Step 26 — Packages on the new model; the gateway typed and generic (H1)
+The P280 natively: outlets, inputs and expansion packs as parts, settings as
+writable attributes, its operating mode an enum, firmware as information; the
+plugs and the weather service likewise. The gateway takes typed commands on a
+part and verifies any of them by reading back the attribute it `sets` —
+settings included, one path for both — with confirmation judged per part.
+**Done when** the `outlet.<id>` pattern, `OutletsCapability`, `SettingsSpec`
+and `ACTUATORS` are gone, and the station's packs have charge history.
 
-### Step 27 — One vocabulary with the standards (H9)
-`device-sdk/src/standards.ts`: for every capability, metric kind and state
-class, its **projection** into Home Assistant (platform, device class, state
-class) and into Matter (cluster, attribute, command) — or an explicit
-`none` — and a test that none is missing. The rule for the library from here
-on: **a capability borrows a Matter cluster's meaning and name where one
-exists** (on/off, level, electrical power and energy measurement, power
-source, temperature, humidity, boolean state), and is invented only where none
-does. Existing names keep working as aliases for one version.
-**Done when** the Home Assistant bridge (PRODUCT.md phase C) and a Matter
-package could be written from the table alone.
+### Step 27 — API v4 (H2)
+`DeviceView` carries the device's information, description and readings;
+commands go to `/devices/:id/parts/:part/commands/:capability/:command` with
+typed arguments, writable attributes to `PATCH /devices/:id/attributes`;
+**`GET /api/stream`** (server-sent events) carries readings, health, events and
+description changes, with polling as the fallback; `/version` states the API
+version and the installed types, and an app that is too old is told so (the
+old step 20). **Done when** the app builds against the new contract only.
 
-### Step 28 — Packages bring their automations (H7)
-The recipe contract moves into the SDK (`defineRecipe`): roles as capability
-needs over parts, a settings schema, a decision, a sentence. Device and
-service packages export the recipes their devices are for, and the engine runs
-every installed one through the same gateway, modes and audit as today's.
-Triggers join the schedule: an event (step 26), a value crossing a threshold.
-**Done when** the forecast recipe lives in a package, and a package-provided
-recipe runs end to end in observe and then in act.
+### Step 28 — The app: pages from descriptions, slots, a kit, live
+Generic pages drawn from the description: parts as sections, controls from
+commands, settings from writable attributes by section, history per
+attribute, events, *About* from the information, an energy flow from part
+roles. A package's screens become **slots** — a card, a dashboard, a section
+for a part, settings, tools, recipe editors — so it deepens one piece and
+inherits the rest, built from a kit in `packages/ui`. Live through the stream.
+**Done when** the ATORCH has a full page with no screen code, and the P280
+overrides only what it draws better.
 
-### Step 29 — Types that evolve (H8)
-`DeviceType.version`, and `migrate(from, { config, store })`, run by the
-holder before a session opens; the version a device was last opened with is
-kept with it. A key may be renamed only by a migration that renames its
-history too.
-**Done when** a test type at version 2 opens a device saved at version 1.
+### Step 29 — Automations from packages (H5, H7)
+`defineRecipe` in the SDK: roles as capability needs over parts, parameters
+in the value system, a decision and a sentence. Packages export recipes; the
+engine runs every installed one through the same gateway, modes and audit.
+Triggers: a schedule, an event, an attribute crossing a threshold.
+**Done when** the forecast recipe ships from the weather package, and a
+threshold recipe runs observe → act.
 
-### Step 30 — Refinement: standards the floor, packages the ceiling (H10)
-A type may **refine** another: `refines: { type, match(identified) }`. When
-the check identifies a device through the base type — a generic Tuya socket,
-later a Matter node or an ESPHome device — and a refinement matches it, the
-refinement is offered, as another model is today. It keeps the base's
-methods and session and adds what it knows: a description, settings, screens,
-recipes. The Tuya profiles become refinements.
-**Done when** the ATORCH S1W is a refinement of the generic socket, and a
-contract test covers refinement.
+### Step 30 — Refinement, discovery, reach, transport state (H10–H12)
+A type may **refine** another (`refines: { type, match }`), offered at the
+check like another model is today; the Tuya profiles become refinements. A
+protocol may ship a generic, self-describing type — the floor. Filters gain
+Bluetooth manufacturer ids, mDNS, DHCP and USB; a method declares its
+**reach** (local push or poll; cloud never, at setup, or always); a transport
+gets a store and secrets of its own. **Done when** the ATORCH is a refinement
+and the add screen states reach from declarations.
 
-### Step 31 — Discovery and reach declared; transports keep state (H11, H12)
-- Filters gain Bluetooth manufacturer ids, mDNS service types, DHCP host
-  names and USB ids, so a transport can look for every installed protocol at
-  once, and Web Bluetooth's chooser gets exact filters.
-- A method declares its **reach** — local push or poll; cloud never, at setup,
-  or always, with a sentence — shown on the add screen and in the generated
-  device table, so "nothing leaves your network" is checked, not claimed.
-- A transport gets a store and secrets of its own, encrypted as a
-  connection's are.
+### Step 31 — The Home Assistant bridge
+MQTT discovery, written entirely from the projections of step 23; commands
+from Home Assistant go through the gateway as actor `home-assistant`;
+dangerous settings and tools are not bridged. **Done when** a device appears
+in Home Assistant with the right classes and switching it there is on
+kraftverk's timeline.
 
-**Done when** the add screen says *Local only* or why not, from declarations.
+### Step 32 — Packages from outside the repository; rails for contributors (H13)
+A `kraftverk.packages.json` names packages from npm or a folder, which the
+server's discovery and `gen:devices` include and one command builds into an
+image — trust stays explicit, nothing is downloaded from a screen. The SDK on
+npm; `npm run check:packages` measures each package and writes the README's
+device table; a recording tool turns a session's bytes into a fixture and a
+replaying simulator; a diagnostics bundle per device, secrets redacted; an
+`AGENTS.md` for device packages. **Done when** a package outside the
+repository builds into an image and passes the checks.
 
-### Step 32 — Rails for contributors (H13)
-- `npm run check:packages`: each package measured — simulator, contract test,
-  identify tested against recorded bytes, README, evidence for `verified` —
-  and the README's device table generated from it.
-- A **diagnostics bundle** per device — description, health, readings,
-  recent events, config with secrets redacted — for *My device differs*.
-- An `AGENTS.md` for device packages, so an AI agent writes one right first.
+### Step 33 — The first standard floor
+BTHome (passive Bluetooth, self-describing), then Shelly and ESPHome, each a
+generic type. **Done when** a BTHome sensor works with no package of its own.
 
-**Done when** the device table cannot drift from the packages, and an issue
-can carry a device's diagnostics without anything private in it.
+### Step 34 — A Matter spike
+matter.js as a protocol over IP, commissioning over Bluetooth, the fabric in
+transport state; Thread through a border router, multi-admin first. **Done
+when** there is a recorded go or no-go, with the path for Thread.
 
 ---
 
@@ -1211,7 +1278,7 @@ can carry a device's diagnostics without anything private in it.
     adds everything its owner knows (§8 step 30).
 19. **New capabilities borrow Matter's meaning and name** where a cluster
     exists, and every capability has a projection into Home Assistant and
-    Matter (§8 step 27).
+    Matter (§8 step 23).
 20. **Thread is a network, not a protocol:** kraftverk reaches Thread devices
     as Matter over IP through a border router, and runs no radio of its own.
 

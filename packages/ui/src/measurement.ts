@@ -60,6 +60,9 @@ const DEFAULT_PRECISION: Record<MetricSpec['kind'], number> = {
   temperature: 1,
   frequency: 2,
   duration: 0,
+  humidity: 0,
+  illuminance: 0,
+  signal: 0,
   state: 0,
 };
 

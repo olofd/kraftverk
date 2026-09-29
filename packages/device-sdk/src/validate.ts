@@ -1,9 +1,9 @@
-import { CAPABILITIES, isCapability } from './capabilities.ts';
+import { CAPABILITIES, isCapability, requiredMeanings } from './capabilities.ts';
 import { CATEGORIES, isCategory } from './categories.ts';
 import { PLATFORMS, type Protocol, type TransportDefinition } from './connection.ts';
 import { DEVICE_API_VERSION, type DeviceType } from './device-type.ts';
 import { isSecretField, type ConfigSchema } from './schema.ts';
-import { STANDARD_NAMESPACES, standardMetric } from './telemetry.ts';
+import { STANDARD_NAMESPACES, STATE_CLASSES, standardMetric, stateClassOf } from './telemetry.ts';
 
 /**
  * The static half of the contract: everything about a device type, a protocol
@@ -69,6 +69,10 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
     if (keys.has(spec.key)) problem(`telemetry key "${spec.key}" is declared twice`);
     keys.add(spec.key);
     if (spec.primary) primaries += 1;
+    if (spec.stateClass !== undefined) {
+      if (!STATE_CLASSES.includes(spec.stateClass)) problem(`"${spec.key}" has an unknown state class "${spec.stateClass}"`);
+      else if (spec.kind === 'state') problem(`"${spec.key}" is an on/off state, which has no state class`);
+    }
 
     if (spec.metric === undefined) continue;
     if (metrics.has(spec.metric)) problem(`metric "${spec.metric}" is claimed by two keys`);
@@ -82,6 +86,10 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
           `"${spec.key}" claims ${spec.metric}, which is ${standard.kind} in "${standard.unit}", ` +
             `but is declared ${spec.kind} in "${spec.unit}"`
         );
+      }
+      // A lifetime counter charted as a level, or a level charted as a counter, is a wrong chart.
+      if ((standard.stateClass ?? 'measurement') !== (stateClassOf(spec) ?? 'measurement')) {
+        problem(`"${spec.key}" claims ${spec.metric}, which is ${standard.stateClass ?? 'measurement'}, but is declared ${stateClassOf(spec) ?? 'measurement'}`);
       }
     } else {
       const namespace = spec.metric.split('.')[0]!;
@@ -97,7 +105,7 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
 
   for (const name of capabilities) {
     if (!isCapability(name)) continue;
-    for (const required of CAPABILITIES[name].requires) {
+    for (const required of requiredMeanings(name)) {
       if (!metrics.has(required)) problem(`capability "${name}" needs telemetry with metric "${required}"`);
     }
   }

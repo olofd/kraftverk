@@ -7,35 +7,28 @@
  * things a form can contain has to be closed and known in advance.
  *
  * It is a subset of JSON Schema in spirit, not a JSON Schema implementation.
+ * A field is a value of the one value system (`values.ts`) with a title, a
+ * description and a default — plus two ways of showing a string: a secret, and
+ * a host.
  */
 
+import { checkValue, type BooleanValue, type EnumValue, type NumberValue, type StringValue, type ValueType } from './values.ts';
+
+type Presented = { title: string; description?: string; required?: boolean };
+
 export type ConfigField =
-  | { type: 'string'; title: string; description?: string; required?: boolean; default?: string; placeholder?: string }
+  | (StringValue & Presented & { default?: string; placeholder?: string })
   /** Write-only. Never returned by the API, never in an export. */
   | { type: 'secret'; title: string; description?: string; required?: boolean }
   /** An IP address or hostname on the local network. */
   | { type: 'host'; title: string; description?: string; required?: boolean; default?: string }
-  | {
-      type: 'number';
-      title: string;
-      description?: string;
-      required?: boolean;
-      default?: number;
-      min?: number;
-      max?: number;
-      step?: number;
-      unit?: string;
-      integer?: boolean;
-    }
-  | { type: 'boolean'; title: string; description?: string; default?: boolean }
-  | {
-      type: 'enum';
-      title: string;
-      description?: string;
-      required?: boolean;
-      default?: string;
-      options: readonly { value: string; label: string }[];
-    };
+  | (NumberValue & Presented & { default?: number })
+  | (BooleanValue & Presented & { default?: boolean })
+  | (EnumValue & Presented & { default?: string });
+
+/** The value a field holds: a secret and a host are strings, shown their own way. */
+export const valueTypeOf = (field: ConfigField): ValueType =>
+  field.type === 'secret' || field.type === 'host' ? { type: 'string' } : field;
 
 export type ConfigSchema = {
   fields: Record<string, ConfigField>;
@@ -95,12 +88,6 @@ export function validateConfig(schema: ConfigSchema, input: unknown): Validation
     }
 
     switch (field.type) {
-      case 'string':
-      case 'secret':
-        if (typeof given !== 'string') issues.push({ field: name, message: `${field.title} must be text` });
-        else value[name] = given;
-        break;
-
       case 'host': {
         if (typeof given !== 'string') {
           issues.push({ field: name, message: `${field.title} must be text` });
@@ -114,41 +101,10 @@ export function validateConfig(schema: ConfigSchema, input: unknown): Validation
         break;
       }
 
-      case 'number': {
-        const numeric = typeof given === 'number' ? given : Number(given);
-        if (!Number.isFinite(numeric)) {
-          issues.push({ field: name, message: `${field.title} must be a number` });
-          break;
-        }
-        if (field.integer && !Number.isInteger(numeric)) {
-          issues.push({ field: name, message: `${field.title} must be a whole number` });
-          break;
-        }
-        if (field.min !== undefined && numeric < field.min) {
-          issues.push({ field: name, message: `${field.title} must be at least ${field.min}` });
-          break;
-        }
-        if (field.max !== undefined && numeric > field.max) {
-          issues.push({ field: name, message: `${field.title} must be at most ${field.max}` });
-          break;
-        }
-        value[name] = numeric;
-        break;
-      }
-
-      case 'boolean':
-        if (typeof given !== 'boolean') issues.push({ field: name, message: `${field.title} must be true or false` });
-        else value[name] = given;
-        break;
-
-      case 'enum': {
-        const allowed = field.options.map((option) => option.value);
-        if (typeof given !== 'string' || !allowed.includes(given)) {
-          issues.push({ field: name, message: `${field.title} must be one of: ${allowed.join(', ')}` });
-          break;
-        }
-        value[name] = given;
-        break;
+      default: {
+        const checked = checkValue(valueTypeOf(field), given);
+        if (checked.ok) value[name] = checked.value;
+        else issues.push({ field: name, message: `${field.title} ${checked.problem}` });
       }
     }
   }

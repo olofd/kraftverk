@@ -105,7 +105,7 @@ kraftverk wins by **not** building those (§5).
 | kraftverk | Home Assistant | How well |
 | --- | --- | --- |
 | Device: `identity`, brand, model, firmware | Device registry: `identifiers`, `manufacturer`, `model`, `sw_version` | 1:1 — `identity` becomes `["kraftverk", identity]`, a MAC also a `connection` |
-| Telemetry `MetricSpec`: key, unit, `kind`, standard `metric`, `cumulative` | `sensor` / `binary_sensor`: `device_class`, `unit_of_measurement`, `state_class` | Close — `kind` maps to `device_class` (power, energy, voltage, current, temperature, frequency, duration, battery); `cumulative` to `total_increasing`, else `measurement`; `state` to a `binary_sensor` |
+| Telemetry `MetricSpec`: key, unit, `kind`, standard `metric`, state class | `sensor` / `binary_sensor`: `device_class`, `unit_of_measurement`, `state_class` | Close — `kind` maps to `device_class` (power, energy, voltage, current, temperature, frequency, duration, battery); state classes are Home Assistant's own three; `state` to a `binary_sensor` — all in `device-sdk/src/standards.ts` |
 | Controls: `switch` / `enum` / `number` / `button` | `switch` / `select` / `number` / `button` entities | 1:1 |
 | Settings schema | Entities with `entity_category: config` | Close — except dangerous fields, which stay in kraftverk (a person must confirm there) |
 | Health: `connected` / `offline` / … | Availability | 1:1 as `online` / `offline` |

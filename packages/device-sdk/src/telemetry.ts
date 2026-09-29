@@ -30,8 +30,29 @@ export type MetricKind =
   | 'temperature'
   | 'frequency'
   | 'duration'
+  | 'humidity'
+  | 'illuminance'
+  /** Radio signal strength, in dBm. Diagnostic by nature. */
+  | 'signal'
   /** On/off, present/absent. Charted as a band, not a line. */
   | 'state';
+
+/** What a measurement is a quantity of — the same list, by the name the standards use. */
+export type Quantity = MetricKind;
+
+/**
+ * How a value moves over time, which decides how history treats it
+ * (the same three Home Assistant uses):
+ *
+ * - `measurement` — a value now: power, a temperature. Charted as it is.
+ * - `total` — a running amount that may go down or restart: today's energy,
+ *   reset at midnight. Charted as change per interval, restarts allowed.
+ * - `total_increasing` — a counter that only rises, and whose fall means the
+ *   device restarted it: a meter's lifetime energy.
+ */
+export type StateClass = 'measurement' | 'total' | 'total_increasing';
+
+export const STATE_CLASSES: readonly StateClass[] = ['measurement', 'total', 'total_increasing'];
 
 export type MetricSpec = {
   /** What history is stored under. Stable forever once shipped. */
@@ -46,11 +67,18 @@ export type MetricSpec = {
    */
   metric?: string;
   precision?: number;
-  /** A counter that only rises. Charted as change per interval. */
-  cumulative?: boolean;
+  /**
+   * How it moves over time. Absent means `measurement` for a quantity, and
+   * nothing at all for an on/off state.
+   */
+  stateClass?: StateClass;
   /** The one shown on the device's card. At most one per device type. */
   primary?: boolean;
 };
+
+/** The state class a measurement has: declared, or `measurement` — and none for an on/off state. */
+export const stateClassOf = (spec: Pick<MetricSpec, 'stateClass' | 'kind'>): StateClass | null =>
+  spec.stateClass ?? (spec.kind === 'state' ? null : 'measurement');
 
 export type Reading = {
   key: string;
@@ -70,7 +98,7 @@ export const primaryOf = <T extends Pick<MetricSpec, 'primary'>>(telemetry: read
 
 // --- the standard ids -------------------------------------------------------
 
-type StandardMetric = { label: string; unit: string; kind: MetricKind; cumulative?: boolean };
+type StandardMetric = { label: string; unit: string; kind: MetricKind; stateClass?: StateClass };
 
 /**
  * Metrics that mean the same thing on every device that has them.
@@ -91,8 +119,11 @@ export const STANDARD_METRICS = {
   'power.out': { label: 'Output', unit: 'W', kind: 'power' },
   /** What a device, or what is plugged through it, consumes: a plug's meter. */
   'power.draw': { label: 'Power', unit: 'W', kind: 'power' },
-  'energy.total': { label: 'Energy', unit: 'kWh', kind: 'energy', cumulative: true },
+  /** A meter's own lifetime counter. */
+  'energy.total': { label: 'Energy', unit: 'kWh', kind: 'energy', stateClass: 'total_increasing' },
   'voltage.ac': { label: 'Voltage', unit: 'V', kind: 'voltage' },
+  'current.ac': { label: 'Current', unit: 'A', kind: 'current' },
+  'frequency.ac': { label: 'Frequency', unit: 'Hz', kind: 'frequency' },
   'grid.present': { label: 'Mains present', unit: '', kind: 'state' },
   'switch.on': { label: 'On', unit: '', kind: 'state' },
   'weather.temp': { label: 'Temperature', unit: '°C', kind: 'temperature' },

@@ -1,4 +1,5 @@
 import type { StandardMetricId } from './telemetry.ts';
+import type { ValueType } from './values.ts';
 
 /**
  * Capabilities: what a device can do or report, named by what it is rather than
@@ -133,44 +134,105 @@ export interface WeatherForecastCapability {
  */
 export type CommandSafety = 'safe' | 'confirm' | 'confirm-off-when-critical';
 
+/**
+ * One attribute of a capability: which standard meaning it is. Its unit and
+ * kind are the meaning's (`STANDARD_METRICS`), so they are never declared twice.
+ */
+export type CapabilityAttribute = {
+  means: StandardMetricId;
+  /** A device offering the capability must report it. */
+  required?: boolean;
+};
+
+/** A command a capability accepts. */
+export type CapabilityCommand = {
+  safety: CommandSafety;
+  description: string;
+  /** Its arguments, each a value of the one value system. */
+  args: Readonly<Record<string, ValueType>>;
+  /**
+   * Which of the capability's attributes each argument sets: `{ on: 'on' }`.
+   * The gateway verifies a command by reading these back until they agree,
+   * so a command that sets nothing it can read back cannot be verified.
+   */
+  sets?: Readonly<Record<string, string>>;
+};
+
+/** Data a capability answers on request that is not a value now: a forecast. */
+export type CapabilityQuery = {
+  description: string;
+  args: Readonly<Record<string, ValueType>>;
+};
+
+/**
+ * A capability, declared the way a Matter cluster is: the attributes it binds,
+ * the commands it accepts and the queries it answers (docs/ARCHITECTURE.md §8
+ * step 23). Its projections into Home Assistant and Matter are in
+ * `standards.ts`; a new capability borrows a Matter cluster's meaning and name
+ * where one exists.
+ */
 export type CapabilitySpec = {
   label: string;
-  /** The commands it accepts. None means it only reports. */
-  commands: Readonly<Record<string, { safety: CommandSafety; description: string }>>;
-  /** Telemetry a device offering it must report, so it can be charted and automated. */
-  requires: readonly StandardMetricId[];
+  attributes: Readonly<Record<string, CapabilityAttribute>>;
+  /** None means it only reports. */
+  commands: Readonly<Record<string, CapabilityCommand>>;
+  queries?: Readonly<Record<string, CapabilityQuery>>;
 };
+
+const ON_OFF: ValueType = { type: 'boolean' };
 
 export const CAPABILITIES = {
   switch: {
     label: 'Switch',
-    commands: { set: { safety: 'confirm-off-when-critical', description: 'Turn it on or off' } },
-    requires: ['switch.on'],
+    attributes: { on: { means: 'switch.on', required: true } },
+    commands: {
+      set: { safety: 'confirm-off-when-critical', description: 'Turn it on or off', args: { on: ON_OFF }, sets: { on: 'on' } },
+    },
   },
   powerMeter: {
     label: 'Power meter',
+    attributes: {
+      watts: { means: 'power.draw', required: true },
+      volts: { means: 'voltage.ac' },
+      amps: { means: 'current.ac' },
+      hz: { means: 'frequency.ac' },
+      kwh: { means: 'energy.total' },
+    },
     commands: {},
-    requires: ['power.draw'],
   },
   battery: {
     label: 'Battery',
+    attributes: { soc: { means: 'battery.soc', required: true }, capacity: { means: 'battery.capacity' } },
     commands: {},
-    requires: ['battery.soc'],
   },
+  /**
+   * Several switched outputs on one device, as a power station has. Retires
+   * when a device is made of parts (step 26): each outlet becomes a part with
+   * a `switch` of its own, and this special case goes.
+   */
   outlets: {
     label: 'Outlets',
-    commands: { set: { safety: 'confirm-off-when-critical', description: 'Turn one outlet on or off' } },
-    requires: [],
+    attributes: {},
+    commands: {
+      set: {
+        safety: 'confirm-off-when-critical',
+        description: 'Turn one outlet on or off',
+        args: { outlet: { type: 'string' }, on: ON_OFF },
+      },
+    },
   },
   acInput: {
     label: 'AC input',
+    attributes: { present: { means: 'grid.present', required: true }, watts: { means: 'power.in.ac' } },
     commands: {},
-    requires: ['grid.present'],
   },
   'weather.forecast': {
     label: 'Weather forecast',
+    attributes: {},
     commands: {},
-    requires: [],
+    queries: {
+      hourly: { description: 'The forecast, hour by hour', args: { hours: { type: 'number', min: 1, max: 168, integer: true } } },
+    },
   },
 } as const satisfies Record<string, CapabilitySpec>;
 
@@ -189,6 +251,12 @@ export type CapabilityImpl = {
 };
 
 export const isCapability = (name: string): name is CapabilityName => Object.hasOwn(CAPABILITIES, name);
+
+/** The standard meanings a device offering this capability must report, so it can be charted and automated. */
+export const requiredMeanings = (name: CapabilityName): StandardMetricId[] =>
+  Object.values(CAPABILITIES[name].attributes as Readonly<Record<string, CapabilityAttribute>>)
+    .filter((attribute) => attribute.required)
+    .map((attribute) => attribute.means);
 
 /**
  * What a slot asks of a device — an automation's role: every capability in
