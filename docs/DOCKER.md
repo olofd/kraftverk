@@ -11,7 +11,7 @@ Three containers, two images, one volume — and the app in a browser.
 Running this on a machine that is always on — a NAS — is the point: history and
 automations need something awake while the app is closed.
 
-> Read the hardware warning in the [README](../README.md#-this-software-can-permanently-destroy-your-power-station)
+> Read the hardware warning in the [station's README](../packages/devices/aferiy-p280/README.md#this-software-can-permanently-destroy-your-power-station)
 > first. A container does not make an undocumented BMS protocol safer.
 
 ---

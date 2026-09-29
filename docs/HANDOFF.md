@@ -78,7 +78,7 @@ settled on the actual unit. Do not pick one. See [`ATORCH-S1W.md`](ATORCH-S1W.md
 **The MQTT path needs two things that have nothing to do with code**: the
 station pointed at this machine (BrightEMS's *Local MQTT Broker*, or
 `mqtt.sydpower.com` redirected), and inbound TCP 1883 allowed. On a Windows
-machine whose network profile is Public, the README's `profile=private` firewall
+machine whose network profile is Public, the station README's `profile=private` firewall
 rule does not apply. Bluetooth needs neither.
 
 **A test suite once deleted the owner's database, and the tests still passed.**

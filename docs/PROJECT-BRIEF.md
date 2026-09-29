@@ -251,7 +251,7 @@ Test first with a small non-critical load.
 
 The packages, the rule for what may import what, and how a device type,
 protocol or transport is added are in [ARCHITECTURE.md §3](ARCHITECTURE.md#3-packages-and-the-dependency-rule);
-where each file lives today is in the README's *Project layout*. Two properties
+where each file lives today is in DEVELOPING.md's *Project layout*. Two properties
 matter for everything in this brief:
 
 - **One implementation of the protocol.** The server and the app run the same
