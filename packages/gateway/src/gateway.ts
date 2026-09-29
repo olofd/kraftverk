@@ -112,6 +112,8 @@ export type GatewayPolicy = {
   userDwellMs: number;
   /** An assistant acts at a person's request, but can repeat itself faster than one: a minute between its changes to one part. */
   agentDwellMs: number;
+  /** Between two writes of one setting by a person: long enough for the first to settle, short enough not to be noticed. */
+  userWriteDwellMs: number;
   /** How long the device and the parts it is linked to are given to agree. */
   verifyTimeoutMs: number;
 };
@@ -121,6 +123,7 @@ export const DEFAULT_POLICY: GatewayPolicy = {
   automationDwellMs: 10 * 60_000,
   userDwellMs: 5_000,
   agentDwellMs: 60_000,
+  userWriteDwellMs: 2_000,
   verifyTimeoutMs: 30_000,
 };
 
@@ -516,6 +519,13 @@ export class ActionGateway {
 
     if (this.#deps.isReadOnly(intent.deviceId)) return refuse(this.#deps.readOnlyReason ?? 'The server is in read-only mode');
 
+    // A setting written moments ago is still settling: one write per setting per dwell, whoever asks.
+    const writeDwell = intent.actor === 'automation' ? this.#policy.automationDwellMs : intent.actor === 'agent' ? this.#policy.agentDwellMs : this.#policy.userWriteDwellMs;
+    const settling = keys
+      .map((key) => ({ key, since: Date.now() - (Number(this.#memory.get(`gateway.lastWriteAt.${intent.deviceId}:${key}`) ?? 0) || 0) }))
+      .find(({ since }) => since < writeDwell);
+    if (settling) return refuse(`Too soon: ${writable.get(settling.key)!.label} was changed ${Math.round(settling.since / 1000)} s ago; ${Math.ceil((writeDwell - settling.since) / 1000)} s of the dwell time remains`);
+
     const risky = keys.filter((key) => writable.get(key)!.dangerous);
     if (risky.length && intent.actor !== 'user') return refuse(`${intent.actor === 'agent' ? 'An assistant' : 'An automation'} may not change ${risky.join(', ')}: it can damage the hardware. A person can, in the app`);
     const subject = subjectOf({ device: intent.deviceId, patch: changed, by: intent.by });
@@ -529,6 +539,7 @@ export class ActionGateway {
     note('settings.intent', `${device.name}: changing ${keys.join(', ')}`, { patch: changed });
 
     let values: Readonly<Record<string, Value>>;
+    for (const key of keys) this.#memory.set(`gateway.lastWriteAt.${intent.deviceId}:${key}`, String(Date.now()));
     try {
       values = await session.write(changed);
     } catch (error) {

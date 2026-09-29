@@ -82,6 +82,15 @@ describe('settings through the gateway', () => {
     expect(device.writes).toEqual([]);
   });
 
+  test('one write per setting per dwell: a second before the first settled is refused, another setting is not', async () => {
+    const { g, device } = gateway();
+    expect((await g.write(intent({ led: 'on' }))).outcome).toBe('verified');
+    const again = await g.write(intent({ led: 'off' }));
+    expect(again.outcome).toBe('refused');
+    expect(again.detail).toMatch(/^Too soon: Light was changed 0 s ago; 2 s of the dwell time remains$/);
+    expect(device.writes).toEqual([{ led: 'on' }]);
+  });
+
   test('read-only refuses before anything is sent', async () => {
     const { g, device } = gateway({ readOnly: true });
     expect((await g.write(intent({ led: 'on' }))).detail).toContain('read-only');
