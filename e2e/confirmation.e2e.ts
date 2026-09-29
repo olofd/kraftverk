@@ -17,11 +17,15 @@ test('cutting a plug that feeds a station is confirmed first, naming the part it
   const power = page.getByRole('switch').first();
   await expect(power).toHaveAttribute('aria-checked', 'true');
 
-  const asked = page.waitForEvent('dialog');
+  // Answered by a handler set before the click: a dialog that opens while the click is still settling blocks the page,
+  // and a test that waits for the click before answering waits for itself.
+  let asked = '';
+  page.once('dialog', async (dialog) => {
+    asked = dialog.message();
+    await dialog.dismiss();
+  });
   await power.click();
-  const dialog = await asked;
-  expect(dialog.message()).toContain(`This feeds ${station.name} — Mains and has never been switched from here: confirm it is the right one`);
-  await dialog.dismiss();
+  await expect.poll(() => asked).toContain(`This feeds ${station.name} — Mains and has never been switched from here: confirm it is the right one`);
 
   // Not confirmed: nothing was sent, and it is still on.
   await expect(page.getByText('Not confirmed')).toBeVisible();
