@@ -1,5 +1,5 @@
 import { isSimulated, methodOf, type ConnectionHealth, type DeviceDescription, type DeviceInfo, type DeviceSession, type DeviceType, type SavedDeviceId } from '@kraftverk/device-sdk';
-import { Failover, identityVerdict, openDevice, OpenRefused, type DeviceEventMessage, type LiveBus, type OpenedDevice } from '@kraftverk/holder';
+import { Failover, identityVerdict, openDevice, OpenRefused, ReadingChanges, type DeviceEventMessage, type LiveBus, type OpenedDevice } from '@kraftverk/holder';
 
 import { audit } from '../history/db.ts';
 import type { ProtocolRegistry } from '../runtime/protocols.ts';
@@ -30,6 +30,14 @@ import type { DeviceTypeRegistry } from './types.ts';
  */
 
 const WATCH_MS = 15_000;
+/**
+ * How often what devices say is checked for what changed, for whoever listens
+ * on the bus. A session's readings come from its cache, so this asks nothing
+ * of a device; one that pushes, or finishes a poll, is published at once.
+ */
+const PULSE_MS = 1000;
+/** Health is published when it changes, and at least this often while readings keep arriving, so "last heard" stays true. */
+const HEALTH_REFRESH_MS = 30_000;
 /** How long before trying a refused device again, by how many times it has been tried: then every five minutes. */
 const RETRY_MS = [30_000, 60_000, 120_000, 300_000];
 
@@ -87,6 +95,10 @@ export class DeviceSessionManager {
   #records = new Map<SavedDeviceId, DeviceRecord>();
   #syncing: Promise<unknown> = Promise.resolve();
   #watch: ReturnType<typeof setInterval> | null = null;
+  #pulse: ReturnType<typeof setInterval> | null = null;
+  /** What was last published, so only what moved is published again. */
+  #changes = new ReadingChanges();
+  #published = new Map<SavedDeviceId, { key: string; at: number }>();
 
   constructor(private deps: DeviceSessionManagerDeps) {}
 
@@ -140,7 +152,9 @@ export class DeviceSessionManager {
     const open = this.#open.get(record.id);
     if (open) return open.opened.health();
     const refusal = this.#refusals.get(record.id);
-    const again = refusal?.retryAt ? `; trying again in ${Math.max(1, Math.round((refusal.retryAt - Date.now()) / 1000))} s` : '';
+    // Coarse, so a health that says it does not change every second.
+    const wait = refusal?.retryAt ? refusal.retryAt - Date.now() : null;
+    const again = wait === null ? '' : wait <= 45_000 ? '; trying again in under a minute' : `; trying again in ${Math.round(wait / 60_000)} min`;
     return {
       status: refusal?.status ?? 'offline',
       detail: refusal ? `${refusal.detail}${again}` : 'Not open yet',
@@ -196,6 +210,36 @@ export class DeviceSessionManager {
 
     this.#watch ??= setInterval(() => void this.check(), WATCH_MS);
     this.#watch.unref?.();
+    this.#pulse ??= setInterval(() => this.pulse(), PULSE_MS);
+    this.#pulse.unref?.();
+  }
+
+  /**
+   * Publishes what changed for every device you have: the readings whose
+   * values moved, and health when it changed. Nothing when nobody listens.
+   * Run by a timer; a test runs it directly.
+   */
+  pulse(): void {
+    for (const id of this.#records.keys()) this.#publish(id);
+  }
+
+  #publish(deviceId: SavedDeviceId): void {
+    const bus = this.deps.bus;
+    const record = this.#records.get(deviceId);
+    if (!bus || bus.listening === 0 || !record || record.removedAt) return;
+    const open = this.#open.get(deviceId);
+    if (open) {
+      const changed = this.#changes.since(deviceId, open.opened.session.readings());
+      if (changed.length) bus.publish({ kind: 'readings', deviceId, readings: changed });
+    }
+    const health = this.health(record);
+    const key = `${health.status}|${health.detail}|${health.owner}|${health.transport}`;
+    const last = this.#published.get(deviceId);
+    const now = Date.now();
+    const stale = health.lastReadingAt !== null && last !== undefined && now - last.at >= HEALTH_REFRESH_MS;
+    if (last?.key === key && !stale) return;
+    this.#published.set(deviceId, { key, at: now });
+    bus.publish({ kind: 'health', deviceId, health });
   }
 
   /**
@@ -254,11 +298,12 @@ export class DeviceSessionManager {
         readOnly: this.deps.readOnly && !simulated,
         allowRawFrames: this.deps.allowRawFrames,
         log: { info: log('log'), warn: log('warn'), error: log('error') },
+        // A device that pushes, or a poll that finished: what moved is published now, not at the next pulse.
         changed: () => {
           this.#describe(record.id);
-          const session = this.#open.get(record.id)?.opened.session;
-          if (session) this.deps.bus?.publish({ kind: 'readings', deviceId: record.id, readings: session.readings() });
+          this.#publish(record.id);
         },
+        afterScheduled: () => this.#publish(record.id),
         event: (event) => {
           this.deps.onEvent?.(record.id, event);
           this.deps.bus?.publish({ kind: 'event', deviceId: record.id, event });
@@ -337,6 +382,8 @@ export class DeviceSessionManager {
   async close(deviceId: SavedDeviceId): Promise<void> {
     const open = this.#open.get(deviceId);
     this.#open.delete(deviceId);
+    // Opened again, everything it says is news.
+    this.#changes.forget(deviceId);
     if (!open) return;
     open.detach();
     // The channel is this manager's: it opened it, so it closes it.
@@ -345,7 +392,9 @@ export class DeviceSessionManager {
 
   async closeAll(): Promise<void> {
     if (this.#watch) clearInterval(this.#watch);
+    if (this.#pulse) clearInterval(this.#pulse);
     this.#watch = null;
+    this.#pulse = null;
     await Promise.all([...this.#open.keys()].map((id) => this.close(id)));
   }
 }

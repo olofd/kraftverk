@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { createBunWebSocket } from 'hono/bun';
 import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
@@ -16,6 +17,7 @@ import { adminRoutes } from './routes/admin.ts';
 import { deviceRoutes } from './routes/devices.ts';
 import { connectionRoutes } from './routes/connections.ts';
 import { heldRoutes } from './routes/held.ts';
+import { liveRoutes } from './routes/live.ts';
 import type { AppDeps } from './routes/shared.ts';
 import { setupRoutes } from './routes/setup.ts';
 import { transportRoutes } from './routes/transports.ts';
@@ -65,9 +67,18 @@ export function corsOrigin(config: Pick<ServerConfig, 'allowedOrigins' | 'develo
  * in a simulator and an empty database instead, and drives the very same
  * routes with `app.request()`.
  */
+/**
+ * Changes whose outcome the live stream already carries — a reading moves —
+ * or that are not about devices at all. Every other change made through the
+ * API tells listening apps to read the list again.
+ */
+const QUIET_CHANGES = /^\/api\/(auth|users)\/|\/commands\/|\/attributes$|\/advanced\//;
+
 export function createApp(deps: AppDeps) {
   const { config, startedAt } = deps;
   const app = new Hono();
+  // One per app: the socket handlers Bun is given beside `fetch` (see `index.ts`).
+  const { upgradeWebSocket, websocket } = createBunWebSocket();
 
   /*
     Requests worth a line: anything that changed something, and anything that
@@ -120,6 +131,12 @@ export function createApp(deps: AppDeps) {
   // First, before any route: Hono runs middleware only for routes registered after it.
   api.use('*', accounts.forgery);
   api.use('*', accounts.gate);
+  // Something changed that a list shows — a device, a connection, a link: every open app hears it.
+  api.use('*', async (c, next) => {
+    await next();
+    if (['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) || c.res.status >= 400 || QUIET_CHANGES.test(c.req.path)) return;
+    deps.bus.publish({ kind: 'changed', deviceId: null });
+  });
   api.route('/auth', accounts.auth);
   api.route('/users', accounts.users);
 
@@ -144,6 +161,7 @@ export function createApp(deps: AppDeps) {
   api.route('/', heldRoutes(deps));
   api.route('/', transportRoutes(deps));
   api.route('/', automationRoutes(deps));
+  api.route('/', liveRoutes(deps, upgradeWebSocket, corsOrigin(config)));
 
   app.route('/api', api);
 
@@ -161,5 +179,5 @@ export function createApp(deps: AppDeps) {
     return c.json({ error: 'Internal server error' }, 500);
   });
 
-  return { app, accounts };
+  return { app, accounts, websocket };
 }

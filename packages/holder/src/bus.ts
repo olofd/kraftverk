@@ -20,13 +20,50 @@ export type DeviceEventMessage = {
 };
 
 export type LiveMessage =
+  /** The readings whose values changed since the last message: not every reading. */
   | { kind: 'readings'; deviceId: SavedDeviceId; readings: readonly Reading[] }
   | { kind: 'health'; deviceId: SavedDeviceId; health: ConnectionHealth }
   | { kind: 'event'; deviceId: SavedDeviceId; event: DeviceEventMessage }
   /** What the device is — its description or information — changed: read it again. */
-  | { kind: 'described'; deviceId: SavedDeviceId };
+  | { kind: 'described'; deviceId: SavedDeviceId }
+  /**
+   * What you have changed — a device added, renamed or removed, a connection
+   * or a link — or something a holder elsewhere reported: read the list again.
+   */
+  | { kind: 'changed'; deviceId: SavedDeviceId | null };
 
 export type LiveListener = (message: LiveMessage) => void;
+
+/**
+ * What a device has said since it was last asked, reading by reading.
+ *
+ * A session's readings come from its cache and are asked for often; most of
+ * them have not moved. This keeps what was last passed on, per device, and
+ * gives back only the readings whose value changed — a new time alone is not
+ * a change — so a stream carries what moved and nothing else.
+ */
+export class ReadingChanges {
+  #last = new Map<string, Map<string, string>>();
+
+  /** The readings of `deviceId` whose value differs from the last time; remembers these. */
+  since(deviceId: string, readings: readonly Reading[]): Reading[] {
+    const last = this.#last.get(deviceId) ?? new Map<string, string>();
+    this.#last.set(deviceId, last);
+    const changed: Reading[] = [];
+    for (const reading of readings) {
+      const value = JSON.stringify(reading.value);
+      if (last.get(reading.key) === value) continue;
+      last.set(reading.key, value);
+      changed.push(reading);
+    }
+    return changed;
+  }
+
+  /** Forgets a device, so everything it says next is new. */
+  forget(deviceId: string): void {
+    this.#last.delete(deviceId);
+  }
+}
 
 export class LiveBus {
   #listeners = new Set<LiveListener>();

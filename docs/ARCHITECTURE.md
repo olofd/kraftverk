@@ -1211,9 +1211,18 @@ take, readings part by part, and settings from writable attributes by section.
 commands go to `/devices/:id/parts/:part/commands/:capability/:command` with
 typed arguments, writable attributes to `PATCH /devices/:id/attributes`, and
 `GET /devices/:id/events` lists what a device raised — *done*, with the model.
-Next: **`GET /api/stream`** (server-sent events) from the `LiveBus`, carrying
-readings, health, events and description changes, with polling as the
-fallback. **Done when** the app updates without polling.
+The live stream is *done* too (2026-09-29), as a **WebSocket**, not
+server-sent events: `GET /api/live` (docs/API.md). A phone's React Native has
+no `EventSource`, and one socket can later carry an app's own readings up as
+well. The session manager publishes on the `LiveBus` only what moved (a
+reading by value, health when it changes), at once when a device pushes or
+finishes a poll, and on a one-second pulse otherwise, so a package that never
+calls `ctx.changed()` still streams. Each socket coalesces and sends at most
+four times a second; a change made through the API says `changed`, and the
+app reads the list again. The app polls only while the socket is down.
+**Done when** the app updates without polling — it does. Next, on the same
+socket: the readings of connections an app holds, sent up as they arrive
+rather than every 20 s.
 
 ### Step 28 — The app: pages from descriptions, slots, a kit, live
 Generic pages drawn from the description: parts as sections, controls from

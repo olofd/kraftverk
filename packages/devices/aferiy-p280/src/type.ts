@@ -95,7 +95,8 @@ export default defineDeviceType({
     const connection = ctx.connection;
     if (!connection) throw new Error('A P280 session needs a connection');
     const link = linkOver(connection);
-    const client = new StationClient({ transport: link, readOnly: ctx.readOnly, model: 'AFERIY P280' });
+    // Each frame it decodes is news: its holder hears at once, not at its next look.
+    const client = new StationClient({ transport: link, readOnly: ctx.readOnly, model: 'AFERIY P280', onUpdate: () => ctx.changed() });
     await client.start();
     return stationSession(client, {
       identity: identityFrom(connection.address),

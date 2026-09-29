@@ -24,7 +24,7 @@
       "name": "server:ui-check",
       "runtimeExecutable": "node",
       "runtimeArgs": ["scripts/run-bun.mjs", "server/src/index.ts"],
-      "env": { "KRAFTVERK_DB": "server/data/scratch/ui-check.db", "KRAFTVERK_LOG_DIR": "server/data/scratch/ui-check-logs", "PORT": "3334" },
+      "env": { "KRAFTVERK_DB": "server/data/scratch/ui-check.db", "KRAFTVERK_LOG_DIR": "server/data/scratch/ui-check-logs", "PORT": "3334", "BROKER_SPAWN": "0" },
       "port": 3334
     },
     {

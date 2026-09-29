@@ -77,6 +77,10 @@ Synology:
    **Custom Header → Create**: `X-Forwarded-For` = `$proxy_add_x_forwarded_for`
    and `X-Real-IP` = `$remote_addr`, so the server rate-limits and records the
    real client rather than the proxy.
+   **Custom Header → Create → WebSocket**, which adds the two headers a
+   WebSocket needs through a proxy: the app's live stream uses one. Without
+   them the app still works from outside, and reads the list every five
+   seconds instead.
    **Advanced Settings**: raise the proxy read timeout from 60 to 120 seconds.
    A setup step can take up to 90 seconds (a network scan, a cloud login), and
    a proxy that gives up first reports a failure for something that went on to

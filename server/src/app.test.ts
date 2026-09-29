@@ -3,9 +3,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import type { LiveUpdate } from '@kraftverk/api-contract';
 import { savedDeviceId } from '@kraftverk/device-sdk';
 
 import { ActionGateway } from '@kraftverk/gateway';
+import { LiveBus } from '@kraftverk/holder';
 import { corsOrigin, createApp } from './app.ts';
 import { AutomationEngine, serverDevices } from './automations/engine.ts';
 import { AutomationStore } from './automations/store.ts';
@@ -27,6 +29,7 @@ import { busDefinition, FakeBus, lampProtocol, lampType } from './devices/testin
 import { DeviceTypeRegistry } from './devices/types.ts';
 import { audit, closeDb, db, openSecret } from './history/db.ts';
 import { Sampler } from './history/sampler.ts';
+import { originAllowed } from './routes/live.ts';
 import { ProtocolRegistry } from './runtime/protocols.ts';
 import { TransportHost } from './runtime/transports.ts';
 
@@ -47,6 +50,8 @@ const PROXY = '172.20.0.9';
 
 type Server = {
   app: ReturnType<typeof createApp>['app'];
+  websocket: ReturnType<typeof createApp>['websocket'];
+  live: LiveBus;
   sessions: DeviceSessionManager;
   setup: SetupService;
   bus: FakeBus;
@@ -75,6 +80,7 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
   const links = new LinkStore();
   const clients = new ClientStore();
   const events = new EventStore();
+  const live = new LiveBus();
   const sessions = new DeviceSessionManager({
     types,
     protocols,
@@ -86,6 +92,7 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
     // As the server wires it: what a device is and raises is kept.
     onDescribed: (deviceId, description, info) => catalog.describe(deviceId, description, info),
     onEvent: (deviceId, event) => events.record(deviceId, event),
+    bus: live,
   });
   const remote = new RemoteReadings();
   const registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports, remote });
@@ -115,7 +122,7 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
   const automations = new AutomationStore();
   const engine = new AutomationEngine({ store: automations, device: serverDevices(catalog, sessions), gateway, record: audit });
 
-  const { app } = createApp({
+  const { app, websocket } = createApp({
     config,
     catalog,
     connections,
@@ -131,6 +138,7 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
     remote,
     gateway,
     events,
+    bus: live,
     automations,
     engine,
     sampler: new Sampler(registry),
@@ -140,6 +148,8 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
   });
   return {
     app,
+    websocket,
+    live,
     sessions,
     setup,
     bus,
@@ -856,6 +866,80 @@ describe('automations', () => {
     await as(`/devices/${enc(plug.id)}`, { method: 'DELETE' });
     const [automation] = (await as('/automations')).body.automations;
     expect(automation.problems).toEqual(['What to switch: Heater plug has been removed']);
+  });
+});
+
+describe('the live stream', () => {
+  /** The app, served for real — a socket cannot be opened through `app.fetch` alone. */
+  const serve = (server: Server) =>
+    Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: (request, bun) => server.app.fetch(request, bun), websocket: server.websocket as never });
+
+  /** Opens `/api/live`, and collects what it says. Resolves once it has said hello, or rejects when refused. */
+  const open = (port: number, headers: Record<string, string>) =>
+    new Promise<{ socket: WebSocket; updates: LiveUpdate[] }>((resolve, reject) => {
+      const socket = new WebSocket(`ws://127.0.0.1:${port}/api/live`, { headers } as never);
+      const updates: LiveUpdate[] = [];
+      socket.onmessage = (message) => {
+        const update = JSON.parse(String(message.data)) as LiveUpdate;
+        updates.push(update);
+        if (update.type === 'hello') resolve({ socket, updates });
+      };
+      socket.onerror = () => reject(new Error('refused'));
+      socket.onclose = () => reject(new Error('closed'));
+    });
+
+  const until = async (check: () => boolean, ms = 4000) => {
+    const deadline = Date.now() + ms;
+    while (!check()) {
+      if (Date.now() > deadline) throw new Error('timed out');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  };
+
+  test('says hello, then what changed: a device added, and its readings as they move', async () => {
+    const http = serve(simulated);
+    try {
+      const { socket, updates } = await open(http.port!, { cookie: `${SESSION_COOKIE}=${session}` });
+      const lamp = await added('Pretend lamp', { server: simulated, methodId: 'simulated' });
+      await until(() => updates.some((update) => update.type === 'changed'));
+      await until(() => updates.some((update) => update.type === 'readings' && update.deviceId === lamp.id));
+      const readings = updates.find((update) => update.type === 'readings' && update.deviceId === lamp.id);
+      expect(readings).toMatchObject({ readings: [expect.objectContaining({ key: 'on', value: true })] });
+      await until(() => updates.some((update) => update.type === 'health' && update.deviceId === lamp.id));
+
+      // Switched through the gateway: the stream says so; no list to read again for it.
+      const before = updates.length;
+      expect((await as(`/devices/${enc(lamp.id)}/parts/main/commands/switch/set`, { method: 'POST', body: { args: { on: false } } })).status).toBe(200);
+      await until(() => updates.slice(before).some((update) => update.type === 'readings' && update.deviceId === lamp.id && update.readings[0]?.value === false));
+      expect(updates.slice(before).some((update) => update.type === 'changed')).toBe(false);
+      socket.close();
+    } finally {
+      http.stop(true);
+    }
+  });
+
+  test('is refused without a session, and to a page on another website', async () => {
+    const http = serve(simulated);
+    try {
+      await expect(open(http.port!, {})).rejects.toThrow();
+      await expect(open(http.port!, { cookie: `${SESSION_COOKIE}=${session}`, origin: 'https://evil.example' })).rejects.toThrow();
+      // This server's own app, and the native app (no Origin), are let in.
+      const own = await open(http.port!, { cookie: `${SESSION_COOKIE}=${session}`, origin: `http://127.0.0.1:${http.port}` });
+      own.socket.close();
+    } finally {
+      http.stop(true);
+    }
+  });
+
+  test('a browser page may open it from this server’s own names only', () => {
+    const cors = corsOrigin({ allowedOrigins: ['https://app.example.test'], development: false });
+    const deps = { config: { allowedHosts: new Set(['home.example.test']) } } as never;
+    expect(originAllowed(undefined, '192.0.2.10:8080', deps, cors)).toBe(true);
+    expect(originAllowed('http://192.0.2.10:8080', '192.0.2.10:8080', deps, cors)).toBe(true);
+    expect(originAllowed('https://home.example.test', 'kraftverk:3333', deps, cors)).toBe(true);
+    expect(originAllowed('https://app.example.test', 'kraftverk:3333', deps, cors)).toBe(true);
+    expect(originAllowed('https://evil.example', '192.0.2.10:8080', deps, cors)).toBe(false);
+    expect(originAllowed('not a url', '192.0.2.10:8080', deps, cors)).toBe(false);
   });
 });
 

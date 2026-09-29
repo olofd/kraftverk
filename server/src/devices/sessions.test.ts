@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { SIMULATED_ADDRESS, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT } from '@kraftverk/device-sdk';
+import { LiveBus, type LiveMessage } from '@kraftverk/holder';
 
 import { closeDb, db } from '../history/db.ts';
 import { ProtocolRegistry } from '../runtime/protocols.ts';
@@ -35,7 +36,7 @@ let sessions: DeviceSessionManager;
 let bus: FakeBus;
 let identified: [string, string][];
 
-const build = (options: { readOnly?: boolean } = {}) => {
+const build = (options: { readOnly?: boolean; bus?: LiveBus } = {}) => {
   const protocols = new ProtocolRegistry();
   expect(protocols.install(lampProtocol)).toEqual([]);
   const transports = new TransportHost({ context: { env: {}, log: () => {}, audit: () => {} } });
@@ -51,6 +52,7 @@ const build = (options: { readOnly?: boolean } = {}) => {
     allowRawFrames: false,
     clientName: (id) => clients.get(id)?.name ?? null,
     onIdentified: (deviceId, identity) => identified.push([deviceId, identity]),
+    bus: options.bus,
   });
 };
 
@@ -177,7 +179,7 @@ describe('a device that cannot open is still a device, saying why', () => {
     lampControl.failOpen = true;
     const { record } = addLamp('Hall', 'lamp-1');
     await sessions.sync(catalog.list());
-    expect(sessions.health(record)).toMatchObject({ status: 'error', detail: expect.stringMatching(/^The lamp refused the connection; trying again in \d+ s$/) });
+    expect(sessions.health(record)).toMatchObject({ status: 'error', detail: 'The lamp refused the connection; trying again in under a minute' });
 
     // It may refuse because of something that has since passed: tried again when due.
     lampControl.failOpen = false;
@@ -205,7 +207,7 @@ describe('a device that cannot open is still a device, saying why', () => {
     const { record } = addLamp('Hall', 'lamp-1');
     await sessions.sync(catalog.list());
     expect(sessions.get(record.id)).toBeNull();
-    expect(sessions.health(record)).toMatchObject({ status: 'error', detail: expect.stringMatching(/^No bus on this machine; trying again in (29|30) s$/) });
+    expect(sessions.health(record)).toMatchObject({ status: 'error', detail: 'No bus on this machine; trying again in under a minute' });
 
     // Not yet due: left alone.
     await sessions.check(Date.now() + 10_000);
@@ -214,7 +216,7 @@ describe('a device that cannot open is still a device, saying why', () => {
     // Still down when due: tried, refused, and the next wait is longer.
     await sessions.check(Date.now() + 31_000);
     expect(sessions.get(record.id)).toBeNull();
-    expect(sessions.health(record).detail).toMatch(/trying again in (59|60) s$/);
+    expect(sessions.health(record).detail).toBe('No bus on this machine; trying again in 1 min');
 
     // Back: opened on the next try, with no one touching the catalog.
     bus.unavailable = null;
@@ -240,6 +242,44 @@ describe('a device that cannot open is still a device, saying why', () => {
 
     expect(sessions.get(record.id)).toBeNull();
     expect(sessions.health(record).detail).toBe('Held by Olof’s iPhone, not by this server');
+  });
+});
+
+describe('what devices say, as it changes', () => {
+  test('the bus hears every reading once, then only what moved, and health when it changes', async () => {
+    const live = new LiveBus();
+    const heard: LiveMessage[] = [];
+    const manager = build({ bus: live });
+    const { record } = addLamp('Hall', 'lamp-1');
+    await manager.sync(catalog.list());
+    await new Promise((resolve) => setTimeout(resolve, 30)); // its first read
+
+    // Nobody listening: nothing is published, and nothing is remembered as sent.
+    manager.pulse();
+    expect(heard).toEqual([]);
+
+    live.subscribe((message) => heard.push(message));
+    manager.pulse();
+    expect(heard.map((message) => message.kind)).toEqual(['readings', 'health']);
+    expect(heard[0]).toMatchObject({ kind: 'readings', deviceId: record.id, readings: [expect.objectContaining({ key: 'on', value: true })] });
+    expect(heard[1]).toMatchObject({ kind: 'health', health: { status: 'connected', owner: 'server', transport: 'bus' } });
+
+    // Nothing moved: nothing said.
+    heard.length = 0;
+    manager.pulse();
+    expect(heard).toEqual([]);
+
+    // Switched: the one reading that moved.
+    await manager.get(record.id)!.command({ part: 'main', capability: 'switch', command: 'set', args: { on: false } });
+    manager.pulse();
+    expect(heard).toEqual([{ kind: 'readings', deviceId: record.id, readings: [expect.objectContaining({ key: 'on', value: false })] }]);
+
+    // Gone: its health says so.
+    heard.length = 0;
+    await manager.close(record.id);
+    manager.pulse();
+    expect(heard).toEqual([expect.objectContaining({ kind: 'health', health: expect.objectContaining({ status: 'offline' }) })]);
+    await manager.closeAll();
   });
 });
 

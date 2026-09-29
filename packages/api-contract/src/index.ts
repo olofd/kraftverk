@@ -25,6 +25,7 @@ import type {
   DeviceInfo,
   DeviceTypeMeta,
   DeviceTypeView,
+  EventLevel,
   LinkKind,
   Reading,
   SavedDeviceId,
@@ -171,6 +172,34 @@ export type DeviceHistory = {
 };
 
 export type LinkRecord = { id: string; kind: LinkKind; sourceId: SavedDeviceId; targetId: SavedDeviceId; createdAt: string };
+
+// --- live -------------------------------------------------------------------------
+
+/** Something a device said happened, as the live stream carries it. */
+export type LiveEvent = {
+  id: string;
+  level: EventLevel;
+  part: string | null;
+  data: Readonly<Record<string, Value>> | null;
+  at: string;
+};
+
+/**
+ * `GET /api/live`, a WebSocket: what changed, as it changes, server to app.
+ *
+ * The app reads the list (`GET /devices`) when the socket opens, and applies
+ * these on top: readings merged by key, health replaced. `changed` asks it to
+ * read the list again — something it does not carry in detail changed: a
+ * device added, renamed or removed, a connection, a link, what a device is.
+ * When the socket is down the app polls, as it did before there was one.
+ */
+export type LiveUpdate =
+  | { type: 'hello'; at: string }
+  /** Only the readings whose values moved. */
+  | { type: 'readings'; deviceId: SavedDeviceId; readings: Reading[] }
+  | { type: 'health'; deviceId: SavedDeviceId; health: ConnectionHealth }
+  | { type: 'event'; deviceId: SavedDeviceId; event: LiveEvent }
+  | { type: 'changed'; deviceId: SavedDeviceId | null };
 
 // --- adding a device ----------------------------------------------------------
 

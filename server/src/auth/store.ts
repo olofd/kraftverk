@@ -275,6 +275,19 @@ export function readSession(token: string | undefined | null): Session | null {
   return { user, expiresAt, renewed: true };
 }
 
+/**
+ * Whether a session still stands — not ended, not expired, its account still
+ * there — without renewing it: for something held open on it, a live stream,
+ * that must close when the session does rather than keep it alive.
+ */
+export function sessionAlive(token: string | undefined | null): boolean {
+  if (!token) return false;
+  const row = db()
+    .query<{ user_id: string; expires_at: string }, [string]>('SELECT user_id, expires_at FROM sessions WHERE token_hash = ?')
+    .get(hashToken(token));
+  return row !== null && Date.parse(row.expires_at) > Date.now() && getUser(row.user_id) !== null;
+}
+
 export function endSession(token: string | undefined | null): void {
   if (token) db().query('DELETE FROM sessions WHERE token_hash = ?').run(hashToken(token));
 }

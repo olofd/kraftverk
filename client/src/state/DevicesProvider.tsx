@@ -12,6 +12,7 @@ import {
   fetchRemovedDevices,
   fetchTransportDiagnostic,
   fetchVersion,
+  openLive,
   preferConnection,
   removeConnection as apiRemoveConnection,
   removeDevice,
@@ -28,6 +29,8 @@ import {
   type DeviceView,
   type GatewayResult,
   type LinkView,
+  type LiveState,
+  type LiveUpdate,
   type SavedDeviceId,
   type VersionInfo,
 } from '@kraftverk/api-client';
@@ -39,6 +42,7 @@ import type { LocalDevice } from '../runtime/local';
 import { AppRuntime } from '../runtime/runtime';
 import type { HeldDevice } from '../runtime/sessions';
 import { useAuth } from './AuthProvider';
+import { applyLive } from './live';
 import { useServers, type Mode } from './ServersProvider';
 
 /**
@@ -52,8 +56,15 @@ import { useServers, type Mode } from './ServersProvider';
  * No screen asks which.
  */
 
-/** Readings move slower than a device's own screens poll; the list is for cards. */
+/**
+ * The list is read when the live stream opens, and kept current by it after
+ * that (`GET /api/live`). Only while the stream is down is it read every few
+ * seconds, as it always was; while it is up, rarely, in case anything was missed.
+ */
 const POLL_MS = 5000;
+const POLL_WHILE_LIVE_MS = 60_000;
+/** Updates from the stream are applied together, this often at most: one redraw for a burst. */
+const APPLY_MS = 100;
 
 /** How reachable the thing holding the list is. */
 export type Connection = 'connecting' | 'online' | 'offline' | 'idle';
@@ -62,6 +73,8 @@ type DevicesContextValue = {
   mode: Mode;
   runtime: AppRuntime;
   connection: Connection;
+  /** Whether the server's live stream is up: when it is not, the list is polled. */
+  live: LiveState;
   devices: DeviceView[];
   /** Removed devices, with their history: server mode only. */
   removed: DeviceView[];
@@ -171,6 +184,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   const [unreachable, setUnreachable] = useState(false);
   const [version, setVersion] = useState<VersionInfo | null>(null);
   const [tick, setTick] = useState(0);
+  const [live, setLive] = useState<LiveState>('down');
   const polling = mode === 'server' && allowed;
 
   // Any change in what this app holds is something a card shows.
@@ -208,17 +222,70 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     }
   }, [polling]);
 
+  // The live stream: while it is up, what changed arrives as it changes, and the list is not polled.
+  useEffect(() => {
+    if (!polling) return;
+    let stream: { close(): void } | null = null;
+    let pending: LiveUpdate[] = [];
+    let applying: ReturnType<typeof setTimeout> | null = null;
+    let reading: ReturnType<typeof setTimeout> | null = null;
+
+    const apply = () => {
+      applying = null;
+      const batch = pending;
+      pending = [];
+      setServed((devices) => applyLive(devices, batch));
+    };
+    // Read the list again, once for a burst of "changed".
+    const readAgain = () => {
+      reading ??= setTimeout(() => {
+        reading = null;
+        void load();
+      }, APPLY_MS);
+    };
+    const onUpdate = (update: LiveUpdate) => {
+      // Hello: read the list, and apply what follows on top of it.
+      if (update.type === 'hello' || update.type === 'changed') return readAgain();
+      if (update.type !== 'readings' && update.type !== 'health') return;
+      pending.push(update);
+      applying ??= setTimeout(apply, APPLY_MS);
+    };
+    const start = () => {
+      stream ??= openLive({ onUpdate, onState: setLive });
+    };
+    const stop = () => {
+      stream?.close();
+      stream = null;
+      setLive('down');
+    };
+
+    start();
+    // In the background it is closed, and opened again on return: a phone's battery is not spent on a screen nobody sees.
+    const subscription = AppState.addEventListener('change', (next) => (next === 'active' ? start() : stop()));
+    return () => {
+      stop();
+      subscription.remove();
+      if (applying) clearTimeout(applying);
+      if (reading) clearTimeout(reading);
+    };
+  }, [load, polling]);
+
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | undefined;
+    // Set once this run is cleaned up: a read still in flight must not start a timer nobody will stop.
+    let done = false;
+    const every = live === 'live' ? POLL_WHILE_LIVE_MS : POLL_MS;
     const start = () => {
-      if (polling) timer ??= setInterval(() => void load(), POLL_MS);
+      if (polling && !done) timer ??= setInterval(() => void load(), every);
     };
     const stop = () => {
       if (timer) clearInterval(timer);
       timer = undefined;
     };
-    setLoading(true);
-    void load().then(start);
+    if (live !== 'live') {
+      setLoading((was) => was || served.length === 0);
+      void load().then(start);
+    } else start();
     const subscription = AppState.addEventListener('change', (next) => {
       if (next === 'active') {
         void load();
@@ -226,10 +293,13 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       } else stop();
     });
     return () => {
+      done = true;
       stop();
       subscription.remove();
     };
-  }, [load, polling]);
+    // `served`: only whether there is anything yet, for the first spinner.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, load, polling]);
 
   // --- what this app holds ----------------------------------------------------
 
@@ -448,6 +518,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       mode,
       runtime,
       connection: mode === 'local' ? 'online' : unreachable ? 'offline' : loading ? 'connecting' : 'online',
+      live: mode === 'local' ? 'down' : live,
       devices,
       removed,
       loading: mode === 'server' ? loading : false,
@@ -493,7 +564,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       },
       history: mode === 'server' ? fetchDeviceHistory : null,
     }),
-    [actionsFor, devices, error, holderOf, load, loading, mode, mutate, removed, runtime, screenProps, unreachable, version]
+    [actionsFor, devices, error, holderOf, live, load, loading, mode, mutate, removed, runtime, screenProps, unreachable, version]
   );
 
   return <DevicesContext.Provider value={value}>{children}</DevicesContext.Provider>;

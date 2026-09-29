@@ -58,6 +58,33 @@ type: a type's own tools are its `advanced` actions.
 | `GET` | `/found` | What the transports see that nothing you have is reached by |
 | `GET` | `/diagnostics/log` | The server's own recent log (`?level=warn`, `?limit=`), and where its daily files are |
 | `GET` | `/audit` | The timeline: intents, commands, verification outcomes |
+| `GET` (WebSocket) | `/live` | What changed, as it changes — see below |
+
+## The live stream
+
+`GET /api/live` opens a WebSocket that carries what changed, server to app
+(`LiveUpdate` in `packages/api-contract`):
+
+| Message | Meaning |
+| --- | --- |
+| `{ type: 'hello', at }` | Open. Read the list (`GET /devices`) now, and apply what follows on top of it |
+| `{ type: 'readings', deviceId, readings }` | Only the readings whose values moved: merge them by key |
+| `{ type: 'health', deviceId, health }` | A device's health, when it changed (and at least every 30 s while readings keep arriving) |
+| `{ type: 'event', deviceId, event }` | Something a device said happened |
+| `{ type: 'changed', deviceId: null }` | Something the stream does not carry in detail changed — a device added, renamed or removed, a connection, a link, what a device is: read the list again |
+
+For each socket, the updates waiting to be sent are combined: a reading by its key, health by its device. They go out at most four
+times a second. A socket that is not draining is sent nothing until it does,
+then the latest. The gate applies as to every route (the session cookie
+travels with the socket), and two more rules do too: a browser page from
+another website is refused by its `Origin` (a WebSocket cannot carry the
+`X-Kraftverk-Client` header, so this takes its place; the native app sends
+no Origin), and the socket is closed (code `4401`) within a minute of its
+session ending. What an app sends on it is ignored.
+
+The app reads the list when the socket opens, and polls every five seconds
+only while it is down; closes it in the background; and opens it again with a
+growing wait, up to half a minute. Nothing depends on it being up.
 
 ## Environment
 

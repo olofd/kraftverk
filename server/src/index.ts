@@ -200,7 +200,7 @@ engine.start();
 const proxies = new ProxyDirectory(config.trustedProxies);
 proxies.start();
 
-const { app } = createApp({
+const { app, websocket } = createApp({
   config,
   catalog,
   connections,
@@ -216,6 +216,7 @@ const { app } = createApp({
   remote,
   gateway,
   events,
+  bus,
   automations,
   engine,
   sampler,
@@ -249,4 +250,4 @@ console.log(
   failed — and a retry toggled it again. Above the longest of those, within
   Bun's limit of 255.
 */
-export default { port: config.port, hostname: config.host, fetch: app.fetch, idleTimeout: 120 };
+export default { port: config.port, hostname: config.host, fetch: app.fetch, websocket, idleTimeout: 120 };
