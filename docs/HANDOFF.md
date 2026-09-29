@@ -7,7 +7,7 @@ data model in [`DATA-MODEL.md`](DATA-MODEL.md). This document holds only what
 those cannot: where things stand right now, and what has been learned the hard
 way. Where it describes code that the plan replaces, the plan is the target.
 
-Last updated 2026-09-29.
+Last updated 2026-09-30.
 
 > **Phase: research and development — strict version 1.** Nobody runs
 > kraftverk in production but its owner, so nothing here is kept backward
@@ -21,9 +21,10 @@ Last updated 2026-09-29.
 
 ## Where things stand
 
-**The plan's steps 0–15 are done** (ARCHITECTURE.md §8) and deployed: work
-happens on `main`, and pushing it to GitLab deploys to the owner's NAS (GitHub
-runs CI only; see [CI.md](CI.md)). The broker container is updated by the
+**The plan's steps 0–15 are done** (ARCHITECTURE.md §8), and so are the
+next-step plan's phases 0, 1, 2 and 5 and the assistant minimum — see *What
+is built, and what is not* below. Work happens on `main`, and pushing it to
+GitLab deploys to the owner's NAS (GitHub runs CI only; see [CI.md](CI.md)). The broker container is updated by the
 manual `broker` job, which drops the station for about a minute. The architecture baseline is
 empty: the core names no product, and every device is found, not listed.
 
@@ -98,6 +99,72 @@ server sets the old database aside (`kraftverk.db.set-aside.<time>`) and
 begins a new one, so the first account is created again from the home network
 and the station added again through the add flow. The `.before-migration-*`
 and `.set-aside.*` copies on the server's volume are the owner's to delete.
+
+## What is built, and what is not
+
+Measured against [NEXT-STEP-ARCHITECTURE.md](NEXT-STEP-ARCHITECTURE.md) §10
+(the phases) and §12 (findings J1–J40), as of 2026-09-30 (`32a218b`). All
+checks are green: typecheck, 623 unit tests, the architecture ratchet and 14
+end-to-end tests.
+
+**Deployed 2026-09-30.** The push to GitLab carried the schema change of
+Phase 2 (`4b2be75`), so the NAS database was set aside once on start: the
+first account is made again from the home network, and the station and the
+plug are added again. The set-aside file is kept beside the new one.
+
+### Built
+
+| Phase | What | Commits |
+|---|---|---|
+| 0 Hygiene | Ratchets over every package's words; events pruned; refused devices retried; product words out of the shell | earlier |
+| 1 The model, part 3 | Values with structure, meanings, part-scoped keys, `currentFor`, links between parts, declared consequence, tools and query answers as data, branded ids, reach on methods | `eaade9b` |
+| 2 Storage | `meta`; `sample_change` and `/devices/:id/changes`; `description_source`; `transport_kv` (`TransportContext.store`); `audit.resource_kind`, filterable at `/audit`; history `from`/`to`; one-per-source held by a partial unique index | `4b2be75` |
+| 3 The engine, in part | The live stream (step 27); confirmation as a single-use token bound to the intent and the person (J17); a write dwell per setting (J18) | `4b2be75`, `32a218b` |
+| 4 Automations | Rules as data; recipes from packages and the SDK (`standard.*`); time, event and threshold triggers; trigger state kept across restarts | `df58ec0`, `bda8c67` |
+| 5 The app on the model | Slots (`DeviceUi`) and a kit in `packages/ui`; energy flow, part pages, events and a Problems page, About, tools drawn from their declarations; the P280's screens from its readings, with no status tool; keyboard-operable toggles | `b558fe3`, `4b7ed6d`, `29b102b` |
+| Assistant, minimum | `GET /world`, `GET /vocabulary`; MCP at `POST /mcp`, acting as `actor: 'agent'`, refused whatever needs a person's yes; `propose` (made observing) and rehearsal on history, also in the app | `1389c53` |
+
+From the Phase 1 review:
+
+- Unknown load asks. A missing or stale reading now needs confirmation.
+- The 5 W threshold is the home's `loadWatts`, in App settings → Safety and at `/api/policy`.
+- Trigger state is persisted.
+- The P280 state tool is gone.
+- Phase 2 was bundled with the confirmation nonce.
+- One-per-source is enforced in the database.
+- The small items are done.
+- The end-to-end jobs run in both CIs.
+- The plan documents are committed.
+
+### Not built
+
+| Where | What is left | Finding |
+|---|---|---|
+| Phase 3 | The sampler still builds every device's view once a minute; it should sample from records and sessions, and pushing devices on change | J25 |
+| Phase 3 | Package discovery through a manifest (`@kraftverk/packages`); the broker still walks the protocols folder itself | J31 |
+| Phase 3 | `SightingFilter` with BLE manufacturer data and mDNS | — |
+| Phase 3 | Setup merges credential and method config fields by name; a collision is silent | J35 |
+| Phase 4 | A role records the part, not the capability that filled it; `oneOf` is ambiguous at run time | J40 |
+| Phase 4 | The P280 declares only its mains events: no overload or over-temperature, if its registers carry them | J22 (part) |
+| Phase 5 | The `card` and recipe-editor slots, until a package needs them | — |
+| Assistant | An API token for MCP clients (today a person's session cookie); a CI test against a local model | — |
+| Phase 6 | `refines`; the Tuya profiles as refinements; reach shown on the add screen (the ATORCH's "no cloud" text still contradicts its `cloud-at-setup` reach) | — |
+| Phase 7 | Packages from outside the repository; the SDK on npm; `npm create kraftverk-device`; a diagnostics bundle; `AGENTS.md` for packages; record-and-replay fixtures; the Home Assistant bridge; BTHome, Shelly, ESPHome | J38 (fixtures) |
+| Phase 8 | `ARCHITECTURE.md` split into the design, `ROADMAP.md` and `DECISIONS.md`; the generated device table; published images; notifications; homes and roles | J39 |
+| Phase 9 | The Matter spike | — |
+
+### Next steps
+
+In this order, each small and each keeping the checks green:
+
+1. **Finish Phase 3's findings.**
+   - J25: the sampler reads records and sessions (a lean `DeviceRegistry.current()`) instead of building views, and samples pushing devices on change.
+   - J35: refuse a setup whose credential and method fields collide.
+   - J31: one package manifest for the server, the broker, `gen:devices` and the ratchet.
+2. **J40.** A role binding records the capability that filled it.
+3. **An API token for the assistant.** Scoped to `agent`, revocable, and audited as its own actor, so an MCP client does not carry a person's session.
+4. **Phase 6.** Reach on the add screen, with the ATORCH's text fixed. Then `refines`, with the Tuya profiles as its first use.
+5. **Phases 7–9, as the product needs them.** First the Home Assistant bridge from the projections and record-and-replay fixtures, then packages from outside the repository, then the documentation split.
 
 ## Traps
 
