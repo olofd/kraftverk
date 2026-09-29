@@ -4,10 +4,11 @@ import { z } from 'zod';
 
 import type { AutomationView, RecipeView, RoleBinding } from '@kraftverk/api-contract';
 import { capabilitiesOf, describeRule, isTimeZone, MAIN_PART, meetsNeed, partsOf, savedDeviceId, validateConfig, type ConfigValues, type Value } from '@kraftverk/device-sdk';
-import { CONFIRMATION } from '@kraftverk/gateway';
+import { Confirmations, subjectOf } from '@kraftverk/gateway';
 
+import { actorOf } from '../auth/routes.ts';
 import type { AutomationRecord } from '../automations/engine.ts';
-import { auditDevice, body, type AppDeps } from './shared.ts';
+import { auditAbout, body, type AppDeps } from './shared.ts';
 
 /**
  * Automations (docs/ARCHITECTURE.md step 14): what recipes there are, and the
@@ -24,6 +25,8 @@ const params = z.record(z.string().min(1).max(40), z.union([z.string().max(200),
 
 export function automationRoutes({ automations, engine, library, catalog, sessions }: AppDeps): Hono {
   const api = new Hono();
+  /** Arming is confirmed as a command is: a token bound to this automation, these changes and this person, once. */
+  const arming = new Confirmations();
 
   const view = (automation: AutomationRecord): AutomationView => {
     const recipe = library.recipe(automation.recipe);
@@ -79,7 +82,7 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
     if (!isTimeZone(input.timeZone)) throw new HTTPException(400, { message: `"${input.timeZone}" is not a time zone` });
     const checked = validated(input.recipe, input);
     const created = automations.create({ name: input.name, recipe: input.recipe, roles: checked.roles, params: checked.params, timeZone: input.timeZone });
-    auditDevice(c, 'automation.created', created.id, `Made the automation "${created.name}", observing`, { recipe: created.recipe, roles: created.roles, params: created.params });
+    auditAbout(c, 'automation.created', 'automation', created.id, `Made the automation "${created.name}", observing`, { recipe: created.recipe, roles: created.roles, params: created.params });
     return c.json(view(created));
   });
 
@@ -95,7 +98,7 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
           params: params.optional(),
           timeZone: z.string().min(1).max(64).optional(),
           mode: z.enum(['off', 'observe', 'armed']).optional(),
-          confirmation: z.string().max(20).optional(),
+          confirmation: z.string().max(64).optional(),
         })
         .strict()
     );
@@ -105,9 +108,11 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
     // Arming — and changing what an armed one does — is a deliberate act.
     const armedAfter = input.mode === 'armed' || (input.mode === undefined && current.mode === 'armed');
     const needsConfirming = armedAfter && (current.mode !== 'armed' || checked !== null);
-    if (needsConfirming && input.confirmation !== CONFIRMATION) {
+    const { confirmation, ...changes } = input;
+    const subject = subjectOf({ automation: current.id, changes, by: actorOf(c) });
+    if (needsConfirming && !arming.accept(confirmation, subject)) {
       return c.json(
-        { error: 'An armed automation switches things on its own, with nobody watching. Confirm to arm it.', needsConfirmation: true },
+        { error: 'An armed automation switches things on its own, with nobody watching. Confirm to arm it.', needsConfirmation: arming.ask(subject) },
         409
       );
     }
@@ -125,7 +130,7 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
       ...(input.mode ? { mode: input.mode } : {}),
     })!;
     const said = input.mode && input.mode !== current.mode ? { off: 'Turned off', observe: 'Set to observe only', armed: 'Armed: it now acts on its own' }[input.mode] : 'Changed';
-    auditDevice(c, input.mode === 'armed' ? 'automation.armed' : 'automation.changed', updated.id, `${said}: "${updated.name}"`, {
+    auditAbout(c, input.mode === 'armed' ? 'automation.armed' : 'automation.changed', 'automation', updated.id, `${said}: "${updated.name}"`, {
       before: { mode: current.mode, roles: current.roles, params: current.params },
       after: { mode: updated.mode, roles: updated.roles, params: updated.params },
     });
@@ -136,7 +141,7 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
     const current = automations.get(c.req.param('id'));
     if (!current || !automations.delete(current.id)) throw new HTTPException(404, { message: 'No such automation' });
     engine.reset(current.id);
-    auditDevice(c, 'automation.deleted', current.id, `Deleted the automation "${current.name}"`);
+    auditAbout(c, 'automation.deleted', 'automation', current.id, `Deleted the automation "${current.name}"`);
     return c.json({ ok: true });
   });
 

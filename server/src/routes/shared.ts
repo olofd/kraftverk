@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import { savedDeviceId } from '@kraftverk/device-sdk';
+import { savedDeviceId, type ResourceKind } from '@kraftverk/device-sdk';
 
 import type { ActionGateway } from '@kraftverk/gateway';
 import type { LiveBus } from '@kraftverk/holder';
@@ -93,8 +93,8 @@ export async function body<T extends z.ZodType>(c: Context, schema: T): Promise<
  * history is the destructive one, and a device that vanishes with no entry
  * anywhere is one nobody can account for afterwards.
  */
-export const auditDevice = (c: Context, kind: string, id: string, summary: string, detail?: unknown) =>
-  audit({ at: new Date().toISOString(), kind, actor: actorOf(c), resource: id, summary, detail });
+export const auditAbout = (c: Context, kind: string, resourceKind: ResourceKind, id: string, summary: string, detail?: unknown) =>
+  audit({ at: new Date().toISOString(), kind, actor: actorOf(c), resourceKind, resource: id, summary, detail });
 
 /**
  * The device a route names, or a 404. There is no inference here, not even

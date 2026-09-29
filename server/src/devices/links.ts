@@ -52,13 +52,15 @@ export class LinkStore {
 
   /**
    * Records a link. A kind with one target per source replaces what the
-   * source part pointed at before: a plug feeds one thing.
+   * source part pointed at before: a plug feeds one thing. The row says which
+   * it is, and a unique index holds it (schema.ts).
    */
   add(input: { kind: LinkKind; source: LinkEnd<SavedDeviceId>; target: LinkEnd<SavedDeviceId> }): LinkRecord {
     if (input.source.device === input.target.device) throw new Error('A device cannot be linked to itself');
     const record: LinkRecord = { id: linkId(`l-${randomBytes(6).toString('hex')}`), ...input, createdAt: new Date().toISOString() };
+    const onePerSource = linkKindSpec(input.kind).onePerSource === true;
     db().transaction(() => {
-      if (linkKindSpec(input.kind).onePerSource) {
+      if (onePerSource) {
         db().query('DELETE FROM device_link WHERE kind = ? AND source_device = ? AND source_part = ?').run(input.kind, input.source.device, input.source.part);
       } else {
         db()
@@ -66,8 +68,8 @@ export class LinkStore {
           .run(input.kind, input.source.device, input.source.part, input.target.device, input.target.part);
       }
       db()
-        .query('INSERT INTO device_link (id, kind, source_device, source_part, target_device, target_part, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(record.id, record.kind, record.source.device, record.source.part, record.target.device, record.target.part, record.createdAt);
+        .query('INSERT INTO device_link (id, kind, source_device, source_part, target_device, target_part, one_per_source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(record.id, record.kind, record.source.device, record.source.part, record.target.device, record.target.part, onePerSource ? 1 : 0, record.createdAt);
     })();
     return record;
   }

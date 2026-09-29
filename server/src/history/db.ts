@@ -1,5 +1,6 @@
 import type { AuditEntry } from '@kraftverk/api-contract';
-import { existsSync, mkdirSync, renameSync } from 'node:fs';
+import type { AuditRecord, ResourceKind } from '@kraftverk/device-sdk';
+import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
 
@@ -56,6 +57,24 @@ export type Db = Database;
 
 let database: Db | null = null;
 
+/** The version of kraftverk this is, as its package says: what a new database records it was made by. */
+const VERSION = (() => {
+  try {
+    return (JSON.parse(readFileSync(resolve(import.meta.dirname, '../../package.json'), 'utf8')) as { version?: string }).version ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+})();
+
+/** What a database says it is, from its `meta` table — or nothing, for one from before there was one. */
+function metaOf(handle: Db): Record<string, string> {
+  try {
+    return Object.fromEntries(handle.query<{ key: string; value: string }, []>('SELECT key, value FROM meta').all().map((row) => [row.key, row.value]));
+  } catch {
+    return {};
+  }
+}
+
 function open(path: string): Db {
   const handle = new Database(path, { create: true });
   handle.exec('PRAGMA journal_mode = WAL');
@@ -110,17 +129,23 @@ export function openSchema(path: string, schema = SCHEMA): Db & { setAside?: str
   let setAside: string | undefined;
   if (tables > 0) {
     if (path === ':memory:') throw new Error('An in-memory database with another schema: nothing to set aside');
+    const old = metaOf(handle);
     handle.close();
     const stamp = new Date().toISOString().replace(/\.\d+Z$/, 'Z').replaceAll(':', '-');
     setAside = `${path}.set-aside.${stamp}`;
     for (const suffix of ['', '-wal', '-shm']) if (existsSync(path + suffix)) renameSync(path + suffix, setAside + suffix);
-    console.warn(`[db] ${path} was made by another schema; it is set aside as ${setAside}, and a new database is started. Nothing was deleted.`);
+    const madeBy = old.created_by_version ? `, made by kraftverk ${old.created_by_version} on ${old.created_at?.slice(0, 10)} with schema ${old.schema_hash},` : '';
+    console.warn(`[db] ${path} was made by another schema${madeBy} and is set aside as ${setAside}; a new database is started. Nothing was deleted.`);
     handle = open(path);
   }
 
   handle.transaction(() => {
     handle.exec(schema);
     handle.exec(`PRAGMA user_version = ${fingerprint}`);
+    const remember = handle.query('INSERT INTO meta (key, value) VALUES (?, ?)');
+    remember.run('schema_hash', String(fingerprint));
+    remember.run('created_at', new Date().toISOString());
+    remember.run('created_by_version', VERSION);
   })();
   return Object.assign(handle, setAside ? { setAside } : {});
 }
@@ -130,7 +155,8 @@ export function openSchema(path: string, schema = SCHEMA): Db & { setAside?: str
  *
  * `users`, `sessions` and `client` are kept: erasing the house is not erasing
  * who may enter it, and a server left with no accounts is one waiting to be
- * claimed. Everything else goes —
+ * claimed. `meta` is kept: it is what the database is, not what is in it.
+ * Everything else goes —
  * devices, samples, connections, secrets, links and the audit
  * timeline — which is the point. This is "back to a blank canvas" without
  * asking anyone to find and delete a file on the server.
@@ -142,7 +168,7 @@ export function resetDatabase(): { tables: string[]; rows: number } {
   const handle = db();
   const tables = handle
     .query<{ name: string }, []>(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('users', 'sessions', 'client') ORDER BY name"
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('users', 'sessions', 'client', 'meta') ORDER BY name"
     )
     .all()
     .map((row) => row.name);
@@ -252,40 +278,42 @@ export function openSecret(stored: string, encrypted: boolean): string | null {
 
 // --- audit -----------------------------------------------------------------
 
-/** One line to add to the audit timeline. What the API returns is the contract's `AuditEntry`. */
-export type AuditInput = {
-  at: string;
-  kind: string;
-  actor: string;
-  resource?: string;
-  summary: string;
-  detail?: unknown;
-};
-
-export function audit(entry: AuditInput): void {
+/** Adds a line to the timeline. What the API returns of it is the contract's `AuditEntry`. */
+export function audit(entry: AuditRecord): void {
   db()
-    .query('INSERT INTO audit (at, kind, actor, resource, summary, detail) VALUES (?, ?, ?, ?, ?, ?)')
+    .query('INSERT INTO audit (at, kind, actor, resource_kind, resource, summary, detail) VALUES (?, ?, ?, ?, ?, ?, ?)')
     .run(
       entry.at,
       entry.kind,
       entry.actor,
+      entry.resource === undefined ? null : entry.resourceKind,
       entry.resource ?? null,
       entry.summary,
       entry.detail === undefined ? null : JSON.stringify(entry.detail)
     );
 }
 
-export function recentAudit(limit = 100): AuditEntry[] {
+type AuditRow = { id: number; at: string; kind: string; actor: string; resource_kind: ResourceKind | null; resource: string | null; summary: string; detail: string | null };
+
+/** The timeline, newest first: all of it, or what is about one kind of thing, or one thing. */
+export function recentAudit(options: { limit?: number; resourceKind?: ResourceKind; resource?: string; before?: number } = {}): AuditEntry[] {
+  const where: string[] = [];
+  const args: (string | number)[] = [];
+  if (options.resourceKind) (where.push('resource_kind = ?'), args.push(options.resourceKind));
+  if (options.resource) (where.push('resource = ?'), args.push(options.resource));
+  if (options.before) (where.push('id < ?'), args.push(options.before));
   return db()
-    .query<{ at: string; kind: string; actor: string; resource: string | null; summary: string; detail: string | null }, [number]>(
-      'SELECT at, kind, actor, resource, summary, detail FROM audit ORDER BY id DESC LIMIT ?'
+    .query<AuditRow, (string | number)[]>(
+      `SELECT id, at, kind, actor, resource_kind, resource, summary, detail FROM audit ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY id DESC LIMIT ?`
     )
-    .all(limit)
+    .all(...args, options.limit ?? 100)
     .map((row) => ({
+      id: row.id,
       at: row.at,
       kind: row.kind,
       actor: row.actor,
-      resource: row.resource ?? undefined,
+      resourceKind: row.resource_kind,
+      resource: row.resource,
       summary: row.summary,
       detail: row.detail ? (JSON.parse(row.detail) as unknown) : undefined,
     }));

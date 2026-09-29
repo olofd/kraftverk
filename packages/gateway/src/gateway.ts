@@ -1,4 +1,6 @@
 import {
+  type AuditRecord,
+  type PolicyValues,
   attributeMeaning,
   capabilitiesOf,
   capabilityIn,
@@ -22,16 +24,7 @@ import {
   type SavedDeviceId,
   type Value,
 } from '@kraftverk/device-sdk';
-
-/** One line in the audit timeline, wherever the holder keeps it. */
-export type AuditEntry = {
-  at: string;
-  kind: string;
-  actor: string;
-  resource?: string;
-  summary: string;
-  detail?: unknown;
-};
+import { Confirmations, subjectOf } from './confirmations.ts';
 
 /**
  * The only path a command to hardware takes (docs/ARCHITECTURE.md §4.6).
@@ -54,9 +47,6 @@ export type AuditEntry = {
  * here.
  */
 
-/** What a person sends to say "yes, I mean it". */
-export const CONFIRMATION = 'confirm';
-
 export type CommandIntent = {
   deviceId: SavedDeviceId;
   /** The part it is for: `main`, `outlet.ac`. */
@@ -73,7 +63,11 @@ export type CommandIntent = {
    * to change which rules apply.
    */
   by: string;
-  /** Required for a consequential command, and for the first command through a link that makes its source consequential. */
+  /**
+   * The token a refusal handed out, presented with the retry once a person
+   * has said yes: required for a consequential command, and for the first
+   * command through a link that makes its source consequential.
+   */
   confirmation?: string;
 };
 
@@ -92,9 +86,10 @@ export type GatewayResult = {
   linkAgreed?: boolean;
   /**
    * Refused only because a person has to confirm it: ask, and send it again
-   * with `confirmation: CONFIRMATION`. The detail says why it matters.
+   * with `confirmation` set to this token, good for this intent and this
+   * person, once, for a minute. The detail says why it matters.
    */
-  needsConfirmation?: true;
+  needsConfirmation?: string;
 };
 
 export type GatewayPolicy = {
@@ -138,7 +133,7 @@ export type WriteIntent = {
   patch: Readonly<Record<string, Value>>;
   actor: 'user' | 'automation';
   by: string;
-  /** Required when the patch touches an attribute that can damage the hardware. */
+  /** The token a refusal handed out, once a person has said yes: required when the patch touches an attribute that can damage the hardware. */
   confirmation?: string;
 };
 
@@ -147,8 +142,8 @@ export type WriteResult = {
   detail: string;
   /** What the device reports afterwards. */
   values?: Readonly<Record<string, Value>>;
-  /** Refused only because a person has to confirm it. */
-  needsConfirmation?: true;
+  /** Refused only because a person has to confirm it: the token to send back with the retry. */
+  needsConfirmation?: string;
 };
 
 export type GatewayDeps = {
@@ -163,7 +158,7 @@ export type GatewayDeps = {
    * Where the timeline goes: the server's database, or — for a connection an
    * app holds — a queue that goes up to the server.
    */
-  record: (entry: AuditEntry) => void;
+  record: (entry: AuditRecord) => void;
   policy?: Partial<GatewayPolicy>;
   /**
    * Where each part's last switch is remembered. The server passes its
@@ -171,6 +166,8 @@ export type GatewayDeps = {
    * in memory.
    */
   memory?: { get(key: string): string | null; set(key: string, value: string): void };
+  /** What the home has set of the values a declaration may name — how much is a load. What it has not set takes its default. */
+  policyValues?: () => PolicyValues;
 };
 
 /** What a linked part reads that should follow the command: its evidence, and whether it is current. */
@@ -184,21 +181,39 @@ type Linked = { kind: LinkKindSpec; target: LinkEnd<SavedDeviceId>; name: string
 
 const shown = (value: Value): string => (value === true ? 'on' : value === false ? 'off' : isScalar(value) ? String(value) : JSON.stringify(value));
 
-/** Whether a command is consequential as its declaration says, before links are counted. */
-function declaredConsequence(command: CapabilityCommand, args: Readonly<Record<string, Value>>, read: (means: string) => Value): { matches: boolean; because: string | null } {
+/**
+ * Whether a command is consequential as its declaration says, before links
+ * are counted. A condition on what the part reports that cannot be judged —
+ * nothing read, or read too long ago — counts as holding: unknown is never
+ * taken for the safe answer. A part that does not report it at all (a plug
+ * with no meter) makes no claim either way; only a link can make it one.
+ */
+function declaredConsequence(
+  command: CapabilityCommand,
+  args: Readonly<Record<string, Value>>,
+  read: (means: string) => { value: Value; current: boolean } | null,
+  values: PolicyValues
+): { matches: boolean; because: string | null } {
   const declared = command.consequential;
   if (!declared) return { matches: false, because: null };
   if (declared === 'always') return { matches: true, because: null };
   if (declared.when && args[declared.when.arg] !== declared.when.is) return { matches: false, because: null };
   if (!declared.if?.length) return { matches: true, because: null };
+  let unknown: string | null = null;
   for (const condition of declared.if) {
-    const value = read(condition.means);
-    if (conditionHolds(condition, isScalar(value) ? value : null)) {
-      const meaning = standardMeaning(condition.means);
+    const meaning = standardMeaning(condition.means);
+    const label = meaning?.label ?? condition.means;
+    const reading = read(condition.means);
+    if (reading === null) continue;
+    const holds = reading.current ? conditionHolds(condition, isScalar(reading.value) ? reading.value : null, values) : null;
+    if (holds === true) {
+      const value = reading.value;
       const unit = meaning?.type === 'number' ? ` ${meaning.unit}` : '';
-      return { matches: true, because: `${meaning?.label ?? condition.means} is ${typeof value === 'number' ? Math.round(value) : shown(value)}${unit}` };
+      return { matches: true, because: `${label} is ${typeof value === 'number' ? Math.round(value) : shown(value)}${unit}` };
     }
+    if (holds === null) unknown ??= reading.value === null ? `${label} is not known` : `${label} was last read too long ago to go by`;
   }
+  if (unknown) return { matches: true, because: unknown };
   // Declared, and it matches, but nothing now makes it so: only a link can.
   return { matches: false, because: null };
 }
@@ -206,8 +221,9 @@ function declaredConsequence(command: CapabilityCommand, args: Readonly<Record<s
 export class ActionGateway {
   #deps: GatewayDeps;
   #policy: GatewayPolicy;
-  #record: (entry: AuditEntry) => void;
+  #record: (entry: AuditRecord) => void;
   #memory: NonNullable<GatewayDeps['memory']>;
+  #confirmations = new Confirmations();
   /** Serialises everything, so "exactly one command" survives concurrent callers. */
   #gate: Promise<void> = Promise.resolve();
 
@@ -262,9 +278,9 @@ export class ActionGateway {
     const argsShown = Object.values(intent.args).map(shown).join(', ');
     const what = `${intent.part === MAIN_PART ? intent.capability : partLabel} ${argsShown}`.trim();
     const note = (kind: string, summary: string, detail?: unknown) =>
-      this.#record({ at: new Date().toISOString(), kind, actor: intent.by, resource: intent.deviceId, summary, detail });
+      this.#record({ at: new Date().toISOString(), kind, actor: intent.by, resourceKind: 'device', resource: intent.deviceId, summary, detail });
     const refuse = (detail: string): GatewayResult => {
-      this.#record({ at, kind: 'command.refused', actor: intent.by, resource: intent.deviceId, summary: `${what} refused: ${detail}`, detail: intent });
+      this.#record({ at, kind: 'command.refused', actor: intent.by, resourceKind: 'device', resource: intent.deviceId, summary: `${what} refused: ${detail}`, detail: intent });
       return { outcome: 'refused', detail };
     };
 
@@ -328,22 +344,25 @@ export class ActionGateway {
     }
 
     // 4. A deliberate act where one matters, as the capability and the link kinds declare it.
-    const partValue = (means: string): Value => {
+    const partValue = (means: string) => {
       const attribute = attributeMeaning(device.description, intent.part, means);
-      return attribute ? (readingOf(readingsNow(), attribute.key)?.value ?? null) : null;
+      if (!attribute) return null;
+      const reading = readingOf(readingsNow(), attribute.key);
+      return { value: reading?.value ?? null, current: this.#fresh(attribute, reading?.at ?? null) };
     };
-    const declared = declaredConsequence(spec, intent.args, partValue);
+    const declared = declaredConsequence(spec, intent.args, partValue, this.#deps.policyValues?.() ?? {});
     const whenMatches = spec.consequential !== undefined && (spec.consequential === 'always' || !spec.consequential.when || intent.args[spec.consequential.when.arg] === spec.consequential.when.is);
     const consequentialLink = links.find((link) => link.kind.consequential) ?? null;
     const firstThroughLink = consequentialLink !== null && !this.#everSwitched(key);
     const consequential = declared.matches || (whenMatches && consequentialLink !== null);
-    if (intent.actor === 'user' && (consequential || firstThroughLink) && intent.confirmation !== CONFIRMATION) {
+    const subject = subjectOf({ device: intent.deviceId, part: intent.part, capability: intent.capability, command: intent.command, args: intent.args, by: intent.by });
+    if (intent.actor === 'user' && (consequential || firstThroughLink) && !this.#confirmations.accept(intent.confirmation, subject)) {
       const why = firstThroughLink
         ? `This ${consequentialLink.kind.verb} ${consequentialLink.name} and has never been switched from here: confirm it is the right one`
         : consequentialLink && whenMatches
           ? `This ${consequentialLink.kind.verb} ${consequentialLink.name}`
           : (declared.because ?? 'This needs confirming');
-      return { ...refuse(`This action needs explicit confirmation. ${why}.`), needsConfirmation: true };
+      return { ...refuse(`This action needs explicit confirmation. ${why}.`), needsConfirmation: this.#confirmations.ask(subject) };
     }
 
     const agrees = () => settings.every((setting) => readingOf(readingsNow(), setting.attribute.key)?.value === setting.value);
@@ -462,7 +481,7 @@ export class ActionGateway {
     const device = this.#deps.device(intent.deviceId);
     const keys = Object.keys(intent.patch);
     const refuse = (detail: string, extra: Partial<WriteResult> = {}): WriteResult => {
-      this.#record({ at: new Date().toISOString(), kind: 'settings.refused', actor: intent.by, resource: intent.deviceId, summary: `Changing ${keys.join(', ')} refused: ${detail}` });
+      this.#record({ at: new Date().toISOString(), kind: 'settings.refused', actor: intent.by, resourceKind: 'device', resource: intent.deviceId, summary: `Changing ${keys.join(', ')} refused: ${detail}` });
       return { outcome: 'refused', detail, ...extra };
     };
 
@@ -487,13 +506,14 @@ export class ActionGateway {
 
     const risky = keys.filter((key) => writable.get(key)!.dangerous);
     if (risky.length && intent.actor === 'automation') return refuse(`An automation may not change ${risky.join(', ')}: it can damage the hardware`);
-    if (risky.length && intent.confirmation !== CONFIRMATION) {
+    const subject = subjectOf({ device: intent.deviceId, patch: changed, by: intent.by });
+    if (risky.length && !this.#confirmations.accept(intent.confirmation, subject)) {
       const labels = risky.map((key) => writable.get(key)!.label).join(', ');
-      return refuse(`This needs explicit confirmation. ${labels} can damage the hardware if set wrongly.`, { needsConfirmation: true });
+      return refuse(`This needs explicit confirmation. ${labels} can damage the hardware if set wrongly.`, { needsConfirmation: this.#confirmations.ask(subject) });
     }
 
     const note = (kind: string, summary: string, detail?: unknown) =>
-      this.#record({ at: new Date().toISOString(), kind, actor: intent.by, resource: intent.deviceId, summary, detail });
+      this.#record({ at: new Date().toISOString(), kind, actor: intent.by, resourceKind: 'device', resource: intent.deviceId, summary, detail });
     note('settings.intent', `${device.name}: changing ${keys.join(', ')}`, { patch: changed });
 
     let values: Readonly<Record<string, Value>>;

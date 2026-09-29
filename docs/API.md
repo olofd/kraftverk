@@ -44,11 +44,12 @@ answers — and listed on the device as `tools`.
 | `GET` | `/devices` · `/devices/removed` | The devices you have, each with its description (parts, attributes, events), information, live readings, health, connections and links; removed ones, with their history |
 | `GET` `PATCH` `DELETE` | `/devices/:id` | Read, rename, or remove — keeping its history |
 | `POST` | `/devices/:id/delete-history` | Delete a removed device and everything it recorded; its name, typed, confirms it |
-| `PATCH` | `/devices/:id/attributes` | Change what a device remembers — the attributes its description says can be written — through the action gateway; a refusal says `needsConfirmation` when a person only has to confirm |
-| `POST` | `/devices/:id/parts/:part/commands/:capability/:command` | Every command, to one part of a device, with typed `args` — through the action gateway; a refusal says `needsConfirmation` when a person only has to confirm |
+| `PATCH` | `/devices/:id/attributes` | Change what a device remembers — the attributes its description says can be written — through the action gateway; a refusal that only wants a person's yes carries `needsConfirmation`: a token for this patch and this person, good once for a minute, sent back as `confirmation` |
+| `POST` | `/devices/:id/parts/:part/commands/:capability/:command` | Every command, to one part of a device, with typed `args` — through the action gateway; a refusal that only wants a person's yes carries `needsConfirmation`, a token for this command and this person, sent back as `confirmation` |
 | `GET` | `/devices/:id/events` | What the device said happened, newest first |
 | `GET` `POST` | `/devices/:id/tools/:name` | A device type's own tools, declared as data: register dump, snapshot, scan, raw frame. The input is checked against what the tool asks for (400) and the answer against what it declares (502). Reads are GETs, their input in the query; writes are POSTs, refused while read-only (423) and audited |
-| `GET` | `/devices/:id/history` | One measurement over time, thinned for a chart |
+| `GET` | `/devices/:id/history` | One measurement over time, thinned for a chart: the last `hours`, or `from` to `to` |
+| `GET` | `/devices/:id/changes` | Every change of an on/off or an enum in a span (`hours`, or `from` and `to`; one `key` or all), exactly when it happened, with each key's value from before the span |
 | `POST` `DELETE` | `/devices/:id/connections/:connection` (`/prefer`) | Prefer one way to reach it, or remove one — not the last |
 | `PUT` | `/devices/:id/connections/:connection/secrets` | Replace a server-held connection's secrets, such as a plug's new local key |
 | `POST` `DELETE` | `/links` · `/links/:id` | Facts about the house, between parts: `{kind, source: {device, part}, target: {device, part}}` — this plug's relay feeds that station's mains input |
@@ -58,7 +59,8 @@ answers — and listed on the device as `tools`.
 | `GET` | `/transports` · `/transports/:id/diagnostics/:name` | What this server reaches devices over, and each transport's diagnostics — the broker, its journal, its traffic |
 | `GET` | `/found` | What the transports see that nothing you have is reached by |
 | `GET` | `/diagnostics/log` | The server's own recent log (`?level=warn`, `?limit=`), and where its daily files are |
-| `GET` | `/audit` | The timeline: intents, commands, verification outcomes |
+| `GET` | `/audit` | The timeline: intents, commands, verification outcomes — all of it, or one `resourceKind`'s (`device`, `client`, `automation`, `account`, `transport`), or one `resource`'s; `before` an entry's id pages back |
+| `GET` `PUT` | `/policy` · `/policy/:name` | What the home decides that declarations name: `loadWatts`, how much a load is before turning it off is confirmed. `{ value }` sets it, `null` puts back the default; audited |
 | `GET` (WebSocket) | `/live` | What changed, as it changes — see below |
 
 ## The live stream

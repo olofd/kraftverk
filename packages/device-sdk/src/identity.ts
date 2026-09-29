@@ -55,6 +55,26 @@ export type AutomationId = Branded<'AutomationId'>;
 export const automationId = (raw: string): AutomationId => raw as AutomationId;
 
 /**
+ * What an entry on the timeline is about: a device, an app, an automation, an
+ * account, or something a transport saw that is no device yet (an address).
+ */
+export type ResourceKind = 'device' | 'client' | 'automation' | 'account' | 'transport';
+
+export const RESOURCE_KINDS: readonly ResourceKind[] = ['device', 'client', 'automation', 'account', 'transport'];
+
+/** What an entry is about: a kind and an id together, or nothing — an id with no kind could not be filtered by. */
+export type AuditSubject = { resourceKind?: undefined; resource?: undefined } | { resourceKind: ResourceKind; resource: string };
+
+/** One line for the audit timeline, wherever the holder keeps it: who did what, to what, and what came of it. */
+export type AuditRecord = {
+  at: string;
+  kind: string;
+  actor: string;
+  summary: string;
+  detail?: unknown;
+} & AuditSubject;
+
+/**
  * Why a device is or is not answering.
  *
  * A boolean could not say the difference between "you have not finished setting

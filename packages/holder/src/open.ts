@@ -7,6 +7,7 @@ import {
   type Channel,
   type ConnectionHealth,
   type DeviceContext,
+  type DescriptionSource,
   type DeviceDescription,
   type DeviceInfo,
   type DeviceLogger,
@@ -70,6 +71,8 @@ export type OpenedDevice = {
   session: DeviceSession;
   /** What the device is now: its own description when it reports one, else its type's for its config. */
   description(): DeviceDescription;
+  /** Whose word that is: the type's, for its config, or the device's own. */
+  describedBy(): DescriptionSource;
   /** What the device has said about itself, as far as it has. */
   info(): DeviceInfo | null;
   /** How it is doing: its session's word, and who holds it over what — which only the holder knows. */
@@ -196,6 +199,7 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
     return {
       session: opened,
       description: describe,
+      describedBy: () => (opened.description ? 'device' : 'type'),
       info: () => opened.info?.() ?? null,
       health: () => ({
         ...opened.health(),

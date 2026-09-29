@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { actorOf } from '../auth/routes.ts';
 import { LINK_KIND_IDS, type LinkKind } from '@kraftverk/device-sdk';
 
-import { auditDevice, body, ownClient, type AppDeps } from './shared.ts';
+import { auditAbout, body, ownClient, type AppDeps } from './shared.ts';
 
 const values = z.record(z.string().max(64), z.union([z.string().max(4096), z.number(), z.boolean()]));
 
@@ -122,7 +122,7 @@ export function setupRoutes({ setup, registry, clients }: AppDeps): Hono {
         .strict()
     );
     const record = await setup.save(id, input);
-    if (input.anyway) auditDevice(c, 'device.saved-unchecked', record.id, `"${record.name}" was saved without answering the check`);
+    if (input.anyway) auditAbout(c, 'device.saved-unchecked', 'device', record.id, `"${record.name}" was saved without answering the check`);
     return c.json(registry.find(record.id));
   });
 

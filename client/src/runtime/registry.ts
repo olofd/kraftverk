@@ -11,6 +11,7 @@ import type {
 } from '@kraftverk/device-sdk';
 
 import { DEVICE_TYPES, PROTOCOLS, TRANSPORTS } from '../generated/registry';
+import { clearPreference, readPreference, writePreference } from '../lib/preferences';
 
 /**
  * What this app has installed, and the transports it can use where it runs.
@@ -35,7 +36,16 @@ export class AppRegistry {
     TRANSPORTS.map((entry) => [entry.definition.id, { definition: entry.definition, factory: entry[PLATFORM], transport: null, starting: null, error: null }])
   );
 
-  constructor(private context: TransportContext) {}
+  constructor(private context: Omit<TransportContext, 'store'>) {}
+
+  /** What one transport is handed: the shared context, and its own store in this app's storage. */
+  #contextFor(id: string): TransportContext {
+    const key = (name: string) => `kraftverk.transport.${id}.${name}`;
+    return {
+      ...this.context,
+      store: { get: (name) => readPreference(key(name)), set: (name, value) => writePreference(key(name), value), delete: (name) => clearPreference(key(name)) },
+    };
+  }
 
   definition(id: string): TransportDefinition | null {
     return this.#transports.get(id)?.definition ?? null;
@@ -55,7 +65,7 @@ export class AppRegistry {
     }
     if (entry.error) return { ok: false, reason: entry.error };
     // Not started yet: a probe that needs nothing started, like "is there Web Bluetooth here".
-    if (!entry.transport) return entry.factory(this.context).available();
+    if (!entry.transport) return entry.factory(this.#contextFor(id)).available();
     return entry.transport.available();
   }
 
@@ -66,7 +76,7 @@ export class AppRegistry {
     if (entry.transport) return entry.transport;
     entry.starting ??= (async () => {
       try {
-        const transport = entry.factory!(this.context);
+        const transport = entry.factory!(this.#contextFor(id));
         await transport.start();
         entry.transport = transport;
         entry.error = null;

@@ -4,13 +4,13 @@ import axios from 'axios';
 
 import {
   addLink as apiAddLink,
-  CONFIRMATION_TOKEN,
   deleteDeviceHistory,
   describeError,
   fetchDeviceHistory,
   fetchDeviceList,
   fetchRemovedDevices,
   fetchTransportDiagnostic,
+  fetchPolicy,
   fetchVersion,
   openLive,
   preferConnection,
@@ -158,6 +158,7 @@ function describeLocal(runtime: AppRuntime, device: LocalDevice, local: Map<stri
       ? { name: type.meta.name, brand: type.meta.brand, icon: type.meta.icon, support: type.meta.support, category: type.meta.category }
       : { name: device.typeId, icon: 'help-circle', support: 'experimental', category: 'unknown' },
     description,
+    descriptionSource: runtime.sessions.describedBy(device.id) ?? 'type',
     capabilities: deviceCapabilities(description),
     info: runtime.sessions.info(device.id),
     config: device.config,
@@ -211,6 +212,10 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     if (!polling) return;
     void runtime.register().catch(() => undefined);
     void fetchVersion().then(setVersion).catch(() => undefined);
+    // How much is a load, as the home has set it: the gateway here uses the server's word for devices this app holds.
+    void fetchPolicy()
+      .then((values) => runtime.setPolicyValues(Object.fromEntries(values.map((value) => [value.name, value.value]))))
+      .catch(() => undefined);
   }, [polling, runtime]);
 
   const load = useCallback(async () => {
@@ -421,12 +426,13 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
 
   /** Sends a command or a settings write, and when the gateway only wants a person to confirm, asks them. */
   const confirmed = useCallback(
-    async <R extends { outcome: GatewayResult['outcome']; detail: string; needsConfirmation?: true }>(send: (confirmation?: string) => Promise<R>): Promise<R> => {
+    async <R extends { outcome: GatewayResult['outcome']; detail: string; needsConfirmation?: string }>(send: (confirmation?: string) => Promise<R>): Promise<R> => {
       const first = await send();
       if (!first.needsConfirmation) return first;
       const yes = await confirmAction('Confirm', first.detail.replace(/^This (action )?needs explicit confirmation\. /, ''), 'Do it');
       if (!yes) return { ...first, detail: 'Not confirmed', needsConfirmation: undefined };
-      return send(CONFIRMATION_TOKEN);
+      // The token the refusal handed out: good for this intent, from this person, once.
+      return send(first.needsConfirmation);
     },
     []
   );
@@ -446,11 +452,11 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
             const spec = runtime.registry.types.get(device.typeId)?.tools?.[name];
             try {
               const answer = await runTool({ deviceName: device.name, name, spec, session: session(), input, readOnly: !runtime.allowWrites });
-              if (spec?.writes) runtime.uplink?.audit({ at: new Date().toISOString(), kind: 'device.tool', resource: device.id, summary: `Ran ${spec.label.toLowerCase()} on "${device.name}"`, detail: { tool: name, input } });
+              if (spec?.writes) runtime.uplink?.audit({ at: new Date().toISOString(), kind: 'device.tool', resourceKind: 'device', resource: device.id, summary: `Ran ${spec.label.toLowerCase()} on "${device.name}"`, detail: { tool: name, input } });
               // Checked against its declaration above: T is that declaration's shape.
               return answer as T;
             } catch (error) {
-              if (spec?.writes) runtime.uplink?.audit({ at: new Date().toISOString(), kind: 'device.tool-refused', resource: device.id, summary: `${spec.label} on "${device.name}" was refused: ${(error as Error).message}`, detail: { tool: name, input } });
+              if (spec?.writes) runtime.uplink?.audit({ at: new Date().toISOString(), kind: 'device.tool-refused', resourceKind: 'device', resource: device.id, summary: `${spec.label} on "${device.name}" was refused: ${(error as Error).message}`, detail: { tool: name, input } });
               throw error;
             }
           },

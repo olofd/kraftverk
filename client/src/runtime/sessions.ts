@@ -1,4 +1,4 @@
-import { isSimulated, type ConnectionHealth, type DeviceDescription, type DeviceInfo, type DeviceSession, type DeviceStore, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { isSimulated, type ConnectionHealth, type DescriptionSource, type DeviceDescription, type DeviceInfo, type DeviceSession, type DeviceStore, type SavedDeviceId } from '@kraftverk/device-sdk';
 import { Failover, identityVerdict, openDevice, OpenRefused, type DeviceEventMessage, type OpenedDevice } from '@kraftverk/holder';
 
 import { PLATFORM, type AppRegistry } from './registry';
@@ -67,6 +67,11 @@ export class HeldSessions {
   /** What an open device is now: its own description, or its type's for its config. */
   description(deviceId: string): DeviceDescription | null {
     return this.#open.get(deviceId)?.opened.description() ?? null;
+  }
+
+  /** Whose word an open device's description is: its type's, or its own. */
+  describedBy(deviceId: string): DescriptionSource | null {
+    return this.#open.get(deviceId)?.opened.describedBy() ?? null;
   }
 
   /** What an open device has said about itself. */

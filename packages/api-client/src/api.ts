@@ -2,13 +2,14 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import axios from 'axios';
 
-import type { ConfigValues, DeviceDescription, DeviceInfo, Reading, SetupActionResult } from '@kraftverk/device-sdk';
+import type { ConfigValues, DeviceDescription, DeviceInfo, Reading, ResourceKind, SetupActionResult } from '@kraftverk/device-sdk';
 import type { GatewayResult } from '@kraftverk/gateway';
 
 import type {
   Account,
   AccountDetail,
   AuditEntry,
+  AuditUpload,
   AuthState,
   AutomationChanges,
   AutomationRun,
@@ -18,6 +19,7 @@ import type {
   ClientRecord,
   AttributeWrite,
   CommandBody,
+  DeviceChanges,
   DeviceHistory,
   DeviceTypeList,
   DeviceView,
@@ -26,6 +28,8 @@ import type {
   HeldSetupInput,
   LinkRecord,
   NewLink,
+  PolicyValueName,
+  PolicyValueView,
   RecipeView,
   SaveInput,
   ServerLogLine,
@@ -225,11 +229,18 @@ export async function writeDeviceAttributes(id: string, write: AttributeWrite, s
 }
 
 /** One measurement over a window, already thinned to something a chart can draw. */
-export async function fetchDeviceHistory(id: string, key: string, options: { hours?: number; points?: number } = {}, signal?: AbortSignal) {
+/** One measurement over a span: the last `hours`, or `from` to `to`; the last day when neither is given. */
+export async function fetchDeviceHistory(id: string, key: string, options: { hours?: number; from?: string; to?: string; points?: number } = {}, signal?: AbortSignal) {
   const { data } = await api.get<DeviceHistory>(devicePath(id, '/history'), {
-    params: { key, hours: options.hours ?? 24, points: options.points ?? 240 },
+    params: { key, ...options, points: options.points ?? 240 },
     signal,
   });
+  return data;
+}
+
+/** Every change of an on/off or an enum in a span, exactly when it happened: one key's, or all of them. */
+export async function fetchDeviceChanges(id: string, options: { key?: string; hours?: number; from?: string; to?: string } = {}, signal?: AbortSignal) {
+  const { data } = await api.get<DeviceChanges>(devicePath(id, '/changes'), { params: options, signal });
   return data;
 }
 
@@ -324,14 +335,14 @@ export async function createAutomation(input: NewAutomation) {
 export async function updateAutomation(
   id: string,
   changes: AutomationChanges
-): Promise<{ automation: AutomationView } | { needsConfirmation: true; reason: string }> {
-  const response = await api.patch<AutomationView | { error: string; needsConfirmation?: boolean }>(`/automations/${encodeURIComponent(id)}`, changes, {
+): Promise<{ automation: AutomationView } | { needsConfirmation: string; reason: string }> {
+  const response = await api.patch<AutomationView | { error: string; needsConfirmation?: string }>(`/automations/${encodeURIComponent(id)}`, changes, {
     validateStatus: (status) => status === 200 || status === 409,
   });
   const data = response.data;
   if (response.status === 409) {
-    const refusal = data as { error: string; needsConfirmation?: boolean };
-    if (refusal.needsConfirmation) return { needsConfirmation: true, reason: refusal.error };
+    const refusal = data as { error: string; needsConfirmation?: string };
+    if (refusal.needsConfirmation) return { needsConfirmation: refusal.needsConfirmation, reason: refusal.error };
     throw new Error(refusal.error);
   }
   return { automation: data as AutomationView };
@@ -443,7 +454,7 @@ export async function putDeviceStore(deviceId: string, key: string, input: { cli
   await api.put(devicePath(deviceId, `/store/${encodeURIComponent(key)}`), input);
 }
 
-export async function uploadAudit(clientId: string, entries: readonly Omit<AuditEntry, 'actor' | 'id'>[]) {
+export async function uploadAudit(clientId: string, entries: readonly AuditUpload[]) {
   const { data } = await api.post<{ recorded: number }>(`/clients/${encodeURIComponent(clientId)}/audit`, { entries });
   return data;
 }
@@ -473,8 +484,9 @@ export async function fetchServerLog(options: { limit?: number; level?: ServerLo
   return data;
 }
 
-export async function fetchAudit(limit = 100, signal?: AbortSignal) {
-  const { data } = await api.get<AuditEntry[]>('/audit', { params: { limit }, signal });
+/** The timeline, newest first: all of it, or one kind of thing's, or one thing's. `before` is an entry's id, to page back. */
+export async function fetchAudit(query: { limit?: number; resourceKind?: ResourceKind; resource?: string; before?: number } = {}, signal?: AbortSignal) {
+  const { data } = await api.get<AuditEntry[]>('/audit', { params: query, signal });
   return data;
 }
 
@@ -583,4 +595,18 @@ export async function removeAccount(id: string, yourPassword: string) {
 /** Someone else's password. Signs them out everywhere. */
 export async function resetAccountPassword(id: string, password: string, yourPassword: string) {
   await api.post(`/users/${encodeURIComponent(id)}/password`, { password, yourPassword });
+}
+
+// --- policy -------------------------------------------------------------------
+
+/** What this home decides that declarations name: how much is a load worth confirming. */
+export async function fetchPolicy(signal?: AbortSignal) {
+  const { data } = await api.get<PolicyValueView[]>('/policy', { signal });
+  return data;
+}
+
+/** Sets one, or puts it back to its default with null. Answers them all, as they now are. */
+export async function setPolicyValue(name: PolicyValueName, value: number | null) {
+  const { data } = await api.put<PolicyValueView[]>(`/policy/${encodeURIComponent(name)}`, { value });
+  return data;
 }

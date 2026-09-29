@@ -38,11 +38,43 @@ import type { ScalarValue, ScalarValueType, ValueOf, ValueType } from './values.
  */
 export type CommandResult = { accepted: true } | { accepted: false; error: string };
 
-/** Something true of a part now, by meaning: `{ means: 'power.draw', above: 5 }` — it is carrying a load. */
+/**
+ * A number the home decides, that a declaration names rather than fixes. The
+ * capability says what is consequential — turning off what carries a load —
+ * and the home says how much a load is: a night light at 6 W is not a
+ * freezer. Each has the value it takes until someone changes it.
+ */
+export type PolicyValueSpec = { label: string; description: string; unit: string; default: number; min: number; max: number };
+
+export const POLICY_VALUES = {
+  loadWatts: {
+    label: 'A load worth confirming',
+    description: 'Turning off something that draws more than this asks first.',
+    unit: 'W',
+    default: 5,
+    min: 0,
+    max: 10_000,
+  },
+} as const satisfies Record<string, PolicyValueSpec>;
+
+export type PolicyValueName = keyof typeof POLICY_VALUES;
+
+export const isPolicyValueName = (name: string): name is PolicyValueName => Object.hasOwn(POLICY_VALUES, name);
+
+/** A bound in a condition: a number, or a policy value by name. */
+export type Threshold = number | { policy: PolicyValueName };
+
+/** What the home has set, by name; what it has not set takes its default. */
+export type PolicyValues = Readonly<Partial<Record<PolicyValueName, number>>>;
+
+export const thresholdOf = (threshold: Threshold, values: PolicyValues = {}): number =>
+  typeof threshold === 'number' ? threshold : (values[threshold.policy] ?? POLICY_VALUES[threshold.policy].default);
+
+/** Something true of a part now, by meaning: `{ means: 'power.draw', above: { policy: 'loadWatts' } }` — it is carrying a load. */
 export type PartCondition = {
   means: StandardMeaningId;
-  above?: number;
-  below?: number;
+  above?: Threshold;
+  below?: Threshold;
   is?: ScalarValue;
 };
 
@@ -128,8 +160,8 @@ export const CAPABILITIES = {
         description: 'Turn it on or off',
         args: { on: { type: 'boolean' } },
         sets: { on: 'on' },
-        // Turning off what carries a load, or what feeds another device, is a deliberate act.
-        consequential: { when: { arg: 'on', is: false }, if: [{ means: 'power.draw', above: 5 }] },
+        // Turning off what carries a load, or what feeds another device, is a deliberate act. How much is a load is the home's to say.
+        consequential: { when: { arg: 'on', is: false }, if: [{ means: 'power.draw', above: { policy: 'loadWatts' } }] },
       },
     },
     queries: {},
@@ -225,10 +257,10 @@ export const meetsNeed = (need: CapabilityNeed, offered: readonly string[]): boo
   need.capabilities.every((capability) => offered.includes(capability)) && (!need.oneOf?.length || need.oneOf.some((capability) => offered.includes(capability)));
 
 /** Whether a part's current readings make a condition true; null when what it reads is not known. */
-export function conditionHolds(condition: PartCondition, value: ScalarValue | undefined): boolean | null {
+export function conditionHolds(condition: PartCondition, value: ScalarValue | undefined, values: PolicyValues = {}): boolean | null {
   if (value === null || value === undefined) return null;
   if (condition.is !== undefined && value !== condition.is) return false;
-  if (condition.above !== undefined && !(typeof value === 'number' && value > condition.above)) return false;
-  if (condition.below !== undefined && !(typeof value === 'number' && value < condition.below)) return false;
+  if (condition.above !== undefined && !(typeof value === 'number' && value > thresholdOf(condition.above, values))) return false;
+  if (condition.below !== undefined && !(typeof value === 'number' && value < thresholdOf(condition.below, values))) return false;
   return true;
 }

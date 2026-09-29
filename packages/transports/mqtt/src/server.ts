@@ -1,4 +1,5 @@
 import type {
+  AuditSubject,
   Availability,
   ChannelMessage,
   MessageChannel,
@@ -187,13 +188,10 @@ const createMqttTransport: TransportFactory = (context: TransportContext): Trans
     const now = Date.now();
     if (now - (lastRefusal.get(key) ?? 0) < 60_000) return;
     lastRefusal.set(key, now);
-    context.audit({
-      kind: 'mqtt.refused',
-      actor: entry.clientId ?? 'unknown',
-      resource: entry.device ?? String(entry.data?.topic ?? '').split('/')[0],
-      summary: entry.message,
-      detail: entry.data,
-    });
+    // What it tried to reach: a device's address on the broker, which may be no device you have.
+    const address = entry.device ?? String(entry.data?.topic ?? '').split('/')[0];
+    const about: AuditSubject = address ? { resourceKind: 'transport', resource: address } : {};
+    context.audit({ kind: 'mqtt.refused', actor: entry.clientId ?? 'unknown', ...about, summary: entry.message, detail: entry.data });
   });
 
   /** The broker, as the server sees it: running or not, connected or not, and what it holds. */

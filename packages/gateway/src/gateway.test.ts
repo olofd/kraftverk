@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
-import { MAIN_PART, savedDeviceId, type CommandResult, type ConnectionHealth, type DeviceDescription, type DeviceSession, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { MAIN_PART, savedDeviceId, type CommandResult, type ConnectionHealth, type DeviceDescription, type DeviceSession, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
 
-import { ActionGateway, CONFIRMATION, type CommandIntent, type GatewayDevice, type OutgoingLink } from './gateway.ts';
+import { ActionGateway, type CommandIntent, type GatewayDevice, type OutgoingLink } from './gateway.ts';
 
 /**
  * The guards that stand between a web request and the hardware.
@@ -138,6 +138,7 @@ function harness(
     /** More links, from a part: `{ '<device>:<part>': [target, part] }`. */
     links?: Record<string, OutgoingLink[]>;
     devices?: Record<string, GatewayDevice>;
+    policyValues?: PolicyValues;
   } = {}
 ): Harness {
   const plug = options.plug ?? new StubPlug();
@@ -164,6 +165,7 @@ function harness(
     isReadOnly: () => options.readOnly === true,
     record: (entry) => events.push(entry.kind),
     memory,
+    policyValues: () => options.policyValues ?? {},
     // Short timeouts: these tests are about the decisions, not the clock.
     policy: { verifyTimeoutMs: 300, userDwellMs: 50, automationDwellMs: 10_000 },
   });
@@ -235,12 +237,29 @@ describe('what may be commanded', () => {
   test('a person cutting mains must confirm; an automation has its own gates', async () => {
     const { gateway, plug } = harness();
 
-    expect((await gateway.execute(cut({ actor: 'user', by: 'olof' }))).outcome).toBe('refused');
+    const asked = await gateway.execute(cut({ actor: 'user', by: 'olof' }));
+    expect(asked.outcome).toBe('refused');
     expect(plug.commands).toHaveLength(0);
 
-    const confirmed = await gateway.execute(cut({ actor: 'user', by: 'olof', confirmation: CONFIRMATION }));
+    const confirmed = await gateway.execute(cut({ actor: 'user', by: 'olof', confirmation: asked.needsConfirmation }));
     expect(confirmed.outcome).not.toBe('refused');
     expect(plug.commands).toEqual([false]);
+  });
+
+  test('a confirmation is a token for this intent and this person, good once — not a word anyone can send', async () => {
+    const { gateway, plug, station } = harness();
+    station.reading = () => ({ present: true, at: now(), connected: true });
+
+    // The constant that used to be enough is no yes at all.
+    expect(await gateway.execute(cut({ actor: 'user', by: 'olof', confirmation: 'confirm' }))).toMatchObject({ outcome: 'refused', needsConfirmation: expect.any(String) });
+
+    const asked = await gateway.execute(cut({ actor: 'user', by: 'olof' }));
+    // Someone else presenting it, or it presented for another command, is refused, and it is spent.
+    expect((await gateway.execute(cut({ actor: 'user', by: 'guest', confirmation: asked.needsConfirmation }))).outcome).toBe('refused');
+    expect((await gateway.execute(cut({ actor: 'user', by: 'olof', confirmation: asked.needsConfirmation }))).outcome).toBe('refused');
+    const again = await gateway.execute(cut({ actor: 'user', by: 'olof', args: { on: true } }));
+    expect((await gateway.execute(cut({ actor: 'user', by: 'olof', confirmation: again.needsConfirmation }))).outcome).toBe('refused');
+    expect(plug.commands).toHaveLength(0);
   });
 
   test('the first switch of a plug that feeds a station needs confirmation, even to turn it on', async () => {
@@ -256,11 +275,30 @@ describe('what may be commanded', () => {
     const intent = cut({ deviceId: STATION, part: 'outlet.ac', actor: 'user', by: 'olof' });
 
     // As `switch.set` declares it: off, while it draws more than 5 W. The gateway reads the declaration.
-    expect(await gateway.execute(intent)).toMatchObject({ outcome: 'refused', needsConfirmation: true, detail: 'This action needs explicit confirmation. Power is 40 W.' });
+    expect(await gateway.execute(intent)).toMatchObject({ outcome: 'refused', needsConfirmation: expect.any(String), detail: 'This action needs explicit confirmation. Power is 40 W.' });
     station.outlet = { on: true, watts: 0 };
     const idle = await gateway.execute(intent);
     expect(idle.outcome).toBe('verified');
     expect(station.outletCommands).toEqual([['outlet.ac', false]]);
+  });
+
+  test('a load that is not known is not taken for none: it asks', async () => {
+    const { gateway, station } = harness();
+    station.outlet = { on: true, watts: null };
+    const intent = cut({ deviceId: STATION, part: 'outlet.ac', actor: 'user', by: 'olof' });
+    expect(await gateway.execute(intent)).toMatchObject({ outcome: 'refused', needsConfirmation: expect.any(String), detail: 'This action needs explicit confirmation. Power is not known.' });
+    expect(station.outletCommands).toHaveLength(0);
+  });
+
+  test('how much is a load is the home’s to say', async () => {
+    // A night light at 6 W: over the default, under what this home has set.
+    const { gateway, station } = harness({ policyValues: { loadWatts: 10 } });
+    station.outlet = { on: true, watts: 6 };
+    expect((await gateway.execute(cut({ deviceId: STATION, part: 'outlet.ac', actor: 'user', by: 'olof' }))).outcome).toBe('verified');
+
+    const strict = harness({ policyValues: { loadWatts: 3 } });
+    strict.station.outlet = { on: true, watts: 4 };
+    expect(await strict.gateway.execute(cut({ deviceId: STATION, part: 'outlet.ac', actor: 'user', by: 'olof' }))).toMatchObject({ detail: 'This action needs explicit confirmation. Power is 4 W.' });
   });
 });
 
@@ -286,7 +324,7 @@ describe('links between parts', () => {
   test('cutting what a station’s outlet feeds is confirmed, naming the part it reaches', async () => {
     const { gateway, station } = chain();
     const result = await gateway.execute(cut({ deviceId: STATION, part: 'outlet.ac', actor: 'user', by: 'olof' }));
-    expect(result).toMatchObject({ outcome: 'refused', needsConfirmation: true });
+    expect(result).toMatchObject({ outcome: 'refused', needsConfirmation: expect.any(String) });
     expect(result.detail).toContain('This feeds Cabin station — Mains and has never been switched from here');
     expect(station.outletCommands).toHaveLength(0);
   });
@@ -341,8 +379,11 @@ describe('what a command declares', () => {
     };
     const { gateway } = harness({ devices: { [LOCK]: { name: 'Safe', session, description: LOCK_DESCRIPTION, offline: 'Not answering' } } });
     const intent = cut({ deviceId: LOCK, capability: 'acme.safe.bolt', command: 'set', args: { thrown: true }, actor: 'user', by: 'olof' });
-    expect(await gateway.execute(intent)).toMatchObject({ outcome: 'refused', needsConfirmation: true });
-    expect(await gateway.execute({ ...intent, confirmation: CONFIRMATION })).toMatchObject({ outcome: 'verified' });
+    const asked = await gateway.execute(intent);
+    // Read before matching: bun's toMatchObject writes its matchers into what it was given.
+    const token = asked.needsConfirmation;
+    expect(asked).toMatchObject({ outcome: 'refused', needsConfirmation: expect.any(String) });
+    expect(await gateway.execute({ ...intent, confirmation: token })).toMatchObject({ outcome: 'verified' });
     expect(thrown).toBe(true);
   });
 });

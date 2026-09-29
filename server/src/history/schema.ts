@@ -9,6 +9,16 @@
  * is, a device that has not been removed.
  */
 export const SCHEMA = `
+  /*
+    What this database is: the schema it was made with, when, and by which
+    version of kraftverk. What the set-aside rule reports, and what the
+    compatibility rules will read on the day there is data to keep.
+  */
+  CREATE TABLE meta (
+    key   TEXT PRIMARY KEY CHECK (key IN ('schema_hash', 'created_at', 'created_by_version')),
+    value TEXT NOT NULL
+  );
+
   /* People who may use this server — from anywhere, the home network included. */
   CREATE TABLE users (
     id                  TEXT PRIMARY KEY,
@@ -56,6 +66,8 @@ export const SCHEMA = `
     name        TEXT NOT NULL,
     config      TEXT NOT NULL DEFAULT '{}',
     description TEXT NOT NULL,
+    /* Whose word the description is: its type's, for its config, or the device's own. */
+    description_source TEXT NOT NULL DEFAULT 'type' CHECK (description_source IN ('type', 'device')),
     info        TEXT,
     added_at    TEXT NOT NULL,
     removed_at  TEXT
@@ -108,20 +120,24 @@ export const SCHEMA = `
 
   /*
     Facts about the house, between parts of two devices: this plug's relay
-    feeds that station's mains input. A kind with one target per source
-    (links.ts) is held to it when a link is added.
+    feeds that station's mains input. A kind with one target per source — a
+    plug feeds one thing — says so in its row, as its kind declares it, and
+    the database holds it to that: no concurrent add or direct write can give
+    one source part two, whatever the code above does.
   */
   CREATE TABLE device_link (
-    id            TEXT PRIMARY KEY,
-    kind          TEXT NOT NULL,
-    source_device TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
-    source_part   TEXT NOT NULL,
-    target_device TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
-    target_part   TEXT NOT NULL,
-    created_at    TEXT NOT NULL,
+    id             TEXT PRIMARY KEY,
+    kind           TEXT NOT NULL,
+    source_device  TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
+    source_part    TEXT NOT NULL,
+    target_device  TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
+    target_part    TEXT NOT NULL,
+    one_per_source INTEGER NOT NULL CHECK (one_per_source IN (0, 1)),
+    created_at     TEXT NOT NULL,
     CHECK (source_device <> target_device)
   );
   CREATE UNIQUE INDEX device_link_once ON device_link (kind, source_device, source_part, target_device, target_part);
+  CREATE UNIQUE INDEX device_link_one_per_source ON device_link (kind, source_device, source_part) WHERE one_per_source = 1;
   CREATE INDEX device_link_target ON device_link (target_device);
 
   /*
@@ -142,6 +158,23 @@ export const SCHEMA = `
     CHECK ((value IS NULL) <> (text IS NULL))
   );
   CREATE INDEX sample_part ON sample (device_id, part, at);
+
+  /*
+    Every change of an on/off or an enum, when the device observed it: one row
+    per change, kept two years. Small and exact — what a timeline wants ("AC
+    outlets off 14:02–14:19"), where an hourly mean of an on/off is a duty
+    cycle nobody asked for.
+  */
+  CREATE TABLE sample_change (
+    device_id TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
+    part      TEXT NOT NULL,
+    key       TEXT NOT NULL,
+    at        TEXT NOT NULL,
+    value     REAL,
+    text      TEXT,
+    PRIMARY KEY (device_id, key, at),
+    CHECK ((value IS NULL) <> (text IS NULL))
+  );
 
   /* Each numeric attribute's hours, rolled up, kept for two years. */
   CREATE TABLE sample_hour (
@@ -167,6 +200,7 @@ export const SCHEMA = `
     at        TEXT NOT NULL
   );
   CREATE INDEX device_event_lookup ON device_event (device_id, at);
+  CREATE INDEX device_event_problems ON device_event (level, at) WHERE level <> 'info';
 
   /*
     Automations: a recipe, the parts of devices that fill its roles, its
@@ -187,24 +221,39 @@ export const SCHEMA = `
     last_result TEXT
   );
 
-  /* Decisions the server keeps: the gateway's memory of each part's last switch. */
+  /* What a transport keeps between runs, its own: a Bluetooth bond, a Matter fabric, a broker's credentials. */
+  CREATE TABLE transport_kv (
+    transport TEXT NOT NULL,
+    key       TEXT NOT NULL,
+    value     TEXT NOT NULL,
+    PRIMARY KEY (transport, key)
+  );
+
+  /* Decisions the server keeps: the gateway's memory of each part's last switch, each trigger's state. */
   CREATE TABLE app_state (
     key        TEXT PRIMARY KEY,
     value      TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
 
-  /* The timeline: who did what, and what came of it. */
+  /*
+    The timeline: who did what, and what came of it. What an entry is about is
+    a kind and an id — a device, an app, an automation, an account, what a
+    transport saw — so the timeline can be asked for one thing's.
+  */
   CREATE TABLE audit (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    at       TEXT NOT NULL,
-    kind     TEXT NOT NULL,
-    actor    TEXT NOT NULL,
-    resource TEXT,
-    summary  TEXT NOT NULL,
-    detail   TEXT
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    at            TEXT NOT NULL,
+    kind          TEXT NOT NULL,
+    actor         TEXT NOT NULL,
+    resource_kind TEXT CHECK (resource_kind IN ('device', 'client', 'automation', 'account', 'transport')),
+    resource      TEXT,
+    summary       TEXT NOT NULL,
+    detail        TEXT,
+    CHECK ((resource IS NULL) = (resource_kind IS NULL))
   );
   CREATE INDEX audit_at ON audit (at);
+  CREATE INDEX audit_resource ON audit (resource_kind, resource, at);
 `;
 
 /**

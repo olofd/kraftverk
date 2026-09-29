@@ -210,7 +210,7 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
     }
     if (!(await passwordMatches(user.id, password))) {
       limiter.failed(keys);
-      audit({ at: now(), kind: 'auth.confirm-failed', actor: user.username, resource: user.id, summary: `${user.username} gave a wrong password to confirm a change`, detail: { clientIp: trust.clientIp, path: c.req.path } });
+      audit({ at: now(), kind: 'auth.confirm-failed', actor: user.username, resourceKind: 'account', resource: user.id, summary: `${user.username} gave a wrong password to confirm a change`, detail: { clientIp: trust.clientIp, path: c.req.path } });
       throw new HTTPException(403, { message: 'Your password is not right' });
     }
     limiter.succeeded(keys);
@@ -257,7 +257,7 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
     const { token } = createSession(user.id, trust.clientIp, c.req.header('user-agent') ?? null);
     markLoggedIn(user.id);
     writeCookie(c, token);
-    audit({ at: now(), kind: 'auth.setup', actor: username, resource: user.id, summary: `${username} created the first account`, detail: { clientIp: trust.clientIp } });
+    audit({ at: now(), kind: 'auth.setup', actor: username, resourceKind: 'account', resource: user.id, summary: `${username} created the first account`, detail: { clientIp: trust.clientIp } });
     return c.json({ user: { id: user.id, username: user.username } }, 201);
   });
 
@@ -285,7 +285,7 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
     endSession(getCookie(c, SESSION_COOKIE));
     const { token } = createSession(user.id, trust.clientIp, c.req.header('user-agent') ?? null);
     writeCookie(c, token);
-    audit({ at: now(), kind: 'auth.login', actor: user.username, resource: user.id, summary: `${user.username} logged in`, detail: { clientIp: trust.clientIp, reason: trust.reason } });
+    audit({ at: now(), kind: 'auth.login', actor: user.username, resourceKind: 'account', resource: user.id, summary: `${user.username} logged in`, detail: { clientIp: trust.clientIp, reason: trust.reason } });
     return c.json({ user: { id: user.id, username: user.username } });
   });
 
@@ -293,7 +293,7 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
     const { user } = access(c);
     endSession(getCookie(c, SESSION_COOKIE));
     clearCookie(c);
-    if (user) audit({ at: now(), kind: 'auth.logout', actor: user.username, resource: user.id, summary: `${user.username} logged out` });
+    if (user) audit({ at: now(), kind: 'auth.logout', actor: user.username, resourceKind: 'account', resource: user.id, summary: `${user.username} logged out` });
     return c.json({ ok: true });
   });
 
@@ -304,7 +304,7 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
     const refused = await confirmIdentity(c, user, current);
     if (refused) return refused;
     await setPassword(user.id, password, getCookie(c, SESSION_COOKIE)).catch(rethrow);
-    audit({ at: now(), kind: 'user.password', actor: user.username, resource: user.id, summary: `${user.username} changed their password; their other sessions were signed out` });
+    audit({ at: now(), kind: 'user.password', actor: user.username, resourceKind: 'account', resource: user.id, summary: `${user.username} changed their password; their other sessions were signed out` });
     return c.json({ ok: true });
   });
 
@@ -321,7 +321,7 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
     const refused = await confirmIdentity(c, actor, confirmation);
     if (refused) return refused;
     const user = await createUser(username, password, actor.username).catch(rethrow);
-    audit({ at: now(), kind: 'user.created', actor: actor.username, resource: user.id, summary: `${actor.username} added ${user.username}` });
+    audit({ at: now(), kind: 'user.created', actor: actor.username, resourceKind: 'account', resource: user.id, summary: `${actor.username} added ${user.username}` });
     return c.json({ user }, 201);
   });
 
@@ -338,7 +338,7 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
       rethrow(error);
     }
     if (target.id === actor.id) clearCookie(c);
-    audit({ at: now(), kind: 'user.removed', actor: actor.username, resource: target.id, summary: `${actor.username} removed ${target.username}` });
+    audit({ at: now(), kind: 'user.removed', actor: actor.username, resourceKind: 'account', resource: target.id, summary: `${actor.username} removed ${target.username}` });
     return c.json({ ok: true });
   });
 
@@ -360,7 +360,7 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
     const refused = await confirmIdentity(c, actor, confirmation);
     if (refused) return refused;
     await setPassword(target.id, password).catch(rethrow);
-    audit({ at: now(), kind: 'user.password', actor: actor.username, resource: target.id, summary: `${actor.username} set a new password for ${target.username}; their sessions were signed out` });
+    audit({ at: now(), kind: 'user.password', actor: actor.username, resourceKind: 'account', resource: target.id, summary: `${actor.username} set a new password for ${target.username}; their sessions were signed out` });
     return c.json({ ok: true });
   });
 

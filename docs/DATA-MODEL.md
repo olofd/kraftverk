@@ -273,7 +273,7 @@ classDiagram
 | **Holder** | Somewhere a connection can be held: the server, or one client (a phone or browser running the app). It reports the transports it has *now*, and why one is missing. Setup offers a method wherever its transport is available. | runtime | The server: `mqtt`, `ble`, `lan`, `https`. Chrome on a laptop: `ble`, `https`. Firefox: `https` ("no Bluetooth in Firefox"). |
 | **Value** | One type system for everything a device reports, is told, answers or asks for: number (unit, range, step, precision), boolean, enum, string, **timestamp**, and a **list** or an **object** of values for structure. `null` is "not known". A config field is a value type with a title and a **presentation** (`secret`, `host`, `multiline`, `slider`). | `device-sdk` (`values.ts`, `schema.ts`) | A forecast: a list of objects `{at: timestamp, temperature: °C, cloudCover: %, …}`; a local key: a string presented as a secret |
 | **Description** | What a device is: its **parts** (`main`, and whatever it has several of — each of a curated **kind** with an icon, or one of the type's own, namespaced, and an optional **energy role**), their **attributes** (what they report, and what they remember and can be told), its **events**, and any capabilities of its own. An attribute's key begins with its part (`pack.1.soc`); it says how long a value stays **current** (`currentFor`). A type declares it for a device's config; a session may report its own. | `device-sdk` (`description.ts`) | A P280: `main`, `input.ac` (`input.ac.present`), `input.solar`, `outlet.ac`/`dc`/`usb` (`outlet.ac.on`), and `pack.1` when a pack is plugged in |
-| **Capability** | What a part can do or report, declared like a Matter cluster: attributes bound to standard meanings (Matter's names), commands with typed arguments, what each sets and **what makes it consequential**, queries with the **type of their answer**, and events. The library is shared; a package may declare its own, namespaced by its type, in the same shape. | `device-sdk` | `switch` (off while drawing more than 5 W is consequential), `powerMeter`, `battery`, `acInput` (raises `mains.lost`), `weather.forecast` (answers a list of hours) |
+| **Capability** | What a part can do or report, declared like a Matter cluster: attributes bound to standard meanings (Matter's names), commands with typed arguments, what each sets and **what makes it consequential**, queries with the **type of their answer**, and events. The library is shared; a package may declare its own, namespaced by its type, in the same shape. | `device-sdk` | `switch` (off while drawing more than the home's `loadWatts` is consequential), `powerMeter`, `battery`, `acInput` (raises `mains.lost`), `weather.forecast` (answers a list of hours) |
 | **Tool** | Something a kind of device can do beyond its capabilities — a register dump, a raw frame — **declared as data**: what it asks for, what it answers, whether it writes. The holder checks both ways. | inside the device type | P280: `registers`, `scan`, `raw`; a Tuya plug: `datapoints` |
 | **Link kind** | A physical fact between **parts** of two devices: which capability each end needs, what on the target proves a command on the source did something, and whether being its source makes a command consequential. | `device-sdk` | `feeds`: from a part with `switch` to a part with `acInput`, proven by `grid.present` following `switch.on`; consequential |
 
@@ -324,6 +324,7 @@ erDiagram
   client |o--o{ device_connection : "holds (none: the server does)"
   device ||--o{ device_kv : "remembers"
   device ||--o{ sample : "recorded"
+  device ||--o{ sample_change : "changed"
   device ||--o{ device_attribute : "has had"
   device ||--o{ device_event : "raised"
   device ||--o{ device_link : "is the source of"
@@ -339,6 +340,7 @@ erDiagram
     text name "Garage P280"
     json config "{} · the type's own choices · tuya.plug: {profile: atorch-s1} · Open-Meteo: {lat, lon}"
     json description "{parts: [...], attributes: [...], events: [...]} · the latest, the type's or its own"
+    text description_source "type · device · whose word the description is"
     json info "{manufacturer: AFERIY, model: P280, firmware: {...}} · null until it has said"
     text added_at "2026-09-27T19:40:00Z"
     text removed_at "null · set by Remove · history kept"
@@ -382,6 +384,7 @@ erDiagram
     text source_part "main"
     text target_device FK "d-3f9a2c61b0e4 · Garage P280"
     text target_part "input.ac"
+    int one_per_source "1 · as its kind declares: a plug feeds one thing"
     text created_at "2026-09-27T19:45:00Z"
   }
   sample {
@@ -391,6 +394,14 @@ erDiagram
     text at PK "2026-09-27T19:41:00Z"
     real value "87 · a number, or on/off as 1/0"
     text text "charging · an enum or text instead of a value"
+  }
+  sample_change {
+    text device_id PK "d-3f9a2c61b0e4"
+    text part "outlet.ac"
+    text key PK "outlet.ac.on · an on/off or an enum"
+    text at PK "2026-09-27T14:02:13Z · when the device observed it"
+    real value "0 · on/off as 1/0"
+    text text "eco · an enum instead"
   }
   device_attribute {
     text device_id PK "d-3f9a2c61b0e4"
@@ -426,14 +437,24 @@ erDiagram
     text at "2026-09-27T19:51:12Z"
     text kind "device.control"
     text actor "olofdahlbom · automation:a-71c2d0e5f9a3 · client:k-51d0e7a2c9f3"
+    text resource_kind "device · client · automation · account · transport · null with resource"
     text resource "d-3f9a2c61b0e4 · not a foreign key: it outlives the device"
     text summary "Switched the AC outlets off"
     json detail "{part: outlet.ac, capability: switch, command: set, args: {on: false}}"
   }
   app_state {
-    text key PK "legacy-import.decision"
-    text value "declined"
+    text key PK "automation.trigger.a-71c2d0e5f9a3:0 · gateway.lastSwitchAt.… · policy.values"
+    text value "{last: true, heldSince: …, fired: false} · {loadWatts: 10}"
     text updated_at "2026-09-01T10:00:00Z"
+  }
+  transport_kv {
+    text transport PK "ble · matter · mqtt"
+    text key PK "bond.AABBCC001122"
+    text value "what the transport keeps between runs"
+  }
+  meta {
+    text key PK "schema_hash · created_at · created_by_version"
+    text value "1843021779 · 2026-09-29T12:00:00Z · 0.1.0"
   }
   users {
     text id PK "u-2a9c40e1b7d8"
@@ -469,7 +490,12 @@ erDiagram
 | `device_link` | Facts about the house, between parts — which plug feeds which station's mains input, which station's outlet feeds another — that the gateway, the energy view and automations all read. | step 9, or later on the device's page |
 | `device_kv` | What a session keeps between runs: a simulator's settings, a plug's detected protocol version. | by the session |
 | `device.description`, `device_attribute` | What the device is — so a closed or removed device is still described — and every attribute it ever had, so history keeps its labels after a part is gone. | step 10, then whenever it changes |
+| `device.description_source` | Whether the description is the type's, for its config, or the device's own — a station that reports its packs. | step 10, then whenever it changes |
 | `sample` | History: every attribute the description says to keep, with its part, while its value is current. | continuously, by the holder |
+| `sample_change` | Every change of an on/off or an enum, when it happened: what a timeline draws ("AC outlets off 14:02–14:19"), where minute samples would blur a switch flicked between them. Two years, and each key's latest beyond. | as readings move, from the server's sessions and from apps' uplinks |
+| `transport_kv` | What a transport keeps between runs — a Bluetooth bond, a Matter fabric — its own and no other's. | by the transport |
+| `meta` | What the database is: the schema it was made with, when, and by which version — what the set-aside message reports. | when the database is made |
+| `audit.resource_kind` | What an entry is about, as a kind and an id together, so the timeline can be asked for one device's, one automation's, one account's. | with every entry |
 | `device_event` | What devices said happened, beside their history. | when a device raises one |
 
 ### Rules the schema and the code enforce
@@ -494,8 +520,13 @@ erDiagram
   that client's secure storage. `connection_secret` holds only secrets of
   server-held connections, encrypted.
 - **Links join parts, and a kind may allow one target per source part.**
-  `feeds` does — a plug feeds one thing — so a second replaces the first;
-  the same link twice is refused by a unique index on all its ends.
+  `feeds` does — a plug feeds one thing — so a second replaces the first.
+  The row says so (`one_per_source`, from its kind), and a partial unique
+  index on `(kind, source_device, source_part)` holds it: no concurrent add
+  or direct write can give a source part two. The same link twice is refused
+  by a unique index on all its ends.
+- **What an audit entry is about is a kind and an id together, or neither,**
+  checked by the table.
 - **The audit log is never cascaded,** so it still says what happened to a
   device after the device is gone.
 

@@ -305,7 +305,7 @@ automations until promoted to the library.
 
 | Capability | Attributes (meaning) | Commands and queries | Consequential |
 |---|---|---|---|
-| `switch` | `on` (`switch.on`, required) | `set(on)` sets `on` | turning off while `power.draw` is above 5 W, or while it is the source of a consequential link |
+| `switch` | `on` (`switch.on`, required) | `set(on)` sets `on` | turning off while `power.draw` is above the home's `loadWatts` (5 W until set), or not known; or while it is the source of a consequential link |
 | `powerMeter` | `activePower` (`power.draw`, required), `voltage`, `activeCurrent`, `frequency`, `energyImported` | — | — |
 | `battery` | `soc` (`battery.soc`, required), `capacity` | — | — |
 | `acInput` | `present` (`grid.present`, required), `activePower`; events `mains.lost`, `mains.restored` | — | — |
@@ -484,9 +484,20 @@ from its kind's — and applies, per part:
 - that the part offers the capability, and the arguments are the command's own,
   of the right types;
 - confirmation where the command is **consequential** as declared — `switch.set`
-  turning off a part whose `power.draw` is above 5 W — or the part is the
-  source of a link whose kind says being its source is (cutting what feeds a
-  station), and for the first command through such a link;
+  turning off a part whose `power.draw` is above `loadWatts` — or the part is
+  the source of a link whose kind says being its source is (cutting what feeds
+  a station), and for the first command through such a link. A declared
+  condition that cannot be judged — the part reports the meaning, but nothing
+  current — counts as holding: unknown is never taken for the safe answer. A
+  part that does not report it at all makes no claim, and only a link can make
+  its command consequential;
+- thresholds a declaration names rather than fixes: the capability says what is
+  consequential, the home says how much (`POLICY_VALUES`, set in App settings,
+  kept by the server in `app_state` and served at `/api/policy`);
+- confirmation as a **token**, not a word: the refusal hands out one bound to
+  the device, part, command and arguments (or the patch) and the person,
+  good once, for a minute; the retry presents it. Arming an automation is
+  confirmed the same way;
 - read-only mode;
 - dwell time, per part;
 - fresh data: acting needs readings that are current for their attribute and

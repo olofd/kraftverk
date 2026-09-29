@@ -4,7 +4,7 @@ import { connect, createServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { MessageBrokerPolicy } from '@kraftverk/device-sdk';
+import { memoryTransportStore, type MessageBrokerPolicy } from '@kraftverk/device-sdk';
 
 import { BrokerBus, type BusMessage } from '../bus.ts';
 import { MqttClient } from '../client.ts';
@@ -354,6 +354,7 @@ describe('the transport’s channel to one device', () => {
       },
       log: (_level, message) => lines.push(message),
       audit: () => undefined,
+      store: memoryTransportStore(),
     });
     await transport.start();
 

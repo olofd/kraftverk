@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { createSocket } from 'node:dgram';
 import { createServer, type Socket } from 'node:net';
 
+import { memoryTransportStore } from '@kraftverk/device-sdk';
+
 import { isLocalAddress } from './index.ts';
 import createLanTransport from './server.ts';
 
@@ -10,7 +12,7 @@ import createLanTransport from './server.ts';
  * UDP datagram standing in for its broadcast.
  */
 
-const quiet = { env: {}, log: () => undefined, audit: () => undefined };
+const quiet = { env: {}, log: () => undefined, audit: () => undefined, store: memoryTransportStore() };
 
 const until = async (condition: () => boolean, what: string, ms = 3000) => {
   const deadline = Date.now() + ms;

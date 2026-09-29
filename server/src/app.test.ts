@@ -29,6 +29,7 @@ import { EventStore } from './devices/events.ts';
 import { busDefinition, FakeBus, lampProtocol, lampType } from './devices/testing.ts';
 import { DeviceTypeRegistry } from './devices/types.ts';
 import { audit, closeDb, db, openSecret } from './history/db.ts';
+import { policyValues } from './history/policy.ts';
 import { Sampler } from './history/sampler.ts';
 import { originAllowed } from './routes/live.ts';
 import { ProtocolRegistry } from './runtime/protocols.ts';
@@ -91,7 +92,7 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
     allowRawFrames: false,
     clientName: (id) => clients.get(id)?.name ?? null,
     // As the server wires it: what a device is and raises is kept.
-    onDescribed: (deviceId, description, info) => catalog.describe(deviceId, description, info),
+    onDescribed: (deviceId, description, info, source) => catalog.describe(deviceId, description, info, source),
     onEvent: (deviceId, event) => events.record(deviceId, event),
     bus: live,
   });
@@ -117,6 +118,7 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
     isReadOnly: (id) => config.readOnly && !sessions.simulated(id),
     record: audit,
     policy: { verifyTimeoutMs: 300 },
+    policyValues,
   });
   const proxies = new ProxyDirectory(PROXY);
   await proxies.refresh();
@@ -508,7 +510,7 @@ describe('a device you have', () => {
 
     const refused = await as(`/devices/${enc(plug.id)}/parts/main/commands/switch/set`, { method: 'POST', body: { args: { on: false } } });
     expect(refused.status).toBe(409);
-    expect(refused.body).toMatchObject({ outcome: 'refused', needsConfirmation: true });
+    expect(refused.body).toMatchObject({ outcome: 'refused', needsConfirmation: expect.any(String) });
     expect(refused.body.detail).toContain('Garage P280');
   });
 
@@ -612,7 +614,7 @@ describe('connections and links', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     // Cutting it cuts the other station's mains: a person confirms, told which.
     const refused = await as(`/devices/${enc(garage.id)}/parts/outlet.ac/commands/switch/set`, { method: 'POST', body: { args: { on: false } } });
-    expect(refused.body).toMatchObject({ outcome: 'refused', needsConfirmation: true });
+    expect(refused.body).toMatchObject({ outcome: 'refused', needsConfirmation: expect.any(String) });
     expect(refused.body.detail).toContain('Cabin P280 — Mains');
   });
 });
@@ -758,11 +760,21 @@ describe('a connection a browser holds', () => {
 
     const recorded = await onBusAs(`/clients/${client.id}/audit`, {
       method: 'POST',
-      body: { entries: [{ at: new Date().toISOString(), kind: 'command.verified', resource: device.id, summary: 'Desk lamp: switched off' }] },
+      body: { entries: [{ at: new Date().toISOString(), kind: 'command.verified', resourceKind: 'device', resource: device.id, summary: 'Desk lamp: switched off' }] },
     });
     expect(recorded.body).toEqual({ recorded: 1 });
     const entry = ((await onBusAs('/audit')).body as { kind: string; actor: string; detail: { from: { name: string } } }[]).find((e) => e.kind === 'command.verified');
-    expect(entry).toMatchObject({ actor: 'olof', detail: { from: { name: 'Olof’s laptop' } } });
+    expect(entry).toMatchObject({ actor: 'olof', resourceKind: 'device', resource: device.id, detail: { from: { name: 'Olof’s laptop' } } });
+
+    // The timeline, asked for one device's.
+    const its = (await onBusAs(`/audit?resourceKind=device&resource=${enc(device.id)}`)).body as { resource: string }[];
+    expect(its.length).toBeGreaterThan(0);
+    expect(its.every((line) => line.resource === device.id)).toBe(true);
+    expect((await onBusAs('/audit?resourceKind=automation')).body).toEqual([]);
+
+    // An id with no kind could not be filtered by, and is refused.
+    const half = await onBusAs(`/clients/${client.id}/audit`, { method: 'POST', body: { entries: [{ at: new Date().toISOString(), kind: 'command.verified', resource: device.id, summary: 'Half an entry' }] } });
+    expect(half.status).toBe(400);
   });
 });
 
@@ -785,6 +797,22 @@ describe('phones and browsers', () => {
   });
 });
 
+describe('what the home decides', () => {
+  test('how much is a load is set here, bounded, audited, and put back with null', async () => {
+    const listed = (await as('/policy')).body as { name: string; value: number; default: number }[];
+    expect(listed).toContainEqual(expect.objectContaining({ name: 'loadWatts', value: 5, default: 5, unit: 'W' }));
+
+    const set = await as('/policy/loadWatts', { method: 'PUT', body: { value: 12 } });
+    expect(set.status).toBe(200);
+    expect(set.body).toContainEqual(expect.objectContaining({ name: 'loadWatts', value: 12 }));
+    expect((await as('/policy/loadWatts', { method: 'PUT', body: { value: -1 } })).status).toBe(400);
+    expect((await as('/policy/nothing', { method: 'PUT', body: { value: 1 } })).status).toBe(404);
+    expect(((await as('/audit')).body as { kind: string; summary: string }[]).find((entry) => entry.kind === 'policy.changed')?.summary).toBe('A load worth confirming: now 12 W');
+
+    expect((await as('/policy/loadWatts', { method: 'PUT', body: { value: null } })).body).toContainEqual(expect.objectContaining({ name: 'loadWatts', value: 5 }));
+  });
+});
+
 describe('settings, through the gateway', () => {
   test('a setting is written, read back and audited; one that can damage the hardware is confirmed first', async () => {
     const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
@@ -802,8 +830,11 @@ describe('settings, through the gateway', () => {
 
     const risky = await as(path, { method: 'PATCH', body: { patch: { sleepMinutes: '480' } } });
     expect(risky.status).toBe(409);
-    expect(risky.body.needsConfirmation).toBe(true);
-    const confirmed = await as(path, { method: 'PATCH', body: { patch: { sleepMinutes: '480' }, confirmation: 'confirm' } });
+    expect(risky.body.needsConfirmation).toEqual(expect.any(String));
+    // A word anyone could send is no yes; the token the refusal handed out is.
+    expect((await as(path, { method: 'PATCH', body: { patch: { sleepMinutes: '480' }, confirmation: 'confirm' } })).status).toBe(409);
+    const asked = await as(path, { method: 'PATCH', body: { patch: { sleepMinutes: '480' } } });
+    const confirmed = await as(path, { method: 'PATCH', body: { patch: { sleepMinutes: '480' }, confirmation: asked.body.needsConfirmation } });
     expect(confirmed.body.outcome).toBe('verified');
 
     const kinds = ((await as('/audit')).body as { kind: string; actor: string }[]).map((entry) => entry.kind);
@@ -907,8 +938,13 @@ describe('automations', () => {
 
     const unconfirmed = await as(path, { method: 'PATCH', body: { mode: 'armed' } });
     expect(unconfirmed.status).toBe(409);
-    expect(unconfirmed.body.needsConfirmation).toBe(true);
-    expect((await as(path, { method: 'PATCH', body: { mode: 'armed', confirmation: 'confirm' } })).body.mode).toBe('armed');
+    expect(unconfirmed.body.needsConfirmation).toEqual(expect.any(String));
+    expect((await as(path, { method: 'PATCH', body: { mode: 'armed', confirmation: 'confirm' } })).status).toBe(409);
+    const asked = await as(path, { method: 'PATCH', body: { mode: 'armed' } });
+    // A token for arming is not one for arming with other settings.
+    expect((await as(path, { method: 'PATCH', body: { mode: 'armed', params: { day: 'today', at: '09:00' }, confirmation: asked.body.needsConfirmation } })).status).toBe(409);
+    const again = await as(path, { method: 'PATCH', body: { mode: 'armed' } });
+    expect((await as(path, { method: 'PATCH', body: { mode: 'armed', confirmation: again.body.needsConfirmation } })).body.mode).toBe('armed');
     // Changing what an armed one does is confirmed again.
     expect((await as(path, { method: 'PATCH', body: { params: { day: 'today', at: '08:00' } } })).status).toBe(409);
 

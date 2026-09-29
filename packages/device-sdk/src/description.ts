@@ -2,6 +2,7 @@ import {
   CAPABILITIES,
   CAPABILITY_NAMES,
   isCapability,
+  isPolicyValueName,
   mustBeOffered,
   requiredMeanings,
   type CapabilityId,
@@ -155,6 +156,9 @@ export type EventSpec = {
   /** What it carries, each a scalar of the one value system. */
   data?: Readonly<Record<string, ScalarValueType>>;
 };
+
+/** Whose word a device's description is: its type's, for its config, or the device's own. */
+export type DescriptionSource = 'type' | 'device';
 
 export type DeviceDescription = {
   /** `main` is always there; declare it only to name it or give it a role. */
@@ -328,6 +332,15 @@ function capabilityProblems(id: string, spec: CapabilitySpec, typeId: string): s
     for (const [arg, attribute] of Object.entries(command.sets ?? {})) {
       if (!(arg in (command.args ?? {}))) problems.push(`${where} command "${name}" sets from "${arg}", which it does not take`);
       if (!(attribute in (spec.attributes ?? {}))) problems.push(`${where} command "${name}" sets "${attribute}", which it does not have`);
+    }
+    const consequence = command.consequential;
+    if (consequence && consequence !== 'always') {
+      for (const condition of consequence.if ?? []) {
+        if (!standardMeaning(condition.means)) problems.push(`${where} command "${name}" is consequential by "${condition.means}", which is not a standard meaning`);
+        for (const bound of [condition.above, condition.below]) {
+          if (bound !== undefined && typeof bound !== 'number' && !isPolicyValueName(bound.policy)) problems.push(`${where} command "${name}" names the policy value "${bound.policy}", which there is none of`);
+        }
+      }
     }
   }
   for (const [name, query] of Object.entries(spec.queries ?? {})) problems.push(...valueTypeProblems(`${where} query "${name}" answer`, query.answer));

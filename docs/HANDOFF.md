@@ -44,6 +44,18 @@ empty: the core names no product, and every device is found, not listed.
   (`server/src/history/schema.ts`): a database from an older schema is set
   aside on start, and history is not carried over. Removing a device keeps its
   history.
+- **What the database holds besides** (Phase 2 of the next-step plan): a
+  `meta` table saying which schema and version made it, a change log of every
+  on/off and enum (`sample_change`, `GET /devices/:id/changes`), whose word a
+  description is (`description_source`), each transport's own store
+  (`transport_kv`, `TransportContext.store`), and what each audit entry is
+  about (`resource_kind`, filterable at `/audit`). One-per-source links are
+  held by a partial unique index, not only by code.
+- **The gateway asks when it cannot tell**: a declared condition on a
+  reading that is missing or stale counts as holding. How much is a load is
+  the home's (`loadWatts`, App settings → Safety, `/api/policy`), and a
+  confirmation is a single-use token bound to the intent and the person,
+  for commands, settings and arming alike.
 - **Live** (step 27): `GET /api/live`, a WebSocket, carries readings that
   moved, health and events; the app polls only while it is down.
 - **The app holds connections too.** "Bluetooth, from this browser" runs the

@@ -1,9 +1,9 @@
 import { Platform } from 'react-native';
 
-import type { DeviceSession, DeviceStore, SavedDeviceId } from '@kraftverk/device-sdk';
-import { ActionGateway, type AuditEntry } from '@kraftverk/gateway';
+import type { DeviceSession, DeviceStore, PolicyValues, SavedDeviceId } from '@kraftverk/device-sdk';
+import { ActionGateway } from '@kraftverk/gateway';
 import { Failover } from '@kraftverk/holder';
-import { fetchDeviceStore, registerClient, type DeviceView } from '@kraftverk/api-client';
+import { fetchDeviceStore, registerClient, type AuditUpload, type DeviceView } from '@kraftverk/api-client';
 
 import { readPreference, writePreference } from '../lib/preferences';
 import type { Mode } from '../state/ServersProvider';
@@ -62,6 +62,9 @@ export class AppRuntime {
   readonly uplink: Uplink | null;
   clientId: string | null = null;
   #allowWrites = false;
+  /** How much is a load, and the other values the home decides: the server's, or this app's own in local mode. */
+  #policyValues: PolicyValues;
+  #policyKey: string;
   #listeners = new Set<() => void>();
   #view = new Map<string, DeviceView>();
   #stores = new Map<string, Record<string, unknown>>();
@@ -72,12 +75,15 @@ export class AppRuntime {
   constructor(private options: { mode: Mode; server: string | null }) {
     // Sealed secrets, one vault per server and one for local mode. The plaintext an older version kept moves in.
     const place = options.mode === 'local' || !options.server ? 'local' : options.server;
+    this.#policyKey = `kraftverk.policy.${place}`;
+    this.#policyValues = JSON.parse(readPreference(this.#policyKey) ?? '{}') as PolicyValues;
     this.vault = new SecretVault({ storageKey: `kraftverk.vault.${place}`, ...(options.server ? legacySecrets(`kraftverk.secrets.${options.server}`) : {}) });
     this.local = new LocalCatalog(this.vault);
     // Sessions opened before the vault was read reopen with their secrets once it has been.
     void this.vault.ready().then(() => this.#changed());
-    const audit = (entry: Omit<AuditEntry, 'actor'>) => {
-      if (this.uplink) this.uplink.audit({ at: entry.at, kind: entry.kind, resource: entry.resource, summary: entry.summary, detail: entry.detail });
+    // The server adds who sent it; what it is about goes as it is.
+    const audit = ({ actor: _actor, ...entry }: AuditUpload & { actor?: string }) => {
+      if (this.uplink) this.uplink.audit(entry);
       else console.log(`[audit] ${entry.summary}`);
     };
     this.registry = new AppRegistry({
@@ -102,7 +108,8 @@ export class AppRuntime {
                     connectionId: held.connection.id,
                     identity: session.identity?.().id ?? null,
                     readings: session.readings(),
-                    description: this.sessions.description(held.deviceId),
+                    // Only a device's own: its type's, the server has from when it was added.
+                    description: this.sessions.describedBy(held.deviceId) === 'device' ? this.sessions.description(held.deviceId) : null,
                     info: this.sessions.info(held.deviceId),
                   },
                 ];
@@ -112,12 +119,12 @@ export class AppRuntime {
     this.sessions = new HeldSessions({
       registry: this.registry,
       readOnly: () => !this.#allowWrites,
-      event: (held, event) => audit({ at: event.at, kind: `device.event.${event.level}`, resource: held.deviceId, summary: `${held.name}: ${event.id}`, detail: { part: event.part, data: event.data } }),
+      event: (held, event) => audit({ at: event.at, kind: `device.event.${event.level}`, resourceKind: 'device', resource: held.deviceId, summary: `${held.name}: ${event.id}`, detail: { part: event.part, data: event.data } }),
       onConnected: (held) => {
         if (options.mode === 'local') this.local.touch(held.connection.id);
       },
       onMismatch: (held, said) =>
-        audit({ at: new Date().toISOString(), kind: 'device.mismatch', resource: held.deviceId, summary: `${held.name}'s connection from this app reaches ${said} instead`, detail: { expected: held.identity } }),
+        audit({ at: new Date().toISOString(), kind: 'device.mismatch', resourceKind: 'device', resource: held.deviceId, summary: `${held.name}'s connection from this app reaches ${said} instead`, detail: { expected: held.identity } }),
       onChange: () => this.#changed(),
       failover: this.#failover,
     });
@@ -140,6 +147,7 @@ export class AppRuntime {
       readOnlyReason: 'Writes from this app are off: allow them in App settings',
       record: (entry) => audit(entry),
       memory: { get: (key) => readPreference(`kraftverk.gateway.${key}`), set: (key, value) => writePreference(`kraftverk.gateway.${key}`, value) },
+      policyValues: () => this.#policyValues,
     });
     this.uplink?.start();
     if (options.mode === 'local') this.#failoverTimer = setInterval(() => this.#failOver(), 15_000);
@@ -147,6 +155,17 @@ export class AppRuntime {
 
   get mode(): Mode {
     return this.options.mode;
+  }
+
+  get policyValues(): PolicyValues {
+    return this.#policyValues;
+  }
+
+  /** What the home has set — from the server, or chosen here in local mode — kept for the next start. */
+  setPolicyValues(values: PolicyValues): void {
+    this.#policyValues = values;
+    writePreference(this.#policyKey, JSON.stringify(values));
+    this.#changed();
   }
 
   get allowWrites(): boolean {

@@ -64,6 +64,14 @@ describe('the device catalog', () => {
     expect(catalog.list().map((entry) => entry.id)).toContain(record.id);
   });
 
+  test('knows whose word its description is: its type’s when added, its own once it says more', () => {
+    const record = add('Station');
+    expect(record.descriptionSource).toBe('type');
+    const own = { ...record.description, attributes: [...record.description.attributes, { key: 'pack.1.soc', label: 'Pack 1', value: { type: 'number' as const, unit: '%' } }] };
+    expect(catalog.describe(record.id, own, null, 'device')).toBe(true);
+    expect(catalog.get(record.id)).toMatchObject({ descriptionSource: 'device', description: own });
+  });
+
   test('renaming changes only the label, and an empty rename is refused', () => {
     const record = add('Before');
     expect(catalog.update(record.id, { name: '  After  ' })?.name).toBe('After');
@@ -182,6 +190,12 @@ describe('links', () => {
 
     expect(links.from(plug.id, 'main').map((link) => link.target)).toEqual([{ device: second.id, part: 'input.ac' }]);
     expect(links.forDevice(first.id)).toEqual([]);
+
+    // Held by the database too: a write that goes around the store cannot give the plug a second.
+    const around = db().query(
+      "INSERT INTO device_link (id, kind, source_device, source_part, target_device, target_part, one_per_source, created_at) VALUES ('l-around', 'feeds', ?, 'main', ?, 'input.ac', 1, '2026-09-29T00:00:00Z')"
+    );
+    expect(() => around.run(plug.id, first.id)).toThrow(/UNIQUE/);
   });
 
   test('each part of a device is a source of its own', () => {

@@ -3,7 +3,6 @@ import { Feather } from '@expo/vector-icons';
 import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import {
-  CONFIRMATION_TOKEN,
   checkAutomation,
   createAutomation,
   deleteAutomation,
@@ -151,7 +150,7 @@ function AutomationCard({ automation, onChanged, onDeleted }: { automation: Auto
       if ('needsConfirmation' in answer) {
         const yes = await confirmAction(`Let “${automation.name}” act on its own?`, `${automation.sentence}\n\n${answer.reason}`, 'Arm it');
         if (!yes) return;
-        answer = await updateAutomation(automation.id, { mode, confirmation: CONFIRMATION_TOKEN });
+        answer = await updateAutomation(automation.id, { mode, confirmation: answer.needsConfirmation });
       }
       if ('automation' in answer) onChanged(answer.automation);
     } catch (err) {

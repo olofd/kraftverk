@@ -9,12 +9,13 @@ import {
   MAIN_PART,
   savedDeviceId,
   zonedInstant,
+  type AuditRecord,
   type DeviceDescription,
   type DeviceReader,
   type DeviceType,
   type Value,
 } from '@kraftverk/device-sdk';
-import type { AuditEntry, CommandIntent, GatewayResult } from '@kraftverk/gateway';
+import type { CommandIntent, GatewayResult } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
 
 import { closeDb, db } from '../history/db.ts';
@@ -152,7 +153,7 @@ const keptMemory = (): TriggerMemory & { kept: Map<string, string> } => {
 
 function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: boolean; memory?: TriggerMemory } = {}) {
   const sent: CommandIntent[] = [];
-  const recorded: AuditEntry[] = [];
+  const recorded: AuditRecord[] = [];
   const station = { soc: 50 as Value };
   let now = options.now ?? MORNING;
   const devices: Record<string, EngineDevice> = {
@@ -230,7 +231,7 @@ describe('at a time of day', () => {
     const result = await engine.run(sunny());
     expect(result).toMatchObject({ outcome: 'would-act', summary: 'Would turn Heater plug on. Tomorrow looks sunny: 15 % cloud' });
     expect(sent).toEqual([]);
-    expect(recorded[0]).toMatchObject({ kind: 'automation.would-act', actor: 'automation:Test automation', resource: PLUG });
+    expect(recorded[0]).toMatchObject({ kind: 'automation.would-act', actor: 'automation:Test automation', resourceKind: 'automation', detail: { device: PLUG } });
   });
 
   test('armed, it acts through the gateway, as an automation, with its reason', async () => {

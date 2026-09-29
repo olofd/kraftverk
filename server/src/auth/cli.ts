@@ -52,8 +52,8 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-const record = (kind: string, summary: string, resource?: string) =>
-  audit({ at: new Date().toISOString(), kind, actor: 'server console', resource, summary });
+const record = (kind: string, summary: string, account: string) =>
+  audit({ at: new Date().toISOString(), kind, actor: 'server console', resourceKind: 'account', resource: account, summary });
 
 try {
   switch (command) {

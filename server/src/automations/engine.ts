@@ -17,6 +17,7 @@ import {
   unitOf,
   zonedInstant,
   type AutomationId,
+  type AuditRecord,
   type BoundPart,
   type CapabilityId,
   type CapabilityName,
@@ -28,7 +29,7 @@ import {
   type Trigger,
   type Value,
 } from '@kraftverk/device-sdk';
-import type { ActionGateway, AuditEntry, GatewayResult } from '@kraftverk/gateway';
+import type { ActionGateway, GatewayResult } from '@kraftverk/gateway';
 import { deviceReader, type LiveBus, type LiveMessage } from '@kraftverk/holder';
 
 import type { DeviceCatalog } from '../devices/catalog.ts';
@@ -88,7 +89,7 @@ export type AutomationEngineDeps = {
   library: Pick<AutomationLibrary, 'recipe' | 'fn'>;
   device: (binding: RoleBinding) => EngineDevice | null;
   gateway: Pick<ActionGateway, 'execute'>;
-  record: (entry: AuditEntry) => void;
+  record: (entry: AuditRecord) => void;
   /** What devices say as they say it: events and readings start runs. */
   bus?: LiveBus;
   now?: () => Date;
@@ -369,8 +370,9 @@ export class AutomationEngine {
     const result = (outcome: RunResult['outcome'], summary: string): RunResult => ({ at: at.toISOString(), outcome, summary });
     const recipe = this.deps.library.recipe(automation.recipe);
     const actor = `automation:${automation.name}`;
-    const note = (entry: RunResult, resource?: string, detail?: unknown) => {
-      if (!options.check) this.deps.record({ at: entry.at, kind: `automation.${entry.outcome}`, actor, resource, summary: `${automation.name}: ${entry.summary}`, detail: { automationId: automation.id, ...(detail as object) } });
+    // A run is about its automation; the device it acted on, if any, is in the detail.
+    const note = (entry: RunResult, device?: string, detail?: unknown) => {
+      if (!options.check) this.deps.record({ at: entry.at, kind: `automation.${entry.outcome}`, actor, resourceKind: 'automation', resource: automation.id, summary: `${automation.name}: ${entry.summary}`, detail: { ...(device ? { device } : {}), ...(detail as object) } });
       return entry;
     };
 

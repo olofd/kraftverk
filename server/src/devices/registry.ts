@@ -155,6 +155,7 @@ export class DeviceRegistry {
         ? { name: type.meta.name, brand: type.meta.brand, icon: type.meta.icon, support: type.meta.support, category: type.meta.category }
         : { name: record.typeId, icon: 'help-circle', support: 'experimental', category: 'unknown' },
       description,
+      descriptionSource: record.removedAt ? record.descriptionSource : this.deps.sessions.describedBy(record),
       capabilities: deviceCapabilities(description),
       info: record.removedAt ? record.info : this.deps.sessions.info(record),
       config: record.config,

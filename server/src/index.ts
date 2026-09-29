@@ -18,6 +18,9 @@ import { DeviceSessionManager } from './devices/sessions.ts';
 import { SetupService } from './devices/setup/index.ts';
 import { DeviceTypeRegistry } from './devices/types.ts';
 import { appState, audit, closeDb, deleteAppState, setAppState } from './history/db.ts';
+import { policyValues } from './history/policy.ts';
+import { ChangeLog } from './history/changes.ts';
+import { transportStore } from './history/transport-store.ts';
 import { Sampler } from './history/sampler.ts';
 import { keepConsole } from './log.ts';
 import { scopedHttp } from './runtime/http.ts';
@@ -91,6 +94,7 @@ const transports = new TransportHost({
     log: (level, message) => console[level === 'info' ? 'log' : level](message),
     audit: (entry) => audit({ at: new Date().toISOString(), ...entry }),
   },
+  store: transportStore,
 });
 await transports.discover();
 
@@ -127,7 +131,7 @@ const sessions = new DeviceSessionManager({
     if (catalog.byIdentity(identity).active) return;
     catalog.update(deviceId, { identity });
   },
-  onDescribed: (deviceId, description, info) => catalog.describe(deviceId, description, info),
+  onDescribed: (deviceId, description, info, source) => catalog.describe(deviceId, description, info, source),
   onEvent: (deviceId, event) => events.record(deviceId, event),
   bus,
   log: (message) => console.log(`[devices] ${message}`),
@@ -187,10 +191,18 @@ const gateway = new ActionGateway({
   isReadOnly: (id) => config.readOnly && !sessions.simulated(id),
   record: audit,
   memory: { get: appState, set: setAppState },
+  policyValues,
 });
 
 const sampler = new Sampler(registry);
 sampler.start();
+
+/** Every change of an on/off or an enum, as the server's sessions report it. */
+const changeLog = new ChangeLog(bus, (id) => {
+  const record = catalog.active(id);
+  return record ? sessions.description(record) : null;
+});
+changeLog.start();
 
 /** Automations: decided here, acted on only through the gateway. */
 /** What the installed packages bring to automations: their recipes and functions. None of the core's own. */
@@ -242,6 +254,7 @@ const { app, websocket } = createApp({
 onStop(
   () => engine.stop(),
   () => sampler.stop(),
+  () => changeLog.stop(),
   () => setup.stop(),
   () => nearby.stop(),
   () => sessions.closeAll(),

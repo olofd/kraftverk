@@ -1,4 +1,5 @@
 import type { DeviceDescription, DeviceInfo } from './description.ts';
+import type { AuditSubject } from './identity.ts';
 import type { ConfigSchema, ConfigValues } from './schema.ts';
 import type { SetupAction, SetupStep } from './setup.ts';
 
@@ -234,8 +235,28 @@ export type TransportContext = {
    * Records something security-relevant in the audit timeline: a command the
    * broker refused, a client that presented the wrong secret.
    */
-  audit(entry: { kind: string; actor: string; resource?: string; summary: string; detail?: unknown }): void;
+  audit(entry: { kind: string; actor: string; summary: string; detail?: unknown } & AuditSubject): void;
+  /** What this transport keeps between runs, its own and no other transport's. */
+  store: TransportStore;
 };
+
+/**
+ * What a transport keeps between runs: a Bluetooth bond, a Matter fabric, a
+ * broker's credentials. Small text values under keys of its choosing, scoped
+ * to it by the host — the server's database, an app's own storage — so one
+ * transport can neither read nor clobber another's.
+ */
+export type TransportStore = {
+  get(key: string): string | null;
+  set(key: string, value: string): void;
+  delete(key: string): void;
+};
+
+/** A store kept in memory: for tests, and a host with nowhere else to keep one. */
+export function memoryTransportStore(): TransportStore {
+  const kept = new Map<string, string>();
+  return { get: (key) => kept.get(key) ?? null, set: (key, value) => void kept.set(key, value), delete: (key) => void kept.delete(key) };
+}
 
 /**
  * What a transport package's entry for one platform exports by default: how

@@ -44,3 +44,30 @@ test('turning off a plug that carries a load says how much, and once confirmed, 
   await expect(power).toHaveAttribute('aria-checked', 'false');
   await expect(page.getByText('0 W', { exact: true }).first()).toBeVisible();
 });
+
+test('how much is a load is the home’s to say: set in App settings, the same plug turns off without asking', async ({ page, request }) => {
+  const plug = await addSimulated(request, 'atorch.s1w', unique('Night light'));
+  try {
+    await page.goto('/app-settings');
+    const load = page.getByLabel('A load worth confirming');
+    await load.fill('500');
+    await load.press('Enter');
+    await expect
+      .poll(async () => ((await (await request.get('/api/policy')).json()) as { name: string; value: number }[]).find((item) => item.name === 'loadWatts')?.value)
+      .toBe(500);
+
+    await page.goto(`/device/${plug.id}`);
+    const power = page.getByRole('switch').first();
+    await expect(power).toHaveAttribute('aria-checked', 'true');
+    let asked = false;
+    page.on('dialog', (dialog) => {
+      asked = true;
+      void dialog.dismiss();
+    });
+    await power.click();
+    await expect(power).toHaveAttribute('aria-checked', 'false');
+    expect(asked).toBe(false);
+  } finally {
+    await request.put('/api/policy/loadWatts', { data: { value: null } });
+  }
+});

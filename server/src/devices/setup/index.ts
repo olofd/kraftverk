@@ -306,6 +306,7 @@ export class SetupService {
       at: new Date().toISOString(),
       kind,
       actor: draft.by,
+      resourceKind: 'device',
       resource: record.id,
       summary:
         kind === 'device.added'

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { partOf, savedDeviceId, type AttributeSpec, type DeviceDescription, type DeviceInfo, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { partOf, savedDeviceId, type AttributeSpec, type DescriptionSource, type DeviceDescription, type DeviceInfo, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import { db } from '../history/db.ts';
 
@@ -32,6 +32,8 @@ export type DeviceRecord = {
   removedAt: string | null;
   /** What it is — parts, attributes, events — as it was last described: by its type, or by itself. */
   description: DeviceDescription;
+  /** Which of the two that was. */
+  descriptionSource: DescriptionSource;
   /** What it has said about itself. Null until it has. */
   info: DeviceInfo | null;
 };
@@ -43,6 +45,7 @@ type Row = {
   name: string;
   config: string;
   description: string;
+  description_source: DescriptionSource;
   info: string | null;
   added_at: string;
   removed_at: string | null;
@@ -58,6 +61,7 @@ const toRecord = (row: Row): DeviceRecord => ({
   addedAt: row.added_at,
   removedAt: row.removed_at,
   description: JSON.parse(row.description) as DeviceDescription,
+  descriptionSource: row.description_source,
   info: row.info === null ? null : (JSON.parse(row.info) as DeviceInfo),
 });
 
@@ -105,6 +109,8 @@ export class DeviceCatalog {
       addedAt: new Date().toISOString(),
       removedAt: null,
       description: input.description,
+      // Its type's word, until it says more itself.
+      descriptionSource: 'type',
       info: null,
     };
     db().transaction(() => {
@@ -121,14 +127,17 @@ export class DeviceCatalog {
    * changed, and records any attribute it has not had before. Returns whether
    * its description changed — a pack plugged in, a firmware that says more.
    */
-  describe(id: SavedDeviceId, description: DeviceDescription, info: DeviceInfo | null): boolean {
-    const row = db().query<{ description: string; info: string | null }, [string]>('SELECT description, info FROM device WHERE id = ?').get(id);
+  describe(id: SavedDeviceId, description: DeviceDescription, info: DeviceInfo | null, source: DescriptionSource): boolean {
+    const row = db()
+      .query<{ description: string; description_source: DescriptionSource; info: string | null }, [string]>('SELECT description, description_source, info FROM device WHERE id = ?')
+      .get(id);
     if (!row) return false; // removed since it was opened: nothing to describe
     const json = JSON.stringify(description);
     const changed = row.description !== json;
     // Information a device has not given is not information it lost.
     const infoJson = info ? JSON.stringify(info) : null;
     db().transaction(() => {
+      if (source !== row.description_source) db().query('UPDATE device SET description_source = ? WHERE id = ?').run(source, id);
       if (changed) {
         db().query('UPDATE device SET description = ? WHERE id = ?').run(json, id);
         this.#recordAttributes(id, description, new Date().toISOString());

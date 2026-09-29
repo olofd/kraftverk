@@ -25,6 +25,7 @@ import type {
   ConfigValues,
   ConnectionHealth,
   ConnectionId,
+  DescriptionSource,
   DeviceDescription,
   DeviceInfo,
   DeviceTypeMeta,
@@ -34,6 +35,10 @@ import type {
   LinkId,
   LinkKind,
   Reading,
+  AuditSubject,
+  PolicyValueName,
+  PolicyValueSpec,
+  ResourceKind,
   SavedDeviceId,
   SetupStepView,
   ToolSpec,
@@ -42,6 +47,9 @@ import type {
 } from '@kraftverk/device-sdk';
 
 export type {
+  AuditSubject,
+  PolicyValueName,
+  PolicyValueSpec,
   AutomationId,
   Availability,
   CapabilityId,
@@ -51,6 +59,7 @@ export type {
   LinkEnd,
   LinkId,
   Reach,
+  ResourceKind,
   ToolSpec,
   CategoryId,
   CategorySpec,
@@ -61,6 +70,7 @@ export type {
   ConnectionMethodView,
   ConnectionStatus,
   AttributeSpec,
+  DescriptionSource,
   DeviceDescription,
   DeviceInfo,
   DeviceTypeMeta,
@@ -140,6 +150,8 @@ export type DeviceView = {
   meta: Pick<DeviceTypeMeta, 'name' | 'brand' | 'icon' | 'support'> & { category: string };
   /** What it is: its parts, their attributes — settings among them — and its events. Its own when it reports one. */
   description: DeviceDescription;
+  /** Whose word that is: its type's, for its config, or the device's own — which can change while it runs (a pack plugged in). */
+  descriptionSource: DescriptionSource;
   /** Every capability any of its parts offers. */
   capabilities: readonly CapabilityId[];
   /** What it has said about itself: firmware, serial. */
@@ -171,8 +183,9 @@ export type DeviceTypeList = {
 
 /**
  * `PATCH /devices/:id/attributes`: only what should change, of the attributes
- * its description says can be written. A dangerous one needs `confirmation`;
- * the answer is the gateway's verdict either way, with what the device reports
+ * its description says can be written. A dangerous one needs `confirmation`: the
+ * token the refusal's `needsConfirmation` handed out, once a person said yes. The
+ * answer is the gateway's verdict either way, with what the device reports
  * afterwards.
  */
 export type AttributeWrite = { patch: Record<string, Value>; confirmation?: string };
@@ -191,6 +204,16 @@ export type DeviceHistory = {
   resolution: 'minute' | 'hour';
   points: SeriesPoint[];
 };
+
+/** One change of an on/off or an enum: from this moment, it was this. */
+export type DeviceChange = { key: string; part: string; at: string; value: Value };
+
+/**
+ * `GET /devices/:id/changes?from&to&key`: every change in the span, oldest
+ * first, with each key's value from before it began — so "off 14:02–14:19"
+ * can be drawn from the first row on.
+ */
+export type DeviceChanges = { deviceId: string; from: string; to: string; changes: DeviceChange[] };
 
 /** A fact about the house between two parts: this plug's relay feeds that station's mains input. */
 export type LinkRecord = { id: LinkId; kind: LinkKind; source: LinkEnd<SavedDeviceId>; target: LinkEnd<SavedDeviceId>; createdAt: string };
@@ -332,15 +355,28 @@ export type ClientRecord = {
 /** One line of the server's own log. */
 export type ServerLogLine = { at: string; level: 'debug' | 'info' | 'warn' | 'error'; text: string };
 
+/** A line an app sends for the timeline: the server adds who sent it. */
+export type AuditUpload = { at: string; kind: string; summary: string; detail?: unknown } & AuditSubject;
+
+/** One line of the timeline: who did what, to what, and what came of it. */
 export type AuditEntry = {
-  id?: number;
+  id: number;
   at: string;
   kind: string;
   actor: string;
-  resource?: string | null;
+  /** What it is about — a device, an app, an automation, an account — or nothing. */
+  resourceKind: ResourceKind | null;
+  resource: string | null;
   summary: string;
   detail?: unknown;
 };
+
+/**
+ * `GET /policy`: a number this home decides that declarations name — how much
+ * is a load worth confirming — with what it is now and what it would be unset.
+ * `PUT /policy/:name` with `{ value }` sets it; `null` puts it back.
+ */
+export type PolicyValueView = PolicyValueSpec & { name: PolicyValueName; value: number };
 
 // --- accounts -----------------------------------------------------------------
 

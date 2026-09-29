@@ -1,10 +1,12 @@
 import {
+  memoryTransportStore,
   validateTransportDefinition,
   type Availability,
   type Transport,
   type TransportContext,
   type TransportDefinition,
   type TransportFactory,
+  type TransportStore,
 } from '@kraftverk/device-sdk';
 
 import { findPackages, load, ROOTS } from './packages.ts';
@@ -30,7 +32,10 @@ type Entry = {
 };
 
 export type TransportHostOptions = {
-  context: TransportContext;
+  /** What every transport is handed: the environment, the log, the timeline. */
+  context: Omit<TransportContext, 'store'>;
+  /** Each transport's own store, by its id: the database's `transport_kv`. In memory when absent. */
+  store?: (transport: string) => TransportStore;
 };
 
 export class TransportHost {
@@ -38,6 +43,11 @@ export class TransportHost {
   #refused: Refused[] = [];
 
   constructor(private options: TransportHostOptions) {}
+
+  /** What one transport is handed: the shared context, and its own store. */
+  #contextFor(id: string): TransportContext {
+    return { ...this.options.context, store: this.options.store?.(id) ?? memoryTransportStore() };
+  }
 
   async discover(roots: readonly string[] = ROOTS.transports): Promise<void> {
     const { found, problems } = await findPackages(roots, 'transport');
@@ -120,7 +130,7 @@ export class TransportHost {
     entry.starting ??= (async () => {
       try {
         const factory = await entry.factory!();
-        const transport = factory(this.options.context);
+        const transport = factory(this.#contextFor(id));
         await transport.start();
         entry.transport = transport;
         entry.error = null;

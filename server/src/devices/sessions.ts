@@ -1,4 +1,4 @@
-import { isSimulated, methodOf, type ConnectionHealth, type DeviceDescription, type DeviceInfo, type DeviceSession, type DeviceType, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { isSimulated, methodOf, type ConnectionHealth, type DescriptionSource, type DeviceDescription, type DeviceInfo, type DeviceSession, type DeviceType, type SavedDeviceId } from '@kraftverk/device-sdk';
 import { Failover, identityVerdict, openDevice, OpenRefused, ReadingChanges, type DeviceEventMessage, type LiveBus, type OpenedDevice } from '@kraftverk/holder';
 
 import { audit } from '../history/db.ts';
@@ -55,7 +55,7 @@ export type DeviceSessionManagerDeps = {
   /** A device said who it is, and the catalog did not know yet. */
   onIdentified?: (deviceId: SavedDeviceId, identity: string) => void;
   /** What a device is and says about itself, to keep: returns whether its description changed. */
-  onDescribed?: (deviceId: SavedDeviceId, description: DeviceDescription, info: DeviceInfo | null) => boolean;
+  onDescribed?: (deviceId: SavedDeviceId, description: DeviceDescription, info: DeviceInfo | null, source: DescriptionSource) => boolean;
   /** An event a device raised, checked against its description. */
   onEvent?: (deviceId: SavedDeviceId, event: DeviceEventMessage) => void;
   /** Where what devices say, as they say it, is published. */
@@ -117,6 +117,11 @@ export class DeviceSessionManager {
   }
 
   /** What a device has said about itself: its open session's word, or what was last kept. */
+  /** Whose word its description is: the type's, or the device's own — as the open session says, else as last kept. */
+  describedBy(record: Pick<DeviceRecord, 'id' | 'descriptionSource'>): DescriptionSource {
+    return this.#open.get(record.id)?.opened.describedBy() ?? record.descriptionSource;
+  }
+
   info(record: Pick<DeviceRecord, 'id' | 'info'>): DeviceInfo | null {
     return this.#open.get(record.id)?.opened.info() ?? record.info;
   }
@@ -125,7 +130,7 @@ export class DeviceSessionManager {
   #describe(deviceId: SavedDeviceId): void {
     const open = this.#open.get(deviceId);
     if (!open) return;
-    const changed = this.deps.onDescribed?.(deviceId, open.opened.description(), open.opened.info()) ?? false;
+    const changed = this.deps.onDescribed?.(deviceId, open.opened.description(), open.opened.info(), open.opened.describedBy()) ?? false;
     if (changed) this.deps.bus?.publish({ kind: 'described', deviceId });
   }
 
@@ -360,7 +365,7 @@ export class DeviceSessionManager {
         // The address now leads somewhere else: nothing it says is this device's.
         await this.close(id);
         this.#refusals.set(id, { status: 'error', detail: `That connection reaches a different device (${said}), not the one you added` });
-        audit({ at: new Date().toISOString(), kind: 'device.mismatch', actor: 'server', resource: id, summary: `${record.name}'s connection reaches ${said} instead`, detail: { expected: record.identity } });
+        audit({ at: new Date().toISOString(), kind: 'device.mismatch', actor: 'server', resourceKind: 'device', resource: id, summary: `${record.name}'s connection reaches ${said} instead`, detail: { expected: record.identity } });
         continue;
       }
       if (verdict === 'learnt') {

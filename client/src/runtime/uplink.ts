@@ -1,5 +1,5 @@
 import type { DeviceDescription, DeviceInfo, Reading } from '@kraftverk/device-sdk';
-import { putDeviceStore, uploadAudit, uploadReadings, type AuditEntry } from '@kraftverk/api-client';
+import { putDeviceStore, uploadAudit, uploadReadings, type AuditUpload } from '@kraftverk/api-client';
 
 import { readPreference, writePreference } from '../lib/preferences';
 
@@ -20,7 +20,6 @@ const FLUSH_MS = 20_000;
 const MAX_QUEUED_READINGS = 20_000;
 const MAX_QUEUED_AUDIT = 1000;
 
-type QueuedAudit = Omit<AuditEntry, 'actor' | 'id'>;
 type QueuedReadings = {
   deviceId: string;
   connectionId: string;
@@ -44,7 +43,7 @@ export type Collected = {
 
 export class Uplink {
   #readings = new Map<string, QueuedReadings>();
-  #audit: QueuedAudit[];
+  #audit: AuditUpload[];
   #store: { deviceId: string; connectionId: string; key: string; value: unknown }[] = [];
   #timer: ReturnType<typeof setInterval> | null = null;
   #running: Promise<void> | null = null;
@@ -61,7 +60,7 @@ export class Uplink {
     }
   ) {
     try {
-      this.#audit = JSON.parse(readPreference(options.key) ?? '[]') as QueuedAudit[];
+      this.#audit = JSON.parse(readPreference(options.key) ?? '[]') as AuditUpload[];
     } catch {
       this.#audit = [];
     }
@@ -76,7 +75,7 @@ export class Uplink {
     this.#timer = null;
   }
 
-  audit(entry: QueuedAudit): void {
+  audit(entry: AuditUpload): void {
     this.#audit = [...this.#audit, entry].slice(-MAX_QUEUED_AUDIT);
     writePreference(this.options.key, JSON.stringify(this.#audit));
     void this.flush();

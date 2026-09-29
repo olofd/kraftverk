@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { CommandResult } from './capabilities.ts';
+import { conditionHolds, POLICY_VALUES, thresholdOf, type CommandResult } from './capabilities.ts';
 import { capabilitiesOf, currentForOf, deviceCapabilities, isCurrent, MAIN_PART, partIcon, partsOf, validateDescription, type DeviceDescription, type Reading } from './description.ts';
 import { defineDeviceType, type DeviceContext, type DeviceSession, type DeviceType } from './device-type.ts';
 import { checkDeviceTypeContract } from './testing.ts';
@@ -175,6 +175,32 @@ describe('checking a description', () => {
     expect(capabilitiesOf(lock, 'buttons')).toEqual(['example.station.childLock']);
     const misnamed = { ...lock, capabilities: { 'acme.childLock': lock.capabilities!['example.station.childLock']! } };
     expect(validateDescription(misnamed, 'example.station')).toContain('capability "acme.childLock" must be namespaced by the type: "example.station.something"');
+
+    // What makes its command consequential names a value the home decides, or a number; never one there is none of.
+    const guarded = (above: unknown) => ({
+      ...lock,
+      capabilities: {
+        'example.station.childLock': {
+          ...lock.capabilities!['example.station.childLock']!,
+          commands: { set: { description: 'Lock', args: { on: { type: 'boolean' as const } }, sets: { on: 'on' }, consequential: { if: [{ means: 'power.draw' as const, above: above as never }] } } },
+        },
+      },
+    });
+    expect(validateDescription(guarded({ policy: 'loadWatts' }), 'example.station')).toEqual([]);
+    expect(validateDescription(guarded(20), 'example.station')).toEqual([]);
+    expect(validateDescription(guarded({ policy: 'nightLight' }), 'example.station')).toContain(
+      'capability "example.station.childLock" command "set" names the policy value "nightLight", which there is none of'
+    );
+  });
+
+  test('a threshold is a number, or what the home has set, or its default', () => {
+    expect(thresholdOf(3)).toBe(3);
+    expect(thresholdOf({ policy: 'loadWatts' })).toBe(POLICY_VALUES.loadWatts.default);
+    expect(thresholdOf({ policy: 'loadWatts' }, { loadWatts: 12 })).toBe(12);
+    const load = { means: 'power.draw' as const, above: { policy: 'loadWatts' as const } };
+    expect(conditionHolds(load, 6)).toBe(true);
+    expect(conditionHolds(load, 6, { loadWatts: 10 })).toBe(false);
+    expect(conditionHolds(load, null)).toBeNull();
   });
 
   test('how long a value stays current: declared, or from its state class', () => {

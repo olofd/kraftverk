@@ -1,11 +1,14 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
+import type { PolicyValueName, PolicyValueView } from '@kraftverk/api-contract';
+import { isPolicyValueName, POLICY_VALUES, RESOURCE_KINDS, type ResourceKind } from '@kraftverk/device-sdk';
 
 import { RESET_SECRET_MIN, resetSecret, resetSecretPath, secretMatches } from '../admin/reset.ts';
 import { LoginLimiter, limiterKeys } from '../auth/limiter.ts';
-import type { createAuth } from '../auth/routes.ts';
+import { actorOf, type createAuth } from '../auth/routes.ts';
 import { audit, recentAudit, resetDatabase } from '../history/db.ts';
+import { policyValues, setPolicyValue } from '../history/policy.ts';
 import { body, type AppDeps } from './shared.ts';
 
 /** Erasing everything, and the audit timeline. */
@@ -86,11 +89,40 @@ export function adminRoutes(
     return c.json({ ok: true, tables, rows });
   });
 
+  /** What this home decides that declarations name: how much is a load worth confirming. */
+  const policyView = (): PolicyValueView[] => {
+    const set = policyValues();
+    return Object.entries(POLICY_VALUES).map(([name, spec]) => ({ name: name as PolicyValueName, ...spec, value: set[name as PolicyValueName] ?? spec.default }));
+  };
+  admin.get('/policy', (c) => c.json(policyView()));
+
+  admin.put('/policy/:name', async (c) => {
+    const name = c.req.param('name');
+    if (!isPolicyValueName(name)) throw new HTTPException(404, { message: `There is no policy value "${name}"` });
+    const { value } = await body(c, z.object({ value: z.number().finite().nullable() }).strict());
+    const spec = POLICY_VALUES[name];
+    try {
+      setPolicyValue(name, value);
+    } catch (error) {
+      throw new HTTPException(400, { message: (error as Error).message });
+    }
+    const now = value ?? spec.default;
+    audit({ at: new Date().toISOString(), kind: 'policy.changed', actor: actorOf(c), summary: `${spec.label}: now ${now} ${spec.unit}${value === null ? ', the default' : ''}`, detail: { name, value } });
+    return c.json(policyView());
+  });
+
+  /** The timeline, newest first: all of it, one kind of thing's, or one thing's; `before` pages back. */
   admin.get('/audit', (c) => {
-    const { limit } = z
-      .object({ limit: z.coerce.number().int().min(1).max(1000).default(100) })
-      .parse({ limit: c.req.query('limit') ?? 100 });
-    return c.json(recentAudit(limit));
+    const query = z
+      .object({
+        limit: z.coerce.number().int().min(1).max(1000).default(100),
+        resourceKind: z.enum(RESOURCE_KINDS as [ResourceKind, ...ResourceKind[]]).optional(),
+        resource: z.string().min(1).max(120).optional(),
+        before: z.coerce.number().int().min(1).optional(),
+      })
+      .strict()
+      .parse(c.req.query());
+    return c.json(recentAudit(query));
   });
 
   return admin;

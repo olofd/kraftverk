@@ -6,7 +6,7 @@ import { isLinkKind, isSecretField, linkFits, linkKindSpec, MAIN_PART, partsOf, 
 
 import { userOf } from '../auth/routes.ts';
 import { connectionSchema } from '../devices/setup/index.ts';
-import { auditDevice, body, deviceOr404, type AppDeps } from './shared.ts';
+import { auditAbout, body, deviceOr404, type AppDeps } from './shared.ts';
 
 /**
  * How each device is reached, how devices fit the house, and the phones and
@@ -29,7 +29,7 @@ export function connectionRoutes({ catalog, connections, links, clients, types, 
   api.post('/devices/:id/connections/:connection/prefer', async (c) => {
     const { record, connection } = connectionOf(c.req.param('id'), c.req.param('connection'));
     connections.prefer(connection.id);
-    auditDevice(c, 'device.connection-preferred', record.id, `"${record.name}" is now reached by ${connection.method} first`);
+    auditAbout(c, 'device.connection-preferred', 'device', record.id, `"${record.name}" is now reached by ${connection.method} first`);
     await sessions.sync(catalog.list());
     return c.json(registry.find(record.id));
   });
@@ -41,7 +41,7 @@ export function connectionRoutes({ catalog, connections, links, clients, types, 
       throw new HTTPException(409, { message: 'This is the only way to reach it. Remove the device instead.' });
     }
     connections.remove(connection.id);
-    auditDevice(c, 'device.connection-removed', record.id, `"${record.name}" is no longer reached by ${connection.method} (${connection.address})`);
+    auditAbout(c, 'device.connection-removed', 'device', record.id, `"${record.name}" is no longer reached by ${connection.method} (${connection.address})`);
     await sessions.sync(catalog.list());
     return c.json(registry.find(record.id));
   });
@@ -62,7 +62,7 @@ export function connectionRoutes({ catalog, connections, links, clients, types, 
 
     connections.setSecrets(connection.id, given);
     // Which fields, never their values.
-    auditDevice(c, 'device.secrets-changed', record.id, `Changed ${Object.keys(given).join(', ')} for "${record.name}"`);
+    auditAbout(c, 'device.secrets-changed', 'device', record.id, `Changed ${Object.keys(given).join(', ')} for "${record.name}"`);
     // Reopened, so the new key is used now rather than at the next restart.
     await sessions.close(record.id);
     await sessions.sync(catalog.list());
@@ -96,7 +96,7 @@ export function connectionRoutes({ catalog, connections, links, clients, types, 
       });
     }
     const link = links.add({ kind: input.kind, source: { device: source.id, part: input.source.part }, target: { device: target.id, part: input.target.part } });
-    auditDevice(c, 'device.linked', source.id, `"${endName(link.source)}" ${kind.verb} "${endName(link.target)}"`, { kind: link.kind, source: link.source, target: link.target });
+    auditAbout(c, 'device.linked', 'device', source.id, `"${endName(link.source)}" ${kind.verb} "${endName(link.target)}"`, { kind: link.kind, source: link.source, target: link.target });
     return c.json(link);
   });
 
@@ -104,7 +104,7 @@ export function connectionRoutes({ catalog, connections, links, clients, types, 
     const link = links.get(c.req.param('id'));
     if (!link) throw new HTTPException(404, { message: 'No such link' });
     links.remove(link.id);
-    auditDevice(c, 'device.unlinked', link.source.device, `"${endName(link.source)}" no longer ${linkKindSpec(link.kind).verb} "${endName(link.target)}"`);
+    auditAbout(c, 'device.unlinked', 'device', link.source.device, `"${endName(link.source)}" no longer ${linkKindSpec(link.kind).verb} "${endName(link.target)}"`);
     return c.json({ ok: true });
   });
 
@@ -144,7 +144,7 @@ export function connectionRoutes({ catalog, connections, links, clients, types, 
     const client = clients.get(c.req.param('id'));
     if (!user || !client || client.userId !== user.id) throw new HTTPException(404, { message: 'No such app' });
     clients.remove(client.id);
-    auditDevice(c, 'client.forgotten', client.id, `Forgot "${client.name}" and every connection it held`);
+    auditAbout(c, 'client.forgotten', 'client', client.id, `Forgot "${client.name}" and every connection it held`);
     await sessions.sync(catalog.list());
     return c.json({ ok: true });
   });

@@ -2,13 +2,31 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import type { AttributeWrite, CommandBody, DeviceHistory, DeviceTypeListing } from '@kraftverk/api-contract';
+import type { AttributeWrite, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeListing } from '@kraftverk/api-contract';
 import { CATEGORIES, capabilityIn, describeDeviceType, isSimulated, methodsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
 import { runTool, ToolRefused, type ToolRefusal } from '@kraftverk/holder';
 
 import { actorOf } from '../auth/routes.ts';
+import { changesOf } from '../history/changes.ts';
 import { resolutionOf, series } from '../history/sampler.ts';
-import { auditDevice, body, deviceOr404, type AppDeps } from './shared.ts';
+import { auditAbout, body, deviceOr404, type AppDeps } from './shared.ts';
+
+/** The longest span history or changes are asked for: as long as they are kept. */
+const MAX_SPAN_MS = 730 * 86_400_000;
+
+/**
+ * The span a history or changes request asks for: `from` and `to`, or the
+ * last `hours` up to now, or the last day. A span that ends before it begins,
+ * or reaches further back than anything is kept, is refused.
+ */
+function spanOf(query: { hours?: number; from?: string; to?: string }): { from: string; to: string } {
+  const to = query.to ? new Date(query.to) : new Date();
+  const from = query.from ? new Date(query.from) : new Date(to.getTime() - (query.hours ?? 24) * 3_600_000);
+  if (query.from && query.hours !== undefined) throw new HTTPException(400, { message: 'Ask for from and to, or hours: not both' });
+  if (!(from < to)) throw new HTTPException(400, { message: 'The span ends before it begins' });
+  if (to.getTime() - from.getTime() > MAX_SPAN_MS) throw new HTTPException(400, { message: 'History is kept for two years: ask for less' });
+  return { from: from.toISOString(), to: to.toISOString() };
+}
 
 /**
  * The devices you own, whatever they are. Described identically, so the app has
@@ -70,7 +88,7 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
     const changes = await body(c, z.object({ name: z.string().trim().min(1).max(60) }).strict());
     const updated = catalog.update(before.id, changes);
     if (!updated) throw new HTTPException(404, { message: 'No such device' });
-    if (updated.name !== before.name) auditDevice(c, 'device.renamed', before.id, `Renamed "${before.name}" to "${updated.name}"`);
+    if (updated.name !== before.name) auditAbout(c, 'device.renamed', 'device', before.id, `Renamed "${before.name}" to "${updated.name}"`);
     return c.json(registry.find(before.id));
   });
 
@@ -81,7 +99,7 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
   api.delete('/devices/:id', async (c) => {
     const record = deviceOr404(catalog, c.req.param('id'));
     catalog.remove(record.id);
-    auditDevice(c, 'device.removed', record.id, `Removed "${record.name}". Its history is kept.`, { typeId: record.typeId, identity: record.identity });
+    auditAbout(c, 'device.removed', 'device', record.id, `Removed "${record.name}". Its history is kept.`, { typeId: record.typeId, identity: record.identity });
     // Removing a device closes its session.
     await sessions.sync(catalog.list());
     return c.json({ ok: true });
@@ -98,7 +116,7 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
     if (name.trim() !== record.name) throw new HTTPException(400, { message: `Type "${record.name}" to confirm` });
 
     // Written before the delete, so the entry survives whatever happens to the transaction.
-    auditDevice(c, 'device.history-deleted', record.id, `Deleted "${record.name}" and everything it had recorded`, {
+    auditAbout(c, 'device.history-deleted', 'device', record.id, `Deleted "${record.name}" and everything it had recorded`, {
       typeId: record.typeId,
       identity: record.identity,
       addedAt: record.addedAt,
@@ -121,7 +139,7 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
     const record = deviceOr404(catalog, c.req.param('id'));
     const input: AttributeWrite = await body(
       c,
-      z.object({ patch: z.record(z.string().max(64), z.union([z.string().max(4096), z.number(), z.boolean(), z.null()])), confirmation: z.string().max(20).optional() }).strict()
+      z.object({ patch: z.record(z.string().max(64), z.union([z.string().max(4096), z.number(), z.boolean(), z.null()])), confirmation: z.string().max(64).optional() }).strict()
     );
     const result = await gateway.write({ deviceId: record.id, patch: input.patch, actor: 'user', by: actorOf(c), confirmation: input.confirmation });
     return c.json(result, result.outcome === 'verified' || result.outcome === 'unverified' ? 200 : 409);
@@ -141,18 +159,40 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
    */
   api.get('/devices/:id/history', (c) => {
     const record = deviceOr404(catalog, c.req.param('id'), { removed: true });
-    const { key, hours, points } = z
+    const { key, points, ...span } = z
       .object({
         key: z.string().min(1).max(64),
-        hours: z.coerce.number().min(0.5).max(24 * 730).default(24),
+        hours: z.coerce.number().min(0.5).max(24 * 730).optional(),
+        from: z.iso.datetime({ offset: true }).optional(),
+        to: z.iso.datetime({ offset: true }).optional(),
         points: z.coerce.number().int().min(20).max(1000).default(240),
       })
-      .parse({ key: c.req.query('key'), hours: c.req.query('hours') ?? 24, points: c.req.query('points') ?? 240 });
-
-    const to = new Date().toISOString();
-    const from = new Date(Date.now() - hours * 3_600_000).toISOString();
+      .strict()
+      .parse(c.req.query());
+    const { from, to } = spanOf(span);
     const history: DeviceHistory = { deviceId: record.id, key, from, to, resolution: resolutionOf(from, to), points: series(record.id, key, from, to, points) };
     return c.json(history);
+  });
+
+  /**
+   * Every change of an on/off or an enum in a span, exactly when it happened —
+   * what a timeline draws, where a chart of means would blur a switch flicked
+   * between two samples into nothing.
+   */
+  api.get('/devices/:id/changes', (c) => {
+    const record = deviceOr404(catalog, c.req.param('id'), { removed: true });
+    const { key, ...span } = z
+      .object({
+        key: z.string().min(1).max(64).optional(),
+        hours: z.coerce.number().min(0.5).max(24 * 730).optional(),
+        from: z.iso.datetime({ offset: true }).optional(),
+        to: z.iso.datetime({ offset: true }).optional(),
+      })
+      .strict()
+      .parse(c.req.query());
+    const { from, to } = spanOf(span);
+    const changes: DeviceChanges = { deviceId: record.id, from, to, changes: changesOf(record.id, sessions.description(record), { from, to, key }) };
+    return c.json(changes);
   });
 
   /**
@@ -213,15 +253,15 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
     return { record, session, spec };
   };
 
-  const run = async (c: Parameters<typeof auditDevice>[0], id: string | undefined, name: string, input: unknown): Promise<unknown> => {
+  const run = async (c: Parameters<typeof auditAbout>[0], id: string | undefined, name: string, input: unknown): Promise<unknown> => {
     const { record, session, spec } = toolOf(id, name);
     try {
       const answer = await runTool({ deviceName: record.name, name, spec, session, input, readOnly: config.readOnly && !sessions.simulated(record.id) });
-      if (spec.writes) auditDevice(c, 'device.tool', record.id, `Ran ${spec.label.toLowerCase()} on "${record.name}"`, { tool: name, input });
+      if (spec.writes) auditAbout(c, 'device.tool', 'device', record.id, `Ran ${spec.label.toLowerCase()} on "${record.name}"`, { tool: name, input });
       return answer;
     } catch (error) {
       // A tool refusing is worth a line too: an attempt at the brick write is what the timeline is for.
-      if (spec.writes) auditDevice(c, 'device.tool-refused', record.id, `${spec.label} on "${record.name}" was refused: ${(error as Error).message}`, { tool: name, input });
+      if (spec.writes) auditAbout(c, 'device.tool-refused', 'device', record.id, `${spec.label} on "${record.name}" was refused: ${(error as Error).message}`, { tool: name, input });
       if (error instanceof ToolRefused) throw new HTTPException(STATUS[error.reason], { message: error.message });
       throw error;
     }

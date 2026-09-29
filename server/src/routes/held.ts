@@ -2,11 +2,12 @@ import { Hono, type Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import { validateDescription, type DeviceDescription, type DeviceInfo } from '@kraftverk/device-sdk';
+import { RESOURCE_KINDS, validateDescription, type AuditSubject, type DeviceDescription, type DeviceInfo, type ResourceKind } from '@kraftverk/device-sdk';
 
 import { actorOf } from '../auth/routes.ts';
 import { deviceStore } from '../devices/store.ts';
 import { audit } from '../history/db.ts';
+import { loggedAttributes, recordChanges } from '../history/changes.ts';
 import { keptAttributes } from '../history/sampler.ts';
 import { body, deviceOr404, ownClient, type AppDeps } from './shared.ts';
 
@@ -68,22 +69,25 @@ export function heldRoutes({ catalog, connections, clients, remote, sessions }: 
     */
     const said = input.identity ?? null;
     if (said && record.identity && said.toLowerCase() !== record.identity.toLowerCase()) {
-      audit({ at: new Date().toISOString(), kind: 'device.mismatch', actor: actorOf(c), resource: record.id, summary: `${record.name}'s connection from ${client.name} reaches ${said} instead`, detail: { expected: record.identity } });
+      audit({ at: new Date().toISOString(), kind: 'device.mismatch', actor: actorOf(c), resourceKind: 'device', resource: record.id, summary: `${record.name}'s connection from ${client.name} reaches ${said} instead`, detail: { expected: record.identity } });
       throw new HTTPException(409, { message: 'That connection reaches a different device, not the one you added' });
     }
     if (said && !record.identity && !catalog.byIdentity(said).active) {
       catalog.update(record.id, { identity: said });
-      audit({ at: new Date().toISOString(), kind: 'device.identified', actor: actorOf(c), resource: record.id, summary: `${record.name} answered for the first time, as ${said}` });
+      audit({ at: new Date().toISOString(), kind: 'device.identified', actor: actorOf(c), resourceKind: 'device', resource: record.id, summary: `${record.name} answered for the first time, as ${said}` });
     }
 
     if (input.description) {
       const description = input.description as unknown as DeviceDescription;
       const problems = validateDescription(description, record.typeId);
       if (problems.length) throw new HTTPException(400, { message: `That description does not hold: ${problems.join('; ')}` });
-      catalog.describe(record.id, description, (input.info as DeviceInfo | undefined) ?? null);
+      // Sent only when the device describes itself: the type's own the server has already.
+      catalog.describe(record.id, description, (input.info as DeviceInfo | undefined) ?? null, 'device');
     }
-    const kept = keptAttributes(sessions.description(catalog.get(record.id)!));
-    const counts = remote.accept(record.id, { clientId: client.id, connectionId: connection.id }, input.readings, kept);
+    const description = sessions.description(catalog.get(record.id)!);
+    const counts = remote.accept(record.id, { clientId: client.id, connectionId: connection.id }, input.readings, keptAttributes(description));
+    // Its on/offs and modes, when each changed: queued ones land in their place in time.
+    recordChanges(record.id, loggedAttributes(description), input.readings);
     connections.touch(connection.id);
     return c.json(counts);
   });
@@ -126,11 +130,13 @@ export function heldRoutes({ catalog, connections, clients, remote, sessions }: 
                 .object({
                   at: z.string().max(40),
                   kind: z.string().regex(/^[a-z][a-z0-9.-]{0,63}$/),
-                  resource: z.string().max(80).optional(),
+                  resourceKind: z.enum(RESOURCE_KINDS as [ResourceKind, ...ResourceKind[]]).optional(),
+                  resource: z.string().min(1).max(80).optional(),
                   summary: z.string().min(1).max(500),
                   detail: z.unknown().optional(),
                 })
                 .strict()
+                .refine((entry) => (entry.resource === undefined) === (entry.resourceKind === undefined), 'What an entry is about is a kind and an id together, or nothing')
             )
             .max(500),
         })
@@ -139,7 +145,8 @@ export function heldRoutes({ catalog, connections, clients, remote, sessions }: 
     const actor = actorOf(c);
     for (const entry of entries) {
       const at = Number.isFinite(Date.parse(entry.at)) ? new Date(entry.at).toISOString() : new Date().toISOString();
-      audit({ ...entry, at, actor, detail: { from: { client: client.id, name: client.name }, ...(entry.detail === undefined ? {} : { detail: entry.detail }) } });
+      const about = (entry.resource === undefined ? {} : { resourceKind: entry.resourceKind, resource: entry.resource }) as AuditSubject;
+      audit({ at, kind: entry.kind, summary: entry.summary, ...about, actor, detail: { from: { client: client.id, name: client.name }, ...(entry.detail === undefined ? {} : { detail: entry.detail }) } });
     }
     return c.json({ recorded: entries.length });
   });

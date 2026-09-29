@@ -39,6 +39,11 @@ describe('the schema', () => {
     expect(tables(handle)).toContain('device');
     expect(handle.query<{ user_version: number }, []>('PRAGMA user_version').get()?.user_version).toBe(schemaFingerprint());
     expect(handle.setAside).toBeUndefined();
+    // What it is, said by itself: the schema, when, and by which version.
+    const meta = Object.fromEntries(handle.query<{ key: string; value: string }, []>('SELECT key, value FROM meta').all().map((row) => [row.key, row.value]));
+    expect(meta.schema_hash).toBe(String(schemaFingerprint()));
+    expect(Date.parse(meta.created_at!)).not.toBeNaN();
+    expect(meta.created_by_version).toMatch(/^\d+\.\d+\.\d+/);
     handle.close();
   });
 
@@ -72,8 +77,8 @@ describe('the schema', () => {
   });
 
   test('rewording a comment is not a new schema; changing a column is', () => {
-    expect(schemaFingerprint(SCHEMA.replace('/* The timeline: who did what, and what came of it. */', '/* Who did what. */'))).toBe(schemaFingerprint());
-    expect(schemaFingerprint(SCHEMA.replace('summary  TEXT NOT NULL,', 'summary  TEXT,'))).not.toBe(schemaFingerprint());
+    expect(schemaFingerprint(SCHEMA.replace('/* People who may use this server — from anywhere, the home network included. */', '/* Who may come in. */'))).toBe(schemaFingerprint());
+    expect(schemaFingerprint(SCHEMA.replace('summary       TEXT NOT NULL,', 'summary       TEXT,'))).not.toBe(schemaFingerprint());
   });
 
   test('a sample holds a number or text, never both and never neither', () => {

@@ -5,7 +5,8 @@ import { router } from 'expo-router';
 import { Button, Input, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { Card, Row, RowSeparator, SectionLabel, ToggleRow, haptic } from '@kraftverk/ui';
-import { describeError, fetchResetAvailability, getApiBaseUrl, resetDatabase } from '@kraftverk/api-client';
+import { describeError, fetchResetAvailability, getApiBaseUrl, resetDatabase, setPolicyValue } from '@kraftverk/api-client';
+import { POLICY_VALUES, type PolicyValueName } from '@kraftverk/device-sdk';
 
 import { completeUrl } from '../src/lib/servers';
 import { Pressable } from '../src/components/Pressable';
@@ -93,6 +94,8 @@ export default function AppSettingsScreen() {
         </Card>
       </YStack>
 
+      <HomePolicy />
+
       <Servers />
 
       <YStack gap="$2">
@@ -126,6 +129,87 @@ export default function AppSettingsScreen() {
 
       {mode === 'server' ? <ResetEverything /> : null}
     </Screen>
+  );
+}
+
+/**
+ * The numbers this home decides that the capabilities name: a switch says
+ * turning off what carries a load is confirmed first, and here is how much a
+ * load is. The server's, for everything it and its apps hold; this app's own
+ * in local mode.
+ */
+function HomePolicy() {
+  const { mode, runtime } = useDevices();
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [problem, setProblem] = useState<string | null>(null);
+  const names = Object.keys(POLICY_VALUES) as PolicyValueName[];
+  const inForce = (name: PolicyValueName) => runtime.policyValues[name] ?? POLICY_VALUES[name].default;
+
+  const save = async (name: PolicyValueName) => {
+    const typed = values[name];
+    if (typed === undefined) return;
+    const value = typed.trim() === '' ? null : Number(typed.replace(',', '.'));
+    const spec = POLICY_VALUES[name];
+    if (value !== null && !(Number.isFinite(value) && value >= spec.min && value <= spec.max)) {
+      setProblem(`${spec.label} is from ${spec.min} to ${spec.max} ${spec.unit}`);
+      return;
+    }
+    setProblem(null);
+    const typedNoMore = () => setValues(({ [name]: _typed, ...rest }) => rest);
+    try {
+      if (mode === 'server') {
+        const now = await setPolicyValue(name, value);
+        runtime.setPolicyValues(Object.fromEntries(now.map((item) => [item.name, item.value])));
+      } else {
+        const { [name]: _dropped, ...rest } = runtime.policyValues;
+        runtime.setPolicyValues(value === null ? rest : { ...rest, [name]: value });
+      }
+      typedNoMore();
+    } catch (err) {
+      setProblem(describeError(err) || 'That did not work');
+    }
+  };
+
+  return (
+    <YStack gap="$2">
+      <SectionLabel>Safety</SectionLabel>
+      <Card inset>
+        {names.map((name, index) => {
+          const spec = POLICY_VALUES[name];
+          return (
+            <YStack key={name}>
+              {index > 0 ? <RowSeparator /> : null}
+              <Row
+                title={spec.label}
+                subtitle={`${spec.description} Empty puts back ${spec.default} ${spec.unit}.`}
+                accessory={
+                  <XStack alignItems="center" gap="$1.5">
+                    <Input
+                      aria-label={spec.label}
+                      width={72}
+                      size="$3"
+                      keyboardType="decimal-pad"
+                      value={values[name] ?? String(inForce(name))}
+                      onChangeText={(text) => setValues((current) => ({ ...current, [name]: text }))}
+                      onBlur={() => void save(name)}
+                      onSubmitEditing={() => void save(name)}
+                    />
+                    <Text fontSize={13} color="$muted">
+                      {spec.unit}
+                    </Text>
+                  </XStack>
+                }
+              />
+            </YStack>
+          );
+        })}
+      </Card>
+      {problem ? (
+        <Text fontSize={12} color="$danger">
+          {problem}
+        </Text>
+      ) : null}
+    </YStack>
   );
 }
 

@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
-import { savedDeviceId, type DeviceDescription, type DeviceSession, type Value } from '@kraftverk/device-sdk';
+import { savedDeviceId, type AuditRecord, type DeviceDescription, type DeviceSession, type Value } from '@kraftverk/device-sdk';
 
-import { ActionGateway, CONFIRMATION, type AuditEntry, type WriteIntent } from './gateway.ts';
+import { ActionGateway, type WriteIntent } from './gateway.ts';
 
 /*
   Settings go through the gateway like commands: attributes the description
@@ -46,7 +46,7 @@ function station(stubborn = false) {
 
 function gateway(options: { stubborn?: boolean; readOnly?: boolean } = {}) {
   const device = station(options.stubborn);
-  const recorded: AuditEntry[] = [];
+  const recorded: AuditRecord[] = [];
   const g = new ActionGateway({
     device: () => ({ name: 'Garage station', session: device.session, description: DESCRIPTION, offline: 'n/a' }),
     linksFrom: () => [],
@@ -91,11 +91,16 @@ describe('settings through the gateway', () => {
   test('a setting that can damage the hardware is confirmed by a person, and never changed by an automation', async () => {
     const { g, device } = gateway();
     const asked = await g.write(intent({ sleepMinutes: 60 }));
-    expect(asked).toMatchObject({ outcome: 'refused', needsConfirmation: true });
+    // Read before matching: bun's toMatchObject writes its matchers into what it was given.
+    const token = asked.needsConfirmation;
+    expect(asked).toMatchObject({ outcome: 'refused', needsConfirmation: expect.any(String) });
     expect(asked.detail).toContain('Sleep after');
-    expect((await g.write(intent({ sleepMinutes: 60 }, { actor: 'automation', by: 'automation:x', confirmation: CONFIRMATION }))).outcome).toBe('refused');
+    expect((await g.write(intent({ sleepMinutes: 60 }, { actor: 'automation', by: 'automation:x', confirmation: token }))).outcome).toBe('refused');
     expect(device.writes).toEqual([]);
-    expect((await g.write(intent({ sleepMinutes: 60 }, { confirmation: CONFIRMATION }))).outcome).toBe('verified');
+    // The token is for this patch: another value is asked about afresh.
+    const other = await g.write(intent({ sleepMinutes: 120 }, { confirmation: token }));
+    expect(other.needsConfirmation).toEqual(expect.any(String));
+    expect((await g.write(intent({ sleepMinutes: 120 }, { confirmation: other.needsConfirmation }))).outcome).toBe('verified');
   });
 
   test('a device that accepts but does not change is unverified, not success', async () => {
