@@ -1,4 +1,6 @@
-import type { Value } from '@kraftverk/device-sdk';
+import type { ComponentType } from 'react';
+
+import type { Part, Value } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
 import type { DeviceView, VersionInfo } from './types';
@@ -73,4 +75,32 @@ export type DeviceScreenProps = {
   readOnly: boolean;
   /** The server holding it, when a server does. */
   version: VersionInfo | null;
+};
+
+/** What a package's card for one part is handed: the device, as every screen gets it, and the part. */
+export type PartSlotProps = DeviceScreenProps & { part: Part };
+
+/**
+ * Which pieces of a device's pages its package draws itself (step 28's slots).
+ * Each is optional, and whatever a package leaves out the app draws from the
+ * description: a package deepens one part of a page and inherits the rest,
+ * rather than replacing whole pages.
+ */
+export type DeviceUi = {
+  /**
+   * The dashboard's top — in place of the generic overview, energy flow,
+   * controls and part cards. History and events stay the app's, drawn for
+   * every device alike.
+   */
+  dashboard?: ComponentType<DeviceScreenProps>;
+  /** One part's card on the generic dashboard, by the part's id or its kind: a pack drawn its own way. */
+  parts?: Readonly<Record<string, ComponentType<PartSlotProps>>>;
+  /** The settings, in place of the generic forms. Connections, links and removing it stay the app's. */
+  settings?: ComponentType<DeviceScreenProps>;
+  /**
+   * A workbench of the type's own above its tools — a register dump with a
+   * diff. The tools themselves are drawn from their declarations for every
+   * device; this is polish on top.
+   */
+  tools?: { label: string; description: string; Screen: ComponentType<DeviceScreenProps> };
 };

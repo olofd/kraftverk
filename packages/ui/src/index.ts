@@ -15,6 +15,11 @@
 export { AnimatedNumber } from './AnimatedNumber';
 export { Card, SectionLabel, type CardProps } from './Card';
 export { DeviceCard, type DeviceCardDevice } from './DeviceCard';
+export { EnergyFlow } from './EnergyFlow';
+export { energyFlowOf, type Flow, type FlowNode } from './energy';
+export { EventList, type ListedEvent } from './EventList';
+export { InfoCard, PartCard, ReadingRow } from './PartCard';
+export { ToolPanel } from './ToolPanel';
 export { ModeRow } from './ModeRow';
 export { PendingMark } from './PendingMark';
 export { Row, RowSeparator, ToggleRow } from './Row';

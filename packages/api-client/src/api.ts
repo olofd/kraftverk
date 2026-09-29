@@ -20,6 +20,9 @@ import type {
   AttributeWrite,
   CommandBody,
   DeviceChanges,
+  DeviceEventView,
+  LiveEvent,
+  ProblemView,
   DeviceHistory,
   DeviceTypeList,
   DeviceView,
@@ -439,10 +442,31 @@ export async function forgetClient(id: string) {
 
 export async function uploadReadings(
   deviceId: string,
-  input: { clientId: string; connectionId: string; identity?: string | null; readings: readonly Reading[]; description?: DeviceDescription; info?: DeviceInfo }
+  input: {
+    clientId: string;
+    connectionId: string;
+    identity?: string | null;
+    readings: readonly Reading[];
+    description?: DeviceDescription;
+    info?: DeviceInfo;
+    /** What the device said happened: kept by the server as its own devices' events are. */
+    events?: readonly LiveEvent[];
+  }
 ) {
   const { data } = await api.post<{ live: number; history: number; refused: number }>(devicePath(deviceId, '/readings'), input);
   return data;
+}
+
+/** What a device said happened, newest first. */
+export async function fetchDeviceEvents(id: string, limit = 50, signal?: AbortSignal) {
+  const { data } = await api.get<{ events: DeviceEventView[] }>(devicePath(id, '/events'), { params: { limit }, signal });
+  return data.events;
+}
+
+/** Warnings and errors across the devices you have, newest first. */
+export async function fetchProblems(limit = 100, signal?: AbortSignal) {
+  const { data } = await api.get<{ problems: ProblemView[] }>('/problems', { params: { limit }, signal });
+  return data.problems;
 }
 
 export async function fetchDeviceStore(deviceId: string, signal?: AbortSignal) {

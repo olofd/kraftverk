@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import type { AttributeWrite, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeListing } from '@kraftverk/api-contract';
+import type { AttributeWrite, CommandBody, DeviceChanges, DeviceEventView, DeviceHistory, DeviceTypeListing, ProblemView } from '@kraftverk/api-contract';
 import { CATEGORIES, capabilityIn, describeDeviceType, isSimulated, methodsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
 import { runTool, ToolRefused, type ToolRefusal } from '@kraftverk/holder';
 
@@ -145,11 +145,19 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
     return c.json(result, result.outcome === 'verified' || result.outcome === 'unverified' ? 200 : 409);
   });
 
+  /** Warnings and errors across the devices you have, newest first: what wants looking at. */
+  api.get('/problems', (c) => {
+    const limit = z.coerce.number().int().min(1).max(500).default(100).parse(c.req.query('limit') ?? 100);
+    const problems: ProblemView[] = events.problems(limit);
+    return c.json({ problems });
+  });
+
   /** What a device said happened, newest first. A removed device's are still there to look at. */
   api.get('/devices/:id/events', (c) => {
     const record = deviceOr404(catalog, c.req.param('id'), { removed: true });
     const limit = z.coerce.number().int().min(1).max(500).default(100).parse(c.req.query('limit') ?? 100);
-    return c.json({ events: events.recent(record.id, limit) });
+    const recent: DeviceEventView[] = events.recent(record.id, limit);
+    return c.json({ events: recent });
   });
 
   /**

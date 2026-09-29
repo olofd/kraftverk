@@ -28,7 +28,7 @@ const reading = z
   })
   .strict();
 
-export function heldRoutes({ catalog, connections, clients, remote, sessions }: AppDeps): Hono {
+export function heldRoutes({ catalog, connections, clients, remote, sessions, events, bus }: AppDeps): Hono {
   const api = new Hono();
 
   /** The device, the app and the connection a call is about — all three checked. */
@@ -56,6 +56,20 @@ export function heldRoutes({ catalog, connections, clients, remote, sessions }: 
           // What the device is and says about itself, by the app's session: a pack plugged in.
           description: z.record(z.string(), z.unknown()).optional(),
           info: z.record(z.string(), z.unknown()).optional(),
+          // What the device said happened, as the app's holder heard it.
+          events: z
+            .array(
+              z
+                .object({
+                  id: z.string().min(1).max(80),
+                  part: z.string().min(1).max(80).nullable(),
+                  data: z.record(z.string(), z.union([z.string().max(500), z.number(), z.boolean(), z.null()])).nullable(),
+                  at: z.string().max(40),
+                })
+                .strict()
+            )
+            .max(500)
+            .optional(),
         })
         .strict()
     );
@@ -88,6 +102,15 @@ export function heldRoutes({ catalog, connections, clients, remote, sessions }: 
     const counts = remote.accept(record.id, { clientId: client.id, connectionId: connection.id }, input.readings, keptAttributes(description));
     // Its on/offs and modes, when each changed: queued ones land in their place in time.
     recordChanges(record.id, loggedAttributes(description), input.readings);
+    // Its events, kept as the server's own are: only what its description declares, at the level it declares.
+    for (const event of input.events ?? []) {
+      const declared = (description.events ?? []).find((spec) => spec.id === event.id);
+      const at = Date.parse(event.at);
+      if (!declared || !Number.isFinite(at) || at > Date.now() + 60_000) continue;
+      const kept = { id: event.id, level: declared.level, part: event.part ?? declared.part ?? null, data: event.data, at: new Date(at).toISOString() };
+      events.record(record.id, kept);
+      bus.publish({ kind: 'event', deviceId: record.id, event: kept });
+    }
     connections.touch(connection.id);
     return c.json(counts);
   });

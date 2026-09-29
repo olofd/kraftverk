@@ -79,6 +79,21 @@ export function decodeSocket(profile: SocketProfile, dps: Dps, relayDp = profile
 }
 
 /**
+ * The reverse: a reading as a socket with this profile would send it — for a
+ * simulator, which then answers exactly as a plug of that layout does, and
+ * for tests.
+ */
+export function encodeSocket(profile: SocketProfile, reading: SocketReading, relayDp = profile.relay.dp): Dps {
+  const dps: Dps = {};
+  if (reading.relayOn !== undefined) dps[String(relayDp)] = reading.relayOn;
+  for (const [name, metric] of Object.entries(profile.metrics) as [keyof SocketProfile['metrics'], Metric | undefined][]) {
+    const value = reading[name];
+    if (metric && value !== undefined) dps[String(metric.dp)] = Math.round(value * 10 ** metric.scale);
+  }
+  return dps;
+}
+
+/**
  * Which datapoints could plausibly be the relay.
  *
  * Booleans only, the documented ones first. This is what turns "the sources

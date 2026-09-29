@@ -102,13 +102,25 @@ Work through `src/type.ts` in this order:
    fake connections from `@kraftverk/device-sdk/testing` (`fakeByteChannel`,
    `fakeMessageChannel`) to check `identify` against scripted bytes.
 
-Screens are optional. A device with none gets the generic ones — a card, a
-section for each part, controls from the commands its parts take, settings
-from its writable attributes, history — and that is the outcome the model is
-for. When it needs its own (the station's energy flow), add a `ui/`
-folder, name it in `package.json` under `kraftverk.ui` and `exports`, and run
-`npm run gen:devices`. A screen gets `DeviceScreenProps` from
-`@kraftverk/api-client`: the device, actions that reach whoever holds its
+Screens are optional. A device with none gets the generic pages — a card,
+where its energy comes from and goes (from its parts' energy roles and its
+links), controls from the commands its parts take, a card and a page for each
+part, settings from its writable attributes, history, what it said happened,
+what it is (its `DeviceInfo`), and its tools drawn from their declarations —
+and that is the outcome the model is for. Draw from its readings: whatever a
+screen shows must be a declared attribute, so history, automations and every
+other screen see the same.
+
+When it draws something better, fill a **slot** rather than a page
+(`DeviceUi` in `@kraftverk/api-client`): `dashboard` (the top of the
+dashboard; history and events stay the app's), `parts` (one part's card, by
+its id or kind), `settings`, and `tools` (a workbench above the declared
+tools). Add a `ui/` folder whose default export `satisfies DeviceUi`, name it
+in `package.json` under `kraftverk.ui` and `exports`, and run
+`npm run gen:devices`. Compose it from the kit in `@kraftverk/ui` —
+`PartCard`, `ReadingRow`, `EnergyFlow`, `EventList`, `InfoCard`,
+`ToolPanel`, `SchemaForm` — which takes model types only. A piece gets
+`DeviceScreenProps`: the device, actions that reach whoever holds its
 connection, and whether they reach it now (`reach`). It never learns whether
 that is the server or the app.
 

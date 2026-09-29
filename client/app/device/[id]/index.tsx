@@ -3,7 +3,7 @@ import { useLocalSearchParams } from 'expo-router';
 import type { DeviceView } from '@kraftverk/api-client';
 
 import { DeviceShell } from '../../../src/features/devices/DeviceShell';
-import { Controls, History, Overview, Readings } from '../../../src/features/devices/panels';
+import { Controls, Energy, Events, History, Overview, Parts, Readings } from '../../../src/features/devices/panels';
 import { RemovedDevice } from '../../../src/features/devices/removed';
 import { screensFor } from '../../../src/devices/ui';
 import { useDevices } from '../../../src/state/DevicesProvider';
@@ -11,10 +11,12 @@ import { useDevices } from '../../../src/state/DevicesProvider';
 /**
  * What this device is doing.
  *
- * A device with screens of its own — a station's energy flow — gets them, fed
- * through whoever holds its connection. Every other device gets the generic
- * panels, which is the outcome the device model exists for: adding a plug
- * must never require writing a screen.
+ * Drawn from its description: an overview, where its energy comes from and
+ * goes, the controls its parts take, each part's card, its history and what it
+ * said happened. A package deepens what it draws better — the whole top of the
+ * dashboard (a station's own energy flow), or one part's card — and inherits
+ * the rest; history and events are the app's for every device alike. Adding a
+ * plug never requires writing a screen.
  */
 export default function DeviceDashboardScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -26,21 +28,21 @@ function Dashboard({ device }: { device: DeviceView }) {
   if (device.removedAt) return <RemovedDevice device={device} />;
 
   const Panel = screensFor(device)?.dashboard;
-  if (!Panel) {
-    return (
-      <>
-        <Overview device={device} />
-        <Controls device={device} />
-        <History device={device} />
-        <Readings device={device} />
-      </>
-    );
-  }
   return (
     <>
-      <Panel {...screenProps(device)} />
-      {/* History is the shell's: drawn from what the device declared, for every device alike. */}
+      {Panel ? (
+        <Panel {...screenProps(device)} />
+      ) : (
+        <>
+          <Overview device={device} />
+          <Energy device={device} />
+          <Controls device={device} />
+          <Readings device={device} />
+          <Parts device={device} />
+        </>
+      )}
       <History device={device} />
+      <Events device={device} />
     </>
   );
 }

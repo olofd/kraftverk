@@ -1,5 +1,5 @@
 import type { DeviceDescription, DeviceInfo, Reading } from '@kraftverk/device-sdk';
-import { putDeviceStore, uploadAudit, uploadReadings, type AuditUpload } from '@kraftverk/api-client';
+import { putDeviceStore, uploadAudit, uploadReadings, type AuditUpload, type LiveEvent } from '@kraftverk/api-client';
 
 import { readPreference, writePreference } from '../lib/preferences';
 
@@ -19,6 +19,7 @@ const FLUSH_MS = 20_000;
 /** A day of minute readings for a dozen measurements, at most, per device. */
 const MAX_QUEUED_READINGS = 20_000;
 const MAX_QUEUED_AUDIT = 1000;
+const MAX_QUEUED_EVENTS = 500;
 
 type QueuedReadings = {
   deviceId: string;
@@ -29,6 +30,8 @@ type QueuedReadings = {
   description: DeviceDescription | null;
   info: DeviceInfo | null;
   sentDescription: string | null;
+  /** What the device said happened, in order, until the server has it. */
+  events: LiveEvent[];
 };
 
 /** What a session this app holds has to send. */
@@ -81,6 +84,13 @@ export class Uplink {
     void this.flush();
   }
 
+  /** Something a device this app holds said happened: sent with its readings, and kept on the server as its own devices' events are. */
+  event(deviceId: string, connectionId: string, event: LiveEvent): void {
+    const queued = this.#queued(deviceId, connectionId);
+    queued.events = [...queued.events, event].slice(-MAX_QUEUED_EVENTS);
+    void this.flush();
+  }
+
   store(deviceId: string, connectionId: string, key: string, value: unknown): void {
     this.#store = [...this.#store.filter((write) => !(write.deviceId === deviceId && write.key === key)), { deviceId, connectionId, key, value }];
     void this.flush();
@@ -93,10 +103,16 @@ export class Uplink {
     return count + this.#audit.length;
   }
 
-  #queue({ deviceId, connectionId, identity, readings, description, info }: Collected): void {
-    const queued = this.#readings.get(deviceId) ?? { deviceId, connectionId, identity, readings: new Map<string, Reading>(), description: null, info: null, sentDescription: null };
-    queued.identity = identity ?? queued.identity;
+  #queued(deviceId: string, connectionId: string): QueuedReadings {
+    const queued = this.#readings.get(deviceId) ?? { deviceId, connectionId, identity: null, readings: new Map<string, Reading>(), description: null, info: null, sentDescription: null, events: [] };
     queued.connectionId = connectionId;
+    this.#readings.set(deviceId, queued);
+    return queued;
+  }
+
+  #queue({ deviceId, connectionId, identity, readings, description, info }: Collected): void {
+    const queued = this.#queued(deviceId, connectionId);
+    queued.identity = identity ?? queued.identity;
     queued.description = description ?? queued.description;
     queued.info = info ?? queued.info;
     for (const reading of readings) {
@@ -154,9 +170,10 @@ export class Uplink {
       });
     }
     for (const [deviceId, queued] of [...this.#readings]) {
-      if (!queued.readings.size) continue;
+      if (!queued.readings.size && !queued.events.length) continue;
       await attempt(async () => {
         const sending = [...queued.readings.entries()].slice(0, 2000);
+        const events = queued.events.slice(0, 500);
         const description = queued.description ? JSON.stringify(queued.description) : null;
         const describe = description !== null && description !== queued.sentDescription;
         await uploadReadings(deviceId, {
@@ -165,9 +182,11 @@ export class Uplink {
           identity: queued.identity,
           readings: sending.map(([, reading]) => reading),
           ...(describe ? { description: queued.description!, ...(queued.info ? { info: queued.info } : {}) } : {}),
+          ...(events.length ? { events } : {}),
         });
         if (describe) queued.sentDescription = description;
         for (const [key] of sending) queued.readings.delete(key);
+        queued.events = queued.events.slice(events.length);
       });
     }
     for (const write of [...this.#store]) {

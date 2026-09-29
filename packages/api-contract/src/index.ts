@@ -221,6 +221,23 @@ export type LinkRecord = { id: LinkId; kind: LinkKind; source: LinkEnd<SavedDevi
 /** `POST /links`. */
 export type NewLink = { kind: LinkKind; source: LinkEnd<string>; target: LinkEnd<string> };
 
+// --- events -----------------------------------------------------------------------
+
+/** Something a device said happened, as it is kept: `GET /devices/:id/events`, newest first. */
+export type DeviceEventView = {
+  id: number;
+  deviceId: SavedDeviceId;
+  part: string;
+  /** The event's id, as its description declares it: `mains.lost`. */
+  event: string;
+  level: EventLevel;
+  data: Readonly<Record<string, Value>> | null;
+  at: string;
+};
+
+/** `GET /problems`: warnings and errors across the devices you have, newest first, each with its device's name. */
+export type ProblemView = DeviceEventView & { deviceName: string };
+
 // --- live -------------------------------------------------------------------------
 
 /** Something a device said happened, as the live stream carries it. */

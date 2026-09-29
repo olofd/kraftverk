@@ -12,10 +12,18 @@ import { Screen } from '../src/components/Screen';
 import { DeviceIcon } from '../src/features/devices/panels';
 import { useDevices } from '../src/state/DevicesProvider';
 
-/** What can be added, from the categories: "Power stations, smart plugs, weather". */
-const ADD_SUBTITLE = Object.values(CATEGORIES)
-  .map((category, index) => (index ? category.label.toLowerCase() : category.label))
-  .join(', ');
+/** What can be added, from the categories something installed is in: "Power stations, smart plugs, weather". */
+const addSubtitle = (installed: readonly { meta: { category: string } }[]) =>
+  Object.entries(CATEGORIES)
+    .filter(([id]) => installed.some((type) => type.meta.category === id))
+    .map(([, category], index) => (index ? category.label.toLowerCase() : category.label))
+    .join(', ');
+
+/** The products installed here, by name: "Brand station, Brand plug and a weather service". */
+const productList = (installed: readonly { meta: { name: string } }[]) => {
+  const names = installed.map((type) => type.meta.name);
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : (names[0] ?? 'nothing yet');
+};
 
 /**
  * Everything you have, in one list. The app opens here, always.
@@ -26,8 +34,20 @@ const ADD_SUBTITLE = Object.values(CATEGORIES)
  * server can see that you have not added yet.
  */
 export default function DevicesScreen() {
-  const { devices, removed, mode, loading, error } = useDevices();
+  const { devices, removed, mode, loading, error, runtime, problems, heard } = useDevices();
   const theme = useTheme();
+  const installed = [...runtime.registry.types.values()];
+  const [problemCount, setProblemCount] = useState<number | null>(null);
+
+  // How many warnings and errors there are to look at, read again when the stream carries an event.
+  useEffect(() => {
+    if (!problems) return setProblemCount(null);
+    const controller = new AbortController();
+    void problems(100, controller.signal)
+      .then((found) => setProblemCount(found.length))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [heard?.count, problems]);
   const hardware = devices.filter((device) => device.kind === 'hardware');
   const services = devices.filter((device) => device.kind === 'service');
 
@@ -69,7 +89,7 @@ export default function DevicesScreen() {
             <Text fontSize={13} color="$muted" lineHeight={19}>
               {mode === 'local'
                 ? 'This app keeps its own devices and reaches them itself, over its own Bluetooth. Add a server in App settings for history and anything that runs while the app is closed.'
-                : 'Add your first device to monitor it, configure it, and later connect it to automations.'}
+                : `Add your first device to watch it, set it up and let automations use it. This install can add ${productList(installed)}.`}
             </Text>
           </YStack>
           <Button
@@ -101,7 +121,7 @@ export default function DevicesScreen() {
           <Pressable onPress={() => router.push('/add-device')}>
             <Row
               title="Add a device"
-              subtitle={ADD_SUBTITLE}
+              subtitle={addSubtitle(installed)}
               accessory={<Feather name="plus" size={16} color={theme.muted?.val} />}
             />
           </Pressable>
@@ -113,6 +133,18 @@ export default function DevicesScreen() {
                   title="Automations"
                   subtitle="What happens on its own: “if tomorrow is sunny, turn the plug on”"
                   accessory={<Feather name="chevron-right" size={16} color={theme.muted?.val} />}
+                />
+              </Pressable>
+            </>
+          ) : null}
+          {problems ? (
+            <>
+              <RowSeparator />
+              <Pressable onPress={() => router.push('/problems')}>
+                <Row
+                  title="Problems"
+                  subtitle={problemCount ? `${problemCount} warning${problemCount === 1 ? '' : 's'} or error${problemCount === 1 ? '' : 's'} your devices reported` : 'None reported'}
+                  accessory={<Feather name={problemCount ? 'alert-triangle' : 'chevron-right'} size={16} color={problemCount ? theme.warning?.val : theme.muted?.val} />}
                 />
               </Pressable>
             </>

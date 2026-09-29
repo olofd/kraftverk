@@ -131,7 +131,7 @@ function Diagnostics({ transport, names }: { transport: string; names: string[] 
         ))}
       </XStack>
       {shown ? (
-        <Text fontSize={11} fontFamily="$mono" color="$color" lineHeight={16} selectable>
+        <Text fontSize={11} fontFamily="$mono" color="$color" lineHeight={16} userSelect="text">
           {shown.body.length > 20_000 ? `${shown.body.slice(0, 20_000)}\n…` : shown.body}
         </Text>
       ) : null}

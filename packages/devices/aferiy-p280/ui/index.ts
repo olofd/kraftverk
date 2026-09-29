@@ -1,3 +1,5 @@
+import type { DeviceUi } from '@kraftverk/api-client';
+
 import { StationDashboard } from './dashboard.tsx';
 import { StationRegisters } from './registers.tsx';
 import { StationSettings } from './settings.tsx';
@@ -11,9 +13,9 @@ import { StationSettings } from './settings.tsx';
 export default {
   dashboard: StationDashboard,
   settings: StationSettings,
-  advanced: {
+  tools: {
     label: 'Registers',
     description: 'Register dumps and the snapshot-and-diff workflow, for checking the map against real hardware',
     Screen: StationRegisters,
   },
-};
+} satisfies DeviceUi;

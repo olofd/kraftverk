@@ -8,13 +8,13 @@ import type { Reading } from '@kraftverk/device-sdk';
   back. The API is stood in for; this checks the queue, not the network.
 */
 
-const sent = { readings: [] as { deviceId: string; readings: readonly Reading[]; identity?: string | null }[], audit: [] as unknown[][] };
+const sent = { readings: [] as { deviceId: string; readings: readonly Reading[]; identity?: string | null; events?: readonly { id: string }[] }[], audit: [] as unknown[][] };
 let serverAway = false;
 
 mock.module('@kraftverk/api-client', () => ({
-  uploadReadings: async (deviceId: string, input: { readings: readonly Reading[]; identity?: string | null }) => {
+  uploadReadings: async (deviceId: string, input: { readings: readonly Reading[]; identity?: string | null; events?: readonly { id: string }[] }) => {
     if (serverAway) throw new Error('away');
-    sent.readings.push({ deviceId, readings: input.readings, identity: input.identity });
+    sent.readings.push({ deviceId, readings: input.readings, identity: input.identity, events: input.events });
     return { live: 0, history: input.readings.length, refused: 0 };
   },
   uploadAudit: async (_clientId: string, entries: unknown[]) => {
@@ -40,6 +40,20 @@ beforeEach(() => {
 const reading = (key: string, minute: number, value: number): Reading => ({ key, value, at: new Date(Date.UTC(2026, 8, 28, 10, minute)).toISOString() });
 
 describe('the uplink', () => {
+  test('sends what a device said happened, kept while the server is away and sent once', async () => {
+    const uplink = new Uplink({ clientId: () => 'k-1', key: 'test.uplink', collect: () => [] });
+    serverAway = true;
+    uplink.event('d-1', 'c-1', { id: 'mains.lost', level: 'warn', part: 'input.ac', data: null, at: '2026-09-28T10:00:00.000Z' });
+    await uplink.flush();
+    expect(sent.readings).toEqual([]);
+
+    serverAway = false;
+    await uplink.flush();
+    expect(sent.readings.map((batch) => batch.events?.map((event) => event.id))).toEqual([['mains.lost']]);
+    await uplink.flush();
+    expect(sent.readings).toHaveLength(1);
+  });
+
   test('keeps one reading per measurement per minute, and sends them with who the device said it is', async () => {
     let collected: Reading[] = [reading('soc', 0, 80), reading('soc', 0, 81), reading('soc', 1, 82)];
     const uplink = new Uplink({

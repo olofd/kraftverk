@@ -1,6 +1,6 @@
 import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Card, Row, SectionLabel } from '@kraftverk/ui';
+import { Card, InfoCard, Row, SectionLabel } from '@kraftverk/ui';
 import { Text, useTheme, XStack, YStack } from 'tamagui';
 
 import type { DeviceView } from '@kraftverk/api-client';
@@ -13,8 +13,8 @@ import { screensFor } from '../../../src/devices/ui';
 import { useDevices } from '../../../src/state/DevicesProvider';
 
 /**
- * What this device remembers, how it is reached, how it fits the house, and
- * whether you still have it — in the order they matter.
+ * What this device remembers, how it is reached, how it fits the house, what
+ * it is, and whether you still have it — in the order they matter.
  */
 export default function DeviceSettingsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -30,7 +30,8 @@ function DeviceSettings({ device }: { device: DeviceView }) {
       {Panel ? <Panel {...screenProps(device)} /> : <GenericSettings device={device} />}
       <Connections device={device} />
       <Links device={device} />
-      <Advanced device={device} />
+      <InfoCard info={device.info} />
+      <Tools device={device} />
       <Manage device={device} />
     </>
   );
@@ -65,19 +66,20 @@ function WhereWritesGo({ device }: { device: DeviceView }) {
   );
 }
 
-/** A device type's own tools, for the types that have any. */
-function Advanced({ device }: { device: DeviceView }) {
+/** A device type's own tools, for the types that have any: drawn from their declarations, with a package's workbench above them. */
+function Tools({ device }: { device: DeviceView }) {
   const theme = useTheme();
-  const advanced = screensFor(device)?.advanced;
-  if (!advanced) return null;
+  const workbench = screensFor(device)?.tools;
+  if (!workbench && device.tools.length === 0) return null;
+  const names = device.tools.map((tool) => tool.label).join(', ');
   return (
     <YStack gap="$2">
-      <SectionLabel>Advanced</SectionLabel>
+      <SectionLabel>Tools</SectionLabel>
       <Card inset>
-        <Pressable onPress={() => router.push(`/device/${encodeURIComponent(device.id)}/advanced`)}>
+        <Pressable onPress={() => router.push(`/device/${encodeURIComponent(device.id)}/tools`)}>
           <Row
-            title={advanced.label}
-            subtitle={advanced.description}
+            title={workbench?.label ?? 'Tools'}
+            subtitle={workbench?.description ?? names}
             accessory={<Feather name="chevron-right" size={16} color={theme.muted?.val} />}
           />
         </Pressable>

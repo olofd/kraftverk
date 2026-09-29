@@ -13,7 +13,7 @@ import {
   type ToolRun,
   type ToolSpec,
 } from '@kraftverk/device-sdk';
-import { decodeSocket, linkOver, relayCandidates, tuyaIdentity, type Dps, type SocketProfile, type SocketReading } from '@kraftverk/protocol-tuya-local';
+import { decodeSocket, encodeSocket, linkOver, relayCandidates, tuyaIdentity, type Dps, type SocketProfile, type SocketReading } from '@kraftverk/protocol-tuya-local';
 
 /**
  * A Tuya energy socket, as a device type: a relay and a meter, reached over the
@@ -248,26 +248,26 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
       if (Object.keys(dps).length) ingest(dps);
       else await poll();
     },
-    tools: {
-      async datapoints() {
-        const dps = await link.status();
-        const decoded = decodeSocket(profile, dps, relayDp);
-        return {
-          protocolVersion: link.version,
-          profile: profile.id,
-          relayDp,
-          raw: Object.entries(dps).map(([dp, value]) => ({ dp: Number(dp), kind: typeof value, value: String(value) })),
-          decoded: Object.fromEntries(Object.entries(decoded).map(([name, value]) => [name, value ?? null])),
-          relayCandidates: relayCandidates(dps),
-        };
-      },
-    },
+    tools: { datapoints: async () => datapointsAnswer(link.version, profile, relayDp, await link.status()) },
     close: () => link.close(),
   });
 }
 
 /** A plug that is not there: a relay, and a load that draws while it is on. */
-function simulatedSession(ctx: DeviceContext<SocketConfig>): DeviceSession {
+/** What the datapoints tool answers: every datapoint raw, what the profile makes of them, and which on/offs could be the relay. */
+function datapointsAnswer(protocolVersion: string, profile: SocketProfile, relayDp: number, dps: Dps) {
+  const decoded = decodeSocket(profile, dps, relayDp);
+  return {
+    protocolVersion,
+    profile: profile.id,
+    relayDp,
+    raw: Object.entries(dps).map(([dp, value]) => ({ dp: Number(dp), kind: typeof value, value: String(value) })),
+    decoded: Object.fromEntries(Object.entries(decoded).map(([name, value]) => [name, value ?? null])),
+    relayCandidates: relayCandidates(dps),
+  };
+}
+
+function simulatedSession(ctx: DeviceContext<SocketConfig>, profiles: readonly SocketProfile[]): DeviceSession {
   let on = ctx.store.get<boolean>('simulator.on') ?? true;
   let kwh = ctx.store.get<number>('simulator.kwh') ?? 0;
   let at = new Date().toISOString();
@@ -279,9 +279,14 @@ function simulatedSession(ctx: DeviceContext<SocketConfig>): DeviceSession {
       ctx.store.set('simulator.kwh', kwh);
     }
   });
+  const reading = () => ({ relayOn: on, watts: on ? watts : 0, volts: 230, amps: on ? Math.round((watts / 230) * 100) / 100 : 0, kwh: Math.round(kwh * 1000) / 1000, hz: 50 });
+  const profile = profileOf(profiles, ctx.config.profile);
+  const relayDp = ctx.config.relayDp ?? profile.relay.dp;
   return socketSession({
-    read: () => ({ reading: { relayOn: on, watts: on ? watts : 0, volts: 230, amps: on ? Math.round((watts / 230) * 100) / 100 : 0, kwh: Math.round(kwh * 1000) / 1000, hz: 50 }, at }),
+    read: () => ({ reading: reading(), at }),
     identity: 'tuya-local:SIMULATED',
+    // Its datapoints as a plug of its profile would send them: the tool answers as it does for a real one.
+    tools: { datapoints: async () => datapointsAnswer('simulated', profile, relayDp, encodeSocket(profile, reading(), relayDp)) },
     health: () => ({ status: 'connected', detail: 'Simulated', lastReadingAt: at }),
     set: async (next) => {
       on = next;
@@ -358,6 +363,6 @@ export function defineTuyaSocket(definition: SocketTypeDefinition): DeviceType<S
     },
 
     createSession: (ctx) => realSession(ctx, profiles),
-    createSimulator: async (ctx) => simulatedSession(ctx),
+    createSimulator: async (ctx) => simulatedSession(ctx, profiles),
   });
 }

@@ -10,7 +10,9 @@ import {
   fetchDeviceList,
   fetchRemovedDevices,
   fetchTransportDiagnostic,
+  fetchDeviceEvents,
   fetchPolicy,
+  fetchProblems,
   fetchVersion,
   openLive,
   preferConnection,
@@ -100,6 +102,11 @@ type DevicesContextValue = {
   addLink: (link: NewLink) => Promise<void>;
   removeLink: (link: LinkView) => Promise<void>;
   history: typeof fetchDeviceHistory | null;
+  /** What a device said happened, and every device's warnings and errors: server mode only. */
+  events: typeof fetchDeviceEvents | null;
+  problems: typeof fetchProblems | null;
+  /** The last event the live stream carried, counted, so a list of events knows to read again. */
+  heard: { deviceId: string; count: number } | null;
 };
 
 /** Who holds a device's connection in use: the server, this app, another app, or nobody right now. */
@@ -201,6 +208,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   const [version, setVersion] = useState<VersionInfo | null>(null);
   const [tick, setTick] = useState(0);
   const [live, setLive] = useState<LiveState>('down');
+  const [heard, setHeard] = useState<{ deviceId: string; count: number } | null>(null);
   const polling = mode === 'server' && allowed;
 
   // Any change in what this app holds is something a card shows.
@@ -266,6 +274,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     const onUpdate = (update: LiveUpdate) => {
       // Hello: read the list, and apply what follows on top of it.
       if (update.type === 'hello' || update.type === 'changed') return readAgain();
+      if (update.type === 'event') return setHeard((last) => ({ deviceId: update.deviceId, count: (last?.count ?? 0) + 1 }));
       if (update.type !== 'readings' && update.type !== 'health') return;
       pending.push(update);
       applying ??= setTimeout(apply, APPLY_MS);
@@ -598,8 +607,11 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         else await mutate(() => apiRemoveLink(link.id));
       },
       history: mode === 'server' ? fetchDeviceHistory : null,
+      events: mode === 'server' ? fetchDeviceEvents : null,
+      problems: mode === 'server' ? fetchProblems : null,
+      heard,
     }),
-    [actionsFor, devices, error, holderOf, live, load, loading, mode, mutate, removed, runtime, screenProps, unreachable, version]
+    [actionsFor, devices, error, heard, holderOf, live, load, loading, mode, mutate, removed, runtime, screenProps, unreachable, version]
   );
 
   return <DevicesContext.Provider value={value}>{children}</DevicesContext.Provider>;

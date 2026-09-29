@@ -1,24 +1,18 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { describeError, isOnline } from '@kraftverk/api-client';
-import type { AttributeSpec, ConfigSchema, ConnectionView, DeviceView, LinkView, Value } from '@kraftverk/api-client';
+import type { AttributeSpec, ConnectionView, DeviceEventView, DeviceView, LinkView, Value } from '@kraftverk/api-client';
 import {
-  attributeMeaning,
   attributesOf,
-  capabilitiesOf,
-  capabilityIn,
   keepsHistory,
   LINK_KIND_IDS,
   linkCandidates,
   linkKindSpec,
   MAIN_PART,
   partsOf,
-  settingField,
-  type CapabilityId,
-  type ConfigField,
   type ConfigValues,
   type LinkKind,
   type Part,
@@ -26,12 +20,14 @@ import {
 import {
   Card,
   DeviceCard,
+  EnergyFlow,
+  EventList,
+  PartCard,
   Row,
   RowSeparator,
   SchemaForm,
   SectionLabel,
   ToggleRow,
-  formatValue,
   haptic,
   readingFor,
   useWriteGate,
@@ -40,6 +36,8 @@ import {
 import { MeasurementChart } from '../../components/MeasurementChart';
 import { Pressable } from '../../components/Pressable';
 import { confirmAction } from '../../lib/confirm';
+import { partSlotFor } from '../../devices/ui';
+import { fedBy, feedsTo, settingsForms, togglesOf, type Toggle } from './model';
 import { featherName } from '../../lib/icons';
 import { useDevices } from '../../state/DevicesProvider';
 
@@ -72,38 +70,17 @@ const partTitle = (device: DeviceView, part: Part) => (part.id === MAIN_PART ? d
 
 // --- controls -----------------------------------------------------------------
 
-/** One switch a part takes: which command, which argument, and the on/off attribute it moves. */
-type Toggle = { part: Part; capability: CapabilityId; command: string; argument: string; attribute: AttributeSpec };
-
 /**
- * Every on/off a device's parts can be switched through: each command a part's
- * capability takes whose argument sets an on/off attribute it reports.
+ * What this device can be told to do — one part's, or all of them. Every
+ * control is a command to one of its parts through the holder's gateway —
+ * which asks the person to confirm when it matters, and says why — so a tap
+ * here has exactly a manual switch's authority.
  */
-function togglesOf(device: DeviceView): Toggle[] {
-  return partsOf(device.description, device.name).flatMap((part) =>
-    capabilitiesOf(device.description, part.id).flatMap((capability) =>
-      Object.entries(capabilityIn(device.description, capability)?.commands ?? {}).flatMap(([command, spec]) =>
-        Object.entries(spec.sets).flatMap(([argument, attributeName]) => {
-          const means = capabilityIn(device.description, capability)?.attributes[attributeName]?.means;
-          const attribute = means ? attributeMeaning(device.description, part.id, means) : null;
-          return attribute && attribute.value.type === 'boolean' && spec.args[argument]?.type === 'boolean' ? [{ part, capability, command, argument, attribute }] : [];
-        })
-      )
-    )
-  );
-}
-
-/**
- * What this device can be told to do. Every control is a command to one of
- * its parts through the holder's gateway — which asks the person to confirm
- * when it matters, and says why — so a tap here has exactly a manual switch's
- * authority.
- */
-export function Controls({ device }: { device: DeviceView }) {
+export function Controls({ device, part }: { device: DeviceView; part?: string }) {
   const { actionsFor } = useDevices();
   const [gate, writes] = useWriteGate<string>();
   const [error, setError] = useState<string | null>(null);
-  const toggles = useMemo(() => togglesOf(device), [device]);
+  const toggles = useMemo(() => togglesOf(device.description, device.name).filter((toggle) => part === undefined || toggle.part.id === part), [device, part]);
 
   const run = useCallback(
     async (toggle: Toggle, value: boolean) => {
@@ -165,35 +142,82 @@ export function Controls({ device }: { device: DeviceView }) {
 
 // --- readings -----------------------------------------------------------------
 
-/** Everything each part reports, part by part, and what it last said. Settings are elsewhere. */
+/** What a part reports, settings apart. */
+const reportedBy = (device: DeviceView, part: string) => attributesOf(device.description, part).filter((attribute) => attribute.access !== 'write');
+
+/** Everything its main part reports, and what it last said. */
 export function Readings({ device }: { device: DeviceView }) {
-  const sections = partsOf(device.description, device.name)
-    .map((part) => ({ part, attributes: attributesOf(device.description, part.id).filter((attribute) => attribute.access !== 'write') }))
-    .filter((section) => section.attributes.length > 0);
-  if (sections.length === 0) return null;
+  return <PartCard title="Readings" attributes={reportedBy(device, MAIN_PART)} readings={device.readings} />;
+}
+
+/**
+ * Each of its other parts as a card — or as its package draws it, where it
+ * fills that part's slot — with the way to the part's own page: a strip with
+ * six sockets, a station with four packs.
+ */
+export function Parts({ device }: { device: DeviceView }) {
+  const { screenProps } = useDevices();
+  const theme = useTheme();
+  const parts = partsOf(device.description, device.name).filter((part) => part.id !== MAIN_PART);
   return (
-    <YStack gap="$3">
-      {sections.map(({ part, attributes }) => (
-        <YStack key={part.id} gap="$2">
-          <SectionLabel>{part.id === MAIN_PART ? 'Readings' : part.label}</SectionLabel>
-          <Card inset>
-            {attributes.map((spec, index) => (
-              <YStack key={spec.key}>
-                {index > 0 ? <RowSeparator /> : null}
-                <Row
-                  title={spec.label}
-                  accessory={
-                    <Text fontSize={15} fontWeight="700" color={spec.category === 'diagnostic' ? '$muted' : '$color'}>
-                      {formatValue(spec, readingFor(device.readings, spec.key)?.value ?? null)}
-                    </Text>
-                  }
-                />
-              </YStack>
-            ))}
-          </Card>
-        </YStack>
-      ))}
-    </YStack>
+    <>
+      {parts.map((part) => {
+        const Slot = partSlotFor(device, part);
+        if (Slot) return <Slot key={part.id} {...screenProps(device)} part={part} />;
+        return (
+          <PartCard
+            key={part.id}
+            title={part.label}
+            attributes={reportedBy(device, part.id)}
+            readings={device.readings}
+            accessory={
+              <Pressable onPress={() => router.push(`/device/${encodeURIComponent(device.id)}/part/${encodeURIComponent(part.id)}`)}>
+                <Row title={`More about ${part.label.toLowerCase()}`} accessory={<Feather name="chevron-right" size={16} color={theme.muted?.val} />} />
+              </Pressable>
+            }
+          />
+        );
+      })}
+    </>
+  );
+}
+
+/** Where its energy comes from, is kept and goes, for a device whose parts say — with what feeds each input, from the house's links. */
+export function Energy({ device }: { device: DeviceView }) {
+  return <EnergyFlow description={device.description} readings={device.readings} mainLabel={device.name} fedBy={fedBy(device.links)} feeds={feedsTo(device.links)} />;
+}
+
+// --- events -------------------------------------------------------------------
+
+/**
+ * What it said happened, newest first — one part's, or all of them — read
+ * again when the live stream carries one of its events. A device that
+ * declares no events has nothing to show; local mode keeps none.
+ */
+export function Events({ device, part }: { device: DeviceView; part?: string }) {
+  const { events, heard } = useDevices();
+  const [list, setList] = useState<DeviceEventView[] | null>(null);
+  const count = heard?.deviceId === device.id ? heard.count : 0;
+  const declares = (device.description.events?.length ?? 0) > 0;
+
+  useEffect(() => {
+    if (!events || !declares) return;
+    const controller = new AbortController();
+    void events(device.id, 50, controller.signal)
+      .then(setList)
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [count, declares, device.id, events]);
+
+  if (!events || !declares || !list) return null;
+  const shown = part === undefined ? list : list.filter((event) => event.part === part);
+  return (
+    <EventList
+      title="What it said"
+      events={shown.map((event) => ({ key: event.id, event: event.event, level: event.level, part: event.part, at: event.at }))}
+      describe={() => device.description}
+      empty="Nothing yet: what it says happened is listed here."
+    />
   );
 }
 
@@ -204,10 +228,10 @@ export function Readings({ device }: { device: DeviceView }) {
  * records every attribute its description says to keep — whoever holds it — so
  * the picker is simply that list. Local mode keeps no history, and says nothing.
  */
-export function History({ device }: { device: DeviceView }) {
+export function History({ device, part }: { device: DeviceView; part?: string }) {
   const { history } = useDevices();
   const chartable = device.description.attributes.filter(
-    (attribute) => attribute.value.type === 'number' && keepsHistory(attribute)
+    (attribute) => attribute.value.type === 'number' && keepsHistory(attribute) && (part === undefined || (attribute.part ?? MAIN_PART) === part)
   );
   const [key, setKey] = useState<string | null>(null);
   const selected: AttributeSpec | undefined =
@@ -254,25 +278,6 @@ export function History({ device }: { device: DeviceView }) {
 
 // --- settings -----------------------------------------------------------------
 
-/** The attributes a device can be told, as the form language draws them: one form per section. */
-function settingsForms(device: DeviceView): { section: string; schema: ConfigSchema; keys: string[] }[] {
-  const writable = device.description.attributes.filter((attribute) => attribute.access === 'write');
-  const sections = [...new Set(writable.map((attribute) => attribute.section ?? 'Settings'))];
-  return sections.map((section) => {
-    const inSection = writable.filter((attribute) => (attribute.section ?? 'Settings') === section);
-    return {
-      section,
-      keys: inSection.map((attribute) => attribute.key),
-      schema: {
-        fields: Object.fromEntries(inSection.flatMap((attribute): [string, ConfigField][] => {
-          const field = settingField(attribute);
-          return field ? [[attribute.key, field]] : [];
-        })),
-      },
-    };
-  });
-}
-
 /**
  * The device's own settings: the attributes its description says can be
  * written, grouped as it groups them, with what it reports now. Edits are held
@@ -284,7 +289,7 @@ export function GenericSettings({ device }: { device: DeviceView }) {
   const [draft, setDraft] = useState<Record<string, Value>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const forms = useMemo(() => settingsForms(device), [device]);
+  const forms = useMemo(() => settingsForms(device.description), [device]);
   const dangerous = device.description.attributes.filter((attribute) => attribute.access === 'write' && attribute.dangerous);
 
   if (forms.length === 0) return null;

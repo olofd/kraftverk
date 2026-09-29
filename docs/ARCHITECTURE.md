@@ -168,8 +168,8 @@ packages/devices/atorch-s1w/
   src/type.ts           export default defineDeviceType({...})   pure, no React: identify,
                         createSession, createSimulator and any setup steps of its own —
                         in this file, or split beside it as the type grows
-  ui/index.ts           optional screens, export default { dashboard, settings, advanced (its tools) };
-                        the generic ones are used otherwise
+  ui/index.ts           optional slots, export default { dashboard, parts, settings, tools } satisfies DeviceUi;
+                        the generic pages draw whatever it leaves out
   assets/               icon.svg, product.webp
   test/contract.test.ts checkDeviceTypeContract(type) from @kraftverk/device-sdk/testing
 ```
@@ -1268,6 +1268,19 @@ for a part, settings, tools, recipe editors — so it deepens one piece and
 inherits the rest, built from a kit in `packages/ui`. Live through the stream.
 **Done when** the ATORCH has a full page with no screen code, and the P280
 overrides only what it draws better.
+
+*Done* (2026-09-29, NEXT-STEP-ARCHITECTURE.md phase 5). Slots are `DeviceUi`
+in `@kraftverk/api-client` — `dashboard`, `parts` (by id or kind), `settings`,
+`tools` — and the kit in `packages/ui` is `PartCard`, `ReadingRow`,
+`EnergyFlow` (from part roles and links), `EventList`, `InfoCard` and
+`ToolPanel`, each taking model types only. Every device has a page per part,
+its events (the server keeps an app-held device's too, at the level its
+description declares) and a problems page across devices, *About*, and its
+tools drawn from their declarations. The P280's screens draw from its
+readings and links: its `state` tool is gone, and every figure it shows is a
+declared attribute. On the web a toggle is a real `button`, so it is operated
+from the keyboard. The `card` and recipe-editor slots wait for a package that
+needs them.
 
 ### Step 29 — Automations from packages (H5, H7)
 `defineRecipe` in the SDK: roles as capability needs over parts, parameters

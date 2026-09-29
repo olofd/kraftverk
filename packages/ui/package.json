@@ -16,11 +16,15 @@
     "@kraftverk/device-sdk": "*"
   },
   "peerDependencies": {
+    "@expo/vector-icons": "*",
     "react": "*",
     "react-native": "*",
     "tamagui": "*"
   },
   "peerDependenciesMeta": {
+    "@expo/vector-icons": {
+      "optional": true
+    },
     "react": {
       "optional": true
     },

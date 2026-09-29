@@ -663,6 +663,33 @@ describe('a connection a browser holds', () => {
     expect(db().query<{ n: number }, [string]>('SELECT COUNT(*) n FROM sample WHERE device_id = ?').get(device.id)!.n).toBe(1);
   });
 
+  test('sends what the device said happened: kept as the server’s own are, at the level its description declares, and a problem across devices', async () => {
+    const client = await browser();
+    const started = await heldSetup(client.id, { identity: 'lampish:HALL', model: 'L1', summary: 'On.' });
+    const device = (await onBusAs(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: 'Hall lamp' } })).body;
+    const connectionId = device.connections[0].id;
+    const at = new Date().toISOString();
+
+    const sent = await onBusAs(`/devices/${enc(device.id)}/readings`, {
+      method: 'POST',
+      body: {
+        clientId: client.id,
+        connectionId,
+        readings: [],
+        events: [
+          // Its level is its description's word, not the app's.
+          { id: 'bulb.failed', part: null, data: null, at },
+          { id: 'made.up', part: null, data: null, at },
+        ],
+      },
+    });
+    expect(sent.status).toBe(200);
+    const events = (await onBusAs(`/devices/${enc(device.id)}/events`)).body.events;
+    expect(events).toEqual([expect.objectContaining({ event: 'bulb.failed', level: 'error', part: 'main', deviceId: device.id })]);
+    const problems = (await onBusAs('/problems')).body.problems as { event: string; deviceName: string }[];
+    expect(problems).toContainEqual(expect.objectContaining({ event: 'bulb.failed', deviceName: 'Hall lamp' }));
+  });
+
   test('a device saved before it answered learns who it is from the app, and a different device adds nothing', async () => {
     const client = await browser();
     // A browser cannot always read an identity during setup: saved without one.

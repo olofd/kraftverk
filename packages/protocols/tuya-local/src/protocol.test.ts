@@ -11,7 +11,7 @@ import { decodeBroadcast, DISCOVERY_KEY } from './discovery.ts';
 import { CMD, encodeFrame, FrameReader, PREFIX_55AA, SUFFIX_55AA, type ProtocolVersion } from './frame.ts';
 import protocol, { linkOver, tuyaIdentity } from './index.ts';
 import { parseDps, sessionKeyOf, TuyaLink } from './session.ts';
-import { decodeSocket, relayCandidates, type SocketProfile } from './socket.ts';
+import { decodeSocket, encodeSocket, relayCandidates, type SocketProfile } from './socket.ts';
 
 /**
  * The Tuya LAN protocol, checked against the published specification — and a
@@ -148,6 +148,11 @@ describe('a socket profile', () => {
 
   test('decodes to engineering units', () => {
     expect(decodeSocket(profile, dps)).toMatchObject({ relayOn: true, amps: 3.26, watts: 745, volts: 231.2, kwh: 12.5 });
+  });
+
+  test('encodes as a plug of the profile sends it, which decodes to the same reading', () => {
+    expect(encodeSocket(profile, { relayOn: true, amps: 3.26, watts: 745, volts: 231.2, kwh: 12.5 })).toEqual(dps);
+    expect(decodeSocket(profile, encodeSocket(profile, { relayOn: false, watts: 0 }, 131), 131)).toMatchObject({ relayOn: false, watts: 0 });
   });
 
   test('an overridden relay datapoint is honoured', () => {

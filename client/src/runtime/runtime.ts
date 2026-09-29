@@ -119,7 +119,8 @@ export class AppRuntime {
     this.sessions = new HeldSessions({
       registry: this.registry,
       readOnly: () => !this.#allowWrites,
-      event: (held, event) => audit({ at: event.at, kind: `device.event.${event.level}`, resourceKind: 'device', resource: held.deviceId, summary: `${held.name}: ${event.id}`, detail: { part: event.part, data: event.data } }),
+      // Kept by the server as its own devices' events are; with no server, they are only heard.
+      event: (held, event) => (this.uplink ? this.uplink.event(held.deviceId, held.connection.id, event) : console.log(`[event] ${held.name}: ${event.id}`)),
       onConnected: (held) => {
         if (options.mode === 'local') this.local.touch(held.connection.id);
       },
