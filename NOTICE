@@ -1,0 +1,21 @@
+kraftverk
+Copyright (c) 2026 Olof Dahlbom
+
+Licensed under the MIT License; see LICENSE. This notice adds to it and takes
+nothing away.
+
+HARDWARE NOTICE
+
+This software communicates with hardware — batteries among it — over
+undocumented, reverse-engineered protocols. Incorrect use can permanently and
+irreparably disable a device such as a power station, and may void its
+warranty.
+
+The disclaimer in LICENSE applies in full to physical damage to hardware and
+property, not only to loss of data or software malfunction. You use this
+software entirely at your own risk.
+
+This project is not affiliated with, endorsed by, or supported by AFERIY,
+Sydpower, Fossibot, Tuya, ATORCH, or any other manufacturer whose products it
+works with. Product names are used only to identify the hardware with which
+this software is compatible.

@@ -19,19 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-ADDITIONAL HARDWARE NOTICE
-
-This software communicates with battery hardware over an undocumented,
-reverse-engineered protocol. Incorrect use can permanently and irreparably
-disable a power station, and may void its warranty.
-
-The disclaimer above applies in full to physical damage to hardware and
-property, not only to loss of data or software malfunction. You use this
-software entirely at your own risk.
-
-This project is not affiliated with, endorsed by, or supported by AFERIY,
-Sydpower, Fossibot, or any related company. Product names are used only to
-identify the hardware with which this software is compatible.

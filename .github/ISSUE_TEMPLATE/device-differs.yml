@@ -1,0 +1,41 @@
+name: My device differs
+description: A supported device — or a model close to one — that reads or behaves differently from what kraftverk assumes.
+title: "Differs: "
+labels: ["device evidence"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the most useful report there is: real hardware, disagreeing with an assumption. A Sydpower station that is not a P280 is exactly what this is for.
+        **Never paste keys, passwords, your IP address or anything that identifies your home.** Run in read-only mode while you collect this.
+  - type: input
+    id: device
+    attributes:
+      label: Device and firmware
+      description: Brand, model, and firmware versions if the device shows them.
+    validations:
+      required: true
+  - type: input
+    id: type
+    attributes:
+      label: The device type you used in kraftverk
+      placeholder: AFERIY P280
+    validations:
+      required: true
+  - type: textarea
+    id: differs
+    attributes:
+      label: What differs
+      description: What kraftverk shows or does, and what the device (or its own app) shows instead.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: A register dump or snapshot diff (Settings → Advanced), a frame log, or a capture. Paste as text, or attach a file.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: kraftverk version or commit

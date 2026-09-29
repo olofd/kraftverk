@@ -300,5 +300,6 @@ to. Reverse engineering a device you own for interoperability is generally
 lawful in the EU and US. Everything here targets hardware on your own network —
 do not point it at anyone else's.
 
-**Licence:** [MIT](LICENSE), including its warranty and liability disclaimers.
+**Licence:** [MIT](LICENSE), including its warranty and liability disclaimers,
+which [NOTICE](NOTICE) extends in so many words to damaged hardware.
 *Kraftverk* is Swedish for "power plant".

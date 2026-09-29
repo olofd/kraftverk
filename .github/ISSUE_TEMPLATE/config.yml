@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Writing a device package
+    url: https://github.com/olofd/kraftverk/blob/main/docs/ADDING-A-DEVICE.md
+    about: The guide to supporting a new product — start here before asking.
+  - name: A security problem
+    url: https://github.com/olofd/kraftverk/blob/main/.github/SECURITY.md
+    about: Report it privately, not as an issue.

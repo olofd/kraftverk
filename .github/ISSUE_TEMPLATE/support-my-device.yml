@@ -1,0 +1,58 @@
+name: Support my device
+description: A device kraftverk does not support yet — or one you are writing a package for.
+title: "Device: "
+labels: ["device request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        kraftverk supports fewer devices than most hubs, each one deeply. The more you can tell about how yours talks, the sooner it can be supported — and if you are writing the package yourself, this is the place to say so.
+        **Never paste keys, passwords, your IP address or anything that identifies your home.**
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: Brand and model, as printed on it.
+      placeholder: ACME PowerCube 1200
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: What kind of device is it?
+      options:
+        - Power station or battery
+        - Smart plug or relay
+        - Sensor
+        - Inverter or charger
+        - Something I built
+        - A service (weather, prices, …)
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: reach
+    attributes:
+      label: How does it talk today?
+      options:
+        - label: Bluetooth LE
+        - label: Wi-Fi, to a vendor cloud
+        - label: Wi-Fi, on the home network
+        - label: Zigbee, Z-Wave, Matter or Thread
+        - label: A cable (USB, RS485, serial)
+        - label: I don't know yet
+  - type: textarea
+    id: known
+    attributes:
+      label: What is already known
+      description: Vendor app, other open-source projects that talk to it, captures, register maps, write-ups.
+  - type: dropdown
+    id: help
+    attributes:
+      label: Can you help?
+      options:
+        - I will write the package (with or without an AI agent)
+        - I can capture traffic or run tests on real hardware
+        - I can only describe it
+    validations:
+      required: true
