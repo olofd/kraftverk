@@ -3,11 +3,10 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
 import type { AutomationView, RecipeView, RoleBinding } from '@kraftverk/api-contract';
-import { capabilitiesOf, MAIN_PART, meetsNeed, partsOf, savedDeviceId, validateConfig, type ConfigValues } from '@kraftverk/device-sdk';
+import { capabilitiesOf, describeRule, isTimeZone, MAIN_PART, meetsNeed, partsOf, savedDeviceId, validateConfig, type ConfigValues, type Value } from '@kraftverk/device-sdk';
 import { CONFIRMATION } from '@kraftverk/gateway';
 
-import { RECIPES, recipeOf, type AutomationRecord } from '../automations/recipes.ts';
-import { isTimeZone } from '../automations/time.ts';
+import type { AutomationRecord } from '../automations/engine.ts';
 import { auditDevice, body, type AppDeps } from './shared.ts';
 
 /**
@@ -23,11 +22,11 @@ import { auditDevice, body, type AppDeps } from './shared.ts';
 const roles = z.record(z.string().min(1).max(40), z.object({ device: z.string().min(1).max(80), part: z.string().min(1).max(80) }).strict());
 const params = z.record(z.string().min(1).max(40), z.union([z.string().max(200), z.number(), z.boolean()]));
 
-export function automationRoutes({ automations, engine, catalog, sessions }: AppDeps): Hono {
+export function automationRoutes({ automations, engine, library, catalog, sessions }: AppDeps): Hono {
   const api = new Hono();
 
   const view = (automation: AutomationRecord): AutomationView => {
-    const recipe = recipeOf(automation.recipe);
+    const recipe = library.recipe(automation.recipe);
     const name = (role: string) => {
       const binding = automation.roles[role];
       const record = binding ? catalog.get(binding.device) : null;
@@ -38,14 +37,14 @@ export function automationRoutes({ automations, engine, catalog, sessions }: App
     return {
       ...automation,
       recipeLabel: recipe?.label ?? automation.recipe,
-      sentence: recipe?.describe(automation, name) ?? automation.recipe,
+      sentence: recipe ? describeRule(recipe, automation.params as Record<string, Value>, name, library) : automation.recipe,
       problems: engine.roleProblems(automation),
     };
   };
 
   /** Checks what is asked of a recipe: every role filled by a part of one of your devices that fits, and settings its schema accepts. */
   const validated = (recipeId: string, input: { roles: Record<string, { device: string; part: string }>; params: Record<string, unknown> }) => {
-    const recipe = recipeOf(recipeId);
+    const recipe = library.recipe(recipeId);
     if (!recipe) throw new HTTPException(400, { message: `There is no recipe called "${recipeId}"` });
     const filled: Record<string, RoleBinding> = {};
     for (const [role, spec] of Object.entries(recipe.roles)) {
@@ -66,7 +65,7 @@ export function automationRoutes({ automations, engine, catalog, sessions }: App
 
   api.get('/automations/recipes', (c) =>
     c.json({
-      recipes: RECIPES.map(({ id, label, description, roles: recipeRoles, params: schema }): RecipeView => ({ id, label, description, roles: recipeRoles, params: schema })),
+      recipes: library.recipes().map(({ recipe, from }): RecipeView => ({ id: recipe.id, label: recipe.label, description: recipe.description, from, roles: recipe.roles, params: recipe.params })),
     })
   );
 
@@ -75,7 +74,7 @@ export function automationRoutes({ automations, engine, catalog, sessions }: App
   api.post('/automations', async (c) => {
     const input = await body(
       c,
-      z.object({ name: z.string().trim().min(1).max(80), recipe: z.string().min(1).max(40), roles, params, timeZone: z.string().min(1).max(64) }).strict()
+      z.object({ name: z.string().trim().min(1).max(80), recipe: z.string().min(1).max(120), roles, params, timeZone: z.string().min(1).max(64) }).strict()
     );
     if (!isTimeZone(input.timeZone)) throw new HTTPException(400, { message: `"${input.timeZone}" is not a time zone` });
     const checked = validated(input.recipe, input);
@@ -117,6 +116,8 @@ export function automationRoutes({ automations, engine, catalog, sessions }: App
       if (problems.length) throw new HTTPException(409, { message: `It cannot act as it is: ${problems.join('; ')}` });
     }
 
+    // What it watches may have changed: its conditions start afresh.
+    engine.reset(current.id);
     const updated = automations.update(current.id, {
       ...(input.name ? { name: input.name } : {}),
       ...(checked ?? {}),
@@ -134,6 +135,7 @@ export function automationRoutes({ automations, engine, catalog, sessions }: App
   api.delete('/automations/:id', (c) => {
     const current = automations.get(c.req.param('id'));
     if (!current || !automations.delete(current.id)) throw new HTTPException(404, { message: 'No such automation' });
+    engine.reset(current.id);
     auditDevice(c, 'automation.deleted', current.id, `Deleted the automation "${current.name}"`);
     return c.json({ ok: true });
   });

@@ -89,6 +89,29 @@ folder, name it in `package.json` under `kraftverk.ui` and `exports`, and run
 `@kraftverk/api-client`: the device, and actions that reach whoever holds its
 connection. It never learns whether that is the server or the app.
 
+### What it brings to automations
+
+A device's package decides what automations can do with it
+([AUTOMATIONS.md](AUTOMATIONS.md)). Three things, all optional:
+
+- **Events** in its description — `{ id: 'mains.lost', part: 'input.ac', level:
+  'warn' }` — raised with `ctx.event(id, data, part)` when they happen, never
+  on the first reading. A trigger can wait for them.
+- **Recipes**, under `automation.recipes`: rules with roles and settings left
+  open, as data (`defineRecipe`). Ask for capabilities, never for your own
+  product — "a part that offers `battery`" — so any device can fill a role.
+  Give it a `sentence`; the check makes sure it names only roles and
+  settings.
+- **Functions**, under `automation.functions` (`defineFunction`), for what a
+  comparison cannot say: "does tomorrow look sunny". Typed arguments and
+  result, the capability it needs, and an answer of `null` — with why — when
+  it cannot tell. The only package code an automation runs; it answers, it
+  never acts.
+
+Ids are namespaced by your type: `acme.plug.overheating`. The contract check
+validates every recipe as a rule; the server checks it again against every
+installed package's functions when it starts.
+
 ## Rules the check enforces
 
 `npm run check:architecture` runs in CI and fails on:

@@ -1,4 +1,4 @@
-import type { HttpChannel, Protocol, WeatherHour } from '@kraftverk/device-sdk';
+import type { HttpChannel, Protocol } from '@kraftverk/device-sdk';
 
 /**
  * The Open-Meteo forecast API, as a protocol: which request to make for a
@@ -12,6 +12,21 @@ import type { HttpChannel, Protocol, WeatherHour } from '@kraftverk/device-sdk';
 export const OPEN_METEO = 'https://api.open-meteo.com';
 
 export type Place = { latitude: number; longitude: number };
+
+/**
+ * One hour of a forecast: what `weather.forecast`'s `hourly` query answers
+ * with, a list of. This service's shape, kept here rather than in the core; a
+ * forecast from anywhere else that answers the same query answers in it too.
+ */
+export type WeatherHour = {
+  /** The start of the hour. */
+  at: string;
+  temperatureC: number | null;
+  cloudCoverPercent: number | null;
+  precipitationMm: number | null;
+  /** Global horizontal irradiance: what reaches a panel lying flat. */
+  irradianceWm2: number | null;
+};
 
 /** The hourly forecast for a place, three days ahead, in UTC. */
 export const forecastPath = ({ latitude, longitude }: Place): string =>

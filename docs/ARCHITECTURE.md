@@ -646,7 +646,7 @@ What it found is in the data model.
 | H4 | No device information: firmware, hardware revision and serial are not in the model; the P280's firmware versions are a register tool | 24 |
 | H5 | No events: a device cannot say that something happened — a button, an overload trip, a fault — except as a log line nothing can trigger on | 24, 29 |
 | H6 | Thin measurement semantics: `cumulative` cannot say a counter that resets daily; nothing marks a diagnostic value (signal strength) to keep it off the dashboard; nine kinds, none for the first sensor that arrives | 23, 24 |
-| H7 | Automations belong to the core (`server/src/automations/recipes.ts`): a package cannot bring the automations its device is for | 29 |
+| H7 | Automations belong to the core (`server/src/automations/recipes.ts`): a package cannot bring the automations its device is for — *fixed 2026-09-29: recipes and functions come from packages* | 29 |
 | H8 | Types cannot evolve: no version, no migration of a saved device's config or store when its type changes | 24 |
 | H9 | No shared vocabulary with the standards: capabilities and kinds map to nothing in Home Assistant or Matter, so every bridge would invent its own | 23 |
 | H10 | Refinement exists only inside the Tuya package: its profiles make the ATORCH a layout over the generic socket — standards the floor, packages the ceiling — but nothing lets a package refine a device another protocol found | 30 |
@@ -1241,6 +1241,20 @@ engine runs every installed one through the same gateway, modes and audit.
 Triggers: a schedule, an event, an attribute crossing a threshold.
 **Done when** the forecast recipe ships from the weather package, and a
 threshold recipe runs observe → act.
+
+*Done* (2026-09-29), as a language rather than as code: see
+[AUTOMATIONS.md](AUTOMATIONS.md). A recipe is a **rule** — roles, settings,
+triggers (`at`, `event`, `becomes` with `heldForMinutes`), a condition and
+gateway commands, over the model's own words — checked before it runs
+(`checkRule`, `checkBinding`), evaluated three-valued with a trace, and read
+as a sentence. Code enters only as **functions** a package contributes. The
+weather package ships `skyLooks` and "Switch by the forecast"; the station
+declares `mains.lost` and `mains.restored` events and ships "When the battery
+runs low" and "When mains power is lost"; the core has no recipe. The same
+language is what a DSL and an AI in the app will write.
+`WeatherHour` and `QueryAnswers` left the SDK for the weather protocol, and
+the time-zone helpers moved into it. An action names its capability, so a
+role no longer has to (NEXT-STEP J40).
 
 ### Step 30 — Refinement, discovery, reach, transport state (H10–H12)
 A type may **refine** another (`refines: { type, match }`), offered at the

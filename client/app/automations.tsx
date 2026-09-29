@@ -323,7 +323,7 @@ function Editor({
             <YStack key={candidate.id}>
               {index > 0 ? <RowSeparator /> : null}
               <Pressable selected={recipe?.id === candidate.id} onPress={() => (setRecipe(candidate), setParams(defaults(candidate)), setRoles({}))}>
-                <Row title={candidate.label} subtitle={candidate.description} />
+                <Row title={candidate.label} subtitle={`${candidate.description} From ${candidate.from.name}.`} />
               </Pressable>
             </YStack>
           ))}

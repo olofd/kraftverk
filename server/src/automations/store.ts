@@ -4,7 +4,7 @@ import type { RoleBinding } from '@kraftverk/api-contract';
 import type { ConfigValues } from '@kraftverk/device-sdk';
 
 import { db } from '../history/db.ts';
-import type { AutomationMode, AutomationRecord, RunResult } from './recipes.ts';
+import type { AutomationMode, AutomationRecord, RunResult } from './engine.ts';
 
 type Row = {
   id: string;

@@ -119,22 +119,6 @@ export const CAPABILITIES = {
   },
 } as const satisfies Record<string, CapabilitySpec>;
 
-/** One hour of a forecast: what `weather.forecast`'s `hourly` query answers with, a list of. */
-export type WeatherHour = {
-  /** The start of the hour. */
-  at: string;
-  temperatureC: number | null;
-  cloudCoverPercent: number | null;
-  precipitationMm: number | null;
-  /** Global horizontal irradiance: what reaches a panel lying flat. */
-  irradianceWm2: number | null;
-};
-
-/** What each query answers with, for callers that ask one. */
-export type QueryAnswers = {
-  'weather.forecast': { hourly: WeatherHour[] };
-};
-
 export type CapabilityName = keyof typeof CAPABILITIES;
 
 export const CAPABILITY_NAMES = Object.keys(CAPABILITIES) as CapabilityName[];

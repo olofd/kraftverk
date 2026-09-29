@@ -10,6 +10,7 @@ import { ActionGateway } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
 import { corsOrigin, createApp } from './app.ts';
 import { AutomationEngine, serverDevices } from './automations/engine.ts';
+import { AutomationLibrary } from './automations/library.ts';
 import { AutomationStore } from './automations/store.ts';
 import { CLIENT_HEADER, SESSION_COOKIE } from './auth/routes.ts';
 import { createFirstUser, createUser } from './auth/store.ts';
@@ -120,7 +121,8 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
   const proxies = new ProxyDirectory(PROXY);
   await proxies.refresh();
   const automations = new AutomationStore();
-  const engine = new AutomationEngine({ store: automations, device: serverDevices(catalog, sessions), gateway, record: audit });
+  const library = new AutomationLibrary(types.all(), () => {});
+  const engine = new AutomationEngine({ store: automations, library, device: serverDevices(catalog, sessions), gateway, record: audit, bus: live });
 
   const { app, websocket } = createApp({
     config,
@@ -141,6 +143,7 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
     bus: live,
     automations,
     engine,
+    library,
     sampler: new Sampler(registry),
     proxies,
     serverLog: { dir: null, recent: () => [] },
@@ -791,12 +794,37 @@ describe('automations', () => {
   const make = (roles: Record<string, { device: string; part: string }>) =>
     as('/automations', {
       method: 'POST',
-      body: { name: 'Sunny heater', recipe: 'forecast-switch', roles, params: { day: 'tomorrow', at: '07:00' }, timeZone: 'Europe/Stockholm' },
+      body: { name: 'Sunny heater', recipe: 'open-meteo.weather.forecast-switch', roles, params: { day: 'tomorrow', at: '07:00' }, timeZone: 'Europe/Stockholm' },
     });
 
-  test('lists its recipes, with the roles each needs', async () => {
+  test('lists the recipes the installed packages bring, with the roles each needs and where it came from', async () => {
     const { recipes } = (await as('/automations/recipes')).body;
-    expect(recipes).toEqual([expect.objectContaining({ id: 'forecast-switch', roles: expect.objectContaining({ forecast: expect.objectContaining({ capabilities: ['weather.forecast'] }) }) })]);
+    expect(recipes.map((recipe: { id: string }) => recipe.id).sort()).toEqual(['aferiy.p280.low-battery', 'aferiy.p280.mains-lost', 'open-meteo.weather.forecast-switch']);
+    expect(recipes.find((recipe: { id: string }) => recipe.id === 'open-meteo.weather.forecast-switch')).toMatchObject({
+      from: { typeId: 'open-meteo.weather', name: 'Open-Meteo' },
+      roles: { forecast: expect.objectContaining({ capabilities: ['weather.forecast'] }) },
+    });
+  });
+
+  test('a station’s recipes: a battery that runs low, and mains that goes — each a part that fits', async () => {
+    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
+    const plug = await added('Heater plug', { server: simulated, typeId: 'atorch.s1w' });
+    const low = await as('/automations', {
+      method: 'POST',
+      body: { name: 'Charge when low', recipe: 'aferiy.p280.low-battery', roles: { battery: { device: station.id, part: 'main' }, switch: whole(plug) }, params: {}, timeZone: 'Europe/Stockholm' },
+    });
+    expect(low.status).toBe(200);
+    expect(low.body).toMatchObject({ problems: [], sentence: 'When Garage P280 stays below 20 % for 5 min, turn Heater plug on.' });
+
+    const shed = (part: string) =>
+      as('/automations', {
+        method: 'POST',
+        body: { name: 'Shed the heater', recipe: 'aferiy.p280.mains-lost', roles: { station: { device: station.id, part }, switch: whole(plug) }, params: {}, timeZone: 'Europe/Stockholm' },
+      });
+    // Only the part that says when mains is lost can fill the role.
+    expect((await shed('main')).status).toBe(400);
+    const made = await shed('input.ac');
+    expect(made.body).toMatchObject({ problems: [], sentence: "When Garage P280's Mains loses mains power, turn Heater plug off." });
   });
 
   test('a role takes only a device that fits it', async () => {
@@ -846,7 +874,7 @@ describe('automations', () => {
         method: 'POST',
         body: {
           name: 'Sunny lights',
-          recipe: 'forecast-switch',
+          recipe: 'open-meteo.weather.forecast-switch',
           roles: { forecast: { device: weather.id, part: 'main' }, switch: { device: station.id, part } },
           params: { day: 'today' },
           timeZone: 'Europe/Stockholm',

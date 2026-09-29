@@ -7,6 +7,7 @@ import { savedDeviceId } from '@kraftverk/device-sdk';
 import type { ActionGateway } from '@kraftverk/gateway';
 import type { LiveBus } from '@kraftverk/holder';
 import type { AutomationEngine } from '../automations/engine.ts';
+import type { AutomationLibrary } from '../automations/library.ts';
 import type { AutomationStore } from '../automations/store.ts';
 import { actorOf, userOf } from '../auth/routes.ts';
 import type { LoginLimiter } from '../auth/limiter.ts';
@@ -61,6 +62,8 @@ export type AppDeps = {
   bus: LiveBus;
   automations: AutomationStore;
   engine: AutomationEngine;
+  /** The recipes and functions the installed packages bring. */
+  library: AutomationLibrary;
   sampler: Sampler;
   proxies: ProxyDirectory;
   serverLog: Pick<ServerLog, 'dir' | 'recent'>;

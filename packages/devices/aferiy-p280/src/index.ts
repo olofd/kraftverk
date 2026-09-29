@@ -1,4 +1,4 @@
-import { MAIN_PART, valueTypeOf, type AttributeSpec, type ConfigSchema, type DeviceDescription, type DeviceInfo, type Part, type Reading } from '@kraftverk/device-sdk';
+import { MAIN_PART, valueTypeOf, type AttributeSpec, type ConfigSchema, type DeviceDescription, type DeviceInfo, type EventSpec, type Part, type Reading } from '@kraftverk/device-sdk';
 
 import type { PortId, StationSettings, StationStatus } from './model/types.ts';
 
@@ -132,7 +132,12 @@ export function describeStation(packs = 0): DeviceDescription {
     ),
   ];
 
-  return { parts, attributes, events: [] };
+  const events: EventSpec[] = [
+    { id: 'mains.lost', label: 'Mains lost', level: 'warn', part: 'input.ac', description: 'Mains power went away: the station runs its outlets from its battery.' },
+    { id: 'mains.restored', label: 'Mains back', level: 'info', part: 'input.ac', description: 'Mains power came back.' },
+  ];
+
+  return { parts, attributes, events };
 }
 
 /**

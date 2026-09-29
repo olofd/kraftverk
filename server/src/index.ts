@@ -2,6 +2,7 @@ import { ActionGateway } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
 import { createApp } from './app.ts';
 import { AutomationEngine, serverDevices } from './automations/engine.ts';
+import { AutomationLibrary } from './automations/library.ts';
 import { AutomationStore } from './automations/store.ts';
 import { ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
@@ -192,8 +193,10 @@ const sampler = new Sampler(registry);
 sampler.start();
 
 /** Automations: decided here, acted on only through the gateway. */
+/** What the installed packages bring to automations: their recipes and functions. None of the core's own. */
+const library = new AutomationLibrary(types.all());
 const automations = new AutomationStore();
-const engine = new AutomationEngine({ store: automations, device: serverDevices(catalog, sessions), gateway, record: audit });
+const engine = new AutomationEngine({ store: automations, library, device: serverDevices(catalog, sessions), gateway, record: audit, bus });
 engine.start();
 
 /** The web container, the one proxy whose "home-network entrance" stamp is believed. */
@@ -219,6 +222,7 @@ const { app, websocket } = createApp({
   bus,
   automations,
   engine,
+  library,
   sampler,
   proxies,
   serverLog,

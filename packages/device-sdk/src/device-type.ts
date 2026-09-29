@@ -1,3 +1,4 @@
+import type { AutomationFunction, Recipe } from './automation.ts';
 import type { CapabilityName, CommandResult } from './capabilities.ts';
 import type { CategoryId } from './categories.ts';
 import { methodsOf, type ConnectionMethod, type Identified, type OpenConnection, type Platform } from './connection.ts';
@@ -98,6 +99,16 @@ export interface DeviceType<Config extends ConfigValues = ConfigValues> {
    * connection.
    */
   createSimulator(ctx: DeviceContext<Config>): Promise<DeviceSession>;
+
+  /**
+   * What this package brings to automations (docs/AUTOMATIONS.md): recipes —
+   * rules with roles and settings left open — and functions a rule can call.
+   * Both namespaced by this type's id, found when the package is installed.
+   */
+  readonly automation?: {
+    readonly recipes?: readonly Recipe[];
+    readonly functions?: readonly AutomationFunction[];
+  };
 }
 
 /** A command to one part of a device: `switch.set({ on: true })` on `outlet.ac`. */

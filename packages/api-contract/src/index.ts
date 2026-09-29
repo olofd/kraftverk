@@ -340,11 +340,17 @@ export type AuthState = {
 /** Which part of which device fills a role: a plug, or one of a station's outlets. */
 export type RoleBinding = { device: SavedDeviceId; part: string };
 
-/** A recipe the server offers: roles to fill with parts of devices, and its settings. */
+/**
+ * A recipe the server offers: roles to fill with parts of devices, and its
+ * settings. Recipes come with the installed packages (docs/AUTOMATIONS.md);
+ * `from` says which.
+ */
 export type RecipeView = {
+  /** Namespaced by the type it came with: `acme.weather.forecast-switch`. */
   id: string;
   label: string;
   description: string;
+  from: { typeId: string; name: string };
   /** What each role asks of a part: every one of `capabilities`, and one of `oneOf` when given. */
   roles: Record<
     string,

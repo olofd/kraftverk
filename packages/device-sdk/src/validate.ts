@@ -1,4 +1,5 @@
 import { CATEGORIES, isCategory } from './categories.ts';
+import { checkRule } from './automation.ts';
 import { PLATFORMS, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, type Protocol, type TransportDefinition } from './connection.ts';
 import { validateDescription } from './description.ts';
 import type { DeviceType } from './device-type.ts';
@@ -72,6 +73,39 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
     }
   }
   if (methods.filter((method) => method.recommended).length > 1) problem('more than one connection method is recommended');
+
+  // --- automations ------------------------------------------------------------
+  // Namespaced by the type, so two packages can never ship the same id; and every
+  // recipe checked as a rule — against the functions installed with it, which the
+  // server checks again once every package is installed.
+  const functions = type.automation?.functions ?? [];
+  const recipes = type.automation?.recipes ?? [];
+  const namespaced = (kind: string, id: string) => {
+    if (!id?.startsWith(`${type.id}.`) || !/^[a-z0-9.-]+\.[a-z][A-Za-z0-9-]*$/.test(id)) problem(`${kind} "${id}" must be namespaced by the type: "${type.id}.something"`);
+  };
+  const seen = new Set<string>();
+  for (const fn of functions) {
+    namespaced('function', fn.id);
+    if (seen.has(fn.id)) problem(`function "${fn.id}" is declared twice`);
+    seen.add(fn.id);
+    if (!fn.label?.trim()) problem(`function "${fn.id}" has no label`);
+    if (typeof fn.evaluate !== 'function') problem(`function "${fn.id}" cannot be evaluated`);
+  }
+  for (const recipe of recipes) {
+    namespaced('recipe', recipe.id);
+    if (seen.has(recipe.id)) problem(`recipe "${recipe.id}" is declared twice`);
+    seen.add(recipe.id);
+    if (!recipe.label?.trim() || !recipe.description?.trim()) problem(`recipe "${recipe.id}" needs a label and a description`);
+    const own = (id: string) => functions.find((fn) => fn.id === id) ?? null;
+    for (const found of checkRule(recipe, { fn: own })) {
+      // Another package's function is checked when everything is installed.
+      if (!/there is no function ".*" installed/.test(found)) problem(`recipe "${recipe.id}": ${found}`);
+    }
+    for (const placeholder of recipe.sentence?.match(/\{(\w+)\}/g) ?? []) {
+      const key = placeholder.slice(1, -1);
+      if (!(key in recipe.roles) && !(key in recipe.params.fields)) problem(`recipe "${recipe.id}": its sentence names "${key}", which is neither a role nor a setting`);
+    }
+  }
 
   // --- setup steps ------------------------------------------------------------
   const stepIds = new Set<string>(['ready', 'choose', 'credentials', 'connection', 'check']);

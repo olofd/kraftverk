@@ -1,6 +1,7 @@
 import { defineDeviceType, type OpenConnection } from '@kraftverk/device-sdk';
 import { linkOver, parseMac, readInputRegisters, stationIdentity } from '@kraftverk/protocol-sydpower';
 
+import { lowBattery, mainsLost, mainsWatcher } from './automation.ts';
 import { describeStation } from './index.ts';
 import { StationClient } from './model/client.ts';
 import { INPUT_REGISTER_COUNT, decodeTelemetry } from './model/registers.ts';
@@ -38,6 +39,7 @@ export default defineDeviceType({
     icon: 'zap',
   },
   config: { fields: {} },
+  automation: { recipes: [lowBattery, mainsLost] },
   describe: () => describeStation(),
   connections: [
     {
@@ -95,8 +97,17 @@ export default defineDeviceType({
     const connection = ctx.connection;
     if (!connection) throw new Error('A P280 session needs a connection');
     const link = linkOver(connection);
-    // Each frame it decodes is news: its holder hears at once, not at its next look.
-    const client = new StationClient({ transport: link, readOnly: ctx.readOnly, model: 'AFERIY P280', onUpdate: () => ctx.changed() });
+    // Each frame it decodes is news: its holder hears at once, not at its next look — and so does whatever waits for mains.
+    const mains = mainsWatcher((event) => ctx.event(event, undefined, 'input.ac'));
+    const client = new StationClient({
+      transport: link,
+      readOnly: ctx.readOnly,
+      model: 'AFERIY P280',
+      onUpdate: (status) => {
+        mains(status.gridConnected);
+        ctx.changed();
+      },
+    });
     await client.start();
     return stationSession(client, {
       identity: identityFrom(connection.address),
@@ -112,6 +123,8 @@ export default defineDeviceType({
   async createSimulator(ctx) {
     const station = new SimulatedStation(ctx.store);
     station.start();
+    const mains = mainsWatcher((event) => ctx.event(event, undefined, 'input.ac'));
+    ctx.schedule(1000, () => mains(station.status().gridConnected));
     return stationSession(station, {
       identity: 'sydpower:SIMULATED',
       connected: () => true,
