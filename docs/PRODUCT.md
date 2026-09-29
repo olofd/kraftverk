@@ -201,6 +201,10 @@ with the right device classes, and switching it there goes through the
 gateway and onto kraftverk's timeline.
 
 ### D — A framework people can join (L)
+Built on the data model of [ARCHITECTURE.md](ARCHITECTURE.md) §8 steps
+23–32 — parts, descriptions that come from the device, events, refinement, a
+shared vocabulary with Home Assistant and Matter — which comes first.
+
 - `@kraftverk/device-sdk` on npm, and `npm create kraftverk-device`.
 - **Packages bring their own automation options**: a device type ships the
   recipes that make sense for it (a station's reserve, a heater's cheap hours),
