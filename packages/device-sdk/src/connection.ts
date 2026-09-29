@@ -340,6 +340,18 @@ export type Protocol = {
  * transport. Where it runs is never said here: a method is offered wherever its
  * transport is available (docs/ARCHITECTURE.md, decision 8).
  */
+/**
+ * What a way of reaching a device needs besides your home network (H11):
+ *
+ * - `local` — nothing. It works with the internet unplugged.
+ * - `cloud-at-setup` — the vendor's cloud once, while adding it: a key fetched,
+ *   an account linked. After that, local.
+ * - `cloud` — the internet, always: a web API, a vendor's servers.
+ */
+export type Reach = 'local' | 'cloud-at-setup' | 'cloud';
+
+export const REACHES: readonly Reach[] = ['local', 'cloud-at-setup', 'cloud'];
+
 export type ConnectionMethod = {
   /** `wifi`, `bluetooth`, `lan`. Stable forever within the type: connections name it. */
   id: string;
@@ -349,6 +361,8 @@ export type ConnectionMethod = {
   description?: string;
   protocol: string;
   transport: string;
+  /** Whether it needs anything beyond your home network: said on the add screen before anything is chosen. */
+  reach: Reach;
   /** The one to suggest, when a type has several. */
   recommended?: boolean;
   /**
@@ -383,6 +397,7 @@ export const SIMULATED_METHOD: ConnectionMethod = {
   protocol: SIMULATED_TRANSPORT,
   transport: SIMULATED_TRANSPORT,
   address: SIMULATED_ADDRESS,
+  reach: 'local',
 };
 
 /** Every way a type can be added: its own, then simulated. */

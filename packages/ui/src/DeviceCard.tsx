@@ -6,7 +6,7 @@ import { isOnline } from '@kraftverk/device-sdk';
 
 import { Card } from './Card';
 import { haptic } from './haptics';
-import { formatValue, readingFor, shownAttributes } from './measurement';
+import { formatValue, isOld, observedAt, readingFor, shownAttributes } from './measurement';
 
 /**
  * One device, as a card.
@@ -59,12 +59,15 @@ type Props = {
 export function DeviceCard({ device, icon, secondary, onPress }: Props) {
   const online = isOnline(device.health);
   const [primary, ...rest] = shownAttributes(device.attributes);
-  const primaryValue = primary ? formatValue(primary, readingFor(device.readings, primary.key)?.value ?? null) : '—';
+  const primaryReading = primary ? readingFor(device.readings, primary.key) : undefined;
+  const primaryValue = primary ? formatValue(primary, primaryReading?.value ?? null) : '—';
+  // Its attribute says how long a value stays current: past that it is shown as it was, and when.
+  const primaryOld = primary ? isOld(primary, primaryReading) : false;
 
-  const extras = (secondary ?? rest.slice(0, 2)).map((spec) => ({
-    spec,
-    text: formatValue(spec, readingFor(device.readings, spec.key)?.value ?? null),
-  }));
+  const extras = (secondary ?? rest.slice(0, 2)).map((spec) => {
+    const reading = readingFor(device.readings, spec.key);
+    return { spec, text: formatValue(spec, reading?.value ?? null), old: isOld(spec, reading) };
+  });
 
   return (
     <Card
@@ -124,24 +127,24 @@ export function DeviceCard({ device, icon, secondary, onPress }: Props) {
 
       <XStack alignItems="flex-end" justifyContent="space-between" gap="$3">
         <YStack gap={2}>
-          <Text fontSize={30} fontWeight="800" letterSpacing={-1} color="$color">
+          <Text fontSize={30} fontWeight="800" letterSpacing={-1} color={primaryOld ? '$muted' : '$color'}>
             {primaryValue}
           </Text>
           {primary ? (
             <Text fontSize={11} color="$muted" textTransform="uppercase" letterSpacing={0.6}>
-              {primary.label}
+              {primaryOld && primaryReading ? `${primary.label}, as of ${observedAt(primaryReading.at)}` : primary.label}
             </Text>
           ) : null}
         </YStack>
 
         {extras.length > 0 ? (
           <YStack alignItems="flex-end" gap={3}>
-            {extras.map(({ spec, text }) => (
+            {extras.map(({ spec, text, old }) => (
               <XStack key={spec.key} alignItems="baseline" gap="$2">
                 <Text fontSize={11} color="$muted">
                   {spec.label}
                 </Text>
-                <Text fontSize={13} fontWeight="600" color="$color">
+                <Text fontSize={13} fontWeight="600" color={old ? '$muted' : '$color'}>
                   {text}
                 </Text>
               </XStack>

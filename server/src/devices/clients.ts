@@ -1,6 +1,8 @@
 import type { ClientRecord } from '@kraftverk/api-contract';
 import { randomBytes } from 'node:crypto';
 
+import { clientId } from '@kraftverk/device-sdk';
+
 import { db } from '../history/db.ts';
 
 /**
@@ -18,7 +20,7 @@ export type { ClientRecord };
 type Row = { id: string; user_id: string; name: string; platform: string; transports: string; created_at: string; last_seen_at: string };
 
 const toRecord = (row: Row): ClientRecord => ({
-  id: row.id,
+  id: clientId(row.id),
   userId: row.user_id,
   name: row.name,
   platform: row.platform === 'native' ? 'native' : 'web',
@@ -56,7 +58,7 @@ export class ClientStore {
       return { ...existing, name: input.name, platform: input.platform, transports: input.transports, lastSeenAt: now };
     }
     const record: ClientRecord = {
-      id: `k-${randomBytes(6).toString('hex')}`,
+      id: clientId(`k-${randomBytes(6).toString('hex')}`),
       userId: input.userId,
       name: input.name,
       platform: input.platform,

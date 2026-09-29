@@ -62,7 +62,7 @@ describe('a device, described', () => {
     const porch = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Porch', config: { room: 'Porch' } });
     const connection = connections.add({ deviceId: hall.id, method: 'bus', transport: 'bus', heldBy: null, address: 'lamp-1' });
     connections.setSecrets(connection.id, { pin: '1234' });
-    links.add({ kind: 'feeds', sourceId: hall.id, targetId: porch.id });
+    links.add({ kind: 'feeds', source: { device: hall.id, part: 'main' }, target: { device: porch.id, part: 'main' } });
     await sessions.sync(catalog.list());
 
     const view = registry.find(hall.id)!;
@@ -75,18 +75,18 @@ describe('a device, described', () => {
       meta: { name: 'Test lamp', category: 'smart-plug' },
       capabilities: ['switch'],
       config: { room: 'Hall' },
-      links: [{ kind: 'feeds', role: 'source', other: { id: porch.id, name: 'Porch' } }],
-      advanced: [
-        { name: 'ping', writes: false },
-        { name: 'blink', writes: true },
-      ],
+      links: [{ kind: 'feeds', role: 'source', part: 'main', other: { id: porch.id, name: 'Porch', part: 'main', partLabel: '' } }],
     });
+    expect(view.tools.map((tool) => [tool.name, tool.writes, tool.answer.type])).toEqual([
+      ['ping', false, 'object'],
+      ['blink', true, 'object'],
+    ]);
     expect(view.connections).toEqual([
       expect.objectContaining({ method: 'bus', methodLabel: 'Test bus', transport: 'bus', heldBy: { kind: 'server' }, address: 'lamp-1', inUse: true, secrets: ['pin'] }),
     ]);
     // Which secrets, never their values.
     expect(JSON.stringify(view)).not.toContain('1234');
-    expect(registry.find(porch.id)!.links).toEqual([expect.objectContaining({ role: 'target', other: { id: hall.id, name: 'Hall' } })]);
+    expect(registry.find(porch.id)!.links).toEqual([expect.objectContaining({ role: 'target', other: { id: hall.id, name: 'Hall', part: 'main', partLabel: '' } })]);
   });
 
   test('a device of a type nobody installed is still listed, and says so', () => {

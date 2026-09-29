@@ -98,10 +98,43 @@ describe('sampling', () => {
     await new Sampler(registry('stale', [{ key: 'soc', value: 73.4, at: tenMinutesAgo }])).sample();
     expect(stored('stale')).toEqual([]);
   });
+
+  /*
+    A forecast is fetched every half hour, and its value stays current for an
+    hour: sampled every minute in between, not only in the two minutes after
+    each fetch — which is what one global freshness rule did to weather history.
+  */
+  test('a value is kept as long as its attribute says it stays current', async () => {
+    const fetched = new Date(Date.now() - 40 * 60_000).toISOString();
+    const description: DeviceDescription = {
+      attributes: [
+        { key: 'temperature', label: 'Temperature', value: { type: 'number', unit: '°C' }, means: 'temperature.air', currentFor: 60 * 60_000 },
+        { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' } },
+      ],
+    };
+    await new Sampler(registry('forecast', [{ key: 'temperature', value: 12.5, at: fetched }, { key: 'watts', value: 40, at: fetched }], description)).sample();
+    expect(stored('forecast')).toEqual([{ key: 'temperature', value: 12.5 }]);
+  });
+
+  test('each sample says which part it belongs to', async () => {
+    const at = new Date().toISOString();
+    const description: DeviceDescription = {
+      parts: [{ id: 'pack.1', label: 'Pack 1', kind: 'battery' }],
+      attributes: [
+        { key: 'soc', label: 'Charge', value: { type: 'number', unit: '%' } },
+        { key: 'pack.1.soc', part: 'pack.1', label: 'Pack 1 charge', value: { type: 'number', unit: '%' } },
+      ],
+    };
+    await new Sampler(registry('packs', [{ key: 'soc', value: 80, at }, { key: 'pack.1.soc', value: 60, at }], description)).sample();
+    expect(db().query('SELECT part, key FROM sample WHERE device_id = ? ORDER BY key').all('packs')).toEqual([
+      { part: 'pack.1', key: 'pack.1.soc' },
+      { part: 'main', key: 'soc' },
+    ]);
+  });
 });
 
 describe('history that lasts', () => {
-  const put = (id: string, at: Date, value: number) => db().query('INSERT OR REPLACE INTO sample (device_id, key, at, value) VALUES (?, ?, ?, ?)').run(id, 'soc', at.toISOString(), value);
+  const put = (id: string, at: Date, value: number) => db().query("INSERT OR REPLACE INTO sample (device_id, part, key, at, value) VALUES (?, 'main', ?, ?, ?)").run(id, 'soc', at.toISOString(), value);
   const hours = (id: string) =>
     db().query('SELECT hour, min, avg, max, n FROM sample_hour WHERE device_id = ? ORDER BY hour').all(id) as { hour: string; min: number; avg: number; max: number; n: number }[];
 
@@ -123,7 +156,7 @@ describe('history that lasts', () => {
     const now = Date.UTC(2026, 8, 28, 12, 0);
     const old = new Date(now - 15 * 86_400_000);
     put('kept', old, 42);
-    db().query("INSERT INTO sample_hour (device_id, key, hour, min, avg, max, n) VALUES ('kept', 'soc', '2020-01-01T00:00:00.000Z', 1, 1, 1, 1)").run();
+    db().query("INSERT INTO sample_hour (device_id, part, key, hour, min, avg, max, n) VALUES ('kept', 'main', 'soc', '2020-01-01T00:00:00.000Z', 1, 1, 1, 1)").run();
     new Sampler(registry('kept', [])).prune(now);
     expect(stored('kept')).toEqual([]);
     expect(hours('kept').map((row) => [row.hour.slice(0, 10), row.avg])).toEqual([[old.toISOString().slice(0, 10), 42]]);
@@ -151,7 +184,7 @@ describe('history that lasts', () => {
 
     registry('charted', []);
     const hour = new Date(Math.floor((now - 10 * 86_400_000) / 3_600_000) * 3_600_000);
-    db().query('INSERT INTO sample_hour (device_id, key, hour, min, avg, max, n) VALUES (?, ?, ?, 1, 50, 99, 60)').run('charted', 'soc', hour.toISOString());
+    db().query("INSERT INTO sample_hour (device_id, part, key, hour, min, avg, max, n) VALUES (?, 'main', ?, ?, 1, 50, 99, 60)").run('charted', 'soc', hour.toISOString());
     expect(series('charted', 'soc', ago(24 * 30), to)).toEqual([{ at: hour.toISOString(), value: 50 }]);
   });
 });

@@ -2,6 +2,8 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 
 import { actorOf } from '../auth/routes.ts';
+import { LINK_KIND_IDS, type LinkKind } from '@kraftverk/device-sdk';
+
 import { auditDevice, body, ownClient, type AppDeps } from './shared.ts';
 
 const values = z.record(z.string().max(64), z.union([z.string().max(4096), z.number(), z.boolean()]));
@@ -104,7 +106,16 @@ export function setupRoutes({ setup, registry, clients }: AppDeps): Hono {
           deviceId: z.string().min(1).max(80).optional(),
           anyway: z.boolean().optional(),
           links: z
-            .array(z.object({ kind: z.string().min(1).max(40), other: z.string().min(1).max(80), role: z.enum(['source', 'target']) }).strict())
+            .array(
+              z
+                .object({
+                  kind: z.enum(LINK_KIND_IDS as [LinkKind, ...LinkKind[]]),
+                  part: z.string().min(1).max(80),
+                  other: z.object({ device: z.string().min(1).max(80), part: z.string().min(1).max(80) }).strict(),
+                  role: z.enum(['source', 'target']),
+                })
+                .strict()
+            )
             .max(8)
             .optional(),
         })

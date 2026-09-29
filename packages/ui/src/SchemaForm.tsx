@@ -2,7 +2,7 @@ import { Input, Text, XStack, YStack } from 'tamagui';
 
 import { Row, RowSeparator, ToggleRow } from './Row';
 import { haptic } from './haptics';
-import type { ConfigField, ConfigSchema, ConfigValues } from '@kraftverk/device-sdk';
+import { presentationOf, type ConfigField, type ConfigSchema, type ConfigValues } from '@kraftverk/device-sdk';
 
 /**
  * Renders any device type's settings from its declared schema.
@@ -125,7 +125,8 @@ function Field({
     );
   }
 
-  const secret = field.type === 'secret';
+  const secret = presentationOf(field) === 'secret';
+  const multiline = presentationOf(field) === 'multiline';
   const numeric = field.type === 'number';
 
   return (
@@ -148,6 +149,8 @@ function Field({
         // `type`, not `secureTextEntry`: Tamagui's web Input discards the latter,
         // which left every secret field — a device's local key — readable on screen.
         type={secret ? 'password' : 'text'}
+        multiline={multiline}
+        numberOfLines={multiline ? 4 : undefined}
         autoComplete={secret ? 'off' : undefined}
         autoCapitalize="none"
         autoCorrect={false}
@@ -159,9 +162,11 @@ function Field({
               : 'Not set'
             : 'placeholder' in field && field.placeholder
               ? field.placeholder
-              : field.type === 'host'
+              : presentationOf(field) === 'host'
                 ? '192.168.1.50'
-                : undefined
+                : field.type === 'timestamp'
+                  ? '2026-09-29T07:00'
+                  : undefined
         }
         value={value === undefined || typeof value === 'boolean' ? '' : String(value)}
         onChangeText={(text) => {
@@ -200,7 +205,7 @@ function Label({ title, description }: { title: string; description?: string }) 
 export function isComplete(schema: ConfigSchema, values: ConfigValues, secretsSet: string[] = []): boolean {
   return Object.entries(schema.fields).every(([name, field]) => {
     if (!('required' in field) || !field.required) return true;
-    if (field.type === 'secret') return secretsSet.includes(name) || Boolean(values[name]);
+    if (presentationOf(field) === 'secret') return secretsSet.includes(name) || Boolean(values[name]);
     const value = values[name];
     return value !== undefined && value !== '';
   });

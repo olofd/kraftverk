@@ -61,7 +61,7 @@ const plug = (flaws: Parameters<typeof simulatedPlug>[1] = {}, description: Devi
     kind: 'hardware',
     meta: { name: 'Example plug', category: 'smart-plug', support: 'experimental', icon: 'power' },
     config: { fields: { pollSeconds: { type: 'number', title: 'Poll interval', default: 10, min: 1 } } },
-    connections: [{ id: 'lan', label: 'Home network', protocol: 'example', transport: 'lan' }],
+    connections: [{ id: 'lan', label: 'Home network', protocol: 'example', transport: 'lan', reach: 'local' }],
     describe: () => description,
     // Asks the plug who it is: it answers "id:<serial>".
     async identify(connection) {
@@ -101,7 +101,7 @@ const exampleProtocol: Protocol = {
       addressLabel: 'IP address',
     },
   },
-  credentials: { schema: { fields: { key: { type: 'secret', title: 'Key', required: true } } } },
+  credentials: { schema: { fields: { key: { type: 'string', presentation: 'secret', title: 'Key', required: true } } } },
 };
 
 const lan: TransportDefinition = {
@@ -167,12 +167,29 @@ describe('validating a declaration', () => {
     );
   });
 
-  test('a category comes from the fixed list, and matches devices or services', () => {
+  test('a category comes from the fixed list; which section it is listed in is the type’s kind', () => {
     expect(broken((type) => ({ ...type, meta: { ...type.meta, category: 'smartplug' as never } }))[0]).toContain(
       'meta.category "smartplug" is not one of'
     );
-    expect(broken((type) => ({ ...type, meta: { ...type.meta, category: 'weather' } }))).toContain(
-      'meta.category "weather" lists services, but the type is hardware'
+    expect(broken((type) => ({ ...type, meta: { ...type.meta, category: 'weather' } }))).toEqual([]);
+  });
+
+  test('every way to reach a device says what it needs beyond the home network', () => {
+    expect(broken((type) => ({ ...type, connections: type.connections.map(({ reach: _reach, ...method }) => method as never) }))).toContain(
+      'connection method "lan" must say what it reaches: local, cloud-at-setup, cloud'
+    );
+  });
+
+  test('the shared vocabulary’s namespace is not a type’s', () => {
+    expect(broken((type) => ({ ...type, id: 'standard.plug' }))).toContain('id "standard.plug" is in the namespace "standard", which is the shared vocabulary\'s');
+  });
+
+  test('a tool is declared as data: what it answers, in the value system', () => {
+    expect(
+      broken((type) => ({ ...type, tools: { dump: { label: 'Dump', description: 'Everything.', writes: false, answer: { type: 'list', of: { type: 'object', fields: {} } } } } }))
+    ).toContain('tool "dump" answer[] is an object with no fields');
+    expect(broken((type) => ({ ...type, tools: { dump: { label: 'Dump', description: 'Everything.', writes: false, honoursReadOnly: true, answer: { type: 'boolean' } } } }))).toContain(
+      'tool "dump" honours read-only mode but never writes'
     );
   });
 
@@ -180,7 +197,7 @@ describe('validating a declaration', () => {
 
   test('a capability outside the library is refused', () => {
     expect(described((d) => ({ ...d, parts: [{ id: MAIN_PART, label: 'Plug', kind: 'device', offers: ['switch', 'teleport' as never] }] }))).toContain(
-      'part "main" offers "teleport", which is not in the library'
+      'part "main" offers "teleport", which is neither in the library nor declared by the type'
     );
   });
 
@@ -204,7 +221,7 @@ describe('validating a declaration', () => {
 
   test('secrets are never config: they are a connection\'s credentials', () => {
     expect(
-      broken((type) => ({ ...type, config: { fields: { ...type.config.fields, key: { type: 'secret', title: 'Key' } } } }))
+      broken((type) => ({ ...type, config: { fields: { ...type.config.fields, key: { type: 'string', presentation: 'secret', title: 'Key' } } } }))
     ).toContain('config field "key" is a secret; secrets belong to a connection\'s credentials');
   });
 

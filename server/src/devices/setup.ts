@@ -7,8 +7,11 @@ import {
   isLinkKind,
   isSecretField,
   isSimulated,
-  LINK_KINDS,
+  linkKindSpec,
   linkFits,
+  savedDeviceId,
+  clientId,
+  type ClientId,
   methodOf,
   openChannel,
   setupPlan,
@@ -72,7 +75,7 @@ type Draft = {
   id: string;
   by: string;
   /** Who will hold the connection: null for this server, or the app that ran the steps itself. */
-  heldBy: string | null;
+  heldBy: ClientId | null;
   type: DeviceType<any>;
   method: ConnectionMethod | null;
   /** Simulated: no transport is started and no device is read; its type's simulator will stand in. */
@@ -210,7 +213,7 @@ export class SetupService {
     const draft: Draft = {
       id: `s-${randomBytes(8).toString('hex')}`,
       by: input.by,
-      heldBy: input.clientId,
+      heldBy: clientId(input.clientId),
       type,
       method,
       simulated: false,
@@ -554,12 +557,13 @@ export class SetupService {
 
     for (const link of input.links ?? []) {
       if (!isLinkKind(link.kind)) throw new SetupError(`There is no link called "${link.kind}"`);
-      const other = this.deps.catalog.active(link.other as SavedDeviceId);
+      const other = this.deps.catalog.active(savedDeviceId(link.other.device));
       if (!other) throw new SetupError('The device to link to has gone', 404);
-      const [source, target, sourceDescription, targetDescription] =
-        link.role === 'source' ? [record.id, other.id, record.description, other.description] : [other.id, record.id, other.description, record.description];
-      if (!linkFits(link.kind, sourceDescription, targetDescription)) throw new SetupError(`${LINK_KINDS[link.kind].verb} does not fit those two devices`);
-      this.deps.links.add({ kind: link.kind, sourceId: source, targetId: target });
+      const mine = { device: record.id, part: link.part, description: record.description };
+      const theirs = { device: other.id, part: link.other.part, description: other.description };
+      const [source, target] = link.role === 'source' ? [mine, theirs] : [theirs, mine];
+      if (!linkFits(link.kind, source.description, source.part, target.description, target.part)) throw new SetupError(`"${linkKindSpec(link.kind).verb}" does not fit those two parts`);
+      this.deps.links.add({ kind: link.kind, source: { device: source.device, part: source.part }, target: { device: target.device, part: target.part } });
     }
     return { record, kind };
   }

@@ -1,5 +1,6 @@
+import type { EventLevel } from './description.ts';
 import type { StandardMeaningId } from './meanings.ts';
-import type { ValueType } from './values.ts';
+import type { ScalarValue, ScalarValueType, ValueOf, ValueType } from './values.ts';
 
 /**
  * Capabilities: what a part of a device can do or report, named by what it is
@@ -12,12 +13,20 @@ import type { ValueType } from './values.ts';
  *
  * A capability is declared the way a Matter cluster is: the attributes it
  * binds, each to a standard meaning; the commands it accepts, with typed
- * arguments, a safety level and the attribute each one sets; and the queries
- * it answers. Nothing implements it by hand: a session takes commands and
- * queries addressed to a part and a capability, and reports attributes whose
- * meanings the capability names. Its projections into Home Assistant and
- * Matter are in `standards.ts`; a new capability borrows a Matter cluster's
- * meaning and name where one exists, and is one reviewed addition here.
+ * arguments, what makes one consequential and the attribute each one sets;
+ * the queries it answers, with the type of the answer; and the events a part
+ * offering it may raise. Nothing implements it by hand: a session takes
+ * commands and queries addressed to a part and a capability, and reports
+ * attributes whose meanings the capability names. Its projections into Home
+ * Assistant and Matter are in `standards.ts`; a new capability borrows a
+ * Matter cluster's meaning and names where one exists, and is one reviewed
+ * addition here.
+ *
+ * The library is the shared vocabulary. A package may declare capabilities of
+ * its own, in the same shape, namespaced by its type (`acme.plug.childLock`),
+ * in its description: the gateway, the app and the contract treat them like
+ * any other, but they have no projection into the standards and no place in
+ * automations that work across types until they are promoted here.
  */
 
 /**
@@ -29,19 +38,32 @@ import type { ValueType } from './values.ts';
  */
 export type CommandResult = { accepted: true } | { accepted: false; error: string };
 
+/** Something true of a part now, by meaning: `{ means: 'power.draw', above: 5 }` — it is carrying a load. */
+export type PartCondition = {
+  means: StandardMeaningId;
+  above?: number;
+  below?: number;
+  is?: ScalarValue;
+};
+
 /**
- * How careful the gateway must be with a command.
+ * What makes a command consequential — worth a person's explicit "yes" — as a
+ * declaration the gateway evaluates, so the gateway knows no domain:
  *
- * - `safe` — carried out when asked.
- * - `confirm` — the caller must confirm, every time.
- * - `confirm-off-when-critical` — turning something off needs confirmation when
- *   it matters: the part feeds another device through a link, or is carrying a
- *   load. Turning it on, or off when nothing depends on it, does not.
+ * - `when` — the arguments that make it one: `{ arg: 'on', is: false }`,
+ *   turning something off. Absent: every call.
+ * - `if` — and any of these is true of the part now: it is carrying a load.
+ *   Being the source of a link whose kind says so (`LinkKindSpec.consequential`)
+ *   counts too: cutting what feeds a station. Absent: always, once `when`
+ *   matches.
  *
  * The gateway also applies read-only mode, dwell time and freshness to every
- * command, whatever its level (docs/ARCHITECTURE.md §4.6).
+ * command, consequential or not (docs/ARCHITECTURE.md §4.6).
  */
-export type CommandSafety = 'safe' | 'confirm' | 'confirm-off-when-critical';
+export type Consequence = {
+  when?: { arg: string; is: ScalarValue };
+  if?: readonly PartCondition[];
+};
 
 /** One attribute of a capability: which standard meaning it is. Its unit and quantity are the meaning's. */
 export type CapabilityAttribute = {
@@ -51,22 +73,28 @@ export type CapabilityAttribute = {
 };
 
 export type CapabilityCommand = {
-  safety: CommandSafety;
   description: string;
-  /** Its arguments, each a value of the one value system. */
-  args: Readonly<Record<string, ValueType>>;
+  /** Its arguments, each a scalar of the one value system. */
+  args: Readonly<Record<string, ScalarValueType>>;
   /**
    * Which of the capability's attributes each argument sets: `{ on: 'on' }`.
    * The gateway verifies a command by reading these back until they agree.
    */
   sets: Readonly<Record<string, string>>;
+  /** When it needs a person to confirm it: never, when absent; `'always'`; or as declared. */
+  consequential?: Consequence | 'always';
 };
 
 /** Data a capability answers on request that is not a value now: a forecast. */
 export type CapabilityQuery = {
   description: string;
-  args: Readonly<Record<string, ValueType>>;
+  args: Readonly<Record<string, ScalarValueType>>;
+  /** What it answers, in the value system: checked by the contract suite, and what a rule reads. */
+  answer: ValueType;
 };
+
+/** Something a part offering the capability may say happened: mains lost. Declared again, with its part, in the description of a device that raises it. */
+export type CapabilityEvent = { label: string; level: EventLevel; description: string };
 
 export type CapabilitySpec = {
   label: string;
@@ -74,25 +102,47 @@ export type CapabilitySpec = {
   /** None means it only reports. */
   commands: Readonly<Record<string, CapabilityCommand>>;
   queries: Readonly<Record<string, CapabilityQuery>>;
+  events?: Readonly<Record<string, CapabilityEvent>>;
 };
+
+/** One hour of a forecast, as `weather.forecast` answers it. */
+const FORECAST_HOUR = {
+  type: 'object',
+  fields: {
+    /** The hour it is about — not when it was forecast. */
+    at: { type: 'timestamp' },
+    temperature: { type: 'number', unit: '°C' },
+    cloudCover: { type: 'number', unit: '%', min: 0, max: 100 },
+    precipitation: { type: 'number', unit: 'mm', min: 0 },
+    irradiance: { type: 'number', unit: 'W/m²', min: 0 },
+  },
+  required: ['at'],
+} as const satisfies ValueType;
 
 export const CAPABILITIES = {
   switch: {
     label: 'Switch',
     attributes: { on: { means: 'switch.on', required: true } },
     commands: {
-      set: { safety: 'confirm-off-when-critical', description: 'Turn it on or off', args: { on: { type: 'boolean' } }, sets: { on: 'on' } },
+      set: {
+        description: 'Turn it on or off',
+        args: { on: { type: 'boolean' } },
+        sets: { on: 'on' },
+        // Turning off what carries a load, or what feeds another device, is a deliberate act.
+        consequential: { when: { arg: 'on', is: false }, if: [{ means: 'power.draw', above: 5 }] },
+      },
     },
     queries: {},
   },
   powerMeter: {
     label: 'Power meter',
+    // Matter's ElectricalPowerMeasurement and ElectricalEnergyMeasurement names.
     attributes: {
-      watts: { means: 'power.draw', required: true },
-      volts: { means: 'voltage.ac' },
-      amps: { means: 'current.ac' },
-      hz: { means: 'frequency.ac' },
-      kwh: { means: 'energy.total' },
+      activePower: { means: 'power.draw', required: true },
+      voltage: { means: 'voltage.ac' },
+      activeCurrent: { means: 'current.ac' },
+      frequency: { means: 'frequency.ac' },
+      energyImported: { means: 'energy.total' },
     },
     commands: {},
     queries: {},
@@ -105,51 +155,80 @@ export const CAPABILITIES = {
   },
   acInput: {
     label: 'AC input',
-    attributes: { present: { means: 'grid.present', required: true }, watts: { means: 'power.in.ac' } },
+    attributes: { present: { means: 'grid.present', required: true }, activePower: { means: 'power.in.ac' } },
     commands: {},
     queries: {},
+    events: {
+      'mains.lost': { label: 'Mains lost', level: 'warn', description: 'Mains power went away: what it supplies runs from its battery, if it has one.' },
+      'mains.restored': { label: 'Mains back', level: 'info', description: 'Mains power came back.' },
+    },
   },
   'weather.forecast': {
     label: 'Weather forecast',
     attributes: {},
     commands: {},
     queries: {
-      hourly: { description: 'The forecast, hour by hour', args: { hours: { type: 'number', min: 1, max: 168, integer: true } } },
+      hourly: {
+        description: 'The forecast, hour by hour, from the hour now',
+        args: { hours: { type: 'number', min: 1, max: 168, integer: true } },
+        answer: { type: 'list', of: FORECAST_HOUR },
+      },
     },
   },
 } as const satisfies Record<string, CapabilitySpec>;
 
+/** A capability in the library: the shared vocabulary. */
 export type CapabilityName = keyof typeof CAPABILITIES;
+
+/** Any capability: the library's, or one a package declares, namespaced by its type. */
+export type CapabilityId = CapabilityName | (string & {});
 
 export const CAPABILITY_NAMES = Object.keys(CAPABILITIES) as CapabilityName[];
 
 export const isCapability = (name: string): name is CapabilityName => Object.hasOwn(CAPABILITIES, name);
 
-/** A capability's declaration, typed wide enough to walk. */
+/** A library capability's declaration, typed wide enough to walk. */
 export const capabilitySpec = (name: CapabilityName): CapabilitySpec => CAPABILITIES[name];
 
+/** The queries a library capability answers, by name. */
+export type QueryName<Name extends CapabilityName> = keyof (typeof CAPABILITIES)[Name]['queries'] & string;
+
+/** A library query's answer, as TypeScript sees it: what a function reads, with no cast. */
+export type QueryAnswer<Name extends CapabilityName, Query extends QueryName<Name>> =
+  (typeof CAPABILITIES)[Name]['queries'][Query] extends { answer: infer Answer extends ValueType } ? ValueOf<Answer> : never;
+
 /** The standard meanings a part offering this capability must report. */
-export const requiredMeanings = (name: CapabilityName): StandardMeaningId[] =>
-  Object.values(capabilitySpec(name).attributes)
+export const requiredMeanings = (spec: CapabilitySpec): StandardMeaningId[] =>
+  Object.values(spec.attributes)
     .filter((attribute) => attribute.required)
     .map((attribute) => attribute.means);
 
 /** Whether a capability can change anything in the world. */
-export const isActuating = (name: CapabilityName): boolean => Object.keys(capabilitySpec(name).commands).length > 0;
+export const isActuating = (spec: CapabilitySpec): boolean => Object.keys(spec.commands).length > 0;
 
 /**
  * Whether a part must say it offers a capability — it takes commands or
  * answers queries — rather than show it by the meanings of its attributes.
  */
-export const mustBeOffered = (name: CapabilityName): boolean =>
-  isActuating(name) || Object.keys(capabilitySpec(name).queries).length > 0 || requiredMeanings(name).length === 0;
+export const mustBeOffered = (spec: CapabilitySpec): boolean =>
+  isActuating(spec) || Object.keys(spec.queries).length > 0 || requiredMeanings(spec).length === 0;
 
 /**
  * What a slot asks of a part — an automation's role: every capability in
- * `capabilities`, and at least one of `oneOf` when there is one.
+ * `capabilities`, and at least one of `oneOf` when there is one. Library
+ * capabilities only: a role is filled across types.
  */
 export type CapabilityNeed = { capabilities: readonly CapabilityName[]; oneOf?: readonly CapabilityName[] };
 
 /** Whether a part offering these capabilities meets the need. */
-export const meetsNeed = (need: CapabilityNeed, offered: readonly CapabilityName[]): boolean =>
+export const meetsNeed = (need: CapabilityNeed, offered: readonly string[]): boolean =>
   need.capabilities.every((capability) => offered.includes(capability)) && (!need.oneOf?.length || need.oneOf.some((capability) => offered.includes(capability)));
+
+/** Whether a part's current readings make a condition true; null when what it reads is not known. */
+export function conditionHolds(condition: PartCondition, value: ScalarValue | undefined): boolean | null {
+  if (value === null || value === undefined) return null;
+  if (condition.is !== undefined && value !== condition.is) return false;
+  if (condition.above !== undefined && !(typeof value === 'number' && value > condition.above)) return false;
+  if (condition.below !== undefined && !(typeof value === 'number' && value < condition.below)) return false;
+  return true;
+}

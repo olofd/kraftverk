@@ -1,12 +1,13 @@
 import { defineDeviceType, type OpenConnection } from '@kraftverk/device-sdk';
 import { linkOver, parseMac, readInputRegisters, stationIdentity } from '@kraftverk/protocol-sydpower';
 
-import { lowBattery, mainsLost, mainsWatcher } from './automation.ts';
+import { mainsWatcher } from './automation.ts';
 import { describeStation } from './index.ts';
 import { StationClient } from './model/client.ts';
 import { INPUT_REGISTER_COUNT, decodeTelemetry } from './model/registers.ts';
 import { SimulatedStation } from './simulator.ts';
 import { registerTools, stationSession, stationTools } from './station.ts';
+import { STATION_TOOLS } from './tools.ts';
 
 /**
  * The AFERIY P280, as a device type: what the holder of its connection
@@ -39,8 +40,8 @@ export default defineDeviceType({
     icon: 'zap',
   },
   config: { fields: {} },
-  automation: { recipes: [lowBattery, mainsLost] },
   describe: () => describeStation(),
+  tools: STATION_TOOLS,
   connections: [
     {
       id: 'wifi',
@@ -48,6 +49,7 @@ export default defineDeviceType({
       description: 'Always on: history and automations keep running. The station must be set to use this server’s broker.',
       protocol: 'sydpower',
       transport: 'mqtt',
+      reach: 'local',
       recommended: true,
     },
     {
@@ -56,6 +58,7 @@ export default defineDeviceType({
       description: 'Within about 10 m of whatever holds it. The station takes one Bluetooth connection at a time.',
       protocol: 'sydpower',
       transport: 'ble',
+      reach: 'local',
     },
   ],
   setup: {
@@ -112,7 +115,7 @@ export default defineDeviceType({
     return stationSession(client, {
       identity: identityFrom(connection.address),
       connected: () => link.connected,
-      advanced: { ...stationTools(client), ...registerTools(client, link, ctx) },
+      tools: { ...stationTools(client), ...registerTools(client, link, ctx) },
       close: async () => {
         await client.stop();
         await link.close();
@@ -128,7 +131,7 @@ export default defineDeviceType({
     return stationSession(station, {
       identity: 'sydpower:SIMULATED',
       connected: () => true,
-      advanced: stationTools(station),
+      tools: stationTools(station),
       close: () => station.stop(),
     });
   },

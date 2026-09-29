@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
-import type { SavedDeviceId } from '@kraftverk/device-sdk';
+import { clientId, connectionId, savedDeviceId, type ClientId, type ConnectionId, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import { db, openSecret, sealSecret } from '../history/db.ts';
 
@@ -16,14 +16,14 @@ import { db, openSecret, sealSecret } from '../history/db.ts';
  */
 
 export type ConnectionRecord = {
-  id: string;
+  id: ConnectionId;
   deviceId: SavedDeviceId;
   /** One of the device type's connection methods: `wifi`. */
   method: string;
   /** The method's transport, copied here for the address rule: `mqtt`. */
   transport: string;
   /** The client that holds it, or null for the server. */
-  heldBy: string | null;
+  heldBy: ClientId | null;
   /** What the transport knows the device by: a MAC, an IP, a browser's handle. */
   address: string;
   /** 0 is preferred; higher numbers are fallbacks. */
@@ -48,11 +48,11 @@ type Row = {
 };
 
 const toRecord = (row: Row): ConnectionRecord => ({
-  id: row.id,
-  deviceId: row.device_id as SavedDeviceId,
+  id: connectionId(row.id),
+  deviceId: savedDeviceId(row.device_id),
   method: row.method,
   transport: row.transport,
-  heldBy: row.held_by,
+  heldBy: row.held_by === null ? null : clientId(row.held_by),
   address: row.address,
   priority: row.priority,
   config: JSON.parse(row.config) as Record<string, unknown>,
@@ -88,14 +88,14 @@ export class ConnectionStore {
     deviceId: SavedDeviceId;
     method: string;
     transport: string;
-    heldBy: string | null;
+    heldBy: ClientId | null;
     address: string;
     config?: Record<string, unknown>;
     priority?: number;
   }): ConnectionRecord {
     const existing = this.forDevice(input.deviceId);
     const record: ConnectionRecord = {
-      id: `c-${randomBytes(6).toString('hex')}`,
+      id: connectionId(`c-${randomBytes(6).toString('hex')}`),
       deviceId: input.deviceId,
       method: input.method,
       transport: input.transport,

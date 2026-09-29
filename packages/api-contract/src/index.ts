@@ -15,28 +15,43 @@
  */
 
 import type {
+  AutomationId,
   Availability,
+  CapabilityId,
   CapabilityName,
   CategorySpec,
+  ClientId,
   ConfigSchema,
   ConfigValues,
   ConnectionHealth,
+  ConnectionId,
   DeviceDescription,
   DeviceInfo,
   DeviceTypeMeta,
   DeviceTypeView,
   EventLevel,
+  LinkEnd,
+  LinkId,
   LinkKind,
   Reading,
   SavedDeviceId,
   SetupStepView,
+  ToolSpec,
   TransportDefinition,
   Value,
 } from '@kraftverk/device-sdk';
 
 export type {
+  AutomationId,
   Availability,
+  CapabilityId,
   CapabilityName,
+  ClientId,
+  ConnectionId,
+  LinkEnd,
+  LinkId,
+  Reach,
+  ToolSpec,
   CategoryId,
   CategorySpec,
   ConfigField,
@@ -78,13 +93,13 @@ export type VersionInfo = {
 
 /** One way a device is reached, as its page lists it. */
 export type ConnectionView = {
-  id: string;
+  id: ConnectionId;
   method: string;
   /** "Wi-Fi", from the type. */
   methodLabel: string;
   transport: string;
   /** Who holds it: the server, or one phone or browser. */
-  heldBy: { kind: 'server' } | { kind: 'client'; id: string; name: string };
+  heldBy: { kind: 'server' } | { kind: 'client'; id: ClientId; name: string };
   address: string;
   priority: number;
   /** Whether it reaches the device right now; null when nobody is trying it. */
@@ -97,13 +112,19 @@ export type ConnectionView = {
   config: Record<string, unknown>;
 };
 
+/** A link as one of its devices' pages lists it: which of its parts, and which part of which other device. */
 export type LinkView = {
-  id: string;
-  kind: string;
+  id: LinkId;
+  kind: LinkKind;
   /** Whether this device is the link's source or its target. */
   role: 'source' | 'target';
-  other: { id: SavedDeviceId; name: string };
+  /** The part of this device the link joins. */
+  part: string;
+  other: { id: SavedDeviceId; name: string; part: string; partLabel: string };
 };
+
+/** A tool of the device's type that its session can run now, as data. */
+export type ToolView = ToolSpec & { name: string };
 
 /** A saved device, joined to what it is doing right now. */
 export type DeviceView = {
@@ -120,14 +141,14 @@ export type DeviceView = {
   /** What it is: its parts, their attributes — settings among them — and its events. Its own when it reports one. */
   description: DeviceDescription;
   /** Every capability any of its parts offers. */
-  capabilities: readonly CapabilityName[];
+  capabilities: readonly CapabilityId[];
   /** What it has said about itself: firmware, serial. */
   info: DeviceInfo | null;
   config: Record<string, unknown>;
   connections: ConnectionView[];
   links: LinkView[];
-  /** The type's own tools, by name, and which of them change the device. */
-  advanced: { name: string; writes: boolean }[];
+  /** The tools of its type its session can run now: what each asks for, what it answers, and whether it changes the device. */
+  tools: ToolView[];
   readings: Reading[];
   health: ConnectionHealth;
 };
@@ -171,7 +192,11 @@ export type DeviceHistory = {
   points: SeriesPoint[];
 };
 
-export type LinkRecord = { id: string; kind: LinkKind; sourceId: SavedDeviceId; targetId: SavedDeviceId; createdAt: string };
+/** A fact about the house between two parts: this plug's relay feeds that station's mains input. */
+export type LinkRecord = { id: LinkId; kind: LinkKind; source: LinkEnd<SavedDeviceId>; target: LinkEnd<SavedDeviceId>; createdAt: string };
+
+/** `POST /links`. */
+export type NewLink = { kind: LinkKind; source: LinkEnd<string>; target: LinkEnd<string> };
 
 // --- live -------------------------------------------------------------------------
 
@@ -248,7 +273,8 @@ export type SaveInput = {
   deviceId?: string;
   /** Save after a check the type expects to fail sometimes: a sleeping station. */
   anyway?: boolean;
-  links?: { kind: string; other: string; role: 'source' | 'target' }[];
+  /** Links from or to the device being saved: which of its parts, and which part of a device you have. */
+  links?: { kind: LinkKind; part: string; other: LinkEnd<string>; role: 'source' | 'target' }[];
 };
 
 /** What an app learnt by reading a device itself, for a connection it will hold. */
@@ -294,7 +320,7 @@ export type TransportList = {
 
 /** A phone or browser running the app, as the server knows it. */
 export type ClientRecord = {
-  id: string;
+  id: ClientId;
   userId: string;
   name: string;
   platform: 'web' | 'native';
@@ -350,7 +376,8 @@ export type RecipeView = {
   id: string;
   label: string;
   description: string;
-  from: { typeId: string; name: string };
+  /** The package it came with; null for the shared vocabulary's own. */
+  from: { typeId: string; name: string } | null;
   /** What each role asks of a part: every one of `capabilities`, and one of `oneOf` when given. */
   roles: Record<
     string,
@@ -394,7 +421,7 @@ export type AutomationRun = {
 };
 
 export type AutomationView = {
-  id: string;
+  id: AutomationId;
   name: string;
   recipe: string;
   recipeLabel: string;

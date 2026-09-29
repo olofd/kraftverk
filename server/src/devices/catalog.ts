@@ -183,7 +183,7 @@ export class DeviceCatalog {
     const removedAt = new Date().toISOString();
     db().transaction(() => {
       db().query('DELETE FROM device_connection WHERE device_id = ?').run(id);
-      db().query('DELETE FROM device_link WHERE source_id = ? OR target_id = ?').run(id, id);
+      db().query('DELETE FROM device_link WHERE source_device = ? OR target_device = ?').run(id, id);
       db().query('UPDATE device SET removed_at = ? WHERE id = ?').run(removedAt, id);
     })();
     return { ...record, removedAt };

@@ -113,7 +113,7 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
       const record = catalog.active(id);
       return record ? { name: record.name, session: sessions.get(id), description: sessions.description(record), offline: sessions.health(record).detail } : null;
     },
-    feeds: (id) => links.targetOf('feeds', id),
+    linksFrom: (id, part) => links.from(id, part).map((link) => ({ kind: link.kind, target: link.target })),
     isReadOnly: (id) => config.readOnly && !sessions.simulated(id),
     record: audit,
     policy: { verifyTimeoutMs: 300 },
@@ -343,7 +343,7 @@ describe('adding a device', () => {
   test('a removed lamp is offered back, with its history', async () => {
     lampAt('lamp-1');
     const lamp = await added('Hall lamp');
-    db().query('INSERT INTO sample (device_id, key, at, value) VALUES (?, ?, ?, ?)').run(lamp.id, 'on', new Date().toISOString(), 1);
+    db().query("INSERT INTO sample (device_id, part, key, at, value) VALUES (?, 'main', ?, ?, ?)").run(lamp.id, 'on', new Date().toISOString(), 1);
     expect((await onBusAs(`/devices/${enc(lamp.id)}`, { method: 'DELETE' })).status).toBe(200);
 
     const { id, check } = await checked();
@@ -503,7 +503,7 @@ describe('a device you have', () => {
   test('cutting mains to a station a plug feeds asks for confirmation, naming the station', async () => {
     const plug = await added('Heater plug', { server: simulated, typeId: 'atorch.s1w' });
     const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
-    await as('/links', { method: 'POST', body: { kind: 'feeds', sourceId: plug.id, targetId: station.id } });
+    await as('/links', { method: 'POST', body: { kind: 'feeds', source: { device: plug.id, part: 'main' }, target: { device: station.id, part: 'input.ac' } } });
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     const refused = await as(`/devices/${enc(plug.id)}/parts/main/commands/switch/set`, { method: 'POST', body: { args: { on: false } } });
@@ -515,16 +515,25 @@ describe('a device you have', () => {
   test('its type’s tools: a read is a GET, a write is a POST and is audited, refusals too', async () => {
     lampAt('lamp-1');
     const lamp = await added('Hall lamp');
-    const base = `/devices/${enc(lamp.id)}/advanced`;
+    const base = `/devices/${enc(lamp.id)}/tools`;
+    // Declared as data: what each asks for and answers, listed with the device.
+    expect((await onBusAs(`/devices/${enc(lamp.id)}`)).body.tools.map((tool: { name: string; writes: boolean }) => [tool.name, tool.writes])).toEqual([
+      ['ping', false],
+      ['blink', true],
+    ]);
     expect((await onBusAs(`${base}/ping`)).body).toEqual({ pong: true, room: 'Hall' });
     expect((await onBusAs(`${base}/blink`)).status).toBe(405);
     expect((await onBusAs(`${base}/nothing`)).status).toBe(404);
     expect((await onBusAs(`${base}/blink`, { method: 'POST', body: { times: 2 } })).body).toEqual({ blinked: 2 });
+    // Its input is checked against what it asks for before it runs.
+    const outOfRange = await onBusAs(`${base}/blink`, { method: 'POST', body: { times: 500 } });
+    expect(outOfRange.status).toBe(400);
+    expect(outOfRange.body.error).toBe('Times must be at most 99');
     const refused = await onBusAs(`${base}/blink`, { method: 'POST', body: { times: 99 } });
     expect(refused.status).toBe(409);
     expect(refused.body.error).toContain('overheat');
-    const kinds = ((await onBusAs('/audit')).body as { kind: string; actor: string }[]).filter((entry) => entry.kind.startsWith('device.advanced'));
-    expect(kinds.map((entry) => entry.kind).sort()).toEqual(['device.advanced', 'device.advanced-refused']);
+    const kinds = ((await onBusAs('/audit')).body as { kind: string; actor: string }[]).filter((entry) => entry.kind.startsWith('device.tool'));
+    expect(kinds.map((entry) => entry.kind).sort()).toEqual(['device.tool', 'device.tool-refused', 'device.tool-refused']);
     expect(kinds.every((entry) => entry.actor === 'olof')).toBe(true);
   });
 
@@ -533,11 +542,11 @@ describe('a device you have', () => {
     try {
       readOnly.bus.lamps.set('lamp-1', { serial: 'LAMP-1', model: 'L1', on: true, answers: true });
       const real = await added('Real lamp', { server: readOnly, address: 'lamp-1' });
-      expect((await as(`/devices/${enc(real.id)}/advanced/blink`, { method: 'POST', body: {}, server: readOnly })).status).toBe(423);
+      expect((await as(`/devices/${enc(real.id)}/tools/blink`, { method: 'POST', body: {}, server: readOnly })).status).toBe(423);
       expect((await as(`/devices/${enc(real.id)}/parts/main/commands/switch/set`, { method: 'POST', body: { args: { on: false } }, server: readOnly })).status).toBe(409);
 
       const pretend = await added('Pretend lamp', { server: readOnly, methodId: 'simulated' });
-      expect((await as(`/devices/${enc(pretend.id)}/advanced/blink`, { method: 'POST', body: {}, server: readOnly })).status).toBe(200);
+      expect((await as(`/devices/${enc(pretend.id)}/tools/blink`, { method: 'POST', body: {}, server: readOnly })).status).toBe(200);
       expect((await as(`/devices/${enc(pretend.id)}/parts/main/commands/switch/set`, { method: 'POST', body: { args: { on: false } }, server: readOnly })).status).toBe(200);
     } finally {
       await readOnly.close();
@@ -573,16 +582,38 @@ describe('connections and links', () => {
     expect(changed.text).not.toContain('4321');
   });
 
-  test('a plug feeds a station, and not the other way round', async () => {
+  test('a plug feeds a station’s mains input, and not the other way round', async () => {
     const plug = await added('Heater plug', { server: simulated, typeId: 'atorch.s1w' });
     const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
+    const end = (device: { id: string }, part: string) => ({ device: device.id, part });
 
-    expect((await as('/links', { method: 'POST', body: { kind: 'feeds', sourceId: station.id, targetId: plug.id } })).status).toBe(400);
-    const link = await as('/links', { method: 'POST', body: { kind: 'feeds', sourceId: plug.id, targetId: station.id } });
+    expect((await as('/links', { method: 'POST', body: { kind: 'feeds', source: end(station, 'input.ac'), target: end(plug, 'main') } })).status).toBe(400);
+    // The station's main part takes no mains: its input does.
+    const wrongPart = await as('/links', { method: 'POST', body: { kind: 'feeds', source: end(plug, 'main'), target: end(station, 'main') } });
+    expect(wrongPart.status).toBe(400);
+    expect(wrongPart.body.error).toContain('the one must offer switch, the other acInput');
+    const link = await as('/links', { method: 'POST', body: { kind: 'feeds', source: end(plug, 'main'), target: end(station, 'input.ac') } });
     expect(link.status).toBe(200);
-    expect((await as(`/devices/${enc(station.id)}`)).body.links).toEqual([expect.objectContaining({ kind: 'feeds', role: 'target', other: { id: plug.id, name: 'Heater plug' } })]);
+    expect((await as(`/devices/${enc(station.id)}`)).body.links).toEqual([
+      expect.objectContaining({ kind: 'feeds', role: 'target', part: 'input.ac', other: { id: plug.id, name: 'Heater plug', part: 'main', partLabel: '' } }),
+    ]);
     expect((await as(`/links/${link.body.id}`, { method: 'DELETE' })).status).toBe(200);
     expect((await as(`/devices/${enc(station.id)}`)).body.links).toEqual([]);
+  });
+
+  test('a station’s outlet can feed another station: links join parts', async () => {
+    const garage = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
+    const cabin = await added('Cabin P280', { server: simulated, typeId: 'aferiy.p280' });
+    const link = await as('/links', { method: 'POST', body: { kind: 'feeds', source: { device: garage.id, part: 'outlet.ac' }, target: { device: cabin.id, part: 'input.ac' } } });
+    expect(link.status).toBe(200);
+    expect((await as(`/devices/${enc(garage.id)}`)).body.links).toEqual([
+      expect.objectContaining({ role: 'source', part: 'outlet.ac', other: { id: cabin.id, name: 'Cabin P280', part: 'input.ac', partLabel: 'Mains' } }),
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Cutting it cuts the other station's mains: a person confirms, told which.
+    const refused = await as(`/devices/${enc(garage.id)}/parts/outlet.ac/commands/switch/set`, { method: 'POST', body: { args: { on: false } } });
+    expect(refused.body).toMatchObject({ outcome: 'refused', needsConfirmation: true });
+    expect(refused.body.detail).toContain('Cabin P280 — Mains');
   });
 });
 
@@ -797,21 +828,54 @@ describe('automations', () => {
       body: { name: 'Sunny heater', recipe: 'open-meteo.weather.forecast-switch', roles, params: { day: 'tomorrow', at: '07:00' }, timeZone: 'Europe/Stockholm' },
     });
 
-  test('lists the recipes the installed packages bring, with the roles each needs and where it came from', async () => {
+  test('lists the shared recipes and those the installed packages bring, with the roles each needs and where it came from', async () => {
     const { recipes } = (await as('/automations/recipes')).body;
-    expect(recipes.map((recipe: { id: string }) => recipe.id).sort()).toEqual(['aferiy.p280.low-battery', 'aferiy.p280.mains-lost', 'open-meteo.weather.forecast-switch']);
+    expect(recipes.map((recipe: { id: string }) => recipe.id).sort()).toEqual([
+      'open-meteo.weather.forecast-switch',
+      'standard.charge-between',
+      'standard.low-battery',
+      'standard.mains-lost',
+    ]);
     expect(recipes.find((recipe: { id: string }) => recipe.id === 'open-meteo.weather.forecast-switch')).toMatchObject({
       from: { typeId: 'open-meteo.weather', name: 'Open-Meteo' },
       roles: { forecast: expect.objectContaining({ capabilities: ['weather.forecast'] }) },
     });
+    expect(recipes.find((recipe: { id: string }) => recipe.id === 'standard.low-battery')).toMatchObject({ from: null });
   });
 
-  test('a station’s recipes: a battery that runs low, and mains that goes — each a part that fits', async () => {
+  /*
+    A charge window of your own: the plug that feeds a P280's mains input on
+    when the station stays below 15 %, off when it reaches 50 % — below the
+    60 % the station's own AC charge limit goes down to.
+  */
+  test('a station and the plug that feeds it make a charge window of your own', async () => {
+    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
+    const plug = await added('ATORCH plug', { server: simulated, typeId: 'atorch.s1w' });
+    await as('/links', { method: 'POST', body: { kind: 'feeds', source: whole(plug), target: { device: station.id, part: 'input.ac' } } });
+    const window = await as('/automations', {
+      method: 'POST',
+      body: {
+        name: 'Charge between 15 and 50 %',
+        recipe: 'standard.charge-between',
+        roles: { battery: whole(station), charger: whole(plug) },
+        params: { low: 15, high: 50, minutes: 2 },
+        timeZone: 'Europe/Stockholm',
+      },
+    });
+    expect(window.status).toBe(200);
+    expect(window.body).toMatchObject({ mode: 'observe', problems: [], sentence: 'Charge Garage P280 with ATORCH plug: on when it stays below 15 % for 2 min, off when it reaches 50 %.' });
+    // A pack of it fills the battery role as well as the station does.
+    const check = await as(`/automations/${window.body.id}/check`, { method: 'POST' });
+    expect(check.status).toBe(200);
+    expect(check.body.summary).toContain('Garage P280: Charge');
+  });
+
+  test('the shared recipes, on a station: a battery that runs low, and mains that goes — each a part that fits', async () => {
     const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
     const plug = await added('Heater plug', { server: simulated, typeId: 'atorch.s1w' });
     const low = await as('/automations', {
       method: 'POST',
-      body: { name: 'Charge when low', recipe: 'aferiy.p280.low-battery', roles: { battery: { device: station.id, part: 'main' }, switch: whole(plug) }, params: {}, timeZone: 'Europe/Stockholm' },
+      body: { name: 'Charge when low', recipe: 'standard.low-battery', roles: { battery: { device: station.id, part: 'main' }, switch: whole(plug) }, params: {}, timeZone: 'Europe/Stockholm' },
     });
     expect(low.status).toBe(200);
     expect(low.body).toMatchObject({ problems: [], sentence: 'When Garage P280 stays below 20 % for 5 min, turn Heater plug on.' });
@@ -819,7 +883,7 @@ describe('automations', () => {
     const shed = (part: string) =>
       as('/automations', {
         method: 'POST',
-        body: { name: 'Shed the heater', recipe: 'aferiy.p280.mains-lost', roles: { station: { device: station.id, part }, switch: whole(plug) }, params: {}, timeZone: 'Europe/Stockholm' },
+        body: { name: 'Shed the heater', recipe: 'standard.mains-lost', roles: { input: { device: station.id, part }, switch: whole(plug) }, params: {}, timeZone: 'Europe/Stockholm' },
       });
     // Only the part that says when mains is lost can fill the role.
     expect((await shed('main')).status).toBe(400);

@@ -7,12 +7,17 @@
  * `power.draw` — and is what the generic screens, charts that compare devices,
  * automations and the bridges to Home Assistant and Matter work from. Keeping
  * them apart lets meaning be added to a type without touching what it stored.
+ *
+ * A meaning is named by what is measured — `temperature.air`, not the weather
+ * service's temperature — and the part it is on says where: an outdoor
+ * thermometer, a BTHome sensor and a forecast all report the air's temperature.
  */
 
 /**
  * What a number is a quantity of, which decides how it is formatted, charted
  * and projected into the standards. Adding one is a decision about every
  * device at once — the app has to know how to draw it — which keeps it short.
+ * An on/off is not a quantity: it is a boolean, drawn as a band.
  */
 export type Quantity =
   | 'power'
@@ -26,9 +31,7 @@ export type Quantity =
   | 'humidity'
   | 'illuminance'
   /** Radio signal strength, in dBm. Diagnostic by nature. */
-  | 'signal'
-  /** On/off, present/absent. Charted as a band, not a line. */
-  | 'state';
+  | 'signal';
 
 export const QUANTITIES: readonly Quantity[] = [
   'power',
@@ -42,7 +45,6 @@ export const QUANTITIES: readonly Quantity[] = [
   'humidity',
   'illuminance',
   'signal',
-  'state',
 ];
 
 /**
@@ -58,36 +60,45 @@ export type StateClass = 'measurement' | 'total' | 'total_increasing';
 
 export const STATE_CLASSES: readonly StateClass[] = ['measurement', 'total', 'total_increasing'];
 
-export type StandardMeaning = { label: string; unit: string; quantity: Quantity; stateClass?: StateClass };
+/**
+ * A standard meaning: a number, with the unit, quantity and state class every
+ * attribute claiming it keeps — or an on/off.
+ */
+export type StandardMeaning =
+  | { label: string; type: 'number'; unit: string; quantity: Quantity; stateClass?: StateClass }
+  | { label: string; type: 'boolean' };
 
 /**
  * Meanings every device that has them shares.
  *
  * Deliberately few, and added to only when something — a chart, an automation,
  * a capability, a bridge — needs to find a quantity on devices it knows nothing
- * about. An attribute that claims one keeps its unit, quantity and state class,
- * so two devices' values share an axis without conversion.
+ * about, and with the first device that has one, not before. An attribute that
+ * claims one keeps its unit, quantity and state class, so two devices' values
+ * share an axis without conversion.
  */
 export const STANDARD_MEANINGS = {
-  'battery.soc': { label: 'Charge', unit: '%', quantity: 'percent' },
-  'battery.capacity': { label: 'Capacity', unit: 'Wh', quantity: 'energy' },
+  'battery.soc': { label: 'Charge', type: 'number', unit: '%', quantity: 'percent' },
+  'battery.capacity': { label: 'Capacity', type: 'number', unit: 'Wh', quantity: 'energy' },
   /** Everything coming in, from any source. */
-  'power.in': { label: 'Input', unit: 'W', quantity: 'power' },
-  'power.in.ac': { label: 'From mains', unit: 'W', quantity: 'power' },
-  'power.in.solar': { label: 'Solar', unit: 'W', quantity: 'power' },
+  'power.in': { label: 'Input', type: 'number', unit: 'W', quantity: 'power' },
+  'power.in.ac': { label: 'From mains', type: 'number', unit: 'W', quantity: 'power' },
+  'power.in.solar': { label: 'Solar', type: 'number', unit: 'W', quantity: 'power' },
   /** Everything a device supplies to what is plugged into it. */
-  'power.out': { label: 'Output', unit: 'W', quantity: 'power' },
+  'power.out': { label: 'Output', type: 'number', unit: 'W', quantity: 'power' },
   /** What a device, or what is plugged through it, consumes: a plug's meter, an outlet's draw. */
-  'power.draw': { label: 'Power', unit: 'W', quantity: 'power' },
+  'power.draw': { label: 'Power', type: 'number', unit: 'W', quantity: 'power' },
   /** A meter's own lifetime counter. */
-  'energy.total': { label: 'Energy', unit: 'kWh', quantity: 'energy', stateClass: 'total_increasing' },
-  'voltage.ac': { label: 'Voltage', unit: 'V', quantity: 'voltage' },
-  'current.ac': { label: 'Current', unit: 'A', quantity: 'current' },
-  'frequency.ac': { label: 'Frequency', unit: 'Hz', quantity: 'frequency' },
-  'grid.present': { label: 'Mains present', unit: '', quantity: 'state' },
-  'switch.on': { label: 'On', unit: '', quantity: 'state' },
-  'weather.temp': { label: 'Temperature', unit: '°C', quantity: 'temperature' },
-  'weather.cloud': { label: 'Cloud cover', unit: '%', quantity: 'percent' },
+  'energy.total': { label: 'Energy', type: 'number', unit: 'kWh', quantity: 'energy', stateClass: 'total_increasing' },
+  'voltage.ac': { label: 'Voltage', type: 'number', unit: 'V', quantity: 'voltage' },
+  'current.ac': { label: 'Current', type: 'number', unit: 'A', quantity: 'current' },
+  'frequency.ac': { label: 'Frequency', type: 'number', unit: 'Hz', quantity: 'frequency' },
+  'grid.present': { label: 'Mains present', type: 'boolean' },
+  'switch.on': { label: 'On', type: 'boolean' },
+  /** The air's temperature, where the part is: outdoors, a room, the hour a forecast is for. */
+  'temperature.air': { label: 'Temperature', type: 'number', unit: '°C', quantity: 'temperature' },
+  /** How much of the sky is cloud, measured or forecast. */
+  'sky.cloudCover': { label: 'Cloud cover', type: 'number', unit: '%', quantity: 'percent' },
 } as const satisfies Record<string, StandardMeaning>;
 
 export type StandardMeaningId = keyof typeof STANDARD_MEANINGS;

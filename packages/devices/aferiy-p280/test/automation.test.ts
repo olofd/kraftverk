@@ -1,15 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 
-import { checkBinding, checkRule, describeRule, MAIN_PART, partsOf, capabilitiesOf } from '@kraftverk/device-sdk';
+import { checkBinding, describeRule, lowBattery, mainsLost, MAIN_PART, partsOf, capabilitiesOf, validateDescription } from '@kraftverk/device-sdk';
 
-import { lowBattery, mainsLost, mainsWatcher } from '../src/automation.ts';
+import { mainsWatcher } from '../src/automation.ts';
 import { describeStation } from '../src/index.ts';
 import { SimulatedStation } from '../src/simulator.ts';
 
 /*
-  What the station brings to automations: the events it raises when mains
-  comes and goes, and two recipes that ask for capabilities, not for this
-  product.
+  What the station brings to automations: the events its mains input raises
+  when mains comes and goes — `acInput`'s own — so the shared recipes, which
+  ask for capabilities and not for this product, run on it.
 */
 
 describe('mains, as events', () => {
@@ -38,17 +38,17 @@ describe('mains, as events', () => {
   });
 });
 
-describe('its recipes', () => {
-  const description = describeStation();
+describe('the shared recipes, on a station', () => {
+  const description = describeStation(2);
   const bound = (parts: Record<string, string>) => (role: string) =>
     parts[role] ? { name: 'Garage P280', description, part: parts[role]!, capabilities: capabilitiesOf(description, parts[role]!) } : null;
 
-  test('are rules that check, by capability', () => {
-    for (const recipe of [lowBattery, mainsLost]) expect(checkRule(recipe, { fn: () => null })).toEqual([]);
-    // The station fills them itself: its battery, its mains input, one of its outlets.
+  test('are filled by its parts: its battery or a pack, its mains input, one of its outlets', () => {
+    expect(validateDescription(description, 'aferiy.p280')).toEqual([]);
     expect(checkBinding(lowBattery, bound({ battery: MAIN_PART, switch: 'outlet.ac' }))).toEqual([]);
-    expect(checkBinding(mainsLost, bound({ station: 'input.ac', switch: 'outlet.dc' }))).toEqual([]);
-    expect(checkBinding(mainsLost, bound({ station: MAIN_PART, switch: 'outlet.dc' }))).toContain('Mains input: Garage P280 cannot do that');
+    expect(checkBinding(lowBattery, bound({ battery: 'pack.2', switch: 'outlet.ac' }))).toEqual([]);
+    expect(checkBinding(mainsLost, bound({ input: 'input.ac', switch: 'outlet.dc' }))).toEqual([]);
+    expect(checkBinding(mainsLost, bound({ input: MAIN_PART, switch: 'outlet.dc' }))).toContain('Mains input: Garage P280 cannot do that');
     expect(partsOf(description).map((part) => part.id)).toContain('input.ac');
   });
 

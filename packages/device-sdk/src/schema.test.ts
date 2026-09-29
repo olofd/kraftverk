@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
-import { secretFields, validateConfig, withoutSecrets, type ConfigSchema } from './schema.ts';
+import { schemaProblems, secretFields, validateConfig, withoutSecrets, type ConfigSchema } from './schema.ts';
 
 const schema: ConfigSchema = {
   fields: {
-    host: { type: 'host', title: 'Address', required: true },
+    host: { type: 'string', presentation: 'host', title: 'Address', required: true },
     deviceId: { type: 'string', title: 'Device id', required: true },
-    localKey: { type: 'secret', title: 'Local key', required: true },
+    localKey: { type: 'string', presentation: 'secret', title: 'Local key', required: true },
     protocol: {
       type: 'enum',
       title: 'Protocol',
@@ -20,6 +20,20 @@ const schema: ConfigSchema = {
     beep: { type: 'boolean', title: 'Beep' },
   },
 };
+
+describe('presentation', () => {
+  test('a secret and a host are text, shown and kept their own way', () => {
+    expect(secretFields(schema)).toEqual(['localKey']);
+    const result = validateConfig(schema, { host: 'http://192.0.2.5/', deviceId: 'abc', localKey: 'k' });
+    expect(result.ok ? [] : result.issues.map((issue) => issue.message)).toEqual(['Address must be a hostname or IP address']);
+  });
+
+  test('a presentation its type cannot have is named', () => {
+    expect(schemaProblems('config', { fields: { n: { type: 'number', title: 'N', presentation: 'slider' } } })).toEqual(['config field "n" is a slider with no range']);
+    expect(schemaProblems('config', { fields: { n: { type: 'number', title: 'N', presentation: 'secret' as never } } })).toEqual(['config field "n" is number, which cannot be presented as secret']);
+    expect(schemaProblems('config', { fields: { n: { type: 'number', title: 'N', min: 0, max: 5, default: 9 } } })).toEqual(['config field "n" has a default its type does not allow']);
+  });
+});
 
 describe('config validation', () => {
   test('applies defaults for anything not supplied', () => {

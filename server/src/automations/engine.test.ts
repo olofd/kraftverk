@@ -10,7 +10,7 @@ import {
   savedDeviceId,
   zonedInstant,
   type DeviceDescription,
-  type DeviceSession,
+  type DeviceReader,
   type DeviceType,
   type Value,
 } from '@kraftverk/device-sdk';
@@ -68,7 +68,7 @@ const kit = {
         needs: { capabilities: ['weather.forecast'] },
         args: {},
         returns: { type: 'enum', options: [{ value: 'sunny', label: 'Sunny' }, { value: 'cloudy', label: 'Cloudy' }] },
-        evaluate: async ({ part }) => (part.session ? { value: sky.value, detail: sky.detail } : { value: null, detail: `${part.name} is not answering: ${part.offline}` }),
+        evaluate: async ({ part }) => (part.device ? { value: sky.value, detail: sky.detail } : { value: null, detail: `${part.name} is not answering: ${part.offline}` }),
       }),
     ],
     recipes: [
@@ -126,17 +126,17 @@ const STATION_DESCRIPTION: DeviceDescription = {
   attributes: [
     { key: 'soc', label: 'Battery', value: { type: 'number', unit: '%' }, quantity: 'percent', means: 'battery.soc' },
     { key: 'outlet.ac.on', part: 'outlet.ac', label: 'On', value: { type: 'boolean' }, means: 'switch.on' },
-    { key: 'gridConnected', part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'grid.present' },
+    { key: 'input.ac.present', part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'grid.present' },
   ],
   events: [{ id: 'mains.lost', label: 'Mains lost', level: 'warn', part: 'input.ac' }],
 };
 const FORECAST_DESCRIPTION: DeviceDescription = { parts: [{ id: MAIN_PART, label: 'Forecast', kind: 'sensor', offers: ['weather.forecast'] }], attributes: [] };
 
-const session = (readings: () => { key: string; value: Value }[]): DeviceSession => ({
+/** What a function or a condition may see of a device: its readings, its health, its answers. */
+const reader = (readings: () => { key: string; value: Value }[]): DeviceReader => ({
   health: () => ({ status: 'connected', detail: 'Fine', lastReadingAt: null }),
   readings: () => readings().map((reading) => ({ ...reading, at: new Date().toISOString() })),
-  command: async () => ({ accepted: true }),
-  close: async () => {},
+  query: async () => [],
 });
 
 function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: boolean } = {}) {
@@ -151,14 +151,14 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
       hasPart: true,
       part: 'main',
       description: FORECAST_DESCRIPTION,
-      session: options.forecastSession === false ? null : session(() => []),
+      device: options.forecastSession === false ? null : reader(() => []),
       offline: 'Not answering',
       capabilities: ['weather.forecast'],
     },
-    [`${PLUG}:main`]: { name: 'Heater plug', removed: options.plugRemoved ?? false, hasPart: true, part: 'main', description: PLUG_DESCRIPTION, session: null, offline: 'n/a', capabilities: ['switch'] },
-    [`${STATION}:main`]: { name: 'Garage P280', removed: false, hasPart: true, part: 'main', description: STATION_DESCRIPTION, session: session(() => [{ key: 'soc', value: station.soc }]), offline: 'n/a', capabilities: ['battery'] },
-    [`${STATION}:outlet.ac`]: { name: 'Garage P280 — AC outlets', removed: false, hasPart: true, part: 'outlet.ac', description: STATION_DESCRIPTION, session: null, offline: 'n/a', capabilities: ['switch'] },
-    [`${STATION}:input.ac`]: { name: 'Garage P280 — Mains', removed: false, hasPart: true, part: 'input.ac', description: STATION_DESCRIPTION, session: null, offline: 'n/a', capabilities: ['acInput'] },
+    [`${PLUG}:main`]: { name: 'Heater plug', removed: options.plugRemoved ?? false, hasPart: true, part: 'main', description: PLUG_DESCRIPTION, device: null, offline: 'n/a', capabilities: ['switch'] },
+    [`${STATION}:main`]: { name: 'Garage P280', removed: false, hasPart: true, part: 'main', description: STATION_DESCRIPTION, device: reader(() => [{ key: 'soc', value: station.soc }]), offline: 'n/a', capabilities: ['battery'] },
+    [`${STATION}:outlet.ac`]: { name: 'Garage P280 — AC outlets', removed: false, hasPart: true, part: 'outlet.ac', description: STATION_DESCRIPTION, device: null, offline: 'n/a', capabilities: ['switch'] },
+    [`${STATION}:input.ac`]: { name: 'Garage P280 — Mains', removed: false, hasPart: true, part: 'input.ac', description: STATION_DESCRIPTION, device: null, offline: 'n/a', capabilities: ['acInput'] },
   };
   const store = new AutomationStore();
   const bus = new LiveBus();
@@ -336,9 +336,9 @@ describe('when a condition becomes true', () => {
     const context = setup();
     const automation = low(context);
     context.station.soc = 63;
-    expect((await context.engine.run(automation, { check: true })).summary).toBe('Would turn Heater plug on. Garage P280: Charge 63 %: what it waits for does not hold now');
+    expect((await context.engine.run(automation, { check: true })).summary).toBe("Would turn Heater plug on. Garage P280: Charge 63 %; Garage P280's charge is below 20 %: not now");
     context.station.soc = 12;
-    expect((await context.engine.run(automation, { check: true })).summary).toContain('Charge 12 %: what it waits for holds now');
+    expect((await context.engine.run(automation, { check: true })).summary).toContain("Garage P280: Charge 12 %; Garage P280's charge is below 20 %: yes, now");
   });
 
   test('unknown — a device gone quiet — is neither a start nor an end', async () => {

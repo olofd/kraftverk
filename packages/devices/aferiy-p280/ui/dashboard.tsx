@@ -49,8 +49,6 @@ function DashboardView({
   pending,
   version,
   waitingFor,
-  direct,
-  resuming,
   linkLabel,
   writeError,
   togglePort,
@@ -62,11 +60,7 @@ function DashboardView({
     // Whoever holds the connection has not answered yet: say what is awaited.
     return (
       <Card alignItems="center" paddingVertical="$8" gap="$4">
-        {direct && !resuming ? (
-          <Feather name="bluetooth" size={22} color={theme.muted?.val} />
-        ) : (
-          <Spinner size="large" color="$accent" />
-        )}
+        <Spinner size="large" color="$accent" />
         <Text color="$muted" fontSize={13} textAlign="center" lineHeight={19}>
           {waitingFor}
         </Text>
@@ -114,9 +108,7 @@ function DashboardView({
           </XStack>
           <Text fontSize={12} color="$muted" lineHeight={18}>
             {!hasReading
-              ? direct
-                ? 'The Bluetooth link is open, but the station has not sent a reading yet.'
-                : 'The server is up, but the station has not sent a reading yet. Its figures and switches appear once it does.'
+              ? 'The link is open, but the station has not sent a reading yet. Its figures and switches appear once it does.'
               : `Showing its last reading, from ${lastReading}. Switching is refused until it answers again.`}
           </Text>
         </Card>
@@ -281,13 +273,13 @@ function DashboardView({
               <RowSeparator />
               <Row
                 title="Station"
-                subtitle={direct ? 'Connected by this app' : undefined}
+                subtitle={linkLabel ?? undefined}
                 accessory={<Value>{status.link.mac}</Value>}
               />
             </>
           ) : null}
-          {/* There is no server to report on when the app holds the link itself. */}
-          {!direct ? (
+          {/* Only a server that holds the station has a version and an uptime to report. */}
+          {version ? (
             <>
               <RowSeparator />
               <Row

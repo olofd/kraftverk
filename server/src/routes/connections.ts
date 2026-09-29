@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import { isLinkKind, isSecretField, LINK_KINDS, linkFits } from '@kraftverk/device-sdk';
+import { isLinkKind, isSecretField, linkFits, linkKindSpec, MAIN_PART, partsOf, savedDeviceId } from '@kraftverk/device-sdk';
 
 import { userOf } from '../auth/routes.ts';
 import { connectionSchema } from '../devices/setup.ts';
@@ -71,18 +71,32 @@ export function connectionRoutes({ catalog, connections, links, clients, types, 
 
   // --- links ------------------------------------------------------------------
 
-  /** Records a fact about the house: this plug feeds that station. */
+  /** "Garage station — Mains", or a device's name for its main part: how a link's ends read on the timeline. */
+  const endName = (end: { device: string; part: string }): string => {
+    const record = catalog.get(savedDeviceId(end.device));
+    if (!record) return 'a removed device';
+    if (end.part === MAIN_PART) return record.name;
+    const part = partsOf(record.removedAt ? record.description : sessions.description(record)).find((candidate) => candidate.id === end.part);
+    return `${record.name} — ${part?.label ?? end.part}`;
+  };
+
+  const LINK_END = z.object({ device: z.string().min(1).max(80), part: z.string().min(1).max(80) }).strict();
+
+  /** Records a fact about the house, between two parts: this plug's relay feeds that station's mains input. */
   api.post('/links', async (c) => {
-    const input = await body(c, z.object({ kind: z.string().min(1).max(40), sourceId: z.string().min(1).max(80), targetId: z.string().min(1).max(80) }).strict());
+    const input = await body(c, z.object({ kind: z.string().min(1).max(40), source: LINK_END, target: LINK_END }).strict());
     if (!isLinkKind(input.kind)) throw new HTTPException(400, { message: `There is no link called "${input.kind}"` });
-    const source = deviceOr404(catalog, input.sourceId);
-    const target = deviceOr404(catalog, input.targetId);
+    const source = deviceOr404(catalog, input.source.device);
+    const target = deviceOr404(catalog, input.target.device);
     if (source.id === target.id) throw new HTTPException(400, { message: 'A device cannot be linked to itself' });
-    if (!linkFits(input.kind, sessions.description(source), sessions.description(target))) {
-      throw new HTTPException(400, { message: `"${source.name}" cannot be said to ${LINK_KINDS[input.kind].verb.replace(/s$/, '')} "${target.name}"` });
+    const kind = linkKindSpec(input.kind);
+    if (!linkFits(input.kind, sessions.description(source), input.source.part, sessions.description(target), input.target.part)) {
+      throw new HTTPException(400, {
+        message: `"${endName(input.source)}" cannot be said to ${kind.verb.replace(/s$/, '')} "${endName(input.target)}": the one must offer ${kind.from}, the other ${kind.to}`,
+      });
     }
-    const link = links.add({ kind: input.kind, sourceId: source.id, targetId: target.id });
-    auditDevice(c, 'device.linked', source.id, `"${source.name}" ${LINK_KINDS[input.kind].verb} "${target.name}"`, { kind: input.kind, targetId: target.id });
+    const link = links.add({ kind: input.kind, source: { device: source.id, part: input.source.part }, target: { device: target.id, part: input.target.part } });
+    auditDevice(c, 'device.linked', source.id, `"${endName(link.source)}" ${kind.verb} "${endName(link.target)}"`, { kind: link.kind, source: link.source, target: link.target });
     return c.json(link);
   });
 
@@ -90,9 +104,7 @@ export function connectionRoutes({ catalog, connections, links, clients, types, 
     const link = links.get(c.req.param('id'));
     if (!link) throw new HTTPException(404, { message: 'No such link' });
     links.remove(link.id);
-    const source = catalog.get(link.sourceId);
-    const target = catalog.get(link.targetId);
-    auditDevice(c, 'device.unlinked', link.sourceId, `"${source?.name ?? link.sourceId}" no longer ${LINK_KINDS[link.kind].verb} "${target?.name ?? link.targetId}"`);
+    auditDevice(c, 'device.unlinked', link.source.device, `"${endName(link.source)}" no longer ${linkKindSpec(link.kind).verb} "${endName(link.target)}"`);
     return c.json({ ok: true });
   });
 

@@ -1,12 +1,12 @@
 import type { AutomationFunction, Recipe } from './automation.ts';
-import type { CapabilityName, CommandResult } from './capabilities.ts';
+import type { CapabilityId, CommandResult } from './capabilities.ts';
 import type { CategoryId } from './categories.ts';
 import { methodsOf, type ConnectionMethod, type Identified, type OpenConnection, type Platform } from './connection.ts';
 import { deviceCapabilities, type DeviceDescription, type DeviceInfo, type Reading } from './description.ts';
 import type { SavedDeviceId, SessionHealth } from './identity.ts';
 import { configDefaults, type ConfigSchema, type ConfigValues } from './schema.ts';
 import type { SetupStep } from './setup.ts';
-import type { Value } from './values.ts';
+import type { Value, ValueType } from './values.ts';
 
 /**
  * The contract a device type implements: what a contributor writes to add a
@@ -109,12 +109,20 @@ export interface DeviceType<Config extends ConfigValues = ConfigValues> {
     readonly recipes?: readonly Recipe[];
     readonly functions?: readonly AutomationFunction[];
   };
+
+  /**
+   * Tools of this kind of device beyond its capabilities and settings — a
+   * register dump, a datapoint scan — declared as data, so the app can draw
+   * each as a form and its answer with no code of the type's own, and anything
+   * generic can reason about them. A session implements the ones it can run.
+   */
+  readonly tools?: Readonly<Record<string, ToolSpec>>;
 }
 
 /** A command to one part of a device: `switch.set({ on: true })` on `outlet.ac`. */
 export type CommandRequest = {
   part: string;
-  capability: CapabilityName;
+  capability: CapabilityId;
   command: string;
   args: Readonly<Record<string, Value>>;
 };
@@ -122,18 +130,25 @@ export type CommandRequest = {
 /** A question to one part, answered with data that is not a value now: a forecast. */
 export type QueryRequest = {
   part: string;
-  capability: CapabilityName;
+  capability: CapabilityId;
   query: string;
   args: Readonly<Record<string, Value>>;
 };
 
 /**
- * A tool of this kind of device beyond its capabilities and settings: a
- * register dump, a raw frame. The core serves each one under
- * `/devices/:id/advanced/:name`, refuses one that `writes` while read-only, and
- * audits every call that writes.
+ * A tool of a kind of device, as data: what it asks for, what it answers, and
+ * whether it changes the device. The core serves each one under
+ * `/devices/:id/tools/:name`, checks its input against `input` before it runs
+ * and its answer against `answer` after, refuses one that `writes` while
+ * read-only, and audits every call that writes.
  */
-export type AdvancedAction = {
+export type ToolSpec = {
+  label: string;
+  description: string;
+  /** What it asks for, drawn as a form. Nothing, when absent. */
+  input?: ConfigSchema;
+  /** What it answers, in the value system. */
+  answer: ValueType;
   /** Changes something on the device. */
   writes: boolean;
   /**
@@ -143,8 +158,10 @@ export type AdvancedAction = {
    * Only for a tool that may write; it must refuse every write while read-only.
    */
   honoursReadOnly?: boolean;
-  run(input: Readonly<Record<string, unknown>>): Promise<unknown>;
 };
+
+/** A tool as a session runs it: given its checked input, it answers a value of its declared type. */
+export type ToolRun = (input: ConfigValues) => Promise<Value>;
 
 /**
  * One device, open.
@@ -168,7 +185,8 @@ export interface DeviceSession {
   info?(): DeviceInfo | null;
   /** A command to a part's capability. Called by the gateway only. */
   command(request: CommandRequest): Promise<CommandResult>;
-  query?(request: QueryRequest): Promise<unknown>;
+  /** A capability's query, answered in the type the capability declares; whoever holds the device checks it. */
+  query?(request: QueryRequest): Promise<Value>;
   /**
    * Writes attributes the description marks `write`, and returns what the
    * device reports afterwards: a readback, not an echo, because writing one
@@ -181,8 +199,8 @@ export interface DeviceSession {
    * the user's name for it, which the core keeps.
    */
   identity?(): { id: string | null; name: string | null };
-  /** Tools of this kind of device: see `AdvancedAction`. */
-  readonly advanced?: Readonly<Record<string, AdvancedAction>>;
+  /** The tools its type declares that this session can run: a simulator may run fewer. */
+  readonly tools?: Readonly<Record<string, ToolRun>>;
   close(): Promise<void>;
 }
 
@@ -257,9 +275,10 @@ export type DeviceTypeView = {
   kind: 'hardware' | 'service';
   meta: DeviceTypeMeta;
   description: DeviceDescription;
-  capabilities: readonly CapabilityName[];
+  capabilities: readonly CapabilityId[];
   config: ConfigSchema;
   connections: readonly ConnectionMethodView[];
+  tools: Readonly<Record<string, ToolSpec>>;
   saveAnyway: string | null;
 };
 
@@ -274,6 +293,7 @@ export const describeDeviceType = (type: DeviceType<any>): DeviceTypeView => {
     config: type.config,
     // Simulated included: every type can be tried with no hardware.
     connections: methodsOf(type).map(({ steps: _steps, ...method }) => method),
+    tools: type.tools ?? {},
     saveAnyway: type.setup?.saveAnyway ?? null,
   };
 };

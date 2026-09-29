@@ -60,7 +60,7 @@ never the secret (see [SECURITY.md](SECURITY.md)).
 
 | | |
 |---|---|
-| **You see** | Two sections. **Devices** shows *Power stations* and *Smart plugs*. **Services** shows *Weather*. Each category has its icon and how many products it covers. There is a search box for brand and model ("P280", "ATORCH"). When the server can see something nobody has added, a **Found near you** row sits at the top: "A power station is connected to this server over Wi-Fi". |
+| **You see** | Two sections. **Devices** shows *Power stations* and *Smart plugs*. **Services** shows *Weather*: a category is under Services when what is installed in it is services. Each category has its icon and names the products it covers. There is a search box for brand and model ("P280", "ATORCH"). When the server can see something nobody has added, a **Found near you** row sits at the top: "A power station is connected to this server over Wi-Fi". |
 | **You choose** | A category, a search result (which goes straight to step 2's item), or something found. |
 | **Comes from** | **Category** is a fixed list in the SDK. Each device type names one. **Sightings** come from the server's transports, recognised by a protocol. |
 | **Leaves behind** | Nothing. A category is display only, and a sighting is live state. |
@@ -159,13 +159,14 @@ as `device.name`.
 
 ### 9 · How is it connected?
 
-Asked only when a **link kind** could join this device to one you already
-have. For a smart plug when you own a station: "What is plugged into this
-plug?", with *Garage P280 (its AC input)* or *Something else*, and what it
-changes: "Kraftverk will check that the station sees mains power whenever it
-switches this plug." For a station when you own a plug, the question is asked
-the other way round. It can be skipped, and changed later on either device's
-page. Stored as a `device_link`.
+Asked only when a **link kind** could join a part of this device to a part
+of one you already have. For a smart plug when you own a station: "What is
+plugged into this?", with *Garage P280 — Mains* or *None of these*, and what
+it changes: "Kraftverk checks the target sees mains come and go whenever the
+source is switched." For a station, the question is asked once for each of
+its outlets ("AC outlets: what is plugged into this?"), and the other way
+round for its mains input. It can be skipped, and changed later on either
+device's page. Stored as a `device_link` between the two parts.
 
 ### 10 · Save
 
@@ -193,14 +194,16 @@ classDiagram
   class Category {
     id
     label
-    section
+    icon
   }
   class DeviceType {
     id
+    kind
     category
     describe(config)
     config
     connections
+    tools
     identify(connection)
     createSession(ctx)
     createSimulator(ctx)
@@ -210,6 +213,7 @@ classDiagram
     label
     protocol
     transport
+    reach
     recommended
     extraSteps
   }
@@ -236,14 +240,17 @@ classDiagram
   }
   class Capability {
     id
-    commands
-    safety
-    requiredMetrics
+    attributes by meaning
+    commands and what makes one consequential
+    queries and their answers
+    events
   }
   class LinkKind {
     id
     fromCapability
     toCapability
+    evidence
+    consequential
   }
 
   DeviceType "*" --> "1" Category : is listed under
@@ -252,21 +259,23 @@ classDiagram
   ConnectionMethod "*" --> "1" Transport : over
   Protocol "*" --> "1..*" Transport : has a binding for
   Holder "*" --> "*" Transport : has
-  DeviceType "*" --> "*" Capability : offers
-  LinkKind "*" --> "2" Capability : joins devices offering
+  DeviceType "*" --> "*" Capability : its parts offer
+  LinkKind "*" --> "2" Capability : joins parts offering
 ```
 
 | Definition | What it is | Lives in | Examples |
 |---|---|---|---|
-| **Category** | What a person would call the thing, and which section it sits in (devices or services). For finding things, never for behaviour. A fixed list, so two types can't spell the same category two ways. | `device-sdk` | `power-station` "Power stations", `smart-plug` "Smart plugs", `weather` "Weather" (a service) |
+| **Category** | What a person would call the thing: a shelf on the add screen, with a label and an icon and no prose about any product. For finding things, never for behaviour. Which section it is listed in comes from its types' `kind` (hardware or service). A fixed list, so two types can't spell the same category two ways. | `device-sdk` | `power-station` "Power stations", `smart-plug` "Smart plugs", `weather` "Weather" |
 | **Transport** | How bytes or messages reach a device. It does all the I/O and the finding, and has no idea what the bytes mean. It ships one implementation for each place it can run. It is **exclusive** when an address means one physical thing, so only one device may claim it. There are few transports, and they are rarely added. | `packages/transports/*` | `mqtt`: our broker, server only, exclusive. `ble`: server (its radio), web (Web Bluetooth), native (phone); exclusive. `lan`: TCP and UDP on the home network, server and native; exclusive. `https`: the internet; server, web and native; not exclusive. |
 | **Protocol** | The language spoken over a transport: framing, encryption, message shapes. It has one **binding** for each transport it rides: the MQTT topic names, the Bluetooth service and how frames are split. It **recognises** its own devices among sightings, and says what instructions and credentials setup needs. Pure code: no I/O, no Node or Bun built-ins, no product knowledge. | `packages/protocols/*` | `sydpower`: MODBUS-style frames, bindings for `mqtt` and `ble`, and the rule that register 68 is never written 0. `tuya-local`: encrypted frames, a binding for `lan`, the local-key credential. |
 | **Device type** | One product or product family: what its values *mean*. It **identifies** a device (its identity and model) over any of its connection methods. Models of one family are *profiles*, as data, not separate types. Pure code too, because it runs wherever its connection is held. | `packages/devices/*`, `packages/services/*` | `aferiy.p280`, `atorch.s1w`, `tuya.plug` (one profile per socket), `open-meteo.weather` |
-| **Connection method** | One (protocol, transport) pair a type supports, with an optional *recommended* flag and any extra setup steps of its own. It says nothing about *where* it runs. A type declares pairs, not two separate lists, because not every protocol rides every transport. | inside the device type | P280: `wifi` = sydpower over mqtt; `bluetooth` = sydpower over ble. ATORCH: `lan` = tuya-local over lan. Open-Meteo: `api` = open-meteo over https. |
+| **Connection method** | One (protocol, transport) pair a type supports, what it **reaches** beyond the home network (`local`, `cloud-at-setup` — the vendor's cloud once, to fetch a key — or `cloud`), an optional *recommended* flag and any extra setup steps of its own. It says nothing about *where* it runs. A type declares pairs, not two separate lists, because not every protocol rides every transport. | inside the device type | P280: `wifi` = sydpower over mqtt, local; `bluetooth` = sydpower over ble, local. ATORCH: `lan` = tuya-local over lan, cloud at setup. Open-Meteo: `api` = open-meteo over https, cloud. |
 | **Holder** | Somewhere a connection can be held: the server, or one client (a phone or browser running the app). It reports the transports it has *now*, and why one is missing. Setup offers a method wherever its transport is available. | runtime | The server: `mqtt`, `ble`, `lan`, `https`. Chrome on a laptop: `ble`, `https`. Firefox: `https` ("no Bluetooth in Firefox"). |
-| **Description** | What a device is: its **parts** (`main`, and whatever it has several of), their **attributes** (what they report, and what they remember and can be told), and its **events**. A type declares it for a device's config; a session may report its own. | `device-sdk` (`description.ts`) | A P280: `main`, `input.ac`, `input.solar`, `outlet.ac`/`dc`/`usb`, and `pack.1` when a pack is plugged in |
-| **Capability** | What a part can do or report, declared like a Matter cluster: attributes bound to standard meanings, commands with typed arguments, a safety level and what each sets, and queries. | `device-sdk` | `switch`, `powerMeter`, `battery`, `acInput`, `weather.forecast` |
-| **Link kind** | A physical fact between two devices, which capability each end needs, and what on the target proves it. | `device-sdk` | `feeds`: from a main part with `switch` to a part with `acInput`, proven by `grid.present` |
+| **Value** | One type system for everything a device reports, is told, answers or asks for: number (unit, range, step, precision), boolean, enum, string, **timestamp**, and a **list** or an **object** of values for structure. `null` is "not known". A config field is a value type with a title and a **presentation** (`secret`, `host`, `multiline`, `slider`). | `device-sdk` (`values.ts`, `schema.ts`) | A forecast: a list of objects `{at: timestamp, temperature: °C, cloudCover: %, …}`; a local key: a string presented as a secret |
+| **Description** | What a device is: its **parts** (`main`, and whatever it has several of — each of a curated **kind** with an icon, or one of the type's own, namespaced, and an optional **energy role**), their **attributes** (what they report, and what they remember and can be told), its **events**, and any capabilities of its own. An attribute's key begins with its part (`pack.1.soc`); it says how long a value stays **current** (`currentFor`). A type declares it for a device's config; a session may report its own. | `device-sdk` (`description.ts`) | A P280: `main`, `input.ac` (`input.ac.present`), `input.solar`, `outlet.ac`/`dc`/`usb` (`outlet.ac.on`), and `pack.1` when a pack is plugged in |
+| **Capability** | What a part can do or report, declared like a Matter cluster: attributes bound to standard meanings (Matter's names), commands with typed arguments, what each sets and **what makes it consequential**, queries with the **type of their answer**, and events. The library is shared; a package may declare its own, namespaced by its type, in the same shape. | `device-sdk` | `switch` (off while drawing more than 5 W is consequential), `powerMeter`, `battery`, `acInput` (raises `mains.lost`), `weather.forecast` (answers a list of hours) |
+| **Tool** | Something a kind of device can do beyond its capabilities — a register dump, a raw frame — **declared as data**: what it asks for, what it answers, whether it writes. The holder checks both ways. | inside the device type | P280: `registers`, `scan`, `raw`; a Tuya plug: `datapoints` |
+| **Link kind** | A physical fact between **parts** of two devices: which capability each end needs, what on the target proves a command on the source did something, and whether being its source makes a command consequential. | `device-sdk` | `feeds`: from a part with `switch` to a part with `acInput`, proven by `grid.present` following `switch.on`; consequential |
 
 ### A method's setup is assembled, not written
 
@@ -369,12 +378,15 @@ erDiagram
   device_link {
     text id PK "l-0c7f3e19a2b8"
     text kind "feeds · a LinkKind id"
-    text source_id FK "d-5b2e90c4a1d3 · Heater plug"
-    text target_id FK "d-3f9a2c61b0e4 · Garage P280"
+    text source_device FK "d-5b2e90c4a1d3 · Heater plug"
+    text source_part "main"
+    text target_device FK "d-3f9a2c61b0e4 · Garage P280"
+    text target_part "input.ac"
     text created_at "2026-09-27T19:45:00Z"
   }
   sample {
     text device_id PK "d-3f9a2c61b0e4"
+    text part "main · pack.1 · the part the key begins with"
     text key PK "soc · the type's own key · means battery.soc"
     text at PK "2026-09-27T19:41:00Z"
     real value "87 · a number, or on/off as 1/0"
@@ -400,7 +412,7 @@ erDiagram
   automation {
     text id PK "a-71c2d0e5f9a3"
     text name "Sunny heater"
-    text recipe "forecast-switch"
+    text recipe "open-meteo.weather.forecast-switch · standard.charge-between"
     json roles "{forecast: {device: d-8e1d44a0f2b7, part: main}, switch: {device: d-3f9a2c61b0e4, part: outlet.dc}} · not foreign keys"
     json params "{at: 07:00, day: tomorrow, condition: sunny, cloudMax: 40, action: on}"
     text time_zone "Europe/Stockholm · the owner's clock"
@@ -454,10 +466,10 @@ erDiagram
 | `device_connection` | A device can be reached more than one way, from more than one place. Your station over Wi-Fi from the server *and* over Bluetooth from your phone is one device with two connections. | step 10, or *Add another way to reach it* |
 | `connection_secret` | Credentials belong to a way of reaching the device (the Tuya local key is part of *tuya-local over lan*), not to the device. | step 6 |
 | `client` | "Held by this phone" needs a phone to point at, with a name the app can show: "Held by Olof's iPhone". | the first sign-in on a phone or browser |
-| `device_link` | Facts about the house, such as which plug feeds which station, that the gateway, the energy view and automations all read. | step 9, or later on the device's page |
+| `device_link` | Facts about the house, between parts — which plug feeds which station's mains input, which station's outlet feeds another — that the gateway, the energy view and automations all read. | step 9, or later on the device's page |
 | `device_kv` | What a session keeps between runs: a simulator's settings, a plug's detected protocol version. | by the session |
 | `device.description`, `device_attribute` | What the device is — so a closed or removed device is still described — and every attribute it ever had, so history keeps its labels after a part is gone. | step 10, then whenever it changes |
-| `sample` | History: every attribute the description says to keep. | continuously, by the holder |
+| `sample` | History: every attribute the description says to keep, with its part, while its value is current. | continuously, by the holder |
 | `device_event` | What devices said happened, beside their history. | when a device raises one |
 
 ### Rules the schema and the code enforce
@@ -481,8 +493,9 @@ erDiagram
 - **Secrets of an app-held connection never reach the server.** They live in
   that client's secure storage. `connection_secret` holds only secrets of
   server-held connections, encrypted.
-- **One `feeds` link per source.** There is a unique index on
-  `(kind, source_id)`, because a plug feeds one thing.
+- **Links join parts, and a kind may allow one target per source part.**
+  `feeds` does — a plug feeds one thing — so a second replaces the first;
+  the same link twice is refused by a unique index on all its ends.
 - **The audit log is never cascaded,** so it still says what happened to a
   device after the device is gone.
 
@@ -493,7 +506,7 @@ erDiagram
 | **Sighting**: something a transport sees that no connection claims | the broker has client `AABBCC001122` connected | each holder's transports. It feeds "Found near you" and step 5, and is gone after a restart. The broker also keeps a file of stations it has seen, so they reconnect quickly. That file is the broker's own. |
 | **Setup draft** | type, method, holder, address and a placeholder for the key, part-way through the flow | the app, plus the server for server-run steps; fifteen minutes |
 | **Active connection**: which of a device's connections is in use | Garage P280 is using `wifi`; `bluetooth` from the iPhone is standing by | the session manager (§4) |
-| **Latest reading** | battery 87 % at 21:04:58 | the session. `sample` holds history at the sampler's resolution. |
+| **Latest reading** | battery 87 % observed at 21:04:58 | the session. `sample` holds history at the sampler's resolution, for as long as each value stays current. |
 | **Definitions** | categories, types, methods, protocols, transports, capabilities, link kinds | the installed packages |
 
 ---

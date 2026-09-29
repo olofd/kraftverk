@@ -3,8 +3,11 @@ import {
   attributeMeaning,
   capabilitiesOf,
   checkBinding,
+  describeExpr,
   evaluate,
   evaluateNow,
+  isCurrent,
+  isScalar,
   localTime,
   MAIN_PART,
   partsOf,
@@ -13,7 +16,9 @@ import {
   standardMeaning,
   unitOf,
   zonedInstant,
+  type AutomationId,
   type BoundPart,
+  type CapabilityId,
   type CapabilityName,
   type ConfigValues,
   type DeviceDescription,
@@ -24,7 +29,7 @@ import {
   type Value,
 } from '@kraftverk/device-sdk';
 import type { ActionGateway, AuditEntry, GatewayResult } from '@kraftverk/gateway';
-import type { LiveBus, LiveMessage } from '@kraftverk/holder';
+import { deviceReader, type LiveBus, type LiveMessage } from '@kraftverk/holder';
 
 import type { DeviceCatalog } from '../devices/catalog.ts';
 import type { DeviceSessionManager } from '../devices/sessions.ts';
@@ -36,7 +41,7 @@ export type RunResult = AutomationRun;
 export type { AutomationMode };
 
 export type AutomationRecord = {
-  id: string;
+  id: AutomationId;
   name: string;
   /** Where its rule comes from: a recipe an installed package ships. */
   recipe: string;
@@ -59,7 +64,7 @@ export type EngineDevice = RulePart & {
   hasPart: boolean;
   description: DeviceDescription;
   /** What the part offers. */
-  capabilities: readonly CapabilityName[];
+  capabilities: readonly CapabilityId[];
 };
 
 export type AutomationEngineDeps = {
@@ -252,8 +257,9 @@ export class AutomationEngine {
       read: (role, means) => {
         const device = part(role);
         const attribute = device ? attributeMeaning(device.description, device.part, means) : null;
-        const reading = device?.session && attribute ? readingOf(device.session.readings(), attribute.key) : null;
-        if (!attribute || !reading || reading.value === null) return null;
+        const reading = device?.device && attribute ? readingOf(device.device.readings(), attribute.key) : null;
+        // What it reports now: a reading past how long it stays current is not known, and neither is structure.
+        if (!attribute || !reading || !isCurrent(attribute, reading, now.getTime()) || !isScalar(reading.value)) return null;
         return { value: reading.value, label: standardMeaning(means)?.label ?? attribute.label, unit: unitOf(attribute) };
       },
       call: async (id, role, args) => {
@@ -287,14 +293,18 @@ export class AutomationEngine {
 
     const scope = this.#scope(automation, recipe, at);
     const trace: string[] = options.because ? [options.because] : [];
-    // A check is not started by its trigger: say whether a condition it waits for holds now.
+    // A check is not started by its trigger: say what it read, once, and whether each condition it waits for holds now.
     if (options.check) {
+      const read: string[] = [];
+      const judged: string[] = [];
+      const settled = Object.fromEntries(Object.keys(recipe.params.fields).map((key) => [key, scope.param(key)]));
       for (const trigger of recipe.when) {
         if (!('becomes' in trigger)) continue;
-        const read: string[] = [];
         const holds = evaluateNow(trigger.becomes, scope, read);
-        trace.push(`${read.join('; ')}: ${holds === true ? 'what it waits for holds now' : holds === false ? 'what it waits for does not hold now' : 'what it waits for cannot be judged now'}`);
+        const condition = describeExpr(recipe, trigger.becomes, settled, (role) => scope.name(role), this.deps.library);
+        judged.push(`${condition}: ${holds === true ? 'yes, now' : holds === false ? 'not now' : 'cannot be judged now'}`);
       }
+      if (judged.length) trace.push(...new Set(read), ...judged);
     }
     try {
       if (recipe.if) {
@@ -394,13 +404,15 @@ export const serverDevices =
     const removed = record.removedAt !== null;
     const description = removed ? record.description : sessions.description(record);
     const part = partsOf(description, record.name).find((candidate) => candidate.id === binding.part) ?? null;
+    const session = removed ? null : sessions.get(record.id);
     return {
       name: binding.part === MAIN_PART || !part ? record.name : `${record.name} — ${part.label}`,
       removed,
       hasPart: part !== null,
       part: binding.part,
       description,
-      session: removed ? null : sessions.get(record.id),
+      // What a function may see: readings, health and checked queries — never the session itself.
+      device: session ? deviceReader(session, () => sessions.description(record)) : null,
       offline: removed ? 'It has been removed' : sessions.health(record).detail,
       capabilities: part ? capabilitiesOf(description, part.id) : [],
     };

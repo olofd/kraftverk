@@ -22,13 +22,13 @@ const POLL_MS = 2000;
  * them: a poll asked for before a write finished would otherwise flip a switch
  * back for a moment after every tap (see `writeGate.ts` in `@kraftverk/ui`).
  */
-export function useStation({ device, actions, holder, readOnly, version }: DeviceScreenProps): StationView {
+export function useStation({ actions, reach, readOnly, version }: DeviceScreenProps): StationView {
   const [status, setStatus] = useState<StationStatus | null>(null);
   const [settings, setSettings] = useState<StationSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [gate, writes] = useWriteGate<StationWriteKey>();
-  const reachable = holder === 'server' || holder === 'this-app';
+  const reachable = reach.now;
 
   const load = useCallback(async () => {
     if (!reachable) return;
@@ -109,7 +109,6 @@ export function useStation({ device, actions, holder, readOnly, version }: Devic
 
   const pending = useMemo(() => writesInFlight(writes.pending), [writes.pending]);
   const shown = useMemo(() => withPending(status, settings, writes.pending), [settings, status, writes.pending]);
-  const inUse = device.connections.find((connection) => connection.inUse) ?? null;
 
   return {
     status: shown.status,
@@ -117,16 +116,9 @@ export function useStation({ device, actions, holder, readOnly, version }: Devic
     pending,
     readOnly,
     simulated: status?.link.mode === 'simulator',
-    direct: holder === 'this-app',
-    waitingFor:
-      holder === 'other-app' || holder === 'none'
-        ? device.health.detail
-        : error ?? (holder === 'this-app' ? 'Connecting from this app…' : 'Waiting for the server…'),
-    version: holder === 'server' ? version : null,
-    linkLabel: inUse
-      ? `${inUse.methodLabel}, ${inUse.heldBy.kind === 'server' ? 'through the server' : holder === 'this-app' ? 'from this app' : `from ${inUse.heldBy.name}`}`
-      : null,
-    resuming: false,
+    waitingFor: reach.now ? (error ?? reach.waiting) : reach.waiting,
+    version,
+    linkLabel: reach.via,
     writeError,
     updateSettings,
     togglePort,

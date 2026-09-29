@@ -72,7 +72,7 @@ export function corsOrigin(config: Pick<ServerConfig, 'allowedOrigins' | 'develo
  * or that are not about devices at all. Every other change made through the
  * API tells listening apps to read the list again.
  */
-const QUIET_CHANGES = /^\/api\/(auth|users)\/|\/commands\/|\/attributes$|\/advanced\//;
+const QUIET_CHANGES = /^\/api\/(auth|users)\/|\/commands\/|\/attributes$|\/tools\//;
 
 export function createApp(deps: AppDeps) {
   const { config, startedAt } = deps;

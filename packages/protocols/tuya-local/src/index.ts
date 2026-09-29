@@ -56,7 +56,7 @@ export const CREDENTIALS: ConfigSchema = {
       description: 'Filled in when the plug is found on the network; the Smart Life app calls it "Virtual ID".',
       required: true,
     },
-    localKey: { type: 'secret', title: 'Local key', description: '16 characters. It never leaves the server.', required: true },
+    localKey: { type: 'string', presentation: 'secret', title: 'Local key', description: '16 characters. It never leaves the server.', required: true },
     protocolVersion: {
       type: 'enum',
       title: 'Version',
@@ -84,7 +84,7 @@ const keySchema: ConfigSchema = {
       options: Object.entries(REGIONS).map(([value, region]) => ({ value, label: region.label })),
     },
     clientId: { type: 'string', title: 'Access ID', required: true },
-    clientSecret: { type: 'secret', title: 'Access Secret', required: true },
+    clientSecret: { type: 'string', presentation: 'secret', title: 'Access Secret', required: true },
   },
 };
 

@@ -3,14 +3,16 @@
  *
  * The first screen of adding a device lists these, not device types — "Power
  * stations", "Smart plugs" — because nobody arrives knowing a type id. A
- * category never decides behaviour: that comes from capabilities.
+ * category never decides behaviour: that comes from capabilities. Nor does it
+ * decide the section of the add screen: that comes from each type's `kind`,
+ * hardware or service.
  *
- * A fixed list, so two types cannot spell the same category two ways and split
- * the add screen in half. A new category is a reviewed addition here, the same
- * as a new capability (docs/DATA-MODEL.md §2).
+ * A category is a shelf, so it says nothing about any one product; what a
+ * product is, its package says in its own description. A fixed list, so two
+ * types cannot spell the same category two ways and split the add screen in
+ * half. A new one is a reviewed addition here: a plural label, a singular one
+ * that reads in a sentence ("a power station"), and a Feather icon.
  */
-
-export type CategorySection = 'devices' | 'services';
 
 export type CategorySpec = {
   /** Plural, as a heading: "Power stations". */
@@ -19,33 +21,12 @@ export type CategorySpec = {
   singular: string;
   /** A Feather icon name. */
   icon: string;
-  section: CategorySection;
-  /** One line under the heading. */
-  description: string;
 };
 
 export const CATEGORIES = {
-  'power-station': {
-    label: 'Power stations',
-    singular: 'power station',
-    icon: 'battery-charging',
-    section: 'devices',
-    description: 'Portable batteries with outlets, charged from mains or solar.',
-  },
-  'smart-plug': {
-    label: 'Smart plugs',
-    singular: 'smart plug',
-    icon: 'power',
-    section: 'devices',
-    description: 'Sockets that switch and measure what is plugged into them.',
-  },
-  weather: {
-    label: 'Weather',
-    singular: 'weather forecast',
-    icon: 'cloud',
-    section: 'services',
-    description: 'Forecasts for your location, for planning charging around the sun.',
-  },
+  'power-station': { label: 'Power stations', singular: 'power station', icon: 'battery-charging' },
+  'smart-plug': { label: 'Smart plugs', singular: 'smart plug', icon: 'power' },
+  weather: { label: 'Weather', singular: 'weather forecast', icon: 'cloud' },
 } as const satisfies Record<string, CategorySpec>;
 
 export type CategoryId = keyof typeof CATEGORIES;

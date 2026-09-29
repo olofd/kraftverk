@@ -10,6 +10,8 @@ import {
   type OpenConnection,
   type Reading,
   type SessionHealth,
+  type ToolRun,
+  type ToolSpec,
 } from '@kraftverk/device-sdk';
 import { decodeSocket, linkOver, relayCandidates, tuyaIdentity, type Dps, type SocketProfile, type SocketReading } from '@kraftverk/protocol-tuya-local';
 
@@ -47,7 +49,7 @@ type SocketConfig = {
 
 /** A socket: one part, a relay it switches and a meter on what flows through it. */
 const DESCRIPTION: DeviceDescription = {
-  parts: [{ id: MAIN_PART, label: 'Socket', kind: 'outlet', role: 'load', offers: ['switch'] }],
+  parts: [{ id: MAIN_PART, label: 'Socket', kind: 'outlet', energy: { role: 'load' }, offers: ['switch'] }],
   attributes: [
     { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W', precision: 0 }, quantity: 'power', means: 'power.draw', category: 'primary' },
     { key: 'volts', label: 'Voltage', value: { type: 'number', unit: 'V', precision: 1 }, quantity: 'voltage', means: 'voltage.ac' },
@@ -62,6 +64,48 @@ const DESCRIPTION: DeviceDescription = {
       consequence: 'Switches off whatever is plugged into it. If it feeds a station, the station then runs from its battery and solar.',
     },
   ],
+};
+
+const INTEGER = { type: 'number', integer: true } as const;
+
+/** The plug's tools, as data: what the app draws and the contract checks. */
+const TOOLS: Readonly<Record<string, ToolSpec>> = {
+  datapoints: {
+    label: 'Datapoints',
+    description:
+      'Every datapoint the plug reports, raw, with what its layout makes of them and which on/offs could be the relay. How a new plug’s layout is established: flip it at the wall, read again, see what moved.',
+    writes: false,
+    answer: {
+      type: 'object',
+      fields: {
+        protocolVersion: { type: 'string' },
+        profile: { type: 'string' },
+        relayDp: INTEGER,
+        raw: {
+          type: 'list',
+          of: {
+            type: 'object',
+            fields: { dp: INTEGER, kind: { type: 'enum', options: [{ value: 'boolean', label: 'On/off' }, { value: 'number', label: 'Number' }, { value: 'string', label: 'Text' }] }, value: { type: 'string' } },
+            required: ['dp', 'kind', 'value'],
+          },
+        },
+        decoded: {
+          type: 'object',
+          fields: {
+            relayOn: { type: 'boolean' },
+            watts: { type: 'number', unit: 'W' },
+            volts: { type: 'number', unit: 'V' },
+            amps: { type: 'number', unit: 'A' },
+            kwh: { type: 'number', unit: 'kWh' },
+            hz: { type: 'number', unit: 'Hz' },
+            powerFactor: { type: 'number' },
+          },
+        },
+        relayCandidates: { type: 'list', of: INTEGER },
+      },
+      required: ['protocolVersion', 'profile', 'relayDp', 'raw', 'decoded', 'relayCandidates'],
+    },
+  },
 };
 
 function configSchema(profiles: readonly SocketProfile[]): ConfigSchema {
@@ -126,7 +170,7 @@ function socketSession(options: {
   health: () => SessionHealth;
   set: (on: boolean) => Promise<void>;
   identity: string | null;
-  advanced?: DeviceSession['advanced'];
+  tools?: Readonly<Record<string, ToolRun>>;
   close: () => Promise<void>;
 }): DeviceSession {
   return {
@@ -144,7 +188,7 @@ function socketSession(options: {
       }
     },
     identity: () => ({ id: options.identity, name: null }),
-    ...(options.advanced ? { advanced: options.advanced } : {}),
+    ...(options.tools ? { tools: options.tools } : {}),
     close: options.close,
   };
 }
@@ -204,25 +248,18 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
       if (Object.keys(dps).length) ingest(dps);
       else await poll();
     },
-    advanced: {
-      /**
-       * Every datapoint the plug reports, raw, with what the layout makes of
-       * them and which booleans could be the relay. How a new plug's layout is
-       * established: flip it at the wall, read again, see what moved.
-       */
-      datapoints: {
-        writes: false,
-        async run() {
-          const dps = await link.status();
-          return {
-            protocolVersion: link.version,
-            profile: profile.id,
-            relayDp,
-            raw: dps,
-            decoded: decodeSocket(profile, dps, relayDp),
-            relayCandidates: relayCandidates(dps),
-          };
-        },
+    tools: {
+      async datapoints() {
+        const dps = await link.status();
+        const decoded = decodeSocket(profile, dps, relayDp);
+        return {
+          protocolVersion: link.version,
+          profile: profile.id,
+          relayDp,
+          raw: Object.entries(dps).map(([dp, value]) => ({ dp: Number(dp), kind: typeof value, value: String(value) })),
+          decoded: Object.fromEntries(Object.entries(decoded).map(([name, value]) => [name, value ?? null])),
+          relayCandidates: relayCandidates(dps),
+        };
       },
     },
     close: () => link.close(),
@@ -263,6 +300,7 @@ export function defineTuyaSocket(definition: SocketTypeDefinition): DeviceType<S
     meta: { icon: 'power', ...definition.meta, category: 'smart-plug' },
     config: configSchema(profiles),
     describe: () => DESCRIPTION,
+    tools: TOOLS,
     connections: [
       {
         id: 'lan',
@@ -270,6 +308,8 @@ export function defineTuyaSocket(definition: SocketTypeDefinition): DeviceType<S
         description: 'Straight to the plug on your home network, with no cloud. Needs its local key, once.',
         protocol: 'tuya-local',
         transport: 'lan',
+        // The local key comes from the Tuya cloud account the plug is paired with, once.
+        reach: 'cloud-at-setup',
       },
     ],
     setup: {

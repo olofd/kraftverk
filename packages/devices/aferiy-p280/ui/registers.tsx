@@ -66,7 +66,7 @@ const SECONDARY = {
  * tools, through whoever holds its connection — the server, or this app.
  */
 export function StationRegisters(props: DeviceScreenProps) {
-  const { device, actions, holder, readOnly } = props;
+  const { device, actions, reach, readOnly } = props;
   const { status } = useStation(props);
   const [link, setLink] = useState<LinkState | null>(null);
   const [broker, setBroker] = useState<BrokerView | null>(null);
@@ -77,13 +77,13 @@ export function StationRegisters(props: DeviceScreenProps) {
   const [busy, setBusy] = useState(false);
   const [onlyChanged, setOnlyChanged] = useState(false);
 
-  const reachable = holder === 'server' || holder === 'this-app';
+  const reachable = reach.now;
   const inUse = device.connections.find((connection) => connection.inUse) ?? null;
-  /** The broker, its journal and its traffic exist only for a Wi-Fi connection the server holds. */
-  const onMqtt = holder === 'server' && inUse?.transport === 'mqtt' && actions.diagnostic !== null;
+  /** The broker, its journal and its traffic exist only for a Wi-Fi connection whose holder has diagnostics to show. */
+  const onMqtt = inUse?.transport === 'mqtt' && actions.diagnostic !== null;
   const simulated = status?.link.mode === 'simulator';
-  const hasLink = device.advanced.some((tool) => tool.name === 'link');
-  const hasRegisters = device.advanced.some((tool) => tool.name === 'registers');
+  const hasLink = device.tools.some((tool) => tool.name === 'link');
+  const hasRegisters = device.tools.some((tool) => tool.name === 'registers');
 
   const refresh = useCallback(async () => {
     if (!reachable) return;
@@ -174,9 +174,9 @@ export function StationRegisters(props: DeviceScreenProps) {
         <SectionLabel>Link</SectionLabel>
         <Card inset>
           <Row
-            title="Held by"
-            accessory={<Mono>{holder === 'server' ? 'the server' : holder === 'this-app' ? 'this app' : holder === 'other-app' ? 'another app' : 'nobody'}</Mono>}
-            subtitle={inUse ? `${inUse.methodLabel} · ${inUse.address}` : device.health.detail}
+            title="Reached"
+            accessory={<Mono>{reach.via ?? 'not now'}</Mono>}
+            subtitle={inUse ? inUse.address : device.health.detail}
           />
           <RowSeparator />
           <Row

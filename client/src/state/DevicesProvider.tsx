@@ -31,11 +31,12 @@ import {
   type LinkView,
   type LiveState,
   type LiveUpdate,
+  type NewLink,
   type SavedDeviceId,
   type VersionInfo,
 } from '@kraftverk/api-client';
-import { CATEGORIES, deviceCapabilities, methodOf, savedDeviceId, type DeviceType } from '@kraftverk/device-sdk';
-import { toHold, withInUse } from '@kraftverk/holder';
+import { CATEGORIES, clientId, connectionId, deviceCapabilities, linkId, MAIN_PART, methodOf, partsOf, savedDeviceId, type DeviceType } from '@kraftverk/device-sdk';
+import { runTool, toHold, toolsOf, withInUse } from '@kraftverk/holder';
 
 import { confirmAction } from '../lib/confirm';
 import type { LocalDevice } from '../runtime/local';
@@ -84,7 +85,8 @@ type DevicesContextValue = {
   version: VersionInfo | null;
   refresh: () => Promise<void>;
   /** Who holds the connection a device is using right now. */
-  holderOf: (device: DeviceView) => DeviceScreenProps['holder'];
+  /** Who holds the connection in use: the app's own business, never a device screen's. */
+  holderOf: (device: DeviceView) => Holder;
   /** What a device's screens can do, through whoever holds it. */
   actionsFor: (device: DeviceView) => DeviceActions;
   /** Everything a device's own screens are handed. */
@@ -95,15 +97,18 @@ type DevicesContextValue = {
   prefer: (device: DeviceView, connection: ConnectionView) => Promise<void>;
   removeConnection: (device: DeviceView, connection: ConnectionView) => Promise<void>;
   setSecrets: (device: DeviceView, connection: ConnectionView, secrets: Record<string, string>) => Promise<void>;
-  addLink: (kind: string, sourceId: string, targetId: string) => Promise<void>;
+  addLink: (link: NewLink) => Promise<void>;
   removeLink: (link: LinkView) => Promise<void>;
   history: typeof fetchDeviceHistory | null;
 };
 
+/** Who holds a device's connection in use: the server, this app, another app, or nobody right now. */
+export type Holder = 'server' | 'this-app' | 'other-app' | 'none';
+
 const DevicesContext = createContext<DevicesContextValue | null>(null);
 
 /** A device in local mode, described the way the server describes one. */
-function describeLocal(runtime: AppRuntime, device: LocalDevice, names: Map<string, string>): DeviceView {
+function describeLocal(runtime: AppRuntime, device: LocalDevice, local: Map<string, LocalDevice>): DeviceView {
   const type: DeviceType<any> | undefined = runtime.registry.types.get(device.typeId);
   const held = runtime.sessions.held(device.id);
   const session = runtime.sessions.get(device.id);
@@ -111,11 +116,11 @@ function describeLocal(runtime: AppRuntime, device: LocalDevice, names: Map<stri
   const description = runtime.sessions.description(device.id) ?? type?.describe(device.config as never) ?? { attributes: [] };
   const connections = runtime.local.connections(device.id).map(
     (connection): ConnectionView => ({
-      id: connection.id,
+      id: connectionId(connection.id),
       method: connection.method,
       methodLabel: (type ? methodOf(type, connection.method)?.label : null) ?? connection.method,
       transport: connection.transport,
-      heldBy: { kind: 'client', id: 'this-app', name: 'This app' },
+      heldBy: { kind: 'client', id: clientId('this-app'), name: 'This app' },
       address: connection.address,
       priority: connection.priority,
       reachable: held?.connection.id === connection.id ? runtime.sessions.health(device.id)?.status === 'connected' : null,
@@ -126,9 +131,19 @@ function describeLocal(runtime: AppRuntime, device: LocalDevice, names: Map<stri
     })
   );
   const links = runtime.local.links(device.id).map((link): LinkView => {
-    const role = link.sourceId === device.id ? 'source' : 'target';
-    const other = role === 'source' ? link.targetId : link.sourceId;
-    return { id: link.id, kind: link.kind, role, other: { id: savedDeviceId(other), name: names.get(other) ?? 'A removed device' } };
+    const role = link.source.device === device.id ? 'source' : 'target';
+    const [mine, other] = role === 'source' ? [link.source, link.target] : [link.target, link.source];
+    const otherDevice = local.get(other.device);
+    const otherType = otherDevice ? runtime.registry.types.get(otherDevice.typeId) : undefined;
+    const otherDescription = otherDevice ? (runtime.sessions.description(otherDevice.id) ?? otherType?.describe(otherDevice.config as never)) : undefined;
+    const partLabel = other.part === MAIN_PART ? '' : ((otherDescription ? partsOf(otherDescription).find((part) => part.id === other.part)?.label : undefined) ?? other.part);
+    return {
+      id: linkId(link.id),
+      kind: link.kind,
+      role,
+      part: mine.part,
+      other: { id: savedDeviceId(other.device), name: otherDevice?.name ?? 'A removed device', part: other.part, partLabel },
+    };
   });
   return {
     id: savedDeviceId(device.id),
@@ -148,7 +163,7 @@ function describeLocal(runtime: AppRuntime, device: LocalDevice, names: Map<stri
     config: device.config,
     connections,
     links,
-    advanced: Object.entries(session?.advanced ?? {}).map(([name, action]) => ({ name, writes: action.writes })),
+    tools: toolsOf(type?.tools, session ?? null).map(({ name, spec }) => ({ name, ...spec })),
     readings: session?.readings() ?? [],
     health: runtime.sessions.health(device.id) ?? {
       status: connections.length ? 'connecting' : 'unconfigured',
@@ -360,8 +375,8 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
 
   const devices = useMemo((): DeviceView[] => {
     if (mode === 'local') {
-      const names = new Map((localDevices ?? []).map((device) => [device.id, device.name]));
-      return (localDevices ?? []).map((device) => describeLocal(runtime, device, names));
+      const local = new Map((localDevices ?? []).map((device) => [device.id, device]));
+      return (localDevices ?? []).map((device) => describeLocal(runtime, device, local));
     }
     // What this app holds, it knows first: its readings and health replace the server's.
     return served.map((device) => {
@@ -378,7 +393,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         ...device,
         readings: session?.readings() ?? device.readings,
         health: health ?? device.health,
-        advanced: session ? Object.entries(session.advanced ?? {}).map(([name, action]) => ({ name, writes: action.writes })) : device.advanced,
+        tools: session ? toolsOf(runtime.registry.types.get(device.typeId)?.tools, session).map(({ name, spec }) => ({ name, ...spec })) : device.tools,
         connections: withInUse(
           // What this app holds, it knows first: whether its own connection reaches the device.
           connections.map((connection) => (held && connection.id === held.connection.id ? { ...connection, reachable: health?.status === 'connected' } : connection)),
@@ -394,7 +409,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   // --- what a device's screens can do -------------------------------------------
 
   const holderOf = useCallback(
-    (device: DeviceView): DeviceScreenProps['holder'] => {
+    (device: DeviceView): Holder => {
       if (runtime.sessions.get(device.id)) return 'this-app';
       const inUse = device.connections.find((connection) => connection.inUse);
       if (inUse?.heldBy.kind === 'client') return inUse.heldBy.id === runtime.clientId ? 'this-app' : 'other-app';
@@ -426,13 +441,18 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
           return open;
         };
         return {
+          // The holder's own check, as on the server: the input the tool asks for, the answer it declares.
           tool: async <T,>(name: string, input: Record<string, unknown> = {}) => {
-            const action = session().advanced?.[name];
-            if (!action) throw new Error(`${device.name} has no tool called "${name}"`);
-            if (action.writes && !action.honoursReadOnly && !runtime.allowWrites) throw new Error('Writes from this app are off: allow them in App settings');
-            const result = (await action.run(input)) as T;
-            if (action.writes) runtime.uplink?.audit({ at: new Date().toISOString(), kind: 'device.advanced', resource: device.id, summary: `Ran ${name} on "${device.name}"`, detail: { input } });
-            return result;
+            const spec = runtime.registry.types.get(device.typeId)?.tools?.[name];
+            try {
+              const answer = await runTool({ deviceName: device.name, name, spec, session: session(), input, readOnly: !runtime.allowWrites });
+              if (spec?.writes) runtime.uplink?.audit({ at: new Date().toISOString(), kind: 'device.tool', resource: device.id, summary: `Ran ${spec.label.toLowerCase()} on "${device.name}"`, detail: { tool: name, input } });
+              // Checked against its declaration above: T is that declaration's shape.
+              return answer as T;
+            } catch (error) {
+              if (spec?.writes) runtime.uplink?.audit({ at: new Date().toISOString(), kind: 'device.tool-refused', resource: device.id, summary: `${spec.label} on "${device.name}" was refused: ${(error as Error).message}`, detail: { tool: name, input } });
+              throw error;
+            }
           },
           // The gateway's write, here as on the server: types, confirmation, read-back, audit.
           write: (patch) =>
@@ -466,7 +486,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         const inUse = device.connections.find((connection) => connection.inUse) ?? device.connections.find((connection) => connection.heldBy.kind === 'server');
         return {
           tool: <T,>(name: string, input?: Record<string, unknown>) =>
-            runDeviceTool<T>(device.id, name, { input, writes: device.advanced.find((tool) => tool.name === name)?.writes ?? false }),
+            runDeviceTool<T>(device.id, name, { input, writes: device.tools.find((tool) => tool.name === name)?.writes ?? false }),
           write: (patch) => confirmed((confirmation) => writeDeviceAttributes(device.id, { patch, confirmation })),
           command: (input) => confirmed((confirmation) => sendCommand(device.id, { ...input, confirmation })),
           diagnostic: inUse ? <T,>(name: string, query?: Record<string, string | number>) => fetchTransportDiagnostic<T>(inUse.transport, name, query) : null,
@@ -488,12 +508,21 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   const screenProps = useCallback(
     (device: DeviceView): DeviceScreenProps => {
       const holder = holderOf(device);
+      const inUse = device.connections.find((connection) => connection.inUse) ?? null;
+      const via = inUse
+        ? `${inUse.methodLabel}, ${inUse.heldBy.kind === 'server' ? 'through the server' : holder === 'this-app' ? 'from this app' : `from ${inUse.heldBy.name}`}`
+        : null;
       return {
         device,
         actions: actionsFor(device),
-        holder,
+        // Whether it can be reached, and what to say while it cannot — never by whom.
+        reach: {
+          now: holder === 'server' || holder === 'this-app',
+          waiting: holder === 'this-app' ? 'Connecting from this app…' : holder === 'server' ? 'Waiting for the server…' : device.health.detail,
+          via,
+        },
         readOnly: holder === 'this-app' ? !runtime.allowWrites : (version?.readOnly ?? false),
-        version,
+        version: holder === 'server' ? version : null,
       };
     },
     [actionsFor, holderOf, runtime, version]
@@ -554,9 +583,9 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         if (connection.heldBy.kind === 'client') throw new Error(`Its secrets are kept by ${connection.heldBy.name}: change them there`);
         await mutate(() => setConnectionSecrets(device.id, connection.id, secrets));
       },
-      addLink: async (kind, sourceId, targetId) => {
-        if (mode === 'local') runtime.local.addLink(kind, sourceId, targetId);
-        else await mutate(() => apiAddLink(kind, sourceId, targetId));
+      addLink: async (link) => {
+        if (mode === 'local') runtime.local.addLink(link.kind, link.source, link.target);
+        else await mutate(() => apiAddLink(link));
       },
       removeLink: async (link) => {
         if (mode === 'local') runtime.local.removeLink(link.id);

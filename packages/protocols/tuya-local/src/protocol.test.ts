@@ -194,9 +194,9 @@ describe('cloud signing', () => {
   });
 
   test('the local key is a secret credential, and the cloud account is never one kept', () => {
-    expect(protocol.credentials!.schema.fields.localKey!.type).toBe('secret');
+    expect(protocol.credentials!.schema.fields.localKey).toMatchObject({ type: 'string', presentation: 'secret' });
     const fetch = protocol.credentials!.actions!.find((action) => action.id === 'fetchKey')!;
-    expect(fetch.input!.fields.clientSecret!.type).toBe('secret');
+    expect(fetch.input!.fields.clientSecret).toMatchObject({ type: 'string', presentation: 'secret' });
   });
 });
 

@@ -23,7 +23,8 @@ device is recognised however it is found, and why removing one and adding it
 again can bring its history back. Health is not a boolean: `health.status` is
 one of `connected`, `connecting`, `offline`, `unconfigured` or `error`, and
 always comes with a sentence in `health.detail`. Nothing here names a device
-type: a type's own tools are its `advanced` actions.
+type: a type's own tools are declared as data — what each asks for and what it
+answers — and listed on the device as `tools`.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -46,11 +47,11 @@ type: a type's own tools are its `advanced` actions.
 | `PATCH` | `/devices/:id/attributes` | Change what a device remembers — the attributes its description says can be written — through the action gateway; a refusal says `needsConfirmation` when a person only has to confirm |
 | `POST` | `/devices/:id/parts/:part/commands/:capability/:command` | Every command, to one part of a device, with typed `args` — through the action gateway; a refusal says `needsConfirmation` when a person only has to confirm |
 | `GET` | `/devices/:id/events` | What the device said happened, newest first |
-| `GET` `POST` | `/devices/:id/advanced/:name` | A device type's own tools: register dump, snapshot, scan, raw frame. Reads are GETs; writes are refused while read-only and audited |
+| `GET` `POST` | `/devices/:id/tools/:name` | A device type's own tools, declared as data: register dump, snapshot, scan, raw frame. The input is checked against what the tool asks for (400) and the answer against what it declares (502). Reads are GETs, their input in the query; writes are POSTs, refused while read-only (423) and audited |
 | `GET` | `/devices/:id/history` | One measurement over time, thinned for a chart |
 | `POST` `DELETE` | `/devices/:id/connections/:connection` (`/prefer`) | Prefer one way to reach it, or remove one — not the last |
 | `PUT` | `/devices/:id/connections/:connection/secrets` | Replace a server-held connection's secrets, such as a plug's new local key |
-| `POST` `DELETE` | `/links` · `/links/:id` | Facts about the house: this plug feeds that station |
+| `POST` `DELETE` | `/links` · `/links/:id` | Facts about the house, between parts: `{kind, source: {device, part}, target: {device, part}}` — this plug's relay feeds that station's mains input |
 | `GET` `POST` `DELETE` | `/clients` · `/clients/:id` | The phones and browsers that hold connections |
 | `POST` | `/devices/:id/readings` · `/clients/:id/audit` | What an app sends for a connection it holds |
 | `GET` `PUT` | `/devices/:id/store` · `/devices/:id/store/:key` | A device's own store, for a session an app runs |

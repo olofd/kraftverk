@@ -32,6 +32,28 @@ export type SavedDeviceId = Branded<'SavedDeviceId'>;
  */
 export const savedDeviceId = (raw: string): SavedDeviceId => raw as SavedDeviceId;
 
+/*
+  The other ids the core keeps are branded for the same reason: a connection
+  id passed where a device id was meant, or an app's id where a link's was,
+  is a wrong row updated, not an error. Each crosses in at the edge, named.
+*/
+
+/** One way a device is reached: a row of `device_connection`. */
+export type ConnectionId = Branded<'ConnectionId'>;
+export const connectionId = (raw: string): ConnectionId => raw as ConnectionId;
+
+/** A phone or browser running the app, which may hold connections. */
+export type ClientId = Branded<'ClientId'>;
+export const clientId = (raw: string): ClientId => raw as ClientId;
+
+/** A fact about the house between two parts: a row of `device_link`. */
+export type LinkId = Branded<'LinkId'>;
+export const linkId = (raw: string): LinkId => raw as LinkId;
+
+/** An automation. */
+export type AutomationId = Branded<'AutomationId'>;
+export const automationId = (raw: string): AutomationId => raw as AutomationId;
+
 /**
  * Why a device is or is not answering.
  *

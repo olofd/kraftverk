@@ -1,11 +1,11 @@
 import {
   validateConfig,
-  type AdvancedAction,
   type CommandResult,
   type DeviceContext,
   type DeviceSession,
   type Reading,
   type SessionHealth,
+  type ToolRun,
   type Value,
 } from '@kraftverk/device-sdk';
 import { commandRefusal, describeCommand, fromHex, parseCommand, toHex, type SydpowerLink } from '@kraftverk/protocol-sydpower';
@@ -44,7 +44,8 @@ export type StationSessionOptions = {
   identity: string | null;
   /** Whether the connection underneath is up; the simulator's always is. */
   connected: () => boolean;
-  advanced?: Record<string, AdvancedAction>;
+  /** The tools of `STATION_TOOLS` this session can run. */
+  tools?: Record<string, ToolRun>;
   close?: () => void | Promise<void>;
 };
 
@@ -117,7 +118,7 @@ export function stationSession(source: StationSource, options: StationSessionOpt
       return { id: options.identity, name: source.status().name ?? null };
     },
 
-    ...(options.advanced ? { advanced: options.advanced } : {}),
+    ...(options.tools ? { tools: options.tools } : {}),
 
     async close() {
       await options.close?.();
@@ -133,9 +134,9 @@ export function stationSession(source: StationSource, options: StationSessionOpt
  * the energy-flow view needs the whole of it. Offered by a real station and
  * the simulator alike, and served by whoever holds the connection.
  */
-export function stationTools(source: StationSource): Record<string, AdvancedAction> {
+export function stationTools(source: StationSource): Record<string, ToolRun> {
   return {
-    state: { writes: false, run: async () => ({ status: source.status(), settings: source.settings() }) },
+    state: async () => ({ status: source.status(), settings: source.settings() }),
   };
 }
 
@@ -152,51 +153,42 @@ export function stationTools(source: StationSource): Record<string, AdvancedActi
 type Baseline = { at: string; input: number[]; holding: number[] };
 const BASELINE_KEY = 'registers.baseline';
 
-const integer = (value: unknown, fallback: number, min: number, max: number, name: string): number => {
-  const numeric = value === undefined || value === '' ? fallback : Number(value);
-  if (!Number.isInteger(numeric) || numeric < min || numeric > max) throw new Error(`${name} must be a whole number from ${min} to ${max}`);
-  return numeric;
-};
-
 /**
  * Tools for confirming the register map against real hardware. The published
  * map came from FOSSiBOT F2400/F3600 units; the P280 is the same stack but a
- * different machine, so a value is verified before it is trusted.
+ * different machine, so a value is verified before it is trusted. Their input
+ * arrives checked against `STATION_TOOLS`, and their answers are checked
+ * against it too.
  */
 export function registerTools(
   client: StationClient,
   link: SydpowerLink,
   ctx: Pick<DeviceContext, 'store' | 'readOnly' | 'allowRawFrames'>
-): Record<string, AdvancedAction> {
+): Record<string, ToolRun> {
   return {
     /** Every register, raw and decoded, diffed against this station's own baseline. */
-    registers: {
-      writes: false,
-      async run(): Promise<RegisterDump> {
-        const [input, holding] = await Promise.all([
-          client.readAllInput().catch(() => [] as number[]),
-          client.readAllHolding().catch(() => [] as number[]),
-        ]);
-        const baseline = ctx.store.get<Baseline>(BASELINE_KEY);
-        return {
-          mac: client.mac,
-          readOnly: client.readOnly,
-          baselineAt: baseline?.at ?? null,
-          input: describeRegisters(input, 'input', baseline?.input),
-          holding: describeRegisters(holding, 'holding', baseline?.holding),
-        };
-      },
+    async registers() {
+      const [input, holding] = await Promise.all([
+        client.readAllInput().catch(() => [] as number[]),
+        client.readAllHolding().catch(() => [] as number[]),
+      ]);
+      const baseline = ctx.store.get<Baseline>(BASELINE_KEY);
+      const dump: RegisterDump = {
+        mac: client.mac,
+        readOnly: client.readOnly,
+        baselineAt: baseline?.at ?? null,
+        input: describeRegisters(input, 'input', baseline?.input),
+        holding: describeRegisters(holding, 'holding', baseline?.holding),
+      };
+      return dump;
     },
 
     /** Takes the baseline the next dump is compared with. Changes nothing on the station. */
-    snapshot: {
-      writes: false,
-      async run() {
-        const [input, holding] = await Promise.all([client.readAllInput(), client.readAllHolding()]);
-        const baseline: Baseline = { at: new Date().toISOString(), input, holding };
-        ctx.store.set(BASELINE_KEY, baseline);
-        return { at: baseline.at, input: input.length, holding: holding.length };
-      },
+    async snapshot() {
+      const [input, holding] = await Promise.all([client.readAllInput(), client.readAllHolding()]);
+      const baseline: Baseline = { at: new Date().toISOString(), input, holding };
+      ctx.store.set(BASELINE_KEY, baseline);
+      return { at: baseline.at, input: input.length, holding: holding.length };
     },
 
     /**
@@ -206,33 +198,27 @@ export function registerTools(
      * characters per register and are invisible in a numeric dump. Reads only,
      * so probing outside the documented window cannot change anything.
      */
-    scan: {
-      writes: false,
-      async run(input) {
-        const fn = integer(input.fn, 3, 3, 4, 'fn') as 3 | 4;
-        const start = integer(input.start, 0, 0, 65535, 'start');
-        const count = integer(input.count, 40, 1, 125, 'count');
-        const values = await client.readRange(fn, start, count).catch(() => [] as number[]);
-        const ch = (b: number) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : '.');
-        return {
-          fn,
-          start,
-          count,
-          ok: values.length > 0,
-          values: values.map((raw, i) => ({ register: start + i, raw, hex: raw.toString(16).padStart(4, '0') })),
-          ascii: values.map((v) => ch((v >> 8) & 0xff) + ch(v & 0xff)).join(''),
-        };
-      },
+    async scan(input) {
+      const fn = Number(input.fn) as 3 | 4;
+      const start = Number(input.start);
+      const count = Number(input.count);
+      const values = await client.readRange(fn, start, count).catch(() => [] as number[]);
+      const ch = (b: number) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : '.');
+      return {
+        fn,
+        start,
+        count,
+        ok: values.length > 0,
+        values: values.map((raw, i) => ({ register: start + i, raw, hex: raw.toString(16).padStart(4, '0') })),
+        ascii: values.map((v) => ch((v >> 8) & 0xff) + ch(v & 0xff)).join(''),
+      };
     },
 
     /** Writes this station refused while read-only. Its own, not somebody else's. */
-    blocked: { writes: false, run: async () => client.blockedWrites },
+    blocked: async () => client.blockedWrites,
 
     /** How the link is doing: what it rides, and what the transport reports about it. */
-    link: {
-      writes: false,
-      run: async () => ({ transport: link.transport, address: link.address, connected: link.connected, status: client.status().link }),
-    },
+    link: async () => ({ transport: link.transport, address: link.address, connected: link.connected, status: client.status().link }),
 
     /**
      * Sends an arbitrary frame: the escape hatch for protocol work.
@@ -243,24 +229,20 @@ export function registerTools(
      * for — but never the protocol's guard, and never read-only mode: only a
      * frame that is plainly a read can change nothing.
      */
-    raw: {
-      writes: true,
-      honoursReadOnly: true,
-      async run(input) {
-        if (!ctx.allowRawFrames) {
-          throw new Error('Raw frames are off. Start the server with ALLOW_RAW_FRAMES=1 to send them; bad writes can brick the station.');
-        }
-        const hex = typeof input.hex === 'string' ? input.hex : '';
-        if (!/^[0-9a-fA-F]{2,512}$/.test(hex) || hex.length % 2) throw new Error('hex must be whole bytes of hexadecimal');
-        const frame = fromHex(hex);
-        const refusal = commandRefusal(frame);
-        if (refusal) throw new Error(refusal);
-        if (ctx.readOnly && parseCommand(frame)?.kind !== 'read') {
-          throw new Error(`Refused to send ${describeCommand(frame)}: this holder is read-only, and only reads are sent.`);
-        }
-        await link.send(frame);
-        return { sent: toHex(frame), to: link.address, described: describeCommand(frame) };
-      },
+    async raw(input) {
+      if (!ctx.allowRawFrames) {
+        throw new Error('Raw frames are off. Start the server with ALLOW_RAW_FRAMES=1 to send them; bad writes can brick the station.');
+      }
+      const hex = typeof input.hex === 'string' ? input.hex : '';
+      if (!/^[0-9a-fA-F]{2,512}$/.test(hex) || hex.length % 2) throw new Error('hex must be whole bytes of hexadecimal');
+      const frame = fromHex(hex);
+      const refusal = commandRefusal(frame);
+      if (refusal) throw new Error(refusal);
+      if (ctx.readOnly && parseCommand(frame)?.kind !== 'read') {
+        throw new Error(`Refused to send ${describeCommand(frame)}: this holder is read-only, and only reads are sent.`);
+      }
+      await link.send(frame);
+      return { sent: toHex(frame), to: link.address, described: describeCommand(frame) };
     },
   };
 }

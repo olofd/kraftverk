@@ -1,4 +1,4 @@
-import type { ConfigValues } from '@kraftverk/device-sdk';
+import { linkKindSpec, type ConfigValues, type LinkEnd, type LinkKind } from '@kraftverk/device-sdk';
 
 import { readPreference, writePreference } from '../lib/preferences';
 
@@ -34,7 +34,8 @@ export function memorySecrets(): SecretStore {
 
 export type LocalDevice = { id: string; typeId: string; name: string; identity: string | null; config: ConfigValues; addedAt: string };
 export type LocalConnection = { id: string; deviceId: string; method: string; transport: string; address: string; config: ConfigValues; priority: number; lastConnectedAt: string | null };
-export type LocalLink = { id: string; kind: string; sourceId: string; targetId: string };
+/** A fact about the house between two parts, as the server keeps one. */
+export type LocalLink = { id: string; kind: LinkKind; source: LinkEnd; target: LinkEnd };
 
 type Stored = {
   devices: LocalDevice[];
@@ -46,6 +47,12 @@ type Stored = {
 };
 
 const KEY = 'kraftverk.local';
+
+const sameEnd = (a: LinkEnd, b: LinkEnd) => a.device === b.device && a.part === b.part;
+
+/** Whether a new link takes an old one's place: the same one again, or one of a kind with one target per source part. */
+const replaces = (link: LocalLink, old: LocalLink): boolean =>
+  link.kind === old.kind && sameEnd(link.source, old.source) && (linkKindSpec(link.kind).onePerSource || sameEnd(link.target, old.target));
 const empty = (): Stored => ({ devices: [], connections: [], links: [], stores: {} });
 const id = (prefix: string) => `${prefix}-${Math.random().toString(16).slice(2, 14).padEnd(12, '0')}`;
 
@@ -67,7 +74,9 @@ export class LocalCatalog {
   static #read(): Stored {
     try {
       const parsed = JSON.parse(readPreference(KEY) ?? 'null') as Partial<Stored> | null;
-      return { ...empty(), ...(parsed ?? {}) };
+      const stored = { ...empty(), ...(parsed ?? {}) };
+      // Links kept before they joined parts are set aside, as the server sets aside an older database.
+      return { ...stored, links: stored.links.filter((link) => Boolean(link.source?.part && link.target?.part)) };
     } catch {
       return empty();
     }
@@ -100,7 +109,7 @@ export class LocalCatalog {
   }
 
   links(deviceId?: string): LocalLink[] {
-    return deviceId ? this.#data.links.filter((link) => link.sourceId === deviceId || link.targetId === deviceId) : this.#data.links;
+    return deviceId ? this.#data.links.filter((link) => link.source.device === deviceId || link.target.device === deviceId) : this.#data.links;
   }
 
   secrets(connectionId: string): Record<string, string> {
@@ -129,7 +138,7 @@ export class LocalCatalog {
   save(input: {
     device: { id?: string; typeId: string; name: string; identity: string | null; config: ConfigValues };
     connection: { method: string; transport: string; address: string; config: ConfigValues; secrets: Record<string, string> };
-    links?: { kind: string; other: string; role: 'source' | 'target' }[];
+    links?: { kind: LinkKind; part: string; other: LinkEnd; role: 'source' | 'target' }[];
   }): LocalDevice {
     const existing = input.device.id ? this.device(input.device.id) : null;
     const device: LocalDevice = existing ?? {
@@ -154,18 +163,15 @@ export class LocalCatalog {
       priority: siblings.length ? Math.max(...siblings.map((c) => c.priority)) + 1 : 0,
       lastConnectedAt: null,
     };
-    const links = (input.links ?? []).map((link): LocalLink => ({
-      id: id('l'),
-      kind: link.kind,
-      sourceId: link.role === 'source' ? device.id : link.other,
-      targetId: link.role === 'source' ? link.other : device.id,
-    }));
+    const links = (input.links ?? []).map((link): LocalLink => {
+      const mine = { device: device.id, part: link.part };
+      return { id: id('l'), kind: link.kind, source: link.role === 'source' ? mine : link.other, target: link.role === 'source' ? link.other : mine };
+    });
     this.#data = {
       ...this.#data,
       devices: existing ? this.#data.devices : [...this.#data.devices, device],
       connections: [...this.#data.connections, connection],
-      // One feeds link per source: a new one replaces the old.
-      links: [...this.#data.links.filter((old) => !links.some((link) => link.kind === old.kind && link.sourceId === old.sourceId)), ...links],
+      links: [...this.#data.links.filter((old) => !links.some((link) => replaces(link, old))), ...links],
     };
     if (Object.keys(input.connection.secrets).length) this.vault.set(connection.id, input.connection.secrets);
     this.#write();
@@ -217,16 +223,16 @@ export class LocalCatalog {
     this.#data = {
       devices: this.#data.devices.filter((device) => device.id !== deviceId),
       connections: this.#data.connections.filter((connection) => connection.deviceId !== deviceId),
-      links: this.#data.links.filter((link) => link.sourceId !== deviceId && link.targetId !== deviceId),
+      links: this.#data.links.filter((link) => link.source.device !== deviceId && link.target.device !== deviceId),
       stores,
     };
     for (const connectionId of gone) this.vault.delete(connectionId);
     this.#write();
   }
 
-  addLink(kind: string, sourceId: string, targetId: string): LocalLink {
-    const link: LocalLink = { id: id('l'), kind, sourceId, targetId };
-    this.#data = { ...this.#data, links: [...this.#data.links.filter((old) => !(old.kind === kind && old.sourceId === sourceId)), link] };
+  addLink(kind: LinkKind, source: LinkEnd, target: LinkEnd): LocalLink {
+    const link: LocalLink = { id: id('l'), kind, source, target };
+    this.#data = { ...this.#data, links: [...this.#data.links.filter((old) => !replaces(link, old)), link] };
     this.#write();
     return link;
   }

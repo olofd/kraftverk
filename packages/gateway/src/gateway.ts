@@ -1,17 +1,24 @@
 import {
   attributeMeaning,
   capabilitiesOf,
-  capabilitySpec,
+  capabilityIn,
   checkValue,
-  isCapability,
-  LINK_KINDS,
+  conditionHolds,
+  currentForOf,
+  isScalar,
+  linkKindSpec,
   MAIN_PART,
   partsOf,
   readingOf,
+  standardMeaning,
   type AttributeSpec,
-  type CapabilityName,
+  type CapabilityCommand,
+  type CapabilityId,
   type DeviceDescription,
   type DeviceSession,
+  type LinkEnd,
+  type LinkKind,
+  type LinkKindSpec,
   type SavedDeviceId,
   type Value,
 } from '@kraftverk/device-sdk';
@@ -31,16 +38,20 @@ export type AuditEntry = {
  *
  * Every command — from a screen, an automation or a bridge — and every write
  * of a device's own settings comes here, and everything it has to survive
- * lives here: the capability's safety level, read-only mode, dwell time, the
- * freshness of what the decision rests on, and — the part that makes it more
- * than a wrapper — verification. A device saying "done" is not proof. Reading
- * back what the command sets is one proof; and switching a plug that `feeds` a
- * station is proven only by the station's own mains reading agreeing, from a
- * reading it took after the switch.
+ * lives here: what makes a command consequential, read-only mode, dwell time,
+ * the freshness of what the decision rests on, and — the part that makes it
+ * more than a wrapper — verification. A device saying "done" is not proof.
+ * Reading back what the command sets is one proof; and a command on a part
+ * that is the source of a link is proven only by the target's own reading of
+ * the link's evidence agreeing — a station seeing its mains go when the plug
+ * that feeds it is switched off — from a reading it took after the command.
  *
- * It names no capability: what a command takes, what it sets and how careful to
- * be come from the capability library, and what a device reads from its
- * description, so a new capability needs no edit here.
+ * It names no capability, no link kind and no domain: what a command takes,
+ * what it sets and what makes it consequential come from the capability's
+ * declaration; what a link proves, and whether being its source matters, from
+ * the link kind's; and what a device reads, and how long each reading stays
+ * current, from its description. A new capability or link kind needs no edit
+ * here.
  */
 
 /** What a person sends to say "yes, I mean it". */
@@ -50,7 +61,7 @@ export type CommandIntent = {
   deviceId: SavedDeviceId;
   /** The part it is for: `main`, `outlet.ac`. */
   part: string;
-  capability: CapabilityName;
+  capability: CapabilityId;
   command: string;
   args: Readonly<Record<string, Value>>;
   reason: string;
@@ -62,7 +73,7 @@ export type CommandIntent = {
    * to change which rules apply.
    */
   by: string;
-  /** Required when turning off something that matters, and for the first switch of a feeding plug. */
+  /** Required for a consequential command, and for the first command through a link that makes its source consequential. */
   confirmation?: string;
 };
 
@@ -77,7 +88,7 @@ export type GatewayResult = {
   detail: string;
   /** The device's own readback agrees. */
   deviceAgreed?: boolean;
-  /** The device it feeds agrees — for a part that feeds one. */
+  /** Every part it is linked to agrees — for a part that is a link's source. */
   linkAgreed?: boolean;
   /**
    * Refused only because a person has to confirm it: ask, and send it again
@@ -87,16 +98,18 @@ export type GatewayResult = {
 };
 
 export type GatewayPolicy = {
-  /** How old a reading may be and still be acted on. */
+  /**
+   * The oldest a reading may be and still be acted on: acting asks more than
+   * showing, so a reading must be current for its attribute *and* no older
+   * than this.
+   */
   maxDataAgeMs: number;
   /** Minimum gap between an automation's changes to one part. */
   automationDwellMs: number;
   /** A much shorter guard for a person tapping a button, so the acceptance drill is possible. */
   userDwellMs: number;
-  /** How long the device and the device it feeds are given to agree. */
+  /** How long the device and the parts it is linked to are given to agree. */
   verifyTimeoutMs: number;
-  /** A part drawing more than this is carrying a load: turning it off needs confirmation. */
-  loadWatts: number;
 };
 
 export const DEFAULT_POLICY: GatewayPolicy = {
@@ -104,8 +117,10 @@ export const DEFAULT_POLICY: GatewayPolicy = {
   automationDwellMs: 10 * 60_000,
   userDwellMs: 5_000,
   verifyTimeoutMs: 30_000,
-  loadWatts: 5,
 };
+
+/** A link from a part, as the gateway walks it. */
+export type OutgoingLink = { kind: LinkKind; target: LinkEnd<SavedDeviceId> };
 
 /** What the gateway needs of a device: its session, what it is, and its name for the timeline. */
 export type GatewayDevice = {
@@ -138,8 +153,8 @@ export type WriteResult = {
 
 export type GatewayDeps = {
   device: (id: SavedDeviceId) => GatewayDevice | null;
-  /** The device a device's main part feeds, from the links. */
-  feeds: (id: SavedDeviceId) => SavedDeviceId | null;
+  /** Every link whose source is this part, of any kind. */
+  linksFrom: (id: SavedDeviceId, part: string) => readonly OutgoingLink[];
   /** True when writes to this device are refused: every hardware write, when read-only. A simulated device has no hardware. */
   isReadOnly: (deviceId: SavedDeviceId) => boolean;
   /** What read-only is called where this holder runs: the server's mode, or an app's switch. */
@@ -158,13 +173,35 @@ export type GatewayDeps = {
   memory?: { get(key: string): string | null; set(key: string, value: string): void };
 };
 
-/** What a linked device reads that should follow the switch: its evidence. */
-type LinkEvidence = { connected: boolean; value: boolean | null; at: string | null };
+/** What a linked part reads that should follow the command: its evidence, and whether it is current. */
+type LinkEvidence = { connected: boolean; value: Value; at: string | null; current: boolean };
 
 /** One attribute a command sets, and the value it is to take. */
 type Setting = { attribute: AttributeSpec; value: Value };
 
-const shown = (value: Value): string => (value === true ? 'on' : value === false ? 'off' : String(value));
+/** A link from the part commanded, with what its kind says and what its target is called. */
+type Linked = { kind: LinkKindSpec; target: LinkEnd<SavedDeviceId>; name: string; expected: Value };
+
+const shown = (value: Value): string => (value === true ? 'on' : value === false ? 'off' : isScalar(value) ? String(value) : JSON.stringify(value));
+
+/** Whether a command is consequential as its declaration says, before links are counted. */
+function declaredConsequence(command: CapabilityCommand, args: Readonly<Record<string, Value>>, read: (means: string) => Value): { matches: boolean; because: string | null } {
+  const declared = command.consequential;
+  if (!declared) return { matches: false, because: null };
+  if (declared === 'always') return { matches: true, because: null };
+  if (declared.when && args[declared.when.arg] !== declared.when.is) return { matches: false, because: null };
+  if (!declared.if?.length) return { matches: true, because: null };
+  for (const condition of declared.if) {
+    const value = read(condition.means);
+    if (conditionHolds(condition, isScalar(value) ? value : null)) {
+      const meaning = standardMeaning(condition.means);
+      const unit = meaning?.type === 'number' ? ` ${meaning.unit}` : '';
+      return { matches: true, because: `${meaning?.label ?? condition.means} is ${typeof value === 'number' ? Math.round(value) : shown(value)}${unit}` };
+    }
+  }
+  // Declared, and it matches, but nothing now makes it so: only a link can.
+  return { matches: false, because: null };
+}
 
 export class ActionGateway {
   #deps: GatewayDeps;
@@ -233,8 +270,9 @@ export class ActionGateway {
 
     // 1. A part that is here, offers this, and a command it takes, with the arguments it takes.
     if (!device) return refuse('No such device');
-    if (!isCapability(intent.capability)) return refuse(`"${intent.capability}" is not a capability`);
-    const spec = capabilitySpec(intent.capability).commands[intent.command];
+    const capability = capabilityIn(device.description, intent.capability);
+    if (!capability) return refuse(`"${intent.capability}" is not a capability`);
+    const spec = capability.commands[intent.command];
     if (!spec) return refuse(`${intent.capability} has no command "${intent.command}"`);
     if (!capabilitiesOf(device.description, intent.part).includes(intent.capability)) {
       return refuse(`${intent.part === MAIN_PART ? device.name : `"${intent.part}"`} does not offer ${intent.capability}`);
@@ -250,7 +288,7 @@ export class ActionGateway {
 
     const settings: Setting[] = [];
     for (const [argument, attributeName] of Object.entries(spec.sets)) {
-      const means = capabilitySpec(intent.capability).attributes[attributeName]?.means;
+      const means = capability.attributes[attributeName]?.means;
       const attribute = means ? attributeMeaning(device.description, intent.part, means) : null;
       if (!attribute) return refuse(`It does not report what ${intent.command} changes, so it cannot be checked`);
       settings.push({ attribute, value: intent.args[argument] ?? null });
@@ -270,45 +308,59 @@ export class ActionGateway {
 
     // 3. Freshness: acting on stale readings is how mains is cut at exactly the wrong moment.
     if (current.some((reading) => reading === null || reading.value === null)) return refuse('Its current state is not known, so it is not switched blind');
-    if (current.some((reading) => this.#ageOf(reading!.at) > this.#policy.maxDataAgeMs)) return refuse('Its reading is stale: refusing to switch blind');
+    if (settings.some((setting, index) => !this.#fresh(setting.attribute, current[index]!.at))) return refuse('Its reading is stale: refusing to switch blind');
 
-    const fed = intent.part === MAIN_PART && LINK_KINDS.feeds.from === intent.capability ? this.#deps.feeds(intent.deviceId) : null;
-    const linked = fed ? this.#evidence(fed) : null;
-    if (fed) {
-      if (!linked || !linked.connected || linked.at === null || linked.value === null) {
-        return refuse('The device it feeds is not answering: refusing to switch without its own reading of mains');
+    // Every link from this part whose kind goes through this capability: its target must be answering, now.
+    const links: Linked[] = [];
+    for (const link of this.#deps.linksFrom(intent.deviceId, intent.part)) {
+      const kind = linkKindSpec(link.kind);
+      if (kind.from !== intent.capability) continue;
+      const follows = settings.find((setting) => setting.attribute.means === kind.evidence.follows);
+      const target = this.#deps.device(link.target.device);
+      links.push({ kind, target: link.target, name: target ? this.#partName(target, link.target.part) : 'a device that is gone', expected: follows?.value ?? null });
+    }
+    for (const link of links) {
+      const evidence = this.#evidence(link);
+      if (!evidence || !evidence.connected || evidence.at === null || evidence.value === null) {
+        return refuse(`${link.name}, which it ${link.kind.verb}, is not answering: refusing to act without its own reading`);
       }
-      if (this.#ageOf(linked.at) > this.#policy.maxDataAgeMs) return refuse('The reading of the device it feeds is stale: refusing to switch blind');
+      if (!evidence.current) return refuse(`The reading of ${link.name}, which it ${link.kind.verb}, is stale: refusing to act blind`);
     }
 
-    // 4. A deliberate act where one matters: turning off what feeds a device or
-    //    carries a load, and the first switch of a feeding part.
-    const turningOff = settings.some((setting) => setting.value === false);
-    const load = this.#watts(device.description, session, intent.part);
-    const critical = fed !== null || load > this.#policy.loadWatts;
-    const needsConfirmation =
-      intent.actor === 'user' &&
-      (spec.safety === 'confirm' || (spec.safety === 'confirm-off-when-critical' && ((turningOff && critical) || (fed !== null && !this.#everSwitched(key)))));
-    if (needsConfirmation && intent.confirmation !== CONFIRMATION) {
-      const fedName = fed ? (this.#deps.device(fed)?.name ?? 'the device it feeds') : null;
-      const why =
-        fedName && !this.#everSwitched(key)
-          ? `This feeds ${fedName} and has never been switched from here: confirm it is the right one`
-          : fedName
-            ? `This cuts mains to ${fedName}`
-            : load > this.#policy.loadWatts
-              ? `It is carrying ${Math.round(load)} W`
-              : 'This needs confirming';
+    // 4. A deliberate act where one matters, as the capability and the link kinds declare it.
+    const partValue = (means: string): Value => {
+      const attribute = attributeMeaning(device.description, intent.part, means);
+      return attribute ? (readingOf(readingsNow(), attribute.key)?.value ?? null) : null;
+    };
+    const declared = declaredConsequence(spec, intent.args, partValue);
+    const whenMatches = spec.consequential !== undefined && (spec.consequential === 'always' || !spec.consequential.when || intent.args[spec.consequential.when.arg] === spec.consequential.when.is);
+    const consequentialLink = links.find((link) => link.kind.consequential) ?? null;
+    const firstThroughLink = consequentialLink !== null && !this.#everSwitched(key);
+    const consequential = declared.matches || (whenMatches && consequentialLink !== null);
+    if (intent.actor === 'user' && (consequential || firstThroughLink) && intent.confirmation !== CONFIRMATION) {
+      const why = firstThroughLink
+        ? `This ${consequentialLink.kind.verb} ${consequentialLink.name} and has never been switched from here: confirm it is the right one`
+        : consequentialLink && whenMatches
+          ? `This ${consequentialLink.kind.verb} ${consequentialLink.name}`
+          : (declared.because ?? 'This needs confirming');
       return { ...refuse(`This action needs explicit confirmation. ${why}.`), needsConfirmation: true };
     }
 
     const agrees = () => settings.every((setting) => readingOf(readingsNow(), setting.attribute.key)?.value === setting.value);
-    const expected = settings.find((setting) => typeof setting.value === 'boolean')?.value as boolean | undefined;
+    const linksAgree = (after: number | null) =>
+      links.every((link) => {
+        const evidence = this.#evidence(link);
+        const readAt = evidence?.at ? Date.parse(evidence.at) : Number.NaN;
+        // Only a reading taken after the command counts, once one was sent. The one
+        // cached from before says what was — which, cutting mains to a station that
+        // had already lost it, looked exactly like agreement.
+        return Boolean(evidence?.connected && (after === null || readAt > after) && evidence.value === link.expected);
+      });
     if (agrees()) {
-      const linkAgreed = linked && expected !== undefined ? linked.value === expected : undefined;
+      const linkAgreed = links.length ? linksAgree(null) : undefined;
       return {
         outcome: linkAgreed === false ? 'unverified' : 'verified',
-        detail: linkAgreed === false ? `It is already ${argsShown}, but the device it feeds does not agree` : `Already ${argsShown}`,
+        detail: linkAgreed === false ? `It is already ${argsShown}, but ${links.map((link) => link.name).join(' and ')} does not agree` : `Already ${argsShown}`,
         deviceAgreed: true,
         linkAgreed,
       };
@@ -321,7 +373,7 @@ export class ActionGateway {
       command: intent.command,
       args: intent.args,
       before: Object.fromEntries(settings.map((setting, index) => [setting.attribute.key, current[index]?.value ?? null])),
-      linked: linked ? { deviceId: fed, value: linked.value } : undefined,
+      linked: links.length ? links.map((link) => ({ kind: link.kind.verb, deviceId: link.target.device, part: link.target.part, value: this.#evidence(link)?.value ?? null })) : undefined,
     });
 
     // 6. Exactly one command.
@@ -335,25 +387,16 @@ export class ActionGateway {
 
     // 7. The proofs, recorded separately.
     const deviceAgreed = await this.#eventually(agrees);
-    const linkAgreed =
-      fed && expected !== undefined
-        ? await this.#eventually(() => {
-            const reading = this.#evidence(fed);
-            const readAt = reading?.at ? Date.parse(reading.at) : Number.NaN;
-            // Only a reading taken after the switch counts. The one cached from
-            // before says what mains was — which, cutting mains to a station that
-            // had already lost it, looked exactly like agreement.
-            return Boolean(reading?.connected && readAt > sentAt && reading.value === expected);
-          })
-        : undefined;
+    const linkAgreed = links.length ? await this.#eventually(() => linksAgree(sentAt)) : undefined;
 
     const outcome: GatewayOutcome = deviceAgreed && linkAgreed !== false ? 'verified' : 'unverified';
+    const evidenceOf = (link: Linked) => standardMeaning(link.kind.evidence.means)?.label.toLowerCase() ?? link.kind.evidence.means;
     const detail = !deviceAgreed
       ? 'It accepted the command but does not report the new state'
       : linkAgreed === false
-        ? `It says ${argsShown}, but the device it feeds has not seen mains ${expected ? 'return' : 'go'}`
-        : fed
-          ? `Mains ${expected ? 'restored' : 'removed'}, confirmed by both devices`
+        ? `It says ${argsShown}, but ${links.map((link) => `${link.name} does not report ${evidenceOf(link)} as ${shown(link.expected)}`).join(', and ')}`
+        : links.length
+          ? `Done — ${argsShown}, confirmed by the device and by ${links.map((link) => `${link.name} (${evidenceOf(link)}: ${shown(link.expected)})`).join(' and ')}`
           : `Done — ${argsShown}, confirmed by the device`;
 
     // 8. The outcome, with every piece of evidence.
@@ -361,31 +404,36 @@ export class ActionGateway {
     return { outcome, detail, deviceAgreed, linkAgreed };
   }
 
-  /** What a part draws, from the attribute that means `power.draw` on it; 0 when it has none or has not said. */
-  #watts(description: DeviceDescription, session: DeviceSession, part: string): number {
-    const attribute = attributeMeaning(description, part, 'power.draw');
-    const value = attribute ? readingOf(session.readings(), attribute.key)?.value : null;
-    return typeof value === 'number' ? value : 0;
+  /** "Garage station — Mains", or the device's name for its main part. */
+  #partName(device: GatewayDevice, part: string): string {
+    if (part === MAIN_PART) return device.name;
+    return `${device.name} — ${partsOf(device.description).find((candidate) => candidate.id === part)?.label ?? part}`;
   }
 
   /**
-   * What a fed device says, from its own session: the attribute a feeds link
-   * names as its evidence, on the part that offers what the link reaches.
+   * What a linked part says, from its own session: the attribute its link kind
+   * names as evidence, on the part the link reaches — which must still offer
+   * what the kind reaches.
    */
-  #evidence(id: SavedDeviceId): LinkEvidence | null {
-    const target = this.#deps.device(id);
+  #evidence(link: Pick<Linked, 'kind' | 'target'>): LinkEvidence | null {
+    const target = this.#deps.device(link.target.device);
     const session = target?.session;
     if (!target || !session) return null;
-    const kind = LINK_KINDS.feeds;
-    const part = partsOf(target.description).find((candidate) => capabilitiesOf(target.description, candidate.id).includes(kind.to));
-    const attribute = part ? attributeMeaning(target.description, part.id, kind.evidence) : null;
+    if (!capabilitiesOf(target.description, link.target.part).includes(link.kind.to)) return null;
+    const attribute = attributeMeaning(target.description, link.target.part, link.kind.evidence.means);
     if (!attribute) return null;
     const reading = readingOf(session.readings(), attribute.key);
     return {
       connected: session.health().status === 'connected',
-      value: typeof reading?.value === 'boolean' ? reading.value : null,
+      value: reading?.value ?? null,
       at: reading?.at ?? null,
+      current: this.#fresh(attribute, reading?.at ?? null),
     };
+  }
+
+  /** Current for its attribute, and no older than the policy allows anything to be acted on. */
+  #fresh(attribute: AttributeSpec, at: string | null): boolean {
+    return this.#ageOf(at) <= Math.min(this.#policy.maxDataAgeMs, currentForOf(attribute));
   }
 
   /** Waits for `check`, looking at what is cached — cheap, so often enough to answer soon. */

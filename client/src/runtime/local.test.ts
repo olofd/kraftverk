@@ -57,21 +57,26 @@ describe('the local catalog', () => {
     expect(catalog.secrets(connection!.id)).toEqual({ pin: '9999', key: 'abc' });
   });
 
-  test('one feeds link per source: a new one replaces the old', () => {
+  test('one feeds link per source part: a new one replaces the old', () => {
     const catalog = new LocalCatalog();
     catalog.save({
       device: { typeId: 'test.plug', name: 'Plug', identity: null, config: {} },
       connection: { method: 'lan', transport: 'lan', address: '192.0.2.5', config: {}, secrets: {} },
-      links: [{ kind: 'feeds', other: 'd-station-1', role: 'source' }],
+      links: [{ kind: 'feeds', part: 'main', other: { device: 'd-station-1', part: 'input.ac' }, role: 'source' }],
     });
     const plug = catalog.devices()[0]!;
     lamp(catalog, { id: plug.id, method: 'ble' });
     catalog.save({
       device: { id: plug.id, typeId: 'test.plug', name: 'Plug', identity: null, config: {} },
       connection: { method: 'usb', transport: 'usb', address: 'x', config: {}, secrets: {} },
-      links: [{ kind: 'feeds', other: 'd-station-2', role: 'source' }],
+      links: [{ kind: 'feeds', part: 'main', other: { device: 'd-station-2', part: 'input.ac' }, role: 'source' }],
     });
-    expect(catalog.links(plug.id).map((link) => link.targetId)).toEqual(['d-station-2']);
+    expect(catalog.links(plug.id).map((link) => link.target)).toEqual([{ device: 'd-station-2', part: 'input.ac' }]);
+  });
+
+  test('links kept before they joined parts are set aside', () => {
+    writePreference('kraftverk.local', JSON.stringify({ devices: [], connections: [], links: [{ id: 'l-1', kind: 'feeds', sourceId: 'd-1', targetId: 'd-2' }], stores: {} }));
+    expect(new LocalCatalog().links()).toEqual([]);
   });
 
   test('secrets an older version kept in plaintext move into the vault, and leave the catalog', () => {

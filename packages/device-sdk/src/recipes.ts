@@ -1,0 +1,111 @@
+import { defineRecipe, type Expr, type Recipe, type RoleSpec } from './automation.ts';
+
+/**
+ * Recipes in the shared vocabulary (docs/AUTOMATIONS.md): rules that name only
+ * library capabilities, standard meanings and the events capabilities declare,
+ * so any device that offers them fills their roles — a station, a battery
+ * monitor, a device nobody has written yet. They live beside the capability
+ * library because that is what they are written in; a package's own recipes,
+ * which need what only its devices do, ship with the package.
+ *
+ * Namespaced `standard.`, which no device type may take.
+ */
+
+export const STANDARD_NAMESPACE = 'standard';
+
+const ACTION = {
+  type: 'enum',
+  title: 'Then turn it',
+  options: [
+    { value: 'on', label: 'On' },
+    { value: 'off', label: 'Off' },
+  ],
+} as const;
+
+const SWITCH: RoleSpec = { label: 'What to switch', description: 'A plug, or one outlet of a station', capabilities: ['switch'] };
+
+/** `switch.set`, on or off as the automation's "Then turn it" says. */
+const turn: Expr = { compare: 'eq', left: { param: 'action' }, right: { value: 'on' } };
+
+/** "When the battery stays below 20 % for 5 minutes, turn the charger plug on." */
+export const lowBattery = defineRecipe({
+  id: 'standard.low-battery',
+  label: 'When a battery runs low',
+  description: 'Switch something when a battery stays below a level for a while: a charger plug on, or a load off.',
+  sentence: 'When {battery} stays below {below} for {minutes}, turn {switch} {action}.',
+  roles: {
+    battery: { label: 'Battery', description: 'Anything that reports its charge: a station, one of its packs', capabilities: ['battery'] },
+    switch: SWITCH,
+  },
+  params: {
+    fields: {
+      below: { type: 'number', title: 'Below', unit: '%', min: 5, max: 95, step: 5, default: 20, presentation: 'slider' },
+      minutes: { type: 'number', title: 'For at least', description: 'So a dip for a moment does not count.', unit: 'min', min: 0, max: 60, step: 1, default: 5 },
+      action: { ...ACTION, default: 'on' },
+    },
+  },
+  when: [
+    {
+      becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'battery.soc' } }, right: { param: 'below' } },
+      heldForMinutes: { param: 'minutes' },
+    },
+  ],
+  then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: turn } } }],
+});
+
+/** "When the station loses mains power, turn the heater off." */
+export const mainsLost = defineRecipe({
+  id: 'standard.mains-lost',
+  label: 'When mains power is lost',
+  description: 'Switch something the moment an AC input says its mains went away: shed a load to save a battery.',
+  sentence: 'When {input} loses mains power, turn {switch} {action}.',
+  roles: {
+    input: { label: 'Mains input', description: 'An AC input that says when mains is lost: a station’s', capabilities: ['acInput'] },
+    switch: SWITCH,
+  },
+  params: { fields: { action: { ...ACTION, default: 'off' } } },
+  when: [{ event: { role: 'input', event: 'mains.lost' } }],
+  then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: turn } } }],
+});
+
+const soc: Expr = { read: { role: 'battery', means: 'battery.soc' } };
+
+/**
+ * "Charge the station through the plug that feeds it: on below 15 %, off at
+ * 50 %" — a charge window of your own, below what the device's own settings
+ * allow, by switching what charges it.
+ *
+ * One rule, two edges: it runs when the charge has stayed below the low level
+ * for a while, and when it reaches the high one; either way it sets the
+ * charger to "below the high level?", so falling low turns it on and reaching
+ * high turns it off. In between nothing happens — which is the point: the
+ * battery charges up from low to high, then runs down again, instead of
+ * hovering at one level with the charger clicking.
+ */
+export const chargeBetween = defineRecipe({
+  id: 'standard.charge-between',
+  label: 'Charge between two levels',
+  description:
+    'Switch what charges a battery on when it runs low and off when it has charged enough: a charge window of your own, with a plug that feeds a station, say.',
+  sentence: 'Charge {battery} with {charger}: on when it stays below {low} for {minutes}, off when it reaches {high}.',
+  roles: {
+    battery: { label: 'Battery', description: 'Anything that reports its charge: a station, one of its packs', capabilities: ['battery'] },
+    charger: { label: 'What charges it', description: 'A plug that feeds it, or anything that switches its charger', capabilities: ['switch'] },
+  },
+  params: {
+    fields: {
+      low: { type: 'number', title: 'Start charging below', unit: '%', min: 5, max: 90, step: 5, default: 15, presentation: 'slider' },
+      high: { type: 'number', title: 'Stop charging at', unit: '%', min: 10, max: 100, step: 5, default: 50, presentation: 'slider' },
+      minutes: { type: 'number', title: 'Below for at least', description: 'So a dip under load for a moment does not count.', unit: 'min', min: 0, max: 60, step: 1, default: 2 },
+    },
+  },
+  when: [
+    { becomes: { compare: 'lt', left: soc, right: { param: 'low' } }, heldForMinutes: { param: 'minutes' } },
+    { becomes: { compare: 'ge', left: soc, right: { param: 'high' } } },
+  ],
+  // A window that is upside down would switch the charger on and off at once.
+  if: { compare: 'lt', left: { param: 'low' }, right: { param: 'high' } },
+  then: [{ command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { compare: 'lt', left: soc, right: { param: 'high' } } } } }],
+});
+
+export const STANDARD_RECIPES: readonly Recipe[] = [lowBattery, chargeBetween, mainsLost];

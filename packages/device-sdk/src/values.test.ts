@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { checkValue, enumLabel, type EnumValue } from './values.ts';
+import { checkValue, enumLabel, valueTypeProblems, type EnumValue, type ValueOf, type ValueType } from './values.ts';
 
 /*
   One value system for attributes, command arguments, event data and config.
@@ -35,6 +35,41 @@ describe('checking a value', () => {
   test('a boolean is true or false, never a truthy string', () => {
     expect(checkValue({ type: 'boolean' }, false)).toEqual({ ok: true, value: false });
     expect(checkValue({ type: 'boolean' }, 'true')).toEqual({ ok: false, problem: 'must be true or false' });
+  });
+
+  test('a time is an instant, kept in UTC', () => {
+    expect(checkValue({ type: 'timestamp' }, '2026-09-29T09:00:00+02:00')).toEqual({ ok: true, value: '2026-09-29T07:00:00.000Z' });
+    expect(checkValue({ type: 'timestamp' }, '29 September')).toEqual({ ok: false, problem: 'must be a time, like 2026-09-29T07:00:00Z' });
+    expect(checkValue({ type: 'timestamp' }, '2026-09-29')).toMatchObject({ ok: false });
+  });
+
+  test('a list and an object are checked all the way down, saying where', () => {
+    const hour = {
+      type: 'object',
+      fields: { at: { type: 'timestamp' }, cloud: { type: 'number', min: 0, max: 100 } },
+      required: ['at'],
+    } as const satisfies ValueType;
+    const forecast = { type: 'list', of: hour } as const satisfies ValueType;
+    expect(checkValue(forecast, [{ at: '2026-09-29T07:00:00Z', cloud: 40 }, { at: '2026-09-29T08:00:00Z' }])).toEqual({
+      ok: true,
+      value: [
+        { at: '2026-09-29T07:00:00.000Z', cloud: 40 },
+        { at: '2026-09-29T08:00:00.000Z', cloud: null },
+      ],
+    });
+    expect(checkValue(forecast, [{ at: '2026-09-29T07:00:00Z', cloud: 140 }])).toEqual({ ok: false, problem: '[0].cloud must be at most 100' });
+    expect(checkValue(forecast, [{ cloud: 4 }])).toEqual({ ok: false, problem: '[0].at must be given' });
+    expect(checkValue(forecast, [{ at: '2026-09-29T07:00:00Z', rain: 1 }])).toEqual({ ok: false, problem: '[0] has no field "rain"' });
+    expect(checkValue(forecast, 'sunny')).toEqual({ ok: false, problem: 'must be a list' });
+
+    // And TypeScript reads the same declaration: the answer's type is derived from it.
+    const typed: ValueOf<typeof forecast> = [{ at: '2026-09-29T07:00:00Z', cloud: null }];
+    expect(typed[0]!.at).toBe('2026-09-29T07:00:00Z');
+  });
+
+  test('a declared type with a mistake in it says where', () => {
+    expect(valueTypeProblems('answer', { type: 'list', of: { type: 'object', fields: {} } })).toEqual(['answer[] is an object with no fields']);
+    expect(valueTypeProblems('answer', { type: 'object', fields: { a: { type: 'boolean' } }, required: ['b'] })).toEqual(['answer requires "b", which it does not have']);
   });
 
   test('an enum value is shown by its label, or as itself when it is not an option', () => {

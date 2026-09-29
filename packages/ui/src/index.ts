@@ -29,12 +29,11 @@ export { useWriteGate } from './useWriteGate';
 export {
   fixedRange,
   formatValue,
-  freshestAt,
-  isStale,
+  isOld,
+  observedAt,
   shownAttributes,
   readingFor,
   startsAtZero,
-  STALE_AFTER_MS,
 } from './measurement';
 export {
   chartPath,

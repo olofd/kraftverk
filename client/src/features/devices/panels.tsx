@@ -3,21 +3,24 @@ import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { describeError, isOnline, LINK_KINDS } from '@kraftverk/api-client';
+import { describeError, isOnline } from '@kraftverk/api-client';
 import type { AttributeSpec, ConfigSchema, ConnectionView, DeviceView, LinkView, Value } from '@kraftverk/api-client';
 import {
   attributeMeaning,
   attributesOf,
   capabilitiesOf,
-  capabilitySpec,
+  capabilityIn,
   keepsHistory,
   LINK_KIND_IDS,
-  linkFits,
+  linkCandidates,
+  linkKindSpec,
   MAIN_PART,
   partsOf,
-  quantityOf,
-  type CapabilityName,
+  settingField,
+  type CapabilityId,
+  type ConfigField,
   type ConfigValues,
+  type LinkKind,
   type Part,
 } from '@kraftverk/device-sdk';
 import {
@@ -70,7 +73,7 @@ const partTitle = (device: DeviceView, part: Part) => (part.id === MAIN_PART ? d
 // --- controls -----------------------------------------------------------------
 
 /** One switch a part takes: which command, which argument, and the on/off attribute it moves. */
-type Toggle = { part: Part; capability: CapabilityName; command: string; argument: string; attribute: AttributeSpec };
+type Toggle = { part: Part; capability: CapabilityId; command: string; argument: string; attribute: AttributeSpec };
 
 /**
  * Every on/off a device's parts can be switched through: each command a part's
@@ -79,9 +82,9 @@ type Toggle = { part: Part; capability: CapabilityName; command: string; argumen
 function togglesOf(device: DeviceView): Toggle[] {
   return partsOf(device.description, device.name).flatMap((part) =>
     capabilitiesOf(device.description, part.id).flatMap((capability) =>
-      Object.entries(capabilitySpec(capability).commands).flatMap(([command, spec]) =>
+      Object.entries(capabilityIn(device.description, capability)?.commands ?? {}).flatMap(([command, spec]) =>
         Object.entries(spec.sets).flatMap(([argument, attributeName]) => {
-          const means = capabilitySpec(capability).attributes[attributeName]?.means;
+          const means = capabilityIn(device.description, capability)?.attributes[attributeName]?.means;
           const attribute = means ? attributeMeaning(device.description, part.id, means) : null;
           return attribute && attribute.value.type === 'boolean' && spec.args[argument]?.type === 'boolean' ? [{ part, capability, command, argument, attribute }] : [];
         })
@@ -204,7 +207,7 @@ export function Readings({ device }: { device: DeviceView }) {
 export function History({ device }: { device: DeviceView }) {
   const { history } = useDevices();
   const chartable = device.description.attributes.filter(
-    (attribute) => attribute.value.type === 'number' && keepsHistory(attribute) && quantityOf(attribute) !== 'state'
+    (attribute) => attribute.value.type === 'number' && keepsHistory(attribute)
   );
   const [key, setKey] = useState<string | null>(null);
   const selected: AttributeSpec | undefined =
@@ -261,12 +264,10 @@ function settingsForms(device: DeviceView): { section: string; schema: ConfigSch
       section,
       keys: inSection.map((attribute) => attribute.key),
       schema: {
-        fields: Object.fromEntries(
-          inSection.map((attribute) => [
-            attribute.key,
-            { ...attribute.value, title: attribute.label, ...(attribute.description ? { description: attribute.description } : {}) },
-          ])
-        ),
+        fields: Object.fromEntries(inSection.flatMap((attribute): [string, ConfigField][] => {
+          const field = settingField(attribute);
+          return field ? [[attribute.key, field]] : [];
+        })),
       },
     };
   });
@@ -468,9 +469,13 @@ export function Connections({ device }: { device: DeviceView }) {
 
 // --- links ------------------------------------------------------------------------
 
+/** One way this device could be linked: which of its parts, by which kind, to which part of which other device. */
+type LinkCandidate = { kind: LinkKind; role: 'source' | 'target'; part: Part; other: DeviceView; otherPart: Part };
+
 /**
- * Facts about the house (docs/ARCHITECTURE.md §4.4): this plug feeds that
- * station. Offered only between devices a link kind fits.
+ * Facts about the house (docs/ARCHITECTURE.md §4.4), between parts: this
+ * plug's relay feeds that station's mains input; this station's AC outlets
+ * feed another's. Offered only between parts a link kind fits.
  */
 export function Links({ device }: { device: DeviceView }) {
   const { devices, addLink, removeLink } = useDevices();
@@ -479,14 +484,18 @@ export function Links({ device }: { device: DeviceView }) {
   const theme = useTheme();
 
   // Decided by the SDK's own rule, the one the server applies: only what it would accept is offered.
-  const candidates = LINK_KIND_IDS.flatMap((kind) => {
-    const others = devices.filter((other) => other.id !== device.id);
-    const asSource = others.filter((other) => linkFits(kind, device.description, other.description)).map((other) => ({ kind, role: 'source' as const, other }));
-    const asTarget = others.filter((other) => linkFits(kind, other.description, device.description)).map((other) => ({ kind, role: 'target' as const, other }));
-    return [...asSource, ...asTarget];
-  });
-  const linked = (kind: string, role: 'source' | 'target', otherId: string) =>
-    device.links.some((link) => link.kind === kind && link.role === role && link.other.id === otherId);
+  const candidates: LinkCandidate[] = LINK_KIND_IDS.flatMap((kind) =>
+    devices
+      .filter((other) => other.id !== device.id)
+      .flatMap((other) => [
+        ...linkCandidates(kind, device.description, other.description).map(({ sourcePart, targetPart }) => ({ kind, role: 'source' as const, part: sourcePart, other, otherPart: targetPart })),
+        ...linkCandidates(kind, other.description, device.description).map(({ sourcePart, targetPart }) => ({ kind, role: 'target' as const, part: targetPart, other, otherPart: sourcePart })),
+      ])
+  );
+  const linked = (candidate: LinkCandidate) =>
+    device.links.some(
+      (link) => link.kind === candidate.kind && link.role === candidate.role && link.part === candidate.part.id && link.other.id === candidate.other.id && link.other.part === candidate.otherPart.id
+    );
 
   if (device.links.length === 0 && candidates.length === 0) return null;
 
@@ -503,10 +512,13 @@ export function Links({ device }: { device: DeviceView }) {
     }
   };
 
-  const sentence = (link: { kind: string; role: 'source' | 'target' }, otherName: string) => {
-    const verb = (LINK_KINDS as Record<string, { verb: string }>)[link.kind]?.verb ?? link.kind;
-    return link.role === 'source' ? `${capitalise(verb)} ${otherName}` : `${otherName} ${verb} it`;
+  /** "Its AC outlets feed Garage station — Mains", or "Heater plug feeds its mains input". */
+  const sentence = (link: { kind: LinkKind; role: 'source' | 'target'; mine: string; other: string }) => {
+    const verb = linkKindSpec(link.kind).verb;
+    return link.role === 'source' ? `${capitalise(link.mine)} ${verb} ${link.other}` : `${link.other} ${verb} ${link.mine}`;
   };
+  const partLabel = (part: string) => (part === MAIN_PART ? 'it' : `its ${(partsOf(device.description).find((candidate) => candidate.id === part)?.label ?? part).toLowerCase()}`);
+  const otherName = (name: string, label: string) => (label ? `${name} — ${label}` : name);
 
   return (
     <YStack gap="$2">
@@ -516,7 +528,7 @@ export function Links({ device }: { device: DeviceView }) {
           <YStack key={link.id}>
             {index > 0 ? <RowSeparator /> : null}
             <Row
-              title={sentence(link, link.other.name)}
+              title={sentence({ kind: link.kind, role: link.role, mine: partLabel(link.part), other: otherName(link.other.name, link.other.partLabel) })}
               accessory={
                 <Button size="$2" disabled={busy} onPress={() => void act(() => removeLink(link))}>
                   Remove
@@ -526,20 +538,25 @@ export function Links({ device }: { device: DeviceView }) {
           </YStack>
         ))}
         {candidates
-          .filter((candidate) => !linked(candidate.kind, candidate.role, candidate.other.id))
+          .filter((candidate) => !linked(candidate))
           .map((candidate, index) => (
-            <YStack key={`${candidate.kind}-${candidate.role}-${candidate.other.id}`}>
+            <YStack key={`${candidate.kind}-${candidate.role}-${candidate.part.id}-${candidate.other.id}-${candidate.otherPart.id}`}>
               {index > 0 || device.links.length > 0 ? <RowSeparator /> : null}
               <Pressable
-                onPress={() =>
-                  void act(() =>
-                    candidate.role === 'source' ? addLink(candidate.kind, device.id, candidate.other.id) : addLink(candidate.kind, candidate.other.id, device.id)
-                  )
-                }
+                onPress={() => {
+                  const mine = { device: device.id, part: candidate.part.id };
+                  const theirs = { device: candidate.other.id, part: candidate.otherPart.id };
+                  void act(() => addLink({ kind: candidate.kind, source: candidate.role === 'source' ? mine : theirs, target: candidate.role === 'source' ? theirs : mine }));
+                }}
               >
                 <Row
-                  title={sentence(candidate, candidate.other.name)}
-                  subtitle={(LINK_KINDS as Record<string, { description: string }>)[candidate.kind]?.description}
+                  title={sentence({
+                    kind: candidate.kind,
+                    role: candidate.role,
+                    mine: partLabel(candidate.part.id),
+                    other: otherName(candidate.other.name, candidate.otherPart.id === MAIN_PART ? '' : candidate.otherPart.label),
+                  })}
+                  subtitle={linkKindSpec(candidate.kind).description}
                   accessory={<Feather name="plus" size={16} color={theme.muted?.val} />}
                 />
               </Pressable>

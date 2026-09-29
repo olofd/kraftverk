@@ -88,7 +88,26 @@ What that buys:
   dwell, freshness, confirmation, read-only mode or verification. Whatever
   writes a rule — a package, a person, a DSL, an AI — writes data, and the
   worst a wrong rule can do is what a person could do from a screen, after it
-  has been watched observing and armed on purpose.
+  has been watched observing and armed on purpose. A value it reads is what
+  the part reports *now*: one older than its attribute says a value stays
+  current (`currentFor`) is unknown, as it is to history and the gateway.
+
+### Kept closed, on purpose
+
+The language grows, but only by what passes two tests:
+
+1. **`describeRule` can still say it in one sentence.** A person approves an
+   automation by reading it; a construct that cannot be read back is one
+   nobody can approve.
+2. **`checkRule` can still type it without running it.** The checker is what a
+   DSL's errors and an AI's critic are made of; a construct it cannot check
+   is one an AI can get wrong without anyone knowing until it runs.
+
+What fails either belongs in a package **function** — typed at its edges,
+answering, never acting — not in the language. Arithmetic over readings,
+waits between actions, notifications and schedules on some days are
+candidates; each goes in only when it passes both, and one at a time. That
+discipline is what keeps "an AI writes data inside the same rails" true.
 
 ## What a package contributes
 
@@ -97,21 +116,44 @@ A device type's package may bring, beside its description:
 - **Events** in its description — `mains.lost` on the station's mains input —
   raised by its session with `ctx.event`. Triggers name them.
 - **Functions**: named, typed computations a rule can call, for what a
-  comparison cannot say. The weather service's `open-meteo.weather.skyLooks` asks any
-  part offering `weather.forecast` for the day's hours and answers `sunny` or
-  `cloudy`, with the reason. A function declares the capability it needs, its
-  arguments and its result in the value system, and is the only place an
-  automation runs package code. It is generic over the capability, not over
-  its own device: another package's forecast answers it too.
+  comparison cannot say. The weather service's `open-meteo.weather.skyLooks`
+  asks any part offering `weather.forecast` for the day's hours and answers
+  `sunny` or `cloudy`, with the reason. A function declares the capability
+  it needs, its arguments and its result in the value system, and is the only
+  place an automation runs package code. It is generic over the capability,
+  not over its own device: another package's forecast answers it too. It is
+  handed a **reader** of the part — its readings, its health, and its queries
+  answered in the type the capability declares (`ask(part, 'weather.forecast',
+  'hourly', …)` is a checked forecast, no cast) — and nothing that can command,
+  write or run a tool: "answers, never acts" is the contract's, not a
+  convention.
 - **Recipes**: rules with roles and settings left open, a label and a
-  sentence — the weather service's "Switch by the forecast", the station's
-  "When the battery runs low" and "When mains power is lost". A recipe is
-  data; filling it in makes an automation.
+  sentence, for what only its devices make possible — the weather service's
+  "Switch by the forecast", which needs its function. A recipe is data;
+  filling it in makes an automation.
 
-All three are namespaced by the type (`open-meteo.weather.forecast-switch`) and found
-the way device types are — installing a package is all it takes, and the core
-holds no recipe of its own. A recipe may use any installed package's
-functions; one whose function is missing is refused at start, saying which.
+Package ids are namespaced by the type (`open-meteo.weather.forecast-switch`)
+and found the way device types are — installing a package is all it takes.
+
+**The shared vocabulary's recipes** sit beside the capability library
+(`device-sdk/src/recipes.ts`), namespaced `standard.`: rules that name only
+library capabilities, standard meanings and the events capabilities declare,
+so every device that offers them fills their roles and a home without any one
+product still gets them.
+
+- **When a battery runs low** — below a level for a while, switch something.
+- **Charge between two levels** — switch what charges a battery on when it
+  stays below a low level, off when it reaches a high one. A station fed by a
+  smart plug gets a charge window of its own this way: on below 15 %, off at
+  50 %, beneath the lowest AC charge limit the station's own settings allow.
+  One rule with two `becomes` edges; its command sets the charger to "below
+  the high level?", so falling low turns it on, reaching high turns it off,
+  and nothing clicks in between.
+- **When mains power is lost** — on `acInput`'s own `mains.lost`, from any
+  station that raises it.
+
+A recipe may use any installed package's functions; one whose function is
+missing is refused at start, saying which.
 
 ## One engine
 
@@ -135,8 +177,9 @@ arming with confirmation and "check now" are unchanged.
 
 ## Stored
 
-An automation is its recipe's id, which part of which device fills each role,
-its settings, its clock and its mode — the same columns as before. The rule is
+An automation is its recipe's id (`standard.charge-between`,
+`open-meteo.weather.forecast-switch`), which part of which device fills each
+role, its settings, its clock and its mode. The rule is
 the recipe's, resolved when it runs, so a package that improves a recipe
 improves every automation made from it.
 

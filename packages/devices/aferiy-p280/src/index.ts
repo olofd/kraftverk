@@ -26,15 +26,30 @@ import type { PortId, StationSettings, StationStatus } from './model/types.ts';
  * express SOS and flash; the port register behind it is a boolean and would
  * silently reduce four modes to two.
  */
-export const OUTLETS: readonly { port: PortId; label: string; on: string; watts: string }[] = [
-  { port: 'ac', label: 'AC outlets', on: 'acOn', watts: 'acWatts' },
-  { port: 'dc', label: '12V DC / car port', on: 'dcOn', watts: 'dcWatts' },
-  { port: 'usb', label: 'USB-A + USB-C', on: 'usbOn', watts: 'usbWatts' },
+export const OUTLETS: readonly { port: PortId; label: string }[] = [
+  { port: 'ac', label: 'AC outlets' },
+  { port: 'dc', label: '12V DC / car port' },
+  { port: 'usb', label: 'USB-A + USB-C' },
 ];
 
 /** The part an outlet is, and the outlet a part is. */
 export const outletPart = (port: PortId): string => `outlet.${port}`;
 export const portOf = (part: string): PortId | null => OUTLETS.find((outlet) => outletPart(outlet.port) === part)?.port ?? null;
+
+/**
+ * Where each reading is kept. The station's own are its old names, on main;
+ * everything on another part begins with the part's id (`outlet.ac.on`), as
+ * every key off main must.
+ */
+export const KEYS = {
+  mainsPresent: 'input.ac.present',
+  mainsWatts: 'input.ac.watts',
+  mainsVolts: 'input.ac.volts',
+  solarWatts: 'input.solar.watts',
+  outletOn: (port: PortId) => `${outletPart(port)}.on`,
+  outletWatts: (port: PortId) => `${outletPart(port)}.watts`,
+  packSoc: (pack: number) => `pack.${pack}.soc`,
+} as const;
 
 /** Where each setting is grouped on a generic settings screen. */
 const SECTIONS: Record<string, string> = {
@@ -62,17 +77,17 @@ const number = (unit: string, precision = 0) => ({ type: 'number' as const, unit
  * the station says some are connected — its expansion batteries, each a part
  * whose charge is kept as history like the station's own.
  *
- * The station's own keys are the ones history has always been kept under; a
- * pack's key is its position, `pack.1.soc`, which the station reports the same
- * way every time.
+ * Every key off main begins with its part (`input.ac.present`); a pack's is
+ * its position, `pack.1.soc`, which the station reports the same way every
+ * time.
  */
 export function describeStation(packs = 0): DeviceDescription {
   const parts: Part[] = [
-    { id: MAIN_PART, label: 'Station', kind: 'device', role: 'storage' },
-    { id: 'input.ac', label: 'Mains', kind: 'input', role: 'source' },
-    { id: 'input.solar', label: 'Solar', kind: 'input', role: 'source' },
-    ...OUTLETS.map((outlet): Part => ({ id: outletPart(outlet.port), label: outlet.label, kind: 'outlet', role: 'load', offers: ['switch'] })),
-    ...Array.from({ length: packs }, (_, index): Part => ({ id: `pack.${index + 1}`, label: `Pack ${index + 1}`, kind: 'battery', role: 'storage', parent: MAIN_PART })),
+    { id: MAIN_PART, label: 'Station', kind: 'device', icon: 'battery-charging', energy: { role: 'storage' } },
+    { id: 'input.ac', label: 'Mains', kind: 'input', icon: 'zap', energy: { role: 'source' } },
+    { id: 'input.solar', label: 'Solar', kind: 'input', icon: 'sun', energy: { role: 'source' } },
+    ...OUTLETS.map((outlet): Part => ({ id: outletPart(outlet.port), label: outlet.label, kind: 'outlet', energy: { role: 'load' }, offers: ['switch'] })),
+    ...Array.from({ length: packs }, (_, index): Part => ({ id: `pack.${index + 1}`, label: `Pack ${index + 1}`, kind: 'battery', energy: { role: 'storage' }, parent: MAIN_PART })),
   ];
 
   const attributes: AttributeSpec[] = [
@@ -98,18 +113,18 @@ export function describeStation(packs = 0): DeviceDescription {
     { key: 'minutesToFull', label: 'Time to full', value: number('min'), quantity: 'duration', means: 'p280.minutesToFull' },
     { key: 'acOutputVolts', label: 'Inverter voltage', value: number('V', 1), quantity: 'voltage', means: 'p280.inverterVolts', category: 'diagnostic' },
 
-    { key: 'gridConnected', part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'grid.present' },
-    { key: 'acInputWatts', part: 'input.ac', label: 'From mains', value: number('W'), quantity: 'power', means: 'power.in.ac', category: 'primary' },
-    { key: 'acInputVolts', part: 'input.ac', label: 'Mains voltage', value: number('V', 1), quantity: 'voltage', means: 'voltage.ac' },
-    { key: 'solarWatts', part: 'input.solar', label: 'Solar', value: number('W'), quantity: 'power', means: 'power.in.solar', category: 'primary' },
+    { key: KEYS.mainsPresent, part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'grid.present' },
+    { key: KEYS.mainsWatts, part: 'input.ac', label: 'From mains', value: number('W'), quantity: 'power', means: 'power.in.ac', category: 'primary' },
+    { key: KEYS.mainsVolts, part: 'input.ac', label: 'Mains voltage', value: number('V', 1), quantity: 'voltage', means: 'voltage.ac' },
+    { key: KEYS.solarWatts, part: 'input.solar', label: 'Solar', value: number('W'), quantity: 'power', means: 'power.in.solar', category: 'primary' },
 
     ...OUTLETS.flatMap((outlet): AttributeSpec[] => [
-      { key: outlet.on, part: outletPart(outlet.port), label: outlet.label, value: { type: 'boolean' }, means: 'switch.on' },
-      { key: outlet.watts, part: outletPart(outlet.port), label: `${outlet.label} draw`, value: number('W'), quantity: 'power', means: 'power.draw', category: 'primary' },
+      { key: KEYS.outletOn(outlet.port), part: outletPart(outlet.port), label: outlet.label, value: { type: 'boolean' }, means: 'switch.on' },
+      { key: KEYS.outletWatts(outlet.port), part: outletPart(outlet.port), label: `${outlet.label} draw`, value: number('W'), quantity: 'power', means: 'power.draw', category: 'primary' },
     ]),
 
     ...Array.from({ length: packs }, (_, index): AttributeSpec => ({
-      key: `pack.${index + 1}.soc`,
+      key: KEYS.packSoc(index + 1),
       part: `pack.${index + 1}`,
       label: `Pack ${index + 1} charge`,
       value: number('%', 1),
@@ -132,6 +147,7 @@ export function describeStation(packs = 0): DeviceDescription {
     ),
   ];
 
+  // Its mains input's, as `acInput` declares them: anything waiting for mains to go hears this station too.
   const events: EventSpec[] = [
     { id: 'mains.lost', label: 'Mains lost', level: 'warn', part: 'input.ac', description: 'Mains power went away: the station runs its outlets from its battery.' },
     { id: 'mains.restored', label: 'Mains back', level: 'info', part: 'input.ac', description: 'Mains power came back.' },
@@ -318,15 +334,15 @@ export function readings(status: StationStatus, settings: StationSettings | null
     { key: 'minutesRemaining', value: status.minutesRemaining, at },
     { key: 'minutesToFull', value: status.minutesToFull, at },
     { key: 'acOutputVolts', value: status.acOutputVolts, at },
-    { key: 'gridConnected', value: status.gridConnected, at },
-    { key: 'acInputWatts', value: status.acInputWatts, at },
-    { key: 'acInputVolts', value: status.acInputVolts, at },
-    { key: 'solarWatts', value: status.solarInputWatts, at },
+    { key: KEYS.mainsPresent, value: status.gridConnected, at },
+    { key: KEYS.mainsWatts, value: status.acInputWatts, at },
+    { key: KEYS.mainsVolts, value: status.acInputVolts, at },
+    { key: KEYS.solarWatts, value: status.solarInputWatts, at },
     ...OUTLETS.flatMap((outlet): Reading[] => [
-      { key: outlet.on, value: port(outlet.port)?.enabled ?? null, at },
-      { key: outlet.watts, value: port(outlet.port)?.watts ?? null, at },
+      { key: KEYS.outletOn(outlet.port), value: port(outlet.port)?.enabled ?? null, at },
+      { key: KEYS.outletWatts(outlet.port), value: port(outlet.port)?.watts ?? null, at },
     ]),
-    ...status.expansionSoc.map((soc, index): Reading => ({ key: `pack.${index + 1}.soc`, value: soc, at })),
+    ...status.expansionSoc.map((soc, index): Reading => ({ key: KEYS.packSoc(index + 1), value: soc, at })),
     ...(settings ? Object.entries(settingsToValues(settings)).map(([key, value]): Reading => ({ key, value, at })) : []),
   ];
 }
@@ -401,6 +417,7 @@ export function valuesToSettings(values: Record<string, unknown>): Record<string
 }
 
 export * from './model/types.ts';
+export { STATION_TOOLS } from './tools.ts';
 export { AC_CHARGING_WATTS, HOLDING, INPUT, LED_MODE_VALUES, WRITABLE, type WriteRule } from './model/registers.ts';
 export { describeRegisters, type RegisterDump, type RegisterRow } from './model/diagnostics.ts';
 export { PORT_LABELS, buildSettings, buildStatus } from './model/station.ts';

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { checkRule, dayAfter, describeRule, localTime, zonedInstant, type DeviceSession } from '@kraftverk/device-sdk';
+import { checkRule, dayAfter, describeRule, localTime, zonedInstant, type DeviceReader, type Value } from '@kraftverk/device-sdk';
 import type { WeatherHour } from '@kraftverk/protocol-open-meteo';
 
 import { forecastSwitch, skyLooks } from '../src/automation.ts';
@@ -16,24 +16,29 @@ const ZONE = 'Europe/Stockholm';
 const MORNING = zonedInstant({ year: 2026, month: 6, day: 15, hour: 7, minute: 5 }, ZONE);
 
 /** A forecast whose every hour has this much cloud, from a day ago to three days ahead. */
-function forecast(cloud: (at: Date) => number | null, now = MORNING): DeviceSession {
+function forecast(cloud: (at: Date) => number | null, now = MORNING): DeviceReader {
   const start = new Date(now);
   start.setUTCMinutes(0, 0, 0);
   const hours: WeatherHour[] = Array.from({ length: 96 }, (_, i) => {
     const at = new Date(start.getTime() + (i - 24) * 3_600_000);
-    return { at: at.toISOString(), temperatureC: 10, cloudCoverPercent: cloud(at), precipitationMm: 0, irradianceWm2: null };
+    return { at: at.toISOString(), temperature: 10, cloudCover: cloud(at), precipitation: 0, irradiance: null };
   });
   return {
     health: () => ({ status: 'connected', detail: 'Fine', lastReadingAt: now.toISOString() }),
     readings: () => [],
-    command: async () => ({ accepted: false, error: 'A forecast takes no commands' }),
     query: async (request) => hours.filter((hour) => Date.parse(hour.at) >= now.getTime() - 3_600_000).slice(0, Number(request.args.hours)),
-    close: async () => {},
   };
 }
 
-const ask = (session: DeviceSession | null, day: 'today' | 'tomorrow', cloudMax = 40) =>
-  skyLooks.evaluate({ part: { name: 'Weather', part: 'main', session, offline: 'Not answering' }, args: { day, cloudMax }, now: MORNING, timeZone: ZONE });
+/** A forecast that answers something that is not one. */
+const garbled = (answer: Value): DeviceReader => ({
+  health: () => ({ status: 'connected', detail: 'Fine', lastReadingAt: MORNING.toISOString() }),
+  readings: () => [],
+  query: async () => answer,
+});
+
+const ask = (device: DeviceReader | null, day: 'today' | 'tomorrow', cloudMax = 40) =>
+  skyLooks.evaluate({ part: { name: 'Weather', part: 'main', device, offline: 'Not answering' }, args: { day, cloudMax }, now: MORNING, timeZone: ZONE });
 
 describe('how the sky looks', () => {
   test('sunny by the average between 09:00 and 17:00, with the reason', async () => {
@@ -54,6 +59,13 @@ describe('how the sky looks', () => {
       detail: "Weather's forecast does not cover tomorrow between 09:00 and 17:00",
     });
     expect(await ask(null, 'tomorrow')).toEqual({ value: null, detail: 'Weather is not answering: Not answering' });
+  });
+
+  test('an answer that is not the forecast the capability declares is not read as one', async () => {
+    expect(await ask(garbled('sunny'), 'tomorrow')).toEqual({ value: null, detail: 'Weather answered weather.forecast.hourly with something else: its answer must be a list' });
+    expect((await ask(garbled([{ at: MORNING.toISOString(), cloudCover: 'lots' }]), 'tomorrow')).detail).toBe(
+      'Weather answered weather.forecast.hourly with something else: its answer [0].cloudCover must be a number'
+    );
   });
 });
 

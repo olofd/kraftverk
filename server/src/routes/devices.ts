@@ -3,7 +3,8 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
 import type { AttributeWrite, CommandBody, DeviceHistory, DeviceTypeListing } from '@kraftverk/api-contract';
-import { CATEGORIES, describeDeviceType, isCapability, isSimulated, methodsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
+import { CATEGORIES, capabilityIn, describeDeviceType, isSimulated, methodsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
+import { runTool, ToolRefused, type ToolRefusal } from '@kraftverk/holder';
 
 import { actorOf } from '../auth/routes.ts';
 import { resolutionOf, series } from '../history/sampler.ts';
@@ -166,7 +167,8 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
   api.post('/devices/:id/parts/:part/commands/:capability/:command', async (c) => {
     const record = deviceOr404(catalog, c.req.param('id'));
     const capability = c.req.param('capability');
-    if (!isCapability(capability)) throw new HTTPException(404, { message: `"${capability}" is not a capability` });
+    // The library's, or one the device's own description declares.
+    if (!capabilityIn(sessions.description(record), capability)) throw new HTTPException(404, { message: `"${capability}" is not a capability of ${record.name}` });
 
     const input: CommandBody = await body(
       c,
@@ -194,40 +196,47 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
   });
 
   /**
-   * A device type's own tools: a register dump, a raw frame. The core serves
-   * them, so none of them is a route of its own. Reading is a GET; anything
-   * that `writes` is a POST, refused while read-only, and audited.
+   * A device type's own tools, declared as data: a register dump, a raw frame.
+   * The core serves them, so none of them is a route of its own; the holder
+   * checks each one's input against what it asks for and its answer against
+   * what it declares. One that only reads is a GET, its input in the query;
+   * one that `writes` is a POST, refused while read-only, and audited.
    */
-  const advancedOf = (id: string | undefined, name: string) => {
+  const STATUS: Record<ToolRefusal, 400 | 404 | 409 | 423 | 502> = { missing: 404, input: 400, 'read-only': 423, failed: 409, answer: 502 };
+
+  const toolOf = (id: string | undefined, name: string) => {
     const record = deviceOr404(catalog, id);
     const session = sessions.get(record.id);
     if (!session) throw new HTTPException(409, { message: sessions.health(record).detail });
-    const action = session.advanced?.[name];
-    if (!action) throw new HTTPException(404, { message: `${record.name} has no tool called "${name}"` });
-    return { record, action };
+    const spec = sessions.typeOf(record)?.tools?.[name];
+    if (!spec || typeof session.tools?.[name] !== 'function') throw new HTTPException(404, { message: `${record.name} has no tool called "${name}"` });
+    return { record, session, spec };
   };
 
-  api.get('/devices/:id/advanced/:name', async (c) => {
-    const name = c.req.param('name');
-    const { action } = advancedOf(c.req.param('id'), name);
-    if (action.writes) throw new HTTPException(405, { message: `${name} changes the device: POST it` });
-    return c.json(await action.run(c.req.query()));
-  });
-
-  api.post('/devices/:id/advanced/:name', async (c) => {
-    const name = c.req.param('name');
-    const { record, action } = advancedOf(c.req.param('id'), name);
-    const input = await body(c, z.record(z.string(), z.unknown()));
-    if (action.writes && !action.honoursReadOnly && config.readOnly && !sessions.simulated(record.id)) throw new HTTPException(423, { message: 'The server is in read-only mode' });
+  const run = async (c: Parameters<typeof auditDevice>[0], id: string | undefined, name: string, input: unknown): Promise<unknown> => {
+    const { record, session, spec } = toolOf(id, name);
     try {
-      const result = await action.run(input);
-      if (action.writes) auditDevice(c, 'device.advanced', record.id, `Ran ${name} on "${record.name}"`, { input });
-      return c.json(result);
+      const answer = await runTool({ deviceName: record.name, name, spec, session, input, readOnly: config.readOnly && !sessions.simulated(record.id) });
+      if (spec.writes) auditDevice(c, 'device.tool', record.id, `Ran ${spec.label.toLowerCase()} on "${record.name}"`, { tool: name, input });
+      return answer;
     } catch (error) {
       // A tool refusing is worth a line too: an attempt at the brick write is what the timeline is for.
-      if (action.writes) auditDevice(c, 'device.advanced-refused', record.id, `${name} on "${record.name}" was refused: ${(error as Error).message}`, { input });
-      throw new HTTPException(409, { message: (error as Error).message });
+      if (spec.writes) auditDevice(c, 'device.tool-refused', record.id, `${spec.label} on "${record.name}" was refused: ${(error as Error).message}`, { tool: name, input });
+      if (error instanceof ToolRefused) throw new HTTPException(STATUS[error.reason], { message: error.message });
+      throw error;
     }
+  };
+
+  api.get('/devices/:id/tools/:name', async (c) => {
+    const name = c.req.param('name');
+    const { spec } = toolOf(c.req.param('id'), name);
+    if (spec.writes) throw new HTTPException(405, { message: `${name} changes the device: POST it` });
+    return c.json(await run(c, c.req.param('id'), name, c.req.query()));
+  });
+
+  api.post('/devices/:id/tools/:name', async (c) => {
+    const input = await body(c, z.record(z.string().max(64), z.union([z.string().max(4096), z.number(), z.boolean(), z.null()])));
+    return c.json(await run(c, c.req.param('id'), c.req.param('name'), input));
   });
 
   return api;

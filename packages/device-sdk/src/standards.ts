@@ -41,8 +41,6 @@ export const HOME_ASSISTANT_QUANTITIES: Readonly<Record<Quantity, { deviceClass:
   humidity: { deviceClass: 'humidity', units: ['%'] },
   illuminance: { deviceClass: 'illuminance', units: ['lx'] },
   signal: { deviceClass: 'signal_strength', units: ['dBm', 'dB'] },
-  // An on/off state is a binary sensor, not a sensor with a class.
-  state: { deviceClass: null, units: [''] },
 };
 
 /** Home Assistant uses the same three state classes, by the same names. */
@@ -147,12 +145,12 @@ export const MEANING_PROJECTIONS: Readonly<Record<StandardMeaningId, MeaningProj
     homeAssistant: { platform: 'switch', deviceClass: 'outlet' },
     matter: { cluster: 'OnOff', attribute: 'OnOff', scale: 1 },
   },
-  'weather.temp': {
+  'temperature.air': {
     homeAssistant: { platform: 'sensor', deviceClass: null },
     // Hundredths of a degree.
     matter: { cluster: 'TemperatureMeasurement', attribute: 'MeasuredValue', scale: 100 },
   },
-  'weather.cloud': {
+  'sky.cloudCover': {
     homeAssistant: { platform: 'sensor', deviceClass: null },
     matter: { none: 'Matter has no cloud-cover measurement' },
   },
@@ -208,7 +206,9 @@ export function homeAssistantEntityOf(attribute: Pick<AttributeSpec, 'value' | '
   const unit = unitOf(attribute);
   return {
     platform,
-    deviceClass: meaning?.homeAssistant.deviceClass ?? (platform === 'sensor' && quantity ? HOME_ASSISTANT_QUANTITIES[quantity].deviceClass : null),
+    deviceClass:
+      meaning?.homeAssistant.deviceClass ??
+      (attribute.value.type === 'timestamp' ? 'timestamp' : platform === 'sensor' && quantity ? HOME_ASSISTANT_QUANTITIES[quantity].deviceClass : null),
     stateClass: stateClass ? HOME_ASSISTANT_STATE_CLASSES[stateClass] : null,
     unit: platform === 'sensor' && unit ? unit : null,
   };

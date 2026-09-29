@@ -21,16 +21,12 @@ export type StationView = {
   /** True when every write is being refused. */
   readOnly: boolean;
   simulated: boolean;
-  /** This app holds the station's connection itself, over its own radio. */
-  direct: boolean;
   /** What the screen is waiting for, before the station has said anything. */
   waitingFor: string;
   /** Only when a server is in the path. */
   version: { version: string; runtime: string; uptimeSeconds: number; readOnly: boolean } | null;
   /** How the connection in use is described: "Wi-Fi, through the server". */
   linkLabel: string | null;
-  /** Never true now: a connection this app holds reconnects by itself. */
-  resuming: boolean;
   /** Why the last change did not happen, until the next one is asked for. */
   writeError: string | null;
   updateSettings: (patch: StationSettingsPatch) => Promise<void>;

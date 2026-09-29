@@ -1,11 +1,21 @@
-import { CAPABILITIES, type CapabilityCommand, type CapabilityName } from './capabilities.ts';
 import type { ByteChannel, ChannelMessage, MessageChannel, OpenConnection } from './connection.ts';
-import { attributeMeaning, capabilitiesOf, checkAttributeValue, partsOf, validateDescription, type AttributeSpec, type DeviceDescription } from './description.ts';
+import {
+  attributeMeaning,
+  capabilitiesOf,
+  capabilityIn,
+  checkAttributeValue,
+  currentForOf,
+  isCurrent,
+  partsOf,
+  validateDescription,
+  type AttributeSpec,
+  type DeviceDescription,
+} from './description.ts';
 import type { DeviceContext, DeviceSession, DeviceType } from './device-type.ts';
 import { savedDeviceId } from './identity.ts';
-import { configDefaults, validateConfig, type ConfigValues } from './schema.ts';
+import { configDefaults, validateConfig, valueTypeOf, type ConfigSchema, type ConfigValues } from './schema.ts';
 import { validateDeviceType } from './validate.ts';
-import { checkValue, type Value, type ValueType } from './values.ts';
+import { checkValue, type ScalarValueType, type Value } from './values.ts';
 
 /**
  * The contract suite: what every device type must do, checked against its
@@ -13,10 +23,12 @@ import { checkValue, type Value, type ValueType } from './values.ts';
  *
  * `validateDeviceType` checks what a type declares; this checks that its
  * sessions keep those declarations. Generic from end to end — it knows no
- * capability by name: it checks that readings are the attributes described
- * and hold values their types allow, that every command which `sets` an
- * on/off attribute really moves it, that every query answers, that a written
- * attribute survives a round trip, and that every event raised is declared.
+ * capability by name: it checks that readings are the attributes described,
+ * hold values their types allow and are current when they arrive; that every
+ * command which `sets` an on/off attribute really moves it; that every query
+ * and every tool that only reads answers in the type it declares; that a
+ * written attribute survives a round trip; and that every event raised is
+ * declared.
  * Given a connection to a fake device, it checks `identify` too. A type passes
  * when the returned list is empty:
  *
@@ -107,7 +119,7 @@ async function eventually(check: () => boolean, ms: number): Promise<boolean> {
 const isIso = (value: unknown): boolean => typeof value === 'string' && Number.isFinite(Date.parse(value));
 
 /** A value to give an argument when the suite has no reason to prefer one. */
-function sampleArgument(type: ValueType): Value {
+function sampleArgument(type: ScalarValueType): Value {
   switch (type.type) {
     case 'number':
       return type.min ?? (type.max !== undefined ? Math.min(0, type.max) : 1);
@@ -117,8 +129,18 @@ function sampleArgument(type: ValueType): Value {
       return type.options[0]?.value ?? null;
     case 'string':
       return '';
+    case 'timestamp':
+      return new Date().toISOString();
   }
 }
+
+/** Input for a tool: its defaults, and a sample for anything required without one. */
+const sampleInput = (schema: ConfigSchema | undefined): ConfigValues => ({
+  ...Object.fromEntries(
+    Object.entries(schema?.fields ?? {}).flatMap(([name, field]) => (field.required ? [[name, sampleArgument(valueTypeOf(field)) as string | number | boolean]] : []))
+  ),
+  ...configDefaults(schema ?? { fields: {} }),
+});
 
 /** Runs the whole contract against a type's simulator. Empty means it passes. */
 export async function checkDeviceTypeContract(type: DeviceType<any>, options: ContractOptions = {}): Promise<string[]> {
@@ -172,6 +194,10 @@ export async function checkDeviceTypeContract(type: DeviceType<any>, options: Co
       if (reading.value === null) continue;
       const checked = checkAttributeValue(attribute, reading.value);
       if (!checked.ok) problems.push(`"${reading.key}" is ${JSON.stringify(reading.value)}, which ${checked.problem}`);
+      // `at` is when the value was observed. A value that is out of date the moment it arrives has the time it is about there instead.
+      else if (isIso(reading.at) && !isCurrent(attribute, reading)) {
+        problems.push(`"${reading.key}" was observed at ${reading.at}, longer ago than it stays current (${Math.round(currentForOf(attribute) / 1000)} s): a reading's time is when it was observed`);
+      }
     }
 
     const info = session.info?.() ?? null;
@@ -183,10 +209,11 @@ export async function checkDeviceTypeContract(type: DeviceType<any>, options: Co
     const valueOf = (key: string) => session.readings().find((reading) => reading.key === key)?.value ?? null;
     for (const part of partsOf(description)) {
       for (const name of capabilitiesOf(description, part.id)) {
-        const spec = CAPABILITIES[name as CapabilityName];
-        for (const [command, declaredCommand] of Object.entries(spec.commands as Record<string, CapabilityCommand>)) {
+        const spec = capabilityIn(description, name);
+        if (!spec) continue;
+        for (const [command, declaredCommand] of Object.entries(spec.commands)) {
           const [argument, attributeName] = Object.entries(declaredCommand.sets)[0] ?? [];
-          const means = attributeName ? (spec.attributes as Record<string, { means: string }>)[attributeName]?.means : undefined;
+          const means = attributeName ? spec.attributes[attributeName]?.means : undefined;
           const target: AttributeSpec | null = means ? attributeMeaning(description, part.id, means) : null;
           const where = `${part.id}: ${name}.${command}`;
           if (!argument || !target || target.value.type !== 'boolean') continue;
@@ -204,7 +231,7 @@ export async function checkDeviceTypeContract(type: DeviceType<any>, options: Co
           if (!(await eventually(() => valueOf(target.key) === !before, settleMs))) problems.push(`${where} was accepted, but "${target.key}" never showed the change`);
           await session.command({ part: part.id, capability: name, command, args: { ...args, [argument]: before } });
         }
-        for (const [query, declaredQuery] of Object.entries(spec.queries as Record<string, { args: Record<string, ValueType> }>)) {
+        for (const [query, declaredQuery] of Object.entries(spec.queries)) {
           if (!session.query) {
             problems.push(`${part.id} offers ${name}, which answers "${query}", but the session answers no queries`);
             continue;
@@ -212,10 +239,30 @@ export async function checkDeviceTypeContract(type: DeviceType<any>, options: Co
           const args = Object.fromEntries(Object.entries(declaredQuery.args).map(([key, type]) => [key, sampleArgument(type)]));
           try {
             const answer = await session.query({ part: part.id, capability: name, query, args });
-            if (answer === undefined) problems.push(`${part.id}: ${name}.${query} answered nothing`);
+            const checked = checkValue(declaredQuery.answer, answer);
+            if (!checked.ok) problems.push(`${part.id}: ${name}.${query} answered something else: its answer ${checked.problem}`);
           } catch (error) {
             problems.push(`${part.id}: ${name}.${query} failed: ${(error as Error).message}`);
           }
+        }
+      }
+    }
+
+    // Every tool it runs is one its type declares; every one that only reads answers in the type it declares.
+    const declaredTools = type.tools ?? {};
+    for (const [name, run] of Object.entries(session.tools ?? {})) {
+      const tool = declaredTools[name];
+      if (!tool) {
+        problems.push(`runs a tool "${name}", which its type does not declare`);
+        continue;
+      }
+      if (typeof run !== 'function') problems.push(`tool "${name}" cannot be run`);
+      else if (!tool.writes) {
+        try {
+          const checked = checkValue(tool.answer, await run(sampleInput(tool.input)));
+          if (!checked.ok) problems.push(`tool "${name}" answered something else: its answer ${checked.problem}`);
+        } catch (error) {
+          problems.push(`tool "${name}" failed: ${(error as Error).message}`);
         }
       }
     }
@@ -227,7 +274,7 @@ export async function checkDeviceTypeContract(type: DeviceType<any>, options: Co
     const known = writable.find((attribute) => valueOf(attribute.key) !== null);
     if (session.write && writable.length && !known) problems.push('no attribute that can be written has a value after the simulator settled');
     if (session.write && known) {
-      const value = valueOf(known.key);
+      const value = valueOf(known.key) as Exclude<Value, null>;
       const after = await session.write({ [known.key]: value });
       if (after[known.key] !== value) problems.push(`writing "${known.key}" back as it was changed it to ${String(after[known.key])}`);
     }

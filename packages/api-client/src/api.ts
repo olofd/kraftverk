@@ -25,6 +25,7 @@ import type {
   FoundView,
   HeldSetupInput,
   LinkRecord,
+  NewLink,
   RecipeView,
   SaveInput,
   ServerLogLine,
@@ -253,11 +254,13 @@ export async function sendCommand(
 }
 
 /**
- * One of a device type's own tools: a register dump, a raw frame. Reads are a
- * GET, anything that writes a POST — the server refuses and audits accordingly.
+ * One of a device type's own tools, declared as data: a register dump, a raw
+ * frame. Reads are a GET, anything that writes a POST — the server checks the
+ * input and the answer against the declaration, and refuses and audits
+ * accordingly.
  */
 export async function runDeviceTool<T = unknown>(id: string, name: string, options: { input?: Record<string, unknown>; writes?: boolean } = {}, signal?: AbortSignal): Promise<T> {
-  const path = devicePath(id, `/advanced/${encodeURIComponent(name)}`);
+  const path = devicePath(id, `/tools/${encodeURIComponent(name)}`);
   if (options.writes) {
     const { data } = await api.post<T>(path, options.input ?? {}, { signal, timeout: 30_000 });
     return data;
@@ -286,8 +289,9 @@ export async function setConnectionSecrets(deviceId: string, connectionId: strin
 }
 
 /** Records a fact about the house: this device feeds that one. */
-export async function addLink(kind: string, sourceId: string, targetId: string) {
-  const { data } = await api.post<LinkRecord>('/links', { kind, sourceId, targetId });
+/** Records a fact about the house between two parts: this plug's relay feeds that station's mains input. */
+export async function addLink(link: NewLink) {
+  const { data } = await api.post<LinkRecord>('/links', link);
   return data;
 }
 

@@ -175,15 +175,15 @@ const setup = new SetupService({ types, protocols, transports, catalog, connecti
 const nearby = new Nearby({ types, protocols, transports, connections });
 
 /**
- * The only path a command to hardware takes. What a plug feeds comes from the
- * links, so switching one is verified against the station it actually feeds.
+ * The only path a command to hardware takes. What a part is linked to comes
+ * from the links, so a command on it is verified against what it reaches.
  */
 const gateway = new ActionGateway({
   device: (id) => {
     const record = catalog.active(id);
     return record ? { name: record.name, session: sessions.get(id), description: sessions.description(record), offline: sessions.health(record).detail } : null;
   },
-  feeds: (id) => links.targetOf('feeds', id),
+  linksFrom: (id, part) => links.from(id, part).map((link) => ({ kind: link.kind, target: link.target })),
   isReadOnly: (id) => config.readOnly && !sessions.simulated(id),
   record: audit,
   memory: { get: appState, set: setAppState },

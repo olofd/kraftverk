@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { MAIN_PART, savedDeviceId, type CommandResult, type ConnectionHealth, type DeviceDescription, type DeviceSession, type SavedDeviceId } from '@kraftverk/device-sdk';
 
-import { ActionGateway, CONFIRMATION, type CommandIntent, type GatewayDevice } from './gateway.ts';
+import { ActionGateway, CONFIRMATION, type CommandIntent, type GatewayDevice, type OutgoingLink } from './gateway.ts';
 
 /**
  * The guards that stand between a web request and the hardware.
@@ -78,9 +78,9 @@ const STATION_DESCRIPTION: DeviceDescription = {
     { id: 'outlet.ac', label: 'AC outlets', kind: 'outlet', offers: ['switch'] },
   ],
   attributes: [
-    { key: 'gridConnected', part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'grid.present' },
-    { key: 'acOn', part: 'outlet.ac', label: 'AC outlets', value: { type: 'boolean' }, means: 'switch.on' },
-    { key: 'acWatts', part: 'outlet.ac', label: 'AC draw', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power.draw' },
+    { key: 'input.ac.present', part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'grid.present' },
+    { key: 'outlet.ac.on', part: 'outlet.ac', label: 'AC outlets', value: { type: 'boolean' }, means: 'switch.on' },
+    { key: 'outlet.ac.watts', part: 'outlet.ac', label: 'AC draw', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power.draw' },
   ],
 };
 
@@ -99,9 +99,9 @@ class StubStation {
       readings: () => {
         const reading = this.#current();
         return [
-          ...(reading?.at ? [{ key: 'gridConnected', value: reading.present, at: reading.at }] : []),
-          { key: 'acOn', value: this.outlet.on, at: now() },
-          { key: 'acWatts', value: this.outlet.watts, at: now() },
+          ...(reading?.at ? [{ key: 'input.ac.present', value: reading.present, at: reading.at }] : []),
+          { key: 'outlet.ac.on', value: this.outlet.on, at: now() },
+          { key: 'outlet.ac.watts', value: this.outlet.watts, at: now() },
         ];
       },
       command: async (request): Promise<CommandResult> => {
@@ -128,7 +128,17 @@ type Harness = {
 };
 
 function harness(
-  options: { plug?: StubPlug; readOnly?: boolean; feeds?: boolean; stationSession?: boolean; memory?: GatewayMemory; everSwitched?: boolean } = {}
+  options: {
+    plug?: StubPlug;
+    readOnly?: boolean;
+    feeds?: boolean;
+    stationSession?: boolean;
+    memory?: GatewayMemory;
+    everSwitched?: boolean;
+    /** More links, from a part: `{ '<device>:<part>': [target, part] }`. */
+    links?: Record<string, OutgoingLink[]>;
+    devices?: Record<string, GatewayDevice>;
+  } = {}
 ): Harness {
   const plug = options.plug ?? new StubPlug();
   const station = new StubStation();
@@ -142,10 +152,15 @@ function harness(
   const devices: Record<string, GatewayDevice> = {
     [PLUG]: { name: 'Heater plug', session: plugSession, description: PLUG_DESCRIPTION, offline: 'Not answering' },
     [STATION]: { name: 'Garage P280', session: options.stationSession === false ? null : stationSession, description: STATION_DESCRIPTION, offline: 'Not answering' },
+    ...options.devices,
+  };
+  const links: Record<string, OutgoingLink[]> = {
+    ...(options.feeds !== false ? { [`${PLUG}:${MAIN_PART}`]: [{ kind: 'feeds', target: { device: STATION, part: 'input.ac' } }] } : {}),
+    ...options.links,
   };
   const gateway = new ActionGateway({
     device: (id) => devices[id] ?? null,
-    feeds: (id) => (options.feeds !== false && id === PLUG ? STATION : null),
+    linksFrom: (id, part) => links[`${id}:${part}`] ?? [],
     isReadOnly: () => options.readOnly === true,
     record: (entry) => events.push(entry.kind),
     memory,
@@ -240,11 +255,95 @@ describe('what may be commanded', () => {
     const { gateway, station } = harness();
     const intent = cut({ deviceId: STATION, part: 'outlet.ac', actor: 'user', by: 'olof' });
 
-    expect((await gateway.execute(intent)).outcome).toBe('refused');
+    // As `switch.set` declares it: off, while it draws more than 5 W. The gateway reads the declaration.
+    expect(await gateway.execute(intent)).toMatchObject({ outcome: 'refused', needsConfirmation: true, detail: 'This action needs explicit confirmation. Power is 40 W.' });
     station.outlet = { on: true, watts: 0 };
     const idle = await gateway.execute(intent);
     expect(idle.outcome).toBe('verified');
     expect(station.outletCommands).toEqual([['outlet.ac', false]]);
+  });
+});
+
+describe('links between parts', () => {
+  /*
+    A station's AC outlet feeds another station's mains input: the link joins
+    parts, and the gateway walks it like any other — confirming the cut, and
+    holding the outlet's switch to the other station's own reading of mains.
+  */
+  const OTHER = savedDeviceId('d-other');
+
+  function chain() {
+    const other = new StubStation();
+    const setup = harness({
+      feeds: false,
+      devices: { [OTHER]: { name: 'Cabin station', session: other.session(), description: STATION_DESCRIPTION, offline: 'Not answering' } },
+      links: { [`${STATION}:outlet.ac`]: [{ kind: 'feeds', target: { device: OTHER, part: 'input.ac' } }] },
+    });
+    setup.station.outlet = { on: true, watts: 0 };
+    return { ...setup, other };
+  }
+
+  test('cutting what a station’s outlet feeds is confirmed, naming the part it reaches', async () => {
+    const { gateway, station } = chain();
+    const result = await gateway.execute(cut({ deviceId: STATION, part: 'outlet.ac', actor: 'user', by: 'olof' }));
+    expect(result).toMatchObject({ outcome: 'refused', needsConfirmation: true });
+    expect(result.detail).toContain('This feeds Cabin station — Mains and has never been switched from here');
+    expect(station.outletCommands).toHaveLength(0);
+  });
+
+  test('and is verified by the station it feeds seeing its mains go', async () => {
+    const { gateway, station, other } = chain();
+    other.reading = () => ({ present: station.outlet.on, at: now(), connected: true });
+    const result = await gateway.execute(cut({ deviceId: STATION, part: 'outlet.ac' }));
+    expect(result).toMatchObject({ outcome: 'verified', deviceAgreed: true, linkAgreed: true });
+    expect(result.detail).toContain('Cabin station — Mains (mains present: off)');
+  });
+
+  test('a link to a part that no longer offers what the kind reaches is not answering', async () => {
+    const { gateway, station } = chain();
+    const result = await gateway.execute(cut({ deviceId: STATION, part: 'outlet.ac' }));
+    expect(result.outcome).not.toBe('refused');
+    expect(station.outletCommands).toEqual([['outlet.ac', false]]);
+    const wrong = harness({ feeds: false, links: { [`${PLUG}:${MAIN_PART}`]: [{ kind: 'feeds', target: { device: STATION, part: 'outlet.ac' } }] } });
+    expect((await wrong.gateway.execute(cut())).detail).toContain('is not answering');
+  });
+});
+
+describe('what a command declares', () => {
+  /*
+    A capability of a package's own, in the library's shape: the gateway takes
+    it from the description and needs no edit for it — its consequence included.
+  */
+  const LOCK = savedDeviceId('d-lock');
+  const LOCK_DESCRIPTION: DeviceDescription = {
+    capabilities: {
+      'acme.safe.bolt': {
+        label: 'Bolt',
+        attributes: { thrown: { means: 'switch.on', required: true } },
+        commands: { set: { description: 'Throw or draw the bolt', args: { thrown: { type: 'boolean' } }, sets: { thrown: 'thrown' }, consequential: 'always' } },
+        queries: {},
+      },
+    },
+    parts: [{ id: MAIN_PART, label: 'Safe', kind: 'lock', offers: ['acme.safe.bolt'] }],
+    attributes: [{ key: 'bolt', label: 'Bolt', value: { type: 'boolean' }, means: 'switch.on' }],
+  };
+
+  test('a package’s own capability is commanded like any other, and "always" means every time', async () => {
+    let thrown = false;
+    const session: DeviceSession = {
+      health: () => health(true),
+      readings: () => [{ key: 'bolt', value: thrown, at: now() }],
+      command: async (request) => {
+        thrown = request.args.thrown as boolean;
+        return { accepted: true };
+      },
+      close: async () => {},
+    };
+    const { gateway } = harness({ devices: { [LOCK]: { name: 'Safe', session, description: LOCK_DESCRIPTION, offline: 'Not answering' } } });
+    const intent = cut({ deviceId: LOCK, capability: 'acme.safe.bolt', command: 'set', args: { thrown: true }, actor: 'user', by: 'olof' });
+    expect(await gateway.execute(intent)).toMatchObject({ outcome: 'refused', needsConfirmation: true });
+    expect(await gateway.execute({ ...intent, confirmation: CONFIRMATION })).toMatchObject({ outcome: 'verified' });
+    expect(thrown).toBe(true);
   });
 });
 

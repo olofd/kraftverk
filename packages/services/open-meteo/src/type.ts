@@ -18,20 +18,43 @@ import { forecastSwitch, skyLooks } from './automation.ts';
  * current hour's temperature and cloud cover as attributes, so they are charted
  * like any measurement. Its place is its config; the place is sent to
  * Open-Meteo to ask for the forecast, and nowhere else.
+ *
+ * A reading's time is when the forecast was fetched — when the value was
+ * observed — not the hour it is about; the hour is in the forecast's own data.
+ * A forecast stays current for an hour: two fetches, so one that fails does
+ * not leave a gap in history.
  */
 
 type WeatherConfig = { latitude: number; longitude: number; place?: string };
 
-const DESCRIPTION: DeviceDescription = {
-  parts: [{ id: MAIN_PART, label: 'Forecast', kind: 'sensor', offers: ['weather.forecast'] }],
-  attributes: [
-    { key: 'temperature', label: 'Temperature', value: { type: 'number', unit: '°C', precision: 1 }, quantity: 'temperature', means: 'weather.temp', category: 'primary' },
-    { key: 'cloudCover', label: 'Cloud cover', value: { type: 'number', unit: '%', precision: 0 }, quantity: 'percent', means: 'weather.cloud' },
-  ],
-};
-
 /** How often to ask. The forecast changes a few times a day; this is plenty. */
 const REFRESH_MS = 30 * 60_000;
+
+/** How long a fetched forecast's hour stays current: two fetches. */
+const CURRENT_FOR_MS = 2 * REFRESH_MS;
+
+const DESCRIPTION: DeviceDescription = {
+  parts: [{ id: MAIN_PART, label: 'Forecast', kind: 'forecast', offers: ['weather.forecast'] }],
+  attributes: [
+    {
+      key: 'temperature',
+      label: 'Temperature',
+      value: { type: 'number', unit: '°C', precision: 1 },
+      quantity: 'temperature',
+      means: 'temperature.air',
+      category: 'primary',
+      currentFor: CURRENT_FOR_MS,
+    },
+    {
+      key: 'cloudCover',
+      label: 'Cloud cover',
+      value: { type: 'number', unit: '%', precision: 0 },
+      quantity: 'percent',
+      means: 'sky.cloudCover',
+      currentFor: CURRENT_FOR_MS,
+    },
+  ],
+};
 
 const hourOf = (hours: readonly WeatherHour[], at = Date.now()): WeatherHour | null => {
   let current: WeatherHour | null = null;
@@ -58,9 +81,10 @@ function weatherSession(options: {
       const hour = hourOf(options.hours());
       const at = options.fetchedAt();
       if (!hour || !at) return [];
+      // Observed when it was fetched: the hour it is about is not when anyone saw it.
       return [
-        { key: 'temperature', value: hour.temperatureC, at: hour.at },
-        { key: 'cloudCover', value: hour.cloudCoverPercent, at: hour.at },
+        { key: 'temperature', value: hour.temperature, at },
+        { key: 'cloudCover', value: hour.cloudCover, at },
       ];
     },
     command: async () => ({ accepted: false, error: 'A forecast takes no commands' }),
@@ -123,10 +147,10 @@ function simulatedSession(ctx: DeviceContext<WeatherConfig>): DeviceSession {
       const cloud = Math.round(50 + 40 * Math.sin(i / 7));
       return {
         at: at.toISOString(),
-        temperatureC: Math.round((8 + 8 * daylight) * 10) / 10,
-        cloudCoverPercent: cloud,
-        precipitationMm: cloud > 80 ? 0.4 : 0,
-        irradianceWm2: Math.round(800 * daylight * (1 - cloud / 130)),
+        temperature: Math.round((8 + 8 * daylight) * 10) / 10,
+        cloudCover: cloud,
+        precipitation: cloud > 80 ? 0.4 : 0,
+        irradiance: Math.round(800 * daylight * (1 - cloud / 130)),
       };
     });
   };
@@ -172,6 +196,7 @@ export default defineDeviceType<WeatherConfig>({
       protocol: 'open-meteo',
       transport: 'https',
       address: OPEN_METEO,
+      reach: 'cloud',
     },
   ],
   setup: {
@@ -203,7 +228,7 @@ export default defineDeviceType<WeatherConfig>({
     return {
       identity: null,
       model: null,
-      summary: `${now?.temperatureC ?? '?'} °C now, ${now?.cloudCoverPercent ?? '?'} % cloud; ${hours.length} hours of forecast.`,
+      summary: `${now?.temperature ?? '?'} °C now, ${now?.cloudCover ?? '?'} % cloud; ${hours.length} hours of forecast.`,
     };
   },
 

@@ -1,9 +1,10 @@
-import { capabilitySpec, isCapability, meetsNeed, type CapabilityName, type CapabilityNeed } from './capabilities.ts';
-import { attributeMeaning, MAIN_PART, partsOf, type DeviceDescription } from './description.ts';
-import type { DeviceSession } from './device-type.ts';
+import { capabilitySpec, isCapability, meetsNeed, type CapabilityId, type CapabilityName, type CapabilityNeed, type QueryAnswer, type QueryName } from './capabilities.ts';
+import { attributeMeaning, MAIN_PART, partsOf, type DeviceDescription, type Reading } from './description.ts';
+import type { QueryRequest } from './device-type.ts';
+import type { SessionHealth } from './identity.ts';
 import { standardMeaning } from './meanings.ts';
 import { valueTypeOf, type ConfigSchema } from './schema.ts';
-import { enumLabel, type Value, type ValueType } from './values.ts';
+import { checkValue, enumLabel, isScalar, type ScalarValue, type Value, type ValueType } from './values.ts';
 
 /**
  * Automations as data: the rule (docs/AUTOMATIONS.md).
@@ -85,15 +86,50 @@ export type Recipe = Rule & {
 /** A value, and in words why it is what it is. */
 export type Evaluation = { value: Value; detail: string | null };
 
+/**
+ * A device as a function may see it: what it reports, how it is doing, and
+ * its queries answered — each answer checked against the type its capability
+ * declares. Nothing that acts: a function answers, it never commands, writes
+ * or runs a tool, and it is not handed anything that could.
+ */
+export type DeviceReader = {
+  readings(): readonly Reading[];
+  health(): SessionHealth;
+  query(request: QueryRequest): Promise<Value>;
+};
+
 /** The part filling a role, as a function sees it. */
 export type RulePart = {
   /** "Heater plug", or "Garage station — AC outlets". */
   name: string;
   part: string;
-  session: DeviceSession | null;
+  /** Null when there is nothing to ask: it is offline, or held by an app. */
+  device: DeviceReader | null;
   /** Why it cannot answer, when it cannot. */
   offline: string;
 };
+
+/**
+ * Asks the part filling a role one of a library capability's queries, and
+ * answers in the type the capability declares — checked, so a function reads
+ * a forecast as a forecast, with no cast. Throws, saying why, when the part
+ * cannot answer or answers something else.
+ */
+export async function ask<Name extends CapabilityName, Query extends QueryName<Name>>(
+  part: RulePart,
+  capability: Name,
+  query: Query,
+  args: Readonly<Record<string, Value>>
+): Promise<QueryAnswer<Name, Query>> {
+  if (!part.device) throw new Error(`${part.name} is not answering: ${part.offline}`);
+  const declared = capabilitySpec(capability).queries[query];
+  if (!declared) throw new Error(`${capability} has no query "${query}"`);
+  const answer = await part.device.query({ part: part.part, capability, query, args });
+  const checked = checkValue(declared.answer, answer);
+  if (!checked.ok) throw new Error(`${part.name} answered ${capability}.${query} with something else: its answer ${checked.problem}`);
+  // Checked against the declaration the type is derived from.
+  return checked.value as QueryAnswer<Name, Query>;
+}
 
 export type FunctionContext = {
   part: RulePart;
@@ -127,22 +163,43 @@ export const defineFunction = (fn: AutomationFunction): AutomationFunction => fn
 
 // --- checking a rule --------------------------------------------------------------
 
-/** What an expression is, as far as can be known before it runs. */
-type Shape = { type: 'number'; unit: string | null } | { type: 'boolean' } | { type: 'string'; options: readonly string[] | null } | { type: 'unknown' };
+/**
+ * What an expression is, as far as can be known before it runs. A list or an
+ * object is `structure`: a rule can hand one to a function, never compare it —
+ * reading into structure is what functions are for.
+ */
+type Shape = { type: 'number'; unit: string | null } | { type: 'boolean' } | { type: 'string'; options: readonly string[] | null } | { type: 'structure' } | { type: 'unknown' };
 
-const shapeOf = (type: ValueType): Shape =>
-  type.type === 'number'
-    ? { type: 'number', unit: type.unit ?? null }
-    : type.type === 'boolean'
-      ? { type: 'boolean' }
-      : type.type === 'enum'
-        ? { type: 'string', options: type.options.map((option) => option.value) }
-        : { type: 'string', options: null };
+const shapeOf = (type: ValueType): Shape => {
+  switch (type.type) {
+    case 'number':
+      return { type: 'number', unit: type.unit ?? null };
+    case 'boolean':
+      return { type: 'boolean' };
+    case 'enum':
+      return { type: 'string', options: type.options.map((option) => option.value) };
+    case 'string':
+    case 'timestamp':
+      return { type: 'string', options: null };
+    case 'list':
+    case 'object':
+      return { type: 'structure' };
+  }
+};
 
 const shapeOfValue = (value: Value): Shape =>
-  value === null ? { type: 'unknown' } : typeof value === 'number' ? { type: 'number', unit: null } : typeof value === 'boolean' ? { type: 'boolean' } : { type: 'string', options: null };
+  value === null
+    ? { type: 'unknown' }
+    : typeof value === 'number'
+      ? { type: 'number', unit: null }
+      : typeof value === 'boolean'
+        ? { type: 'boolean' }
+        : typeof value === 'string'
+          ? { type: 'string', options: null }
+          : { type: 'structure' };
 
-const said = (shape: Shape): string => (shape.type === 'number' && shape.unit ? `a number in ${shape.unit}` : shape.type === 'number' ? 'a number' : `a ${shape.type}`);
+const said = (shape: Shape): string =>
+  shape.type === 'number' && shape.unit ? `a number in ${shape.unit}` : shape.type === 'number' ? 'a number' : shape.type === 'structure' ? 'a list or an object' : `a ${shape.type}`;
 
 /** Whether a value of shape `given` may stand where `wanted` is expected. */
 function fits(wanted: Shape, given: Shape): boolean {
@@ -203,7 +260,7 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       if (spec && !meaningsOfNeed(spec).has(expr.read.means)) {
         problems.push(`${where}: ${expr.read.role} asks for nothing that reports ${expr.read.means}`);
       }
-      return standard.quantity === 'state' ? { type: 'boolean' } : { type: 'number', unit: standard.unit || null };
+      return standard.type === 'boolean' ? { type: 'boolean' } : { type: 'number', unit: standard.unit || null };
     }
     if ('call' in expr) {
       if (!options.calls) problems.push(`${where}: "becomes" is evaluated on every reading, so it cannot call ${expr.call}`);
@@ -236,6 +293,7 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       if (!fits(left, right)) problems.push(`${where}: compares ${said(left)} with ${said(right)}`);
       const ordered = ['lt', 'le', 'gt', 'ge'].includes(expr.compare);
       if (ordered && [left, right].some((side) => side.type === 'boolean' || side.type === 'string')) problems.push(`${where}: only numbers are above or below each other`);
+      if ([left, right].some((side) => side.type === 'structure')) problems.push(`${where}: a list or an object is read by a function, not compared`);
       // An option the other side can never be is a mistake, not a condition.
       for (const [side, other] of [[left, expr.right], [right, expr.left]] as const) {
         if (side.type === 'string' && side.options && 'value' in other && typeof other.value === 'string' && !side.options.includes(other.value)) {
@@ -324,6 +382,10 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
   return problems;
 }
 
+/** The events a role's capabilities declare: what a trigger on it can wait for before it is bound. */
+export const roleEvents = (spec: CapabilityNeed): string[] =>
+  [...new Set([...spec.capabilities, ...(spec.oneOf ?? [])].flatMap((name) => (isCapability(name) ? Object.keys(capabilitySpec(name).events ?? {}) : [])))];
+
 /** Every role a rule reads, triggers on or acts through, with what it asks of it. */
 function uses(rule: Rule): { reads: { role: string; means: string }[]; events: { role: string; event: string }[] } {
   const reads: { role: string; means: string }[] = [];
@@ -352,7 +414,7 @@ export type BoundPart = {
   name: string;
   description: DeviceDescription;
   part: string;
-  capabilities: readonly CapabilityName[];
+  capabilities: readonly CapabilityId[];
 };
 
 /**
@@ -393,7 +455,7 @@ export const readsRole = (rule: Rule, role: string): boolean => uses(rule).reads
 export type RuleScope = {
   param(name: string): Value;
   /** What the part filling a role reports now for a meaning, or null when it cannot be known. */
-  read(role: string, means: string): { value: Value; label: string; unit: string } | null;
+  read(role: string, means: string): { value: ScalarValue; label: string; unit: string } | null;
   /** A function's answer; not given where calls are not allowed. */
   call?(fn: string, role: string, args: Readonly<Record<string, Value>>): Promise<Evaluation>;
   /** How a role's part is named: "Garage station". */
@@ -401,7 +463,8 @@ export type RuleScope = {
 };
 
 const compare = (op: CompareOp, left: Value, right: Value): Value => {
-  if (left === null || right === null) return null;
+  // Unknown is never an answer; structure is not compared.
+  if (left === null || right === null || !isScalar(left) || !isScalar(right)) return null;
   switch (op) {
     case 'eq':
       return left === right;
@@ -421,7 +484,17 @@ const combine = (kind: 'all' | 'any', values: readonly Value[]): Value => {
 };
 
 const shown = (value: Value, unit = ''): string =>
-  value === null ? 'unknown' : typeof value === 'boolean' ? (value ? 'yes' : 'no') : typeof value === 'number' ? `${Math.round(value * 100) / 100}${unit ? (unit === '%' ? ' %' : ` ${unit}`) : ''}` : value;
+  value === null
+    ? 'unknown'
+    : typeof value === 'boolean'
+      ? value ? 'yes' : 'no'
+      : typeof value === 'number'
+        ? `${Math.round(value * 100) / 100}${unit ? (unit === '%' ? ' %' : ` ${unit}`) : ''}`
+        : typeof value === 'string'
+          ? value
+          : Array.isArray(value)
+            ? `${value.length} values`
+            : 'a set of values';
 
 /**
  * An expression's value, or null when it cannot be known — and, in `trace`,
@@ -490,10 +563,9 @@ const OP_WORDS: Record<CompareOp, string> = { lt: 'is below', le: 'is at most', 
  * How an automation reads, in one sentence: its recipe's wording with roles
  * and settings filled in, or one made from the rule itself.
  */
-export function describeRule(rule: Rule & { sentence?: string }, params: Readonly<Record<string, Value>>, name: (role: string) => string, vocabulary?: RuleVocabulary): string {
+/** One expression of a rule, in words, with its settings filled in: "Garage station's charge is below 15 %". */
+export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<string, Value>>, name: (role: string) => string, vocabulary?: RuleVocabulary): string {
   const param = (key: string) => paramText(rule.params, key, params[key] ?? null);
-  if (rule.sentence) return rule.sentence.replace(/\{(\w+)\}/g, (_, key: string) => (key in rule.roles ? name(key) : param(key)));
-
   const text = (expr: Expr): string => {
     if ('value' in expr) return shown(expr.value);
     if ('param' in expr) return param(expr.param);
@@ -504,6 +576,14 @@ export function describeRule(rule: Rule & { sentence?: string }, params: Readonl
     if ('any' in expr) return expr.any.map(text).join(' or ');
     return `not (${text(expr.not)})`;
   };
+  return text(expr);
+}
+
+export function describeRule(rule: Rule & { sentence?: string }, params: Readonly<Record<string, Value>>, name: (role: string) => string, vocabulary?: RuleVocabulary): string {
+  const param = (key: string) => paramText(rule.params, key, params[key] ?? null);
+  if (rule.sentence) return rule.sentence.replace(/\{(\w+)\}/g, (_, key: string) => (key in rule.roles ? name(key) : param(key)));
+
+  const text = (expr: Expr): string => describeExpr(rule, expr, params, name, vocabulary);
   // What can be known from the settings alone — "turn it on", not "turn it (action is on)".
   const settled: RuleScope = {
     param: (key) => {

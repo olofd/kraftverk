@@ -8,7 +8,7 @@ import { join } from 'node:path';
  * reached, and how they fit the house (docs/DATA-MODEL.md §3). These cover the
  * lifecycle — add, rename, remove keeping history, bring back, delete for good
  * — and the rules the data model depends on: one device per identity, one
- * device per exclusive address, one `feeds` link per source.
+ * device per exclusive address, one `feeds` link per source part.
  *
  * The database is a throwaway. Running these against `server/data` would put
  * test devices in the owner's own list.
@@ -46,7 +46,7 @@ afterAll(() => {
 const add = (name: string, identity: string | null = null) => catalog.add({ description: LAMP, typeId: 'aferiy.p280', name, identity });
 
 const sample = (id: string) =>
-  db().query('INSERT INTO sample (device_id, key, at, value) VALUES (?, ?, ?, ?)').run(id, 'soc', new Date().toISOString(), 50);
+  db().query("INSERT INTO sample (device_id, part, key, at, value) VALUES (?, 'main', ?, ?, ?)").run(id, 'soc', new Date().toISOString(), 50);
 
 const samplesOf = (id: string) => db().query<{ n: number }, [string]>('SELECT COUNT(*) n FROM sample WHERE device_id = ?').get(id)!.n;
 
@@ -94,7 +94,7 @@ describe('removing a device', () => {
     const plug = catalog.add({ description: LAMP, typeId: 'atorch.s1w', name: 'Plug' });
     const connection = connections.add({ deviceId: station.id, method: 'wifi', transport: 'mqtt', heldBy: null, address: 'AABBCC000003' });
     connections.setSecrets(connection.id, { localKey: 'k' });
-    links.add({ kind: 'feeds', sourceId: plug.id, targetId: station.id });
+    links.add({ kind: 'feeds', source: { device: plug.id, part: 'main' }, target: { device: station.id, part: 'input.ac' } });
     sample(station.id);
 
     catalog.remove(station.id);
@@ -173,19 +173,30 @@ describe('connections', () => {
 });
 
 describe('links', () => {
-  test('a source feeds one thing: a second feeds link replaces the first', () => {
+  test('a source part feeds one thing: a second feeds link replaces the first', () => {
     const plug = catalog.add({ description: LAMP, typeId: 'atorch.s1w', name: 'Feeder' });
     const first = add('First station');
     const second = add('Second station');
-    links.add({ kind: 'feeds', sourceId: plug.id, targetId: first.id });
-    links.add({ kind: 'feeds', sourceId: plug.id, targetId: second.id });
+    links.add({ kind: 'feeds', source: { device: plug.id, part: 'main' }, target: { device: first.id, part: 'input.ac' } });
+    links.add({ kind: 'feeds', source: { device: plug.id, part: 'main' }, target: { device: second.id, part: 'input.ac' } });
 
-    expect(links.targetOf('feeds', plug.id)).toBe(second.id);
+    expect(links.from(plug.id, 'main').map((link) => link.target)).toEqual([{ device: second.id, part: 'input.ac' }]);
     expect(links.forDevice(first.id)).toEqual([]);
+  });
+
+  test('each part of a device is a source of its own', () => {
+    const station = add('Station with outlets');
+    const one = add('One');
+    const two = add('Two');
+    links.add({ kind: 'feeds', source: { device: station.id, part: 'outlet.ac' }, target: { device: one.id, part: 'input.ac' } });
+    links.add({ kind: 'feeds', source: { device: station.id, part: 'outlet.dc' }, target: { device: two.id, part: 'input.ac' } });
+    expect(links.from(station.id, 'outlet.ac').map((link) => link.target.device)).toEqual([one.id]);
+    expect(links.from(station.id, 'outlet.dc').map((link) => link.target.device)).toEqual([two.id]);
+    expect(links.from(station.id, 'main')).toEqual([]);
   });
 
   test('a device cannot feed itself', () => {
     const plug = catalog.add({ description: LAMP, typeId: 'atorch.s1w', name: 'Loop' });
-    expect(() => links.add({ kind: 'feeds', sourceId: plug.id, targetId: plug.id })).toThrow();
+    expect(() => links.add({ kind: 'feeds', source: { device: plug.id, part: 'main' }, target: { device: plug.id, part: 'main' } })).toThrow();
   });
 });

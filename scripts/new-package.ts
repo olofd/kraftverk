@@ -100,7 +100,7 @@ type Config = Record<string, never>;
  * \`switch.set\`, and the gateway checks it by reading \`on\` back.
  */
 const DESCRIPTION: DeviceDescription = {
-  parts: [{ id: MAIN_PART, label: '${title}', kind: 'outlet', offers: ['switch'] }],
+  parts: [{ id: MAIN_PART, label: '${title}', kind: 'outlet', energy: { role: 'load' }, offers: ['switch'] }],
   attributes: [{ key: 'on', label: 'On', value: { type: 'boolean' }, means: 'switch.on' }],
 };
 
@@ -136,8 +136,8 @@ export default defineDeviceType<Config>({
   },
   config: { fields: {} },
   describe: () => DESCRIPTION,
-  // One way to reach it: its protocol over a transport. Replace with the real one.
-  connections: [{ id: 'lan', label: 'Home network', protocol: 'tuya-local', transport: 'lan' }],
+  // One way to reach it: its protocol over a transport, and whether it needs the vendor's cloud. Replace with the real one.
+  connections: [{ id: 'lan', label: 'Home network', protocol: 'tuya-local', transport: 'lan', reach: 'local' }],
 
   async identify() {
     throw new Error('Reading a real ${title} is not written yet');

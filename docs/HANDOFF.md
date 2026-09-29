@@ -33,23 +33,30 @@ empty: the core names no product, and every device is found, not listed.
   tuya-plug, atorch-s1w), `packages/services` (open-meteo) and
   `packages/gateway`. The server finds them at start; the app binds them in
   through `client/src/generated/registry.ts`.
-- **The device model** (2026-09-29, ARCHITECTURE.md §4.2, steps 23–26): a
-  device is described by parts, attributes and events; capabilities are
+- **The device model** (2026-09-29, ARCHITECTURE.md §4.2, steps 23–26 and
+  35): a device is described by parts, attributes and events; capabilities are
   declared like Matter clusters and projected into Home Assistant and Matter
   (`standards.ts`); commands go to a part, settings are attributes written
-  through the gateway. There is one contract and one database schema
+  through the gateway. Keys off `main` begin with their part; each attribute
+  says how long its value stays current; links join parts; tools, query
+  answers and what makes a command consequential are declared as data and
+  checked. There is one contract and one database schema
   (`server/src/history/schema.ts`): a database from an older schema is set
   aside on start, and history is not carried over. Removing a device keeps its
   history.
+- **Live** (step 27): `GET /api/live`, a WebSocket, carries readings that
+  moved, health and events; the app polls only while it is down.
 - **The app holds connections too.** "Bluetooth, from this browser" runs the
   station's own session in the app, sends readings to the server and follows the
   gateway's rules there (`client/src/runtime`). Web Bluetooth is verified in the
   browser's add flow up to its chooser; native Bluetooth
   (`transport-ble/src/native.ts`) has not run on a phone.
-- **Automations** (step 14): recipes with roles filled by devices, observing
-  until armed, run by the server through the gateway and audited
-  (`server/src/automations`, the app's Automations screen). The first recipe
-  switches by the forecast; the backup reserve and rules are next.
+- **Automations** (steps 14, 29): one typed rule language
+  ([AUTOMATIONS.md](AUTOMATIONS.md)) — roles filled by parts, triggers by
+  clock, event and threshold, commands through the gateway — observing until
+  armed, audited. The shared recipes (`standard.*` in the SDK: a battery
+  running low, charging between two levels, mains lost) and the packages'
+  own (the forecast switch) are what automations are made from.
 
 **Local mode.** The app does not need a server. A server is a client-side record
 — address, name — kept in `localStorage` by `client/src/lib/servers.ts`, one

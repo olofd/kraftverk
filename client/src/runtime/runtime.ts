@@ -131,7 +131,10 @@ export class AppRuntime {
         }
         return seen ? { name: seen.name, session: viewSession(seen), description: seen.description, offline: seen.health.detail } : null;
       },
-      feeds: (id) => (this.#view.get(id)?.links.find((link) => link.kind === 'feeds' && link.role === 'source')?.other.id as SavedDeviceId | undefined) ?? null,
+      linksFrom: (id, part) =>
+        (this.#view.get(id)?.links ?? [])
+          .filter((link) => link.role === 'source' && link.part === part)
+          .map((link) => ({ kind: link.kind, target: { device: link.other.id, part: link.other.part } })),
       isReadOnly: () => !this.#allowWrites,
       readOnlyReason: 'Writes from this app are off: allow them in App settings',
       record: (entry) => audit(entry),

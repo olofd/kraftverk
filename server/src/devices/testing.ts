@@ -105,7 +105,7 @@ export const lampProtocol: Protocol = {
     },
   },
   credentials: {
-    schema: { fields: { pin: { type: 'secret', title: 'PIN' } } },
+    schema: { fields: { pin: { type: 'string', presentation: 'secret', title: 'PIN' } } },
     // Finds a secret, as fetching a key from a vendor's cloud does.
     actions: [
       {
@@ -173,14 +173,11 @@ const lampSession = (ctx: DeviceContext<LampConfig>, channel: ByteChannel | null
       return { accepted: true };
     },
     identity: () => ({ id: state && channel ? `lampish:${state.serial}` : null, name: null }),
-    advanced: {
-      ping: { writes: false, run: async () => ({ pong: true, room: ctx.config.room ?? null }) },
-      blink: {
-        writes: true,
-        run: async (input) => {
-          if (input.times === 99) throw new Error('Refused: the lamp would overheat');
-          return { blinked: input.times ?? 1 };
-        },
+    tools: {
+      ping: async () => ({ pong: true, room: ctx.config.room ?? null }),
+      blink: async (input) => {
+        if (input.times === 99) throw new Error('Refused: the lamp would overheat');
+        return { blinked: input.times ?? 1 };
       },
     },
     close: async () => {
@@ -201,9 +198,19 @@ export const lampType = defineDeviceType<LampConfig>({
   meta: { name: 'Test lamp', category: 'smart-plug', support: 'experimental', icon: 'sun', models: ['L1'] },
   describe: () => LAMP,
   config: { fields: { room: { type: 'string', title: 'Room' } } },
+  tools: {
+    ping: { label: 'Ping', description: 'Asks the lamp whether it is there.', writes: false, answer: { type: 'object', fields: { pong: { type: 'boolean' }, room: { type: 'string' } }, required: ['pong'] } },
+    blink: {
+      label: 'Blink',
+      description: 'Blinks the lamp.',
+      writes: true,
+      input: { fields: { times: { type: 'number', title: 'Times', integer: true, min: 1, max: 99, default: 1 } } },
+      answer: { type: 'object', fields: { blinked: { type: 'number', integer: true } }, required: ['blinked'] },
+    },
+  },
   connections: [
-    { id: 'bus', label: 'Test bus', protocol: 'lampish', transport: 'bus', recommended: true },
-    { id: 'backup', label: 'Test bus, second port', protocol: 'lampish', transport: 'bus' },
+    { id: 'bus', label: 'Test bus', protocol: 'lampish', transport: 'bus', reach: 'local', recommended: true },
+    { id: 'backup', label: 'Test bus, second port', protocol: 'lampish', transport: 'bus', reach: 'local' },
   ],
   setup: { saveAnyway: 'A lamp that is switched off at the wall cannot answer.' },
   async identify(connection, ctx) {

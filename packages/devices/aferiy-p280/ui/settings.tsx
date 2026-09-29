@@ -107,7 +107,6 @@ function SettingsView({
   settings,
   pending,
   readOnly,
-  direct,
   waitingFor,
   writeError,
   updateSettings,
@@ -136,10 +135,8 @@ function SettingsView({
             Read-only mode
           </Text>
           <Text fontSize={12} color="$muted" lineHeight={18}>
-            These controls still show what the station reports, but every write is refused.{' '}
-            {direct
-              ? 'This app holds the connection and is set to read-only: turn on “Allow writes from this app” in App settings when you are ready to make changes.'
-              : 'The server was started read-only. Whoever runs it can allow writes: READ_ONLY=0 for Docker, or starting it without --read-only.'}
+            These controls still show what the station reports, but every write is refused where it is held — the line above says
+            where, and how to allow writes.
           </Text>
         </Card>
       ) : null}

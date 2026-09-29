@@ -2,16 +2,16 @@ import { describe, expect, test } from 'bun:test';
 
 import type { AttributeSpec, Quantity } from '@kraftverk/device-sdk';
 
-import { fixedRange, formatValue, readingFor, shownAttributes, startsAtZero } from './measurement';
+import { fixedRange, formatValue, isOld, readingFor, shownAttributes, startsAtZero } from './measurement';
 
-/** An attribute the way these cases think of it: a quantity, a unit, a precision. */
-const spec = (over: { key?: string; unit?: string; kind?: Quantity; precision?: number; primary?: boolean; category?: AttributeSpec['category'] } = {}): AttributeSpec => {
+/** An attribute the way these cases think of it: a quantity, a unit, a precision — or an on/off. */
+const spec = (over: { key?: string; unit?: string; kind?: Quantity | 'on/off'; precision?: number; primary?: boolean; category?: AttributeSpec['category'] } = {}): AttributeSpec => {
   const kind = over.kind ?? 'power';
   return {
     key: over.key ?? 'x',
     label: 'X',
-    value: kind === 'state' ? { type: 'boolean' } : { type: 'number', unit: over.unit ?? 'W', ...(over.precision !== undefined ? { precision: over.precision } : {}) },
-    ...(kind !== 'state' ? { quantity: kind } : {}),
+    value: kind === 'on/off' ? { type: 'boolean' } : { type: 'number', unit: over.unit ?? 'W', ...(over.precision !== undefined ? { precision: over.precision } : {}) },
+    ...(kind !== 'on/off' ? { quantity: kind } : {}),
     ...(over.primary ? { category: 'primary' as const } : over.category ? { category: over.category } : {}),
   };
 };
@@ -49,8 +49,8 @@ describe('formatValue', () => {
     expect(formatValue(spec({ kind: 'duration', unit: 's' }), 5400)).toBe('1h 30m');
   });
 
-  test('state reads as on or off whichever way the driver expressed it', () => {
-    const port = spec({ kind: 'state', unit: '' });
+  test('an on/off reads as on or off whichever way it was expressed', () => {
+    const port = spec({ kind: 'on/off', unit: '' });
     expect(formatValue(port, true)).toBe('On');
     expect(formatValue(port, false)).toBe('Off');
     expect(formatValue(port, 1)).toBe('On');
@@ -89,8 +89,20 @@ describe('axis decisions', () => {
 
   test('only a percentage has bounds the data cannot argue with', () => {
     expect(fixedRange('percent')).toEqual([0, 100]);
-    expect(fixedRange('state')).toEqual([0, 1]);
     expect(fixedRange('power')).toBeNull();
+  });
+});
+
+describe('an old value', () => {
+  test('is one observed longer ago than its attribute says a value stays current', () => {
+    const now = Date.parse('2026-09-29T12:00:00Z');
+    const reading = { key: 'x', value: 12, at: '2026-09-29T11:30:00Z' };
+    expect(isOld(spec(), reading, now)).toBe(true);
+    // A forecast, fetched half an hour ago, is current for an hour.
+    expect(isOld({ ...spec(), currentFor: 3_600_000 }, reading, now)).toBe(false);
+    // What was never said is not old: it is not known.
+    expect(isOld(spec(), { ...reading, value: null }, now)).toBe(false);
+    expect(isOld(spec(), undefined, now)).toBe(false);
   });
 });
 

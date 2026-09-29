@@ -298,7 +298,14 @@ function Editor({
     [devices, recipe]
   );
   const chosen = (role: string, device: DeviceView, part: string) => roles[role]?.device === device.id && roles[role]?.part === part;
-  const ready = recipe !== null && name.trim() !== '' && Object.keys(recipe.roles).every((role) => roles[role]) && isComplete(recipe.params, params);
+  // What is still needed, said rather than implied by a greyed-out button. The name is the recipe's until you give one.
+  const missing = recipe
+    ? [
+        ...Object.entries(recipe.roles).flatMap(([role, spec]) => (roles[role] ? [] : [spec.label.toLowerCase()])),
+        ...(isComplete(recipe.params, params) ? [] : ['its settings']),
+      ]
+    : ['a recipe'];
+  const ready = missing.length === 0;
 
   const save = async () => {
     if (!recipe) return;
@@ -306,7 +313,7 @@ function Editor({
     setProblem(null);
     try {
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      onSaved(await createAutomation({ name: name.trim(), recipe: recipe.id, roles, params, timeZone }));
+      onSaved(await createAutomation({ name: name.trim() || recipe.label, recipe: recipe.id, roles, params, timeZone }));
     } catch (err) {
       setProblem(describeError(err) || 'It could not be saved');
     } finally {
@@ -323,7 +330,7 @@ function Editor({
             <YStack key={candidate.id}>
               {index > 0 ? <RowSeparator /> : null}
               <Pressable selected={recipe?.id === candidate.id} onPress={() => (setRecipe(candidate), setParams(defaults(candidate)), setRoles({}))}>
-                <Row title={candidate.label} subtitle={`${candidate.description} From ${candidate.from.name}.`} />
+                <Row title={candidate.label} subtitle={candidate.from ? `${candidate.description} From ${candidate.from.name}.` : candidate.description} />
               </Pressable>
             </YStack>
           ))}
@@ -372,7 +379,7 @@ function Editor({
 
           <YStack gap="$2">
             <SectionLabel>Name</SectionLabel>
-            <Input size="$3" value={name} placeholder="Sunny heater" onChangeText={setName} backgroundColor="$background" borderColor="$borderColor" accessibilityLabel="Name" />
+            <Input size="$3" value={name} placeholder={recipe.label} onChangeText={setName} backgroundColor="$background" borderColor="$borderColor" accessibilityLabel="Name" />
           </YStack>
         </>
       ) : null}
@@ -380,6 +387,11 @@ function Editor({
       {problem ? (
         <Text fontSize={12} color="$danger" lineHeight={18}>
           {problem}
+        </Text>
+      ) : null}
+      {!ready ? (
+        <Text fontSize={12} color="$warning" lineHeight={18} paddingHorizontal="$1" role="status">
+          Still to choose: {missing.join(', ')}.
         </Text>
       ) : null}
       <Text fontSize={12} color="$muted" lineHeight={18} paddingHorizontal="$1">

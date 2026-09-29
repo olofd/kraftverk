@@ -7,7 +7,7 @@ import { validateDescription, type DeviceDescription, type DeviceInfo } from '@k
 import { actorOf } from '../auth/routes.ts';
 import { deviceStore } from '../devices/store.ts';
 import { audit } from '../history/db.ts';
-import { keptKeys } from '../history/sampler.ts';
+import { keptAttributes } from '../history/sampler.ts';
 import { body, deviceOr404, ownClient, type AppDeps } from './shared.ts';
 
 /**
@@ -82,7 +82,7 @@ export function heldRoutes({ catalog, connections, clients, remote, sessions }: 
       if (problems.length) throw new HTTPException(400, { message: `That description does not hold: ${problems.join('; ')}` });
       catalog.describe(record.id, description, (input.info as DeviceInfo | undefined) ?? null);
     }
-    const kept = keptKeys(sessions.description(catalog.get(record.id)!));
+    const kept = keptAttributes(sessions.description(catalog.get(record.id)!));
     const counts = remote.accept(record.id, { clientId: client.id, connectionId: connection.id }, input.readings, kept);
     connections.touch(connection.id);
     return c.json(counts);

@@ -123,8 +123,8 @@ describe('checking it against the parts that fill its roles', () => {
 describe('running it', () => {
   const scope = (soc: Value, params: Record<string, Value> = {}): RuleScope => ({
     param: (name) => ({ below: 20, action: 'on', ...params })[name] ?? null,
-    read: (_role, means) => (means === 'battery.soc' && soc !== null ? { value: soc, label: 'Charge', unit: '%' } : null),
-    call: async (_fn, _role, args) => sky.evaluate({ part: { name: 'Weather', part: 'main', session: null, offline: '' }, args, now: new Date(), timeZone: 'UTC' }),
+    read: (_role, means) => (means === 'battery.soc' && typeof soc === 'number' ? { value: soc, label: 'Charge', unit: '%' } : null),
+    call: async (_fn, _role, args) => sky.evaluate({ part: { name: 'Weather', part: 'main', device: null, offline: '' }, args, now: new Date(), timeZone: 'UTC' }),
     name: () => 'Garage P280',
   });
   const low = (lowBattery.when[0] as { becomes: Expr }).becomes;

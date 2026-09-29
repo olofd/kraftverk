@@ -1,4 +1,4 @@
-import type { HttpChannel, Protocol } from '@kraftverk/device-sdk';
+import type { HttpChannel, Protocol, QueryAnswer } from '@kraftverk/device-sdk';
 
 /**
  * The Open-Meteo forecast API, as a protocol: which request to make for a
@@ -14,19 +14,13 @@ export const OPEN_METEO = 'https://api.open-meteo.com';
 export type Place = { latitude: number; longitude: number };
 
 /**
- * One hour of a forecast: what `weather.forecast`'s `hourly` query answers
- * with, a list of. This service's shape, kept here rather than in the core; a
- * forecast from anywhere else that answers the same query answers in it too.
+ * One hour of a forecast, in the shape `weather.forecast`'s `hourly` query
+ * declares its answer in — derived from that declaration, so this service
+ * answers exactly what the capability says, and a forecast from anywhere else
+ * answers in it too. Irradiance is global horizontal: what reaches a panel
+ * lying flat.
  */
-export type WeatherHour = {
-  /** The start of the hour. */
-  at: string;
-  temperatureC: number | null;
-  cloudCoverPercent: number | null;
-  precipitationMm: number | null;
-  /** Global horizontal irradiance: what reaches a panel lying flat. */
-  irradianceWm2: number | null;
-};
+export type WeatherHour = QueryAnswer<'weather.forecast', 'hourly'>[number];
 
 /** The hourly forecast for a place, three days ahead, in UTC. */
 export const forecastPath = ({ latitude, longitude }: Place): string =>
@@ -56,10 +50,10 @@ export function parseForecast(body: unknown): WeatherHour[] {
     return [
       {
         at: at.toISOString(),
-        temperatureC: numberOrNull(hourly.temperature_2m?.[i]),
-        cloudCoverPercent: numberOrNull(hourly.cloud_cover?.[i]),
-        precipitationMm: numberOrNull(hourly.precipitation?.[i]),
-        irradianceWm2: numberOrNull(hourly.shortwave_radiation?.[i]),
+        temperature: numberOrNull(hourly.temperature_2m?.[i]),
+        cloudCover: numberOrNull(hourly.cloud_cover?.[i]),
+        precipitation: numberOrNull(hourly.precipitation?.[i]),
+        irradiance: numberOrNull(hourly.shortwave_radiation?.[i]),
       },
     ];
   });

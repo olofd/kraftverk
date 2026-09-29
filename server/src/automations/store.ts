@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 
 import type { RoleBinding } from '@kraftverk/api-contract';
-import type { ConfigValues } from '@kraftverk/device-sdk';
+import { automationId, type ConfigValues } from '@kraftverk/device-sdk';
 
 import { db } from '../history/db.ts';
 import type { AutomationMode, AutomationRecord, RunResult } from './engine.ts';
@@ -29,7 +29,7 @@ const parse = <T>(json: string | null, fallback: T): T => {
 };
 
 const toRecord = (row: Row): AutomationRecord => ({
-  id: row.id,
+  id: automationId(row.id),
   name: row.name,
   recipe: row.recipe,
   roles: parse<Record<string, RoleBinding>>(row.roles, {}),
@@ -54,7 +54,7 @@ export class AutomationStore {
   }
 
   create(input: Pick<AutomationRecord, 'name' | 'recipe' | 'roles' | 'params' | 'timeZone'>): AutomationRecord {
-    const id = `a-${randomBytes(6).toString('hex')}`;
+    const id = automationId(`a-${randomBytes(6).toString('hex')}`);
     const now = new Date().toISOString();
     db()
       .query('INSERT INTO automation (id, name, recipe, roles, params, time_zone, mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')

@@ -42,8 +42,10 @@ function DeviceSettings({ device }: { device: DeviceView }) {
  * bricks the machine, that is worth one line.
  */
 function WhereWritesGo({ device }: { device: DeviceView }) {
-  const { screenProps } = useDevices();
-  const { holder, readOnly } = screenProps(device);
+  const { screenProps, holderOf } = useDevices();
+  const { readOnly } = screenProps(device);
+  // Which holder is this screen's business, not a device package's: the app says where writes go.
+  const holder = holderOf(device);
   const theme = useTheme();
   const [tone, icon, message] = readOnly
     ? (['$warning', 'lock', holder === 'this-app' ? 'Read-only: writes from this app are off (App settings).' : 'Read-only: the server refuses every write.'] as const)

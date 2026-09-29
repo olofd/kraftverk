@@ -25,7 +25,11 @@ export type CommandInput = {
 };
 
 export type DeviceActions = {
-  /** Runs one of the type's own tools (`DeviceView.advanced`). */
+  /**
+   * Runs one of the type's own tools (`DeviceView.tools`). Whoever holds the
+   * device checks the input against what the tool asks for and the answer
+   * against what it declares, so `T` is the declared answer's shape.
+   */
   tool<T = unknown>(name: string, input?: Record<string, unknown>): Promise<T>;
   /**
    * Writes attributes the device remembers — its settings — through the
@@ -46,13 +50,27 @@ export type DeviceActions = {
   diagnostic: (<T = unknown>(name: string, query?: Record<string, string | number>) => Promise<T>) | null;
 };
 
+/**
+ * Whether the device can be reached through `actions` now — never who holds
+ * it, which a screen has no business knowing: the same screen draws a device
+ * the server holds, one this app holds over its own radio, and one another
+ * phone has.
+ */
+export type DeviceReach = {
+  /** Commands, writes and tools reach the device now. */
+  now: boolean;
+  /** What is awaited while they do not, or before it has said anything: "Waiting for the server…". */
+  waiting: string;
+  /** How the connection in use is described: "Wi-Fi, through the server". Null when none is in use. */
+  via: string | null;
+};
+
 export type DeviceScreenProps = {
   device: DeviceView;
   actions: DeviceActions;
-  /** Who holds the connection in use: the server, this app, another app, or nobody right now. */
-  holder: 'server' | 'this-app' | 'other-app' | 'none';
+  reach: DeviceReach;
   /** Every write is refused by whoever holds the connection. */
   readOnly: boolean;
-  /** The server, when there is one in the path. */
+  /** The server holding it, when a server does. */
   version: VersionInfo | null;
 };

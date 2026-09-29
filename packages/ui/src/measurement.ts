@@ -1,4 +1,4 @@
-import { enumLabel, quantityOf, unitOf, type AttributeSpec, type Quantity, type Reading, type Value } from '@kraftverk/device-sdk';
+import { enumLabel, isCurrent, quantityOf, unitOf, type AttributeSpec, type Quantity, type Reading, type Value } from '@kraftverk/device-sdk';
 
 import { formatDuration, formatWatts, formatWh } from './format';
 
@@ -19,36 +19,21 @@ export const readingFor = (readings: readonly Reading[], key: string): Reading |
   readings.find((reading) => reading.key === key);
 
 /**
- * When the device last actually said something.
- *
- * The most recent `at` across every reading — which is the device's own clock,
- * not ours. A device that is answering happily while reporting a timestamp from
- * ten minutes ago is exactly the failure this exists to catch.
+ * A value that is known but no longer current: observed longer ago than its
+ * attribute says a value stays current (`AttributeSpec.currentFor`) — two
+ * minutes for power, an hour for a forecast. Shown, because it is what the
+ * device last said, but as old, with when it was observed: the same rule
+ * history and the gateway keep.
  */
-export function freshestAt(readings: readonly Reading[]): string | null {
-  let newest: string | null = null;
-  let newestMs = -Infinity;
+export const isOld = (attribute: Pick<AttributeSpec, 'currentFor' | 'stateClass' | 'value'>, reading: Reading | null | undefined, now = Date.now()): boolean =>
+  Boolean(reading && reading.value !== null && !isCurrent(attribute, reading, now));
 
-  for (const reading of readings) {
-    const ms = Date.parse(reading.at);
-    if (Number.isFinite(ms) && ms > newestMs) {
-      newestMs = ms;
-      newest = reading.at;
-    }
-  }
-  return newest;
+/** When an old value was observed, as a person reads it: "14:02" today, "3 Oct 14:02" before. */
+export function observedAt(at: string, now = new Date()): string {
+  const when = new Date(at);
+  const time = when.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  return when.toDateString() === now.toDateString() ? time : `${when.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} ${time}`;
 }
-
-/**
- * How long a reading may go unrefreshed before it stops counting as live.
- *
- * Generous on purpose: the sampler runs every minute and a slow device can miss
- * one. Two of them is a device that has stopped talking.
- */
-export const STALE_AFTER_MS = 150_000;
-
-export const isStale = (at: string | null): boolean =>
-  at === null || Date.now() - Date.parse(at) > STALE_AFTER_MS;
 
 /** How many decimals a kind is worth, when the device does not say. */
 const DEFAULT_PRECISION: Record<Quantity, number> = {
@@ -63,7 +48,6 @@ const DEFAULT_PRECISION: Record<Quantity, number> = {
   humidity: 0,
   illuminance: 0,
   signal: 0,
-  state: 0,
 };
 
 type Formatted = Pick<AttributeSpec, 'value' | 'quantity' | 'means'>;
@@ -79,15 +63,20 @@ type Formatted = Pick<AttributeSpec, 'value' | 'quantity' | 'means'>;
 export function formatValue(attribute: Formatted, value: Value | undefined): string {
   if (value === null || value === undefined) return '—';
   if (typeof value === 'boolean') return value ? 'On' : 'Off';
-  if (typeof value === 'string') return attribute.value.type === 'enum' ? enumLabel(attribute.value, value) : value;
+  if (typeof value === 'string') {
+    if (attribute.value.type === 'enum') return enumLabel(attribute.value, value);
+    return attribute.value.type === 'timestamp' ? observedAt(value) : value;
+  }
+  // A list or an object is drawn by what knows its shape, not as one value.
+  if (typeof value !== 'number') return Array.isArray(value) ? `${value.length} values` : '…';
   if (!Number.isFinite(value)) return '—';
+  // An on/off kept as 1 or 0 — as history keeps one — still reads as on or off.
+  if (attribute.value.type === 'boolean') return value ? 'On' : 'Off';
 
   const quantity = quantityOf(attribute);
   const unit = unitOf(attribute);
   const precision = attribute.value.type === 'number' ? attribute.value.precision : undefined;
   switch (quantity) {
-    case 'state':
-      return value ? 'On' : 'Off';
     case 'power':
       // The shared formatter knows when to switch to kW; it only applies when
       // the device is actually counting watts.
@@ -124,11 +113,11 @@ const withUnit = (unit: string, digits: number, value: number): string => {
  */
 export const startsAtZero = (quantity: Quantity | null): boolean =>
   quantity === 'power' || quantity === 'energy' || quantity === 'percent' || quantity === 'current' ||
-  quantity === 'duration' || quantity === 'state' || quantity === 'illuminance';
+  quantity === 'duration' || quantity === 'illuminance';
 
 /** A percentage is 0–100 whatever the data did; nothing else has fixed bounds. */
 export const fixedRange = (quantity: Quantity | null): [number, number] | null =>
-  quantity === 'percent' || quantity === 'humidity' ? [0, 100] : quantity === 'state' ? [0, 1] : null;
+  quantity === 'percent' || quantity === 'humidity' ? [0, 100] : null;
 
 /**
  * What a card shows, in order: the attribute marked primary, then the others a

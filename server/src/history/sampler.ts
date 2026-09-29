@@ -1,5 +1,5 @@
 import type { SeriesPoint } from '@kraftverk/api-contract';
-import { keepsHistory, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
+import { isCurrent, keepsHistory, partOf, type AttributeSpec, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
 
 import { db } from './db.ts';
 import type { DeviceRegistry } from '../devices/registry.ts';
@@ -17,6 +17,12 @@ import type { DeviceRegistry } from '../devices/registry.ts';
  * quantity); an operating mode or any text goes in `text`. Nulls — a device
  * that has not reported — are skipped rather than written as zero: a gap in a
  * chart is honest, a zero is a lie about what was happening.
+ *
+ * A reading is sampled only while it is current for its attribute
+ * (`AttributeSpec.currentFor`): a device that stops answering keeps its last
+ * reading, and sampling that every minute drew a flat line through the outage
+ * — as confident as the real data either side of it. How long is the
+ * attribute's to say: a power reading two minutes, a forecast an hour.
  */
 
 /** Where a value is kept in a sample, or null when it is not a value to keep. */
@@ -24,20 +30,15 @@ export function sampleOf(value: Value | undefined): { value: number | null; text
   if (value === null || value === undefined) return null;
   if (typeof value === 'boolean') return { value: value ? 1 : 0, text: null };
   if (typeof value === 'number') return Number.isFinite(value) ? { value, text: null } : null;
-  return { value: null, text: value };
+  if (typeof value === 'string') return { value: null, text: value };
+  return null; // a list or an object: one sample is one value
 }
 
 /** Which of a device's attributes history keeps, by key. */
-export const keptKeys = (description: DeviceDescription): Set<string> =>
-  new Set(description.attributes.filter((attribute) => keepsHistory(attribute)).map((attribute) => attribute.key));
+export const keptAttributes = (description: DeviceDescription): Map<string, AttributeSpec> =>
+  new Map(description.attributes.filter((attribute) => keepsHistory(attribute)).map((attribute) => [attribute.key, attribute]));
 
 const INTERVAL_MS = 60_000;
-/**
- * A reading older than this is not sampled. A device that stops answering
- * keeps its last reading, and sampling that every minute drew a flat line
- * through the outage — as confident as the real data either side of it.
- */
-const STALE_MS = 2 * INTERVAL_MS;
 /** Two weeks of minute samples is a few hundred thousand rows. Plenty, and small. */
 const RETAIN_DAYS = 14;
 /** Hourly roll-ups: two years, for charts that reach back and for calibrating forecasts. */
@@ -98,12 +99,7 @@ export class Sampler {
 
     const now = Date.now();
     const at = new Date(now).toISOString();
-    const fresh = (readingAt: string | null | undefined) => {
-      if (!readingAt) return true; // a reading that does not say when is taken as current
-      const taken = Date.parse(readingAt);
-      return !Number.isFinite(taken) || now - taken <= STALE_MS;
-    };
-    const insert = db().query('INSERT OR REPLACE INTO sample (device_id, key, at, value, text) VALUES (?, ?, ?, ?, ?)');
+    const insert = db().query('INSERT OR REPLACE INTO sample (device_id, part, key, at, value, text) VALUES (?, ?, ?, ?, ?, ?)');
 
     // A device deleted since it was read has no history to add to: skipped, not a failed tick.
     const exists = db().query('SELECT 1 FROM device WHERE id = ?');
@@ -111,11 +107,12 @@ export class Sampler {
     const write = db().transaction(() => {
       for (const device of devices) {
         if (!exists.get(device.id)) continue;
-        const kept = keptKeys(device.description);
+        const kept = keptAttributes(device.description);
         for (const reading of device.readings) {
-          if (!kept.has(reading.key) || !fresh(reading.at)) continue;
+          const attribute = kept.get(reading.key);
+          if (!attribute || !isCurrent(attribute, reading, now)) continue;
           const sample = sampleOf(reading.value);
-          if (sample) insert.run(device.id, reading.key, at, sample.value, sample.text);
+          if (sample) insert.run(device.id, partOf(attribute), reading.key, at, sample.value, sample.text);
         }
       }
     });
@@ -146,10 +143,10 @@ const hourOf = (iso: string) => `${iso.slice(0, 13)}:00:00.000Z`;
 export function rollUp(fromIso = new Date(Date.now() - ROLLUP_WINDOW_MS).toISOString(), toIso = new Date().toISOString()): void {
   db()
     .query(
-      `INSERT OR REPLACE INTO sample_hour (device_id, key, hour, min, avg, max, n)
-         SELECT device_id, key, substr(at, 1, 13) || ':00:00.000Z', min(value), avg(value), max(value), count(*)
+      `INSERT OR REPLACE INTO sample_hour (device_id, part, key, hour, min, avg, max, n)
+         SELECT device_id, part, key, substr(at, 1, 13) || ':00:00.000Z', min(value), avg(value), max(value), count(*)
          FROM sample WHERE value IS NOT NULL AND at >= ? AND at < ?
-         GROUP BY device_id, key, substr(at, 1, 13)`
+         GROUP BY device_id, part, key, substr(at, 1, 13)`
     )
     .run(hourOf(fromIso), toIso);
 }

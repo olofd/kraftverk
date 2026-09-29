@@ -79,7 +79,7 @@ describe('the schema', () => {
   test('a sample holds a number or text, never both and never neither', () => {
     const handle = openSchema(scratch());
     handle.query("INSERT INTO device (id, type_id, name, description, added_at) VALUES ('d-1', 'test.lamp', 'Lamp', '{\"attributes\":[]}', '2026-09-29T00:00:00Z')").run();
-    const insert = handle.query('INSERT INTO sample (device_id, key, at, value, text) VALUES (?, ?, ?, ?, ?)');
+    const insert = handle.query("INSERT INTO sample (device_id, part, key, at, value, text) VALUES (?, 'main', ?, ?, ?, ?)");
     insert.run('d-1', 'soc', '2026-09-29T00:00:00Z', 80, null);
     insert.run('d-1', 'state', '2026-09-29T00:00:00Z', null, 'charging');
     expect(() => insert.run('d-1', 'both', '2026-09-29T00:00:00Z', 1, 'one')).toThrow();

@@ -1,6 +1,6 @@
 import type { ConnectionView, DeviceView, LinkView } from '@kraftverk/api-contract';
-import { deviceCapabilities, methodOf, type SavedDeviceId } from '@kraftverk/device-sdk';
-import { activeConnection } from '@kraftverk/holder';
+import { deviceCapabilities, MAIN_PART, methodOf, partsOf, type DeviceDescription, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { activeConnection, toolsOf } from '@kraftverk/holder';
 
 import type { TransportHost } from '../runtime/transports.ts';
 import type { DeviceCatalog, DeviceRecord } from './catalog.ts';
@@ -30,6 +30,8 @@ import type { DeviceTypeRegistry } from './types.ts';
 /** What every view in one answer is joined from, read once. */
 type Joined = {
   names: Map<SavedDeviceId, string>;
+  /** What each device is now, for naming the part a link reaches. */
+  descriptions: Map<SavedDeviceId, DeviceDescription>;
   connections: Map<SavedDeviceId, ConnectionRecord[]>;
   secrets: Map<string, string[]>;
   links: Map<SavedDeviceId, LinkRecord[]>;
@@ -73,10 +75,11 @@ export class DeviceRegistry {
   #join(active: DeviceRecord[]): Joined {
     const links = new Map<SavedDeviceId, LinkRecord[]>();
     for (const link of this.deps.links.all()) {
-      for (const end of new Set([link.sourceId, link.targetId])) links.set(end, [...(links.get(end) ?? []), link]);
+      for (const end of new Set([link.source.device, link.target.device])) links.set(end, [...(links.get(end) ?? []), link]);
     }
     return {
       names: new Map(active.map((record) => [record.id, record.name])),
+      descriptions: new Map(active.map((record) => [record.id, this.deps.sessions.description(record)])),
       connections: this.deps.connections.byDevice(),
       secrets: this.deps.connections.secretFieldsByConnection(),
       links,
@@ -132,9 +135,11 @@ export class DeviceRegistry {
     });
 
     const links = (joined.links.get(record.id) ?? []).map((link): LinkView => {
-      const role = link.sourceId === record.id ? 'source' : 'target';
-      const otherId = role === 'source' ? link.targetId : link.sourceId;
-      return { id: link.id, kind: link.kind, role, other: { id: otherId, name: names.get(otherId) ?? 'A removed device' } };
+      const role = link.source.device === record.id ? 'source' : 'target';
+      const [mine, other] = role === 'source' ? [link.source, link.target] : [link.target, link.source];
+      const otherDescription = joined.descriptions.get(other.device);
+      const partLabel = other.part === MAIN_PART ? '' : (otherDescription ? partsOf(otherDescription).find((part) => part.id === other.part)?.label : undefined) ?? other.part;
+      return { id: link.id, kind: link.kind, role, part: mine.part, other: { id: other.device, name: names.get(other.device) ?? 'A removed device', part: other.part, partLabel } };
     });
 
     return {
@@ -155,7 +160,8 @@ export class DeviceRegistry {
       config: record.config,
       connections,
       links,
-      advanced: remote ? [] : Object.entries(session?.advanced ?? {}).map(([name, action]) => ({ name, writes: action.writes })),
+      // What its session can run here; an app holding it runs its own.
+      tools: remote ? [] : toolsOf(type?.tools, session).map(({ name, spec }) => ({ name, ...spec })),
       readings: remote?.readings ?? session?.readings() ?? [],
       health: record.removedAt
         ? { status: 'offline', detail: `Removed ${new Date(record.removedAt).toLocaleDateString()}; its history is kept`, owner: null, transport: null, lastReadingAt: null }

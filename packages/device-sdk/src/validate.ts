@@ -1,9 +1,11 @@
 import { CATEGORIES, isCategory } from './categories.ts';
 import { checkRule } from './automation.ts';
-import { PLATFORMS, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, type Protocol, type TransportDefinition } from './connection.ts';
+import { PLATFORMS, REACHES, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, type Protocol, type TransportDefinition } from './connection.ts';
 import { validateDescription } from './description.ts';
 import type { DeviceType } from './device-type.ts';
-import { configDefaults, isSecretField, type ConfigSchema } from './schema.ts';
+import { STANDARD_NAMESPACE } from './recipes.ts';
+import { configDefaults, isSecretField, schemaProblems, type ConfigSchema } from './schema.ts';
+import { valueTypeProblems } from './values.ts';
 
 /**
  * The static half of the contract: everything about a device type, a protocol
@@ -32,18 +34,12 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
 
   // --- identity ---------------------------------------------------------------
   if (!NAMESPACED_ID.test(type.id ?? '')) problem(`id "${type.id}" must be namespaced lowercase, like "brand.model"`);
+  else if (type.id.split('.')[0] === STANDARD_NAMESPACE) problem(`id "${type.id}" is in the namespace "${STANDARD_NAMESPACE}", which is the shared vocabulary's`);
   if (type.kind !== 'hardware' && type.kind !== 'service') problem(`kind must be "hardware" or "service"`);
 
   const meta = type.meta ?? ({} as DeviceType['meta']);
   if (!meta.name?.trim()) problem('meta.name is required');
-  if (!isCategory(meta.category ?? '')) {
-    problem(`meta.category "${meta.category}" is not one of: ${Object.keys(CATEGORIES).join(', ')}`);
-  } else {
-    const section = CATEGORIES[meta.category].section;
-    if ((section === 'services') !== (type.kind === 'service')) {
-      problem(`meta.category "${meta.category}" lists ${section}, but the type is ${type.kind}`);
-    }
-  }
+  if (!isCategory(meta.category ?? '')) problem(`meta.category "${meta.category}" is not one of: ${Object.keys(CATEGORIES).join(', ')}`);
   if (!meta.icon?.trim()) problem('meta.icon is required');
   if (!['verified', 'community', 'experimental'].includes(meta.support)) {
     problem('meta.support must be verified, community or experimental');
@@ -51,6 +47,7 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
 
   // --- config ---------------------------------------------------------------
   if (!type.config?.fields) problem('config is required, even when it has no fields');
+  problems.push(...schemaProblems('config', type.config));
   for (const field of secretsIn(type.config)) {
     problem(`config field "${field}" is a secret; secrets belong to a connection's credentials`);
   }
@@ -68,6 +65,8 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
     if (!method.label?.trim()) problem(`connection method "${method.id}" has no label`);
     if (!method.protocol?.trim()) problem(`connection method "${method.id}" names no protocol`);
     if (!method.transport?.trim()) problem(`connection method "${method.id}" names no transport`);
+    if (!REACHES.includes(method.reach)) problem(`connection method "${method.id}" must say what it reaches: ${REACHES.join(', ')}`);
+    problems.push(...schemaProblems(`connection method "${method.id}" config`, method.config));
     for (const field of secretsIn(method.config)) {
       problem(`connection method "${method.id}": "${field}" is a secret; secrets are the protocol's credentials`);
     }
@@ -107,12 +106,24 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
     }
   }
 
+  // --- tools ------------------------------------------------------------------
+  for (const [name, tool] of Object.entries(type.tools ?? {})) {
+    const where = `tool "${name}"`;
+    if (!/^[a-z][A-Za-z0-9]*$/.test(name)) problem(`${where} is named in camelCase`);
+    if (!tool.label?.trim() || !tool.description?.trim()) problem(`${where} needs a label and a description`);
+    problems.push(...valueTypeProblems(`${where} answer`, tool.answer));
+    problems.push(...schemaProblems(`${where} input`, tool.input));
+    if (secretsIn(tool.input).length) problem(`${where} asks for a secret; a tool's input is audited`);
+    if (tool.honoursReadOnly && !tool.writes) problem(`${where} honours read-only mode but never writes`);
+  }
+
   // --- setup steps ------------------------------------------------------------
   const stepIds = new Set<string>(['ready', 'choose', 'credentials', 'connection', 'check']);
   const steps = [...(type.setup?.steps ?? []), ...methods.flatMap((method) => method.steps ?? [])];
   for (const step of steps) {
     if (stepIds.has(step.id)) problem(`setup step "${step.id}" is declared twice, or uses a name the core reserves`);
     stepIds.add(step.id);
+    if (step.kind === 'form') problems.push(...schemaProblems(`setup step "${step.id}"`, step.schema));
     if (step.kind === 'form' && step.target === 'device') {
       for (const field of Object.keys(step.schema.fields)) {
         if (!(field in (type.config?.fields ?? {}))) problem(`setup step "${step.id}" asks for "${field}", which is not in config`);

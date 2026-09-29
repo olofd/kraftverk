@@ -106,24 +106,34 @@ export const SCHEMA = `
     PRIMARY KEY (connection_id, field)
   );
 
-  /* Facts about the house: this plug feeds that station. */
+  /*
+    Facts about the house, between parts of two devices: this plug's relay
+    feeds that station's mains input. A kind with one target per source
+    (links.ts) is held to it when a link is added.
+  */
   CREATE TABLE device_link (
-    id         TEXT PRIMARY KEY,
-    kind       TEXT NOT NULL,
-    source_id  TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
-    target_id  TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
-    created_at TEXT NOT NULL,
-    CHECK (source_id <> target_id)
+    id            TEXT PRIMARY KEY,
+    kind          TEXT NOT NULL,
+    source_device TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
+    source_part   TEXT NOT NULL,
+    target_device TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
+    target_part   TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    CHECK (source_device <> target_device)
   );
-  CREATE UNIQUE INDEX device_link_one_per_source ON device_link (kind, source_id);
+  CREATE UNIQUE INDEX device_link_once ON device_link (kind, source_device, source_part, target_device, target_part);
+  CREATE INDEX device_link_target ON device_link (target_device);
 
   /*
     One row per device, attribute and minute. Narrow on purpose: no schema knows
     what a watt is, so nothing changes here when something new starts measuring
-    one. A number or an on/off in value; an enum or text in text.
+    one. A number or an on/off in value; an enum or text in text. The part it
+    belongs to is kept beside its key, so history is asked for per part
+    without reading keys.
   */
   CREATE TABLE sample (
     device_id TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
+    part      TEXT NOT NULL,
     key       TEXT NOT NULL,
     at        TEXT NOT NULL,
     value     REAL,
@@ -131,10 +141,12 @@ export const SCHEMA = `
     PRIMARY KEY (device_id, key, at),
     CHECK ((value IS NULL) <> (text IS NULL))
   );
+  CREATE INDEX sample_part ON sample (device_id, part, at);
 
   /* Each numeric attribute's hours, rolled up, kept for two years. */
   CREATE TABLE sample_hour (
     device_id TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
+    part      TEXT NOT NULL,
     key       TEXT NOT NULL,
     hour      TEXT NOT NULL,
     min       REAL NOT NULL,

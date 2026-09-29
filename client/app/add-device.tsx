@@ -7,13 +7,12 @@ import {
   CATEGORIES,
   describeError,
   fetchDeviceTypes,
-  LINK_KINDS,
   type CheckOutcome,
   type DeviceTypeListing,
   type DeviceView,
   type SaveInput,
 } from '@kraftverk/api-client';
-import { describeDeviceType, linkFits, type DeviceDescription, type LinkKind } from '@kraftverk/device-sdk';
+import { describeDeviceType, LINK_KIND_IDS, linkableParts, linkKindSpec, MAIN_PART, type DeviceDescription } from '@kraftverk/device-sdk';
 import { Card, Row, RowSeparator, SectionLabel, haptic } from '@kraftverk/ui';
 
 import { Pressable } from '../src/components/Pressable';
@@ -280,10 +279,17 @@ function matches(type: DeviceTypeListing, query: string): boolean {
 
 function Categories({ types, onPick }: { types: DeviceTypeListing[]; onPick: (id: string) => void }) {
   const theme = useTheme();
-  const sections = (['devices', 'services'] as const).map((section) => ({
-    section,
-    categories: Object.entries(CATEGORIES).filter(([, spec]) => spec.section === section),
-  }));
+  // A category is under Services when what is installed in it is services; the types say, not the category.
+  const isServices = (id: string) => {
+    const installed = types.filter((type) => type.meta.category === id);
+    return installed.length > 0 && installed.every((type) => type.kind === 'service');
+  };
+  const sections = (['devices', 'services'] as const)
+    .map((section) => ({
+      section,
+      categories: Object.entries(CATEGORIES).filter(([id]) => isServices(id) === (section === 'services')),
+    }))
+    .filter(({ categories }) => categories.length > 0);
   return (
     <>
       {sections.map(({ section, categories }) => (
@@ -291,7 +297,8 @@ function Categories({ types, onPick }: { types: DeviceTypeListing[]; onPick: (id
           <SectionLabel>{section === 'devices' ? 'Devices' : 'Services'}</SectionLabel>
           <Card inset>
             {categories.map(([id, spec], index) => {
-              const count = types.filter((type) => type.meta.category === id).length;
+              const installed = types.filter((type) => type.meta.category === id);
+              const count = installed.length;
               return (
                 <YStack key={id}>
                   {index > 0 ? <RowSeparator /> : null}
@@ -299,7 +306,7 @@ function Categories({ types, onPick }: { types: DeviceTypeListing[]; onPick: (id
                     <XStack alignItems="center" gap="$3" paddingLeft="$4">
                       <Feather name={featherName(spec.icon)} size={18} color={count ? theme.accent?.val : theme.muted?.val} />
                       <YStack flex={1}>
-                        <Row title={spec.label} subtitle={count ? `${spec.description} ${count === 1 ? 'One product.' : `${count} products.`}` : 'Nothing installed yet'} disabled={count === 0} />
+                        <Row title={spec.label} subtitle={count ? installed.map((type) => type.meta.name).join(', ') : 'Nothing installed yet'} disabled={count === 0} />
                       </YStack>
                     </XStack>
                   </Pressable>
@@ -495,18 +502,29 @@ function Finish({
 }) {
   const [name, setName] = useState(typeName);
   const [restore, setRestore] = useState<string | null>(outcome.outcome === 'removed' ? (outcome.devices[0]?.id ?? null) : null);
+  /** By question, the other end chosen: "device|part", or empty for none. */
   const [links, setLinks] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Questions a link kind asks, where this device fits one end and a device you have the other.
-  const questions = Object.entries(LINK_KINDS).flatMap(([kind, spec]) => {
-    const asSource = devices.filter((other) => linkFits(kind as LinkKind, description, other.description));
-    const asTarget = devices.filter((other) => linkFits(kind as LinkKind, other.description, description));
-    return [
-      ...(asSource.length ? [{ key: `${kind}:source`, kind, role: 'source' as const, question: spec.question.fromSide, options: asSource }] : []),
-      ...(asTarget.length ? [{ key: `${kind}:target`, kind, role: 'target' as const, question: spec.question.toSide, options: asTarget }] : []),
-    ];
+  // Questions a link kind asks, one per part of this device that fits one end, with the parts of devices you have that fit the other.
+  const questions = LINK_KIND_IDS.flatMap((kind) => {
+    const spec = linkKindSpec(kind);
+    const ask = (role: 'source' | 'target') =>
+      linkableParts(kind, description, role).flatMap((part) => {
+        const options = devices.flatMap((other) =>
+          linkableParts(kind, other.description, role === 'source' ? 'target' : 'source').map((otherPart) => ({
+            value: `${other.id}|${otherPart.id}`,
+            title: otherPart.id === MAIN_PART ? other.name : `${other.name} — ${otherPart.label}`,
+            subtitle: other.meta.name,
+          }))
+        );
+        const question = role === 'source' ? spec.question.fromSide : spec.question.toSide;
+        return options.length
+          ? [{ key: `${kind}:${role}:${part.id}`, kind, role, part: part.id, question: part.id === MAIN_PART ? question : `${part.label}: ${question}`, options }]
+          : [];
+      });
+    return [...ask('source'), ...ask('target')];
   });
 
   const save = async () => {
@@ -522,12 +540,12 @@ function Finish({
               name,
               mode: 'new',
               anyway: outcome.outcome === 'no-answer' ? true : undefined,
-              links: Object.entries(links)
-                .filter(([, other]) => other)
-                .map(([key, other]) => {
-                  const [kind, role] = key.split(':') as [string, 'source' | 'target'];
-                  return { kind, other, role };
-                }),
+              links: questions.flatMap((question) => {
+                const chosen = links[question.key];
+                if (!chosen) return [];
+                const [device, part] = chosen.split('|') as [string, string];
+                return [{ kind: question.kind, part: question.part, other: { device, part }, role: question.role }];
+              }),
             };
       if (attachTo && outcome.outcome === 'no-answer') input.anyway = true;
       await onSaved(await flow.save(input));
@@ -580,11 +598,11 @@ function Finish({
                 <Pressable selected={!links[question.key]} onPress={() => setLinks((before) => ({ ...before, [question.key]: '' }))}>
                   <Row title="None of these" />
                 </Pressable>
-                {question.options.map((other) => (
-                  <YStack key={other.id}>
+                {question.options.map((option) => (
+                  <YStack key={option.value}>
                     <RowSeparator />
-                    <Pressable selected={links[question.key] === other.id} onPress={() => setLinks((before) => ({ ...before, [question.key]: other.id }))}>
-                      <Row title={other.name} subtitle={other.meta.name} />
+                    <Pressable selected={links[question.key] === option.value} onPress={() => setLinks((before) => ({ ...before, [question.key]: option.value }))}>
+                      <Row title={option.title} subtitle={option.subtitle} />
                     </Pressable>
                   </YStack>
                 ))}

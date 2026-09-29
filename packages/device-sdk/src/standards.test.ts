@@ -9,7 +9,7 @@ import {
   homeAssistantEntityOf,
   isProjected,
 } from './standards.ts';
-import { STANDARD_MEANINGS, type StandardMeaningId } from './meanings.ts';
+import { STANDARD_MEANINGS, type StandardMeaning, type StandardMeaningId } from './meanings.ts';
 
 /*
   The projections into Home Assistant and Matter (docs/ARCHITECTURE.md §8
@@ -22,17 +22,18 @@ import { STANDARD_MEANINGS, type StandardMeaningId } from './meanings.ts';
 const meanings = Object.keys(STANDARD_MEANINGS) as StandardMeaningId[];
 
 describe('standard meanings', () => {
-  test("each one's unit is one Home Assistant accepts for its quantity", () => {
+  test("each number's unit is one Home Assistant accepts for its quantity", () => {
     for (const id of meanings) {
-      const { quantity, unit } = STANDARD_MEANINGS[id];
-      expect({ id, ok: HOME_ASSISTANT_QUANTITIES[quantity].units.includes(unit) }).toEqual({ id, ok: true });
+      const meaning: StandardMeaning = STANDARD_MEANINGS[id];
+      if (meaning.type !== 'number') continue;
+      expect({ id, ok: HOME_ASSISTANT_QUANTITIES[meaning.quantity].units.includes(meaning.unit) }).toEqual({ id, ok: true });
     }
   });
 
-  test('an on/off state is a binary sensor or a switch, and a quantity is a sensor', () => {
+  test('an on/off is a binary sensor or a switch, and a number is a sensor', () => {
     for (const id of meanings) {
       const platform = MEANING_PROJECTIONS[id].homeAssistant.platform;
-      const onOff = STANDARD_MEANINGS[id].quantity === 'state';
+      const onOff = STANDARD_MEANINGS[id].type === 'boolean';
       expect({ id, platform: onOff ? platform !== 'sensor' : platform === 'sensor' }).toEqual({ id, platform: true });
     }
   });

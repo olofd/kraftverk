@@ -168,7 +168,7 @@ packages/devices/atorch-s1w/
   src/type.ts           export default defineDeviceType({...})   pure, no React: identify,
                         createSession, createSimulator and any setup steps of its own —
                         in this file, or split beside it as the type grows
-  ui/index.ts           optional screens, export default { dashboard, settings, advanced };
+  ui/index.ts           optional screens, export default { dashboard, settings, advanced (its tools) };
                         the generic ones are used otherwise
   assets/               icon.svg, product.webp
   test/contract.test.ts checkDeviceTypeContract(type) from @kraftverk/device-sdk/testing
@@ -254,10 +254,10 @@ export interface DeviceSession {
   description?(): DeviceDescription | null;                // its own, when it differs from the type's: a pack plugged in
   info?(): DeviceInfo | null;                              // manufacturer, model, serial, firmware
   command(request: CommandRequest): Promise<CommandResult>;  // { part, capability, command, args } — the gateway's only
-  query?(request: QueryRequest): Promise<unknown>;         // data that is not a value now: a forecast
+  query?(request: QueryRequest): Promise<Value>;           // data that is not a value now: a forecast, in its declared type
   write?(patch: Record<string, Value>): Promise<Record<string, Value>>;  // attributes it can be told; a readback
   identity?(): { id: string | null; name: string | null };  // what the device says it is, once it has
-  advanced?: Record<string, AdvancedAction>;               // a register dump: /devices/:id/advanced/:name
+  tools?: Record<string, ToolRun>;                         // the type's declared tools it can run: /devices/:id/tools/:name
   close(): Promise<void>;
 }
 
@@ -289,22 +289,27 @@ product methods, and nothing a device type runs knows **where** it is running.
 
 A capability is **declared the way a Matter cluster is** (step 23): the
 attributes it binds, each to a standard meaning; the commands it accepts, each
-with typed arguments from the one value system (`values.ts`), a safety level
-the gateway enforces, and the attribute it `sets` — which is how the gateway
-verifies it; and queries for data that is not a value now. Nothing implements a
+with typed arguments from the one value system (`values.ts`), **what makes it
+consequential** (step 35) and the attribute it `sets` — which is how the
+gateway verifies it; queries for data that is not a value now, each with the
+type of its **answer**; and the events a part offering it may raise. Nothing implements a
 capability by hand: a session takes commands and queries addressed to a part and
 a capability. A part offers a read-only capability when its attributes carry
 the meanings it requires, and one with commands or queries when it says so
 (`offers`). The set grows deliberately, one reviewed addition at a time, and a
-new capability borrows a Matter cluster's meaning where one exists.
+new capability borrows a Matter cluster's meaning and names where one exists.
+A package may declare capabilities of its own in its description, namespaced
+by its type (`acme.plug.childLock`), in the same shape: offered, commanded and
+verified like any other, with no projection and no place in cross-type
+automations until promoted to the library.
 
-| Capability | Attributes (meaning) | Commands | Safety |
+| Capability | Attributes (meaning) | Commands and queries | Consequential |
 |---|---|---|---|
-| `switch` | `on` (`switch.on`, required) | `set(on)` sets `on` | confirm turning off when critical |
-| `powerMeter` | `watts` (`power.draw`, required), `volts`, `amps`, `hz`, `kwh` | — | read-only |
-| `battery` | `soc` (`battery.soc`, required), `capacity` | — | read-only |
-| `acInput` | `present` (`grid.present`, required), `watts` | — | read-only |
-| `weather.forecast` | — | query `hourly(hours)` | read-only |
+| `switch` | `on` (`switch.on`, required) | `set(on)` sets `on` | turning off while `power.draw` is above 5 W, or while it is the source of a consequential link |
+| `powerMeter` | `activePower` (`power.draw`, required), `voltage`, `activeCurrent`, `frequency`, `energyImported` | — | — |
+| `battery` | `soc` (`battery.soc`, required), `capacity` | — | — |
+| `acInput` | `present` (`grid.present`, required), `activePower`; events `mains.lost`, `mains.restored` | — | — |
+| `weather.forecast` | — | query `hourly(hours)`, answering a list of `{at, temperature, cloudCover, precipitation, irradiance}` | — |
 
 **Projections** (`standards.ts`): every standard meaning, quantity, state class
 and capability says what it is in Home Assistant (platform, device class,
@@ -314,9 +319,12 @@ a meaning or capability without a projection does not compile, and tests
 check the units and clusters agree. A bridge to either standard is a lookup
 in this table.
 
-"Critical" is decided by the gateway at the time: a switch whose device feeds
-another through a link, or an outlet carrying a load. Every read is stamped
-with when the device produced it, and null is unknown — never off, never zero.
+What makes a command consequential is declared, and the gateway evaluates
+the declaration at the time — it names no domain. Every reading is stamped
+with when the device **observed** it, and each attribute says how long a value
+stays current (`currentFor`, from its state class when absent: two minutes
+for a measurement, an hour for a total); history, the gateway and the app all
+hold to it. Null is unknown — never off, never zero.
 The library lives in `packages/device-sdk/src/capabilities.ts`.
 
 A P280's `main` part offers `battery`, its `input.ac` part `acInput`, and
@@ -333,13 +341,17 @@ publish. A type declares it for a device's config (`describe`); a session may
 report its own and change it — a pack plugged in is a new part — and the holder
 keeps the latest with the device.
 
-- **Parts**: `main` always, and whatever the device has several of, each with a
-  kind (outlet, input, battery, sensor…), a role in the flow of energy
-  (source, storage, load) and the capabilities it `offers` beyond what its
-  attributes show.
-- **Attributes**: a `key` — what history is stored under, local to the type:
-  the P280's `soc`, a plug's `watts`; a value type from the one value system
-  (number with unit and precision, boolean, enum, string); a **meaning** — a
+- **Parts**: `main` always, and whatever the device has several of, each of a
+  **kind** from a curated list with an icon (outlet, input, battery, sensor,
+  meter, light, lock, valve, …) or one of the type's own, namespaced
+  (`acme.hopper`), with its icon; an optional place in the flow of energy
+  (`energy: { role: 'source' | 'storage' | 'load' }`) — a lock has none — and
+  the capabilities it `offers` beyond what its attributes show.
+- **Attributes**: a `key` — what history is stored under, beginning with its
+  part when it is not on `main`: the P280's `soc`, `input.ac.present`,
+  `outlet.ac.on`, `pack.1.soc`; a value type from the one value system
+  (number with unit and precision, boolean, enum, string, timestamp, or a list
+  or object of values); how long a value stays **current**; a **meaning** — a
   standard one (`battery.soc`, `power.draw`), whose unit, quantity and state
   class it must keep, or one namespaced by the type (`p280.minutesToFull`); a
   quantity and a **state class** (`measurement`, `total`, `total_increasing`),
@@ -354,8 +366,9 @@ keeps the latest with the device.
 The standard meanings start small and grow only when something needs them:
 `battery.soc`, `battery.capacity`, `power.in`, `power.in.ac`,
 `power.in.solar`, `power.out`, `power.draw`, `energy.total`, `voltage.ac`,
-`current.ac`, `frequency.ac`, `grid.present`, `switch.on`, `weather.temp`,
-`weather.cloud` (`meanings.ts`). `validateDescription` checks every rule, and
+`current.ac`, `frequency.ac`, `grid.present`, `switch.on`, `temperature.air`,
+`sky.cloudCover` (`meanings.ts`) — each named by what it measures, the part
+saying where. An on/off has no quantity: it is a boolean, drawn as a band. `validateDescription` checks every rule, and
 the contract suite checks a session keeps its description.
 
 ### 4.3 Connection methods and setup
@@ -384,26 +397,30 @@ Secrets a server step finds stay on the server; the app sees a short-lived
 placeholder (see [SECURITY.md](SECURITY.md)). Secrets of an app-held connection
 never leave that client.
 
-### 4.4 Links between devices
+### 4.4 Links between parts
 
 Some facts are about the house, not about any one device: *this plug's output
 feeds that station's AC input*. They are recorded as **links**, not as part of
 either device and not inside an automation, because several things need them:
 
-- the gateway, whose second proof after switching a feeding plug is the linked
-  station's `grid.present` (§4.6);
+- the gateway, whose second proof after a command on a linked part is the
+  target part's own evidence (§4.6);
 - the energy-flow view;
 - any number of automations.
 
-A link has a kind, and the kind says which capabilities each end needs — the
-source's main part, and some part of the target — and which meaning on the
-target is its evidence:
+A link joins **parts**: a plug's `main`, a station's `outlet.ac`, another
+station's `input.ac`. Its kind says which capability each end offers, which
+meaning on the target should follow which on the source, whether one source
+part has one target, and whether being its source makes a command
+consequential:
 
-| Kind | From | To | Evidence | Means |
-|---|---|---|---|---|
-| `feeds` | a main part with `switch` | a part with `acInput` | `grid.present` | switching the source switches the target's mains |
+| Kind | From | To | Evidence | One per source | Consequential |
+|---|---|---|---|---|---|
+| `feeds` | a part with `switch` | a part with `acInput` | `grid.present` follows `switch.on` | yes | yes: cutting it, and the first command through it |
 
-One source feeds at most one target. Removing either device removes the
+The gateway walks every link from the part it commands, of any kind, by these
+declarations; it names none. The second kind comes with the first device
+that needs it (`charges`, `measures`). Removing either device removes the
 link. Links replace the global "which station does the relay feed" key, and
 are set while adding a device ("What is plugged into this plug?") or later on
 either device's page.
@@ -459,20 +476,26 @@ a device, through
 `POST /api/devices/:id/parts/:part/commands/:capability/:command` and the
 action gateway; every write of a device's settings through
 `PATCH /api/devices/:id/attributes` and the same gateway. It names no
-capability — what a command takes, what it sets and how careful to be come from
-the library — and applies, per part:
+capability, no link kind and no domain — what a command takes, what it sets
+and what makes it consequential come from the capability's declaration (the
+library's, or one the device's description declares); what a link proves
+from its kind's — and applies, per part:
 
 - that the part offers the capability, and the arguments are the command's own,
   of the right types;
-- the capability's safety level: confirmation when needed — turning off a part
-  that carries a load (its `power.draw`) or feeds another device;
+- confirmation where the command is **consequential** as declared — `switch.set`
+  turning off a part whose `power.draw` is above 5 W — or the part is the
+  source of a link whose kind says being its source is (cutting what feeds a
+  station), and for the first command through such a link;
 - read-only mode;
 - dwell time, per part;
-- fresh data: acting needs readings younger than the policy allows, and an
-  unknown value is never read as a value;
-- verification: reading back the attribute the command `sets`, plus the rules
-  its links add — switching a plug that `feeds` a station is verified by that
-  station's `grid.present` changing, from a reading taken after the switch;
+- fresh data: acting needs readings that are current for their attribute and
+  no older than the policy allows, and an unknown value is never read as a
+  value;
+- verification: reading back the attribute the command `sets`, plus every
+  link from the part — the target part's evidence must come to agree, from a
+  reading taken after the command: a station's `grid.present` following the
+  plug that feeds it;
 - for a write: only attributes that can be written, held to their types, a
   dangerous one confirmed by a person and never changed by an automation;
 - an audit entry naming the account, the automation or the client.
@@ -737,14 +760,15 @@ holders and identity were added to the model (DATA-MODEL.md).
 | 24 | The model, 2: parts, attributes, device information, events | L | done |
 | 25 | Storage and holders carry descriptions | M–L | done |
 | 26 | Packages on the new model; the gateway typed and generic | L | done |
-| 27 | The API: descriptions, typed commands, a live stream | M | descriptions and typed commands done; the stream next |
+| 27 | The API: descriptions, typed commands, a live stream | M | done |
 | 28 | The app: pages from descriptions, slots, a kit for packages, live | L | |
-| 29 | Automations from packages; event and threshold triggers | M | roles over parts done |
+| 29 | Automations from packages; event and threshold triggers | M | done, as a language |
 | 30 | Refinement, discovery, reach, transport state | M | |
 | 31 | The Home Assistant bridge | S–M | |
 | 32 | Packages from outside the repository, and rails for contributors | M | |
 | 33 | The first standard floor: BTHome, then Shelly and ESPHome | M | |
 | 34 | A Matter spike | M | |
+| 35 | The model, part 3: time, structure, consequence, parts and links, tools as data | L | done |
 
 ### Step 0 — Words and one authority
 This document; banners on the ones it replaces. **Done when** there is one
@@ -1170,7 +1194,7 @@ The device-type contract:
 - **Events**, declared, raised with `ctx.event`; `ctx.changed()` for devices
   that push.
 - The session: `readings()`, `command({ part, capability, command, args })`,
-  `write(patch)`, `query(…)`, `advanced`.
+  `write(patch)`, `query(…)`, and the tools it runs (step 35: declared as data).
 
 *Done.* `description.ts` is the model, with `capabilitiesOf` deriving a
 part's capabilities and `validateDescription` checking one; `device-type.ts`
@@ -1291,13 +1315,65 @@ matter.js as a protocol over IP, commissioning over Bluetooth, the fabric in
 transport state; Thread through a border router, multi-admin first. **Done
 when** there is a recorded go or no-go, with the path for Thread.
 
+### Step 35 — The model, part 3 (NEXT-STEP-ARCHITECTURE.md phase 1)
+Everything the review of 2026-09-29 found the model could not say, changed
+everywhere at once (decision 21):
+
+- **Values**: `timestamp`, `list`, `object` (with required fields); a config
+  field is a value type with a **presentation** (`secret`, `host`,
+  `multiline`, `slider`), not a type of its own. `ValueOf` derives the
+  TypeScript type from a declaration.
+- **Time**: a reading's `at` is when it was observed; `AttributeSpec.currentFor`
+  says how long it stays current, and the sampler, the gateway, the rule
+  engine and the app's cards hold to it. Weather history is continuous: its
+  readings were stamped with the hour they were about, and the sampler kept
+  two minutes of every sixty (J2, J20).
+- **Capabilities**: queries declare their `answer` (the forecast's hours; the
+  weather function reads a checked answer, with no cast); commands declare
+  what makes them `consequential`; a package may declare its own,
+  namespaced; `powerMeter`'s attributes take Matter's names; `acInput`
+  declares the events it raises (J3, J10, J12).
+- **Meanings**: `temperature.air` and `sky.cloudCover` replace the weather
+  service's; the quantity `state` is gone (J9).
+- **Parts**: curated kinds with icons and a namespaced escape; the energy role
+  optional; a key off `main` begins with its part, enforced, and `sample`
+  and `sample_hour` carry the part (J1, J8).
+- **Links join parts** (`device_link` has both ends' parts); a kind declares
+  its evidence and whether being its source is consequential, and the
+  gateway walks every kind from a part — it names none. A station's outlet
+  can feed another station (J4, J5).
+- **Categories** are shelves with no product prose; the add screen's sections
+  come from each type's `kind` (J7, J11).
+- **Reach** on every connection method: `local`, `cloud-at-setup`, `cloud`
+  (H11, J19).
+- **Tools declared as data** (`DeviceType.tools`): what each asks for and
+  answers; the holder checks both ways, and the contract suite runs every
+  tool that only reads (J15). `/devices/:id/advanced` is
+  `/devices/:id/tools`.
+- **Screens are not told who holds a device**: `DeviceScreenProps.holder` is
+  `reach` — whether actions reach it now, and what to say while they do not
+  (J16).
+- **Ids are branded**: connection, app, link and automation ids, like the
+  device id (J14).
+- **Automations**: a function is handed a read-only view of its part —
+  readings, health, checked queries — and nothing that acts; recipes that
+  need only the shared vocabulary live beside it in the SDK
+  (`standard.low-battery`, `standard.charge-between`,
+  `standard.mains-lost`), and a package keeps only what its devices alone
+  make possible.
+
+*Done* (2026-09-29). The contract suite checks query and tool answers
+against their declarations, a P280 outlet can feed a device, weather history
+is continuous, and the architecture check stays at zero.
+
 ---
 
 ## 9. Decisions
 
-1. **Which station a plug feeds** is a link between devices (§4.4) — a fact
-   about the house that the gateway, the energy-flow view and automations all
-   read — not part of either device, and not inside one automation.
+1. **Which station a plug feeds** is a link between parts of two devices
+   (§4.4; between devices until step 35) — a fact about the house that the
+   gateway, the energy-flow view and automations all read — not part of
+   either device, and not inside one automation.
 2. **In-app Bluetooth** is not a special path. It is a connection held by the
    app (step 12), and the old path is gone.
 3. **Unverified station models** are removed. One comes back as its own type,

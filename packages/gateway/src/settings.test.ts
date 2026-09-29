@@ -49,7 +49,7 @@ function gateway(options: { stubborn?: boolean; readOnly?: boolean } = {}) {
   const recorded: AuditEntry[] = [];
   const g = new ActionGateway({
     device: () => ({ name: 'Garage station', session: device.session, description: DESCRIPTION, offline: 'n/a' }),
-    feeds: () => null,
+    linksFrom: () => [],
     isReadOnly: () => options.readOnly ?? false,
     record: (entry) => recorded.push(entry),
     policy: { verifyTimeoutMs: 100 },

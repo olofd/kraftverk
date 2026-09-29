@@ -37,30 +37,45 @@ Work through `src/type.ts` in this order:
 1. **What it is.** `meta`: its name, brand, the models it covers as the device
    reports them, and its **category** — one of the fixed list in
    `device-sdk/src/categories.ts` (Power stations, Smart plugs, Weather…). The
-   category decides where the add screen lists it and nothing else. Set
-   `support` honestly: *experimental* until it has run against real hardware.
+   category decides where the add screen lists it and nothing else; what your
+   product is, your own `meta.description` says. Set `support` honestly:
+   *experimental* until it has run against real hardware.
 2. **What it is made of.** `describe(config)` returns its description
    (`device-sdk/src/description.ts`): its **parts** — `main`, and whatever it
-   has several of, such as outlets, inputs, battery packs — and their
-   **attributes**: a key (what history is kept under), a value type (number
-   with unit and precision, boolean, enum, string), a standard **meaning**
-   where one applies (`power.in.ac`, `grid.present`, `switch.on`) or one of
-   your own namespaced by the type, a quantity and state class for numbers,
-   and a category: `primary` leads the card, `diagnostic` stays off it.
-   Settings are attributes with `access: 'write'`, grouped by `section`, and
-   `dangerous` when a wrong value damages the hardware. If the device decides
-   what it has — a pack plugged in — the session reports its own description.
+   has several of, such as outlets, inputs, battery packs — each of a
+   **kind** from the curated list (`outlet`, `input`, `battery`, `sensor`…,
+   or one of your own, namespaced, with an icon) and, where it has one, its
+   place in the flow of energy (`energy: { role: 'load' }`). Then their
+   **attributes**: a key — what history is kept under, beginning with its part
+   when it is not on `main` (`outlet.ac.on`, `pack.1.soc`) — a value type
+   (number with unit and precision, boolean, enum, string, timestamp, or a
+   list or object of values), a standard **meaning** where one applies
+   (`power.in.ac`, `grid.present`, `temperature.air`) or one of your own
+   namespaced by the type, a quantity and state class for numbers, how long a
+   value stays **current** when it is not two minutes (`currentFor`: a
+   forecast fetched every half hour says an hour), and a category: `primary`
+   leads the card, `diagnostic` stays off it. Settings are attributes with
+   `access: 'write'`, grouped by `section`, and `dangerous` when a wrong value
+   damages the hardware. If the device decides what it has — a pack plugged in
+   — the session reports its own description.
 3. **What it offers.** A part offers a read-only capability from the library
    (`device-sdk/src/capabilities.ts`: `powerMeter`, `battery`, `acInput`) when
    its attributes carry the meanings it needs, and one that takes commands or
    answers queries (`switch`, `weather.forecast`) when the part lists it in
    `offers`. Automations, the gateway and the bridges then use it without
-   knowing the product. A capability that is not in the library is a reviewed
-   addition there, borrowing a Matter cluster's meaning where one exists.
+   knowing the product; what makes a command consequential — worth a
+   person's "yes" — is the capability's declaration, never your code. When the
+   library has nothing for what your device does, declare a capability of
+   your own in its description (`capabilities`), namespaced by your type
+   (`acme.plug.childLock`), in the library's shape: the gateway and the app
+   treat it like any other, and it can be promoted to the library — borrowing
+   a Matter cluster's meaning where one exists — once a second device needs it.
 4. **How it is reached.** `connections`: one method per (protocol, transport)
-   pair, with a label people understand — "Wi-Fi", "Bluetooth". Never say
-   where it runs: a method is offered wherever its transport is available, on
-   the server and in the app alike. Its setup is assembled from its layers —
+   pair, with a label people understand — "Wi-Fi", "Bluetooth" — and what it
+   **reaches** beyond the home network: `local`, `cloud-at-setup` (a key
+   fetched from the vendor's cloud once) or `cloud`. Never say where it runs:
+   a method is offered wherever its transport is available, on the server and
+   in the app alike. Its setup is assembled from its layers —
    the binding's instructions, the transport's way of finding it, the
    protocol's credentials — plus any steps of the type's own.
 5. **Who it is.** `identify(connection)` reads the device once: its permanent
@@ -70,10 +85,17 @@ Work through `src/type.ts` in this order:
 6. **The session.** `createSession(ctx)` gets an open connection and returns a
    `DeviceSession`: `readings()` — every attribute, settings included —
    `command({ part, capability, command, args })`, `write(patch)` for
-   settings, `query(…)` for data that is not a value now, and any `advanced`
-   tools (a register dump). Reads are synchronous — the session polls its own
-   device with `ctx.schedule` — so nothing waits on a device that stopped
-   answering. `ctx.event(id, data)` raises an event the description declares.
+   settings, `query(…)` for data that is not a value now — answered in the
+   type its capability declares — and the `tools` it can run. Each reading
+   carries when the device **observed** it, never the time the value is
+   about: a forecast for 14:00 fetched at 09:30 was observed at 09:30. Reads
+   are synchronous — the session polls its own device with `ctx.schedule` —
+   so nothing waits on a device that stopped answering. `ctx.event(id, data)`
+   raises an event the description declares.
+   **Tools** — a register dump, a raw frame — are declared on the type as
+   data (`tools`): what each asks for, what it answers in the value system,
+   and whether it writes. Whoever holds the device checks the input before a
+   tool runs and the answer after; the app can draw any of them.
 7. **The simulator.** `createSimulator(ctx)` keeps the same contract with no
    hardware. Tests use it, and so does "try without hardware".
 8. **Tests.** `test/contract.test.ts` runs `checkDeviceTypeContract`; pass it
@@ -86,8 +108,9 @@ from its writable attributes, history — and that is the outcome the model is
 for. When it needs its own (the station's energy flow), add a `ui/`
 folder, name it in `package.json` under `kraftverk.ui` and `exports`, and run
 `npm run gen:devices`. A screen gets `DeviceScreenProps` from
-`@kraftverk/api-client`: the device, and actions that reach whoever holds its
-connection. It never learns whether that is the server or the app.
+`@kraftverk/api-client`: the device, actions that reach whoever holds its
+connection, and whether they reach it now (`reach`). It never learns whether
+that is the server or the app.
 
 ### What it brings to automations
 
@@ -98,15 +121,19 @@ A device's package decides what automations can do with it
   'warn' }` — raised with `ctx.event(id, data, part)` when they happen, never
   on the first reading. A trigger can wait for them.
 - **Recipes**, under `automation.recipes`: rules with roles and settings left
-  open, as data (`defineRecipe`). Ask for capabilities, never for your own
-  product — "a part that offers `battery`" — so any device can fill a role.
-  Give it a `sentence`; the check makes sure it names only roles and
-  settings.
+  open, as data (`defineRecipe`), for what only your devices make possible.
+  A recipe that needs nothing but library capabilities and standard meanings
+  — "when a battery runs low", "charge between two levels" — belongs in the
+  shared vocabulary (`device-sdk/src/recipes.ts`), where every device that
+  offers them gets it. Give it a `sentence`; the check makes sure it names
+  only roles and settings.
 - **Functions**, under `automation.functions` (`defineFunction`), for what a
   comparison cannot say: "does tomorrow look sunny". Typed arguments and
   result, the capability it needs, and an answer of `null` — with why — when
   it cannot tell. The only package code an automation runs; it answers, it
-  never acts.
+  never acts: it is handed a reader of the part — its readings, its health,
+  and its queries answered in their declared types (`ask`) — and nothing
+  that can command, write or run a tool.
 
 Ids are namespaced by your type: `acme.plug.overheating`. The contract check
 validates every recipe as a rule; the server checks it again against every
