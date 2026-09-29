@@ -18,7 +18,7 @@ import type { AuditEntry, CommandIntent, GatewayResult } from '@kraftverk/gatewa
 import { LiveBus } from '@kraftverk/holder';
 
 import { closeDb, db } from '../history/db.ts';
-import { AutomationEngine, type AutomationRecord, type EngineDevice } from './engine.ts';
+import { AutomationEngine, type AutomationRecord, type EngineDevice, type TriggerMemory } from './engine.ts';
 import { AutomationLibrary } from './library.ts';
 import { AutomationStore } from './store.ts';
 
@@ -139,7 +139,18 @@ const reader = (readings: () => { key: string; value: Value }[]): DeviceReader =
   query: async () => [],
 });
 
-function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: boolean } = {}) {
+/** Trigger state kept as the server keeps it: across engines, as across restarts. */
+const keptMemory = (): TriggerMemory & { kept: Map<string, string> } => {
+  const kept = new Map<string, string>();
+  return {
+    kept,
+    get: (key) => kept.get(key) ?? null,
+    set: (key, value) => void kept.set(key, value),
+    forget: (prefix) => [...kept.keys()].filter((key) => key.startsWith(prefix)).forEach((key) => kept.delete(key)),
+  };
+};
+
+function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: boolean; memory?: TriggerMemory } = {}) {
   const sent: CommandIntent[] = [];
   const recorded: AuditEntry[] = [];
   const station = { soc: 50 as Value };
@@ -175,6 +186,7 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
     record: (entry) => recorded.push(entry),
     bus,
     now: () => now,
+    ...(options.memory ? { memory: options.memory } : {}),
   });
   const make = (recipe: string, roles: AutomationRecord['roles'], params: Record<string, string | number> = {}, mode: AutomationRecord['mode'] = 'observe') => {
     const created = store.create({ name: 'Test automation', recipe, roles, params, timeZone: ZONE });
@@ -279,19 +291,17 @@ describe('when a condition becomes true', () => {
   const low = (context: ReturnType<typeof setup>, params: Record<string, number> = {}) =>
     context.make('test.kit.low', { battery: { device: STATION, part: 'main' }, switch: { device: PLUG, part: 'main' } }, { below: 20, minutes: 0, ...params }, 'armed');
 
-  test('fires on the change to true — not when it starts out true, and not again while it stays so', async () => {
+  test('fires on the change to true, and not again while it stays so', async () => {
     const context = setup();
     const { engine, station, sent, readingsMoved } = context;
+    station.soc = 40;
     low(context);
     engine.start();
     try {
-      station.soc = 15; // already low when first seen: where it starts, not a change
       readingsMoved();
       await settle();
       expect(sent).toEqual([]);
 
-      station.soc = 40;
-      readingsMoved();
       station.soc = 18;
       readingsMoved();
       await settle();
@@ -305,6 +315,74 @@ describe('when a condition becomes true', () => {
     } finally {
       engine.stop();
     }
+  });
+
+  /*
+    The owner's charge window, armed while the station already sits at 8 %:
+    waiting for a change would wait for ever — nothing charges it, so it never
+    rises to fall again. A trigger with nothing kept takes a condition already
+    true as its edge.
+  */
+  test('armed while already true, it acts — once — rather than waiting for a change that will not come', async () => {
+    const context = setup();
+    const { engine, station, sent, readingsMoved } = context;
+    station.soc = 8;
+    low(context);
+    engine.start();
+    try {
+      readingsMoved();
+      readingsMoved();
+      await settle();
+      expect(sent).toHaveLength(1);
+    } finally {
+      engine.stop();
+    }
+  });
+
+  test('its state survives a restart: nothing fires twice, and what turned true meanwhile fires', async () => {
+    const memory = keptMemory();
+    const first = setup({ memory });
+    first.station.soc = 10;
+    const automation = low(first);
+    await first.engine.tick();
+    await settle();
+    expect(first.sent).toHaveLength(1);
+    first.engine.stop();
+
+    // The same database, a new process: still low, and already dealt with.
+    const second = setup({ memory });
+    second.station.soc = 10;
+    second.bus.subscribe(() => {});
+    await second.engine.hear({ kind: 'readings', deviceId: STATION, readings: [] });
+    await second.engine.tick();
+    await settle();
+    expect(second.sent).toEqual([]);
+
+    // Changing it starts it afresh: its condition, already true, is its edge again.
+    second.engine.reset(automation.id);
+    expect([...memory.kept.keys()].filter((key) => key.includes(automation.id))).toEqual([]);
+    await second.engine.tick();
+    await settle();
+    expect(second.sent).toHaveLength(1);
+  });
+
+  test('a hold that was running when the server stopped resumes with the time it had left', async () => {
+    const memory = keptMemory();
+    const first = setup({ memory });
+    first.station.soc = 10;
+    const automation = low(first, { minutes: 5 });
+    await first.engine.tick();
+    expect(first.sent).toEqual([]);
+    first.engine.stop();
+
+    // Five minutes later, a new process: it has held long enough, and runs at once.
+    const second = setup({ memory, now: new Date(MORNING.getTime() + 5 * 60_000 + 1_000) });
+    second.station.soc = 10;
+    await second.engine.tick();
+    await settle();
+    expect(second.sent).toHaveLength(1);
+    expect(second.sent[0]!.reason).toContain('for 5 min');
+    expect(JSON.parse(memory.get(`automation.trigger.${automation.id}:0`)!)).toMatchObject({ last: true, fired: true });
   });
 
   test('held for a while: only if it stays true that long', async () => {

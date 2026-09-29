@@ -22,7 +22,7 @@ import type { EventStore } from '../devices/events.ts';
 import type { DeviceRegistry } from '../devices/registry.ts';
 import type { RemoteReadings } from '../devices/remote.ts';
 import type { DeviceSessionManager } from '../devices/sessions.ts';
-import type { SetupService } from '../devices/setup.ts';
+import type { SetupService } from '../devices/setup/index.ts';
 import type { DeviceTypeRegistry } from '../devices/types.ts';
 import { audit } from '../history/db.ts';
 import type { Sampler } from '../history/sampler.ts';

@@ -24,7 +24,7 @@ import { Nearby } from './devices/nearby.ts';
 import { DeviceRegistry } from './devices/registry.ts';
 import { RemoteReadings } from './devices/remote.ts';
 import { DeviceSessionManager } from './devices/sessions.ts';
-import { SetupService } from './devices/setup.ts';
+import { SetupService } from './devices/setup/index.ts';
 import { EventStore } from './devices/events.ts';
 import { busDefinition, FakeBus, lampProtocol, lampType } from './devices/testing.ts';
 import { DeviceTypeRegistry } from './devices/types.ts';

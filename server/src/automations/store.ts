@@ -44,6 +44,13 @@ const toRecord = (row: Row): AutomationRecord => ({
 
 /** The automations you made. Validation is the caller's: this only keeps them. */
 export class AutomationStore {
+  #revision = 0;
+
+  /** Moves whenever an automation is made, changed or deleted — not when one runs: what the engine indexes by. */
+  get revision(): number {
+    return this.#revision;
+  }
+
   list(): AutomationRecord[] {
     return db().query<Row, []>('SELECT * FROM automation ORDER BY created_at').all().map(toRecord);
   }
@@ -59,6 +66,7 @@ export class AutomationStore {
     db()
       .query('INSERT INTO automation (id, name, recipe, roles, params, time_zone, mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run(id, input.name, input.recipe, JSON.stringify(input.roles), JSON.stringify(input.params), input.timeZone, 'observe', now, now);
+    this.#revision += 1;
     return this.get(id)!;
   }
 
@@ -69,6 +77,7 @@ export class AutomationStore {
     db()
       .query('UPDATE automation SET name = ?, roles = ?, params = ?, time_zone = ?, mode = ?, updated_at = ? WHERE id = ?')
       .run(next.name, JSON.stringify(next.roles), JSON.stringify(next.params), next.timeZone, next.mode, new Date().toISOString(), id);
+    this.#revision += 1;
     return this.get(id);
   }
 
@@ -77,6 +86,7 @@ export class AutomationStore {
   }
 
   delete(id: string): boolean {
+    this.#revision += 1;
     return db().query('DELETE FROM automation WHERE id = ?').run(id).changes > 0;
   }
 }

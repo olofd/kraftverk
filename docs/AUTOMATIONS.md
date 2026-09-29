@@ -163,12 +163,20 @@ The server's engine runs every automation the same way:
   owner's clock, up to an hour late (a server that was down at 07:00 still
   acts at 07:20).
 - **`event`**: heard on the live bus as the device raises it.
-- **`becomes`**: evaluated when a reading of a bound device moves, again from
-  the live bus. It fires on the change from not-true to true, and with
-  `heldForMinutes` only once it has stayed true that long. It may only read and
-  compare — no function calls — so it is cheap to evaluate on every reading.
-  A condition that is already true when the server starts is a starting
-  point, not a change.
+- **`becomes`**: evaluated when a reading of a bound device moves, from the
+  live bus, and on the half-minute clock besides — a battery sitting at 8 %
+  sends nothing. It fires on the change from not-true to true, and with
+  `heldForMinutes` only once it has stayed true that long. It may only read
+  and compare — no function calls — so it is cheap to evaluate on every
+  reading. Each trigger's state — what its condition was last, since when it
+  has held, whether this hold has run — is kept in the database, so a restart
+  continues from where it was: nothing fires twice, a hold resumes with the
+  time it had left, and a condition that turned true while the server was
+  down fires when it is back. A trigger with nothing kept — an automation
+  just made, or changed, or armed — takes a condition already true as its
+  edge: a charge window armed at 8 % starts charging, rather than waiting
+  for the battery to rise and fall again, which nothing would make it do.
+  Only the automations bound to a device are looked at when it reports.
 
 A run evaluates `if`, then each action: an automation that **observes** says
 what it would have done; one **armed** sends it through the gateway as

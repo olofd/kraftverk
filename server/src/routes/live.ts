@@ -132,18 +132,33 @@ export function liveRoutes(deps: AppDeps, upgradeWebSocket: UpgradeWebSocket, co
       return {
         onOpen: (_event, ws: WSContext) => {
           const send = (update: LiveUpdate) => ws.send(JSON.stringify(update));
-          const unsubscribe = deps.bus.subscribe((message) => outbox.add(message));
-          const flush = setInterval(() => {
+          /*
+            A send is scheduled when something is waiting, at most every
+            FLUSH_MS, and never while nothing is: an idle socket costs no timer.
+            A client that is not reading keeps it waiting — its backlog
+            coalesces in the outbox rather than in the socket's buffer.
+          */
+          let pending: ReturnType<typeof setTimeout> | null = null;
+          const flush = () => {
+            pending = null;
             const raw = ws.raw as { getBufferedAmount?: () => number } | undefined;
-            if ((raw?.getBufferedAmount?.() ?? 0) > MAX_BUFFERED_BYTES) return;
+            if ((raw?.getBufferedAmount?.() ?? 0) > MAX_BUFFERED_BYTES) return schedule();
             for (const update of outbox.take()) send(update);
-          }, FLUSH_MS);
+          };
+          const schedule = () => {
+            pending ??= setTimeout(flush, FLUSH_MS);
+          };
+          const unsubscribe = deps.bus.subscribe((message) => {
+            outbox.add(message);
+            schedule();
+          });
           const watch = setInterval(() => {
             if (!sessionAlive(token)) ws.close(SIGNED_OUT, 'Signed out');
           }, SESSION_CHECK_MS);
           stop = () => {
             unsubscribe();
-            clearInterval(flush);
+            if (pending) clearTimeout(pending);
+            pending = null;
             clearInterval(watch);
           };
           send({ type: 'hello', at: new Date().toISOString() });

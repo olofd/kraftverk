@@ -67,6 +67,22 @@ export type EngineDevice = RulePart & {
   capabilities: readonly CapabilityId[];
 };
 
+/**
+ * Where each `becomes` trigger's state is kept — what its condition was last,
+ * since when it has held, and whether this hold has run — so a restart
+ * continues from where it was. The server passes its database; tests keep it
+ * in memory.
+ */
+export type TriggerMemory = {
+  get(key: string): string | null;
+  set(key: string, value: string): void;
+  /** Forgets every key under a prefix. */
+  forget(prefix: string): void;
+};
+
+/** One `becomes` trigger's state, as kept. */
+type TriggerState = { last: boolean; heldSince: string | null; fired: boolean };
+
 export type AutomationEngineDeps = {
   store: AutomationStore;
   library: Pick<AutomationLibrary, 'recipe' | 'fn'>;
@@ -78,6 +94,7 @@ export type AutomationEngineDeps = {
   now?: () => Date;
   /** How often it looks at what is due by the clock. */
   everyMs?: number;
+  memory?: TriggerMemory;
 };
 
 /** Late, but not too late: a server that was down at 07:00 still acts at 07:20, not at 15:00. */
@@ -94,8 +111,11 @@ const GRACE_MS = 60 * 60_000;
  * - `event`: heard on the live bus as the device raises it.
  * - `becomes`: evaluated when a reading of a device it reads moves; fires when
  *   the condition turns true, and with `heldForMinutes` once it has stayed
- *   true that long. True already when first seen is where it starts, not a
- *   change.
+ *   true that long. Its state is kept, so a restart continues from where it
+ *   was — a hold resumes with what it had left, and nothing fires twice. An
+ *   automation with no state yet — new, or just changed or armed — takes a
+ *   condition already true as the edge: a charge window armed at 8 % starts
+ *   charging, rather than waiting for the battery to rise and fall again.
  *
  * A run evaluates the rule's condition — unknown is never true — and then its
  * actions: one that observes says what it would have done; one armed sends it
@@ -113,10 +133,20 @@ export class AutomationEngine {
   #ticking = false;
   /** Automations running now: one run of the same automation at a time. */
   #running = new Set<string>();
-  /** Each `becomes` trigger's last known state, and its hold when one is waiting it out. */
-  #becoming = new Map<string, { last: boolean; hold: ReturnType<typeof setTimeout> | null }>();
+  /** Each `becomes` trigger's state, read once from memory, and its hold when one is waiting it out. */
+  #becoming = new Map<string, { state: TriggerState; hold: ReturnType<typeof setTimeout> | null }>();
+  #memory: TriggerMemory;
+  /** Which automations each device's messages concern, by store revision: not every automation for every reading. */
+  #index: { revision: number; byDevice: Map<string, AutomationRecord[]> } | null = null;
 
-  constructor(private deps: AutomationEngineDeps) {}
+  constructor(private deps: AutomationEngineDeps) {
+    const kept = new Map<string, string>();
+    this.#memory = deps.memory ?? {
+      get: (key) => kept.get(key) ?? null,
+      set: (key, value) => void kept.set(key, value),
+      forget: (prefix) => [...kept.keys()].filter((key) => key.startsWith(prefix)).forEach((key) => kept.delete(key)),
+    };
+  }
 
   start(): void {
     this.#timer ??= setInterval(() => void this.tick(), this.deps.everyMs ?? 30_000);
@@ -128,17 +158,39 @@ export class AutomationEngine {
     this.#timer = null;
     this.#unsubscribe?.();
     this.#unsubscribe = null;
-    for (const state of this.#becoming.values()) if (state.hold) clearTimeout(state.hold);
+    for (const entry of this.#becoming.values()) if (entry.hold) clearTimeout(entry.hold);
     this.#becoming.clear();
   }
 
-  /** Forgets what an automation's conditions were: after it changed, what it now watches starts afresh. */
+  /**
+   * Forgets what an automation's conditions were: after it changed — its
+   * settings, its parts, its mode — what it now watches starts afresh, and a
+   * condition already true is its edge.
+   */
   reset(automationId: string): void {
-    for (const [key, state] of this.#becoming) {
+    for (const [key, entry] of this.#becoming) {
       if (!key.startsWith(`${automationId}:`)) continue;
-      if (state.hold) clearTimeout(state.hold);
+      if (entry.hold) clearTimeout(entry.hold);
       this.#becoming.delete(key);
     }
+    this.#memory.forget(`automation.trigger.${automationId}:`);
+  }
+
+  /** The automations a device's events and readings can start: bound to it, and with a trigger that listens. */
+  #concerning(deviceId: string): AutomationRecord[] {
+    const revision = this.deps.store.revision;
+    if (this.#index?.revision !== revision) {
+      const byDevice = new Map<string, AutomationRecord[]>();
+      for (const automation of this.deps.store.list()) {
+        const recipe = this.deps.library.recipe(automation.recipe);
+        if (!recipe?.when.some((trigger) => 'event' in trigger || 'becomes' in trigger)) continue;
+        for (const device of new Set(Object.values(automation.roles).map((binding) => binding.device))) {
+          byDevice.set(device, [...(byDevice.get(device) ?? []), automation]);
+        }
+      }
+      this.#index = { revision, byDevice };
+    }
+    return this.#index.byDevice.get(deviceId) ?? [];
   }
 
   /** Runs whatever is due by the clock. One tick at a time. */
@@ -152,6 +204,11 @@ export class AutomationEngine {
         const recipe = this.deps.library.recipe(automation.recipe);
         const due = recipe?.when.find((trigger) => 'at' in trigger && this.#dueAt(automation, recipe, trigger, now));
         if (due) await this.#runAndKeep(automation, null);
+        // A condition is looked at on the clock too, not only when a reading moves: a battery that sits
+        // at 8 % sends nothing, and an automation just armed must still see it is below its level.
+        recipe?.when.forEach((trigger, index) => {
+          if ('becomes' in trigger) this.#becomes(automation, recipe, trigger, index);
+        });
       }
     } finally {
       this.#ticking = false;
@@ -161,7 +218,9 @@ export class AutomationEngine {
   /** What a device said: an event some automation waits for, or a reading some condition reads. */
   async hear(message: LiveMessage): Promise<void> {
     if (message.kind !== 'event' && message.kind !== 'readings') return;
-    for (const automation of this.deps.store.list()) {
+    for (const indexed of this.#concerning(message.deviceId)) {
+      // Its latest word — a run may have moved its last result since the index was built.
+      const automation = this.deps.store.get(indexed.id) ?? indexed;
       if (automation.mode === 'off') continue;
       const recipe = this.deps.library.recipe(automation.recipe);
       if (!recipe) continue;
@@ -182,42 +241,70 @@ export class AutomationEngine {
     }
   }
 
-  /** A `becomes` trigger, looked at again: fires on the change to true, or once it has held that long. */
+  /**
+   * A `becomes` trigger, looked at again: fires on the change to true — or
+   * once it has held that long — and, with no state kept yet, on a condition
+   * already true. Its state is kept after every change, so a restart resumes
+   * a hold with the time it had left and never fires one twice.
+   */
   #becomes(automation: AutomationRecord, recipe: Recipe, trigger: Extract<Trigger, { becomes: unknown }>, index: number): void {
     const key = `${automation.id}:${index}`;
+    const memoryKey = `automation.trigger.${key}`;
     const scope = this.#scope(automation, recipe);
     const now = evaluateNow(trigger.becomes, scope);
     // Unknown — a device gone quiet — changes nothing: neither a start nor an end.
     if (typeof now !== 'boolean') return;
-    const state = this.#becoming.get(key);
-    if (!state) {
-      // The first look is where it starts from, not a change.
-      this.#becoming.set(key, { last: now, hold: null });
+
+    let entry = this.#becoming.get(key);
+    if (!entry) {
+      const kept = this.#memory.get(memoryKey);
+      // Nothing kept: as if it had been false, so a condition already true is its edge.
+      entry = { state: kept ? (JSON.parse(kept) as TriggerState) : { last: false, heldSince: null, fired: false }, hold: null };
+      this.#becoming.set(key, entry);
+    }
+    const { state } = entry;
+    const keep = () => this.#memory.set(memoryKey, JSON.stringify(state));
+
+    if (!now) {
+      if (entry.hold) clearTimeout(entry.hold);
+      entry.hold = null;
+      if (state.last || state.heldSince || state.fired) {
+        Object.assign(state, { last: false, heldSince: null, fired: false });
+        keep();
+      }
       return;
     }
-    const turned = !state.last && now;
-    state.last = now;
-    if (!now && state.hold) {
-      clearTimeout(state.hold);
-      state.hold = null;
+
+    const turned = !state.last;
+    if (turned) {
+      Object.assign(state, { last: true, heldSince: this.#now().toISOString(), fired: false });
+      keep();
     }
-    if (!turned) return;
+    // True, and already dealt with — or already waiting it out.
+    if (state.fired || entry.hold) return;
 
     const trace: string[] = [];
     evaluateNow(trigger.becomes, scope, trace);
     const minutes = trigger.heldForMinutes ? Number(evaluateNow(trigger.heldForMinutes, scope)) : 0;
-    if (!(minutes > 0)) {
-      void this.#runAndKeep(automation, trace.join('; '));
+    const fire = (because: string) => {
+      state.fired = true;
+      keep();
+      void this.#runAndKeep(this.deps.store.get(automation.id) ?? automation, because);
+    };
+    const since = Date.parse(state.heldSince ?? this.#now().toISOString());
+    const remaining = minutes > 0 ? since + minutes * 60_000 - this.#now().getTime() : 0;
+    if (remaining <= 0) {
+      fire(minutes > 0 ? `${trace.join('; ')}, for ${minutes} min` : trace.join('; '));
       return;
     }
-    state.hold = setTimeout(() => {
-      state.hold = null;
+    entry.hold = setTimeout(() => {
+      entry.hold = null;
       // Still true, all this time? Only then.
       const held: string[] = [];
       if (evaluateNow(trigger.becomes, this.#scope(automation, recipe), held) !== true) return;
-      void this.#runAndKeep(this.deps.store.get(automation.id) ?? automation, `${held.join('; ')}, for ${minutes} min`);
-    }, minutes * 60_000);
-    (state.hold as { unref?: () => void }).unref?.();
+      fire(`${held.join('; ')}, for ${minutes} min`);
+    }, remaining);
+    (entry.hold as { unref?: () => void }).unref?.();
   }
 
   #dueAt(automation: AutomationRecord, recipe: Recipe, trigger: Extract<Trigger, { at: unknown }>, now: Date): boolean {

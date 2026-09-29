@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { isLinkKind, isSecretField, linkFits, linkKindSpec, MAIN_PART, partsOf, savedDeviceId } from '@kraftverk/device-sdk';
 
 import { userOf } from '../auth/routes.ts';
-import { connectionSchema } from '../devices/setup.ts';
+import { connectionSchema } from '../devices/setup/index.ts';
 import { auditDevice, body, deviceOr404, type AppDeps } from './shared.ts';
 
 /**

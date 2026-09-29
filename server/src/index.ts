@@ -15,9 +15,9 @@ import { Nearby } from './devices/nearby.ts';
 import { DeviceRegistry } from './devices/registry.ts';
 import { RemoteReadings } from './devices/remote.ts';
 import { DeviceSessionManager } from './devices/sessions.ts';
-import { SetupService } from './devices/setup.ts';
+import { SetupService } from './devices/setup/index.ts';
 import { DeviceTypeRegistry } from './devices/types.ts';
-import { appState, audit, closeDb, setAppState } from './history/db.ts';
+import { appState, audit, closeDb, deleteAppState, setAppState } from './history/db.ts';
 import { Sampler } from './history/sampler.ts';
 import { keepConsole } from './log.ts';
 import { scopedHttp } from './runtime/http.ts';
@@ -196,7 +196,16 @@ sampler.start();
 /** What the installed packages bring to automations: their recipes and functions. None of the core's own. */
 const library = new AutomationLibrary(types.all());
 const automations = new AutomationStore();
-const engine = new AutomationEngine({ store: automations, library, device: serverDevices(catalog, sessions), gateway, record: audit, bus });
+const engine = new AutomationEngine({
+  store: automations,
+  library,
+  device: serverDevices(catalog, sessions),
+  gateway,
+  record: audit,
+  bus,
+  // Each trigger's state survives a restart, as the gateway's dwell memory does.
+  memory: { get: appState, set: setAppState, forget: deleteAppState },
+});
 engine.start();
 
 /** The web container, the one proxy whose "home-network entrance" stamp is believed. */
