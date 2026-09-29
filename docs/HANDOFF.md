@@ -141,9 +141,10 @@ optional native modules, which is what lets the app build without
 **`npm install --ignore-scripts` leaves a placeholder `bun.exe`.** Fix it with
 `node node_modules/bun/install.js`.
 
-**Toggles cannot be operated from a keyboard.** They are focusable and announce
-correctly, but neither a Tamagui `onKeyDown` prop, a listener attached through
-the ref, nor `role="button"` + `aria-pressed` flipped one. Everything else is
+**On the web a toggle is a real `<button role="switch">`** (`packages/ui/src/Toggle.tsx`):
+no handler on a Tamagui view ever received a key — an `onKeyDown` prop, a
+listener through the ref and `role="button"` were all tried — and a button gets
+Tab, Space and Enter from the browser. Everything else is
 keyboard-operable: each tappable has a `role`, a `tabIndex` and a focus ring —
 a Tamagui `XStack` with an `onPress` renders a plain `div` and is invisible to
 Tab. If you add a tappable that is not a `Button`, use

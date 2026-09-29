@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { ActivityIndicator, Animated } from 'react-native';
+import { createElement, useEffect, useRef } from 'react';
+import { ActivityIndicator, Animated, Platform } from 'react-native';
 import { XStack, useTheme } from 'tamagui';
 
 import { haptic } from './haptics';
@@ -74,6 +74,78 @@ export function Toggle({ checked, onCheckedChange, disabled, pending }: TogglePr
 
   const off = theme.backgroundPress?.val ?? '#d1d5db';
   const on = theme.success?.val ?? '#16a34a';
+  const flip = () => {
+    if (locked) return;
+    haptic();
+    onCheckedChange(!checked);
+  };
+
+  const track = (
+    <Animated.View
+      style={{
+        flex: 1,
+        borderRadius: 999,
+        padding: INSET,
+        justifyContent: 'center',
+        backgroundColor: slide.interpolate({ inputRange: [0, 1], outputRange: [off, on] }),
+      }}
+    >
+      {/*
+        A transform rather than a layout change: it cannot reflow the row the
+        switch sits in.
+      */}
+      <Animated.View
+        style={{
+          width: THUMB,
+          height: THUMB,
+          borderRadius: 999,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: theme.white?.val ?? '#ffffff',
+          transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [0, TRAVEL] }) }],
+        }}
+      >
+        {pending ? <ActivityIndicator size="small" color={theme.muted?.val} style={{ transform: [{ scale: 0.7 }] }} /> : null}
+      </Animated.View>
+    </Animated.View>
+  );
+
+  /*
+    On the web, a real `<button role="switch">`: the browser gives it Tab, a
+    focus ring, and Space and Enter, which no handler on a Tamagui view ever
+    received (an `onKeyDown` prop, a listener through the ref and
+    `role="button"` were all tried). Disabled while locked, so a second press
+    cannot race the first.
+  */
+  if (Platform.OS === 'web') {
+    return createElement(
+      'button',
+      {
+        type: 'button',
+        role: 'switch',
+        'aria-checked': checked,
+        'aria-busy': pending || undefined,
+        disabled: locked,
+        onClick: flip,
+        style: {
+          display: 'flex',
+          width: TRACK_WIDTH,
+          height: TRACK_HEIGHT,
+          padding: 0,
+          margin: 0,
+          border: 'none',
+          borderRadius: 999,
+          background: 'transparent',
+          // Dimmed when it cannot be used at all; a pending switch stays bright, because the position it shows is the one being made true.
+          opacity: disabled ? 0.5 : 1,
+          cursor: locked ? 'default' : 'pointer',
+          outlineOffset: 2,
+          flexShrink: 0,
+        },
+      },
+      track
+    );
+  }
 
   return (
     <XStack
@@ -81,20 +153,6 @@ export function Toggle({ checked, onCheckedChange, disabled, pending }: TogglePr
       aria-checked={checked}
       aria-disabled={locked}
       aria-busy={pending || undefined}
-      /*
-        Focusable, and announced correctly — but **not yet operable from a
-        keyboard**, which is a known gap rather than an oversight.
-
-        A Tamagui `onKeyDown` prop never reaches the DOM here (checked by
-        dispatching a real keydown at the node and watching nothing happen), a
-        listener attached through the ref did not fire either, and switching to
-        `role="button"` + `aria-pressed` — which react-native-web does give
-        Enter and Space — did not flip it either. Rather than ship a handler
-        that looks like support and is not, this keeps the honest semantics and
-        the gap is written down.
-      */
-      tabIndex={locked ? -1 : 0}
-      focusVisibleStyle={{ outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid' }}
       width={TRACK_WIDTH}
       height={TRACK_HEIGHT}
       borderRadius={999}
@@ -103,43 +161,9 @@ export function Toggle({ checked, onCheckedChange, disabled, pending }: TogglePr
       opacity={disabled ? 0.5 : 1}
       cursor={locked ? 'default' : 'pointer'}
       pressStyle={locked ? undefined : { opacity: 0.8 }}
-      onPress={() => {
-        if (locked) return;
-        haptic();
-        onCheckedChange(!checked);
-      }}
+      onPress={flip}
     >
-      <Animated.View
-        style={{
-          flex: 1,
-          borderRadius: 999,
-          padding: INSET,
-          justifyContent: 'center',
-          backgroundColor: slide.interpolate({ inputRange: [0, 1], outputRange: [off, on] }),
-        }}
-      >
-        {/*
-          A transform rather than a layout change: it cannot reflow the row the
-          switch sits in.
-        */}
-        <Animated.View
-          style={{
-            width: THUMB,
-            height: THUMB,
-            borderRadius: 999,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: theme.white?.val ?? '#ffffff',
-            transform: [
-              { translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [0, TRAVEL] }) },
-            ],
-          }}
-        >
-          {pending ? (
-            <ActivityIndicator size="small" color={theme.muted?.val} style={{ transform: [{ scale: 0.7 }] }} />
-          ) : null}
-        </Animated.View>
-      </Animated.View>
+      {track}
     </XStack>
   );
 }

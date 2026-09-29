@@ -45,6 +45,23 @@ test('turning off a plug that carries a load says how much, and once confirmed, 
   await expect(page.getByText('0 W', { exact: true }).first()).toBeVisible();
 });
 
+test('a switch is operated from the keyboard: Tab to it, Space asks the same question a tap does', async ({ page, request }) => {
+  const plug = await addSimulated(request, 'atorch.s1w', unique('Kettle plug'));
+
+  await page.goto(`/device/${plug.id}`);
+  const power = page.getByRole('switch').first();
+  await expect(power).toHaveAttribute('aria-checked', 'true');
+  await power.focus();
+  await expect(power).toBeFocused();
+
+  page.once('dialog', async (dialog) => {
+    expect(dialog.message()).toContain('Power is 240 W');
+    await dialog.accept();
+  });
+  await page.keyboard.press('Space');
+  await expect(power).toHaveAttribute('aria-checked', 'false');
+});
+
 test('how much is a load is the home’s to say: set in App settings, the same plug turns off without asking', async ({ page, request }) => {
   const plug = await addSimulated(request, 'atorch.s1w', unique('Night light'));
   try {
