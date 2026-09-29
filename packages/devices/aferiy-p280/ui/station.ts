@@ -1,72 +1,55 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AppState } from 'react-native';
 
 import { describeError, type DeviceScreenProps } from '@kraftverk/api-client';
 import { useWriteGate } from '@kraftverk/ui';
 
-import type { PortId, StationSettings, StationSettingsPatch, StationStatus } from '../src/model/types';
-import { outletPart, patchToValues, valuesToSettings } from '../src/index';
+import type { PortId, StationSettingsPatch } from '../src/model/types';
+import { outletPart, patchToValues, stationView, valuesToSettings } from '../src/index';
 import { portKey, settingsKeys, withPending, writesInFlight, type StationWriteKey } from '../src/writes';
 import type { StationView } from './contract';
 
-/** Two seconds: what the energy flow needs to look alive. */
-const POLL_MS = 2000;
-
 /**
- * One station's state, as its screens draw it.
+ * One station, as its screens draw it: read from its readings — the ones every
+ * screen, the history and the automations see, which the app keeps live — and
+ * nothing else. It asks the station nothing of its own.
  *
- * Read from the station's own `state` tool, through whoever holds its
- * connection, every two seconds while the app is in front. Writes go through
- * the same path — settings as settings, outlets as capability commands through
- * the holder's gateway — and are held on screen until the station confirms
- * them: a poll asked for before a write finished would otherwise flip a switch
- * back for a moment after every tap (see `writeGate.ts` in `@kraftverk/ui`).
+ * Writes go through whoever holds it — settings as settings, outlets as
+ * capability commands through the holder's gateway — and are held on screen
+ * until the station confirms them, then until its readings say so too: the
+ * gateway's readback can arrive a moment before the live reading does, and a
+ * switch must not flick back in between (see `writeGate.ts` in `@kraftverk/ui`).
  */
-export function useStation({ actions, reach, readOnly, version }: DeviceScreenProps): StationView {
-  const [status, setStatus] = useState<StationStatus | null>(null);
-  const [settings, setSettings] = useState<StationSettings | null>(null);
-  const [error, setError] = useState<string | null>(null);
+export function useStation({ device, actions, reach, readOnly, version }: DeviceScreenProps): StationView {
   const [writeError, setWriteError] = useState<string | null>(null);
   const [gate, writes] = useWriteGate<StationWriteKey>();
-  const reachable = reach.now;
+  /** What the station confirmed, shown until its readings catch up. */
+  const [confirmed, setConfirmed] = useState<ReadonlyMap<StationWriteKey, unknown>>(new Map());
 
-  const load = useCallback(async () => {
-    if (!reachable) return;
-    const askedAt = gate.epoch;
-    try {
-      const state = await actions.tool<{ status: StationStatus; settings: StationSettings | null }>('state');
-      if (!gate.fresh(askedAt)) return;
-      setStatus(state.status);
-      setSettings(state.settings);
-      setError(null);
-    } catch (err) {
-      const message = describeError(err);
-      if (message) setError(message);
-    }
-  }, [actions, gate, reachable]);
+  const inUse = device.connections.find((connection) => connection.inUse) ?? null;
+  const seen = useMemo(
+    () =>
+      stationView({
+        readings: device.readings,
+        info: device.info,
+        health: device.health,
+        address: inUse?.address ?? null,
+        simulated: device.health.transport === 'sim',
+      }),
+    [device.readings, device.info, device.health, inUse?.address]
+  );
 
+  // A confirmed value goes once the readings say it too.
   useEffect(() => {
-    if (!reachable) return;
-    let timer: ReturnType<typeof setInterval> | undefined;
-    const start = () => {
-      timer ??= setInterval(() => void load(), POLL_MS);
-    };
-    const stop = () => {
-      if (timer) clearInterval(timer);
-      timer = undefined;
-    };
-    void load().then(start);
-    const subscription = AppState.addEventListener('change', (next) => {
-      if (next === 'active') {
-        void load();
-        start();
-      } else stop();
-    });
-    return () => {
-      stop();
-      subscription.remove();
-    };
-  }, [load, reachable]);
+    if (!confirmed.size) return;
+    const agreed = [...confirmed].filter(([key, value]) =>
+      key.startsWith('port:')
+        ? seen.status?.ports.find((port) => `port:${port.id}` === key)?.enabled === value
+        : (seen.settings as Record<string, unknown> | null)?.[key] === value
+    );
+    if (agreed.length) setConfirmed((current) => new Map([...current].filter(([key]) => !agreed.some(([done]) => done === key))));
+  }, [confirmed, seen]);
+
+  const hold = (values: Record<string, unknown>) => setConfirmed((current) => new Map([...current, ...(Object.entries(values) as [StationWriteKey, unknown][])]));
 
   const updateSettings = useCallback(
     async (patch: StationSettingsPatch) => {
@@ -75,16 +58,15 @@ export function useStation({ actions, reach, readOnly, version }: DeviceScreenPr
         await gate.run(settingsKeys(patch), async () => {
           const result = await actions.write(patchToValues(patch));
           if (result.outcome === 'refused' || result.outcome === 'failed') throw new Error(result.detail);
-          const values = result.values ?? {};
-          if (Object.keys(values).length) setSettings((current) => ({ ...(current ?? ({} as StationSettings)), ...valuesToSettings(values) }));
+          // The reply is a readback: one setting can move another.
+          hold(valuesToSettings(result.values ?? {}));
         });
       } catch (err) {
         const message = describeError(err);
         if (message) setWriteError(message);
-        await load();
       }
     },
-    [actions, gate, load]
+    [actions, gate]
   );
 
   const togglePort = useCallback(
@@ -94,31 +76,29 @@ export function useStation({ actions, reach, readOnly, version }: DeviceScreenPr
         await gate.run({ [portKey(id)]: enabled }, async () => {
           const result = await actions.command({ part: outletPart(id), capability: 'switch', command: 'set', args: { on: enabled }, reason: 'Switched on the station’s screen' });
           if (result.outcome === 'refused' || result.outcome === 'failed') throw new Error(result.detail);
-          // The station as it is now, read inside the write, so the switch holds its position until this lands.
-          const state = await actions.tool<{ status: StationStatus }>('state').catch(() => null);
-          if (state) setStatus(state.status);
+          if (result.deviceAgreed) hold({ [portKey(id)]: enabled });
         });
       } catch (err) {
         const message = describeError(err);
         if (message) setWriteError(message);
-        await load();
       }
     },
-    [actions, gate, load]
+    [actions, gate]
   );
 
   const pending = useMemo(() => writesInFlight(writes.pending), [writes.pending]);
-  const shown = useMemo(() => withPending(status, settings, writes.pending), [settings, status, writes.pending]);
+  const shown = useMemo(() => withPending(seen.status, seen.settings, new Map([...confirmed, ...writes.pending])), [confirmed, seen, writes.pending]);
 
   return {
     status: shown.status,
     settings: shown.settings,
     pending,
     readOnly,
-    simulated: status?.link.mode === 'simulator',
-    waitingFor: reach.now ? (error ?? reach.waiting) : reach.waiting,
+    simulated: seen.status?.link.mode === 'simulator',
+    waitingFor: reach.waiting,
     version,
     linkLabel: reach.via,
+    mainsFrom: device.links.find((link) => link.role === 'target' && link.part === 'input.ac')?.other.name ?? null,
     writeError,
     updateSettings,
     togglePort,

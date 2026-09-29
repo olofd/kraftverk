@@ -6,7 +6,7 @@ import { describeStation } from './index.ts';
 import { StationClient } from './model/client.ts';
 import { INPUT_REGISTER_COUNT, decodeTelemetry } from './model/registers.ts';
 import { SimulatedStation } from './simulator.ts';
-import { registerTools, stationSession, stationTools } from './station.ts';
+import { registerTools, stationSession } from './station.ts';
 import { STATION_TOOLS } from './tools.ts';
 
 /**
@@ -115,7 +115,7 @@ export default defineDeviceType({
     return stationSession(client, {
       identity: identityFrom(connection.address),
       connected: () => link.connected,
-      tools: { ...stationTools(client), ...registerTools(client, link, ctx) },
+      tools: registerTools(client, link, ctx),
       close: async () => {
         await client.stop();
         await link.close();
@@ -131,7 +131,6 @@ export default defineDeviceType({
     return stationSession(station, {
       identity: 'sydpower:SIMULATED',
       connected: () => true,
-      tools: stationTools(station),
       close: () => station.stop(),
     });
   },

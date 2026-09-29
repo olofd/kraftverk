@@ -50,6 +50,7 @@ function DashboardView({
   version,
   waitingFor,
   linkLabel,
+  mainsFrom,
   writeError,
   togglePort,
   updateSettings,
@@ -228,7 +229,7 @@ function DashboardView({
         <Card inset>
           <Row
             title="Grid input"
-            subtitle={status.gridConnected ? 'Connected' : 'Not connected'}
+            subtitle={[status.gridConnected ? 'Connected' : 'Not connected', mainsFrom ? `fed by ${mainsFrom}` : null].filter(Boolean).join(' · ')}
             accessory={
               <Value>
                 {status.gridConnected

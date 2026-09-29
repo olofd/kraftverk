@@ -126,20 +126,6 @@ export function stationSession(source: StationSource, options: StationSessionOpt
   };
 }
 
-// --- the station's own view --------------------------------------------------------
-
-/**
- * Everything the station's own screens draw: ports, firmware, link, settings,
- * in the station's own units. The shared readings are a projection of this;
- * the energy-flow view needs the whole of it. Offered by a real station and
- * the simulator alike, and served by whoever holds the connection.
- */
-export function stationTools(source: StationSource): Record<string, ToolRun> {
-  return {
-    state: async () => ({ status: source.status(), settings: source.settings() }),
-  };
-}
-
 // --- the register tools ----------------------------------------------------------
 
 /**

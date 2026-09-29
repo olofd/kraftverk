@@ -6,9 +6,10 @@ import type { WritesInFlight } from '../src/writes';
 export type { DeviceScreenProps, WritesInFlight };
 
 /**
- * What the P280's screens draw from: the station's own state, and ways to
- * change it — built by `useStation` from what the app hands every device's
- * screens (`DeviceScreenProps`). The app never sees this shape.
+ * What the P280's screens draw from: the station's readings in its own
+ * terms, its links, and ways to change it — built by `useStation` from what
+ * the app hands every device's screens (`DeviceScreenProps`). The app never
+ * sees this shape.
  *
  * Screens return *content*. The frame around it — page padding, the offline
  * banner, the status dot — is the app's chrome and stays there.
@@ -27,6 +28,8 @@ export type StationView = {
   version: { version: string; runtime: string; uptimeSeconds: number; readOnly: boolean } | null;
   /** How the connection in use is described: "Wi-Fi, through the server". */
   linkLabel: string | null;
+  /** What feeds its mains input, as the house's links say: "Charger plug". */
+  mainsFrom: string | null;
   /** Why the last change did not happen, until the next one is asked for. */
   writeError: string | null;
   updateSettings: (patch: StationSettingsPatch) => Promise<void>;

@@ -1,20 +1,26 @@
 import { expect, test } from '@playwright/test';
 
-import { addSimulated, unique } from './helpers';
+import { addSimulated, link, unique } from './helpers';
 
 /*
   Devices as their pages draw them: the station through its own screens —
-  which read its declared state tool, answers checked — and a service through
-  the generic ones, its values current for as long as its attributes say.
+  drawn from its declared readings and the house's links, asking it nothing
+  of their own — and a service through the generic ones, its values current
+  for as long as its attributes say.
 */
 
-test('the station’s own dashboard and settings draw what it reports', async ({ page, request }) => {
+test('the station’s own dashboard and settings draw what it reports, and what feeds it', async ({ page, request }) => {
   const station = await addSimulated(request, 'aferiy.p280', unique('Garage P280'));
+  const charger = await addSimulated(request, 'atorch.s1w', unique('Charger plug'));
+  await link(request, { device: charger.id, part: 'main' }, { device: station.id, part: 'input.ac' });
 
   await page.goto(`/device/${station.id}`);
   await expect(page.getByText('Grid', { exact: true })).toBeVisible();
   await expect(page.getByText('Solar', { exact: true }).first()).toBeVisible();
   await expect(page.getByText(/^\d+%?$/).first()).toBeVisible();
+  // The light is a part it reports, with the mode it remembers; mains says what feeds it.
+  await expect(page.getByText('Light', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(new RegExp(`fed by ${charger.name}`))).toBeVisible();
 
   await page.goto(`/device/${station.id}/settings`);
   await expect(page.getByText('AC charge limit', { exact: true })).toBeVisible();

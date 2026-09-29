@@ -45,7 +45,11 @@ export const KEYS = {
   mainsPresent: 'input.ac.present',
   mainsWatts: 'input.ac.watts',
   mainsVolts: 'input.ac.volts',
+  mainsHz: 'input.ac.hz',
+  solarPresent: 'input.solar.present',
   solarWatts: 'input.solar.watts',
+  lightOn: 'light.on',
+  lightWatts: 'light.watts',
   outletOn: (port: PortId) => `${outletPart(port)}.on`,
   outletWatts: (port: PortId) => `${outletPart(port)}.watts`,
   packSoc: (pack: number) => `pack.${pack}.soc`,
@@ -73,9 +77,12 @@ const SECTIONS: Record<string, string> = {
 const number = (unit: string, precision = 0) => ({ type: 'number' as const, unit, precision });
 
 /**
- * What a P280 is: the station, its two inputs, its three outlets and — when
- * the station says some are connected — its expansion batteries, each a part
- * whose charge is kept as history like the station's own.
+ * What a P280 is: the station, its two inputs, its three outlets, its light
+ * and — when the station says some are connected — its expansion batteries,
+ * each a part whose charge is kept as history like the station's own.
+ *
+ * Everything its screens draw is here: they read the station's readings, as
+ * any screen does, and nothing the description does not declare.
  *
  * Every key off main begins with its part (`input.ac.present`); a pack's is
  * its position, `pack.1.soc`, which the station reports the same way every
@@ -87,6 +94,8 @@ export function describeStation(packs = 0): DeviceDescription {
     { id: 'input.ac', label: 'Mains', kind: 'input', icon: 'zap', energy: { role: 'source' } },
     { id: 'input.solar', label: 'Solar', kind: 'input', icon: 'sun', energy: { role: 'source' } },
     ...OUTLETS.map((outlet): Part => ({ id: outletPart(outlet.port), label: outlet.label, kind: 'outlet', energy: { role: 'load' }, offers: ['switch'] })),
+    // Not a switch: it has four modes, and the station remembers the mode, which makes it the setting `ledMode`.
+    { id: 'light', label: 'Light', kind: 'light', energy: { role: 'load' } },
     ...Array.from({ length: packs }, (_, index): Part => ({ id: `pack.${index + 1}`, label: `Pack ${index + 1}`, kind: 'battery', energy: { role: 'storage' }, parent: MAIN_PART })),
   ];
 
@@ -112,11 +121,17 @@ export function describeStation(packs = 0): DeviceDescription {
     { key: 'minutesRemaining', label: 'Runtime left', value: number('min'), quantity: 'duration', means: 'p280.minutesRemaining' },
     { key: 'minutesToFull', label: 'Time to full', value: number('min'), quantity: 'duration', means: 'p280.minutesToFull' },
     { key: 'acOutputVolts', label: 'Inverter voltage', value: number('V', 1), quantity: 'voltage', means: 'p280.inverterVolts', category: 'diagnostic' },
+    { key: 'acOutputHz', label: 'Inverter frequency', value: number('Hz', 1), quantity: 'frequency', means: 'p280.inverterHz', category: 'diagnostic' },
+    { key: 'chargeBookingMinutes', label: 'Charging deferred', value: number('min'), quantity: 'duration', means: 'p280.chargeDeferred' },
 
     { key: KEYS.mainsPresent, part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'grid.present' },
     { key: KEYS.mainsWatts, part: 'input.ac', label: 'From mains', value: number('W'), quantity: 'power', means: 'power.in.ac', category: 'primary' },
     { key: KEYS.mainsVolts, part: 'input.ac', label: 'Mains voltage', value: number('V', 1), quantity: 'voltage', means: 'voltage.ac' },
+    { key: KEYS.mainsHz, part: 'input.ac', label: 'Mains frequency', value: number('Hz', 1), quantity: 'frequency', means: 'frequency.ac', category: 'diagnostic' },
+    { key: KEYS.solarPresent, part: 'input.solar', label: 'Solar connected', value: { type: 'boolean' }, means: 'p280.solarPresent' },
     { key: KEYS.solarWatts, part: 'input.solar', label: 'Solar', value: number('W'), quantity: 'power', means: 'power.in.solar', category: 'primary' },
+    { key: KEYS.lightOn, part: 'light', label: 'Light on', value: { type: 'boolean' }, means: 'p280.lightOn' },
+    { key: KEYS.lightWatts, part: 'light', label: 'Light draw', value: number('W'), quantity: 'power', means: 'power.draw' },
 
     ...OUTLETS.flatMap((outlet): AttributeSpec[] => [
       { key: KEYS.outletOn(outlet.port), part: outletPart(outlet.port), label: outlet.label, value: { type: 'boolean' }, means: 'switch.on' },
@@ -334,10 +349,16 @@ export function readings(status: StationStatus, settings: StationSettings | null
     { key: 'minutesRemaining', value: status.minutesRemaining, at },
     { key: 'minutesToFull', value: status.minutesToFull, at },
     { key: 'acOutputVolts', value: status.acOutputVolts, at },
+    { key: 'acOutputHz', value: status.acOutputHz, at },
+    { key: 'chargeBookingMinutes', value: status.chargeBookingMinutes, at },
     { key: KEYS.mainsPresent, value: status.gridConnected, at },
     { key: KEYS.mainsWatts, value: status.acInputWatts, at },
     { key: KEYS.mainsVolts, value: status.acInputVolts, at },
+    { key: KEYS.mainsHz, value: status.acInputHz, at },
+    { key: KEYS.solarPresent, value: status.solarConnected, at },
     { key: KEYS.solarWatts, value: status.solarInputWatts, at },
+    { key: KEYS.lightOn, value: port('led')?.enabled ?? null, at },
+    { key: KEYS.lightWatts, value: port('led')?.watts ?? null, at },
     ...OUTLETS.flatMap((outlet): Reading[] => [
       { key: KEYS.outletOn(outlet.port), value: port(outlet.port)?.enabled ?? null, at },
       { key: KEYS.outletWatts(outlet.port), value: port(outlet.port)?.watts ?? null, at },
@@ -418,6 +439,7 @@ export function valuesToSettings(values: Record<string, unknown>): Record<string
 
 export * from './model/types.ts';
 export { STATION_TOOLS } from './tools.ts';
+export { stationView, type StationAsSeen } from './view.ts';
 export { AC_CHARGING_WATTS, HOLDING, INPUT, LED_MODE_VALUES, WRITABLE, type WriteRule } from './model/registers.ts';
 export { describeRegisters, type RegisterDump, type RegisterRow } from './model/diagnostics.ts';
 export { PORT_LABELS, buildSettings, buildStatus } from './model/station.ts';
