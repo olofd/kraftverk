@@ -69,6 +69,16 @@ export class ConnectionStore {
       .map(toRecord);
   }
 
+  /** Every connection, grouped by device, each group preferred first: one query for a whole list. */
+  byDevice(): Map<SavedDeviceId, ConnectionRecord[]> {
+    const grouped = new Map<SavedDeviceId, ConnectionRecord[]>();
+    for (const row of db().query<Row, []>('SELECT * FROM device_connection ORDER BY priority, created_at').all()) {
+      const record = toRecord(row);
+      grouped.set(record.deviceId, [...(grouped.get(record.deviceId) ?? []), record]);
+    }
+    return grouped;
+  }
+
   get(id: string): ConnectionRecord | null {
     const row = db().query<Row, [string]>('SELECT * FROM device_connection WHERE id = ?').get(id);
     return row ? toRecord(row) : null;
@@ -166,6 +176,15 @@ export class ConnectionStore {
       .query<{ field: string }, [string]>('SELECT field FROM connection_secret WHERE connection_id = ? ORDER BY field')
       .all(connectionId)
       .map((row) => row.field);
+  }
+
+  /** The names of every connection's secrets, by connection: one query for a whole list. */
+  secretFieldsByConnection(): Map<string, string[]> {
+    const grouped = new Map<string, string[]>();
+    for (const row of db().query<{ connection_id: string; field: string }, []>('SELECT connection_id, field FROM connection_secret ORDER BY field').all()) {
+      grouped.set(row.connection_id, [...(grouped.get(row.connection_id) ?? []), row.field]);
+    }
+    return grouped;
   }
 
   setSecrets(connectionId: string, values: Record<string, string>): void {

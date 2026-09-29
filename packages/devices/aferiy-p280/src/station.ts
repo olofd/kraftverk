@@ -2,10 +2,10 @@ import {
   validateConfig,
   type AdvancedAction,
   type CommandResult,
-  type ConnectionHealth,
   type DeviceContext,
   type DeviceSession,
   type Reading,
+  type SessionHealth,
   type Value,
 } from '@kraftverk/device-sdk';
 import { commandRefusal, describeCommand, fromHex, parseCommand, toHex, type SydpowerLink } from '@kraftverk/protocol-sydpower';
@@ -42,8 +42,6 @@ const failed = (error: unknown): CommandResult => ({
 export type StationSessionOptions = {
   /** The station's permanent identity, when it is known. */
   identity: string | null;
-  /** How it is reached: `mqtt`, `ble`, `sim`. */
-  transport: string;
   /** Whether the connection underneath is up; the simulator's always is. */
   connected: () => boolean;
   advanced?: Record<string, AdvancedAction>;
@@ -52,7 +50,7 @@ export type StationSessionOptions = {
 
 export function stationSession(source: StationSource, options: StationSessionOptions): DeviceSession {
   return {
-    health(): ConnectionHealth {
+    health(): SessionHealth {
       const status = source.status();
       const simulated = status.link.mode === 'simulator';
       const connected = simulated || (options.connected() && status.link.state === 'connected');
@@ -65,8 +63,6 @@ export function stationSession(source: StationSource, options: StationSessionOpt
           : options.connected()
             ? 'Reached, waiting for the station’s first reading'
             : 'The station has not connected',
-        owner: 'server',
-        transport: options.transport,
         lastReadingAt: connected ? status.lastUpdated : status.link.lastSeen,
       };
     },

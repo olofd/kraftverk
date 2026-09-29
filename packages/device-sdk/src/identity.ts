@@ -53,17 +53,25 @@ export type ConnectionStatus =
   /** Something is wrong that the user has to act on — a wrong key, a refused link. */
   | 'error';
 
-export type ConnectionHealth = {
+/**
+ * How a device is doing, as its session knows it. Nothing about who holds it
+ * or how: a session cannot know that, and the same session runs in every holder.
+ */
+export type SessionHealth = {
   status: ConnectionStatus;
   /** One plain sentence, always present, even when connected. */
   detail: string;
-  /** Who holds the link: the server, or the app in the user's hand. */
-  owner: 'server' | 'client' | null;
-  /** The transport of the connection in use — `ble`, `mqtt`, `lan` — or `sim`. Null when none is. */
-  transport: string | null;
   /** When the device last produced a reading, not when it was last asked. */
   lastReadingAt: string | null;
 };
 
+/** How a device is doing, as its holder reports it: its session's word, and who holds it over what. */
+export type ConnectionHealth = SessionHealth & {
+  /** Who holds the link: the server, or the app in the user's hand. */
+  owner: 'server' | 'client' | null;
+  /** The transport of the connection in use — `ble`, `mqtt`, `lan` — or `sim`. Null when none is. */
+  transport: string | null;
+};
+
 /** Connected, and nothing else. The one question most UI actually asks. */
-export const isOnline = (health: ConnectionHealth): boolean => health.status === 'connected';
+export const isOnline = (health: SessionHealth): boolean => health.status === 'connected';

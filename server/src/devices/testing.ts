@@ -159,8 +159,6 @@ const lampSession = (ctx: DeviceContext<LampConfig>, channel: ByteChannel | null
     health: () => ({
       status: !channel || channel.connected ? 'connected' : 'offline',
       detail: `Lamp in ${ctx.config.room ?? 'no room'}`,
-      owner: 'server',
-      transport: channel ? 'bus' : 'simulator',
       lastReadingAt: state?.at ?? null,
     }),
     readings: () => (state ? [{ key: 'on', value: state.on, at: state.at }] : []),

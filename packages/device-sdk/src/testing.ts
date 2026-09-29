@@ -149,6 +149,10 @@ export async function checkDeviceTypeContract(type: DeviceType<any>, options: Co
       problems.push(`health() gives an unknown status "${health.status}"`);
     }
     if (!health.detail?.trim()) problems.push('health() gives no sentence explaining itself');
+    // Who holds it, and over what, is its holder's to say: the same session runs in every holder.
+    for (const field of ['owner', 'transport'] as const) {
+      if (field in health) problems.push(`health() says "${field}", which only its holder knows`);
+    }
 
     const answered = await eventually(() => session.readings().some((reading) => reading.value !== null), settleMs);
     if (!answered) problems.push(`the simulator produced no readings within ${settleMs} ms`);

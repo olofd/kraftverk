@@ -86,7 +86,7 @@ export class HeldSessions {
   /** How a device this app holds is doing, or null when it holds no session for it. */
   health(deviceId: string): ConnectionHealth | null {
     const open = this.#open.get(deviceId);
-    if (open) return { ...open.opened.session.health(), owner: 'client' };
+    if (open) return open.opened.health();
     const refusal = this.#refusals.get(deviceId);
     return refusal ? { status: 'error', detail: refusal, owner: 'client', transport: null, lastReadingAt: null } : null;
   }

@@ -123,13 +123,15 @@ export class Sampler {
     write();
   }
 
-  /** Minute samples go after two weeks — rolled up first — hourly ones after two years, the audit after one. */
+  /** Minute samples go after two weeks — rolled up first — hourly ones after two years, the audit and device events after one. */
   prune(now = Date.now()): void {
     const before = (days: number) => new Date(now - days * 86_400_000).toISOString();
     rollUp(before(RETAIN_DAYS + 2), before(RETAIN_DAYS - 1));
     db().query('DELETE FROM sample WHERE at < ?').run(before(RETAIN_DAYS));
     db().query('DELETE FROM sample_hour WHERE hour < ?').run(before(RETAIN_HOURLY_DAYS));
     db().query('DELETE FROM audit WHERE at < ?').run(before(RETAIN_AUDIT_DAYS));
+    // What a device said happened is kept as long as what was done to it.
+    db().query('DELETE FROM device_event WHERE at < ?').run(before(RETAIN_AUDIT_DAYS));
   }
 }
 

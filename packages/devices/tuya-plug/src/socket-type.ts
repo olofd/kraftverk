@@ -2,7 +2,6 @@ import {
   defineDeviceType,
   MAIN_PART,
   type ConfigSchema,
-  type ConnectionHealth,
   type DeviceContext,
   type DeviceDescription,
   type DeviceSession,
@@ -10,6 +9,7 @@ import {
   type DeviceTypeMeta,
   type OpenConnection,
   type Reading,
+  type SessionHealth,
 } from '@kraftverk/device-sdk';
 import { decodeSocket, linkOver, relayCandidates, tuyaIdentity, type Dps, type SocketProfile, type SocketReading } from '@kraftverk/protocol-tuya-local';
 
@@ -123,7 +123,7 @@ function readingsOf(state: State): Reading[] {
 /** The session over a plug — real, or simulated behind the same shape. */
 function socketSession(options: {
   read: () => State;
-  health: () => ConnectionHealth;
+  health: () => SessionHealth;
   set: (on: boolean) => Promise<void>;
   identity: string | null;
   advanced?: DeviceSession['advanced'];
@@ -195,8 +195,6 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
       return {
         status: fresh ? 'connected' : lastError ? (link.connected || connection.channel.connected ? 'error' : 'offline') : 'connecting',
         detail: fresh ? `Answering, Tuya ${link.version}` : (lastError ?? 'Connecting'),
-        owner: 'server',
-        transport: connection.transport,
         lastReadingAt: state?.at ?? null,
       };
     },
@@ -247,7 +245,7 @@ function simulatedSession(ctx: DeviceContext<SocketConfig>): DeviceSession {
   return socketSession({
     read: () => ({ reading: { relayOn: on, watts: on ? watts : 0, volts: 230, amps: on ? Math.round((watts / 230) * 100) / 100 : 0, kwh: Math.round(kwh * 1000) / 1000, hz: 50 }, at }),
     identity: 'tuya-local:SIMULATED',
-    health: () => ({ status: 'connected', detail: 'Simulated', owner: 'server', transport: 'sim', lastReadingAt: at }),
+    health: () => ({ status: 'connected', detail: 'Simulated', lastReadingAt: at }),
     set: async (next) => {
       on = next;
       at = new Date().toISOString();

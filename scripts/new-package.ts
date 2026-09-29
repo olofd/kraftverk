@@ -109,7 +109,7 @@ function simulatedSession(ctx: DeviceContext<Config>): DeviceSession {
   let on = ctx.store.get<boolean>('on') ?? true;
   let at = new Date().toISOString();
   return {
-    health: () => ({ status: 'connected', detail: 'Simulated', owner: 'server', transport: 'sim', lastReadingAt: at }),
+    health: () => ({ status: 'connected', detail: 'Simulated', lastReadingAt: at }),
     readings: (): Reading[] => [{ key: 'on', value: on, at }],
     async command(request) {
       if (request.capability !== 'switch' || typeof request.args.on !== 'boolean') return { accepted: false, error: 'It only switches' };

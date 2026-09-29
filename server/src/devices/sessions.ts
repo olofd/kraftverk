@@ -30,6 +30,8 @@ import type { DeviceTypeRegistry } from './types.ts';
  */
 
 const WATCH_MS = 15_000;
+/** How long before trying a refused device again, by how many times it has been tried: then every five minutes. */
+const RETRY_MS = [30_000, 60_000, 120_000, 300_000];
 
 export type DeviceSessionManagerDeps = {
   types: DeviceTypeRegistry;
@@ -53,7 +55,17 @@ export type DeviceSessionManagerDeps = {
   log?: (message: string) => void;
 };
 
-type Refusal = { status: 'unconfigured' | 'offline' | 'error'; detail: string };
+type Refusal = {
+  status: 'unconfigured' | 'offline' | 'error';
+  detail: string;
+  /**
+   * When to try again, for what can mend itself — a transport not up yet, a
+   * device that did not answer. Absent for what waits on a person: nothing set
+   * up, held elsewhere, a different device at the address.
+   */
+  retryAt?: number;
+  attempts?: number;
+};
 
 type Open = {
   opened: OpenedDevice;
@@ -126,11 +138,12 @@ export class DeviceSessionManager {
   /** How a device is doing: its session's own answer, or why it has none. */
   health(record: DeviceRecord): ConnectionHealth {
     const open = this.#open.get(record.id);
-    if (open) return open.opened.session.health();
+    if (open) return open.opened.health();
     const refusal = this.#refusals.get(record.id);
+    const again = refusal?.retryAt ? `; trying again in ${Math.max(1, Math.round((refusal.retryAt - Date.now()) / 1000))} s` : '';
     return {
       status: refusal?.status ?? 'offline',
-      detail: refusal?.detail ?? 'Not open yet',
+      detail: refusal ? `${refusal.detail}${again}` : 'Not open yet',
       owner: 'server',
       transport: null,
       lastReadingAt: null,
@@ -162,7 +175,7 @@ export class DeviceSessionManager {
       }
       const chosen = await this.#choose(record, type);
       if ('refusal' in chosen) {
-        this.#refusals.set(record.id, chosen.refusal);
+        this.#refuse(record.id, chosen.refusal, chosen.refusal.status === 'error');
         continue;
       }
       wanted.set(record.id, { record, connection: chosen.connection });
@@ -265,18 +278,31 @@ export class DeviceSessionManager {
       this.#describe(record.id);
     } catch (error) {
       const refused = error instanceof OpenRefused ? error : new OpenRefused((error as Error).message, 'error');
-      this.#refusals.set(record.id, { status: refused.status, detail: refused.message });
+      this.#refuse(record.id, { status: refused.status, detail: refused.message }, refused.status !== 'unconfigured');
       this.deps.log?.(`${record.name} could not be opened: ${refused.message}`);
     }
   }
 
+  /** Why a device has no session; for what can mend itself, when it will be tried again. */
+  #refuse(deviceId: SavedDeviceId, refusal: Refusal, retry: boolean): void {
+    if (!retry) {
+      this.#refusals.set(deviceId, refusal);
+      return;
+    }
+    const attempts = (this.#refusals.get(deviceId)?.attempts ?? 0) + 1;
+    const wait = RETRY_MS[Math.min(attempts, RETRY_MS.length) - 1]!;
+    this.#refusals.set(deviceId, { ...refusal, attempts, retryAt: Date.now() + wait });
+  }
+
   /**
    * Every little while: learns identities devices have said, refuses a
-   * connection that reaches the wrong device, and falls back from one that has
-   * been down too long. Run by a timer; a test runs it directly.
+   * connection that reaches the wrong device, falls back from one that has
+   * been down too long, and tries again to open a device whose refusal can
+   * mend itself. Run by a timer; a test runs it directly, and may say when "now" is.
    */
-  async check(): Promise<void> {
-    let changed = false;
+  async check(now = Date.now()): Promise<void> {
+    // A device refused for what can mend itself — a transport not up at boot — is tried again when due.
+    let changed = [...this.#refusals.values()].some((refusal) => refusal.retryAt !== undefined && refusal.retryAt <= now);
     for (const [id, open] of [...this.#open]) {
       const record = this.#records.get(id);
       // What it is can change while it is open: a pack plugged in, firmware read.

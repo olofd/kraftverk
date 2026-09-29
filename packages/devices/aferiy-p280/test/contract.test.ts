@@ -112,7 +112,7 @@ describe('writing a P280’s settings through its session', () => {
         return station.applySettings(patch);
       },
     };
-    return { session: stationSession(source, { identity: null, transport: 'sim', connected: () => true }), applied };
+    return { session: stationSession(source, { identity: null, connected: () => true }), applied };
   };
 
   test('a whole-machine sleep time of zero never reaches the station — it destroys it', async () => {

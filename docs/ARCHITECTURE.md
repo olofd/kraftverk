@@ -249,7 +249,7 @@ export type OpenConnection = {      // what identify and a session are handed, w
 };
 
 export interface DeviceSession {
-  health(): ConnectionHealth;
+  health(): SessionHealth; // status, a sentence, the last reading: who holds it is the holder's to add
   readings(): Reading[];                                   // every attribute's latest value, settings too; from cache
   description?(): DeviceDescription | null;                // its own, when it differs from the type's: a pack plugged in
   info?(): DeviceInfo | null;                              // manufacturer, model, serial, firmware

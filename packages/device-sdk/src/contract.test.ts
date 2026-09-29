@@ -27,7 +27,7 @@ function simulatedPlug(ctx: DeviceContext<PlugConfig>, flaws: { refuse?: boolean
   });
 
   return {
-    health: () => ({ status: 'connected', detail: 'Simulated', owner: 'server', transport: 'sim', lastReadingAt: at }),
+    health: () => ({ status: 'connected', detail: 'Simulated', lastReadingAt: at }),
     readings: () => [
       { key: 'watts', value: watts, at },
       { key: 'relay', value: on, at },

@@ -1,8 +1,10 @@
 import {
   checkValue,
   openChannel,
+  SIMULATED_TRANSPORT,
   validateConfig,
   type Channel,
+  type ConnectionHealth,
   type DeviceContext,
   type DeviceDescription,
   type DeviceInfo,
@@ -69,6 +71,8 @@ export type OpenedDevice = {
   description(): DeviceDescription;
   /** What the device has said about itself, as far as it has. */
   info(): DeviceInfo | null;
+  /** How it is doing: its session's word, and who holds it over what — which only the holder knows. */
+  health(): ConnectionHealth;
   /** The channel this holder opened, and so closes; null for a simulator. */
   channel: Channel | null;
   /** Stops its scheduled work, closes its session, then its channel. Never throws. */
@@ -95,12 +99,13 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
   const { type, device } = input;
 
   /*
-    Only the fields the type knows. Writes are held to the schema strictly; but
-    a device saved by an older version may carry a key its type has since
-    dropped, and that must not stop a working device from opening.
+    Held to its type's schema, strictly (strict version 1, AGENTS.md): a key
+    the type does not have means the device was saved against another shape
+    of it, and saying so is better than opening it on a guess.
   */
-  const known = Object.fromEntries(Object.entries(device.config).filter(([field]) => field in type.config.fields));
-  const config = validateConfig(type.config, known);
+  const unknown = Object.keys(device.config).filter((field) => !(field in type.config.fields));
+  if (unknown.length) throw new OpenRefused(`Needs setting up again: ${type.meta.name} has no setting ${unknown.map((field) => `"${field}"`).join(', ')}`, 'unconfigured');
+  const config = validateConfig(type.config, device.config);
   if (!config.ok) throw new OpenRefused(`Needs setting up: ${config.issues.map((issue) => issue.message).join('; ')}`, 'unconfigured');
 
   const timers: ReturnType<typeof setInterval>[] = [];
@@ -190,6 +195,11 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
       session: opened,
       description: describe,
       info: () => opened.info?.() ?? null,
+      health: () => ({
+        ...opened.health(),
+        owner: input.platform === 'server' ? 'server' : 'client',
+        transport: input.connection?.transport ?? SIMULATED_TRANSPORT,
+      }),
       channel: openChannelRef,
       close: async () => {
         stop();

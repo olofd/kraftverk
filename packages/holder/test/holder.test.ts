@@ -13,7 +13,7 @@ import { activeConnection, Failover, identityVerdict, judgeCheck, openDevice, Op
 
 const quiet = { info: () => {}, warn: () => {}, error: () => {} };
 const session = (extra: Partial<DeviceSession> = {}): DeviceSession => ({
-  health: () => ({ status: 'connected', detail: 'Fine', owner: 'server', transport: 'bus', lastReadingAt: null }),
+  health: () => ({ status: 'connected', detail: 'Fine', lastReadingAt: null }),
   readings: () => [],
   command: async () => ({ accepted: false, error: 'A lamp takes no commands here' }),
   close: async () => {},

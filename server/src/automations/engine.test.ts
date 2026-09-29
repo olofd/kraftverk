@@ -45,7 +45,7 @@ function forecastSession(cloud: (at: Date) => number | null, now: Date): DeviceS
     return { at: at.toISOString(), temperatureC: 10, cloudCoverPercent: cloud(at), precipitationMm: 0, irradianceWm2: null };
   });
   return {
-    health: () => ({ status: 'connected', detail: 'Fine', owner: 'server', transport: 'https', lastReadingAt: now.toISOString() }),
+    health: () => ({ status: 'connected', detail: 'Fine', lastReadingAt: now.toISOString() }),
     readings: () => [],
     command: async () => ({ accepted: false, error: 'A forecast takes no commands' }),
     query: async (request) => hours.filter((hour) => Date.parse(hour.at) >= now.getTime() - 3_600_000).slice(0, Number(request.args.hours)),

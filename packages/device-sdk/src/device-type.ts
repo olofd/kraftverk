@@ -2,7 +2,7 @@ import type { CapabilityName, CommandResult } from './capabilities.ts';
 import type { CategoryId } from './categories.ts';
 import { methodsOf, type ConnectionMethod, type Identified, type OpenConnection, type Platform } from './connection.ts';
 import { deviceCapabilities, type DeviceDescription, type DeviceInfo, type Reading } from './description.ts';
-import type { ConnectionHealth, SavedDeviceId } from './identity.ts';
+import type { SavedDeviceId, SessionHealth } from './identity.ts';
 import { configDefaults, type ConfigSchema, type ConfigValues } from './schema.ts';
 import type { SetupStep } from './setup.ts';
 import type { Value } from './values.ts';
@@ -144,7 +144,7 @@ export type AdvancedAction = {
  * by the age of its readings, never by a read that hangs.
  */
 export interface DeviceSession {
-  health(): ConnectionHealth;
+  health(): SessionHealth;
   /** Every attribute's latest value, settings included. Null values are unknown. */
   readings(): Reading[];
   /**

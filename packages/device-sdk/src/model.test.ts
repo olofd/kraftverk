@@ -46,7 +46,7 @@ function simulatedStation(ctx: DeviceContext, flaws: Flaws): DeviceSession {
     at = new Date().toISOString();
   });
   return {
-    health: () => ({ status: 'connected', detail: 'Simulated', owner: 'server', transport: 'sim', lastReadingAt: at }),
+    health: () => ({ status: 'connected', detail: 'Simulated', lastReadingAt: at }),
     readings: (): Reading[] => [
       { key: 'soc', value: state.soc, at },
       { key: 'mode', value: flaws.badEnum ? 'turbo' : 'idle', at },

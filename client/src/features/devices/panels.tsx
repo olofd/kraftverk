@@ -11,6 +11,8 @@ import {
   capabilitiesOf,
   capabilitySpec,
   keepsHistory,
+  LINK_KIND_IDS,
+  linkFits,
   MAIN_PART,
   partsOf,
   quantityOf,
@@ -476,13 +478,11 @@ export function Links({ device }: { device: DeviceView }) {
   const [busy, setBusy] = useState(false);
   const theme = useTheme();
 
-  const candidates = Object.entries(LINK_KINDS).flatMap(([kind, spec]) => {
-    const asSource = device.capabilities.includes(spec.from)
-      ? devices.filter((other) => other.id !== device.id && other.capabilities.includes(spec.to)).map((other) => ({ kind, role: 'source' as const, other }))
-      : [];
-    const asTarget = device.capabilities.includes(spec.to)
-      ? devices.filter((other) => other.id !== device.id && other.capabilities.includes(spec.from)).map((other) => ({ kind, role: 'target' as const, other }))
-      : [];
+  // Decided by the SDK's own rule, the one the server applies: only what it would accept is offered.
+  const candidates = LINK_KIND_IDS.flatMap((kind) => {
+    const others = devices.filter((other) => other.id !== device.id);
+    const asSource = others.filter((other) => linkFits(kind, device.description, other.description)).map((other) => ({ kind, role: 'source' as const, other }));
+    const asTarget = others.filter((other) => linkFits(kind, other.description, device.description)).map((other) => ({ kind, role: 'target' as const, other }));
     return [...asSource, ...asTarget];
   });
   const linked = (kind: string, role: 'source' | 'target', otherId: string) =>

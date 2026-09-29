@@ -166,18 +166,23 @@ describe('one session per device', () => {
 });
 
 describe('a device that cannot open is still a device, saying why', () => {
-  test('a key its type no longer knows does not stop it opening', async () => {
-    const { record } = addLamp('Hall', 'lamp-1', { room: 'Hall', retiredField: 'from an older version' });
+  test('a setting its type does not have is refused, not guessed around', async () => {
+    const { record } = addLamp('Hall', 'lamp-1', { room: 'Hall', retiredField: 'from another shape' });
     await sessions.sync(catalog.list());
-    expect(sessions.get(record.id)).not.toBeNull();
-    expect(opened[0]!.ctx.config).toEqual({ room: 'Hall' });
+    expect(sessions.get(record.id)).toBeNull();
+    expect(sessions.health(record)).toMatchObject({ status: 'unconfigured', detail: 'Needs setting up again: Test lamp has no setting "retiredField"' });
   });
 
   test('a session that fails to open is an error, with the reason', async () => {
     lampControl.failOpen = true;
     const { record } = addLamp('Hall', 'lamp-1');
     await sessions.sync(catalog.list());
-    expect(sessions.health(record)).toMatchObject({ status: 'error', detail: 'The lamp refused the connection' });
+    expect(sessions.health(record)).toMatchObject({ status: 'error', detail: expect.stringMatching(/^The lamp refused the connection; trying again in \d+ s$/) });
+
+    // It may refuse because of something that has since passed: tried again when due.
+    lampControl.failOpen = false;
+    await sessions.check(Date.now() + 31_000);
+    expect(sessions.get(record.id)).not.toBeNull();
   });
 
   test('a device no installed type claims gets no session at all', async () => {
@@ -195,12 +200,34 @@ describe('a device that cannot open is still a device, saying why', () => {
     expect(sessions.health(record).detail).toContain('Nothing can reach');
   });
 
-  test('a transport that cannot run here is the reason given', async () => {
+  test('a transport that cannot run here is the reason given, and the device opens by itself when it can', async () => {
     bus.unavailable = 'No bus on this machine';
     const { record } = addLamp('Hall', 'lamp-1');
     await sessions.sync(catalog.list());
     expect(sessions.get(record.id)).toBeNull();
-    expect(sessions.health(record).detail).toBe('No bus on this machine');
+    expect(sessions.health(record)).toMatchObject({ status: 'error', detail: expect.stringMatching(/^No bus on this machine; trying again in (29|30) s$/) });
+
+    // Not yet due: left alone.
+    await sessions.check(Date.now() + 10_000);
+    expect(sessions.get(record.id)).toBeNull();
+
+    // Still down when due: tried, refused, and the next wait is longer.
+    await sessions.check(Date.now() + 31_000);
+    expect(sessions.get(record.id)).toBeNull();
+    expect(sessions.health(record).detail).toMatch(/trying again in (59|60) s$/);
+
+    // Back: opened on the next try, with no one touching the catalog.
+    bus.unavailable = null;
+    await sessions.check(Date.now() + 61_000);
+    expect(sessions.get(record.id)).not.toBeNull();
+  });
+
+  test('what waits on a person is not tried again', async () => {
+    const record = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Unreachable' });
+    await sessions.sync(catalog.list());
+    await sessions.check(Date.now() + 3_600_000);
+    expect(sessions.health(record)).toMatchObject({ status: 'unconfigured' });
+    expect(sessions.health(record).detail).not.toContain('trying again');
   });
 
   test('a device held only by a phone has no session here, and says who holds it', async () => {

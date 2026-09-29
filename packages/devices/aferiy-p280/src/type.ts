@@ -99,7 +99,6 @@ export default defineDeviceType({
     await client.start();
     return stationSession(client, {
       identity: identityFrom(connection.address),
-      transport: connection.transport,
       connected: () => link.connected,
       advanced: { ...stationTools(client), ...registerTools(client, link, ctx) },
       close: async () => {
@@ -114,7 +113,6 @@ export default defineDeviceType({
     station.start();
     return stationSession(station, {
       identity: 'sydpower:SIMULATED',
-      transport: 'sim',
       connected: () => true,
       advanced: stationTools(station),
       close: () => station.stop(),

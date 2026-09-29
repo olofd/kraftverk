@@ -13,7 +13,7 @@ import {
   type DeviceView,
   type SaveInput,
 } from '@kraftverk/api-client';
-import { describeDeviceType } from '@kraftverk/device-sdk';
+import { describeDeviceType, linkFits, type DeviceDescription, type LinkKind } from '@kraftverk/device-sdk';
 import { Card, Row, RowSeparator, SectionLabel, haptic } from '@kraftverk/ui';
 
 import { Pressable } from '../src/components/Pressable';
@@ -243,7 +243,7 @@ export default function AddDeviceScreen() {
           flow={flow}
           outcome={outcome}
           typeName={type.meta.name}
-          capabilities={type.capabilities}
+          description={type.description}
           attachTo={attachTo}
           devices={devices}
           onSaved={async (id) => {
@@ -479,7 +479,7 @@ function Finish({
   flow,
   outcome,
   typeName,
-  capabilities,
+  description,
   attachTo,
   devices,
   onSaved,
@@ -487,7 +487,8 @@ function Finish({
   flow: SetupFlow;
   outcome: CheckOutcome;
   typeName: string;
-  capabilities: readonly string[];
+  /** What it is, as its type describes it: which links fit is decided the way the server decides it. */
+  description: DeviceDescription;
   attachTo: DeviceView | null;
   devices: DeviceView[];
   onSaved: (id: string) => Promise<void>;
@@ -500,8 +501,8 @@ function Finish({
 
   // Questions a link kind asks, where this device fits one end and a device you have the other.
   const questions = Object.entries(LINK_KINDS).flatMap(([kind, spec]) => {
-    const asSource = capabilities.includes(spec.from) ? devices.filter((other) => other.capabilities.includes(spec.to)) : [];
-    const asTarget = capabilities.includes(spec.to) ? devices.filter((other) => other.capabilities.includes(spec.from)) : [];
+    const asSource = devices.filter((other) => linkFits(kind as LinkKind, description, other.description));
+    const asTarget = devices.filter((other) => linkFits(kind as LinkKind, other.description, description));
     return [
       ...(asSource.length ? [{ key: `${kind}:source`, kind, role: 'source' as const, question: spec.question.fromSide, options: asSource }] : []),
       ...(asTarget.length ? [{ key: `${kind}:target`, kind, role: 'target' as const, question: spec.question.toSide, options: asTarget }] : []),

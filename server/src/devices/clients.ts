@@ -28,6 +28,10 @@ const toRecord = (row: Row): ClientRecord => ({
 });
 
 export class ClientStore {
+  all(): ClientRecord[] {
+    return db().query<Row, []>('SELECT * FROM client').all().map(toRecord);
+  }
+
   get(id: string): ClientRecord | null {
     const row = db().query<Row, [string]>('SELECT * FROM client WHERE id = ?').get(id);
     return row ? toRecord(row) : null;

@@ -4,9 +4,9 @@ import { activeConnection } from '@kraftverk/holder';
 
 import type { TransportHost } from '../runtime/transports.ts';
 import type { DeviceCatalog, DeviceRecord } from './catalog.ts';
-import type { ClientStore } from './clients.ts';
+import type { ClientRecord, ClientStore } from './clients.ts';
 import type { ConnectionRecord, ConnectionStore } from './connections.ts';
-import type { LinkStore } from './links.ts';
+import type { LinkRecord, LinkStore } from './links.ts';
 import type { RemoteReadings } from './remote.ts';
 import type { DeviceSessionManager } from './sessions.ts';
 import type { DeviceTypeRegistry } from './types.ts';
@@ -21,7 +21,20 @@ import type { DeviceTypeRegistry } from './types.ts';
  * the app has one card, one detail screen and one chart for everything it will
  * ever show — and this file names no product. The shapes it builds are the
  * API contract's (`@kraftverk/api-contract`), shared with the app.
+ *
+ * A list is built from one read of each table — connections, their secrets'
+ * names, links, clients — whatever the number of devices, since the app asks
+ * for it every few seconds.
  */
+
+/** What every view in one answer is joined from, read once. */
+type Joined = {
+  names: Map<SavedDeviceId, string>;
+  connections: Map<SavedDeviceId, ConnectionRecord[]>;
+  secrets: Map<string, string[]>;
+  links: Map<SavedDeviceId, LinkRecord[]>;
+  clients: Map<string, ClientRecord>;
+};
 
 export class DeviceRegistry {
   constructor(
@@ -41,23 +54,38 @@ export class DeviceRegistry {
   /** Every device you have, joined to what it is doing. */
   all(): DeviceView[] {
     const records = this.deps.catalog.list();
-    const names = new Map(records.map((record) => [record.id, record.name]));
-    return records.map((record) => this.#view(record, names));
+    const joined = this.#join(records);
+    return records.map((record) => this.#view(record, joined));
   }
 
   /** Removed devices, kept with their history, to bring back or delete. */
   removed(): DeviceView[] {
-    const names = new Map(this.deps.catalog.list().map((record) => [record.id, record.name]));
-    return this.deps.catalog.removed().map((record) => this.#view(record, names));
+    const joined = this.#join(this.deps.catalog.list());
+    return this.deps.catalog.removed().map((record) => this.#view(record, joined));
   }
 
   find(id: SavedDeviceId): DeviceView | null {
     const record = this.deps.catalog.get(id);
     if (!record) return null;
-    return this.#view(record, new Map(this.deps.catalog.list().map((candidate) => [candidate.id, candidate.name])));
+    return this.#view(record, this.#join(this.deps.catalog.list()));
   }
 
-  #view(record: DeviceRecord, names: Map<SavedDeviceId, string>): DeviceView {
+  #join(active: DeviceRecord[]): Joined {
+    const links = new Map<SavedDeviceId, LinkRecord[]>();
+    for (const link of this.deps.links.all()) {
+      for (const end of new Set([link.sourceId, link.targetId])) links.set(end, [...(links.get(end) ?? []), link]);
+    }
+    return {
+      names: new Map(active.map((record) => [record.id, record.name])),
+      connections: this.deps.connections.byDevice(),
+      secrets: this.deps.connections.secretFieldsByConnection(),
+      links,
+      clients: new Map(this.deps.clients.all().map((client) => [client.id, client])),
+    };
+  }
+
+  #view(record: DeviceRecord, joined: Joined): DeviceView {
+    const { names } = joined;
     const type = this.deps.sessions.typeOf(record);
     const session = record.removedAt ? null : this.deps.sessions.get(record.id);
     const description = record.removedAt ? record.description : this.deps.sessions.description(record);
@@ -75,7 +103,7 @@ export class DeviceRegistry {
       if (connection.heldBy) return latest?.connectionId === connection.id ? true : null;
       return opened?.id === connection.id ? this.deps.sessions.reachable(record.id) : null;
     };
-    const ordered = [...this.deps.connections.forDevice(record.id)].sort((a, b) => a.priority - b.priority);
+    const ordered = joined.connections.get(record.id) ?? [];
     const activeId = activeConnection(
       ordered.map((connection) => ({ id: connection.id, priority: connection.priority, reachable: reachable(connection) })),
       opened?.id ?? null
@@ -86,7 +114,7 @@ export class DeviceRegistry {
 
     const connections = ordered.map((connection): ConnectionView => {
       const method = type ? methodOf(type, connection.method) : null;
-      const client = connection.heldBy ? this.deps.clients.get(connection.heldBy) : null;
+      const client = connection.heldBy ? joined.clients.get(connection.heldBy) : null;
       return {
         id: connection.id,
         method: connection.method,
@@ -98,12 +126,12 @@ export class DeviceRegistry {
         reachable: reachable(connection),
         inUse: active?.id === connection.id,
         lastConnectedAt: connection.lastConnectedAt,
-        secrets: this.deps.connections.secretFields(connection.id),
+        secrets: joined.secrets.get(connection.id) ?? [],
         config: connection.config,
       };
     });
 
-    const links = this.deps.links.forDevice(record.id).map((link): LinkView => {
+    const links = (joined.links.get(record.id) ?? []).map((link): LinkView => {
       const role = link.sourceId === record.id ? 'source' : 'target';
       const otherId = role === 'source' ? link.targetId : link.sourceId;
       return { id: link.id, kind: link.kind, role, other: { id: otherId, name: names.get(otherId) ?? 'A removed device' } };
@@ -134,7 +162,7 @@ export class DeviceRegistry {
         : remote
           ? {
               status: 'connected',
-              detail: `Connected through ${this.deps.clients.get(remote.clientId)?.name ?? 'another app'}`,
+              detail: `Connected through ${joined.clients.get(remote.clientId)?.name ?? 'another app'}`,
               owner: 'client',
               transport: connections.find((connection) => connection.id === remote.connectionId)?.transport ?? null,
               lastReadingAt: remote.at,

@@ -129,6 +129,19 @@ describe('history that lasts', () => {
     expect(hours('kept').map((row) => [row.hour.slice(0, 10), row.avg])).toEqual([[old.toISOString().slice(0, 10), 42]]);
   });
 
+  test('events a device raised are kept a year, like the audit', () => {
+    registry('eventful', []);
+    const now = Date.UTC(2026, 8, 28, 12, 0);
+    const at = (days: number) => new Date(now - days * 86_400_000).toISOString();
+    const raise = (when: string) =>
+      db().query("INSERT INTO device_event (device_id, part, event, level, data, at) VALUES ('eventful', 'main', 'tripped', 'warn', NULL, ?)").run(when);
+    raise(at(400));
+    raise(at(30));
+    new Sampler(registry('eventful', [])).prune(now);
+    const left = db().query("SELECT at FROM device_event WHERE device_id = 'eventful'").all() as { at: string }[];
+    expect(left.map((row) => row.at)).toEqual([at(30)]);
+  });
+
   test('a long span is drawn from the hours, a short one from the minutes', () => {
     const now = Date.now();
     const ago = (h: number) => new Date(now - h * 3_600_000).toISOString();

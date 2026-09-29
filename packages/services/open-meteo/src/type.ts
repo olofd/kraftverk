@@ -104,8 +104,6 @@ async function realSession(ctx: DeviceContext<WeatherConfig>): Promise<DeviceSes
       return {
         status: fresh ? 'connected' : lastError ? 'error' : 'connecting',
         detail: fresh ? `Forecast from ${new Date(fetchedAt!).toLocaleTimeString()}` : (lastError ?? 'Asking for the forecast'),
-        owner: 'server',
-        transport: connection.transport,
         lastReadingAt: fetchedAt,
       };
     },
@@ -138,7 +136,7 @@ function simulatedSession(ctx: DeviceContext<WeatherConfig>): DeviceSession {
   return weatherSession({
     hours,
     fetchedAt: () => at,
-    health: () => ({ status: 'connected', detail: 'Simulated', owner: 'server', transport: 'sim', lastReadingAt: at }),
+    health: () => ({ status: 'connected', detail: 'Simulated', lastReadingAt: at }),
     close: async () => undefined,
   });
 }
