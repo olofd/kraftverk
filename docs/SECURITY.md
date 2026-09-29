@@ -155,7 +155,7 @@ Unchanged by any of this, and applied to every caller:
   broker for every command (including the server's), and in the station's
   link for every frame it sends, whoever holds the connection — the server or
   the app. The station's raw-frame tool is off unless the holder was started
-  with `ALLOW_RAW_MODBUS=1`, and an app never is.
+  with `ALLOW_RAW_FRAMES=1`, and an app never is.
   `commandRefusal` fails closed: it passes only reads, and writes it can read
   to the end — a function code it does not know, a write cut short, or a
   multi-register write whose count, byte count and data disagree is refused.

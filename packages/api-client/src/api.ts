@@ -90,7 +90,7 @@ export const api = axios.create({
     `X-Kraftverk-Client` on every request: the server refuses writes without
     it, because a page on another website cannot add it without asking the
     server first — and the server says no. It is what stops any site you visit
-    from switching the relay through your browser.
+    from switching your devices through your browser.
   */
   headers: { Accept: 'application/json', 'X-Kraftverk-Client': 'app' },
   // The session is an httpOnly cookie; it only travels if asked to.
@@ -245,7 +245,7 @@ export async function sendCommand(
   const { part, capability, command: name, ...body } = command;
   const path = `/parts/${encodeURIComponent(part)}/commands/${encodeURIComponent(capability)}/${encodeURIComponent(name)}`;
   const response = await api.post<GatewayResult>(devicePath(id, path), body, {
-    // Verification waits for the device, and the station a plug feeds, to agree.
+    // Verification waits for the device, and whatever it is linked to, to agree.
     timeout: 45_000,
     validateStatus: (status) => status === 200 || status === 409,
   });
@@ -285,7 +285,7 @@ export async function setConnectionSecrets(deviceId: string, connectionId: strin
   return data;
 }
 
-/** Records a fact about the house: this plug feeds that station. */
+/** Records a fact about the house: this device feeds that one. */
 export async function addLink(kind: string, sourceId: string, targetId: string) {
   const { data } = await api.post<LinkRecord>('/links', { kind, sourceId, targetId });
   return data;
@@ -376,7 +376,7 @@ export async function updateSetup(id: string, values: { device?: ConfigValues; c
   return data;
 }
 
-/** A step's helper, run on the server: "Fetch it with my Tuya account". Slow by nature. */
+/** A step's helper, run on the server: "Fetch it with my vendor account". Slow by nature. */
 export async function runSetupAction(id: string, stepId: string, actionId: string, input: ConfigValues = {}) {
   const { data } = await api.post<SetupActionResult>(`/setup/${id}/steps/${stepId}/actions/${actionId}`, { input }, { timeout: 95_000 });
   return data;

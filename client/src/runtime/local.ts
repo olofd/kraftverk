@@ -107,7 +107,7 @@ export class LocalCatalog {
     return this.vault.get(connectionId);
   }
 
-  /** Changes a connection's secrets: a Tuya plug's local key changes every time it is paired again. */
+  /** Changes a connection's secrets: a plug's local key can change every time it is paired again. */
   setSecrets(connectionId: string, secrets: Record<string, string>): void {
     this.vault.set(connectionId, secrets);
     for (const listener of this.#listeners) listener();

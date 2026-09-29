@@ -1,4 +1,4 @@
-import type { ConnectionHealth, DeviceDescription, DeviceInfo, DeviceSession, DeviceType, SavedDeviceId } from '@kraftverk/device-sdk';
+import { isSimulated, methodOf, type ConnectionHealth, type DeviceDescription, type DeviceInfo, type DeviceSession, type DeviceType, type SavedDeviceId } from '@kraftverk/device-sdk';
 import { Failover, identityVerdict, openDevice, OpenRefused, type DeviceEventMessage, type LiveBus, type OpenedDevice } from '@kraftverk/holder';
 
 import { audit } from '../history/db.ts';
@@ -17,8 +17,9 @@ import type { DeviceTypeRegistry } from './types.ts';
  * connections say how it is reached. This opens it: the connection in use is
  * the preferred one the server holds and can reach (docs/DATA-MODEL.md §4) —
  * its transport's channel, with what the protocol's binding asks for — and the
- * type's session is opened over it. Without hardware, the type's simulator
- * instead. It knows no product, no protocol and no transport.
+ * type's session is opened over it. A simulated connection opens the type's
+ * simulator instead, and reaches nothing. It knows no product, no protocol and
+ * no transport.
  *
  * A device whose session cannot be opened is still a device you own. It gets
  * no session and a reason, which is what its card then says.
@@ -35,9 +36,7 @@ export type DeviceSessionManagerDeps = {
   protocols: ProtocolRegistry;
   transports: TransportHost;
   connections: ConnectionStore;
-  /** Every device is simulated; no hardware is reached. */
-  simulate: boolean;
-  /** Every hardware write is refused. Sessions are told, and must honour it. */
+  /** Every hardware write is refused. Sessions are told, and must honour it; a simulator reaches no hardware. */
   readOnly: boolean;
   /** Frames nobody has described may be sent, by a type's raw-frame tool. */
   allowRawFrames: boolean;
@@ -58,15 +57,15 @@ type Refusal = { status: 'unconfigured' | 'offline' | 'error'; detail: string };
 
 type Open = {
   opened: OpenedDevice;
-  /** The connection in use; null for a simulator. */
-  connection: ConnectionRecord | null;
+  /** The connection in use: a simulated one opens the type's simulator. */
+  connection: ConnectionRecord;
   /** What it was opened with, so a change reopens it. */
   fingerprint: string;
   detach: () => void;
 };
 
-const fingerprintOf = (record: DeviceRecord, connection: ConnectionRecord | null) =>
-  JSON.stringify([record.config, connection?.id, connection?.address, connection?.config]);
+const fingerprintOf = (record: DeviceRecord, connection: ConnectionRecord) =>
+  JSON.stringify([record.config, connection.id, connection.address, connection.config]);
 
 export class DeviceSessionManager {
   #open = new Map<SavedDeviceId, Open>();
@@ -106,15 +105,22 @@ export class DeviceSessionManager {
     if (changed) this.deps.bus?.publish({ kind: 'described', deviceId });
   }
 
-  /** The connection a device is using right now. Null for a simulator or when none is open. */
+  /** The connection a device is using right now. Null when none is open. */
   inUse(deviceId: SavedDeviceId): ConnectionRecord | null {
     return this.#open.get(deviceId)?.connection ?? null;
+  }
+
+  /** Whether a device is open as its type's simulator: nothing it does reaches hardware. */
+  simulated(deviceId: SavedDeviceId): boolean {
+    const open = this.#open.get(deviceId);
+    return open !== undefined && isSimulated(open.connection);
   }
 
   /** Whether the connection a device's session has open reaches it right now. */
   reachable(deviceId: SavedDeviceId): boolean {
     const open = this.#open.get(deviceId);
-    return open?.connection != null && open.opened.channel?.connected === true;
+    if (!open) return false;
+    return isSimulated(open.connection) || open.opened.channel?.connected === true;
   }
 
   /** How a device is doing: its session's own answer, or why it has none. */
@@ -145,17 +151,13 @@ export class DeviceSessionManager {
 
   async #sync(records: DeviceRecord[]): Promise<void> {
     this.#records = new Map(records.map((record) => [record.id, record]));
-    const wanted = new Map<SavedDeviceId, { record: DeviceRecord; connection: ConnectionRecord | null }>();
+    const wanted = new Map<SavedDeviceId, { record: DeviceRecord; connection: ConnectionRecord }>();
 
     for (const record of records) {
       if (record.removedAt) continue;
       const type = this.typeOf(record);
       if (!type) {
         this.#refusals.set(record.id, { status: 'unconfigured', detail: `Nothing installed on this server knows what "${record.typeId}" is` });
-        continue;
-      }
-      if (this.deps.simulate) {
-        wanted.set(record.id, { record, connection: null });
         continue;
       }
       const chosen = await this.#choose(record, type);
@@ -185,8 +187,8 @@ export class DeviceSessionManager {
 
   /**
    * The connection to use: the preferred one the server holds whose transport
-   * is available here. A device held only by a phone has no server session —
-   * its card says who holds it.
+   * is available here — a simulated one always is. A device held only by a
+   * phone has no server session — its card says who holds it.
    */
   async #choose(record: DeviceRecord, type: DeviceType<any>): Promise<{ connection: ConnectionRecord } | { refusal: Refusal }> {
     const all = this.deps.connections.forDevice(record.id);
@@ -196,11 +198,12 @@ export class DeviceSessionManager {
     const serverHeld = all.filter((connection) => connection.heldBy === null);
     for (const connection of serverHeld) {
       if (this.#failover.avoided(connection.id) && serverHeld.length > 1) continue;
-      const method = type.connections.find((candidate) => candidate.id === connection.method);
+      const method = methodOf(type, connection.method);
       if (!method) {
         reasons.push(`${record.typeId} no longer has a way called "${connection.method}"`);
         continue;
       }
+      if (isSimulated(connection)) return { connection };
       await this.deps.transports.start(connection.transport);
       const available = this.deps.transports.available(connection.transport);
       if (!available.ok) {
@@ -218,8 +221,9 @@ export class DeviceSessionManager {
     return { refusal: { status: 'error', detail: reasons[0] ?? 'None of its connections can be used here' } };
   }
 
-  async #openDevice(record: DeviceRecord, connection: ConnectionRecord | null): Promise<void> {
+  async #openDevice(record: DeviceRecord, connection: ConnectionRecord): Promise<void> {
     const type = this.typeOf(record)!;
+    const simulated = isSimulated(connection);
     this.#refusals.delete(record.id);
     const log = (level: 'log' | 'warn' | 'error') => (message: string, extra?: unknown) => console[level](`[${record.name}] ${message}`, extra ?? '');
 
@@ -227,13 +231,14 @@ export class DeviceSessionManager {
       const opened = await openDevice({
         type,
         device: record,
-        connection,
-        secret: (field) => (connection ? this.deps.connections.secret(connection.id, field) : null),
+        // Simulated: no connection to open, and its type's simulator in its place.
+        connection: simulated ? null : connection,
+        secret: (field) => this.deps.connections.secret(connection.id, field),
         protocols: this.deps.protocols,
         transports: this.deps.transports,
         store: deviceStore(record.id),
         platform: 'server',
-        readOnly: this.deps.readOnly,
+        readOnly: this.deps.readOnly && !simulated,
         allowRawFrames: this.deps.allowRawFrames,
         log: { info: log('log'), warn: log('warn'), error: log('error') },
         changed: () => {
@@ -248,7 +253,7 @@ export class DeviceSessionManager {
       });
 
       const entry: Open = { opened, connection, fingerprint: fingerprintOf(record, connection), detach: () => {} };
-      if (opened.channel && connection) {
+      if (opened.channel) {
         const noteState = (connected: boolean) => {
           this.#failover.note(connection.id, connected);
           if (connected) this.deps.connections.touch(connection.id);
@@ -276,7 +281,7 @@ export class DeviceSessionManager {
       const record = this.#records.get(id);
       // What it is can change while it is open: a pack plugged in, firmware read.
       this.#describe(id);
-      if (!record || !open.connection) continue;
+      if (!record || isSimulated(open.connection)) continue;
 
       const said = open.opened.session.identity?.().id ?? null;
       const verdict = identityVerdict(record.identity, said);
@@ -292,7 +297,7 @@ export class DeviceSessionManager {
         this.#records.set(id, { ...record, identity: said });
       }
 
-      const others = this.deps.connections.forDevice(id).filter((connection) => connection.heldBy === null && connection.id !== open.connection!.id);
+      const others = this.deps.connections.forDevice(id).filter((connection) => connection.heldBy === null && connection.id !== open.connection.id);
       const down = this.#failover.downFor(open.connection.id);
       if (this.#failover.due(open.connection.id, others.length > 0)) {
         this.deps.log?.(`${record.name}: ${open.connection.method} has been down for ${Math.round((down ?? 0) / 1000)} s; trying its next connection`);

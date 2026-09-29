@@ -1,5 +1,5 @@
 import type { ConnectionView, DeviceView, LinkView } from '@kraftverk/api-contract';
-import { deviceCapabilities, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { deviceCapabilities, methodOf, type SavedDeviceId } from '@kraftverk/device-sdk';
 import { activeConnection } from '@kraftverk/holder';
 
 import type { TransportHost } from '../runtime/transports.ts';
@@ -85,7 +85,7 @@ export class DeviceRegistry {
     const remote = latest && active?.id === latest.connectionId && (opened !== null || !session) ? latest : null;
 
     const connections = ordered.map((connection): ConnectionView => {
-      const method = type?.connections.find((candidate) => candidate.id === connection.method);
+      const method = type ? methodOf(type, connection.method) : null;
       const client = connection.heldBy ? this.deps.clients.get(connection.heldBy) : null;
       return {
         id: connection.id,

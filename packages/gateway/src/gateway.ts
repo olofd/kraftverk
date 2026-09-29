@@ -140,8 +140,8 @@ export type GatewayDeps = {
   device: (id: SavedDeviceId) => GatewayDevice | null;
   /** The device a device's main part feeds, from the links. */
   feeds: (id: SavedDeviceId) => SavedDeviceId | null;
-  /** True when every hardware write is refused. */
-  isReadOnly: () => boolean;
+  /** True when writes to this device are refused: every hardware write, when read-only. A simulated device has no hardware. */
+  isReadOnly: (deviceId: SavedDeviceId) => boolean;
   /** What read-only is called where this holder runs: the server's mode, or an app's switch. */
   readOnlyReason?: string;
   /**
@@ -259,7 +259,7 @@ export class ActionGateway {
     const current = settings.map((setting) => readingOf(readingsNow(), setting.attribute.key));
 
     // 2. Policy, evaluated now rather than when anything was configured.
-    if (this.#deps.isReadOnly()) return refuse(this.#deps.readOnlyReason ?? 'The server is in read-only mode');
+    if (this.#deps.isReadOnly(intent.deviceId)) return refuse(this.#deps.readOnlyReason ?? 'The server is in read-only mode');
 
     const key = this.#key(intent);
     const dwell = intent.actor === 'automation' ? this.#policy.automationDwellMs : this.#policy.userDwellMs;
@@ -435,7 +435,7 @@ export class ActionGateway {
     }
     if (!session?.write) return refuse(session ? 'It cannot be written to' : device.offline);
 
-    if (this.#deps.isReadOnly()) return refuse(this.#deps.readOnlyReason ?? 'The server is in read-only mode');
+    if (this.#deps.isReadOnly(intent.deviceId)) return refuse(this.#deps.readOnlyReason ?? 'The server is in read-only mode');
 
     const risky = keys.filter((key) => writable.get(key)!.dangerous);
     if (risky.length && intent.actor === 'automation') return refuse(`An automation may not change ${risky.join(', ')}: it can damage the hardware`);

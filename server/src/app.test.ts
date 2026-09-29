@@ -34,10 +34,11 @@ import { TransportHost } from './runtime/transports.ts';
  * The server's routes, over HTTP, as the app and an attacker reach them.
  *
  * Two servers, built the way `index.ts` builds one. The *simulated* one has
- * every installed package — the P280, the plugs, the weather — and reaches no
- * hardware. The *bus* one holds lamps on a pretend bus (`devices/testing.ts`),
- * so the paths that touch a device — finding it, checking who it is, claiming
- * its address, switching it — run for real.
+ * every installed package — the P280, the plugs, the weather — and each device
+ * is added to it the simulated way, so nothing reaches hardware or the network.
+ * The *bus* one holds lamps on a pretend bus (`devices/testing.ts`), so the
+ * paths that touch a device — finding it, checking who it is, claiming its
+ * address, switching it — run for real.
  */
 
 const dir = mkdtempSync(join(tmpdir(), 'kraftverk-app-'));
@@ -52,20 +53,13 @@ type Server = {
   close(): Promise<void>;
 };
 
-async function build(options: { simulate: boolean; readOnly?: boolean }): Promise<Server> {
-  const config = loadConfig(
-    {
-      NODE_ENV: 'test',
-      ...(options.simulate ? {} : { KRAFTVERK_TRANSPORTS: 'bus' }),
-      READ_ONLY: options.readOnly ? '1' : '0',
-    },
-    []
-  );
+async function build(options: { installed: boolean; readOnly?: boolean }): Promise<Server> {
+  const config = loadConfig({ NODE_ENV: 'test', READ_ONLY: options.readOnly ? '1' : '0' }, []);
   const bus = new FakeBus();
   const protocols = new ProtocolRegistry();
-  const transports = new TransportHost({ enabled: () => ({ ok: true }), context: { env: {}, log: () => {}, audit: () => {} } });
+  const transports = new TransportHost({ context: { env: {}, log: () => {}, audit: () => {} } });
   const types = new DeviceTypeRegistry();
-  if (options.simulate) {
+  if (options.installed) {
     await protocols.discover();
     await transports.discover();
     await types.discover();
@@ -73,7 +67,8 @@ async function build(options: { simulate: boolean; readOnly?: boolean }): Promis
   protocols.install(lampProtocol);
   transports.install(busDefinition, { create: () => bus });
   types.install(lampType);
-  if (!options.simulate) await transports.startAll(['bus']);
+  // Only the bus: the installed transports would reach real radios and the network.
+  await transports.startAll(['bus']);
 
   const catalog = new DeviceCatalog();
   const connections = new ConnectionStore();
@@ -85,7 +80,6 @@ async function build(options: { simulate: boolean; readOnly?: boolean }): Promis
     protocols,
     transports,
     connections,
-    simulate: options.simulate,
     readOnly: config.readOnly,
     allowRawFrames: false,
     clientName: (id) => clients.get(id)?.name ?? null,
@@ -104,7 +98,6 @@ async function build(options: { simulate: boolean; readOnly?: boolean }): Promis
     links,
     sessions,
     http: () => Promise.reject(new Error('no network in these tests')),
-    simulate: options.simulate,
   });
   const nearby = new Nearby({ types, protocols, transports, connections });
   const gateway = new ActionGateway({
@@ -113,7 +106,7 @@ async function build(options: { simulate: boolean; readOnly?: boolean }): Promis
       return record ? { name: record.name, session: sessions.get(id), description: sessions.description(record), offline: sessions.health(record).detail } : null;
     },
     feeds: (id) => links.targetOf('feeds', id),
-    isReadOnly: () => config.readOnly,
+    isReadOnly: (id) => config.readOnly && !sessions.simulated(id),
     record: audit,
     policy: { verifyTimeoutMs: 300 },
   });
@@ -165,8 +158,8 @@ let onBus: Server;
 beforeAll(async () => {
   process.env.KRAFTVERK_DB = join(dir, 'test.db');
   closeDb();
-  simulated = await build({ simulate: true });
-  onBus = await build({ simulate: false });
+  simulated = await build({ installed: true });
+  onBus = await build({ installed: false });
 });
 
 afterAll(async () => {
@@ -235,11 +228,14 @@ const lampAt = (address: string, lamp: Partial<{ serial: string; model: string; 
 /** Walks setup to the check step, and returns the draft and what the check found. */
 async function checked(options: { typeId?: string; methodId?: string; address?: string; server?: Server } = {}) {
   const server = options.server ?? onBus;
-  const started = await as('/setup', { method: 'POST', body: { typeId: options.typeId ?? 'test.lamp', methodId: options.methodId ?? 'bus' }, server });
+  const methodId = options.methodId ?? (server === simulated ? 'simulated' : 'bus');
+  const started = await as('/setup', { method: 'POST', body: { typeId: options.typeId ?? 'test.lamp', methodId }, server });
   expect(started.status).toBe(200);
   const id = started.body.id as string;
-  const address = options.address ?? (server === onBus ? 'lamp-1' : 'simulated');
-  expect((await as(`/setup/${id}/choose`, { method: 'POST', body: { address }, server })).status).toBe(200);
+  // A simulated device has nothing to choose: there is only its simulator.
+  if (started.body.plan.some((step: { kind: string }) => step.kind === 'choose')) {
+    expect((await as(`/setup/${id}/choose`, { method: 'POST', body: { address: options.address ?? 'lamp-1' }, server })).status).toBe(200);
+  }
   const check = await as(`/setup/${id}/check`, { method: 'POST', server });
   return { id, check: check.body };
 }
@@ -267,8 +263,9 @@ describe('what can be added', () => {
     expect(Object.keys(body.categories)).toEqual(['power-station', 'smart-plug', 'weather']);
     const p280 = body.types.find((type: { id: string }) => type.id === 'aferiy.p280');
     expect(p280.meta.category).toBe('power-station');
-    expect(p280.connections.map((method: { id: string }) => method.id)).toEqual(['wifi', 'bluetooth']);
-    expect(p280.availability.wifi.server).toEqual({ ok: true });
+    // Its own ways, and simulated — which every type has, and a server can always hold.
+    expect(p280.connections.map((method: { id: string }) => method.id)).toEqual(['wifi', 'bluetooth', 'simulated']);
+    expect(p280.availability.simulated.server).toEqual({ ok: true });
     for (const id of ['tuya.plug', 'atorch.s1w', 'open-meteo.weather']) expect(body.types.map((type: { id: string }) => type.id)).toContain(id);
     // Declarations only: every function stays on the server.
     expect(JSON.stringify(body)).not.toContain('=>');
@@ -283,21 +280,21 @@ describe('what can be added', () => {
 });
 
 describe('adding a device', () => {
-  test('simulated: a P280 is set up over Wi-Fi from the steps its layers supply, and opened', async () => {
-    const started = await as('/setup', { method: 'POST', body: { typeId: 'aferiy.p280', methodId: 'wifi' } });
+  test('simulated: a P280 is added with no hardware, by its own steps only, and opened as its simulator', async () => {
+    const started = await as('/setup', { method: 'POST', body: { typeId: 'aferiy.p280', methodId: 'simulated' } });
     expect(started.status).toBe(200);
-    expect(started.body.plan.map((step: { kind: string }) => step.kind)).toEqual(['instructions', 'choose', 'check']);
+    // No protocol and no transport: nothing to prepare, nothing to choose.
+    expect(started.body.plan.map((step: { kind: string }) => step.kind)).toEqual(['check']);
 
     const id = started.body.id;
-    const sightings = await as(`/setup/${id}/sightings`);
-    expect(sightings.body.sightings).toEqual([expect.objectContaining({ address: 'simulated', claimedBy: null })]);
-    await as(`/setup/${id}/choose`, { method: 'POST', body: { address: 'simulated' } });
     expect((await as(`/setup/${id}/check`, { method: 'POST' })).body.outcome).toBe('new');
 
     const saved = await as(`/setup/${id}/save`, { method: 'POST', body: { name: 'Garage P280' } });
     expect(saved.status).toBe(200);
-    expect(saved.body).toMatchObject({ name: 'Garage P280', typeId: 'aferiy.p280', connections: [expect.objectContaining({ method: 'wifi', transport: 'mqtt' })] });
+    expect(saved.body).toMatchObject({ name: 'Garage P280', typeId: 'aferiy.p280', connections: [expect.objectContaining({ method: 'simulated', transport: 'sim' })] });
     expect(simulated.sessions.get(savedDeviceId(saved.body.id))).not.toBeNull();
+    const view = (await as(`/devices/${enc(saved.body.id)}`)).body;
+    expect(view.connections[0]).toMatchObject({ methodLabel: 'Simulated', reachable: true, inUse: true });
 
     // The draft is gone, and the timeline says who added what.
     expect((await as(`/setup/${id}`)).status).toBe(404);
@@ -475,7 +472,7 @@ describe('a device you have', () => {
   });
 
   test('a device is served with its description, and what it offers comes from its parts', async () => {
-    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280', methodId: 'wifi' });
+    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
     await new Promise((resolve) => setTimeout(resolve, 50));
     const view = (await as(`/devices/${enc(station.id)}`)).body;
     const parts = view.description.parts.map((part: { id: string }) => part.id);
@@ -491,8 +488,8 @@ describe('a device you have', () => {
   });
 
   test('cutting mains to a station a plug feeds asks for confirmation, naming the station', async () => {
-    const plug = await added('Heater plug', { server: simulated, typeId: 'atorch.s1w', methodId: 'lan' });
-    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280', methodId: 'wifi' });
+    const plug = await added('Heater plug', { server: simulated, typeId: 'atorch.s1w' });
+    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
     await as('/links', { method: 'POST', body: { kind: 'feeds', sourceId: plug.id, targetId: station.id } });
     await new Promise((resolve) => setTimeout(resolve, 50));
 
@@ -518,12 +515,17 @@ describe('a device you have', () => {
     expect(kinds.every((entry) => entry.actor === 'olof')).toBe(true);
   });
 
-  test('a read-only server refuses a tool that writes before it runs', async () => {
-    const readOnly = await build({ simulate: true, readOnly: true });
+  test('a read-only server refuses a tool that writes to hardware before it runs; a simulated device has none', async () => {
+    const readOnly = await build({ installed: false, readOnly: true });
     try {
-      const lamp = await added('Sim lamp', { server: readOnly, address: 'simulated' });
-      const result = await as(`/devices/${enc(lamp.id)}/advanced/blink`, { method: 'POST', body: {}, server: readOnly });
-      expect(result.status).toBe(423);
+      readOnly.bus.lamps.set('lamp-1', { serial: 'LAMP-1', model: 'L1', on: true, answers: true });
+      const real = await added('Real lamp', { server: readOnly, address: 'lamp-1' });
+      expect((await as(`/devices/${enc(real.id)}/advanced/blink`, { method: 'POST', body: {}, server: readOnly })).status).toBe(423);
+      expect((await as(`/devices/${enc(real.id)}/parts/main/commands/switch/set`, { method: 'POST', body: { args: { on: false } }, server: readOnly })).status).toBe(409);
+
+      const pretend = await added('Pretend lamp', { server: readOnly, methodId: 'simulated' });
+      expect((await as(`/devices/${enc(pretend.id)}/advanced/blink`, { method: 'POST', body: {}, server: readOnly })).status).toBe(200);
+      expect((await as(`/devices/${enc(pretend.id)}/parts/main/commands/switch/set`, { method: 'POST', body: { args: { on: false } }, server: readOnly })).status).toBe(200);
     } finally {
       await readOnly.close();
     }
@@ -559,8 +561,8 @@ describe('connections and links', () => {
   });
 
   test('a plug feeds a station, and not the other way round', async () => {
-    const plug = await added('Heater plug', { server: simulated, typeId: 'atorch.s1w', methodId: 'lan' });
-    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280', methodId: 'wifi' });
+    const plug = await added('Heater plug', { server: simulated, typeId: 'atorch.s1w' });
+    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
 
     expect((await as('/links', { method: 'POST', body: { kind: 'feeds', sourceId: station.id, targetId: plug.id } })).status).toBe(400);
     const link = await as('/links', { method: 'POST', body: { kind: 'feeds', sourceId: plug.id, targetId: station.id } });
@@ -741,7 +743,7 @@ describe('phones and browsers', () => {
 
 describe('settings, through the gateway', () => {
   test('a setting is written, read back and audited; one that can damage the hardware is confirmed first', async () => {
-    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280', methodId: 'wifi' });
+    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
     const path = `/devices/${enc(station.id)}/attributes`;
 
     const led = await as(path, { method: 'PATCH', body: { patch: { ledMode: 'sos' } } });
@@ -768,11 +770,11 @@ describe('settings, through the gateway', () => {
 describe('automations', () => {
   /** A weather service and a plug, simulated: what "if tomorrow is sunny, turn the plug on" needs. */
   const weatherAndPlug = async () => {
-    const started = await as('/setup', { method: 'POST', body: { typeId: 'open-meteo.weather', methodId: 'api' } });
+    const started = await as('/setup', { method: 'POST', body: { typeId: 'open-meteo.weather', methodId: 'simulated' } });
     await as(`/setup/${started.body.id}`, { method: 'PATCH', body: { device: { place: 'Home', latitude: 59.3, longitude: 18.1 } } });
     await as(`/setup/${started.body.id}/check`, { method: 'POST' });
     const weather = (await as(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: 'Weather' } })).body as { id: string };
-    const plug = await added('Heater plug', { server: simulated, typeId: 'atorch.s1w', methodId: 'lan' });
+    const plug = await added('Heater plug', { server: simulated, typeId: 'atorch.s1w' });
     return { weather, plug };
   };
   const whole = (device: { id: string }) => ({ device: device.id, part: 'main' });
@@ -824,11 +826,11 @@ describe('automations', () => {
   });
 
   test('one outlet of a station fills the switch role, and only a part it has that can switch', async () => {
-    const started = await as('/setup', { method: 'POST', body: { typeId: 'open-meteo.weather', methodId: 'api' } });
+    const started = await as('/setup', { method: 'POST', body: { typeId: 'open-meteo.weather', methodId: 'simulated' } });
     await as(`/setup/${started.body.id}`, { method: 'PATCH', body: { device: { place: 'Home', latitude: 59.3, longitude: 18.1 } } });
     await as(`/setup/${started.body.id}/check`, { method: 'POST' });
     const weather = (await as(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: 'Weather' } })).body as { id: string };
-    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280', methodId: 'wifi' });
+    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
     const make = (part: string) =>
       as('/automations', {
         method: 'POST',
@@ -859,15 +861,18 @@ describe('automations', () => {
 
 describe('the server', () => {
   test('says what it is running as', async () => {
-    expect((await as('/version')).body).toMatchObject({ simulate: true, transports: [], readOnly: false });
-    expect((await onBusAs('/version')).body).toMatchObject({ simulate: false, transports: ['bus'] });
+    const version = (await as('/version')).body;
+    expect(version).toMatchObject({ readOnly: false });
+    // Which transports to use is not the server's setting: every installed one is available.
+    expect(version.simulate).toBeUndefined();
+    expect(version.transports).toBeUndefined();
   });
 
   test('lists its transports, and what they can see that nothing you have is reached by', async () => {
     lampAt('lamp-1');
     lampAt('lamp-2');
     const transports = (await onBusAs('/transports')).body;
-    expect(transports.transports).toEqual([expect.objectContaining({ id: 'bus', enabled: true, running: true, availability: { ok: true } })]);
+    expect(transports.transports).toEqual([expect.objectContaining({ id: 'bus', running: true, availability: { ok: true } })]);
 
     await onBusAs('/found'); // starts watching
     const found = (await onBusAs('/found')).body.found;

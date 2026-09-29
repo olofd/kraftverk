@@ -46,21 +46,13 @@ export default function ConnectivityScreen() {
             </Card>
           ) : null}
           {!list && !error ? <Spinner color="$accent" /> : null}
-          {list?.simulate ? (
-            <Card>
-              <Text fontSize={13} color="$muted" lineHeight={19}>
-                This server runs the simulator: every device is simulated and nothing real is reached. Start it
-                for hardware to reach real devices.
-              </Text>
-            </Card>
-          ) : null}
           {list?.transports.map((transport) => (
             <Card key={transport.id} gap="$2">
               <XStack alignItems="center" gap="$2">
                 <Feather
-                  name={transport.availability.ok ? 'check-circle' : transport.enabled ? 'alert-circle' : 'slash'}
+                  name={transport.availability.ok ? 'check-circle' : 'alert-circle'}
                   size={16}
-                  color={transport.availability.ok ? theme.success?.val : transport.enabled ? theme.warning?.val : theme.muted?.val}
+                  color={transport.availability.ok ? theme.success?.val : theme.warning?.val}
                 />
                 <Text flex={1} fontSize={15} fontWeight="700" color="$color">
                   {capitalise(transport.label)}

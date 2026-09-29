@@ -20,9 +20,9 @@ import { db } from '../history/db.ts';
 
 export type DeviceRecord = {
   id: SavedDeviceId;
-  /** The device type: `atorch.s1w`. Stable forever. */
+  /** The device type: `acme.plug`. Stable forever. */
   typeId: string;
-  /** Its own permanent id, read from the device — `sydpower:AABBCC001122` — or null until it has said. */
+  /** Its own permanent id, read from the device — `acme:AABBCC001122` — or null until it has said. */
   identity: string | null;
   name: string;
   /** The type's own choices for this device: a profile, a location. Never secrets. */

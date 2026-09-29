@@ -63,9 +63,7 @@ type: a type's own tools are its `advanced` actions.
 
 | Variable | Flag | Default | Meaning |
 | --- | --- | --- | --- |
-| `STATION_DRIVER` | `--driver=` | `sim` | `sim` reaches no hardware; `device` means Bluetooth and MQTT; or a list, `mqtt`, `ble,mqtt`. Every hardware mode also has the home network (`lan`) and `https` |
-| `KRAFTVERK_TRANSPORTS` | — | — | Names the transports outright instead: `mqtt,lan,https` |
-| `READ_ONLY` | `--read-only` | on for hardware modes | Refuse every write |
+| `READ_ONLY` | `--read-only` | on in the dev scripts | Refuse every write to hardware. Simulated devices take writes either way. There is no transport setting: every installed transport is available, and each device is reached the way it was added — or simulated |
 | `PORT` / `HOST` | — | `3333` / `0.0.0.0` | HTTP API |
 | `MQTT_PORT` / `MQTT_HOST` | — | `1883` / `0.0.0.0` | Where the MQTT broker listens for stations |
 | `BROKER_HOST` / `BROKER_ADMIN_URL` | — | `127.0.0.1` / `http://127.0.0.1:3883` | Where the server reaches the broker |
@@ -73,7 +71,7 @@ type: a type's own tools are its `advanced` actions.
 | `ALLOWED_ORIGINS` | — | — | Browser origins allowed to call the API with your session, comma-separated. Not needed for the web container (same origin) or the native app; in development the Expo dev server on a private address is allowed on its own. `*` is refused |
 | `KRAFTVERK_ALLOWED_HOSTS` | — | — | Names the server answers to besides addresses and local names, such as a DDNS name. Others get `421` (DNS-rebinding defence) |
 | `KRAFTVERK_TRUSTED_PROXIES` | — | — | The web container, whose home-network/public entrance stamp is believed. See [docs/SECURITY.md](SECURITY.md) |
-| `ALLOW_RAW_FRAMES` (or `ALLOW_RAW_MODBUS`) | — | — | `1` lets a device type's raw-frame tool send frames nobody has described. The protocol's guard still applies |
+| `ALLOW_RAW_FRAMES` | — | — | `1` lets a device type's raw-frame tool send frames nobody has described. The protocol's guard still applies |
 | `KRAFTVERK_DB` | — | `server/data/kraftverk.db` | Where the database lives. **Required under `NODE_ENV=test`** — the server refuses to open the default file from a test run |
 | `KRAFTVERK_RESET_SECRET_FILE` | — | `server/data/reset-secret` | A passphrase of 16+ characters here lets the app empty the database from **App settings → Danger zone**. No file means the route does not exist; the app shows how to enable it rather than a dead button. Gitignored |
 | `KRAFTVERK_SECRET_KEY` | — | — | Passphrase for AES-256-GCM secrets, such as a plug's local key. Without it they are stored as given, and the UI says so |

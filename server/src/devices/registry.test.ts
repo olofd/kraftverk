@@ -41,11 +41,11 @@ beforeAll(() => {
   clients = new ClientStore();
   const protocols = new ProtocolRegistry();
   protocols.install(lampProtocol);
-  const transports = new TransportHost({ enabled: () => ({ ok: true }), context: { env: {}, log: () => {}, audit: () => {} } });
+  const transports = new TransportHost({ context: { env: {}, log: () => {}, audit: () => {} } });
   transports.install(busDefinition, { create: () => bus });
   const types = new DeviceTypeRegistry();
   types.install(lampType);
-  sessions = new DeviceSessionManager({ types, protocols, transports, connections, simulate: false, readOnly: false, allowRawFrames: false, clientName: (id) => clients.get(id)?.name ?? null });
+  sessions = new DeviceSessionManager({ types, protocols, transports, connections, readOnly: false, allowRawFrames: false, clientName: (id) => clients.get(id)?.name ?? null });
   registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports, remote: new RemoteReadings() });
 });
 

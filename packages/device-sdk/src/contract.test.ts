@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { Protocol, TransportDefinition } from './connection.ts';
+import { isSimulated, methodOf, methodsOf, SIMULATED_METHOD, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, type Protocol, type TransportDefinition } from './connection.ts';
 import { MAIN_PART, type DeviceDescription } from './description.ts';
 import type { DeviceContext, DeviceSession, DeviceType } from './device-type.ts';
-import { defineDeviceType } from './device-type.ts';
+import { defineDeviceType, describeDeviceType } from './device-type.ts';
 import { setupPlan } from './setup.ts';
 import { checkDeviceTypeContract, fakeByteChannel, fakeConnection } from './testing.ts';
 import { connectionProblems, validateDeviceType, validateProtocol, validateTransportDefinition } from './validate.ts';
@@ -146,6 +146,25 @@ describe('validating a declaration', () => {
 
   test('ids are namespaced', () => {
     expect(broken((type) => ({ ...type, id: 'plug' }))).toEqual(['id "plug" must be namespaced lowercase, like "brand.model"']);
+  });
+
+  test('simulated is every type’s own way, and no type declares it', () => {
+    const type = plug();
+    expect(methodsOf(type).map((method) => method.id)).toEqual([...type.connections.map((method) => method.id), SIMULATED_METHOD_ID]);
+    expect(methodOf(type, SIMULATED_METHOD_ID)).toBe(SIMULATED_METHOD);
+    expect(isSimulated(SIMULATED_METHOD)).toBe(true);
+    expect(describeDeviceType(type).connections.at(-1)).toMatchObject({ id: 'simulated', label: 'Simulated' });
+
+    const own = type.connections[0]!;
+    expect(broken((candidate) => ({ ...candidate, connections: [{ ...own, id: SIMULATED_METHOD_ID }] }))).toContain(
+      'connection method id "simulated" is every type\'s own: its simulator'
+    );
+    expect(broken((candidate) => ({ ...candidate, connections: [{ ...own, transport: SIMULATED_TRANSPORT }] }))).toContain(
+      `connection method "${own.id}" goes over "sim", which only the simulated method may`
+    );
+    expect(validateTransportDefinition({ id: 'sim', label: 'pretend', channel: 'bytes', platforms: ['server'], discovery: {} } as never)).toContain(
+      'transport id "sim" is taken: it means simulated'
+    );
   });
 
   test('a category comes from the fixed list, and matches devices or services', () => {

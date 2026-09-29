@@ -125,8 +125,8 @@ export function encodeFrame(options: EncodeOptions): Uint8Array {
  * Pulls whole frames out of a TCP stream.
  *
  * Devices coalesce and split responses freely, so the caller feeds bytes in and
- * takes frames out — the same shape as a Sydpower station's Bluetooth
- * assembler, for the same reason.
+ * takes frames out — the same shape as any assembler over a stream that
+ * does not keep message boundaries.
  */
 export class FrameReader {
   #buffer: Uint8Array = new Uint8Array();

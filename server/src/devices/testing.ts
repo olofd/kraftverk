@@ -42,7 +42,11 @@ export class FakeBus implements Transport {
   channels: (ByteChannel & { setConnected(connected: boolean): void })[] = [];
   #watchers = new Set<(sightings: readonly Sighting[]) => void>();
 
+  /** Why it cannot run where the server runs, as a radio missing from a container: null when it can. */
+  unavailable: string | null = null;
+
   available() {
+    if (this.unavailable) return { ok: false, reason: this.unavailable } as const;
     return this.started ? ({ ok: true } as const) : ({ ok: false, reason: 'The bus is off' } as const);
   }
   async start() {
@@ -102,7 +106,7 @@ export const lampProtocol: Protocol = {
   },
   credentials: {
     schema: { fields: { pin: { type: 'secret', title: 'PIN' } } },
-    // Finds a secret, as fetching a Tuya key from the vendor's cloud does.
+    // Finds a secret, as fetching a key from a vendor's cloud does.
     actions: [
       {
         id: 'fetch',

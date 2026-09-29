@@ -3,7 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
 import type { AttributeWrite, CommandBody, DeviceHistory, DeviceTypeListing } from '@kraftverk/api-contract';
-import { CATEGORIES, describeDeviceType, isCapability, type Availability } from '@kraftverk/device-sdk';
+import { CATEGORIES, describeDeviceType, isCapability, isSimulated, methodsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
 
 import { actorOf } from '../auth/routes.ts';
 import { resolutionOf, series } from '../history/sampler.ts';
@@ -17,15 +17,15 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
   const api = new Hono();
 
   /**
-   * Whether this server can hold a connection over a method. With the
-   * simulator every method can be tried; otherwise its protocol must be
-   * installed, and its transport enabled here and running.
+   * Whether this server can hold a connection over a method: a simulated one
+   * always; otherwise its protocol must be installed, and its transport able
+   * to run here.
    */
-  const serverHolds = (protocolId: string, transportId: string): Availability => {
-    const protocol = protocols.get(protocolId);
-    if (!protocol?.bindings[transportId]) return { ok: false, reason: 'This server cannot reach devices this way: it needs updating' };
-    if (config.simulate) return { ok: true };
-    return transports.available(transportId);
+  const serverHolds = (method: ConnectionMethod): Availability => {
+    if (isSimulated(method)) return { ok: true };
+    const protocol = protocols.get(method.protocol);
+    if (!protocol?.bindings[method.transport]) return { ok: false, reason: 'This server cannot reach devices this way: it needs updating' };
+    return transports.available(method.transport);
   };
 
   /**
@@ -36,7 +36,7 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
   api.get('/device-types', (c) => {
     const listing: DeviceTypeListing[] = types.all().map((type) => ({
       ...describeDeviceType(type),
-      availability: Object.fromEntries(type.connections.map((method) => [method.id, { server: serverHolds(method.protocol, method.transport) }])),
+      availability: Object.fromEntries(methodsOf(type).map((method) => [method.id, { server: serverHolds(method) }])),
       warnings: types.warnings(type.id),
     }));
     return c.json({
@@ -218,7 +218,7 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
     const name = c.req.param('name');
     const { record, action } = advancedOf(c.req.param('id'), name);
     const input = await body(c, z.record(z.string(), z.unknown()));
-    if (action.writes && !action.honoursReadOnly && config.readOnly) throw new HTTPException(423, { message: 'The server is in read-only mode' });
+    if (action.writes && !action.honoursReadOnly && config.readOnly && !sessions.simulated(record.id)) throw new HTTPException(423, { message: 'The server is in read-only mode' });
     try {
       const result = await action.run(input);
       if (action.writes) auditDevice(c, 'device.advanced', record.id, `Ran ${name} on "${record.name}"`, { input });

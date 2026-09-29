@@ -122,8 +122,8 @@ and nothing leaving your network unless a device's own setup needs it.
 **Verified** — confirmed on real hardware by someone who owns one.
 **Community** — works for its author, not checked here.
 **Experimental** — built from published work; expect surprises.
-Every device type also runs as a **simulator**, so you can use the app with no
-hardware at all.
+Every device type can also be added **Simulated**, so you can use the app with
+no hardware at all.
 
 **Ways to reach a device:** Bluetooth LE (from the server, a browser through
 Web Bluetooth, or a phone) · the home network · an MQTT broker kraftverk runs
@@ -159,8 +159,9 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:8081>, create your account, and add any device — in
-this mode every one of them is a simulator.
+Open <http://localhost:8081>, create your account, and add any device as
+**Simulated**: its simulator stands in for it, so no hardware is needed — and
+a real one can sit beside it later.
 
 **Run it for real, always on** — on a NAS, a Raspberry Pi, anything with
 Docker:

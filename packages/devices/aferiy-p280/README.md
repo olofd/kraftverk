@@ -169,7 +169,7 @@ These are the station's own steps.
 
 ### Connecting over Wi-Fi
 
-1. Start with `npm run dev:device` (or `dev:wifi`). The server starts the MQTT
+1. Start with `npm run dev`. The server starts the MQTT
    broker on `:1883` if one is not already running.
 2. Point the station at your machine, one of two ways:
    - **BrightEMS 1.6.0+**: *Me → Settings → Local MQTT Broker Settings*, and
@@ -204,7 +204,7 @@ netsh advfirewall firewall add rule name="kraftverk MQTT" dir=in action=allow pr
 ### Connecting over Bluetooth
 
 ```bash
-npm run dev:ble
+npm run dev
 ```
 
 **Close the vendor app first.** These stations accept one BLE connection at a

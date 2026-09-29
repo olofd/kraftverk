@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { SIMULATED_ADDRESS, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT } from '@kraftverk/device-sdk';
+
 import { closeDb, db } from '../history/db.ts';
 import { ProtocolRegistry } from '../runtime/protocols.ts';
 import { TransportHost } from '../runtime/transports.ts';
@@ -32,15 +34,11 @@ let clients: ClientStore;
 let sessions: DeviceSessionManager;
 let bus: FakeBus;
 let identified: [string, string][];
-let busEnabled: boolean;
 
-const build = (options: { simulate?: boolean } = {}) => {
+const build = (options: { readOnly?: boolean } = {}) => {
   const protocols = new ProtocolRegistry();
   expect(protocols.install(lampProtocol)).toEqual([]);
-  const transports = new TransportHost({
-    enabled: () => (busEnabled ? { ok: true } : { ok: false, reason: 'This server was not started with bus' }),
-    context: { env: {}, log: () => {}, audit: () => {} },
-  });
+  const transports = new TransportHost({ context: { env: {}, log: () => {}, audit: () => {} } });
   expect(transports.install(busDefinition, { create: () => bus })).toEqual([]);
   const types = new DeviceTypeRegistry();
   expect(types.install(lampType)).toEqual([]);
@@ -49,8 +47,7 @@ const build = (options: { simulate?: boolean } = {}) => {
     protocols,
     transports,
     connections,
-    simulate: options.simulate ?? false,
-    readOnly: false,
+    readOnly: options.readOnly ?? false,
     allowRawFrames: false,
     clientName: (id) => clients.get(id)?.name ?? null,
     onIdentified: (deviceId, identity) => identified.push([deviceId, identity]),
@@ -77,7 +74,6 @@ beforeEach(async () => {
   opened.length = 0;
   lampControl.failOpen = false;
   identified = [];
-  busEnabled = true;
   bus = new FakeBus();
   sessions = build();
 });
@@ -151,13 +147,21 @@ describe('one session per device', () => {
     expect(sessions.inUse(record.id)?.address).toBe('lamp-9');
   });
 
-  test('simulated, every device is opened through its type’s simulator, with no connection', async () => {
-    const simulated = build({ simulate: true });
-    const record = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Hall', config: { room: 'Hall' } });
-    await simulated.sync(catalog.list());
-    expect(simulated.get(record.id)).not.toBeNull();
-    expect(opened.at(-1)!.ctx.connection).toBeNull();
-    await simulated.closeAll();
+  test('a simulated connection opens its type’s simulator, beside real ones, and reaches nothing', async () => {
+    const readOnly = build({ readOnly: true });
+    const real = addLamp('Hall', 'lamp-1').record;
+    const pretend = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Pretend lamp', config: { room: 'Attic' } });
+    connections.add({ deviceId: pretend.id, method: SIMULATED_METHOD_ID, transport: SIMULATED_TRANSPORT, heldBy: null, address: SIMULATED_ADDRESS });
+    await readOnly.sync(catalog.list());
+
+    expect(readOnly.get(real.id)).not.toBeNull();
+    expect(readOnly.get(pretend.id)).not.toBeNull();
+    const simulator = opened.find((entry) => entry.ctx.connection === null)!;
+    expect(simulator).toBeDefined();
+    // Read-only guards hardware; a simulator has none.
+    expect(simulator.ctx.readOnly).toBe(false);
+    expect(readOnly.reachable(pretend.id)).toBe(true);
+    await readOnly.closeAll();
   });
 });
 
@@ -191,12 +195,12 @@ describe('a device that cannot open is still a device, saying why', () => {
     expect(sessions.health(record).detail).toContain('Nothing can reach');
   });
 
-  test('a transport this server may not use is the reason given', async () => {
-    busEnabled = false;
+  test('a transport that cannot run here is the reason given', async () => {
+    bus.unavailable = 'No bus on this machine';
     const { record } = addLamp('Hall', 'lamp-1');
     await sessions.sync(catalog.list());
     expect(sessions.get(record.id)).toBeNull();
-    expect(sessions.health(record).detail).toContain('not started with bus');
+    expect(sessions.health(record).detail).toBe('No bus on this machine');
   });
 
   test('a device held only by a phone has no session here, and says who holds it', async () => {

@@ -340,7 +340,7 @@ P280-specific candidates requiring confirmation:
 3. Do not remove or weaken `WRITABLE`, Zod validation, or tests that reject unsafe
    values.
 4. Never use the raw-frame tool to probe writes. It is deliberately an
-   escape hatch and must remain disabled unless `ALLOW_RAW_MODBUS=1`.
+   escape hatch and must remain disabled unless `ALLOW_RAW_FRAMES=1`.
 5. Treat registers `25` and `26` as toggles until their behaviour is verified on the
    actual P280; do not assume writing `1` makes a port on idempotently.
 6. Begin every unfamiliar-hardware session in `--read-only` mode.

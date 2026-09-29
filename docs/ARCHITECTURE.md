@@ -591,7 +591,8 @@ green at every commit.
 
 What the review found, and which step fixes it. Every finding below is fixed
 as of step 13 (2026-09-28): the architecture baseline is empty — no boundary
-exceptions, and no product identifier outside the P280's package. The table is
+exceptions, and no product word outside its package (counted for every
+installed package since 2026-09-29, the P280's alone before). The table is
 kept as the record of why the layout is what it is.
 
 | | Finding | Step |
@@ -629,7 +630,7 @@ the code kept only in part.
 | G7 | History is 14 days of raw samples and nothing after; the audit timeline grows forever | 19 |
 | G8 | No app–server compatibility check: a store build can lag the server's installed types | 20 |
 | G9 | App-held secrets are stored in plaintext in the app | 21 |
-| G10 | Retired vocabulary in configuration: `STATION_DRIVER`, `--driver` | 22 |
+| G10 | Retired vocabulary in configuration: `STATION_DRIVER`, `--driver` — *fixed 2026-09-29: there is no transport setting at all* | 22 |
 | G11 | The app's device state and add screen are too big to change safely | 22 |
 | G12 | Segmented controls cannot be operated from a keyboard or a screen reader | 22 |
 
@@ -660,14 +661,18 @@ What it found is in the data model.
 `npm run check:architecture` (`scripts/architecture.mjs`) fails the build when:
 
 - **the dependency rule** (§3) is broken by a new import;
-- **the leak count** rises: the number of product-specific identifiers —
-  `core.station`, `p280`, `StationStatus`, `StationSettings`, `gridRelay` — in
-  shipped files outside `packages/devices/aferiy-p280`. (`power-station` is a
-  category now, and belongs in the SDK.) Tests are held to the dependency rule
-  but not counted: a test that drives the real station through a core route
-  moves with that route. Nor are database migrations, which must name what
-  stored data used to be called and never change once shipped, or a pointer to
-  a document such as `docs/P280-FINDINGS.md`;
+- **the leak count** rises: the number of words that mean one product in
+  shipped files where that product is not. The words are derived from what is
+  installed: every device, service and protocol package's folder name, the
+  `brand` it declares, and the words it lists in its package.json
+  (`kraftverk.words`: the P280 lists `p280`, `StationStatus`, `gridRelay`…;
+  the Sydpower protocol the brands it speaks for). They are counted in the
+  core, and in a package that neither depends on that product nor shares the
+  word (the Tuya protocol may say Tuya). Transports are technologies, not
+  products, and the core may name them. Tests are held to the dependency rule
+  but not counted: a test that drives a real device type through a core route
+  moves with that route. Nor is a pointer to a document such as
+  `docs/P280-FINDINGS.md`;
 - **purity** is broken, from step 4: a protocol or a device type's `src/`
   imports a Node or Bun built-in (`node:*`, `bun:*`), or a transport, or
   anything else that does I/O. Those packages run in the app as well as on the
@@ -1084,8 +1089,11 @@ phone persists nothing yet — its preferences are memory — so a secure store
 there (`expo-secure-store`) comes with persisting its preferences at all.
 
 ### Step 22 — Loose ends (G10–G12)
-`KRAFTVERK_TRANSPORTS` as the only documented setting, the app's device
-state and add screen split, and segmented controls a keyboard can reach.
+The app's device state and add screen split, and segmented controls a
+keyboard can reach. (G10 is done, further than planned: there is no transport
+setting at all. Every installed transport is available, and simulation is a
+way to add a device — the simulated method every type has — not a mode of the
+server.)
 
 ### Steps 23–34 — The model first, then everything above it
 
@@ -1295,8 +1303,10 @@ when** there is a recorded go or no-go, with the path for Thread.
 13. **Removing a device keeps its history.** Deleting history is a separate,
     confirmed action. Decided after a device removal on 2026-09-27 deleted the
     station's history in production.
-14. **Categories are a fixed list in the SDK.** A simulator is never something
+14. **Categories are a fixed list in the SDK.** A simulator is never a type
     you can add: every type has one, for tests and "try without hardware".
+    Since 2026-09-29 it is reached as a way to add that type — the simulated
+    method every type has — rather than by starting the server in a mode.
 15. **Local mode stays: the app works with no server.** In the model it is
     simply a client that is the only holder: it offers the methods whose
     transports it has, and keeps the same records — devices, connections, their

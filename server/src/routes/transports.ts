@@ -14,13 +14,11 @@ export function transportRoutes({ config, transports, serverLog, nearby }: AppDe
 
   api.get('/transports', (c) =>
     c.json({
-      simulate: config.simulate,
       readOnly: config.readOnly,
       transports: transports.definitions().map((definition) => {
         const transport = transports.get(definition.id);
         return {
           ...definition,
-          enabled: config.transports.includes(definition.id),
           running: transport !== null,
           availability: transports.available(definition.id),
           values: transport?.values?.() ?? {},

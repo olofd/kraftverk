@@ -47,8 +47,8 @@ export function connectionRoutes({ catalog, connections, links, clients, types, 
   });
 
   /**
-   * Replaces a server-held connection's secrets: a Tuya plug's local key
-   * changes every time it is paired again. Write-only, like every secret.
+   * Replaces a server-held connection's secrets: a plug's local key can
+   * change every time it is paired again. Write-only, like every secret.
    */
   api.put('/devices/:id/connections/:connection/secrets', async (c) => {
     const { record, connection } = connectionOf(c.req.param('id'), c.req.param('connection'));

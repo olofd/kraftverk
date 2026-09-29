@@ -89,7 +89,7 @@ export function credentialProblem(username: string, password: string): string | 
     return 'A username is 1–64 letters, digits, dots, dashes, underscores or @';
   }
   if (password.length < PASSWORD_MIN) {
-    return `A password needs at least ${PASSWORD_MIN} characters — this login may be all that stands between the internet and the station`;
+    return `A password needs at least ${PASSWORD_MIN} characters — this login may be all that stands between the internet and your devices`;
   }
   if (password.length > PASSWORD_MAX) return `A password can be at most ${PASSWORD_MAX} characters`;
   return null;

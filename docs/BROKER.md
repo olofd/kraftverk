@@ -39,9 +39,9 @@ constantly — is a client of it:
 
 ## How it runs
 
-**Nothing to do in development.** When the server starts with the Wi-Fi
-transport (`dev:wifi`, `dev:device`, and their `:write` twins) it asks the
-admin API whether a broker is running:
+**Nothing to do in development.** When the server starts its Wi-Fi
+transport — every server does — it asks the admin API whether a broker is
+running:
 
 - **One is** → it attaches. The station has been connected to it all along,
   and the server restart was a non-event.

@@ -91,7 +91,7 @@ function Field({
         <Label title={field.title} description={field.description} />
         {/*
           Wrapping chips rather than a segmented control: an enum can have two
-          options or nine (Tuya has seven data centres), and a segmented control
+          options or nine (a vendor's cloud may have seven regions), and a segmented control
           silently becomes unreadable somewhere in between.
         */}
         <XStack gap="$2" flexWrap="wrap">
@@ -146,7 +146,7 @@ function Field({
         placeholderTextColor="$muted"
         disabled={disabled}
         // `type`, not `secureTextEntry`: Tamagui's web Input discards the latter,
-        // which left every secret field — a Tuya local key — readable on screen.
+        // which left every secret field — a device's local key — readable on screen.
         type={secret ? 'password' : 'text'}
         autoComplete={secret ? 'off' : undefined}
         autoCapitalize="none"

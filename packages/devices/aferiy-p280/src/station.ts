@@ -252,7 +252,7 @@ export function registerTools(
       honoursReadOnly: true,
       async run(input) {
         if (!ctx.allowRawFrames) {
-          throw new Error('Raw frames are off. Start the server with ALLOW_RAW_MODBUS=1 to send them; bad writes can brick the station.');
+          throw new Error('Raw frames are off. Start the server with ALLOW_RAW_FRAMES=1 to send them; bad writes can brick the station.');
         }
         const hex = typeof input.hex === 'string' ? input.hex : '';
         if (!/^[0-9a-fA-F]{2,512}$/.test(hex) || hex.length % 2) throw new Error('hex must be whole bytes of hexadecimal');

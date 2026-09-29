@@ -131,11 +131,12 @@ Tab. If you add a tappable that is not a `Button`, use
 `src/components/Pressable.tsx`, and pass `selected` when it is one of a set of
 choices so it announces as a radio.
 
-**What a server can reach is a launch flag.** `npm run dev` is the
-*simulator*, and no screen can change that: **App settings → Connectivity** says
-which it is. Restarting a Bluetooth server with the wrong script is an easy way
-to spend ten minutes wondering why the radio vanished. `.claude/launch.json`
-carries `server`, `server:ble` and `server:ble:write` for that reason.
+**Every server can reach everything installed.** There is no launch flag for
+transports: each device is reached the way it was added, and **Simulated** is a
+way to add any device with no hardware. **App settings → Connectivity** says
+which transports run on this machine, and why one does not. What a launch
+chooses is only whether writes to hardware are allowed: `.claude/launch.json`
+carries `server` (read-only) and `server:write`.
 
 **Writes from the app are off every launch.** A connection the app holds is
 read-only until **App settings → Allow writes from this app** is turned on, on
@@ -144,9 +145,8 @@ purpose. A settings screen that silently refuses from a phone is that switch.
 ## Commands worth knowing
 
 ```bash
-npm run dev                  # simulator + web app
-npm run dev:ble              # real station over Bluetooth, read-only
-npm run dev:ble:write        # the same, with writes allowed — read the hardware warning
+npm run dev                  # server + web app, writes to hardware refused
+npm run dev:write            # the same, with writes allowed — read the hardware warning
 npm test                     # the whole repo
 npm run typecheck            # every workspace
 npm run check:architecture   # the dependency rule, the leak ratchet, the app's generated registry

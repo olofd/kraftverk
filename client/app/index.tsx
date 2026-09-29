@@ -5,12 +5,17 @@ import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { Card, DeviceCard, Row, RowSeparator, SectionLabel, haptic } from '@kraftverk/ui';
 import { fetchFound, type DeviceView, type FoundView } from '@kraftverk/api-client';
-import { attributesOf, MAIN_PART } from '@kraftverk/device-sdk';
+import { attributesOf, CATEGORIES, MAIN_PART } from '@kraftverk/device-sdk';
 
 import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
 import { DeviceIcon } from '../src/features/devices/panels';
 import { useDevices } from '../src/state/DevicesProvider';
+
+/** What can be added, from the categories: "Power stations, smart plugs, weather". */
+const ADD_SUBTITLE = Object.values(CATEGORIES)
+  .map((category, index) => (index ? category.label.toLowerCase() : category.label))
+  .join(', ');
 
 /**
  * Everything you have, in one list. The app opens here, always.
@@ -96,7 +101,7 @@ export default function DevicesScreen() {
           <Pressable onPress={() => router.push('/add-device')}>
             <Row
               title="Add a device"
-              subtitle="A power station, a smart plug, a weather forecast"
+              subtitle={ADD_SUBTITLE}
               accessory={<Feather name="plus" size={16} color={theme.muted?.val} />}
             />
           </Pressable>

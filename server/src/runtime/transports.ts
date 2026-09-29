@@ -15,11 +15,10 @@ import type { Refused } from './protocols.ts';
  * and started only when wanted.
  *
  * There is one of each per process — one radio, one connection to the broker —
- * shared by every connection over it. A transport starts when something first
- * needs it: a device to open, or a person looking for one to add. Which ones this
- * server may start at all is its configuration (`STATION_DRIVER`, or
- * `KRAFTVERK_TRANSPORTS`): a container has no Bluetooth radio, and a server
- * started with the simulator reaches nothing.
+ * shared by every connection over it. Every installed transport is available:
+ * none is switched on or off by configuration. One that cannot run where the
+ * server runs — Bluetooth in a container with no radio — says so, and that
+ * reason is what a connection over it shows.
  */
 
 type Entry = {
@@ -31,8 +30,6 @@ type Entry = {
 };
 
 export type TransportHostOptions = {
-  /** Whether this server may start it: why not, when not. */
-  enabled: (id: string) => Availability;
   context: TransportContext;
 };
 
@@ -110,8 +107,6 @@ export class TransportHost {
     if (!entry.definition.platforms.includes('server') || !entry.factory) {
       return { ok: false, reason: `A server cannot use ${entry.definition.label}` };
     }
-    const enabled = this.options.enabled(id);
-    if (!enabled.ok) return enabled;
     if (entry.error) return { ok: false, reason: entry.error };
     if (!entry.transport) return { ok: false, reason: `${capitalise(entry.definition.label)} is starting` };
     return entry.transport.available();
@@ -121,7 +116,6 @@ export class TransportHost {
   async start(id: string): Promise<Transport | null> {
     const entry = this.#entries.get(id);
     if (!entry?.factory || !entry.definition.platforms.includes('server')) return null;
-    if (!this.options.enabled(id).ok) return null;
     if (entry.transport) return entry.transport;
     entry.starting ??= (async () => {
       try {

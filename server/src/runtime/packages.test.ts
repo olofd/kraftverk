@@ -17,7 +17,7 @@ import { TransportHost } from './transports.ts';
 */
 
 const protocols = new ProtocolRegistry();
-const transports = new TransportHost({ enabled: () => ({ ok: true }), context: { env: {}, log: () => {}, audit: () => {} } });
+const transports = new TransportHost({ context: { env: {}, log: () => {}, audit: () => {} } });
 const types = new DeviceTypeRegistry();
 await Promise.all([protocols.discover(), transports.discover(), types.discover()]);
 types.checkConnections({ protocol: (id) => protocols.get(id), transport: (id) => transports.definition(id) });

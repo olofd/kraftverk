@@ -69,10 +69,7 @@ export type VersionInfo = {
   runtime: string;
   startedAt: string;
   uptimeSeconds: number;
-  /** Every device is simulated: this server reaches no hardware. */
-  simulate: boolean;
-  /** Which transports this server may use. */
-  transports: string[];
+  /** Every write to hardware is refused. */
   readOnly: boolean;
 };
 
@@ -253,7 +250,6 @@ export type FoundView = {
 // --- transports, apps, the server ---------------------------------------------
 
 export type TransportView = TransportDefinition & {
-  enabled: boolean;
   running: boolean;
   availability: Availability;
   values: Record<string, string>;
@@ -262,7 +258,6 @@ export type TransportView = TransportDefinition & {
 };
 
 export type TransportList = {
-  simulate: boolean;
   readOnly: boolean;
   transports: TransportView[];
   refused: Refused[];

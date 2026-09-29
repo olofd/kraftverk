@@ -4,7 +4,7 @@ import { createApp } from './app.ts';
 import { AutomationEngine, serverDevices } from './automations/engine.ts';
 import { AutomationStore } from './automations/store.ts';
 import { ProxyDirectory } from './auth/trust.ts';
-import { loadConfig, transportEnabled } from './config.ts';
+import { loadConfig } from './config.ts';
 import { DeviceCatalog } from './devices/catalog.ts';
 import { EventStore } from './devices/events.ts';
 import { ClientStore } from './devices/clients.ts';
@@ -85,7 +85,6 @@ const protocols = new ProtocolRegistry();
 await protocols.discover();
 
 const transports = new TransportHost({
-  enabled: transportEnabled(config),
   context: {
     env: config.env,
     log: (level, message) => console[level === 'info' ? 'log' : level](message),
@@ -119,7 +118,6 @@ const sessions = new DeviceSessionManager({
   protocols,
   transports,
   connections,
-  simulate: config.simulate,
   readOnly: config.readOnly,
   allowRawFrames: config.allowRawFrames,
   clientName: (id) => clients.get(id)?.name ?? null,
@@ -134,37 +132,35 @@ const sessions = new DeviceSessionManager({
   log: (message) => console.log(`[devices] ${message}`),
 });
 
-if (!config.simulate) {
-  /*
-    Every transport this server may use, and an installed device type needs,
-    starts now, before any session: finding a device has to work before there
-    is one to open. One no type reaches anything over stays stopped. MQTT
-    attaches to the broker that is already running — the stations have been
-    connected to it all along — or starts one. One that cannot start here,
-    Bluetooth in a container, is reported and left out.
-  */
-  const needed = new Set(types.all().flatMap((type) => type.connections.map((method) => method.transport)));
-  const starting = config.transports.filter((id) => needed.has(id));
-  const unneeded = config.transports.filter((id) => !needed.has(id));
-  if (unneeded.length) console.log(`[transports] Not started, no installed device type needs them: ${unneeded.join(', ')}`);
-  await transports.startAll(starting);
-  for (const id of starting) {
-    const available = transports.available(id);
-    if (!available.ok) console.error(`[transports] ${id} is unavailable: ${available.reason}`);
-  }
+/*
+  Every installed transport an installed device type uses starts now, before
+  any session: finding a device has to work before there is one to open. None
+  is chosen by configuration — what reaches a device is how it was added. MQTT
+  attaches to the broker that is already running — its devices have been
+  connected to it all along — or starts one. One that cannot run here,
+  Bluetooth in a container, is reported and left out; connections over it say
+  why they are not reached.
+*/
+const needed = new Set(types.all().flatMap((type) => type.connections.map((method) => method.transport)));
+const starting = transports.definitions().map((definition) => definition.id).filter((id) => needed.has(id));
+await transports.startAll(starting);
+for (const id of starting) {
+  const available = transports.available(id);
+  if (!available.ok) console.warn(`[transports] ${id} is unavailable here: ${available.reason}`);
+}
 
-  /*
-    Both modes announce themselves. Read-only saying so and write mode saying
-    nothing would mean the dangerous state is the silent one.
-  */
-  if (config.readOnly) {
-    console.log('READ-ONLY: every write will be refused. Nothing can change on any device.');
-  } else {
-    console.warn(
-      'WRITES ALLOWED: this process can change settings on real hardware. ' +
-        'The wrong register can destroy a station permanently — see the hardware warning in the README.'
-    );
-  }
+/*
+  Both modes announce themselves. Read-only saying so and write mode saying
+  nothing would mean the dangerous state is the silent one. Simulated devices
+  reach no hardware, and take writes either way.
+*/
+if (config.readOnly) {
+  console.log('READ-ONLY: every write to hardware will be refused.');
+} else {
+  console.warn(
+    'WRITES ALLOWED: this process can change settings on real hardware. ' +
+      'The wrong register can destroy a device permanently — see the hardware warning in the README.'
+  );
 }
 
 // Sessions for the devices already in the catalog, and nothing else.
@@ -173,7 +169,7 @@ await sessions.sync(catalog.list());
 const remote = new RemoteReadings();
 const registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports, remote });
 
-const setup = new SetupService({ types, protocols, transports, catalog, connections, links, sessions, http: scopedHttp, simulate: config.simulate });
+const setup = new SetupService({ types, protocols, transports, catalog, connections, links, sessions, http: scopedHttp });
 
 const nearby = new Nearby({ types, protocols, transports, connections });
 
@@ -187,7 +183,7 @@ const gateway = new ActionGateway({
     return record ? { name: record.name, session: sessions.get(id), description: sessions.description(record), offline: sessions.health(record).detail } : null;
   },
   feeds: (id) => links.targetOf('feeds', id),
-  isReadOnly: () => config.readOnly,
+  isReadOnly: (id) => config.readOnly && !sessions.simulated(id),
   record: audit,
   memory: { get: appState, set: setAppState },
 });
@@ -241,7 +237,7 @@ onStop(
 const saved = catalog.list().length;
 console.log(
   `kraftverk API listening on http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port} ` +
-    `(${config.simulate ? 'simulator' : config.transports.join(' + ')}, ` +
+    `(${transports.definitions().filter((definition) => transports.get(definition.id)).map((definition) => definition.id).join(' + ') || 'no transports running'}, ` +
     `${saved === 1 ? '1 device' : `${saved} devices`})`
 );
 

@@ -1,5 +1,5 @@
 import { CATEGORIES, isCategory } from './categories.ts';
-import { PLATFORMS, type Protocol, type TransportDefinition } from './connection.ts';
+import { PLATFORMS, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, type Protocol, type TransportDefinition } from './connection.ts';
 import { validateDescription } from './description.ts';
 import type { DeviceType } from './device-type.ts';
 import { configDefaults, isSecretField, type ConfigSchema } from './schema.ts';
@@ -61,6 +61,8 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
   for (const method of methods) {
     if (!PLAIN_ID.test(method.id ?? '')) problem(`connection method id "${method.id}" must be lowercase words`);
     if (methodIds.has(method.id)) problem(`connection method "${method.id}" is declared twice`);
+    if (method.id === SIMULATED_METHOD_ID) problem(`connection method id "${SIMULATED_METHOD_ID}" is every type's own: its simulator`);
+    if (method.transport === SIMULATED_TRANSPORT) problem(`connection method "${method.id}" goes over "${SIMULATED_TRANSPORT}", which only the simulated method may`);
     methodIds.add(method.id);
     if (!method.label?.trim()) problem(`connection method "${method.id}" has no label`);
     if (!method.protocol?.trim()) problem(`connection method "${method.id}" names no protocol`);
@@ -102,6 +104,7 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
 export function validateTransportDefinition(transport: TransportDefinition): string[] {
   const problems: string[] = [];
   if (!PLAIN_ID.test(transport.id ?? '')) problems.push(`transport id "${transport.id}" must be lowercase words`);
+  if (transport.id === SIMULATED_TRANSPORT) problems.push(`transport id "${SIMULATED_TRANSPORT}" is taken: it means simulated`);
   if (!transport.label?.trim()) problems.push(`transport "${transport.id}" has no label`);
   if (!['bytes', 'messages', 'http'].includes(transport.channel)) problems.push(`transport "${transport.id}" has an unknown channel "${transport.channel}"`);
   if (!transport.platforms?.length) problems.push(`transport "${transport.id}" runs nowhere`);

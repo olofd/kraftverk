@@ -8,27 +8,9 @@
       "port": 3333
     },
     {
-      "name": "server:ble",
+      "name": "server:write",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "server:ble"],
-      "port": 3333
-    },
-    {
-      "name": "server:ble:write",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "server:ble:write"],
-      "port": 3333
-    },
-    {
-      "name": "server:wifi",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "server:wifi"],
-      "port": 3333
-    },
-    {
-      "name": "server:device:write",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "server:device:write"],
+      "runtimeArgs": ["run", "server:write"],
       "port": 3333
     },
     {

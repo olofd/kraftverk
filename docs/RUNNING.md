@@ -55,50 +55,40 @@ the native modules for BLE, serial and USB.
 npm run dev
 ```
 
-That starts the simulator and the web app — no hardware needed. Open
-`http://localhost:8081`.
+That starts the server and the web app. Open `http://localhost:8081`, and
+add a device: every type can be added **Simulated**, which needs no hardware —
+its simulator stands in for it, beside any real device you add later.
 
 ### Which command to run
 
-Against a real station you choose **how to reach it** and **whether writes are
-allowed**. Those are the only two decisions, and they are the two halves of the
-script name:
+There is one decision: **whether writes to hardware are allowed**. How a device
+is reached is not a way of starting the server — every installed transport is
+available (Bluetooth, Wi-Fi through the MQTT broker, the home network, HTTPS),
+and each device is reached the way you added it. A transport that cannot run on
+this machine — no Bluetooth adapter — says so on the Connectivity screen and on
+every connection over it, and the others carry on.
 
-| Command | Reaches the station over | Writes |
-| --- | --- | --- |
-| `npm run dev` | nothing — the simulator | — |
-| `npm run dev:device` | Bluetooth **and** WiFi | refused |
-| `npm run dev:ble` | Bluetooth only | refused |
-| `npm run dev:wifi` | WiFi only (MQTT on `:1883`) | refused |
-| `npm run dev:device:write` | Bluetooth **and** WiFi | **allowed** |
-| `npm run dev:ble:write` | Bluetooth only | **allowed** |
-| `npm run dev:wifi:write` | WiFi only (MQTT on `:1883`) | **allowed** |
+| Command | Writes to hardware |
+| --- | --- |
+| `npm run dev` | refused |
+| `npm run dev:write` | **allowed** |
 
-**`dev:device` is the one to reach for.** A station is reachable over whichever
-transport it happens to be using, and starting both radios means you do not have
-to know which one in advance. A machine with no Bluetooth adapter is fine here —
-a transport that cannot start is reported on the Connection screen, and the
-other one carries on.
-
-Narrow it only when you want exactly one radio: `dev:ble` leaves the MQTT port
-closed, and `dev:wifi` does not touch the Bluetooth adapter.
-
-Everything without `:write` **refuses every write at the driver**. Reach for a
-`:write` variant only once you have verified reads against your own unit and
-have decided to accept the risk described in the
+Without `:write` the server **refuses every write to hardware**. Simulated
+devices reach no hardware and take writes either way. Reach for `:write` only
+once you have verified reads against your own unit and have decided to accept
+the risk described in the
 [station's hardware warning](../packages/devices/aferiy-p280/README.md#this-software-can-permanently-destroy-your-power-station).
 
 Each of these frees ports `3333` and `8081` before starting, so a server left
 running from last time is not something you have to think about. Port `1883` is
 deliberately left alone: that is the MQTT broker, which runs as its own process
-and survives server restarts so the station stays connected. The Wi-Fi commands
-start it if it is not running. `npm run broker:status` shows it, and
+and survives server restarts so the station stays connected. The server starts
+it if it is not running. `npm run broker:status` shows it, and
 `npm run broker:logs` follows everything the station does —
 see [**docs/BROKER.md**](BROKER.md).
 
-To run the server on its own, without Metro, the same names work with a
-`server:` prefix — `npm run server:device`, `npm run server:ble:write`, and so
-on.
+To run the server on its own, without Metro: `npm run server`, or
+`npm run server:write`.
 
 ### Running it for real
 
@@ -111,9 +101,8 @@ thing rather than work on it — left running on the machine next to the station
 npm run start:prod
 ```
 
-Both radios, writes allowed, the app bundled in production mode, and neither
-side restarting under you. It is `dev:device:write` with the development parts
-taken out.
+Writes allowed, the app bundled in production mode, and neither side
+restarting under you. It is `dev:write` with the development parts taken out.
 
 It is also **the most dangerous way to run this software**, and the server says
 so on startup: full hardware access with writes enabled and no read-only net.
@@ -122,7 +111,7 @@ reads against your own unit.
 
 `start:prod` runs on the **host**, not in Docker. A container has no honest
 access to a Bluetooth radio — which is why the image leaves noble out
-altogether — so "all transports" is something only a host process can offer.
+altogether — so Bluetooth is something only a host process can offer.
 For an always-on server reaching stations over WiFi, use Docker instead.
 
 ### Running the server in Docker
@@ -137,10 +126,10 @@ docker compose up -d --build
 Then open `http://<that-host>:8080`: the app, served beside the server, which
 asks you to create the first administrator. Three containers — the app, the
 server, and the MQTT broker, kept apart so that updating the server does not
-drop the station. It ships the simulator with writes refused by default, and
+drop the station. It ships with writes to hardware refused by default, and
 Bluetooth is deliberately not in it — a container has no honest access to a
 radio, and MQTT is the transport that suits a server anyway.
-[**docs/DOCKER.md**](DOCKER.md) covers the transport choice, secrets,
+[**docs/DOCKER.md**](DOCKER.md) covers reaching devices, secrets,
 reaching it from outside over HTTPS, backups, updating without dropping the
 station, and diagnosing a problem.
 

@@ -6,8 +6,10 @@ import {
   findStep,
   isLinkKind,
   isSecretField,
+  isSimulated,
   LINK_KINDS,
   linkFits,
+  methodOf,
   openChannel,
   setupPlan,
   validateConfig,
@@ -73,6 +75,8 @@ type Draft = {
   heldBy: string | null;
   type: DeviceType<any>;
   method: ConnectionMethod | null;
+  /** Simulated: no transport is started and no device is read; its type's simulator will stand in. */
+  simulated: boolean;
   protocol: Protocol | null;
   transport: TransportDefinition | null;
   plan: SetupStepView[];
@@ -98,18 +102,7 @@ export type SetupServiceDeps = {
   sessions: DeviceSessionManager;
   /** For helpers that call a vendor's API once — fetching a key. */
   http: ScopedHttp;
-  /**
-   * The server runs the simulator: no transport is started and no device is
-   * read. Each method offers one simulated device, and the check passes, so
-   * the whole flow can be tried without hardware.
-   */
-  simulate?: boolean;
 };
-
-/** The one device a simulated method offers. */
-export const SIMULATED_ADDRESS = 'simulated';
-
-const SIMULATED_VALUES: Readonly<Record<string, string>> = { host: 'this server’s address', port: 'its port' };
 
 /** A save as the route has parsed it (`SaveInput` with its defaults applied). */
 export type SaveRequest = SaveInput & Required<Pick<SaveInput, 'name' | 'mode'>>;
@@ -142,18 +135,19 @@ export class SetupService {
     if (!type) throw new SetupError(`Nothing installed here knows what "${input.typeId}" is`, 404);
 
     const method = input.methodId
-      ? (type.connections.find((candidate) => candidate.id === input.methodId) ?? null)
+      ? methodOf(type, input.methodId)
       : type.connections.length === 1
         ? type.connections[0]!
         : null;
     if (!method) throw new SetupError(input.methodId ? `${type.meta.name} has no way called "${input.methodId}"` : 'Choose how to connect first');
 
-    const protocol = this.deps.protocols.get(method.protocol);
-    const transportDefinition = this.deps.transports.definition(method.transport);
-    if (!protocol || !protocol.bindings[method.transport]) throw new SetupError(`This server cannot reach a ${type.meta.name} by ${method.label}: it needs updating`, 409);
-    const simulate = this.deps.simulate ?? false;
-    const transport = simulate ? null : await this.deps.transports.start(method.transport);
-    if (!simulate) {
+    // Simulated: nothing to reach, so no protocol and no transport — only the type's own steps, then its simulator.
+    const simulated = isSimulated(method);
+    const protocol = simulated ? null : this.deps.protocols.get(method.protocol);
+    const transportDefinition = simulated ? null : this.deps.transports.definition(method.transport);
+    if (!simulated && (!protocol || !protocol.bindings[method.transport])) throw new SetupError(`This server cannot reach a ${type.meta.name} by ${method.label}: it needs updating`, 409);
+    const transport = simulated ? null : await this.deps.transports.start(method.transport);
+    if (!simulated) {
       const available = this.deps.transports.available(method.transport);
       if (!transport || !available.ok) throw new SetupError(available.ok ? `${method.label} cannot be used here` : available.reason, 409);
     }
@@ -164,10 +158,10 @@ export class SetupService {
       heldBy: null,
       type,
       method,
-      protocol,
+      simulated,
+      protocol: protocol ?? null,
       transport: transportDefinition,
-      // A simulator starts no transport, so its instructions get words where the addresses would be.
-      plan: setupPlan({ type, method, protocol, transport: transportDefinition, platform: 'server', values: transport?.values?.() ?? (simulate ? SIMULATED_VALUES : {}) }),
+      plan: setupPlan({ type, method, protocol: protocol ?? null, transport: transportDefinition, platform: 'server', values: transport?.values?.() ?? {} }),
       address: method.address ?? null,
       identityHint: null,
       device: {},
@@ -181,9 +175,7 @@ export class SetupService {
     };
 
     // What the transport can see, kept current for as long as the draft lives.
-    if (simulate && !method.address) {
-      draft.sightings = [{ transport: method.transport, address: SIMULATED_ADDRESS, seenAt: new Date().toISOString(), name: `Simulated ${type.meta.name}`, facts: {} }];
-    } else if (transport?.watch && !method.address && transportDefinition?.discovery.server === 'list') {
+    if (protocol && transport?.watch && !method.address && transportDefinition?.discovery.server === 'list') {
       const binding = protocol.bindings[method.transport]!;
       draft.stopWatching = transport.watch(binding.filter ?? {}, (sightings) => {
         draft.sightings = sightings;
@@ -207,7 +199,7 @@ export class SetupService {
     if (!type) throw new SetupError(`Nothing installed here knows what "${input.typeId}" is`, 404);
     const method = type.connections.find((candidate) => candidate.id === input.methodId);
     if (!method) throw new SetupError(`${type.meta.name} has no way called "${input.methodId}"`);
-    const protocol = this.deps.protocols.get(method.protocol);
+    const protocol = this.deps.protocols.get(method.protocol) ?? null;
     const secret = new Set(
       Object.entries(connectionSchema(method, protocol).fields)
         .filter(([, spec]) => isSecretField(spec))
@@ -221,6 +213,7 @@ export class SetupService {
       heldBy: input.clientId,
       type,
       method,
+      simulated: false,
       protocol,
       transport: this.deps.transports.definition(method.transport),
       plan: [],
@@ -262,9 +255,6 @@ export class SetupService {
     const binding = draft.protocol?.bindings[draft.method!.transport];
     if (!binding) return [];
     const exclusive = draft.transport?.exclusive ?? true;
-    if (this.deps.simulate) {
-      return draft.sightings.map((sighting) => ({ address: sighting.address, name: sighting.name!, detail: 'No hardware is reached', identity: null, seenAt: sighting.seenAt, rssi: null, claimedBy: null }));
-    }
     return draft.sightings.flatMap((sighting): SightingView[] => {
       const recognised = binding.recognise(sighting);
       if (!recognised) return [];
@@ -297,11 +287,11 @@ export class SetupService {
       draft.identityHint = null;
     } else {
       const sighting = draft.sightings.find((candidate) => candidate.address.toLowerCase() === input.address?.toLowerCase());
-      const recognised = sighting && this.deps.simulate ? { name: sighting.name ?? '' } : sighting ? binding.recognise(sighting) : null;
+      const recognised = sighting ? binding.recognise(sighting) : null;
       if (!sighting || !recognised) throw new SetupError('That device is not in the list any more; choose again');
       draft.address = sighting.address;
       draft.identityHint = recognised.identity ?? null;
-      // What the sighting already says — a Tuya device's id and version — fills in the connection.
+      // What the sighting already says — a device's id and version — fills in the connection.
       draft.connection = { ...draft.connection, ...(recognised.config ?? {}) };
     }
     draft.checked = null;
@@ -343,7 +333,7 @@ export class SetupService {
     return this.#view(draft);
   }
 
-  /** Runs a step's helper — "Fetch it with my Tuya account" — here, and holds any secret it finds. */
+  /** Runs a step's helper — "Fetch it with my vendor account" — here, and holds any secret it finds. */
   async action(id: string, stepId: string, actionId: string, input: ConfigValues, signal?: AbortSignal): Promise<SetupActionResult> {
     const draft = this.#draft(id);
     const step = findStep(draft.type, draft.method, draft.protocol, stepId);
@@ -387,7 +377,7 @@ export class SetupService {
     const method = draft.method!;
     if (!draft.address) throw new SetupError('Choose the device first');
 
-    if (this.deps.simulate) {
+    if (draft.simulated) {
       return this.#checked(draft, { outcome: 'new', summary: 'Simulated: no hardware was read, and none will be.', identity: null });
     }
 
@@ -467,7 +457,7 @@ export class SetupService {
     if (!device.ok) throw new SetupError(device.issues.map((issue) => issue.message).join('; '));
     const schema = connectionSchema(method, draft.protocol);
     // A simulated device reaches nothing, so it needs no device id and no key: what is given is still checked.
-    const simulated = this.deps.simulate ?? false;
+    const simulated = draft.simulated;
     const nonSecret: ConfigSchema = {
       fields: Object.fromEntries(
         Object.entries(schema.fields)
@@ -547,7 +537,7 @@ export class SetupService {
     }
 
     // An exclusive address belongs to one device.
-    if (draft.transport?.exclusive !== false && !this.deps.simulate && draft.heldBy === null) {
+    if (draft.transport?.exclusive !== false && !draft.simulated && draft.heldBy === null) {
       const claim = this.deps.connections.claimant(method.transport, address);
       if (claim && claim.deviceId !== record.id) throw new SetupError('Another device you have is already reached at that address', 409);
     }

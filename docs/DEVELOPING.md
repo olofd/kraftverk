@@ -17,8 +17,8 @@ the app runs the code these tests exercise. The rest cover the catalog, the
 connection manager, the action gateway, the device registry, the MQTT broker,
 history, and accounts and sign-in, written as attacks — and the HTTP routes
 themselves, through `createApp` in `server/src/app.ts`, which builds the whole
-API around the simulator and a throwaway database without starting a radio or
-a broker.
+API around simulated devices, a pretend bus and a throwaway database without
+starting a radio or a broker.
 
 Every push also checks the architecture — no device-specific code may leak
 into the core, and the count of what already has may only fall

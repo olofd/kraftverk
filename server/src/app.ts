@@ -132,8 +132,6 @@ export function createApp(deps: AppDeps) {
       runtime: typeof Bun !== 'undefined' ? `bun ${Bun.version}` : `node ${process.versions.node}`,
       startedAt: startedAt.toISOString(),
       uptimeSeconds: Math.round((Date.now() - startedAt.getTime()) / 1000),
-      simulate: config.simulate,
-      transports: config.transports,
       readOnly: config.readOnly,
     };
     return c.json(info);

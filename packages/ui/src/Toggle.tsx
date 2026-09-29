@@ -52,7 +52,7 @@ export function Toggle({ checked, onCheckedChange, disabled, pending }: TogglePr
     and 1 and rebuilding the interpolation from the colour it last saw, and
     once that bookkeeping fell out of step it replayed a green-to-grey change
     on later renders with nothing having changed. Telemetry re-renders the
-    screen every two seconds, so an outlet that was off drew its switch green,
+    screen every two seconds, so a switch that was off drew its track green,
     then grey, over and over, while the thumb sat still at off. It was
     reproduced after a change that was set and set back within a moment; with
     the colour taken from the thumb's own value, no trigger can do it again.

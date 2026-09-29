@@ -71,7 +71,7 @@ export type ByteChannel = ChannelBase & {
   onData(listener: (bytes: Uint8Array) => void): () => void;
   /**
    * Drops the connection and makes a fresh one. For protocols that negotiate
-   * per connection — Tuya 3.4's session key — and must start again to try
+   * per connection — a session key agreed on connecting — and must start again to try
    * another version. Absent where a fresh connection means nothing.
    */
   reset?(): Promise<void>;
@@ -112,7 +112,7 @@ export type ChannelKind = Channel['kind'];
 export type OpenOptions = {
   /** Bluetooth: the GATT layouts the protocol speaks, tried in order. */
   gatt?: readonly { service: string; write: string; notify: string }[];
-  /** Bluetooth: write with response. What the Sydpower stations require. */
+  /** Bluetooth: write with response. What some devices require. */
   writeWithResponse?: boolean;
   /** Bytes channels: the least time between two writes the device tolerates. */
   writeSpacingMs?: number;
@@ -159,7 +159,7 @@ export type Recognised = {
   detail?: string;
   /**
    * Connection settings the sighting already reveals, applied to the draft
-   * when it is chosen: a Tuya device's id and protocol version.
+   * when it is chosen: a device's id and protocol version.
    */
   config?: ConfigValues;
 };
@@ -318,12 +318,12 @@ export type Binding = {
  * A protocol: pure code, no I/O and no product meaning.
  *
  * It has a binding for each transport it rides. What setup must ask for —
- * a Tuya local key — is its `credentials`, stored with the connection, the
+ * a device's local key — is its `credentials`, stored with the connection, the
  * secret fields encrypted. `guard` is the one frame-level rule no one may get
  * around: every holder and the broker apply it to what they carry.
  */
 export type Protocol = {
-  /** `sydpower`, `tuya-local`. Stable forever. */
+  /** `acme-link`: what the protocol is called. Stable forever. */
   readonly id: string;
   readonly label: string;
   readonly bindings: Readonly<Record<string, Binding>>;
@@ -363,6 +363,39 @@ export type ConnectionMethod = {
 };
 
 /**
+ * Simulated: a way every device type can be added, with no hardware.
+ *
+ * Every type ships a simulator (the contract requires one), so every type can
+ * be tried, shown and developed against without the device. Simulation is a
+ * choice per device, not a mode of the server: a simulated lamp beside a real
+ * station is an ordinary thing to have. A simulated connection names no real
+ * protocol or transport; whoever holds it opens its type's simulator in its
+ * place, and nothing it does reaches hardware.
+ */
+export const SIMULATED_METHOD_ID = 'simulated';
+export const SIMULATED_TRANSPORT = 'sim';
+export const SIMULATED_ADDRESS = 'simulated';
+
+export const SIMULATED_METHOD: ConnectionMethod = {
+  id: SIMULATED_METHOD_ID,
+  label: 'Simulated',
+  description: 'No hardware: its simulator stands in, to try it out.',
+  protocol: SIMULATED_TRANSPORT,
+  transport: SIMULATED_TRANSPORT,
+  address: SIMULATED_ADDRESS,
+};
+
+/** Every way a type can be added: its own, then simulated. */
+export const methodsOf = (type: { readonly connections: readonly ConnectionMethod[] }): ConnectionMethod[] => [...type.connections, SIMULATED_METHOD];
+
+/** One of a type's ways, by id, simulated included. */
+export const methodOf = (type: { readonly connections: readonly ConnectionMethod[] }, id: string): ConnectionMethod | null =>
+  methodsOf(type).find((method) => method.id === id) ?? null;
+
+/** Whether a connection is simulated: its holder opens the type's simulator, and reaches nothing. */
+export const isSimulated = (connection: { readonly transport: string }): boolean => connection.transport === SIMULATED_TRANSPORT;
+
+/**
  * A connection, open: what a device type's session and its `identify` are handed.
  *
  * The same shape wherever it is held, which is how the same device-type code
@@ -385,7 +418,7 @@ export type OpenConnection = {
 /** What `identify` learns by reading a device once. */
 export type Identified = {
   /**
-   * The device's own permanent id, namespaced by protocol: `sydpower:AABBCC001122`.
+   * The device's own permanent id, namespaced by protocol: `acme:AABBCC001122`.
    * Null for a service, which has none.
    */
   identity: string | null;

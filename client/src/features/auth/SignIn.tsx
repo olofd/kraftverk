@@ -187,7 +187,7 @@ export function SetupForm() {
           kind="new-password"
           value={password}
           onChange={setPassword}
-          hint={`At least ${PASSWORD_MIN} characters. A password manager’s suggestion is ideal — this may be all that stands between the internet and your station.`}
+          hint={`At least ${PASSWORD_MIN} characters. A password manager’s suggestion is ideal — this may be all that stands between the internet and your devices.`}
         />
         <Field label="Password again" kind="new-password" value={confirm} onChange={setConfirm} onSubmit={() => void submit()} />
         {password && confirm && passwordProblem(password, confirm) ? (

@@ -20,7 +20,6 @@ cd "$(dirname "$0")/../.."
 project=kraftverk-smoke
 host=${SMOKE_HOST:-127.0.0.1}
 export COMPOSE_PROJECT_NAME=$project
-export STATION_DRIVER=mqtt
 export READ_ONLY=1
 export KRAFTVERK_ALLOWED_HOSTS=kraftverk.example.test
 export KRAFTVERK_LAN_PORT=18080 KRAFTVERK_PUBLIC_PORT=18090 KRAFTVERK_MQTT_PORT=11883 KRAFTVERK_API_PORT=13333

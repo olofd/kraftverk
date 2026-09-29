@@ -73,7 +73,7 @@ export default function AppSettingsScreen() {
         <Card inset>
           {/*
             Off on every launch, on purpose: a phone in a pocket should not be
-            the easiest way to change a station's settings or cut its mains.
+            the easiest way to change a device's settings or switch its power.
           */}
           <ToggleRow
             title="Allow writes from this app"

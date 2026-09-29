@@ -1,11 +1,11 @@
 # kraftverk: the app, the server, and the MQTT broker stations connect to.
 #
-# Defaults are the safe ones: the simulator, and writes refused. Read
-# docs/DOCKER.md before changing either — the second one is the difference
-# between a dashboard and something that can switch mains power.
+# The default is the safe one: writes to hardware refused. Read docs/DOCKER.md
+# before changing it — it is the difference between a dashboard and something
+# that can switch mains power.
 #
-# Everything a particular installation sets — which station driver, the secret
-# key, the public name it is reached by — goes in a `.env` file beside this one,
+# Everything a particular installation sets — whether writes are allowed, the
+# secret key, the public name it is reached by — goes in a `.env` file beside this one,
 # not in this file. See docs/DOCKER.md#environment.
 #
 # Three services:
@@ -76,13 +76,9 @@ services:
       - "127.0.0.1:${KRAFTVERK_API_PORT:-3333}:3333"
 
     environment:
-      # sim | mqtt — the simulator, or real hardware: stations over Wi-Fi through
-      # the broker, plus plugs on the home network and web services, which need
-      # nothing of the machine. `ble` is deliberately absent: see docs/DOCKER.md.
-      STATION_DRIVER: ${STATION_DRIVER:-sim}
-
-      # 1 refuses every write at the driver. The npm scripts pass --read-only
-      # for the hardware modes; nothing passes it for you here, so it is set
+      # 1 refuses every write to hardware; simulated devices take writes
+      # either way. The npm dev scripts pass --read-only; nothing passes it
+      # for you here, so it is set
       # explicitly rather than left to a default that means "writes allowed".
       # Only an explicit READ_ONLY=0 turns writes on.
       READ_ONLY: ${READ_ONLY:-1}

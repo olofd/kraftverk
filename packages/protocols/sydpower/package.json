@@ -7,7 +7,8 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "kraftverk": {
-    "protocol": "./src/index.ts"
+    "protocol": "./src/index.ts",
+    "words": ["Sydpower", "AFERIY", "FOSSiBOT", "ABOK", "Eco Play", "BrightEMS"]
   },
   "exports": {
     ".": "./src/index.ts"

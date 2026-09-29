@@ -1,6 +1,6 @@
 import type { CapabilityName, CommandResult } from './capabilities.ts';
 import type { CategoryId } from './categories.ts';
-import type { ConnectionMethod, Identified, OpenConnection, Platform } from './connection.ts';
+import { methodsOf, type ConnectionMethod, type Identified, type OpenConnection, type Platform } from './connection.ts';
 import { deviceCapabilities, type DeviceDescription, type DeviceInfo, type Reading } from './description.ts';
 import type { ConnectionHealth, SavedDeviceId } from './identity.ts';
 import { configDefaults, type ConfigSchema, type ConfigValues } from './schema.ts';
@@ -31,7 +31,7 @@ import type { Value } from './values.ts';
 export type SupportLevel = 'verified' | 'community' | 'experimental';
 
 export type DeviceTypeMeta = {
-  /** 'ATORCH S1W', 'Open-Meteo'. */
+  /** 'Acme plug', 'Acme weather'. */
   name: string;
   brand?: string;
   /**
@@ -63,7 +63,7 @@ export type IdentifyContext = {
 };
 
 export interface DeviceType<Config extends ConfigValues = ConfigValues> {
-  /** Namespaced and stable forever: `acme.plug`, `open-meteo.weather`. Saved devices name it. */
+  /** Namespaced and stable forever: `acme.plug`, `acme.weather`. Saved devices name it. */
   readonly id: string;
   /** A service has no hardware: weather, prices. Shown in a section of its own. */
   readonly kind: 'hardware' | 'service';
@@ -261,7 +261,8 @@ export const describeDeviceType = (type: DeviceType<any>): DeviceTypeView => {
     description,
     capabilities: deviceCapabilities(description),
     config: type.config,
-    connections: type.connections.map(({ steps: _steps, ...method }) => method),
+    // Simulated included: every type can be tried with no hardware.
+    connections: methodsOf(type).map(({ steps: _steps, ...method }) => method),
     saveAnyway: type.setup?.saveAnyway ?? null,
   };
 };

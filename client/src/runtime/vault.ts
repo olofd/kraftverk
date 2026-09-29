@@ -1,7 +1,7 @@
 import { clearPreference, readPreference, writePreference } from '../lib/preferences';
 
 /**
- * Where this app keeps the secrets of connections it holds — a Tuya local
+ * Where this app keeps the secrets of connections it holds — a plug's local
  * key — never in plaintext (docs/ARCHITECTURE.md step 21).
  *
  * On the web they are sealed with AES-GCM under a key the browser generated

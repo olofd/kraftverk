@@ -34,11 +34,11 @@ health checks.
 
 ## What the defaults are, and why
 
-The compose file starts the **simulator** with **writes refused**. Both are
+The compose file starts with **writes to hardware refused**. That is
 deliberate.
 
-`READ_ONLY` matters more than it looks. On a developer's machine the hardware
-modes get `--read-only` from the npm scripts; in a container there are no npm
+`READ_ONLY` matters more than it looks. On a developer's machine the dev
+scripts pass `--read-only`; in a container there are no npm
 scripts, and the server's own default is *writes allowed*. So `READ_ONLY=1` is
 the compose default rather than a default that means the opposite of what the
 rest of the project does. Turn it off when you have read your registers and
@@ -94,36 +94,39 @@ internet — but nothing else about that entrance was made for it.)
 
 ---
 
-## Choosing a transport
+## How devices are reached
 
-| `STATION_DRIVER` | What it is | Works in this image |
+Nothing to choose here: every transport in the image is available, and each
+device is reached the way you added it.
+
+| Transport | What it reaches | In this image |
 | --- | --- | --- |
-| `sim` | Every device simulated; no hardware is reached | ✅ Default. No hardware needed |
-| `mqtt` | Real hardware: stations over Wi-Fi through the `broker` service, plus plugs on the home network and web services such as the weather | ✅ The one to use for a real deployment |
-| `ble` | Real hardware over Bluetooth LE | ❌ Not in this image — see below |
+| Wi-Fi (MQTT) | Stations over Wi-Fi, through the `broker` service | ✅ The one that suits a server |
+| Home network (`lan`) | Plugs and other devices on your network, over TCP | ✅ |
+| HTTPS | Web services, such as the weather | ✅ |
+| Bluetooth LE | Devices within radio range | ❌ Not in this image — see below; the Connectivity screen says so |
 
-Every hardware mode also gets the home network (`lan`) and `https`, which
-need nothing of the machine. `KRAFTVERK_TRANSPORTS=mqtt,lan,https` names them
-outright instead. A plug on the home network is reached from the container over
-TCP; its UDP announcements may not reach a bridged container, so give its IP
-address by hand when it is not found.
+**Simulated** is a way to add any device, with no hardware: its type's
+simulator stands in for it. A simulated device sits beside real ones, reaches
+nothing, and takes writes even when writes to hardware are refused.
+
+A plug on the home network is reached from the container over TCP; its UDP
+announcements may not reach a bridged container, so give its IP address by
+hand when it is not found.
 
 ### Wi-Fi / MQTT — the one that suits a server
 
 The station connects to the vendor's broker until it is told otherwise.
 
-1. Set `STATION_DRIVER=mqtt` in a `.env` file beside `docker-compose.yml`, and
-   restart. (`device` means Wi-Fi *and* Bluetooth; this image has no
-   Bluetooth, so it works but reports a failed transport on every start.)
-2. Point the station at the Docker host, one of two ways:
+1. Point the station at the Docker host, one of two ways:
    - **BrightEMS 1.6.0+**: *Me → Settings → Local MQTT Broker Settings*, and
      enter the Docker host's LAN IP. Only the master account can change it.
    - **Older firmware**: in your router, Pi-hole, or whatever resolves DNS on
      that network, point `mqtt.sydpower.com` at the Docker host's LAN IP, then
      power-cycle the station so it re-resolves.
-3. `docker compose logs -f broker` shows it arrive: the TCP connection, the
+2. `docker compose logs -f broker` shows it arrive: the TCP connection, the
    MQTT handshake, its first frames.
-4. Add it in the app under **Your devices → Add a device → Power station**.
+3. Add it in the app under **Your devices → Add a device → Power station**.
 
 Port `1883` must be reachable **on the host's LAN address**, not just from
 localhost — the station is a separate device on the network. Check the host
@@ -137,7 +140,8 @@ from the vendor cloud before connecting. Only the MQTT traffic is redirected.
 `@stoprocent/noble` is declared an **optional dependency** and the image installs
 with `--omit=optional`, which is what keeps four native builds — node-gyp, usb,
 bluetooth-hci-socket, serialport — out of it. The server imports noble lazily, so
-`sim` and `mqtt` never reach for it and nothing is lost.
+the Bluetooth transport reports itself unavailable here and every other one
+carries on.
 
 That is not merely a build convenience. A container has no honest access to a
 Bluetooth radio:
@@ -148,7 +152,7 @@ Bluetooth radio:
   `CAP_NET_ADMIN`, access to the host's BlueZ stack, and an image rebuilt without
   `--omit=optional`. It is fiddly, and not something this repository tests.
 
-If you want Bluetooth, run the server on the host with `npm run dev:ble`, or let
+If you want Bluetooth, run the server on the host with `npm run dev`, or let
 the app hold the link itself from a browser.
 
 ---
@@ -160,8 +164,7 @@ settings and secrets: keep it out of any repository, readable only by you.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `STATION_DRIVER` | `sim` | `sim`, or `mqtt` for a station over Wi-Fi. `ble` is not available — see above |
-| `READ_ONLY` | `1` | `1` refuses every write at the driver. Only `0` allows them |
+| `READ_ONLY` | `1` | `1` refuses every write to hardware. Only `0` allows them. Simulated devices take writes either way |
 | `KRAFTVERK_SECRET_KEY` | — | Passphrase for AES-256-GCM secrets, such as a plug's local key. **Set this.** See below |
 | `KRAFTVERK_ALLOWED_HOSTS` | — | The public name the server is reached by, if any — a DDNS name. Comma-separated |
 | `KRAFTVERK_LAN_PORT` | `8080` | Where the home network opens the app |
@@ -174,8 +177,8 @@ Set in the compose file, and best left alone: `BROKER_SPAWN=0`, `BROKER_HOST`,
 `BROKER_ADMIN_URL` (how the server finds the broker service) and
 `KRAFTVERK_TRUSTED_PROXIES=web` (whose entrance stamp is believed). Set in the
 image: `KRAFTVERK_DB`, `KRAFTVERK_BROKER_DIR` and `KRAFTVERK_LOG_DIR`, all
-under `/data`. `ALLOW_RAW_MODBUS=1` lets the station's raw-frame tool send
-arbitrary frames; bad writes can brick the station.
+under `/data`. `ALLOW_RAW_FRAMES=1` lets a device type's raw-frame tool send
+arbitrary frames; bad writes can brick a device.
 
 ### Secrets
 
@@ -302,9 +305,8 @@ at a moment when losing the station for a minute is fine:
 docker compose up -d --build broker
 ```
 
-`STATION_DRIVER` is read once at startup and cannot be changed from any screen.
-If **App settings → Connectivity** says the server runs the simulator and you
-expected Wi-Fi, the container was started with the wrong `STATION_DRIVER`.
+**App settings → Connectivity** lists every transport and whether it runs
+here, with the reason when one does not.
 
 ---
 
@@ -314,7 +316,7 @@ expected Wi-Fi, the container was started with the wrong `STATION_DRIVER`.
 its listening address on the first line. A port already taken on the host keeps
 the container restarting.
 
-**The station never appears with `STATION_DRIVER=mqtt`.** Start with
+**The station never appears over Wi-Fi.** Start with
 `docker compose logs broker`: the broker records every TCP connection before any
 MQTT, so it distinguishes "nothing is connecting" from "connecting but failing
 the handshake" from "connected but not understood". If nothing is connecting, in

@@ -8,9 +8,12 @@
  *   protocol or a transport; a device type never reaches into the app or a
  *   transport; a protocol knows no product; protocols and device code import no
  *   platform built-in. A new import that breaks it fails the build.
- * - **The leak count.** Product-specific identifiers — `core.station`, `p280`,
- *   `StationStatus` and the rest — outside the P280's own package, counted per
- *   file. A count that rises fails the build.
+ * - **The leak count.** Words that mean one product — every device, service
+ *   and protocol package's folder name and brand, and the words it lists in
+ *   its package.json (`kraftverk.words`) — counted per file wherever that
+ *   package is not: in the core, and in a package that does not depend on it.
+ *   A count that rises fails the build. The words are derived from what is
+ *   installed, so the next package is held to it the day it arrives.
  *
  * Today's exceptions are listed in scripts/architecture-baseline.json, file by
  * file. A file that gets better fails too, until `--update` records it: the
@@ -32,20 +35,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BASELINE = resolve(ROOT, 'scripts/architecture-baseline.json');
 const SELF = ['scripts/architecture.mjs', 'scripts/architecture-baseline.json'];
 
-/** The identifiers that mean one product, and so belong in its package only. */
-const LEAK = /core\.station|p280|P280|StationStatus|StationSettings|gridRelay/g;
-/** Where they are allowed. */
-const LEAK_HOME = 'packages/devices/aferiy-p280/';
-
 const SOURCE = /\.(ts|tsx|mts|js|mjs|jsx)$/;
 /** Test files: held to the dependency rule, but not counted for product identifiers. */
 const TEST = /\.test\.(ts|tsx)$|(^|\/)test\//;
-/**
- * Database migrations: held to the dependency rule, but not counted. A
- * migration has to name what stored data used to be called — `core.station`
- * becoming `aferiy.p280` — and never changes once it has shipped.
- */
-const MIGRATION = /^server\/src\/history\/migrations\//;
 
 // --- where a file belongs ----------------------------------------------------
 
@@ -93,6 +85,76 @@ function areaOf(file) {
   const transport = packageRoot(file, TRANSPORT_PARENTS);
   if (transport) return { kind: 'transport', root: transport };
   return { kind: 'other' };
+}
+
+// --- the words that mean one product --------------------------------------
+
+/**
+ * Transports are not here: Bluetooth and MQTT are technologies the core may
+ * name. A device, a service or a protocol is a product the core must not.
+ */
+const WORD_PARENTS = [...DEVICE_PARENTS, ...PROTOCOL_PARENTS];
+
+const escape = (word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** Case-insensitive; a hyphen may be written or left out (`open-meteo`, `OpenMeteo`). */
+const wordPattern = (word) => escape(word).split('-').join('-?');
+
+/**
+ * Every product package: where it is, which packages it may name (its own
+ * dependencies), and the words that mean it.
+ */
+function productPackages() {
+  const found = [];
+  for (const parent of WORD_PARENTS) {
+    const listed = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', `${parent}*/package.json`], { cwd: ROOT, encoding: 'utf8' });
+    for (const manifest of listed.split('\n').map((line) => line.trim()).filter(Boolean)) {
+      if (manifest.includes('node_modules/')) continue;
+      const root = manifest.slice(0, -'package.json'.length);
+      const json = JSON.parse(readFileSync(resolve(ROOT, manifest), 'utf8'));
+      const folder = root.slice(parent.length, -1);
+      const words = new Set([folder, ...(json.kraftverk?.words ?? [])]);
+      // Its brand, from what it declares about itself.
+      const listedSources = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', `${root}src`], { cwd: ROOT, encoding: 'utf8' });
+      for (const file of listedSources.split('\n').map((line) => line.trim()).filter((line) => SOURCE.test(line) && !TEST.test(line))) {
+        let source;
+        try {
+          source = readFileSync(resolve(ROOT, file), 'utf8');
+        } catch {
+          continue;
+        }
+        for (const match of source.matchAll(/\bbrand:\s*'([^']+)'/g)) words.add(match[1]);
+      }
+      found.push({ root, name: json.name, dependencies: new Set(Object.keys({ ...json.dependencies, ...json.peerDependencies })), words: [...words] });
+    }
+  }
+  return found;
+}
+
+const PRODUCTS = productPackages();
+
+/** The words a file may not use: those of every product package it neither is nor depends on. */
+function forbiddenFor(file, area) {
+  if (area.kind === 'core') return PRODUCTS;
+  if (area.kind !== 'device' && area.kind !== 'protocol') return [];
+  const own = PRODUCTS.find((product) => product.root === area.root);
+  return PRODUCTS.filter((product) => product.root !== area.root && !own?.dependencies.has(product.name));
+}
+
+const plain = (word) => word.toLowerCase().split('-').join('');
+
+const leakPatterns = new Map();
+function leakPattern(products, area) {
+  // A word that contains one of its own package's words, or is contained by one, is its own too:
+  // the Tuya protocol may say Tuya, and name its generic Tuya plug.
+  const own = PRODUCTS.find((product) => product.root === area.root)?.words.map(plain) ?? [];
+  const key = `${area.root ?? ''}:${products.map((product) => product.root).join('|')}`;
+  if (!leakPatterns.has(key)) {
+    const words = [...new Set(products.flatMap((product) => product.words))]
+      .filter((word) => !own.some((mine) => mine.includes(plain(word)) || plain(word).includes(mine)))
+      .sort((a, b) => b.length - a.length);
+    leakPatterns.set(key, words.length ? new RegExp(words.map(wordPattern).join('|'), 'gi') : null);
+  }
+  return leakPatterns.get(key);
 }
 
 // --- the dependency rule ---------------------------------------------------
@@ -200,14 +262,15 @@ function measure() {
     if (broken.length) imports[file] = broken;
 
     /*
-      Shipped code only. A test that drives the real station through a core
-      route is not the core knowing the station — and it moves with that route
-      when the route moves into the station's package. The dependency rule
+      Shipped code only. A test that drives a real device type through a core
+      route is not the core knowing that device — and it moves with that route
+      when the route moves into the device's package. The dependency rule
       above still applies to tests.
     */
-    if (!file.startsWith(LEAK_HOME) && area.kind !== 'generated' && !TEST.test(file) && !MIGRATION.test(file)) {
+    const pattern = TEST.test(file) ? null : leakPattern(forbiddenFor(file, area), area);
+    if (pattern) {
       // A pointer to a document is not knowledge in code: docs/P280-FINDINGS.md is where a finding lives.
-      const count = source.replace(/docs\/[\w.-]+\.md/g, '').match(LEAK)?.length ?? 0;
+      const count = source.replace(/docs\/[\w.-]+\.md/g, '').match(pattern)?.length ?? 0;
       if (count) leaks[file] = count;
     }
   }
@@ -314,7 +377,7 @@ if (copies.length) {
 
 const summary =
   `${importCount(current.imports)} boundary exceptions, ` +
-  `${total(current.leaks)} product identifiers outside ${LEAK_HOME} in ${Object.keys(current.leaks).length} files`;
+  `${total(current.leaks)} product words outside their packages (${PRODUCTS.length} packages) in ${Object.keys(current.leaks).length} files`;
 
 /*
   Moving a file moves its leaks with it, and per file that looks like a new

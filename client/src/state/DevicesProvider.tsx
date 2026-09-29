@@ -31,7 +31,7 @@ import {
   type SavedDeviceId,
   type VersionInfo,
 } from '@kraftverk/api-client';
-import { CATEGORIES, deviceCapabilities, savedDeviceId, type DeviceType } from '@kraftverk/device-sdk';
+import { CATEGORIES, deviceCapabilities, methodOf, savedDeviceId, type DeviceType } from '@kraftverk/device-sdk';
 import { toHold, withInUse } from '@kraftverk/holder';
 
 import { confirmAction } from '../lib/confirm';
@@ -100,7 +100,7 @@ function describeLocal(runtime: AppRuntime, device: LocalDevice, names: Map<stri
     (connection): ConnectionView => ({
       id: connection.id,
       method: connection.method,
-      methodLabel: type?.connections.find((method) => method.id === connection.method)?.label ?? connection.method,
+      methodLabel: (type ? methodOf(type, connection.method)?.label : null) ?? connection.method,
       transport: connection.transport,
       heldBy: { kind: 'client', id: 'this-app', name: 'This app' },
       address: connection.address,

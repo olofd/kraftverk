@@ -18,8 +18,8 @@ import { decodeSocket, linkOver, relayCandidates, tuyaIdentity, type Dps, type S
  * home network with the Tuya local protocol.
  *
  * Every Tuya socket is the same device to kraftverk apart from its data layout,
- * so this builds a type from a profile — which is how the generic socket and the
- * ATORCH S1W are two types of ten lines each, and how the next plug is a profile
+ * so this builds a type from a profile — which is how the generic socket and a
+ * named model are two types of ten lines each, and how the next plug is a profile
  * rather than code (docs/ATORCH-S1W.md §2).
  */
 
@@ -292,7 +292,7 @@ export function defineTuyaSocket(definition: SocketTypeDefinition): DeviceType<S
 
     /**
      * Reads the plug once: who it is, and whether the relay is where the layout
-     * says. When it is not — the ATORCH's datapoint 1 or 131 question — the
+     * says. When it is not — a model whose relay is datapoint 131, not 1 — the
      * boolean that is there becomes the relay datapoint, and the check says so.
      */
     async identify(connection: OpenConnection, ctx) {

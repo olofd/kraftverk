@@ -7,7 +7,7 @@ import { defineTuyaSocket } from './socket-type.ts';
  *
  * The generic layout fits most sockets. A model that differs gets a profile —
  * data — and, when it is common enough to deserve its own name and picture, a
- * type of its own built the same way (see `@kraftverk/device-atorch-s1w`).
+ * type of its own built the same way, in a package of its own.
  */
 export default defineTuyaSocket({
   id: 'tuya.plug',

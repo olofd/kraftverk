@@ -65,9 +65,12 @@ never the secret (see [SECURITY.md](SECURITY.md)).
 | **Comes from** | **Category** is a fixed list in the SDK. Each device type names one. **Sightings** come from the server's transports, recognised by a protocol. |
 | **Leaves behind** | Nothing. A category is display only, and a sighting is live state. |
 
-A simulator is never listed. A simulator belongs to every device type and is
-used for tests and for "try without hardware". A device you can add is always a
-real product or a real service.
+A simulator is never listed as a type. A simulator belongs to every device
+type, so a device you can add is always a real product or a real service —
+and **Simulated** is one of the ways to add it (step 3), beside Wi-Fi or
+Bluetooth: its simulator stands in for the hardware, for "try without
+hardware", for a demo, for developing. It is a choice per device, not a mode
+of the server, so a simulated lamp and a real station sit side by side.
 
 "Found near you" skips steps 2–6: the sighting already says which transport,
 which protocol and which address. If more than one installed type speaks that
@@ -173,8 +176,8 @@ reading.
 
 ### A service goes the same way
 
-*Weather* → *Open-Meteo* → step 3 is skipped (one method: its web API, held by
-the server) → no instructions → *Where?* (search a place, or use this phone's
+*Weather* → *Open-Meteo* → step 3: its web API, held by the server (or
+Simulated) → no instructions → *Where?* (search a place, or use this phone's
 location) → check: fetch one forecast → name → save. The place is
 `device.config`; the API is its connection. A weather service that needs a key
 keeps it in `connection_secret`, like any other credential.

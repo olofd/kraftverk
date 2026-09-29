@@ -9,7 +9,7 @@ import type { ConfigSchema, ConfigValues } from './schema.ts';
  * device type. The protocol's binding says what to do to the device first; the
  * transport finds it; the protocol asks for its credentials; the device type
  * adds what is its own and reads the device once to check it. So a device type
- * mostly declares "sydpower over mqtt", and improving a layer improves every
+ * mostly declares "this protocol over mqtt", and improving a layer improves every
  * device that uses it.
  *
  * Every step runs in the holder: on the server for a connection the server will
@@ -76,7 +76,7 @@ export type SetupContext<Config extends ConfigValues = ConfigValues> = {
   platform: Platform;
 };
 
-/** A button inside a step: "Fetch the key from the Tuya cloud". */
+/** A button inside a step: "Fetch the key from the vendor's cloud". */
 export type SetupAction<Config extends ConfigValues = ConfigValues> = {
   id: string;
   label: string;
