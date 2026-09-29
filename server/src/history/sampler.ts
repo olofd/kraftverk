@@ -1,20 +1,35 @@
 import type { SeriesPoint } from '@kraftverk/api-contract';
+import { keepsHistory, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
 
 import { db } from './db.ts';
 import type { DeviceRegistry } from '../devices/registry.ts';
 
 /**
- * Writes one sample per device measurement, once a minute.
+ * Writes one sample per device attribute, once a minute.
  *
- * Generic by construction: it records whatever devices declare, so a plug added
- * next year gets charts without a line of code here. That is the same trade the
- * narrow `sample` table makes — no schema knows what a "watt" is, which is why
- * no schema change is needed when something new starts measuring one.
+ * Generic by construction: it records whatever a device's description says to
+ * keep, so a plug added next year gets charts without a line of code here.
+ * That is the same trade the narrow `sample` table makes — no schema knows
+ * what a "watt" is, which is why no schema change is needed when something new
+ * starts measuring one.
  *
- * Booleans are stored as 0/1 so one column serves every kind. Nulls — a device
+ * Numbers and on/off go in `value` (on/off as 1/0, so one column charts every
+ * quantity); an operating mode or any text goes in `text`. Nulls — a device
  * that has not reported — are skipped rather than written as zero: a gap in a
  * chart is honest, a zero is a lie about what was happening.
  */
+
+/** Where a value is kept in a sample, or null when it is not a value to keep. */
+export function sampleOf(value: Value | undefined): { value: number | null; text: string | null } | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'boolean') return { value: value ? 1 : 0, text: null };
+  if (typeof value === 'number') return Number.isFinite(value) ? { value, text: null } : null;
+  return { value: null, text: value };
+}
+
+/** Which of a device's attributes history keeps, by key. */
+export const keptKeys = (description: DeviceDescription): Set<string> =>
+  new Set(description.attributes.filter((attribute) => keepsHistory(attribute)).map((attribute) => attribute.key));
 
 const INTERVAL_MS = 60_000;
 /**
@@ -88,9 +103,7 @@ export class Sampler {
       const taken = Date.parse(readingAt);
       return !Number.isFinite(taken) || now - taken <= STALE_MS;
     };
-    const insert = db().query(
-      'INSERT OR REPLACE INTO sample (device_id, key, at, value) VALUES (?, ?, ?, ?)'
-    );
+    const insert = db().query('INSERT OR REPLACE INTO sample (device_id, key, at, value, text) VALUES (?, ?, ?, ?, ?)');
 
     // A device deleted since it was read has no history to add to: skipped, not a failed tick.
     const exists = db().query('SELECT 1 FROM device WHERE id = ?');
@@ -98,12 +111,11 @@ export class Sampler {
     const write = db().transaction(() => {
       for (const device of devices) {
         if (!exists.get(device.id)) continue;
+        const kept = keptKeys(device.description);
         for (const reading of device.readings) {
-          if (reading.value === null || reading.value === undefined) continue;
-          if (!fresh(reading.at)) continue;
-          const numeric = typeof reading.value === 'boolean' ? (reading.value ? 1 : 0) : reading.value;
-          if (!Number.isFinite(numeric)) continue;
-          insert.run(device.id, reading.key, at, numeric);
+          if (!kept.has(reading.key) || !fresh(reading.at)) continue;
+          const sample = sampleOf(reading.value);
+          if (sample) insert.run(device.id, reading.key, at, sample.value, sample.text);
         }
       }
     });

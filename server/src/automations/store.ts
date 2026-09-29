@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 
-import type { ConfigValues, SavedDeviceId } from '@kraftverk/device-sdk';
+import type { RoleBinding } from '@kraftverk/api-contract';
+import type { ConfigValues } from '@kraftverk/device-sdk';
 
 import { db } from '../history/db.ts';
 import type { AutomationMode, AutomationRecord, RunResult } from './recipes.ts';
@@ -31,7 +32,7 @@ const toRecord = (row: Row): AutomationRecord => ({
   id: row.id,
   name: row.name,
   recipe: row.recipe,
-  roles: parse<Record<string, SavedDeviceId>>(row.roles, {}),
+  roles: parse<Record<string, RoleBinding>>(row.roles, {}),
   params: parse<ConfigValues>(row.params, {}),
   timeZone: row.time_zone,
   mode: row.mode,

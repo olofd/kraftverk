@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { capabilitiesOf, readingOf } from '@kraftverk/device-sdk';
 import { checkDeviceTypeContract, fakeByteChannel, fakeConnection, fakeMessageChannel, simulatorContext } from '@kraftverk/device-sdk/testing';
 import { crc16 } from '@kraftverk/protocol-sydpower';
 
@@ -70,12 +71,29 @@ describe('the P280 device type', () => {
   test('its simulator remembers settings in the device’s own store', async () => {
     const { context, stop } = simulatorContext(p280);
     const first = await p280.createSimulator(context);
-    await first.writeSettings!({ chargeLimit: 80 });
+    await first.write!({ chargeLimit: 80 });
     await first.close();
 
     const second = await p280.createSimulator(context);
-    expect(second.readSettings!()?.chargeLimit).toBe(80);
+    expect(readingOf(second.readings(), 'chargeLimit')?.value).toBe(80);
     await second.close();
+    stop();
+  });
+
+  test('its outlets are parts that switch, its mains an input, and each expansion battery a part of its own', async () => {
+    const declared = p280.describe({});
+    expect(capabilitiesOf(declared, 'outlet.ac')).toEqual(['switch', 'powerMeter']);
+    expect(capabilitiesOf(declared, 'input.ac')).toEqual(['acInput']);
+    expect(capabilitiesOf(declared, 'main')).toEqual(['battery']);
+
+    const { context, stop } = simulatorContext(p280);
+    const session = await p280.createSimulator(context);
+    const packs = session.readings().filter((reading) => reading.key.startsWith('pack.'));
+    const described = session.description?.();
+    expect(packs.length).toBeGreaterThan(0);
+    expect(described?.parts?.filter((part) => part.kind === 'battery').length).toBe(packs.length);
+    expect(capabilitiesOf(described!, 'pack.1')).toEqual(['battery']);
+    await session.close();
     stop();
   });
 });
@@ -99,13 +117,13 @@ describe('writing a P280’s settings through its session', () => {
 
   test('a whole-machine sleep time of zero never reaches the station — it destroys it', async () => {
     const { session, applied } = recording();
-    await expect(session.writeSettings!({ sleepMinutes: '0' })).rejects.toThrow();
+    await expect(session.write!({ sleepMinutes: '0' })).rejects.toThrow();
     expect(applied).toEqual([]);
   });
 
   test('only what was asked for is sent', async () => {
     const { session, applied } = recording();
-    await session.writeSettings!({ chargeLimit: 85 });
+    await session.write!({ chargeLimit: 85 });
     expect(applied).toEqual([{ chargeLimit: 85 }]);
   });
 });

@@ -7,7 +7,15 @@ data model in [`DATA-MODEL.md`](DATA-MODEL.md). This document holds only what
 those cannot: where things stand right now, and what has been learned the hard
 way. Where it describes code that the plan replaces, the plan is the target.
 
-Last updated 2026-09-28.
+Last updated 2026-09-29.
+
+> **Phase: research and development — strict version 1.** Nobody runs
+> kraftverk in production but its owner, so nothing here is kept backward
+> compatible: no adapters, no versions, no migration chain, no fields nullable
+> only for old rows. A change to the model is made everywhere at once. Where
+> this document says "stable forever", it means from the first release on.
+> See [AGENTS.md](../AGENTS.md) and decision 21 in ARCHITECTURE.md §9; this changes when there
+> is a production state to protect.
 
 ---
 
@@ -25,10 +33,14 @@ empty: the core names no product, and every device is found, not listed.
   tuya-plug, atorch-s1w), `packages/services` (open-meteo) and
   `packages/gateway`. The server finds them at start; the app binds them in
   through `client/src/generated/registry.ts`.
-- **Migration 7** turns the old catalog into devices with type ids and
-  identities, connections, sealed connection secrets and links; the Tuya
-  plugin's configuration becomes an ATORCH or generic plug with its key, and
-  the grid pairing a `feeds` link. Removing a device now keeps its history.
+- **The device model** (2026-09-29, ARCHITECTURE.md §4.2, steps 23–26): a
+  device is described by parts, attributes and events; capabilities are
+  declared like Matter clusters and projected into Home Assistant and Matter
+  (`standards.ts`); commands go to a part, settings are attributes written
+  through the gateway. There is one contract and one database schema
+  (`server/src/history/schema.ts`): a database from an older schema is set
+  aside on start, and history is not carried over. Removing a device keeps its
+  history.
 - **The app holds connections too.** "Bluetooth, from this browser" runs the
   station's own session in the app, sends readings to the server and follows the
   gateway's rules there (`client/src/runtime`). Web Bluetooth is verified in the
@@ -52,12 +64,12 @@ Under `NODE_ENV=test`, `KRAFTVERK_DB` is **required** — see the trap below.
 `.claude/launch.json` has `server:ui-check`: the server on port 3334 with a
 scratch database, for driving the app in a browser.
 
-**Production starts afresh.** The live database had no devices after
-2026-09-27, when removing a device still deleted its history. The owner decided
-not to restore the older copy: it is early in the project, and history from
-before the new data model is not worth keeping. The `.before-migration-*`
-copies on the server's volume can be deleted by the owner. Add the station
-again through the add flow.
+**Production starts afresh.** The owner decided history from before the
+device model is not worth keeping: on its first start with the one schema the
+server sets the old database aside (`kraftverk.db.set-aside.<time>`) and
+begins a new one, so the first account is created again from the home network
+and the station added again through the add flow. The `.before-migration-*`
+and `.set-aside.*` copies on the server's volume are the owner's to delete.
 
 ## Traps
 

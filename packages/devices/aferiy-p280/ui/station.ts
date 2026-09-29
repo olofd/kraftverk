@@ -5,7 +5,7 @@ import { describeError, type DeviceScreenProps } from '@kraftverk/api-client';
 import { useWriteGate } from '@kraftverk/ui';
 
 import type { PortId, StationSettings, StationSettingsPatch, StationStatus } from '../src/model/types';
-import { patchToValues, valuesToSettings } from '../src/index';
+import { outletPart, patchToValues, valuesToSettings } from '../src/index';
 import { portKey, settingsKeys, withPending, writesInFlight, type StationWriteKey } from '../src/writes';
 import type { StationView } from './contract';
 
@@ -73,7 +73,9 @@ export function useStation({ device, actions, holder, readOnly, version }: Devic
       setWriteError(null);
       try {
         await gate.run(settingsKeys(patch), async () => {
-          const values = await actions.writeSettings(patchToValues(patch));
+          const result = await actions.write(patchToValues(patch));
+          if (result.outcome === 'refused' || result.outcome === 'failed') throw new Error(result.detail);
+          const values = result.values ?? {};
           if (Object.keys(values).length) setSettings((current) => ({ ...(current ?? ({} as StationSettings)), ...valuesToSettings(values) }));
         });
       } catch (err) {
@@ -90,7 +92,7 @@ export function useStation({ device, actions, holder, readOnly, version }: Devic
       setWriteError(null);
       try {
         await gate.run({ [portKey(id)]: enabled }, async () => {
-          const result = await actions.command({ capability: 'outlets', target: id, value: enabled, reason: 'Switched on the station’s screen' });
+          const result = await actions.command({ part: outletPart(id), capability: 'switch', command: 'set', args: { on: enabled }, reason: 'Switched on the station’s screen' });
           if (result.outcome === 'refused' || result.outcome === 'failed') throw new Error(result.detail);
           // The station as it is now, read inside the write, so the switch holds its position until this lands.
           const state = await actions.tool<{ status: StationStatus }>('state').catch(() => null);

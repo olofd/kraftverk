@@ -1,7 +1,7 @@
-import type { ConfigValues } from '@kraftverk/device-sdk';
-import type { GatewayResult } from '@kraftverk/gateway';
+import type { Value } from '@kraftverk/device-sdk';
+import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
-import type { DeviceSettings, DeviceView, VersionInfo } from './types';
+import type { DeviceView, VersionInfo } from './types';
 
 /**
  * What the app hands a device type's own screens (docs/ARCHITECTURE.md §3, a
@@ -15,22 +15,24 @@ import type { DeviceSettings, DeviceView, VersionInfo } from './types';
  * and never imports the app that renders it.
  */
 
+/** A command to one part of the device: `switch.set({ on: false })` on `outlet.ac`. */
 export type CommandInput = {
+  part: string;
   capability: string;
-  /** `set` when absent. */
-  command?: string;
-  /** Which part: an outlet id. */
-  target?: string;
-  value: boolean;
+  command: string;
+  args: Record<string, Value>;
   reason?: string;
 };
 
 export type DeviceActions = {
   /** Runs one of the type's own tools (`DeviceView.advanced`). */
   tool<T = unknown>(name: string, input?: Record<string, unknown>): Promise<T>;
-  readSettings(): Promise<DeviceSettings>;
-  /** Writes the device's own settings, and returns what it reports afterwards. */
-  writeSettings(patch: ConfigValues): Promise<ConfigValues>;
+  /**
+   * Writes attributes the device remembers — its settings — through the
+   * holder's gateway. When a person has to confirm, the app asks them and
+   * sends it again; the result is the gateway's final word.
+   */
+  write(patch: Record<string, Value>): Promise<WriteResult>;
   /**
    * A capability command, through the holder's gateway. When a person has to
    * confirm it, the app asks them — saying why — and sends it again; the

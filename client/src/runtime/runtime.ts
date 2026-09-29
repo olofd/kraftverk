@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 
-import type { CapabilityImpl, CapabilityName, DeviceSession, DeviceStore, SavedDeviceId } from '@kraftverk/device-sdk';
+import type { DeviceSession, DeviceStore, SavedDeviceId } from '@kraftverk/device-sdk';
 import { ActionGateway, type AuditEntry } from '@kraftverk/gateway';
 import { Failover } from '@kraftverk/holder';
 import { fetchDeviceStore, registerClient, type DeviceView } from '@kraftverk/api-client';
@@ -40,26 +40,15 @@ function clientName(): string {
 
 /**
  * A device this app does not hold, as the gateway sees it: what the list says
- * it reads. Enough to verify a switch against a station the server holds — its
- * mains presence is a standard measurement, whoever reads it.
+ * it reads, with the description it was served with. Enough to verify a switch
+ * against a station the server holds — its mains presence is a standard
+ * meaning, whoever reads it. It takes no commands from here.
  */
 function viewSession(device: DeviceView): DeviceSession {
-  const byMetric = (metric: string) => {
-    const key = device.measurements.find((spec) => spec.metric === metric)?.key;
-    return key ? (device.readings.find((reading) => reading.key === key) ?? null) : null;
-  };
-  const acInput: CapabilityImpl['acInput'] = {
-    read: () => {
-      const present = byMetric('grid.present');
-      if (!present?.at) return null;
-      const watts = byMetric('power.in.ac');
-      return { present: typeof present.value === 'boolean' ? present.value : present.value === null ? null : present.value !== 0, watts: typeof watts?.value === 'number' ? watts.value : null, at: present.at };
-    },
-  };
   return {
     health: () => device.health,
     readings: () => device.readings,
-    capability: (<N extends CapabilityName>(name: N) => (name === 'acInput' && device.capabilities.includes('acInput') ? acInput : null) as CapabilityImpl[N] | null) as DeviceSession['capability'],
+    command: async () => ({ accepted: false, error: 'This app does not hold that device' }),
     close: async () => {},
   };
 }
@@ -104,15 +93,26 @@ export class AppRuntime {
             collect: () =>
               this.sessions.all().flatMap((held) => {
                 const session = this.sessions.get(held.deviceId);
-                // Who it says it is, so a device saved before it answered learns its identity (§4.3).
-                return session ? [{ deviceId: held.deviceId, connectionId: held.connection.id, identity: session.identity?.().id ?? null, readings: session.readings() }] : [];
+                if (!session) return [];
+                // Who it says it is, so a device saved before it answered learns its identity (§4.3);
+                // and what it is now, so a pack plugged in is kept on the server too.
+                return [
+                  {
+                    deviceId: held.deviceId,
+                    connectionId: held.connection.id,
+                    identity: session.identity?.().id ?? null,
+                    readings: session.readings(),
+                    description: this.sessions.description(held.deviceId),
+                    info: this.sessions.info(held.deviceId),
+                  },
+                ];
               }),
           })
         : null;
     this.sessions = new HeldSessions({
       registry: this.registry,
       readOnly: () => !this.#allowWrites,
-      emit: (held, event) => audit({ at: new Date().toISOString(), kind: `device.${event.level}`, resource: held.deviceId, summary: `${held.name}: ${event.message}`, detail: event.data }),
+      event: (held, event) => audit({ at: event.at, kind: `device.event.${event.level}`, resource: held.deviceId, summary: `${held.name}: ${event.id}`, detail: { part: event.part, data: event.data } }),
       onConnected: (held) => {
         if (options.mode === 'local') this.local.touch(held.connection.id);
       },
@@ -124,12 +124,12 @@ export class AppRuntime {
     this.gateway = new ActionGateway({
       device: (id: SavedDeviceId) => {
         const held = this.sessions.held(id);
-        if (held) {
-          const settings = this.registry.types.get(held.typeId)?.settings ?? null;
-          return { name: held.name, session: this.sessions.get(id), offline: this.sessions.health(id)?.detail ?? 'Not connected', settings };
-        }
         const seen = this.#view.get(id);
-        return seen ? { name: seen.name, session: viewSession(seen), offline: seen.health.detail } : null;
+        if (held) {
+          const description = this.sessions.description(id) ?? seen?.description ?? { attributes: [] };
+          return { name: held.name, session: this.sessions.get(id), description, offline: this.sessions.health(id)?.detail ?? 'Not connected' };
+        }
+        return seen ? { name: seen.name, session: viewSession(seen), description: seen.description, offline: seen.health.detail } : null;
       },
       feeds: (id) => (this.#view.get(id)?.links.find((link) => link.kind === 'feeds' && link.role === 'source')?.other.id as SavedDeviceId | undefined) ?? null,
       isReadOnly: () => !this.#allowWrites,

@@ -1,4 +1,5 @@
-import { meetsNeed, type SavedDeviceId } from '@kraftverk/device-sdk';
+import type { RoleBinding } from '@kraftverk/api-contract';
+import { capabilitiesOf, MAIN_PART, meetsNeed, partsOf } from '@kraftverk/device-sdk';
 import type { ActionGateway, AuditEntry, GatewayResult } from '@kraftverk/gateway';
 
 import type { DeviceCatalog } from '../devices/catalog.ts';
@@ -6,12 +7,12 @@ import type { DeviceSessionManager } from '../devices/sessions.ts';
 import { recipeOf, type AutomationRecord, type Decision, type RecipeDevice, type RunResult } from './recipes.ts';
 import type { AutomationStore } from './store.ts';
 
-/** A device as the engine sees it: enough to check a role and to hand a recipe. */
-export type EngineDevice = RecipeDevice & { removed: boolean };
+/** The part filling a role, as the engine sees it: enough to check the role and to hand a recipe. */
+export type EngineDevice = RecipeDevice & { removed: boolean; /** Whether the device still has that part. */ hasPart: boolean };
 
 export type AutomationEngineDeps = {
   store: AutomationStore;
-  device: (id: SavedDeviceId) => EngineDevice | null;
+  device: (binding: RoleBinding) => EngineDevice | null;
   gateway: Pick<ActionGateway, 'execute'>;
   record: (entry: AuditEntry) => void;
   now?: () => Date;
@@ -87,12 +88,12 @@ export class AutomationEngine {
 
     let decision: Decision;
     try {
-      decision = recipe.decide({
+      decision = await recipe.decide({
         automation,
         now: at,
         device: (role) => {
-          const id = automation.roles[role];
-          const device = id ? this.deps.device(id) : null;
+          const binding = automation.roles[role];
+          const device = binding ? this.deps.device(binding) : null;
           return device && !device.removed ? device : null;
         },
       });
@@ -102,19 +103,21 @@ export class AutomationEngine {
 
     if (decision.kind !== 'act') return note(result(decision.kind, decision.reason), undefined, { decision });
 
-    const deviceId = automation.roles[decision.role]!;
-    const target = this.deps.device(deviceId)!;
-    const what = `turn ${target.name}${decision.target ? ` ${decision.target}` : ''} ${decision.value ? 'on' : 'off'}`;
+    const binding = automation.roles[decision.role]!;
+    const deviceId = binding.device;
+    const target = this.deps.device(binding)!;
+    const setting = Object.values(decision.args).map((value) => (value === true ? 'on' : value === false ? 'off' : String(value))).join(', ');
+    const what = `turn ${target.name} ${setting}`;
     if (options.check || automation.mode !== 'armed') {
       return note(result('would-act', `Would ${what}. ${decision.reason}`), deviceId, { decision });
     }
 
     const outcome: GatewayResult = await this.deps.gateway.execute({
       deviceId,
+      part: binding.part,
       capability: decision.capability,
       command: decision.command,
-      target: decision.target,
-      value: decision.value,
+      args: decision.args,
       reason: `${automation.name}: ${decision.reason}`,
       actor: 'automation',
       by: actor,
@@ -122,7 +125,7 @@ export class AutomationEngine {
     const kind = outcome.outcome === 'verified' ? 'acted' : outcome.outcome;
     const summary =
       outcome.outcome === 'verified' && outcome.detail.startsWith('Already')
-        ? `${target.name} was already ${decision.value ? 'on' : 'off'}. ${decision.reason}`
+        ? `${target.name} was already ${setting}. ${decision.reason}`
         : outcome.outcome === 'verified'
           ? `${capitalise(what)}: ${outcome.detail}. ${decision.reason}`
           : outcome.outcome === 'refused'
@@ -136,10 +139,11 @@ export class AutomationEngine {
     const recipe = recipeOf(automation.recipe);
     if (!recipe) return [`Unknown recipe "${automation.recipe}"`];
     return Object.entries(recipe.roles).flatMap(([role, spec]) => {
-      const id = automation.roles[role];
-      const device = id ? this.deps.device(id) : null;
-      if (!id || !device) return [`${spec.label}: no device`];
+      const binding = automation.roles[role];
+      const device = binding ? this.deps.device(binding) : null;
+      if (!binding || !device) return [`${spec.label}: no device`];
       if (device.removed) return [`${spec.label}: ${device.name} has been removed`];
+      if (!device.hasPart) return [`${spec.label}: ${device.name} no longer has that part`];
       return meetsNeed(spec, device.capabilities) ? [] : [`${spec.label}: ${device.name} cannot do that`];
     });
   }
@@ -152,21 +156,26 @@ export class AutomationEngine {
 const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /**
- * Devices as the server holds them, for the engine: a removed one is still
- * found, so an automation can say its device was removed rather than that it
- * never existed; one only an app holds has no session here, and says whose it is.
+ * Parts of devices as the server holds them, for the engine: a removed device
+ * is still found, so an automation can say it was removed rather than that it
+ * never existed; one only an app holds has no session here, and says whose it
+ * is. A part is named with its device: "Garage station — AC outlets".
  */
 export const serverDevices =
-  (catalog: Pick<DeviceCatalog, 'get'>, sessions: Pick<DeviceSessionManager, 'get' | 'health' | 'typeOf'>) =>
-  (id: SavedDeviceId): EngineDevice | null => {
-    const record = catalog.get(id);
+  (catalog: Pick<DeviceCatalog, 'get'>, sessions: Pick<DeviceSessionManager, 'get' | 'health' | 'description'>) =>
+  (binding: RoleBinding): EngineDevice | null => {
+    const record = catalog.get(binding.device);
     if (!record) return null;
     const removed = record.removedAt !== null;
+    const description = removed ? record.description : sessions.description(record);
+    const part = partsOf(description, record.name).find((candidate) => candidate.id === binding.part) ?? null;
     return {
-      name: record.name,
+      name: binding.part === MAIN_PART || !part ? record.name : `${record.name} — ${part.label}`,
       removed,
-      session: removed ? null : sessions.get(id),
+      hasPart: part !== null,
+      part: binding.part,
+      session: removed ? null : sessions.get(record.id),
       offline: removed ? 'It has been removed' : sessions.health(record).detail,
-      capabilities: sessions.typeOf(record)?.capabilities ?? [],
+      capabilities: part ? capabilitiesOf(description, part.id) : [],
     };
   };

@@ -1,76 +1,80 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { MetricSpec } from '@kraftverk/device-sdk';
+import type { AttributeSpec, Quantity } from '@kraftverk/device-sdk';
 
-import {
-  fixedRange,
-  formatMeasurement,
-  primaryMeasurement,
-  readingFor,
-  startsAtZero,
-} from './measurement';
+import { fixedRange, formatValue, readingFor, shownAttributes, startsAtZero } from './measurement';
 
-const spec = (over: Partial<MetricSpec> = {}): MetricSpec => ({
-  key: 'x',
-  label: 'X',
-  unit: 'W',
-  kind: 'power',
-  ...over,
-});
+/** An attribute the way these cases think of it: a quantity, a unit, a precision. */
+const spec = (over: { key?: string; unit?: string; kind?: Quantity; precision?: number; primary?: boolean; category?: AttributeSpec['category'] } = {}): AttributeSpec => {
+  const kind = over.kind ?? 'power';
+  return {
+    key: over.key ?? 'x',
+    label: 'X',
+    value: kind === 'state' ? { type: 'boolean' } : { type: 'number', unit: over.unit ?? 'W', ...(over.precision !== undefined ? { precision: over.precision } : {}) },
+    ...(kind !== 'state' ? { quantity: kind } : {}),
+    ...(over.primary ? { category: 'primary' as const } : over.category ? { category: over.category } : {}),
+  };
+};
 
-describe('formatMeasurement', () => {
+describe('formatValue', () => {
   test('a missing reading is a dash, never a zero', () => {
     // The distinction the whole device model rests on: a device that has not
     // reported is not a device reporting nothing.
-    expect(formatMeasurement(spec(), null)).toBe('—');
-    expect(formatMeasurement(spec(), 0)).toBe('0 W');
+    expect(formatValue(spec(), null)).toBe('—');
+    expect(formatValue(spec(), 0)).toBe('0 W');
   });
 
   test('watts become kilowatts where a person would say kilowatts', () => {
-    expect(formatMeasurement(spec(), 950)).toBe('950 W');
-    expect(formatMeasurement(spec(), 1800)).toBe('1.80 kW');
+    expect(formatValue(spec(), 950)).toBe('950 W');
+    expect(formatValue(spec(), 1800)).toBe('1.80 kW');
   });
 
   test('a power measurement in something other than watts keeps its own unit', () => {
-    expect(formatMeasurement(spec({ unit: 'kW', precision: 1 }), 1.8)).toBe('1.8 kW');
+    expect(formatValue(spec({ unit: 'kW', precision: 1 }), 1.8)).toBe('1.8 kW');
   });
 
   test('percentages carry the declared precision', () => {
-    expect(formatMeasurement(spec({ kind: 'percent', unit: '%', precision: 1 }), 87.25)).toBe('87.3%');
-    expect(formatMeasurement(spec({ kind: 'percent', unit: '%' }), 87.25)).toBe('87%');
+    expect(formatValue(spec({ kind: 'percent', unit: '%', precision: 1 }), 87.25)).toBe('87.3%');
+    expect(formatValue(spec({ kind: 'percent', unit: '%' }), 87.25)).toBe('87%');
   });
 
   test('durations are read as time, not as a count of minutes', () => {
     const runtime = spec({ kind: 'duration', unit: 'min' });
-    expect(formatMeasurement(runtime, 90)).toBe('1h 30m');
+    expect(formatValue(runtime, 90)).toBe('1h 30m');
     // A P280 sitting idle genuinely reports multi-week runtimes.
-    expect(formatMeasurement(runtime, 20_000)).toBe('13d 21h');
+    expect(formatValue(runtime, 20_000)).toBe('13d 21h');
   });
 
   test('a duration declared in seconds is converted before it is read', () => {
-    expect(formatMeasurement(spec({ kind: 'duration', unit: 's' }), 5400)).toBe('1h 30m');
+    expect(formatValue(spec({ kind: 'duration', unit: 's' }), 5400)).toBe('1h 30m');
   });
 
   test('state reads as on or off whichever way the driver expressed it', () => {
     const port = spec({ kind: 'state', unit: '' });
-    expect(formatMeasurement(port, true)).toBe('On');
-    expect(formatMeasurement(port, false)).toBe('Off');
-    expect(formatMeasurement(port, 1)).toBe('On');
-    expect(formatMeasurement(port, 0)).toBe('Off');
+    expect(formatValue(port, true)).toBe('On');
+    expect(formatValue(port, false)).toBe('Off');
+    expect(formatValue(port, 1)).toBe('On');
+    expect(formatValue(port, 0)).toBe('Off');
   });
 
   test('degrees hug their number, other units take a space', () => {
-    expect(formatMeasurement(spec({ kind: 'temperature', unit: '°C' }), 21.4)).toBe('21.4°C');
-    expect(formatMeasurement(spec({ kind: 'voltage', unit: 'V' }), 230.15)).toBe('230.2 V');
+    expect(formatValue(spec({ kind: 'temperature', unit: '°C' }), 21.4)).toBe('21.4°C');
+    expect(formatValue(spec({ kind: 'voltage', unit: 'V' }), 230.15)).toBe('230.2 V');
   });
 
   test('a unitless number is not left with a trailing space', () => {
-    expect(formatMeasurement(spec({ kind: 'frequency', unit: '' }), 50)).toBe('50.00');
+    expect(formatValue(spec({ kind: 'frequency', unit: '' }), 50)).toBe('50.00');
+  });
+
+  test('an operating mode shows its label, and one the type does not know shows as itself', () => {
+    const mode: AttributeSpec = { key: 'state', label: 'Doing', value: { type: 'enum', options: [{ value: 'charging', label: 'Charging' }] } };
+    expect(formatValue(mode, 'charging')).toBe('Charging');
+    expect(formatValue(mode, 'bootloader')).toBe('bootloader');
   });
 
   test('an infinite value is reported as unknown rather than drawn', () => {
-    expect(formatMeasurement(spec(), Number.POSITIVE_INFINITY)).toBe('—');
-    expect(formatMeasurement(spec(), Number.NaN)).toBe('—');
+    expect(formatValue(spec(), Number.POSITIVE_INFINITY)).toBe('—');
+    expect(formatValue(spec(), Number.NaN)).toBe('—');
   });
 });
 
@@ -90,18 +94,19 @@ describe('axis decisions', () => {
   });
 });
 
-describe('picking measurements', () => {
-  test('the declared primary wins, whatever order they are in', () => {
+describe('what a card shows', () => {
+  test('the declared primary leads, whatever order they are in', () => {
     const list = [spec({ key: 'a' }), spec({ key: 'b', primary: true })];
-    expect(primaryMeasurement(list)?.key).toBe('b');
+    expect(shownAttributes(list).map((attribute) => attribute.key)).toEqual(['b', 'a']);
   });
 
-  test('without a declared primary the first one leads', () => {
-    expect(primaryMeasurement([spec({ key: 'a' }), spec({ key: 'b' })])?.key).toBe('a');
+  test('settings and diagnostics are not on a card', () => {
+    const list = [spec({ key: 'signal', category: 'diagnostic' }), spec({ key: 'watts' }), spec({ key: 'limit', category: 'config' })];
+    expect(shownAttributes(list).map((attribute) => attribute.key)).toEqual(['watts']);
   });
 
-  test('a device that measures nothing has no primary', () => {
-    expect(primaryMeasurement([])).toBeNull();
+  test('a device that reports nothing shows nothing', () => {
+    expect(shownAttributes([])).toEqual([]);
   });
 
   test('a reading is found by key, and absence is undefined rather than a guess', () => {

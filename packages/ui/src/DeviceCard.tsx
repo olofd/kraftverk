@@ -1,19 +1,19 @@
 import type { ReactNode } from 'react';
 import { Text, XStack, YStack } from 'tamagui';
 
-import type { ConnectionHealth, MetricSpec, Reading } from '@kraftverk/device-sdk';
+import type { AttributeSpec, ConnectionHealth, Reading } from '@kraftverk/device-sdk';
 import { isOnline } from '@kraftverk/device-sdk';
 
 import { Card } from './Card';
 import { haptic } from './haptics';
-import { formatMeasurement, primaryMeasurement, readingFor } from './measurement';
+import { formatValue, readingFor, shownAttributes } from './measurement';
 
 /**
  * One device, as a card.
  *
- * There is exactly one of these, and it is written against declarations rather
- * than against any particular device: a name, an icon, what it measures, and
- * what it last read. A station and a plug differ only in what they declared,
+ * There is exactly one of these, and it is written against descriptions rather
+ * than against any particular device: a name, an icon, the attributes of its
+ * main part, and what it last read. A station and a plug differ only in what they declared,
  * which is the point — the grid stops needing new code the moment a device
  * type starts providing something new.
  *
@@ -24,9 +24,11 @@ import { formatMeasurement, primaryMeasurement, readingFor } from './measurement
 
 export type DeviceCardDevice = {
   name: string;
-  description?: string;
+  /** A line under the name: its model. */
+  subtitle?: string;
   health: ConnectionHealth;
-  measurements: readonly MetricSpec[];
+  /** The attributes it leads with: its main part's. */
+  attributes: readonly AttributeSpec[];
   readings: readonly Reading[];
 };
 
@@ -49,24 +51,20 @@ type Props = {
   device: DeviceCardDevice;
   /** Supplied by the app: this package has no icon set of its own. */
   icon?: ReactNode;
-  /** Up to two more measurements under the headline. */
-  secondary?: readonly MetricSpec[];
+  /** Up to two more attributes under the headline. */
+  secondary?: readonly AttributeSpec[];
   onPress?: () => void;
 };
 
 export function DeviceCard({ device, icon, secondary, onPress }: Props) {
   const online = isOnline(device.health);
-  const primary = primaryMeasurement(device.measurements);
-  const primaryValue = primary
-    ? formatMeasurement(primary, readingFor(device.readings, primary.key)?.value ?? null)
-    : '—';
+  const [primary, ...rest] = shownAttributes(device.attributes);
+  const primaryValue = primary ? formatValue(primary, readingFor(device.readings, primary.key)?.value ?? null) : '—';
 
-  const extras = (secondary ?? device.measurements.filter((m) => m !== primary).slice(0, 2)).map(
-    (spec) => ({
-      spec,
-      text: formatMeasurement(spec, readingFor(device.readings, spec.key)?.value ?? null),
-    })
-  );
+  const extras = (secondary ?? rest.slice(0, 2)).map((spec) => ({
+    spec,
+    text: formatValue(spec, readingFor(device.readings, spec.key)?.value ?? null),
+  }));
 
   return (
     <Card
@@ -108,9 +106,9 @@ export function DeviceCard({ device, icon, secondary, onPress }: Props) {
             <Text fontSize={16} fontWeight="700" color="$color" numberOfLines={1}>
               {device.name}
             </Text>
-            {device.description ? (
+            {device.subtitle ? (
               <Text fontSize={12} color="$muted" numberOfLines={1}>
-                {device.description}
+                {device.subtitle}
               </Text>
             ) : null}
           </YStack>

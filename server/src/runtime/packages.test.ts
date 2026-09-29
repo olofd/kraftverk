@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { asDeviceTypeV4 } from '@kraftverk/device-sdk';
-import { checkDeviceTypeContract, checkDeviceTypeV4Contract } from '@kraftverk/device-sdk/testing';
+import { checkDeviceTypeContract } from '@kraftverk/device-sdk/testing';
 
 import { DeviceTypeRegistry } from '../devices/types.ts';
 import { ProtocolRegistry } from './protocols.ts';
@@ -42,12 +41,6 @@ describe('installed packages', () => {
   for (const type of types.all()) {
     test(`${type.id} keeps the device-type contract`, async () => {
       expect(await checkDeviceTypeContract(type)).toEqual([]);
-    }, 30_000);
-
-    // The device model every holder is moving to (docs/ARCHITECTURE.md §8 step 24),
-    // through the adapter until the package is written against it.
-    test(`${type.id} keeps the device-model contract, version 4`, async () => {
-      expect(await checkDeviceTypeV4Contract(asDeviceTypeV4(type))).toEqual([]);
     }, 30_000);
   }
 });

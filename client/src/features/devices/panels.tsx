@@ -1,10 +1,23 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { describeError, isOnline, LINK_KINDS } from '@kraftverk/api-client';
-import type { ConfigValues, ConnectionView, ControlSpec, DeviceView, LinkView, MetricSpec } from '@kraftverk/api-client';
+import type { AttributeSpec, ConfigSchema, ConnectionView, DeviceView, LinkView, Value } from '@kraftverk/api-client';
+import {
+  attributeMeaning,
+  attributesOf,
+  capabilitiesOf,
+  capabilitySpec,
+  keepsHistory,
+  MAIN_PART,
+  partsOf,
+  quantityOf,
+  type CapabilityName,
+  type ConfigValues,
+  type Part,
+} from '@kraftverk/device-sdk';
 import {
   Card,
   DeviceCard,
@@ -13,7 +26,7 @@ import {
   SchemaForm,
   SectionLabel,
   ToggleRow,
-  formatMeasurement,
+  formatValue,
   haptic,
   readingFor,
   useWriteGate,
@@ -28,11 +41,11 @@ import { useDevices } from '../../state/DevicesProvider';
 /**
  * What every device gets for free.
  *
- * Written against declarations: the controls come from what the device says
- * it can be told to do, the rows from what it says it measures, the settings
- * form from the schema it publishes, and its connections and links from the
- * data model. Nothing here knows what a power station is — a plug added next
- * year lands on these panels with no code written for it.
+ * Written against its description: a section for each of its parts, the
+ * controls from the commands its parts take, the rows from what they report,
+ * the settings form from the attributes it can be told, and its connections
+ * and links from the data model. Nothing here knows what a power station is —
+ * a plug added next year lands on these panels with no code written for it.
  */
 
 export function DeviceIcon({ device, size = 16 }: { device: DeviceView; size?: number }) {
@@ -41,28 +54,65 @@ export function DeviceIcon({ device, size = 16 }: { device: DeviceView; size?: n
 }
 
 export function Overview({ device }: { device: DeviceView }) {
-  return <DeviceCard device={device} icon={<DeviceIcon device={device} />} />;
+  return (
+    <DeviceCard
+      device={{ name: device.name, subtitle: device.meta.name, health: device.health, attributes: attributesOf(device.description, MAIN_PART), readings: device.readings }}
+      icon={<DeviceIcon device={device} />}
+    />
+  );
 }
+
+/** What a part is called on a screen: the device's name for its main part, its own label otherwise. */
+const partTitle = (device: DeviceView, part: Part) => (part.id === MAIN_PART ? device.name : part.label);
 
 // --- controls -----------------------------------------------------------------
 
+/** One switch a part takes: which command, which argument, and the on/off attribute it moves. */
+type Toggle = { part: Part; capability: CapabilityName; command: string; argument: string; attribute: AttributeSpec };
+
 /**
- * What this device can be told to do. Every control is a capability command
- * through the holder's gateway — which asks the person to confirm when it
- * matters, and says why — so a tap here has exactly a manual switch's authority.
+ * Every on/off a device's parts can be switched through: each command a part's
+ * capability takes whose argument sets an on/off attribute it reports.
+ */
+function togglesOf(device: DeviceView): Toggle[] {
+  return partsOf(device.description, device.name).flatMap((part) =>
+    capabilitiesOf(device.description, part.id).flatMap((capability) =>
+      Object.entries(capabilitySpec(capability).commands).flatMap(([command, spec]) =>
+        Object.entries(spec.sets).flatMap(([argument, attributeName]) => {
+          const means = capabilitySpec(capability).attributes[attributeName]?.means;
+          const attribute = means ? attributeMeaning(device.description, part.id, means) : null;
+          return attribute && attribute.value.type === 'boolean' && spec.args[argument]?.type === 'boolean' ? [{ part, capability, command, argument, attribute }] : [];
+        })
+      )
+    )
+  );
+}
+
+/**
+ * What this device can be told to do. Every control is a command to one of
+ * its parts through the holder's gateway — which asks the person to confirm
+ * when it matters, and says why — so a tap here has exactly a manual switch's
+ * authority.
  */
 export function Controls({ device }: { device: DeviceView }) {
   const { actionsFor } = useDevices();
   const [gate, writes] = useWriteGate<string>();
   const [error, setError] = useState<string | null>(null);
+  const toggles = useMemo(() => togglesOf(device), [device]);
 
   const run = useCallback(
-    async (control: ControlSpec, value: boolean) => {
+    async (toggle: Toggle, value: boolean) => {
       setError(null);
       haptic();
       try {
-        await gate.run({ [control.id]: value }, async () => {
-          const result = await actionsFor(device).command({ capability: control.capability, command: control.command, target: control.target, value, reason: `${control.label} from the device screen` });
+        await gate.run({ [toggle.attribute.key]: value }, async () => {
+          const result = await actionsFor(device).command({
+            part: toggle.part.id,
+            capability: toggle.capability,
+            command: toggle.command,
+            args: { [toggle.argument]: value },
+            reason: `${partTitle(device, toggle.part)} from the device screen`,
+          });
           if (result.outcome === 'refused' || result.outcome === 'failed') throw new Error(result.detail);
           if (result.outcome === 'unverified') setError(result.detail);
         });
@@ -73,28 +123,27 @@ export function Controls({ device }: { device: DeviceView }) {
     [actionsFor, device, gate]
   );
 
-  const switches = device.controls.filter((control) => control.kind === 'switch');
-  if (switches.length === 0) return null;
+  if (toggles.length === 0) return null;
   const unavailable = !isOnline(device.health);
 
   return (
     <YStack gap="$2">
       <SectionLabel>Controls</SectionLabel>
       <Card inset>
-        {switches.map((control, index) => {
-          const reading = control.measurementKey ? readingFor(device.readings, control.measurementKey) : undefined;
-          const pending = writes.pending.has(control.id);
-          const value = pending ? writes.pending.get(control.id) : reading?.value;
+        {toggles.map((toggle, index) => {
+          const reading = readingFor(device.readings, toggle.attribute.key);
+          const pending = writes.pending.has(toggle.attribute.key);
+          const value = pending ? writes.pending.get(toggle.attribute.key) : reading?.value;
           return (
-            <YStack key={control.id}>
+            <YStack key={`${toggle.part.id}:${toggle.attribute.key}`}>
               {index > 0 ? <RowSeparator /> : null}
               <ToggleRow
-                title={control.label}
-                subtitle={control.consequence}
+                title={toggle.part.id === MAIN_PART ? toggle.attribute.label : toggle.part.label}
+                subtitle={toggle.attribute.consequence}
                 checked={value === true}
                 disabled={unavailable}
                 pending={pending}
-                onCheckedChange={(next) => void run(control, next)}
+                onCheckedChange={(next) => void run(toggle, next)}
               />
             </YStack>
           );
@@ -111,27 +160,34 @@ export function Controls({ device }: { device: DeviceView }) {
 
 // --- readings -----------------------------------------------------------------
 
-/** Everything the device declared it measures, and what it last said. */
+/** Everything each part reports, part by part, and what it last said. Settings are elsewhere. */
 export function Readings({ device }: { device: DeviceView }) {
-  if (device.measurements.length === 0) return null;
+  const sections = partsOf(device.description, device.name)
+    .map((part) => ({ part, attributes: attributesOf(device.description, part.id).filter((attribute) => attribute.access !== 'write') }))
+    .filter((section) => section.attributes.length > 0);
+  if (sections.length === 0) return null;
   return (
-    <YStack gap="$2">
-      <SectionLabel>Readings</SectionLabel>
-      <Card inset>
-        {device.measurements.map((spec, index) => (
-          <YStack key={spec.key}>
-            {index > 0 ? <RowSeparator /> : null}
-            <Row
-              title={spec.label}
-              accessory={
-                <Text fontSize={15} fontWeight="700" color="$color">
-                  {formatMeasurement(spec, readingFor(device.readings, spec.key)?.value ?? null)}
-                </Text>
-              }
-            />
-          </YStack>
-        ))}
-      </Card>
+    <YStack gap="$3">
+      {sections.map(({ part, attributes }) => (
+        <YStack key={part.id} gap="$2">
+          <SectionLabel>{part.id === MAIN_PART ? 'Readings' : part.label}</SectionLabel>
+          <Card inset>
+            {attributes.map((spec, index) => (
+              <YStack key={spec.key}>
+                {index > 0 ? <RowSeparator /> : null}
+                <Row
+                  title={spec.label}
+                  accessory={
+                    <Text fontSize={15} fontWeight="700" color={spec.category === 'diagnostic' ? '$muted' : '$color'}>
+                      {formatValue(spec, readingFor(device.readings, spec.key)?.value ?? null)}
+                    </Text>
+                  }
+                />
+              </YStack>
+            ))}
+          </Card>
+        </YStack>
+      ))}
     </YStack>
   );
 }
@@ -139,16 +195,21 @@ export function Readings({ device }: { device: DeviceView }) {
 // --- history ------------------------------------------------------------------
 
 /**
- * One chart, and a way to point it at any measurement. The server records
- * everything a device declares — whoever holds it — so the picker is simply
- * the declaration list. Local mode keeps no history, and says nothing.
+ * One chart, and a way to point it at any number the device keeps. The server
+ * records every attribute its description says to keep — whoever holds it — so
+ * the picker is simply that list. Local mode keeps no history, and says nothing.
  */
 export function History({ device }: { device: DeviceView }) {
   const { history } = useDevices();
-  const chartable = device.measurements.filter((spec) => spec.kind !== 'state');
+  const chartable = device.description.attributes.filter(
+    (attribute) => attribute.value.type === 'number' && keepsHistory(attribute) && quantityOf(attribute) !== 'state'
+  );
   const [key, setKey] = useState<string | null>(null);
-  const selected: MetricSpec | undefined = chartable.find((spec) => spec.key === key) ?? chartable.find((spec) => spec.primary) ?? chartable[0];
+  const selected: AttributeSpec | undefined =
+    chartable.find((spec) => spec.key === key) ?? chartable.find((spec) => spec.category === 'primary') ?? chartable[0];
   if (!history || !selected) return null;
+  const parts = new Map(partsOf(device.description, device.name).map((part) => [part.id, part]));
+  const label = (spec: AttributeSpec) => (spec.part && spec.part !== MAIN_PART && !spec.label.startsWith(parts.get(spec.part)?.label ?? '') ? `${parts.get(spec.part)?.label}: ${spec.label}` : spec.label);
 
   return (
     <YStack gap="$2">
@@ -176,7 +237,7 @@ export function History({ device }: { device: DeviceView }) {
                 setKey(spec.key);
               }}
             >
-              {spec.label}
+              {label(spec)}
             </Text>
           ))}
         </XStack>
@@ -188,41 +249,44 @@ export function History({ device }: { device: DeviceView }) {
 
 // --- settings -----------------------------------------------------------------
 
+/** The attributes a device can be told, as the form language draws them: one form per section. */
+function settingsForms(device: DeviceView): { section: string; schema: ConfigSchema; keys: string[] }[] {
+  const writable = device.description.attributes.filter((attribute) => attribute.access === 'write');
+  const sections = [...new Set(writable.map((attribute) => attribute.section ?? 'Settings'))];
+  return sections.map((section) => {
+    const inSection = writable.filter((attribute) => (attribute.section ?? 'Settings') === section);
+    return {
+      section,
+      keys: inSection.map((attribute) => attribute.key),
+      schema: {
+        fields: Object.fromEntries(
+          inSection.map((attribute) => [
+            attribute.key,
+            { ...attribute.value, title: attribute.label, ...(attribute.description ? { description: attribute.description } : {}) },
+          ])
+        ),
+      },
+    };
+  });
+}
+
 /**
- * The device's own settings, from the schema it publishes. Edits are held until
- * Save: writing a register per keystroke would put the hardware through a dozen
- * writes to reach one value.
+ * The device's own settings: the attributes its description says can be
+ * written, grouped as it groups them, with what it reports now. Edits are held
+ * until Save: writing a register per keystroke would put the hardware through a
+ * dozen writes to reach one value.
  */
 export function GenericSettings({ device }: { device: DeviceView }) {
   const { actionsFor } = useDevices();
-  const [values, setValues] = useState<ConfigValues | null>(null);
-  const [draft, setDraft] = useState<ConfigValues>({});
-  const [dangerous, setDangerous] = useState<string[]>([]);
+  const [draft, setDraft] = useState<Record<string, Value>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const schema = device.settings?.schema;
+  const forms = useMemo(() => settingsForms(device), [device]);
+  const dangerous = device.description.attributes.filter((attribute) => attribute.access === 'write' && attribute.dangerous);
 
-  useEffect(() => {
-    if (!schema) return;
-    let live = true;
-    void actionsFor(device)
-      .readSettings()
-      .then((loaded) => {
-        if (!live) return;
-        setValues(loaded.values);
-        setDangerous(loaded.dangerous);
-      })
-      .catch((err: unknown) => {
-        if (live) setError(describeError(err) || 'Could not read its settings');
-      });
-    return () => {
-      live = false;
-    };
-    // Re-reading on every poll would fight the form; the device is what matters.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [device.id, Boolean(schema)]);
-
-  if (!schema) return null;
+  if (forms.length === 0) return null;
+  const values = Object.fromEntries(forms.flatMap((form) => form.keys).map((key) => [key, readingFor(device.readings, key)?.value ?? undefined]));
+  const known = Object.values(values).some((value) => value !== undefined && value !== null);
   const pending = Object.keys(draft).length > 0;
 
   const save = async () => {
@@ -230,8 +294,9 @@ export function GenericSettings({ device }: { device: DeviceView }) {
     setError(null);
     try {
       // The reply is a readback: one setting can move another.
-      const applied = await actionsFor(device).writeSettings(draft);
-      setValues((current) => ({ ...current, ...applied }));
+      const result = await actionsFor(device).write(draft);
+      if (result.outcome === 'refused' || result.outcome === 'failed') throw new Error(result.detail);
+      if (result.outcome === 'unverified') setError(result.detail);
       setDraft({});
     } catch (err) {
       setError(describeError(err) || 'That write was refused');
@@ -241,35 +306,33 @@ export function GenericSettings({ device }: { device: DeviceView }) {
   };
 
   return (
-    <YStack gap="$2">
-      <SectionLabel>Settings</SectionLabel>
+    <YStack gap="$3">
       {dangerous.length > 0 ? (
         <Text fontSize={12} color="$muted" lineHeight={18} paddingHorizontal="$1">
           {dangerous.length === 1 ? 'One setting here can' : `${dangerous.length} settings here can`} damage the hardware if set wrongly. The device
           says which; their descriptions explain what happens.
         </Text>
       ) : null}
-      <Card inset>
-        {values === null ? (
-          <YStack padding="$5" alignItems="center">
-            {error ? (
-              <Text fontSize={13} color="$muted" textAlign="center">
-                {error}
-              </Text>
+      {forms.map((form) => (
+        <YStack key={form.section} gap="$2">
+          <SectionLabel>{form.section}</SectionLabel>
+          <Card inset>
+            {!known ? (
+              <YStack padding="$5" alignItems="center">
+                {isOnline(device.health) ? <Spinner color="$accent" /> : <Text fontSize={13} color="$muted" textAlign="center">{device.health.detail}</Text>}
+              </YStack>
             ) : (
-              <Spinner color="$accent" />
+              <SchemaForm
+                schema={form.schema}
+                values={{ ...(values as ConfigValues), ...(draft as ConfigValues) }}
+                disabled={busy || !isOnline(device.health)}
+                onChange={(name, value) => setDraft((current) => ({ ...current, [name]: value as Value }))}
+              />
             )}
-          </YStack>
-        ) : (
-          <SchemaForm
-            schema={schema}
-            values={{ ...values, ...draft }}
-            disabled={busy || !isOnline(device.health)}
-            onChange={(name, value) => setDraft((current) => ({ ...current, [name]: value as ConfigValues[string] }))}
-          />
-        )}
-      </Card>
-      {error && values !== null ? (
+          </Card>
+        </YStack>
+      ))}
+      {error ? (
         <Text fontSize={12} color="$danger" lineHeight={18} paddingHorizontal="$1">
           {error}
         </Text>

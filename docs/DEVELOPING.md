@@ -55,7 +55,7 @@ server/
   src/runtime/           finding packages; the transports this server runs
   src/devices/           catalog, connections, links, sessions, setup, registry
   src/routes/            the HTTP API
-  src/history/           sqlite, migrations, samples, the audit timeline
+  src/history/           sqlite: the one schema, samples, roll-ups, the audit timeline
 docs/HANDOFF.md          state of play, and the traps worth knowing — start here
 docs/ARCHITECTURE.md     the architecture, its words and the plan: the authority
 docs/DATA-MODEL.md       adding a device screen by screen, and everything stored

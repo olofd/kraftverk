@@ -22,6 +22,7 @@ import { DeviceRegistry } from './devices/registry.ts';
 import { RemoteReadings } from './devices/remote.ts';
 import { DeviceSessionManager } from './devices/sessions.ts';
 import { SetupService } from './devices/setup.ts';
+import { EventStore } from './devices/events.ts';
 import { busDefinition, FakeBus, lampProtocol, lampType } from './devices/testing.ts';
 import { DeviceTypeRegistry } from './devices/types.ts';
 import { audit, closeDb, db, openSecret } from './history/db.ts';
@@ -78,6 +79,7 @@ async function build(options: { simulate: boolean; readOnly?: boolean }): Promis
   const connections = new ConnectionStore();
   const links = new LinkStore();
   const clients = new ClientStore();
+  const events = new EventStore();
   const sessions = new DeviceSessionManager({
     types,
     protocols,
@@ -87,6 +89,9 @@ async function build(options: { simulate: boolean; readOnly?: boolean }): Promis
     readOnly: config.readOnly,
     allowRawFrames: false,
     clientName: (id) => clients.get(id)?.name ?? null,
+    // As the server wires it: what a device is and raises is kept.
+    onDescribed: (deviceId, description, info) => catalog.describe(deviceId, description, info),
+    onEvent: (deviceId, event) => events.record(deviceId, event),
   });
   const remote = new RemoteReadings();
   const registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports, remote });
@@ -105,7 +110,7 @@ async function build(options: { simulate: boolean; readOnly?: boolean }): Promis
   const gateway = new ActionGateway({
     device: (id) => {
       const record = catalog.active(id);
-      return record ? { name: record.name, session: sessions.get(id), offline: sessions.health(record).detail, settings: sessions.typeOf(record)?.settings ?? null } : null;
+      return record ? { name: record.name, session: sessions.get(id), description: sessions.description(record), offline: sessions.health(record).detail } : null;
     },
     feeds: (id) => links.targetOf('feeds', id),
     isReadOnly: () => config.readOnly,
@@ -132,6 +137,7 @@ async function build(options: { simulate: boolean; readOnly?: boolean }): Promis
     nearby,
     remote,
     gateway,
+    events,
     automations,
     engine,
     sampler: new Sampler(registry),
@@ -453,16 +459,35 @@ describe('a device you have', () => {
     expect(entries.map((entry) => entry.kind)).toEqual(expect.arrayContaining(['device.removed', 'device.history-deleted']));
   });
 
-  test('a capability command goes through the gateway, and switches the lamp', async () => {
+  test('a command to a part goes through the gateway, and switches the lamp', async () => {
     lampAt('lamp-1');
     const lamp = await added('Hall lamp');
     await new Promise((resolve) => setTimeout(resolve, 30)); // its first reading
-    const result = await onBusAs(`/devices/${enc(lamp.id)}/capabilities/switch/set`, { method: 'POST', body: { value: false } });
+    const commands = `/devices/${enc(lamp.id)}/parts/main/commands`;
+    const result = await onBusAs(`${commands}/switch/set`, { method: 'POST', body: { args: { on: false } } });
     expect(result.status).toBe(200);
     expect(result.body.outcome).toBe('verified');
     expect(onBus.bus.lamps.get('lamp-1')!.on).toBe(false);
-    expect((await onBusAs(`/devices/${enc(lamp.id)}/capabilities/battery/set`, { method: 'POST', body: { value: true } })).status).toBe(404);
-    expect((await onBusAs(`/devices/${enc(lamp.id)}/capabilities/switch/explode`, { method: 'POST', body: { value: true } })).status).toBe(409);
+    expect((await onBusAs(`${commands}/teleport/set`, { method: 'POST', body: { args: { on: true } } })).status).toBe(404);
+    expect((await onBusAs(`${commands}/battery/set`, { method: 'POST', body: { args: { on: true } } })).status).toBe(409);
+    expect((await onBusAs(`${commands}/switch/explode`, { method: 'POST', body: { args: { on: true } } })).status).toBe(409);
+    expect((await onBusAs(`/devices/${enc(lamp.id)}/parts/outlet.z/commands/switch/set`, { method: 'POST', body: { args: { on: true } } })).status).toBe(409);
+  });
+
+  test('a device is served with its description, and what it offers comes from its parts', async () => {
+    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280', methodId: 'wifi' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const view = (await as(`/devices/${enc(station.id)}`)).body;
+    const parts = view.description.parts.map((part: { id: string }) => part.id);
+    expect(parts).toEqual(expect.arrayContaining(['main', 'input.ac', 'outlet.ac', 'pack.1']));
+    expect(view.capabilities).toEqual(expect.arrayContaining(['battery', 'acInput', 'switch', 'powerMeter']));
+    expect(view.info).toMatchObject({ manufacturer: 'AFERIY' });
+    // The pack the simulator reports is kept with the device, so its history keeps its name —
+    // recorded on the holder's next check, which runs every little while.
+    await simulated.sessions.check();
+    const kept = db().query<{ key: string }, [string]>("SELECT key FROM device_attribute WHERE device_id = ? AND part = 'pack.1'").all(station.id);
+    expect(kept.map((row) => row.key)).toEqual(['pack.1.soc']);
+    expect((await as(`/devices/${enc(station.id)}/events`)).body).toEqual({ events: [] });
   });
 
   test('cutting mains to a station a plug feeds asks for confirmation, naming the station', async () => {
@@ -471,7 +496,7 @@ describe('a device you have', () => {
     await as('/links', { method: 'POST', body: { kind: 'feeds', sourceId: plug.id, targetId: station.id } });
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    const refused = await as(`/devices/${enc(plug.id)}/capabilities/switch/set`, { method: 'POST', body: { value: false } });
+    const refused = await as(`/devices/${enc(plug.id)}/parts/main/commands/switch/set`, { method: 'POST', body: { args: { on: false } } });
     expect(refused.status).toBe(409);
     expect(refused.body).toMatchObject({ outcome: 'refused', needsConfirmation: true });
     expect(refused.body.detail).toContain('Garage P280');
@@ -717,7 +742,7 @@ describe('phones and browsers', () => {
 describe('settings, through the gateway', () => {
   test('a setting is written, read back and audited; one that can damage the hardware is confirmed first', async () => {
     const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280', methodId: 'wifi' });
-    const path = `/devices/${enc(station.id)}/settings`;
+    const path = `/devices/${enc(station.id)}/attributes`;
 
     const led = await as(path, { method: 'PATCH', body: { patch: { ledMode: 'sos' } } });
     expect(led.status).toBe(200);
@@ -726,6 +751,8 @@ describe('settings, through the gateway', () => {
     const unknown = await as(path, { method: 'PATCH', body: { patch: { turbo: true } } });
     expect(unknown.status).toBe(409);
     expect(unknown.body).toMatchObject({ outcome: 'refused', detail: 'No such setting: turbo' });
+    // What it reports is not something it can be told.
+    expect((await as(path, { method: 'PATCH', body: { patch: { soc: 100 } } })).body).toMatchObject({ outcome: 'refused', detail: 'No such setting: soc' });
 
     const risky = await as(path, { method: 'PATCH', body: { patch: { sleepMinutes: '480' } } });
     expect(risky.status).toBe(409);
@@ -748,7 +775,8 @@ describe('automations', () => {
     const plug = await added('Heater plug', { server: simulated, typeId: 'atorch.s1w', methodId: 'lan' });
     return { weather, plug };
   };
-  const make = (roles: Record<string, string>) =>
+  const whole = (device: { id: string }) => ({ device: device.id, part: 'main' });
+  const make = (roles: Record<string, { device: string; part: string }>) =>
     as('/automations', {
       method: 'POST',
       body: { name: 'Sunny heater', recipe: 'forecast-switch', roles, params: { day: 'tomorrow', at: '07:00' }, timeZone: 'Europe/Stockholm' },
@@ -761,14 +789,14 @@ describe('automations', () => {
 
   test('a role takes only a device that fits it', async () => {
     const { weather, plug } = await weatherAndPlug();
-    const wrong = await make({ forecast: plug.id, switch: weather.id });
+    const wrong = await make({ forecast: whole(plug), switch: whole(weather) });
     expect(wrong.status).toBe(400);
     expect(wrong.body.error).toContain('cannot do that');
   });
 
   test('is made observing, says what it does, and is armed only when confirmed', async () => {
     const { weather, plug } = await weatherAndPlug();
-    const created = await make({ forecast: weather.id, switch: plug.id });
+    const created = await make({ forecast: whole(weather), switch: whole(plug) });
     expect(created.status).toBe(200);
     expect(created.body).toMatchObject({ mode: 'observe', problems: [], sentence: 'At 07:00, if tomorrow looks sunny by Weather, turn Heater plug on.' });
     const path = `/automations/${created.body.id}`;
@@ -786,7 +814,7 @@ describe('automations', () => {
 
   test('checks what it would do now without doing it, and is deleted', async () => {
     const { weather, plug } = await weatherAndPlug();
-    const created = (await make({ forecast: weather.id, switch: plug.id })).body;
+    const created = (await make({ forecast: whole(weather), switch: whole(plug) })).body;
     const check = await as(`/automations/${created.id}/check`, { method: 'POST' });
     expect(check.status).toBe(200);
     expect(['would-act', 'idle']).toContain(check.body.outcome);
@@ -795,30 +823,34 @@ describe('automations', () => {
     expect((await as('/automations')).body.automations).toEqual([]);
   });
 
-  test('a station fills the switch role through the outlet it is told, and only one it has', async () => {
+  test('one outlet of a station fills the switch role, and only a part it has that can switch', async () => {
     const started = await as('/setup', { method: 'POST', body: { typeId: 'open-meteo.weather', methodId: 'api' } });
     await as(`/setup/${started.body.id}`, { method: 'PATCH', body: { device: { place: 'Home', latitude: 59.3, longitude: 18.1 } } });
     await as(`/setup/${started.body.id}/check`, { method: 'POST' });
     const weather = (await as(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: 'Weather' } })).body as { id: string };
     const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280', methodId: 'wifi' });
-    const make = (params: Record<string, string>) =>
+    const make = (part: string) =>
       as('/automations', {
         method: 'POST',
-        body: { name: 'Sunny lights', recipe: 'forecast-switch', roles: { forecast: weather.id, switch: station.id }, params: { day: 'today', ...params }, timeZone: 'Europe/Stockholm' },
+        body: {
+          name: 'Sunny lights',
+          recipe: 'forecast-switch',
+          roles: { forecast: { device: weather.id, part: 'main' }, switch: { device: station.id, part } },
+          params: { day: 'today' },
+          timeZone: 'Europe/Stockholm',
+        },
       });
 
-    const unsaid = await make({});
-    expect(unsaid.status).toBe(400);
-    expect(unsaid.body.error).toContain('choose which');
-    expect((await make({ outlet: 'garage-door' })).status).toBe(400);
-    const made = await make({ outlet: 'dc' });
+    expect((await make('main')).body.error).toContain('cannot do that');
+    expect((await make('outlet.garage-door')).body.error).toContain('has no part');
+    const made = await make('outlet.dc');
     expect(made.status).toBe(200);
-    expect(made.body.sentence).toContain("Garage P280's dc outlet");
+    expect(made.body.sentence).toContain("Garage P280's 12V DC / car port");
   });
 
   test('says when a device it uses has been removed', async () => {
     const { weather, plug } = await weatherAndPlug();
-    await make({ forecast: weather.id, switch: plug.id });
+    await make({ forecast: whole(weather), switch: whole(plug) });
     await as(`/devices/${enc(plug.id)}`, { method: 'DELETE' });
     const [automation] = (await as('/automations')).body.automations;
     expect(automation.problems).toEqual(['What to switch: Heater plug has been removed']);

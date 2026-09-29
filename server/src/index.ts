@@ -1,10 +1,12 @@
 import { ActionGateway } from '@kraftverk/gateway';
+import { LiveBus } from '@kraftverk/holder';
 import { createApp } from './app.ts';
 import { AutomationEngine, serverDevices } from './automations/engine.ts';
 import { AutomationStore } from './automations/store.ts';
 import { ProxyDirectory } from './auth/trust.ts';
 import { loadConfig, transportEnabled } from './config.ts';
 import { DeviceCatalog } from './devices/catalog.ts';
+import { EventStore } from './devices/events.ts';
 import { ClientStore } from './devices/clients.ts';
 import { ConnectionStore } from './devices/connections.ts';
 import { LinkStore } from './devices/links.ts';
@@ -108,6 +110,10 @@ const connections = new ConnectionStore();
 const links = new LinkStore();
 const clients = new ClientStore();
 
+/** What devices say as they say it: readings, events, a changed description. */
+const bus = new LiveBus();
+const events = new EventStore();
+
 const sessions = new DeviceSessionManager({
   types,
   protocols,
@@ -122,6 +128,9 @@ const sessions = new DeviceSessionManager({
     if (catalog.byIdentity(identity).active) return;
     catalog.update(deviceId, { identity });
   },
+  onDescribed: (deviceId, description, info) => catalog.describe(deviceId, description, info),
+  onEvent: (deviceId, event) => events.record(deviceId, event),
+  bus,
   log: (message) => console.log(`[devices] ${message}`),
 });
 
@@ -175,7 +184,7 @@ const nearby = new Nearby({ types, protocols, transports, connections });
 const gateway = new ActionGateway({
   device: (id) => {
     const record = catalog.active(id);
-    return record ? { name: record.name, session: sessions.get(id), offline: sessions.health(record).detail, settings: sessions.typeOf(record)?.settings ?? null } : null;
+    return record ? { name: record.name, session: sessions.get(id), description: sessions.description(record), offline: sessions.health(record).detail } : null;
   },
   feeds: (id) => links.targetOf('feeds', id),
   isReadOnly: () => config.readOnly,
@@ -210,6 +219,7 @@ const { app } = createApp({
   nearby,
   remote,
   gateway,
+  events,
   automations,
   engine,
   sampler,

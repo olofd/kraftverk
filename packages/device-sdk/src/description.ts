@@ -1,9 +1,9 @@
-import { CAPABILITIES, isCapability, requiredMeanings, type CapabilityName } from './capabilities.ts';
-import { STANDARD_METRICS, STANDARD_NAMESPACES, STATE_CLASSES, type Quantity, type StandardMetricId, type StateClass } from './telemetry.ts';
+import { CAPABILITY_NAMES, isCapability, mustBeOffered, requiredMeanings, type CapabilityName } from './capabilities.ts';
+import { QUANTITIES, STANDARD_NAMESPACES, STATE_CLASSES, standardMeaning, type Quantity, type StateClass } from './meanings.ts';
 import { checkValue, type Value, type ValueType } from './values.ts';
 
 /**
- * What a device is, as data (docs/ARCHITECTURE.md §8 step 24).
+ * What a device is, as data (docs/ARCHITECTURE.md §4.5).
  *
  * A device is made of **parts**, as a Matter node is made of endpoints: `main`,
  * and whatever it has several of — outlets, inputs, battery packs. Each part
@@ -116,8 +116,12 @@ export type DeviceInfo = {
   firmware?: Readonly<Record<string, string>>;
 };
 
-/** A value an attribute holds, and when the device produced it. */
-export type AttributeReading = { key: string; value: Value; at: string };
+/** A value an attribute holds, and when the device produced it — not when anyone asked. */
+export type Reading = { key: string; value: Value; at: string };
+
+/** The reading for one key, or null when the device has not reported it. */
+export const readingOf = (readings: readonly Reading[], key: string): Reading | null =>
+  readings.find((reading) => reading.key === key) ?? null;
 
 // --- reading a description ------------------------------------------------------
 
@@ -138,9 +142,23 @@ export const attributesOf = (description: DeviceDescription, part: string): Attr
 /** What a value is a quantity of: declared, or the standard meaning's, or a state for on/off. */
 export function quantityOf(attribute: Pick<AttributeSpec, 'quantity' | 'means' | 'value'>): Quantity | null {
   if (attribute.quantity) return attribute.quantity;
-  if (attribute.means && attribute.means in STANDARD_METRICS) return STANDARD_METRICS[attribute.means as StandardMetricId].kind;
+  const standard = attribute.means ? standardMeaning(attribute.means) : null;
+  if (standard) return standard.quantity;
   return attribute.value.type === 'boolean' ? 'state' : null;
 }
+
+/** The unit a value is shown in: a number's own, or none. */
+export const unitOf = (attribute: Pick<AttributeSpec, 'value'>): string => (attribute.value.type === 'number' ? (attribute.value.unit ?? '') : '');
+
+/** How a number moves over time; none for anything that is not a number. */
+export const stateClassOf = (attribute: Pick<AttributeSpec, 'stateClass' | 'value'>): StateClass | null =>
+  attribute.value.type === 'number' ? (attribute.stateClass ?? 'measurement') : null;
+
+/** The attribute that leads a part's card: the one marked primary, or its first. */
+export const primaryOf = (description: DeviceDescription, part = MAIN_PART): AttributeSpec | null => {
+  const own = attributesOf(description, part).filter((attribute) => attribute.category !== 'config');
+  return own.find((attribute) => attribute.category === 'primary') ?? own[0] ?? null;
+};
 
 /** Whether history keeps it. */
 export const keepsHistory = (attribute: Pick<AttributeSpec, 'history' | 'access' | 'value'>): boolean =>
@@ -153,14 +171,9 @@ export const keepsHistory = (attribute: Pick<AttributeSpec, 'history' | 'access'
 export function capabilitiesOf(description: DeviceDescription, part: string): CapabilityName[] {
   const meanings = new Set(attributesOf(description, part).flatMap((attribute) => (attribute.means ? [attribute.means] : [])));
   const offers = partsOf(description).find((candidate) => candidate.id === part)?.offers ?? [];
-  const names = Object.keys(CAPABILITIES) as CapabilityName[];
-  return names.filter((name) => {
-    if (offers.includes(name)) return true;
-    const spec = CAPABILITIES[name];
-    const acts = Object.keys(spec.commands).length > 0 || Object.keys((spec as { queries?: object }).queries ?? {}).length > 0;
-    const required = requiredMeanings(name);
-    return !acts && required.length > 0 && required.every((meaning) => meanings.has(meaning));
-  });
+  return CAPABILITY_NAMES.filter(
+    (name) => offers.includes(name) || (!mustBeOffered(name) && requiredMeanings(name).every((meaning) => meanings.has(meaning)))
+  );
 }
 
 /** Every capability any part offers — what a role in an automation asks of a whole device. */
@@ -247,7 +260,10 @@ export function validateDescription(description: DeviceDescription, typeId = 'br
       if (!STATE_CLASSES.includes(attribute.stateClass)) problem(`${where} has an unknown state class "${attribute.stateClass}"`);
       else if (attribute.value?.type !== 'number') problem(`${where} has a state class, which only a number can have`);
     }
-    if (attribute.quantity !== undefined && attribute.value?.type !== 'number') problem(`${where} names a quantity, which only a number has`);
+    if (attribute.quantity !== undefined) {
+      if (attribute.value?.type !== 'number') problem(`${where} names a quantity, which only a number has`);
+      else if (!QUANTITIES.includes(attribute.quantity) || attribute.quantity === 'state') problem(`${where} has an unknown quantity "${attribute.quantity}"`);
+    }
     if (attribute.dangerous && attribute.access !== 'write') problem(`${where} is dangerous but cannot be written; a command's danger is its capability's`);
     if (attribute.category === 'config' && attribute.access !== 'write') problem(`${where} is a setting that cannot be written`);
 
@@ -256,13 +272,13 @@ export function validateDescription(description: DeviceDescription, typeId = 'br
     if (meanings.has(meaningInPart)) problem(`part "${partOf(attribute)}" has two attributes meaning "${attribute.means}"`);
     meanings.add(meaningInPart);
 
-    if (attribute.means in STANDARD_METRICS) {
-      const standard = STANDARD_METRICS[attribute.means as StandardMetricId];
-      const standardState = 'stateClass' in standard ? standard.stateClass : 'measurement';
-      if (standard.kind === 'state') {
+    const standard = standardMeaning(attribute.means);
+    if (standard) {
+      const standardState = standard.stateClass ?? 'measurement';
+      if (standard.quantity === 'state') {
         if (attribute.value?.type !== 'boolean') problem(`${where} means ${attribute.means}, which is on or off, but is not a boolean`);
-      } else if (attribute.value?.type !== 'number' || (attribute.value.unit ?? '') !== standard.unit || quantityOf(attribute) !== standard.kind) {
-        problem(`${where} means ${attribute.means}, which is ${standard.kind} in "${standard.unit}"`);
+      } else if (attribute.value?.type !== 'number' || (attribute.value.unit ?? '') !== standard.unit || quantityOf(attribute) !== standard.quantity) {
+        problem(`${where} means ${attribute.means}, which is ${standard.quantity} in "${standard.unit}"`);
       } else if ((attribute.stateClass ?? 'measurement') !== standardState) {
         problem(`${where} means ${attribute.means}, which is ${standardState}, but is declared ${attribute.stateClass ?? 'measurement'}`);
       }

@@ -34,6 +34,7 @@ beforeEach(() => {
 const ZONE = 'Europe/Stockholm';
 const FORECAST = savedDeviceId('d-forecast');
 const PLUG = savedDeviceId('d-plug');
+const STATION = savedDeviceId('d-station');
 
 /** A forecast whose every hour has this much cloud, from a day ago to three days ahead. */
 function forecastSession(cloud: (at: Date) => number | null, now: Date): DeviceSession {
@@ -46,28 +47,34 @@ function forecastSession(cloud: (at: Date) => number | null, now: Date): DeviceS
   return {
     health: () => ({ status: 'connected', detail: 'Fine', owner: 'server', transport: 'https', lastReadingAt: now.toISOString() }),
     readings: () => [],
-    capability: ((name: string) => (name === 'weather.forecast' ? { hourly: (count: number) => hours.filter((hour) => Date.parse(hour.at) >= now.getTime() - 3_600_000).slice(0, count) } : null)) as DeviceSession['capability'],
+    command: async () => ({ accepted: false, error: 'A forecast takes no commands' }),
+    query: async (request) => hours.filter((hour) => Date.parse(hour.at) >= now.getTime() - 3_600_000).slice(0, Number(request.args.hours)),
     close: async () => {},
   };
 }
 
-function setup(options: { cloud: (at: Date) => number | null; now: Date; plugRemoved?: boolean; forecastSession?: boolean; plugOutlets?: boolean }) {
+function setup(options: { cloud: (at: Date) => number | null; now: Date; plugRemoved?: boolean; forecastSession?: boolean }) {
   const sent: CommandIntent[] = [];
   const recorded: AuditEntry[] = [];
+  // Parts of devices, by "device:part": a plug, and a station's outlet.
   const devices: Record<string, EngineDevice> = {
-    [FORECAST]: {
+    [`${FORECAST}:main`]: {
       name: 'Weather',
       removed: false,
+      hasPart: true,
+      part: 'main',
       session: options.forecastSession === false ? null : forecastSession(options.cloud, options.now),
       offline: 'Not answering',
       capabilities: ['weather.forecast'],
     },
-    [PLUG]: { name: 'Heater plug', removed: options.plugRemoved ?? false, session: null, offline: 'n/a', capabilities: options.plugOutlets ? ['outlets', 'battery'] : ['switch', 'powerMeter'] },
+    [`${PLUG}:main`]: { name: 'Heater plug', removed: options.plugRemoved ?? false, hasPart: true, part: 'main', session: null, offline: 'n/a', capabilities: ['switch', 'powerMeter'] },
+    [`${STATION}:outlet.ac`]: { name: 'Garage P280 — AC outlets', removed: false, hasPart: true, part: 'outlet.ac', session: null, offline: 'n/a', capabilities: ['switch', 'powerMeter'] },
+    [`${STATION}:input.ac`]: { name: 'Garage P280 — Mains', removed: false, hasPart: true, part: 'input.ac', session: null, offline: 'n/a', capabilities: ['acInput'] },
   };
   const store = new AutomationStore();
   const engine = new AutomationEngine({
     store,
-    device: (id) => devices[id] ?? null,
+    device: (binding) => devices[`${binding.device}:${binding.part}`] ?? null,
     gateway: {
       execute: async (intent: CommandIntent): Promise<GatewayResult> => {
         sent.push(intent);
@@ -77,11 +84,11 @@ function setup(options: { cloud: (at: Date) => number | null; now: Date; plugRem
     record: (entry) => recorded.push(entry),
     now: () => options.now,
   });
-  const make = (params: Record<string, string | number> = {}, mode: AutomationRecord['mode'] = 'observe') => {
+  const make = (params: Record<string, string | number> = {}, mode: AutomationRecord['mode'] = 'observe', switchPart = { device: PLUG, part: 'main' }) => {
     const created = store.create({
       name: 'Sunny heater',
       recipe: 'forecast-switch',
-      roles: { forecast: FORECAST, switch: PLUG },
+      roles: { forecast: { device: FORECAST, part: 'main' }, switch: switchPart },
       params: { at: '07:00', day: 'tomorrow', condition: 'sunny', cloudMax: 40, action: 'on', ...params },
       timeZone: ZONE,
     });
@@ -130,7 +137,7 @@ describe('forecast switch', () => {
     const result = await engine.run(make({}, 'armed'));
     expect(result.outcome).toBe('acted');
     expect(sent).toEqual([
-      expect.objectContaining({ deviceId: PLUG, capability: 'switch', command: 'set', value: true, actor: 'automation', by: 'automation:Sunny heater' }),
+      expect.objectContaining({ deviceId: PLUG, part: 'main', capability: 'switch', command: 'set', args: { on: true }, actor: 'automation', by: 'automation:Sunny heater' }),
     ]);
     expect(sent[0]!.reason).toContain('Tomorrow looks sunny');
   });
@@ -147,7 +154,7 @@ describe('forecast switch', () => {
   test('a cloudy condition, and turning off', async () => {
     const { engine, make, sent } = setup({ cloud: () => 80, now: MORNING });
     expect((await engine.run(make({ condition: 'cloudy', action: 'off' }, 'armed'))).outcome).toBe('acted');
-    expect(sent[0]).toMatchObject({ value: false });
+    expect(sent[0]).toMatchObject({ args: { on: false } });
   });
 
   test('a forecast with gaps, or none at all, decides nothing', async () => {
@@ -159,12 +166,12 @@ describe('forecast switch', () => {
     expect(await silent.engine.run(silent.make({}, 'armed'))).toMatchObject({ outcome: 'unknown', summary: 'Weather is not answering: Not answering' });
   });
 
-  test('a station fills the switch role through one of its outlets', async () => {
-    const { engine, make, sent } = setup({ cloud: () => 5, now: MORNING, plugOutlets: true });
-    expect((await engine.run(make({ outlet: 'ac' }, 'armed'))).outcome).toBe('acted');
-    expect(sent[0]).toMatchObject({ capability: 'outlets', target: 'ac', value: true });
-    // Without saying which outlet, nothing is switched.
-    expect((await engine.run(make({}, 'armed'))).outcome).toBe('unknown');
+  test('one outlet of a station fills the switch role, as a plug does', async () => {
+    const { engine, make, sent } = setup({ cloud: () => 5, now: MORNING });
+    expect((await engine.run(make({}, 'armed', { device: STATION, part: 'outlet.ac' }))).outcome).toBe('acted');
+    expect(sent[0]).toMatchObject({ deviceId: STATION, part: 'outlet.ac', capability: 'switch', args: { on: true } });
+    // A part that cannot switch cannot fill the role.
+    expect(await engine.run(make({}, 'armed', { device: STATION, part: 'input.ac' }))).toMatchObject({ outcome: 'unknown', summary: 'What to switch: Garage P280 — Mains cannot do that' });
   });
 
   test('a removed device stops it, and says so', async () => {

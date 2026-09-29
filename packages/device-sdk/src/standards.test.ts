@@ -9,7 +9,7 @@ import {
   homeAssistantEntityOf,
   isProjected,
 } from './standards.ts';
-import { STANDARD_METRICS, type StandardMetricId } from './telemetry.ts';
+import { STANDARD_MEANINGS, type StandardMeaningId } from './meanings.ts';
 
 /*
   The projections into Home Assistant and Matter (docs/ARCHITECTURE.md §8
@@ -19,20 +19,20 @@ import { STANDARD_METRICS, type StandardMetricId } from './telemetry.ts';
   commands that are the capability's own.
 */
 
-const meanings = Object.keys(STANDARD_METRICS) as StandardMetricId[];
+const meanings = Object.keys(STANDARD_MEANINGS) as StandardMeaningId[];
 
 describe('standard meanings', () => {
   test("each one's unit is one Home Assistant accepts for its quantity", () => {
     for (const id of meanings) {
-      const { kind, unit } = STANDARD_METRICS[id];
-      expect({ id, ok: HOME_ASSISTANT_QUANTITIES[kind].units.includes(unit) }).toEqual({ id, ok: true });
+      const { quantity, unit } = STANDARD_MEANINGS[id];
+      expect({ id, ok: HOME_ASSISTANT_QUANTITIES[quantity].units.includes(unit) }).toEqual({ id, ok: true });
     }
   });
 
   test('an on/off state is a binary sensor or a switch, and a quantity is a sensor', () => {
     for (const id of meanings) {
       const platform = MEANING_PROJECTIONS[id].homeAssistant.platform;
-      const onOff = STANDARD_METRICS[id].kind === 'state';
+      const onOff = STANDARD_MEANINGS[id].quantity === 'state';
       expect({ id, platform: onOff ? platform !== 'sensor' : platform === 'sensor' }).toEqual({ id, platform: true });
     }
   });
@@ -62,7 +62,7 @@ describe('capabilities', () => {
   test('a command sets only attributes of its own capability, from arguments it has', () => {
     for (const name of CAPABILITY_NAMES) {
       const spec = CAPABILITIES[name];
-      for (const [command, declared] of Object.entries(spec.commands as Record<string, { args: object; sets?: Record<string, string> }>)) {
+      for (const [command, declared] of Object.entries(spec.commands as Record<string, { args: object; sets: Record<string, string> }>)) {
         for (const [argument, attribute] of Object.entries(declared.sets ?? {})) {
           expect({ name, command, argument, has: argument in declared.args }).toEqual({ name, command, argument, has: true });
           expect({ name, command, attribute, has: attribute in spec.attributes }).toEqual({ name, command, attribute, has: true });
@@ -82,9 +82,9 @@ describe('capabilities', () => {
   });
 });
 
-describe('a measurement as Home Assistant should show it', () => {
+describe('an attribute as Home Assistant should show it', () => {
   test("a plug's lifetime energy is a total_increasing energy sensor in kWh", () => {
-    expect(homeAssistantEntityOf({ kind: 'energy', unit: 'kWh', metric: 'energy.total', stateClass: 'total_increasing' })).toEqual({
+    expect(homeAssistantEntityOf({ value: { type: 'number', unit: 'kWh' }, means: 'energy.total', stateClass: 'total_increasing' })).toEqual({
       platform: 'sensor',
       deviceClass: 'energy',
       stateClass: 'total_increasing',
@@ -93,11 +93,11 @@ describe('a measurement as Home Assistant should show it', () => {
   });
 
   test("a station's charge is a battery sensor, more specific than its quantity", () => {
-    expect(homeAssistantEntityOf({ kind: 'percent', unit: '%', metric: 'battery.soc' }).deviceClass).toBe('battery');
+    expect(homeAssistantEntityOf({ value: { type: 'number', unit: '%' }, means: 'battery.soc' }).deviceClass).toBe('battery');
   });
 
-  test("a type's own measurement projects from its quantity alone", () => {
-    expect(homeAssistantEntityOf({ kind: 'duration', unit: 'min', metric: 'p280.minutesToFull' })).toEqual({
+  test("a type's own attribute projects from its quantity alone", () => {
+    expect(homeAssistantEntityOf({ value: { type: 'number', unit: 'min' }, quantity: 'duration', means: 'station.minutesToFull' })).toEqual({
       platform: 'sensor',
       deviceClass: 'duration',
       stateClass: 'measurement',
@@ -106,6 +106,15 @@ describe('a measurement as Home Assistant should show it', () => {
   });
 
   test('an on/off state is a binary sensor with no state class or unit', () => {
-    expect(homeAssistantEntityOf({ kind: 'state', unit: '' })).toEqual({ platform: 'binary_sensor', deviceClass: null, stateClass: null, unit: null });
+    expect(homeAssistantEntityOf({ value: { type: 'boolean' } })).toEqual({ platform: 'binary_sensor', deviceClass: null, stateClass: null, unit: null });
+  });
+
+  test('an operating mode is a sensor with no class, unit or state class', () => {
+    expect(homeAssistantEntityOf({ value: { type: 'enum', options: [{ value: 'idle', label: 'Idle' }] } })).toEqual({
+      platform: 'sensor',
+      deviceClass: null,
+      stateClass: null,
+      unit: null,
+    });
   });
 });

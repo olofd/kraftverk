@@ -219,22 +219,27 @@ the server finds at start. Then make it true:
 ```ts
 export default defineDeviceType<Config>({
   id: 'community.acme-plug',
-  apiVersion: '3',
   kind: 'hardware',
   meta: { name: 'Acme plug', category: 'smart-plug', support: 'experimental', icon: 'power' },
-  capabilities: ['switch'],
-  telemetry: [{ key: 'on', label: 'On', unit: '', kind: 'state', metric: 'switch.on' }],
-  controls: [{ id: 'power', label: 'Power', kind: 'switch', capability: 'switch' }],
   config: { fields: {} },
+  // What it is: its parts, what they report and what they take.
+  describe: () => ({
+    parts: [{ id: 'main', label: 'Plug', kind: 'outlet', offers: ['switch'] }],
+    attributes: [
+      { key: 'on', label: 'On', value: { type: 'boolean' }, means: 'switch.on' },
+      { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power.draw' },
+    ],
+  }),
   connections: [{ id: 'lan', label: 'Home network', protocol: 'tuya-local', transport: 'lan' }],
   async identify(connection) { /* read it once: who is it? */ },
-  async createSession(ctx) { /* readings, capabilities, settings */ },
+  async createSession(ctx) { /* readings, and the commands its parts take */ },
   async createSimulator(ctx) { /* the same, with no hardware */ },
 });
 ```
 
-The app gives it a card, controls, settings from its schema and history
-charts, with no screen code — and when it deserves more, its own screens live in
+The app gives it a card, a section for each part, controls from the commands
+they take, settings from what it can be told and history charts, with no
+screen code — and when it deserves more, its own screens live in
 the same package. Writing one with an AI coding agent works well: the contract,
 the simulator and the tests tell it, and you, when it is wrong. A protocol or transport of its own is
 `npm run new:protocol` or `npm run new:transport`.

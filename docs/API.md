@@ -40,11 +40,12 @@ type: a type's own tools are its `advanced` actions.
 | `POST` | `/setup/:id/choose` · `/steps/:step/actions/:action` · `/steps/:step/discover` | Choose the device; run a step's helper ("fetch the key") on the server |
 | `POST` | `/setup/:id/check` · `/setup/:id/save` | Read it once — new, yours, yours before, another model — then save it all in one go |
 | `POST` | `/setup/app` | A connection this app will hold: what it learnt reading the device itself, never a secret |
-| `GET` | `/devices` · `/devices/removed` | The devices you have, with live readings, health, connections and links; removed ones, with their history |
+| `GET` | `/devices` · `/devices/removed` | The devices you have, each with its description (parts, attributes, events), information, live readings, health, connections and links; removed ones, with their history |
 | `GET` `PATCH` `DELETE` | `/devices/:id` | Read, rename, or remove — keeping its history |
 | `POST` | `/devices/:id/delete-history` | Delete a removed device and everything it recorded; its name, typed, confirms it |
-| `GET` `PATCH` | `/devices/:id/settings` | A device's own settings, from the schema it publishes |
-| `POST` | `/devices/:id/capabilities/:capability/:command` | Every command — through the action gateway; a refusal says `needsConfirmation` when a person only has to confirm |
+| `PATCH` | `/devices/:id/attributes` | Change what a device remembers — the attributes its description says can be written — through the action gateway; a refusal says `needsConfirmation` when a person only has to confirm |
+| `POST` | `/devices/:id/parts/:part/commands/:capability/:command` | Every command, to one part of a device, with typed `args` — through the action gateway; a refusal says `needsConfirmation` when a person only has to confirm |
+| `GET` | `/devices/:id/events` | What the device said happened, newest first |
 | `GET` `POST` | `/devices/:id/advanced/:name` | A device type's own tools: register dump, snapshot, scan, raw frame. Reads are GETs; writes are refused while read-only and audited |
 | `GET` | `/devices/:id/history` | One measurement over time, thinned for a chart |
 | `POST` `DELETE` | `/devices/:id/connections/:connection` (`/prefer`) | Prefer one way to reach it, or remove one — not the last |

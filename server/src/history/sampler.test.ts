@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { Reading } from '@kraftverk/device-sdk';
+import type { AttributeSpec, DeviceDescription, Reading } from '@kraftverk/device-sdk';
 
 import { closeDb, db } from './db.ts';
 import { resolutionOf, rollUp, Sampler, series } from './sampler.ts';
@@ -29,16 +29,32 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+/** What a device reporting these readings is: an attribute each, typed by what it reports. */
+const describedBy = (readings: Reading[], extra: AttributeSpec[] = []): DeviceDescription => ({
+  attributes: [
+    ...readings.map(
+      (reading): AttributeSpec => ({
+        key: reading.key,
+        label: reading.key,
+        value: typeof reading.value === 'boolean' ? { type: 'boolean' } : typeof reading.value === 'string' ? { type: 'string' } : { type: 'number' },
+      })
+    ),
+    ...extra,
+  ].filter((attribute, index, all) => all.findIndex((other) => other.key === attribute.key) === index),
+});
+
 /** A registry holding one device with the given readings, saved as history needs it to be. */
-const registry = (id: string, readings: Reading[]) => {
+const registry = (id: string, readings: Reading[], description = describedBy(readings)) => {
   db()
-    .query("INSERT OR IGNORE INTO device (id, name, config, added_at, type_id) VALUES (?, ?, '{}', ?, 'test.device')")
-    .run(id, id, new Date().toISOString());
-  return { all: async () => [{ id, readings }] } as unknown as DeviceRegistry;
+    .query("INSERT OR IGNORE INTO device (id, name, config, description, added_at, type_id) VALUES (?, ?, '{}', ?, ?, 'test.device')")
+    .run(id, id, JSON.stringify(description), new Date().toISOString());
+  return { all: async () => [{ id, readings, description }] } as unknown as DeviceRegistry;
 };
 
 const stored = (id: string) =>
   db().query('SELECT key, value FROM sample WHERE device_id = ? ORDER BY key').all(id) as { key: string; value: number }[];
+const storedText = (id: string) =>
+  db().query('SELECT key, text FROM sample WHERE device_id = ? AND text IS NOT NULL ORDER BY key').all(id) as { key: string; text: string }[];
 
 describe('sampling', () => {
   test('a current reading is stored; booleans as 0 and 1', async () => {
@@ -51,6 +67,25 @@ describe('sampling', () => {
       { key: 'gridConnected', value: 1 },
       { key: 'soc', value: 73.4 },
     ]);
+  });
+
+  test('an operating mode is kept as text; a setting and a string are not kept at all unless asked', async () => {
+    const at = new Date().toISOString();
+    const readings: Reading[] = [
+      { key: 'state', value: 'charging', at },
+      { key: 'limit', value: 90, at },
+      { key: 'serial', value: 'AB12', at },
+    ];
+    const description: DeviceDescription = {
+      attributes: [
+        { key: 'state', label: 'Doing', value: { type: 'enum', options: [{ value: 'charging', label: 'Charging' }] } },
+        { key: 'limit', label: 'Limit', value: { type: 'number' }, access: 'write', category: 'config' },
+        { key: 'serial', label: 'Serial', value: { type: 'string' } },
+      ],
+    };
+    await new Sampler(registry('modes', readings, description)).sample();
+    expect(storedText('modes')).toEqual([{ key: 'state', text: 'charging' }]);
+    expect(stored('modes').map((row) => row.key)).toEqual(['state']);
   });
 
   test('a device that has not reported leaves a gap, not a zero', async () => {

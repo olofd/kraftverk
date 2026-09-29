@@ -28,10 +28,10 @@ export { WriteGate, WriteInFlightError, type WriteSnapshot } from './writeGate';
 export { useWriteGate } from './useWriteGate';
 export {
   fixedRange,
-  formatMeasurement,
+  formatValue,
   freshestAt,
   isStale,
-  primaryMeasurement,
+  shownAttributes,
   readingFor,
   startsAtZero,
   STALE_AFTER_MS,

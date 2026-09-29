@@ -1,5 +1,5 @@
-import type { ConnectionHealth, DeviceSession, DeviceType, SavedDeviceId } from '@kraftverk/device-sdk';
-import { Failover, identityVerdict, openDevice, OpenRefused, type OpenedDevice } from '@kraftverk/holder';
+import type { ConnectionHealth, DeviceDescription, DeviceInfo, DeviceSession, DeviceType, SavedDeviceId } from '@kraftverk/device-sdk';
+import { Failover, identityVerdict, openDevice, OpenRefused, type DeviceEventMessage, type LiveBus, type OpenedDevice } from '@kraftverk/holder';
 
 import { audit } from '../history/db.ts';
 import type { ProtocolRegistry } from '../runtime/protocols.ts';
@@ -45,6 +45,12 @@ export type DeviceSessionManagerDeps = {
   clientName?: (clientId: string) => string | null;
   /** A device said who it is, and the catalog did not know yet. */
   onIdentified?: (deviceId: SavedDeviceId, identity: string) => void;
+  /** What a device is and says about itself, to keep: returns whether its description changed. */
+  onDescribed?: (deviceId: SavedDeviceId, description: DeviceDescription, info: DeviceInfo | null) => boolean;
+  /** An event a device raised, checked against its description. */
+  onEvent?: (deviceId: SavedDeviceId, event: DeviceEventMessage) => void;
+  /** Where what devices say, as they say it, is published. */
+  bus?: LiveBus;
   log?: (message: string) => void;
 };
 
@@ -80,6 +86,24 @@ export class DeviceSessionManager {
 
   get(deviceId: SavedDeviceId): DeviceSession | null {
     return this.#open.get(deviceId)?.opened.session ?? null;
+  }
+
+  /** What a device is now: its open session's word, or what was last kept. */
+  description(record: Pick<DeviceRecord, 'id' | 'description'>): DeviceDescription {
+    return this.#open.get(record.id)?.opened.description() ?? record.description;
+  }
+
+  /** What a device has said about itself: its open session's word, or what was last kept. */
+  info(record: Pick<DeviceRecord, 'id' | 'info'>): DeviceInfo | null {
+    return this.#open.get(record.id)?.opened.info() ?? record.info;
+  }
+
+  /** Keeps what an open device is and has said; tells listeners when it changed. */
+  #describe(deviceId: SavedDeviceId): void {
+    const open = this.#open.get(deviceId);
+    if (!open) return;
+    const changed = this.deps.onDescribed?.(deviceId, open.opened.description(), open.opened.info()) ?? false;
+    if (changed) this.deps.bus?.publish({ kind: 'described', deviceId });
   }
 
   /** The connection a device is using right now. Null for a simulator or when none is open. */
@@ -212,8 +236,15 @@ export class DeviceSessionManager {
         readOnly: this.deps.readOnly,
         allowRawFrames: this.deps.allowRawFrames,
         log: { info: log('log'), warn: log('warn'), error: log('error') },
-        emit: (event) =>
-          audit({ at: new Date().toISOString(), kind: `device.${event.level}`, actor: record.name, resource: record.id, summary: event.message, detail: event.data }),
+        changed: () => {
+          this.#describe(record.id);
+          const session = this.#open.get(record.id)?.opened.session;
+          if (session) this.deps.bus?.publish({ kind: 'readings', deviceId: record.id, readings: session.readings() });
+        },
+        event: (event) => {
+          this.deps.onEvent?.(record.id, event);
+          this.deps.bus?.publish({ kind: 'event', deviceId: record.id, event });
+        },
       });
 
       const entry: Open = { opened, connection, fingerprint: fingerprintOf(record, connection), detach: () => {} };
@@ -226,6 +257,7 @@ export class DeviceSessionManager {
         noteState(opened.channel.connected);
       }
       this.#open.set(record.id, entry);
+      this.#describe(record.id);
     } catch (error) {
       const refused = error instanceof OpenRefused ? error : new OpenRefused((error as Error).message, 'error');
       this.#refusals.set(record.id, { status: refused.status, detail: refused.message });
@@ -242,6 +274,8 @@ export class DeviceSessionManager {
     let changed = false;
     for (const [id, open] of [...this.#open]) {
       const record = this.#records.get(id);
+      // What it is can change while it is open: a pack plugged in, firmware read.
+      this.#describe(id);
       if (!record || !open.connection) continue;
 
       const said = open.opened.session.identity?.().id ?? null;

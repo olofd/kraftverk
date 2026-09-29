@@ -15,7 +15,7 @@ const quiet = { info: () => {}, warn: () => {}, error: () => {} };
 const session = (extra: Partial<DeviceSession> = {}): DeviceSession => ({
   health: () => ({ status: 'connected', detail: 'Fine', owner: 'server', transport: 'bus', lastReadingAt: null }),
   readings: () => [],
-  capability: (() => null) as DeviceSession['capability'],
+  command: async () => ({ accepted: false, error: 'A lamp takes no commands here' }),
   close: async () => {},
   ...extra,
 });
@@ -26,11 +26,12 @@ const protocol: Protocol = { id: 'lampish', label: 'Lampish', bindings: { bus: {
 function lampType(overrides: Partial<DeviceType<any>> = {}): DeviceType<any> {
   return {
     id: 'test.lamp',
-    apiVersion: '3',
     kind: 'hardware',
     meta: { name: 'Lamp', category: 'smart-plug', support: 'experimental', icon: 'sun', models: ['L1'] },
-    capabilities: [],
-    telemetry: [],
+    describe: () => ({
+      attributes: [{ key: 'lux', label: 'Light', value: { type: 'number', unit: 'lx' }, quantity: 'illuminance' }],
+      events: [{ id: 'bulb.failed', label: 'Bulb failed', level: 'warn', data: { hours: { type: 'number' } } }],
+    }),
     config: { fields: { room: { type: 'string', title: 'Room', required: true } } },
     connections: [{ id: 'bus', label: 'Bus', protocol: 'lampish', transport: 'bus' }],
     identify: async () => ({ identity: null, model: null, summary: '' }),
@@ -52,7 +53,26 @@ const baseInput = (type: DeviceType<any>, channel = fakeByteChannel(() => null))
   readOnly: false,
   allowRawFrames: false,
   log: quiet,
-  emit: () => {},
+});
+
+describe('what a device raises', () => {
+  test('an event it declares reaches the holder with its level; one it does not is dropped', async () => {
+    const heard: { id: string; level: string; data: unknown }[] = [];
+    let raise: ((id: string, data?: Record<string, number>) => void) | null = null;
+    const type = lampType({
+      createSession: async (ctx) => {
+        raise = (id, data) => ctx.event(id, data);
+        return session();
+      },
+    });
+    const opened = await openDevice({ ...baseInput(type), event: (event) => heard.push(event) });
+    raise!('bulb.failed', { hours: 1200 });
+    raise!('bulb.exploded');
+    raise!('bulb.failed', { colour: 3 });
+    expect(heard.map(({ id, level, data }) => ({ id, level, data }))).toEqual([{ id: 'bulb.failed', level: 'warn', data: { hours: 1200 } }]);
+    expect(opened.description().attributes.map((attribute) => attribute.key)).toEqual(['lux']);
+    await opened.close();
+  });
 });
 
 describe('opening a device', () => {

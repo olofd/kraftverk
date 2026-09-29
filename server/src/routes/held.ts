@@ -2,9 +2,12 @@ import { Hono, type Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
+import { validateDescription, type DeviceDescription, type DeviceInfo } from '@kraftverk/device-sdk';
+
 import { actorOf } from '../auth/routes.ts';
 import { deviceStore } from '../devices/store.ts';
 import { audit } from '../history/db.ts';
+import { keptKeys } from '../history/sampler.ts';
 import { body, deviceOr404, ownClient, type AppDeps } from './shared.ts';
 
 /**
@@ -19,12 +22,12 @@ import { body, deviceOr404, ownClient, type AppDeps } from './shared.ts';
 const reading = z
   .object({
     key: z.string().min(1).max(64),
-    value: z.union([z.number(), z.boolean(), z.null()]),
+    value: z.union([z.number(), z.boolean(), z.string().max(200), z.null()]),
     at: z.string().min(1).max(40),
   })
   .strict();
 
-export function heldRoutes({ catalog, connections, clients, remote }: AppDeps): Hono {
+export function heldRoutes({ catalog, connections, clients, remote, sessions }: AppDeps): Hono {
   const api = new Hono();
 
   /** The device, the app and the connection a call is about — all three checked. */
@@ -49,6 +52,9 @@ export function heldRoutes({ catalog, connections, clients, remote }: AppDeps): 
           // Who the device said it is, read by the app's session.
           identity: z.string().min(1).max(120).nullable().optional(),
           readings: z.array(reading).max(2000),
+          // What the device is and says about itself, by the app's session: a pack plugged in.
+          description: z.record(z.string(), z.unknown()).optional(),
+          info: z.record(z.string(), z.unknown()).optional(),
         })
         .strict()
     );
@@ -70,7 +76,14 @@ export function heldRoutes({ catalog, connections, clients, remote }: AppDeps): 
       audit({ at: new Date().toISOString(), kind: 'device.identified', actor: actorOf(c), resource: record.id, summary: `${record.name} answered for the first time, as ${said}` });
     }
 
-    const counts = remote.accept(record.id, { clientId: client.id, connectionId: connection.id }, input.readings);
+    if (input.description) {
+      const description = input.description as unknown as DeviceDescription;
+      const problems = validateDescription(description, record.typeId);
+      if (problems.length) throw new HTTPException(400, { message: `That description does not hold: ${problems.join('; ')}` });
+      catalog.describe(record.id, description, (input.info as DeviceInfo | undefined) ?? null);
+    }
+    const kept = keptKeys(sessions.description(catalog.get(record.id)!));
+    const counts = remote.accept(record.id, { clientId: client.id, connectionId: connection.id }, input.readings, kept);
     connections.touch(connection.id);
     return c.json(counts);
   });

@@ -9,11 +9,9 @@ import {
   describeError,
   fetchDeviceHistory,
   fetchDeviceList,
-  fetchDeviceSettings,
   fetchRemovedDevices,
   fetchTransportDiagnostic,
   fetchVersion,
-  patchDeviceSettings,
   preferConnection,
   removeConnection as apiRemoveConnection,
   removeDevice,
@@ -22,20 +20,18 @@ import {
   runDeviceTool,
   sendCommand,
   setConnectionSecrets,
+  writeDeviceAttributes,
   type CommandInput,
-  type ConfigValues,
   type ConnectionView,
   type DeviceActions,
   type DeviceScreenProps,
-  type DeviceSettings,
   type DeviceView,
   type GatewayResult,
-  type SettingsResult,
   type LinkView,
   type SavedDeviceId,
   type VersionInfo,
 } from '@kraftverk/api-client';
-import { CATEGORIES, savedDeviceId, type DeviceType } from '@kraftverk/device-sdk';
+import { CATEGORIES, deviceCapabilities, savedDeviceId, type DeviceType } from '@kraftverk/device-sdk';
 import { toHold, withInUse } from '@kraftverk/holder';
 
 import { confirmAction } from '../lib/confirm';
@@ -98,6 +94,8 @@ function describeLocal(runtime: AppRuntime, device: LocalDevice, names: Map<stri
   const type: DeviceType<any> | undefined = runtime.registry.types.get(device.typeId);
   const held = runtime.sessions.held(device.id);
   const session = runtime.sessions.get(device.id);
+  // What it is: its open session's word, or its type's for its config.
+  const description = runtime.sessions.description(device.id) ?? type?.describe(device.config as never) ?? { attributes: [] };
   const connections = runtime.local.connections(device.id).map(
     (connection): ConnectionView => ({
       id: connection.id,
@@ -131,10 +129,9 @@ function describeLocal(runtime: AppRuntime, device: LocalDevice, names: Map<stri
     meta: type
       ? { name: type.meta.name, brand: type.meta.brand, icon: type.meta.icon, support: type.meta.support, category: type.meta.category }
       : { name: device.typeId, icon: 'help-circle', support: 'experimental', category: 'unknown' },
-    capabilities: type?.capabilities ?? [],
-    measurements: type?.telemetry ?? [],
-    controls: type?.controls ?? [],
-    settings: type?.settings ?? null,
+    description,
+    capabilities: deviceCapabilities(description),
+    info: runtime.sessions.info(device.id),
     config: device.config,
     connections,
     links,
@@ -349,12 +346,6 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     []
   );
 
-  /** A settings write's verdict, as the screens take it: what the device reports, or why not. */
-  const settled = (result: SettingsResult): ConfigValues => {
-    if (result.outcome === 'refused' || result.outcome === 'failed') throw new Error(result.detail);
-    return result.values ?? {};
-  };
-
   const actionsFor = useCallback(
     (device: DeviceView): DeviceActions => {
       const holder = holderOf(device);
@@ -373,32 +364,25 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
             if (action.writes) runtime.uplink?.audit({ at: new Date().toISOString(), kind: 'device.advanced', resource: device.id, summary: `Ran ${name} on "${device.name}"`, detail: { input } });
             return result;
           },
-          readSettings: async (): Promise<DeviceSettings> => ({
-            schema: device.settings?.schema ?? null,
-            dangerous: [...(device.settings?.dangerous ?? [])],
-            values: session().readSettings?.() ?? {},
-          }),
-          // The gateway's settings write, here as on the server: schema, confirmation, read-back, audit.
-          writeSettings: async (patch: ConfigValues) =>
-            settled(
-              await confirmed((confirmation) =>
-                runtime.gateway.writeSettings({
-                  deviceId: device.id as SavedDeviceId,
-                  patch,
-                  actor: 'user',
-                  by: runtime.clientId ? `app:${runtime.clientId}` : 'this app',
-                  confirmation,
-                })
-              )
+          // The gateway's write, here as on the server: types, confirmation, read-back, audit.
+          write: (patch) =>
+            confirmed((confirmation) =>
+              runtime.gateway.write({
+                deviceId: device.id as SavedDeviceId,
+                patch,
+                actor: 'user',
+                by: runtime.clientId ? `app:${runtime.clientId}` : 'this app',
+                confirmation,
+              })
             ),
           command: (input: CommandInput) =>
             confirmed((confirmation) =>
               runtime.gateway.execute({
                 deviceId: device.id as SavedDeviceId,
+                part: input.part,
                 capability: input.capability as never,
-                command: input.command ?? 'set',
-                target: input.target,
-                value: input.value,
+                command: input.command,
+                args: input.args,
                 reason: input.reason ?? 'From this app',
                 actor: 'user',
                 by: runtime.clientId ? `app:${runtime.clientId}` : 'this app',
@@ -413,8 +397,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         return {
           tool: <T,>(name: string, input?: Record<string, unknown>) =>
             runDeviceTool<T>(device.id, name, { input, writes: device.advanced.find((tool) => tool.name === name)?.writes ?? false }),
-          readSettings: () => fetchDeviceSettings(device.id),
-          writeSettings: async (patch) => settled(await confirmed((confirmation) => patchDeviceSettings(device.id, { patch, confirmation }))),
+          write: (patch) => confirmed((confirmation) => writeDeviceAttributes(device.id, { patch, confirmation })),
           command: (input) => confirmed((confirmation) => sendCommand(device.id, { ...input, confirmation })),
           diagnostic: inUse ? <T,>(name: string, query?: Record<string, string | number>) => fetchTransportDiagnostic<T>(inUse.transport, name, query) : null,
         };
@@ -424,8 +407,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       };
       return {
         tool: why,
-        readSettings: why,
-        writeSettings: why,
+        write: async () => ({ outcome: 'refused', detail: device.health.detail }),
         command: async () => ({ outcome: 'refused', detail: device.health.detail }),
         diagnostic: null,
       };

@@ -78,9 +78,7 @@ export function connectionRoutes({ catalog, connections, links, clients, types, 
     const source = deviceOr404(catalog, input.sourceId);
     const target = deviceOr404(catalog, input.targetId);
     if (source.id === target.id) throw new HTTPException(400, { message: 'A device cannot be linked to itself' });
-    const sourceType = types.get(source.typeId);
-    const targetType = types.get(target.typeId);
-    if (!sourceType || !targetType || !linkFits(input.kind, sourceType.capabilities, targetType.capabilities)) {
+    if (!linkFits(input.kind, sessions.description(source), sessions.description(target))) {
       throw new HTTPException(400, { message: `"${source.name}" cannot be said to ${LINK_KINDS[input.kind].verb.replace(/s$/, '')} "${target.name}"` });
     }
     const link = links.add({ kind: input.kind, sourceId: source.id, targetId: target.id });

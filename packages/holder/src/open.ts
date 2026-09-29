@@ -1,9 +1,11 @@
 import {
+  checkValue,
   openChannel,
   validateConfig,
   type Channel,
   type DeviceContext,
-  type DeviceEvent,
+  type DeviceDescription,
+  type DeviceInfo,
   type DeviceLogger,
   type DeviceSession,
   type DeviceStore,
@@ -14,6 +16,8 @@ import {
   type SavedDeviceId,
   type TransportSource,
 } from '@kraftverk/device-sdk';
+
+import type { DeviceEventMessage } from './bus.ts';
 
 /**
  * Opening one device, the same in every holder (docs/ARCHITECTURE.md step 17).
@@ -50,14 +54,21 @@ export type OpenInput = {
   readOnly: boolean;
   allowRawFrames: boolean;
   log: DeviceLogger;
-  emit: (event: DeviceEvent) => void;
   /** After each scheduled run: the app redraws what the run changed. */
   afterScheduled?: () => void;
+  /** A device that pushes said something changed: a reading, its description, its information. */
+  changed?: () => void;
+  /** An event the device raised, already checked against its description. */
+  event?: (event: DeviceEventMessage) => void;
   timeoutMs?: number;
 };
 
 export type OpenedDevice = {
   session: DeviceSession;
+  /** What the device is now: its own description when it reports one, else its type's for its config. */
+  description(): DeviceDescription;
+  /** What the device has said about itself, as far as it has. */
+  info(): DeviceInfo | null;
   /** The channel this holder opened, and so closes; null for a simulator. */
   channel: Channel | null;
   /** Stops its scheduled work, closes its session, then its channel. Never throws. */
@@ -116,6 +127,11 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
       };
     }
 
+    // Declared once for this device's config; a device that reports its own replaces it.
+    const declared = type.describe(config.value);
+    let session: DeviceSession | null = null;
+    const describe = (): DeviceDescription => session?.description?.() ?? declared;
+
     const context: DeviceContext = {
       deviceId: device.id,
       config: config.value,
@@ -143,23 +159,42 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
           }, everyMs)
         );
       },
-      emit: input.emit,
+      changed: () => input.changed?.(),
+      event: (id, data, part) => {
+        const spec = describe().events?.find((candidate) => candidate.id === id);
+        if (!spec) {
+          input.log.warn(`raised an event it does not declare: "${id}"`);
+          return;
+        }
+        const wrong = Object.entries(data ?? {}).find(([field, value]) => {
+          const type = spec.data?.[field];
+          return !type || (value !== null && !checkValue(type, value).ok);
+        });
+        if (wrong) {
+          input.log.warn(`raised "${id}" with "${wrong[0]}", which it does not declare as that`);
+          return;
+        }
+        input.event?.({ id, level: spec.level, part: part ?? spec.part ?? null, data: data ?? null, at: new Date().toISOString() });
+      },
     };
 
-    const session = await withTimeout(
+    const opened = await withTimeout(
       connection ? type.createSession(context) : type.createSimulator(context),
       `Opening ${device.name}`,
       input.timeoutMs ?? OPEN_TIMEOUT_MS
     );
+    session = opened;
 
-    const opened = channel;
+    const openChannelRef = channel;
     return {
-      session,
-      channel: opened,
+      session: opened,
+      description: describe,
+      info: () => opened.info?.() ?? null,
+      channel: openChannelRef,
       close: async () => {
         stop();
-        await withTimeout(session.close(), 'Closing a device', 5_000).catch(() => undefined);
-        await opened?.close().catch(() => undefined);
+        await withTimeout(opened.close(), 'Closing a device', 5_000).catch(() => undefined);
+        await openChannelRef?.close().catch(() => undefined);
       },
     };
   } catch (error) {

@@ -1,7 +1,7 @@
 import type { Reading, SavedDeviceId } from '@kraftverk/device-sdk';
 
 import { db } from '../history/db.ts';
-import { rollUp } from '../history/sampler.ts';
+import { rollUp, sampleOf } from '../history/sampler.ts';
 
 /**
  * Readings from connections an app holds (docs/DATA-MODEL.md §4, "When a
@@ -28,7 +28,13 @@ export class RemoteReadings {
    * Takes what an app read. Returns how many went straight into history
    * because they were queued, and how many were refused as out of range.
    */
-  accept(deviceId: SavedDeviceId, from: { clientId: string; connectionId: string }, readings: readonly Reading[]): { live: number; history: number; refused: number } {
+  accept(
+    deviceId: SavedDeviceId,
+    from: { clientId: string; connectionId: string },
+    readings: readonly Reading[],
+    /** Which keys history keeps: the device description's. */
+    kept: ReadonlySet<string>
+  ): { live: number; history: number; refused: number } {
     const now = Date.now();
     const held = this.#held.get(deviceId) ?? { ...from, readings: new Map(), at: 0 };
     held.clientId = from.clientId;
@@ -36,7 +42,7 @@ export class RemoteReadings {
     let live = 0;
     let history = 0;
     let refused = 0;
-    const insert = db().query('INSERT OR REPLACE INTO sample (device_id, key, at, value) VALUES (?, ?, ?, ?)');
+    const insert = db().query('INSERT OR REPLACE INTO sample (device_id, key, at, value, text) VALUES (?, ?, ?, ?, ?)');
     let earliest = Number.POSITIVE_INFINITY;
     let latest = 0;
 
@@ -55,10 +61,10 @@ export class RemoteReadings {
           continue;
         }
         // Queued while the app was away: history at the minute it was read.
-        const value = typeof reading.value === 'boolean' ? (reading.value ? 1 : 0) : reading.value;
-        if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+        const sample = kept.has(reading.key) ? sampleOf(reading.value) : null;
+        if (!sample) continue;
         const minute = new Date(Math.floor(taken / 60_000) * 60_000).toISOString();
-        insert.run(deviceId, reading.key, minute, value);
+        insert.run(deviceId, reading.key, minute, sample.value, sample.text);
         history += 1;
         earliest = Math.min(earliest, taken);
         latest = Math.max(latest, taken);

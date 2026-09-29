@@ -1,20 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { CommandResult } from './capabilities.ts';
-import { capabilitiesOf, deviceCapabilities, MAIN_PART, partsOf, validateDescription, type AttributeReading, type DeviceDescription } from './description.ts';
-import { defineDeviceTypeV4, type DeviceContextV4, type DeviceSessionV4, type DeviceTypeV4 } from './device-model.ts';
-import { defineDeviceType, type DeviceContext, type DeviceSession } from './device-type.ts';
-import { checkDeviceTypeV4Contract } from './testing.ts';
-import { asDeviceTypeV4, describeV3, upgradeDeviceType } from './v3.ts';
+import { capabilitiesOf, deviceCapabilities, MAIN_PART, partsOf, validateDescription, type DeviceDescription, type Reading } from './description.ts';
+import { defineDeviceType, type DeviceContext, type DeviceSession, type DeviceType } from './device-type.ts';
+import { checkDeviceTypeContract } from './testing.ts';
 
 /*
-  The device model, version 4 (docs/ARCHITECTURE.md §8 step 24): a device made
-  of parts, with attributes, commands and events — declared by its type, or
-  reported by the device itself — and the adapter that lets a version-3 type
-  be seen the same way.
+  The device model (docs/ARCHITECTURE.md §4.5): a device made of parts, with
+  attributes, commands and events — declared by its type, or reported by the
+  device itself.
 */
 
-// --- a station written against version 4 ---------------------------------------
+// --- a station with outlets, a setting, an event, and a pack it reports itself ----
 
 type Flaws = { undeclaredReading?: boolean; undeclaredEvent?: boolean; stuckOutlet?: boolean; badEnum?: boolean };
 
@@ -42,7 +39,7 @@ const withPack = (description: DeviceDescription): DeviceDescription => ({
   attributes: [...description.attributes, { key: 'pack.1.soc', part: 'pack.1', label: 'Pack 1 charge', value: { type: 'number', unit: '%' }, means: 'battery.soc' }],
 });
 
-function simulatedStation(ctx: DeviceContextV4, flaws: Flaws): DeviceSessionV4 {
+function simulatedStation(ctx: DeviceContext, flaws: Flaws): DeviceSession {
   const state = { soc: 80, aOn: true, bOn: false, limit: 90, packSoc: 60 };
   let at = new Date().toISOString();
   ctx.schedule(10, () => {
@@ -50,7 +47,7 @@ function simulatedStation(ctx: DeviceContextV4, flaws: Flaws): DeviceSessionV4 {
   });
   return {
     health: () => ({ status: 'connected', detail: 'Simulated', owner: 'server', transport: 'sim', lastReadingAt: at }),
-    readings: (): AttributeReading[] => [
+    readings: (): Reading[] => [
       { key: 'soc', value: state.soc, at },
       { key: 'mode', value: flaws.badEnum ? 'turbo' : 'idle', at },
       { key: 'aOn', value: state.aOn, at },
@@ -78,11 +75,9 @@ function simulatedStation(ctx: DeviceContextV4, flaws: Flaws): DeviceSessionV4 {
   };
 }
 
-const station = (flaws: Flaws = {}): DeviceTypeV4 =>
-  defineDeviceTypeV4({
+const station = (flaws: Flaws = {}): DeviceType =>
+  defineDeviceType({
     id: 'example.station',
-    apiVersion: '4',
-    version: 1,
     kind: 'hardware',
     meta: { name: 'Example station', category: 'power-station', support: 'experimental', icon: 'zap' },
     config: { fields: {} },
@@ -107,12 +102,12 @@ describe('a device made of parts', () => {
     expect(partsOf(STATION)[0]!.id).toBe(MAIN_PART);
   });
 
-  test('a station written against version 4 keeps the contract — its pack reported by the device', async () => {
-    expect(await checkDeviceTypeV4Contract(station(), { settleMs: 500 })).toEqual([]);
+  test('a station keeps the contract — its pack reported by the device itself', async () => {
+    expect(await checkDeviceTypeContract(station(), { settleMs: 500 })).toEqual([]);
   });
 
   test('the contract catches each way a session can break it', async () => {
-    const run = async (flaws: Flaws) => checkDeviceTypeV4Contract(station(flaws), { settleMs: 200 });
+    const run = async (flaws: Flaws) => checkDeviceTypeContract(station(flaws), { settleMs: 200 });
     expect(await run({ undeclaredReading: true })).toContain('reports "secret", which the description does not have');
     expect(await run({ badEnum: true })).toContain('"mode" is "turbo", which must be one of: idle, charging');
     expect(await run({ stuckOutlet: true })).toContain('outlet.a: switch.set was accepted, but "aOn" never showed the change');
@@ -148,85 +143,5 @@ describe('checking a description', () => {
     expect(broken((d) => ({ ...d, attributes: [...d.attributes, { key: 'own', label: 'Own', value: { type: 'number' }, means: 'power.own' }] }))).toContain(
       'attribute "own" means "power.own", which is not a standard meaning; a type\'s own are namespaced by the type, like "station.own"'
     );
-  });
-});
-
-// --- a version-3 station, through the adapter -------------------------------------
-
-function simulatedV3(ctx: DeviceContext): DeviceSession {
-  const outlets = { usb: true, ac: false };
-  let limit = 90;
-  const at = () => new Date().toISOString();
-  ctx.schedule(10, () => undefined);
-  return {
-    health: () => ({ status: 'connected', detail: 'Simulated', owner: 'server', transport: 'sim', lastReadingAt: at() }),
-    readings: () => [
-      { key: 'soc', value: 70, at: at() },
-      { key: 'usbOn', value: outlets.usb, at: at() },
-      { key: 'acOn', value: outlets.ac, at: at() },
-    ],
-    capability: ((name: string) => {
-      if (name === 'battery') return { read: () => ({ socPercent: 70, capacityWh: 1000, at: at() }) };
-      if (name === 'outlets') {
-        return {
-          read: () => ({ outlets: [{ id: 'usb', label: 'USB', on: outlets.usb, watts: 0 }, { id: 'ac', label: 'AC', on: outlets.ac, watts: 0 }], at: at() }),
-          set: async (id: string, on: boolean) => {
-            if (id !== 'usb' && id !== 'ac') return { accepted: false as const, error: 'No such outlet' };
-            outlets[id] = on;
-            return { accepted: true as const };
-          },
-        };
-      }
-      return null;
-    }) as DeviceSession['capability'],
-    readSettings: () => ({ limit }),
-    writeSettings: async (patch) => {
-      if (typeof patch.limit === 'number') limit = patch.limit;
-      return { limit };
-    },
-    close: async () => undefined,
-  };
-}
-
-const v3Station = defineDeviceType({
-  id: 'example.oldstation',
-  apiVersion: '3',
-  kind: 'hardware',
-  meta: { name: 'Old station', category: 'power-station', support: 'experimental', icon: 'zap' },
-  capabilities: ['battery', 'outlets'],
-  telemetry: [
-    { key: 'soc', label: 'Charge', unit: '%', kind: 'percent', metric: 'battery.soc', primary: true },
-    { key: 'usbOn', label: 'USB', unit: '', kind: 'state', metric: 'outlet.usb.on' },
-    { key: 'acOn', label: 'AC', unit: '', kind: 'state', metric: 'outlet.ac.on' },
-  ],
-  controls: [{ id: 'ac', label: 'AC outlets', kind: 'switch', capability: 'outlets', target: 'ac', measurementKey: 'acOn', consequence: 'Cuts what is plugged in' }],
-  settings: { schema: { fields: { limit: { type: 'number', title: 'Charge limit', min: 50, max: 100 } } }, dangerous: ['limit'] },
-  config: { fields: {} },
-  connections: [{ id: 'ble', label: 'Bluetooth', protocol: 'example', transport: 'ble' }],
-  identify: async () => ({ identity: 'example:2', model: 'Old 1', summary: 'It answered.' }),
-  createSession: async (ctx) => simulatedV3(ctx),
-  createSimulator: async (ctx) => simulatedV3(ctx),
-});
-
-describe('a version-3 type, as version 4', () => {
-  test('its outlets become parts that switch, and its settings attributes that can be written', () => {
-    const description = describeV3(v3Station);
-    expect(partsOf(description).map((part) => [part.id, part.label, part.offers ?? []])).toEqual([
-      [MAIN_PART, 'Old station', ['battery']],
-      ['outlet.usb', 'USB', ['switch']],
-      ['outlet.ac', 'AC outlets', ['switch']],
-    ]);
-    expect(description.attributes.find((attribute) => attribute.key === 'acOn')).toMatchObject({ part: 'outlet.ac', means: 'switch.on', consequence: 'Cuts what is plugged in' });
-    expect(description.attributes.find((attribute) => attribute.key === 'limit')).toMatchObject({ access: 'write', category: 'config', dangerous: true });
-    expect(validateDescription(description, v3Station.id)).toEqual([]);
-  });
-
-  test('it keeps the version-4 contract: a command to an outlet part reaches the old outlets capability', async () => {
-    expect(await checkDeviceTypeV4Contract(upgradeDeviceType(v3Station), { settleMs: 500 })).toEqual([]);
-  });
-
-  test('a version-4 type is left as it is', () => {
-    const native = station();
-    expect(asDeviceTypeV4(native)).toBe(native);
   });
 });

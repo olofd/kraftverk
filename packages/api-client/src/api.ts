@@ -2,7 +2,7 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import axios from 'axios';
 
-import type { ConfigValues, Reading, SetupActionResult } from '@kraftverk/device-sdk';
+import type { ConfigValues, DeviceDescription, DeviceInfo, Reading, SetupActionResult } from '@kraftverk/device-sdk';
 import type { GatewayResult } from '@kraftverk/gateway';
 
 import type {
@@ -16,8 +16,9 @@ import type {
   NewAutomation,
   CheckOutcome,
   ClientRecord,
+  AttributeWrite,
+  CommandBody,
   DeviceHistory,
-  DeviceSettings,
   DeviceTypeList,
   DeviceView,
   DraftView,
@@ -26,9 +27,8 @@ import type {
   LinkRecord,
   RecipeView,
   SaveInput,
-  SettingsResult,
-  SettingsWrite,
   ServerLogLine,
+  WriteResult,
   SightingView,
   TransportList,
   VersionInfo,
@@ -207,21 +207,14 @@ export async function deleteDeviceHistory(id: string, name: string, signal?: Abo
   return data;
 }
 
-export async function fetchDeviceSettings(id: string, signal?: AbortSignal) {
-  const { data } = await api.get<DeviceSettings>(devicePath(id, '/settings'), { signal });
-  return data;
-}
-
 /**
- * Writes a device's own settings. Only the changed keys are sent, and the
- * reply is a readback rather than an echo: writing one setting can move another.
+ * Writes attributes a device remembers — its settings — through the server's
+ * gateway. Only the changed keys are sent, and the reply is a readback rather
+ * than an echo: writing one setting can move another. A refusal is an answer,
+ * not an error: `needsConfirmation` says a person only has to confirm.
  */
-/**
- * A settings write, through the server's gateway. A refusal is an answer, not
- * an error: `needsConfirmation` says a person only has to confirm.
- */
-export async function patchDeviceSettings(id: string, write: SettingsWrite, signal?: AbortSignal): Promise<SettingsResult> {
-  const response = await api.patch<SettingsResult>(devicePath(id, '/settings'), write, {
+export async function writeDeviceAttributes(id: string, write: AttributeWrite, signal?: AbortSignal): Promise<WriteResult> {
+  const response = await api.patch<WriteResult>(devicePath(id, '/attributes'), write, {
     signal,
     // Verification reads the device back until it agrees.
     timeout: 45_000,
@@ -240,17 +233,18 @@ export async function fetchDeviceHistory(id: string, key: string, options: { hou
 }
 
 /**
- * A capability command, through the server's action gateway.
+ * A command to one part of a device, through the server's action gateway.
  *
  * A refusal is an answer, not an error: the gateway's verdict comes back
  * either way, and `needsConfirmation` says when a person only has to confirm.
  */
 export async function sendCommand(
   id: string,
-  command: { capability: string; command?: string; target?: string; value: boolean; confirmation?: string; reason?: string }
+  command: { part: string; capability: string; command: string } & CommandBody
 ): Promise<GatewayResult> {
-  const { capability, command: name = 'set', ...rest } = command;
-  const response = await api.post<GatewayResult>(devicePath(id, `/capabilities/${encodeURIComponent(capability)}/${encodeURIComponent(name)}`), rest, {
+  const { part, capability, command: name, ...body } = command;
+  const path = `/parts/${encodeURIComponent(part)}/commands/${encodeURIComponent(capability)}/${encodeURIComponent(name)}`;
+  const response = await api.post<GatewayResult>(devicePath(id, path), body, {
     // Verification waits for the device, and the station a plug feeds, to agree.
     timeout: 45_000,
     validateStatus: (status) => status === 200 || status === 409,
@@ -428,7 +422,10 @@ export async function forgetClient(id: string) {
   await api.delete(`/clients/${encodeURIComponent(id)}`);
 }
 
-export async function uploadReadings(deviceId: string, input: { clientId: string; connectionId: string; identity?: string | null; readings: readonly Reading[] }) {
+export async function uploadReadings(
+  deviceId: string,
+  input: { clientId: string; connectionId: string; identity?: string | null; readings: readonly Reading[]; description?: DeviceDescription; info?: DeviceInfo }
+) {
   const { data } = await api.post<{ live: number; history: number; refused: number }>(devicePath(deviceId, '/readings'), input);
   return data;
 }

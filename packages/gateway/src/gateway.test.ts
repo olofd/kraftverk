@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { savedDeviceId, type CommandResult, type ConnectionHealth, type DeviceSession, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { MAIN_PART, savedDeviceId, type CommandResult, type ConnectionHealth, type DeviceDescription, type DeviceSession, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import { ActionGateway, CONFIRMATION, type CommandIntent, type GatewayDevice } from './gateway.ts';
 
@@ -10,9 +10,9 @@ import { ActionGateway, CONFIRMATION, type CommandIntent, type GatewayDevice } f
  * Every case here is a way the naive version gets it wrong: switching while
  * read-only, switching on stale data, switching twice in a second, and — the
  * one that matters most — believing a plug that says "done" while nothing
- * physically moved. The gateway knows no product: a plug is any session with
- * `switch`, a station any session with `acInput`, and which plug feeds which
- * station is a link.
+ * physically moved. The gateway knows no product: a plug is any device whose
+ * part offers `switch`, a station any device with a part offering `acInput`,
+ * and which plug feeds which station is a link.
  */
 
 const now = () => new Date().toISOString();
@@ -26,7 +26,15 @@ const health = (connected = true): ConnectionHealth => ({
   lastReadingAt: now(),
 });
 
-/** A plug: `switch` and `powerMeter`. */
+/** A plug: one part, with `switch` and `powerMeter`. */
+const PLUG_DESCRIPTION: DeviceDescription = {
+  parts: [{ id: MAIN_PART, label: 'Plug', kind: 'outlet', offers: ['switch'] }],
+  attributes: [
+    { key: 'relay', label: 'Relay', value: { type: 'boolean' }, means: 'switch.on' },
+    { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power.draw' },
+  ],
+};
+
 class StubPlug {
   commands: boolean[] = [];
   on: boolean | null;
@@ -45,25 +53,16 @@ class StubPlug {
   session(): DeviceSession {
     return {
       health: () => health(),
-      readings: () => [],
-      capability: ((name: string) => {
-        if (name === 'switch') {
-          return {
-            state: () => (this.on === null || this.at === null ? null : { on: this.on, at: this.at }),
-            set: async (on: boolean): Promise<CommandResult> => {
-              this.commands.push(on);
-              if (!this.ignoreCommands) {
-                this.on = on;
-                this.at = now();
-              }
-              return { accepted: true };
-            },
-            bootBehaviour: () => 'last',
-          };
+      readings: () => (this.at === null ? [] : [{ key: 'relay', value: this.on, at: this.at }, { key: 'watts', value: this.watts, at: this.at }]),
+      command: async (request): Promise<CommandResult> => {
+        const on = request.args.on as boolean;
+        this.commands.push(on);
+        if (!this.ignoreCommands) {
+          this.on = on;
+          this.at = now();
         }
-        if (name === 'powerMeter') return { read: () => ({ watts: this.watts, at: now() }) };
-        return null;
-      }) as DeviceSession['capability'],
+        return { accepted: true };
+      },
       close: async () => {},
     };
   }
@@ -71,10 +70,23 @@ class StubPlug {
 
 type StationReading = { present: boolean | null; at: string | null; connected: boolean } | null;
 
-/** A station: `acInput`, and outlets it can switch itself. */
+/** A station: its mains an input part with `acInput`, and an outlet part it switches itself. */
+const STATION_DESCRIPTION: DeviceDescription = {
+  parts: [
+    { id: MAIN_PART, label: 'Station', kind: 'device' },
+    { id: 'input.ac', label: 'Mains', kind: 'input' },
+    { id: 'outlet.ac', label: 'AC outlets', kind: 'outlet', offers: ['switch'] },
+  ],
+  attributes: [
+    { key: 'gridConnected', part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'grid.present' },
+    { key: 'acOn', part: 'outlet.ac', label: 'AC outlets', value: { type: 'boolean' }, means: 'switch.on' },
+    { key: 'acWatts', part: 'outlet.ac', label: 'AC draw', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power.draw' },
+  ],
+};
+
 class StubStation {
   reading: StationReading | (() => StationReading) = { present: true, at: now(), connected: true };
-  outlets = [{ id: 'ac', label: 'AC', on: true as boolean | null, watts: 40 as number | null }];
+  outlet = { on: true as boolean | null, watts: 40 as number | null };
   outletCommands: [string, boolean][] = [];
 
   #current(): StationReading {
@@ -84,28 +96,20 @@ class StubStation {
   session(): DeviceSession {
     return {
       health: () => health(this.#current()?.connected ?? false),
-      readings: () => [],
-      capability: ((name: string) => {
-        if (name === 'acInput') {
-          return {
-            read: () => {
-              const reading = this.#current();
-              return reading?.at ? { present: reading.present, watts: null, at: reading.at } : null;
-            },
-          };
-        }
-        if (name === 'outlets') {
-          return {
-            read: () => ({ outlets: this.outlets, at: now() }),
-            set: async (id: string, on: boolean): Promise<CommandResult> => {
-              this.outletCommands.push([id, on]);
-              this.outlets = this.outlets.map((outlet) => (outlet.id === id ? { ...outlet, on } : outlet));
-              return { accepted: true };
-            },
-          };
-        }
-        return null;
-      }) as DeviceSession['capability'],
+      readings: () => {
+        const reading = this.#current();
+        return [
+          ...(reading?.at ? [{ key: 'gridConnected', value: reading.present, at: reading.at }] : []),
+          { key: 'acOn', value: this.outlet.on, at: now() },
+          { key: 'acWatts', value: this.outlet.watts, at: now() },
+        ];
+      },
+      command: async (request): Promise<CommandResult> => {
+        const on = request.args.on as boolean;
+        this.outletCommands.push([request.part, on]);
+        this.outlet = { ...this.outlet, on };
+        return { accepted: true };
+      },
       close: async () => {},
     };
   }
@@ -133,11 +137,11 @@ function harness(
   const stationSession = station.session();
   const memory = options.memory ?? inMemory();
   // Most cases are about a plug that has been switched before; the first switch has its own test.
-  if (options.everSwitched !== false) memory.set(`gateway.everSwitched.${PLUG}`, '1');
+  if (options.everSwitched !== false) memory.set(`gateway.everSwitched.${PLUG}:${MAIN_PART}`, '1');
 
   const devices: Record<string, GatewayDevice> = {
-    [PLUG]: { name: 'Heater plug', session: plugSession, offline: 'Not answering' },
-    [STATION]: { name: 'Garage P280', session: options.stationSession === false ? null : stationSession, offline: 'Not answering' },
+    [PLUG]: { name: 'Heater plug', session: plugSession, description: PLUG_DESCRIPTION, offline: 'Not answering' },
+    [STATION]: { name: 'Garage P280', session: options.stationSession === false ? null : stationSession, description: STATION_DESCRIPTION, offline: 'Not answering' },
   };
   const gateway = new ActionGateway({
     device: (id) => devices[id] ?? null,
@@ -167,9 +171,10 @@ const inMemory = (): GatewayMemory => {
 
 const cut = (overrides: Partial<CommandIntent> = {}): CommandIntent => ({
   deviceId: PLUG,
+  part: MAIN_PART,
   capability: 'switch',
   command: 'set',
-  value: false,
+  args: { on: false },
   reason: 'battery first',
   actor: 'automation',
   by: 'automation:test',
@@ -190,10 +195,18 @@ describe('what may be commanded', () => {
     expect(plug.commands).toHaveLength(0);
   });
 
-  test('refuses a capability the device does not offer', async () => {
-    const { gateway } = harness();
-    const result = await gateway.execute(cut({ capability: 'outlets', target: 'ac' }));
-    expect(result.outcome).toBe('refused');
+  test('refuses a part that does not offer the capability', async () => {
+    const { gateway, station } = harness();
+    const result = await gateway.execute(cut({ deviceId: STATION, part: 'input.ac' }));
+    expect(result).toEqual({ outcome: 'refused', detail: '"input.ac" does not offer switch' });
+    expect(station.outletCommands).toHaveLength(0);
+  });
+
+  test('refuses arguments the command does not take, or of the wrong type', async () => {
+    const { gateway, plug } = harness();
+    expect((await gateway.execute(cut({ args: { on: 'yes' } }))).detail).toBe('on must be true or false');
+    expect((await gateway.execute(cut({ args: { on: false, speed: 3 } }))).detail).toBe('switch.set takes no speed');
+    expect(plug.commands).toHaveLength(0);
   });
 
   test('refuses while the server is read-only', async () => {
@@ -218,20 +231,20 @@ describe('what may be commanded', () => {
   test('the first switch of a plug that feeds a station needs confirmation, even to turn it on', async () => {
     const plug = new StubPlug({ on: false });
     const { gateway } = harness({ plug, everSwitched: false });
-    const result = await gateway.execute(cut({ actor: 'user', by: 'olof', value: true }));
+    const result = await gateway.execute(cut({ actor: 'user', by: 'olof', args: { on: true } }));
     expect(result.outcome).toBe('refused');
     expect(result.detail).toContain('confirmation');
   });
 
   test('turning off an outlet carrying a load needs confirmation; one carrying nothing does not', async () => {
     const { gateway, station } = harness();
-    const intent = cut({ deviceId: STATION, capability: 'outlets', target: 'ac', actor: 'user', by: 'olof' });
+    const intent = cut({ deviceId: STATION, part: 'outlet.ac', actor: 'user', by: 'olof' });
 
     expect((await gateway.execute(intent)).outcome).toBe('refused');
-    station.outlets = [{ id: 'ac', label: 'AC', on: true, watts: 0 }];
+    station.outlet = { on: true, watts: 0 };
     const idle = await gateway.execute(intent);
     expect(idle.outcome).toBe('verified');
-    expect(station.outletCommands).toEqual([['ac', false]]);
+    expect(station.outletCommands).toEqual([['outlet.ac', false]]);
   });
 });
 
@@ -283,7 +296,7 @@ describe('freshness', () => {
     const { gateway, plug } = harness({ feeds: false });
     const result = await gateway.execute(cut());
     expect(result.outcome).toBe('verified');
-    expect(result.stationAgreed).toBeUndefined();
+    expect(result.linkAgreed).toBeUndefined();
     expect(plug.commands).toEqual([false]);
   });
 });
@@ -296,7 +309,7 @@ describe('verification', () => {
     // The station reports nothing new after the switch, so agreement never comes.
     expect(result.outcome).toBe('unverified');
     expect(result.deviceAgreed).toBe(true);
-    expect(result.stationAgreed).toBe(false);
+    expect(result.linkAgreed).toBe(false);
     expect(events).toContain('command.intent');
     expect(events).toContain('command.unverified');
 
@@ -304,7 +317,7 @@ describe('verification', () => {
     live.follow();
     const second = await live.gateway.execute(cut());
     expect(second.outcome).toBe('verified');
-    expect(second.stationAgreed).toBe(true);
+    expect(second.linkAgreed).toBe(true);
   });
 
   /*
@@ -318,7 +331,7 @@ describe('verification', () => {
 
     const result = await gateway.execute(cut());
     expect(result.outcome).toBe('unverified');
-    expect(result.stationAgreed).toBe(false);
+    expect(result.linkAgreed).toBe(false);
   });
 
   test('a plug that accepts commands but never switches is caught', async () => {
@@ -334,7 +347,7 @@ describe('verification', () => {
 
   test('an already-correct state is not switched again', async () => {
     const { gateway, plug } = harness();
-    const result = await gateway.execute(cut({ value: true }));
+    const result = await gateway.execute(cut({ args: { on: true } }));
     expect(result.outcome).toBe('verified');
     expect(plug.commands).toHaveLength(0);
   });
@@ -342,9 +355,9 @@ describe('verification', () => {
   test('an already-correct plug the station disagrees with is not called verified', async () => {
     const { gateway, plug, station } = harness();
     station.reading = { present: false, at: now(), connected: true }; // the plug says on; the station sees no mains
-    const result = await gateway.execute(cut({ value: true }));
+    const result = await gateway.execute(cut({ args: { on: true } }));
     expect(result.outcome).toBe('unverified');
-    expect(result.stationAgreed).toBe(false);
+    expect(result.linkAgreed).toBe(false);
     expect(plug.commands).toHaveLength(0);
   });
 });
@@ -354,7 +367,7 @@ describe('dwell', () => {
     const { gateway, plug } = harness();
 
     await gateway.execute(cut({ reason: 'first' }));
-    const second = await gateway.execute(cut({ value: true, reason: 'immediately after' }));
+    const second = await gateway.execute(cut({ args: { on: true }, reason: 'immediately after' }));
 
     expect(second.outcome).toBe('refused');
     expect(second.detail).toContain('Too soon');
@@ -370,11 +383,11 @@ describe('dwell', () => {
 
     // A new process, the same database: still too soon for this plug.
     const restarted = harness({ memory });
-    expect((await restarted.gateway.execute(cut({ value: true }))).detail).toContain('Too soon');
+    expect((await restarted.gateway.execute(cut({ args: { on: true } }))).detail).toContain('Too soon');
 
     // The station's outlet has a clock of its own.
-    restarted.station.outlets = [{ id: 'ac', label: 'AC', on: true, watts: 0 }];
-    const outlet = await restarted.gateway.execute(cut({ deviceId: STATION, capability: 'outlets', target: 'ac' }));
+    restarted.station.outlet = { on: true, watts: 0 };
+    const outlet = await restarted.gateway.execute(cut({ deviceId: STATION, part: 'outlet.ac' }));
     expect(outlet.outcome).toBe('verified');
   });
 

@@ -1,25 +1,23 @@
 import {
   validateConfig,
   type AdvancedAction,
-  type CapabilityImpl,
-  type CapabilityName,
   type CommandResult,
-  type ConfigValues,
   type ConnectionHealth,
   type DeviceContext,
   type DeviceSession,
   type Reading,
+  type Value,
 } from '@kraftverk/device-sdk';
 import { commandRefusal, describeCommand, fromHex, parseCommand, toHex, type SydpowerLink } from '@kraftverk/protocol-sydpower';
 
-import { CAPABILITIES, readings, SETTINGS_SCHEMA, settingsToValues, valuesToSettings } from './index.ts';
+import { describeStation, infoOf, portOf, readings, SETTINGS_SCHEMA, settingsToValues, valuesToSettings } from './index.ts';
 import type { StationClient } from './model/client.ts';
 import { describeRegisters, type RegisterDump } from './model/diagnostics.ts';
 import type { PortId, StationSettings, StationSettingsPatch, StationStatus } from './model/types.ts';
 
 /**
- * A P280, as a device session: what its station client reports, in the shared
- * vocabulary of readings, capabilities and settings.
+ * A P280, as a device session: what its station client reports, as the
+ * attributes of its parts, and the commands and settings it takes.
  *
  * The same session serves a real station and the simulator, and the same code
  * runs wherever the connection is held. What differs is only the source: a
@@ -35,9 +33,6 @@ export interface StationSource {
   applySettings(patch: StationSettingsPatch): Promise<StationSettings | null>;
   setPort(id: PortId, enabled: boolean): Promise<StationStatus>;
 }
-
-/** The outlets a P280 has. The light is a setting, not an outlet: see `CONTROLS`. */
-const OUTLETS: readonly PortId[] = ['ac', 'dc', 'usb'];
 
 const failed = (error: unknown): CommandResult => ({
   accepted: false,
@@ -56,51 +51,6 @@ export type StationSessionOptions = {
 };
 
 export function stationSession(source: StationSource, options: StationSessionOptions): DeviceSession {
-  /** The latest status, but only once the station has actually reported. */
-  const reported = (): StationStatus | null => {
-    const status = source.status();
-    return status.lastUpdated !== null ? status : null;
-  };
-
-  const battery: CapabilityImpl['battery'] = {
-    read: () => {
-      const status = reported();
-      return status ? { socPercent: status.level, capacityWh: status.capacityWh || null, at: status.lastUpdated! } : null;
-    },
-  };
-
-  const acInput: CapabilityImpl['acInput'] = {
-    read: () => {
-      const status = reported();
-      return status ? { present: status.gridConnected, watts: status.acInputWatts, at: status.lastUpdated! } : null;
-    },
-  };
-
-  const outlets: CapabilityImpl['outlets'] = {
-    read: () => {
-      const status = reported();
-      if (!status) return null;
-      return {
-        at: status.lastUpdated!,
-        outlets: OUTLETS.map((id) => {
-          const port = status.ports.find((candidate) => candidate.id === id);
-          return { id, label: port?.label ?? id, on: port?.enabled ?? null, watts: port?.watts ?? null };
-        }),
-      };
-    },
-    set: async (outletId, on) => {
-      if (!OUTLETS.includes(outletId as PortId)) return { accepted: false, error: `A P280 has no outlet "${outletId}"` };
-      try {
-        await source.setPort(outletId as PortId, on);
-        return { accepted: true };
-      } catch (error) {
-        return failed(error);
-      }
-    },
-  };
-
-  const offered: Partial<CapabilityImpl> = { battery, acInput, outlets };
-
   return {
     health(): ConnectionHealth {
       const status = source.status();
@@ -122,41 +72,56 @@ export function stationSession(source: StationSource, options: StationSessionOpt
     },
 
     readings(): Reading[] {
-      return readings(source.status());
+      return readings(source.status(), source.settings());
     },
 
-    capability<N extends CapabilityName>(name: N): CapabilityImpl[N] | null {
-      if (!(CAPABILITIES as readonly string[]).includes(name)) return null;
-      return (offered[name] as CapabilityImpl[N] | undefined) ?? null;
+    /** The declared station, plus a part for each expansion battery it reports. */
+    description() {
+      const packs = source.status().expansionSoc.length;
+      return packs ? describeStation(packs) : null;
     },
 
-    readSettings(): ConfigValues | null {
-      const settings = source.settings();
-      return settings ? settingsToValues(settings) : null;
+    info() {
+      const status = source.status();
+      return status.lastUpdated ? infoOf(status) : null;
     },
 
-    async writeSettings(patch: ConfigValues): Promise<ConfigValues | null> {
+    async command(request): Promise<CommandResult> {
+      const port = portOf(request.part);
+      if (!port || request.capability !== 'switch' || request.command !== 'set') {
+        return { accepted: false, error: `A P280 takes no ${request.capability}.${request.command} on "${request.part}"` };
+      }
+      if (typeof request.args.on !== 'boolean') return { accepted: false, error: 'on must be true or false' };
+      try {
+        await source.setPort(port, request.args.on);
+        return { accepted: true };
+      } catch (error) {
+        return failed(error);
+      }
+    },
+
+    async write(patch): Promise<Record<string, Value>> {
       const current = source.settings();
       if (!current) throw new Error('The station’s settings have not been read yet');
       /*
-        Checked against the schema the app draws from, whoever calls: the
-        bounds, the enum steps, and above all "Whole machine unused time", whose
-        schema has no zero because zero destroys the station. The client's
-        register whitelist checks again below this, and the protocol's guard
-        below that.
+        Checked against the schema the settings are described by, whoever
+        calls: the bounds, the enum steps, and above all "Whole machine unused
+        time", whose schema has no zero because zero destroys the station. The
+        client's register whitelist checks again below this, and the protocol's
+        guard below that.
       */
       const merged = validateConfig(SETTINGS_SCHEMA, { ...settingsToValues(current), ...patch });
       if (!merged.ok) throw new Error(merged.issues.map((issue) => issue.message).join('; '));
       const changed = Object.fromEntries(Object.keys(patch).map((key) => [key, merged.value[key]]));
       const applied = await source.applySettings(valuesToSettings(changed) as StationSettingsPatch);
-      return applied ? settingsToValues(applied) : null;
+      return settingsToValues(applied ?? current);
     },
 
     identity() {
       return { id: options.identity, name: source.status().name ?? null };
     },
 
-    advanced: options.advanced,
+    ...(options.advanced ? { advanced: options.advanced } : {}),
 
     async close() {
       await options.close?.();

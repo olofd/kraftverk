@@ -6,8 +6,9 @@
  * other instead of failing on a phone. Types only: the server validates what
  * it receives with its own schemas, typed against the inputs declared here.
  *
- * What a device *is* — its type, capabilities, telemetry, setup steps — is
- * declared in `@kraftverk/device-sdk` and re-exported from here. What is
+ * What a device *is* — its type, its description (parts, attributes, events),
+ * its setup steps — is declared in `@kraftverk/device-sdk` and re-exported
+ * from here. What is
  * declared here is only the envelope the server wraps around it: a saved
  * device with its connections and links, a setup draft, a transport as this
  * server runs it. No device type is named.
@@ -20,16 +21,16 @@ import type {
   ConfigSchema,
   ConfigValues,
   ConnectionHealth,
-  ControlSpec,
+  DeviceDescription,
+  DeviceInfo,
   DeviceTypeMeta,
   DeviceTypeView,
   LinkKind,
-  MetricSpec,
   Reading,
   SavedDeviceId,
-  SettingsSpec,
   SetupStepView,
   TransportDefinition,
+  Value,
 } from '@kraftverk/device-sdk';
 
 export type {
@@ -43,21 +44,23 @@ export type {
   ConnectionHealth,
   ConnectionMethodView,
   ConnectionStatus,
-  ControlSpec,
+  AttributeSpec,
+  DeviceDescription,
+  DeviceInfo,
   DeviceTypeMeta,
   DeviceTypeView,
   LinkKind,
-  MetricSpec,
+  Part,
   Reading,
   SavedDeviceId,
-  SettingsSpec,
   SetupActionResult,
   SetupChoice,
   SetupStepView,
   SupportLevel,
   TransportDefinition,
+  Value,
 } from '@kraftverk/device-sdk';
-export type { GatewayResult, GatewayOutcome, SettingsResult } from '@kraftverk/gateway';
+export type { GatewayResult, GatewayOutcome, WriteResult } from '@kraftverk/gateway';
 
 /** `GET /api/version`. */
 export type VersionInfo = {
@@ -116,10 +119,12 @@ export type DeviceView = {
   removedAt: string | null;
   kind: 'hardware' | 'service';
   meta: Pick<DeviceTypeMeta, 'name' | 'brand' | 'icon' | 'support'> & { category: string };
+  /** What it is: its parts, their attributes — settings among them — and its events. Its own when it reports one. */
+  description: DeviceDescription;
+  /** Every capability any of its parts offers. */
   capabilities: readonly CapabilityName[];
-  measurements: readonly MetricSpec[];
-  controls: readonly ControlSpec[];
-  settings: SettingsSpec | null;
+  /** What it has said about itself: firmware, serial. */
+  info: DeviceInfo | null;
   config: Record<string, unknown>;
   connections: ConnectionView[];
   links: LinkView[];
@@ -145,20 +150,16 @@ export type DeviceTypeList = {
   refused: { types: Refused[]; protocols: Refused[]; transports: Refused[] };
 };
 
-/** A device's own settings: the schema it declares, and what it holds now. */
-export type DeviceSettings = {
-  schema: ConfigSchema | null;
-  values: ConfigValues;
-  /** Settings that can damage the hardware if set wrongly. */
-  dangerous: string[];
-};
-
 /**
- * `PATCH /devices/:id/settings`: only what should change. A setting in
- * `dangerous` needs `confirmation`; the answer is the gateway's verdict either
- * way, with what the device reports afterwards.
+ * `PATCH /devices/:id/attributes`: only what should change, of the attributes
+ * its description says can be written. A dangerous one needs `confirmation`;
+ * the answer is the gateway's verdict either way, with what the device reports
+ * afterwards.
  */
-export type SettingsWrite = { patch: ConfigValues; confirmation?: string };
+export type AttributeWrite = { patch: Record<string, Value>; confirmation?: string };
+
+/** `POST /devices/:id/parts/:part/commands/:capability/:command`. */
+export type CommandBody = { args: Record<string, Value>; reason?: string; confirmation?: string };
 
 export type SeriesPoint = { at: string; value: number };
 
@@ -312,12 +313,15 @@ export type AuthState = {
 };
 // --- automations ----------------------------------------------------------------
 
-/** A recipe the server offers: roles to fill with devices, and its settings. */
+/** Which part of which device fills a role: a plug, or one of a station's outlets. */
+export type RoleBinding = { device: SavedDeviceId; part: string };
+
+/** A recipe the server offers: roles to fill with parts of devices, and its settings. */
 export type RecipeView = {
   id: string;
   label: string;
   description: string;
-  /** What each role asks of a device: every one of `capabilities`, and one of `oneOf` when given. */
+  /** What each role asks of a part: every one of `capabilities`, and one of `oneOf` when given. */
   roles: Record<
     string,
     {
@@ -325,20 +329,18 @@ export type RecipeView = {
       description: string;
       capabilities: readonly CapabilityName[];
       oneOf?: readonly CapabilityName[];
-      /** Filled through this capability, the part chosen — an outlet — is kept in the setting `param`. */
-      target?: { param: string; capability: CapabilityName };
     }
   >;
   params: ConfigSchema;
 };
 
 /** `POST /automations`. `timeZone` is the app's own clock: "Europe/Stockholm". */
-export type NewAutomation = { name: string; recipe: string; roles: Record<string, string>; params: ConfigValues; timeZone: string };
+export type NewAutomation = { name: string; recipe: string; roles: Record<string, RoleBinding>; params: ConfigValues; timeZone: string };
 
 /** `PATCH /automations/:id`. Arming, or changing an armed one, needs `confirmation`. */
 export type AutomationChanges = {
   name?: string;
-  roles?: Record<string, string>;
+  roles?: Record<string, RoleBinding>;
   params?: ConfigValues;
   timeZone?: string;
   mode?: AutomationMode;
@@ -368,7 +370,7 @@ export type AutomationView = {
   recipeLabel: string;
   /** What it does, in a sentence: "At 07:00, if tomorrow looks sunny by Weather, turn Heater plug on." */
   sentence: string;
-  roles: Record<string, SavedDeviceId>;
+  roles: Record<string, RoleBinding>;
   params: ConfigValues;
   timeZone: string;
   mode: AutomationMode;

@@ -1,6 +1,8 @@
 import { fakeByteChannel } from '@kraftverk/device-sdk/testing';
 import {
   defineDeviceType,
+  MAIN_PART,
+  type DeviceDescription,
   type ByteChannel,
   type DeviceContext,
   type DeviceSession,
@@ -158,21 +160,16 @@ const lampSession = (ctx: DeviceContext<LampConfig>, channel: ByteChannel | null
       lastReadingAt: state?.at ?? null,
     }),
     readings: () => (state ? [{ key: 'on', value: state.on, at: state.at }] : []),
-    capability: ((name: string) =>
-      name === 'switch'
-        ? {
-            state: () => (state ? { on: state.on, at: state.at } : null),
-            set: async (on: boolean) => {
-              if (ctx.readOnly) return { accepted: false, error: 'Read-only' };
-              if (channel) {
-                const said = await ask(channel, on ? 'on' : 'off');
-                state = { serial: said.serial, on: said.on, at: new Date().toISOString() };
-              } else state = { serial: 'SIM', on, at: new Date().toISOString() };
-              return { accepted: true };
-            },
-            bootBehaviour: () => 'last',
-          }
-        : null) as DeviceSession['capability'],
+    async command(request) {
+      if (request.capability !== 'switch' || typeof request.args.on !== 'boolean') return { accepted: false, error: 'A lamp only switches' };
+      if (ctx.readOnly) return { accepted: false, error: 'Read-only' };
+      const on = request.args.on;
+      if (channel) {
+        const said = await ask(channel, on ? 'on' : 'off');
+        state = { serial: said.serial, on: said.on, at: new Date().toISOString() };
+      } else state = { serial: 'SIM', on, at: new Date().toISOString() };
+      return { accepted: true };
+    },
     identity: () => ({ id: state && channel ? `lampish:${state.serial}` : null, name: null }),
     advanced: {
       ping: { writes: false, run: async () => ({ pong: true, room: ctx.config.room ?? null }) },
@@ -190,14 +187,17 @@ const lampSession = (ctx: DeviceContext<LampConfig>, channel: ByteChannel | null
   };
 };
 
+/** A lamp: one part, a switch. */
+export const LAMP: DeviceDescription = {
+  parts: [{ id: MAIN_PART, label: 'Lamp', kind: 'light', offers: ['switch'] }],
+  attributes: [{ key: 'on', label: 'On', value: { type: 'boolean' }, means: 'switch.on' }],
+};
+
 export const lampType = defineDeviceType<LampConfig>({
   id: 'test.lamp',
-  apiVersion: '3',
   kind: 'hardware',
   meta: { name: 'Test lamp', category: 'smart-plug', support: 'experimental', icon: 'sun', models: ['L1'] },
-  capabilities: ['switch'],
-  telemetry: [{ key: 'on', label: 'On', unit: '', kind: 'state', metric: 'switch.on' }],
-  controls: [{ id: 'power', label: 'Power', kind: 'switch', capability: 'switch' }],
+  describe: () => LAMP,
   config: { fields: { room: { type: 'string', title: 'Room' } } },
   connections: [
     { id: 'bus', label: 'Test bus', protocol: 'lampish', transport: 'bus', recommended: true },

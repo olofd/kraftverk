@@ -1,3 +1,4 @@
+import type { DeviceDescription, DeviceInfo } from './description.ts';
 import type { ConfigSchema, ConfigValues } from './schema.ts';
 import type { SetupAction, SetupStep } from './setup.ts';
 
@@ -396,6 +397,10 @@ export type Identified = {
   summary: string;
   /** Settings for the device worked out from what it said: a relay datapoint. */
   config?: ConfigValues;
+  /** What it said about itself: firmware, serial. */
+  info?: DeviceInfo;
+  /** Its own description, for a device that describes itself — a standard's. */
+  description?: DeviceDescription;
 };
 
 /** Namespaces a device's own id by the protocol that read it. */

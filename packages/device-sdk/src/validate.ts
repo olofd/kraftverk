@@ -1,11 +1,8 @@
-import { CAPABILITIES, isCapability, requiredMeanings } from './capabilities.ts';
 import { CATEGORIES, isCategory } from './categories.ts';
 import { PLATFORMS, type Protocol, type TransportDefinition } from './connection.ts';
 import { validateDescription } from './description.ts';
-import { DEVICE_MODEL_VERSION, type DeviceTypeV4 } from './device-model.ts';
-import { DEVICE_API_VERSION, type DeviceType } from './device-type.ts';
-import { isSecretField, type ConfigSchema, type ConfigValues } from './schema.ts';
-import { STANDARD_NAMESPACES, STATE_CLASSES, standardMetric, stateClassOf } from './telemetry.ts';
+import type { DeviceType } from './device-type.ts';
+import { configDefaults, isSecretField, type ConfigSchema } from './schema.ts';
 
 /**
  * The static half of the contract: everything about a device type, a protocol
@@ -28,14 +25,7 @@ const secretsIn = (schema: ConfigSchema | undefined): string[] =>
     .filter(([, field]) => isSecretField(field))
     .map(([name]) => name);
 
-/** What every device type is checked for, whatever version of the contract it keeps. */
-type AnyDeviceType = Pick<DeviceType<any>, 'id' | 'kind' | 'meta' | 'config' | 'connections' | 'setup'> & {
-  identify?: unknown;
-  createSession?: unknown;
-  createSimulator?: unknown;
-};
-
-function commonTypeProblems(type: AnyDeviceType): string[] {
+export function validateDeviceType(type: DeviceType<any>): string[] {
   const problems: string[] = [];
   const problem = (message: string) => problems.push(message);
 
@@ -94,127 +84,18 @@ function commonTypeProblems(type: AnyDeviceType): string[] {
     }
   }
 
+  if (typeof type.describe !== 'function') problem('describe is missing');
+  else {
+    try {
+      problems.push(...validateDescription(type.describe(configDefaults(type.config)), type.id));
+    } catch (error) {
+      problem(`describe() failed with the default config: ${(error as Error).message}`);
+    }
+  }
   if (typeof type.identify !== 'function') problem('identify is missing');
   if (typeof type.createSession !== 'function') problem('createSession is missing');
   if (typeof type.createSimulator !== 'function') problem('createSimulator is missing');
 
-  return problems;
-}
-
-export function validateDeviceType(type: DeviceType<any>): string[] {
-  const problems = commonTypeProblems(type);
-  const problem = (message: string) => problems.push(message);
-  if (type.apiVersion !== DEVICE_API_VERSION) {
-    problem(`apiVersion is "${type.apiVersion}"; this SDK speaks "${DEVICE_API_VERSION}"`);
-  }
-
-  // --- capabilities -----------------------------------------------------------
-  const capabilities = new Set<string>();
-  for (const name of type.capabilities ?? []) {
-    if (!isCapability(name)) problem(`capability "${name}" is not in the library`);
-    if (capabilities.has(name)) problem(`capability "${name}" is declared twice`);
-    capabilities.add(name);
-  }
-
-  // --- telemetry --------------------------------------------------------------
-  const keys = new Set<string>();
-  const metrics = new Set<string>();
-  let primaries = 0;
-  for (const spec of type.telemetry ?? []) {
-    if (!spec.key?.trim()) problem('a telemetry entry has no key');
-    if (keys.has(spec.key)) problem(`telemetry key "${spec.key}" is declared twice`);
-    keys.add(spec.key);
-    if (spec.primary) primaries += 1;
-    if (spec.stateClass !== undefined) {
-      if (!STATE_CLASSES.includes(spec.stateClass)) problem(`"${spec.key}" has an unknown state class "${spec.stateClass}"`);
-      else if (spec.kind === 'state') problem(`"${spec.key}" is an on/off state, which has no state class`);
-    }
-
-    if (spec.metric === undefined) continue;
-    if (metrics.has(spec.metric)) problem(`metric "${spec.metric}" is claimed by two keys`);
-    metrics.add(spec.metric);
-
-    const standard = standardMetric(spec.metric);
-    if (standard) {
-      // Two devices' values on one axis without conversion is the point.
-      if (standard.kind !== spec.kind || standard.unit !== spec.unit) {
-        problem(
-          `"${spec.key}" claims ${spec.metric}, which is ${standard.kind} in "${standard.unit}", ` +
-            `but is declared ${spec.kind} in "${spec.unit}"`
-        );
-      }
-      // A lifetime counter charted as a level, or a level charted as a counter, is a wrong chart.
-      if ((standard.stateClass ?? 'measurement') !== (stateClassOf(spec) ?? 'measurement')) {
-        problem(`"${spec.key}" claims ${spec.metric}, which is ${standard.stateClass ?? 'measurement'}, but is declared ${stateClassOf(spec) ?? 'measurement'}`);
-      }
-    } else {
-      const namespace = spec.metric.split('.')[0]!;
-      if (!spec.metric.includes('.') || STANDARD_NAMESPACES.includes(namespace)) {
-        problem(
-          `metric "${spec.metric}" on "${spec.key}" is not a standard id; a type's own metrics ` +
-            `are namespaced by the type, like "${type.id?.split('.').pop() ?? 'brand'}.${spec.key}"`
-        );
-      }
-    }
-  }
-  if (primaries > 1) problem('more than one telemetry entry is marked primary');
-
-  for (const name of capabilities) {
-    if (!isCapability(name)) continue;
-    for (const required of requiredMeanings(name)) {
-      if (!metrics.has(required)) problem(`capability "${name}" needs telemetry with metric "${required}"`);
-    }
-  }
-
-  // --- controls ---------------------------------------------------------------
-  const controls = new Set<string>();
-  for (const control of type.controls ?? []) {
-    if (controls.has(control.id)) problem(`control "${control.id}" is declared twice`);
-    controls.add(control.id);
-    if (!capabilities.has(control.capability)) {
-      problem(`control "${control.id}" uses "${control.capability}", which the type does not declare`);
-      continue;
-    }
-    const command = control.command ?? 'set';
-    const commands = isCapability(control.capability) ? CAPABILITIES[control.capability].commands : {};
-    if (!(command in commands)) problem(`control "${control.id}": "${control.capability}" has no command "${command}"`);
-    if (control.measurementKey && !keys.has(control.measurementKey)) {
-      problem(`control "${control.id}" reads "${control.measurementKey}", which is not in telemetry`);
-    }
-  }
-
-  // --- settings and config ----------------------------------------------------
-  if (type.settings) {
-    for (const field of type.settings.dangerous ?? []) {
-      if (!(field in type.settings.schema.fields)) problem(`dangerous setting "${field}" is not in the settings schema`);
-    }
-  }
-  return problems;
-}
-
-/** The defaults a type's config schema gives, for describing a device before any is saved. */
-export const configDefaults = (schema: ConfigSchema): ConfigValues =>
-  Object.fromEntries(Object.entries(schema.fields).flatMap(([name, field]) => ('default' in field && field.default !== undefined ? [[name, field.default]] : [])));
-
-/**
- * The static half of the version-4 contract: what every type is checked for,
- * and the description it declares for a device with its default config.
- */
-export function validateDeviceTypeV4(type: DeviceTypeV4<any>): string[] {
-  const problems = commonTypeProblems(type);
-  const problem = (message: string) => problems.push(message);
-  if (type.apiVersion !== DEVICE_MODEL_VERSION) problem(`apiVersion is "${type.apiVersion}"; the device model is "${DEVICE_MODEL_VERSION}"`);
-  if (!Number.isInteger(type.version) || type.version < 1) problem('version must be a whole number from 1');
-  if (type.migrate !== undefined && typeof type.migrate !== 'function') problem('migrate must be a function');
-  if (typeof type.describe !== 'function') {
-    problem('describe is missing');
-    return problems;
-  }
-  try {
-    problems.push(...validateDescription(type.describe(configDefaults(type.config)), type.id));
-  } catch (error) {
-    problem(`describe() failed with its default config: ${(error as Error).message}`);
-  }
   return problems;
 }
 

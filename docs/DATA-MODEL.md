@@ -195,8 +195,7 @@ classDiagram
   class DeviceType {
     id
     category
-    capabilities
-    telemetry
+    describe(config)
     config
     connections
     identify(connection)
@@ -262,8 +261,9 @@ classDiagram
 | **Device type** | One product or product family: what its values *mean*. It **identifies** a device (its identity and model) over any of its connection methods. Models of one family are *profiles*, as data, not separate types. Pure code too, because it runs wherever its connection is held. | `packages/devices/*`, `packages/services/*` | `aferiy.p280`, `atorch.s1w`, `tuya.plug` (one profile per socket), `open-meteo.weather` |
 | **Connection method** | One (protocol, transport) pair a type supports, with an optional *recommended* flag and any extra setup steps of its own. It says nothing about *where* it runs. A type declares pairs, not two separate lists, because not every protocol rides every transport. | inside the device type | P280: `wifi` = sydpower over mqtt; `bluetooth` = sydpower over ble. ATORCH: `lan` = tuya-local over lan. Open-Meteo: `api` = open-meteo over https. |
 | **Holder** | Somewhere a connection can be held: the server, or one client (a phone or browser running the app). It reports the transports it has *now*, and why one is missing. Setup offers a method wherever its transport is available. | runtime | The server: `mqtt`, `ble`, `lan`, `https`. Chrome on a laptop: `ble`, `https`. Firefox: `https` ("no Bluetooth in Firefox"). |
-| **Capability** | A typed thing to read or command, with a safety level and the metrics it requires. | `device-sdk` | `switch`, `powerMeter`, `battery`, `outlets`, `acInput`, `weather.forecast` |
-| **Link kind** | A physical fact between two devices, and which capability each end needs. | `device-sdk` | `feeds`: from a device with `switch` to one with `acInput` |
+| **Description** | What a device is: its **parts** (`main`, and whatever it has several of), their **attributes** (what they report, and what they remember and can be told), and its **events**. A type declares it for a device's config; a session may report its own. | `device-sdk` (`description.ts`) | A P280: `main`, `input.ac`, `input.solar`, `outlet.ac`/`dc`/`usb`, and `pack.1` when a pack is plugged in |
+| **Capability** | What a part can do or report, declared like a Matter cluster: attributes bound to standard meanings, commands with typed arguments, a safety level and what each sets, and queries. | `device-sdk` | `switch`, `powerMeter`, `battery`, `acInput`, `weather.forecast` |
+| **Link kind** | A physical fact between two devices, which capability each end needs, and what on the target proves it. | `device-sdk` | `feeds`: from a main part with `switch` to a part with `acInput`, proven by `grid.present` |
 
 ### A method's setup is assembled, not written
 
@@ -312,6 +312,8 @@ erDiagram
   client |o--o{ device_connection : "holds (none: the server does)"
   device ||--o{ device_kv : "remembers"
   device ||--o{ sample : "recorded"
+  device ||--o{ device_attribute : "has had"
+  device ||--o{ device_event : "raised"
   device ||--o{ device_link : "is the source of"
   device ||--o{ device_link : "is the target of"
   users ||--o{ client : "signed in on"
@@ -319,11 +321,13 @@ erDiagram
   client |o--o{ sessions : "belongs to"
 
   device {
-    text id PK "d-3f9a2c61b0e4 · or kept verbatim: power-station:16757b71"
+    text id PK "d-3f9a2c61b0e4"
     text type_id "aferiy.p280 · a DeviceType id · never changes"
     text identity "sydpower:AABBCC001122 · read from the device · null until first read"
     text name "Garage P280"
     json config "{} · the type's own choices · tuya.plug: {profile: atorch-s1} · Open-Meteo: {lat, lon}"
+    json description "{parts: [...], attributes: [...], events: [...]} · the latest, the type's or its own"
+    json info "{manufacturer: AFERIY, model: P280, firmware: {...}} · null until it has said"
     text added_at "2026-09-27T19:40:00Z"
     text removed_at "null · set by Remove · history kept"
   }
@@ -370,13 +374,31 @@ erDiagram
     text device_id PK "d-3f9a2c61b0e4"
     text key PK "soc · the type's own key · means battery.soc"
     text at PK "2026-09-27T19:41:00Z"
-    real value "87"
+    real value "87 · a number, or on/off as 1/0"
+    text text "charging · an enum or text instead of a value"
+  }
+  device_attribute {
+    text device_id PK "d-3f9a2c61b0e4"
+    text key PK "pack.1.soc"
+    text part "pack.1"
+    json spec "{label: Pack 1 charge, value: {type: number, unit: %}, means: battery.soc}"
+    text first_seen "2026-09-27T19:41:00Z"
+    text last_seen "2026-09-29T10:02:00Z"
+  }
+  device_event {
+    int id PK "88"
+    text device_id FK "d-3f9a2c61b0e4"
+    text part "main"
+    text event "overload · declared in its description"
+    text level "warn"
+    json data "{watts: 2400}"
+    text at "2026-09-28T18:12:40Z"
   }
   automation {
-    text id PK "a-71c2d0e5f9a3 · migration 8"
+    text id PK "a-71c2d0e5f9a3"
     text name "Sunny heater"
     text recipe "forecast-switch"
-    json roles "{forecast: d-8e1d44a0f2b7, switch: d-5b2e90c4a1d3} · not foreign keys"
+    json roles "{forecast: {device: d-8e1d44a0f2b7, part: main}, switch: {device: d-3f9a2c61b0e4, part: outlet.dc}} · not foreign keys"
     json params "{at: 07:00, day: tomorrow, condition: sunny, cloudMax: 40, action: on}"
     text time_zone "Europe/Stockholm · the owner's clock"
     text mode "off · observe · armed"
@@ -391,7 +413,7 @@ erDiagram
     text actor "olofdahlbom · automation:a-71c2d0e5f9a3 · client:k-51d0e7a2c9f3"
     text resource "d-3f9a2c61b0e4 · not a foreign key: it outlives the device"
     text summary "Switched the AC outlets off"
-    json detail "{capability: outlets, command: set, outlet: ac, on: false}"
+    json detail "{part: outlet.ac, capability: switch, command: set, args: {on: false}}"
   }
   app_state {
     text key PK "legacy-import.decision"
@@ -431,7 +453,9 @@ erDiagram
 | `client` | "Held by this phone" needs a phone to point at, with a name the app can show: "Held by Olof's iPhone". | the first sign-in on a phone or browser |
 | `device_link` | Facts about the house, such as which plug feeds which station, that the gateway, the energy view and automations all read. | step 9, or later on the device's page |
 | `device_kv` | What a session keeps between runs: a simulator's settings, a plug's detected protocol version. | by the session |
-| `sample` | History. | continuously, by the holder |
+| `device.description`, `device_attribute` | What the device is — so a closed or removed device is still described — and every attribute it ever had, so history keeps its labels after a part is gone. | step 10, then whenever it changes |
+| `sample` | History: every attribute the description says to keep. | continuously, by the holder |
+| `device_event` | What devices said happened, beside their history. | when a device raises one |
 
 ### Rules the schema and the code enforce
 
@@ -522,103 +546,14 @@ page, with *Add a way to reach it*.
 
 ---
 
-## 5. Today, and how it gets here
+## 5. One schema
 
-```mermaid
-erDiagram
-  device ||--o{ sample : "recorded (no foreign key: deleted by code)"
-  device ||--o{ device_kv : "remembers (cascade)"
-  users ||--o{ sessions : "has (no foreign key)"
-
-  device {
-    text id PK "power-station:16757b71"
-    text type "power-station · retired"
-    text model "P280 · retired"
-    text driver "core.station · becomes type_id aferiy.p280"
-    text name "Power station"
-    json config "{transport: mqtt, boundId: AABBCC001122} · becomes a device_connection"
-    text added_at "2026-09-01T10:00:00Z"
-  }
-  sample {
-    text device_id PK "power-station:16757b71"
-    text key PK "soc"
-    text at PK "2026-09-27T19:41:00Z"
-    real value "87"
-  }
-  device_kv {
-    text device_id PK "d-68dcc27c1360"
-    text key PK "sim.settings"
-    text value "{acChargingWatts: 800}"
-  }
-  plugin_config {
-    text plugin_id PK "tuya-local-grid-relay · one row per plugin, so one plug per install"
-    json json "{host: 192.0.2.41, deviceId: bf3a0c1d2e4f5a6b7c8d9e, profile: atorch-s1}"
-    int enabled "1"
-    text updated_at "2026-09-10T12:00:00Z"
-  }
-  plugin_secret {
-    text plugin_id PK "tuya-local-grid-relay"
-    text field PK "localKey"
-    text value "encrypted"
-    int encrypted "1"
-  }
-  plugin_kv {
-    text plugin_id PK "tuya-local-grid-relay"
-    text key PK "protocolVersion"
-    text value "3.4"
-  }
-  capability_grant {
-    text plugin_id PK "tuya-local-grid-relay"
-    text capability PK "grid.relay"
-    text granted_at "2026-09-10T12:00:00Z"
-  }
-  active_provider {
-    text resource PK "gridRelay · which plugin plays the relay role"
-    text plugin_id "tuya-local-grid-relay"
-    text chosen_at "2026-09-10T12:00:00Z"
-  }
-  app_state {
-    text key PK "gridRelay.stationDeviceId · becomes a feeds link"
-    text value "power-station:16757b71"
-    text updated_at "2026-09-27T19:45:00Z"
-  }
-  audit {
-    int id PK "4812"
-    text at "2026-09-27T19:51:12Z"
-    text kind "device.control"
-    text actor "olofdahlbom"
-    text resource "power-station:16757b71"
-    text summary "Switched the AC outlets off"
-    text detail "{...}"
-  }
-  users {
-    text id PK "u-2a9c40e1b7d8"
-    text username UK "olof"
-    text password_hash "argon2id"
-  }
-  sessions {
-    text token_hash PK "sha-256"
-    text user_id "u-2a9c40e1b7d8"
-  }
-```
-
-| Today | Becomes |
-|---|---|
-| `device.driver`, `.type`, `.model` | `device.type_id` (`core.station` → `aferiy.p280`) |
-| `device.config.transport`, `.boundId` | one `device_connection`: method `wifi` or `bluetooth`, held by the server, at `AABBCC001122` |
-| nothing | `device.identity`: `sydpower:` plus the MAC, which the station reports itself |
-| `plugin_config` for `tuya-local-grid-relay` | a `device` of type `atorch.s1w`, config `{profile}`, with a `device_connection` (`lan`, `192.0.2.41`) |
-| `plugin_secret` | that connection's `connection_secret` |
-| `plugin_kv` | that device's `device_kv` |
-| `app_state['gridRelay.stationDeviceId']` | a `device_link` of kind `feeds` |
-| `capability_grant`, `active_provider` | dropped: a device's capabilities come from its type, and "which relay" is a link |
-| the fake grid relay plugin | the ATORCH type's simulator. A saved fake relay is dropped, with a line in the audit log. |
-| in-app Bluetooth, remembered only by the app | a `device_connection` held by that client |
-| *Forget* deletes the row and every sample | *Remove* sets `removed_at`; *Delete history* is separate |
-
-The migration follows the rules in ARCHITECTURE.md §4.5: the database is copied
-first, the migration runs in one transaction, and it is rehearsed on a copy of
-the real database before it ships.
+The database is one definition, `server/src/history/schema.ts` — not a chain
+of migrations (ARCHITECTURE.md §4.5, decision 21: strict version 1 while
+kraftverk is in research and development). A database made by any other schema
+is set aside beside itself, untouched, and a new one is started; history from
+an older schema is not carried over. When there is a production state to
+protect, this section becomes the rules for changing a schema that holds it.
 
 ---
 

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { savedDeviceId, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { partOf, savedDeviceId, type AttributeSpec, type DeviceDescription, type DeviceInfo, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import { db } from '../history/db.ts';
 
@@ -30,14 +30,20 @@ export type DeviceRecord = {
   addedAt: string;
   /** When it was removed; its history is kept. Null while it is yours. */
   removedAt: string | null;
+  /** What it is — parts, attributes, events — as it was last described: by its type, or by itself. */
+  description: DeviceDescription;
+  /** What it has said about itself. Null until it has. */
+  info: DeviceInfo | null;
 };
 
 type Row = {
   id: string;
-  type_id: string | null;
+  type_id: string;
   identity: string | null;
   name: string;
   config: string;
+  description: string;
+  info: string | null;
   added_at: string;
   removed_at: string | null;
 };
@@ -45,12 +51,14 @@ type Row = {
 const toRecord = (row: Row): DeviceRecord => ({
   // The database row is a boundary: this is where a string becomes an identity.
   id: savedDeviceId(row.id),
-  typeId: row.type_id ?? '',
+  typeId: row.type_id,
   identity: row.identity,
   name: row.name,
   config: JSON.parse(row.config) as Record<string, unknown>,
   addedAt: row.added_at,
   removedAt: row.removed_at,
+  description: JSON.parse(row.description) as DeviceDescription,
+  info: row.info === null ? null : (JSON.parse(row.info) as DeviceInfo),
 });
 
 export class DeviceCatalog {
@@ -82,7 +90,7 @@ export class DeviceCatalog {
     return { active: rows.find((record) => !record.removedAt) ?? null, removed: rows.filter((record) => record.removedAt) };
   }
 
-  add(input: { typeId: string; name: string; identity?: string | null; config?: Record<string, unknown> }): DeviceRecord {
+  add(input: { typeId: string; name: string; description: DeviceDescription; identity?: string | null; config?: Record<string, unknown> }): DeviceRecord {
     const record: DeviceRecord = {
       /*
         Opaque: an id that says what the device is invites code that reads it,
@@ -96,11 +104,54 @@ export class DeviceCatalog {
       config: input.config ?? {},
       addedAt: new Date().toISOString(),
       removedAt: null,
+      description: input.description,
+      info: null,
     };
-    db()
-      .query('INSERT INTO device (id, type_id, identity, name, config, added_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(record.id, record.typeId, record.identity, record.name, JSON.stringify(record.config), record.addedAt);
+    db().transaction(() => {
+      db()
+        .query('INSERT INTO device (id, type_id, identity, name, config, description, added_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(record.id, record.typeId, record.identity, record.name, JSON.stringify(record.config), JSON.stringify(record.description), record.addedAt);
+      this.#recordAttributes(record.id, record.description, record.addedAt);
+    })();
     return record;
+  }
+
+  /**
+   * Keeps what a device is and has said about itself, writing only what
+   * changed, and records any attribute it has not had before. Returns whether
+   * its description changed — a pack plugged in, a firmware that says more.
+   */
+  describe(id: SavedDeviceId, description: DeviceDescription, info: DeviceInfo | null): boolean {
+    const row = db().query<{ description: string; info: string | null }, [string]>('SELECT description, info FROM device WHERE id = ?').get(id);
+    if (!row) return false; // removed since it was opened: nothing to describe
+    const json = JSON.stringify(description);
+    const changed = row.description !== json;
+    // Information a device has not given is not information it lost.
+    const infoJson = info ? JSON.stringify(info) : null;
+    db().transaction(() => {
+      if (changed) {
+        db().query('UPDATE device SET description = ? WHERE id = ?').run(json, id);
+        this.#recordAttributes(id, description, new Date().toISOString());
+      }
+      if (infoJson !== null && infoJson !== row.info) db().query('UPDATE device SET info = ? WHERE id = ?').run(infoJson, id);
+    })();
+    return changed;
+  }
+
+  /** Every attribute the device has ever had, as last described: what its history is labelled by. */
+  attributes(id: SavedDeviceId): AttributeSpec[] {
+    return db()
+      .query<{ spec: string }, [string]>('SELECT spec FROM device_attribute WHERE device_id = ? ORDER BY first_seen, key')
+      .all(id)
+      .map((row) => JSON.parse(row.spec) as AttributeSpec);
+  }
+
+  #recordAttributes(id: SavedDeviceId, description: DeviceDescription, at: string): void {
+    const upsert = db().query(
+      `INSERT INTO device_attribute (device_id, key, part, spec, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT (device_id, key) DO UPDATE SET part = excluded.part, spec = excluded.spec, last_seen = excluded.last_seen`
+    );
+    for (const attribute of description.attributes) upsert.run(id, attribute.key, partOf(attribute), JSON.stringify(attribute), at, at);
   }
 
   update(id: SavedDeviceId, changes: { name?: string; config?: Record<string, unknown>; identity?: string | null }): DeviceRecord | null {

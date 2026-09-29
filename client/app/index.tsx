@@ -5,6 +5,7 @@ import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { Card, DeviceCard, Row, RowSeparator, SectionLabel, haptic } from '@kraftverk/ui';
 import { fetchFound, type DeviceView, type FoundView } from '@kraftverk/api-client';
+import { attributesOf, MAIN_PART } from '@kraftverk/device-sdk';
 
 import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
@@ -143,7 +144,7 @@ function DeviceList({ devices }: { devices: DeviceView[] }) {
       {devices.map((device) => (
         <DeviceCard
           key={device.id}
-          device={{ ...device, description: device.meta.name }}
+          device={{ name: device.name, subtitle: device.meta.name, health: device.health, attributes: attributesOf(device.description, MAIN_PART), readings: device.readings }}
           icon={<DeviceIcon device={device} />}
           onPress={() => router.push(`/device/${encodeURIComponent(device.id)}`)}
         />

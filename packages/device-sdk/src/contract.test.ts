@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { Protocol, TransportDefinition } from './connection.ts';
+import { MAIN_PART, type DeviceDescription } from './description.ts';
 import type { DeviceContext, DeviceSession, DeviceType } from './device-type.ts';
 import { defineDeviceType } from './device-type.ts';
 import { setupPlan } from './setup.ts';
@@ -15,7 +16,7 @@ import { connectionProblems, validateDeviceType, validateProtocol, validateTrans
 
 type PlugConfig = { pollSeconds: number };
 
-function simulatedPlug(ctx: DeviceContext<PlugConfig>, flaws: { dropSwitch?: boolean; lie?: boolean } = {}): DeviceSession {
+function simulatedPlug(ctx: DeviceContext<PlugConfig>, flaws: { refuse?: boolean; lie?: boolean } = {}): DeviceSession {
   let on = true;
   let at = new Date().toISOString();
   let watts = 40;
@@ -32,21 +33,13 @@ function simulatedPlug(ctx: DeviceContext<PlugConfig>, flaws: { dropSwitch?: boo
       { key: 'relay', value: on, at },
       ...(flaws.lie ? [{ key: 'secret', value: 1, at }] : []),
     ],
-    capability: ((name: string) => {
-      if (name === 'switch' && !flaws.dropSwitch) {
-        return {
-          state: () => ({ on, at }),
-          set: async (next: boolean) => {
-            on = next;
-            at = new Date().toISOString();
-            return { accepted: true as const };
-          },
-          bootBehaviour: () => 'unknown' as const,
-        };
-      }
-      if (name === 'powerMeter') return { read: () => ({ watts, at }) };
-      return null;
-    }) as DeviceSession['capability'],
+    async command(request) {
+      if (flaws.refuse) return { accepted: false, error: 'Not today' };
+      if (request.capability !== 'switch' || typeof request.args.on !== 'boolean') return { accepted: false, error: 'Unknown command' };
+      on = request.args.on;
+      at = new Date().toISOString();
+      return { accepted: true };
+    },
     close: async () => undefined,
   };
 }
@@ -54,20 +47,22 @@ function simulatedPlug(ctx: DeviceContext<PlugConfig>, flaws: { dropSwitch?: boo
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-const plug = (flaws: Parameters<typeof simulatedPlug>[1] = {}): DeviceType<PlugConfig> =>
+const PLUG: DeviceDescription = {
+  parts: [{ id: MAIN_PART, label: 'Example plug', kind: 'device', offers: ['switch'] }],
+  attributes: [
+    { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power.draw', category: 'primary' },
+    { key: 'relay', label: 'Relay', value: { type: 'boolean' }, means: 'switch.on' },
+  ],
+};
+
+const plug = (flaws: Parameters<typeof simulatedPlug>[1] = {}, description: DeviceDescription = PLUG): DeviceType<PlugConfig> =>
   defineDeviceType<PlugConfig>({
     id: 'example.plug',
-    apiVersion: '3',
     kind: 'hardware',
     meta: { name: 'Example plug', category: 'smart-plug', support: 'experimental', icon: 'power' },
-    capabilities: ['switch', 'powerMeter'],
-    telemetry: [
-      { key: 'watts', label: 'Power', unit: 'W', kind: 'power', metric: 'power.draw', primary: true },
-      { key: 'relay', label: 'Relay', unit: '', kind: 'state', metric: 'switch.on' },
-    ],
-    controls: [{ id: 'relay', label: 'Relay', kind: 'switch', capability: 'switch', measurementKey: 'relay' }],
     config: { fields: { pollSeconds: { type: 'number', title: 'Poll interval', default: 10, min: 1 } } },
     connections: [{ id: 'lan', label: 'Home network', protocol: 'example', transport: 'lan' }],
+    describe: () => description,
     // Asks the plug who it is: it answers "id:<serial>".
     async identify(connection) {
       if (connection.channel.kind !== 'bytes') throw new Error('Expected bytes');
@@ -123,14 +118,14 @@ describe('the contract suite', () => {
     expect(await checkDeviceTypeContract(plug(), { settleMs: 500, connections: [connection] })).toEqual([]);
   });
 
-  test('catches a capability that is declared but not offered', async () => {
-    const problems = await checkDeviceTypeContract(plug({ dropSwitch: true }), { settleMs: 200 });
-    expect(problems).toContain('declares "switch" but the session does not offer it');
+  test('catches a part that offers a switch but will not switch', async () => {
+    const problems = await checkDeviceTypeContract(plug({ refuse: true }), { settleMs: 200 });
+    expect(problems).toContain('main: switch.set was refused by the simulator: Not today');
   });
 
-  test('catches telemetry that was never declared', async () => {
+  test('catches a reading its description does not have', async () => {
     const problems = await checkDeviceTypeContract(plug({ lie: true }), { settleMs: 200 });
-    expect(problems).toContain('reports "secret", which its telemetry does not declare');
+    expect(problems).toContain('reports "secret", which the description does not have');
   });
 
   test('catches an identity that is not namespaced by its protocol', async () => {
@@ -162,30 +157,26 @@ describe('validating a declaration', () => {
     );
   });
 
+  const described = (change: (description: DeviceDescription) => DeviceDescription) => validateDeviceType(plug({}, change(PLUG)));
+
   test('a capability outside the library is refused', () => {
-    expect(broken((type) => ({ ...type, capabilities: [...type.capabilities, 'teleport' as never] }))).toContain(
-      'capability "teleport" is not in the library'
+    expect(described((d) => ({ ...d, parts: [{ id: MAIN_PART, label: 'Plug', kind: 'device', offers: ['switch', 'teleport' as never] }] }))).toContain(
+      'part "main" offers "teleport", which is not in the library'
     );
   });
 
-  test('a capability brings the telemetry it needs', () => {
-    expect(
-      broken((type) => ({ ...type, telemetry: type.telemetry.filter((spec) => spec.metric !== 'switch.on'), controls: [] }))
-    ).toContain('capability "switch" needs telemetry with metric "switch.on"');
+  test('a part that offers a capability has the attributes it needs', () => {
+    expect(described((d) => ({ ...d, attributes: d.attributes.filter((attribute) => attribute.means !== 'switch.on') }))).toContain(
+      'part "main" offers "switch", which needs an attribute meaning "switch.on"'
+    );
   });
 
-  test('a standard metric keeps its standard unit, so devices can share an axis', () => {
-    const problems = broken((type) => ({
-      ...type,
-      telemetry: type.telemetry.map((spec) => (spec.key === 'watts' ? { ...spec, unit: 'kW' } : spec)),
+  test('a standard meaning keeps its standard unit, so devices can share an axis', () => {
+    const problems = described((d) => ({
+      ...d,
+      attributes: d.attributes.map((attribute) => (attribute.key === 'watts' ? { ...attribute, value: { type: 'number', unit: 'kW' } } : attribute)),
     }));
-    expect(problems[0]).toContain('claims power.draw, which is power in "W"');
-  });
-
-  test('a control uses a command its capability has', () => {
-    expect(broken((type) => ({ ...type, controls: [{ id: 'x', label: 'X', kind: 'button', capability: 'powerMeter' }] }))).toContain(
-      'control "x": "powerMeter" has no command "set"'
-    );
+    expect(problems).toContain('attribute "watts" means power.draw, which is power in "W"');
   });
 
   test('a device can be reached some way', () => {

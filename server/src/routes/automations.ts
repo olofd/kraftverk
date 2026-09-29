@@ -2,8 +2,8 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import type { AutomationChanges, AutomationView, NewAutomation, RecipeView } from '@kraftverk/api-contract';
-import { meetsNeed, outletsOf, savedDeviceId, validateConfig, type ConfigValues, type SavedDeviceId } from '@kraftverk/device-sdk';
+import type { AutomationView, RecipeView, RoleBinding } from '@kraftverk/api-contract';
+import { capabilitiesOf, MAIN_PART, meetsNeed, partsOf, savedDeviceId, validateConfig, type ConfigValues } from '@kraftverk/device-sdk';
 import { CONFIRMATION } from '@kraftverk/gateway';
 
 import { RECIPES, recipeOf, type AutomationRecord } from '../automations/recipes.ts';
@@ -20,7 +20,7 @@ import { auditDevice, body, type AppDeps } from './shared.ts';
  * gateway, as any command does.
  */
 
-const roles = z.record(z.string().min(1).max(40), z.string().min(1).max(80));
+const roles = z.record(z.string().min(1).max(40), z.object({ device: z.string().min(1).max(80), part: z.string().min(1).max(80) }).strict());
 const params = z.record(z.string().min(1).max(40), z.union([z.string().max(200), z.number(), z.boolean()]));
 
 export function automationRoutes({ automations, engine, catalog, sessions }: AppDeps): Hono {
@@ -29,8 +29,11 @@ export function automationRoutes({ automations, engine, catalog, sessions }: App
   const view = (automation: AutomationRecord): AutomationView => {
     const recipe = recipeOf(automation.recipe);
     const name = (role: string) => {
-      const id = automation.roles[role];
-      return (id && catalog.get(savedDeviceId(id))?.name) || 'a device you no longer have';
+      const binding = automation.roles[role];
+      const record = binding ? catalog.get(binding.device) : null;
+      if (!record) return 'a device you no longer have';
+      const part = partsOf(record.description).find((candidate) => candidate.id === binding!.part);
+      return binding!.part === MAIN_PART || !part ? record.name : `${record.name}'s ${part.label}`;
     };
     return {
       ...automation,
@@ -40,27 +43,19 @@ export function automationRoutes({ automations, engine, catalog, sessions }: App
     };
   };
 
-  /** Checks what is asked of a recipe: every role filled by a device that fits, and settings its schema accepts. */
-  const validated = (recipeId: string, input: { roles: Record<string, string>; params: Record<string, unknown> }) => {
+  /** Checks what is asked of a recipe: every role filled by a part of one of your devices that fits, and settings its schema accepts. */
+  const validated = (recipeId: string, input: { roles: Record<string, { device: string; part: string }>; params: Record<string, unknown> }) => {
     const recipe = recipeOf(recipeId);
     if (!recipe) throw new HTTPException(400, { message: `There is no recipe called "${recipeId}"` });
-    const filled: Record<string, SavedDeviceId> = {};
+    const filled: Record<string, RoleBinding> = {};
     for (const [role, spec] of Object.entries(recipe.roles)) {
-      const id = input.roles[role];
-      const device = id ? catalog.active(savedDeviceId(id)) : null;
-      if (!device) throw new HTTPException(400, { message: `${spec.label}: choose one of your devices` });
-      const type = sessions.typeOf(device);
-      if (!meetsNeed(spec, type?.capabilities ?? [])) throw new HTTPException(400, { message: `${spec.label}: ${device.name} cannot do that` });
-      // Filled through a part — a station's outlet — the part must be one it has.
-      const others = (spec.oneOf ?? []).filter((capability) => capability !== spec.target?.capability);
-      if (spec.target && type && !others.some((capability) => type.capabilities.includes(capability))) {
-        const chosen = input.params[spec.target.param];
-        const parts = outletsOf(type.telemetry).map((outlet) => outlet.id);
-        if (typeof chosen !== 'string' || !parts.includes(chosen)) {
-          throw new HTTPException(400, { message: `${spec.label}: choose which of ${device.name}'s outlets (${parts.join(', ')})` });
-        }
-      }
-      filled[role] = device.id;
+      const binding = input.roles[role];
+      const device = binding ? catalog.active(savedDeviceId(binding.device)) : null;
+      if (!binding || !device) throw new HTTPException(400, { message: `${spec.label}: choose one of your devices` });
+      const description = sessions.description(device);
+      if (!partsOf(description).some((part) => part.id === binding.part)) throw new HTTPException(400, { message: `${spec.label}: ${device.name} has no part "${binding.part}"` });
+      if (!meetsNeed(spec, capabilitiesOf(description, binding.part))) throw new HTTPException(400, { message: `${spec.label}: that part of ${device.name} cannot do that` });
+      filled[role] = { device: device.id, part: binding.part };
     }
     const extra = Object.keys(input.roles).filter((role) => !recipe.roles[role]);
     if (extra.length) throw new HTTPException(400, { message: `This recipe has no role called ${extra.join(', ')}` });
@@ -78,7 +73,7 @@ export function automationRoutes({ automations, engine, catalog, sessions }: App
   api.get('/automations', (c) => c.json({ automations: automations.list().map(view) }));
 
   api.post('/automations', async (c) => {
-    const input: NewAutomation = await body(
+    const input = await body(
       c,
       z.object({ name: z.string().trim().min(1).max(80), recipe: z.string().min(1).max(40), roles, params, timeZone: z.string().min(1).max(64) }).strict()
     );
@@ -92,7 +87,7 @@ export function automationRoutes({ automations, engine, catalog, sessions }: App
   api.patch('/automations/:id', async (c) => {
     const current = automations.get(c.req.param('id'));
     if (!current) throw new HTTPException(404, { message: 'No such automation' });
-    const input: AutomationChanges = await body(
+    const input = await body(
       c,
       z
         .object({

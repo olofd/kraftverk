@@ -20,6 +20,7 @@ import { closeDb, db } from '../history/db.ts';
 import { DeviceCatalog } from './catalog.ts';
 import { ConnectionStore } from './connections.ts';
 import { LinkStore } from './links.ts';
+import { LAMP } from './testing.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'kraftverk-catalog-'));
 let catalog: DeviceCatalog;
@@ -42,7 +43,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const add = (name: string, identity: string | null = null) => catalog.add({ typeId: 'aferiy.p280', name, identity });
+const add = (name: string, identity: string | null = null) => catalog.add({ description: LAMP, typeId: 'aferiy.p280', name, identity });
 
 const sample = (id: string) =>
   db().query('INSERT INTO sample (device_id, key, at, value) VALUES (?, ?, ?, ?)').run(id, 'soc', new Date().toISOString(), 50);
@@ -90,7 +91,7 @@ describe('the device catalog', () => {
 describe('removing a device', () => {
   test('keeps its history, and drops its connections, their secrets and its links', () => {
     const station = add('Doomed', 'sydpower:AABBCC000003');
-    const plug = catalog.add({ typeId: 'atorch.s1w', name: 'Plug' });
+    const plug = catalog.add({ description: LAMP, typeId: 'atorch.s1w', name: 'Plug' });
     const connection = connections.add({ deviceId: station.id, method: 'wifi', transport: 'mqtt', heldBy: null, address: 'AABBCC000003' });
     connections.setSecrets(connection.id, { localKey: 'k' });
     links.add({ kind: 'feeds', sourceId: plug.id, targetId: station.id });
@@ -173,7 +174,7 @@ describe('connections', () => {
 
 describe('links', () => {
   test('a source feeds one thing: a second feeds link replaces the first', () => {
-    const plug = catalog.add({ typeId: 'atorch.s1w', name: 'Feeder' });
+    const plug = catalog.add({ description: LAMP, typeId: 'atorch.s1w', name: 'Feeder' });
     const first = add('First station');
     const second = add('Second station');
     links.add({ kind: 'feeds', sourceId: plug.id, targetId: first.id });
@@ -184,7 +185,7 @@ describe('links', () => {
   });
 
   test('a device cannot feed itself', () => {
-    const plug = catalog.add({ typeId: 'atorch.s1w', name: 'Loop' });
+    const plug = catalog.add({ description: LAMP, typeId: 'atorch.s1w', name: 'Loop' });
     expect(() => links.add({ kind: 'feeds', sourceId: plug.id, targetId: plug.id })).toThrow();
   });
 });

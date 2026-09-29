@@ -2,8 +2,8 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import type { DeviceHistory, DeviceTypeListing, SettingsWrite } from '@kraftverk/api-contract';
-import { CATEGORIES, describeDeviceType, secretFields, type Availability } from '@kraftverk/device-sdk';
+import type { AttributeWrite, CommandBody, DeviceHistory, DeviceTypeListing } from '@kraftverk/api-contract';
+import { CATEGORIES, describeDeviceType, isCapability, type Availability } from '@kraftverk/device-sdk';
 
 import { actorOf } from '../auth/routes.ts';
 import { resolutionOf, series } from '../history/sampler.ts';
@@ -13,7 +13,7 @@ import { auditDevice, body, deviceOr404, type AppDeps } from './shared.ts';
  * The devices you own, whatever they are. Described identically, so the app has
  * one card, one detail screen and one chart for all of them.
  */
-export function deviceRoutes({ config, catalog, types, protocols, transports, sessions, registry, gateway }: AppDeps): Hono {
+export function deviceRoutes({ config, catalog, types, protocols, transports, sessions, registry, gateway, events }: AppDeps): Hono {
   const api = new Hono();
 
   /**
@@ -107,36 +107,30 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
     return c.json({ ok: true, samples });
   });
 
-  // --- settings, history and controls: the same for every device ---------
+  // --- settings, history, events and commands: the same for every device ---
 
   /**
-   * A device's own settings: what it remembers, not how we reach it. The
-   * schema comes from the device, so the app renders every device's settings
-   * through the same code, and a setting that can damage the hardware is
-   * marked as such by the device.
+   * Writes what a device remembers — the attributes its description says can
+   * be written, its settings — through the gateway, like a command: held to
+   * their types, refused while read-only, confirmed for one that can damage
+   * the hardware, verified by reading it back, and audited. A refusal is an
+   * answer (409), with `needsConfirmation` when a person only has to say yes.
    */
-  api.get('/devices/:id/settings', (c) => {
+  api.patch('/devices/:id/attributes', async (c) => {
     const record = deviceOr404(catalog, c.req.param('id'));
-    const settings = sessions.typeOf(record)?.settings;
-    if (!settings) return c.json({ schema: null, values: {}, dangerous: [] });
-    return c.json({ schema: settings.schema, dangerous: settings.dangerous ?? [], values: registry.readSettings(record) });
+    const input: AttributeWrite = await body(
+      c,
+      z.object({ patch: z.record(z.string().max(64), z.union([z.string().max(4096), z.number(), z.boolean(), z.null()])), confirmation: z.string().max(20).optional() }).strict()
+    );
+    const result = await gateway.write({ deviceId: record.id, patch: input.patch, actor: 'user', by: actorOf(c), confirmation: input.confirmation });
+    return c.json(result, result.outcome === 'verified' || result.outcome === 'unverified' ? 200 : 409);
   });
 
-  /**
-   * A settings write goes through the gateway, like a command: held to the
-   * type's schema, refused while read-only, confirmed for a setting that can
-   * damage the hardware, verified by reading it back, and audited. A refusal
-   * is an answer (409), with `needsConfirmation` when a person only has to say yes.
-   */
-  api.patch('/devices/:id/settings', async (c) => {
-    const record = deviceOr404(catalog, c.req.param('id'));
-    if (!sessions.typeOf(record)?.settings) throw new HTTPException(404, { message: 'That device has no settings' });
-    const input: SettingsWrite = await body(
-      c,
-      z.object({ patch: z.record(z.string().max(64), z.union([z.string().max(4096), z.number(), z.boolean()])), confirmation: z.string().max(20).optional() }).strict()
-    );
-    const result = await gateway.writeSettings({ deviceId: record.id, patch: input.patch, actor: 'user', by: actorOf(c), confirmation: input.confirmation });
-    return c.json(result, result.outcome === 'verified' || result.outcome === 'unverified' ? 200 : 409);
+  /** What a device said happened, newest first. A removed device's are still there to look at. */
+  api.get('/devices/:id/events', (c) => {
+    const record = deviceOr404(catalog, c.req.param('id'), { removed: true });
+    const limit = z.coerce.number().int().min(1).max(500).default(100).parse(c.req.query('limit') ?? 100);
+    return c.json({ events: events.recent(record.id, limit) });
   });
 
   /**
@@ -161,27 +155,24 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
   });
 
   /**
-   * A capability command, on this device: every one goes through here, and
-   * so through the action gateway. A control on a screen is only a view of
-   * one of these, with exactly the authority a manual switch has.
+   * A command to one part of a device: every one goes through here, and so
+   * through the action gateway, which checks the part offers the capability
+   * and the arguments are the command's own. A control on a screen is only a
+   * view of one of these, with exactly the authority a manual switch has.
    *
    * A refusal is an answer, not an error: 409 with the gateway's verdict, which
    * says `needsConfirmation` when a person only has to confirm it.
    */
-  api.post('/devices/:id/capabilities/:capability/:command', async (c) => {
+  api.post('/devices/:id/parts/:part/commands/:capability/:command', async (c) => {
     const record = deviceOr404(catalog, c.req.param('id'));
     const capability = c.req.param('capability');
-    const type = sessions.typeOf(record);
-    if (!type?.capabilities.includes(capability as never)) {
-      throw new HTTPException(404, { message: `${record.name} does not offer ${capability}` });
-    }
+    if (!isCapability(capability)) throw new HTTPException(404, { message: `"${capability}" is not a capability` });
 
-    const { target, value, confirmation, reason } = await body(
+    const input: CommandBody = await body(
       c,
       z
         .object({
-          target: z.string().min(1).max(40).optional(),
-          value: z.boolean(),
+          args: z.record(z.string().max(64), z.union([z.string().max(4096), z.number(), z.boolean(), z.null()])),
           confirmation: z.string().max(64).optional(),
           reason: z.string().min(1).max(200).optional(),
         })
@@ -190,14 +181,14 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
 
     const result = await gateway.execute({
       deviceId: record.id,
-      capability: capability as never,
+      part: c.req.param('part'),
+      capability,
       command: c.req.param('command'),
-      target,
-      value,
-      reason: reason ?? 'From the device screen',
+      args: input.args,
+      reason: input.reason ?? 'From the device screen',
       actor: 'user',
       by: actorOf(c),
-      confirmation,
+      confirmation: input.confirmation,
     });
     return c.json(result, result.outcome === 'refused' ? 409 : 200);
   });

@@ -17,8 +17,9 @@ import {
   type ConfigValues,
   type DeviceView,
   type RecipeView,
+  type RoleBinding,
 } from '@kraftverk/api-client';
-import { meetsNeed, outletsOf } from '@kraftverk/device-sdk';
+import { capabilitiesOf, MAIN_PART, meetsNeed, partsOf } from '@kraftverk/device-sdk';
 import { Card, Row, RowSeparator, SchemaForm, SectionLabel, SegmentedControl, haptic, isComplete } from '@kraftverk/ui';
 
 import { Pressable } from '../src/components/Pressable';
@@ -274,38 +275,30 @@ function Editor({
 }) {
   const [recipe, setRecipe] = useState<RecipeView | null>(recipes.length === 1 ? recipes[0]! : null);
   const [name, setName] = useState('');
-  const [roles, setRoles] = useState<Record<string, string>>({});
+  const [roles, setRoles] = useState<Record<string, RoleBinding>>({});
   const [params, setParams] = useState<ConfigValues>(() => (recipes.length === 1 ? defaults(recipes[0]!) : {}));
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
+  /** For each role, every part of every device you have that fits it: a plug, or one outlet of a station. */
   const fits = useMemo(
     () =>
       Object.fromEntries(
         Object.entries(recipe?.roles ?? {}).map(([role, spec]) => [
           role,
-          devices.filter((device) => !device.removedAt && meetsNeed(spec, device.capabilities)),
+          devices
+            .filter((device) => !device.removedAt)
+            .flatMap((device) =>
+              partsOf(device.description, device.name)
+                .filter((part) => meetsNeed(spec, capabilitiesOf(device.description, part.id)))
+                .map((part) => ({ device, part, title: part.id === MAIN_PART ? device.name : `${device.name} — ${part.label}` }))
+            ),
         ])
       ),
     [devices, recipe]
   );
-  /** For a role filled through a part — a station's outlets — which parts the chosen device has. Null otherwise. */
-  const partsFor = (role: string): { id: string; label: string }[] | null => {
-    const spec = recipe?.roles[role];
-    const device = devices.find((candidate) => candidate.id === roles[role]);
-    if (!spec?.target || !device) return null;
-    const others = (spec.oneOf ?? []).filter((capability) => capability !== spec.target!.capability);
-    if (others.some((capability) => device.capabilities.includes(capability))) return null;
-    return outletsOf(device.measurements);
-  };
-  /** The settings the form shows: a part is chosen beside its device, not typed. */
-  const formSchema = useMemo(() => {
-    if (!recipe) return null;
-    const targets = new Set(Object.values(recipe.roles).flatMap((spec) => (spec.target ? [spec.target.param] : [])));
-    return { fields: Object.fromEntries(Object.entries(recipe.params.fields).filter(([field]) => !targets.has(field))) };
-  }, [recipe]);
-  const partsChosen = Object.entries(recipe?.roles ?? {}).every(([role, spec]) => !partsFor(role) || Boolean(spec.target && params[spec.target.param]));
-  const ready = recipe !== null && name.trim() !== '' && Object.keys(recipe.roles).every((role) => roles[role]) && partsChosen && isComplete(recipe.params, params);
+  const chosen = (role: string, device: DeviceView, part: string) => roles[role]?.device === device.id && roles[role]?.part === part;
+  const ready = recipe !== null && name.trim() !== '' && Object.keys(recipe.roles).every((role) => roles[role]) && isComplete(recipe.params, params);
 
   const save = async () => {
     if (!recipe) return;
@@ -348,20 +341,17 @@ function Editor({
               <SectionLabel>{spec.label}</SectionLabel>
               <Card inset>
                 {fits[role]?.length ? (
-                  fits[role]!.map((device, index) => (
-                    <YStack key={device.id}>
+                  fits[role]!.map(({ device, part, title }, index) => (
+                    <YStack key={`${device.id}:${part.id}`}>
                       {index > 0 ? <RowSeparator /> : null}
                       <Pressable
-                        selected={roles[role] === device.id}
-                        onPress={() => {
-                          setRoles((current) => ({ ...current, [role]: device.id }));
-                          if (spec.target) setParams((current) => ({ ...current, [spec.target!.param]: undefined }));
-                        }}
+                        selected={chosen(role, device, part.id)}
+                        onPress={() => setRoles((current) => ({ ...current, [role]: { device: device.id, part: part.id } }))}
                       >
                         <Row
-                          title={device.name}
+                          title={title}
                           subtitle={device.meta.name}
-                          accessory={roles[role] === device.id ? <Feather name="check" size={16} /> : undefined}
+                          accessory={chosen(role, device, part.id) ? <Feather name="check" size={16} /> : undefined}
                         />
                       </Pressable>
                     </YStack>
@@ -370,32 +360,13 @@ function Editor({
                   <Row title="Nothing you have fits" subtitle={`${spec.description}. Add one first.`} />
                 )}
               </Card>
-              {spec.target && partsFor(role) ? (
-                <Card inset>
-                  {partsFor(role)!.map((part, index) => (
-                    <YStack key={part.id}>
-                      {index > 0 ? <RowSeparator /> : null}
-                      <Pressable
-                        selected={params[spec.target!.param] === part.id}
-                        onPress={() => setParams((current) => ({ ...current, [spec.target!.param]: part.id }))}
-                      >
-                        <Row
-                          title={part.label}
-                          subtitle="The outlet to switch"
-                          accessory={params[spec.target!.param] === part.id ? <Feather name="check" size={16} /> : undefined}
-                        />
-                      </Pressable>
-                    </YStack>
-                  ))}
-                </Card>
-              ) : null}
             </YStack>
           ))}
 
           <YStack gap="$2">
             <SectionLabel>Settings</SectionLabel>
             <Card gap="$3">
-              <SchemaForm schema={formSchema ?? recipe.params} values={params} onChange={(field, value) => setParams((current) => ({ ...current, [field]: value }))} />
+              <SchemaForm schema={recipe.params} values={params} onChange={(field, value) => setParams((current) => ({ ...current, [field]: value }))} />
             </Card>
           </YStack>
 

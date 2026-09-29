@@ -38,6 +38,10 @@ export type ConfigSchema = {
 
 export type ConfigValues = Record<string, string | number | boolean | undefined>;
 
+/** The defaults a schema gives, for describing a device before any is saved. */
+export const configDefaults = (schema: ConfigSchema): ConfigValues =>
+  Object.fromEntries(Object.entries(schema.fields).flatMap(([name, field]) => ('default' in field && field.default !== undefined ? [[name, field.default]] : [])));
+
 export type ValidationIssue = { field: string; message: string };
 
 export type ValidationResult =

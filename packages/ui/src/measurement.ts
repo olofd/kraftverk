@@ -1,17 +1,17 @@
-import type { MetricSpec, Reading } from '@kraftverk/device-sdk';
+import { enumLabel, quantityOf, unitOf, type AttributeSpec, type Quantity, type Reading, type Value } from '@kraftverk/device-sdk';
 
 import { formatDuration, formatWatts, formatWh } from './format';
 
 /**
  * How to draw a number nobody wrote a screen for.
  *
- * Every device declares what it measures and what kind each quantity is. That
- * declaration is the whole interface: this file turns a kind into formatting,
- * an axis and a sense of what zero means, so a plug added next year gets a card
- * and a chart without a line of code being written for it.
+ * Every device describes its attributes: what type of value each is, and for a
+ * number what quantity. That description is the whole interface: this file
+ * turns it into formatting, an axis and a sense of what zero means, so a plug
+ * added next year gets a card and a chart without a line of code for it.
  *
- * The rule the kinds encode: a *unit* says what the number is, a *kind* says how
- * it behaves. Two quantities in watts read the same; a percentage and a
+ * The rule the quantities encode: a *unit* says what the number is, a
+ * *quantity* says how it behaves. Two quantities in watts read the same; a percentage and a
  * temperature both fit 0–100 but only one of them should start its axis at zero.
  */
 
@@ -51,7 +51,7 @@ export const isStale = (at: string | null): boolean =>
   at === null || Date.now() - Date.parse(at) > STALE_AFTER_MS;
 
 /** How many decimals a kind is worth, when the device does not say. */
-const DEFAULT_PRECISION: Record<MetricSpec['kind'], number> = {
+const DEFAULT_PRECISION: Record<Quantity, number> = {
   power: 0,
   energy: 0,
   percent: 0,
@@ -66,43 +66,48 @@ const DEFAULT_PRECISION: Record<MetricSpec['kind'], number> = {
   state: 0,
 };
 
+type Formatted = Pick<AttributeSpec, 'value' | 'quantity' | 'means'>;
+
 /**
- * One reading, as a person would read it.
+ * One value, as a person would read it.
  *
  * `null` is rendered as an em dash rather than a zero. A device that has not
  * reported is not a device reporting nothing, and the difference matters most
- * exactly when something has gone wrong.
+ * exactly when something has gone wrong. An enum shows its label; on/off shows
+ * as words.
  */
-export function formatMeasurement(spec: MetricSpec, value: number | boolean | null): string {
+export function formatValue(attribute: Formatted, value: Value | undefined): string {
   if (value === null || value === undefined) return '—';
-
-  if (spec.kind === 'state' || typeof value === 'boolean') {
-    return value === true || value === 1 ? 'On' : 'Off';
-  }
+  if (typeof value === 'boolean') return value ? 'On' : 'Off';
+  if (typeof value === 'string') return attribute.value.type === 'enum' ? enumLabel(attribute.value, value) : value;
   if (!Number.isFinite(value)) return '—';
 
-  switch (spec.kind) {
+  const quantity = quantityOf(attribute);
+  const unit = unitOf(attribute);
+  const precision = attribute.value.type === 'number' ? attribute.value.precision : undefined;
+  switch (quantity) {
+    case 'state':
+      return value ? 'On' : 'Off';
     case 'power':
       // The shared formatter knows when to switch to kW; it only applies when
       // the device is actually counting watts.
-      return spec.unit === 'W' ? formatWatts(value) : withUnit(spec, value);
+      return unit === 'W' ? formatWatts(value) : withUnit(unit, precision ?? 0, value);
     case 'energy':
-      return spec.unit === 'Wh' ? formatWh(value) : withUnit(spec, value);
+      return unit === 'Wh' ? formatWh(value) : withUnit(unit, precision ?? 0, value);
     case 'percent':
-      return `${value.toFixed(spec.precision ?? 0)}%`;
+      return `${value.toFixed(precision ?? 0)}%`;
     case 'duration':
       // Declared in minutes by convention, which is what the station reports.
-      return formatDuration(spec.unit === 'min' ? value : value / 60);
+      return formatDuration(unit === 'min' ? value : value / 60);
     default:
-      return withUnit(spec, value);
+      return withUnit(unit, precision ?? (quantity ? DEFAULT_PRECISION[quantity] : 0), value);
   }
 }
 
-const withUnit = (spec: MetricSpec, value: number): string => {
-  const digits = spec.precision ?? DEFAULT_PRECISION[spec.kind];
+const withUnit = (unit: string, digits: number, value: number): string => {
   const number = value.toFixed(digits);
   // Degrees hug their number; every other unit takes a space.
-  return spec.unit.startsWith('°') ? `${number}${spec.unit}` : `${number} ${spec.unit}`.trim();
+  return unit.startsWith('°') ? `${number}${unit}` : `${number} ${unit}`.trim();
 };
 
 /**
@@ -112,16 +117,19 @@ const withUnit = (spec: MetricSpec, value: number): string => {
  * charge. Not for mains voltage or room temperature, where a zero-based axis
  * compresses the whole interesting range into a band a few pixels tall.
  */
-export const startsAtZero = (kind: MetricSpec['kind']): boolean =>
-  kind === 'power' || kind === 'energy' || kind === 'percent' || kind === 'current' ||
-  kind === 'duration' || kind === 'state';
+export const startsAtZero = (quantity: Quantity | null): boolean =>
+  quantity === 'power' || quantity === 'energy' || quantity === 'percent' || quantity === 'current' ||
+  quantity === 'duration' || quantity === 'state' || quantity === 'illuminance';
 
 /** A percentage is 0–100 whatever the data did; nothing else has fixed bounds. */
-export const fixedRange = (kind: MetricSpec['kind']): [number, number] | null =>
-  kind === 'percent' ? [0, 100] : kind === 'state' ? [0, 1] : null;
+export const fixedRange = (quantity: Quantity | null): [number, number] | null =>
+  quantity === 'percent' || quantity === 'humidity' ? [0, 100] : quantity === 'state' ? [0, 1] : null;
 
-/** The measurement a card should lead with, and a chart should open on. */
-export const primaryMeasurement = (
-  measurements: readonly MetricSpec[]
-): MetricSpec | null =>
-  measurements.find((measurement) => measurement.primary) ?? measurements[0] ?? null;
+/**
+ * What a card shows, in order: the attribute marked primary, then the others a
+ * person reads — never settings, never diagnostics.
+ */
+export const shownAttributes = (attributes: readonly AttributeSpec[]): AttributeSpec[] => {
+  const readable = attributes.filter((attribute) => attribute.category !== 'config' && attribute.category !== 'diagnostic');
+  return [...readable.filter((attribute) => attribute.category === 'primary'), ...readable.filter((attribute) => attribute.category !== 'primary')];
+};

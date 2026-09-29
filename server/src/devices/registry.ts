@@ -1,5 +1,5 @@
 import type { ConnectionView, DeviceView, LinkView } from '@kraftverk/api-contract';
-import type { ConfigValues, SavedDeviceId } from '@kraftverk/device-sdk';
+import { deviceCapabilities, type SavedDeviceId } from '@kraftverk/device-sdk';
 import { activeConnection } from '@kraftverk/holder';
 
 import type { TransportHost } from '../runtime/transports.ts';
@@ -15,9 +15,9 @@ import type { DeviceTypeRegistry } from './types.ts';
  * Joins the devices you added to what they are, how they are reached, and
  * what they are doing.
  *
- * The catalog says what exists; the device type says what it is; its
- * connections say how it is reached and its links how it fits the house; its
- * session says what it is doing. Every device is described the same way, so
+ * The catalog says what exists and what each device was last described as;
+ * its open session says what it is now and what it is doing; its connections
+ * say how it is reached and its links how it fits the house. Every device is described the same way, so
  * the app has one card, one detail screen and one chart for everything it will
  * ever show — and this file names no product. The shapes it builds are the
  * API contract's (`@kraftverk/api-contract`), shared with the app.
@@ -60,6 +60,7 @@ export class DeviceRegistry {
   #view(record: DeviceRecord, names: Map<SavedDeviceId, string>): DeviceView {
     const type = this.deps.sessions.typeOf(record);
     const session = record.removedAt ? null : this.deps.sessions.get(record.id);
+    const description = record.removedAt ? record.description : this.deps.sessions.description(record);
     const opened = record.removedAt ? null : this.deps.sessions.inUse(record.id);
     const latest = record.removedAt ? null : this.deps.remote.latest(record.id);
 
@@ -120,10 +121,9 @@ export class DeviceRegistry {
       meta: type
         ? { name: type.meta.name, brand: type.meta.brand, icon: type.meta.icon, support: type.meta.support, category: type.meta.category }
         : { name: record.typeId, icon: 'help-circle', support: 'experimental', category: 'unknown' },
-      capabilities: type?.capabilities ?? [],
-      measurements: type?.telemetry ?? [],
-      controls: type?.controls ?? [],
-      settings: type?.settings ?? null,
+      description,
+      capabilities: deviceCapabilities(description),
+      info: record.removedAt ? record.info : this.deps.sessions.info(record),
       config: record.config,
       connections,
       links,
@@ -142,10 +142,4 @@ export class DeviceRegistry {
           : this.deps.sessions.health(record),
     };
   }
-
-  /** A device's own settings, as last read from it. Empty until they have been. */
-  readSettings(record: DeviceRecord): ConfigValues {
-    return this.deps.sessions.get(record.id)?.readSettings?.() ?? {};
-  }
-  // Writing them is the gateway's (ActionGateway.writeSettings): the same checks as a command.
 }

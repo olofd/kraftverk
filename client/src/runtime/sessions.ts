@@ -1,5 +1,5 @@
-import type { ConnectionHealth, DeviceEvent, DeviceSession, DeviceStore, SavedDeviceId } from '@kraftverk/device-sdk';
-import { Failover, identityVerdict, openDevice, OpenRefused, type OpenedDevice } from '@kraftverk/holder';
+import type { ConnectionHealth, DeviceDescription, DeviceInfo, DeviceSession, DeviceStore, SavedDeviceId } from '@kraftverk/device-sdk';
+import { Failover, identityVerdict, openDevice, OpenRefused, type DeviceEventMessage, type OpenedDevice } from '@kraftverk/holder';
 
 import { PLATFORM, type AppRegistry } from './registry';
 
@@ -38,8 +38,8 @@ export type HeldSessionsOptions = {
   registry: AppRegistry;
   /** Writes from this app are refused unless someone has allowed them. */
   readOnly: () => boolean;
-  /** A device's own events, for the audit timeline. */
-  emit: (held: HeldDevice, event: DeviceEvent) => void;
+  /** An event a device raised, checked against its description. */
+  event: (held: HeldDevice, event: DeviceEventMessage) => void;
   /** The connection answered. */
   onConnected?: (held: HeldDevice) => void;
   /** A connection reached a different device from the one it was added as. */
@@ -62,6 +62,16 @@ export class HeldSessions {
 
   get(deviceId: string): DeviceSession | null {
     return this.#open.get(deviceId)?.opened.session ?? null;
+  }
+
+  /** What an open device is now: its own description, or its type's for its config. */
+  description(deviceId: string): DeviceDescription | null {
+    return this.#open.get(deviceId)?.opened.description() ?? null;
+  }
+
+  /** What an open device has said about itself. */
+  info(deviceId: string): DeviceInfo | null {
+    return this.#open.get(deviceId)?.opened.info() ?? null;
   }
 
   held(deviceId: string): HeldDevice | null {
@@ -122,7 +132,8 @@ export class HeldSessions {
         // Frames nobody has described are for a server started to bring up a unit, never for an app.
         allowRawFrames: false,
         log: { info: log('log'), warn: log('warn'), error: log('error') },
-        emit: (event) => this.options.emit(held, event),
+        event: (event) => this.options.event(held, event),
+        changed: () => this.options.onChange?.(),
         afterScheduled: () => {
           this.#checkIdentity(held.deviceId);
           this.options.onChange?.();

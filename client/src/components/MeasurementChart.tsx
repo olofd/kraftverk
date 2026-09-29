@@ -3,13 +3,14 @@ import Svg, { Line, Path } from 'react-native-svg';
 import { Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { describeError, fetchDeviceHistory } from '@kraftverk/api-client';
-import type { MetricSpec, SeriesPoint } from '@kraftverk/api-client';
+import type { AttributeSpec, SeriesPoint } from '@kraftverk/api-client';
+import { quantityOf } from '@kraftverk/device-sdk';
 import {
   chartPath,
   chartScale,
   chartSegments,
   chartY,
-  formatMeasurement,
+  formatValue,
   haptic,
 } from '@kraftverk/ui';
 
@@ -17,7 +18,7 @@ import {
  * One chart, for every measurement of every device.
  *
  * This is what the device model was for. It is written against a
- * `MetricSpec` and a list of points, so a plug added next year is charted
+ * `AttributeSpec` and a list of points, so a plug added next year is charted
  * by code that predates it — the kind decides the axis, the unit decides the
  * labels, and nothing here has an opinion about what is being measured.
  *
@@ -41,7 +42,7 @@ export function MeasurementChart({
   measurement,
 }: {
   deviceId: string;
-  measurement: MetricSpec;
+  measurement: AttributeSpec;
 }) {
   const [hours, setHours] = useState<number>(24);
   const [points, setPoints] = useState<SeriesPoint[] | null>(null);
@@ -72,7 +73,7 @@ export function MeasurementChart({
     return () => controller.abort();
   }, [load]);
 
-  const scale = useMemo(() => chartScale(points ?? [], measurement), [measurement, points]);
+  const scale = useMemo(() => chartScale(points ?? [], quantityOf(measurement)), [measurement, points]);
   const segments = useMemo(() => chartSegments(points ?? []), [points]);
 
   return (
@@ -151,13 +152,13 @@ export function MeasurementChart({
       {segments.length > 0 ? (
         <XStack justifyContent="space-between">
           <Text fontSize={11} color="$muted">
-            low {formatMeasurement(measurement, scale.trough)}
+            low {formatValue(measurement, scale.trough)}
           </Text>
           <Text fontSize={11} color="$muted">
             {segments.length > 1 ? `${segments.length} runs · gaps not drawn` : 'continuous'}
           </Text>
           <Text fontSize={11} color="$muted">
-            peak {formatMeasurement(measurement, scale.peak)}
+            peak {formatValue(measurement, scale.peak)}
           </Text>
         </XStack>
       ) : null}

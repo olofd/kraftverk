@@ -1,5 +1,5 @@
-import type { AutomationMode, AutomationRun } from '@kraftverk/api-contract';
-import type { CapabilityName, CapabilityNeed, ConfigSchema, ConfigValues, DeviceSession, SavedDeviceId, WeatherHour } from '@kraftverk/device-sdk';
+import type { AutomationMode, AutomationRun, RoleBinding } from '@kraftverk/api-contract';
+import type { CapabilityName, CapabilityNeed, ConfigSchema, ConfigValues, DeviceSession, QueryAnswers, Value } from '@kraftverk/device-sdk';
 
 import { dayAfter, localTime, zonedInstant } from './time.ts';
 
@@ -7,9 +7,10 @@ import { dayAfter, localTime, zonedInstant } from './time.ts';
  * Recipes: whole behaviours the core implements, with roles you fill with
  * devices (docs/PROJECT-BRIEF.md, "Wiring"; docs/ARCHITECTURE.md step 14).
  *
- * A recipe names capabilities, never products. Each role says what a device
- * must offer to fill it, so the editor offers only devices that fit and an
- * incompatible piece cannot be connected. Every guard lives here and in the
+ * A recipe names capabilities, never products. Each role says what a part of a
+ * device must offer to fill it — a plug, or one outlet of a station — so the
+ * editor offers only parts that fit and an incompatible piece cannot be
+ * connected. Every guard lives here and in the
  * gateway, not in what a person configures: a recipe only ever *decides*, and
  * what it decides to do goes through the gateway like any command from a
  * screen — dwell, freshness, read-only mode, verification and the audit.
@@ -23,8 +24,8 @@ export type AutomationRecord = {
   id: string;
   name: string;
   recipe: string;
-  /** Which device fills each role. */
-  roles: Record<string, SavedDeviceId>;
+  /** Which part of which device fills each role. */
+  roles: Record<string, RoleBinding>;
   params: ConfigValues;
   /** The owner's clock, from the app it was made in: "Europe/Stockholm". */
   timeZone: string;
@@ -35,19 +36,22 @@ export type AutomationRecord = {
   lastResult: RunResult | null;
 };
 
-/** A role: what a device must offer to fill it (`meetsNeed`), and what it is for. */
+/** A role: what a part must offer to fill it (`meetsNeed`), and what it is for. */
 export type RoleSpec = CapabilityNeed & {
   label: string;
   description: string;
-  /**
-   * When a device fills the role through this capability — a station, through
-   * `outlets` — which part of it: the chosen outlet is kept in the setting `param`.
-   */
-  target?: { param: string; capability: CapabilityName };
 };
 
-/** A device, as a recipe may see it. */
-export type RecipeDevice = { name: string; session: DeviceSession | null; offline: string; capabilities: readonly CapabilityName[] };
+/** The part filling a role, as a recipe may see it. */
+export type RecipeDevice = {
+  /** "Heater plug", or "Garage station — AC outlets" for a part that is not the whole device. */
+  name: string;
+  session: DeviceSession | null;
+  part: string;
+  offline: string;
+  /** What the part offers. */
+  capabilities: readonly CapabilityName[];
+};
 
 export type RecipeContext = {
   automation: AutomationRecord;
@@ -57,8 +61,8 @@ export type RecipeContext = {
 
 /** What a recipe decided. It never acts itself. */
 export type Decision =
-  /** Do this, through the gateway, and say why. */
-  | { kind: 'act'; role: string; capability: CapabilityName; command: string; target?: string; value: boolean; reason: string }
+  /** Do this, through the gateway, to the part filling the role, and say why. */
+  | { kind: 'act'; role: string; capability: CapabilityName; command: string; args: Record<string, Value>; reason: string }
   /** The condition is not met: nothing to do. */
   | { kind: 'idle'; reason: string }
   /** It cannot tell — a forecast that is not there is not a sunny one. Nothing is done. */
@@ -72,7 +76,7 @@ export type Recipe = {
   params: ConfigSchema;
   /** Whether it should run now, given when it last ran. */
   due(automation: AutomationRecord, now: Date): boolean;
-  decide(ctx: RecipeContext): Decision;
+  decide(ctx: RecipeContext): Promise<Decision>;
   /** One sentence for the list: "At 07:00, if today looks sunny, turn Heater plug on." */
   describe(automation: AutomationRecord, name: (role: string) => string): string;
 };
@@ -100,13 +104,7 @@ export const forecastSwitch: Recipe = {
   description: 'Once a day, switch something on or off depending on whether the day looks sunny.',
   roles: {
     forecast: { label: 'Forecast', description: 'Where the forecast comes from', capabilities: ['weather.forecast'] },
-    switch: {
-      label: 'What to switch',
-      description: 'A plug, or one outlet of a station',
-      capabilities: [],
-      oneOf: ['switch', 'outlets'],
-      target: { param: 'outlet', capability: 'outlets' },
-    },
+    switch: { label: 'What to switch', description: 'A plug, or one outlet of a station', capabilities: ['switch'] },
   },
   params: {
     fields: {
@@ -145,11 +143,6 @@ export const forecastSwitch: Recipe = {
         step: 5,
         default: 40,
       },
-      outlet: {
-        type: 'string',
-        title: 'Which outlet',
-        description: 'For a station: the outlet to switch. A plug has only one.',
-      },
       action: {
         type: 'enum',
         title: 'Then turn it',
@@ -169,18 +162,26 @@ export const forecastSwitch: Recipe = {
     return automation.lastRunAt === null || Date.parse(automation.lastRunAt) < at.getTime();
   },
 
-  decide({ automation, now, device }) {
+  async decide({ automation, now, device }) {
     const params = automation.params;
     const forecast = device('forecast');
     if (!forecast) return { kind: 'unknown', reason: 'Its forecast is no longer one of your devices' };
-    const capability = forecast.session?.capability('weather.forecast') ?? null;
-    if (!capability) return { kind: 'unknown', reason: `${forecast.name} is not answering: ${forecast.offline}` };
+    const session = forecast.session;
+    if (!session?.query || !forecast.capabilities.includes('weather.forecast')) {
+      return { kind: 'unknown', reason: `${forecast.name} is not answering: ${forecast.offline}` };
+    }
+    let forecastHours: QueryAnswers['weather.forecast']['hourly'];
+    try {
+      forecastHours = (await session.query({ part: forecast.part, capability: 'weather.forecast', query: 'hourly', args: { hours: 72 } })) as typeof forecastHours;
+    } catch (error) {
+      return { kind: 'unknown', reason: `${forecast.name} could not answer: ${(error as Error).message}` };
+    }
 
     const which = params.day === 'tomorrow' ? 'tomorrow' : 'today';
     const date = dayAfter(now, automation.timeZone, which === 'tomorrow' ? 1 : 0);
     const from = zonedInstant({ ...date, hour: DAYLIGHT.from, minute: 0 }, automation.timeZone).getTime();
     const to = zonedInstant({ ...date, hour: DAYLIGHT.to, minute: 0 }, automation.timeZone).getTime();
-    const hours = capability.hourly(72).filter((hour: WeatherHour) => {
+    const hours = forecastHours.filter((hour) => {
       const at = Date.parse(hour.at);
       return at >= from && at < to;
     });
@@ -196,18 +197,12 @@ export const forecastSwitch: Recipe = {
     const wanted = params.condition === 'cloudy' ? 'cloudy' : 'sunny';
     const reason = `${capitalise(which)} looks ${looks}: ${cloud} % cloud on average between 09:00 and 17:00`;
     if (looks !== wanted) return { kind: 'idle', reason };
-    const value = params.action !== 'off';
-    const target = device('switch');
-    if (target?.capabilities.includes('switch')) return { kind: 'act', role: 'switch', capability: 'switch', command: 'set', value, reason };
-    const outlet = typeof params.outlet === 'string' && params.outlet ? params.outlet : null;
-    if (!outlet) return { kind: 'unknown', reason: 'It does not say which outlet to switch' };
-    return { kind: 'act', role: 'switch', capability: 'outlets', command: 'set', target: outlet, value, reason };
+    return { kind: 'act', role: 'switch', capability: 'switch', command: 'set', args: { on: params.action !== 'off' }, reason };
   },
 
   describe(automation, name) {
     const params = automation.params;
-    const what = params.outlet ? `${name('switch')}'s ${params.outlet} outlet` : name('switch');
-    return `At ${params.at ?? '07:00'}, if ${params.day === 'tomorrow' ? 'tomorrow' : 'today'} looks ${params.condition === 'cloudy' ? 'cloudy' : 'sunny'} by ${name('forecast')}, turn ${what} ${params.action === 'off' ? 'off' : 'on'}.`;
+    return `At ${params.at ?? '07:00'}, if ${params.day === 'tomorrow' ? 'tomorrow' : 'today'} looks ${params.condition === 'cloudy' ? 'cloudy' : 'sunny'} by ${name('forecast')}, turn ${name('switch')} ${params.action === 'off' ? 'off' : 'on'}.`;
   },
 };
 

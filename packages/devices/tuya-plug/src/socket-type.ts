@@ -1,15 +1,13 @@
 import {
   defineDeviceType,
-  type BootBehaviour,
-  type CapabilityImpl,
-  type CapabilityName,
+  MAIN_PART,
   type ConfigSchema,
   type ConnectionHealth,
   type DeviceContext,
+  type DeviceDescription,
   type DeviceSession,
   type DeviceType,
   type DeviceTypeMeta,
-  type MetricSpec,
   type OpenConnection,
   type Reading,
 } from '@kraftverk/device-sdk';
@@ -32,6 +30,14 @@ export type SocketTypeDefinition = {
   profiles: readonly SocketProfile[];
 };
 
+/**
+ * What the relay does when power returns after a cut. A plug that feeds a
+ * station's charger and comes back off can strand a flat battery with no way
+ * to charge, so this is recorded from a real power-cut test, and `unknown` is
+ * a value, not an omission.
+ */
+type BootBehaviour = 'on' | 'off' | 'last' | 'unknown';
+
 type SocketConfig = {
   profile: string;
   relayDp?: number;
@@ -39,16 +45,24 @@ type SocketConfig = {
   pollSeconds: number;
 };
 
-const TELEMETRY: MetricSpec[] = [
-  { key: 'watts', label: 'Power', unit: 'W', kind: 'power', metric: 'power.draw', precision: 0, primary: true },
-  { key: 'volts', label: 'Voltage', unit: 'V', kind: 'voltage', metric: 'voltage.ac', precision: 1 },
-  { key: 'amps', label: 'Current', unit: 'A', kind: 'current', metric: 'current.ac', precision: 2 },
-  { key: 'kwh', label: 'Energy', unit: 'kWh', kind: 'energy', metric: 'energy.total', precision: 2, stateClass: 'total_increasing' },
-  { key: 'hz', label: 'Frequency', unit: 'Hz', kind: 'frequency', metric: 'frequency.ac', precision: 1 },
-  { key: 'relay', label: 'Relay', unit: '', kind: 'state', metric: 'switch.on' },
-];
-
-const CAPABILITIES = ['switch', 'powerMeter'] as const;
+/** A socket: one part, a relay it switches and a meter on what flows through it. */
+const DESCRIPTION: DeviceDescription = {
+  parts: [{ id: MAIN_PART, label: 'Socket', kind: 'outlet', role: 'load', offers: ['switch'] }],
+  attributes: [
+    { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W', precision: 0 }, quantity: 'power', means: 'power.draw', category: 'primary' },
+    { key: 'volts', label: 'Voltage', value: { type: 'number', unit: 'V', precision: 1 }, quantity: 'voltage', means: 'voltage.ac' },
+    { key: 'amps', label: 'Current', value: { type: 'number', unit: 'A', precision: 2 }, quantity: 'current', means: 'current.ac' },
+    { key: 'kwh', label: 'Energy', value: { type: 'number', unit: 'kWh', precision: 2 }, quantity: 'energy', means: 'energy.total', stateClass: 'total_increasing' },
+    { key: 'hz', label: 'Frequency', value: { type: 'number', unit: 'Hz', precision: 1 }, quantity: 'frequency', means: 'frequency.ac', category: 'diagnostic' },
+    {
+      key: 'relay',
+      label: 'Power',
+      value: { type: 'boolean' },
+      means: 'switch.on',
+      consequence: 'Switches off whatever is plugged into it. If it feeds a station, the station then runs from its battery and solar.',
+    },
+  ],
+};
 
 function configSchema(profiles: readonly SocketProfile[]): ConfigSchema {
   return {
@@ -89,7 +103,7 @@ function configSchema(profiles: readonly SocketProfile[]): ConfigSchema {
 const profileOf = (profiles: readonly SocketProfile[], id: unknown): SocketProfile =>
   profiles.find((profile) => profile.id === id) ?? profiles[0]!;
 
-/** What was read, as the readings and capabilities report it. */
+/** What was read, as the readings report it. */
 type State = { reading: SocketReading; at: string } | null;
 
 function readingsOf(state: State): Reading[] {
@@ -108,7 +122,6 @@ function readingsOf(state: State): Reading[] {
 
 /** The session over a plug — real, or simulated behind the same shape. */
 function socketSession(options: {
-  bootBehaviour: BootBehaviour;
   read: () => State;
   health: () => ConnectionHealth;
   set: (on: boolean) => Promise<void>;
@@ -116,39 +129,22 @@ function socketSession(options: {
   advanced?: DeviceSession['advanced'];
   close: () => Promise<void>;
 }): DeviceSession {
-  const switchImpl: CapabilityImpl['switch'] = {
-    state: () => {
-      const state = options.read();
-      return state && state.reading.relayOn !== undefined ? { on: state.reading.relayOn, at: state.at } : null;
-    },
-    set: async (on) => {
+  return {
+    health: options.health,
+    readings: () => readingsOf(options.read()),
+    async command(request) {
+      if (request.capability !== 'switch' || request.command !== 'set' || typeof request.args.on !== 'boolean') {
+        return { accepted: false, error: `A socket takes no ${request.capability}.${request.command}` };
+      }
       try {
-        await options.set(on);
+        await options.set(request.args.on);
         return { accepted: true };
       } catch (error) {
         return { accepted: false, error: (error as Error).message };
       }
     },
-    bootBehaviour: () => options.bootBehaviour,
-  };
-  const meter: CapabilityImpl['powerMeter'] = {
-    read: () => {
-      const state = options.read();
-      if (!state) return null;
-      const { reading, at } = state;
-      return { watts: reading.watts ?? null, volts: reading.volts ?? null, amps: reading.amps ?? null, kwh: reading.kwh ?? null, hz: reading.hz ?? null, powerFactor: reading.powerFactor ?? null, at };
-    },
-  };
-  const offered: Partial<CapabilityImpl> = { switch: switchImpl, powerMeter: meter };
-
-  return {
-    health: options.health,
-    readings: () => readingsOf(options.read()),
-    capability<N extends CapabilityName>(name: N) {
-      return (offered[name] as CapabilityImpl[N] | undefined) ?? null;
-    },
     identity: () => ({ id: options.identity, name: null }),
-    advanced: options.advanced,
+    ...(options.advanced ? { advanced: options.advanced } : {}),
     close: options.close,
   };
 }
@@ -192,7 +188,6 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
   void poll();
 
   return socketSession({
-    bootBehaviour: ctx.config.bootBehaviour,
     read: () => state,
     identity: tuyaIdentity(String(connection.config.deviceId ?? '')),
     health: () => {
@@ -207,7 +202,6 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
     },
     set: async (on) => {
       if (ctx.readOnly) throw new Error('Every hardware write is refused: this holder is read-only');
-      ctx.emit({ level: 'info', message: `Relay ${on ? 'on' : 'off'}` });
       const dps = await link.set({ [String(relayDp)]: on });
       if (Object.keys(dps).length) ingest(dps);
       else await poll();
@@ -251,7 +245,6 @@ function simulatedSession(ctx: DeviceContext<SocketConfig>): DeviceSession {
     }
   });
   return socketSession({
-    bootBehaviour: ctx.config.bootBehaviour,
     read: () => ({ reading: { relayOn: on, watts: on ? watts : 0, volts: 230, amps: on ? Math.round((watts / 230) * 100) / 100 : 0, kwh: Math.round(kwh * 1000) / 1000, hz: 50 }, at }),
     identity: 'tuya-local:SIMULATED',
     health: () => ({ status: 'connected', detail: 'Simulated', owner: 'server', transport: 'sim', lastReadingAt: at }),
@@ -268,23 +261,10 @@ export function defineTuyaSocket(definition: SocketTypeDefinition): DeviceType<S
   const { profiles } = definition;
   return defineDeviceType<SocketConfig>({
     id: definition.id,
-    apiVersion: '3',
     kind: 'hardware',
     meta: { icon: 'power', ...definition.meta, category: 'smart-plug' },
-    capabilities: CAPABILITIES,
-    telemetry: TELEMETRY,
-    controls: [
-      {
-        id: 'relay',
-        label: 'Power',
-        kind: 'switch',
-        capability: 'switch',
-        measurementKey: 'relay',
-        dangerous: true,
-        consequence: 'Switches off whatever is plugged into it. If it feeds a station, the station then runs from its battery and solar.',
-      },
-    ],
     config: configSchema(profiles),
+    describe: () => DESCRIPTION,
     connections: [
       {
         id: 'lan',

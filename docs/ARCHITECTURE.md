@@ -20,6 +20,14 @@ fixed.
 Progress is tracked in §8; every step says what "done" means, and CI enforces
 the parts a machine can check (§7).
 
+> **Phase: research and development — strict version 1.** Nobody runs
+> kraftverk in production but its owner, so nothing here is kept backward
+> compatible: no adapters, no versions, no migration chain, no fields nullable
+> only for old rows. A change to the model is made everywhere at once. Where
+> this document says "stable forever", it means from the first release on.
+> See [AGENTS.md](../AGENTS.md) and decision 21 in §9; this changes when there
+> is a production state to protect.
+
 ---
 
 ## 1. The goal
@@ -33,14 +41,15 @@ the parts a machine can check (§7).
    hand.
 3. **Protocols are shared packages.** Sydpower MODBUS, Tuya local and so on each
    live in one package that any number of device types use.
-4. **Every device exposes the same three things:** telemetry (typed metrics over
-   time), capabilities (typed things it can do or report), and settings (its
-   own configuration).
+4. **Every device is described the same way:** parts (the device, and whatever
+   it has several of), their attributes (what they report, and what they
+   remember and can be told — settings), the capabilities they offer, and the
+   events it raises. The description comes from its type, or from the device.
 5. **A device is reached through connection methods it declares:** each a
    protocol over a transport, set up by steps the layers supply, and held by
    the server or by the app, with the same code either way.
 6. **Services are devices without hardware.** Weather is added the same way and
-   exposes telemetry and capabilities the same way.
+   is described the same way.
 7. **Automations connect capabilities,** never products: "when the forecast
    says sun, turn on this switch".
 
@@ -70,13 +79,16 @@ One word for each thing, in code, in docs and on screen.
 | **Connection** | One way a device is reached: a method, a holder and an address, with its own secrets. A device may have several; one is in use at a time. | Garage P280 over Wi-Fi, held by the server |
 | **Sighting** | Something a transport can see that no connection claims. Live state, never stored. | "A power station is connected to this server" |
 | **Service** | A device type with `kind: 'service'`: no hardware. Added and shown the same way, in its own section. | "Weather (Open-Meteo)" |
-| **Telemetry** | Named, typed metrics a device reports over time. | `battery.soc`, `power.draw` |
-| **Capability** | A typed interface a device offers: things you can command or read. | `switch`, `battery`, `weather.forecast` |
-| **Setting** | Something the device itself remembers across a power cycle. | A charge limit, a standby timer |
+| **Description** | What a device is, as data: its parts, their attributes, and its events. Declared by its type, or reported by the device. | — |
+| **Part** | The device itself (`main`), or one of what it has several of, as a Matter endpoint is. | `main`, `outlet.ac`, `pack.1` |
+| **Attribute** | A value a part reports, with a stable key, a type and — where one applies — a standard meaning. | `soc` meaning `battery.soc` |
+| **Capability** | What a part can do or report, declared like a Matter cluster: attributes, commands, queries. | `switch`, `battery`, `weather.forecast` |
+| **Setting** | An attribute the device remembers across a power cycle, and can be told. | A charge limit, a standby timer |
+| **Event** | Something that happened, declared by the device's description. | An overload trip |
 | **Config** | Non-secret choices stored with a device (the type's) or a connection (the method's). Secrets are stored apart and never leave their holder. | A plug's profile; a Tuya protocol version |
 | **Setup** | The steps from choosing a category to a saved device (DATA-MODEL.md §1). Each method's steps are assembled from its transport, protocol and type. | Scan the LAN, fetch the key, read once |
 | **Link** | A physical fact connecting two devices, recorded by the user. | "This plug feeds that station's AC input" |
-| **Automation** | A rule that connects telemetry and capabilities across devices, through the gateway. | "Sunny tomorrow → switch on the heater plug" |
+| **Automation** | A recipe whose roles are filled by parts of devices, acting through the gateway. | "Sunny tomorrow → switch on the heater plug" |
 | **Session** | A running connection to one device, in whichever holder has it in use. | — (internal) |
 
 Retired: **extension**, **adapter**, **driver** and **provider** as names for
@@ -94,8 +106,9 @@ Bluetooth radio — and so do the ones people know, such as MQTT.
 
 ```
 packages/
-  device-sdk/            contracts only: categories, capabilities, link kinds, metrics, schema,
-                         DeviceType, ConnectionMethod, Transport, Protocol, DeviceSession
+  device-sdk/            contracts only: values, meanings, capabilities, descriptions, projections,
+                         categories, link kinds, schema, DeviceType, ConnectionMethod, Transport,
+                         Protocol, DeviceSession
   transports/mqtt/       @kraftverk/transport-mqtt       the broker (its own process) and the server's client; server only
   transports/ble/        @kraftverk/transport-ble        server (noble), web (Web Bluetooth), native (the phone)
   transports/lan/        @kraftverk/transport-lan        TCP and UDP on the home network; server only for now —
@@ -165,13 +178,13 @@ packages/devices/atorch-s1w/
 
 ## 4. The contract: `@kraftverk/device-sdk`
 
-The contract, API version 3, in `packages/device-sdk/src` (`device-type.ts`,
-`connection.ts`). Abridged: the comments in the code say the rest.
+The contract, in `packages/device-sdk/src` (`device-type.ts`,
+`description.ts`, `connection.ts`). Abridged: the comments in the code say
+the rest. There is one version of it (decision 21).
 
 ```ts
 export interface DeviceType<Config extends ConfigValues = ConfigValues> {
   id: string;                        // 'atorch.s1w' — stable forever, namespaced
-  apiVersion: '3';
   kind: 'hardware' | 'service';
   meta: {
     name: string; brand?: string; models?: string[]; description?: string;
@@ -179,14 +192,11 @@ export interface DeviceType<Config extends ConfigValues = ConfigValues> {
     support: 'verified' | 'community' | 'experimental'; supportNote?: string;
     icon: string; image?: string; docsUrl?: string;
   };
-  capabilities: CapabilityName[];    // what every device of this type offers
-  telemetry: MetricSpec[];           // standard metric ids where they exist (§4.2)
-  controls?: ControlSpec[];          // how capability commands are presented
-  settings?: SettingsSpec;           // what the device remembers, read and written live
+  describe(config: Config): DeviceDescription;  // parts, attributes, events (§4.2); a session may report its own
   config: ConfigSchema;              // the type's own per-device choices, e.g. a profile; never secrets
   connections: ConnectionMethod[];   // at least one; §4.3
   setup?: { steps?: SetupStep[]; saveAnyway?: string };   // steps of its own, whatever the method
-  identify(connection: OpenConnection, ctx: IdentifyContext): Promise<Identified>;  // { identity, model, summary }
+  identify(connection: OpenConnection, ctx: IdentifyContext): Promise<Identified>;  // { identity, model, summary, info?, description? }
   createSession(ctx: DeviceContext<Config>): Promise<DeviceSession>;
   createSimulator(ctx: DeviceContext<Config>): Promise<DeviceSession>;   // ctx.connection is null
 }
@@ -240,10 +250,12 @@ export type OpenConnection = {      // what identify and a session are handed, w
 
 export interface DeviceSession {
   health(): ConnectionHealth;
-  readings(): Reading[];                                   // latest telemetry, from cache
-  capability<N extends CapabilityName>(name: N): CapabilityImpl[N] | null;
-  readSettings?(): ConfigValues | null;                    // null until read — never defaults
-  writeSettings?(patch: ConfigValues): Promise<ConfigValues | null>;
+  readings(): Reading[];                                   // every attribute's latest value, settings too; from cache
+  description?(): DeviceDescription | null;                // its own, when it differs from the type's: a pack plugged in
+  info?(): DeviceInfo | null;                              // manufacturer, model, serial, firmware
+  command(request: CommandRequest): Promise<CommandResult>;  // { part, capability, command, args } — the gateway's only
+  query?(request: QueryRequest): Promise<unknown>;         // data that is not a value now: a forecast
+  write?(patch: Record<string, Value>): Promise<Record<string, Value>>;  // attributes it can be told; a readback
   identity?(): { id: string | null; name: string | null };  // what the device says it is, once it has
   advanced?: Record<string, AdvancedAction>;               // a register dump: /devices/:id/advanced/:name
   close(): Promise<void>;
@@ -256,7 +268,8 @@ export interface DeviceContext<Config> {
   store: DeviceStore;                // this device's own
   log: DeviceLogger;
   schedule(everyMs: number, task: () => void | Promise<void>): void;  // cancelled on close
-  emit(event: DeviceEvent): void;    // lands in the audit timeline
+  changed(): void;                   // something changed: for devices that push
+  event(id: string, data?, part?): void;  // an event the description declares; checked, kept, published
   readOnly: boolean;                 // every hardware write is refused
   allowRawFrames: boolean;           // bringing up an unfamiliar unit; the guard still applies
   platform: Platform;
@@ -269,8 +282,8 @@ wrapped by `guardChannel`, so the protocol's guard sees every frame whatever
 code sends it.
 
 Three properties carry the design: everything is **per device** and **per
-connection**, a session exposes **capabilities** and never product methods, and
-nothing a device type runs knows **where** it is running.
+connection**, a session is addressed by **part and capability** and never by
+product methods, and nothing a device type runs knows **where** it is running.
 
 ### 4.1 Capabilities: a small standard library
 
@@ -278,9 +291,11 @@ A capability is **declared the way a Matter cluster is** (step 23): the
 attributes it binds, each to a standard meaning; the commands it accepts, each
 with typed arguments from the one value system (`values.ts`), a safety level
 the gateway enforces, and the attribute it `sets` — which is how the gateway
-verifies it; and queries for data that is not a value now. Each also has a
-typed interface its sessions implement, until devices are made of parts
-(step 26). The set grows deliberately, one reviewed addition at a time, and a
+verifies it; and queries for data that is not a value now. Nothing implements a
+capability by hand: a session takes commands and queries addressed to a part and
+a capability. A part offers a read-only capability when its attributes carry
+the meanings it requires, and one with commands or queries when it says so
+(`offers`). The set grows deliberately, one reviewed addition at a time, and a
 new capability borrows a Matter cluster's meaning where one exists.
 
 | Capability | Attributes (meaning) | Commands | Safety |
@@ -288,7 +303,6 @@ new capability borrows a Matter cluster's meaning where one exists.
 | `switch` | `on` (`switch.on`, required) | `set(on)` sets `on` | confirm turning off when critical |
 | `powerMeter` | `watts` (`power.draw`, required), `volts`, `amps`, `hz`, `kwh` | — | read-only |
 | `battery` | `soc` (`battery.soc`, required), `capacity` | — | read-only |
-| `outlets` | per outlet, `outlet.<id>.on` and `.power` — retires in step 26 | `set(outlet, on)` | confirm turning off when critical |
 | `acInput` | `present` (`grid.present`, required), `watts` | — | read-only |
 | `weather.forecast` | — | query `hourly(hours)` | read-only |
 
@@ -305,39 +319,44 @@ another through a link, or an outlet carrying a load. Every read is stamped
 with when the device produced it, and null is unknown — never off, never zero.
 The library lives in `packages/device-sdk/src/capabilities.ts`.
 
-A P280 offers `battery`, `outlets` and `acInput`. Not `powerMeter`: that is a
-meter on what flows *through* a device, a plug's; a station's own input and
-output are its `power.in` and `power.out` telemetry. An ATORCH S1W offers
-`switch` and `powerMeter`. A weather service offers `weather.forecast`.
+A P280's `main` part offers `battery`, its `input.ac` part `acInput`, and
+each of its outlets — `outlet.ac`, `outlet.dc`, `outlet.usb` — `switch` and
+`powerMeter`; each expansion battery it reports is a part `pack.<n>` offering
+`battery`. An ATORCH S1W's one part offers `switch` and `powerMeter`. A weather service offers `weather.forecast`.
 Nothing in the core knows any of those products.
 
-### 4.2 Telemetry: standard names, local keys
+### 4.2 Descriptions: parts, attributes, events
 
-A `MetricSpec` is a measurement (`key`, label, unit, kind, precision) plus an
-optional `metric`, the standard id it means when one applies, and a **state
-class** — `measurement`, `total` (a running amount that may restart, today's
-energy) or `total_increasing` (a lifetime counter) — the same three Home
-Assistant uses. The kinds are the quantities a value can be of: power, energy,
-percent, voltage, current, temperature, frequency, duration, humidity,
-illuminance, signal, and on/off state.
+A device's **description** (`description.ts`) is what the app draws, the
+gateway checks, automations ask for, history is kept by and the bridges
+publish. A type declares it for a device's config (`describe`); a session may
+report its own and change it — a pack plugged in is a new part — and the holder
+keeps the latest with the device.
 
-- **`key` is what is stored.** History is keyed by `(device, key)`, and a key
-  never changes once a type has shipped — renaming one would orphan its
-  history. Keys are local to a type: the P280's `soc`, a plug's `watts`.
-- **`metric` is what it means.** `battery.soc`, `power.draw`, `power.in.solar`.
-  The generic dashboard, charts across devices and automations use it. A metric
-  with no standard id is namespaced by its type (`p280.inverterHz`) or has none.
+- **Parts**: `main` always, and whatever the device has several of, each with a
+  kind (outlet, input, battery, sensor…), a role in the flow of energy
+  (source, storage, load) and the capabilities it `offers` beyond what its
+  attributes show.
+- **Attributes**: a `key` — what history is stored under, local to the type:
+  the P280's `soc`, a plug's `watts`; a value type from the one value system
+  (number with unit and precision, boolean, enum, string); a **meaning** — a
+  standard one (`battery.soc`, `power.draw`), whose unit, quantity and state
+  class it must keep, or one namespaced by the type (`p280.minutesToFull`); a
+  quantity and a **state class** (`measurement`, `total`, `total_increasing`),
+  as Home Assistant has them; `read` or `write` — a setting is an attribute
+  that can be written; a category (`primary`, `config`, `diagnostic`), a
+  section and `dangerous`.
+- **Events**: declared with their level and data; raised with `ctx.event` and
+  checked against the declaration by the holder.
+- **Information**: manufacturer, model, serial, hardware and firmware, from
+  `identify` and `session.info()`.
 
-Standard ids start small and grow only when something needs them:
-`battery.soc`, `battery.capacity`, `power.in`, `power.in.ac`, `power.in.solar`,
-`power.out`, `power.draw`, `energy.total`, `voltage.ac`, `current.ac`,
-`frequency.ac`, `grid.present`,
-`switch.on`, `weather.temp`, `weather.cloud`, and `outlet.<id>.on` and
-`outlet.<id>.power` for each outlet. `weather.irradiance`, with the measurement
-kind it needs, comes with the first recipe that needs it (step 14), not before:
-nothing reads it yet. A standard id has one unit, kind and state class, and a
-type that claims it must use them, so two devices share an axis without
-conversion; `validateDeviceType` checks it.
+The standard meanings start small and grow only when something needs them:
+`battery.soc`, `battery.capacity`, `power.in`, `power.in.ac`,
+`power.in.solar`, `power.out`, `power.draw`, `energy.total`, `voltage.ac`,
+`current.ac`, `frequency.ac`, `grid.present`, `switch.on`, `weather.temp`,
+`weather.cloud` (`meanings.ts`). `validateDescription` checks every rule, and
+the contract suite checks a session keeps its description.
 
 ### 4.3 Connection methods and setup
 
@@ -376,11 +395,13 @@ either device and not inside an automation, because several things need them:
 - the energy-flow view;
 - any number of automations.
 
-A link has a kind, and the kind says which capabilities each end needs:
+A link has a kind, and the kind says which capabilities each end needs — the
+source's main part, and some part of the target — and which meaning on the
+target is its evidence:
 
-| Kind | From | To | Means |
-|---|---|---|---|
-| `feeds` | a device with `switch` | a device with `acInput` | switching the source switches the target's mains |
+| Kind | From | To | Evidence | Means |
+|---|---|---|---|---|
+| `feeds` | a main part with `switch` | a part with `acInput` | `grid.present` | switching the source switches the target's mains |
 
 One source feeds at most one target. Removing either device removes the
 link. Links replace the global "which station does the relay feed" key, and
@@ -395,61 +416,65 @@ history is deleted on purpose. The model, with an example for every field and
 the reason for every table, is [DATA-MODEL.md](DATA-MODEL.md). In short:
 
 ```sql
-device            (id PK, type_id, identity, name, config JSON, added_at, removed_at)
+device            (id PK, type_id, identity, name, config JSON, description JSON, info JSON,
+                   added_at, removed_at)
+device_attribute  (device_id → device ON DELETE CASCADE, key, part, spec JSON, first_seen, last_seen)
 device_connection (id PK, device_id → device, method, transport, held_by → client | NULL = server,
                    address, priority, config JSON, created_at, last_connected_at)
 connection_secret (connection_id → device_connection ON DELETE CASCADE, field, value, encrypted)
 client            (id PK, user_id → users, name, platform, transports JSON, created_at, last_seen_at)
 device_kv         (device_id → device ON DELETE CASCADE, key, value)
 device_link       (id PK, kind, source_id → device, target_id → device, created_at)
-sample            (device_id → device ON DELETE CASCADE, key, at, value)            -- 14 days
+sample            (device_id → device ON DELETE CASCADE, key, at, value | text)     -- 14 days
 sample_hour       (device_id → device ON DELETE CASCADE, key, hour, min, avg, max, n) -- 2 years
-automation        (id PK, name, recipe, roles JSON, params JSON, time_zone, mode, created_at,
-                   updated_at, last_run_at, last_result JSON)                  -- migration 8
-audit, app_state, users                                                       -- unchanged
-sessions          (… as today, + client_id → client)
+device_event      (id PK, device_id → device ON DELETE CASCADE, part, event, level, data JSON, at)
+automation        (id PK, name, recipe, roles JSON {role: {device, part}}, params JSON, time_zone,
+                   mode, created_at, updated_at, last_run_at, last_result JSON)
+audit, app_state, users, sessions
 ```
 
-- **Ids are opaque and permanent.** Existing ids (`power-station:3db445e0`) are
-  kept verbatim: history is keyed by them. New ids carry no meaning.
+- **Ids are opaque and permanent.** New ids carry no meaning.
 - **`type_id` is immutable.** Changing what a device *is* means adding a new
   one; its history would not mean the same thing.
 - **Identity, not address, is the device.** One device per identity among those
   not removed; an exclusive transport's address belongs to one device.
+- **A device keeps its description.** The latest — its type's, or its own — is
+  kept with it, and `device_attribute` records every attribute it has ever
+  had, so a pack's history keeps its name after the pack is unplugged.
 - **Config is validated** against the schema its definition declares, on every
   write. Secrets are never in it.
 - **Remove keeps history;** deleting history is a separate, confirmed action.
-- **Retired by the migrations** (§8, steps 5 and 9): `device.type`, `device.model`,
-  `device.driver`, `device.config.transport` and `.boundId`, `plugin_config`,
-  `plugin_secret`, `plugin_kv`, `capability_grant`, `active_provider`, and the
-  `gridRelay.stationDeviceId` app-state key.
 
-**Every migration is safe for the owner's real data:**
-
-1. The server copies the database (`VACUUM INTO`) beside itself before it
-   applies any migration to a database that already has data, and says where.
-   Rolling back is stopping the server and putting the copy back.
-2. Each migration runs in one transaction; a failure changes nothing.
-3. A migration that moves data is rehearsed against a copy of the real
-   database before it ships (`npm run db:rehearse -- <copy>`), on the owner's
-   machine — the data never leaves it. The file named is only read; the report
-   gives every table's and every device's rows before and after, and fails on
-   history lost without a note in the audit timeline.
+**One schema, not a chain of migrations** (decision 21). The schema is
+`server/src/history/schema.ts`, and its fingerprint is kept in the database's
+`user_version`. A database made by any other schema is not changed: it is set
+aside beside itself — `kraftverk.db.set-aside.<time>` — and a new one started.
+Nothing is deleted; history from the old schema is not carried over. Every
+column that can be required is: a null is left only where it means something.
 
 ### 4.6 The gateway: every command, one path
 
-Every capability command — from a screen or an automation — goes through
-`POST /api/devices/:id/capabilities/:capability/:command` and the action
-gateway. It applies, per device and per capability:
+Every command — from a screen, an automation or a bridge — goes to one part of
+a device, through
+`POST /api/devices/:id/parts/:part/commands/:capability/:command` and the
+action gateway; every write of a device's settings through
+`PATCH /api/devices/:id/attributes` and the same gateway. It names no
+capability — what a command takes, what it sets and how careful to be come from
+the library — and applies, per part:
 
-- the capability's safety level: confirmation when needed;
+- that the part offers the capability, and the arguments are the command's own,
+  of the right types;
+- the capability's safety level: confirmation when needed — turning off a part
+  that carries a load (its `power.draw`) or feeds another device;
 - read-only mode;
-- dwell time, per device;
+- dwell time, per part;
 - fresh data: acting needs readings younger than the policy allows, and an
   unknown value is never read as a value;
-- verification: the capability's own readback, plus the rules its links add —
-  switching a plug that `feeds` a station is verified by that station's
-  `grid.present` changing, from a reading taken after the switch;
+- verification: reading back the attribute the command `sets`, plus the rules
+  its links add — switching a plug that `feeds` a station is verified by that
+  station's `grid.present` changing, from a reading taken after the switch;
+- for a write: only attributes that can be written, held to their types, a
+  dangerous one confirmed by a person and never changed by an automation;
 - an audit entry naming the account, the automation or the client.
 
 The gateway's rules are shared code, not a server route's: when a phone or
@@ -467,10 +492,10 @@ entry is sent to the server (queued while offline).
    └────────────┬─────────────┴────────────┬─────────────┴────────────┬─────────────┘
                 ▼                          ▼                          ▼
 server:  DeviceTypeRegistry ──► DeviceSessionManager: for every device, the connection in use,
-         TransportHost (starts what      │ readings              │ capabilities
-         installed types need)           ▼                       ▼
+         TransportHost (starts what      │ readings, description,│ commands, writes
+         installed types need)           │ events → LiveBus      ▼
                                    Sampler / history       ActionGateway ◄── device links
-                                         │                       ▲
+                                   catalog, event store          ▲
                                          └──► AutomationEngine ──┘
 app:     the same registry, sessions and gateway rules for connections it holds; readings and audit
          go up to the server · /api/device-types → the add flow · generic device view + optional panels
@@ -493,18 +518,18 @@ standard most devices will speak.
 
 | | kraftverk | Home Assistant | Matter |
 | --- | --- | --- | --- |
-| **The unit of support** | A device type package: category, capabilities, telemetry, controls, settings, methods, session, simulator | An integration: `manifest.json`, a config flow, entity platforms, a Python library beside it | A device type: an endpoint with required clusters |
+| **The unit of support** | A device type package: category, a description, methods, session, simulator | An integration: `manifest.json`, a config flow, entity platforms, a Python library beside it | A device type: an endpoint with required clusters |
 | **A device** | Identity read from the device; a type; a name; config | Device registry: identifiers, connections, manufacturer, model, firmware, serial, `via_device` | A node: Basic Information (vendor, product, serial, versions) |
-| **Its parts** | Flat. Outlets are a name pattern, `outlet.<id>.on` | Many entities on one device | **Endpoints**, each with its own clusters |
+| **Its parts** | Parts, since the model was rebuilt (2026-09-29): `main`, `outlet.ac`, `pack.1` | Many entities on one device | **Endpoints**, each with its own clusters |
 | **What it can do** | Capabilities, from a small library | Entity platforms (switch, sensor, light…) and `supported_features` | **Clusters**: attributes, commands, events |
-| **What it measures** | `MetricSpec`: stable key, standard metric, kind, unit, state class (since step 23) | Sensor: `device_class`, `state_class`, unit, `entity_category`; enum and text states | Attributes, typed, enums included |
-| **Where the description comes from** | Declared by the type, fixed | Integrations create entities at runtime from what the device reports | Read from the node's descriptor |
-| **Things that happen** | Log lines to the timeline | Events, event entities, device triggers | Events |
+| **What it measures** | Attributes: stable key, value type (enum and text included), meaning, quantity, state class, category | Sensor: `device_class`, `state_class`, unit, `entity_category`; enum and text states | Attributes, typed, enums included |
+| **Where the description comes from** | Declared by the type, or reported by the device and kept with it | Integrations create entities at runtime from what the device reports | Read from the node's descriptor |
+| **Things that happen** | Declared events, checked, kept and published | Events, event entities, device triggers | Events |
 | **Reaching it** | Connection methods — protocol over transport — several per device, failover across holders | One config entry per device; `iot_class`; discovery matchers in the manifest | Operational discovery over IP; commissioning over BLE |
 | **Protocol code** | Pure packages, run on the server, in a browser and on a phone | A library on PyPI, by rule | The SDK |
 | **Physical safety** | One gateway: schema, confirmation, verification, audit | A service call | Access control lists |
-| **Automations** | Recipes in the core | Automations, blueprints, device automations from integrations | Out of scope |
-| **Evolving a type** | Keys are stable by rule | Config entry versions and migrations | Spec revisions |
+| **Automations** | Recipes in the core, their roles filled by parts | Automations, blueprints, device automations from integrations | Out of scope |
+| **Evolving a type** | Not yet: strict version 1 until there is data to protect (decision 21) | Config entry versions and migrations | Spec revisions |
 
 **Where kraftverk is already ahead, and should stay:** connections apart from
 devices, with failover across holders; a device *is* its identity, so history
@@ -704,12 +729,12 @@ holders and identity were added to the model (DATA-MODEL.md).
 | 21 | Secrets at rest in the app | S | done |
 | 22 | Loose ends: configuration words, big modules, accessibility | M | later |
 | 23 | The model, 1: one value system; declarative capabilities; projections into Home Assistant and Matter | M | done |
-| 24 | The model, 2: parts, attributes, device information, events, type versions; the v3 adapter | L | done |
-| 25 | Storage and holders carry descriptions | M–L | |
-| 26 | Packages on the new model; the gateway typed and generic | L | |
-| 27 | API v4: descriptions, typed commands, a live stream, the handshake | M | |
+| 24 | The model, 2: parts, attributes, device information, events | L | done |
+| 25 | Storage and holders carry descriptions | M–L | done |
+| 26 | Packages on the new model; the gateway typed and generic | L | done |
+| 27 | The API: descriptions, typed commands, a live stream | M | descriptions and typed commands done; the stream next |
 | 28 | The app: pages from descriptions, slots, a kit for packages, live | L | |
-| 29 | Automations from packages; event and threshold triggers | M | |
+| 29 | Automations from packages; event and threshold triggers | M | roles over parts done |
 | 30 | Refinement, discovery, reach, transport state | M | |
 | 31 | The Home Assistant bridge | S–M | |
 | 32 | Packages from outside the repository, and rails for contributors | M | |
@@ -1078,9 +1103,17 @@ standard's generic one become the same thing at different depths.
 
 One vocabulary, borrowed from Matter: a **part** (an endpoint) offers
 **capabilities** (clusters) made of **attributes**, **commands** and
-**events**. Steps 23–25 are the foundation and change nothing anyone sees; from
-26 on, each step changes what people see and stays green on its own. The old
-step 20 folds into 27; step 22 goes alongside 28.
+**events**. The old step 20 (a version handshake) is dropped under decision 21
+— there is one version; step 22 goes alongside 28.
+
+**How 24–26 were done, 2026-09-29.** The plan was an adapter that let the old
+contract and the new one live side by side while packages moved one at a time.
+The owner decided instead that nothing is kept backward compatible while
+kraftverk is in research and development (decision 21), so the model changed
+everywhere at once: the SDK has one contract, every package is written against
+it, the gateway, holder, server, API and app speak it, and the database is one
+schema. The adapter and the type versions it would have needed were removed
+before they shipped.
 
 ### Step 23 — One value system, declarative capabilities, projections (H3, H6, H9)
 - **`values.ts`: one value system** — number (unit, range, step, precision),
@@ -1114,8 +1147,8 @@ into Home Assistant and Matter, with `homeAssistantEntityOf` as the one call a
 bridge needs. `energyMeter` stays inside `powerMeter` (its `kwh`) until a
 device measures energy without power.
 
-### Step 24 — Parts, attributes, information, events, versions (H1, H2, H3, H4, H5, H8)
-The device-type contract, version 4:
+### Step 24 — Parts, attributes, information, events (H1, H2, H3, H4, H5)
+The device-type contract:
 - A **description** — parts, attributes, events — that a type declares
   (`describe(config)`) and a session may report and change
   (`session.description()`): a pack plugged in is a new part. Keys of parts
@@ -1123,68 +1156,56 @@ The device-type contract, version 4:
 - **Parts**: `main`, and whatever a device has several of, each with a kind and
   a role — source, storage, load — so an energy flow can be drawn for any
   device. A part's capabilities are derived from its attributes' meanings and
-  the commands the type implements, never declared twice.
-- **Attributes** replace telemetry, settings and controls: a key stable
-  forever, a part, a value type, a meaning, a quantity, a state class
-  (`measurement`, `total`, `total_increasing`), `read` or `write` (a setting
-  the device remembers), a category (`primary`, `config`, `diagnostic`), a
-  section, `dangerous`.
-- **Device information** — manufacturer, model, model id, serial, hardware,
-  firmware — from `identify` and `session.info()`.
+  what it `offers`, never declared twice.
+- **Attributes** replace telemetry, settings and controls.
+- **Device information**, from `identify` and `session.info()`.
 - **Events**, declared, raised with `ctx.event`; `ctx.changed()` for devices
-  that push; **`version` and `migrate`**.
+  that push.
 - The session: `readings()`, `command({ part, capability, command, args })`,
   `write(patch)`, `query(…)`, `advanced`.
-- **An adapter** turns a version-3 type into a version-4 one, so the four
-  packages keep working and move one at a time.
 
-**Done when** all four packages pass the version-4 contract through the
-adapter, with no change in behaviour.
-
-*Done.* `description.ts` is the model — parts (`main` always, others with a
-kind, a role and what they `offer`), attributes, events, device information
-— with `capabilitiesOf` deriving a part's capabilities and
-`validateDescription` checking one. `device-model.ts` is the version-4
-contract (`DeviceTypeV4`, `DeviceSessionV4`, `DeviceContextV4` with
-`changed` and `event`), beside version 3 until step 26 renames it. `v3.ts`
-upgrades a version-3 type: an `outlet.<id>` metric becomes part
-`outlet.<id>` offering `switch`, a setting becomes a writable `config`
-attribute, and a command or query to a part reaches the old capability.
-`checkDeviceTypeV4Contract` knows no capability by name — it flips any
-on/off attribute a command `sets`, asks every query, round-trips a written
+*Done.* `description.ts` is the model, with `capabilitiesOf` deriving a
+part's capabilities and `validateDescription` checking one; `device-type.ts`
+is the one contract. The contract suite knows no capability by name — it flips
+any on/off attribute a command `sets`, asks every query, round-trips a written
 attribute and checks every event raised — and runs over every installed
-package through the adapter (`server/src/runtime/packages.test.ts`). A
-native version-4 station in `model.test.ts`, whose pack is reported by the
+package. A test station in `model.test.ts`, whose pack is reported by the
 device, keeps it; one flaw at a time, it does not.
 
 ### Step 25 — Storage and holders carry descriptions (H2)
-Migration 10: a device keeps its information, description (and its hash) and
-the type version it was last opened with; **`device_attribute`** records every
-attribute a device ever had, so a pack's history keeps its name after the pack
-is unplugged; `sample` gains a text column for enums and strings;
-**`device_event`**, with retention, joins the timeline; links and automation
-roles name parts. The holder keeps descriptions and information current,
-records changes, runs `migrate`, and publishes readings and events on a live
-bus. **Done when** the migration is rehearsed and every device's description,
-information and attribute history is kept and served.
+*Done.* The one schema (`schema.ts`) keeps each device's description and
+information; `device_attribute` records every attribute a device ever had;
+`sample` holds a number or text; `device_event` keeps what devices raised;
+automation roles name a device and a part. The holder (`openDevice`) gives
+each device's current description and information and checks every event
+against it; the server's session manager records them — on open and on every
+check — and publishes readings, events and description changes on a
+`LiveBus`. An app holding a device sends its description up with its
+readings. The sampler keeps only what a description says to keep. Links stay
+between devices: a `feeds` link runs from the source's main part to the
+target's part that offers `acInput`, found when it is used.
 
 ### Step 26 — Packages on the new model; the gateway typed and generic (H1)
-The P280 natively: outlets, inputs and expansion packs as parts, settings as
-writable attributes, its operating mode an enum, firmware as information; the
-plugs and the weather service likewise. The gateway takes typed commands on a
-part and verifies any of them by reading back the attribute it `sets` —
-settings included, one path for both — with confirmation judged per part.
-**Done when** the `outlet.<id>` pattern, `OutletsCapability`, `SettingsSpec`
-and `ACTUATORS` are gone, and the station's packs have charge history.
+*Done.* The P280 is parts — the station, its mains and solar inputs, its three
+outlets and each expansion pack it reports — with its settings as writable
+attributes in sections, its operating state an enum and its firmware as
+information; the plugs and the weather service likewise. The gateway takes a
+typed command to a part, checks the part offers the capability and the
+arguments are the command's own, judges confirmation by that part's load and
+links, and verifies by reading back what the command `sets`; settings are
+written through `ActionGateway.write`, the same path. `OutletsCapability`,
+the `outlet.<id>` pattern, `SettingsSpec`, `ControlSpec`, `MetricSpec` and
+`ACTUATORS` are gone. The generic pages draw controls from the commands parts
+take, readings part by part, and settings from writable attributes by section.
 
-### Step 27 — API v4 (H2)
+### Step 27 — The API (H2)
 `DeviceView` carries the device's information, description and readings;
 commands go to `/devices/:id/parts/:part/commands/:capability/:command` with
-typed arguments, writable attributes to `PATCH /devices/:id/attributes`;
-**`GET /api/stream`** (server-sent events) carries readings, health, events and
-description changes, with polling as the fallback; `/version` states the API
-version and the installed types, and an app that is too old is told so (the
-old step 20). **Done when** the app builds against the new contract only.
+typed arguments, writable attributes to `PATCH /devices/:id/attributes`, and
+`GET /devices/:id/events` lists what a device raised — *done*, with the model.
+Next: **`GET /api/stream`** (server-sent events) from the `LiveBus`, carrying
+readings, health, events and description changes, with polling as the
+fallback. **Done when** the app updates without polling.
 
 ### Step 28 — The app: pages from descriptions, slots, a kit, live
 Generic pages drawn from the description: parts as sections, controls from
@@ -1297,6 +1318,15 @@ when** there is a recorded go or no-go, with the path for Thread.
     Matter (§8 step 23).
 20. **Thread is a network, not a protocol:** kraftverk reaches Thread devices
     as Matter over IP through a border router, and runs no radio of its own.
+21. **Strict version 1 until there is a production state to protect**
+    (2026-09-29, the owner). Nothing is kept backward compatible: no adapter
+    between an old shape and a new one, no API or type versions, no migration
+    hooks, one database schema rather than a chain of migrations — an older
+    database is set aside and a new one started — and no field nullable only
+    because older rows lack it. A change to the model is made everywhere at
+    once and the architecture stays green. When kraftverk has users whose data
+    must survive an upgrade, this decision is replaced by compatibility rules.
+    [AGENTS.md](../AGENTS.md) says the same, for agents.
 
 ---
 
@@ -1323,9 +1353,11 @@ is said beside it.
 - [x] The core has no connectivity code; protocols and device types are pure,
       enforced in CI.
 - [x] The leak baseline is empty, enforced in CI.
-- [x] Every command goes through `/devices/:id/capabilities/…` and the gateway's
-      rules, wherever the connection is held; every holder applies the
-      protocol's guard where it opens the channel.
+- [x] Every command goes to a part, through
+      `/devices/:id/parts/:part/commands/…`, and every settings write through
+      `/devices/:id/attributes`, under the gateway's rules, wherever the
+      connection is held; every holder applies the protocol's guard where it
+      opens the channel.
 - [x] Every device type has its methods, a simulator and a passing contract
       test, and one test checks every installed package
       (`server/src/runtime/packages.test.ts`).

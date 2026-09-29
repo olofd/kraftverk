@@ -82,7 +82,7 @@ if (kind === 'device') {
     { deviceType: './src/type.ts' },
     { '.': './src/type.ts', './type': './src/type.ts' }
   );
-  files['src/type.ts'] = `import { defineDeviceType, type DeviceContext, type DeviceSession, type Reading } from '@kraftverk/device-sdk';
+  files['src/type.ts'] = `import { defineDeviceType, MAIN_PART, type DeviceContext, type DeviceDescription, type DeviceSession, type Reading } from '@kraftverk/device-sdk';
 
 /**
  * The ${title}. See docs/ADDING-A-DEVICE.md.
@@ -94,6 +94,16 @@ if (kind === 'device') {
 
 type Config = Record<string, never>;
 
+/**
+ * What it is: its parts, what each reports and what each takes. One part here,
+ * \`main\`, which reports whether it is on and offers \`switch\` — so it takes
+ * \`switch.set\`, and the gateway checks it by reading \`on\` back.
+ */
+const DESCRIPTION: DeviceDescription = {
+  parts: [{ id: MAIN_PART, label: '${title}', kind: 'outlet', offers: ['switch'] }],
+  attributes: [{ key: 'on', label: 'On', value: { type: 'boolean' }, means: 'switch.on' }],
+};
+
 /** A simulated ${title}: a switch that remembers where it was left. */
 function simulatedSession(ctx: DeviceContext<Config>): DeviceSession {
   let on = ctx.store.get<boolean>('on') ?? true;
@@ -101,27 +111,20 @@ function simulatedSession(ctx: DeviceContext<Config>): DeviceSession {
   return {
     health: () => ({ status: 'connected', detail: 'Simulated', owner: 'server', transport: 'sim', lastReadingAt: at }),
     readings: (): Reading[] => [{ key: 'on', value: on, at }],
-    capability: ((name: string) =>
-      name === 'switch'
-        ? {
-            state: () => ({ on, at }),
-            set: async (next: boolean) => {
-              if (ctx.readOnly) return { accepted: false, error: 'Read-only' };
-              on = next;
-              at = new Date().toISOString();
-              ctx.store.set('on', on);
-              return { accepted: true };
-            },
-            bootBehaviour: () => 'unknown',
-          }
-        : null) as DeviceSession['capability'],
+    async command(request) {
+      if (request.capability !== 'switch' || typeof request.args.on !== 'boolean') return { accepted: false, error: 'It only switches' };
+      if (ctx.readOnly) return { accepted: false, error: 'Read-only' };
+      on = request.args.on;
+      at = new Date().toISOString();
+      ctx.store.set('on', on);
+      return { accepted: true };
+    },
     close: async () => {},
   };
 }
 
 export default defineDeviceType<Config>({
   id: 'community.${id}',
-  apiVersion: '3',
   kind: 'hardware',
   meta: {
     name: '${title}',
@@ -131,10 +134,8 @@ export default defineDeviceType<Config>({
     supportNote: 'Nobody has run it against real hardware yet.',
     icon: 'power',
   },
-  capabilities: ['switch'],
-  telemetry: [{ key: 'on', label: 'On', unit: '', kind: 'state', metric: 'switch.on' }],
-  controls: [{ id: 'power', label: 'Power', kind: 'switch', capability: 'switch', measurementKey: 'on' }],
   config: { fields: {} },
+  describe: () => DESCRIPTION,
   // One way to reach it: its protocol over a transport. Replace with the real one.
   connections: [{ id: 'lan', label: 'Home network', protocol: 'tuya-local', transport: 'lan' }],
 

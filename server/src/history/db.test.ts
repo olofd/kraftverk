@@ -5,20 +5,19 @@ import { join } from 'node:path';
 
 import { Database } from 'bun:sqlite';
 
-import { migrate, type Migration } from './db.ts';
+import { openSchema } from './db.ts';
+import { SCHEMA, schemaFingerprint } from './schema.ts';
 
 /*
-  The copy before a migration is the owner's way back from a bad one, on a
-  server that migrates itself unattended after a deploy. These use their own
+  One schema, strict version 1 (docs/ARCHITECTURE.md §9, decision 21): a new
+  database gets it, one made by it is used as it is, and one made by anything
+  else is set aside — never changed, never deleted. These use their own
   handles on their own files: nothing here touches the shared database.
 */
 
-const FIRST: Migration[] = [{ id: 1, sql: 'CREATE TABLE thing (name TEXT)' }];
-const SECOND: Migration[] = [...FIRST, { id: 2, sql: 'ALTER TABLE thing ADD COLUMN size INTEGER' }];
-
 const dirs: string[] = [];
 const scratch = () => {
-  const dir = mkdtempSync(join(tmpdir(), 'kraftverk-migrate-'));
+  const dir = mkdtempSync(join(tmpdir(), 'kraftverk-schema-'));
   dirs.push(dir);
   return join(dir, 'kraftverk.db');
 };
@@ -27,65 +26,64 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe('migrating', () => {
-  test('a fresh database is not copied: it has nothing to lose', () => {
+const tables = (handle: Database) =>
+  handle
+    .query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+    .all()
+    .map((row) => row.name);
+
+describe('the schema', () => {
+  test('a new database gets it, fingerprinted', () => {
     const path = scratch();
-    const handle = new Database(path, { create: true });
-    expect(migrate(handle, path, FIRST)).toBeNull();
+    const handle = openSchema(path);
+    expect(tables(handle)).toContain('device');
+    expect(handle.query<{ user_version: number }, []>('PRAGMA user_version').get()?.user_version).toBe(schemaFingerprint());
+    expect(handle.setAside).toBeUndefined();
     handle.close();
   });
 
-  test('a database with data is copied, as it was, before it changes', () => {
+  test('a database made by it is used as it is, data and all', () => {
     const path = scratch();
-    const handle = new Database(path, { create: true });
-    migrate(handle, path, FIRST);
-    handle.query("INSERT INTO thing (name) VALUES ('station')").run();
+    const first = openSchema(path);
+    first.query("INSERT INTO app_state (key, value, updated_at) VALUES ('kept', 'yes', '2026-09-29T00:00:00Z')").run();
+    first.close();
 
-    const backup = migrate(handle, path, SECOND);
-    handle.close();
-
-    expect(backup).not.toBeNull();
-    expect(existsSync(backup!)).toBe(true);
-    expect(backup!).toContain('before-migration-2');
-
-    const copy = new Database(backup!, { readonly: true });
-    // The data came along, and the schema is the old one.
-    expect(copy.query<{ name: string }, []>('SELECT name FROM thing').all()).toEqual([{ name: 'station' }]);
-    const columns = copy.query<{ name: string }, []>('PRAGMA table_info(thing)').all().map((c) => c.name);
-    expect(columns).toEqual(['name']);
-    copy.close();
+    const again = openSchema(path);
+    expect(again.query<{ value: string }, []>("SELECT value FROM app_state WHERE key = 'kept'").get()?.value).toBe('yes');
+    expect(again.setAside).toBeUndefined();
+    again.close();
   });
 
-  test('nothing pending, nothing copied', () => {
+  test('a database made by another schema is set aside, untouched, and a new one started', () => {
     const path = scratch();
-    const handle = new Database(path, { create: true });
-    migrate(handle, path, SECOND);
-    expect(migrate(handle, path, SECOND)).toBeNull();
+    const old = new Database(path, { create: true });
+    old.exec("CREATE TABLE thing (name TEXT); INSERT INTO thing (name) VALUES ('station')");
+    old.close();
+
+    const handle = openSchema(path);
+    expect(handle.setAside).toContain('.set-aside.');
+    expect(tables(handle)).not.toContain('thing');
     handle.close();
+
+    const kept = new Database(handle.setAside!, { readonly: true });
+    expect(kept.query<{ name: string }, []>('SELECT name FROM thing').all()).toEqual([{ name: 'station' }]);
+    kept.close();
+    expect(existsSync(path)).toBe(true);
   });
 
-  test('a migration that fails part-way leaves nothing behind', () => {
-    const path = scratch();
-    const handle = new Database(path, { create: true });
-    migrate(handle, path, FIRST);
+  test('rewording a comment is not a new schema; changing a column is', () => {
+    expect(schemaFingerprint(SCHEMA.replace('/* The timeline: who did what, and what came of it. */', '/* Who did what. */'))).toBe(schemaFingerprint());
+    expect(schemaFingerprint(SCHEMA.replace('summary  TEXT NOT NULL,', 'summary  TEXT,'))).not.toBe(schemaFingerprint());
+  });
 
-    const broken: Migration[] = [
-      ...FIRST,
-      {
-        id: 2,
-        sql: 'CREATE TABLE other (x TEXT)',
-        run: () => {
-          throw new Error('the data did not fit');
-        },
-      },
-    ];
-    expect(() => migrate(handle, path, broken)).toThrow('the data did not fit');
-
-    const tables = handle
-      .query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'other'")
-      .all();
-    expect(tables).toEqual([]);
-    expect(handle.query<{ id: number }, []>('SELECT id FROM migration').all()).toEqual([{ id: 1 }]);
+  test('a sample holds a number or text, never both and never neither', () => {
+    const handle = openSchema(scratch());
+    handle.query("INSERT INTO device (id, type_id, name, description, added_at) VALUES ('d-1', 'test.lamp', 'Lamp', '{\"attributes\":[]}', '2026-09-29T00:00:00Z')").run();
+    const insert = handle.query('INSERT INTO sample (device_id, key, at, value, text) VALUES (?, ?, ?, ?, ?)');
+    insert.run('d-1', 'soc', '2026-09-29T00:00:00Z', 80, null);
+    insert.run('d-1', 'state', '2026-09-29T00:00:00Z', null, 'charging');
+    expect(() => insert.run('d-1', 'both', '2026-09-29T00:00:00Z', 1, 'one')).toThrow();
+    expect(() => insert.run('d-1', 'neither', '2026-09-29T00:00:00Z', null, null)).toThrow();
     handle.close();
   });
 });

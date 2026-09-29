@@ -1,4 +1,4 @@
-import type { MetricSpec } from '@kraftverk/device-sdk';
+import type { Quantity } from '@kraftverk/device-sdk';
 
 import { fixedRange, startsAtZero } from './measurement';
 
@@ -28,7 +28,7 @@ export type ChartScale = {
 /**
  * Where the vertical axis starts and ends.
  *
- * Every decision here comes from the measurement's *kind*, which is why no
+ * Every decision here comes from the attribute's *quantity*, which is why no
  * device has to describe its own chart: a percentage is 0–100 whatever today's
  * data did, power starts at zero because zero means "nothing is happening", and
  * mains voltage does not — a zero-based axis would squash 230 V ± 5 into a
@@ -36,16 +36,16 @@ export type ChartScale = {
  */
 export function chartScale(
   points: readonly SeriesPoint[],
-  measurement: Pick<MetricSpec, 'kind'>
+  quantity: Quantity | null
 ): ChartScale {
   const values = points.map((point) => point.value).filter((value) => Number.isFinite(value));
   const peak = values.length ? Math.max(...values) : 0;
   const trough = values.length ? Math.min(...values) : 0;
 
-  const fixed = fixedRange(measurement.kind);
+  const fixed = fixedRange(quantity);
   if (fixed) return { min: fixed[0], max: fixed[1], peak, trough };
 
-  const zeroed = startsAtZero(measurement.kind);
+  const zeroed = startsAtZero(quantity);
   let min = zeroed ? Math.min(0, trough) : trough;
   let max = peak;
 

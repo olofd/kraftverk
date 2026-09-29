@@ -1,4 +1,6 @@
 import type { CapabilityName } from './capabilities.ts';
+import { capabilitiesOf, MAIN_PART, partsOf, type DeviceDescription } from './description.ts';
+import type { StandardMeaningId } from './meanings.ts';
 
 /**
  * Links: physical facts between two devices, recorded by the user
@@ -25,6 +27,12 @@ export type LinkKindSpec = {
   question: { fromSide: string; toSide: string };
   /** One source may have at most one target of this kind. */
   onePerSource: boolean;
+  /**
+   * What the target part reads that switching the source should change — the
+   * second proof, after the source's own readback, that a command did
+   * something physical. A station that a plug feeds sees its mains come and go.
+   */
+  evidence: StandardMeaningId;
 };
 
 export const LINK_KINDS = {
@@ -39,6 +47,7 @@ export const LINK_KINDS = {
       toSide: 'Is it charged through a smart plug?',
     },
     onePerSource: true,
+    evidence: 'grid.present',
   },
 } as const satisfies Record<string, LinkKindSpec>;
 
@@ -49,8 +58,11 @@ export const LINK_KIND_IDS = Object.keys(LINK_KINDS) as LinkKind[];
 export const isLinkKind = (id: string): id is LinkKind => Object.hasOwn(LINK_KINDS, id);
 
 /** Whether a device offering `from` may be linked to one offering `to` by `kind`. */
-export const linkFits = (
-  kind: LinkKind,
-  from: readonly CapabilityName[],
-  to: readonly CapabilityName[]
-): boolean => from.includes(LINK_KINDS[kind].from) && to.includes(LINK_KINDS[kind].to);
+/**
+ * Whether one device may be linked to another by `kind`: the source's main
+ * part offers what the link switches — a plug's relay — and some part of the
+ * target offers what it reaches, a station's AC input.
+ */
+export const linkFits = (kind: LinkKind, source: DeviceDescription, target: DeviceDescription): boolean =>
+  capabilitiesOf(source, MAIN_PART).includes(LINK_KINDS[kind].from) &&
+  partsOf(target).some((part) => capabilitiesOf(target, part.id).includes(LINK_KINDS[kind].to));

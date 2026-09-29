@@ -1,7 +1,7 @@
 import { defineDeviceType, type OpenConnection } from '@kraftverk/device-sdk';
 import { linkOver, parseMac, readInputRegisters, stationIdentity } from '@kraftverk/protocol-sydpower';
 
-import { CAPABILITIES, CONTROLS, DANGEROUS_SETTINGS, MEASUREMENTS, SETTINGS_SCHEMA } from './index.ts';
+import { describeStation } from './index.ts';
 import { StationClient } from './model/client.ts';
 import { INPUT_REGISTER_COUNT, decodeTelemetry } from './model/registers.ts';
 import { SimulatedStation } from './simulator.ts';
@@ -26,7 +26,6 @@ const identityFrom = (address: string): string | null => {
 
 export default defineDeviceType({
   id: 'aferiy.p280',
-  apiVersion: '3',
   kind: 'hardware',
   meta: {
     name: 'AFERIY P280',
@@ -38,11 +37,8 @@ export default defineDeviceType({
     supportNote: 'Every setting confirmed on real hardware.',
     icon: 'zap',
   },
-  capabilities: CAPABILITIES,
-  telemetry: MEASUREMENTS,
-  controls: CONTROLS,
-  settings: { schema: SETTINGS_SCHEMA, dangerous: [...DANGEROUS_SETTINGS] },
   config: { fields: {} },
+  describe: () => describeStation(),
   connections: [
     {
       id: 'wifi',

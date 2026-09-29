@@ -1,8 +1,8 @@
 import {
   defineDeviceType,
-  type CapabilityImpl,
-  type CapabilityName,
+  MAIN_PART,
   type DeviceContext,
+  type DeviceDescription,
   type DeviceSession,
   type Reading,
   type WeatherHour,
@@ -14,12 +14,20 @@ import { fetchForecast, OPEN_METEO } from '@kraftverk/protocol-open-meteo';
  * shown like any other, in its own section (docs/ARCHITECTURE.md, step 13).
  *
  * It offers `weather.forecast` — what the charging recipes plan with — and the
- * current hour's temperature and cloud cover as telemetry, so they are charted
+ * current hour's temperature and cloud cover as attributes, so they are charted
  * like any measurement. Its place is its config; the place is sent to
  * Open-Meteo to ask for the forecast, and nowhere else.
  */
 
 type WeatherConfig = { latitude: number; longitude: number; place?: string };
+
+const DESCRIPTION: DeviceDescription = {
+  parts: [{ id: MAIN_PART, label: 'Forecast', kind: 'sensor', offers: ['weather.forecast'] }],
+  attributes: [
+    { key: 'temperature', label: 'Temperature', value: { type: 'number', unit: '°C', precision: 1 }, quantity: 'temperature', means: 'weather.temp', category: 'primary' },
+    { key: 'cloudCover', label: 'Cloud cover', value: { type: 'number', unit: '%', precision: 0 }, quantity: 'percent', means: 'weather.cloud' },
+  ],
+};
 
 /** How often to ask. The forecast changes a few times a day; this is plenty. */
 const REFRESH_MS = 30 * 60_000;
@@ -39,11 +47,9 @@ function weatherSession(options: {
   health: DeviceSession['health'];
   close: () => Promise<void>;
 }): DeviceSession {
-  const forecast: CapabilityImpl['weather.forecast'] = {
-    hourly: (count) => {
-      const now = Date.now() - 3_600_000;
-      return options.hours().filter((hour) => Date.parse(hour.at) >= now).slice(0, count);
-    },
+  const hourly = (count: number): WeatherHour[] => {
+    const now = Date.now() - 3_600_000;
+    return options.hours().filter((hour) => Date.parse(hour.at) >= now).slice(0, count);
   };
   return {
     health: options.health,
@@ -56,8 +62,10 @@ function weatherSession(options: {
         { key: 'cloudCover', value: hour.cloudCoverPercent, at: hour.at },
       ];
     },
-    capability<N extends CapabilityName>(name: N) {
-      return name === 'weather.forecast' ? (forecast as CapabilityImpl[N]) : null;
+    command: async () => ({ accepted: false, error: 'A forecast takes no commands' }),
+    async query(request) {
+      if (request.capability !== 'weather.forecast' || request.query !== 'hourly') throw new Error(`A forecast answers no ${request.capability}.${request.query}`);
+      return hourly(typeof request.args.hours === 'number' ? request.args.hours : 24);
     },
     close: options.close,
   };
@@ -137,7 +145,6 @@ function simulatedSession(ctx: DeviceContext<WeatherConfig>): DeviceSession {
 
 export default defineDeviceType<WeatherConfig>({
   id: 'open-meteo.weather',
-  apiVersion: '3',
   kind: 'service',
   meta: {
     name: 'Open-Meteo',
@@ -149,11 +156,7 @@ export default defineDeviceType<WeatherConfig>({
     icon: 'cloud',
     docsUrl: 'https://open-meteo.com/en/docs',
   },
-  capabilities: ['weather.forecast'],
-  telemetry: [
-    { key: 'temperature', label: 'Temperature', unit: '°C', kind: 'temperature', metric: 'weather.temp', precision: 1, primary: true },
-    { key: 'cloudCover', label: 'Cloud cover', unit: '%', kind: 'percent', metric: 'weather.cloud', precision: 0 },
-  ],
+  describe: () => DESCRIPTION,
   config: {
     fields: {
       place: { type: 'string', title: 'Place', description: 'What you call it: “Home”, “The cabin”.', placeholder: 'Home' },

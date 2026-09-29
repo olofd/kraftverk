@@ -13,7 +13,7 @@ import { LinkStore } from './links.ts';
 import { DeviceRegistry } from './registry.ts';
 import { RemoteReadings } from './remote.ts';
 import { DeviceSessionManager } from './sessions.ts';
-import { busDefinition, FakeBus, lampProtocol, lampType } from './testing.ts';
+import { busDefinition, FakeBus, LAMP, lampProtocol, lampType } from './testing.ts';
 import { DeviceTypeRegistry } from './types.ts';
 
 /**
@@ -58,8 +58,8 @@ afterAll(async () => {
 describe('a device, described', () => {
   test('joins what it is, how it is reached and how it fits the house', async () => {
     bus.lamps.set('lamp-1', { serial: 'LAMP-1', model: 'L1', on: true, answers: true });
-    const hall = catalog.add({ typeId: 'test.lamp', name: 'Hall', config: { room: 'Hall' } });
-    const porch = catalog.add({ typeId: 'test.lamp', name: 'Porch', config: { room: 'Porch' } });
+    const hall = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Hall', config: { room: 'Hall' } });
+    const porch = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Porch', config: { room: 'Porch' } });
     const connection = connections.add({ deviceId: hall.id, method: 'bus', transport: 'bus', heldBy: null, address: 'lamp-1' });
     connections.setSecrets(connection.id, { pin: '1234' });
     links.add({ kind: 'feeds', sourceId: hall.id, targetId: porch.id });
@@ -90,12 +90,12 @@ describe('a device, described', () => {
   });
 
   test('a device of a type nobody installed is still listed, and says so', () => {
-    const mystery = catalog.add({ typeId: 'nobody.knows', name: 'Mystery' });
+    const mystery = catalog.add({ description: { attributes: [] }, typeId: 'nobody.knows', name: 'Mystery' });
     expect(registry.find(mystery.id)).toMatchObject({ installed: false, meta: { name: 'nobody.knows', category: 'unknown' }, capabilities: [], readings: [] });
   });
 
   test('a removed device is listed apart, with its history kept and no session', async () => {
-    const gone = catalog.add({ typeId: 'test.lamp', name: 'Gone' });
+    const gone = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Gone' });
     catalog.remove(gone.id);
     await sessions.sync(catalog.list());
 
@@ -108,7 +108,7 @@ describe('a device, described', () => {
   test('a connection held by a phone names the phone', () => {
     db().exec("INSERT INTO users (id, username, password_hash, created_at, password_changed_at) VALUES ('u-reg', 'registry', 'x', '2026-01-01', '2026-01-01')");
     const phone = clients.register({ userId: 'u-reg', name: 'Olof’s iPhone', platform: 'native', transports: ['ble'] });
-    const pocket = catalog.add({ typeId: 'test.lamp', name: 'Pocket' });
+    const pocket = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Pocket' });
     connections.add({ deviceId: pocket.id, method: 'bus', transport: 'bus', heldBy: phone.id, address: 'lamp-7' });
 
     expect(registry.find(pocket.id)!.connections[0]!.heldBy).toEqual({ kind: 'client', id: phone.id, name: 'Olof’s iPhone' });

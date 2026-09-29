@@ -1,11 +1,11 @@
 import type { AuditEntry } from '@kraftverk/api-contract';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
 
 import { Database } from 'bun:sqlite';
 
-import * as connections from './migrations/007-connections.ts';
+import { SCHEMA, schemaFingerprint } from './schema.ts';
 
 /**
  * One SQLite file for everything that has to outlive a restart: devices,
@@ -18,7 +18,7 @@ import * as connections from './migrations/007-connections.ts';
 /**
  * `KRAFTVERK_DB` exists for tests, which must not write to the database the
  * owner's devices live in. Point it at a temp file — or `:memory:` — and the
- * same migrations run against a throwaway. Read when the database is first
+ * same schema is made in a throwaway. Read when the database is first
  * opened rather than when this module loads, so a test can set it.
  */
 const DEFAULT_FILE = () => resolve(import.meta.dirname, '../../data/kraftverk.db');
@@ -56,20 +56,23 @@ export type Db = Database;
 
 let database: Db | null = null;
 
-export function db(): Db {
-  if (database) return database;
-
-  const path = file();
-  if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
+function open(path: string): Db {
   const handle = new Database(path, { create: true });
   handle.exec('PRAGMA journal_mode = WAL');
   handle.exec('PRAGMA foreign_keys = ON');
   // The recovery CLI may write while the server does: wait for the lock
   // rather than failing at once with SQLITE_BUSY.
   handle.exec('PRAGMA busy_timeout = 5000');
-  migrate(handle, path);
-  database = handle;
   return handle;
+}
+
+export function db(): Db {
+  if (database) return database;
+
+  const path = file();
+  if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
+  database = openSchema(path);
+  return database;
 }
 
 /**
@@ -84,316 +87,62 @@ export function closeDb(): void {
 }
 
 /**
- * Migrations run transactionally at boot, in order, once each.
+ * Opens the database with this schema — and only this one (docs/ARCHITECTURE.md
+ * §9, decision 21: strict version 1, no migrations).
  *
- * Deliberately plain: a numbered list and a table of what has been applied. A
- * migration framework would be more code than the thing it manages.
+ * A new file gets the schema and its fingerprint. A file whose fingerprint
+ * matches is used as it is. A file built from any other schema is not changed:
+ * it is set aside beside itself — `kraftverk.db.set-aside.<time>` — and a new
+ * one is started, saying so in the log. Nothing is deleted; history from the
+ * old schema is simply not carried over. Returns the handle, and where the old
+ * file went when one was set aside.
+ *
+ * Exported for tests.
  */
-export const MIGRATIONS: Migration[] = [
-  {
-    id: 1,
-    sql: `
-      CREATE TABLE plugin_config (
-        plugin_id  TEXT PRIMARY KEY,
-        json       TEXT NOT NULL DEFAULT '{}',
-        enabled    INTEGER NOT NULL DEFAULT 0,
-        updated_at TEXT NOT NULL
-      );
-      CREATE TABLE plugin_secret (
-        plugin_id  TEXT NOT NULL,
-        field      TEXT NOT NULL,
-        value      TEXT NOT NULL,
-        encrypted  INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY (plugin_id, field)
-      );
-      CREATE TABLE plugin_kv (
-        plugin_id TEXT NOT NULL,
-        key       TEXT NOT NULL,
-        value     TEXT NOT NULL,
-        PRIMARY KEY (plugin_id, key)
-      );
-      CREATE TABLE capability_grant (
-        plugin_id  TEXT NOT NULL,
-        capability TEXT NOT NULL,
-        granted_at TEXT NOT NULL,
-        PRIMARY KEY (plugin_id, capability)
-      );
-      CREATE TABLE audit (
-        id       INTEGER PRIMARY KEY AUTOINCREMENT,
-        at       TEXT NOT NULL,
-        kind     TEXT NOT NULL,
-        actor    TEXT NOT NULL,
-        resource TEXT,
-        summary  TEXT NOT NULL,
-        detail   TEXT
-      );
-      CREATE INDEX audit_at ON audit (at);
-    `,
-  },
-  {
-    id: 2,
-    sql: `
-      CREATE TABLE active_provider (
-        resource  TEXT PRIMARY KEY,
-        plugin_id TEXT NOT NULL,
-        chosen_at TEXT NOT NULL
-      );
-    `,
-  },
-  {
-    id: 3,
-    sql: `
-      /*
-        The devices you have added, and they stay added.
+export function openSchema(path: string, schema = SCHEMA): Db & { setAside?: string } {
+  const fingerprint = schemaFingerprint(schema);
+  let handle = open(path);
+  const version = handle.query<{ user_version: number }, []>('PRAGMA user_version').get()?.user_version ?? 0;
+  const tables = handle.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").get()?.n ?? 0;
 
-        Deliberately not derived from whatever happens to be reachable: a plug
-        that is unplugged for a week is still yours, and should still be in the
-        list — greyed, with its history intact — rather than silently vanishing
-        and taking its charts with it.
+  if (tables > 0 && version === fingerprint) return handle;
 
-        The model is stored because it changes how the thing is read: the
-        register map differs between two models of one stack, so it must not be
-        guessed.
-      */
-      CREATE TABLE device (
-        id        TEXT PRIMARY KEY,
-        type      TEXT NOT NULL,
-        model     TEXT,
-        driver    TEXT NOT NULL,
-        name      TEXT NOT NULL,
-        config    TEXT NOT NULL DEFAULT '{}',
-        added_at  TEXT NOT NULL
-      );
-
-      /*
-        One row per device, per measurement, per sample. Narrow on purpose: a
-        column per quantity would need a migration every time any device learns
-        to measure something new, and could never hold a device nobody has
-        written yet.
-      */
-      CREATE TABLE sample (
-        device_id TEXT NOT NULL,
-        key       TEXT NOT NULL,
-        at        TEXT NOT NULL,
-        value     REAL,
-        PRIMARY KEY (device_id, key, at)
-      );
-      CREATE INDEX sample_lookup ON sample (device_id, key, at);
-    `,
-  },
-  {
-    id: 4,
-    sql: `
-      /*
-        Decisions the app has already put to the user, so it stops asking.
-
-        The first of them is the legacy station import: someone who bound a
-        station before there was a device catalog gets offered it once, and
-        whether they took it or waved it away has to outlive the restart. A
-        banner that reappears every boot is a banner people learn to ignore.
-      */
-      CREATE TABLE app_state (
-        key        TEXT PRIMARY KEY,
-        value      TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-    `,
-  },
-  {
-    id: 5,
-    sql: `
-      /*
-        People who may use this server — from anywhere, the home network included.
-
-        Every account is an administrator: there is one kind of person here,
-        the owner and whoever they trust with the house. The password is an
-        argon2id hash; the name is unique regardless of case, because "Olof"
-        and "olof" being two different accounts is a support call, not a
-        feature.
-      */
-      CREATE TABLE users (
-        id                  TEXT PRIMARY KEY,
-        username            TEXT NOT NULL UNIQUE COLLATE NOCASE,
-        password_hash       TEXT NOT NULL,
-        created_at          TEXT NOT NULL,
-        created_by          TEXT,
-        password_changed_at TEXT NOT NULL,
-        last_login_at       TEXT
-      );
-
-      /*
-        Signed-in browsers. The token itself is never stored — only its SHA-256
-        — so a copy of this database cannot be replayed as a live session.
-      */
-      CREATE TABLE sessions (
-        token_hash   TEXT PRIMARY KEY,
-        user_id      TEXT NOT NULL,
-        created_at   TEXT NOT NULL,
-        last_seen_at TEXT NOT NULL,
-        expires_at   TEXT NOT NULL,
-        client_ip    TEXT,
-        user_agent   TEXT
-      );
-      CREATE INDEX sessions_user ON sessions (user_id);
-    `,
-  },
-  {
-    id: 6,
-    sql: `
-      /*
-        Each device's own storage: what its session keeps between runs — a
-        simulated station's settings, a plug's detected protocol version.
-
-        Keyed by the device, not by the code that wrote it, so two plugs of the
-        same type cannot read each other's; and it goes with the device when the
-        device is forgotten. See docs/ARCHITECTURE.md §4.5.
-      */
-      CREATE TABLE device_kv (
-        device_id TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
-        key       TEXT NOT NULL,
-        value     TEXT NOT NULL,
-        PRIMARY KEY (device_id, key)
-      );
-    `,
-  },
-  // Devices reached through connections; the plugin tables go. See the file.
-  { id: 7, sql: connections.SQL, run: connections.run },
-  {
-    id: 8,
-    sql: `
-      /*
-        Automations: a recipe, the devices that fill its roles, its settings and
-        the owner's clock (docs/ARCHITECTURE.md step 14). Devices are named in
-        roles, not by foreign key: an automation whose device is removed stays,
-        and says it cannot run, rather than vanishing with it.
-
-        mode: off, observe (decides and says what it would have done), armed
-        (acts, through the gateway). A new one observes.
-      */
-      CREATE TABLE automation (
-        id          TEXT PRIMARY KEY,
-        name        TEXT NOT NULL,
-        recipe      TEXT NOT NULL,
-        roles       TEXT NOT NULL DEFAULT '{}',
-        params      TEXT NOT NULL DEFAULT '{}',
-        time_zone   TEXT NOT NULL,
-        mode        TEXT NOT NULL DEFAULT 'observe' CHECK (mode IN ('off', 'observe', 'armed')),
-        created_at  TEXT NOT NULL,
-        updated_at  TEXT NOT NULL,
-        last_run_at TEXT,
-        last_result TEXT
-      );
-    `,
-  },
-  {
-    id: 9,
-    sql: `
-      /*
-        History that lasts: each measurement's hours, rolled up — the lowest,
-        the mean, the highest and how many samples — kept for two years beside
-        two weeks of minute samples. A month's chart reads 720 rows instead of
-        43 000, and the calibration a forecast needs has months to learn from.
-
-        Filled from the samples already kept, so nothing recorded is lost; and
-        it goes with its device, as its samples do.
-      */
-      CREATE TABLE sample_hour (
-        device_id TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
-        key       TEXT NOT NULL,
-        hour      TEXT NOT NULL,
-        min       REAL NOT NULL,
-        avg       REAL NOT NULL,
-        max       REAL NOT NULL,
-        n         INTEGER NOT NULL,
-        PRIMARY KEY (device_id, key, hour)
-      );
-      INSERT INTO sample_hour (device_id, key, hour, min, avg, max, n)
-        SELECT device_id, key, substr(at, 1, 13) || ':00:00.000Z', min(value), avg(value), max(value), count(*)
-        FROM sample WHERE value IS NOT NULL
-        GROUP BY device_id, key, substr(at, 1, 13);
-    `,
-  },
-];
-
-/**
- * One step of the schema's history.
- *
- * `sql` for a change of shape; `run` as well when data has to move in ways SQL
- * alone says badly — both inside the same transaction, so a migration that
- * fails part-way leaves nothing behind.
- */
-export type Migration = { id: number; sql: string; run?: (handle: Db) => void };
-
-/**
- * Brings a database up to date, copying it first if it holds anything.
- *
- * The copy is the way back. Migrations change the owner's only record of their
- * devices and everything they measured, on a server nobody is watching when it
- * restarts after a deploy — so before the first pending migration touches a
- * database that has already been migrated, the whole file is copied beside
- * itself. Rolling back is stopping the server and putting the copy in place.
- *
- * A copy that cannot be made stops the migration, and with it the server:
- * starting on the old schema is safe, changing data with no way back is not.
- *
- * Exported for tests, which bring their own list.
- */
-export function migrate(handle: Db, path: string, migrations: readonly Migration[] = MIGRATIONS): string | null {
-  handle.exec('CREATE TABLE IF NOT EXISTS migration (id INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)');
-  const applied = new Set(
-    handle.query<{ id: number }, []>('SELECT id FROM migration').all().map((row) => row.id)
-  );
-
-  const pending = migrations.filter((migration) => !applied.has(migration.id));
-  if (pending.length === 0) return null;
-
-  // A fresh database has nothing to lose, and one in memory nowhere to copy to.
-  const backup = applied.size > 0 && path !== ':memory:' ? copyBefore(handle, path, pending[0]!.id) : null;
-
-  for (const migration of pending) {
-    handle.transaction(() => {
-      handle.exec(migration.sql);
-      migration.run?.(handle);
-      handle.query('INSERT INTO migration (id, applied_at) VALUES (?, ?)').run(
-        migration.id,
-        new Date().toISOString()
-      );
-    })();
+  let setAside: string | undefined;
+  if (tables > 0) {
+    if (path === ':memory:') throw new Error('An in-memory database with another schema: nothing to set aside');
+    handle.close();
+    const stamp = new Date().toISOString().replace(/\.\d+Z$/, 'Z').replaceAll(':', '-');
+    setAside = `${path}.set-aside.${stamp}`;
+    for (const suffix of ['', '-wal', '-shm']) if (existsSync(path + suffix)) renameSync(path + suffix, setAside + suffix);
+    console.warn(`[db] ${path} was made by another schema; it is set aside as ${setAside}, and a new database is started. Nothing was deleted.`);
+    handle = open(path);
   }
 
-  return backup;
-}
-
-/** `kraftverk.db` → `kraftverk.db.before-migration-6.2026-09-27T10-15-00Z` */
-function copyBefore(handle: Db, path: string, id: number): string {
-  const stamp = new Date().toISOString().replace(/\.\d+Z$/, 'Z').replaceAll(':', '-');
-  const target = `${path}.before-migration-${id}.${stamp}`;
-  // A consistent copy of a live WAL database in one statement, unlike copying
-  // the file, which can catch it half-written.
-  handle.query('VACUUM INTO ?').run(target);
-  console.log(`[db] Copied the database to ${target} before migrating it. To roll back, stop the server and put that file in place of ${path}.`);
-  return target;
+  handle.transaction(() => {
+    handle.exec(schema);
+    handle.exec(`PRAGMA user_version = ${fingerprint}`);
+  })();
+  return Object.assign(handle, setAside ? { setAside } : {});
 }
 
 /**
  * Empties every table, keeping the schema.
  *
- * `migration` is kept: dropping those rows would make the next boot try to
- * create tables that already exist. So are `users` and `sessions`: erasing
- * the house is not erasing who may enter it, and a server left with no
- * accounts is one waiting to be claimed. Everything else goes —
+ * `users`, `sessions` and `client` are kept: erasing the house is not erasing
+ * who may enter it, and a server left with no accounts is one waiting to be
+ * claimed. Everything else goes —
  * devices, samples, connections, secrets, links and the audit
  * timeline — which is the point. This is "back to a blank canvas" without
  * asking anyone to find and delete a file on the server.
  *
- * Deliberately not `DROP TABLE`: the schema is the migrations' business, and
+ * Deliberately not `DROP TABLE`: the schema is `schema.ts`'s business, and
  * recreating it here would be a second definition to drift.
  */
 export function resetDatabase(): { tables: string[]; rows: number } {
   const handle = db();
   const tables = handle
     .query<{ name: string }, []>(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('migration', 'users', 'sessions', 'client') ORDER BY name"
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('users', 'sessions', 'client') ORDER BY name"
     )
     .all()
     .map((row) => row.name);
@@ -408,7 +157,7 @@ export function resetDatabase(): { tables: string[]; rows: number } {
     // AUTOINCREMENT keeps its high-water mark in this table; clearing it means
     // a reset database really does start from one rather than from wherever
     // the last one left off.
-    handle.query("DELETE FROM sqlite_sequence WHERE name <> 'migration'").run();
+    handle.query('DELETE FROM sqlite_sequence').run();
   })();
 
   // Reclaims the space rather than leaving a 20 MB file describing nothing.
@@ -458,9 +207,7 @@ const secretKey = (): Buffer | null => {
   const passphrase = process.env.KRAFTVERK_SECRET_KEY;
   if (!passphrase) return null;
   if (derived?.passphrase !== passphrase) {
-    // The salt keeps its old name: changing it would make every stored secret unreadable.
-    // The salt keeps its old name: changing it would make every stored secret unreadable.
-    derived = { passphrase, key: scryptSync(passphrase, 'kraftverk-plugin-secrets', 32) };
+    derived = { passphrase, key: scryptSync(passphrase, 'kraftverk-secrets', 32) };
   }
   return derived.key;
 };

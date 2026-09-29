@@ -10,7 +10,7 @@ import { DeviceCatalog } from './catalog.ts';
 import { ClientStore } from './clients.ts';
 import { ConnectionStore } from './connections.ts';
 import { DeviceSessionManager } from './sessions.ts';
-import { busDefinition, FakeBus, lampControl, lampProtocol, lampType, opened } from './testing.ts';
+import { busDefinition, FakeBus, LAMP, lampControl, lampProtocol, lampType, opened } from './testing.ts';
 import { DeviceTypeRegistry } from './types.ts';
 
 /**
@@ -85,7 +85,7 @@ beforeEach(async () => {
 /** A lamp on the bus, saved, with its connection. */
 const addLamp = (name: string, address: string, config: Record<string, unknown> = { room: name }, identity: string | null = null) => {
   bus.lamps.set(address, { serial: address.toUpperCase(), model: 'L1', on: true, answers: true });
-  const record = catalog.add({ typeId: 'test.lamp', name, config, identity });
+  const record = catalog.add({ description: LAMP, typeId: 'test.lamp', name, config, identity });
   const connection = connections.add({ deviceId: record.id, method: 'bus', transport: 'bus', heldBy: null, address });
   return { record, connection };
 };
@@ -153,7 +153,7 @@ describe('one session per device', () => {
 
   test('simulated, every device is opened through its type’s simulator, with no connection', async () => {
     const simulated = build({ simulate: true });
-    const record = catalog.add({ typeId: 'test.lamp', name: 'Hall', config: { room: 'Hall' } });
+    const record = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Hall', config: { room: 'Hall' } });
     await simulated.sync(catalog.list());
     expect(simulated.get(record.id)).not.toBeNull();
     expect(opened.at(-1)!.ctx.connection).toBeNull();
@@ -177,7 +177,7 @@ describe('a device that cannot open is still a device, saying why', () => {
   });
 
   test('a device no installed type claims gets no session at all', async () => {
-    const record = catalog.add({ typeId: 'nobody.knows', name: 'Mystery' });
+    const record = catalog.add({ description: LAMP, typeId: 'nobody.knows', name: 'Mystery' });
     await sessions.sync(catalog.list());
     expect(sessions.typeOf(record)).toBeNull();
     expect(sessions.get(record.id)).toBeNull();
@@ -185,7 +185,7 @@ describe('a device that cannot open is still a device, saying why', () => {
   });
 
   test('a device with no connection says nothing can reach it', async () => {
-    const record = catalog.add({ typeId: 'test.lamp', name: 'Unreachable' });
+    const record = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Unreachable' });
     await sessions.sync(catalog.list());
     expect(sessions.health(record)).toMatchObject({ status: 'unconfigured' });
     expect(sessions.health(record).detail).toContain('Nothing can reach');
@@ -203,7 +203,7 @@ describe('a device that cannot open is still a device, saying why', () => {
     const user = db().query<{ id: string }, []>('SELECT id FROM users LIMIT 1').get();
     const userId = user?.id ?? (db().exec("INSERT INTO users (id, username, password_hash, created_at, password_changed_at) VALUES ('u-test', 'tester', 'x', '2026-01-01', '2026-01-01')"), 'u-test');
     const phone = clients.register({ userId, name: 'Olof’s iPhone', platform: 'native', transports: ['ble'] });
-    const record = catalog.add({ typeId: 'test.lamp', name: 'Pocket lamp' });
+    const record = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Pocket lamp' });
     connections.add({ deviceId: record.id, method: 'bus', transport: 'bus', heldBy: phone.id, address: 'lamp-7' });
     await sessions.sync(catalog.list());
 

@@ -542,7 +542,7 @@ export class SetupService {
     } else {
       if (checked.outcome === 'yours') throw new SetupError(`You already have this device: ${checked.device.name}`, 409);
       const identity = checked.outcome === 'new' || checked.outcome === 'removed' ? (checked.identity ?? null) : null;
-      record = this.deps.catalog.add({ typeId: type.id, name: input.name.trim() || type.meta.name, identity, config: deviceConfig });
+      record = this.deps.catalog.add({ typeId: type.id, name: input.name.trim() || type.meta.name, identity, config: deviceConfig, description: type.describe(deviceConfig) });
       kind = 'device.added';
     }
 
@@ -565,11 +565,10 @@ export class SetupService {
     for (const link of input.links ?? []) {
       if (!isLinkKind(link.kind)) throw new SetupError(`There is no link called "${link.kind}"`);
       const other = this.deps.catalog.active(link.other as SavedDeviceId);
-      const otherType = other ? this.deps.types.get(other.typeId) : null;
-      if (!other || !otherType) throw new SetupError('The device to link to has gone', 404);
-      const [source, target, sourceCaps, targetCaps] =
-        link.role === 'source' ? [record.id, other.id, type.capabilities, otherType.capabilities] : [other.id, record.id, otherType.capabilities, type.capabilities];
-      if (!linkFits(link.kind, sourceCaps, targetCaps)) throw new SetupError(`${LINK_KINDS[link.kind].verb} does not fit those two devices`);
+      if (!other) throw new SetupError('The device to link to has gone', 404);
+      const [source, target, sourceDescription, targetDescription] =
+        link.role === 'source' ? [record.id, other.id, record.description, other.description] : [other.id, record.id, other.description, record.description];
+      if (!linkFits(link.kind, sourceDescription, targetDescription)) throw new SetupError(`${LINK_KINDS[link.kind].verb} does not fit those two devices`);
       this.deps.links.add({ kind: link.kind, sourceId: source, targetId: target });
     }
     return { record, kind };

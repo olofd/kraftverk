@@ -54,8 +54,11 @@ These are not style. A pull request that breaks one is not merged.
   the documentation ranges (`192.0.2.x`, `198.51.100.x`) and made-up ids.
 - **Device-specific code stays in its package.** `npm run check:architecture`
   fails if a product's name or quirk leaks into the core.
-- **Keys are stable forever.** Once a type has shipped, its telemetry keys are
-  what history is stored under; rename a label, never a key.
+- **Strict version 1, for now.** kraftverk is in research and development:
+  nothing is kept backward compatible, a change to the model is made
+  everywhere at once, and the database is one schema, not a migration chain
+  ([AGENTS.md](AGENTS.md)). From the first release on, keys become stable
+  forever — history is stored under them.
 
 ## Before you open a pull request
 

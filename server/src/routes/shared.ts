@@ -16,6 +16,7 @@ import type { ClientStore } from '../devices/clients.ts';
 import type { ConnectionStore } from '../devices/connections.ts';
 import type { LinkStore } from '../devices/links.ts';
 import type { Nearby } from '../devices/nearby.ts';
+import type { EventStore } from '../devices/events.ts';
 import type { DeviceRegistry } from '../devices/registry.ts';
 import type { RemoteReadings } from '../devices/remote.ts';
 import type { DeviceSessionManager } from '../devices/sessions.ts';
@@ -53,6 +54,8 @@ export type AppDeps = {
   /** Readings from connections an app holds. */
   remote: RemoteReadings;
   gateway: ActionGateway;
+  /** What devices said happened. */
+  events: EventStore;
   automations: AutomationStore;
   engine: AutomationEngine;
   sampler: Sampler;

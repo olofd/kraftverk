@@ -1,9 +1,10 @@
 import type { CapabilityName } from './capabilities.ts';
-import { stateClassOf, type MetricSpec, type Quantity, type StandardMetricId, type StateClass } from './telemetry.ts';
+import { quantityOf, stateClassOf, unitOf, type AttributeSpec } from './description.ts';
+import type { Quantity, StandardMeaningId, StateClass } from './meanings.ts';
 
 /**
  * Projections: what kraftverk's vocabulary is called in the standards it sits
- * beside (docs/ARCHITECTURE.md §4.8, §8 step 23).
+ * beside (docs/ARCHITECTURE.md §4.1, §4.8).
  *
  * Every quantity, state class, standard meaning and capability says what it is
  * in Home Assistant and in Matter — or says plainly that it has no counterpart,
@@ -88,10 +89,10 @@ export type MeaningProjection = {
 
 /**
  * Each standard meaning, projected. Power on a device with several flows —
- * a station's input and output — is one ElectricalPowerMeasurement per part
- * once devices are made of parts (step 24); the attribute is the same.
+ * a station's input and output — is one ElectricalPowerMeasurement per part:
+ * the attribute is the same.
  */
-export const MEANING_PROJECTIONS: Readonly<Record<StandardMetricId, MeaningProjection>> = {
+export const MEANING_PROJECTIONS: Readonly<Record<StandardMeaningId, MeaningProjection>> = {
   'battery.soc': {
     homeAssistant: { platform: 'sensor', deviceClass: 'battery' },
     // Matter counts in half-percents: 0–200.
@@ -179,10 +180,6 @@ export const CAPABILITY_PROJECTIONS: Readonly<Record<CapabilityName, CapabilityP
     homeAssistant: { platforms: ['sensor'], commands: {} },
     matter: { clusters: ['PowerSource'], commands: {} },
   },
-  outlets: {
-    homeAssistant: { none: 'Retires in step 26: each outlet becomes a part with a switch, projected as one' },
-    matter: { none: 'Retires in step 26: each outlet becomes an endpoint with OnOff' },
-  },
   acInput: {
     homeAssistant: { platforms: ['binary_sensor', 'sensor'], commands: {} },
     matter: { clusters: ['PowerSource'], commands: {} },
@@ -196,22 +193,23 @@ export const CAPABILITY_PROJECTIONS: Readonly<Record<CapabilityName, CapabilityP
 export const isProjected = <T extends object>(projection: T | NoProjection): projection is T => !('none' in projection);
 
 /**
- * How Home Assistant should show one measurement — a standard meaning or a
+ * How Home Assistant should show one attribute — a standard meaning or a
  * type's own: its platform, device class, state class and unit. What a bridge
- * publishes for it.
+ * publishes for it. An enum is a sensor with options; text is a sensor too.
  */
-export function homeAssistantEntityOf(spec: Pick<MetricSpec, 'kind' | 'unit' | 'metric' | 'stateClass'>): HomeAssistantEntity & {
+export function homeAssistantEntityOf(attribute: Pick<AttributeSpec, 'value' | 'means' | 'quantity' | 'stateClass'>): HomeAssistantEntity & {
   stateClass: string | null;
   unit: string | null;
 } {
-  const meaning = spec.metric && spec.metric in MEANING_PROJECTIONS ? MEANING_PROJECTIONS[spec.metric as StandardMetricId] : null;
-  const platform = meaning?.homeAssistant.platform ?? (spec.kind === 'state' ? 'binary_sensor' : 'sensor');
-  const quantity = HOME_ASSISTANT_QUANTITIES[spec.kind];
-  const stateClass = platform === 'sensor' ? stateClassOf(spec) : null;
+  const meaning = attribute.means && Object.hasOwn(MEANING_PROJECTIONS, attribute.means) ? MEANING_PROJECTIONS[attribute.means as StandardMeaningId] : null;
+  const quantity = quantityOf(attribute);
+  const platform = meaning?.homeAssistant.platform ?? (attribute.value.type === 'boolean' ? 'binary_sensor' : 'sensor');
+  const stateClass = platform === 'sensor' ? stateClassOf(attribute) : null;
+  const unit = unitOf(attribute);
   return {
     platform,
-    deviceClass: meaning?.homeAssistant.deviceClass ?? (platform === 'sensor' ? quantity.deviceClass : null),
+    deviceClass: meaning?.homeAssistant.deviceClass ?? (platform === 'sensor' && quantity ? HOME_ASSISTANT_QUANTITIES[quantity].deviceClass : null),
     stateClass: stateClass ? HOME_ASSISTANT_STATE_CLASSES[stateClass] : null,
-    unit: platform === 'sensor' && spec.unit ? spec.unit : null,
+    unit: platform === 'sensor' && unit ? unit : null,
   };
 }

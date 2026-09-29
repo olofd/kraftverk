@@ -1,4 +1,4 @@
-import type { Reading } from '@kraftverk/device-sdk';
+import type { DeviceDescription, DeviceInfo, Reading } from '@kraftverk/device-sdk';
 import { putDeviceStore, uploadAudit, uploadReadings, type AuditEntry } from '@kraftverk/api-client';
 
 import { readPreference, writePreference } from '../lib/preferences';
@@ -21,7 +21,26 @@ const MAX_QUEUED_READINGS = 20_000;
 const MAX_QUEUED_AUDIT = 1000;
 
 type QueuedAudit = Omit<AuditEntry, 'actor' | 'id'>;
-type QueuedReadings = { deviceId: string; connectionId: string; identity: string | null; readings: Map<string, Reading> };
+type QueuedReadings = {
+  deviceId: string;
+  connectionId: string;
+  identity: string | null;
+  readings: Map<string, Reading>;
+  /** What the device is now, and what it says of itself — sent when it differs from what was last sent. */
+  description: DeviceDescription | null;
+  info: DeviceInfo | null;
+  sentDescription: string | null;
+};
+
+/** What a session this app holds has to send. */
+export type Collected = {
+  deviceId: string;
+  connectionId: string;
+  identity: string | null;
+  readings: readonly Reading[];
+  description?: DeviceDescription | null;
+  info?: DeviceInfo | null;
+};
 
 export class Uplink {
   #readings = new Map<string, QueuedReadings>();
@@ -38,7 +57,7 @@ export class Uplink {
       /** Where the audit queue is kept across a reload: one per server. */
       key: string;
       /** The readings to send now, from every session this app holds. */
-      collect: () => { deviceId: string; connectionId: string; identity: string | null; readings: readonly Reading[] }[];
+      collect: () => Collected[];
     }
   ) {
     try {
@@ -75,10 +94,12 @@ export class Uplink {
     return count + this.#audit.length;
   }
 
-  #queue(deviceId: string, connectionId: string, identity: string | null, readings: readonly Reading[]): void {
-    const queued = this.#readings.get(deviceId) ?? { deviceId, connectionId, identity, readings: new Map<string, Reading>() };
+  #queue({ deviceId, connectionId, identity, readings, description, info }: Collected): void {
+    const queued = this.#readings.get(deviceId) ?? { deviceId, connectionId, identity, readings: new Map<string, Reading>(), description: null, info: null, sentDescription: null };
     queued.identity = identity ?? queued.identity;
     queued.connectionId = connectionId;
+    queued.description = description ?? queued.description;
+    queued.info = info ?? queued.info;
     for (const reading of readings) {
       if (!reading.at || reading.value === null) continue;
       // One per measurement per minute: that is the resolution history keeps.
@@ -115,7 +136,7 @@ export class Uplink {
 
   async #flushOnce(): Promise<void> {
     const clientId = this.options.clientId();
-    for (const { deviceId, connectionId, identity, readings } of this.options.collect()) this.#queue(deviceId, connectionId, identity, readings);
+    for (const collected of this.options.collect()) this.#queue(collected);
     if (!clientId) return;
     // Each on its own: one device this app no longer holds must not keep the rest from going up.
     const attempt = async (work: () => Promise<void>) => {
@@ -137,7 +158,16 @@ export class Uplink {
       if (!queued.readings.size) continue;
       await attempt(async () => {
         const sending = [...queued.readings.entries()].slice(0, 2000);
-        await uploadReadings(deviceId, { clientId, connectionId: queued.connectionId, identity: queued.identity, readings: sending.map(([, reading]) => reading) });
+        const description = queued.description ? JSON.stringify(queued.description) : null;
+        const describe = description !== null && description !== queued.sentDescription;
+        await uploadReadings(deviceId, {
+          clientId,
+          connectionId: queued.connectionId,
+          identity: queued.identity,
+          readings: sending.map(([, reading]) => reading),
+          ...(describe ? { description: queued.description!, ...(queued.info ? { info: queued.info } : {}) } : {}),
+        });
+        if (describe) queued.sentDescription = description;
         for (const [key] of sending) queued.readings.delete(key);
       });
     }

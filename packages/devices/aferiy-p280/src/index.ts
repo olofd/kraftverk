@@ -1,6 +1,6 @@
-import type { ConfigSchema, ControlSpec, MetricSpec, Reading } from '@kraftverk/device-sdk';
+import { MAIN_PART, valueTypeOf, type AttributeSpec, type ConfigSchema, type DeviceDescription, type DeviceInfo, type Part, type Reading } from '@kraftverk/device-sdk';
 
-import type { StationSettings, StationStatus } from './model/types.ts';
+import type { PortId, StationSettings, StationStatus } from './model/types.ts';
 
 /**
  * The AFERIY P280, described in the device model.
@@ -11,65 +11,129 @@ import type { StationSettings, StationStatus } from './model/types.ts';
  * settings can permanently brick the station. None of that is knowledge the
  * core should carry — it is knowledge about *this device*.
  *
- * The core turns these declarations into the API and the app into screens;
+ * The core turns this description into the API and the app into screens;
  * neither needs to know what a P280 is. The station model below them — the
  * register map, the decode, the polling client — is in `./model`, and is this
  * package's too: the protocol package knows the wire, not the machine.
  */
 
 /**
- * What the station reports.
+ * The outputs, each a part with a switch of its own.
  *
- * The keys are what history has been stored under since the first release, so
- * they stay as they are; `metric` is what each one means, in the standard
- * vocabulary every device shares (docs/ARCHITECTURE.md §4.2).
- */
-export const MEASUREMENTS: MetricSpec[] = [
-  { key: 'soc', label: 'Charge', unit: '%', kind: 'percent', metric: 'battery.soc', precision: 1, primary: true },
-  { key: 'inputWatts', label: 'Input', unit: 'W', kind: 'power', metric: 'power.in', precision: 0 },
-  { key: 'outputWatts', label: 'Output', unit: 'W', kind: 'power', metric: 'power.out', precision: 0 },
-  { key: 'solarWatts', label: 'Solar', unit: 'W', kind: 'power', metric: 'power.in.solar', precision: 0 },
-  { key: 'acInputWatts', label: 'From mains', unit: 'W', kind: 'power', metric: 'power.in.ac', precision: 0 },
-  { key: 'acInputVolts', label: 'Mains voltage', unit: 'V', kind: 'voltage', metric: 'voltage.ac', precision: 1 },
-  { key: 'acOutputVolts', label: 'Inverter voltage', unit: 'V', kind: 'voltage', metric: 'p280.inverterVolts', precision: 1 },
-  { key: 'minutesRemaining', label: 'Runtime left', unit: 'min', kind: 'duration', metric: 'p280.minutesRemaining', precision: 0 },
-  { key: 'minutesToFull', label: 'Time to full', unit: 'min', kind: 'duration', metric: 'p280.minutesToFull', precision: 0 },
-  { key: 'gridConnected', label: 'Mains present', unit: '', kind: 'state', metric: 'grid.present' },
-  { key: 'acOn', label: 'AC outlets', unit: '', kind: 'state', metric: 'outlet.ac.on' },
-  { key: 'dcOn', label: '12V DC', unit: '', kind: 'state', metric: 'outlet.dc.on' },
-  { key: 'usbOn', label: 'USB', unit: '', kind: 'state', metric: 'outlet.usb.on' },
-  { key: 'acWatts', label: 'AC outlet draw', unit: 'W', kind: 'power', metric: 'outlet.ac.power', precision: 0 },
-  { key: 'dcWatts', label: 'DC draw', unit: 'W', kind: 'power', metric: 'outlet.dc.power', precision: 0 },
-  { key: 'usbWatts', label: 'USB draw', unit: 'W', kind: 'power', metric: 'outlet.usb.power', precision: 0 },
-];
-
-/**
- * The three outputs, and nothing else.
- *
- * The light is deliberately absent. It looks like a control — you tap it and
+ * The light is deliberately not one. It looks like an outlet — you tap it and
  * the lamp changes — but the station *remembers* the mode across a power cycle,
- * and the SDK draws the line exactly there: momentary is a control, remembered
- * is a setting. It lives in `SETTINGS_SCHEMA` as `ledMode`, which is also the
- * only path that can express SOS and flash; the port register behind it is a
- * boolean and would silently reduce four modes to two.
- *
- * Declaring it in both places was the tempting mistake. The generic device
- * screen would then have shown a control that the generic control endpoint
- * cannot honour.
+ * which makes it a setting: `ledMode`, which is also the only path that can
+ * express SOS and flash; the port register behind it is a boolean and would
+ * silently reduce four modes to two.
  */
-export const CONTROLS: ControlSpec[] = [
-  { id: 'ac', label: 'AC outlets', kind: 'switch', capability: 'outlets', target: 'ac', measurementKey: 'acOn' },
-  { id: 'dc', label: '12V DC / car port', kind: 'switch', capability: 'outlets', target: 'dc', measurementKey: 'dcOn' },
-  { id: 'usb', label: 'USB-A + USB-C', kind: 'switch', capability: 'outlets', target: 'usb', measurementKey: 'usbOn' },
+export const OUTLETS: readonly { port: PortId; label: string; on: string; watts: string }[] = [
+  { port: 'ac', label: 'AC outlets', on: 'acOn', watts: 'acWatts' },
+  { port: 'dc', label: '12V DC / car port', on: 'dcOn', watts: 'dcWatts' },
+  { port: 'usb', label: 'USB-A + USB-C', on: 'usbOn', watts: 'usbWatts' },
 ];
 
+/** The part an outlet is, and the outlet a part is. */
+export const outletPart = (port: PortId): string => `outlet.${port}`;
+export const portOf = (part: string): PortId | null => OUTLETS.find((outlet) => outletPart(outlet.port) === part)?.port ?? null;
+
+/** Where each setting is grouped on a generic settings screen. */
+const SECTIONS: Record<string, string> = {
+  chargeLimit: 'Battery',
+  dischargeFloor: 'Battery',
+  acChargingWatts: 'Charging',
+  acSilentCharging: 'Charging',
+  dcInputType: 'Charging',
+  maxChargingCurrent: 'Charging',
+  stopChargeAfterMinutes: 'Charging',
+  ledMode: 'Light and sound',
+  keySound: 'Light and sound',
+  usbStandbyMinutes: 'Standby',
+  acStandbyMinutes: 'Standby',
+  dcStandbyMinutes: 'Standby',
+  screenRestSeconds: 'Standby',
+  sleepMinutes: 'Standby',
+  temperatureUnit: 'Display',
+};
+
+const number = (unit: string, precision = 0) => ({ type: 'number' as const, unit, precision });
+
 /**
- * What a P280 can do, in the shared vocabulary: report its battery, switch its
- * outlets, and say whether mains is reaching it. Not `powerMeter` — that is a
- * meter on what flows through a device, a plug's; the station's own input and
- * output are `power.in` and `power.out`.
+ * What a P280 is: the station, its two inputs, its three outlets and — when
+ * the station says some are connected — its expansion batteries, each a part
+ * whose charge is kept as history like the station's own.
+ *
+ * The station's own keys are the ones history has always been kept under; a
+ * pack's key is its position, `pack.1.soc`, which the station reports the same
+ * way every time.
  */
-export const CAPABILITIES = ['battery', 'outlets', 'acInput'] as const;
+export function describeStation(packs = 0): DeviceDescription {
+  const parts: Part[] = [
+    { id: MAIN_PART, label: 'Station', kind: 'device', role: 'storage' },
+    { id: 'input.ac', label: 'Mains', kind: 'input', role: 'source' },
+    { id: 'input.solar', label: 'Solar', kind: 'input', role: 'source' },
+    ...OUTLETS.map((outlet): Part => ({ id: outletPart(outlet.port), label: outlet.label, kind: 'outlet', role: 'load', offers: ['switch'] })),
+    ...Array.from({ length: packs }, (_, index): Part => ({ id: `pack.${index + 1}`, label: `Pack ${index + 1}`, kind: 'battery', role: 'storage', parent: MAIN_PART })),
+  ];
+
+  const attributes: AttributeSpec[] = [
+    { key: 'soc', label: 'Charge', value: number('%', 1), quantity: 'percent', means: 'battery.soc', category: 'primary' },
+    { key: 'capacityWh', label: 'Capacity', value: number('Wh'), quantity: 'energy', means: 'battery.capacity', category: 'diagnostic' },
+    { key: 'inputWatts', label: 'Input', value: number('W'), quantity: 'power', means: 'power.in' },
+    { key: 'outputWatts', label: 'Output', value: number('W'), quantity: 'power', means: 'power.out' },
+    {
+      key: 'state',
+      label: 'Doing',
+      value: {
+        type: 'enum',
+        options: [
+          { value: 'charging', label: 'Charging' },
+          { value: 'discharging', label: 'Supplying' },
+          { value: 'idle', label: 'Idle' },
+          { value: 'standby', label: 'Standby' },
+        ],
+      },
+      means: 'p280.state',
+    },
+    { key: 'minutesRemaining', label: 'Runtime left', value: number('min'), quantity: 'duration', means: 'p280.minutesRemaining' },
+    { key: 'minutesToFull', label: 'Time to full', value: number('min'), quantity: 'duration', means: 'p280.minutesToFull' },
+    { key: 'acOutputVolts', label: 'Inverter voltage', value: number('V', 1), quantity: 'voltage', means: 'p280.inverterVolts', category: 'diagnostic' },
+
+    { key: 'gridConnected', part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'grid.present' },
+    { key: 'acInputWatts', part: 'input.ac', label: 'From mains', value: number('W'), quantity: 'power', means: 'power.in.ac', category: 'primary' },
+    { key: 'acInputVolts', part: 'input.ac', label: 'Mains voltage', value: number('V', 1), quantity: 'voltage', means: 'voltage.ac' },
+    { key: 'solarWatts', part: 'input.solar', label: 'Solar', value: number('W'), quantity: 'power', means: 'power.in.solar', category: 'primary' },
+
+    ...OUTLETS.flatMap((outlet): AttributeSpec[] => [
+      { key: outlet.on, part: outletPart(outlet.port), label: outlet.label, value: { type: 'boolean' }, means: 'switch.on' },
+      { key: outlet.watts, part: outletPart(outlet.port), label: `${outlet.label} draw`, value: number('W'), quantity: 'power', means: 'power.draw', category: 'primary' },
+    ]),
+
+    ...Array.from({ length: packs }, (_, index): AttributeSpec => ({
+      key: `pack.${index + 1}.soc`,
+      part: `pack.${index + 1}`,
+      label: `Pack ${index + 1} charge`,
+      value: number('%', 1),
+      quantity: 'percent',
+      means: 'battery.soc',
+      category: 'primary',
+    })),
+
+    ...Object.entries(SETTINGS_SCHEMA.fields).map(
+      ([key, field]): AttributeSpec => ({
+        key,
+        label: field.title,
+        ...(field.description ? { description: field.description } : {}),
+        value: valueTypeOf(field),
+        access: 'write',
+        category: 'config',
+        section: SECTIONS[key] ?? 'Other',
+        ...(DANGEROUS_SETTINGS.has(key) ? { dangerous: true, consequence: 'The wrong value here can leave the station unable to wake.' } : {}),
+      })
+    ),
+  ];
+
+  return { parts, attributes, events: [] };
+}
 
 /**
  * The station's own settings.
@@ -222,37 +286,53 @@ export const SETTINGS_SCHEMA: ConfigSchema = {
   },
 };
 
-/** Settings where a wrong value damages hardware rather than annoying you. */
-export const DANGEROUS_SETTINGS = ['sleepMinutes'] as const;
+/**
+ * The station's own settings that can damage it. `sleepMinutes` has no
+ * "never" option because writing zero to that register permanently destroys
+ * the station, which is why it is also marked dangerous rather than merely
+ * omitted from the list.
+ */
+export const DANGEROUS_SETTINGS: ReadonlySet<string> = new Set(['sleepMinutes']);
 
 /**
- * Station telemetry, flattened into the readings the device model expects.
- * None at all before the station's first reading: the zeros in their place
- * were charted as a flat battery.
+ * Everything the station reports, and its settings, as readings. None at all
+ * before the station's first reading: the zeros in their place were charted as
+ * a flat battery.
  */
-export function readings(status: StationStatus): Reading[] {
+export function readings(status: StationStatus, settings: StationSettings | null): Reading[] {
   const at = status.lastUpdated;
   if (at === null) return [];
-  const port = (id: string) => status.ports.find((candidate) => candidate.id === id);
+  const port = (id: PortId) => status.ports.find((candidate) => candidate.id === id);
 
   return [
     { key: 'soc', value: status.level, at },
+    { key: 'capacityWh', value: status.capacityWh || null, at },
     { key: 'inputWatts', value: status.totalInputWatts, at },
     { key: 'outputWatts', value: status.totalOutputWatts, at },
-    { key: 'solarWatts', value: status.solarInputWatts, at },
-    { key: 'acInputWatts', value: status.acInputWatts, at },
-    { key: 'acInputVolts', value: status.acInputVolts, at },
-    { key: 'acOutputVolts', value: status.acOutputVolts, at },
+    { key: 'state', value: status.state, at },
     { key: 'minutesRemaining', value: status.minutesRemaining, at },
     { key: 'minutesToFull', value: status.minutesToFull, at },
+    { key: 'acOutputVolts', value: status.acOutputVolts, at },
     { key: 'gridConnected', value: status.gridConnected, at },
-    { key: 'acOn', value: port('ac')?.enabled ?? null, at },
-    { key: 'dcOn', value: port('dc')?.enabled ?? null, at },
-    { key: 'usbOn', value: port('usb')?.enabled ?? null, at },
-    { key: 'acWatts', value: port('ac')?.watts ?? null, at },
-    { key: 'dcWatts', value: port('dc')?.watts ?? null, at },
-    { key: 'usbWatts', value: port('usb')?.watts ?? null, at },
+    { key: 'acInputWatts', value: status.acInputWatts, at },
+    { key: 'acInputVolts', value: status.acInputVolts, at },
+    { key: 'solarWatts', value: status.solarInputWatts, at },
+    ...OUTLETS.flatMap((outlet): Reading[] => [
+      { key: outlet.on, value: port(outlet.port)?.enabled ?? null, at },
+      { key: outlet.watts, value: port(outlet.port)?.watts ?? null, at },
+    ]),
+    ...status.expansionSoc.map((soc, index): Reading => ({ key: `pack.${index + 1}.soc`, value: soc, at })),
+    ...(settings ? Object.entries(settingsToValues(settings)).map(([key, value]): Reading => ({ key, value, at })) : []),
   ];
+}
+
+/** What the station says about itself. */
+export function infoOf(status: StationStatus): DeviceInfo {
+  return {
+    manufacturer: 'AFERIY',
+    model: status.model,
+    ...(status.firmware ? { firmware: { ...status.firmware } } : {}),
+  };
 }
 
 /**
