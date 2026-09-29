@@ -1,8 +1,10 @@
 import { CAPABILITIES, isCapability, requiredMeanings } from './capabilities.ts';
 import { CATEGORIES, isCategory } from './categories.ts';
 import { PLATFORMS, type Protocol, type TransportDefinition } from './connection.ts';
+import { validateDescription } from './description.ts';
+import { DEVICE_MODEL_VERSION, type DeviceTypeV4 } from './device-model.ts';
 import { DEVICE_API_VERSION, type DeviceType } from './device-type.ts';
-import { isSecretField, type ConfigSchema } from './schema.ts';
+import { isSecretField, type ConfigSchema, type ConfigValues } from './schema.ts';
 import { STANDARD_NAMESPACES, STATE_CLASSES, standardMetric, stateClassOf } from './telemetry.ts';
 
 /**
@@ -26,15 +28,19 @@ const secretsIn = (schema: ConfigSchema | undefined): string[] =>
     .filter(([, field]) => isSecretField(field))
     .map(([name]) => name);
 
-export function validateDeviceType(type: DeviceType<any>): string[] {
+/** What every device type is checked for, whatever version of the contract it keeps. */
+type AnyDeviceType = Pick<DeviceType<any>, 'id' | 'kind' | 'meta' | 'config' | 'connections' | 'setup'> & {
+  identify?: unknown;
+  createSession?: unknown;
+  createSimulator?: unknown;
+};
+
+function commonTypeProblems(type: AnyDeviceType): string[] {
   const problems: string[] = [];
   const problem = (message: string) => problems.push(message);
 
   // --- identity ---------------------------------------------------------------
   if (!NAMESPACED_ID.test(type.id ?? '')) problem(`id "${type.id}" must be namespaced lowercase, like "brand.model"`);
-  if (type.apiVersion !== DEVICE_API_VERSION) {
-    problem(`apiVersion is "${type.apiVersion}"; this SDK speaks "${DEVICE_API_VERSION}"`);
-  }
   if (type.kind !== 'hardware' && type.kind !== 'service') problem(`kind must be "hardware" or "service"`);
 
   const meta = type.meta ?? ({} as DeviceType['meta']);
@@ -50,6 +56,56 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
   if (!meta.icon?.trim()) problem('meta.icon is required');
   if (!['verified', 'community', 'experimental'].includes(meta.support)) {
     problem('meta.support must be verified, community or experimental');
+  }
+
+  // --- config ---------------------------------------------------------------
+  if (!type.config?.fields) problem('config is required, even when it has no fields');
+  for (const field of secretsIn(type.config)) {
+    problem(`config field "${field}" is a secret; secrets belong to a connection's credentials`);
+  }
+
+  // --- connection methods -----------------------------------------------------
+  const methods = type.connections ?? [];
+  if (!methods.length) problem('a device type needs at least one connection method');
+  const methodIds = new Set<string>();
+  for (const method of methods) {
+    if (!PLAIN_ID.test(method.id ?? '')) problem(`connection method id "${method.id}" must be lowercase words`);
+    if (methodIds.has(method.id)) problem(`connection method "${method.id}" is declared twice`);
+    methodIds.add(method.id);
+    if (!method.label?.trim()) problem(`connection method "${method.id}" has no label`);
+    if (!method.protocol?.trim()) problem(`connection method "${method.id}" names no protocol`);
+    if (!method.transport?.trim()) problem(`connection method "${method.id}" names no transport`);
+    for (const field of secretsIn(method.config)) {
+      problem(`connection method "${method.id}": "${field}" is a secret; secrets are the protocol's credentials`);
+    }
+  }
+  if (methods.filter((method) => method.recommended).length > 1) problem('more than one connection method is recommended');
+
+  // --- setup steps ------------------------------------------------------------
+  const stepIds = new Set<string>(['ready', 'choose', 'credentials', 'connection', 'check']);
+  const steps = [...(type.setup?.steps ?? []), ...methods.flatMap((method) => method.steps ?? [])];
+  for (const step of steps) {
+    if (stepIds.has(step.id)) problem(`setup step "${step.id}" is declared twice, or uses a name the core reserves`);
+    stepIds.add(step.id);
+    if (step.kind === 'form' && step.target === 'device') {
+      for (const field of Object.keys(step.schema.fields)) {
+        if (!(field in (type.config?.fields ?? {}))) problem(`setup step "${step.id}" asks for "${field}", which is not in config`);
+      }
+    }
+  }
+
+  if (typeof type.identify !== 'function') problem('identify is missing');
+  if (typeof type.createSession !== 'function') problem('createSession is missing');
+  if (typeof type.createSimulator !== 'function') problem('createSimulator is missing');
+
+  return problems;
+}
+
+export function validateDeviceType(type: DeviceType<any>): string[] {
+  const problems = commonTypeProblems(type);
+  const problem = (message: string) => problems.push(message);
+  if (type.apiVersion !== DEVICE_API_VERSION) {
+    problem(`apiVersion is "${type.apiVersion}"; this SDK speaks "${DEVICE_API_VERSION}"`);
   }
 
   // --- capabilities -----------------------------------------------------------
@@ -133,45 +189,32 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
       if (!(field in type.settings.schema.fields)) problem(`dangerous setting "${field}" is not in the settings schema`);
     }
   }
-  if (!type.config?.fields) problem('config is required, even when it has no fields');
-  for (const field of secretsIn(type.config)) {
-    problem(`config field "${field}" is a secret; secrets belong to a connection's credentials`);
+  return problems;
+}
+
+/** The defaults a type's config schema gives, for describing a device before any is saved. */
+export const configDefaults = (schema: ConfigSchema): ConfigValues =>
+  Object.fromEntries(Object.entries(schema.fields).flatMap(([name, field]) => ('default' in field && field.default !== undefined ? [[name, field.default]] : [])));
+
+/**
+ * The static half of the version-4 contract: what every type is checked for,
+ * and the description it declares for a device with its default config.
+ */
+export function validateDeviceTypeV4(type: DeviceTypeV4<any>): string[] {
+  const problems = commonTypeProblems(type);
+  const problem = (message: string) => problems.push(message);
+  if (type.apiVersion !== DEVICE_MODEL_VERSION) problem(`apiVersion is "${type.apiVersion}"; the device model is "${DEVICE_MODEL_VERSION}"`);
+  if (!Number.isInteger(type.version) || type.version < 1) problem('version must be a whole number from 1');
+  if (type.migrate !== undefined && typeof type.migrate !== 'function') problem('migrate must be a function');
+  if (typeof type.describe !== 'function') {
+    problem('describe is missing');
+    return problems;
   }
-
-  // --- connection methods -----------------------------------------------------
-  const methods = type.connections ?? [];
-  if (!methods.length) problem('a device type needs at least one connection method');
-  const methodIds = new Set<string>();
-  for (const method of methods) {
-    if (!PLAIN_ID.test(method.id ?? '')) problem(`connection method id "${method.id}" must be lowercase words`);
-    if (methodIds.has(method.id)) problem(`connection method "${method.id}" is declared twice`);
-    methodIds.add(method.id);
-    if (!method.label?.trim()) problem(`connection method "${method.id}" has no label`);
-    if (!method.protocol?.trim()) problem(`connection method "${method.id}" names no protocol`);
-    if (!method.transport?.trim()) problem(`connection method "${method.id}" names no transport`);
-    for (const field of secretsIn(method.config)) {
-      problem(`connection method "${method.id}": "${field}" is a secret; secrets are the protocol's credentials`);
-    }
+  try {
+    problems.push(...validateDescription(type.describe(configDefaults(type.config)), type.id));
+  } catch (error) {
+    problem(`describe() failed with its default config: ${(error as Error).message}`);
   }
-  if (methods.filter((method) => method.recommended).length > 1) problem('more than one connection method is recommended');
-
-  // --- setup steps ------------------------------------------------------------
-  const stepIds = new Set<string>(['ready', 'choose', 'credentials', 'connection', 'check']);
-  const steps = [...(type.setup?.steps ?? []), ...methods.flatMap((method) => method.steps ?? [])];
-  for (const step of steps) {
-    if (stepIds.has(step.id)) problem(`setup step "${step.id}" is declared twice, or uses a name the core reserves`);
-    stepIds.add(step.id);
-    if (step.kind === 'form' && step.target === 'device') {
-      for (const field of Object.keys(step.schema.fields)) {
-        if (!(field in (type.config?.fields ?? {}))) problem(`setup step "${step.id}" asks for "${field}", which is not in config`);
-      }
-    }
-  }
-
-  if (typeof type.identify !== 'function') problem('identify is missing');
-  if (typeof type.createSession !== 'function') problem('createSession is missing');
-  if (typeof type.createSimulator !== 'function') problem('createSimulator is missing');
-
   return problems;
 }
 

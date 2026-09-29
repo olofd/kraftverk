@@ -704,7 +704,7 @@ holders and identity were added to the model (DATA-MODEL.md).
 | 21 | Secrets at rest in the app | S | done |
 | 22 | Loose ends: configuration words, big modules, accessibility | M | later |
 | 23 | The model, 1: one value system; declarative capabilities; projections into Home Assistant and Matter | M | done |
-| 24 | The model, 2: parts, attributes, device information, events, type versions; the v3 adapter | L | |
+| 24 | The model, 2: parts, attributes, device information, events, type versions; the v3 adapter | L | done |
 | 25 | Storage and holders carry descriptions | M–L | |
 | 26 | Packages on the new model; the gateway typed and generic | L | |
 | 27 | API v4: descriptions, typed commands, a live stream, the handshake | M | |
@@ -1140,6 +1140,22 @@ The device-type contract, version 4:
 
 **Done when** all four packages pass the version-4 contract through the
 adapter, with no change in behaviour.
+
+*Done.* `description.ts` is the model — parts (`main` always, others with a
+kind, a role and what they `offer`), attributes, events, device information
+— with `capabilitiesOf` deriving a part's capabilities and
+`validateDescription` checking one. `device-model.ts` is the version-4
+contract (`DeviceTypeV4`, `DeviceSessionV4`, `DeviceContextV4` with
+`changed` and `event`), beside version 3 until step 26 renames it. `v3.ts`
+upgrades a version-3 type: an `outlet.<id>` metric becomes part
+`outlet.<id>` offering `switch`, a setting becomes a writable `config`
+attribute, and a command or query to a part reaches the old capability.
+`checkDeviceTypeV4Contract` knows no capability by name — it flips any
+on/off attribute a command `sets`, asks every query, round-trips a written
+attribute and checks every event raised — and runs over every installed
+package through the adapter (`server/src/runtime/packages.test.ts`). A
+native version-4 station in `model.test.ts`, whose pack is reported by the
+device, keeps it; one flaw at a time, it does not.
 
 ### Step 25 — Storage and holders carry descriptions (H2)
 Migration 10: a device keeps its information, description (and its hash) and

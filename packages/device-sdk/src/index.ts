@@ -23,5 +23,8 @@ export * from './categories.ts';
 export * from './links.ts';
 export * from './connection.ts';
 export * from './device-type.ts';
+export * from './description.ts';
+export * from './device-model.ts';
+export * from './v3.ts';
 export * from './setup.ts';
 export * from './validate.ts';

@@ -1,10 +1,21 @@
-import { CAPABILITY_NAMES, type CapabilityName } from './capabilities.ts';
+import { CAPABILITIES, CAPABILITY_NAMES, type CapabilityCommand, type CapabilityName } from './capabilities.ts';
 import type { ByteChannel, ChannelMessage, MessageChannel, OpenConnection } from './connection.ts';
+import {
+  attributeMeaning,
+  capabilitiesOf,
+  checkAttributeValue,
+  partsOf,
+  validateDescription,
+  type AttributeSpec,
+  type DeviceDescription,
+} from './description.ts';
+import type { DeviceContextV4, DeviceSessionV4, DeviceTypeV4 } from './device-model.ts';
 import type { DeviceContext, DeviceSession, DeviceType } from './device-type.ts';
 import { savedDeviceId } from './identity.ts';
-import { validateConfig, type ConfigValues } from './schema.ts';
+import { validateConfig, type ConfigSchema, type ConfigValues } from './schema.ts';
 import type { MetricSpec, Reading } from './telemetry.ts';
-import { validateDeviceType } from './validate.ts';
+import { configDefaults, validateDeviceType, validateDeviceTypeV4 } from './validate.ts';
+import { checkValue, type Value, type ValueType } from './values.ts';
 
 /**
  * The contract suite: what every device type must do, checked against its
@@ -40,7 +51,7 @@ export type ContractOptions = {
 
 /** A context with nothing real behind it: memory for storage, no network, no radios. */
 export function simulatorContext<Config extends ConfigValues = ConfigValues>(
-  type: DeviceType<Config>,
+  type: DeviceType<Config> | DeviceTypeV4<Config>,
   options: ContractOptions = {}
 ): { context: DeviceContext<Config>; stop: () => void; events: string[] } {
   const timers: ReturnType<typeof setInterval>[] = [];
@@ -274,7 +285,167 @@ export async function checkDeviceTypeContract(type: DeviceType<any>, options: Co
 }
 
 /** Runs `identify` against a fake device, the way the check step will. */
-async function identifyProblems(type: DeviceType<any>, connection: OpenConnection, config: ConfigValues): Promise<string[]> {
+// --- version 4 -------------------------------------------------------------------
+
+/** A value to give an argument when the suite has no reason to prefer one. */
+function sampleArgument(type: ValueType): Value {
+  switch (type.type) {
+    case 'number':
+      return type.min ?? (type.max !== undefined ? Math.min(0, type.max) : 1);
+    case 'boolean':
+      return true;
+    case 'enum':
+      return type.options[0]?.value ?? null;
+    case 'string':
+      return '';
+  }
+}
+
+/**
+ * Runs the version-4 contract against a type's simulator (docs/ARCHITECTURE.md
+ * §8 step 24). Generic from end to end: it knows no capability by name. It
+ * checks the description, that readings are the attributes described and hold
+ * values their types allow, that every command which `sets` an on/off
+ * attribute really moves it, that every query answers, that a written
+ * attribute survives a round trip, and that every event raised is one declared.
+ */
+export async function checkDeviceTypeV4Contract(type: DeviceTypeV4<any>, options: ContractOptions = {}): Promise<string[]> {
+  const problems = validateDeviceTypeV4(type);
+  if (problems.length) return problems;
+  const settleMs = options.settleMs ?? 3_000;
+
+  const { context: base, stop } = simulatorContext(type, options);
+  const raised: { id: string; data?: Readonly<Record<string, Value>>; part?: string }[] = [];
+  const context: DeviceContextV4<any> = { ...base, changed: () => undefined, event: (id, data, part) => void raised.push({ id, data, part }) };
+
+  let session: DeviceSessionV4;
+  try {
+    session = await Promise.race([
+      type.createSimulator(context),
+      sleep(5_000).then(() => {
+        throw new Error('did not open within 5 s');
+      }),
+    ]);
+  } catch (error) {
+    stop();
+    return [`the simulator could not be opened: ${(error as Error).message}`];
+  }
+
+  const declared = type.describe(context.config ?? configDefaults(type.config));
+  const describe = (): DeviceDescription => session.description?.() ?? declared;
+
+  try {
+    const health = session.health();
+    if (!['connected', 'connecting', 'offline', 'unconfigured', 'error'].includes(health.status)) {
+      problems.push(`health() gives an unknown status "${health.status}"`);
+    }
+    if (!health.detail?.trim()) problems.push('health() gives no sentence explaining itself');
+
+    const answered = await eventually(() => session.readings().some((reading) => reading.value !== null), settleMs);
+    if (!answered) problems.push(`the simulator produced no readings within ${settleMs} ms`);
+
+    const reported = session.description?.() ?? null;
+    if (reported) problems.push(...validateDescription(reported, type.id).map((message) => `description(): ${message}`));
+    const description = describe();
+    const byKey = new Map(description.attributes.map((attribute) => [attribute.key, attribute]));
+
+    for (const reading of session.readings()) {
+      const attribute = byKey.get(reading.key);
+      if (!attribute) {
+        problems.push(`reports "${reading.key}", which the description does not have`);
+        continue;
+      }
+      if (!isIso(reading.at)) problems.push(`"${reading.key}" has no valid time`);
+      if (reading.value === null) continue;
+      const checked = checkAttributeValue(attribute, reading.value);
+      if (!checked.ok) problems.push(`"${reading.key}" is ${JSON.stringify(reading.value)}, which ${checked.problem}`);
+    }
+
+    const info = session.info?.() ?? null;
+    for (const [component, version] of Object.entries(info?.firmware ?? {})) {
+      if (typeof version !== 'string') problems.push(`info() gives firmware "${component}" as ${typeof version}, not text`);
+    }
+
+    // Every command that sets an on/off attribute: flip it, see it move, put it back.
+    const valueOf = (key: string) => session.readings().find((reading) => reading.key === key)?.value ?? null;
+    for (const part of partsOf(description)) {
+      for (const name of capabilitiesOf(description, part.id)) {
+        const spec = CAPABILITIES[name];
+        for (const [command, declaredCommand] of Object.entries(spec.commands as Record<string, CapabilityCommand>)) {
+          const [argument, attributeName] = Object.entries(declaredCommand.sets ?? {})[0] ?? [];
+          const means = attributeName ? (spec.attributes as Record<string, { means: string }>)[attributeName]?.means : undefined;
+          const target: AttributeSpec | null = means ? attributeMeaning(description, part.id, means) : null;
+          const where = `${part.id}: ${name}.${command}`;
+          if (!argument || !target) continue;
+          if (target.value.type !== 'boolean') continue;
+          const before = valueOf(target.key);
+          if (typeof before !== 'boolean') {
+            problems.push(`${where}: "${target.key}" is still unknown after the simulator settled`);
+            continue;
+          }
+          const args = { ...Object.fromEntries(Object.entries(declaredCommand.args).map(([key, type]) => [key, sampleArgument(type)])), [argument]: !before };
+          const result = await session.command({ part: part.id, capability: name, command, args });
+          if (!result.accepted) {
+            problems.push(`${where} was refused by the simulator: ${result.error}`);
+            continue;
+          }
+          if (!(await eventually(() => valueOf(target.key) === !before, settleMs))) problems.push(`${where} was accepted, but "${target.key}" never showed the change`);
+          await session.command({ part: part.id, capability: name, command, args: { ...args, [argument]: before } });
+        }
+        for (const [query, declaredQuery] of Object.entries((spec as { queries?: Record<string, { args: Record<string, ValueType> }> }).queries ?? {})) {
+          if (!session.query) {
+            problems.push(`${part.id} offers ${name}, which answers "${query}", but the session answers no queries`);
+            continue;
+          }
+          const args = Object.fromEntries(Object.entries(declaredQuery.args).map(([key, type]) => [key, sampleArgument(type)]));
+          try {
+            const answer = await session.query({ part: part.id, capability: name, query, args });
+            if (answer === undefined) problems.push(`${part.id}: ${name}.${query} answered nothing`);
+          } catch (error) {
+            problems.push(`${part.id}: ${name}.${query} failed: ${(error as Error).message}`);
+          }
+        }
+      }
+    }
+
+    // A written attribute survives a round trip: written back as it is, it comes back unchanged.
+    const writable = description.attributes.filter((attribute) => attribute.access === 'write');
+    if (writable.length && !session.write) problems.push('describes attributes that can be written, but the session cannot write');
+    if (!writable.length && session.write) problems.push('writes attributes, but describes none that can be written');
+    const known = writable.find((attribute) => valueOf(attribute.key) !== null);
+    if (session.write && writable.length && !known) problems.push('no attribute that can be written has a value after the simulator settled');
+    if (session.write && known) {
+      const value = valueOf(known.key);
+      const after = await session.write({ [known.key]: value });
+      if (after?.[known.key] !== value) problems.push(`writing "${known.key}" back as it was changed it to ${String(after?.[known.key])}`);
+    }
+
+    // Every event raised is one the description declares, carrying what it says.
+    const events = new Map((describe().events ?? []).map((event) => [event.id, event]));
+    for (const event of raised) {
+      const spec = events.get(event.id);
+      if (!spec) {
+        problems.push(`raised event "${event.id}", which the description does not declare`);
+        continue;
+      }
+      for (const [field, value] of Object.entries(event.data ?? {})) {
+        const type = spec.data?.[field];
+        if (!type) problems.push(`event "${event.id}" carries "${field}", which it does not declare`);
+        else if (value !== null && !checkValue(type, value).ok) problems.push(`event "${event.id}" carries "${field}" as ${JSON.stringify(value)}`);
+      }
+    }
+  } finally {
+    await session.close().catch((error: unknown) => problems.push(`close() failed: ${(error as Error).message}`));
+    stop();
+  }
+
+  for (const connect of options.connections ?? []) {
+    problems.push(...(await identifyProblems(type, await connect(), context.config)));
+  }
+  return problems;
+}
+
+async function identifyProblems(type: Pick<DeviceType<any>, 'identify' | 'kind'>, connection: OpenConnection, config: ConfigValues): Promise<string[]> {
   const where = `identify over ${connection.method}`;
   const quiet = () => undefined;
   try {
