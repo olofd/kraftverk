@@ -30,11 +30,17 @@ function forecast(cloud: (at: Date) => number | null, now = MORNING): DeviceRead
   };
 }
 
-/** A forecast that answers something that is not one. */
-const garbled = (answer: Value): DeviceReader => ({
+/**
+ * A forecast whose answer was not one: the reader checks every answer against
+ * what the capability declares (holder's deviceReader, tested there), and
+ * refuses it, saying why.
+ */
+const refused = (why: string): DeviceReader => ({
   health: () => ({ status: 'connected', detail: 'Fine', lastReadingAt: MORNING.toISOString() }),
   readings: () => [],
-  query: async () => answer,
+  query: async () => {
+    throw new Error(why);
+  },
 });
 
 const ask = (device: DeviceReader | null, day: 'today' | 'tomorrow', cloudMax = 40) =>
@@ -61,11 +67,9 @@ describe('how the sky looks', () => {
     expect(await ask(null, 'tomorrow')).toEqual({ value: null, detail: 'Weather is not answering: Not answering' });
   });
 
-  test('an answer that is not the forecast the capability declares is not read as one', async () => {
-    expect(await ask(garbled('sunny'), 'tomorrow')).toEqual({ value: null, detail: 'Weather answered weather.forecast.hourly with something else: its answer must be a list' });
-    expect((await ask(garbled([{ at: MORNING.toISOString(), cloudCover: 'lots' }]), 'tomorrow')).detail).toBe(
-      'Weather answered weather.forecast.hourly with something else: its answer [0].cloudCover must be a number'
-    );
+  test('an answer that is not the forecast the capability declares is not read as one: it says why, and guesses nothing', async () => {
+    const why = 'It answered weather.forecast.hourly with something else: its answer [0].cloudCover must be a number';
+    expect(await ask(refused(why), 'tomorrow')).toEqual({ value: null, detail: why });
   });
 });
 

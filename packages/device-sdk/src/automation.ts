@@ -111,7 +111,7 @@ export type RulePart = {
 
 /**
  * Asks the part filling a role one of a library capability's queries, and
- * answers in the type the capability declares — checked, so a function reads
+ * answers in the type the capability declares — checked by the reader, so a function reads
  * a forecast as a forecast, with no cast. Throws, saying why, when the part
  * cannot answer or answers something else.
  */
@@ -122,13 +122,8 @@ export async function ask<Name extends CapabilityName, Query extends QueryName<N
   args: Readonly<Record<string, Value>>
 ): Promise<QueryAnswer<Name, Query>> {
   if (!part.device) throw new Error(`${part.name} is not answering: ${part.offline}`);
-  const declared = capabilitySpec(capability).queries[query];
-  if (!declared) throw new Error(`${capability} has no query "${query}"`);
-  const answer = await part.device.query({ part: part.part, capability, query, args });
-  const checked = checkValue(declared.answer, answer);
-  if (!checked.ok) throw new Error(`${part.name} answered ${capability}.${query} with something else: its answer ${checked.problem}`);
-  // Checked against the declaration the type is derived from.
-  return checked.value as QueryAnswer<Name, Query>;
+  // The reader checks the answer against the declaration the type is derived from: once, there.
+  return (await part.device.query({ part: part.part, capability, query, args })) as QueryAnswer<Name, Query>;
 }
 
 export type FunctionContext = {

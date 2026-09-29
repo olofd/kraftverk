@@ -34,7 +34,8 @@ const REFRESH_MS = 30 * 60_000;
 const CURRENT_FOR_MS = 2 * REFRESH_MS;
 
 const DESCRIPTION: DeviceDescription = {
-  parts: [{ id: MAIN_PART, label: 'Forecast', kind: 'forecast', offers: ['weather.forecast'] }],
+  // What it is: the weather at a place. A forecast is what it offers.
+  parts: [{ id: MAIN_PART, label: 'Weather', kind: 'place', offers: ['weather.forecast'] }],
   attributes: [
     {
       key: 'temperature',

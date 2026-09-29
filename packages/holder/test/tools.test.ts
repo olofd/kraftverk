@@ -70,7 +70,7 @@ describe('a tool', () => {
 });
 
 describe('a device as a function sees it', () => {
-  const description: DeviceDescription = { parts: [{ id: 'main', label: 'Forecast', kind: 'forecast', offers: ['weather.forecast'] }], attributes: [] };
+  const description: DeviceDescription = { parts: [{ id: 'main', label: 'Weather', kind: 'place', offers: ['weather.forecast'] }], attributes: [] };
 
   test('answers a query in the type its capability declares, and nothing else', async () => {
     let answer: Value = [{ at: '2026-09-29T07:00:00Z', cloudCover: 40 }];

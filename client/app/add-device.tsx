@@ -282,24 +282,30 @@ function matches(type: DeviceTypeListing, query: string): boolean {
     .every((word) => text.includes(word));
 }
 
+type Section = 'devices' | 'services' | 'empty';
+
+const SECTION_LABELS: Record<Section, string> = { devices: 'Devices', services: 'Services', empty: 'Nothing installed yet' };
+
 function Categories({ types, onPick }: { types: DeviceTypeListing[]; onPick: (id: string) => void }) {
   const theme = useTheme();
-  // A category is under Services when what is installed in it is services; the types say, not the category.
-  const isServices = (id: string) => {
+  /*
+    Where a shelf goes is what is installed on it says: services when all of
+    it is, devices otherwise. A shelf with nothing on it has nothing to say
+    which it is, so it is listed apart rather than guessed into one.
+  */
+  const sectionOf = (id: string): Section => {
     const installed = types.filter((type) => type.meta.category === id);
-    return installed.length > 0 && installed.every((type) => type.kind === 'service');
+    if (!installed.length) return 'empty';
+    return installed.every((type) => type.kind === 'service') ? 'services' : 'devices';
   };
-  const sections = (['devices', 'services'] as const)
-    .map((section) => ({
-      section,
-      categories: Object.entries(CATEGORIES).filter(([id]) => isServices(id) === (section === 'services')),
-    }))
+  const sections = (['devices', 'services', 'empty'] as const)
+    .map((section) => ({ section, categories: Object.entries(CATEGORIES).filter(([id]) => sectionOf(id) === section) }))
     .filter(({ categories }) => categories.length > 0);
   return (
     <>
       {sections.map(({ section, categories }) => (
         <YStack key={section} gap="$2">
-          <SectionLabel>{section === 'devices' ? 'Devices' : 'Services'}</SectionLabel>
+          <SectionLabel>{SECTION_LABELS[section]}</SectionLabel>
           <Card inset>
             {categories.map(([id, spec], index) => {
               const installed = types.filter((type) => type.meta.category === id);
@@ -311,7 +317,7 @@ function Categories({ types, onPick }: { types: DeviceTypeListing[]; onPick: (id
                     <XStack alignItems="center" gap="$3" paddingLeft="$4">
                       <Feather name={featherName(spec.icon)} size={18} color={count ? theme.accent?.val : theme.muted?.val} />
                       <YStack flex={1}>
-                        <Row title={spec.label} subtitle={count ? installed.map((type) => type.meta.name).join(', ') : 'Nothing installed yet'} disabled={count === 0} />
+                        <Row title={spec.label} subtitle={count ? installed.map((type) => type.meta.name).join(', ') : 'No package for these is installed'} disabled={count === 0} />
                       </YStack>
                     </XStack>
                   </Pressable>

@@ -57,7 +57,7 @@ export const PART_KINDS = {
   valve: { label: 'Valve', icon: 'droplet' },
   lock: { label: 'Lock', icon: 'lock' },
   fan: { label: 'Fan', icon: 'wind' },
-  forecast: { label: 'Forecast', icon: 'cloud' },
+  place: { label: 'Place', icon: 'map-pin' },
   other: { label: 'Part', icon: 'box' },
 } as const satisfies Record<string, { label: string; icon: string }>;
 
