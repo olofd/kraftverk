@@ -1,15 +1,38 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="kraftverk">
+  <!--
+    kraftverk: a charge ring with a bolt inside — the station's own gauge, the
+    signature element of the app, as a mark. Dark tile so it reads on light and
+    dark pages alike; the ring runs from empty (bottom left) to full (bottom
+    right) and is nearly there.
+  -->
   <defs>
-    <linearGradient id="face" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#FFB547"/>
-      <stop offset="1" stop-color="#F0602B"/>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1B2230"/>
+      <stop offset="1" stop-color="#0B0F17"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#22C55E"/>
+      <stop offset="1" stop-color="#5EEAD4"/>
     </linearGradient>
     <linearGradient id="bolt" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#FFF1DE"/>
+      <stop offset="1" stop-color="#D9FBE7"/>
     </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
   </defs>
-  <rect x="4" y="4" width="120" height="120" rx="30" fill="url(#face)"/>
-  <rect x="4.5" y="4.5" width="119" height="119" rx="29.5" fill="none" stroke="#000" stroke-opacity=".08"/>
-  <path d="M71 20 L38 70 H60 L53 108 L90 54 H67 Z" fill="url(#bolt)"/>
+
+  <rect x="0" y="0" width="128" height="128" rx="30" fill="url(#tile)"/>
+  <rect x="0.5" y="0.5" width="127" height="127" rx="29.5" fill="none" stroke="#FFFFFF" stroke-opacity=".07"/>
+
+  <!-- The track: the whole gauge, faint. Arc from 135° to 405° (bottom-left round to bottom-right). -->
+  <path d="M 34.3 93.7 A 42 42 0 1 1 93.7 93.7" fill="none" stroke="#FFFFFF" stroke-opacity=".10" stroke-width="10" stroke-linecap="round"/>
+
+  <!-- The charge: most of the way round. -->
+  <path d="M 34.3 93.7 A 42 42 0 1 1 93.7 93.7" fill="none" stroke="url(#ring)" stroke-opacity=".35" stroke-width="10" stroke-linecap="round" filter="url(#glow)" pathLength="100" stroke-dasharray="84 16"/>
+  <path d="M 34.3 93.7 A 42 42 0 1 1 93.7 93.7" fill="none" stroke="url(#ring)" stroke-width="10" stroke-linecap="round" pathLength="100" stroke-dasharray="84 16"/>
+
+  <!-- The bolt. -->
+  <path d="M 69.5 36 L 49 70 H 62 L 57.5 94 L 79 60 H 66 Z" fill="url(#bolt)"/>
 </svg>
