@@ -1,0 +1,5 @@
+{
+  "//": "Not a workspace: the end-to-end tests, run by npm run test:e2e at the root. ES modules, like the rest of the repository.",
+  "private": true,
+  "type": "module"
+}

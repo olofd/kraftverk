@@ -20,6 +20,7 @@ import {
 import {
   findStep,
   isSecretField,
+  isSimulated,
   openChannel,
   savedDeviceId,
   setupPlan,
@@ -151,13 +152,17 @@ export class AppFlow implements SetupFlow {
   #stopWatching: (() => void) | null = null;
   #seen: readonly Sighting[] = [];
 
+  /** Simulated: nothing to reach, so no protocol and no transport — only the type's own steps, then its simulator, held here. */
+  readonly #simulated: boolean;
+
   constructor(
     private runtime: AppRuntime,
     private type: DeviceType<any>,
     private method: ConnectionMethod,
-    private protocol: Protocol
+    private protocol: Protocol | null
   ) {
-    this.plan = setupPlan({ type, method, protocol, transport: runtime.registry.definition(method.transport), platform: PLATFORM });
+    this.#simulated = isSimulated(method);
+    this.plan = setupPlan({ type, method, protocol, transport: this.#simulated ? null : runtime.registry.definition(method.transport), platform: PLATFORM });
     this.address = method.address ?? null;
   }
 
@@ -166,7 +171,7 @@ export class AppFlow implements SetupFlow {
   }
 
   #binding() {
-    const binding = this.protocol.bindings[this.method.transport];
+    const binding = this.protocol?.bindings[this.method.transport];
     if (!binding) throw new Error(`This app cannot reach a ${this.type.meta.name} by ${this.method.label}: update it`);
     return binding;
   }
@@ -212,7 +217,7 @@ export class AppFlow implements SetupFlow {
   }
 
   async update(values: { device?: ConfigValues; connection?: ConfigValues }) {
-    const schema = { ...(this.protocol.credentials?.schema.fields ?? {}), ...(this.method.config?.fields ?? {}) };
+    const schema = { ...(this.protocol?.credentials?.schema.fields ?? {}), ...(this.method.config?.fields ?? {}) };
     if (values.device) this.device = { ...this.device, ...values.device };
     for (const [field, value] of Object.entries(values.connection ?? {})) {
       const spec = schema[field];
@@ -299,6 +304,10 @@ export class AppFlow implements SetupFlow {
 
   async check(): Promise<CheckOutcome> {
     if (!this.address) throw new Error('Choose the device first');
+    if (this.#simulated) {
+      if (this.runtime.mode === 'server') throw new Error('With a server, the server holds a simulated device: add it through your server');
+      return { outcome: 'new', summary: 'Simulated: no hardware was read, and none will be.', identity: null };
+    }
     const { identified, failure } = await this.#identify();
 
     if (this.runtime.mode === 'server') {

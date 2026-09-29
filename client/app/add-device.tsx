@@ -12,7 +12,7 @@ import {
   type DeviceView,
   type SaveInput,
 } from '@kraftverk/api-client';
-import { describeDeviceType, LINK_KIND_IDS, linkableParts, linkKindSpec, MAIN_PART, type DeviceDescription } from '@kraftverk/device-sdk';
+import { describeDeviceType, isSimulated, LINK_KIND_IDS, linkableParts, linkKindSpec, MAIN_PART, methodOf, type DeviceDescription } from '@kraftverk/device-sdk';
 import { Card, Row, RowSeparator, SectionLabel, haptic } from '@kraftverk/ui';
 
 import { Pressable } from '../src/components/Pressable';
@@ -96,6 +96,11 @@ export default function AddDeviceScreen() {
           recommended: Boolean(method.recommended),
         });
       }
+      // Simulated reaches nothing, so whatever runs the app can hold it: the server when there is one, this app when there is not.
+      if (isSimulated(method)) {
+        if (mode === 'local') rows.push({ methodId: method.id, label: `${method.label}, from ${HERE}`, description: method.description, holder: 'this-app', available: true, reason: null, recommended: false });
+        return rows;
+      }
       const definition = runtime.registry.definition(method.transport);
       if (definition?.platforms.includes(PLATFORM) && runtime.registry.protocols.get(method.protocol)?.bindings[method.transport]) {
         const here = runtime.registry.available(method.transport);
@@ -126,9 +131,9 @@ export default function AddDeviceScreen() {
           next = await ServerFlow.start(type.id, way.methodId);
         } else {
           const local = runtime.registry.types.get(type.id);
-          const method = local?.connections.find((candidate) => candidate.id === way.methodId);
-          const protocol = method ? runtime.registry.protocols.get(method.protocol) : undefined;
-          if (!local || !method || !protocol) throw new Error('This app cannot set that up: update it');
+          const method = local ? methodOf(local, way.methodId) : null;
+          const protocol = method && !isSimulated(method) ? (runtime.registry.protocols.get(method.protocol) ?? null) : null;
+          if (!local || !method || (!protocol && !isSimulated(method))) throw new Error('This app cannot set that up: update it');
           next = new AppFlow(runtime, local, method, protocol);
         }
         flowRef.current = next;
@@ -362,11 +367,14 @@ function Types({ types, onPick, onBack }: { types: DeviceTypeListing[]; onPick: 
 
 function Ways({ ways, busy, onPick, onBack }: { ways: Way[]; busy: boolean; onPick: (way: Way) => void; onBack?: () => void }) {
   const theme = useTheme();
+  const { mode } = useDevices();
   return (
     <YStack gap="$2">
       <SectionLabel>How do you want to connect?</SectionLabel>
       <Card inset>
-        {ways.length === 0 ? <Row title="No way to reach it from here" subtitle="Neither your server nor this app has what it needs" /> : null}
+        {ways.length === 0 ? (
+          <Row title="No way to reach it from here" subtitle={mode === 'server' ? 'Neither your server nor this app has what it needs' : 'This app has nothing that reaches it'} />
+        ) : null}
         {ways.map((way, index) => (
           <YStack key={`${way.methodId}-${way.holder}`}>
             {index > 0 ? <RowSeparator /> : null}

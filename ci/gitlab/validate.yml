@@ -31,6 +31,28 @@ validate:
     - npm test
     - EXPO_PUBLIC_API_URL=same-origin npm run build:web
 
+# The app end to end, in a browser: e2e/ against a read-only server of its
+# own, every device simulated. Beside validate, not after it.
+e2e:
+  stage: validate
+  needs: []
+  image: node:24.21.0-bookworm
+  timeout: 25m
+  cache:
+    key:
+      files: [package-lock.json]
+    paths: [.npm/]
+  variables:
+    npm_config_cache: $CI_PROJECT_DIR/.npm
+  script:
+    - npm ci
+    - npx playwright install --with-deps chromium
+    - npm run test:e2e
+  artifacts:
+    when: on_failure
+    expire_in: 7 days
+    paths: [e2e-report/, e2e-results/]
+
 stack:
   stage: image
   # Beside validate, not after it: they are independent, and whatever comes

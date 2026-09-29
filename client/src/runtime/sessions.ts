@@ -1,4 +1,4 @@
-import type { ConnectionHealth, DeviceDescription, DeviceInfo, DeviceSession, DeviceStore, SavedDeviceId } from '@kraftverk/device-sdk';
+import { isSimulated, type ConnectionHealth, type DeviceDescription, type DeviceInfo, type DeviceSession, type DeviceStore, type SavedDeviceId } from '@kraftverk/device-sdk';
 import { Failover, identityVerdict, openDevice, OpenRefused, type DeviceEventMessage, type OpenedDevice } from '@kraftverk/holder';
 
 import { PLATFORM, type AppRegistry } from './registry';
@@ -78,6 +78,12 @@ export class HeldSessions {
     return this.#open.get(deviceId)?.held ?? null;
   }
 
+  /** Whether this app holds it through its simulator: no hardware, so read-only does not apply. */
+  simulated(deviceId: string): boolean {
+    const held = this.#open.get(deviceId)?.held;
+    return held !== undefined && isSimulated(held.connection);
+  }
+
   /** Every device this app has a session for. */
   all(): HeldDevice[] {
     return [...this.#open.values()].map((open) => open.held);
@@ -128,7 +134,8 @@ export class HeldSessions {
         transports: registry,
         store: held.store,
         platform: PLATFORM,
-        readOnly,
+        // Read-only is about hardware: a simulated device has none, and takes writes either way, as on a server.
+        readOnly: readOnly && !isSimulated(held.connection),
         // Frames nobody has described are for a server started to bring up a unit, never for an app.
         allowRawFrames: false,
         log: { info: log('log'), warn: log('warn'), error: log('error') },
@@ -139,16 +146,19 @@ export class HeldSessions {
           this.options.onChange?.();
         },
       });
-      const channel = opened.channel!;
       const noteState = (connected: boolean) => {
         this.options.failover?.note(held.connection.id, connected);
         if (connected) this.options.onConnected?.(held);
       };
-      const detach = channel.onConnectedChange((connected) => {
-        noteState(connected);
-        this.options.onChange?.();
-      });
-      noteState(channel.connected);
+      // A simulator has no channel: it is there, and stays there.
+      const channel = opened.channel;
+      const detach = channel
+        ? channel.onConnectedChange((connected) => {
+            noteState(connected);
+            this.options.onChange?.();
+          })
+        : () => undefined;
+      noteState(channel?.connected ?? true);
       this.#open.set(held.deviceId, { held, opened, fingerprint: fingerprintOf(held, readOnly), detach });
       this.#refusals.delete(held.deviceId);
     } catch (error) {

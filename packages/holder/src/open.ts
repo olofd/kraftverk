@@ -1,5 +1,6 @@
 import {
   checkValue,
+  isSimulated,
   openChannel,
   SIMULATED_TRANSPORT,
   validateConfig,
@@ -46,7 +47,7 @@ export class OpenRefused extends Error {
 export type OpenInput = {
   type: DeviceType<any>;
   device: { id: SavedDeviceId; name: string; config: Record<string, unknown> };
-  /** The connection to open; null opens the type's simulator. */
+  /** The connection to open; null, or a simulated one, opens the type's simulator. */
   connection: { method: string; transport: string; address: string; config: Record<string, unknown> } | null;
   secret: (field: string) => string | null;
   protocols: { get(id: string): Protocol | null | undefined };
@@ -116,7 +117,8 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
 
   try {
     let connection: OpenConnection | null = null;
-    if (input.connection) {
+    // Simulated is a way to add any device, not one of its type's methods: it opens the simulator and reaches nothing.
+    if (input.connection && !isSimulated(input.connection)) {
       const method = type.connections.find((candidate) => candidate.id === input.connection!.method);
       if (!method) throw new OpenRefused(`${type.meta.name} no longer has a way called "${input.connection.method}"`, 'error');
       channel = await openChannel(input.transports, input.protocols.get(method.protocol), input.connection);

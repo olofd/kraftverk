@@ -26,6 +26,34 @@ into the core, and the count of what already has may only fall
 builds both Docker images, starts the stack and attacks it —
 on GitHub and on GitLab alike. See [docs/CI.md](CI.md).
 
+### End to end, in a browser
+
+```bash
+npm run test:e2e
+```
+
+Playwright drives the app as a person does — adding a device, answering
+what it is linked to, making an automation, confirming a consequential
+command, the app with no server — against the **real server**, started on a
+port and a database of its own, read-only, with every device added through
+the **Simulated** method. The server holds a simulated device exactly as it
+holds a real one: setup, sessions, the gateway, history, the live stream and
+automations all run; only the hardware is not there. The app is the web
+build as it ships, served same-origin by `e2e/serve.mjs` with `/api` and the
+live socket passed through, as the web container serves it. The tests are
+`e2e/*.e2e.ts` — not `*.spec.ts`, which Bun's runner would pick up.
+
+`npm run test:e2e` builds the app first (`E2E_SKIP_BUILD=1` reuses
+`client/dist`); `-- --headed` or `-- --ui` pass through to Playwright. The
+first run needs its browser: `npx playwright install chromium`. On a failure,
+`e2e-results/` has a screenshot, a trace and the page as the test saw it.
+
+What these do not reach yet is below the device: `identify`, the protocols'
+framing and the transports run in their unit tests against scripted bytes.
+Fakes on the wire — a pretend plug speaking tuya-local on a local port, a
+pretend station speaking Sydpower to a test broker, built from recorded
+sessions — will let the same tests run all the way down (NEXT-STEP phase 7).
+
 **Server tests must set `KRAFTVERK_DB`.** Bun runs every test file in one
 process, sharing the database handle, and several suites begin by deleting from
 `device` and `sample`. A suite that reaches the default file would truncate the

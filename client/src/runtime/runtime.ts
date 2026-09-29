@@ -135,7 +135,8 @@ export class AppRuntime {
         (this.#view.get(id)?.links ?? [])
           .filter((link) => link.role === 'source' && link.part === part)
           .map((link) => ({ kind: link.kind, target: { device: link.other.id, part: link.other.part } })),
-      isReadOnly: () => !this.#allowWrites,
+      // Every hardware write, while writes from this app are off; a simulated device has no hardware.
+      isReadOnly: (id) => !this.#allowWrites && !this.sessions.simulated(id),
       readOnlyReason: 'Writes from this app are off: allow them in App settings',
       record: (entry) => audit(entry),
       memory: { get: (key) => readPreference(`kraftverk.gateway.${key}`), set: (key, value) => writePreference(`kraftverk.gateway.${key}`, value) },

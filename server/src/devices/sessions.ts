@@ -288,8 +288,8 @@ export class DeviceSessionManager {
       const opened = await openDevice({
         type,
         device: record,
-        // Simulated: no connection to open, and its type's simulator in its place.
-        connection: simulated ? null : connection,
+        // A simulated one opens its type's simulator in its place, in every holder.
+        connection,
         secret: (field) => this.deps.connections.secret(connection.id, field),
         protocols: this.deps.protocols,
         transports: this.deps.transports,

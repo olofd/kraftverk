@@ -47,3 +47,7 @@ Thumbs.db
 
 # Written by scripts/ci/smoke-docker.sh
 smoke-logs.txt
+
+# End-to-end test output (npm run test:e2e)
+e2e-results/
+e2e-report/
