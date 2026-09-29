@@ -62,6 +62,33 @@ answers — and listed on the device as `tools`.
 | `GET` | `/audit` | The timeline: intents, commands, verification outcomes — all of it, or one `resourceKind`'s (`device`, `client`, `automation`, `account`, `transport`), or one `resource`'s; `before` an entry's id pages back |
 | `GET` `PUT` | `/policy` · `/policy/:name` | What the home decides that declarations name: `loadWatts`, how much a load is before turning it off is confirmed. `{ value }` sets it, `null` puts back the default; audited |
 | `GET` (WebSocket) | `/live` | What changed, as it changes — see below |
+| `GET` | `/problems` | Warnings and errors across the devices you have, newest first |
+| `POST` · `GET` | `/automations/rehearse` · `/automations/:id/rehearse` | A rule rehearsed on the last `hours` of history: when it would have run and what it would have done, and what history could not show. Nothing is sent |
+| `GET` | `/world` | The house as a model reads it: every device, its parts, what each offers and reports with meaning and freshness, the links, and the rules an assistant is held to. `?format=text` is the same in a few lines a device |
+| `GET` | `/vocabulary` | The words the world is said in: capabilities (commands, queries, what makes a command consequential), meanings, link kinds, recipes, the home's policy values |
+| `POST` | `/mcp` | MCP over HTTP (JSON-RPC, no stream) — see below |
+
+## The assistant: MCP
+
+`POST /api/mcp` speaks the Model Context Protocol, JSON in and JSON out, behind
+the same sign-in as every route: a client sends the session cookie and the
+`x-kraftverk-client` header, as the app does. Its tools are the intents and
+nothing else:
+
+| Tool | What it does |
+| --- | --- |
+| `world` | The house now, as `GET /world?format=text` |
+| `vocabulary` | As `GET /vocabulary` |
+| `command` | One command to one part, through the gateway as `actor: 'agent'`: arguments, dwell time and freshness checked, the effect read back. What needs a person's confirmation is refused to an agent — it cannot say yes for anyone — and the refusal says so |
+| `query` | A capability's query, answered in its declared type |
+| `receipts` | The timeline, one device's or one automation's |
+| `rehearse` | A recipe with its roles and settings, rehearsed on history |
+| `propose` | An automation from a recipe, made **observing** — it acts only once a person arms it in the app — and rehearsed on the last week |
+
+A client configured with, say,
+`{ "type": "http", "url": "http://localhost:3333/api/mcp", "headers": { "Cookie": "kraftverk_session=…", "x-kraftverk-client": "mcp" } }`
+reads the house and acts in it with exactly those rails. A token of its own,
+rather than a person's session, is still to come.
 
 ## The live stream
 

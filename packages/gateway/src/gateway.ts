@@ -55,8 +55,12 @@ export type CommandIntent = {
   command: string;
   args: Readonly<Record<string, Value>>;
   reason: string;
-  /** The kind of caller. It decides policy — a person confirms, an automation has its own dwell time. */
-  actor: 'user' | 'automation';
+  /**
+   * The kind of caller. It decides policy — a person confirms; an automation
+   * has its own dwell time; an agent (an assistant acting for a person) may do
+   * what needs no one's yes, and never gives that yes itself.
+   */
+  actor: Actor;
   /**
    * Who, for the audit trail: an account name, or "automation:a-…". Kept apart
    * from `actor`, which is a kind and drives policy — a name must never be able
@@ -70,6 +74,9 @@ export type CommandIntent = {
    */
   confirmation?: string;
 };
+
+/** Who is asking, as policy sees it. */
+export type Actor = 'user' | 'automation' | 'agent';
 
 export type GatewayOutcome =
   | 'verified' // it happened, and everything that can say so agrees
@@ -103,6 +110,8 @@ export type GatewayPolicy = {
   automationDwellMs: number;
   /** A much shorter guard for a person tapping a button, so the acceptance drill is possible. */
   userDwellMs: number;
+  /** An assistant acts at a person's request, but can repeat itself faster than one: a minute between its changes to one part. */
+  agentDwellMs: number;
   /** How long the device and the parts it is linked to are given to agree. */
   verifyTimeoutMs: number;
 };
@@ -111,6 +120,7 @@ export const DEFAULT_POLICY: GatewayPolicy = {
   maxDataAgeMs: 60_000,
   automationDwellMs: 10 * 60_000,
   userDwellMs: 5_000,
+  agentDwellMs: 60_000,
   verifyTimeoutMs: 30_000,
 };
 
@@ -131,7 +141,7 @@ export type WriteIntent = {
   deviceId: SavedDeviceId;
   /** Only what should change: writing the full set would rewrite every register to change one. */
   patch: Readonly<Record<string, Value>>;
-  actor: 'user' | 'automation';
+  actor: Actor;
   by: string;
   /** The token a refusal handed out, once a person has said yes: required when the patch touches an attribute that can damage the hardware. */
   confirmation?: string;
@@ -316,7 +326,7 @@ export class ActionGateway {
     if (this.#deps.isReadOnly(intent.deviceId)) return refuse(this.#deps.readOnlyReason ?? 'The server is in read-only mode');
 
     const key = this.#key(intent);
-    const dwell = intent.actor === 'automation' ? this.#policy.automationDwellMs : this.#policy.userDwellMs;
+    const dwell = intent.actor === 'automation' ? this.#policy.automationDwellMs : intent.actor === 'agent' ? this.#policy.agentDwellMs : this.#policy.userDwellMs;
     const sinceLast = Date.now() - this.#lastSwitchAt(key);
     if (this.#lastSwitchAt(key) > 0 && sinceLast < dwell) {
       return refuse(`Too soon: ${Math.ceil((dwell - sinceLast) / 1000)} s of the dwell time remains`);
@@ -356,12 +366,14 @@ export class ActionGateway {
     const firstThroughLink = consequentialLink !== null && !this.#everSwitched(key);
     const consequential = declared.matches || (whenMatches && consequentialLink !== null);
     const subject = subjectOf({ device: intent.deviceId, part: intent.part, capability: intent.capability, command: intent.command, args: intent.args, by: intent.by });
+    const why = firstThroughLink
+      ? `This ${consequentialLink.kind.verb} ${consequentialLink.name} and has never been switched from here: confirm it is the right one`
+      : consequentialLink && whenMatches
+        ? `This ${consequentialLink.kind.verb} ${consequentialLink.name}`
+        : (declared.because ?? 'This needs confirming');
+    // An agent cannot say yes for a person: what needs one is theirs to do, in the app, and the refusal says so.
+    if (intent.actor === 'agent' && (consequential || firstThroughLink)) return refuse(`A person has to do this, in the app: it needs their confirmation. ${why}.`);
     if (intent.actor === 'user' && (consequential || firstThroughLink) && !this.#confirmations.accept(intent.confirmation, subject)) {
-      const why = firstThroughLink
-        ? `This ${consequentialLink.kind.verb} ${consequentialLink.name} and has never been switched from here: confirm it is the right one`
-        : consequentialLink && whenMatches
-          ? `This ${consequentialLink.kind.verb} ${consequentialLink.name}`
-          : (declared.because ?? 'This needs confirming');
       return { ...refuse(`This action needs explicit confirmation. ${why}.`), needsConfirmation: this.#confirmations.ask(subject) };
     }
 
@@ -505,7 +517,7 @@ export class ActionGateway {
     if (this.#deps.isReadOnly(intent.deviceId)) return refuse(this.#deps.readOnlyReason ?? 'The server is in read-only mode');
 
     const risky = keys.filter((key) => writable.get(key)!.dangerous);
-    if (risky.length && intent.actor === 'automation') return refuse(`An automation may not change ${risky.join(', ')}: it can damage the hardware`);
+    if (risky.length && intent.actor !== 'user') return refuse(`${intent.actor === 'agent' ? 'An assistant' : 'An automation'} may not change ${risky.join(', ')}: it can damage the hardware. A person can, in the app`);
     const subject = subjectOf({ device: intent.deviceId, patch: changed, by: intent.by });
     if (risky.length && !this.#confirmations.accept(intent.confirmation, subject)) {
       const labels = risky.map((key) => writable.get(key)!.label).join(', ');

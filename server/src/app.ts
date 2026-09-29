@@ -21,6 +21,7 @@ import { liveRoutes } from './routes/live.ts';
 import type { AppDeps } from './routes/shared.ts';
 import { setupRoutes } from './routes/setup.ts';
 import { transportRoutes } from './routes/transports.ts';
+import { assistantRoutes } from './routes/assistant.ts';
 import { automationRoutes } from './routes/automations.ts';
 
 export type { AppDeps } from './routes/shared.ts';
@@ -72,7 +73,7 @@ export function corsOrigin(config: Pick<ServerConfig, 'allowedOrigins' | 'develo
  * or that are not about devices at all. Every other change made through the
  * API tells listening apps to read the list again.
  */
-const QUIET_CHANGES = /^\/api\/(auth|users)\/|\/commands\/|\/attributes$|\/tools\//;
+const QUIET_CHANGES = /^\/api\/(auth|users)\/|\/commands\/|\/attributes$|\/tools\/|\/rehearse$|^\/api\/mcp$/;
 
 export function createApp(deps: AppDeps) {
   const { config, startedAt } = deps;
@@ -161,6 +162,7 @@ export function createApp(deps: AppDeps) {
   api.route('/', heldRoutes(deps));
   api.route('/', transportRoutes(deps));
   api.route('/', automationRoutes(deps));
+  api.route('/', assistantRoutes(deps));
   api.route('/', liveRoutes(deps, upgradeWebSocket, corsOrigin(config)));
 
   app.route('/api', api);

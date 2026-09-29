@@ -56,6 +56,15 @@ empty: the core names no product, and every device is found, not listed.
   the home's (`loadWatts`, App settings → Safety, `/api/policy`), and a
   confirmation is a single-use token bound to the intent and the person,
   for commands, settings and arming alike.
+- **The app on the model** (step 28): pages drawn from the description —
+  energy flow, part pages, events and a Problems page, About, tools from their
+  declarations — with slots (`DeviceUi`) a package fills where it draws
+  better, from a kit in `packages/ui`. The P280's screens draw from its
+  readings; it has no status tool.
+- **The assistant, minimum**: `GET /api/world`, `GET /api/vocabulary`, and
+  MCP at `POST /api/mcp` (see [API.md](API.md)) acting as `actor: 'agent'`,
+  which is refused whatever needs a person's yes; `propose` makes an
+  automation observing and rehearses it on history.
 - **Live** (step 27): `GET /api/live`, a WebSocket, carries readings that
   moved, health and events; the app polls only while it is down.
 - **The app holds connections too.** "Bluetooth, from this browser" runs the

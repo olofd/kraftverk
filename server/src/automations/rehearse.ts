@@ -1,0 +1,191 @@
+import type { Rehearsal, RoleBinding } from '@kraftverk/api-contract';
+import {
+  attributeMeaning,
+  currentForOf,
+  evaluate,
+  evaluateNow,
+  localTime,
+  ruleUses,
+  standardMeaning,
+  zonedInstant,
+  type AttributeSpec,
+  type ConfigValues,
+  type DeviceDescription,
+  type Recipe,
+  type RuleScope,
+  type ScalarValue,
+  type Value,
+} from '@kraftverk/device-sdk';
+
+/**
+ * A rule, rehearsed on what happened (PROPOSITION.md §5.3): walked through a
+ * window of history minute by minute, with the triggers the engine uses —
+ * a condition turning true and held, a time of day, an event — and at each
+ * run, what it would have decided and done. Nothing is sent, and nothing is
+ * kept.
+ *
+ * History is what happened without it: a charger it would have switched on
+ * would have raised the charge, and that is not in the samples. And what
+ * history does not keep — a forecast a function asks for — is unknown here,
+ * as it would be at run time with the service away; the rehearsal says so.
+ */
+
+export type RehearseSource = {
+  /** The part filling a role: its name and description. */
+  device(binding: RoleBinding): { name: string; description: DeviceDescription } | null;
+  /** Its samples of one attribute in a window, oldest first. */
+  samples(deviceId: string, key: string, from: string, to: string): readonly { at: string; value: number | null; text: string | null }[];
+  /** When it raised one event in a window, oldest first. */
+  events(deviceId: string, part: string, event: string, from: string, to: string): readonly string[];
+};
+
+export type Rehearsed = { roles: Readonly<Record<string, RoleBinding>>; params: ConfigValues; timeZone: string };
+
+/** At most this many runs are reported: a rule that runs that often is said to, not listed. */
+const MAX_RUNS = 200;
+/** Samples are a minute apart: a value stays current that much past its attribute's window. */
+const SAMPLE_SLACK_MS = 60_000;
+
+type Series = { attribute: AttributeSpec; points: { at: number; value: ScalarValue }[] };
+
+const valueOf = (attribute: AttributeSpec, row: { value: number | null; text: string | null }): ScalarValue | null =>
+  row.text !== null ? row.text : row.value === null ? null : attribute.value.type === 'boolean' ? row.value !== 0 : row.value;
+
+export async function rehearse(recipe: Recipe, automation: Rehearsed, source: RehearseSource, window: { from: Date; to: Date }): Promise<Rehearsal> {
+  const from = window.from.toISOString();
+  const to = window.to.toISOString();
+  const caveats: string[] = [];
+  const uses = ruleUses(recipe);
+  const name = (role: string) => {
+    const binding = automation.roles[role];
+    return (binding && source.device(binding)?.name) ?? 'a device you no longer have';
+  };
+
+  // Every reading the rule makes, as a series from history.
+  const series = new Map<string, Series | null>();
+  for (const { role, means } of uses.reads) {
+    const key = `${role}:${means}`;
+    if (series.has(key)) continue;
+    const binding = automation.roles[role];
+    const device = binding ? source.device(binding) : null;
+    const attribute = device && binding ? attributeMeaning(device.description, binding.part, means) : null;
+    if (!binding || !device || !attribute) {
+      series.set(key, null);
+      caveats.push(`${recipe.roles[role]?.label ?? role}: nothing reports ${standardMeaning(means)?.label.toLowerCase() ?? means} there`);
+      continue;
+    }
+    const points = source
+      .samples(binding.device, attribute.key, new Date(window.from.getTime() - 60 * 60_000).toISOString(), to)
+      .flatMap((row) => {
+        const value = valueOf(attribute, row);
+        return value === null ? [] : [{ at: Date.parse(row.at), value }];
+      });
+    if (!points.length) caveats.push(`${name(role)} kept no ${attribute.label.toLowerCase()} in that time`);
+    series.set(key, { attribute, points });
+  }
+  for (const call of uses.calls) caveats.push(`It asks ${call.fn} of ${name(call.role)}, which history does not keep: taken as unknown`);
+
+  const scopeAt = (t: number): RuleScope => ({
+    param: (param) => {
+      const field = recipe.params.fields[param];
+      return (automation.params[param] ?? (field && 'default' in field ? field.default : undefined) ?? null) as Value;
+    },
+    read: (role, means) => {
+      const found = series.get(`${role}:${means}`);
+      if (!found) return null;
+      let latest: { at: number; value: ScalarValue } | undefined;
+      for (const point of found.points) {
+        if (point.at > t) break;
+        latest = point;
+      }
+      // A sample older than its attribute stays current was not known then.
+      if (!latest || t - latest.at > currentForOf(found.attribute) + SAMPLE_SLACK_MS) return null;
+      const unit = found.attribute.value.type === 'number' ? (found.attribute.value.unit ?? '') : '';
+      return { value: latest.value, label: standardMeaning(means)?.label ?? found.attribute.label, unit };
+    },
+    name,
+  });
+
+  // The moments anything could have changed: every sample, every time of day, every event.
+  const start = window.from.getTime();
+  const end = window.to.getTime();
+  const moments = new Set<number>();
+  for (const found of series.values()) for (const point of found?.points ?? []) if (point.at >= start && point.at <= end) moments.add(point.at);
+
+  type Fired = { at: number; because: string };
+  const fired: Fired[] = [];
+  for (const trigger of recipe.when) {
+    if ('at' in trigger) {
+      const at = evaluateNow(trigger.at, scopeAt(start));
+      const [hour, minute] = typeof at === 'string' ? at.split(':').map(Number) : [];
+      if (hour === undefined || minute === undefined || Number.isNaN(hour) || Number.isNaN(minute)) continue;
+      for (let day = start - 86_400_000; day <= end + 86_400_000; day += 86_400_000) {
+        const instant = zonedInstant({ ...localTime(new Date(day), automation.timeZone), hour, minute }, automation.timeZone).getTime();
+        if (instant >= start && instant <= end && !fired.some((run) => run.at === instant)) fired.push({ at: instant, because: `It is ${at}` });
+      }
+    } else if ('event' in trigger) {
+      const binding = automation.roles[trigger.event.role];
+      if (!binding) continue;
+      for (const at of source.events(binding.device, binding.part, trigger.event.event, from, to)) fired.push({ at: Date.parse(at), because: `${name(trigger.event.role)} said ${trigger.event.event}` });
+    }
+  }
+  // A condition turning true, and held: the engine's own rules, with nothing kept at the start.
+  const becomes = recipe.when.flatMap((trigger) => ('becomes' in trigger ? [{ trigger, last: false, heldSince: null as number | null, fired: false }] : []));
+  // A hold is looked at again when it has run its time, as the engine's timer does, sample or not.
+  const queue = [...moments].sort((a, b) => a - b);
+  const lookAgainAt = (t: number) => {
+    if (t > end || queue.includes(t)) return;
+    const index = queue.findIndex((moment) => moment > t);
+    queue.splice(index < 0 ? queue.length : index, 0, t);
+  };
+  for (let index = 0; index < queue.length; index++) {
+    const t = queue[index]!;
+    const scope = scopeAt(t);
+    for (const state of becomes) {
+      const now = evaluateNow(state.trigger.becomes, scope);
+      if (typeof now !== 'boolean') continue;
+      if (!now) {
+        Object.assign(state, { last: false, heldSince: null, fired: false });
+        continue;
+      }
+      const minutes = state.trigger.heldForMinutes ? Number(evaluateNow(state.trigger.heldForMinutes, scope)) : 0;
+      if (!state.last) {
+        Object.assign(state, { last: true, heldSince: t, fired: false });
+        if (minutes > 0) lookAgainAt(t + minutes * 60_000);
+      }
+      if (state.fired) continue;
+      if (t - (state.heldSince ?? t) < minutes * 60_000) continue;
+      state.fired = true;
+      const trace: string[] = [];
+      evaluateNow(state.trigger.becomes, scope, trace);
+      fired.push({ at: t, because: `${trace.join('; ')}${minutes > 0 ? `, for ${minutes} min` : ''}` });
+    }
+  }
+
+  const runs: Rehearsal['runs'] = [];
+  for (const run of fired.sort((a, b) => a.at - b.at).slice(0, MAX_RUNS)) {
+    const scope = scopeAt(run.at);
+    const trace = [run.because];
+    const at = new Date(run.at).toISOString();
+    if (recipe.if) {
+      const holds = await evaluate(recipe.if, scope, trace);
+      if (holds !== true) {
+        runs.push({ at, outcome: holds === null ? 'unknown' : 'idle', summary: `${holds === null ? 'Could not tell' : 'Would do nothing'}: ${trace.join('; ')}` });
+        continue;
+      }
+    }
+    const done: string[] = [];
+    let unknown = false;
+    for (const { command } of recipe.then) {
+      const args: Record<string, Value> = {};
+      for (const [arg, expr] of Object.entries(command.args)) args[arg] = await evaluate(expr, scope, []);
+      if (Object.values(args).some((value) => value === null)) unknown = true;
+      const setting = Object.values(args).map((value) => (value === true ? 'on' : value === false ? 'off' : String(value))).join(', ');
+      done.push(command.capability === 'switch' && command.command === 'set' ? `turn ${name(command.role)} ${setting}` : `${command.capability}.${command.command} ${name(command.role)} (${setting})`);
+    }
+    runs.push(unknown ? { at, outcome: 'unknown', summary: `Could not tell what to send: ${trace.join('; ')}` } : { at, outcome: 'would-act', summary: `Would ${done.join(', then ')}. ${trace.join('; ')}` });
+  }
+  if (fired.length > MAX_RUNS) caveats.push(`It would have run ${fired.length} times; the first ${MAX_RUNS} are listed`);
+  if (runs.some((run) => run.outcome === 'would-act')) caveats.push('History is what happened without it: what it would have changed is not in it');
+  return { from, to, runs, caveats };
+}

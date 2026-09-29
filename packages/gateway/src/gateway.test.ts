@@ -282,6 +282,23 @@ describe('what may be commanded', () => {
     expect(station.outletCommands).toEqual([['outlet.ac', false]]);
   });
 
+  test('an agent does what needs no one’s yes, and is told to leave to a person what does', async () => {
+    const { gateway, station } = harness();
+    const agent = { deviceId: STATION, part: 'outlet.ac', actor: 'agent' as const, by: 'agent:assistant' };
+
+    // Off while it carries a load: a person's, in the app — and no token to confirm it with.
+    const refused = await gateway.execute(cut(agent));
+    expect(refused).toMatchObject({ outcome: 'refused' });
+    expect(refused.needsConfirmation).toBeUndefined();
+    expect(refused.detail).toBe('A person has to do this, in the app: it needs their confirmation. Power is 40 W.');
+    expect(station.outletCommands).toHaveLength(0);
+
+    // With nothing drawing, turning it off is the agent's to do.
+    station.outlet = { on: true, watts: 0 };
+    expect((await gateway.execute(cut(agent))).outcome).toBe('verified');
+    expect(station.outletCommands).toEqual([['outlet.ac', false]]);
+  });
+
   test('a load that is not known is not taken for none: it asks', async () => {
     const { gateway, station } = harness();
     station.outlet = { on: true, watts: null };

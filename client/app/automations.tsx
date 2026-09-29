@@ -4,6 +4,7 @@ import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui'
 
 import {
   checkAutomation,
+  rehearseAutomation,
   createAutomation,
   deleteAutomation,
   describeError,
@@ -12,6 +13,7 @@ import {
   updateAutomation,
   type AutomationMode,
   type AutomationRun,
+  type Rehearsal,
   type AutomationView,
   type ConfigValues,
   type DeviceView,
@@ -141,6 +143,7 @@ function AutomationCard({ automation, onChanged, onDeleted }: { automation: Auto
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [checked, setChecked] = useState<AutomationRun | null>(null);
+  const [rehearsal, setRehearsal] = useState<Rehearsal | null>(null);
 
   const setMode = async (mode: AutomationMode) => {
     setBusy(true);
@@ -167,6 +170,18 @@ function AutomationCard({ automation, onChanged, onDeleted }: { automation: Auto
       setChecked(await checkAutomation(automation.id));
     } catch (err) {
       setProblem(describeError(err) || 'It could not be checked');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rehearse = async () => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      setRehearsal(await rehearseAutomation(automation.id));
+    } catch (err) {
+      setProblem(describeError(err) || 'It could not be rehearsed');
     } finally {
       setBusy(false);
     }
@@ -215,6 +230,7 @@ function AutomationCard({ automation, onChanged, onDeleted }: { automation: Auto
       />
       <RunLine label="Last run" run={automation.lastResult} empty="Not run yet" />
       {checked ? <RunLine label="Right now" run={checked} empty="" /> : null}
+      {rehearsal ? <Rehearsed rehearsal={rehearsal} /> : null}
       {problem ? (
         <Text fontSize={12} color="$danger" lineHeight={18}>
           {problem}
@@ -224,11 +240,34 @@ function AutomationCard({ automation, onChanged, onDeleted }: { automation: Auto
         <Button size="$2" disabled={busy} onPress={() => void check()}>
           Check now
         </Button>
+        <Button size="$2" disabled={busy} onPress={() => void rehearse()}>
+          Rehearse on last week
+        </Button>
         <Button size="$2" borderColor="$danger" color="$danger" disabled={busy} onPress={() => void remove()}>
           Delete
         </Button>
       </XStack>
     </Card>
+  );
+}
+
+/** What it would have done on the last week of history, run by run, and what history could not show. */
+function Rehearsed({ rehearsal }: { rehearsal: Rehearsal }) {
+  const shown = rehearsal.runs.slice(-10);
+  return (
+    <YStack gap="$1.5">
+      <Text fontSize={12} fontWeight="700" color="$color">
+        On the last week: {rehearsal.runs.length ? `${rehearsal.runs.length} run${rehearsal.runs.length === 1 ? '' : 's'}${rehearsal.runs.length > shown.length ? `, the last ${shown.length} shown` : ''}` : 'it would not have run'}
+      </Text>
+      {shown.map((run) => (
+        <RunLine key={run.at} label="Would have" run={{ at: run.at, outcome: run.outcome, summary: run.summary }} empty="" />
+      ))}
+      {rehearsal.caveats.map((caveat) => (
+        <Text key={caveat} fontSize={11} color="$muted" lineHeight={16}>
+          {caveat}.
+        </Text>
+      ))}
+    </YStack>
   );
 }
 

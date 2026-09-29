@@ -382,12 +382,14 @@ export const roleEvents = (spec: CapabilityNeed): string[] =>
   [...new Set([...spec.capabilities, ...(spec.oneOf ?? [])].flatMap((name) => (isCapability(name) ? Object.keys(capabilitySpec(name).events ?? {}) : [])))];
 
 /** Every role a rule reads, triggers on or acts through, with what it asks of it. */
-function uses(rule: Rule): { reads: { role: string; means: string }[]; events: { role: string; event: string }[] } {
+/** What a rule reads, the events it waits for and the functions it calls: what running it, or rehearsing it on history, needs. */
+export function ruleUses(rule: Rule): { reads: { role: string; means: string }[]; events: { role: string; event: string }[]; calls: { fn: string; role: string }[] } {
   const reads: { role: string; means: string }[] = [];
+  const calls: { fn: string; role: string }[] = [];
   const walk = (expr: Expr | undefined): void => {
     if (!expr) return;
     if ('read' in expr) reads.push(expr.read);
-    else if ('call' in expr) Object.values(expr.args ?? {}).forEach(walk);
+    else if ('call' in expr) (calls.push({ fn: expr.call, role: expr.role }), Object.values(expr.args ?? {}).forEach(walk));
     else if ('compare' in expr) (walk(expr.left), walk(expr.right));
     else if ('all' in expr) expr.all.forEach(walk);
     else if ('any' in expr) expr.any.forEach(walk);
@@ -401,7 +403,7 @@ function uses(rule: Rule): { reads: { role: string; means: string }[]; events: {
   }
   walk(rule.if);
   for (const action of rule.then) Object.values(action.command.args).forEach(walk);
-  return { reads, events };
+  return { reads, events, calls };
 }
 
 /** The part filling a role, as a binding check sees it. */
@@ -428,7 +430,7 @@ export function checkBinding(rule: Rule, bound: (role: string) => BoundPart | nu
     if (!partsOf(part.description).some((candidate) => candidate.id === part.part)) problems.push(`${spec.label}: ${part.name} no longer has that part`);
     else if (!meetsNeed(spec, part.capabilities)) problems.push(`${spec.label}: ${part.name} cannot do that`);
   }
-  const { reads, events } = uses(rule);
+  const { reads, events } = ruleUses(rule);
   for (const read of reads) {
     const part = bound(read.role);
     if (part && !attributeMeaning(part.description, part.part, read.means)) problems.push(`${rule.roles[read.role]?.label ?? read.role}: ${part.name} does not report ${read.means}`);
@@ -442,7 +444,7 @@ export function checkBinding(rule: Rule, bound: (role: string) => BoundPart | nu
 }
 
 /** Whether a rule reads anything of this role: its `becomes` triggers are evaluated when that part's readings move. */
-export const readsRole = (rule: Rule, role: string): boolean => uses(rule).reads.some((read) => read.role === role);
+export const readsRole = (rule: Rule, role: string): boolean => ruleUses(rule).reads.some((read) => read.role === role);
 
 // --- running a rule -----------------------------------------------------------
 

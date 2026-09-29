@@ -2,12 +2,12 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import type { AutomationView, RecipeView, RoleBinding } from '@kraftverk/api-contract';
-import { capabilitiesOf, describeRule, isTimeZone, MAIN_PART, meetsNeed, partsOf, savedDeviceId, validateConfig, type ConfigValues, type Value } from '@kraftverk/device-sdk';
+import type { RecipeView } from '@kraftverk/api-contract';
+import { isTimeZone } from '@kraftverk/device-sdk';
 import { Confirmations, subjectOf } from '@kraftverk/gateway';
 
 import { actorOf } from '../auth/routes.ts';
-import type { AutomationRecord } from '../automations/engine.ts';
+import { plans, REHEARSAL_MAX_HOURS } from '../automations/plans.ts';
 import { auditAbout, body, type AppDeps } from './shared.ts';
 
 /**
@@ -27,44 +27,7 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
   const api = new Hono();
   /** Arming is confirmed as a command is: a token bound to this automation, these changes and this person, once. */
   const arming = new Confirmations();
-
-  const view = (automation: AutomationRecord): AutomationView => {
-    const recipe = library.recipe(automation.recipe);
-    const name = (role: string) => {
-      const binding = automation.roles[role];
-      const record = binding ? catalog.get(binding.device) : null;
-      if (!record) return 'a device you no longer have';
-      const part = partsOf(record.description).find((candidate) => candidate.id === binding!.part);
-      return binding!.part === MAIN_PART || !part ? record.name : `${record.name}'s ${part.label}`;
-    };
-    return {
-      ...automation,
-      recipeLabel: recipe?.label ?? automation.recipe,
-      sentence: recipe ? describeRule(recipe, automation.params as Record<string, Value>, name, library) : automation.recipe,
-      problems: engine.roleProblems(automation),
-    };
-  };
-
-  /** Checks what is asked of a recipe: every role filled by a part of one of your devices that fits, and settings its schema accepts. */
-  const validated = (recipeId: string, input: { roles: Record<string, { device: string; part: string }>; params: Record<string, unknown> }) => {
-    const recipe = library.recipe(recipeId);
-    if (!recipe) throw new HTTPException(400, { message: `There is no recipe called "${recipeId}"` });
-    const filled: Record<string, RoleBinding> = {};
-    for (const [role, spec] of Object.entries(recipe.roles)) {
-      const binding = input.roles[role];
-      const device = binding ? catalog.active(savedDeviceId(binding.device)) : null;
-      if (!binding || !device) throw new HTTPException(400, { message: `${spec.label}: choose one of your devices` });
-      const description = sessions.description(device);
-      if (!partsOf(description).some((part) => part.id === binding.part)) throw new HTTPException(400, { message: `${spec.label}: ${device.name} has no part "${binding.part}"` });
-      if (!meetsNeed(spec, capabilitiesOf(description, binding.part))) throw new HTTPException(400, { message: `${spec.label}: that part of ${device.name} cannot do that` });
-      filled[role] = { device: device.id, part: binding.part };
-    }
-    const extra = Object.keys(input.roles).filter((role) => !recipe.roles[role]);
-    if (extra.length) throw new HTTPException(400, { message: `This recipe has no role called ${extra.join(', ')}` });
-    const checked = validateConfig(recipe.params, input.params);
-    if (!checked.ok) throw new HTTPException(400, { message: checked.issues.map((issue) => issue.message).join('; ') });
-    return { roles: filled, params: checked.value as ConfigValues };
-  };
+  const { view, validated, rehearsed } = plans({ catalog, sessions, library, engine });
 
   api.get('/automations/recipes', (c) =>
     c.json({
@@ -73,6 +36,28 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
   );
 
   api.get('/automations', (c) => c.json({ automations: automations.list().map(view) }));
+
+  /**
+   * A rule rehearsed on what happened, before it is made or after: when it
+   * would have run in the last hours, and what it would have done. Nothing is
+   * sent and nothing is kept.
+   */
+  api.post('/automations/rehearse', async (c) => {
+    const input = await body(
+      c,
+      z.object({ recipe: z.string().min(1).max(120), roles, params, timeZone: z.string().min(1).max(64), hours: z.number().min(1).max(REHEARSAL_MAX_HOURS).default(24 * 7) }).strict()
+    );
+    if (!isTimeZone(input.timeZone)) throw new HTTPException(400, { message: `"${input.timeZone}" is not a time zone` });
+    const checked = validated(input.recipe, input);
+    return c.json(await rehearsed(input.recipe, { roles: checked.roles, params: checked.params, timeZone: input.timeZone }, input.hours));
+  });
+
+  api.get('/automations/:id/rehearse', async (c) => {
+    const current = automations.get(c.req.param('id'));
+    if (!current) throw new HTTPException(404, { message: 'No such automation' });
+    const hours = z.coerce.number().min(1).max(REHEARSAL_MAX_HOURS).default(24 * 7).parse(c.req.query('hours') ?? 24 * 7);
+    return c.json(await rehearsed(current.recipe, current, hours));
+  });
 
   api.post('/automations', async (c) => {
     const input = await body(
@@ -103,7 +88,8 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
         .strict()
     );
     if (input.timeZone && !isTimeZone(input.timeZone)) throw new HTTPException(400, { message: `"${input.timeZone}" is not a time zone` });
-    const checked = input.roles || input.params ? validated(current.recipe, { roles: input.roles ?? current.roles, params: input.params ?? current.params }) : null;
+    const validRecipe = input.roles || input.params ? validated(current.recipe, { roles: input.roles ?? current.roles, params: input.params ?? current.params }) : null;
+    const checked = validRecipe ? { roles: validRecipe.roles, params: validRecipe.params } : null;
 
     // Arming — and changing what an armed one does — is a deliberate act.
     const armedAfter = input.mode === 'armed' || (input.mode === undefined && current.mode === 'armed');

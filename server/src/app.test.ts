@@ -824,6 +824,80 @@ describe('phones and browsers', () => {
   });
 });
 
+describe('an assistant', () => {
+  const mcp = (method: string, params: Record<string, unknown> = {}, id: number | null = 1) => as('/mcp', { method: 'POST', body: { jsonrpc: '2.0', ...(id === null ? {} : { id }), method, params } });
+  const tool = async (name: string, args: Record<string, unknown> = {}) => (await mcp('tools/call', { name, arguments: args })).body.result as { content: { text: string }[]; isError?: boolean };
+
+  test('reads the world: every device, its parts, what each offers and reports, and whether it is current', async () => {
+    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
+    const world = (await as('/world')).body;
+    expect(world.rules.length).toBeGreaterThan(0);
+    const mains = world.devices.find((device: { id: string }) => device.id === station.id).parts.find((part: { id: string }) => part.id === 'input.ac');
+    expect(mains).toMatchObject({ kind: 'input', capabilities: ['acInput'] });
+    expect(mains.values).toContainEqual(expect.objectContaining({ key: 'input.ac.present', means: 'grid.present', current: true }));
+    // The same, a few lines a device, for a context window.
+    const text = (await as('/world?format=text')).text;
+    expect(text).toContain(`Garage P280 [${station.id}] AFERIY P280: connected`);
+    expect(text).toContain('input.ac "Mains" input offers acInput');
+  });
+
+  test('reads the words it is said in: capabilities with what makes a command consequential, and the recipes', async () => {
+    const words = (await as('/vocabulary')).body;
+    expect(words.capabilities.switch.commands.set.consequential).toMatchObject({ when: { arg: 'on', is: false } });
+    expect(words.meanings['battery.soc']).toEqual({ label: 'Charge', type: 'number', unit: '%' });
+    expect(words.recipes.map((recipe: { id: string }) => recipe.id)).toContain('standard.charge-between');
+    expect(words.policy.loadWatts).toMatchObject({ value: 5, unit: 'W' });
+  });
+
+  test('speaks MCP behind the same sign-in: the handshake, its tools, and nothing without a session', async () => {
+    expect((await call('/mcp', { method: 'POST', body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } })).status).toBe(401);
+    const hello = await mcp('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } });
+    expect(hello.body.result).toMatchObject({ serverInfo: { name: 'kraftverk' }, capabilities: { tools: {} } });
+    // A notification is heard, and not answered.
+    expect((await mcp('notifications/initialized', {}, null)).status).toBe(202);
+    const names = (await mcp('tools/list')).body.result.tools.map((listed: { name: string }) => listed.name);
+    expect(names).toEqual(['world', 'vocabulary', 'command', 'query', 'receipts', 'rehearse', 'propose']);
+    expect((await mcp('tools/call', { name: 'rm -rf' })).body.error.code).toBe(-32602);
+  });
+
+  test('commands through the gateway as an agent: what needs a person’s yes is left to the person, and the timeline says who asked', async () => {
+    const plug = await added('Heater plug', { server: simulated, typeId: 'atorch.s1w' });
+    const command = (on: boolean) => tool('command', { device: plug.id, part: 'main', capability: 'switch', command: 'set', args: { on }, reason: 'asked to' });
+
+    // Off, while it draws 240 W: a person's to do.
+    const refused = await command(false);
+    expect(refused.content[0]!.text).toBe('refused: A person has to do this, in the app: it needs their confirmation. Power is 240 W.');
+    // A made-up argument is a refusal with a sentence, never a wrong device.
+    expect((await tool('command', { device: plug.id, part: 'main', capability: 'switch', command: 'set', args: { on: 'maybe' }, reason: 'x' })).content[0]!.text).toContain('refused: on must be');
+
+    const receipts = (await tool('receipts', { device: plug.id })).content[0]!.text;
+    expect(receipts).toContain('command.refused by assistant for olof');
+  });
+
+  test('proposes an automation from a recipe: made observing, said as a sentence, rehearsed on history', async () => {
+    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
+    const plug = await added('Charger plug', { server: simulated, typeId: 'atorch.s1w' });
+    const proposal = await tool('propose', {
+      name: 'My charge window',
+      recipe: 'standard.charge-between',
+      roles: { battery: { device: station.id, part: 'main' }, charger: { device: plug.id, part: 'main' } },
+      params: { low: 15, high: 50, minutes: 2 },
+      timeZone: 'Europe/Stockholm',
+    });
+    expect(proposal.isError).toBeUndefined();
+    expect(proposal.content[0]!.text).toContain('observing: Charge Garage P280 with Charger plug: on when it stays below 15 % for 2 min, off when it reaches 50 %.');
+    expect(proposal.content[0]!.text).toContain('It acts only once a person arms it in the app.');
+    expect(proposal.content[0]!.text).toContain('Rehearsed from');
+    const made = (await as('/automations')).body.automations as { name: string; mode: string }[];
+    expect(made).toContainEqual(expect.objectContaining({ name: 'My charge window', mode: 'observe' }));
+
+    // A setting outside its range is refused, with the reason, and nothing is made.
+    const wrong = await tool('propose', { name: 'Wrong', recipe: 'standard.charge-between', roles: { battery: { device: station.id, part: 'main' }, charger: { device: plug.id, part: 'main' } }, params: { low: 1 } });
+    expect(wrong.isError).toBe(true);
+    expect((await as('/automations')).body.automations).toHaveLength(1);
+  });
+});
+
 describe('what the home decides', () => {
   test('how much is a load is set here, bounded, audited, and put back with null', async () => {
     const listed = (await as('/policy')).body as { name: string; value: number; default: number }[];

@@ -498,6 +498,10 @@ from its kind's — and applies, per part:
   the device, part, command and arguments (or the patch) and the person,
   good once, for a minute; the retry presents it. Arming an automation is
   confirmed the same way;
+- an **agent** — an assistant acting for a person, over MCP — does what needs
+  no one's yes, with a minute's dwell per part; what needs a person's
+  confirmation, and a setting that can damage the hardware, is refused to it
+  with a sentence saying so, and no token;
 - read-only mode;
 - dwell time, per part;
 - fresh data: acting needs readings that are current for their attribute and

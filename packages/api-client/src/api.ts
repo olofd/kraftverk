@@ -23,6 +23,7 @@ import type {
   DeviceEventView,
   LiveEvent,
   ProblemView,
+  Rehearsal,
   DeviceHistory,
   DeviceTypeList,
   DeviceView,
@@ -356,6 +357,12 @@ export async function deleteAutomation(id: string) {
 }
 
 /** What it would do right now: decided, never acted on. */
+/** When it would have run on the last hours of history, and what it would have done. Nothing is sent. */
+export async function rehearseAutomation(id: string, hours = 24 * 7) {
+  const { data } = await api.get<Rehearsal>(`/automations/${encodeURIComponent(id)}/rehearse`, { params: { hours }, timeout: 30_000 });
+  return data;
+}
+
 export async function checkAutomation(id: string) {
   const { data } = await api.post<AutomationRun>(`/automations/${encodeURIComponent(id)}/check`, {}, { timeout: 30_000 });
   return data;

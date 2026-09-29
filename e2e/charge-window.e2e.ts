@@ -34,4 +34,8 @@ test('a charge window of your own, made from the shared recipe', async ({ page, 
   await expect(said).toContainText(`${station.name}'s charge is below 15 %:`);
   await expect(said).toContainText(`${station.name}'s charge is at least 50 %:`);
   await expect(said).toContainText(/Would turn .* (on|off)|Would /);
+
+  // Rehearsed on the last week: this server has kept almost none of it, and says what it could.
+  await page.getByText('Rehearse on last week').last().click();
+  await expect(page.getByText(/^On the last week:/).last()).toBeVisible();
 });

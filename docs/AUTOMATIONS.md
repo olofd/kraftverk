@@ -180,8 +180,19 @@ The server's engine runs every automation the same way:
 
 A run evaluates `if`, then each action: an automation that **observes** says
 what it would have done; one **armed** sends it through the gateway as
-`actor: 'automation'`. Every run is on the timeline with its trace. The modes,
-arming with confirmation and "check now" are unchanged.
+`actor: 'automation'`. Every run is on the timeline with its trace. Arming is
+confirmed with a token bound to the automation, its changes and the person.
+
+**Rehearsal** walks a rule through a window of history — the minute samples
+of everything it reads, the events it waits for, its times of day — with the
+engine's own trigger rules, including a hold that runs its time with no new
+sample, and says at each run what it would have decided and done
+(`server/src/automations/rehearse.ts`). Nothing is sent. It says what it
+cannot see: history is what happened *without* it (a charger it would have
+switched on would have raised the charge), and a function that asks for
+something history does not keep — a forecast — is unknown, as it would be
+with the service away. In the app, "Rehearse on last week" beside "Check
+now"; for an assistant, the `rehearse` and `propose` tools.
 
 ## Stored
 
@@ -199,13 +210,11 @@ improves every automation made from it.
 - **A DSL.** A text syntax whose parse tree *is* the rule: `when station.battery
   < 20 % for 5 min then turn heater on`. Parsing is the only new part; checking,
   explaining and running are done.
-- **AI in the app.** The model is given the vocabulary — your devices, their
-  parts, the meanings each reports, the events each raises, the commands each
-  takes, the installed functions and recipes (one endpoint, generated from the
-  descriptions) — and asked for a rule or DSL text. `checkRule` and
-  `checkBinding` are its critic; the sentence is what you approve; it starts
-  observing, as every automation does. The AI writes data inside the same
-  rails as everything else.
+- **AI in the app.** The minimum is built: `GET /world`, `GET /vocabulary`
+  and an MCP endpoint whose `propose` makes an automation from a recipe,
+  observing, rehearsed ([API.md](API.md)). Next, a model asked for a rule or
+  DSL text of its own, with `checkRule` and `checkBinding` its critic and the
+  sentence what you approve — inside the same rails as everything else.
 - **More in the language, as needs arrive:** writing a setting (through the
   gateway's write path, never a dangerous one), notifications, a wait
   between actions, schedules on some days only, sunrise and sunset from a
