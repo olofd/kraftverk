@@ -34,6 +34,12 @@ export type Expr =
   /** A function a package contributes, over the part filling a role. */
   | { call: string; role: string; args?: Readonly<Record<string, Expr>> }
   | { compare: CompareOp; left: Expr; right: Expr }
+  /**
+   * A number from two: their sum or difference, or the lower or higher of
+   * them — in one unit, as a comparison is: "the charge limit, less 5 %",
+   * "the lower of the forecast's hours and 4". Unknown when either is.
+   */
+  | { math: MathOp; left: Expr; right: Expr }
   | { all: readonly Expr[] }
   | { any: readonly Expr[] }
   | { not: Expr }
@@ -49,6 +55,17 @@ export type Expr =
    * rule's settings alone cannot say what time it is.
    */
   | { within: { from: Expr; to: Expr } };
+
+/** What `math` does with its two numbers. */
+export type MathOp = 'add' | 'subtract' | 'min' | 'max';
+
+export const MATH_OPS: readonly MathOp[] = ['add', 'subtract', 'min', 'max'];
+
+/** Two numbers made one; unknown unless both are numbers. */
+export const calculate = (op: MathOp, left: Value, right: Value): Value => {
+  if (typeof left !== 'number' || typeof right !== 'number') return null;
+  return op === 'add' ? left + right : op === 'subtract' ? left - right : op === 'min' ? Math.min(left, right) : Math.max(left, right);
+};
 
 /** A time of day as a rule writes it: "07:00", "22:30". */
 export const CLOCK_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -440,6 +457,17 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       role(expr.reachable, where);
       return { type: 'boolean' };
     }
+    if ('math' in expr) {
+      if (!MATH_OPS.includes(expr.math)) problems.push(`${where}: "${expr.math}" is not add, subtract, min or max`);
+      const left = shape(expr.left, `${where}.left`, options);
+      const right = shape(expr.right, `${where}.right`, options);
+      for (const [side, got] of [['left', left], ['right', right]] as const) {
+        if (!fits({ type: 'number', unit: null }, got)) problems.push(`${where}.${side}: expected a number, got ${said(got)}`);
+      }
+      const units = [left, right].flatMap((side) => (side.type === 'number' && side.unit ? [side.unit] : []));
+      if (new Set(units).size > 1) problems.push(`${where}: ${units[0]} and ${units[1]} are not one unit`);
+      return { type: 'number', unit: units[0] ?? null };
+    }
     if ('within' in expr) {
       const ends = [
         ['from', expr.within?.from],
@@ -700,7 +728,7 @@ export function ruleUses(rule: Rule): {
     else if ('reachable' in expr) reaches.push(expr.reachable);
     else if ('within' in expr) (windows.push(expr.within), walk(expr.within.from), walk(expr.within.to));
     else if ('call' in expr) (calls.push({ fn: expr.call, role: expr.role }), Object.values(expr.args ?? {}).forEach(walk));
-    else if ('compare' in expr) (walk(expr.left), walk(expr.right));
+    else if ('compare' in expr || 'math' in expr) (walk(expr.left), walk(expr.right));
     else if ('all' in expr) expr.all.forEach(walk);
     else if ('any' in expr) expr.any.forEach(walk);
     else if ('not' in expr) walk(expr.not);
@@ -888,6 +916,7 @@ export async function evaluate(expr: Expr, scope: RuleScope, trace: string[] = [
     return answer.value;
   }
   if ('compare' in expr) return compare(expr.compare, await evaluate(expr.left, scope, trace), await evaluate(expr.right, scope, trace));
+  if ('math' in expr) return calculate(expr.math, await evaluate(expr.left, scope, trace), await evaluate(expr.right, scope, trace));
   if ('all' in expr || 'any' in expr) {
     const parts = 'all' in expr ? expr.all : expr.any;
     const values: Value[] = [];
@@ -923,6 +952,7 @@ export function evaluateNow(expr: Expr, scope: RuleScope, trace: string[] = []):
     return inWindow(minutesOf(now)!, from, to);
   }
   if ('compare' in expr) return compare(expr.compare, evaluateNow(expr.left, scope, trace), evaluateNow(expr.right, scope, trace));
+  if ('math' in expr) return calculate(expr.math, evaluateNow(expr.left, scope, trace), evaluateNow(expr.right, scope, trace));
   if ('all' in expr) return combine('all', expr.all.map((part) => evaluateNow(part, scope, trace)));
   if ('any' in expr) return combine('any', expr.any.map((part) => evaluateNow(part, scope, trace)));
   if ('not' in expr) {
@@ -983,6 +1013,13 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
     if ('param' in given) return { value: scope.param(given.param) };
     if ('call' in given) return given.args ? { call: given.call, role: given.role, args: args(given.args) } : given;
     if ('within' in given) return { within: { from: expr(given.within.from), to: expr(given.within.to) } };
+    if ('math' in given) {
+      const left = expr(given.left);
+      const right = expr(given.right);
+      // Settings alone: the number they make, written in.
+      if ('value' in left && 'value' in right) return { value: calculate(given.math, left.value, right.value) };
+      return { math: given.math, left, right };
+    }
     if ('compare' in given) {
       const left = expr(given.left);
       const right = expr(given.right);
@@ -1094,6 +1131,7 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
   };
   /** The unit a reading is in, when it is one: a plain number beside it is in it too — "above 50 W", not "above 50". */
   const unitOf = (expr: Expr): string => {
+    if ('math' in expr) return unitOf(expr.left) || unitOf(expr.right);
     const standard = 'read' in expr ? standardMeaning(expr.read.means) : null;
     return standard?.type === 'number' ? standard.unit : '';
   };
@@ -1104,6 +1142,12 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
     if ('read' in expr) return whose(name(expr.read.role), standardMeaning(expr.read.means)?.label.toLowerCase() || expr.read.means || 'reading');
     if ('reachable' in expr) return `${name(expr.reachable)} can be reached`;
     if ('within' in expr) return `it is between ${text(expr.within.from)} and ${text(expr.within.to)}`;
+    if ('math' in expr) {
+      // A plain number beside a reading is in its unit: "Garage station’s charge plus 10 %".
+      const in_ = unit || unitOf(expr);
+      const [left, right] = [text(expr.left, in_), text(expr.right, in_)];
+      return expr.math === 'add' ? `${left} plus ${right}` : expr.math === 'subtract' ? `${left} minus ${right}` : `the ${expr.math === 'min' ? 'lower' : 'higher'} of ${left} and ${right}`;
+    }
     if ('call' in expr) return `${vocabulary?.fn(expr.call)?.label.toLowerCase() ?? expr.call} by ${name(expr.role)}`;
     if ('compare' in expr) return chosen(expr) ?? `${text(expr.left, unitOf(expr.right))} ${OP_WORDS[expr.compare]} ${text(expr.right, unitOf(expr.left))}`;
     if ('all' in expr) return expr.all.map((part) => text(part)).join(' and ');

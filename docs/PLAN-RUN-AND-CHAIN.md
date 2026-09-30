@@ -220,7 +220,9 @@ screen part. Standard recipes stay free of product words.
    sees a window open with nothing reported, rehearsal looks at each
    window's edges, and the editor has "Time of day".
 3. **Arithmetic.** `add`, `subtract`, `min` and `max` over numbers, with
-   units checked as compares check them.
+   units checked as compares check them. **Done, 2026-09-30:** `{ math, left,
+   right }`; a plain number takes the other side's unit, and a copy of a
+   recipe has what its settings alone make written in.
 4. **A price as readings.**
    - A price service reports the current hour's price and its rank among
      today's hours, as readings. "The cheapest four hours" is then

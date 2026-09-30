@@ -57,6 +57,7 @@ type Expr =
   | { read: { role: string; means: string } }      // a part's current value, by meaning
   | { call: string; role: string; args?: Record<string, Expr> }  // a package's function
   | { compare: 'lt' | 'le' | 'gt' | 'ge' | 'eq' | 'ne'; left: Expr; right: Expr }
+  | { math: 'add' | 'subtract' | 'min' | 'max'; left: Expr; right: Expr }   // numbers, in one unit
   | { all: Expr[] } | { any: Expr[] } | { not: Expr }
   | { reachable: string }                          // the part filling a role can be reached now
   | { within: { from: Expr; to: Expr } };          // the owner's clock is between two times, "22:00" to "06:00" across midnight
@@ -123,9 +124,10 @@ What fails either belongs in a package **function** — typed at its edges,
 answering, never acting — not in the language. Waits between actions went
 in that way — six kinds of step, each bounded, each read back as a line of a
 numbered list (SEQUENCES.md) — and so did changing a setting, starting
-another automation, and days of the week (AUTOMATION-EDITOR.md). Arithmetic
-over readings and notifications are candidates; each goes in only when it
-passes both, and one at a time. That discipline is what keeps "an AI writes data
+another automation, and days of the week (AUTOMATION-EDITOR.md), and then a
+window of the day and arithmetic — sums, differences, the lower or higher of
+two numbers, units checked as a comparison checks them. Notifications are a
+candidate; each goes in only when it passes both, and one at a time. That discipline is what keeps "an AI writes data
 inside the same rails" true.
 
 ## What a package contributes
@@ -291,6 +293,6 @@ docs/SEQUENCES.md).
   DSL text of its own, with `checkRule` and `checkBinding` its critic and the
   sentence what you approve — inside the same rails as everything else.
 - **More in the language, as needs arrive:** notifications, sunrise and
-  sunset from a weather or location function, arithmetic over readings.
+  sunset from a weather or location function.
 - **Automations in the app**, for devices only a phone holds: the evaluator
   is pure SDK code, like the gateway, and can run in either holder.
