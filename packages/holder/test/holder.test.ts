@@ -216,6 +216,16 @@ describe('judging the check', () => {
     expect(judgeCheck({ ...said, model: 'L9' }, { type, types: [type, other], known: known(false) })).toMatchObject({ outcome: 'other-model', type: { id: 'test.big' } });
   });
 
+  test('a model reported with its finish after it is still that model; the closest name wins elsewhere', () => {
+    const said = { identity: 'lampish:A', model: 'L1 Black (Matte)', summary: 'On.' };
+    expect(judgeCheck(said, { type, types: [type], known: known(false) })).toMatchObject({ outcome: 'new' });
+    // A longer name is not a finish.
+    expect(judgeCheck({ ...said, model: 'L10' }, { type, types: [type], known: known(false) })).toMatchObject({ outcome: 'other-model', type: null });
+    const family = lampType({ id: 'test.family', meta: { name: 'Lamps', category: 'smart-plug', support: 'experimental', icon: 'sun', models: ['L9'] } });
+    const pro = lampType({ id: 'test.pro', meta: { name: 'Pro lamp', category: 'smart-plug', support: 'experimental', icon: 'sun', models: ['L9 Pro'] } });
+    expect(judgeCheck({ ...said, model: 'L9 Pro White' }, { type, types: [type, family, pro], known: known(false) })).toMatchObject({ outcome: 'other-model', type: { id: 'test.pro' } });
+  });
+
   test('an identity from the sighting stands in when the device does not say', () => {
     expect(judgeCheck({ identity: null, model: null, summary: 'On.' }, { type, types: [type], known: known(false), identityHint: 'lampish:B' })).toMatchObject({ outcome: 'new', identity: 'lampish:B' });
   });

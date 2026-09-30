@@ -38,7 +38,8 @@ export type DeviceTypeMeta = {
   /**
    * The model names it covers, as the devices report them. Search uses them,
    * and so does the check step: a device reporting a model another installed
-   * type claims is offered as that type instead.
+   * type claims is offered as that type instead. A name covers the model
+   * with a finish after it, too: "X2 Sport" covers "X2 Sport Black (Matte)".
    */
   models?: readonly string[];
   /** Where the add screen lists it. Never behaviour — that comes from capabilities. */

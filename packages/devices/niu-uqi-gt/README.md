@@ -22,7 +22,10 @@ As with the ATORCH: one thing at a time, read the tool **What NIU says**,
 write down what moved.
 
 1. Sign in (the owner, in the app's Add flow). Does the list give `sn` or
-   `sn_id`? What model name — is it one of `meta.models`?
+   `sn_id`? What model name — is it one of `meta.models`? *Answered:* the
+   owner's account names it **`UQi-GT Citi Black (Matte)`** — a model name,
+   then its finish. `UQi-GT Citi` is in `meta.models`; the check step takes a
+   name with a finish after it as that model.
 2. Which state call answers: v5, or only v3?
 3. `infoTimestamp`: how old while it sleeps, while it charges? That sets how
    often to ask and how long a report is current.

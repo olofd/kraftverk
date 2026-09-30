@@ -11,7 +11,7 @@ test('the UQi GT keeps the device-type contract', async () => {
 
 test('it is the common NIU scooter in all but its name: the same description, ways in and tools', () => {
   expect(uqiGt.id).toBe('niu.uqi-gt');
-  expect(uqiGt.meta).toMatchObject({ brand: 'NIU', category: 'vehicle', models: expect.arrayContaining(['UQi GT Sport']) });
+  expect(uqiGt.meta).toMatchObject({ brand: 'NIU', category: 'vehicle', models: expect.arrayContaining(['UQi GT Sport', 'UQi-GT Citi']) });
   expect(uqiGt.describe({})).toEqual(common.describe({}));
   expect(uqiGt.connections).toEqual(common.connections);
   expect(Object.keys(uqiGt.tools ?? {})).toEqual(Object.keys(common.tools ?? {}));

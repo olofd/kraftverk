@@ -13,8 +13,8 @@ export default defineNiuScooter({
   id: 'niu.uqi-gt',
   meta: {
     name: 'NIU UQi GT',
-    // As NIU's account lists it: the check step offers this model for a scooter reporting one of these.
-    models: ['UQi GT Sport', 'UQi GT', 'UQi GT Pro'],
+    // As NIU's account lists it, before its finish ("UQi-GT Citi Black (Matte)"): the check step offers this model for a scooter reporting one of these.
+    models: ['UQi GT Sport', 'UQi GT', 'UQi GT Pro', 'UQi-GT Citi'],
     description: 'The NIU UQi GT and GT Sport: a 45 km/h scooter with one removable 48 V battery. Its charge, charging, range and odometer from NIU’s cloud; with a smart plug in front of its charger, charge it to a limit.',
     support: 'experimental',
     supportNote: 'The common NIU scooter until it is mapped on a 2019 UQi GT Sport.',
