@@ -124,7 +124,7 @@ describe('a signed-in client', () => {
     const state = await client.state('N0TAREALSERIAL01');
     await client.totals('N0TAREALSERIAL01');
     expect(asked.filter((call) => call.url.startsWith(NIU_ACCOUNT))).toHaveLength(1);
-    expect(state).toMatchObject({ soc: 74, charging: true, chargerConnected: true, minutesToFull: 90, rangeKm: 38, alarmArmed: true, poweredOn: false, controlUnitBattery: 100 });
+    expect(state).toMatchObject({ soc: 74, charging: true, online: true, minutesToFull: 90, rangeKm: 38, alarmArmed: true, poweredOn: false, controlUnitBattery: 100 });
     expect(state.at).toBe(new Date(1_790_000_000_000).toISOString());
   });
 

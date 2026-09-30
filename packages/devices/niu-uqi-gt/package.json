@@ -7,6 +7,7 @@
   "main": "./src/type.ts",
   "kraftverk": {
     "deviceType": "./src/type.ts",
+    "ui": "./ui/index.ts",
     "assets": {
       "images": ["./assets/image-1.png", "./assets/image-2.png", "./assets/image-3.png"]
     }
@@ -14,6 +15,7 @@
   "exports": {
     ".": "./src/type.ts",
     "./type": "./src/type.ts",
+    "./ui": "./ui/index.ts",
     "./assets/image-1.png": "./assets/image-1.png",
     "./assets/image-2.png": "./assets/image-2.png",
     "./assets/image-3.png": "./assets/image-3.png"

@@ -16,6 +16,8 @@ import {
 } from '@kraftverk/device-sdk';
 import { clientOver, NIU_API, NiuError, parseState, type NiuBatteryHealth, type NiuClient, type NiuVehicle, type NiuState, type NiuTotals } from '@kraftverk/protocol-niu-cloud';
 
+import { ago, REPORT_TRUSTED_MS } from '../ui/words.ts';
+
 /**
  * A NIU electric scooter, as NIU's cloud tells of it (README.md).
  *
@@ -45,13 +47,35 @@ const IDLE_EVERY_MS = 10 * 60_000;
 /** Its totals and battery health change slowly. */
 const SLOW_EVERY_MS = 30 * 60_000;
 /**
- * How long a report stays current. Charging, the scooter reports every few
- * minutes; asleep, seldom — and a charge that old is not known, so nothing
- * acts on it. To be measured on a real one (README.md).
+ * How long a report stays current. Charging or switched on, the scooter
+ * reports every few minutes, and a report older than this is not known — so
+ * nothing acts on it. Parked, it reports seldom, but nothing moves: see
+ * `standsSince`. To be measured on a real one (README.md).
  */
-const CURRENT_FOR_MS = 30 * 60_000;
+const CURRENT_FOR_MS = REPORT_TRUSTED_MS;
 
 const BATTERY = 'battery';
+
+const YES_NO = { true: 'Yes', false: 'No' };
+
+/**
+ * Parked: not charging, no charger in, not switched on. Its charge does not
+ * move then, so its last report stands for as long as NIU keeps answering —
+ * however long ago the scooter made it. A scooter left in the garage for a
+ * week still has its charge, and a plug in front of its charger can act on it.
+ */
+export const isParked = (state: NiuState): boolean => state.charging !== true && state.poweredOn !== true;
+
+/**
+ * Since when its readings hold: when the scooter reported — or, parked, when
+ * NIU last answered (its report still standing), whichever is later.
+ */
+export function standsSince(state: NiuState, reportedAt: string, answeredAt: string): string {
+  return isParked(state) && Date.parse(answeredAt) > Date.parse(reportedAt) ? answeredAt : reportedAt;
+}
+
+/** Its state in a word, for the line beside its health: what a person asks first. */
+const stateWord = (state: NiuState): string => (state.charging ? 'Charging' : state.poweredOn ? 'Switched on' : 'Parked');
 
 const DESCRIPTION: DeviceDescription = {
   // The scooter's charge is the scooter's headline, as a station's is: it leads its card, and it is what a charge
@@ -60,24 +84,26 @@ const DESCRIPTION: DeviceDescription = {
     { id: MAIN_PART, label: 'Scooter', kind: 'device', icon: 'navigation', energy: { role: 'storage' } },
     { id: BATTERY, label: 'Battery', kind: 'battery' },
   ],
+  // In the order a person asks: how full, how far, is it charging. A card shows the first three.
   attributes: [
     { key: 'soc', label: 'Charge', value: { type: 'number', unit: '%', precision: 0 }, means: 'battery.soc', category: 'primary', currentFor: CURRENT_FOR_MS },
-    { key: 'charging', label: 'Charging', value: { type: 'boolean' }, currentFor: CURRENT_FOR_MS },
-    { key: 'chargerConnected', label: 'Charger connected', value: { type: 'boolean' }, currentFor: CURRENT_FOR_MS },
-    { key: 'minutesToFull', label: 'Until full', value: { type: 'number', unit: 'min', precision: 0 }, quantity: 'duration', currentFor: CURRENT_FOR_MS },
-    { key: 'battery.temperature', part: BATTERY, label: 'Temperature', value: { type: 'number', unit: '°C', precision: 0 }, quantity: 'temperature', category: 'diagnostic', currentFor: SLOW_EVERY_MS * 2 },
-    { key: 'battery.health', part: BATTERY, label: 'Health', value: { type: 'number', unit: '%', precision: 0 }, quantity: 'percent', category: 'diagnostic', currentFor: SLOW_EVERY_MS * 2 },
-    { key: 'battery.cycles', part: BATTERY, label: 'Charge cycles', value: { type: 'number', integer: true }, stateClass: 'total_increasing', category: 'diagnostic', currentFor: SLOW_EVERY_MS * 2 },
     { key: 'range', label: 'Range', value: { type: 'number', unit: 'km', precision: 0 }, quantity: 'distance', currentFor: CURRENT_FOR_MS },
+    { key: 'charging', label: 'Charging', value: { type: 'boolean', words: YES_NO }, currentFor: CURRENT_FOR_MS },
+    { key: 'minutesToFull', label: 'Until full', value: { type: 'number', unit: 'min', precision: 0 }, quantity: 'duration', currentFor: CURRENT_FOR_MS },
     { key: 'odometer', label: 'Odometer', value: { type: 'number', unit: 'km', precision: 1 }, quantity: 'distance', stateClass: 'total_increasing', currentFor: SLOW_EVERY_MS * 2 },
-    { key: 'speed', label: 'Speed', value: { type: 'number', unit: 'km/h', precision: 0 }, quantity: 'speed', currentFor: CURRENT_FOR_MS },
-    { key: 'poweredOn', label: 'Powered on', value: { type: 'boolean' }, currentFor: CURRENT_FOR_MS },
-    { key: 'alarmArmed', label: 'Alarm armed', value: { type: 'boolean' }, currentFor: CURRENT_FOR_MS },
-    // What each value means on this model is still being mapped: raw until it is (README.md).
-    { key: 'lockStatus', label: 'Lock status (raw)', value: { type: 'number', integer: true }, category: 'diagnostic', currentFor: CURRENT_FOR_MS },
-    { key: 'mobileSignal', label: 'Mobile signal', value: { type: 'number', integer: true }, category: 'diagnostic', currentFor: CURRENT_FOR_MS },
-    { key: 'gpsSignal', label: 'GPS signal', value: { type: 'number', integer: true }, category: 'diagnostic', currentFor: CURRENT_FOR_MS },
-    { key: 'controlUnitBattery', label: 'Control unit battery', value: { type: 'number', unit: '%', precision: 0 }, quantity: 'percent', category: 'diagnostic', currentFor: CURRENT_FOR_MS },
+    { key: 'poweredOn', label: 'Switched on', value: { type: 'boolean', words: YES_NO }, currentFor: CURRENT_FOR_MS },
+    { key: 'alarmArmed', label: 'Alarm', value: { type: 'boolean', words: { true: 'Armed', false: 'Not armed' } }, currentFor: CURRENT_FOR_MS },
+    { key: 'battery.health', part: BATTERY, label: 'Health', value: { type: 'number', unit: '%', precision: 0 }, quantity: 'percent', category: 'diagnostic', currentFor: SLOW_EVERY_MS * 2 },
+    { key: 'battery.temperature', part: BATTERY, label: 'Temperature', value: { type: 'number', unit: '°C', precision: 0 }, quantity: 'temperature', category: 'diagnostic', currentFor: SLOW_EVERY_MS * 2 },
+    { key: 'battery.cycles', part: BATTERY, label: 'Charge cycles', value: { type: 'number', integer: true }, stateClass: 'total_increasing', category: 'diagnostic', currentFor: SLOW_EVERY_MS * 2 },
+    // What NIU says for working things out, not for reading at a glance, and nothing to keep a history of: a speed
+    // from reports minutes apart is no speed curve; a lock status is raw until mapped (README.md).
+    { key: 'speed', label: 'Speed at its last report', value: { type: 'number', unit: 'km/h', precision: 0 }, quantity: 'speed', category: 'diagnostic', history: false, currentFor: CURRENT_FOR_MS },
+    { key: 'online', label: 'Reaching NIU', value: { type: 'boolean', words: YES_NO }, category: 'diagnostic', history: false, currentFor: CURRENT_FOR_MS },
+    { key: 'lockStatus', label: 'Lock status (raw)', value: { type: 'number', integer: true }, category: 'diagnostic', history: false, currentFor: CURRENT_FOR_MS },
+    { key: 'mobileSignal', label: 'Mobile signal', value: { type: 'number', integer: true }, category: 'diagnostic', history: false, currentFor: CURRENT_FOR_MS },
+    { key: 'gpsSignal', label: 'GPS signal', value: { type: 'number', integer: true }, category: 'diagnostic', history: false, currentFor: CURRENT_FOR_MS },
+    { key: 'controlUnitBattery', label: 'Control unit battery', value: { type: 'number', unit: '%', precision: 0 }, quantity: 'percent', category: 'diagnostic', history: false, currentFor: CURRENT_FOR_MS },
   ],
   events: [
     { id: 'charging.started', label: 'Started charging', level: 'info', data: { soc: { type: 'number', unit: '%' } } },
@@ -94,7 +120,7 @@ export function readingsOf(state: NiuState | null, batteries: readonly NiuBatter
   if (state) {
     add('soc', state.soc, at);
     add('charging', state.charging, at);
-    add('chargerConnected', state.chargerConnected, at);
+    add('online', state.online, at);
     add('minutesToFull', state.minutesToFull, at);
     add('range', state.rangeKm, at);
     add('speed', state.speedKmh, at);
@@ -138,7 +164,7 @@ const TOOLS: Readonly<Record<string, ToolSpec>> = {
   raw: {
     label: 'What NIU says',
     description:
-      'Every field NIU’s cloud gives for the scooter, raw — its state (and which of NIU’s calls answered), its batteries and its totals — with its position left out. How a model is mapped: change one thing, read again, see what moved.',
+      'Everything NIU’s cloud says about the scooter, exactly as it says it: its state, its battery and its totals — never where it is. For working out what a value means: change one thing on the scooter, read again, and compare.',
     writes: false,
     answer: {
       type: 'object',
@@ -155,7 +181,9 @@ async function realSession(ctx: DeviceContext<Config>): Promise<DeviceSession> {
   const { client, serial } = clientOver(ctx.connection);
 
   let state: NiuState | null = null;
+  /** When the scooter made its last report; and when NIU last gave it to us. */
   let stateAt: string | null = null;
+  let answeredAt: string | null = null;
   let batteries: NiuBatteryHealth[] = [];
   let totals: NiuTotals | null = null;
   let slowAt: string | null = null;
@@ -174,13 +202,14 @@ async function realSession(ctx: DeviceContext<Config>): Promise<DeviceSession> {
     const next = await client.state(serial);
     const event = chargingEventOf(state, next);
     state = next;
+    answeredAt = new Date().toISOString();
     // When the scooter reported it; NIU not saying, when we were told.
-    stateAt = next.at ?? new Date().toISOString();
+    stateAt = next.at ?? answeredAt;
     if (event) ctx.event(event.id, { soc: event.soc });
   };
 
   const tick = async () => {
-    const busy = state?.charging === true || state?.chargerConnected === true;
+    const busy = state?.charging === true || state?.poweredOn === true;
     const due = Date.now() - lastAsked >= (busy ? CHARGING_EVERY_MS : IDLE_EVERY_MS);
     const slowDue = Date.now() - lastSlow >= SLOW_EVERY_MS;
     if (!due && !slowDue) return;
@@ -213,9 +242,10 @@ async function realSession(ctx: DeviceContext<Config>): Promise<DeviceSession> {
     health(): SessionHealth {
       if (error) return { status: 'error', detail: error, lastReadingAt: stateAt };
       if (!state || !stateAt) return { status: 'connecting', detail: 'Asking NIU’s cloud', lastReadingAt: null };
-      return { status: 'connected', detail: `Last reported ${new Date(stateAt).toLocaleString()}, through NIU’s cloud`, lastReadingAt: stateAt };
+      // No clock time here: the server's time zone need not be its owner's. When it reported is `lastReadingAt`, for the app to say.
+      return { status: 'connected', detail: `${stateWord(state)} · through NIU’s cloud`, lastReadingAt: stateAt };
     },
-    readings: () => (stateAt ? readingsOf(state, batteries, totals, stateAt, slowAt) : []),
+    readings: () => (state && stateAt && answeredAt ? readingsOf(state, batteries, totals, standsSince(state, stateAt, answeredAt), slowAt) : []),
     info: (): DeviceInfo => ({ manufacturer: 'NIU', serial, ...(scooter?.model ? { model: scooter.model } : {}) }),
     identity: () => ({ id: identityOf('niu-cloud', serial), name: scooter?.name ?? null }),
     command: async () => ({ accepted: false, error: 'It takes no commands here yet: which ones NIU’s cloud takes for this model is still being learnt' }),
@@ -244,7 +274,7 @@ function simulatedSession(ctx: DeviceContext<Config>): DeviceSession {
     soc: Math.round(soc),
     batteries: [{ compartment: 'A', connected: true, soc: Math.round(soc) }],
     charging,
-    chargerConnected: charging,
+    online: true,
     minutesToFull: charging ? Math.round((100 - soc) * 3.5) : null,
     rangeKm: Math.round(soc * 0.55),
     speedKmh: charging ? 0 : 24,
@@ -278,7 +308,8 @@ function simulatedSession(ctx: DeviceContext<Config>): DeviceSession {
   return {
     health: () => ({ status: 'connected', detail: 'Simulated: charging and riding by itself', lastReadingAt: at }),
     readings: () => readingsOf(state(), batteries, { odometerKm: Math.round(odometer * 10) / 10, daysOwned: 1800 }, at, at),
-    info: () => ({ manufacturer: 'NIU', model: 'UQi GT Sport', serial: 'SIMULATED' }),
+    // As NIU names a model: its name, then its finish.
+    info: () => ({ manufacturer: 'NIU', model: 'UQi-GT Citi Black (Matte)', serial: 'SIMULATED' }),
     command: async () => ({ accepted: false, error: 'It takes no commands here yet' }),
     tools: {
       raw: async () => ({ from: 'simulated', state: json(state()), batteries: json(batteries), totals: json({ totalMileage: odometer }) }),
@@ -341,7 +372,7 @@ const COMMON = {
       state.soc === null ? 'charge not known' : `${Math.round(state.soc)} % charged`,
       state.charging ? 'charging' : null,
       state.rangeKm === null ? null : `${state.rangeKm} km of range`,
-      state.at ? `last reported ${new Date(state.at).toLocaleString()}` : 'NIU gives no report time',
+      state.at ? `last reported ${ago(state.at)}` : 'NIU gives no report time',
     ].filter(Boolean);
     return {
       identity: identityOf('niu-cloud', serial),

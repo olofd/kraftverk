@@ -132,8 +132,8 @@ export type NiuState = {
   soc: number | null;
   batteries: NiuBatteryNow[];
   charging: boolean | null;
-  /** A charger is plugged in. */
-  chargerConnected: boolean | null;
+  /** It reaches NIU: online. (Not a charger: `isConnected` is true on a scooter with none, README.md.) */
+  online: boolean | null;
   /** Until full while charging, in minutes; null when not charging or not said. */
   minutesToFull: number | null;
   rangeKm: number | null;
@@ -171,7 +171,7 @@ export function parseState(data: unknown): NiuState {
     soc,
     batteries,
     charging,
-    chargerConnected: booleanOf(raw.isConnected),
+    online: booleanOf(raw.isConnected),
     // NIU says "hours to full" and sends a large number when it has none.
     minutesToFull: charging && leftHours !== null && leftHours >= 0 && leftHours < 100 ? Math.round(leftHours * 60) : null,
     rangeKm: numberOf(raw.estimatedMileage),

@@ -54,6 +54,12 @@ const DEFAULT_PRECISION: Record<Quantity, number> = {
 
 type Formatted = Pick<AttributeSpec, 'value' | 'quantity' | 'means'>;
 
+/** An on/off in its own words, where it has them: "Yes", "Armed". */
+const onOff = (attribute: Formatted, on: boolean): string => {
+  const words = attribute.value.type === 'boolean' ? attribute.value.words : undefined;
+  return words ? words[on ? 'true' : 'false'] : on ? 'On' : 'Off';
+};
+
 /**
  * One value, as a person would read it.
  *
@@ -64,7 +70,7 @@ type Formatted = Pick<AttributeSpec, 'value' | 'quantity' | 'means'>;
  */
 export function formatValue(attribute: Formatted, value: Value | undefined): string {
   if (value === null || value === undefined) return '—';
-  if (typeof value === 'boolean') return value ? 'On' : 'Off';
+  if (typeof value === 'boolean') return onOff(attribute, value);
   if (typeof value === 'string') {
     if (attribute.value.type === 'enum') return enumLabel(attribute.value, value);
     return attribute.value.type === 'timestamp' ? observedAt(value) : value;
@@ -73,7 +79,7 @@ export function formatValue(attribute: Formatted, value: Value | undefined): str
   if (typeof value !== 'number') return Array.isArray(value) ? `${value.length} values` : '…';
   if (!Number.isFinite(value)) return '—';
   // An on/off kept as 1 or 0 — as history keeps one — still reads as on or off.
-  if (attribute.value.type === 'boolean') return value ? 'On' : 'Off';
+  if (attribute.value.type === 'boolean') return onOff(attribute, value !== 0);
 
   const quantity = quantityOf(attribute);
   const unit = unitOf(attribute);

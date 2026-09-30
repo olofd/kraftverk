@@ -57,6 +57,13 @@ describe('formatValue', () => {
     expect(formatValue(port, 0)).toBe('Off');
   });
 
+  test('an on/off with words of its own reads in them, from history too', () => {
+    const alarm: AttributeSpec = { key: 'alarm', label: 'Alarm', value: { type: 'boolean', words: { true: 'Armed', false: 'Not armed' } } };
+    expect(formatValue(alarm, true)).toBe('Armed');
+    expect(formatValue(alarm, false)).toBe('Not armed');
+    expect(formatValue(alarm, 0)).toBe('Not armed');
+  });
+
   test('degrees hug their number, other units take a space', () => {
     expect(formatValue(spec({ kind: 'temperature', unit: '°C' }), 21.4)).toBe('21.4°C');
     expect(formatValue(spec({ kind: 'voltage', unit: 'V' }), 230.15)).toBe('230.2 V');

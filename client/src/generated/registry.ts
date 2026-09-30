@@ -14,7 +14,9 @@ import deviceAferiyP280Ui from '@kraftverk/device-aferiy-p280/ui';
 import deviceAtorchS1wType from '@kraftverk/device-atorch-s1w';
 import deviceAtorchS1wUi from '@kraftverk/device-atorch-s1w/ui';
 import deviceNiuScooterType from '@kraftverk/device-niu-scooter';
+import deviceNiuScooterUi from '@kraftverk/device-niu-scooter/ui';
 import deviceNiuUqiGtType from '@kraftverk/device-niu-uqi-gt';
+import deviceNiuUqiGtUi from '@kraftverk/device-niu-uqi-gt/ui';
 import deviceTuyaPlugType from '@kraftverk/device-tuya-plug/type';
 import serviceOpenMeteoType from '@kraftverk/service-open-meteo';
 import protocolNiuCloud from '@kraftverk/protocol-niu-cloud';
@@ -44,6 +46,8 @@ export const DEVICE_TYPES: readonly DeviceType<any>[] = [
 export const DEVICE_UI: Readonly<Record<string, DeviceUi>> = {
   'aferiy.p280': deviceAferiyP280Ui,
   'atorch.s1w': deviceAtorchS1wUi,
+  'niu.scooter': deviceNiuScooterUi,
+  'niu.uqi-gt': deviceNiuUqiGtUi,
 };
 
 /** Pictures a device type ships, by device type id. */

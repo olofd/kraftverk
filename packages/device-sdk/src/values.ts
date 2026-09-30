@@ -26,7 +26,11 @@ export type NumberValue = {
   integer?: boolean;
 };
 
-export type BooleanValue = { type: 'boolean' };
+export type BooleanValue = {
+  type: 'boolean';
+  /** How it reads, where "On" and "Off" would not: "Yes" and "No", "Armed" and "Not armed". */
+  words?: { true: string; false: string };
+};
 
 export type EnumValue = { type: 'enum'; options: readonly EnumOption[] };
 
@@ -176,6 +180,7 @@ export function valueTypeProblems(what: string, type: ValueType | undefined): st
     case 'number':
       return type.min !== undefined && type.max !== undefined && type.min > type.max ? [`${what} has a minimum above its maximum`] : [];
     case 'boolean':
+      return type.words && !(type.words.true?.trim() && type.words.false?.trim()) ? [`${what} has words for on/off, but not for both`] : [];
     case 'string':
     case 'timestamp':
       return [];

@@ -74,15 +74,27 @@ test('a model has its pictures, and the one shown is its owner’s pick: tap the
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
-test('a NIU scooter is found under Vehicles — the common one, and a model of its own — and its page draws its battery with no screen of its own', async ({ page, request }) => {
+test('a NIU scooter is found under Vehicles — the common one, and a model of its own — and its page says how full it is, what it is doing and when it reported', async ({ page, request }) => {
   await page.goto('/add-device');
   await page.getByText('Vehicles', { exact: true }).click();
   await expect(page.getByText('NIU scooter', { exact: true })).toBeVisible();
   await expect(page.getByText('NIU UQi GT', { exact: true })).toBeVisible();
 
-  const scooter = await addSimulated(request, 'niu.scooter', unique('Scooter'));
+  // A model reported with its finish after its name is still that model: the check lets it be added as one.
+  const scooter = await addSimulated(request, 'niu.uqi-gt', unique('Scooter'));
   await page.goto(`/device/${scooter.id}`);
-  await expect(page.getByText('Battery', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('Charge', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('Range', { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('progressbar')).toBeVisible();
+  await expect(page.getByText(/^(Charging|Switched on|Parked)$/)).toBeVisible();
+  await expect(page.getByText(/^Reported to NIU /)).toBeVisible();
+  await expect(page.getByText('Its battery', { exact: true })).toBeVisible();
+  // What NIU says for working things out is folded away, until asked for.
+  await expect(page.getByText('Mobile signal', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: /More from NIU/ }).click();
+  await expect(page.getByText('Mobile signal', { exact: true })).toBeVisible();
+
+  // Its card says it in words: yes or no, not on or off.
+  await page.goto('/');
+  const card = page.getByRole('button', { name: new RegExp(`^${scooter.name},`) });
+  await expect(card).toContainText('Range');
+  await expect(card).toContainText(/Charging\s*(Yes|No)/);
 });

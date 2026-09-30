@@ -57,26 +57,34 @@ The `app_id` is not stable: projects use `niu_ktdrr960`, `niu_8xt1afu6`,
 | Field | Here | Notes |
 |---|---|---|
 | `batteries.compartmentA.batteryCharging` (and B, C) | `soc` (the scooter's headline) | The mean of the batteries in; a UQi has one |
-| `isCharging` | `charging` | 0/1 |
-| `isConnected` | `chargerConnected` | evcc reads it as "charger plugged in" — **to verify** |
-| `leftTime` | `minutesToFull` | Hours; a large number when there is none |
+| `isCharging` | `charging` | 0/1. **Seen** turning 1 about a minute after the charger went in, in a report sent with the scooter switched off |
+| `isConnected` | `online` | **Not a charger**, as evcc reads it: `true` on a UQi GT with no charger anywhere near it. It reaches NIU — as `ss_online_sta: "1"`. NIU gives no "charger plugged in" |
+| `leftTime` | `minutesToFull` | Hours, and there when not charging too (`"0.2"` idle): read only while charging |
 | `estimatedMileage` | `range` | km |
-| `nowSpeed` | `speed` | km/h |
-| `isAccOn` | `poweredOn` | |
-| `isFortificationOn` | `alarmArmed` | |
-| `lockStatus` | `lockStatus` (raw) | Meaning per value **to map** |
-| `gsm`, `gps` | `mobileSignal`, `gpsSignal` | NIU's bars |
+| `nowSpeed` | `speed` | km/h, at the report: no speed curve from reports minutes apart |
+| `isAccOn` | `poweredOn` | **Seen**: 1 switched on, 0 within seconds of switching off |
+| `isFortificationOn` | `alarmArmed` | `""` on a UQi GT, its alarm armed or not: that model does not say |
+| `lockStatus` | `lockStatus` (raw) | 1 on a UQi GT switched on and off alike, seat locked: not the ignition. Meaning **to map** |
+| `gsm`, `gps` | `mobileSignal`, `gpsSignal` | `gsm` 16–18 on a UQi GT (a 0–31 scale, as a modem's), `gps` 5 |
 | `centreCtrlBattery` | `controlUnitBattery` | % |
-| `infoTimestamp` / `time` / `gpsTimestamp` | every reading's time | **When the scooter reported**, not when we asked |
+| `infoTimestamp` / `time` / `gpsTimestamp` | every reading's time | **When the scooter reported**, not when we asked. Switched on, it reports all the time (a second old whenever asked); switched off, it goes quiet — see below |
 | `postion` (sic), `hdop` | — | Left out: where the owner lives and rides |
 | `lastTrack` | — | The trip in progress; later |
 
 ## How it behaves
 
-- Read every minute while charging or with a charger in, every 10 min
-  otherwise; battery health and the odometer every 30 min.
-- A report stays current for 30 min. A scooter asleep reports seldom, and a
-  charge older than that is not known — nothing acts on it.
+- **Pulled**, never pushed: NIU's cloud has no way to tell anyone else. The
+  scooter reports to NIU over the mobile network on its own rhythm; the
+  server asks NIU every minute while it is charging or switched on, every
+  10 min otherwise; battery health and the odometer every 30 min.
+- **Parked** (not charging, not switched on), the scooter goes quiet, and its
+  charge does not move — so its last report stands for as long as NIU keeps
+  answering (`standsSince`), and a charge limit can act on it however long
+  ago the scooter reported. **Charging or switched on**, a report older than
+  30 min is not known: nothing acts on it.
+- The app says when it last reported ("Reported to NIU 3 minutes ago") from
+  the session's `lastReadingAt`; the server says no clock time — its time
+  zone need not be its owner's.
 - Charging starting and stopping are events on the battery, with the charge.
 - No commands yet.
 - Tool **What NIU says** (`raw`): every field of the state (and which call
@@ -103,8 +111,21 @@ It inherits everything else, and keeps what is still in common.
 The ATORCH feeds the charger; the scooter's charge comes from the cloud.
 "Charge between two levels" with the scooter's battery and the plug, and
 "Keep it so" on: the plug goes off at the upper level. A UQi's battery takes
-about 250 W (48 V × 5.2 A), about 1 % in 3–4 minutes, so a minute between
-reads overshoots by under 1 %.
+about 250 W (48 V × 5.2 A), about 1 % in 3–4 minutes. The server asks NIU
+every minute while it charges, but a UQi GT charging switched off reports to
+NIU only every 4–5 minutes (the mapping log, `niu-uqi-gt`): expect it to
+stop 1–2 % past the level.
+
+## Its page
+
+`ui/` — the dashboard, for every NIU model: its charge, large, on a bar;
+what it is doing ("Charging", "Parked", "Switched on") and what follows
+("Full in about 2 h 38 min", "About 48 km of range"); its range and
+odometer; **when it last reported to NIU**, ticking — and, parked, that its
+charge still holds, or, charging, that it may have moved on. Its battery's
+health and temperature. What NIU says for working things out (signals, the
+control unit, the raw lock status) folded away under "More from NIU". The
+alarm only where the model says it. Words are in `ui/words.ts`, tested.
 
 The scooter is not the target of a "feeds" link: kraftverk checks such a link
 by the target seeing its mains within 30 s, and a scooter reporting through
