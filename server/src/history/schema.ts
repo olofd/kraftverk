@@ -206,15 +206,19 @@ export const SCHEMA = `
     Automations: a recipe, the parts of devices that fill its roles, its
     settings and the owner's clock. Devices are named in roles, not by foreign
     key: an automation whose device is removed stays, and says it cannot run.
+    recheck_minutes: how often a condition that still holds is looked at
+    again, to keep things so; NULL, never — what it did stays until a
+    condition turns true again.
   */
   CREATE TABLE automation (
-    id          TEXT PRIMARY KEY,
-    name        TEXT NOT NULL,
-    recipe      TEXT NOT NULL,
-    roles       TEXT NOT NULL,
-    params      TEXT NOT NULL,
-    time_zone   TEXT NOT NULL,
-    mode        TEXT NOT NULL CHECK (mode IN ('off', 'observe', 'armed')),
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    recipe          TEXT NOT NULL,
+    roles           TEXT NOT NULL,
+    params          TEXT NOT NULL,
+    time_zone       TEXT NOT NULL,
+    mode            TEXT NOT NULL CHECK (mode IN ('off', 'observe', 'armed')),
+    recheck_minutes INTEGER CHECK (recheck_minutes IS NULL OR recheck_minutes BETWEEN 1 AND 1440),
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL,
     last_run_at TEXT,

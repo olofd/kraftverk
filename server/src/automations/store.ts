@@ -14,6 +14,7 @@ type Row = {
   params: string;
   time_zone: string;
   mode: AutomationMode;
+  recheck_minutes: number | null;
   created_at: string;
   updated_at: string;
   last_run_at: string | null;
@@ -36,6 +37,7 @@ const toRecord = (row: Row): AutomationRecord => ({
   params: parse<ConfigValues>(row.params, {}),
   timeZone: row.time_zone,
   mode: row.mode,
+  recheckMinutes: row.recheck_minutes,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
   lastRunAt: row.last_run_at,
@@ -60,23 +62,23 @@ export class AutomationStore {
     return row ? toRecord(row) : null;
   }
 
-  create(input: Pick<AutomationRecord, 'name' | 'recipe' | 'roles' | 'params' | 'timeZone'>): AutomationRecord {
+  create(input: Pick<AutomationRecord, 'name' | 'recipe' | 'roles' | 'params' | 'timeZone' | 'recheckMinutes'>): AutomationRecord {
     const id = automationId(`a-${randomBytes(6).toString('hex')}`);
     const now = new Date().toISOString();
     db()
-      .query('INSERT INTO automation (id, name, recipe, roles, params, time_zone, mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(id, input.name, input.recipe, JSON.stringify(input.roles), JSON.stringify(input.params), input.timeZone, 'observe', now, now);
+      .query('INSERT INTO automation (id, name, recipe, roles, params, time_zone, mode, recheck_minutes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, input.name, input.recipe, JSON.stringify(input.roles), JSON.stringify(input.params), input.timeZone, 'observe', input.recheckMinutes, now, now);
     this.#revision += 1;
     return this.get(id)!;
   }
 
-  update(id: string, changes: Partial<Pick<AutomationRecord, 'name' | 'roles' | 'params' | 'timeZone' | 'mode'>>): AutomationRecord | null {
+  update(id: string, changes: Partial<Pick<AutomationRecord, 'name' | 'roles' | 'params' | 'timeZone' | 'mode' | 'recheckMinutes'>>): AutomationRecord | null {
     const current = this.get(id);
     if (!current) return null;
     const next = { ...current, ...changes };
     db()
-      .query('UPDATE automation SET name = ?, roles = ?, params = ?, time_zone = ?, mode = ?, updated_at = ? WHERE id = ?')
-      .run(next.name, JSON.stringify(next.roles), JSON.stringify(next.params), next.timeZone, next.mode, new Date().toISOString(), id);
+      .query('UPDATE automation SET name = ?, roles = ?, params = ?, time_zone = ?, mode = ?, recheck_minutes = ?, updated_at = ? WHERE id = ?')
+      .run(next.name, JSON.stringify(next.roles), JSON.stringify(next.params), next.timeZone, next.mode, next.recheckMinutes, new Date().toISOString(), id);
     this.#revision += 1;
     return this.get(id);
   }

@@ -2,6 +2,7 @@ import type { AutomationMode, AutomationRun, RoleBinding } from '@kraftverk/api-
 import {
   attributeMeaning,
   capabilitiesOf,
+  capabilityIn,
   checkBinding,
   describeExpr,
   evaluate,
@@ -52,6 +53,8 @@ export type AutomationRecord = {
   /** The owner's clock, from the app it was made in: "Europe/Stockholm". */
   timeZone: string;
   mode: AutomationMode;
+  /** Every this many minutes, a condition that still holds runs it again, unless what it would do is already so. Null: never. */
+  recheckMinutes: number | null;
   createdAt: string;
   updatedAt: string;
   lastRunAt: string | null;
@@ -83,6 +86,9 @@ export type TriggerMemory = {
 
 /** One `becomes` trigger's state, as kept. */
 type TriggerState = { last: boolean; heldSince: string | null; fired: boolean };
+
+/** One action a run would take: the command, its arguments evaluated, and how it reads. */
+type PlannedAction = { binding: RoleBinding; name: string; capability: CapabilityName; command: string; args: Record<string, Value>; what: string };
 
 export type AutomationEngineDeps = {
   store: AutomationStore;
@@ -117,6 +123,14 @@ const GRACE_MS = 60 * 60_000;
  *   automation with no state yet — new, or just changed or armed — takes a
  *   condition already true as the edge: a charge window armed at 8 % starts
  *   charging, rather than waiting for the battery to rise and fall again.
+ *
+ * A condition fires once: what it did then stays until it turns true again,
+ * and a person may change it in between. An automation that keeps things so
+ * (`recheckMinutes`) looks again on that schedule: a condition that still
+ * holds — and has held as long as it must — runs it again, unless what it
+ * would do is already so, which is neither sent nor recorded. A charger
+ * switched on by hand above the level it stops at is switched off again; in
+ * the window between the levels no condition holds, and nothing is changed.
  *
  * A run evaluates the rule's condition — unknown is never true — and then its
  * actions: one that observes says what it would have done; one armed sends it
@@ -175,6 +189,14 @@ export class AutomationEngine {
       this.#becoming.delete(key);
     }
     this.#memory.forget(`automation.trigger.${automationId}:`);
+    // Keeping things so starts afresh too: its first look a whole interval from now.
+    this.#memory.set(`automation.recheck.${automationId}`, this.#now().toISOString());
+  }
+
+  /** Forgets everything kept for an automation that is gone. */
+  forget(automationId: string): void {
+    this.reset(automationId);
+    this.#memory.forget(`automation.recheck.${automationId}`);
   }
 
   /** The automations a device's events and readings can start: bound to it, and with a trigger that listens. */
@@ -210,10 +232,78 @@ export class AutomationEngine {
         recipe?.when.forEach((trigger, index) => {
           if ('becomes' in trigger) this.#becomes(automation, recipe, trigger, index);
         });
+        if (recipe && automation.recheckMinutes) await this.#recheck(automation, recipe, now);
       }
     } finally {
       this.#ticking = false;
     }
+  }
+
+  /**
+   * Keeping things so, when it is time to: the first condition that holds,
+   * and has held as long as it must, runs the automation again — unless what
+   * it would do is already so. The schedule runs from the last look, the
+   * last run or the last change, whichever came last — so a first look comes
+   * a whole interval after it acted, not at the next tick — and when it last
+   * looked is kept, so a restart keeps it.
+   */
+  async #recheck(automation: AutomationRecord, recipe: Recipe, now: Date): Promise<void> {
+    const memoryKey = `automation.recheck.${automation.id}`;
+    const since = Math.max(...[this.#memory.get(memoryKey), automation.lastRunAt].map((at) => Date.parse(at ?? '')).filter(Number.isFinite));
+    if (now.getTime() - since < automation.recheckMinutes! * 60_000) return;
+    this.#memory.set(memoryKey, now.toISOString());
+
+    const scope = this.#scope(automation, recipe, now);
+    for (const [index, trigger] of recipe.when.entries()) {
+      if (!('becomes' in trigger)) continue;
+      // Fired and still true: a hold still waiting it out, or a condition that has ended, is not one.
+      const state = this.#becoming.get(`${automation.id}:${index}`)?.state;
+      if (!state?.last || !state.fired) continue;
+      const trace: string[] = [];
+      if (evaluateNow(trigger.becomes, scope, trace) !== true) continue;
+      const planned = await this.#plan(automation, recipe, scope);
+      if ('unknown' in planned) continue;
+      if (planned.every((action) => this.#alreadySo(action))) return;
+      await this.#runAndKeep(automation, `Checked again, every ${automation.recheckMinutes} min: ${trace.join('; ')}`);
+      return;
+    }
+  }
+
+  /**
+   * Whether an action would change nothing: every attribute its command sets,
+   * as the capability declares, already reads what it would be set to, and
+   * currently. Anything not known is not so: it is sent, and the gateway says.
+   */
+  #alreadySo(action: PlannedAction): boolean {
+    const device = this.deps.device(action.binding);
+    if (!device?.device || device.removed) return false;
+    const capability = capabilityIn(device.description, action.capability);
+    const sets = Object.entries(capability?.commands[action.command]?.sets ?? {});
+    if (!capability || !sets.length) return false;
+    const readings = device.device.readings();
+    const at = this.#now().getTime();
+    return sets.every(([arg, name]) => {
+      const means = capability.attributes[name]?.means;
+      const attribute = means ? attributeMeaning(device.description, action.binding.part, means) : null;
+      const reading = attribute ? readingOf(readings, attribute.key) : null;
+      return attribute !== null && reading !== null && isCurrent(attribute, reading, at) && String(reading.value) === String(action.args[arg]);
+    });
+  }
+
+  /** What a rule would do, each action's arguments evaluated: an unknown one is not guessed. */
+  async #plan(automation: AutomationRecord, recipe: Recipe, scope: RuleScope): Promise<PlannedAction[] | { unknown: string }> {
+    const planned: PlannedAction[] = [];
+    for (const { command } of recipe.then) {
+      const args: Record<string, Value> = {};
+      for (const [name, expr] of Object.entries(command.args)) args[name] = await evaluate(expr, scope, []);
+      if (Object.values(args).some((value) => value === null)) return { unknown: scope.name(command.role) };
+      const binding = automation.roles[command.role]!;
+      const name = scope.name(command.role);
+      const setting = Object.values(args).map((value) => (value === true ? 'on' : value === false ? 'off' : String(value))).join(', ');
+      const what = command.capability === 'switch' && command.command === 'set' ? `turn ${name} ${setting}` : `${command.capability}.${command.command} ${name} (${setting})`;
+      planned.push({ binding, name, capability: command.capability, command: command.command, args, what });
+    }
+    return planned;
   }
 
   /** What a device said: an event some automation waits for, or a reading some condition reads. */
@@ -407,17 +497,8 @@ export class AutomationEngine {
     const reason = trace.join('; ');
 
     // What it will do, each action's arguments evaluated: an unknown one is not guessed.
-    const planned: { binding: RoleBinding; name: string; capability: CapabilityName; command: string; args: Record<string, Value>; what: string }[] = [];
-    for (const { command } of recipe.then) {
-      const args: Record<string, Value> = {};
-      for (const [name, expr] of Object.entries(command.args)) args[name] = await evaluate(expr, scope, []);
-      if (Object.values(args).some((value) => value === null)) return note(result('unknown', `Could not tell what to send ${scope.name(command.role)}`));
-      const binding = automation.roles[command.role]!;
-      const name = scope.name(command.role);
-      const setting = Object.values(args).map((value) => (value === true ? 'on' : value === false ? 'off' : String(value))).join(', ');
-      const what = command.capability === 'switch' && command.command === 'set' ? `turn ${name} ${setting}` : `${command.capability}.${command.command} ${name} (${setting})`;
-      planned.push({ binding, name, capability: command.capability, command: command.command, args, what });
-    }
+    const planned = await this.#plan(automation, recipe, scope);
+    if ('unknown' in planned) return note(result('unknown', `Could not tell what to send ${planned.unknown}`));
     const target = planned[0]?.binding.device;
     if (options.check || automation.mode !== 'armed') {
       return note(result('would-act', `Would ${planned.map((action) => action.what).join(', then ')}.${reason ? ` ${reason}` : ''}`), target, { trace, planned });

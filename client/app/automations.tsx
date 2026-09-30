@@ -143,6 +143,23 @@ const MODE_SAYS: Record<AutomationMode, string> = {
   armed: 'It acts on its own, through the same checks as a tap on a switch.',
 };
 
+/** How often it may look again to keep things so, in minutes; 0 is never. */
+const RECHECK: { value: number; label: string }[] = [
+  { value: 0, label: 'Off' },
+  { value: 5, label: '5 min' },
+  { value: 10, label: '10 min' },
+  { value: 30, label: '30 min' },
+  { value: 60, label: '1 h' },
+];
+
+const every = (minutes: number) => (minutes === 60 ? 'hour' : `${minutes} min`);
+
+/** What keeping things so means, for the choice as it stands. */
+const recheckSays = (minutes: number | null) =>
+  minutes
+    ? `Every ${every(minutes)}, a condition that still holds runs it again: something switched by hand against it is switched back. What is already so is left alone.`
+    : 'Once it has acted, it leaves things be until a condition comes true again: you can switch by hand in between.';
+
 /** Each mode its own shape as well as its colour: acting is filled, and cannot be mistaken for watching. */
 const BADGE: Record<AutomationMode, { label: string; icon: 'pause' | 'eye' | 'zap'; filled: boolean }> = {
   off: { label: 'Off', icon: 'pause', filled: false },
@@ -305,8 +322,17 @@ function AutomationCard({
               </Text>
             </XStack>
           ))}
+          {automation.recheckMinutes ? (
+            <XStack gap="$2" alignItems="flex-start">
+              <Icon name="refresh-cw" size={13} color={theme.muted?.val} style={{ marginTop: 3 }} />
+              <Text flex={1} fontSize={13} color="$color" lineHeight={19}>
+                And every {every(automation.recheckMinutes)}, while a condition still holds, unless it is already so
+              </Text>
+            </XStack>
+          ) : null}
           <Text fontSize={12} color="$muted" lineHeight={17}>
             A condition is looked at every time the device it reads reports.
+            {automation.recheckMinutes ? '' : ' Once it has acted, what you switch by hand stays until a condition comes true again.'}
           </Text>
         </YStack>
       ) : null}
@@ -477,6 +503,7 @@ function Editor({
   const [name, setName] = useState(existing?.name ?? '');
   const [roles, setRoles] = useState<Record<string, RoleBinding>>(existing?.roles ?? {});
   const [params, setParams] = useState<ConfigValues>(() => (existing ? { ...existing.params } : recipes.length === 1 ? defaults(recipes[0]!) : {}));
+  const [recheck, setRecheck] = useState(existing?.recheckMinutes ?? 0);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -513,12 +540,14 @@ function Editor({
     setProblem(null);
     try {
       const chosenName = name.trim() || recipe.label;
+      // Only a rule with a condition has anything to keep.
+      const recheckMinutes = recipe.hasConditions && recheck > 0 ? recheck : null;
       if (!existing) {
         const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        onSaved(await createAutomation({ name: chosenName, recipe: recipe.id, roles, params, timeZone }));
+        onSaved(await createAutomation({ name: chosenName, recipe: recipe.id, roles, params, timeZone, recheckMinutes }));
         return;
       }
-      const changes = { name: chosenName, roles, params };
+      const changes = { name: chosenName, roles, params, recheckMinutes };
       const { answer } = await withConfirmation(
         (confirmation) => updateAutomation(existing.id, { ...changes, confirmation }),
         wantsYes,
@@ -588,6 +617,15 @@ function Editor({
               <SectionLabel>Settings</SectionLabel>
               <Card inset backgroundColor="$background">
                 <SchemaForm schema={recipe.params} values={params} onChange={(field, value) => setParams((current) => ({ ...current, [field]: value }))} />
+              </Card>
+            </YStack>
+          ) : null}
+
+          {recipe.hasConditions ? (
+            <YStack gap="$2">
+              <SectionLabel>Keep it so</SectionLabel>
+              <Card inset backgroundColor="$background">
+                <SegmentedControl title="Check again" subtitle={recheckSays(recheck || null)} value={recheck} options={RECHECK} disabled={busy} onChange={setRecheck} />
               </Card>
             </YStack>
           ) : null}

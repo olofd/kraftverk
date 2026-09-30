@@ -148,7 +148,7 @@ export function assistantRoutes(deps: AppDeps): Hono {
       run: async (args, c) => {
         const input = planInput.parse(args);
         const checked = validated(input.recipe, input);
-        const created = automations.create({ name: input.name, recipe: input.recipe, roles: checked.roles, params: checked.params, timeZone: input.timeZone });
+        const created = automations.create({ name: input.name, recipe: input.recipe, roles: checked.roles, params: checked.params, timeZone: input.timeZone, recheckMinutes: null });
         auditAbout(c, 'automation.proposed', 'automation', created.id, `An assistant proposed "${created.name}", observing: ${view(created).sentence}`, { recipe: created.recipe, roles: created.roles, params: created.params });
         const rehearsal = await rehearsed(created.recipe, created, 24 * 7);
         return [`Made "${created.name}" [${created.id}], observing: ${view(created).sentence}`, 'It acts only once a person arms it in the app.', '', rehearsalText(rehearsal)].join('\n');

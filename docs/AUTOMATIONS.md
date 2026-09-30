@@ -178,6 +178,21 @@ The server's engine runs every automation the same way:
   for the battery to rise and fall again, which nothing would make it do.
   Only the automations bound to a device are looked at when it reports.
 
+A condition fires once: what the automation did then stays until a condition
+turns true again, and a person may change it in between. An automation can
+instead **keep things so** (`recheckMinutes`, chosen when it is set up: off,
+5, 10, 30 or 60 minutes). On that schedule — counted from its last look, its
+last run or its last change, and kept across restarts — a `becomes`
+condition that still holds, and has held as long as it must, runs it again,
+with the reason "Checked again, every 10 min: …". Nothing is sent, and
+nothing recorded, when every attribute its commands set (as the capability
+declares `sets`) already reads what it would be set to. The owner's charge
+window: switched off at 74 %, switched back on by hand, it is off again at
+the next look. Between the two levels no condition holds, and nothing is
+changed: the window stays a window. Time-of-day and event triggers have
+nothing to keep. The gateway's dwell still applies to every run, and turning
+it on for an armed automation is confirmed as arming is.
+
 A run evaluates `if`, then each action: an automation that **observes** says
 what it would have done; one **armed** sends it through the gateway as
 `actor: 'automation'`. Every run is on the timeline with its trace. Arming is

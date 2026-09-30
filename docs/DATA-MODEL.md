@@ -428,6 +428,7 @@ erDiagram
     json params "{at: 07:00, day: tomorrow, condition: sunny, cloudMax: 40, action: on}"
     text time_zone "Europe/Stockholm · the owner's clock"
     text mode "off · observe · armed"
+    int recheck_minutes "10 · null: never; how often a condition that still holds keeps things so"
     text created_at "2026-10-15T08:00:00Z"
     text last_run_at "2026-10-16T05:00:12Z"
     json last_result "{outcome: acted, summary: Turn Heater plug on…}"
@@ -443,7 +444,7 @@ erDiagram
     json detail "{part: outlet.ac, capability: switch, command: set, args: {on: false}}"
   }
   app_state {
-    text key PK "automation.trigger.a-71c2d0e5f9a3:0 · gateway.lastSwitchAt.… · policy.values"
+    text key PK "automation.trigger.a-71c2d0e5f9a3:0 · automation.recheck.a-71c2d0e5f9a3 · gateway.lastSwitchAt.… · policy.values"
     text value "{last: true, heldSince: …, fired: false} · {loadWatts: 10}"
     text updated_at "2026-09-01T10:00:00Z"
   }

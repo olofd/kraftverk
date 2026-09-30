@@ -134,9 +134,9 @@ const STATION_DESCRIPTION: DeviceDescription = {
 const FORECAST_DESCRIPTION: DeviceDescription = { parts: [{ id: MAIN_PART, label: 'Forecast', kind: 'sensor', offers: ['weather.forecast'] }], attributes: [] };
 
 /** What a function or a condition may see of a device: its readings, its health, its answers. */
-const reader = (readings: () => { key: string; value: Value }[]): DeviceReader => ({
+const reader = (readings: () => { key: string; value: Value }[], clock: () => Date = () => new Date()): DeviceReader => ({
   health: () => ({ status: 'connected', detail: 'Fine', lastReadingAt: null }),
-  readings: () => readings().map((reading) => ({ ...reading, at: new Date().toISOString() })),
+  readings: () => readings().map((reading) => ({ ...reading, at: clock().toISOString() })),
   query: async () => [],
 });
 
@@ -155,6 +155,8 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
   const sent: CommandIntent[] = [];
   const recorded: AuditRecord[] = [];
   const station = { soc: 50 as Value };
+  /** Whether the plug is on, as it reports it: unknown until a test says. */
+  const plug = { on: null as Value };
   let now = options.now ?? MORNING;
   const devices: Record<string, EngineDevice> = {
     [`${FORECAST}:main`]: {
@@ -167,8 +169,8 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
       offline: 'Not answering',
       capabilities: ['weather.forecast'],
     },
-    [`${PLUG}:main`]: { name: 'Heater plug', removed: options.plugRemoved ?? false, hasPart: true, part: 'main', description: PLUG_DESCRIPTION, device: null, offline: 'n/a', capabilities: ['switch'] },
-    [`${STATION}:main`]: { name: 'Garage P280', removed: false, hasPart: true, part: 'main', description: STATION_DESCRIPTION, device: reader(() => [{ key: 'soc', value: station.soc }]), offline: 'n/a', capabilities: ['battery'] },
+    [`${PLUG}:main`]: { name: 'Heater plug', removed: options.plugRemoved ?? false, hasPart: true, part: 'main', description: PLUG_DESCRIPTION, device: reader(() => (plug.on === null ? [] : [{ key: 'on', value: plug.on }]), () => now), offline: 'n/a', capabilities: ['switch'] },
+    [`${STATION}:main`]: { name: 'Garage P280', removed: false, hasPart: true, part: 'main', description: STATION_DESCRIPTION, device: reader(() => [{ key: 'soc', value: station.soc }], () => now), offline: 'n/a', capabilities: ['battery'] },
     [`${STATION}:outlet.ac`]: { name: 'Garage P280 — AC outlets', removed: false, hasPart: true, part: 'outlet.ac', description: STATION_DESCRIPTION, device: null, offline: 'n/a', capabilities: ['switch'] },
     [`${STATION}:input.ac`]: { name: 'Garage P280 — Mains', removed: false, hasPart: true, part: 'input.ac', description: STATION_DESCRIPTION, device: null, offline: 'n/a', capabilities: ['acInput'] },
   };
@@ -181,6 +183,8 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
     gateway: {
       execute: async (intent: CommandIntent): Promise<GatewayResult> => {
         sent.push(intent);
+        // The plug does as it is told, and reports it.
+        if (intent.deviceId === PLUG && typeof intent.args.on === 'boolean') plug.on = intent.args.on;
         return { outcome: 'verified', detail: 'Switched, confirmed by the device', deviceAgreed: true };
       },
     },
@@ -189,14 +193,14 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
     now: () => now,
     ...(options.memory ? { memory: options.memory } : {}),
   });
-  const make = (recipe: string, roles: AutomationRecord['roles'], params: Record<string, string | number> = {}, mode: AutomationRecord['mode'] = 'observe') => {
-    const created = store.create({ name: 'Test automation', recipe, roles, params, timeZone: ZONE });
+  const make = (recipe: string, roles: AutomationRecord['roles'], params: Record<string, string | number> = {}, mode: AutomationRecord['mode'] = 'observe', recheckMinutes: number | null = null) => {
+    const created = store.create({ name: 'Test automation', recipe, roles, params, timeZone: ZONE, recheckMinutes });
     return mode === 'observe' ? created : store.update(created.id, { mode })!;
   };
   const sunny = (params: Record<string, string | number> = {}, mode: AutomationRecord['mode'] = 'observe', switchPart = { device: PLUG, part: 'main' }) =>
     make('test.kit.sunny', { forecast: { device: FORECAST, part: 'main' }, switch: switchPart }, params, mode);
   const readingsMoved = () => bus.publish({ kind: 'readings', deviceId: STATION, readings: [] });
-  return { engine, store, bus, sent, recorded, make, sunny, station, readingsMoved, at: (next: Date) => (now = next) };
+  return { engine, store, bus, sent, recorded, make, sunny, station, plug, readingsMoved, at: (next: Date) => (now = next) };
 }
 
 /** 07:05 in Stockholm on a summer day: after the default run time. */
@@ -361,7 +365,8 @@ describe('when a condition becomes true', () => {
 
     // Changing it starts it afresh: its condition, already true, is its edge again.
     second.engine.reset(automation.id);
-    expect([...memory.kept.keys()].filter((key) => key.includes(automation.id))).toEqual([]);
+    // Only when it changed is kept: what keeping things so counts from.
+    expect([...memory.kept.keys()].filter((key) => key.includes(automation.id))).toEqual([`automation.recheck.${automation.id}`]);
     await second.engine.tick();
     await settle();
     expect(second.sent).toHaveLength(1);
@@ -437,6 +442,105 @@ describe('when a condition becomes true', () => {
     } finally {
       engine.stop();
     }
+  });
+});
+
+/*
+  The owner's charge window, again: armed at 74 %, it switched the plug off,
+  and the owner switched it straight back on. A condition fires once, so the
+  plug stayed on. One that keeps things so looks again on its schedule.
+*/
+describe('keeping things so', () => {
+  const MINUTE = 60_000;
+  const window = (context: ReturnType<typeof setup>, recheckMinutes: number | null) =>
+    context.make('standard.charge-between', { battery: { device: STATION, part: 'main' }, charger: { device: PLUG, part: 'main' } }, { low: 15, high: 50, minutes: 2 }, 'armed', recheckMinutes);
+
+  test('a charger switched on by hand above the level it stops at is switched off at the next look', async () => {
+    const context = setup();
+    const { engine, station, plug, sent, readingsMoved } = context;
+    station.soc = 74;
+    plug.on = true;
+    window(context, 10);
+    readingsMoved();
+    await engine.hear({ kind: 'readings', deviceId: STATION, readings: [] });
+    await settle();
+    expect(sent.map((intent) => intent.args.on)).toEqual([false]);
+
+    // By hand, back on: no condition turned true, so nothing, yet.
+    plug.on = true;
+    await engine.hear({ kind: 'readings', deviceId: STATION, readings: [] });
+    await engine.tick();
+    await settle();
+    expect(sent).toHaveLength(1);
+
+    context.at(new Date(MORNING.getTime() + 10 * MINUTE));
+    await engine.tick();
+    expect(sent.map((intent) => intent.args.on)).toEqual([false, false]);
+    expect(sent[1]!.reason).toContain('Checked again, every 10 min');
+    expect(sent[1]!.reason).toContain('Garage P280: Charge 74 %');
+
+    // Not again before its time.
+    plug.on = true;
+    context.at(new Date(MORNING.getTime() + 15 * MINUTE));
+    await engine.tick();
+    expect(sent).toHaveLength(2);
+  });
+
+  test('without it, a person’s switch stands until a condition turns true again', async () => {
+    const context = setup();
+    const { engine, station, plug, sent } = context;
+    station.soc = 74;
+    plug.on = true;
+    window(context, null);
+    await engine.hear({ kind: 'readings', deviceId: STATION, readings: [] });
+    await settle();
+    plug.on = true;
+    context.at(new Date(MORNING.getTime() + 60 * MINUTE));
+    await engine.tick();
+    expect(sent).toHaveLength(1);
+  });
+
+  test('what is already so is neither sent nor recorded', async () => {
+    const context = setup();
+    const { engine, station, plug, sent, recorded } = context;
+    station.soc = 74;
+    plug.on = true;
+    window(context, 10);
+    await engine.hear({ kind: 'readings', deviceId: STATION, readings: [] });
+    await settle();
+    const runs = recorded.length;
+    context.at(new Date(MORNING.getTime() + 10 * MINUTE));
+    await engine.tick();
+    context.at(new Date(MORNING.getTime() + 20 * MINUTE));
+    await engine.tick();
+    expect(sent).toHaveLength(1);
+    expect(recorded).toHaveLength(runs);
+  });
+
+  test('between the levels no condition holds, and the window stays a window: nothing is changed', async () => {
+    const context = setup();
+    const { engine, station, plug, sent } = context;
+    station.soc = 30;
+    window(context, 10);
+    for (const on of [true, false]) {
+      plug.on = on;
+      context.at(new Date(MORNING.getTime() + (on ? 10 : 20) * MINUTE));
+      await engine.hear({ kind: 'readings', deviceId: STATION, readings: [] });
+      await engine.tick();
+    }
+    expect(sent).toEqual([]);
+  });
+
+  test('a condition still waiting out its hold is not one that holds', async () => {
+    const context = setup();
+    const { engine, station, plug, sent } = context;
+    station.soc = 10;
+    plug.on = false;
+    window(context, 10);
+    // Below 15 %, but not yet for two minutes: the hold decides, not the look.
+    await engine.tick();
+    engine.stop();
+    expect(sent).toEqual([]);
   });
 });
 

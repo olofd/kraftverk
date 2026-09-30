@@ -63,6 +63,7 @@ answers — and listed on the device as `tools`.
 | `GET` `PUT` | `/policy` · `/policy/:name` | What the home decides that declarations name: `loadWatts`, how much a load is before turning it off is confirmed. `{ value }` sets it, `null` puts back the default; audited |
 | `GET` (WebSocket) | `/live` | What changed, as it changes — see below |
 | `GET` | `/problems` | Warnings and errors across the devices you have, newest first |
+| `GET` `POST` `PATCH` `DELETE` | `/automations` · `/automations/recipes` · `/automations/:id` · `/automations/:id/check` | Automations, made from recipes (each says `hasConditions`: whether it can keep things so). Made observing; arming, changing an armed one, or changing its `recheckMinutes` (how often a condition that still holds runs it again; `null`, never) is refused with 409 and `needsConfirmation`, sent back as `confirmation`. `check` says what it would do now, and does nothing |
 | `POST` · `GET` | `/automations/rehearse` · `/automations/:id/rehearse` | A rule rehearsed on the last `hours` of history: when it would have run and what it would have done, and what history could not show. Nothing is sent |
 | `GET` | `/world` | The house as a model reads it: every device, its parts, what each offers and reports with meaning and freshness, the links, and the rules an assistant is held to. `?format=text` is the same in a few lines a device |
 | `GET` | `/vocabulary` | The words the world is said in: capabilities (commands, queries, what makes a command consequential), meanings, link kinds, recipes, the home's policy values |

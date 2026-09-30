@@ -30,12 +30,18 @@ test('a charge window of your own, made from the shared recipe', async ({ page, 
   await expect(page.getByText(`When ${station.name}'s charge is below 15 % for 2 min`)).toBeVisible();
   await expect(page.getByText('Only watching').last()).toBeVisible();
 
-  // Changed after it was made: a new name, kept.
+  // Once it has acted, what is switched by hand stays: until it is asked to keep things so.
+  await expect(page.getByText(/what you switch by hand stays until a condition comes true again/).last()).toBeVisible();
+
+  // Changed after it was made: a new name, and a look every ten minutes, kept.
   const renamed = unique('Charge window');
   await page.getByText('Edit', { exact: true }).last().click();
   await page.getByLabel('Name').fill(renamed);
+  await page.getByRole('radio', { name: '10 min' }).click();
+  await expect(page.getByText(/something switched by hand against it is switched back/)).toBeVisible();
   await press(page, 'Save changes');
   await expect(page.getByText(renamed, { exact: true })).toBeVisible();
+  await expect(page.getByText('And every 10 min, while a condition still holds, unless it is already so').last()).toBeVisible();
 
   // Its history: made, then changed.
   await page.getByText('History', { exact: true }).last().click();

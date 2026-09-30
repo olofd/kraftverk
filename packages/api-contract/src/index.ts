@@ -509,6 +509,8 @@ export type RecipeView = {
   description: string;
   /** The package it came with; null for the shared vocabulary's own. */
   from: { typeId: string; name: string } | null;
+  /** It waits for a condition to come true: only then can an automation of it keep things so (`recheckMinutes`). */
+  hasConditions: boolean;
   /** What each role asks of a part: every one of `capabilities`, and one of `oneOf` when given. */
   roles: Record<
     string,
@@ -523,7 +525,7 @@ export type RecipeView = {
 };
 
 /** `POST /automations`. `timeZone` is the app's own clock: "Europe/Stockholm". */
-export type NewAutomation = { name: string; recipe: string; roles: Record<string, RoleBinding>; params: ConfigValues; timeZone: string };
+export type NewAutomation = { name: string; recipe: string; roles: Record<string, RoleBinding>; params: ConfigValues; timeZone: string; recheckMinutes?: number | null };
 
 /** `PATCH /automations/:id`. Arming, or changing an armed one, needs `confirmation`. */
 export type AutomationChanges = {
@@ -532,6 +534,7 @@ export type AutomationChanges = {
   params?: ConfigValues;
   timeZone?: string;
   mode?: AutomationMode;
+  recheckMinutes?: number | null;
   confirmation?: string;
 };
 
@@ -564,6 +567,12 @@ export type AutomationView = {
   params: ConfigValues;
   timeZone: string;
   mode: AutomationMode;
+  /**
+   * Keeping things so: every this many minutes, a condition that still holds
+   * runs it again, unless what it would do is already so. Null: what it did
+   * stays until a condition turns true again, and a person may change it.
+   */
+  recheckMinutes: number | null;
   createdAt: string;
   updatedAt: string;
   lastRunAt: string | null;

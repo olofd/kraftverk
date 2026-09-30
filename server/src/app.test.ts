@@ -1018,6 +1018,24 @@ describe('automations', () => {
     const check = await as(`/automations/${window.body.id}/check`, { method: 'POST' });
     expect(check.status).toBe(200);
     expect(check.body.summary).toContain('Garage P280: Charge');
+
+    // It can keep things so; a time of day and an event have nothing to keep.
+    const { recipes } = (await as('/automations/recipes')).body as { recipes: { id: string; hasConditions: boolean }[] };
+    expect(recipes.find((recipe) => recipe.id === 'standard.charge-between')?.hasConditions).toBe(true);
+    expect(recipes.find((recipe) => recipe.id === 'standard.mains-lost')?.hasConditions).toBe(false);
+    expect(window.body.recheckMinutes).toBeNull();
+    const path = `/automations/${window.body.id}`;
+    expect((await as(path, { method: 'PATCH', body: { recheckMinutes: 10 } })).body.recheckMinutes).toBe(10);
+    expect((await as(path, { method: 'PATCH', body: { recheckMinutes: 0 } })).status).toBe(400);
+
+    // Armed, how often it keeps things so changes what it does: confirmed, as arming is.
+    const asked = await as(path, { method: 'PATCH', body: { mode: 'armed' } });
+    expect((await as(path, { method: 'PATCH', body: { mode: 'armed', confirmation: asked.body.needsConfirmation } })).body.mode).toBe('armed');
+    const refused = await as(path, { method: 'PATCH', body: { recheckMinutes: 5 } });
+    expect(refused.status).toBe(409);
+    expect((await as(path, { method: 'PATCH', body: { recheckMinutes: 5, confirmation: refused.body.needsConfirmation } })).body.recheckMinutes).toBe(5);
+    // The same again changes nothing, and asks nothing.
+    expect((await as(path, { method: 'PATCH', body: { recheckMinutes: 5 } })).status).toBe(200);
   });
 
   test('the shared recipes, on a station: a battery that runs low, and mains that goes — each a part that fits', async () => {

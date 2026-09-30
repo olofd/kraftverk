@@ -22,6 +22,8 @@ import { auditAbout, body, type AppDeps } from './shared.ts';
 
 const roles = z.record(z.string().min(1).max(40), z.object({ device: z.string().min(1).max(80), part: z.string().min(1).max(80) }).strict());
 const params = z.record(z.string().min(1).max(40), z.union([z.string().max(200), z.number(), z.boolean()]));
+/** Minutes between looks that keep things so, a day at most; null, never. */
+const recheckMinutes = z.number().int().min(1).max(1440).nullable();
 
 export function automationRoutes({ automations, engine, library, catalog, sessions }: AppDeps): Hono {
   const api = new Hono();
@@ -31,7 +33,17 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
 
   api.get('/automations/recipes', (c) =>
     c.json({
-      recipes: library.recipes().map(({ recipe, from }): RecipeView => ({ id: recipe.id, label: recipe.label, description: recipe.description, from, roles: recipe.roles, params: recipe.params })),
+      recipes: library.recipes().map(
+        ({ recipe, from }): RecipeView => ({
+          id: recipe.id,
+          label: recipe.label,
+          description: recipe.description,
+          from,
+          hasConditions: recipe.when.some((trigger) => 'becomes' in trigger),
+          roles: recipe.roles,
+          params: recipe.params,
+        })
+      ),
     })
   );
 
@@ -62,12 +74,12 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
   api.post('/automations', async (c) => {
     const input = await body(
       c,
-      z.object({ name: z.string().trim().min(1).max(80), recipe: z.string().min(1).max(120), roles, params, timeZone: z.string().min(1).max(64) }).strict()
+      z.object({ name: z.string().trim().min(1).max(80), recipe: z.string().min(1).max(120), roles, params, timeZone: z.string().min(1).max(64), recheckMinutes: recheckMinutes.optional() }).strict()
     );
     if (!isTimeZone(input.timeZone)) throw new HTTPException(400, { message: `"${input.timeZone}" is not a time zone` });
     const checked = validated(input.recipe, input);
-    const created = automations.create({ name: input.name, recipe: input.recipe, roles: checked.roles, params: checked.params, timeZone: input.timeZone });
-    auditAbout(c, 'automation.created', 'automation', created.id, `Made the automation "${created.name}", observing`, { recipe: created.recipe, roles: created.roles, params: created.params });
+    const created = automations.create({ name: input.name, recipe: input.recipe, roles: checked.roles, params: checked.params, timeZone: input.timeZone, recheckMinutes: input.recheckMinutes ?? null });
+    auditAbout(c, 'automation.created', 'automation', created.id, `Made the automation "${created.name}", observing`, { recipe: created.recipe, roles: created.roles, params: created.params, recheckMinutes: created.recheckMinutes });
     return c.json(view(created));
   });
 
@@ -83,6 +95,7 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
           params: params.optional(),
           timeZone: z.string().min(1).max(64).optional(),
           mode: z.enum(['off', 'observe', 'armed']).optional(),
+          recheckMinutes: recheckMinutes.optional(),
           confirmation: z.string().max(64).optional(),
         })
         .strict()
@@ -93,7 +106,9 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
 
     // Arming — and changing what an armed one does — is a deliberate act.
     const armedAfter = input.mode === 'armed' || (input.mode === undefined && current.mode === 'armed');
-    const needsConfirming = armedAfter && (current.mode !== 'armed' || checked !== null);
+    // How often it keeps things so changes what it does, too.
+    const recheckChanged = input.recheckMinutes !== undefined && input.recheckMinutes !== current.recheckMinutes;
+    const needsConfirming = armedAfter && (current.mode !== 'armed' || checked !== null || recheckChanged);
     const { confirmation, ...changes } = input;
     const subject = subjectOf({ automation: current.id, changes, by: actorOf(c) });
     if (needsConfirming && !arming.accept(confirmation, subject)) {
@@ -114,11 +129,12 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
       ...(checked ?? {}),
       ...(input.timeZone ? { timeZone: input.timeZone } : {}),
       ...(input.mode ? { mode: input.mode } : {}),
+      ...(input.recheckMinutes !== undefined ? { recheckMinutes: input.recheckMinutes } : {}),
     })!;
     const said = input.mode && input.mode !== current.mode ? { off: 'Turned off', observe: 'Set to observe only', armed: 'Armed: it now acts on its own' }[input.mode] : 'Changed';
     auditAbout(c, input.mode === 'armed' ? 'automation.armed' : 'automation.changed', 'automation', updated.id, `${said}: "${updated.name}"`, {
-      before: { mode: current.mode, roles: current.roles, params: current.params },
-      after: { mode: updated.mode, roles: updated.roles, params: updated.params },
+      before: { mode: current.mode, roles: current.roles, params: current.params, recheckMinutes: current.recheckMinutes },
+      after: { mode: updated.mode, roles: updated.roles, params: updated.params, recheckMinutes: updated.recheckMinutes },
     });
     return c.json(view(updated));
   });
@@ -126,7 +142,7 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
   api.delete('/automations/:id', (c) => {
     const current = automations.get(c.req.param('id'));
     if (!current || !automations.delete(current.id)) throw new HTTPException(404, { message: 'No such automation' });
-    engine.reset(current.id);
+    engine.forget(current.id);
     auditAbout(c, 'automation.deleted', 'automation', current.id, `Deleted the automation "${current.name}"`);
     return c.json({ ok: true });
   });
