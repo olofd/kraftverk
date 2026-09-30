@@ -30,8 +30,9 @@ empty: the core names no product, and every device is found, not listed.
 
 - **The layers are packages**: `packages/transports` (mqtt with the broker,
   ble with server, web and native entries, lan, https), `packages/protocols`
-  (sydpower, tuya-local, open-meteo), `packages/devices` (aferiy-p280,
-  tuya-plug, atorch-s1w), `packages/services` (open-meteo) and
+  (sydpower, tuya-local, open-meteo, niu-cloud), `packages/devices`
+  (aferiy-p280, tuya-plug, atorch-s1w, tuya-zigbee-plug, niu-scooter,
+  niu-uqi-gt), `packages/services` (open-meteo) and
   `packages/gateway`. The server finds them at start; the app binds them in
   through `client/src/generated/registry.ts`.
 - **The device model** (2026-09-29, ARCHITECTURE.md §4.2, steps 23–26 and
@@ -104,7 +105,7 @@ and `.set-aside.*` copies on the server's volume are the owner's to delete.
 
 Measured against [NEXT-STEP-ARCHITECTURE.md](NEXT-STEP-ARCHITECTURE.md) §10
 (the phases) and §12 (findings J1–J40), as of 2026-09-30 (`32a218b`). All
-checks are green: typecheck, 678 unit tests, the architecture ratchet and 20
+checks are green: typecheck, 702 unit tests, the architecture ratchet and 21
 end-to-end tests.
 
 **Deployed 2026-09-30.** The push to GitLab carried the schema change of

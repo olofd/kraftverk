@@ -74,6 +74,19 @@ test('a model has its pictures, and the one shown is its owner’s pick: tap the
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
+test('a Zigbee plug is offered under Smart plugs, reached through its gateway; its settings read in words', async ({ page, request }) => {
+  await page.goto('/add-device');
+  await page.getByText('Smart plugs', { exact: true }).click();
+  await page.getByText('Tuya Zigbee plug', { exact: true }).click();
+  await expect(page.getByText('Its Zigbee gateway, through your server', { exact: true })).toBeVisible();
+
+  const plug = await addSimulated(request, 'tuya.zigbee-plug', unique('Fan plug'));
+  await page.goto(`/device/${plug.id}/settings`);
+  await expect(page.getByText('After a power cut', { exact: true })).toBeVisible();
+  await expect(page.getByText('Indicator light', { exact: true })).toBeVisible();
+  await expect(page.getByText('Button locked', { exact: true })).toBeVisible();
+});
+
 test('a NIU scooter is found under Vehicles — the common one, and a model of its own — and its page says how full it is, what it is doing and when it reported', async ({ page, request }) => {
   await page.goto('/add-device');
   await page.getByText('Vehicles', { exact: true }).click();

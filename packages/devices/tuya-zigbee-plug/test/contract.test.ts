@@ -1,0 +1,136 @@
+import { describe, expect, test } from 'bun:test';
+
+import { checkDeviceTypeContract, fakeByteChannel, fakeConnection } from '@kraftverk/device-sdk/testing';
+import { CMD, encodeFrame, FrameReader, hmacSha256, sessionKeyOf } from '@kraftverk/protocol-tuya-local';
+
+import plugType, { ZIGBEE_PLUG } from '../src/type.ts';
+
+/**
+ * The Zigbee plug keeps the device-type contract, and is read and switched
+ * through its gateway the way the real one is (README.md): Tuya 3.4 to the
+ * gateway, with the gateway's key, the plug named by its Zigbee address.
+ */
+
+const KEY = '0123456789abcdef';
+const CID = 'a4c1380000000001';
+const bytes = (text: string) => new TextEncoder().encode(text);
+
+type Dps = Record<string, number | boolean | string>;
+
+/** A 3.4 gateway with the plug behind it: its datapoints `dps`, keeping what it is sent. */
+function gateway(dps: Dps) {
+  const key = bytes(KEY);
+  let reader = new FrameReader('3.4', key);
+  let sessionKey: Uint8Array = key;
+  let clientNonce: Uint8Array = new Uint8Array();
+  const remoteNonce = bytes('fedcba9876543210');
+  const sent: Dps[] = [];
+  const frame = (command: number, payload: Uint8Array, withKey = sessionKey) => encodeFrame({ version: '3.4', key: withKey, sequence: 1, command, payload });
+  const channel = fakeByteChannel((written) => {
+    const out: Uint8Array[] = [];
+    for (const got of reader.push(written)) {
+      if (got.command === CMD.SESS_KEY_NEG_START) {
+        clientNonce = got.payload;
+        const proof = hmacSha256(key, got.payload);
+        const answer = new Uint8Array(48);
+        answer.set(remoteNonce);
+        answer.set(proof, 16);
+        out.push(frame(CMD.SESS_KEY_NEG_RESP, answer, key));
+      } else if (got.command === CMD.SESS_KEY_NEG_FINISH) {
+        const mixed = new Uint8Array(16).map((_, i) => clientNonce[i]! ^ remoteNonce[i]!);
+        sessionKey = sessionKeyOf('3.4', key, clientNonce, mixed);
+        reader = new FrameReader('3.4', sessionKey);
+      } else if (got.command === CMD.DP_QUERY_NEW) {
+        const asked = JSON.parse(new TextDecoder().decode(got.payload)) as { cid?: string };
+        // Asked of itself, a gateway answers with its own datapoints: not the plug's.
+        out.push(frame(CMD.DP_QUERY_NEW, bytes(JSON.stringify(asked.cid === CID ? { dps, cid: CID } : { dps: { '4': false, '32': 'normal' } }))));
+      } else if (got.command === CMD.CONTROL_NEW) {
+        const asked = JSON.parse(new TextDecoder().decode(got.payload)) as { data: { cid: string; dps: Dps } };
+        if (asked.data.cid !== CID) continue;
+        sent.push(asked.data.dps);
+        Object.assign(dps, asked.data.dps);
+        out.push(frame(CMD.CONTROL_NEW, new Uint8Array()));
+        out.push(frame(CMD.STATUS, bytes(JSON.stringify({ protocol: 4, t: 1, data: { dps: asked.data.dps, cid: CID } }))));
+      }
+    }
+    return out;
+  });
+  return { channel, sent };
+}
+
+const over = (channel: ReturnType<typeof gateway>['channel']) =>
+  fakeConnection({
+    method: 'lan',
+    protocol: 'tuya-local',
+    transport: 'lan',
+    address: `192.0.2.74#${CID}`,
+    channel,
+    config: { deviceId: 'bf7c0000000000000000zp', protocolVersion: '3.4' },
+    secrets: { localKey: KEY },
+  });
+
+const quiet = { info: () => {}, warn: () => {}, error: () => {} };
+
+/** A real session over a scripted gateway, the way a holder opens one. */
+async function session(dps: Dps) {
+  const device = gateway(dps);
+  const opened = await plugType.createSession({
+    config: { profile: ZIGBEE_PLUG.id, pollSeconds: 60 },
+    connection: over(device.channel),
+    log: quiet,
+    readOnly: false,
+    store: { get: () => undefined, set: () => {}, delete: () => {} },
+    schedule: () => {},
+    changed: () => {},
+    event: () => {},
+  } as never);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const value = (key: string) => opened.readings().find((reading) => reading.key === key)?.value;
+  return { device, opened, value };
+}
+
+const MAPPED: Dps = { '1': true, '9': 0, '17': 43230, '18': 4310, '19': 9970, '20': 2310, '27': 'memory', '28': 'relay', '29': false };
+
+describe('the Tuya Zigbee plug', () => {
+  test('keeps the device-type contract, reached through its gateway', async () => {
+    const connection = () => over(gateway({ ...MAPPED }).channel);
+    expect(await checkDeviceTypeContract(plugType, { settleMs: 1_500, connections: [connection] })).toEqual([]);
+    expect(plugType.meta.category).toBe('smart-plug');
+    expect(plugType.connections).toEqual([expect.objectContaining({ protocol: 'tuya-local', transport: 'lan', label: 'Its Zigbee gateway' })]);
+  });
+
+  test('its check reads the plug through the gateway, in the units its app shows', async () => {
+    const found = await plugType.identify(over(gateway({ ...MAPPED }).channel), { config: {}, log: quiet, signal: AbortSignal.timeout(10_000) });
+    expect(found.identity).toBe('tuya-local:bf7c0000000000000000zp');
+    expect(found.summary).toBe('Answering through its gateway, Tuya 3.4: the relay is on, drawing 997 W.');
+  });
+
+  test('reads as the app does: 997 W, 4.31 A, 231 V, 43.23 kWh; its settings in words', async () => {
+    const { value, opened } = await session({ ...MAPPED });
+    expect([value('watts'), value('amps'), value('volts'), value('kwh')]).toEqual([997, 4.31, 231, 43.23]);
+    expect([value('afterPowerCut'), value('indicator'), value('buttonLocked'), value('countdown')]).toEqual(['asItWas', 'showsOn', false, 0]);
+    await opened.close();
+  });
+
+  test('switches on DP 1, named by its Zigbee address', async () => {
+    const { device, opened, value } = await session({ ...MAPPED });
+    expect(await opened.command({ part: 'main', capability: 'switch', command: 'set', args: { on: false } })).toEqual({ accepted: true });
+    expect(device.sent).toEqual([{ '1': false }]);
+    expect(value('relay')).toBe(false);
+    await opened.close();
+  });
+
+  test('writes a setting in the plug’s words: the light to find it in the dark, the button locked', async () => {
+    const { device, opened } = await session({ ...MAPPED });
+    await opened.write!({ indicator: 'findInDark' });
+    await opened.write!({ buttonLocked: true });
+    expect(device.sent).toEqual([{ '28': 'pos' }, { '29': true }]);
+    await opened.close();
+  });
+
+  test('offers the power cut, the light and the button as settings; the countdown only read', () => {
+    const attributes = plugType.describe({ profile: ZIGBEE_PLUG.id, pollSeconds: 15 }).attributes;
+    expect(attributes.filter((attribute) => attribute.access === 'write').map((attribute) => attribute.key)).toEqual(['afterPowerCut', 'indicator', 'buttonLocked']);
+    expect(attributes.find((attribute) => attribute.key === 'countdown')).toMatchObject({ category: 'diagnostic' });
+  });
+});

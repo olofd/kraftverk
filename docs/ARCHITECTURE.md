@@ -125,7 +125,10 @@ packages/
   devices/aferiy-p280/   @kraftverk/device-aferiy-p280   a device type: power-station
   devices/atorch-s1w/    @kraftverk/device-atorch-s1w    smart-plug
   devices/niu-scooter/   @kraftverk/device-niu-scooter   vehicle: a NIU scooter through NIU's cloud (being mapped)
+  devices/niu-uqi-gt/    @kraftverk/device-niu-uqi-gt    vehicle: the UQi GT, a model on the common NIU scooter
   devices/tuya-plug/     @kraftverk/device-tuya-plug     smart-plug: the generic Tuya energy socket, with profiles
+  devices/tuya-zigbee-plug/ @kraftverk/device-tuya-zigbee-plug smart-plug: a Zigbee socket behind a Tuya gateway, reached
+                                                         through the gateway (`ip#zigbee-address` on the lan transport)
   services/open-meteo/   @kraftverk/service-open-meteo   weather, a service
   gateway/               @kraftverk/gateway              the action gateway's rules: pure, run by whichever holder has the connection
   api-contract/          @kraftverk/api-contract         the HTTP API's shapes, types only: declared once, imported by the server and the app

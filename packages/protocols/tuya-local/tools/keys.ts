@@ -140,8 +140,11 @@ try {
     const here = local.get(device.id);
     console.log(`  ${device.name || '(unnamed)'}${here ? '   ← on this network' : ''}`);
     console.log(`    device id   ${device.id}`);
-    console.log(`    local key   ${device.localKey || '(none — not a device that speaks Tuya on the LAN)'}`);
+    console.log(`    local key   ${device.localKey || (here ? '(none given: a gateway, whose key its devices carry)' : '(none)')}`);
     if (device.productName) console.log(`    product     ${device.productName}`);
+    if (device.category) console.log(`    category    ${device.category}`);
+    if (device.sub) console.log('    through     its gateway: the key above is the gateway’s');
+    if (device.uuid) console.log(`    uuid        ${device.uuid}`);
     if (here) console.log(`    address     ${here.ip}, protocol ${here.version}`);
     console.log('');
   }

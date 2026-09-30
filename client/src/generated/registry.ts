@@ -18,6 +18,7 @@ import deviceNiuScooterUi from '@kraftverk/device-niu-scooter/ui';
 import deviceNiuUqiGtType from '@kraftverk/device-niu-uqi-gt';
 import deviceNiuUqiGtUi from '@kraftverk/device-niu-uqi-gt/ui';
 import deviceTuyaPlugType from '@kraftverk/device-tuya-plug/type';
+import deviceTuyaZigbeePlugType from '@kraftverk/device-tuya-zigbee-plug';
 import serviceOpenMeteoType from '@kraftverk/service-open-meteo';
 import protocolNiuCloud from '@kraftverk/protocol-niu-cloud';
 import protocolOpenMeteo from '@kraftverk/protocol-open-meteo';
@@ -39,6 +40,7 @@ export const DEVICE_TYPES: readonly DeviceType<any>[] = [
   deviceNiuScooterType,
   deviceNiuUqiGtType,
   deviceTuyaPlugType,
+  deviceTuyaZigbeePlugType,
   serviceOpenMeteoType,
 ];
 

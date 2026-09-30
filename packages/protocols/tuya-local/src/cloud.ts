@@ -70,6 +70,10 @@ export type CloudDevice = {
   ip?: string;
   online?: boolean;
   uid?: string;
+  /** Reached through a gateway (Zigbee, Bluetooth): its local key is its gateway's. */
+  sub?: boolean;
+  /** Tuya's own identifier; for a Zigbee device, its Zigbee address. */
+  uuid?: string;
 };
 
 type TuyaResponse<T> = { success: boolean; result?: T; msg?: string; code?: number };

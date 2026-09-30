@@ -210,6 +210,51 @@ describe('the Smart Life login and listing', () => {
     expect(done.choices?.[0]).toMatchObject({ name: 'Charger', config: { deviceId: 'bf0e5a1c2d3b4f6a7c8d9e', localKey: 'a1b2c3d4e5f6g7h8', protocolVersion: '3.5' } });
   });
 
+  test('from setup: a Zigbee plug comes with its gateway’s address, # its Zigbee address, and the gateway’s key and version', async () => {
+    const signIn = protocol.credentials!.actions!.find((action) => action.id === 'signIn')!;
+    const listing = fakeTuya({
+      '/v1.0/m/life/users/homes': () => [{ ownerId: 11, name: 'Home' }],
+      '/v1.0/m/life/ha/home/devices': () => [
+        // Tuya lists a gateway with no key, and hands its devices its key.
+        { id: 'bf8d0000000000000000gw', name: 'Gateway', local_key: '', category: 'wg2', product_name: 'Zigbee gateway' },
+        { id: 'bf7c0000000000000000zp', name: 'Fan plug', local_key: 'g1a2t3e4w5a6y7k8', category: 'cz', product_name: 'Smart plug', sub: true, uuid: 'A4C1380000000001' },
+      ],
+    });
+    const http = async (url: string, init?: RequestInit) => {
+      if (new URL(url).host !== 'apigw.iotbing.com') return listing.http(url, init);
+      return Response.json({ success: true, result: { access_token: 'tok', refresh_token: 'ref', endpoint: 'https://apigw.tuyaeu.com', uid: 'eu123' } });
+    };
+    const announcement = encodeFrame({
+      version: '3.5',
+      key: DISCOVERY_KEY,
+      sequence: 0,
+      command: 0x13,
+      payload: new TextEncoder().encode(JSON.stringify({ ip: '192.0.2.74', gwId: 'bf8d0000000000000000gw', version: '3.4' })),
+      iv: new Uint8Array(12).fill(1),
+    });
+    const ctx = {
+      draft: {},
+      connection: {},
+      address: null,
+      secrets: { get: () => null },
+      http,
+      sightings: [{ transport: 'lan', address: '192.0.2.74', seenAt: new Date().toISOString(), facts: { payload: toHex(announcement) } }],
+      log: { info: () => {}, warn: () => {}, error: () => {} },
+      signal: AbortSignal.timeout(10_000),
+      platform: 'server' as const,
+    };
+    const done = await signIn.run(ctx, { userCode: 'user-code', token: 'QRTOKEN' });
+    expect(done.choices).toEqual([
+      expect.objectContaining({
+        label: 'Fan plug',
+        address: '192.0.2.74#a4c1380000000001',
+        detail: 'Smart plug · through its gateway at 192.0.2.74',
+        recommended: true,
+        config: { deviceId: 'bf7c0000000000000000zp', localKey: 'g1a2t3e4w5a6y7k8', protocolVersion: '3.4' },
+      }),
+    ]);
+  });
+
   test('a wrong user code says where to find the right one', async () => {
     const http = async () => Response.json({ success: false, msg: 'user code invalid', code: 1106 });
     await expect(requestQrToken(http, 'nope')).rejects.toThrow('Account and Security');

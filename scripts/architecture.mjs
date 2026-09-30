@@ -132,6 +132,14 @@ function productPackages() {
 
 const PRODUCTS = productPackages();
 
+// A word a package shares with a package it is built on is that one's, not its own: a Zigbee plug on
+// the Tuya socket says Tuya as the socket does, and the ATORCH — on the same socket — may too.
+for (const product of PRODUCTS) {
+  const flat = (word) => word.toLowerCase().split('-').join('');
+  const inherited = new Set(PRODUCTS.filter((other) => product.dependencies.has(other.name)).flatMap((other) => other.words.map(flat)));
+  product.words = product.words.filter((word) => !inherited.has(flat(word)));
+}
+
 /** The words a file may not use: those of every product package it neither is nor depends on. */
 function forbiddenFor(file, area) {
   if (area.kind === 'core') return PRODUCTS;

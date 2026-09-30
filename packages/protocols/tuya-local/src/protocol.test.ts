@@ -9,7 +9,7 @@ import { aesEcbDecrypt, aesEcbEncrypt } from './crypto/aes.ts';
 import { crc32, hmacSha256 } from './crypto/hash.ts';
 import { decodeBroadcast, DISCOVERY_KEY } from './discovery.ts';
 import { CMD, encodeFrame, FrameReader, PREFIX_55AA, SUFFIX_55AA, type ProtocolVersion } from './frame.ts';
-import protocol, { linkOver, tuyaIdentity } from './index.ts';
+import protocol, { cidOfAddress, linkOver, parseTuyaAddress, tuyaIdentity } from './index.ts';
 import { parseDps, sessionKeyOf, TuyaLink } from './session.ts';
 import { datapointRaw, datapointValue, decodeSocket, encodeSocket, relayDps, type ProfileDatapoint, type SocketProfile } from './socket.ts';
 
@@ -314,6 +314,127 @@ function fakePlug(version: ProtocolVersion, key: Uint8Array, dps: Record<string,
     },
   });
 }
+
+/**
+ * A Tuya Zigbee gateway, as the RSH GW018-DM behaves (a Zigbee plug's README):
+ * 3.4, its own datapoints, and devices behind it by cid. A query naming a
+ * device answers what the gateway last heard, then pushes what the device
+ * says now; a control is acknowledged empty, then the change is pushed.
+ */
+function fakeGateway(key: Uint8Array, children: Record<string, Record<string, string | number | boolean>>, fresh: Record<string, Record<string, number>> = {}) {
+  let reader = new FrameReader('3.4', key);
+  let sessionKey = key;
+  let clientNonce: Uint8Array | null = null;
+  const remoteNonce = utf8('fedcba9876543210');
+  let sequence = 200;
+  const own = { '4': false, '32': 'normal' };
+  const frame = (command: number, body: unknown, withKey = sessionKey) =>
+    encodeFrame({ version: '3.4', key: withKey, sequence: sequence++, command, payload: body instanceof Uint8Array ? body : utf8(JSON.stringify(body)) });
+  const channel = fakeByteChannel((bytes) => {
+    const out: Uint8Array[] = [];
+    for (const got of reader.push(bytes)) {
+      if (got.command === CMD.SESS_KEY_NEG_START) {
+        clientNonce = got.payload;
+        out.push(frame(CMD.SESS_KEY_NEG_RESP, concat(remoteNonce, hmacSha256(key, got.payload)), key));
+      } else if (got.command === CMD.SESS_KEY_NEG_FINISH) {
+        const mixed = new Uint8Array(16).map((_, i) => clientNonce![i]! ^ remoteNonce[i]!);
+        sessionKey = sessionKeyOf('3.4', key, clientNonce!, mixed);
+        reader = new FrameReader('3.4', sessionKey);
+      } else if (got.command === CMD.DP_QUERY_NEW) {
+        const asked = JSON.parse(text(got.payload)) as { cid?: string };
+        const child = asked.cid ? children[asked.cid] : undefined;
+        if (!asked.cid) out.push(frame(CMD.DP_QUERY_NEW, { dps: own }));
+        else if (child) {
+          out.push(frame(CMD.DP_QUERY_NEW, { dps: child, cid: asked.cid }));
+          const now = fresh[asked.cid];
+          if (now) {
+            Object.assign(child, now);
+            out.push(frame(CMD.STATUS, { protocol: 4, t: 1, data: { dps: now, cid: asked.cid, type: 'query' } }));
+          }
+        }
+      } else if (got.command === CMD.CONTROL_NEW) {
+        const asked = JSON.parse(text(got.payload)) as { data: { cid: string; dps: Record<string, boolean> } };
+        Object.assign(children[asked.data.cid]!, asked.data.dps);
+        out.push(frame(CMD.CONTROL_NEW, new Uint8Array()));
+        out.push(frame(CMD.STATUS, { protocol: 4, t: 1, data: { dps: asked.data.dps, cid: asked.data.cid } }));
+      }
+    }
+    return out;
+  });
+  return Object.assign(channel, {
+    /** Something the gateway says unasked: a change at a device, or who it can reach. */
+    say: (command: number, body: unknown) => channel.push(frame(command, body)),
+  });
+}
+
+describe('a device behind a gateway', () => {
+  const GATEWAY_KEY = '0123456789abcdef';
+  const PLUG = 'a4c1380000000001';
+  const OTHER = 'a4c1380000000002';
+
+  test('is read and switched through the gateway, named by its cid; the gateway’s own datapoints are not its', async () => {
+    const gateway = fakeGateway(utf8(GATEWAY_KEY), { [PLUG]: { '1': false, '19': 0 }, [OTHER]: { '1': true } });
+    const link = new TuyaLink(gateway, { deviceId: 'bfplug', localKey: GATEWAY_KEY, version: '3.4', cid: PLUG });
+    expect(await link.status()).toEqual({ '1': false, '19': 0 });
+    expect(await link.set({ '1': true })).toEqual({});
+    expect(await link.status()).toEqual({ '1': true, '19': 0 });
+    const asked = gateway.written.map((bytes) => new FrameReader('3.4', utf8(GATEWAY_KEY)).push(bytes)).flat();
+    expect(asked.length).toBeGreaterThan(0);
+    await link.close();
+  });
+
+  test('hears what the gateway says of it — the fresh reading after a query, a change — and nothing of another device', async () => {
+    const gateway = fakeGateway(utf8(GATEWAY_KEY), { [PLUG]: { '1': true, '19': 0 }, [OTHER]: { '1': true } }, { [PLUG]: { '19': 9970, '18': 4310 } });
+    const pushed: Record<string, unknown>[] = [];
+    const presence: boolean[] = [];
+    const link = new TuyaLink(gateway, { deviceId: 'bfplug', localKey: GATEWAY_KEY, version: '3.4', cid: PLUG, onPush: (dps) => pushed.push(dps), onPresence: (online) => presence.push(online) });
+    // A query is answered with what the gateway last heard; what the plug says now follows as a push — heard.
+    expect(await link.status()).toMatchObject({ '1': true });
+    await Bun.sleep(5);
+    expect(pushed).toContainEqual({ '19': 9970, '18': 4310 });
+
+    gateway.say(CMD.STATUS, { protocol: 4, t: 2, data: { dps: { '1': false }, cid: OTHER } });
+    gateway.say(CMD.STATUS, { protocol: 4, t: 2, data: { dps: { '1': false }, cid: PLUG } });
+    gateway.say(CMD.LAN_EXT_STREAM, { reqType: 'subdev_online_stat_report', data: { online: [], offline: [PLUG] } });
+    await Bun.sleep(5);
+    expect(pushed.filter((dps) => dps['1'] === false)).toHaveLength(1);
+    expect(presence).toEqual([false]);
+    await link.close();
+  });
+
+  test('its address is its gateway’s, # its Zigbee address; typed, it is checked as such', () => {
+    expect(parseTuyaAddress('192.0.2.30')).toBe('192.0.2.30');
+    expect(parseTuyaAddress(' 192.0.2.30#A4C1380000000001 ')).toBe('192.0.2.30#a4c1380000000001');
+    expect(parseTuyaAddress('192.0.2.30#plug')).toBeNull();
+    expect(parseTuyaAddress('192.0.2.30#a4c1380000000001#x')).toBeNull();
+    expect(parseTuyaAddress('example.com')).toBeNull();
+    expect(cidOfAddress('192.0.2.30#a4c1380000000001')).toBe('a4c1380000000001');
+    expect(cidOfAddress('192.0.2.30')).toBeNull();
+  });
+
+  test('a connection to it builds a link that names it, from its address', async () => {
+    const gateway = fakeGateway(utf8(GATEWAY_KEY), { [PLUG]: { '1': true } });
+    const link = linkOver({
+      method: 'lan',
+      protocol: 'tuya-local',
+      transport: 'lan',
+      address: `192.0.2.30#${PLUG}`,
+      channel: gateway,
+      config: { deviceId: 'bfplug', protocolVersion: '3.4' },
+      secrets: { get: (field) => (field === 'localKey' ? GATEWAY_KEY : null) },
+      platform: 'server',
+    });
+    expect(await link.status()).toEqual({ '1': true });
+    await link.close();
+  });
+
+  test('a device the gateway does not have is said to be that, not a wrong key', async () => {
+    const gateway = fakeGateway(utf8(GATEWAY_KEY), { [OTHER]: { '1': true } });
+    const link = new TuyaLink(gateway, { deviceId: 'bfplug', localKey: GATEWAY_KEY, version: '3.4', cid: PLUG });
+    await expect(link.status()).rejects.toThrow('says nothing of');
+    await link.close();
+  }, 30_000);
+});
 
 describe('a conversation with a plug', () => {
   const PLUG_KEY = '0123456789abcdef';

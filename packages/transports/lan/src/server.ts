@@ -3,7 +3,7 @@ import { Socket } from 'node:net';
 
 import type { ByteChannel, OpenOptions, Sighting, SightingFilter, Transport, TransportContext, TransportFactory } from '@kraftverk/device-sdk';
 
-import definition, { isLocalAddress } from './index.ts';
+import definition, { hostOf, isLocalAddress } from './index.ts';
 
 /**
  * The home network, on the server: TCP connections to devices, and the UDP
@@ -230,9 +230,10 @@ const createLanTransport: TransportFactory = (context: TransportContext): Transp
     async open(address: string, options: OpenOptions) {
       if (!isLocalAddress(address)) throw new Error(`${address} is not on the home network`);
       if (!options.port) throw new Error('A connection on the home network needs a port');
+      // One connection per address: a device behind a gateway (`host#child`) has one of its own to the host.
       const key = `${address}:${options.port}`;
       if (channels.has(key)) throw new Error(`${key} is already open`);
-      const channel = new TcpChannel(address, options.port, () => channels.delete(key));
+      const channel = new TcpChannel(hostOf(address), options.port, () => channels.delete(key));
       channels.set(key, channel);
       channel.connect();
       return channel;

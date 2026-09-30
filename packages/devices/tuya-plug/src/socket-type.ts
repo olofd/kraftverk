@@ -46,7 +46,28 @@ export type SocketTypeDefinition = {
   meta: Omit<DeviceTypeMeta, 'category' | 'icon'> & { icon?: string };
   /** The layouts this type knows. With more than one, setup asks which. */
   profiles: readonly SocketProfile[];
+  /**
+   * `gateway`: a Zigbee socket, reached through the Tuya gateway it is paired
+   * with — on the home network, with the gateway's key — rather than straight
+   * to a plug on Wi-Fi. Its address is the gateway's, `#` its Zigbee address.
+   */
+  reached?: 'directly' | 'gateway';
+  /** How often it is read, by default. A Zigbee socket is asked through its gateway, which asks it over Zigbee: less often. */
+  pollSeconds?: number;
 };
+
+/** How each way in is offered. */
+const METHODS = {
+  directly: {
+    label: 'Home network',
+    description: 'Straight to the plug on your home network, with no cloud. Needs its local key, once.',
+  },
+  gateway: {
+    label: 'Its Zigbee gateway',
+    description:
+      'Through the Tuya gateway it is paired with, on your home network, with no cloud. Needs the gateway’s key, once: signing in with Smart Life brings it with the plug.',
+  },
+} as const;
 
 type SocketConfig = {
   profile: string;
@@ -163,7 +184,7 @@ const TOOLS: Readonly<Record<string, ToolSpec>> = {
   },
 };
 
-function configSchema(profiles: readonly SocketProfile[]): ConfigSchema {
+function configSchema(profiles: readonly SocketProfile[], pollSeconds = 10): ConfigSchema {
   return {
     fields: {
       profile: {
@@ -173,7 +194,7 @@ function configSchema(profiles: readonly SocketProfile[]): ConfigSchema {
         default: profiles[0]!.id,
         options: profiles.map((profile) => ({ value: profile.id, label: profile.label })),
       },
-      pollSeconds: { type: 'number', title: 'Poll interval', default: 10, min: 2, max: 300, unit: 's', integer: true },
+      pollSeconds: { type: 'number', title: 'Poll interval', default: pollSeconds, min: 2, max: 300, unit: 's', integer: true },
     },
   };
 }
@@ -374,10 +395,17 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
 
   // A plug tells of every change it sees — at the plug, from its maker's app, its own
   // protection — and, with fast refresh on, its readings every second.
+  // Behind a gateway: the gateway saying it cannot reach the plug.
+  let unreachable = false;
   const link = linkOver(connection, {
     log: (message) => ctx.log.info(message),
     onPush: (dps) => {
+      unreachable = false;
       ingest(dps);
+      ctx.changed();
+    },
+    onPresence: (online) => {
+      unreachable = !online;
       ctx.changed();
     },
   });
@@ -413,6 +441,7 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
     live,
     identity: tuyaIdentity(String(connection.config.deviceId ?? '')),
     health: () => {
+      if (unreachable) return { status: 'offline', detail: 'Its gateway cannot reach it: is it plugged in?', lastReadingAt: state?.at ?? null };
       const fresh = lastOk !== null && Date.now() - lastOk < pollMs * 2.5;
       return {
         status: fresh ? 'connected' : lastError ? (link.connected || connection.channel.connected ? 'error' : 'offline') : 'connecting',
@@ -495,18 +524,18 @@ function simulatedSession(ctx: DeviceContext<SocketConfig>, profiles: readonly S
 
 export function defineTuyaSocket(definition: SocketTypeDefinition): DeviceType<SocketConfig> {
   const { profiles } = definition;
+  const reached = definition.reached ?? 'directly';
   return defineDeviceType<SocketConfig>({
     id: definition.id,
     kind: 'hardware',
     meta: { icon: 'power', ...definition.meta, category: 'smart-plug' },
-    config: configSchema(profiles),
+    config: configSchema(profiles, definition.pollSeconds),
     describe: (config) => describeSocket(profileOf(profiles, config.profile)),
     tools: toolsOf(profiles),
     connections: [
       {
         id: 'lan',
-        label: 'Home network',
-        description: 'Straight to the plug on your home network, with no cloud. Needs its local key, once.',
+        ...METHODS[reached],
         protocol: 'tuya-local',
         transport: 'lan',
         // The local key comes from the Tuya cloud account the plug is paired with, once.
@@ -541,7 +570,7 @@ export function defineTuyaSocket(definition: SocketTypeDefinition): DeviceType<S
           identity: tuyaIdentity(String(connection.config.deviceId ?? '')),
           // A socket does not say what model it is; the layout is the person's choice.
           model: null,
-          summary: `Answering, Tuya ${link.version}: ${relay}${drawing}.`,
+          summary: `Answering${reached === 'gateway' ? ' through its gateway' : ''}, Tuya ${link.version}: ${relay}${drawing}.`,
         };
       } finally {
         await link.close();

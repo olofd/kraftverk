@@ -4,7 +4,7 @@ import { createServer, type Socket } from 'node:net';
 
 import { memoryTransportStore } from '@kraftverk/device-sdk';
 
-import { isLocalAddress } from './index.ts';
+import { hostOf, isLocalAddress } from './index.ts';
 import createLanTransport from './server.ts';
 
 /**
@@ -64,6 +64,29 @@ describe('the home network', () => {
     await until(() => sockets.length > before && channel.connected, 'a fresh connection');
 
     await channel.close();
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }, 15_000);
+
+  test('two devices behind one gateway are two addresses on one host: a connection each, to the host', async () => {
+    const sockets: Socket[] = [];
+    const server = createServer((socket) => void sockets.push(socket));
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
+
+    expect(hostOf('192.168.1.20#a4c1380000000001')).toBe('192.168.1.20');
+    expect(isLocalAddress('192.168.1.20#a4c1380000000001')).toBe(true);
+    expect(isLocalAddress('8.8.8.8#a4c1380000000001')).toBe(false);
+
+    const transport = createLanTransport(quiet);
+    const first = await transport.open('127.0.0.1#a4c1380000000001', { port });
+    const second = await transport.open('127.0.0.1#a4c1380000000002', { port });
+    await until(() => first.connected && second.connected, 'both connections');
+    expect(sockets).toHaveLength(2);
+    await expect(transport.open('127.0.0.1#a4c1380000000001', { port })).rejects.toThrow('already open');
+
+    await first.close();
+    await second.close();
     for (const socket of sockets) socket.destroy();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }, 15_000);

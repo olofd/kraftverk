@@ -166,6 +166,10 @@ type RawDevice = {
   category?: string;
   ip?: string;
   online?: boolean;
+  /** Reached through a gateway: a Zigbee or Bluetooth device. Its `local_key` is its gateway's. */
+  sub?: boolean;
+  /** Tuya's own identifier for it: for a Zigbee device, its Zigbee address — the `cid` its gateway knows it by. */
+  uuid?: string;
 };
 
 /** Every device in every home on the signed-in account, each with its local key. */
@@ -184,6 +188,8 @@ export async function smartLifeDevices(http: ScopedHttp, session: SmartLifeSessi
         ip: device.ip,
         online: device.online,
         uid: session.uid,
+        ...(device.sub ? { sub: true } : {}),
+        ...(device.uuid ? { uuid: device.uuid } : {}),
       });
     }
   }

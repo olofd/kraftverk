@@ -37,7 +37,42 @@ export type TuyaLinkOptions = {
   log?: (message: string) => void;
   /** Datapoints the device sends unasked: a change at the plug, or its own refresh. */
   onPush?: (dps: Dps) => void;
+  /**
+   * A device behind a gateway — a Zigbee plug — by the id its gateway knows it
+   * by (its Zigbee address). The link then speaks to the gateway, with the
+   * gateway's key, names the device in every request, and hears only what the
+   * gateway says of it: not the gateway's own datapoints, nor its other devices'.
+   */
+  cid?: string;
+  /** For a device behind a gateway: the gateway saying it is reachable, or not. */
+  onPresence?: (online: boolean) => void;
 };
+
+/** Which device behind a gateway a frame is about: `cid` at its top, or in its `data`. Null for the gateway's own. */
+export function cidOf(payload: Uint8Array): string | null {
+  const decoded = text(payload).replace(/\0+$/, '').trim();
+  const start = decoded.indexOf('{');
+  if (start < 0) return null;
+  try {
+    const json = JSON.parse(decoded.slice(start)) as { cid?: unknown; data?: { cid?: unknown } };
+    const cid = json.cid ?? json.data?.cid;
+    return typeof cid === 'string' ? cid : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A gateway's report of which of its devices are reachable: `subdev_online_stat_report`, on LAN_EXT_STREAM. */
+export function presenceOf(payload: Uint8Array): { online: string[]; offline: string[] } | null {
+  try {
+    const json = JSON.parse(text(payload).replace(/\0+$/, '').trim()) as { reqType?: unknown; data?: { online?: unknown; offline?: unknown } };
+    if (json.reqType !== 'subdev_online_stat_report') return null;
+    const list = (value: unknown) => (Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []);
+    return { online: list(json.data?.online), offline: list(json.data?.offline) };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Order matters. 3.4 first because it is what current firmware ships, and
@@ -106,17 +141,22 @@ export class TuyaLink {
   /** Writes datapoints. The caller is the action gateway's path, never a screen directly. */
   async set(dps: Dps): Promise<Dps> {
     await this.#ensure();
-    const { deviceId } = this.#options;
+    const { deviceId, cid } = this.#options;
     const modern = this.#version === '3.4' || this.#version === '3.5';
     const command = modern ? CMD.CONTROL_NEW : CMD.CONTROL;
+    const t = Math.floor(Date.now() / 1000);
+    // Behind a gateway, the device is named in the request: at the top on 3.3, in its data on 3.4 and 3.5.
     const payload = modern
-      ? { protocol: 5, t: Math.floor(Date.now() / 1000), data: { dps } }
-      : { devId: deviceId, uid: deviceId, t: Math.floor(Date.now() / 1000), dps };
+      ? { protocol: 5, t, data: cid ? { cid, ctype: 0, dps } : { dps } }
+      : cid
+        ? { t, cid, dps }
+        : { devId: deviceId, uid: deviceId, t, dps };
 
+    // A gateway acknowledges with an empty frame of the command, then says what changed as a status.
     const frame = await this.#exchange(
       command,
       utf8(JSON.stringify(payload)),
-      (f) => f.command === command || f.command === CMD.STATUS || f.command === CMD.CONTROL
+      (f) => f.command === command || ((f.command === CMD.STATUS || f.command === CMD.CONTROL) && this.#mine(f))
     );
     if (frame.returnCode !== 0) throw new Error(`The device rejected the command (code ${frame.returnCode})`);
     return parseDps(frame.payload);
@@ -202,7 +242,11 @@ export class TuyaLink {
       it proves nothing about the key, and a wrong key decrypts to nonsense
       that parses as "no datapoints".
     */
-    const probe = await this.#query();
+    const probe = await this.#query().catch((error: Error) => {
+      // The handshake above proved the key: a gateway that says nothing of the device does not have it.
+      if (this.#options.cid && version !== '3.3') throw new Error(`the gateway answered, but says nothing of ${this.#options.cid}: is it paired with this gateway?`);
+      throw error;
+    });
     if (Object.keys(probe).length === 0) throw new Error('connected, but no datapoints could be decoded — usually a wrong local key');
 
     this.#readyFor = epoch;
@@ -266,28 +310,51 @@ export class TuyaLink {
 
   /** The query itself, without establishing — establishing uses it to probe. */
   async #query(): Promise<Dps> {
-    const { deviceId } = this.#options;
+    const { deviceId, cid } = this.#options;
     const modern = this.#version === '3.4' || this.#version === '3.5';
     const command = modern ? CMD.DP_QUERY_NEW : CMD.DP_QUERY;
-    const payload = modern
-      ? { protocol: 4, t: Math.floor(Date.now() / 1000), data: {} }
-      : { gwId: deviceId, devId: deviceId, uid: deviceId, t: Math.floor(Date.now() / 1000) };
+    const t = Math.floor(Date.now() / 1000);
+    /*
+      Behind a gateway, the device is named at the top — `{"cid": …}`; in the
+      data, as a control does it, the gateway answers for itself instead. The
+      gateway answers from what it last heard, at once, and asks the device:
+      what is fresh arrives a few seconds later, as a push.
+    */
+    const payload = cid
+      ? modern
+        ? { cid }
+        : { t, cid }
+      : modern
+        ? { protocol: 4, t, data: {} }
+        : { gwId: deviceId, devId: deviceId, uid: deviceId, t };
 
     const frame = await this.#exchange(
       command,
       utf8(JSON.stringify(payload)),
-      (f) => f.payload.length > 0 && (f.command === command || f.command === CMD.STATUS || f.command === CMD.DP_QUERY)
+      (f) => f.payload.length > 0 && (f.command === command || f.command === CMD.STATUS || f.command === CMD.DP_QUERY) && this.#mine(f)
     );
     return parseDps(frame.payload);
+  }
+
+  /** A frame about this device: any, directly; behind a gateway, one naming it. */
+  #mine(frame: TuyaFrame): boolean {
+    return !this.#options.cid || cidOf(frame.payload) === this.#options.cid;
   }
 
   #deliver(frame: TuyaFrame): void {
     const index = this.#waiters.findIndex((waiter) => waiter.match(frame));
     if (index < 0) {
-      // Unasked: a change at the plug, or its own refresh.
-      if (frame.command === CMD.STATUS) {
+      // Unasked: a change at the plug, or its own refresh — behind a gateway, only what it says of this device.
+      if (frame.command === CMD.STATUS && this.#mine(frame)) {
         const dps = parseDps(frame.payload);
         if (Object.keys(dps).length) this.#options.onPush?.(dps);
+      }
+      // A gateway telling which of its devices it can reach.
+      const cid = this.#options.cid;
+      if (cid && frame.command === CMD.LAN_EXT_STREAM) {
+        const presence = presenceOf(frame.payload);
+        if (presence?.online.includes(cid)) this.#options.onPresence?.(true);
+        else if (presence?.offline.includes(cid)) this.#options.onPresence?.(false);
       }
       return;
     }

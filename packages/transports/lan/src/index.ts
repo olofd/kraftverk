@@ -21,13 +21,23 @@ const definition: TransportDefinition = {
 export default definition;
 
 /**
+ * The host an address is reached at. An address is a host — an IP address, a
+ * local name — or, for a device behind a gateway on it (a Zigbee plug behind
+ * its gateway), the host, `#`, and what the gateway knows the device by:
+ * `192.168.1.20#a4c1380000000001`. The transport connects to the host; the
+ * whole address is the one device, so two devices behind one gateway are two
+ * addresses, each claimed by its own device, each with its own connection.
+ */
+export const hostOf = (address: string): string => address.split('#')[0]!.trim();
+
+/**
  * Whether an address is on a home network: a private, link-local or loopback
  * IPv4 address, or a local name. This transport reaches nothing else, so a
  * device type cannot use it to reach the internet — that is `https`'s job, and
  * `https` is scoped to one origin.
  */
 export function isLocalAddress(address: string): boolean {
-  const name = address.trim().toLowerCase();
+  const name = hostOf(address).toLowerCase();
   if (/\.(local|lan|home\.arpa)$/.test(name)) return true;
   const parts = name.split('.').map(Number);
   if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
