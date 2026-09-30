@@ -166,6 +166,9 @@ Small, each its own commit. Numbers are for reference in commits.
 
 ## Phase 2 — the automation editor (one schema change)
 
+**Done, 2026-09-30.** Deploying it sets the home server's database aside:
+its devices are added again, and its automations built again in the editor.
+
 Designed in [AUTOMATION-EDITOR.md](AUTOMATION-EDITOR.md), which replaces what
 stood here. Every automation owns its rule, built from blocks; recipes are
 starting points; play runs any automation; timers are triggers with

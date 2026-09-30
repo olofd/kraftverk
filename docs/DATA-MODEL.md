@@ -336,8 +336,10 @@ erDiagram
   device ||--o{ device_write : "was written"
   automation ||--o{ automation_role : "is filled by"
   device ||--o{ automation_role : "fills"
+  automation ||--o{ automation_role : "is started by"
   automation ||--o{ automation_trigger : "watches with"
   automation ||--o{ automation_run : "ran"
+  automation_run |o--o{ automation_run : "started"
 
   device {
     text id PK "d-3f9a2c61b0e4"
@@ -430,23 +432,25 @@ erDiagram
   automation {
     text id PK "a-71c2d0e5f9a3"
     text name "Sunny heater · Start charging the scooter"
-    text recipe "open-meteo.weather.forecast-switch · standard.start-charging"
-    json params "{at: 07:00, day: tomorrow, action: on} · the recipe's settings"
+    json rule "{roles, params: {fields: {}}, when, if, then, otherwise} · its own, checked before it is kept"
+    text made_from "standard.start-charging · the recipe it was copied from · null: built from nothing"
     text time_zone "Europe/Stockholm · the owner's clock"
     text mode "off · observe · armed"
     int recheck_minutes "10 · null: never; how often a condition that still holds keeps things so"
+    int home_place "0 · its place among the home page's shortcuts · null: not there"
     text looked_at "when it last looked again · null: not yet"
     text created_at "2026-10-15T08:00:00Z"
   }
   automation_role {
     text automation_id PK "a-71c2d0e5f9a3"
     text role PK "charger"
-    text device_id FK "d-3f9a2c61b0e4"
+    text device_id FK "d-3f9a2c61b0e4 · null: another automation fills it"
     text part "main · outlet.ac"
+    text starts FK "a-0c9d1e2f3a4b · the automation a step starts · null: a part fills it"
   }
   automation_trigger {
     text automation_id PK "a-71c2d0e5f9a3"
-    int trigger PK "0 · its place in the recipe's when"
+    int trigger PK "0 · its place in its rule's when"
     int holds "1"
     text held_since "2026-10-16T05:00:12Z"
     int fired "1"
@@ -458,6 +462,7 @@ erDiagram
     text ended_at "2026-10-16T17:03:41Z · null: running now, one at a time"
     text outcome "acted · failed · stopped · interrupted · running · …"
     text started_by "olof · null: its own triggers"
+    text started_by_run FK "r-9a8b7c6d5e4f3a2b · the run whose step started it · null: none"
     text why "Started by olof"
     text summary "Scooter plug: Power 238 W, after 2 tries"
     json detail "{saw, conditions, steps: [{kind, depth, within, what, outcome, detail, at, endedAt, until}]}"
@@ -539,7 +544,7 @@ erDiagram
 | `device_event` | What devices said happened, beside their history. | when a device raises one |
 | `device.picture` | Which picture a device shows: its owner's pick, the same in every app. | on its page |
 | `device_switch`, `device_write` | The gateway's memory of each part and setting: when it was last switched or written — what the dwell counts from, so a restart is no way around it. A part never switched has no row: its first switch through a consequential link is confirmed. | by the gateway, at each switch and write |
-| `automation`, `automation_role` | An automation: its recipe, settings, clock and mode; and which part of which device fills each role — a row each, so a device's page asks which automations it can start. | made, changed |
+| `automation`, `automation_role` | An automation: its own rule, the recipe it was copied from, its clock, mode and place on the home page; and what fills each role — a part of a device, or another automation a step starts — a row each, so a device's page asks which automations it can start; an automation deleted takes with it the roles that would start it, and those that did say they have nothing to start. | made, changed |
 | `automation_trigger` | Each `becomes` trigger's state, so a restart continues a hold and never fires one twice. | as its conditions are looked at |
 | `automation_run` | Every run, with each step it took; the unended one is running now, written at every step — one at a time, held by a unique index. A restart ends it as interrupted (docs/SEQUENCES.md). | as it runs |
 

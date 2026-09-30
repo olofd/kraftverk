@@ -6,8 +6,11 @@ and sentences (`packages/device-sdk/src/automation.ts`), recipes and
 functions from packages, events from the station, and one engine with all
 three triggers. The last section is the direction the contract is shaped for,
 not a promise of when. **Sequences** — steps that wait, make sure, choose and
-watch, started when you ask — are [SEQUENCES.md](SEQUENCES.md), built
-2026-09-30 on the same language and engine.
+watch — are [SEQUENCES.md](SEQUENCES.md), built 2026-09-30 on the same
+language and engine. Since then **every automation owns its rule**, built
+block by block in the app's editor or copied from a recipe, and any of them
+can be started by hand, change a setting, or start another
+([AUTOMATION-EDITOR.md](AUTOMATION-EDITOR.md)).
 
 ## The problem with recipes as code
 
@@ -36,18 +39,17 @@ language — the *rule* — and code only exists where data cannot reach: in
 ```ts
 type Rule = {
   roles:  Record<string, RoleSpec>;   // what each part it works with must offer
-  params: ConfigSchema;               // its settings, in the one value system
-  when:   Trigger[];                  // any of these starts a run
+  params: ConfigSchema;               // a recipe's settings; an automation's are empty — its values are in its blocks
+  when:   Trigger[];                  // any of these starts a run on its own; none, and it runs when started
   if?:    Expr;                       // must be true; unknown means "do nothing, and say why"
   then:   Step[];                     // in order: commands, and — a sequence — waits, choices (SEQUENCES.md)
   otherwise?: Step[];                 // if a step does not succeed, or it is stopped
 };
 
 type Trigger =
-  | { at: Expr }                                   // every day at "07:00", on the owner's clock
+  | { at: Expr; days?: Weekday[] }                 // at "07:00" on the owner's clock, every day or on these
   | { event: { role: string; event: string } }     // something a device said happened
-  | { becomes: Expr; heldForMinutes?: Expr }       // a condition turning true, and staying true
-  | { asked: true };                               // when a person — or an assistant for one — starts it
+  | { becomes: Expr; heldForMinutes?: Expr };      // a condition turning true, and staying true
 
 type Expr =
   | { value: Value }                               // a literal
@@ -60,8 +62,14 @@ type Expr =
 
 type Step =
   | { command: { role: string; capability: CapabilityName; command: string; args: Record<string, Expr> } }
+  | { write: { role: string; key: string; value: Expr } }          // a setting the part keeps
+  | { start: { role: string; waitSeconds?: Expr } }                // another automation, waited for or not
   | { wait } | { waitUntil } | { ensure } | { choose } | { watch };   // SEQUENCES.md
 ```
+
+A role is a part — `{ label, description, capabilities }` — or another
+automation, `{ label, description, automation: true }`, filled by one of the
+owner's own.
 
 Every name in a rule is one the device model already has: roles ask for
 **capabilities**, values are read by **meaning** (`battery.soc`, or a type's
@@ -112,9 +120,10 @@ The language grows, but only by what passes two tests:
 What fails either belongs in a package **function** — typed at its edges,
 answering, never acting — not in the language. Waits between actions went
 in that way — six kinds of step, each bounded, each read back as a line of a
-numbered list (SEQUENCES.md). Arithmetic over readings, notifications and
-schedules on some days are candidates; each goes in only when it passes
-both, and one at a time. That discipline is what keeps "an AI writes data
+numbered list (SEQUENCES.md) — and so did changing a setting, starting
+another automation, and days of the week (AUTOMATION-EDITOR.md). Arithmetic
+over readings and notifications are candidates; each goes in only when it
+passes both, and one at a time. That discipline is what keeps "an AI writes data
 inside the same rails" true.
 
 ## What a package contributes
@@ -137,8 +146,10 @@ A device type's package may bring, beside its description:
   convention.
 - **Recipes**: rules with roles and settings left open, a label and a
   sentence, for what only its devices make possible — the weather service's
-  "Switch by the forecast", which needs its function. A recipe is data;
-  filling it in makes an automation.
+  "Switch by the forecast", which needs its function. A recipe is data, and
+  a starting point: copying it makes an automation of your own, its
+  settings written into its blocks (`inlineParams`), every step then yours
+  to change.
 
 Package ids are namespaced by the type (`open-meteo.weather.forecast-switch`)
 and found the way device types are — installing a package is all it takes.
@@ -168,7 +179,8 @@ missing is refused at start, saying which.
 The server's engine runs every automation the same way:
 
 - **`at`**: looked at every half minute; due once a day at that time, on the
-  owner's clock, up to an hour late (a server that was down at 07:00 still
+  owner's clock and on the days it names (`days`, none for every day), up to
+  an hour late (a server that was down at 07:00 still
   acts at 07:20).
 - **`event`**: heard on the live bus as the device raises it.
 - **`becomes`**: evaluated when a reading of a bound device moves, from the
@@ -204,7 +216,12 @@ it on for an armed automation is confirmed as arming is.
 A run evaluates `if`, then each action: an automation that **observes** says
 what it would have done; one **armed** sends it through the gateway as
 `actor: 'automation'`. Arming is confirmed with a token bound to the
-automation, its changes and the person.
+automation, its changes and the person. The mode governs only what it does
+**on its own**: started by a person — ▶ on its card, on the device it is
+about, or on the home page — any automation that is not off runs and acts,
+asked first in the app while it only watches. An assistant may start only
+one that acts; another automation's `start` step, only one that is not off
+(SEQUENCES.md).
 
 **A run explains itself.** Each is kept — on the automation as its last run,
 and on the timeline — with what started it (`why`: "Garage station's charge is
@@ -234,25 +251,24 @@ sample, and says at each run what it would have decided and done
 cannot see: history is what happened *without* it (a charger it would have
 switched on would have raised the charge), and a function that asks for
 something history does not keep — a forecast — is unknown, as it would be
-with the service away. In the app, "Rehearse on last week" beside "Check
-now"; for an assistant, the `rehearse` and `propose` tools.
+with the service away. In the app, "Rehearse last week" beside "What would
+it do now?"; for an assistant, the `rehearse` and `propose` tools.
 
 ## Stored
 
-An automation is its recipe's id (`standard.charge-between`,
-`open-meteo.weather.forecast-switch`), which part of which device fills each
-role (`automation_role`), its settings, its clock and its mode. The rule is
-the recipe's, resolved when it runs, so a package that improves a recipe
-improves every automation made from it. Each `becomes` trigger's state is a
-row (`automation_trigger`), and every run is one (`automation_run`) — the
-running one unended, one at a time — with each step it took
-(docs/DATA-MODEL.md, docs/SEQUENCES.md).
+An automation is its own rule (`rule`, JSON), the recipe it was copied from
+if it was (`made_from`, shown as "Made from …" and nothing more), which part
+of which device — or which other automation — fills each role
+(`automation_role`), its clock, its mode, and its place on the home page if
+it has one. A recipe improved later changes no automation copied from it:
+what runs is what its owner saw and approved. Each `becomes` trigger's state
+is a row (`automation_trigger`), and every run is one (`automation_run`) —
+the running one unended, one at a time, and the run that started it if
+another did (`started_by_run`) — with each step it took (docs/DATA-MODEL.md,
+docs/SEQUENCES.md).
 
 ## Where this goes (not built)
 
-- **Rules of your own.** An automation that carries its rule instead of a
-  recipe id — one column, `rule`, JSON. The engine already runs rules, not
-  recipes; a recipe is only where the rule comes from.
 - **A DSL.** A text syntax whose parse tree *is* the rule: `when station.battery
   < 20 % for 5 min then turn heater on`. Parsing is the only new part; checking,
   explaining and running are done.
@@ -261,9 +277,7 @@ running one unended, one at a time — with each step it took
   observing, rehearsed ([API.md](API.md)). Next, a model asked for a rule or
   DSL text of its own, with `checkRule` and `checkBinding` its critic and the
   sentence what you approve — inside the same rails as everything else.
-- **More in the language, as needs arrive:** writing a setting (through the
-  gateway's write path, never a dangerous one), notifications, a wait
-  between actions, schedules on some days only, sunrise and sunset from a
-  weather or location function, arithmetic over readings.
+- **More in the language, as needs arrive:** notifications, sunrise and
+  sunset from a weather or location function, arithmetic over readings.
 - **Automations in the app**, for devices only a phone holds: the evaluator
   is pure SDK code, like the gateway, and can run in either holder.

@@ -4,7 +4,9 @@
 the owner's real chain last.
 Extends [AUTOMATIONS.md](AUTOMATIONS.md): one language, one engine, one
 gateway — an automation that takes steps is an automation, not a second kind
-of thing.
+of thing. Since then ([AUTOMATION-EDITOR.md](AUTOMATION-EDITOR.md)) every
+automation owns its rule and can be started by hand, so the `asked` trigger
+is gone; and a step may change a setting, or start another automation.
 
 ## The challenge
 
@@ -45,8 +47,8 @@ A person can do this with a phone in their hand. An automation today cannot:
 
 ## What it must be
 
-- **First-class.** A sequence is an automation: made from a recipe, bound to
-  devices by roles, watched before it acts, armed on purpose, on the timeline,
+- **First-class.** A sequence is an automation: built from blocks or copied
+  from a recipe, bound to devices by roles, watched before it acts, armed on purpose, on the timeline,
   explained. The same language, checked by the same checker, read back in
   sentences, run by the same engine, through the same gateway.
 - **No device in the platform.** The core names no plug, charger or station.
@@ -85,7 +87,9 @@ type Step =
       condition: Expr; seconds: Expr;
       then?: Step[];                                        //   if it stays true all that time
       else?: Step[];                                        //   the moment it is not, or cannot be told
-    } };
+    } }
+  | { write: { role: string; key: string; value: Expr } }   // a setting the part keeps (AUTOMATION-EDITOR.md)
+  | { start: { role: string; waitSeconds?: Expr } };        // another automation — waited for, at most so long
 
 type Rule = {
   roles; params;
@@ -99,7 +103,9 @@ type Rule = {
 
 Six kinds of step, each general, none about charging: **do** (a command),
 **pause**, **wait until**, **make sure** (with retries), **choose**, and
-**watch**. Steps nest — a choice and a watch hold steps — at most four deep.
+**watch** — and, added with the editor, **change a setting** and **start
+another automation**. Steps nest — a choice and a watch hold steps — at most
+four deep.
 A choice its settings alone decide — "if you chose to switch them off
 again" — is no step a person follows: it reads, is tried and runs as the
 steps it chose, in its place (`settledChoice`). Only a choice that turns on
@@ -119,14 +125,13 @@ then: [
 it for 5 seconds; if anything does, or its draw cannot be told, it is left
 on.
 
-Two additions to what a rule can say:
-
-- A trigger **`{ asked: true }`** — *when you start it*: from its card, from a
-  device page it is about, or by the assistant. It has nothing to evaluate;
-  a run starts when a person (or an agent for one) says so.
-- An expression **`{ reachable: role }`** — *the part can be reached now*: its
-  holder says it is connected. True, false, never unknown: not being
-  reachable is itself the answer.
+One addition to what a rule can say besides steps: an expression
+**`{ reachable: role }`** — *the part can be reached now*: its holder says it
+is connected. True, false, never unknown: not being reachable is itself the
+answer. What starts a sequence needs no addition: any automation can be
+started — from its card, from a device page it is about, from the home page,
+by the assistant, or by another automation — and one with no trigger of its
+own (`when: []`) runs only then.
 
 Both tests the language is held to still pass:
 
@@ -140,9 +145,9 @@ Both tests the language is held to still pass:
    > If a step does not succeed: turn Charger plug off, then Station's AC
    > output off.
 
-   and in one line, for a list: *"When you start it: turn Station's AC output
-   on, wait until Charger plug can be reached, turn it on, and make sure it
-   draws over 50 W."*
+   and in one line, for a list: *"Turn Station's AC output on, wait until
+   Charger plug can be reached, turn it on, and make sure it draws over
+   50 W."*
 2. **It is checked without running.** Every condition is a boolean; every
    duration a number of seconds, bounded — a pause, a watch or a wait at most
    an hour, a try at most 10 minutes, at most 10 tries — whether written as a
@@ -162,10 +167,10 @@ scan of JSON. The database is set aside and started afresh for it
 
 | Table | What it keeps |
 |---|---|
-| `automation` | The recipe it is made from, its settings (JSON: their shape is the recipe's schema), its clock, whether it may act, how often it keeps things so, and **`looked_at`** — when it last looked again (NULL: not since it was made). No copy of its last run. |
-| `automation_role` | Which part of which device fills each role: `(automation, role) → (device, part)`, foreign keys to both. A device page lists what it can start by asking here (`automation_role_device`). |
-| `automation_trigger` | Each `becomes` trigger's state, by its place in the recipe: whether it held, since when, whether this hold ran it. Forgotten when the automation starts afresh. |
-| `automation_run` | **Every run.** When it started and ended, how it came out, who started it (NULL: its own triggers), why, its summary, and — in `detail` — what it read, how its conditions stood and **each step it took**. The unended row is the run in progress: written at every step, so a screen follows it and a restart finds it. **One run of an automation at a time**, held by a unique index on the unended row. Its last run is its latest ended one. |
+| `automation` | Its own rule (JSON, checked before it is kept), the recipe it was copied from if it was (`made_from`), its clock, whether it may act, how often it keeps things so, **`looked_at`** — when it last looked again (NULL: not since it was made) — and its place on the home page (`home_place`, NULL: not there). No copy of its last run. |
+| `automation_role` | What fills each role: a part of a device, `(automation, role) → (device, part)`, or another automation a step starts, `(automation, role) → starts`; exactly one of the two, foreign keys to each. A device page lists what it can start by asking here (`automation_role_device`). |
+| `automation_trigger` | Each `becomes` trigger's state, by its place in the rule: whether it held, since when, whether this hold ran it. Forgotten when the automation starts afresh. |
+| `automation_run` | **Every run.** When it started and ended, how it came out, who started it (NULL: its own triggers), the run of another automation whose step started it (`started_by_run`), why, its summary, and — in `detail` — what it read, how its conditions stood and **each step it took**. The unended row is the run in progress: written at every step, so a screen follows it and a restart finds it. **One run of an automation at a time**, held by a unique index on the unended row. Its last run is its latest ended one. |
 | `device_switch`, `device_write` | The gateway's memory of each part it switched and each setting it wrote: when, last — what the dwell counts from. Rows of the device, gone with it. |
 
 Beside them, `device.picture` (which picture a device shows) became a column
@@ -203,14 +208,20 @@ too, and `app_state` keeps only what the home sets as a whole.
   business — its package decides how often, and for how long at most.
 - **`otherwise`** runs when a step does not succeed or someone stops the run:
   each of its steps tried whatever the others do, and not itself stopped.
-- **Observing.** An automation that only watches cannot walk a sequence: its
-  steps wait for what its own commands would have caused. Tried, it says what
-  it would do — every step, in order — and keeps nothing.
+- **Observing.** An automation that only watches cannot walk a sequence on
+  its own: its steps wait for what its own commands would have caused. Asked
+  what it would do now, it says — every step, in order — and keeps nothing.
 - **Starting and stopping.** `POST /automations/:id/start` and `/stop` — by a
-  person, on the timeline with who, or by the assistant (`start`, `stop`). One
-  that is off, or not started when asked, or already running, is refused, in
+  person, on the timeline with who, or by the assistant (`start`, `stop`).
+  Started by a person it runs for real, whatever its mode; by an assistant,
+  only once it acts. One that is off, or already running, is refused, in
   words. A run that takes steps started by a clock or a condition goes on by
   itself: the clock does not wait for it.
+- **Starting another.** A `start` step starts another automation for real,
+  as a person would, and — with `waitSeconds` — waits for it to end, at most
+  so long; a run stopped stops the one it waits for. A chain goes at most
+  four deep (`CHAIN_LIMIT`), and never back to one already in it: both are
+  refused when the rule is checked, and again when it runs.
 - **Keeping things so** is for rules that act at once: a sequence is started,
   not kept, and the server refuses a `recheckMinutes` for one.
 - **Its summary** leads with what changed, says once what was already so, and
@@ -269,19 +280,18 @@ In their packages, through two small additions to the device contract:
 ## The API and the app
 
 - **`AutomationView`** gains `steps` and `otherwise` (its steps in words,
-  numbered and nested — `StepLine`), `takesSteps`, `startsWhenAsked`,
-  `running` (the run in progress, step by step, or null), and `lastRun` in
-  place of the copy it kept. **`RecipeView`** says whether a recipe is
-  started when asked, whether it takes steps, and its steps with its roles
-  named by their labels.
+  numbered and nested — `StepLine`), `takesSteps`, `running` (the run in
+  progress, step by step, or null), and `lastRun` in place of the copy it
+  kept. **`RecipeView`** says whether a recipe takes steps, and its steps
+  with its roles named by their labels.
 - **Routes:** `POST /automations/:id/start`, `/stop`; `GET
   /automations/:id/runs` (every run, each with its steps); `GET
   /automations?device=` (those a device fills a role of).
 - **Live:** a run's progress is published on the live stream
   (`{ type: 'automation', id }`); a screen showing it reads it again at once,
   so it follows a run second by second without polling.
-- **The card** of a sequence leads with **Start** — **Try it** while it only
-  watches — or **Stop** in red while it runs, beside how long it has run and
+- **The card** of every automation leads with **Start** — asked first while
+  it only watches — or **Stop** in red while it runs, beside how long it has run and
   the step it is in. Running, a **Now** panel shows each step as it goes: ✓
   with the device's own words, a spinner and "0:02 of 1:30" with a bar for
   the one it waits in, retries indented under "Try 2 of 3". **What it does**
@@ -290,11 +300,12 @@ In their packages, through two small additions to the device contract:
   own. **Last run** tells a run in one line and then every step it took;
   **History** merges every run with every change, day by day, each run
   opening to its steps.
-- **A device's page** lists, under **Start**, the sequences it is part of,
-  each with its Start or Stop and how it last went — so the owner starts one
-  where they are looking (`client/src/features/automations`).
-- **Making one:** the recipe list marks what takes steps and what you start;
-  a sequence shows **What it will do** before anything is chosen.
+- **A device's page** lists, under **Start**, the automations it is part of
+  that are not off, each with its Start or Stop and how it last went — so the
+  owner starts one where they are looking (`client/src/features/automations`).
+  Any may be put on the **home page** as a shortcut too.
+- **Making one:** the editor, from nothing or from a recipe copied
+  ([AUTOMATION-EDITOR.md](AUTOMATION-EDITOR.md)).
 
 ## The recipe
 
@@ -308,7 +319,8 @@ devices that offer what it asks:
   - Settings: reach within (2 min), charging above (50 W), within (20 s),
     off for (5 s), tries (3), if it never charges (switch both off / leave
     them on).
-  - When you start it: the steps of "The challenge", as data.
+  - No trigger of its own — it runs when started — and the steps of "The
+    challenge", as data.
 
 - **`standard.stop-charging`** — *Stop charging.* The same roles, in
   reverse: the charger's plug off at once; then the supply watched for a few
@@ -334,7 +346,7 @@ Each step kept typecheck, the unit tests, the architecture ratchet and the
 end-to-end tests green, and is tested against simulated devices; the last is
 tried on the owner's real station, plug and charger, with the owner watching.
 
-1. **Language** — six kinds of step, `asked`, `reachable`, the limits;
+1. **Language** — six kinds of step, `asked` (removed since), `reachable`, the limits;
    `checkRule`, `describeSteps`, `ruleUses`, `ruleCommands` —
    `device-sdk/src/automation.ts`; tests in `sequences.test.ts`. *Built.*
 2. **Data model and contract** — `automation_run`, `automation_role`,

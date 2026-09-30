@@ -55,12 +55,22 @@ empty: the core names no product, and every device is found, not listed.
   held by a partial unique index, not only by code.
 - **Sequences** (2026-09-30, [SEQUENCES.md](SEQUENCES.md)): an automation's
   steps may wait, wait until, make sure (with retries), choose and watch —
-  bounded, checked, read back as numbered steps — and one may be started when
-  asked. Every run is a row with its steps (`automation_run`); roles and
-  trigger state are rows too; the gateway lets a run switch a part again
-  within its declared allowance. `standard.start-charging` and
-  `standard.stop-charging` drive a charger through its supply; the app shows a
-  run step by step as it goes, and a device's page offers what it can start.
+  bounded, checked, read back as numbered steps. Every run is a row with its
+  steps (`automation_run`); roles and trigger state are rows too; the gateway
+  lets a run switch a part again within its declared allowance.
+  `standard.start-charging` and `standard.stop-charging` drive a charger
+  through its supply; the app shows a run step by step as it goes, and a
+  device's page offers what it can start.
+- **The automation editor** (2026-09-30,
+  [AUTOMATION-EDITOR.md](AUTOMATION-EDITOR.md)): every automation owns its
+  rule, built from blocks in the app — any command a part offers, any
+  setting it may be told, pauses, waits, checks, choices, watches, and
+  starting another automation — or copied from a recipe and changed. The
+  server checks each draft as it is built. Any automation that is not off
+  can be started by hand, whatever its mode (the mode governs only what it
+  does on its own); `at` triggers take weekdays; chains go four deep and
+  never back on themselves; any automation can be a shortcut on the home
+  page.
 - **The gateway asks when it cannot tell**: a declared condition on a
   reading that is missing or stale counts as holding. How much is a load is
   the home's (`loadWatts`, App settings → Safety, `/api/policy`), and a
@@ -166,10 +176,10 @@ From the Phase 1 review:
 
 ### Next steps
 
-**First, [PLAN-RUN-AND-CHAIN.md](PLAN-RUN-AND-CHAIN.md)**: the fixes from
-setting up the charging sequences and from the review of 5b4ff32–3d9b245;
-play, home-page shortcuts, timers and chaining; then the language for
-import and export. The steps below follow it.
+**First, the rest of [PLAN-RUN-AND-CHAIN.md](PLAN-RUN-AND-CHAIN.md)**: its
+Phases 1 (fixes) and 2 (the automation editor) are done; next, Phase 3 —
+parts shared between automations, decided on paper first — then Phase 4,
+the language for import and export. The steps below follow it.
 
 In this order, each small and each keeping the checks green:
 

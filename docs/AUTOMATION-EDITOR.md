@@ -5,6 +5,11 @@ Written 2026-09-30, from the owner's decision (docs/PLAN-RUN-AND-CHAIN.md,
 plan. It builds on docs/AUTOMATIONS.md and docs/SEQUENCES.md: the language
 they describe stays; who writes a rule changes.
 
+**Status:** built, 2026-09-30, as written here: the editor at
+`client/app/automation/[id].tsx` and `client/src/features/automations/editor`,
+the rule kept and checked on the server (`server/src/automations/plans.ts`),
+and e2e in `e2e/sequences.e2e.ts` and `e2e/charge-window.e2e.ts`.
+
 ## The problem
 
 The language is general: triggers, conditions, and steps that nest (do,
