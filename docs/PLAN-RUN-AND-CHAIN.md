@@ -239,8 +239,11 @@ screen part. Standard recipes stay free of product words.
    from the home's place. "When tomorrow's prices arrive" is a service
    event and already works. **The interval is done, 2026-09-30:**
    `{ every: minutes }`, 5 to 720, on the owner's clock from midnight, once
-   a slot. **Sunrise and sunset wait on a decision:** the home has no place
-   of its own yet — only a weather service's configured place.
+   a slot. **Sunrise and sunset wait for the home** (the owner,
+   2026-09-30): they come from a "where your home is" setting, not a
+   weather service's place — and that belongs to creating a home, the very
+   first thing a person does in the app. Location-based settings wait with
+   it; see "Later" below.
 6. **Smaller.**
    - A role filled by an ordered list of parts ("shed these loads in this
      order").
@@ -250,6 +253,12 @@ screen part. Standard recipes stay free of product words.
      readings.
 
 ## Later, unchanged
+
+- **A home, created first** (the owner, 2026-09-30). Creating a home is to
+  be the first thing a person does in the app, and where the home is — its
+  place — is part of it. Sunrise and sunset triggers, and anything else that
+  needs a location, wait for it rather than borrowing a weather service's
+  place.
 
 - **HANDOFF's next steps.** J25, J35, J31, J40, the assistant's token, and
   Phases 6–9 follow the phases above.
