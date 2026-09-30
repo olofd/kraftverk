@@ -116,6 +116,12 @@ describe('discovery', () => {
     expect(device).toMatchObject({ ip: '192.0.2.74', gwId: 'bf8dc9', version: '3.4', encrypted: true, active: true });
   });
 
+  test('reads a 3.5 device out of its own frame: AES-GCM under the same public key', () => {
+    const payload = utf8(JSON.stringify({ ip: '192.0.2.196', gwId: 'bfefca', version: '3.5', productKey: 'pl28o0', active: 2 }));
+    const frame = encodeFrame({ version: '3.5', key: DISCOVERY_KEY, sequence: 0, command: 0x13, payload, iv: new Uint8Array(12).fill(7) });
+    expect(decodeBroadcast(frame)).toMatchObject({ ip: '192.0.2.196', gwId: 'bfefca', version: '3.5', productKey: 'pl28o0', encrypted: true });
+  });
+
   test('ignores traffic that is not a Tuya frame', () => {
     expect(decodeBroadcast(utf8('hello'))).toBeNull();
   });

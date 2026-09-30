@@ -234,6 +234,8 @@ export class AppFlow implements SetupFlow {
       address: this.address,
       secrets: { get: (field: string) => this.#secrets.get(field) ?? null },
       http: (url: string, init: RequestInit & { timeoutMs?: number } = {}) => fetch(url, { ...init, signal: AbortSignal.timeout(init.timeoutMs ?? 15_000) }),
+      // This app finds a device through the platform's chooser, one at a time: there is no list to match against.
+      sightings: [],
       log: { info: () => {}, warn: (message: string) => console.warn(`[setup] ${message}`), error: (message: string) => console.error(`[setup] ${message}`) },
       signal,
       platform: PLATFORM,

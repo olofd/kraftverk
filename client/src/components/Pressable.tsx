@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { XStack, YStack } from 'tamagui';
+import { Feather } from '@expo/vector-icons';
+import { useTheme, XStack, YStack } from 'tamagui';
 
 /**
  * Tamagui's press styling on a plain wrapper, so a `Row` can be tapped.
@@ -31,11 +32,17 @@ export function Pressable({
    *
    * Passing this changes the row from a button into a radio, which is what
    * makes a screen reader say "2 of 4, selected" instead of reading four
-   * identical-sounding buttons with no indication of which one is active.
+   * identical-sounding buttons with no indication of which one is active —
+   * and draws it as one: an empty circle beside each choice, and the chosen
+   * one filled, tinted and marked at its edge, so which is chosen is seen at a
+   * glance rather than looked for.
    */
   selected?: boolean;
   children: ReactNode;
 }) {
+  const theme = useTheme();
+  const choice = selected !== undefined;
+  const accent = theme.accent?.val as string;
   return (
     <XStack
       /*
@@ -47,17 +54,27 @@ export function Pressable({
         `button` for free, which is why no key handler is needed here and the
         switch, which is not a button, has to attach one itself.
       */
-      role={selected === undefined ? 'button' : 'radio'}
+      role={choice ? 'radio' : 'button'}
       aria-checked={selected}
       aria-disabled={disabled || undefined}
       tabIndex={0}
       aria-label={label}
+      alignItems="center"
       cursor={disabled ? undefined : 'pointer'}
+      // A tint of the accent, written out: a token with transparency does not exist in this theme.
+      style={selected ? ({ backgroundColor: `${accent}1f` } as never) : undefined}
+      borderLeftWidth={choice ? 3 : 0}
+      borderLeftColor={selected ? '$accent' : 'transparent'}
       pressStyle={disabled ? undefined : { opacity: 0.6 }}
       focusVisibleStyle={{ outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid' }}
       onPress={disabled ? undefined : onPress}
     >
       <YStack flex={1}>{children}</YStack>
+      {choice ? (
+        <YStack paddingRight="$4">
+          <Feather name={selected ? 'check-circle' : 'circle'} size={20} color={selected ? accent : (theme.muted?.val as string)} />
+        </YStack>
+      ) : null}
     </XStack>
   );
 }

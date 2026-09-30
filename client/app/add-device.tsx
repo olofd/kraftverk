@@ -55,6 +55,8 @@ export default function AddDeviceScreen() {
   const [flow, setFlow] = useState<SetupFlow | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [outcome, setOutcome] = useState<CheckOutcome | null>(null);
+  /** What a helper learnt the device is called — its name in its maker's app — offered when it is named. */
+  const [suggestedName, setSuggestedName] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const flowRef = useRef<SetupFlow | null>(null);
@@ -141,6 +143,7 @@ export default function AddDeviceScreen() {
         setFlow(next);
         setStepIndex(0);
         setOutcome(null);
+        setSuggestedName(null);
         setStage('steps');
       } catch (err) {
         setError(describeError(err) || 'That way cannot be used right now');
@@ -162,6 +165,41 @@ export default function AddDeviceScreen() {
   }, [begin, params.method, type, ways]);
 
   const title = attachTo ? `Another way to reach ${attachTo.name}` : 'Add a device';
+
+  // --- moving through the steps ---------------------------------------------------------
+
+  /** Forward. Finding the device on the network is skipped when an earlier step already found it. */
+  const next = useCallback(() => {
+    if (!flow) return;
+    setStepIndex((index) => {
+      let to = Math.min(index + 1, flow.plan.length - 1);
+      if (flow.plan[to]?.kind === 'choose' && flow.address && to < flow.plan.length - 1) to += 1;
+      return to;
+    });
+  }, [flow]);
+
+  /** Back one step, keeping everything entered; from the first, back to choosing how to connect. */
+  const back = useCallback(() => {
+    if (!flow) return;
+    haptic();
+    if (stepIndex === 0) {
+      flowRef.current?.discard();
+      flowRef.current = null;
+      setFlow(null);
+      setStage('method');
+      return;
+    }
+    setOutcome(null);
+    setStepIndex(stepIndex - 1);
+  }, [flow, stepIndex]);
+
+  /** Straight to an earlier step, from the progress bar. */
+  const goTo = useCallback((index: number) => {
+    haptic();
+    setOutcome(null);
+    setStage('steps');
+    setStepIndex(index);
+  }, []);
 
   return (
     <Screen back={attachTo ? attachTo.name : 'Your devices'} backTo={attachTo ? `/device/${encodeURIComponent(attachTo.id)}/settings` : '/'} title={title} subtitle={type?.meta.name}>
@@ -216,38 +254,57 @@ export default function AddDeviceScreen() {
         <Ways ways={ways} busy={busy} onPick={(way) => void begin(way)} onBack={params.type ? undefined : () => setStage('type')} />
       ) : null}
 
+      {(stage === 'steps' || stage === 'finish') && flow ? (
+        <Progress
+          steps={[...flow.plan.map((step) => step.title), attachTo ? 'Add it' : 'Name it']}
+          at={stage === 'finish' ? flow.plan.length : stepIndex}
+          onGoTo={goTo}
+        />
+      ) : null}
+
       {stage === 'steps' && flow ? (
-        <>
-          <Progress plan={flow.plan.map((step) => step.title)} at={stepIndex} />
-          {outcome ? (
-            <Outcome
-              outcome={outcome}
-              attachTo={attachTo}
-              onRetry={() => setOutcome(null)}
-              onContinue={() => setStage('finish')}
-              onOtherType={(id) => {
-                setTypeId(id);
-                setStage('method');
-              }}
-            />
-          ) : (
-            <StepView
-              key={flow.plan[stepIndex]?.id}
-              flow={flow}
-              step={flow.plan[stepIndex]!}
-              presetAddress={params.address}
-              onNext={() => setStepIndex((index) => Math.min(index + 1, flow.plan.length - 1))}
-              onChecked={setOutcome}
-            />
-          )}
-        </>
+        outcome ? (
+          <Outcome
+            outcome={outcome}
+            attachTo={attachTo}
+            earlier={flow.plan.length > 1}
+            onBack={() => {
+              // To the step before the check; with none, to choosing how to reach it.
+              if (flow.plan.length > 1) {
+                setOutcome(null);
+                setStepIndex(flow.plan.length - 2);
+              } else {
+                setStepIndex(0);
+                back();
+              }
+            }}
+            onRetry={() => setOutcome(null)}
+            onContinue={() => setStage('finish')}
+            onOtherType={(id) => {
+              setTypeId(id);
+              setStage('method');
+            }}
+          />
+        ) : (
+          <StepView
+            key={flow.plan[stepIndex]?.id}
+            flow={flow}
+            step={flow.plan[stepIndex]!}
+            presetAddress={params.address}
+            onNext={next}
+            onBack={back}
+            onChecked={setOutcome}
+            onNamed={setSuggestedName}
+          />
+        )
       ) : null}
 
       {stage === 'finish' && flow && outcome && type ? (
         <Finish
           flow={flow}
           outcome={outcome}
-          typeName={type.meta.name}
+          onBack={() => setStage('steps')}
+          typeName={suggestedName ?? type.meta.name}
           description={type.description}
           attachTo={attachTo}
           devices={devices}
@@ -362,7 +419,7 @@ function Types({ types, onPick, onBack }: { types: DeviceTypeListing[]; onPick: 
         ))}
       </Card>
       <Text fontSize={12} color="$muted" lineHeight={18} paddingHorizontal="$1">
-        Don't see yours? Support is added one device type at a time: see docs/ADDING-A-DEVICE.md.
+        Don’t see yours? Each model is supported by a package of its own, and one can be written for it.
       </Text>
       <Button alignSelf="flex-start" size="$2" onPress={onBack}>
         Back
@@ -407,24 +464,38 @@ function Ways({ ways, busy, onPick, onBack }: { ways: Way[]; busy: boolean; onPi
   );
 }
 
-function Progress({ plan, at }: { plan: string[]; at: number }) {
+/**
+ * Where you are in setting it up: "Step 2 of 5", and a bar of as many segments.
+ * Done ones are filled, and a tap on one goes back to it with everything kept;
+ * the step's own title is the heading below, so it is not said twice.
+ */
+function Progress({ steps, at, onGoTo }: { steps: string[]; at: number; onGoTo: (index: number) => void }) {
   return (
-    <XStack gap="$1.5" flexWrap="wrap">
-      {plan.map((title, index) => (
-        <Text
-          key={`${title}-${index}`}
-          fontSize={11}
-          fontWeight="600"
-          paddingHorizontal="$2"
-          paddingVertical="$1"
-          borderRadius="$2"
-          backgroundColor={index === at ? '$accent' : '$backgroundPress'}
-          color={index === at ? '$background' : index < at ? '$color' : '$muted'}
-        >
-          {index + 1}. {title}
-        </Text>
-      ))}
-    </XStack>
+    <YStack gap="$2">
+      <Text fontSize={12} fontWeight="700" color="$muted" letterSpacing={0.6} textTransform="uppercase">
+        Step {Math.min(at + 1, steps.length)} of {steps.length}
+      </Text>
+      <XStack gap={4} role="list" aria-label="Setup steps">
+        {steps.map((title, index) => {
+          const done = index < at;
+          return (
+            <YStack
+              key={`${title}-${index}`}
+              flex={1}
+              role="listitem"
+              aria-label={`${title}${done ? ', done — go back to it' : index === at ? ', now' : ''}`}
+              aria-current={index === at ? 'step' : undefined}
+              paddingVertical={6}
+              cursor={done ? 'pointer' : 'default'}
+              onPress={done ? () => onGoTo(index) : undefined}
+              hoverStyle={done ? { opacity: 0.7 } : undefined}
+            >
+              <YStack height={6} borderRadius={3} backgroundColor={index <= at ? '$accent' : '$backgroundPress'} opacity={done ? 0.55 : 1} />
+            </YStack>
+          );
+        })}
+      </XStack>
+    </YStack>
   );
 }
 
@@ -433,12 +504,18 @@ function Progress({ plan, at }: { plan: string[]; at: number }) {
 function Outcome({
   outcome,
   attachTo,
+  earlier,
+  onBack,
   onRetry,
   onContinue,
   onOtherType,
 }: {
   outcome: CheckOutcome;
   attachTo: DeviceView | null;
+  /** There are steps before the check to go back to. */
+  earlier: boolean;
+  /** To the step before the check, to change what was entered — or, with none, to how it is reached. */
+  onBack: () => void;
   onRetry: () => void;
   onContinue: () => void;
   onOtherType: (typeId: string) => void;
@@ -491,6 +568,9 @@ function Outcome({
         <Button size="$3" onPress={onRetry}>
           Try again
         </Button>
+        <Button size="$3" chromeless color="$muted" onPress={onBack}>
+          {earlier ? 'Change what I entered' : 'Reach it another way'}
+        </Button>
       </XStack>
     </Card>
   );
@@ -501,6 +581,7 @@ function Outcome({
 function Finish({
   flow,
   outcome,
+  onBack,
   typeName,
   description,
   attachTo,
@@ -509,6 +590,8 @@ function Finish({
 }: {
   flow: SetupFlow;
   outcome: CheckOutcome;
+  onBack: () => void;
+  /** The name offered: what its maker's app calls it, when a helper learnt that, else its model. */
   typeName: string;
   /** What it is, as its type describes it: which links fit is decided the way the server decides it. */
   description: DeviceDescription;
@@ -627,9 +710,14 @@ function Finish({
           ))
         : null}
 
-      <Button size="$4" backgroundColor="$accent" color="$background" disabled={busy || (!attachTo && !name.trim())} onPress={() => void save()}>
-        {busy ? 'Saving…' : attachTo ? `Add it to ${attachTo.name}` : restore ? 'Bring it back' : 'Save'}
-      </Button>
+      <XStack justifyContent="space-between" alignItems="center">
+        <Button size="$3" chromeless color="$muted" onPress={onBack}>
+          Back
+        </Button>
+        <Button size="$4" backgroundColor="$accent" color="$background" disabled={busy || (!attachTo && !name.trim())} onPress={() => void save()}>
+          {busy ? 'Saving…' : attachTo ? `Add it to ${attachTo.name}` : restore ? 'Bring it back' : 'Save'}
+        </Button>
+      </XStack>
       {error ? (
         <Text fontSize={12} color="$danger" lineHeight={18}>
           {error}

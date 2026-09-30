@@ -1,4 +1,4 @@
-import type { ConnectionMethod, Platform, Protocol, TransportDefinition } from './connection.ts';
+import type { ConnectionMethod, Platform, Protocol, Sighting, TransportDefinition } from './connection.ts';
 import type { DeviceLogger, DeviceType, ScopedHttp } from './device-type.ts';
 import type { ConfigSchema, ConfigValues } from './schema.ts';
 
@@ -38,6 +38,29 @@ export type SetupChoice = {
   config: ConfigValues;
   /** Marks the option the step thinks is right. */
   recommended?: boolean;
+  /**
+   * Where the device is, when the helper knows: an account's device list
+   * matched against what the transport sees. Chosen with it, so the step that
+   * finds the device is already done.
+   */
+  address?: string;
+  /** What its owner calls it, where the helper learnt that: offered as its name. */
+  name?: string;
+};
+
+/**
+ * Not done yet: a person has something to do first — scan a code with the
+ * vendor's app, confirm on the device. The app shows `qr` (as a QR code) and
+ * `detail`, and runs the same action again with `next` as its input every
+ * `everyMs`, until an answer without `waiting` comes back or `until` passes.
+ */
+export type SetupWaiting = {
+  /** Text to show as a QR code, for a phone to scan. */
+  qr?: string;
+  next: ConfigValues;
+  everyMs: number;
+  /** When to give up: an ISO time. */
+  until: string;
 };
 
 export type SetupActionResult = {
@@ -56,6 +79,8 @@ export type SetupActionResult = {
    * turns back into the secret: the value itself never reaches a browser.
    */
   suggestedConfig?: ConfigValues;
+  /** Asked again after a person has done something: see `SetupWaiting`. */
+  waiting?: SetupWaiting;
 };
 
 /** What a step's function can reach. */
@@ -70,6 +95,11 @@ export type SetupContext<Config extends ConfigValues = ConfigValues> = {
   secrets: { get(field: string): string | null };
   /** For helpers that call a vendor's API once — fetching a key. Not for the device. */
   http: ScopedHttp;
+  /**
+   * What the transport sees now, for a helper that matches a vendor's list
+   * against the network. Empty where nothing is watched (an app's chooser).
+   */
+  sightings: readonly Sighting[];
   log: DeviceLogger;
   /** Aborted when the user leaves the flow, or the step runs too long. */
   signal: AbortSignal;
@@ -200,30 +230,34 @@ export function setupPlan(input: SetupPlanInput): SetupStepView[] {
     });
   }
 
+  const credentials =
+    protocol?.credentials && Object.keys(protocol.credentials.schema.fields).length
+      ? viewOf({
+          id: 'credentials',
+          kind: 'form',
+          target: 'connection',
+          title: protocol.credentials.title ?? 'Credentials',
+          schema: protocol.credentials.schema,
+          actions: protocol.credentials.actions,
+        })
+      : null;
+
+  // An account that lists the devices comes first: signing in is how the device is found.
+  if (credentials && protocol?.credentials?.first) steps.push(credentials);
+
   if (method && transport && !method.address) {
     const discovery = transport.discovery[platform] ?? 'none';
     steps.push({
       id: 'choose',
       kind: 'choose',
-      title: `Choose your ${type.meta.name}`,
+      title: `Find your ${type.meta.name}`,
       transport: transport.id,
       discovery,
       manual: binding?.parseAddress ? (binding.addressLabel ?? 'Address') : null,
     });
   }
 
-  if (protocol?.credentials && Object.keys(protocol.credentials.schema.fields).length) {
-    steps.push(
-      viewOf({
-        id: 'credentials',
-        kind: 'form',
-        target: 'connection',
-        title: 'Credentials',
-        schema: protocol.credentials.schema,
-        actions: protocol.credentials.actions,
-      })
-    );
-  }
+  if (credentials && !protocol?.credentials?.first) steps.push(credentials);
 
   if (method?.config && Object.keys(method.config.fields).length) {
     steps.push(viewOf({ id: 'connection', kind: 'form', target: 'connection', title: 'Connection', schema: method.config }));
@@ -244,7 +278,14 @@ export function setupPlan(input: SetupPlanInput): SetupStepView[] {
 /** The step with this id among a type's own steps and a method's, with its function. */
 export function findStep(type: DeviceType<any>, method: ConnectionMethod | null, protocol: Protocol | null, id: string) {
   if (id === 'credentials' && protocol?.credentials) {
-    return { kind: 'form' as const, id, title: 'Credentials', target: 'connection' as const, schema: protocol.credentials.schema, actions: protocol.credentials.actions };
+    return {
+      kind: 'form' as const,
+      id,
+      title: protocol.credentials.title ?? 'Credentials',
+      target: 'connection' as const,
+      schema: protocol.credentials.schema,
+      actions: protocol.credentials.actions,
+    };
   }
   return [...(method?.steps ?? []), ...(type.setup?.steps ?? [])].find((step) => step.id === id) ?? null;
 }

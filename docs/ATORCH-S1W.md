@@ -137,13 +137,13 @@ documentation addresses):
 
 | Device | Address | Protocol | Product key |
 | --- | --- | --- | --- |
-| `bf8dc9…96h6ff` | 192.0.2.74 | **3.4** | `keym557nqw3p8p7m` |
-| `505660…f4d5` | 192.0.2.17 | **3.3** | `toidnjcqfwlzqnlp` |
+| `bf…` | 192.0.2.74 | **3.4** | (a product key) |
+| `20…` | 192.0.2.17 | **3.3** | (a product key) |
 
 Two Tuya devices on two protocol versions, which is why the code implements both and defaults to
 **Detect**: it tries 3.4, then 3.3, then 3.5, and reports which one answered. The second device's id
-embeds its MAC (`bcddc23af4d5`, an Espressif OUI). The ATORCH S1 uses a Beken BK7231N, so the 3.4
-device is the likelier plug, but neither is confirmed until a datapoint dump.
+embeds its MAC, an Espressif OUI. (Neither turned out to be the ATORCH, which is on 3.5 — see the
+package's README.)
 
 Connecting with a deliberately wrong key produced the diagnostic the design wants: a socket that
 opens proves nothing about whether it can be read.

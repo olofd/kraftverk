@@ -13,6 +13,10 @@ import {
   SmartLifeError,
   type SmartLifeSession,
 } from './smartlife.ts';
+import { toHex } from './bytes.ts';
+import { DISCOVERY_KEY } from './discovery.ts';
+import { encodeFrame } from './frame.ts';
+import protocol from './index.ts';
 
 /**
  * The Smart Life login, checked against tuya-device-sharing-sdk's algorithm
@@ -115,13 +119,13 @@ describe('the Smart Life login and listing', () => {
       ],
       '/v1.0/m/life/ha/home/devices': (params) =>
         params?.homeId === 11
-          ? [{ id: 'bfefca9dcaf027e6bfzons', name: 'Kitchen plug', local_key: 'a1b2c3d4e5f6g7h8', category: 'cz', online: true }]
-          : [{ id: '50566078bcddc23af4d5', name: 'Sauna', local_key: 'h8g7f6e5d4c3b2a1', product_name: 'S1W' }],
+          ? [{ id: 'bf0e5a1c2d3b4f6a7c8d9e', name: 'Kitchen plug', local_key: 'a1b2c3d4e5f6g7h8', category: 'cz', online: true }]
+          : [{ id: '20000000aabbccddeeff', name: 'Sauna', local_key: 'h8g7f6e5d4c3b2a1', product_name: 'S1W' }],
     });
     const devices = await smartLifeDevices(http, session);
     expect(devices.map((device) => [device.id, device.localKey])).toEqual([
-      ['bfefca9dcaf027e6bfzons', 'a1b2c3d4e5f6g7h8'],
-      ['50566078bcddc23af4d5', 'h8g7f6e5d4c3b2a1'],
+      ['bf0e5a1c2d3b4f6a7c8d9e', 'a1b2c3d4e5f6g7h8'],
+      ['20000000aabbccddeeff', 'h8g7f6e5d4c3b2a1'],
     ]);
     expect(devices[1]!.productName).toBe('S1W');
     expect(seen).toEqual(['/v1.0/m/life/users/homes', '/v1.0/m/life/ha/home/devices', '/v1.0/m/life/ha/home/devices']);
@@ -154,6 +158,56 @@ describe('the Smart Life login and listing', () => {
       endpoint: 'https://apigw.tuyaeu.com',
       uid: 'eu123',
     });
+  });
+
+  test('from setup: a QR code, then waiting, then the plugs by name — the one heard here with its address', async () => {
+    const signIn = protocol.credentials!.actions!.find((action) => action.id === 'signIn')!;
+    let scanned = false;
+    const listing = fakeTuya({
+      '/v1.0/m/life/users/homes': () => [{ ownerId: 11, name: 'Home' }],
+      '/v1.0/m/life/ha/home/devices': () => [
+        { id: 'bf0e5a1c2d3b4f6a7c8d9e', name: 'Charger', local_key: 'a1b2c3d4e5f6g7h8', category: 'cz', product_name: 'Smart Socket', online: true },
+        { id: '20000000aabbccddeeff', name: 'Lamp', local_key: 'h8g7f6e5d4c3b2a1', category: 'dj' },
+      ],
+    });
+    const http = async (url: string, init?: RequestInit) => {
+      if (new URL(url).host !== 'apigw.iotbing.com') return listing.http(url, init);
+      if (init?.method === 'POST') return Response.json({ success: true, result: { qrcode: 'QRTOKEN' } });
+      return scanned ? Response.json({ success: true, result: { access_token: 'tok', refresh_token: 'ref', endpoint: 'https://apigw.tuyaeu.com', uid: 'eu123' } }) : Response.json({ success: false });
+    };
+    // The plug announcing itself on 3.5, as a sighting of the lan transport.
+    const announcement = encodeFrame({
+      version: '3.5',
+      key: DISCOVERY_KEY,
+      sequence: 0,
+      command: 0x13,
+      payload: new TextEncoder().encode(JSON.stringify({ ip: '192.0.2.196', gwId: 'bf0e5a1c2d3b4f6a7c8d9e', version: '3.5' })),
+      iv: new Uint8Array(12).fill(1),
+    });
+    const ctx = {
+      draft: {},
+      connection: {},
+      address: null,
+      secrets: { get: () => null },
+      http,
+      sightings: [{ transport: 'lan', address: '192.0.2.196', seenAt: new Date().toISOString(), facts: { payload: toHex(announcement) } }],
+      log: { info: () => {}, warn: () => {}, error: () => {} },
+      signal: AbortSignal.timeout(10_000),
+      platform: 'server' as const,
+    };
+
+    const first = await signIn.run(ctx, { userCode: 'user-code' });
+    expect(first.waiting?.qr).toBe('tuyaSmart--qrLogin?token=QRTOKEN');
+    const waiting = await signIn.run(ctx, first.waiting!.next);
+    expect(waiting.waiting).toBeDefined();
+    scanned = true;
+    const done = await signIn.run(ctx, waiting.waiting!.next);
+    expect(done.waiting).toBeUndefined();
+    expect(done.choices?.map((choice) => [choice.label, choice.address ?? null, choice.recommended])).toEqual([
+      ['Charger', '192.0.2.196', true],
+      ['Lamp', null, false],
+    ]);
+    expect(done.choices?.[0]).toMatchObject({ name: 'Charger', config: { deviceId: 'bf0e5a1c2d3b4f6a7c8d9e', localKey: 'a1b2c3d4e5f6g7h8', protocolVersion: '3.5' } });
   });
 
   test('a wrong user code says where to find the right one', async () => {

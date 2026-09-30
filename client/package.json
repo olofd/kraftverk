@@ -35,7 +35,8 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-svg": "15.15.4",
     "react-native-web": "0.21.2",
-    "tamagui": "^2.7.4"
+    "tamagui": "^2.7.4",
+    "toqr": "^0.1.1"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",

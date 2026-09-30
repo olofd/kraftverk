@@ -348,7 +348,19 @@ export type Protocol = {
   readonly id: string;
   readonly label: string;
   readonly bindings: Readonly<Record<string, Binding>>;
-  readonly credentials?: { schema: ConfigSchema; actions?: readonly SetupAction[] };
+  readonly credentials?: {
+    schema: ConfigSchema;
+    actions?: readonly SetupAction[];
+    /**
+     * Asked before the device is chosen. For a protocol whose account lists
+     * the devices — names, keys, which is which — signing in is how the device
+     * is found, and choosing it on the network afterwards is only needed when
+     * the account could not say where it is.
+     */
+    first?: boolean;
+    /** What the step is called: "Your account with the maker's app". "Credentials" when absent. */
+    title?: string;
+  };
   guard?(payload: Uint8Array): string | null;
 };
 

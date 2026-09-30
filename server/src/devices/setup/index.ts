@@ -386,6 +386,7 @@ export class SetupService {
       address: draft.address,
       secrets: { get: (field: string) => draft.secrets.get(field) ?? null },
       http: this.deps.http,
+      sightings: draft.sightings,
       log: { info: () => {}, warn: (m: string) => console.warn(`[setup] ${m}`), error: (m: string) => console.error(`[setup] ${m}`) },
       signal: signal ?? AbortSignal.timeout(ACTION_TIMEOUT_MS),
       platform: 'server' as const,

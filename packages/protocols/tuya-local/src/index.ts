@@ -14,6 +14,7 @@ import { isRegion, REGIONS, TuyaCloud, TuyaCloudError } from './cloud.ts';
 import { decodeBroadcast, DISCOVERY_PORTS } from './discovery.ts';
 import type { ProtocolVersion } from './frame.ts';
 import { TUYA_PORT, TuyaLink, type TuyaLinkOptions } from './session.ts';
+import { pollLogin, qrLoginContent, requestQrToken, smartLifeDevices, SmartLifeError } from './smartlife.ts';
 
 /**
  * The Tuya LAN protocol, 3.1 to 3.5: how most Wi-Fi smart plugs are spoken to
@@ -47,8 +48,8 @@ const isIpv4 = (input: string): string | null => {
 /** What setup asks for, stored with the connection; the key encrypted. */
 export const CREDENTIALS: ConfigSchema = {
   help:
-    'The local key is the one thing a plug will not tell you itself. It comes from the Tuya cloud account the ' +
-    'plug is paired with, once — use “Fetch it with my Tuya account”, or see docs/TUYA-LOCAL-KEY.md.',
+    'A plug talks on your network only to someone who knows its local key, and the key comes from the Smart Life ' +
+    'account it is paired with — once. Signing in fetches it; if you already have it, type it here.',
   fields: {
     deviceId: {
       type: 'string',
@@ -95,16 +96,17 @@ const keySchema: ConfigSchema = {
  */
 const fetchKey: SetupAction = {
   id: 'fetchKey',
-  label: 'Fetch it with my Tuya account',
-  description: 'A plug will not reveal its own local key; it comes from the cloud account the plug is paired with. This is the only step that touches Tuya, and it happens once.',
+  label: 'Use a Tuya developer project',
+  description: 'If you already have a Tuya IoT Platform cloud project: its Access ID and Secret fetch the keys instead.',
   input: keySchema,
   async run(ctx, input) {
     const parsed = validateConfig(keySchema, input);
     if (!parsed.ok) return { ok: false, detail: parsed.issues.map((issue) => issue.message).join('; ') };
     const region = String(parsed.value.region);
     if (!isRegion(region)) return { ok: false, detail: `Unknown data centre "${region}"` };
-    const seed = typeof ctx.connection.deviceId === 'string' ? ctx.connection.deviceId : '';
-    if (!seed) return { ok: false, detail: 'Choose the plug first: its device id is how the cloud finds your account.' };
+    // Any one device on the account finds the rest: the one chosen, or one heard on this network.
+    const seed = (typeof ctx.connection.deviceId === 'string' && ctx.connection.deviceId) || ([...heard(ctx.sightings).keys()][0] ?? '');
+    if (!seed) return { ok: false, detail: 'No Tuya device has been heard on this network yet, and a project finds your account through one. Type the plug’s device id, or sign in with Smart Life instead.' };
 
     const cloud = new TuyaCloud(region, String(parsed.value.clientId), String(parsed.value.clientSecret), ctx.http);
     try {
@@ -128,6 +130,102 @@ const fetchKey: SetupAction = {
       return { ok: true, detail: `Got keys for ${devices.length} device(s). Pick the plug.`, choices };
     } catch (error) {
       return { ok: false, detail: error instanceof TuyaCloudError ? error.message : (error as Error).message };
+    }
+  },
+};
+
+/** How long a sign-in QR code is waited for: Tuya's token lapses about then. */
+const SIGN_IN_WAIT_MS = 3 * 60_000;
+
+const signInSchema: ConfigSchema = {
+  fields: {
+    userCode: {
+      type: 'string',
+      title: 'User Code',
+      description: 'In the Smart Life (or Tuya Smart) app: Me → the gear, top right → Account and Security → User Code.',
+      required: true,
+    },
+  },
+};
+
+/** Where a device is on this network, from what the transport has heard it announce. */
+function heard(sightings: readonly Sighting[]): Map<string, { address: string; version: string }> {
+  const found = new Map<string, { address: string; version: string }>();
+  for (const sighting of sightings) {
+    const hex = sighting.facts.payload;
+    const device = typeof hex === 'string' ? decodeBroadcast(fromHex(hex)) : null;
+    if (device) found.set(device.gwId, { address: sighting.address, version: device.version });
+  }
+  return found;
+}
+
+/**
+ * Signs in with the Smart Life app: a User Code, a QR code the same app scans,
+ * and every device on the account comes back with its name and local key —
+ * no developer project. Matched against what the network announces, the plug
+ * that is here is found as well: the key, the address and the protocol version
+ * in one pick.
+ *
+ * Runs in turns. The first makes the QR code; each after it asks whether it
+ * has been scanned, until it has — the app asks again with what `waiting.next`
+ * says. The sign-in token is used for the one listing and never kept.
+ */
+const signIn: SetupAction = {
+  id: 'signIn',
+  label: 'Sign in with Smart Life',
+  description: 'Scan a code with the Smart Life app, and your plugs come back with their names and keys. Nothing else is read, and nothing is kept.',
+  input: signInSchema,
+  async run(ctx, input) {
+    const userCode = String(input.userCode ?? '').trim();
+    if (!userCode) return { ok: false, detail: 'The User Code is needed: the app shows it under Me → Settings → Account and Security.' };
+    try {
+      const token = typeof input.token === 'string' && input.token ? input.token : null;
+      const until = typeof input.until === 'string' ? input.until : new Date(Date.now() + SIGN_IN_WAIT_MS).toISOString();
+      if (!token) {
+        const fresh = await requestQrToken(ctx.http, userCode);
+        return {
+          ok: true,
+          detail: 'Open the Smart Life app, tap the scan icon (top right of Me), and scan this. It asks to authorise “Home Assistant” — the name Tuya gave this sign-in.',
+          waiting: { qr: qrLoginContent(fresh), next: { userCode, token: fresh, until }, everyMs: 2_000, until },
+        };
+      }
+      const session = await pollLogin(ctx.http, token, userCode);
+      if (!session) {
+        return {
+          ok: true,
+          detail: 'Waiting for the scan…',
+          waiting: { qr: qrLoginContent(token), next: { userCode, token, until }, everyMs: 2_000, until },
+        };
+      }
+
+      const devices = (await smartLifeDevices(ctx.http, session)).filter((device) => device.localKey);
+      if (!devices.length) return { ok: false, detail: 'Signed in, but the account has no devices that can be reached on a home network.' };
+      const here = heard(ctx.sightings);
+      const choices: SetupChoice[] = devices
+        .map((device) => {
+          const seen = here.get(device.id);
+          const plug = device.category === 'cz' || device.category === 'pc';
+          return {
+            id: device.id,
+            label: device.name || device.productName || device.id,
+            detail: [device.productName, seen ? `on your network at ${seen.address}` : 'not heard on this network yet', device.online === false ? 'offline' : null]
+              .filter(Boolean)
+              .join(' · '),
+            config: {
+              deviceId: device.id,
+              localKey: device.localKey,
+              ...(seen && (VERSIONS as readonly string[]).includes(seen.version) ? { protocolVersion: seen.version } : {}),
+            },
+            ...(seen ? { address: seen.address } : {}),
+            ...(device.name ? { name: device.name } : {}),
+            recommended: plug && Boolean(seen),
+          };
+        })
+        // What is on this network first, then plugs, then the rest.
+        .sort((a, b) => Number(Boolean(b.address)) - Number(Boolean(a.address)) || Number(b.recommended) - Number(a.recommended) || a.label.localeCompare(b.label));
+      return { ok: true, detail: `Signed in: ${devices.length} device${devices.length === 1 ? '' : 's'} on the account. Which is it?`, choices };
+    } catch (error) {
+      return { ok: false, detail: error instanceof SmartLifeError ? error.message : (error as Error).message };
     }
   },
 };
@@ -160,15 +258,17 @@ const protocol: Protocol = {
       instructions: {
         title: 'Get the plug ready',
         body:
-          'Pair the plug in the Smart Life or Tuya Smart app first, on a 2.4 GHz Wi-Fi network — the same home ' +
-          'network as {host}. Paired plugs announce themselves every few seconds, and appear in the next step. ' +
-          'Giving the plug a fixed address in your router keeps it from moving.',
+          'Set the plug up in the Smart Life (or Tuya Smart) app first, as its maker intends, on your home Wi-Fi — ' +
+          'most plugs only join 2.4 GHz. When it switches from the app, it is ready. Then close the app on your ' +
+          'phone: while it is open it can keep the plug to itself. Giving the plug a fixed address in your router ' +
+          'keeps it where kraftverk expects it.',
       },
       parseAddress: isIpv4,
       addressLabel: 'IP address',
     },
   },
-  credentials: { schema: CREDENTIALS, actions: [fetchKey] },
+  // Signing in lists the plugs by name, with their keys and — matched against the network — where they are: so it comes first.
+  credentials: { schema: CREDENTIALS, actions: [signIn, fetchKey], first: true, title: 'Your Smart Life account' },
 };
 
 export default protocol;
