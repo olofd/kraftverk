@@ -188,8 +188,13 @@ export type DeviceInfo = {
  * A value an attribute holds, and when the device observed it — not when
  * anyone asked, and not what time the value is about: a forecast for 14:00
  * fetched at 09:30 was observed at 09:30.
+ *
+ * `confirmedAt`: when the device last said it still holds, later than it
+ * observed it — a parked scooter's charge, reported yesterday, still standing
+ * each time its cloud answers. It is current from then (`isCurrent`), while
+ * `at` stays when it was said. Absent: the device has said nothing since.
  */
-export type Reading = { key: string; value: Value; at: string };
+export type Reading = { key: string; value: Value; at: string; confirmedAt?: string };
 
 /** The reading for one key, or null when the device has not reported it. */
 export const readingOf = (readings: readonly Reading[], key: string): Reading | null =>
@@ -245,9 +250,10 @@ export const currentForOf = (attribute: Pick<AttributeSpec, 'currentFor' | 'stat
  * Whether a reading is still current for its attribute, at `now`. A reading
  * that does not say when is not; nor is one that is not known.
  */
-export function isCurrent(attribute: Pick<AttributeSpec, 'currentFor' | 'stateClass' | 'value'>, reading: Pick<Reading, 'at' | 'value'> | null | undefined, now = Date.now()): boolean {
+export function isCurrent(attribute: Pick<AttributeSpec, 'currentFor' | 'stateClass' | 'value'>, reading: Pick<Reading, 'at' | 'confirmedAt' | 'value'> | null | undefined, now = Date.now()): boolean {
   if (!reading || reading.value === null) return false;
-  const at = Date.parse(reading.at);
+  // Current from when it was last said to hold: observed, or confirmed since.
+  const at = Math.max(Date.parse(reading.at), reading.confirmedAt ? Date.parse(reading.confirmedAt) : Number.NEGATIVE_INFINITY);
   return Number.isFinite(at) && now - at <= currentForOf(attribute);
 }
 

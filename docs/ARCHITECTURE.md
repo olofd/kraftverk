@@ -337,7 +337,10 @@ the declaration at the time — it names no domain. Every reading is stamped
 with when the device **observed** it, and each attribute says how long a value
 stays current (`currentFor`, from its state class when absent: two minutes
 for a measurement, an hour for a total); history, the gateway and the app all
-hold to it. Null is unknown — never off, never zero.
+hold to it. A device may say a reading still holds without observing it
+again — a parked scooter's charge, each time its cloud answers — as
+`confirmedAt`: current from then, while `at` stays when it was observed.
+Null is unknown — never off, never zero.
 The library lives in `packages/device-sdk/src/capabilities.ts`.
 
 A P280's `main` part offers `battery`, its `input.ac` part `acInput`, and

@@ -39,6 +39,8 @@ class StubPlug {
   commands: boolean[] = [];
   on: boolean | null;
   at: string | null;
+  /** When it last said its reading still holds, if it has since it made it. */
+  confirmedAt: string | null = null;
   watts = 0;
 
   constructor(
@@ -53,7 +55,14 @@ class StubPlug {
   session(): DeviceSession {
     return {
       health: () => health(),
-      readings: () => (this.at === null ? [] : [{ key: 'relay', value: this.on, at: this.at }, { key: 'watts', value: this.watts, at: this.at }]),
+      readings: () => {
+        if (this.at === null) return [];
+        const confirmed = this.confirmedAt ? { confirmedAt: this.confirmedAt } : {};
+        return [
+          { key: 'relay', value: this.on, at: this.at, ...confirmed },
+          { key: 'watts', value: this.watts, at: this.at, ...confirmed },
+        ];
+      },
       command: async (request): Promise<CommandResult> => {
         const on = request.args.on as boolean;
         this.commands.push(on);
@@ -415,6 +424,15 @@ describe('freshness', () => {
     const result = await gateway.execute(cut());
     expect(result.detail).toContain('stale');
     expect(plug.commands).toHaveLength(0);
+  });
+
+  test('a reading made long ago but confirmed since is not stale: it is current from when it was last said to hold', async () => {
+    const plug = new StubPlug({ at: ago(10 * 60_000) });
+    plug.confirmedAt = now();
+    const { gateway } = harness({ plug, feeds: false });
+    const result = await gateway.execute(cut());
+    expect(result.detail).not.toContain('stale');
+    expect(plug.commands).toEqual([false]);
   });
 
   test('refuses to switch a feeding plug blind when the station it feeds is not there', async () => {

@@ -50,7 +50,7 @@ const SLOW_EVERY_MS = 30 * 60_000;
  * How long a report stays current. Charging or switched on, the scooter
  * reports every few minutes, and a report older than this is not known — so
  * nothing acts on it. Parked, it reports seldom, but nothing moves: see
- * `standsSince`. To be measured on a real one (README.md).
+ * `confirmedSince`. To be measured on a real one (README.md).
  */
 const CURRENT_FOR_MS = REPORT_TRUSTED_MS;
 
@@ -67,11 +67,13 @@ const YES_NO = { true: 'Yes', false: 'No' };
 export const isParked = (state: NiuState): boolean => state.charging !== true && state.poweredOn !== true;
 
 /**
- * Since when its readings hold: when the scooter reported — or, parked, when
- * NIU last answered (its report still standing), whichever is later.
+ * When its report was last confirmed to still hold: parked, when NIU last
+ * answered (`Reading.confirmedAt`) — its readings stay current from then,
+ * while their time stays when the scooter reported. Charging or switched on,
+ * an old report may have moved on: nothing confirms it but a new one.
  */
-export function standsSince(state: NiuState, reportedAt: string, answeredAt: string): string {
-  return isParked(state) && Date.parse(answeredAt) > Date.parse(reportedAt) ? answeredAt : reportedAt;
+export function confirmedSince(state: NiuState, reportedAt: string, answeredAt: string): string | null {
+  return isParked(state) && Date.parse(answeredAt) > Date.parse(reportedAt) ? answeredAt : null;
 }
 
 /** Its state in a word, for the line beside its health: what a person asks first. */
@@ -112,10 +114,19 @@ const DESCRIPTION: DeviceDescription = {
 };
 
 /** Figures in, readings out — each stamped with when the scooter reported it. */
-export function readingsOf(state: NiuState | null, batteries: readonly NiuBatteryHealth[], totals: NiuTotals | null, at: string, slowAt: string | null): Reading[] {
+export function readingsOf(
+  state: NiuState | null,
+  batteries: readonly NiuBatteryHealth[],
+  totals: NiuTotals | null,
+  at: string,
+  slowAt: string | null,
+  confirmedAt: string | null = null
+): Reading[] {
   const readings: Reading[] = [];
   const add = (key: string, value: Value, when: string | null) => {
-    if (when) readings.push({ key, value, at: when });
+    if (!when) return;
+    // The report's readings, confirmed since while it still stands; the slow ones are asked for on their own.
+    readings.push(when === at && confirmedAt ? { key, value, at: when, confirmedAt } : { key, value, at: when });
   };
   if (state) {
     add('soc', state.soc, at);
@@ -245,7 +256,7 @@ async function realSession(ctx: DeviceContext<Config>): Promise<DeviceSession> {
       // No clock time here: the server's time zone need not be its owner's. When it reported is `lastReadingAt`, for the app to say.
       return { status: 'connected', detail: `${stateWord(state)} · through NIU’s cloud`, lastReadingAt: stateAt };
     },
-    readings: () => (state && stateAt && answeredAt ? readingsOf(state, batteries, totals, standsSince(state, stateAt, answeredAt), slowAt) : []),
+    readings: () => (state && stateAt && answeredAt ? readingsOf(state, batteries, totals, stateAt, slowAt, confirmedSince(state, stateAt, answeredAt)) : []),
     info: (): DeviceInfo => ({ manufacturer: 'NIU', serial, ...(scooter?.model ? { model: scooter.model } : {}) }),
     identity: () => ({ id: identityOf('niu-cloud', serial), name: scooter?.name ?? null }),
     command: async () => ({ accepted: false, error: 'It takes no commands here yet: which ones NIU’s cloud takes for this model is still being learnt' }),

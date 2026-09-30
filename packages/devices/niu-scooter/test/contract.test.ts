@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { HttpChannel } from '@kraftverk/device-sdk';
+import { isCurrent, type HttpChannel } from '@kraftverk/device-sdk';
 import { checkDeviceTypeContract, fakeConnection } from '@kraftverk/device-sdk/testing';
 import { md5Hex, NIU_ACCOUNT, NIU_API, parseState } from '@kraftverk/protocol-niu-cloud';
 
-import scooter, { chargingEventOf, isParked, readingsOf, standsSince, withoutPlace } from '../src/type.ts';
+import scooter, { chargingEventOf, confirmedSince, isParked, readingsOf, withoutPlace } from '../src/type.ts';
 
 /**
  * The NIU scooter keeps the device-type contract, and reads what NIU's cloud
@@ -97,14 +97,20 @@ describe('NIU scooter', () => {
     expect(readings.some((reading) => reading.key === 'odometer')).toBe(false);
   });
 
-  test('parked, its last report stands for as long as NIU answers; charging or switched on, it is as old as it is', () => {
+  test('parked, its last report stands for as long as NIU answers — still dated when the scooter made it; charging or switched on, it is as old as it is', () => {
     const reported = '2026-09-30T10:00:00.000Z';
     const answered = '2026-09-30T14:00:00.000Z';
     const parked = parseState({ ...STATE, isCharging: 0, isAccOn: 0 });
     expect(isParked(parked)).toBe(true);
-    expect(standsSince(parked, reported, answered)).toBe(answered);
-    expect(standsSince(parseState({ ...STATE, isCharging: 1 }), reported, answered)).toBe(reported);
-    expect(standsSince(parseState({ ...STATE, isCharging: 0, isAccOn: 1 }), reported, answered)).toBe(reported);
+    expect(confirmedSince(parked, reported, answered)).toBe(answered);
+    expect(confirmedSince(parseState({ ...STATE, isCharging: 1 }), reported, answered)).toBeNull();
+    expect(confirmedSince(parseState({ ...STATE, isCharging: 0, isAccOn: 1 }), reported, answered)).toBeNull();
+    // Its reading keeps the time the scooter reported; it is current from when NIU last confirmed it.
+    const soc = readingsOf(parked, [], null, reported, null, answered).find((reading) => reading.key === 'soc')!;
+    expect(soc).toEqual({ key: 'soc', value: parked.soc, at: reported, confirmedAt: answered });
+    const attribute = scooter.describe({} as never).attributes.find((candidate) => candidate.key === 'soc')!;
+    expect(isCurrent(attribute, soc, Date.parse(answered) + 60_000)).toBe(true);
+    expect(isCurrent(attribute, { ...soc, confirmedAt: undefined }, Date.parse(answered) + 60_000)).toBe(false);
     // NIU's isConnected is not a charger: it says nothing of whether it is parked.
     expect(isParked(parseState({ ...STATE, isCharging: 0, isAccOn: 0, isConnected: true }))).toBe(true);
   });

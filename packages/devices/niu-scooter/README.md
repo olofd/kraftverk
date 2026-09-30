@@ -79,9 +79,11 @@ The `app_id` is not stable: projects use `niu_ktdrr960`, `niu_8xt1afu6`,
   10 min otherwise; battery health and the odometer every 30 min.
 - **Parked** (not charging, not switched on), the scooter goes quiet, and its
   charge does not move — so its last report stands for as long as NIU keeps
-  answering (`standsSince`), and a charge limit can act on it however long
-  ago the scooter reported. **Charging or switched on**, a report older than
-  30 min is not known: nothing acts on it.
+  answering, and a charge limit can act on it however long ago the scooter
+  reported. Its readings keep the time the scooter reported them, and say
+  when NIU last confirmed them (`Reading.confirmedAt`, from
+  `confirmedSince`). **Charging or switched on**, a report older than 30 min
+  is not known: nothing acts on it.
 - The app says when it last reported ("Reported to NIU 3 minutes ago") from
   the session's `lastReadingAt`; the server says no clock time — its time
   zone need not be its owner's.

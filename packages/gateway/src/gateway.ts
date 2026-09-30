@@ -22,6 +22,7 @@ import {
   type LinkEnd,
   type LinkKind,
   type LinkKindSpec,
+  type Reading,
   type SavedDeviceId,
   type Value,
 } from '@kraftverk/device-sdk';
@@ -418,7 +419,7 @@ export class ActionGateway {
 
     // 3. Freshness: acting on stale readings is how mains is cut at exactly the wrong moment.
     if (current.some((reading) => reading === null || reading.value === null)) return refuse('Its current state is not known, so it is not switched blind');
-    if (settings.some((setting, index) => !this.#fresh(setting.attribute, current[index]!.at))) return refuse('Its reading is stale: refusing to switch blind');
+    if (settings.some((setting, index) => !this.#fresh(setting.attribute, current[index]!))) return refuse('Its reading is stale: refusing to switch blind');
 
     // Every link from this part whose kind goes through this capability: its target must be answering, now.
     const links: Linked[] = [];
@@ -442,7 +443,7 @@ export class ActionGateway {
       const attribute = attributeMeaning(device.description, intent.part, means);
       if (!attribute) return null;
       const reading = readingOf(readingsNow(), attribute.key);
-      return { value: reading?.value ?? null, current: this.#fresh(attribute, reading?.at ?? null) };
+      return { value: reading?.value ?? null, current: this.#fresh(attribute, reading) };
     };
     const declared = declaredConsequence(spec, intent.args, partValue, this.#deps.policyValues?.() ?? {});
     const whenMatches = spec.consequential !== undefined && (spec.consequential === 'always' || !spec.consequential.when || intent.args[spec.consequential.when.arg] === spec.consequential.when.is);
@@ -545,13 +546,18 @@ export class ActionGateway {
       connected: session.health().status === 'connected',
       value: reading?.value ?? null,
       at: reading?.at ?? null,
-      current: this.#fresh(attribute, reading?.at ?? null),
+      current: this.#fresh(attribute, reading),
     };
   }
 
-  /** Current for its attribute, and no older than the policy allows anything to be acted on. */
-  #fresh(attribute: AttributeSpec, at: string | null): boolean {
-    return this.#ageOf(at) <= Math.min(this.#policy.maxDataAgeMs, currentForOf(attribute));
+  /**
+   * Current for its attribute, and no older than the policy allows anything
+   * to be acted on — counted from when it was last said to hold: observed, or
+   * confirmed since (`Reading.confirmedAt`).
+   */
+  #fresh(attribute: AttributeSpec, reading: Pick<Reading, 'at' | 'confirmedAt'> | null): boolean {
+    const age = Math.min(this.#ageOf(reading?.at ?? null), this.#ageOf(reading?.confirmedAt ?? null));
+    return age <= Math.min(this.#policy.maxDataAgeMs, currentForOf(attribute));
   }
 
   /** Waits for `check`, looking at what is cached — cheap, so often enough to answer soon. */
