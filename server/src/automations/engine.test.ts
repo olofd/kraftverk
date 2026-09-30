@@ -8,6 +8,7 @@ import {
   defineRecipe,
   MAIN_PART,
   savedDeviceId,
+  inlineParams,
   zonedInstant,
   type AuditRecord,
   type DeviceDescription,
@@ -192,14 +193,18 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
         if (intent.deviceId === PLUG && typeof intent.args.on === 'boolean') plug.on = intent.args.on;
         return { outcome: 'verified', detail: 'Switched, confirmed by the device', deviceAgreed: true };
       },
+      write: async () => ({ outcome: 'verified', detail: 'Changed, confirmed by the device' }),
       runEnded: () => {},
     },
     record: (entry) => recorded.push(entry),
     bus,
     now: () => now,
   });
+  const library = new AutomationLibrary([kit], () => {});
+  /** An automation copied from one of the kit's recipes, its settings written into its blocks — as the app makes one. */
   const make = (recipe: string, roles: AutomationRecord['roles'], params: Record<string, string | number> = {}, mode: AutomationRecord['mode'] = 'observe', recheckMinutes: number | null = null) => {
-    const created = store.create({ name: 'Test automation', recipe, roles, params, timeZone: ZONE, recheckMinutes });
+    const { id: _id, label: _label, description: _description, sentence: _sentence, ...rule } = library.recipe(recipe)!;
+    const created = store.create({ name: 'Test automation', rule: inlineParams(rule, params), madeFrom: recipe, roles, starts: {}, timeZone: ZONE, recheckMinutes });
     return mode === 'observe' ? created : store.update(created.id, { mode })!;
   };
   const sunny = (params: Record<string, string | number> = {}, mode: AutomationRecord['mode'] = 'observe', switchPart = { device: PLUG, part: 'main' }) =>
@@ -233,6 +238,35 @@ describe('at a time of day', () => {
     expect(sent).toHaveLength(1);
     expect(store.get(armed.id)!.lastRun).toMatchObject({ outcome: 'acted' });
     expect(store.get(off.id)!.lastRun).toBeNull();
+  });
+
+  test('only on its days, on the owner’s calendar — and says so as why it ran', async () => {
+    // 15 June 2026 is a Monday in Stockholm.
+    const { engine, store, sent } = setup();
+    const at = (days: readonly ('mon' | 'sat' | 'sun')[]) =>
+      store.update(
+        store.create({
+          name: `On ${days.join(' ')}`,
+          rule: {
+            roles: { switch: { label: 'Switch', description: 'A switch', capabilities: ['switch'] } },
+            params: { fields: {} },
+            when: [{ at: { value: '07:00' }, days }],
+            then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
+          },
+          madeFrom: null,
+          roles: { switch: { device: PLUG, part: 'main' } },
+          starts: {},
+          timeZone: ZONE,
+          recheckMinutes: null,
+        }).id,
+        { mode: 'armed' }
+      )!;
+    const weekend = at(['sat', 'sun']);
+    const monday = at(['mon']);
+    await engine.tick();
+    expect(store.get(weekend.id)!.lastRun).toBeNull();
+    expect(store.get(monday.id)!.lastRun).toMatchObject({ outcome: 'acted', why: 'At 07:00 on Mon' });
+    expect(sent).toHaveLength(1);
   });
 
   test('observing, it says what it would have done, with the function’s reason — and sends nothing', async () => {
@@ -316,9 +350,20 @@ describe('at a time of day', () => {
     expect(recorded).toEqual([]);
   });
 
-  test('a recipe no installed package has says so', async () => {
-    const { engine, make } = setup();
-    expect(await engine.run(make('gone.package.recipe', {}))).toMatchObject({ outcome: 'unknown', summary: expect.stringContaining('the package that brought it is not installed') });
+  test('it owns its rule: the recipe it was copied from is not needed to run it', async () => {
+    const { store, make, sent } = setup();
+    const low = make('test.kit.low', { battery: { device: STATION, part: 'main' }, switch: { device: PLUG, part: 'main' } }, { below: 60, minutes: 0 }, 'armed');
+    // A server whose packages no longer ship that recipe: the automation runs as it was built.
+    const bare = new AutomationEngine({
+      store,
+      library: new AutomationLibrary([], () => {}),
+      device: () => null,
+      gateway: { execute: async () => ({ outcome: 'verified', detail: 'x', deviceAgreed: true }), write: async () => ({ outcome: 'verified', detail: 'x' }), runEnded: () => {} },
+      record: () => {},
+    });
+    expect(bare.steps(low).steps.map((line) => line.text)).toEqual(['Turn a device you no longer have on']);
+    expect(low.rule.params).toEqual({ fields: {} });
+    expect(sent).toEqual([]);
   });
 });
 

@@ -3,48 +3,50 @@ import { expect, test } from '@playwright/test';
 import { addSimulated, answer, press, unique } from './helpers';
 
 /*
-  A sequence you start (docs/SEQUENCES.md): the owner's charging chain — a
-  station's AC output powering a Zigbee plug a scooter's charger is in. Made
-  from the shared recipe, shown as its steps, tried while it only watches,
-  started once it acts, followed as it goes, and started again from the
-  plug's own page.
+  Sequences built in the editor (docs/AUTOMATION-EDITOR.md): the owner's
+  charging chain copied from its recipe, its parts chosen, started, followed,
+  and put on the home page; and one built from nothing, block by block, that
+  changes a setting and starts another automation, waiting for it to end.
 */
 
-test('start charging: made from its recipe, shown as steps, tried, let act, started — and startable from a device it is about', async ({ page, request }) => {
+const HEADERS = { 'x-kraftverk-client': 'app' };
+
+/** Picks, in the picker called `label`, the option that reads `option`. */
+async function pick(page: import('@playwright/test').Page, label: string, option: string) {
+  await page.getByRole('button', { name: new RegExp(`^${label}: .*Choose$`) }).last().click();
+  await page.getByText(option, { exact: true }).last().click();
+}
+
+test('start charging: copied from its recipe, its parts chosen, started, followed — and on the home page and its device', async ({ page, request }) => {
   const station = await addSimulated(request, 'aferiy.p280', unique('Garage P280'));
   const plug = await addSimulated(request, 'tuya.zigbee-plug', unique('Scooter plug'));
 
   await page.goto('/automations');
   await press(page, 'New automation');
-  // A sequence says what it is: it takes steps, and you start it.
-  await expect(page.getByText('Steps', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('You start it', { exact: true }).first()).toBeVisible();
+  // A new one starts from nothing, or from a recipe copied.
+  await expect(page.getByText('Nothing', { exact: true })).toBeVisible();
   await press(page, 'Start charging');
-  // What it will do, before anything is chosen.
-  await expect(page.getByText('What it will do')).toBeVisible();
-  await expect(page.getByText('Wait until the charger’s plug can be reached — at most 2 min')).toBeVisible();
 
-  // Each role lists every part that can fill it: the supply's list first, then the charger's.
-  await page.getByText(`${station.name} — AC outlets`, { exact: true }).first().click();
-  await page.getByText(plug.name, { exact: true }).last().click();
+  // The recipe's blocks, each yours to change; its parts still to choose.
+  await expect(page.getByRole('listitem', { name: /^Wait until: Wait until the charger’s plug can be reached/ })).toBeVisible();
+  await expect(page.getByRole('status')).toContainText('What powers the charger: choose one of your devices');
+  await pick(page, 'What powers the charger', `${station.name} — AC outlets`);
+  await pick(page, 'The charger’s plug', plug.name);
+  await expect(page.getByRole('status')).toContainText('It can run as it is');
   const name = unique('Charge the scooter');
   await page.getByLabel('Name').fill(name);
   await press(page, 'Create');
 
   const card = page.getByRole('region', { name });
+  await expect(card.getByText('Made from “Start charging”')).toBeVisible();
   await expect(card.getByText('What it does')).toBeVisible();
   // The step, not the sentence above it that says the same: one name for a part everywhere.
   await expect(card.getByText(`Turn ${station.name} — AC outlets on`, { exact: true }).first()).toBeVisible();
   await expect(card.getByText(/If a step does not succeed, or you stop it/i)).toBeVisible();
 
-  // Only watching: tried, it says what it would do, and switches nothing.
-  await card.getByRole('button', { name: `Try ${name}` }).click();
-  await expect(card.getByText('If it were started now')).toBeVisible();
-
-  // Let act — confirmed — and started.
-  await card.getByRole('radio', { name: 'Act' }).click();
-  await answer(page, true);
+  // Only watching on its own, it still runs when you start it — said, and asked, first.
   await card.getByRole('button', { name: `Start ${name}` }).click();
+  expect(await answer(page, true)).toContain('started by you it acts');
   // It runs, and ends: the last run, each step as it went.
   await expect(card.getByText(/^Last run/)).toBeVisible({ timeout: 20_000 });
   await expect(card.getByText(`Turn ${plug.name} on`).first()).toBeVisible();
@@ -54,8 +56,83 @@ test('start charging: made from its recipe, shown as steps, tried, let act, star
   await card.getByText('History', { exact: true }).click();
   await expect(card.getByText(/^by e2e-admin/).first()).toBeVisible();
 
+  // Put on the home page: a shortcut there to start it.
+  await card.getByRole('switch', { name: 'On the home page' }).click();
+  await expect(card.getByText('A shortcut to start it is on your home page.')).toBeVisible();
+  await page.goto('/');
+  await expect(page.getByText('Shortcuts', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: `Start ${name}` })).toBeVisible();
+
   // The plug's page offers it, to start from there.
   await page.goto(`/device/${plug.id}`);
-  await expect(page.getByText('Start', { exact: true }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: `Start ${name}` })).toBeVisible();
+});
+
+test('built from nothing: a time, a setting changed, and another automation started and waited for', async ({ page, request }) => {
+  const plug = await addSimulated(request, 'tuya.zigbee-plug', unique('Scooter plug'));
+  const meter = await addSimulated(request, 'atorch.s1w', unique('ATORCH'));
+  // The automation it starts: one step, made straight through the API.
+  const child = unique('Plug on');
+  const made = await request.post('/api/automations', {
+    headers: HEADERS,
+    data: {
+      name: child,
+      rule: {
+        roles: { plug: { label: 'Plug', description: 'The plug', capabilities: ['switch'] } },
+        params: { fields: {} },
+        when: [],
+        then: [{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
+      },
+      roles: { plug: { device: plug.id, part: 'main' } },
+      starts: {},
+      timeZone: 'Europe/Stockholm',
+    },
+  });
+  expect(made.ok(), await made.text()).toBe(true);
+
+  await page.goto('/automation/new');
+  await press(page, 'Nothing');
+  // Nothing in it yet: it says so, and what it still needs.
+  await expect(page.getByRole('status')).toContainText('What it does: it does nothing');
+  await expect(page.getByRole('status')).toContainText('Nothing yet.');
+  const name = unique('Morning');
+  await page.getByLabel('Name').fill(name);
+
+  // What starts it on its own: seven in the morning, on weekdays.
+  await press(page, 'Add a trigger');
+  await page.getByRole('button', { name: 'Add: At a time' }).click();
+  await page.getByLabel('Hour').fill('7');
+  await page.getByRole('radio', { name: 'Weekdays' }).click();
+
+  // A setting the meter keeps: its brightness.
+  await press(page, 'Add a step');
+  await page.getByRole('button', { name: 'Add: Change a setting' }).click();
+  await pick(page, 'Which part', meter.name);
+  await pick(page, 'Which setting', 'Brightness');
+  await page.getByLabel('Set it to').fill('7');
+
+  // Another automation, started and waited for.
+  await press(page, 'Add a step');
+  await page.getByRole('button', { name: 'Add: Start another automation' }).click();
+  await pick(page, 'Which automation', child);
+  await page.getByRole('radio', { name: 'Wait until it ends' }).click();
+
+  const status = page.getByRole('status');
+  await expect(status).toContainText('It can run as it is');
+  await expect(status).toContainText(`At 07:00 on weekdays, set ${meter.name}’s Brightness to 7`);
+  await expect(status).toContainText(`start “${child}” and wait until it ends — at most 10 min`);
+  await press(page, 'Create');
+
+  // Started: it changes the setting, then runs the other to its end.
+  const card = page.getByRole('region', { name });
+  await card.getByRole('button', { name: `Start ${name}` }).click();
+  await answer(page, true);
+  await expect(card.getByText(/^Last run/)).toBeVisible({ timeout: 20_000 });
+  await expect(card.getByText(`Started “${child}”`).first()).toBeVisible();
+
+  // The one it started says who started it.
+  const started = page.getByRole('region', { name: child });
+  await expect(started.getByText(/^Last run/)).toBeVisible();
+  await started.getByText('History', { exact: true }).click();
+  await expect(started.getByText(new RegExp(`by “${name}”`)).first()).toBeVisible();
 });

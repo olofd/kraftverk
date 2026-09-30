@@ -6,12 +6,12 @@ import {
   evaluateNow,
   localTime,
   ruleUses,
+  runsOn,
   standardMeaning,
   zonedInstant,
   type AttributeSpec,
-  type ConfigValues,
   type DeviceDescription,
-  type Recipe,
+  type Rule,
   type RuleScope,
   type ScalarValue,
   type Value,
@@ -39,7 +39,7 @@ export type RehearseSource = {
   events(deviceId: string, part: string, event: string, from: string, to: string): readonly string[];
 };
 
-export type Rehearsed = { roles: Readonly<Record<string, RoleBinding>>; params: ConfigValues; timeZone: string };
+export type Rehearsed = { roles: Readonly<Record<string, RoleBinding>>; timeZone: string };
 
 /** At most this many runs are reported: a rule that runs that often is said to, not listed. */
 const MAX_RUNS = 200;
@@ -68,13 +68,13 @@ function after(times: readonly { at: number }[] | readonly number[], t: number):
   return low;
 }
 
-export async function rehearse(recipe: Recipe, automation: Rehearsed, source: RehearseSource, window: { from: Date; to: Date }): Promise<Rehearsal> {
+export async function rehearse(recipe: Rule, automation: Rehearsed, source: RehearseSource, window: { from: Date; to: Date }): Promise<Rehearsal> {
   const from = window.from.toISOString();
   const to = window.to.toISOString();
   const caveats: string[] = [];
-  // Started when asked, and by nothing else: history holds no moment it would have started on its own.
-  if (recipe.when.every((trigger) => 'asked' in trigger)) {
-    return { from, to, runs: [], caveats: ['It starts when you ask, never on its own: there is no moment in history it would have started'] };
+  // Played or started, and by nothing of its own: history holds no moment it would have started by itself.
+  if (!recipe.when.length) {
+    return { from, to, runs: [], caveats: ['It runs when you play it, or another automation starts it — never on its own: there is no moment in history it would have started'] };
   }
   const uses = ruleUses(recipe);
   const name = (role: string) => {
@@ -109,9 +109,10 @@ export async function rehearse(recipe: Recipe, automation: Rehearsed, source: Re
 
   const scopeAt = (t: number): RuleScope => ({
     reachable: () => ({ reachable: null, detail: 'history does not keep whether it could be reached' }),
+    // An automation's own rule has no settings: its values are in its blocks.
     param: (param) => {
       const field = recipe.params.fields[param];
-      return (automation.params[param] ?? (field && 'default' in field ? field.default : undefined) ?? null) as Value;
+      return ((field && 'default' in field ? field.default : undefined) ?? null) as Value;
     },
     read: (role, means) => {
       const found = series.get(`${role}:${means}`);
@@ -139,7 +140,10 @@ export async function rehearse(recipe: Recipe, automation: Rehearsed, source: Re
       const [hour, minute] = typeof at === 'string' ? at.split(':').map(Number) : [];
       if (hour === undefined || minute === undefined || Number.isNaN(hour) || Number.isNaN(minute)) continue;
       for (let day = start - 86_400_000; day <= end + 86_400_000; day += 86_400_000) {
-        const instant = zonedInstant({ ...localTime(new Date(day), automation.timeZone), hour, minute }, automation.timeZone).getTime();
+        const date = localTime(new Date(day), automation.timeZone);
+        // Only on its days, on the owner's calendar.
+        if (!runsOn(trigger, date)) continue;
+        const instant = zonedInstant({ ...date, hour, minute }, automation.timeZone).getTime();
         if (instant >= start && instant <= end && !fired.some((run) => run.at === instant)) fired.push({ at: instant, because: `It is ${at}` });
       }
     } else if ('event' in trigger) {

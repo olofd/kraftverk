@@ -12,6 +12,9 @@ import type {
   AuditUpload,
   AuthState,
   AutomationChanges,
+  AutomationDraft,
+  AutomationDraftView,
+  AutomationKit,
   AutomationRun,
   AutomationRuns,
   AutomationView,
@@ -339,9 +342,16 @@ export async function removeLink(id: string) {
 
 // --- automations ----------------------------------------------------------------
 
-export async function fetchRecipes(signal?: AbortSignal) {
-  const { data } = await api.get<{ recipes: RecipeView[] }>('/automations/recipes', { signal });
-  return data.recipes;
+/** What an automation can start from, and the functions its conditions may ask. */
+export async function fetchAutomationKit(signal?: AbortSignal) {
+  const { data } = await api.get<AutomationKit>('/automations/recipes', { signal });
+  return data;
+}
+
+/** A draft as it is built: everything wrong with it, and how it reads. Nothing is kept. `self`: the automation it is, when it is one. */
+export async function checkDraft(draft: AutomationDraft, self: string | null, signal?: AbortSignal) {
+  const { data } = await api.post<AutomationDraftView>('/automations/draft', { ...draft, self }, { signal });
+  return data;
 }
 
 export async function fetchAutomations(signal?: AbortSignal) {

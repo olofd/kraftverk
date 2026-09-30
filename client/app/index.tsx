@@ -10,6 +10,7 @@ import { DeviceImage } from '../src/components/DeviceImage';
 import { Pressable } from '../src/components/Pressable';
 import { pictureFor } from '../src/devices/ui';
 import { Screen } from '../src/components/Screen';
+import { Shortcuts } from '../src/features/automations/Shortcuts';
 import { DeviceIcon } from '../src/features/devices/panels';
 import { useAuth } from '../src/state/AuthProvider';
 import { useDevices } from '../src/state/DevicesProvider';
@@ -72,6 +73,7 @@ export default function DevicesScreen() {
         </Card>
       ) : null}
 
+      {mode === 'server' ? <Shortcuts /> : null}
       {mode === 'server' ? <FoundNearYou /> : null}
 
       {loading && devices.length === 0 ? (

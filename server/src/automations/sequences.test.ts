@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { MAIN_PART, savedDeviceId, type AuditRecord, type DeviceDescription, type DeviceReader } from '@kraftverk/device-sdk';
-import type { CommandIntent, GatewayResult } from '@kraftverk/gateway';
+import { inlineParams, MAIN_PART, savedDeviceId, startCharging, stopCharging, type AuditRecord, type AutomationId, type DeviceDescription, type DeviceReader, type Rule } from '@kraftverk/device-sdk';
+import type { CommandIntent, GatewayResult, WriteIntent, WriteResult } from '@kraftverk/gateway';
 import { LiveBus, type LiveMessage } from '@kraftverk/holder';
 
 import { closeDb, db } from '../history/db.ts';
@@ -56,6 +56,7 @@ const SOCKET: DeviceDescription = {
   attributes: [
     { key: 'relay', label: 'Power', value: { type: 'boolean' }, means: 'switch.on' },
     { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power.draw' },
+    { key: 'live', label: 'Live readings', value: { type: 'boolean' }, access: 'write' },
   ],
 };
 
@@ -70,15 +71,18 @@ type World = {
   /** The charger draws once its plug has been switched on this many times; never, when null. */
   wakesOnSwitch: number | null;
   plugSwitchedOn: number;
+  /** The plug’s live readings: a setting it may be told. */
+  live: boolean;
 };
 
 function setup(world: Partial<World> = {}) {
-  const state: World = { supplyOn: false, othersWatts: 0, plugOn: false, reachableAfterMs: 0, supplyOnAt: 0, wakesOnSwitch: 1, plugSwitchedOn: 0, ...world };
+  const state: World = { supplyOn: false, othersWatts: 0, plugOn: false, reachableAfterMs: 0, supplyOnAt: 0, wakesOnSwitch: 1, plugSwitchedOn: 0, live: false, ...world };
   const sent: CommandIntent[] = [];
   const recorded: AuditRecord[] = [];
   const heard: LiveMessage[] = [];
   const fresh: { device: string; until: number }[] = [];
   const runsEnded: string[] = [];
+  const writes: WriteIntent[] = [];
   const reachable = () => state.supplyOn && state.reachableAfterMs !== null && Date.now() - state.supplyOnAt >= state.reachableAfterMs;
   const charging = () => state.plugOn && reachable() && state.wakesOnSwitch !== null && state.plugSwitchedOn >= state.wakesOnSwitch;
   const now = () => new Date().toISOString();
@@ -120,7 +124,7 @@ function setup(world: Partial<World> = {}) {
       MAIN_PART,
       SOCKET,
       reader(
-        () => (reachable() ? [{ key: 'relay', value: state.plugOn }, { key: 'watts', value: charging() ? 240 : 0.4 }] : []),
+        () => (reachable() ? [{ key: 'relay', value: state.plugOn }, { key: 'watts', value: charging() ? 240 : 0.4 }, { key: 'live', value: state.live }] : []),
         reachable
       ),
       reachable
@@ -147,6 +151,12 @@ function setup(world: Partial<World> = {}) {
         }
         return { outcome: 'verified', detail: 'Done — confirmed by the device', deviceAgreed: true };
       },
+      write: async (intent: WriteIntent): Promise<WriteResult> => {
+        writes.push(intent);
+        if (!reachable()) return { outcome: 'refused', detail: 'It cannot be reached' };
+        if (typeof intent.patch.live === 'boolean') state.live = intent.patch.live;
+        return { outcome: 'verified', detail: 'Changed Live readings to on, confirmed by the device' };
+      },
       runEnded: (runId: string) => void runsEnded.push(runId),
     },
     record: (entry) => recorded.push(entry),
@@ -154,8 +164,10 @@ function setup(world: Partial<World> = {}) {
     secondMs: SECOND_MS,
   });
   const roles = { supply: { device: STATION, part: 'outlet.ac' }, charger: { device: PLUG, part: MAIN_PART } };
+  /** An automation copied from the recipe, its settings written into its blocks — as the app makes one. */
   const make = (recipe: 'standard.start-charging' | 'standard.stop-charging', params: Record<string, string | number> = {}, mode: 'observe' | 'armed' | 'off' = 'armed') => {
-    const created = store.create({ name: recipe === 'standard.start-charging' ? 'Start charging the scooter' : 'Stop charging the scooter', recipe, roles, params, timeZone: 'Europe/Stockholm', recheckMinutes: null });
+    const rule = inlineParams(recipe === 'standard.start-charging' ? startCharging : stopCharging, params);
+    const created = store.create({ name: recipe === 'standard.start-charging' ? 'Start charging the scooter' : 'Stop charging the scooter', rule, madeFrom: recipe, roles, starts: {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
     return mode === 'observe' ? created : store.update(created.id, { mode })!;
   };
   /** Waits for the run to end, and answers it as kept. */
@@ -168,7 +180,13 @@ function setup(world: Partial<World> = {}) {
     throw new Error('The run never ended');
   };
   const switches = () => sent.map((intent) => `${intent.deviceId === STATION ? 'supply' : 'charger'} ${intent.args.on ? 'on' : 'off'}`);
-  return { engine, store, state, sent, recorded, heard, fresh, runsEnded, make, ended, switches };
+  /** An automation of its owner's own: a rule built from blocks, with what fills its roles. */
+  const own = (name: string, rule: Omit<Rule, 'params'>, fills: { starts?: Record<string, AutomationId>; mode?: 'observe' | 'armed' | 'off' } = {}) => {
+    const partRoles = Object.fromEntries(Object.keys(rule.roles).filter((role) => role in roles).map((role) => [role, roles[role as keyof typeof roles]]));
+    const created = store.create({ name, rule: { ...rule, params: { fields: {} } }, madeFrom: null, roles: partRoles, starts: fills.starts ?? {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
+    return fills.mode === 'observe' ? created : store.update(created.id, { mode: fills.mode ?? 'armed' })!;
+  };
+  return { engine, store, state, sent, writes, recorded, heard, fresh, runsEnded, make, own, ended, switches };
 }
 
 /** A person asking. */
@@ -315,10 +333,10 @@ describe('starting a charge', () => {
     expect(fresh.some((wish) => wish.device === PLUG)).toBe(true);
   });
 
-  test('only watching, it says what it would do — every step — and sends nothing; off, or not started when asked, it is not started', async () => {
-    const { engine, make, sent, store } = setup();
+  test('asked what it would do, it says so — every step — and sends nothing; played by a person, it runs, whatever its mode', async () => {
+    const { engine, make, sent, store, ended, switches } = setup({ reachableAfterMs: 20 });
     const watching = make('standard.start-charging', QUICK, 'observe');
-    const would = await engine.startAsked(watching.id, OLOF);
+    const would = await engine.run(watching, { check: true });
     expect(would.outcome).toBe('would-act');
     expect(would.id).toBeNull();
     expect(would.steps.map((step) => `${'  '.repeat(step.depth)}${step.what}`)).toEqual([
@@ -333,17 +351,16 @@ describe('starting a charge', () => {
     expect(sent).toEqual([]);
     expect(store.get(watching.id)!.lastRun).toBeNull();
 
+    // An assistant starts only what its owner has let act: an owner's yes, not its own.
+    await expect(engine.startAsked(watching.id, { name: 'assistant for olof', actor: 'agent' })).rejects.toThrow('It only watches');
+    // A person's play is a yes: it runs, for real, though it only watches on its own.
+    expect((await engine.startAsked(watching.id, OLOF)).outcome).toBe('running');
+    expect((await ended(watching.id)).outcome).toBe('acted');
+    expect(switches()).toEqual(['supply on', 'charger on']);
+
+    // Off is off: nobody starts it.
     const off = make('standard.start-charging', QUICK, 'off');
     await expect(engine.startAsked(off.id, OLOF)).rejects.toThrow(RunRefusal);
-    const window = store.create({
-      name: 'Window',
-      recipe: 'standard.charge-between',
-      roles: { battery: { device: STATION, part: MAIN_PART }, charger: { device: PLUG, part: MAIN_PART } },
-      params: {},
-      timeZone: 'Europe/Stockholm',
-      recheckMinutes: null,
-    });
-    await expect(engine.startAsked(window.id, OLOF)).rejects.toThrow('It is not started when asked');
   });
 
   test('a run the server stopped during is ended as interrupted when it starts again — never resumed', async () => {
@@ -355,6 +372,7 @@ describe('starting a charge', () => {
       at,
       endedAt: null,
       startedBy: 'olof',
+      startedByRun: null,
       outcome: 'running',
       summary: 'Running',
       why: 'Started by olof',
@@ -398,5 +416,95 @@ describe('stopping a charge', () => {
     expect(run.steps[1]).toMatchObject({ kind: 'watch', outcome: 'not-met' });
     expect(run.steps[1]!.detail).toBe('It did not, after 0 s — Garage station — AC outlets: Power 45 W');
     expect(run.outcome).toBe('acted');
+  });
+});
+
+/** An automation's roles: the supply and the plug, as the recipes have them. */
+const SUPPLY_ROLE = { label: 'What powers the charger', description: 'Its supply', capabilities: ['switch', 'powerMeter'] } as const;
+const PLUG_ROLE = { label: 'The charger’s plug', description: 'Its plug', capabilities: ['switch', 'powerMeter'] } as const;
+const on = (role: string, value = true) => ({ command: { role, capability: 'switch', command: 'set', args: { on: { value } } } }) as const;
+
+describe('blocks its owner builds', () => {
+  test('change a setting: once the plug can be reached, its live readings on — through the gateway, and not again when they already are', async () => {
+    const { own, engine, ended, writes, state } = setup({ reachableAfterMs: 20 });
+    const fast = own('Fast readings', {
+      roles: { supply: SUPPLY_ROLE, charger: PLUG_ROLE },
+      when: [],
+      then: [on('supply'), { waitUntil: { condition: { reachable: 'charger' }, atMostSeconds: { value: 20 } } }, { write: { role: 'charger', key: 'live', value: { value: true } } }],
+    });
+    await engine.startAsked(fast.id, OLOF);
+    const run = await ended(fast.id);
+    expect(run.outcome).toBe('acted');
+    expect(run.steps[2]).toMatchObject({ kind: 'write', what: 'Set Scooter plug’s Live readings to on', outcome: 'done' });
+    expect(writes.map((write) => [write.deviceId, write.patch, write.actor])).toEqual([[PLUG, { live: true }, 'automation']]);
+    expect(state.live).toBe(true);
+    expect(run.summary).toContain('set Scooter plug’s Live readings to on');
+
+    // Played again: already so, and not written a second time.
+    await engine.startAsked(fast.id, OLOF);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const again = await ended(fast.id);
+    expect(again.steps[2]).toMatchObject({ kind: 'write', outcome: 'already' });
+    expect(writes).toHaveLength(1);
+  });
+
+  test('start another automation and wait for it: its run says which run started it, and who asked for the chain', async () => {
+    const { own, make, engine, store, ended, switches } = setup({ reachableAfterMs: 20 });
+    const charge = make('standard.start-charging', QUICK);
+    const morning = own(
+      'Morning',
+      { roles: { charging: { automation: true, label: 'The charging', description: 'What charges the scooter' } }, when: [], then: [{ start: { role: 'charging', waitSeconds: { value: 60 } } }] },
+      { starts: { charging: charge.id } }
+    );
+    await engine.startAsked(morning.id, OLOF);
+    const run = await ended(morning.id);
+    expect(run.outcome).toBe('acted');
+    expect(run.steps[0]).toMatchObject({ kind: 'start', what: 'Start “Start charging the scooter” and wait until it ends — at most 1 min', outcome: 'done' });
+    expect(run.steps[0]!.detail).toStartWith('It ran: turned Garage station — AC outlets on');
+    expect(run.summary).toBe('Started “Start charging the scooter”');
+    const child = store.runs(charge.id)[0]!;
+    expect(child).toMatchObject({ outcome: 'acted', startedBy: 'olof', startedByRun: { id: run.id, automationId: morning.id, name: 'Morning' }, why: 'Started by “Morning”' });
+    expect(switches()).toEqual(['supply on', 'charger on']);
+  });
+
+  test('stopped while it waits for the other: that one is stopped too, and what each does if stopped runs', async () => {
+    const { own, make, engine, ended, switches } = setup({ reachableAfterMs: 10_000 });
+    const charge = make('standard.start-charging', QUICK);
+    const morning = own(
+      'Morning',
+      { roles: { charging: { automation: true, label: 'The charging', description: 'What charges the scooter' } }, when: [], then: [{ start: { role: 'charging', waitSeconds: { value: 60 } } }] },
+      { starts: { charging: charge.id } }
+    );
+    await engine.startAsked(morning.id, OLOF);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    engine.stopAsked(morning.id, 'olof');
+    const [parent, child] = [await ended(morning.id), await ended(charge.id)];
+    expect(parent.outcome).toBe('stopped');
+    expect(parent.steps[0]).toMatchObject({ kind: 'start', outcome: 'stopped' });
+    expect(child.outcome).toBe('stopped');
+    expect(child.summary).toStartWith('Stopped by “Morning” after it turned Garage station — AC outlets on');
+    // The charging sequence switched its supply back off, as it does when stopped.
+    expect(switches()).toEqual(['supply on', 'charger off', 'supply off']);
+  });
+
+  test('refused, as a step: another that is off, already running, or a chain that would come back to itself', async () => {
+    const { own, make, engine, ended, store } = setup();
+    const charge = make('standard.start-charging', QUICK, 'off');
+    const role = { charging: { automation: true, label: 'The charging', description: 'What charges the scooter' } } as const;
+    const starter = own('Starter', { roles: role, when: [], then: [{ start: { role: 'charging' } }] }, { starts: { charging: charge.id } });
+    await engine.startAsked(starter.id, OLOF);
+    const refused = await ended(starter.id);
+    expect(refused.outcome).toBe('refused');
+    expect(refused.steps[0]).toMatchObject({ kind: 'start', outcome: 'refused', detail: 'It is off: turn it on to start it' });
+
+    // A starts B, and B starts A: the second start is refused, not run round and round.
+    const a = own('A', { roles: role, when: [], then: [{ start: { role: 'charging', waitSeconds: { value: 10 } } }] });
+    const b = own('B', { roles: role, when: [], then: [{ start: { role: 'charging' } }] }, { starts: { charging: a.id } });
+    store.update(a.id, { starts: { charging: b.id } });
+    await engine.startAsked(a.id, OLOF);
+    const [first, second] = [await ended(a.id), await ended(b.id)];
+    expect(second.steps[0]).toMatchObject({ kind: 'start', outcome: 'refused' });
+    expect(['It is already running', 'It is already in this chain: started again, it would start itself']).toContain(second.steps[0]!.detail);
+    expect(first.outcome).toBe('failed');
   });
 });

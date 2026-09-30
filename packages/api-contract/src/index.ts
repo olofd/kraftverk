@@ -41,11 +41,13 @@ import type {
   ResourceKind,
   SavedDeviceId,
   SetupStepView,
+  Rule,
   StepKind,
   StepLine,
   ToolSpec,
   TransportDefinition,
   Value,
+  ValueType,
 } from '@kraftverk/device-sdk';
 
 export type {
@@ -65,6 +67,14 @@ export type {
   StepKind,
   StepLine,
   ToolSpec,
+  Rule,
+  RoleSpec,
+  Step,
+  Expr,
+  Trigger,
+  Weekday,
+  CompareOp,
+  Command,
   CategoryId,
   CategorySpec,
   ConfigField,
@@ -306,7 +316,7 @@ export type VocabularyView = {
   capabilities: Record<string, { label: string; attributes: Record<string, string>; commands: Record<string, { description: string; args: Record<string, unknown>; consequential: unknown }>; queries: Record<string, { description: string; args: Record<string, unknown> }> }>;
   meanings: Record<string, { label: string; type: 'number' | 'boolean'; unit: string | null }>;
   links: Record<string, { verb: string; from: string; to: string; description: string }>;
-  recipes: { id: string; label: string; description: string; roles: Record<string, { label: string; capabilities: readonly string[]; oneOf?: readonly string[] }>; params: ConfigSchema }[];
+  recipes: { id: string; label: string; description: string; roles: Record<string, { label: string; capabilities: readonly string[]; oneOf?: readonly string[] } | { label: string; automation: true }>; params: ConfigSchema }[];
   policy: Record<string, { label: string; value: number; unit: string }>;
 };
 
@@ -521,9 +531,11 @@ export type AuthState = {
 export type RoleBinding = { device: SavedDeviceId; part: string };
 
 /**
- * A recipe the server offers: roles to fill with parts of devices, and its
- * settings. Recipes come with the installed packages (docs/AUTOMATIONS.md);
- * `from` says which.
+ * A recipe the server offers, as a starting point (docs/AUTOMATION-EDITOR.md):
+ * a rule with roles to fill and settings, which the app copies — its
+ * settings written into its blocks (`inlineParams`) — into an automation its
+ * owner then edits. Recipes come with the installed packages; `from` says
+ * which.
  */
 export type RecipeView = {
   /** Namespaced by the type it came with: `acme.weather.forecast-switch`. */
@@ -534,36 +546,68 @@ export type RecipeView = {
   from: { typeId: string; name: string } | null;
   /** It waits for a condition to come true: only then can an automation of it keep things so (`recheckMinutes`). */
   hasConditions: boolean;
-  /** Started when you ask: from its card, a device's page, or the assistant. */
-  startsWhenAsked: boolean;
   /** It takes steps — waits, makes sure, chooses — rather than sending its commands at once. */
   takesSteps: boolean;
-  /** Its steps in words, its roles named by their labels and its settings at their defaults: what making one shows. */
+  /** Its steps in words, its roles named by their labels and its settings at their defaults. */
   steps: StepLine[];
-  /** What each role asks of a part: every one of `capabilities`, and one of `oneOf` when given. */
-  roles: Record<
-    string,
-    {
-      label: string;
-      description: string;
-      capabilities: readonly CapabilityName[];
-      oneOf?: readonly CapabilityName[];
-    }
-  >;
-  params: ConfigSchema;
+  /** The rule itself, with its roles and its settings. */
+  rule: Rule;
 };
 
-/** `POST /automations`. `timeZone` is the app's own clock: "Europe/Stockholm". */
-export type NewAutomation = { name: string; recipe: string; roles: Record<string, RoleBinding>; params: ConfigValues; timeZone: string; recheckMinutes?: number | null };
+/**
+ * A function an installed package offers a condition — "does tomorrow look
+ * sunny?" — asked of a part that offers what it `needs`, with its arguments,
+ * answering a value of `returns`. What an owner's condition may call.
+ */
+export type FunctionView = {
+  /** Namespaced by the type it came with: `acme.weather.skyLooks`. */
+  id: string;
+  label: string;
+  description: string;
+  needs: { capabilities: readonly CapabilityName[]; oneOf?: readonly CapabilityName[] };
+  args: Record<string, ValueType>;
+  returns: ValueType;
+};
 
-/** `PATCH /automations/:id`. Arming, or changing an armed one, needs `confirmation`. */
-export type AutomationChanges = {
+/** `GET /automations/recipes`: what an automation can start from, and the functions its conditions may ask. */
+export type AutomationKit = { recipes: RecipeView[]; functions: FunctionView[] };
+
+/**
+ * What fills an automation's roles: a part of a device for each role one
+ * fills (`roles`), and another automation for each role a `start` step
+ * starts (`starts`).
+ */
+export type RoleFills = { roles: Record<string, RoleBinding>; starts: Record<string, AutomationId> };
+
+/** A rule as it is being built, with what fills its roles: `POST /automations/draft` checks and says it. */
+export type AutomationDraft = RoleFills & { rule: Rule };
+
+/** `POST /automations/draft`: what is wrong with a draft — empty, nothing — and how it reads. Nothing is kept. */
+export type AutomationDraftView = {
+  problems: string[];
+  sentence: string;
+  when: string[];
+  steps: StepLine[];
+  otherwise: StepLine[];
+  takesSteps: boolean;
+  /** Each role's name as its steps say it: "Scooter plug", "“Charge the scooter”". */
+  names: Record<string, string>;
+};
+
+/** `POST /automations`. `timeZone` is the app's own clock: "Europe/Stockholm". `madeFrom`: the recipe it was copied from. */
+export type NewAutomation = AutomationDraft & { name: string; madeFrom?: string | null; timeZone: string; recheckMinutes?: number | null };
+
+/**
+ * `PATCH /automations/:id`. A new rule comes with what fills its roles. Letting
+ * it act, or changing one that acts, needs `confirmation`. `homePlace`: its
+ * place among the shortcuts on the home page; null, off it.
+ */
+export type AutomationChanges = Partial<AutomationDraft> & {
   name?: string;
-  roles?: Record<string, RoleBinding>;
-  params?: ConfigValues;
   timeZone?: string;
   mode?: AutomationMode;
   recheckMinutes?: number | null;
+  homePlace?: number | null;
   confirmation?: string;
 };
 
@@ -578,8 +622,10 @@ export type AutomationRun = {
   id: string | null;
   /** When it started. */
   at: string;
-  /** The person or assistant who started it; null when its own triggers did. */
+  /** The person or assistant who started it — or the run that started it; null when its own triggers did. */
   startedBy: string | null;
+  /** The run of another automation whose step started it; null when none did, or it is gone. */
+  startedByRun: { id: string; automationId: AutomationId; name: string } | null;
   /** When it ended; null while it runs. A run of commands alone ends as it starts. */
   endedAt: string | null;
   outcome:
@@ -643,18 +689,22 @@ export type RunStep = {
   until: string | null;
 };
 
-export type AutomationView = {
+export type AutomationView = RoleFills & {
   id: AutomationId;
   name: string;
-  recipe: string;
-  recipeLabel: string;
+  /** Its own rule, as its owner built it (docs/AUTOMATION-EDITOR.md). */
+  rule: Rule;
+  /** The recipe it was copied from, to say so; null when built from nothing. */
+  madeFrom: { id: string; label: string } | null;
   /** What it does, in a sentence: "At 07:00, if tomorrow looks sunny by Weather, turn Heater plug on." */
   sentence: string;
-  /** When it runs, a sentence a trigger: "When Station's charge is below 15 % for 2 min". */
+  /** When it runs on its own, a sentence a trigger: "When Station's charge is below 15 % for 2 min". Empty: only when played or started. */
   when: string[];
-  roles: Record<string, RoleBinding>;
-  params: ConfigValues;
+  /** Each role's name as its steps say it: "Scooter plug", "“Charge the scooter”". */
+  names: Record<string, string>;
   timeZone: string;
+  /** Its place among the shortcuts on the home page; null when it is not there. */
+  homePlace: number | null;
   mode: AutomationMode;
   /**
    * Keeping things so: every this many minutes, a condition that still holds
@@ -677,8 +727,6 @@ export type AutomationView = {
   otherwise: StepLine[];
   /** It takes steps rather than sending its commands at once. */
   takesSteps: boolean;
-  /** Started when you ask: `POST /automations/:id/start` (docs/SEQUENCES.md). */
-  startsWhenAsked: boolean;
   /** The run it is taking now, step by step as it goes; null when none runs. */
   running: AutomationRun | null;
 };

@@ -50,6 +50,8 @@ export const KIND: Record<StepKind, IconName> = {
   ensure: 'repeat',
   choose: 'git-branch',
   watch: 'eye',
+  write: 'sliders',
+  start: 'play-circle',
 };
 
 /** A theme colour by its token, for what takes a colour rather than a token: an icon. */

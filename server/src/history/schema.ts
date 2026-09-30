@@ -229,46 +229,56 @@ export const SCHEMA = `
   CREATE INDEX device_event_problems ON device_event (level, at) WHERE level <> 'info';
 
   /*
-    Automations (docs/AUTOMATIONS.md, docs/SEQUENCES.md): a recipe — a rule an
-    installed package ships, by id — its settings (JSON: their shape is the
-    recipe's schema), the owner's clock, and whether it may act.
-    recheck_minutes: how often a condition that still holds is looked at
-    again, to keep things so; NULL, never — what it did stays until a
-    condition turns true again. looked_at: when it last did, or when it
-    started afresh (changed, let act); counted from with its last run. NULL:
-    not yet, since it was made.
+    Automations (docs/AUTOMATIONS.md, docs/SEQUENCES.md,
+    docs/AUTOMATION-EDITOR.md): each owns its rule — what starts it, what it
+    checks, the steps it takes — built by its owner from blocks (JSON: a
+    Rule with no settings, checked before it is kept). made_from: the
+    recipe it was copied from, to say so; NULL, built from nothing. The
+    owner's clock, and whether it acts on its own. recheck_minutes: how
+    often a condition that still holds is looked at again, to keep things
+    so; NULL, never. looked_at: when it last did, or started afresh; NULL,
+    not yet. home_place: its place among the shortcuts on the home page;
+    NULL, not there.
   */
   CREATE TABLE automation (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,
-    recipe          TEXT NOT NULL,
-    params          TEXT NOT NULL,
+    rule            TEXT NOT NULL,
+    made_from       TEXT,
     time_zone       TEXT NOT NULL,
     mode            TEXT NOT NULL CHECK (mode IN ('off', 'observe', 'armed')),
     recheck_minutes INTEGER CHECK (recheck_minutes IS NULL OR recheck_minutes BETWEEN 1 AND 1440),
+    home_place      INTEGER CHECK (home_place IS NULL OR home_place >= 0),
     looked_at       TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
   );
+  CREATE UNIQUE INDEX automation_home ON automation (home_place) WHERE home_place IS NOT NULL;
 
   /*
-    Which part of which device fills each of an automation's roles. A device
-    removed stays a device (removed_at), so its automations stay and say they
-    cannot run; one deleted takes its roles with it, and they say a role has
-    no device. What uses a device is asked here: a device's page lists the
-    automations it can start.
+    What fills each of an automation's roles: a part of a device, or —
+    for a step that starts one — another automation. A device removed stays
+    a device (removed_at), so its automations stay and say they cannot run;
+    one deleted takes its roles with it, and they say a role has no device.
+    An automation deleted takes with it the roles that would start it, and
+    the automations that used it say a role has nothing to start. What uses
+    a device is asked here: a device's page lists the automations it is in.
   */
   CREATE TABLE automation_role (
     automation_id TEXT NOT NULL REFERENCES automation (id) ON DELETE CASCADE,
     role          TEXT NOT NULL,
-    device_id     TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
-    part          TEXT NOT NULL,
-    PRIMARY KEY (automation_id, role)
+    device_id     TEXT REFERENCES device (id) ON DELETE CASCADE,
+    part          TEXT,
+    starts        TEXT REFERENCES automation (id) ON DELETE CASCADE,
+    PRIMARY KEY (automation_id, role),
+    CHECK ((device_id IS NOT NULL AND part IS NOT NULL AND starts IS NULL)
+        OR (device_id IS NULL AND part IS NULL AND starts IS NOT NULL))
   );
   CREATE INDEX automation_role_device ON automation_role (device_id);
+  CREATE INDEX automation_role_starts ON automation_role (starts);
 
   /*
-    Each "becomes" trigger's state, by its place in the recipe's triggers:
+    Each "becomes" trigger's state, by its place among its rule's triggers:
     whether its condition held when last looked at, since when it has held,
     and whether this hold has run it. Kept so a restart continues where it
     was: a hold resumes with the time it had left, and nothing fires twice.
@@ -289,7 +299,9 @@ export const SCHEMA = `
     Each time an automation ran, or runs now (docs/SEQUENCES.md): when it
     started and ended, how it came out, why, and — in detail — what it read,
     how its conditions stood and each step it took. started_by: the person or
-    assistant who started it; NULL, its own triggers did. ended_at NULL: it is
+    assistant who started it — or who started the run that started it; NULL,
+    triggers did. started_by_run: the run of another automation whose step
+    started it; NULL, none did (or that run is gone). ended_at NULL: it is
     running, and its row is written at every step, so a screen follows it and
     a restart finds it: a run found unended on start was interrupted, and is
     ended as such, not resumed. One run of an automation at a time, held
@@ -303,12 +315,14 @@ export const SCHEMA = `
     ended_at      TEXT,
     outcome       TEXT NOT NULL CHECK (outcome IN ('acted', 'unverified', 'would-act', 'idle', 'unknown', 'refused', 'failed', 'running', 'stopped', 'interrupted')),
     started_by    TEXT,
+    started_by_run TEXT REFERENCES automation_run (id) ON DELETE SET NULL,
     why           TEXT NOT NULL,
     summary       TEXT NOT NULL,
     detail        TEXT NOT NULL,
     CHECK ((ended_at IS NULL) = (outcome = 'running'))
   );
   CREATE INDEX automation_run_recent ON automation_run (automation_id, started_at);
+  CREATE INDEX automation_run_started_by_run ON automation_run (started_by_run);
   CREATE UNIQUE INDEX automation_run_one_at_a_time ON automation_run (automation_id) WHERE ended_at IS NULL;
 
   /* What a transport keeps between runs, its own: a Bluetooth bond, a Matter fabric, a broker's credentials. */

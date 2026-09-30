@@ -135,7 +135,7 @@ export const startCharging = defineRecipe({
   id: 'standard.start-charging',
   label: 'Start charging',
   description:
-    'When you start it: power a charger through its supply, switch its plug on, and make sure it draws — switching it off and on again if it stays idle, a few times at most.',
+    'Power a charger through its supply, switch its plug on, and make sure it draws — switching it off and on again if it stays idle, a few times at most.',
   roles: { supply: SUPPLY, charger: CHARGER },
   params: {
     fields: {
@@ -164,7 +164,7 @@ export const startCharging = defineRecipe({
       },
     },
   },
-  when: [{ asked: true }],
+  when: [],
   then: [
     set('supply', true),
     { waitUntil: { condition: { reachable: 'charger' }, atMostSeconds: { param: 'reachSeconds' } } },
@@ -191,7 +191,7 @@ export const stopCharging = defineRecipe({
   id: 'standard.stop-charging',
   label: 'Stop charging',
   description:
-    'When you start it: switch a charger’s plug off, then its supply — unless something else still draws from the supply, watched for a few seconds after the charger is off.',
+    'Switch a charger’s plug off, then its supply — unless something else still draws from the supply, watched for a few seconds after the charger is off.',
   roles: { supply: SUPPLY, charger: CHARGER },
   params: {
     fields: {
@@ -208,7 +208,7 @@ export const stopCharging = defineRecipe({
       },
     },
   },
-  when: [{ asked: true }],
+  when: [],
   then: [
     set('charger', false),
     {

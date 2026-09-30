@@ -2,6 +2,7 @@ import { Hono, type Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
+import type { RoleBinding } from '@kraftverk/api-contract';
 import { isTimeZone, savedDeviceId, type CapabilitySpec, type Value } from '@kraftverk/device-sdk';
 import { deviceReader } from '@kraftverk/holder';
 
@@ -17,8 +18,9 @@ import { auditAbout, type AppDeps } from './shared.ts';
  * The house for an assistant (PROPOSITION.md §5.1–5.3): the world as a model
  * reads it, the words it is said in, and an MCP endpoint whose only verbs are
  * the intents — a command through the gateway as an agent, a query, the
- * receipts, and a proposal: an automation made from a recipe, observing until
- * a person arms it, rehearsed on history. No free-form service calls, and
+ * receipts, starting and stopping what its owner let act, and a proposal: an
+ * automation copied from a recipe, observing until a person lets it act,
+ * rehearsed on history. No free-form service calls, and
  * nothing a person has to confirm.
  *
  * Behind the same sign-in as every route: an MCP client sends the session
@@ -38,10 +40,14 @@ const roleBindings: Json = {
   additionalProperties: object({ device: text('A device id from the world'), part: text('A part id of that device') }, ['device', 'part']),
 };
 
+/** Roles as the assistant fills them, with their devices' ids as ids. */
+const boundOf = (roles: Record<string, { device: string; part: string }>): Record<string, RoleBinding> =>
+  Object.fromEntries(Object.entries(roles).map(([role, binding]) => [role, { device: savedDeviceId(binding.device), part: binding.part }]));
+
 export function assistantRoutes(deps: AppDeps): Hono {
   const { config, registry, library, gateway, sessions, catalog, automations, engine } = deps;
   const api = new Hono();
-  const { view, validated, rehearsed } = plans({ catalog, sessions, library, engine });
+  const { view, checked, copied, rehearsed } = plans({ catalog, sessions, library, engine, automations });
 
   const world = async () => worldOf(await registry.all(), { readOnly: config.readOnly });
   const vocabulary = async () =>
@@ -137,14 +143,17 @@ export function assistantRoutes(deps: AppDeps): Hono {
       inputSchema: object({ recipe: text('A recipe id from the vocabulary'), roles: roleBindings, params: { type: 'object', description: 'The recipe’s settings, within their declared ranges' }, timeZone: text('The home’s clock: "Europe/Stockholm"'), hours: { type: 'number', description: `How far back, at most ${REHEARSAL_MAX_HOURS}` } }, ['recipe', 'roles', 'params']),
       run: async (args) => {
         const input = planInput.extend({ hours: z.number().min(1).max(REHEARSAL_MAX_HOURS).default(24 * 7) }).omit({ name: true }).parse(args);
-        const checked = validated(input.recipe, input);
-        return rehearsalText(await rehearsed(input.recipe, { roles: checked.roles, params: checked.params, timeZone: input.timeZone }, input.hours));
+        // The recipe as an automation of it would be: its settings written into its blocks.
+        const rule = copied(input.recipe, input.params);
+        const result = checked({ rule, roles: boundOf(input.roles), starts: {} }, null);
+        if (result.problems.length) return `It cannot be rehearsed as it is: ${result.problems.join('; ')}`;
+        return rehearsalText(await rehearsed({ rule, roles: result.roles, timeZone: input.timeZone }, input.hours));
       },
     },
     {
       name: 'automations',
       description:
-        'The automations there are: each one’s id, what it does in a sentence, whether it acts or only watches, whether it is started when asked (a sequence: "start charging the scooter"), and whether it runs now — with the step it is in.',
+        'The automations there are: each one’s id, what it does in a sentence, whether it acts on its own or only watches, whether it has anything that starts it on its own (none: it runs when started, as "start charging the scooter"), and whether it runs now — with the step it is in.',
       inputSchema: object({}),
       run: async () => {
         const all = automations.list().map(view);
@@ -154,7 +163,7 @@ export function assistantRoutes(deps: AppDeps): Hono {
             const running = automation.running;
             const current = running ? [...running.steps].reverse().find((step) => step.outcome === 'waiting') : null;
             return [
-              `${automation.name} [${automation.id}] — ${automation.mode === 'armed' ? 'acts' : automation.mode === 'observe' ? 'only watches' : 'off'}${automation.startsWhenAsked ? ', started when asked' : ''}`,
+              `${automation.name} [${automation.id}] — ${automation.mode === 'armed' ? 'acts on its own' : automation.mode === 'observe' ? 'only watches on its own' : 'off'}${automation.when.length ? '' : ', runs when started'}`,
               `  ${automation.sentence}`,
               running ? `  Running since ${running.at}${current ? `: ${current.what}` : ''}` : automation.lastRun ? `  Last run ${automation.lastRun.at}: ${automation.lastRun.summary}` : '  Never run',
             ].join('\n');
@@ -165,14 +174,13 @@ export function assistantRoutes(deps: AppDeps): Hono {
     {
       name: 'start',
       description:
-        'Start an automation that is started when asked — a sequence such as "start charging the scooter". One that acts takes its steps from now, each through the gateway; one that only watches answers with what it would do. Say what it will do before starting it, and follow it with `automations`.',
+        'Start an automation now — a sequence such as "start charging the scooter" — one its owner has let act: it takes its steps from now, each through the gateway. One that only watches is its owner’s to start. Say what it will do before starting it, and follow it with `automations`.',
       inputSchema: object({ automation: text('The automation id, from `automations`') }, ['automation']),
       run: async (args, c) => {
         const input = z.object({ automation: z.string().min(1).max(80) }).parse(args);
         try {
           // An assistant's run switches first as an assistant would: its own dwell, not a person's.
           const run = await engine.startAsked(input.automation, { name: `assistant for ${actorOf(c)}`, actor: 'agent' });
-          if (run.outcome === 'would-act') return `It only watches, so nothing was switched. It would: ${run.steps.map((step) => `${'  '.repeat(step.depth)}${step.what}`).join('; ')}`;
           auditAbout(c, 'automation.started', 'automation', input.automation, `An assistant started "${automations.get(input.automation)?.name ?? input.automation}"`, { run: run.id });
           return `Started. Its steps: ${view(automations.get(input.automation)!).steps.map((step) => step.text).join('; ')}`;
         } catch (error) {
@@ -200,15 +208,22 @@ export function assistantRoutes(deps: AppDeps): Hono {
     {
       name: 'propose',
       description:
-        'Propose an automation: a recipe from the vocabulary, its roles filled from the world and its settings within their ranges. It is made observing — it decides and says what it would do, and acts only once a person arms it in the app — and is rehearsed on the last week of history.',
+        'Propose an automation: a recipe from the vocabulary, copied — its settings, within their ranges, written into its steps — and its roles filled from the world. It is made only watching on its own — it decides and says what it would do, and acts on its own only once a person lets it in the app — and is rehearsed on the last week of history. Its owner can change any of its steps in the app.',
       inputSchema: object({ name: text('What to call it'), recipe: text('A recipe id from the vocabulary'), roles: roleBindings, params: { type: 'object', description: 'The recipe’s settings' }, timeZone: text('The home’s clock: "Europe/Stockholm"') }, ['name', 'recipe', 'roles', 'params']),
       run: async (args, c) => {
         const input = planInput.parse(args);
-        const checked = validated(input.recipe, input);
-        const created = automations.create({ name: input.name, recipe: input.recipe, roles: checked.roles, params: checked.params, timeZone: input.timeZone, recheckMinutes: null });
-        auditAbout(c, 'automation.proposed', 'automation', created.id, `An assistant proposed "${created.name}", only watching: ${view(created).sentence}`, { recipe: created.recipe, roles: created.roles, params: created.params });
-        const rehearsal = await rehearsed(created.recipe, created, 24 * 7);
-        return [`Made "${created.name}" [${created.id}], observing: ${view(created).sentence}`, 'It acts only once a person arms it in the app.', '', rehearsalText(rehearsal)].join('\n');
+        const rule = copied(input.recipe, input.params);
+        const result = checked({ rule, roles: boundOf(input.roles), starts: {} }, null);
+        if (result.problems.length) return `Not made: ${result.problems.join('; ')}`;
+        const created = automations.create({ name: input.name, rule, madeFrom: input.recipe, roles: result.roles, starts: {}, timeZone: input.timeZone, recheckMinutes: null });
+        auditAbout(c, 'automation.proposed', 'automation', created.id, `An assistant proposed "${created.name}", only watching: ${view(created).sentence}`, { madeFrom: created.madeFrom, rule: created.rule, roles: created.roles });
+        const rehearsal = await rehearsed(created, 24 * 7);
+        return [
+          `Made "${created.name}" [${created.id}], only watching: ${view(created).sentence}`,
+          'It acts on its own only once a person lets it, in the app, where they can also change any of its steps.',
+          '',
+          rehearsalText(rehearsal),
+        ].join('\n');
       },
     },
   ];

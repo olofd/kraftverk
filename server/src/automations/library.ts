@@ -51,6 +51,11 @@ export class AutomationLibrary {
     return this.#functions.get(id) ?? null;
   }
 
+  /** Every installed function: what a condition an owner builds may ask. */
+  functions(): AutomationFunction[] {
+    return [...this.#functions.values()];
+  }
+
   get refused(): readonly { id: string; problems: string[] }[] {
     return this.#refused;
   }

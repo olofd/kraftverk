@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { LiveUpdate } from '@kraftverk/api-contract';
-import { savedDeviceId } from '@kraftverk/device-sdk';
+import { inlineParams, savedDeviceId, startCharging, type Rule, type Value } from '@kraftverk/device-sdk';
 
 import { ActionGateway } from '@kraftverk/gateway';
 import { LiveBus, type LiveMessage } from '@kraftverk/holder';
@@ -941,8 +941,13 @@ describe('an assistant', () => {
       timeZone: 'Europe/Stockholm',
     });
     expect(proposal.isError).toBeUndefined();
-    expect(proposal.content[0]!.text).toContain('observing: Charge Garage P280 with Charger plug: on when it stays below 15 % for 2 min, off when it reaches 50 %.');
-    expect(proposal.content[0]!.text).toContain('It acts only once a person arms it in the app.');
+    expect(proposal.content[0]!.text).toContain(
+      'only watching: When Garage P280’s charge is below 15 % for 2 min, or when Garage P280’s charge is at least 50 %, turn Charger plug on if Garage P280’s charge is below 50 %, off if not.'
+    );
+    expect(proposal.content[0]!.text).toContain('It acts on its own only once a person lets it, in the app');
+    // Copied from the recipe: its own rule, its settings written into its blocks.
+    const [proposed] = (await as('/automations')).body.automations as { rule: { params: unknown }; madeFrom: { id: string } }[];
+    expect(proposed).toMatchObject({ rule: { params: { fields: {} } }, madeFrom: { id: 'standard.charge-between' } });
     expect(proposal.content[0]!.text).toContain('Rehearsed from');
     const made = (await as('/automations')).body.automations as { name: string; mode: string }[];
     expect(made).toContainEqual(expect.objectContaining({ name: 'My charge window', mode: 'observe' }));
@@ -1010,13 +1015,31 @@ describe('automations', () => {
     return { weather, plug };
   };
   const whole = (device: { id: string }) => ({ device: device.id, part: 'main' });
-  const make = (roles: Record<string, { device: string; part: string }>) =>
-    as('/automations', {
-      method: 'POST',
-      body: { name: 'Sunny heater', recipe: 'open-meteo.weather.forecast-switch', roles, params: { day: 'tomorrow', at: '07:00' }, timeZone: 'Europe/Stockholm' },
-    });
+  /** A recipe copied into a rule of the automation's own, its settings written into its blocks — as the app does. */
+  const copy = async (recipe: string, params: Record<string, Value> = {}): Promise<Rule> => {
+    const { recipes } = (await as('/automations/recipes')).body as { recipes: { id: string; rule: Rule }[] };
+    return inlineParams(recipes.find((one) => one.id === recipe)!.rule, params);
+  };
+  const create = async (name: string, recipe: string, roles: Record<string, { device: string; part: string }>, params: Record<string, Value> = {}, extra: Record<string, unknown> = {}) =>
+    as('/automations', { method: 'POST', body: { name, rule: await copy(recipe, params), roles, starts: {}, madeFrom: recipe, timeZone: 'Europe/Stockholm', ...extra } });
+  const make = (roles: Record<string, { device: string; part: string }>) => create('Sunny heater', 'open-meteo.weather.forecast-switch', roles, { day: 'tomorrow', at: '07:00' });
+  /** Lets it act on its own, confirmed. */
+  const arm = async (path: string) => {
+    const asked = await as(path, { method: 'PATCH', body: { mode: 'armed' } });
+    return as(path, { method: 'PATCH', body: { mode: 'armed', confirmation: asked.body.needsConfirmation } });
+  };
+  /** Waits for its run to end, and answers it as the list shows it. */
+  type Run = { outcome: string; startedBy: string | null; startedByRun: { id: string; automationId: string; name: string } | null; steps: { kind: string; outcome: string; what: string; detail: string }[] };
+  const ended = async (id: string): Promise<Run> => {
+    for (let waited = 0; waited < 20_000; waited += 100) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const now = ((await as('/automations')).body.automations as { id: string; running: unknown; lastRun: Run | null }[]).find((one) => one.id === id)!;
+      if (!now.running && now.lastRun) return now.lastRun;
+    }
+    throw new Error('The run never ended');
+  };
 
-  test('lists the shared recipes and those the installed packages bring, with the roles each needs and where it came from', async () => {
+  test('lists the recipes to start from — the shared ones and those the installed packages bring — each with its rule, and where it came from', async () => {
     const { recipes } = (await as('/automations/recipes')).body;
     expect(recipes.map((recipe: { id: string }) => recipe.id).sort()).toEqual([
       'open-meteo.weather.forecast-switch',
@@ -1028,7 +1051,7 @@ describe('automations', () => {
     ]);
     expect(recipes.find((recipe: { id: string }) => recipe.id === 'open-meteo.weather.forecast-switch')).toMatchObject({
       from: { typeId: 'open-meteo.weather', name: 'Open-Meteo' },
-      roles: { forecast: expect.objectContaining({ capabilities: ['weather.forecast'] }) },
+      rule: { roles: { forecast: expect.objectContaining({ capabilities: ['weather.forecast'] }) }, params: { fields: expect.objectContaining({ day: expect.anything() }) } },
     });
     expect(recipes.find((recipe: { id: string }) => recipe.id === 'standard.low-battery')).toMatchObject({ from: null });
   });
@@ -1042,24 +1065,19 @@ describe('automations', () => {
     const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
     const plug = await added('ATORCH plug', { server: simulated, typeId: 'atorch.s1w' });
     await as('/links', { method: 'POST', body: { kind: 'feeds', source: whole(plug), target: { device: station.id, part: 'input.ac' } } });
-    const window = await as('/automations', {
-      method: 'POST',
-      body: {
-        name: 'Charge between 15 and 50 %',
-        recipe: 'standard.charge-between',
-        roles: { battery: whole(station), charger: whole(plug) },
-        params: { low: 15, high: 50, minutes: 2 },
-        timeZone: 'Europe/Stockholm',
-      },
-    });
+    const window = await create('Charge between 15 and 50 %', 'standard.charge-between', { battery: whole(station), charger: whole(plug) }, { low: 15, high: 50, minutes: 2 });
     expect(window.status).toBe(200);
-    expect(window.body).toMatchObject({ mode: 'observe', problems: [], sentence: 'Charge Garage P280 with ATORCH plug: on when it stays below 15 % for 2 min, off when it reaches 50 %.' });
-    // A pack of it fills the battery role as well as the station does.
+    expect(window.body).toMatchObject({
+      mode: 'observe',
+      problems: [],
+      madeFrom: { id: 'standard.charge-between', label: 'Charge between two levels' },
+      sentence: 'When Garage P280’s charge is below 15 % for 2 min, or when Garage P280’s charge is at least 50 %, turn ATORCH plug on if Garage P280’s charge is below 50 %, off if not.',
+    });
     const check = await as(`/automations/${window.body.id}/check`, { method: 'POST' });
     expect(check.status).toBe(200);
     expect(check.body.saw.join(' ')).toContain('Garage P280: Charge');
     // Its card says how each condition stands now, and what it read to say so.
-    expect(window.body.now.conditions.map((condition: { text: string }) => condition.text)).toEqual(["Garage P280’s charge is below 15 % for 2 min", "Garage P280’s charge is at least 50 %"]);
+    expect(window.body.now.conditions.map((condition: { text: string }) => condition.text)).toEqual(['Garage P280’s charge is below 15 % for 2 min', 'Garage P280’s charge is at least 50 %']);
 
     // It can keep things so; a time of day and an event have nothing to keep.
     const { recipes } = (await as('/automations/recipes')).body as { recipes: { id: string; hasConditions: boolean }[] };
@@ -1070,9 +1088,8 @@ describe('automations', () => {
     expect((await as(path, { method: 'PATCH', body: { recheckMinutes: 10 } })).body.recheckMinutes).toBe(10);
     expect((await as(path, { method: 'PATCH', body: { recheckMinutes: 0 } })).status).toBe(400);
 
-    // Armed, how often it keeps things so changes what it does: confirmed, as arming is.
-    const asked = await as(path, { method: 'PATCH', body: { mode: 'armed' } });
-    expect((await as(path, { method: 'PATCH', body: { mode: 'armed', confirmation: asked.body.needsConfirmation } })).body.mode).toBe('armed');
+    // Let act, how often it keeps things so changes what it does: confirmed, as letting it act is.
+    expect((await arm(path)).body.mode).toBe('armed');
     const refused = await as(path, { method: 'PATCH', body: { recheckMinutes: 5 } });
     expect(refused.status).toBe(409);
     expect((await as(path, { method: 'PATCH', body: { recheckMinutes: 5, confirmation: refused.body.needsConfirmation } })).body.recheckMinutes).toBe(5);
@@ -1091,22 +1108,15 @@ describe('automations', () => {
   test('the shared recipes, on a station: a battery that runs low, and mains that goes — each a part that fits', async () => {
     const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
     const plug = await added('Heater plug', { server: simulated, typeId: 'atorch.s1w' });
-    const low = await as('/automations', {
-      method: 'POST',
-      body: { name: 'Charge when low', recipe: 'standard.low-battery', roles: { battery: { device: station.id, part: 'main' }, switch: whole(plug) }, params: {}, timeZone: 'Europe/Stockholm' },
-    });
+    const low = await create('Charge when low', 'standard.low-battery', { battery: whole(station), switch: whole(plug) });
     expect(low.status).toBe(200);
-    expect(low.body).toMatchObject({ problems: [], sentence: 'When Garage P280 stays below 20 % for 5 min, turn Heater plug on.' });
+    expect(low.body).toMatchObject({ problems: [], sentence: 'When Garage P280’s charge is below 20 % for 5 min, turn Heater plug on.' });
 
-    const shed = (part: string) =>
-      as('/automations', {
-        method: 'POST',
-        body: { name: 'Shed the heater', recipe: 'standard.mains-lost', roles: { input: { device: station.id, part }, switch: whole(plug) }, params: {}, timeZone: 'Europe/Stockholm' },
-      });
+    const shed = (part: string) => create('Shed the heater', 'standard.mains-lost', { input: { device: station.id, part }, switch: whole(plug) });
     // Only the part that says when mains is lost can fill the role.
     expect((await shed('main')).status).toBe(400);
     const made = await shed('input.ac');
-    expect(made.body).toMatchObject({ problems: [], sentence: "When Garage P280 — Mains loses mains power, turn Heater plug off." });
+    expect(made.body).toMatchObject({ problems: [], sentence: 'When Garage P280 — Mains reports mains lost, turn Heater plug off.' });
   });
 
   test('a role takes only a device that fits it', async () => {
@@ -1116,11 +1126,34 @@ describe('automations', () => {
     expect(wrong.body.error).toContain('cannot do that');
   });
 
-  test('is made observing, says what it does, and is armed only when confirmed', async () => {
+  test('a draft is checked and said as it is built — every problem at once — and nothing is kept', async () => {
+    const { weather, plug } = await weatherAndPlug();
+    const rule = await copy('open-meteo.weather.forecast-switch', { day: 'tomorrow', at: '07:00' });
+    const draft = (body: Record<string, unknown>) => as('/automations/draft', { method: 'POST', body: { rule, roles: {}, starts: {}, ...body } });
+
+    const empty = (await draft({})).body;
+    expect(empty.problems).toEqual(['Forecast: choose one of your devices', 'What to switch: choose one of your devices']);
+    // Said with its roles by their labels, as words in the sentence, until they are filled.
+    expect(empty.steps.map((line: { text: string }) => line.text)).toEqual(['Turn what to switch on']);
+
+    const filled = (await draft({ roles: { forecast: whole(weather), switch: whole(plug) } })).body;
+    expect(filled).toMatchObject({ problems: [], when: ['Every day at 07:00'], names: { forecast: 'Weather', switch: 'Heater plug' } });
+    expect(filled.sentence).toStartWith('At 07:00, if ');
+
+    // Its own settings are its blocks: a rule with settings is no automation's.
+    expect((await draft({ rule: { ...rule, params: { fields: { x: { type: 'number', title: 'X' } } } }, roles: { forecast: whole(weather), switch: whole(plug) } })).body.problems).toEqual([
+      'An automation has no settings of its own: its values are in its blocks',
+    ]);
+    // Not a rule at all: said so, and nothing else.
+    expect((await draft({ rule: { then: 'nothing' } })).body).toMatchObject({ problems: ['That is not a rule: it needs roles, settings, triggers and steps'], steps: [] });
+    expect((await as('/automations')).body.automations).toEqual([]);
+  });
+
+  test('is made only watching on its own, says what it does, and is let act only when confirmed', async () => {
     const { weather, plug } = await weatherAndPlug();
     const created = await make({ forecast: whole(weather), switch: whole(plug) });
     expect(created.status).toBe(200);
-    expect(created.body).toMatchObject({ mode: 'observe', problems: [], sentence: 'At 07:00, if tomorrow looks sunny by Weather, turn Heater plug on.' });
+    expect(created.body).toMatchObject({ mode: 'observe', problems: [], homePlace: null, madeFrom: { id: 'open-meteo.weather.forecast-switch' } });
     const path = `/automations/${created.body.id}`;
 
     const unconfirmed = await as(path, { method: 'PATCH', body: { mode: 'armed' } });
@@ -1128,66 +1161,112 @@ describe('automations', () => {
     expect(unconfirmed.body.needsConfirmation).toEqual(expect.any(String));
     expect((await as(path, { method: 'PATCH', body: { mode: 'armed', confirmation: 'confirm' } })).status).toBe(409);
     const asked = await as(path, { method: 'PATCH', body: { mode: 'armed' } });
-    // A token for arming is not one for arming with other settings.
-    expect((await as(path, { method: 'PATCH', body: { mode: 'armed', params: { day: 'today', at: '09:00' }, confirmation: asked.body.needsConfirmation } })).status).toBe(409);
-    const again = await as(path, { method: 'PATCH', body: { mode: 'armed' } });
-    expect((await as(path, { method: 'PATCH', body: { mode: 'armed', confirmation: again.body.needsConfirmation } })).body.mode).toBe('armed');
-    // Changing what an armed one does is confirmed again.
-    expect((await as(path, { method: 'PATCH', body: { params: { day: 'today', at: '08:00' } } })).status).toBe(409);
+    // A yes to letting it act is not one to letting it act with another rule.
+    const other = { rule: await copy('open-meteo.weather.forecast-switch', { day: 'today', at: '09:00' }), roles: { forecast: whole(weather), switch: whole(plug) }, starts: {} };
+    expect((await as(path, { method: 'PATCH', body: { mode: 'armed', ...other, confirmation: asked.body.needsConfirmation } })).status).toBe(409);
+    expect((await arm(path)).body.mode).toBe('armed');
+    // Changing what one that acts does is confirmed again; a rule comes with what fills its roles.
+    expect((await as(path, { method: 'PATCH', body: other })).status).toBe(409);
+    expect((await as(path, { method: 'PATCH', body: { rule: other.rule } })).status).toBe(400);
 
     const audit = (await as('/audit')).body as { kind: string; actor: string }[];
     expect(audit.find((entry) => entry.kind === 'automation.armed')).toMatchObject({ actor: 'olof' });
   });
 
-  test('a sequence you start: tried while it watches, started once it acts, kept as it goes, and its runs listed', async () => {
+  test('played, it runs now — for real, though it only watches on its own — takes its steps as it goes, and its runs are listed', async () => {
     const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
     const plug = await added('Scooter plug', { server: simulated, typeId: 'tuya.zigbee-plug' });
-    const body = {
-      name: 'Start charging the scooter',
-      recipe: 'standard.start-charging',
-      roles: { supply: { device: station.id, part: 'outlet.ac' }, charger: whole(plug) },
-      params: { reachSeconds: 20, withinSeconds: 10, offSeconds: 3, tries: 1 },
-      timeZone: 'Europe/Stockholm',
-    };
+    const roles = { supply: { device: station.id, part: 'outlet.ac' }, charger: whole(plug) };
+    const params = { reachSeconds: 20, withinSeconds: 10, offSeconds: 3, tries: 1 };
     // A sequence is started, not kept so.
-    expect((await as('/automations', { method: 'POST', body: { ...body, recheckMinutes: 10 } })).status).toBe(400);
-    const created = (await as('/automations', { method: 'POST', body })).body;
-    expect(created).toMatchObject({ startsWhenAsked: true, takesSteps: true, running: null, lastRun: null, when: ['When you start it'] });
+    expect((await create('Start charging the scooter', 'standard.start-charging', roles, params, { recheckMinutes: 10 })).status).toBe(400);
+    const created = (await create('Start charging the scooter', 'standard.start-charging', roles, params)).body;
+    expect(created).toMatchObject({ mode: 'observe', takesSteps: true, running: null, lastRun: null, when: [] });
     expect(created.steps.map((step: { text: string }) => step.text)).toEqual([
       'Turn Garage P280 — AC outlets on',
       'Wait until Scooter plug can be reached — at most 20 s',
       'Turn Scooter plug on',
-      "Make sure Scooter plug’s power is above 50 W within 10 s — if not, try again, at most once",
+      'Make sure Scooter plug’s power is above 50 W within 10 s — if not, try again, at most once',
     ]);
     const path = `/automations/${created.id}`;
 
-    // Only watching: tried, it runs nothing and keeps nothing.
-    expect((await as(`${path}/start`, { method: 'POST' })).body).toMatchObject({ running: null, lastRun: null });
-
-    const asked = await as(path, { method: 'PATCH', body: { mode: 'armed' } });
-    await as(path, { method: 'PATCH', body: { mode: 'armed', confirmation: asked.body.needsConfirmation } });
     const started = await as(`${path}/start`, { method: 'POST' });
-    expect(started.body.running).toMatchObject({ outcome: 'running', startedBy: 'olof', why: 'Started by olof' });
-
-    // It takes its steps: the station's outlet on, the plug reachable and on, and drawing.
-    type Run = { outcome: string; steps: { kind: string; outcome: string }[] };
-    let run: Run | null = null;
-    for (let waited = 0; waited < 20_000 && !run; waited += 100) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      const now = ((await as('/automations')).body.automations as { id: string; running: unknown; lastRun: Run | null }[]).find((one) => one.id === created.id)!;
-      if (!now.running) run = now.lastRun;
-    }
+    expect(started.body.running).toMatchObject({ outcome: 'running', startedBy: 'olof', why: 'Started by olof', startedByRun: null });
+    const run = await ended(created.id);
     expect(run).toMatchObject({ outcome: 'acted' });
     // Simulated, the outlet and the plug may be on already: "already so" is as good as done.
-    expect(run!.steps.map((step) => `${step.kind} ${step.outcome.replace('already', 'done')}`)).toEqual(['command done', 'waitUntil met', 'command done', 'ensure met']);
-    const runs = (await as(`${path}/runs`)).body.runs;
-    expect(runs).toHaveLength(1);
-    // Asked of either device, it is among those its page can start.
+    expect(run.steps.map((step) => `${step.kind} ${step.outcome.replace('already', 'done')}`)).toEqual(['command done', 'waitUntil met', 'command done', 'ensure met']);
+    expect((await as(`${path}/runs`)).body.runs).toHaveLength(1);
+    // Asked of either device, it is among those its page lists.
     expect((await as(`/automations?device=${plug.id}`)).body.automations.map((one: { id: string }) => one.id)).toEqual([created.id]);
     expect((await as(`${path}/stop`, { method: 'POST' })).body).toMatchObject({ error: 'It is not running' });
     const kinds = ((await as('/audit')).body as { kind: string }[]).map((entry) => entry.kind);
     expect(kinds).toEqual(expect.arrayContaining(['automation.started', 'automation.acted']));
+
+    // Off is off: nobody plays it.
+    await as(path, { method: 'PATCH', body: { mode: 'off' } });
+    expect((await as(`${path}/start`, { method: 'POST' })).status).toBe(409);
   }, 30_000);
+
+  test('one starts another: a chain that would come back to itself is refused, and one whose other is deleted says so', async () => {
+    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
+    const plug = await added('Scooter plug', { server: simulated, typeId: 'tuya.zigbee-plug' });
+    const charge = (await create('Start charging the scooter', 'standard.start-charging', { supply: { device: station.id, part: 'outlet.ac' }, charger: whole(plug) }, { reachSeconds: 20, withinSeconds: 10, tries: 1 })).body;
+    const role = { charging: { automation: true, label: 'The charging', description: 'What charges the scooter' } };
+    const starter = (name: string, target: string) =>
+      as('/automations', {
+        method: 'POST',
+        body: { name, rule: { roles: role, params: { fields: {} }, when: [], then: [{ start: { role: 'charging', waitSeconds: { value: 60 } } }] }, roles: {}, starts: { charging: target }, timeZone: 'Europe/Stockholm' },
+      });
+    const morning = await starter('Morning', charge.id);
+    expect(morning.status).toBe(200);
+    expect(morning.body).toMatchObject({ madeFrom: null, starts: { charging: charge.id }, names: { charging: '“Start charging the scooter”' } });
+    expect(morning.body.steps.map((step: { text: string }) => step.text)).toEqual(['Start “Start charging the scooter” and wait until it ends — at most 1 min']);
+
+    // Played: the other runs as its step, and says which run started it.
+    await as(`/automations/${morning.body.id}/start`, { method: 'POST' });
+    const run = await ended(morning.body.id);
+    expect(run.outcome).toBe('acted');
+    const child = (await as(`/automations/${charge.id}/runs`)).body.runs[0];
+    expect(child).toMatchObject({ outcome: 'acted', startedBy: 'olof', startedByRun: { automationId: morning.body.id, name: 'Morning' } });
+
+    // The other made to start this one back: refused, as a chain that would start itself.
+    const back = { rule: { roles: role, params: { fields: {} }, when: [], then: [{ start: { role: 'charging' } }] }, roles: {}, starts: { charging: morning.body.id } };
+    const draft = await as('/automations/draft', { method: 'POST', body: { ...back, self: charge.id } });
+    expect(draft.body.problems).toEqual(['Starting “Start charging the scooter” would come back to it: a chain may not start itself']);
+    expect((await as(`/automations/${charge.id}`, { method: 'PATCH', body: back })).status).toBe(400);
+
+    // Deleted, the one that started it has nothing to start, and says so.
+    await as(`/automations/${charge.id}`, { method: 'DELETE' });
+    const [left] = (await as('/automations')).body.automations;
+    expect(left).toMatchObject({ id: morning.body.id, starts: {}, problems: ['The charging: nothing to start — the automation it started is gone'] });
+  }, 30_000);
+
+  test('on the home page, in their places: put there, moved, taken off — the others closing up', async () => {
+    const { weather, plug } = await weatherAndPlug();
+    const ids: string[] = [];
+    for (const name of ['One', 'Two', 'Three']) ids.push((await create(name, 'open-meteo.weather.forecast-switch', { forecast: whole(weather), switch: whole(plug) }, { day: 'tomorrow' })).body.id);
+    const place = (id: string, homePlace: number | null) => as(`/automations/${id}`, { method: 'PATCH', body: { homePlace } });
+    const home = async () =>
+      ((await as('/automations')).body.automations as { name: string; homePlace: number | null }[])
+        .filter((one) => one.homePlace !== null)
+        .sort((a, b) => a.homePlace! - b.homePlace!)
+        .map((one) => one.name);
+    await place(ids[0]!, 0);
+    await place(ids[1]!, 1);
+    expect(await home()).toEqual(['One', 'Two']);
+    // First among them: the others move along.
+    expect((await place(ids[2]!, 0)).body.homePlace).toBe(0);
+    expect(await home()).toEqual(['Three', 'One', 'Two']);
+    await place(ids[0]!, null);
+    expect(await home()).toEqual(['Three', 'Two']);
+    // Deleted, the rest close up behind it.
+    await as(`/automations/${ids[2]}`, { method: 'DELETE' });
+    expect(((await as('/automations')).body.automations as { name: string; homePlace: number | null }[]).find((one) => one.name === 'Two')?.homePlace).toBe(0);
+    // Its place is no change to what it does: it asks nothing, even when it acts.
+    await arm(`/automations/${ids[1]}`);
+    expect((await place(ids[1]!, null)).status).toBe(200);
+  });
 
   test('checks what it would do now without doing it, and is deleted', async () => {
     const { weather, plug } = await weatherAndPlug();
@@ -1206,23 +1285,13 @@ describe('automations', () => {
     await as(`/setup/${started.body.id}/check`, { method: 'POST' });
     const weather = (await as(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: 'Weather' } })).body as { id: string };
     const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
-    const make = (part: string) =>
-      as('/automations', {
-        method: 'POST',
-        body: {
-          name: 'Sunny lights',
-          recipe: 'open-meteo.weather.forecast-switch',
-          roles: { forecast: { device: weather.id, part: 'main' }, switch: { device: station.id, part } },
-          params: { day: 'today' },
-          timeZone: 'Europe/Stockholm',
-        },
-      });
+    const withPart = (part: string) => create('Sunny lights', 'open-meteo.weather.forecast-switch', { forecast: { device: weather.id, part: 'main' }, switch: { device: station.id, part } }, { day: 'today' });
 
-    expect((await make('main')).body.error).toContain('cannot do that');
-    expect((await make('outlet.garage-door')).body.error).toContain('has no part');
-    const made = await make('outlet.dc');
+    expect((await withPart('main')).body.error).toContain('cannot do that');
+    expect((await withPart('outlet.garage-door')).body.error).toContain('has no part');
+    const made = await withPart('outlet.dc');
     expect(made.status).toBe(200);
-    expect(made.body.sentence).toContain("Garage P280 — 12V DC / car port");
+    expect(made.body.sentence).toContain('Garage P280 — 12V DC / car port');
   });
 
   test('says when a device it uses has been removed', async () => {
@@ -1305,9 +1374,9 @@ describe('the live stream', () => {
         method: 'POST',
         body: {
           name: 'Start charging',
-          recipe: 'standard.start-charging',
+          rule: inlineParams(startCharging, {}),
           roles: { supply: { device: station.id, part: 'outlet.ac' }, charger: { device: plug.id, part: 'main' } },
-          params: {},
+          starts: {},
           timeZone: 'Europe/Stockholm',
         },
       });

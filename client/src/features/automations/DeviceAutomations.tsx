@@ -9,10 +9,11 @@ import { RunControl } from './RunControl';
 import { useReadAgain } from './useReadAgain';
 
 /**
- * The automations a device is part of that you start yourself — "Start
- * charging the scooter" on the scooter's page, and on its plug's — each with
- * Start, or Stop while it runs, following it as it goes (docs/SEQUENCES.md).
- * Nothing when there are none, or no server to run them.
+ * The automations a device is part of — "Start charging the scooter" on the
+ * scooter plug's page, and on the station's — each with Start, or Stop while
+ * it runs, following it as it goes (docs/AUTOMATION-EDITOR.md). Any can be
+ * started; one that is off is not listed. Nothing when there are none, or no
+ * server to run them.
  */
 export function DeviceAutomations({ deviceId }: { deviceId: string }) {
   const { mode } = useDevices();
@@ -20,7 +21,7 @@ export function DeviceAutomations({ deviceId }: { deviceId: string }) {
 
   const load = useCallback(() => {
     fetchAutomationsFor(deviceId)
-      .then((all) => setAutomations(all.filter((automation) => automation.startsWhenAsked && automation.mode !== 'off')))
+      .then((all) => setAutomations(all.filter((automation) => automation.mode !== 'off')))
       .catch(() => undefined);
   }, [deviceId]);
 

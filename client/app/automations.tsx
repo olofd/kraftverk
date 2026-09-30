@@ -1,30 +1,25 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Button, Input, Spinner, Text, XStack, YStack } from 'tamagui';
+import { router } from 'expo-router';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
 import {
   checkAutomation,
-  rehearseAutomation,
-  createAutomation,
   deleteAutomation,
   describeError,
   fetchAudit,
   fetchAutomationRuns,
   fetchAutomations,
-  fetchRecipes,
+  rehearseAutomation,
   updateAutomation,
   type AuditEntry,
+  type AutomationChanges,
   type AutomationMode,
   type AutomationRun,
+  type AutomationView,
   type ConditionState,
   type Rehearsal,
-  type AutomationView,
-  type ConfigValues,
-  type DeviceView,
-  type RecipeView,
-  type RoleBinding,
 } from '@kraftverk/api-client';
-import { capabilitiesOf, meetsNeed, partName, partsOf } from '@kraftverk/device-sdk';
-import { Card, Row, RowSeparator, SchemaForm, SectionLabel, SegmentedControl, haptic, isComplete, Icon, type IconName } from '@kraftverk/ui';
+import { Card, RowSeparator, SegmentedControl, ToggleRow, haptic, Icon, type IconName } from '@kraftverk/ui';
 
 import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
@@ -36,27 +31,24 @@ import { ASKED_AGAIN, confirmAction, withConfirmation } from '../src/lib/confirm
 import { useDevices } from '../src/state/DevicesProvider';
 
 /**
- * Automations (docs/AUTOMATIONS.md): recipes, with roles you fill with your
- * devices.
+ * Automations (docs/AUTOMATIONS.md, docs/AUTOMATION-EDITOR.md): each one's
+ * own rule, built from blocks in the editor — from nothing, or from a recipe
+ * copied.
  *
- * A role offers only the devices that can do what it needs, so an automation
- * that cannot work cannot be made. A new one only watches — it says what it
- * would have done — until it is let act, which is confirmed. What an acting
- * one does goes through the same gateway as a tap on a switch, and every run,
- * acting or not, is kept and shown.
+ * Any can be started with ▶, for real. What it does on its own — its
+ * triggers — only watches at first: it says what it would have done, until it
+ * is let act, which is confirmed. Everything it does goes through the same
+ * gateway as a tap on a switch, and every run, acting or not, is kept and
+ * shown.
  */
 export default function AutomationsScreen() {
-  const { mode, devices } = useDevices();
-  const [recipes, setRecipes] = useState<RecipeView[] | null>(null);
+  const { mode } = useDevices();
   const [automations, setAutomations] = useState<AutomationView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [nextRecipes, nextAutomations] = await Promise.all([fetchRecipes(), fetchAutomations()]);
-      setRecipes(nextRecipes);
-      setAutomations(nextAutomations);
+      setAutomations(await fetchAutomations());
       setError(null);
     } catch (err) {
       setError(describeError(err) || 'The automations could not be read');
@@ -102,41 +94,24 @@ export default function AutomationsScreen() {
       ) : null}
       {!automations && !error ? <Spinner color="$accent" /> : null}
 
-      {automations?.length === 0 && !creating ? (
+      {automations?.length === 0 ? (
         <Card gap="$2">
           <Text fontSize={15} fontWeight="700" color="$color">
             Nothing yet
           </Text>
           <Text fontSize={13} color="$muted" lineHeight={19}>
-            An automation connects what your devices report to what they can do — “charge the station while it is low”.
-            A new one only watches at first: it says what it would have done, and you let it act when you trust it.
+            An automation is steps your devices take — “power the charger, wait for its plug, switch it on, and make sure it
+            draws” — started by you, at a time, or when something holds. Build one block by block, or start from a recipe.
           </Text>
         </Card>
       ) : null}
 
       {automations?.map((automation) => (
-        <AutomationCard
-          key={automation.id}
-          automation={automation}
-          recipes={recipes ?? []}
-          devices={devices}
-          onChanged={replace}
-          onDeleted={() => setAutomations((all) => all?.filter((candidate) => candidate.id !== automation.id) ?? null)}
-        />
+        <AutomationCard key={automation.id} automation={automation} onChanged={replace} onDeleted={() => setAutomations((all) => all?.filter((candidate) => candidate.id !== automation.id) ?? null)} />
       ))}
 
-      {creating && recipes ? (
-        <Editor
-          recipes={recipes}
-          devices={devices}
-          onCancel={() => setCreating(false)}
-          onSaved={(created) => {
-            setCreating(false);
-            setAutomations((all) => [...(all ?? []), created]);
-          }}
-        />
-      ) : automations ? (
-        <Button alignSelf="flex-start" size="$3" backgroundColor="$accent" color="$background" icon={<Icon name="plus" size={14} />} onPress={() => (haptic(), setCreating(true))}>
+      {automations ? (
+        <Button alignSelf="flex-start" size="$3" backgroundColor="$accent" color="$background" icon={<Icon name="plus" size={14} />} onPress={() => (haptic(), router.push('/automation/new'))}>
           New automation
         </Button>
       ) : null}
@@ -152,13 +127,19 @@ const MODES: { value: AutomationMode; label: string }[] = [
   { value: 'armed', label: 'Act' },
 ];
 
-/** What each mode means — for one started when asked, as it is started. */
-const modeSays = (mode: AutomationMode, asked: boolean): string =>
-  ({
-    off: asked ? 'It cannot be started.' : 'It does nothing, and does not look.',
-    observe: asked ? 'Tried, it says what it would do. Nothing is switched.' : 'It decides, and says here what it would have done. Nothing is switched.',
-    armed: asked ? 'Started, it takes its steps, each through the same checks as a tap on a switch.' : 'It acts on its own, through the same checks as a tap on a switch.',
-  })[mode];
+/** What each mode means for what it does on its own — for one with nothing that starts it, what is left. */
+const modeSays = (mode: AutomationMode, onItsOwn: boolean): string =>
+  onItsOwn
+    ? {
+        off: 'It does nothing, and cannot be started.',
+        observe: 'On its own, it decides and says here what it would have done: nothing is switched. Started by you, it acts.',
+        armed: 'It acts on its own, through the same checks as a tap on a switch.',
+      }[mode]
+    : {
+        off: 'It cannot be started.',
+        observe: 'Started by you, it acts; an assistant cannot start it until you let it act.',
+        armed: 'Started by you, another automation or an assistant, it acts.',
+      }[mode];
 
 /** How often it may look again to keep things so, in minutes; 0 is never. */
 const RECHECK: { value: number; label: string }[] = [
@@ -198,33 +179,19 @@ const CHANGE: Record<string, Look> = {
 const wantsYes = (answer: Awaited<ReturnType<typeof updateAutomation>>) =>
   'needsConfirmation' in answer ? { token: answer.needsConfirmation, reason: answer.reason } : null;
 
-function AutomationCard({
-  automation,
-  recipes,
-  devices,
-  onChanged,
-  onDeleted,
-}: {
-  automation: AutomationView;
-  recipes: RecipeView[];
-  devices: DeviceView[];
-  onChanged: (next: AutomationView) => void;
-  onDeleted: () => void;
-}) {
+function AutomationCard({ automation, onChanged, onDeleted }: { automation: AutomationView; onChanged: (next: AutomationView) => void; onDeleted: () => void }) {
   const tone = useTone();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [checked, setChecked] = useState<AutomationRun | null>(null);
   const [rehearsal, setRehearsal] = useState<Rehearsal | null>(null);
-  const [editing, setEditing] = useState(false);
   const [history, setHistory] = useState<History | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showPlan, setShowPlan] = useState(false);
-  const recipe = recipes.find((candidate) => candidate.id === automation.recipe) ?? null;
   const badge = BADGE[automation.mode];
-  const asked = automation.startsWhenAsked;
-  const canKeep = !automation.takesSteps && (recipe?.hasConditions ?? automation.now.conditions.length > 0);
-  const onlyAsked = asked && automation.when.every((trigger) => trigger === 'When you start it');
+  // Something starts it on its own: a time, a condition, an event. Nothing does, and it is only ever started.
+  const onItsOwn = automation.when.length > 0;
+  const canKeep = !automation.takesSteps && automation.rule.when.some((trigger) => 'becomes' in trigger);
 
   // Its history: every run it kept, and every change made to it. Read again when it runs or changes.
   const loadHistory = useCallback(() => {
@@ -249,7 +216,7 @@ function AutomationCard({
   };
 
   /** A change the server may want a yes for: asked in its words, again if the yes came too late. */
-  const change = (changes: { mode?: AutomationMode; recheckMinutes?: number | null }, title: string, yes: string) =>
+  const change = (changes: AutomationChanges, title: string, yes: string) =>
     act(async () => {
       const { answer } = await withConfirmation(
         (confirmation) => updateAutomation(automation.id, { ...changes, confirmation }),
@@ -267,21 +234,6 @@ function AutomationCard({
       onDeleted();
     }, 'It could not be deleted');
   };
-
-  if (editing && recipe) {
-    return (
-      <Editor
-        recipes={[recipe]}
-        devices={devices}
-        existing={automation}
-        onCancel={() => setEditing(false)}
-        onSaved={(next) => {
-          setEditing(false);
-          onChanged(next);
-        }}
-      />
-    );
-  }
 
   return (
     <Card gap="$4" role="region" aria-label={automation.name} borderWidth={automation.running ? 1 : 0} borderColor="$accent">
@@ -309,6 +261,11 @@ function AutomationCard({
         <Text fontSize={14} color="$muted" lineHeight={21}>
           {automation.sentence}
         </Text>
+        {automation.madeFrom ? (
+          <Text fontSize={12} color="$muted">
+            Made from “{automation.madeFrom.label}”
+          </Text>
+        ) : null}
       </YStack>
 
       {automation.problems.length ? (
@@ -320,21 +277,22 @@ function AutomationCard({
         </XStack>
       ) : null}
 
-      {asked ? <RunControl automation={automation} onChanged={onChanged} onTried={setChecked} /> : null}
+      <RunControl automation={automation} onChanged={onChanged} />
 
       {automation.running ? (
         <YStack gap="$2.5" padding="$3" borderRadius="$4" backgroundColor="$background" borderWidth={1} borderColor="$accent">
           <XStack alignItems="center" gap="$2">
             <Heading>Now</Heading>
             <Text fontSize={12} color="$muted">
-              {automation.running.startedBy ? `started by ${automation.running.startedBy}` : automation.running.why} · {clock(automation.running.at)}
+              {automation.running.startedByRun ? `started by “${automation.running.startedByRun.name}”` : automation.running.startedBy ? `started by ${automation.running.startedBy}` : automation.running.why} ·{' '}
+              {clock(automation.running.at)}
             </Text>
           </XStack>
           <RunSteps run={automation.running} />
         </YStack>
-      ) : onlyAsked ? null : (
+      ) : onItsOwn ? (
         <Now automation={automation} />
-      )}
+      ) : null}
 
       {automation.takesSteps ? (
         <YStack gap="$2.5">
@@ -359,7 +317,7 @@ function AutomationCard({
             <RunDetail run={automation.lastRun} />
           ) : (
             <Text fontSize={13} color="$muted" lineHeight={19}>
-              {asked ? 'It has not been started yet.' : 'It has not run yet: none of its conditions has come true since it was made.'}
+              {onItsOwn ? 'It has not run yet: nothing that starts it has happened since it was made.' : 'It has not been started yet.'}
             </Text>
           )}
         </YStack>
@@ -368,7 +326,7 @@ function AutomationCard({
       {checked ? (
         <YStack gap="$2" padding="$3" borderRadius="$4" borderWidth={1} borderColor="$accent">
           <XStack alignItems="center" justifyContent="space-between">
-            <Heading>{asked ? 'If it were started now' : 'If it ran now'}</Heading>
+            <Heading>If it ran now</Heading>
             <Button size="$2" chromeless circular aria-label="Close" icon={<Icon name="x" size={14} color={tone('$muted')} />} onPress={() => setChecked(null)} />
           </XStack>
           <RunDetail run={checked} showConditions />
@@ -379,12 +337,12 @@ function AutomationCard({
 
       <Card inset backgroundColor="$background">
         <SegmentedControl
-          title={asked ? 'When started' : 'What it may do'}
-          subtitle={modeSays(automation.mode, asked)}
+          title={onItsOwn ? 'On its own' : 'When started'}
+          subtitle={modeSays(automation.mode, onItsOwn)}
           value={automation.mode}
           options={MODES}
           disabled={busy}
-          onChange={(mode) => void change({ mode }, asked ? `Let “${automation.name}” act when started?` : `Let “${automation.name}” act on its own?`, 'Let it act')}
+          onChange={(mode) => void change({ mode }, onItsOwn ? `Let “${automation.name}” act on its own?` : `Let “${automation.name}” act when others start it?`, 'Let it act')}
         />
         {canKeep ? (
           <>
@@ -405,6 +363,17 @@ function AutomationCard({
             />
           </>
         ) : null}
+        <RowSeparator />
+        <ToggleRow
+          title="On the home page"
+          subtitle={automation.homePlace === null ? 'A shortcut to start it, on your home page.' : 'A shortcut to start it is on your home page.'}
+          checked={automation.homePlace !== null}
+          disabled={busy}
+          onCheckedChange={(on) => void act(async () => {
+            const answer = await updateAutomation(automation.id, { homePlace: on ? 1000 : null });
+            if ('automation' in answer) onChanged(answer.automation);
+          }, 'That did not work')}
+        />
       </Card>
 
       {problem ? (
@@ -417,17 +386,17 @@ function AutomationCard({
       ) : null}
 
       <XStack gap="$2" flexWrap="wrap" alignItems="center">
-        <Button size="$3" disabled={busy || !recipe || automation.running !== null} icon={<Icon name="edit-3" size={14} color={tone('$color')} />} onPress={() => (haptic(), setEditing(true))}>
+        <Button size="$3" disabled={busy || automation.running !== null} icon={<Icon name="edit-3" size={14} color={tone('$color')} />} onPress={() => (haptic(), router.push(`/automation/${automation.id}`))}>
           Edit
         </Button>
         <Button size="$3" disabled={busy} icon={<Icon name="help-circle" size={14} color={tone('$color')} />} onPress={() => void act(async () => setChecked(await checkAutomation(automation.id)), 'It could not be checked')}>
           What would it do now?
         </Button>
-        {onlyAsked ? null : (
+        {onItsOwn ? (
           <Button size="$3" disabled={busy} icon={<Icon name="rewind" size={14} color={tone('$color')} />} onPress={() => void act(async () => setRehearsal(await rehearseAutomation(automation.id)), 'It could not be rehearsed')}>
             Rehearse last week
           </Button>
-        )}
+        ) : null}
         <XStack flex={1} />
         <Button size="$3" chromeless color="$danger" disabled={busy} icon={<Icon name="trash-2" size={14} color={tone('$danger')} />} onPress={() => void remove()}>
           Delete
@@ -446,7 +415,7 @@ function AutomationCard({
             </Text>
           </XStack>
         </Pressable>
-        {showHistory ? <Timeline history={history} automation={automation} recipe={recipe} /> : null}
+        {showHistory ? <Timeline history={history} automation={automation} /> : null}
       </YStack>
     </Card>
   );
@@ -549,7 +518,7 @@ function Now({ automation }: { automation: AutomationView }) {
       ) : (
         automation.when.map((trigger) => (
           <XStack key={trigger} gap="$2" alignItems="flex-start">
-            <Icon name={trigger === 'When you start it' ? 'play' : 'clock'} size={13} color={tone('$muted')} style={{ marginTop: 3 }} />
+            <Icon name="clock" size={13} color={tone('$muted')} style={{ marginTop: 3 }} />
             <Text flex={1} fontSize={13} color="$color" lineHeight={19}>
               {trigger}
             </Text>
@@ -608,10 +577,10 @@ const isRunEntry = (entry: AuditEntry) => entry.kind.replace(/^automation\./, ''
 /** Its history: every run it kept, and every change made to it. */
 type History = { runs: AutomationRun[]; changes: AuditEntry[] };
 
-type Changed = { mode?: AutomationMode; recheckMinutes?: number | null; params?: ConfigValues; roles?: Record<string, RoleBinding> };
+type Changed = { mode?: AutomationMode; recheckMinutes?: number | null; rule?: unknown; roles?: unknown; starts?: unknown; homePlace?: number | null };
 
-/** What a change changed, in words: "Only watching → Acting", "Stop charging at: 50 % → 60 %". */
-function changesOf(entry: AuditEntry, recipe: RecipeView | null): string[] {
+/** What a change changed, in words: "Only watching → Acting", "Its steps changed". */
+function changesOf(entry: AuditEntry): string[] {
   const detail = entry.detail as { before?: Changed; after?: Changed } | null;
   const before = detail?.before;
   const after = detail?.after;
@@ -622,14 +591,9 @@ function changesOf(entry: AuditEntry, recipe: RecipeView | null): string[] {
     const keep = (minutes: number | null | undefined) => (minutes ? `every ${every(minutes)}` : 'off');
     said.push(`Keep it so: ${keep(before.recheckMinutes)} → ${keep(after.recheckMinutes)}`);
   }
-  for (const [key, value] of Object.entries(after.params ?? {})) {
-    const was = before.params?.[key];
-    if (was === value) continue;
-    const field = recipe?.params.fields[key];
-    const unit = field && 'unit' in field && field.unit ? ` ${field.unit}` : '';
-    said.push(`${field?.title ?? key}: ${was ?? '—'}${was === undefined ? '' : unit} → ${value}${unit}`);
-  }
-  if (JSON.stringify(before.roles ?? {}) !== JSON.stringify(after.roles ?? {})) said.push('Its devices changed');
+  if (JSON.stringify(before.rule ?? null) !== JSON.stringify(after.rule ?? null)) said.push('What it does changed');
+  if (JSON.stringify(before.roles ?? {}) !== JSON.stringify(after.roles ?? {}) || JSON.stringify(before.starts ?? {}) !== JSON.stringify(after.starts ?? {})) said.push('What it uses changed');
+  if ((before.homePlace ?? null) !== (after.homePlace ?? null)) said.push(after.homePlace === null || after.homePlace === undefined ? 'Taken off the home page' : 'Put on the home page');
   return said;
 }
 
@@ -640,7 +604,7 @@ type Entry = { at: string; key: string } & ({ run: AutomationRun } | { change: A
  * ran and what came of it — a tap opens its steps — and each change made to
  * it, with who made it and what changed.
  */
-function Timeline({ history, automation, recipe }: { history: History | null; automation: AutomationView; recipe: RecipeView | null }) {
+function Timeline({ history, automation }: { history: History | null; automation: AutomationView }) {
   const [open, setOpen] = useState<string | null>(null);
   if (!history) return <Spinner size="small" color="$accent" alignSelf="flex-start" />;
   const entries: Entry[] = [
@@ -677,8 +641,8 @@ function Timeline({ history, automation, recipe }: { history: History | null; au
             const change = 'change' in entry ? entry.change : null;
             const look = run ? OUTCOME[run.outcome] : (CHANGE[change!.kind] ?? { icon: 'edit-3', tone: '$color' });
             const expanded = open === entry.key;
-            const changes = change ? changesOf(change, recipe) : [];
-            const by = run?.startedBy ?? (change?.actor && !change.actor.startsWith('automation:') ? change.actor : null);
+            const changes = change ? changesOf(change) : [];
+            const by = run?.startedByRun ? `“${run.startedByRun.name}”` : (run?.startedBy ?? (change?.actor && !change.actor.startsWith('automation:') ? change.actor : null));
             const row = (
               <XStack gap="$3" alignItems="stretch">
                 {/* The rail: a mark for each entry, joined to the next. */}
@@ -770,230 +734,6 @@ function Rehearsed({ rehearsal, onClose }: { rehearsal: Rehearsal; onClose: () =
           <Icon name="info" size={12} color={tone('$muted')} style={{ marginTop: 3 }} />
           <Text flex={1} fontSize={12} color="$muted" lineHeight={17}>
             {caveat}.
-          </Text>
-        </XStack>
-      ))}
-    </YStack>
-  );
-}
-
-// --- making one, and changing one ---------------------------------------------------------
-
-function defaults(recipe: RecipeView): ConfigValues {
-  return Object.fromEntries(
-    Object.entries(recipe.params.fields).flatMap(([name, field]) => ('default' in field && field.default !== undefined ? [[name, field.default]] : []))
-  );
-}
-
-/**
- * Making an automation, or changing one: its recipe (fixed once made), the
- * devices that fill its roles, its settings, and its name. Changing one that
- * acts asks first, as letting it act does: what it may do changes.
- */
-function Editor({
-  recipes,
-  devices,
-  existing,
-  onCancel,
-  onSaved,
-}: {
-  recipes: RecipeView[];
-  devices: DeviceView[];
-  /** The automation being changed; none when making a new one. */
-  existing?: AutomationView;
-  onCancel: () => void;
-  onSaved: (automation: AutomationView) => void;
-}) {
-  const [recipe, setRecipe] = useState<RecipeView | null>(existing ? (recipes[0] ?? null) : recipes.length === 1 ? recipes[0]! : null);
-  const [name, setName] = useState(existing?.name ?? '');
-  const [roles, setRoles] = useState<Record<string, RoleBinding>>(existing?.roles ?? {});
-  const [params, setParams] = useState<ConfigValues>(() => (existing ? { ...existing.params } : recipes.length === 1 ? defaults(recipes[0]!) : {}));
-  const [recheck, setRecheck] = useState(existing?.recheckMinutes ?? 0);
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-
-  /** For each role, every part of every device you have that fits it: a plug, or one outlet of a station. */
-  const fits = useMemo(
-    () =>
-      Object.fromEntries(
-        Object.entries(recipe?.roles ?? {}).map(([role, spec]) => [
-          role,
-          devices
-            .filter((device) => !device.removedAt)
-            .flatMap((device) =>
-              partsOf(device.description, device.name)
-                .filter((part) => meetsNeed(spec, capabilitiesOf(device.description, part.id)))
-                .map((part) => ({ device, part, title: partName(device.name, part.id, part.label) }))
-            ),
-        ])
-      ),
-    [devices, recipe]
-  );
-  const chosen = (role: string, device: DeviceView, part: string) => roles[role]?.device === device.id && roles[role]?.part === part;
-  // What is still needed, said rather than implied by a greyed-out button. The name is the recipe's until you give one.
-  const missing = recipe
-    ? [
-        ...Object.entries(recipe.roles).flatMap(([role, spec]) => (roles[role] ? [] : [spec.label.toLowerCase()])),
-        ...(isComplete(recipe.params, params) ? [] : ['its settings']),
-      ]
-    : ['what it does'];
-  const ready = missing.length === 0;
-
-  const save = async () => {
-    if (!recipe) return;
-    setBusy(true);
-    setProblem(null);
-    try {
-      const chosenName = name.trim() || recipe.label;
-      // Only a rule with a condition has anything to keep.
-      const recheckMinutes = recipe.hasConditions && recheck > 0 ? recheck : null;
-      if (!existing) {
-        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        onSaved(await createAutomation({ name: chosenName, recipe: recipe.id, roles, params, timeZone, recheckMinutes }));
-        return;
-      }
-      const changes = { name: chosenName, roles, params, recheckMinutes };
-      const { answer } = await withConfirmation(
-        (confirmation) => updateAutomation(existing.id, { ...changes, confirmation }),
-        wantsYes,
-        (reason, again) => confirmAction(`Change “${existing.name}” while it acts?`, again ? `${ASKED_AGAIN}\n\n${reason}` : reason, 'Change it')
-      );
-      if ('automation' in answer) onSaved(answer.automation);
-    } catch (err) {
-      setProblem(describeError(err) || 'It could not be saved');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Card gap="$4" borderWidth={1} borderColor="$accent">
-      <YStack gap="$1">
-        <Text fontSize={17} fontWeight="800" color="$color">
-          {existing ? `Change “${existing.name}”` : 'New automation'}
-        </Text>
-        {recipe ? (
-          <Text fontSize={13} color="$muted" lineHeight={19}>
-            {recipe.label}: {recipe.description}
-          </Text>
-        ) : null}
-      </YStack>
-
-      {!existing && recipes.length > 1 ? (
-        <YStack gap="$2">
-          <SectionLabel>What should it do?</SectionLabel>
-          <Card inset backgroundColor="$background">
-            {recipes.map((candidate, index) => (
-              <YStack key={candidate.id}>
-                {index > 0 ? <RowSeparator /> : null}
-                <Pressable selected={recipe?.id === candidate.id} onPress={() => (setRecipe(candidate), setParams(defaults(candidate)), setRoles({}))}>
-                  <Row
-                    title={candidate.label}
-                    subtitle={candidate.from ? `${candidate.description} From ${candidate.from.name}.` : candidate.description}
-                    accessory={candidate.takesSteps || candidate.startsWhenAsked ? <Kinds recipe={candidate} /> : undefined}
-                  />
-                </Pressable>
-              </YStack>
-            ))}
-          </Card>
-        </YStack>
-      ) : null}
-
-      {recipe ? (
-        <>
-          {recipe.takesSteps && !existing ? (
-            <YStack gap="$2">
-              <SectionLabel>What it will do</SectionLabel>
-              <Card inset backgroundColor="$background" padding="$3">
-                <StepPlan steps={recipe.steps} />
-              </Card>
-            </YStack>
-          ) : null}
-          {Object.entries(recipe.roles).map(([role, spec]) => (
-            <YStack key={role} gap="$2">
-              <SectionLabel>{spec.label}</SectionLabel>
-              <Card inset backgroundColor="$background">
-                {fits[role]?.length ? (
-                  fits[role]!.map(({ device, part, title }, index) => (
-                    <YStack key={`${device.id}:${part.id}`}>
-                      {index > 0 ? <RowSeparator /> : null}
-                      <Pressable selected={chosen(role, device, part.id)} onPress={() => setRoles((current) => ({ ...current, [role]: { device: device.id, part: part.id } }))}>
-                        <Row title={title} subtitle={device.meta.name} />
-                      </Pressable>
-                    </YStack>
-                  ))
-                ) : (
-                  <Row title="Nothing you have fits" subtitle={`${spec.description}. Add one first.`} />
-                )}
-              </Card>
-            </YStack>
-          ))}
-
-          {Object.keys(recipe.params.fields).length ? (
-            <YStack gap="$2">
-              <SectionLabel>Settings</SectionLabel>
-              <Card inset backgroundColor="$background">
-                <SchemaForm schema={recipe.params} values={params} onChange={(field, value) => setParams((current) => ({ ...current, [field]: value }))} />
-              </Card>
-            </YStack>
-          ) : null}
-
-          {recipe.hasConditions ? (
-            <YStack gap="$2">
-              <SectionLabel>Keep it so</SectionLabel>
-              <Card inset backgroundColor="$background">
-                <SegmentedControl title="Check again" subtitle={recheckSays(recheck || null)} value={recheck} options={RECHECK} disabled={busy} onChange={setRecheck} />
-              </Card>
-            </YStack>
-          ) : null}
-
-          <YStack gap="$2">
-            <SectionLabel>Name</SectionLabel>
-            <Input size="$3" value={name} placeholder={recipe.label} onChangeText={setName} backgroundColor="$background" borderColor="$borderColor" aria-label="Name" />
-          </YStack>
-        </>
-      ) : null}
-
-      {problem ? (
-        <Text fontSize={13} color="$danger" lineHeight={19}>
-          {problem}
-        </Text>
-      ) : null}
-      {!ready ? (
-        <Text fontSize={13} color="$warning" lineHeight={19} role="status">
-          Still to choose: {missing.join(', ')}.
-        </Text>
-      ) : null}
-      {existing ? null : (
-        <Text fontSize={12} color="$muted" lineHeight={18}>
-          {recipe?.startsWhenAsked
-            ? 'It starts by only watching: trying it says what it would do, and switches nothing until you let it act. Then Start takes its steps.'
-            : 'It starts by only watching: it decides and says what it would have done, and switches nothing until you let it act.'}
-        </Text>
-      )}
-      <XStack gap="$2" justifyContent="flex-end">
-        <Button size="$3" chromeless color="$muted" disabled={busy} onPress={onCancel}>
-          Cancel
-        </Button>
-        <Button size="$3" backgroundColor="$accent" color="$background" disabled={busy || !ready} opacity={busy || !ready ? 0.5 : 1} onPress={() => void save()}>
-          {busy ? 'Saving…' : existing ? 'Save changes' : 'Create'}
-        </Button>
-      </XStack>
-    </Card>
-  );
-}
-
-/** What kind of automation a recipe makes, as small marks: it takes steps; you start it. */
-function Kinds({ recipe }: { recipe: RecipeView }) {
-  const tone = useTone();
-  const marks = [...(recipe.takesSteps ? [{ icon: 'list' as const, label: 'Steps' }] : []), ...(recipe.startsWhenAsked ? [{ icon: 'play' as const, label: 'You start it' }] : [])];
-  return (
-    <YStack gap={4} alignItems="flex-end">
-      {marks.map((mark) => (
-        <XStack key={mark.label} gap={4} alignItems="center" paddingHorizontal="$2" paddingVertical={2} borderRadius={999} borderWidth={1} borderColor="$accent">
-          <Icon name={mark.icon} size={10} color={tone('$accent')} />
-          <Text fontSize={11} fontWeight="700" color="$accent">
-            {mark.label}
           </Text>
         </XStack>
       ))}

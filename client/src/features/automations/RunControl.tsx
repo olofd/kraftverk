@@ -1,30 +1,31 @@
 import { useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { checkAutomation, describeError, startAutomation, stopAutomation, type AutomationRun, type AutomationView } from '@kraftverk/api-client';
+import { describeError, startAutomation, stopAutomation, type AutomationView } from '@kraftverk/api-client';
 import { haptic, Icon } from '@kraftverk/ui';
 
+import { confirmAction } from '../../lib/confirm';
 import { OUTCOME, stopwatch, useNow, useTone } from './looks';
 
 /**
- * Starting one that is started when asked, and stopping it while it runs
- * (docs/SEQUENCES.md) — on its card, and on the page of a device it is about.
+ * Playing an automation, and stopping it while it runs
+ * (docs/AUTOMATION-EDITOR.md) — on its card, on a device's page, and on the
+ * home page.
  *
- * Letting it act, Start begins its run; while it runs, Stop ends the step it
- * is in and runs what it does if stopped. Only watching, it is tried instead:
- * what it would do is shown, and nothing is switched. Off, it says so.
+ * Start runs it now, for real, whatever it does on its own: its steps each
+ * go through the gateway, as a tap on a switch does. One that only watches
+ * on its own asks first, every time — it has not been let act, and this
+ * acts. While it runs, Stop ends the step it is in and runs what it does if
+ * stopped. Off, it cannot be started, and says so.
  */
 export function RunControl({
   automation,
   onChanged,
-  onTried,
   compact,
 }: {
   automation: AutomationView;
   onChanged: (next: AutomationView) => void;
-  /** What it would do, when it only watches and was tried. */
-  onTried?: (run: AutomationRun) => void;
-  /** One line, for a device's page. */
+  /** One line, for a device's page or the home page. */
   compact?: boolean;
 }) {
   const tone = useTone();
@@ -49,18 +50,23 @@ export function RunControl({
   };
   const start = () =>
     act(async () => {
-      if (automation.mode === 'observe') onTried?.(await checkAutomation(automation.id));
-      else onChanged(await startAutomation(automation.id));
+      // Only watching on its own: started by a person, it acts — said, and asked, first.
+      if (automation.mode === 'observe') {
+        const yes = await confirmAction(`Start “${automation.name}” now?`, `It only watches on its own, but started by you it acts, for real:\n\n${automation.sentence}`, 'Start it');
+        if (!yes) return;
+      }
+      onChanged(await startAutomation(automation.id));
     });
   const stop = () => act(async () => onChanged(await stopAutomation(automation.id)));
 
   const last = automation.lastRun;
+  const blocked = automation.mode === 'off' || automation.problems.length > 0;
   const status = running
     ? `Running for ${stopwatch((now - Date.parse(running.at)) / 1000)}${current ? ` · ${current.what}` : ''}`
     : automation.mode === 'off'
       ? 'Off: turn it on to start it'
-      : automation.mode === 'observe'
-        ? 'It only watches: trying it shows what it would do, and switches nothing'
+      : automation.problems.length
+        ? `It cannot run as it is: ${automation.problems[0]}`
         : last
           ? `Last: ${OUTCOME[last.outcome].label.toLowerCase()} — ${last.summary}`
           : 'Not started yet';
@@ -82,17 +88,15 @@ export function RunControl({
   ) : (
     <Button
       size={compact ? '$3' : '$4'}
-      backgroundColor={automation.mode === 'armed' ? '$accent' : 'transparent'}
-      borderWidth={automation.mode === 'armed' ? 0 : 1}
-      borderColor="$accent"
-      color={automation.mode === 'armed' ? '$background' : '$accent'}
-      disabled={busy || automation.mode === 'off' || automation.problems.length > 0}
-      opacity={busy || automation.mode === 'off' || automation.problems.length > 0 ? 0.5 : 1}
-      icon={<Icon name={automation.mode === 'armed' ? 'play' : 'eye'} size={14} color={tone(automation.mode === 'armed' ? '$background' : '$accent')} />}
+      backgroundColor="$accent"
+      color="$background"
+      disabled={busy || blocked}
+      opacity={busy || blocked ? 0.5 : 1}
+      icon={<Icon name="play" size={14} color={tone('$background')} />}
       onPress={() => void start()}
-      aria-label={`${automation.mode === 'armed' ? 'Start' : 'Try'} ${automation.name}`}
+      aria-label={`Start ${automation.name}`}
     >
-      {automation.mode === 'armed' ? 'Start' : 'Try it'}
+      Start
     </Button>
   );
 

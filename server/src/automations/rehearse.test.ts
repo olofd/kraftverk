@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { chargeBetween, MAIN_PART, savedDeviceId, type DeviceDescription, type Recipe } from '@kraftverk/device-sdk';
+import { chargeBetween, inlineParams, MAIN_PART, savedDeviceId, type DeviceDescription, type Recipe } from '@kraftverk/device-sdk';
 
 import { rehearse, type RehearseSource } from './rehearse.ts';
 
@@ -32,12 +32,15 @@ const source = (charge = CHARGE): RehearseSource => ({
   events: () => [],
 });
 
-const automation = { roles: { battery: { device: STATION, part: MAIN_PART }, charger: { device: PLUG, part: MAIN_PART } }, params: { low: 15, high: 50, minutes: 2 }, timeZone: 'Europe/Stockholm' };
+const automation = { roles: { battery: { device: STATION, part: MAIN_PART }, charger: { device: PLUG, part: MAIN_PART } }, timeZone: 'Europe/Stockholm' };
+/** The charge window as an automation owns it: its settings written into its blocks. */
+const SETTINGS = { low: 15, high: 50, minutes: 2 };
+const window15to50 = inlineParams(chargeBetween, SETTINGS);
 const window = { from: new Date(START), to: new Date(START + 20 * 60_000) };
 
 describe('a rule rehearsed on history', () => {
   test('the charge window: on once it has stayed below 15 % for 2 min, not at a dip; off when it reaches 50 %', async () => {
-    const rehearsal = await rehearse(chargeBetween, automation, source(), window);
+    const rehearsal = await rehearse(window15to50, automation, source(), window);
     expect(rehearsal.runs.map((run) => [run.at, run.outcome, run.summary.split('.')[0]])).toEqual([
       // 14 % at minute 3 is back to 16 % at 4: no run. Under from 5, for two minutes by 7.
       [minute(7), 'would-act', 'Would turn Charger plug on'],
@@ -57,8 +60,8 @@ describe('a rule rehearsed on history', () => {
     // One sample at 10 %, then silence: two minutes on, it is still current, and the hold has run.
     const once = [{ at: minute(0), value: 10, text: null }];
     const later = { from: new Date(START), to: new Date(START + 60 * 60_000) };
-    expect((await rehearse(chargeBetween, automation, source(once), later)).runs.map((run) => [run.at, run.summary.split('.')[0]])).toEqual([[minute(2), 'Would turn Charger plug on']]);
+    expect((await rehearse(window15to50, automation, source(once), later)).runs.map((run) => [run.at, run.summary.split('.')[0]])).toEqual([[minute(2), 'Would turn Charger plug on']]);
     // Held for five: by then the sample is five minutes old, past current, and nothing is known.
-    expect((await rehearse(chargeBetween, { ...automation, params: { ...automation.params, minutes: 5 } }, source(once), later)).runs).toEqual([]);
+    expect((await rehearse(inlineParams(chargeBetween, { ...SETTINGS, minutes: 5 }), automation, source(once), later)).runs).toEqual([]);
   });
 });

@@ -1,6 +1,7 @@
 import type { DeviceView, VocabularyView, WorldDevice, WorldView } from '@kraftverk/api-contract';
 import {
   attributesOf,
+  isAutomationRole,
   capabilitiesOf,
   CAPABILITIES,
   isCurrent,
@@ -109,7 +110,9 @@ export function vocabularyOf(library: AutomationLibrary, policy: PolicyValues, o
       id: recipe.id,
       label: recipe.label,
       description: recipe.description,
-      roles: Object.fromEntries(Object.entries(recipe.roles).map(([role, spec]) => [role, { label: spec.label, capabilities: spec.capabilities, ...(spec.oneOf ? { oneOf: spec.oneOf } : {}) }])),
+      roles: Object.fromEntries(
+        Object.entries(recipe.roles).map(([role, spec]) => [role, isAutomationRole(spec) ? { label: spec.label, automation: true as const } : { label: spec.label, capabilities: spec.capabilities, ...(spec.oneOf ? { oneOf: spec.oneOf } : {}) }])
+      ),
       params: recipe.params,
     })),
     policy: Object.fromEntries(Object.entries(POLICY_VALUES).map(([name, spec]) => [name, { label: spec.label, value: policy[name as keyof PolicyValues] ?? spec.default, unit: spec.unit }])),
