@@ -33,7 +33,8 @@ test('start charging: made from its recipe, shown as steps, tried, let act, star
 
   const card = page.getByRole('region', { name });
   await expect(card.getByText('What it does')).toBeVisible();
-  await expect(card.getByText(`Turn ${station.name} — AC outlets on`)).toBeVisible();
+  // The step, not the sentence above it that says the same: one name for a part everywhere.
+  await expect(card.getByText(`Turn ${station.name} — AC outlets on`, { exact: true }).first()).toBeVisible();
   await expect(card.getByText(/If a step does not succeed, or you stop it/i)).toBeVisible();
 
   // Only watching: tried, it says what it would do, and switches nothing.
