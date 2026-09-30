@@ -11,7 +11,7 @@ import { decodeBroadcast, DISCOVERY_KEY } from './discovery.ts';
 import { CMD, encodeFrame, FrameReader, PREFIX_55AA, SUFFIX_55AA, type ProtocolVersion } from './frame.ts';
 import protocol, { linkOver, tuyaIdentity } from './index.ts';
 import { parseDps, sessionKeyOf, TuyaLink } from './session.ts';
-import { decodeSocket, encodeSocket, relayCandidates, type SocketProfile } from './socket.ts';
+import { datapointRaw, datapointValue, decodeSocket, encodeSocket, relayDps, type ProfileDatapoint, type SocketProfile } from './socket.ts';
 
 /**
  * The Tuya LAN protocol, checked against the published specification — and a
@@ -152,23 +152,69 @@ describe('a socket profile', () => {
 
   test('encodes as a plug of the profile sends it, which decodes to the same reading', () => {
     expect(encodeSocket(profile, { relayOn: true, amps: 3.26, watts: 745, volts: 231.2, kwh: 12.5 })).toEqual(dps);
-    expect(decodeSocket(profile, encodeSocket(profile, { relayOn: false, watts: 0 }, 131), 131)).toMatchObject({ relayOn: false, watts: 0 });
-  });
-
-  test('an overridden relay datapoint is honoured', () => {
-    const disputed = { ...dps, '131': false };
-    expect(decodeSocket(profile, disputed, 131).relayOn).toBe(false);
-    expect(decodeSocket(profile, disputed, 1).relayOn).toBe(true);
-  });
-
-  test('relay candidates put the documented datapoints first', () => {
-    expect(relayCandidates({ '7': true, '131': false, '1': true, '19': 100 })).toEqual([1, 131, 7]);
+    expect(decodeSocket(profile, encodeSocket(profile, { relayOn: false, watts: 0 }))).toMatchObject({ relayOn: false, watts: 0 });
   });
 
   test('missing datapoints stay undefined rather than becoming zero', () => {
     const sparse = decodeSocket(profile, { '1': false });
     expect(sparse.relayOn).toBe(false);
     expect(sparse.watts).toBeUndefined();
+  });
+});
+
+describe('a relay switched in words, with a separate status', () => {
+  // DP 131 switches, open or close; DP 1 only reports; in auto, DP 132 names the mode that cut it.
+  const profile: SocketProfile = {
+    id: 'words',
+    label: 'Words',
+    relay: { dp: 131, on: 'open', off: 'close', status: 1, cutWhile: { dp: 132, clear: 'off' } },
+    metrics: {},
+  };
+
+  test('is written as its words, not as a boolean on the status datapoint', () => {
+    expect(relayDps(profile.relay, true)).toEqual({ '131': 'open' });
+    expect(relayDps(profile.relay, false)).toEqual({ '131': 'close' });
+  });
+
+  test('the switching datapoint is the truth: a status that disagrees is not believed', () => {
+    // Written to DP 1 once, the plug reports false there while the relay stays on.
+    expect(decodeSocket(profile, { '131': 'open', '1': false }).relayOn).toBe(true);
+    expect(decodeSocket(profile, { '131': 'close', '1': true }).relayOn).toBe(false);
+  });
+
+  test('in auto, a mode that cut it is off even when the status was not pushed; otherwise the status says', () => {
+    expect(decodeSocket(profile, { '131': 'auto', '1': true, '132': 'outage_a' }).relayOn).toBe(false);
+    expect(decodeSocket(profile, { '131': 'auto', '1': true, '132': 'off' }).relayOn).toBe(true);
+    expect(decodeSocket(profile, { '131': 'auto', '132': 'off' }).relayOn).toBeUndefined();
+  });
+
+  test('a simulated plug of the profile answers in the same words', () => {
+    expect(encodeSocket(profile, { relayOn: false })).toEqual({ '131': 'close', '1': false });
+  });
+});
+
+describe('a profile datapoint', () => {
+  const boot: ProfileDatapoint = {
+    dp: 138,
+    key: 'bootBehaviour',
+    label: 'After a power cut',
+    value: { type: 'enum', options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }, { value: 'last', label: 'As it was' }] },
+    wire: { on: 'open', off: 'colse', last: 'memory' },
+    example: 'last',
+  };
+  const limit: ProfileDatapoint = { dp: 104, key: 'overVoltage', label: 'Over-voltage', value: { type: 'number', unit: 'V' }, scale: 1, example: 265 };
+
+  test('text is translated both ways through its wire words, the plug’s spelling included', () => {
+    expect(datapointValue(boot, { '138': 'colse' })).toBe('off');
+    expect(datapointRaw(boot, 'off')).toBe('colse');
+    expect(datapointValue(boot, { '138': 'memory' })).toBe('last');
+  });
+
+  test('numbers are scaled, and what the plug has not said, or says unknowably, is null', () => {
+    expect(datapointValue(limit, { '104': 2577 })).toBe(257.7);
+    expect(datapointRaw(limit, 257.7)).toBe(2577);
+    expect(datapointValue(limit, {})).toBeNull();
+    expect(datapointValue(boot, { '138': 'sideways' })).toBeNull();
   });
 });
 

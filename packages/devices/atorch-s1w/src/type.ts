@@ -1,35 +1,204 @@
-import type { SocketProfile } from '@kraftverk/protocol-tuya-local';
+import type { ProfileDatapoint, SocketProfile } from '@kraftverk/protocol-tuya-local';
 import { defineTuyaSocket } from '@kraftverk/device-tuya-plug';
 
 /**
- * The ATORCH S1W / S1WP / S1BW: a Tuya energy socket with an LCD meter, and the
- * plug kraftverk's reserve feature was designed around — upstream of a power
- * station's AC input (docs/ATORCH-S1W.md).
+ * The ATORCH S1W / S1WP / S1BW: a Tuya energy socket with an LCD meter, its own
+ * protection, and the plug kraftverk's reserve feature was designed around —
+ * upstream of a power station's AC input.
+ *
+ * Every datapoint here was established on a real S1BW (README.md): changed in
+ * the maker's app while kraftverk held the plug's connection, and read off the
+ * wire. The relay is switched on DP 131 in words; DP 1 only reports it, and
+ * writing DP 1 leaves the relay where it was while the plug reports otherwise.
+ *
+ * What is offered as a setting is chosen, not everything the plug has: what
+ * happens after a power cut, the safety cut-off, and the display. The plug's own
+ * modes and timers (its "smart power off", its countdown, its pricing) are
+ * kraftverk's automations' and history's job, done better there; they are read,
+ * so that a cut they cause is explained, and never offered.
  */
 
+const number = (unit: string | undefined, min: number, max: number, step?: number) =>
+  ({ type: 'number', ...(unit ? { unit } : {}), min, max, ...(step ? { step, precision: Math.max(0, -Math.floor(Math.log10(step))) } : { integer: true }) }) as const;
+
+const SAFETY = 'Safety cut-off';
+const DISPLAY = 'Display';
+
+/** A limit whose wrong value cuts what the plug feeds, or stops protecting it. */
+const LIMIT = { access: 'write', category: 'config', section: SAFETY, dangerous: true } as const;
+
+/** Read to explain what the plug did; not a setting. */
+const FACT = { category: 'diagnostic', history: false } as const;
+
+const DATAPOINTS: readonly ProfileDatapoint[] = [
+  // --- what the plug did, and why -------------------------------------------------------------
+  {
+    dp: 132,
+    key: 'cutBy',
+    label: 'Switched itself off',
+    description: 'Why the plug switched its power off by itself: its safety cut-off, or a rule set in the maker’s app.',
+    value: {
+      type: 'enum',
+      options: [
+        { value: 'none', label: 'No' },
+        { value: 'underVoltage', label: 'The voltage was too low' },
+        { value: 'overVoltage', label: 'The voltage was too high' },
+        { value: 'overCurrent', label: 'The current was too high' },
+        { value: 'overPower', label: 'The power was too high' },
+        { value: 'lowPower', label: 'A rule in the maker’s app: the draw stayed low' },
+        { value: 'highPower', label: 'A rule in the maker’s app: the draw stayed high' },
+        { value: 'timedOn', label: 'A timer in the maker’s app' },
+        { value: 'timedOff', label: 'A timer in the maker’s app' },
+        { value: 'cycle', label: 'A timer in the maker’s app' },
+        { value: 'countdown', label: 'A countdown in the maker’s app' },
+      ],
+    },
+    wire: {
+      none: 'off',
+      underVoltage: 'lvp',
+      overVoltage: 'ovp',
+      overCurrent: 'ocp',
+      overPower: 'opp',
+      lowPower: 'outage_a',
+      highPower: 'outage_b',
+      timedOn: 'timing_open',
+      timedOff: 'timing_close',
+      cycle: 'loop_timing',
+      countdown: 'countdown',
+    },
+    category: 'diagnostic',
+    example: 'none',
+    raises: { event: 'cut', label: 'The plug switched itself off', level: 'warn', clear: 'none' },
+  },
+  {
+    dp: 142,
+    key: 'backOnIn',
+    label: 'Back on in',
+    description: 'After a safety cut-off the plug waits until the fault has cleared, counts this down, and switches itself back on.',
+    value: { type: 'number', unit: 's', integer: true, min: 0 },
+    quantity: 'duration',
+    ...FACT,
+    example: 0,
+  },
+  {
+    dp: 118,
+    key: 'rule',
+    label: 'Rule inside the plug',
+    description: 'A rule set in the maker’s app that the plug can run by itself. kraftverk shows it so a cut is explained; its own automations do the same job.',
+    value: {
+      type: 'enum',
+      options: [
+        { value: 'none', label: 'None' },
+        { value: 'lowPower', label: 'Off when the draw stays low' },
+        { value: 'highPower', label: 'Off when the draw stays high' },
+        { value: 'timedOff', label: 'Off after a time' },
+        { value: 'timedOn', label: 'On after a time' },
+        { value: 'cycle', label: 'On and off in a cycle' },
+      ],
+    },
+    // The plug's words are its screen's pages: "safety_protection" is the price and bill page, "wifi1" the protection page. Neither runs a rule.
+    wire: { none: ['safety_protection', 'wifi1'], lowPower: 'outage_a', highPower: 'outage_b', timedOff: 'timing_close', timedOn: 'timing_open', cycle: 'loop_timing' },
+    ...FACT,
+    example: 'none',
+  },
+  { dp: 119, key: 'lowPowerWatts', label: 'Low-draw rule: under', value: number('W', 1, 999), quantity: 'power', ...FACT, example: 100 },
+  { dp: 120, key: 'lowPowerMinutes', label: 'Low-draw rule: for', value: number('min', 1, 99), quantity: 'duration', ...FACT, example: 10 },
+  { dp: 121, key: 'highPowerWatts', label: 'High-draw rule: over', value: number('W', 1, 9999), quantity: 'power', ...FACT, example: 500 },
+  { dp: 122, key: 'highPowerHours', label: 'High-draw rule: for', value: number('h', 1, 99), quantity: 'duration', ...FACT, example: 1 },
+  { dp: 135, key: 'temperature', label: 'Temperature inside', value: { type: 'number', unit: '°C', integer: true }, quantity: 'temperature', stateClass: 'measurement', category: 'diagnostic', example: 40 },
+
+  // --- after a power cut -----------------------------------------------------------------------
+  {
+    dp: 138,
+    key: 'afterPowerCut',
+    label: 'After a power cut',
+    description: 'What the plug does when the mains comes back. It keeps this itself, so it holds even with kraftverk down.',
+    value: { type: 'enum', options: [{ value: 'asItWas', label: 'Back to how it was' }, { value: 'on', label: 'Always on' }, { value: 'off', label: 'Stay off' }] },
+    // "colse": the plug's own spelling.
+    wire: { asItWas: 'memory', on: 'open', off: 'colse' },
+    access: 'write',
+    category: 'config',
+    section: 'Power',
+    consequence: 'Stay off leaves whatever it feeds without power after every cut until someone switches it on — a flat station with no way to charge.',
+    example: 'asItWas',
+  },
+
+  // --- the safety cut-off ------------------------------------------------------------------------
+  {
+    dp: 139,
+    key: 'safetyCutOff',
+    label: 'Safety cut-off',
+    description: 'Cuts the power when the supply or the load goes outside the limits below, and turns it back on once the fault has cleared.',
+    value: { type: 'boolean' },
+    ...LIMIT,
+    consequence: 'Off, the plug no longer cuts on too much current or power, or a bad supply.',
+    example: true,
+  },
+  { dp: 104, key: 'maxVoltage', label: 'Voltage above', value: number('V', 0.1, 275, 0.1), quantity: 'voltage', scale: 1, ...LIMIT, consequence: 'Set below the mains voltage, the plug cuts at once.', example: 265 },
+  { dp: 141, key: 'minVoltage', label: 'Voltage below', value: number('V', 0.1, 275, 0.1), quantity: 'voltage', scale: 1, ...LIMIT, consequence: 'Set above the mains voltage, the plug cuts at once.', example: 75 },
+  { dp: 105, key: 'maxCurrent', label: 'Current above', value: number('A', 0.01, 20, 0.01), quantity: 'current', scale: 2, ...LIMIT, consequence: 'Set below what the load draws, the plug cuts it.', example: 16 },
+  { dp: 106, key: 'maxPower', label: 'Power above', value: number('W', 1, 4500), quantity: 'power', ...LIMIT, consequence: 'Set below what the load draws, the plug cuts it.', example: 4500 },
+  { dp: 103, key: 'cutAfter', label: 'Wait before cutting', description: 'How long a fault must last. Short spikes shorter than this are ridden through.', value: number('s', 0, 2, 0.1), quantity: 'duration', scale: 1, ...LIMIT, example: 0.3 },
+  {
+    dp: 137,
+    key: 'backOnAfter',
+    label: 'Back on after',
+    description: 'How long the fault must have been gone before the plug switches itself back on.',
+    value: number('min', 0, 99),
+    quantity: 'duration',
+    ...LIMIT,
+    example: 3,
+  },
+
+  // --- display -------------------------------------------------------------------------------------
+  { dp: 108, key: 'brightness', label: 'Brightness', value: number(undefined, 1, 9), access: 'write', category: 'config', section: DISPLAY, example: 6 },
+  { dp: 109, key: 'dimmedBrightness', label: 'Dimmed brightness', value: number(undefined, 1, 9), access: 'write', category: 'config', section: DISPLAY, example: 3 },
+  { dp: 110, key: 'dimAfter', label: 'Dim after', value: number('s', 3, 99), quantity: 'duration', access: 'write', category: 'config', section: DISPLAY, example: 60 },
+  {
+    dp: 117,
+    key: 'dimmedShows',
+    label: 'When dimmed, show',
+    value: { type: 'enum', options: [{ value: 'readings', label: 'The readings' }, { value: 'clock', label: 'The start screen' }, { value: 'nothing', label: 'Nothing' }] },
+    // "Screen off" is "calendar" on the wire; "original" is the start screen.
+    wire: { readings: 'measurement', clock: 'original', nothing: 'calendar' },
+    access: 'write',
+    category: 'config',
+    section: DISPLAY,
+    example: 'readings',
+  },
+  { dp: 111, key: 'keyBeep', label: 'Beep on key press', value: { type: 'boolean' }, access: 'write', category: 'config', section: DISPLAY, example: true },
+  {
+    dp: 107,
+    key: 'language',
+    label: 'Language',
+    value: { type: 'enum', options: [{ value: 'english', label: 'English' }, { value: 'chinese', label: 'Chinese' }] },
+    access: 'write',
+    category: 'config',
+    section: DISPLAY,
+    example: 'english',
+  },
+];
+
 /**
- * Its datapoints, from the published Home Assistant work on this exact family
- * (make-all/tuya-local issues #3253 and #1103; docs/ATORCH-S1W.md §2).
- *
- * The relay datapoint is the one thing the sources disagree about: the Tuya
- * product specification says 1, the OpenBeken community says 131 on this
- * ATORCH. So the check step reads every datapoint on the actual unit and takes
- * the relay from what is there, and it stays overridable in the plug's settings.
+ * Its datapoints, as the unit showed them (README.md §4). Left out on purpose:
+ * the countdown and timers (9, 124–130), pricing (101, 102, 136), fast refresh
+ * (140, which kraftverk manages itself), the switch mode (112) and the reset
+ * buttons (113–116). The Datapoints tool still shows every one raw.
  */
 export const ATORCH_S1: SocketProfile = {
   id: 'atorch-s1',
   label: 'ATORCH S1W / S1WP / S1BW',
   productKeys: ['sqrf2g1amfutn4co', 'pl28o0wkaopyft8u'],
-  relay: { dp: 1 },
+  relay: { dp: 131, on: 'open', off: 'close', status: 1, cutWhile: { dp: 132, clear: 'off' } },
   metrics: {
     amps: { dp: 18, scale: 3 },
     watts: { dp: 19, scale: 2 },
     volts: { dp: 20, scale: 2 },
-    kwh: { dp: 123, scale: 2 },
+    kwh: { dp: 123, scale: 3 },
     hz: { dp: 133, scale: 2 },
     powerFactor: { dp: 134, scale: 2 },
   },
-  notes: 'Relay may be DP 1 or DP 131 depending on firmware — the check step settles it on the unit.',
+  datapoints: DATAPOINTS,
 };
 
 export default defineTuyaSocket({
@@ -38,10 +207,10 @@ export default defineTuyaSocket({
     name: 'ATORCH S1W',
     brand: 'ATORCH',
     models: ['S1W', 'S1WP', 'S1BW'],
-    description: 'A Wi-Fi socket with a power meter and display, switched and read over your home network with no cloud.',
-    support: 'experimental',
-    supportNote: 'Datapoints from published work on this family; not yet confirmed on a unit here.',
-    docsUrl: 'docs/ATORCH-S1W.md',
+    description: 'A Wi-Fi socket with a power meter, a display and its own safety cut-off, switched and read over your home network with no cloud.',
+    support: 'verified',
+    supportNote: 'Every datapoint established on an S1BW, protocol 3.5.',
+    docsUrl: 'packages/devices/atorch-s1w/README.md',
   },
   profiles: [ATORCH_S1],
 });

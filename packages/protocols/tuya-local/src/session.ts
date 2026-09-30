@@ -35,6 +35,8 @@ export type TuyaLinkOptions = {
    */
   version: ProtocolVersion | 'auto';
   log?: (message: string) => void;
+  /** Datapoints the device sends unasked: a change at the plug, or its own refresh. */
+  onPush?: (dps: Dps) => void;
 };
 
 /**
@@ -281,7 +283,14 @@ export class TuyaLink {
 
   #deliver(frame: TuyaFrame): void {
     const index = this.#waiters.findIndex((waiter) => waiter.match(frame));
-    if (index < 0) return; // an unsolicited status push; the next poll picks it up
+    if (index < 0) {
+      // Unasked: a change at the plug, or its own refresh.
+      if (frame.command === CMD.STATUS) {
+        const dps = parseDps(frame.payload);
+        if (Object.keys(dps).length) this.#options.onPush?.(dps);
+      }
+      return;
+    }
     const [waiter] = this.#waiters.splice(index, 1);
     waiter?.resolve(frame);
   }

@@ -1,28 +1,44 @@
 import {
   defineDeviceType,
   MAIN_PART,
+  type AttributeSpec,
   type ConfigSchema,
   type DeviceContext,
   type DeviceDescription,
   type DeviceSession,
   type DeviceType,
   type DeviceTypeMeta,
+  type EventSpec,
   type OpenConnection,
   type Reading,
   type SessionHealth,
   type ToolRun,
   type ToolSpec,
+  type Value,
 } from '@kraftverk/device-sdk';
-import { decodeSocket, encodeSocket, linkOver, relayCandidates, tuyaIdentity, type Dps, type SocketProfile, type SocketReading } from '@kraftverk/protocol-tuya-local';
+import {
+  datapointRaw,
+  datapointValue,
+  decodeSocket,
+  encodeSocket,
+  linkOver,
+  relayDps,
+  tuyaIdentity,
+  type Dps,
+  type ProfileDatapoint,
+  type SocketProfile,
+  type SocketReading,
+} from '@kraftverk/protocol-tuya-local';
 
 /**
- * A Tuya energy socket, as a device type: a relay and a meter, reached over the
- * home network with the Tuya local protocol.
+ * A Tuya energy socket, as a device type: a relay and a meter, and whatever
+ * settings and sensors its model adds, reached over the home network with the
+ * Tuya local protocol.
  *
  * Every Tuya socket is the same device to kraftverk apart from its data layout,
  * so this builds a type from a profile — which is how the generic socket and a
- * named model are two types of ten lines each, and how the next plug is a profile
- * rather than code (docs/ATORCH-S1W.md §2).
+ * named model are two types of a few lines each, and how the next plug is a
+ * profile rather than code.
  */
 
 export type SocketTypeDefinition = {
@@ -32,39 +48,48 @@ export type SocketTypeDefinition = {
   profiles: readonly SocketProfile[];
 };
 
-/**
- * What the relay does when power returns after a cut. A plug that feeds a
- * station's charger and comes back off can strand a flat battery with no way
- * to charge, so this is recorded from a real power-cut test, and `unknown` is
- * a value, not an omission.
- */
-type BootBehaviour = 'on' | 'off' | 'last' | 'unknown';
-
 type SocketConfig = {
   profile: string;
-  relayDp?: number;
-  bootBehaviour: BootBehaviour;
   pollSeconds: number;
 };
 
-/** A socket: one part, a relay it switches and a meter on what flows through it. */
-const DESCRIPTION: DeviceDescription = {
-  parts: [{ id: MAIN_PART, label: 'Socket', kind: 'outlet', energy: { role: 'load' }, offers: ['switch'] }],
-  attributes: [
-    { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W', precision: 0 }, quantity: 'power', means: 'power.draw', category: 'primary' },
-    { key: 'volts', label: 'Voltage', value: { type: 'number', unit: 'V', precision: 1 }, quantity: 'voltage', means: 'voltage.ac' },
-    { key: 'amps', label: 'Current', value: { type: 'number', unit: 'A', precision: 2 }, quantity: 'current', means: 'current.ac' },
-    { key: 'kwh', label: 'Energy', value: { type: 'number', unit: 'kWh', precision: 2 }, quantity: 'energy', means: 'energy.total', stateClass: 'total_increasing' },
-    { key: 'hz', label: 'Frequency', value: { type: 'number', unit: 'Hz', precision: 1 }, quantity: 'frequency', means: 'frequency.ac', category: 'diagnostic' },
-    {
-      key: 'relay',
-      label: 'Power',
-      value: { type: 'boolean' },
-      means: 'switch.on',
-      consequence: 'Switches off whatever is plugged into it. If it feeds a station, the station then runs from its battery and solar.',
-    },
-  ],
+const METER: Readonly<Record<keyof SocketProfile['metrics'], AttributeSpec>> = {
+  watts: { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W', precision: 0 }, quantity: 'power', means: 'power.draw', category: 'primary' },
+  volts: { key: 'volts', label: 'Voltage', value: { type: 'number', unit: 'V', precision: 1 }, quantity: 'voltage', means: 'voltage.ac' },
+  amps: { key: 'amps', label: 'Current', value: { type: 'number', unit: 'A', precision: 2 }, quantity: 'current', means: 'current.ac' },
+  kwh: { key: 'kwh', label: 'Energy', value: { type: 'number', unit: 'kWh', precision: 2 }, quantity: 'energy', means: 'energy.total', stateClass: 'total_increasing' },
+  hz: { key: 'hz', label: 'Frequency', value: { type: 'number', unit: 'Hz', precision: 1 }, quantity: 'frequency', means: 'frequency.ac', category: 'diagnostic' },
+  powerFactor: { key: 'powerFactor', label: 'Power factor', value: { type: 'number', precision: 2, min: 0, max: 1 }, category: 'diagnostic' },
 };
+
+const RELAY: AttributeSpec = {
+  key: 'relay',
+  label: 'Power',
+  value: { type: 'boolean' },
+  means: 'switch.on',
+  consequence: 'Switches off whatever is plugged into it. If it feeds a station, the station then runs from its battery and solar.',
+};
+
+/** A profile datapoint as the attribute it is: the wire details left behind. */
+const attributeOf = ({ dp: _dp, scale: _scale, wire: _wire, example: _example, raises: _raises, ...attribute }: ProfileDatapoint): AttributeSpec => attribute;
+
+/** A socket: one part, a relay it switches, the meter its profile has, and the model's own datapoints. */
+export function describeSocket(profile: SocketProfile): DeviceDescription {
+  const events: EventSpec[] = [];
+  for (const point of profile.datapoints ?? []) {
+    if (!point.raises || point.value.type !== 'enum') continue;
+    events.push({ id: point.raises.event, label: point.raises.label, level: point.raises.level, data: { reason: point.value } });
+  }
+  return {
+    parts: [{ id: MAIN_PART, label: 'Socket', kind: 'outlet', energy: { role: 'load' }, offers: ['switch'] }],
+    attributes: [
+      ...(Object.keys(METER) as (keyof SocketProfile['metrics'])[]).filter((name) => profile.metrics[name]).map((name) => METER[name]),
+      RELAY,
+      ...(profile.datapoints ?? []).map(attributeOf),
+    ],
+    ...(events.length ? { events } : {}),
+  };
+}
 
 const INTEGER = { type: 'number', integer: true } as const;
 
@@ -73,14 +98,13 @@ const TOOLS: Readonly<Record<string, ToolSpec>> = {
   datapoints: {
     label: 'Datapoints',
     description:
-      'Every datapoint the plug reports, raw, with what its layout makes of them and which on/offs could be the relay. How a new plug’s layout is established: flip it at the wall, read again, see what moved.',
+      'Every datapoint the plug reports, raw, beside what its layout makes of them. How a new plug’s layout is established: change one thing in the maker’s app, read again, see what moved.',
     writes: false,
     answer: {
       type: 'object',
       fields: {
         protocolVersion: { type: 'string' },
         profile: { type: 'string' },
-        relayDp: INTEGER,
         raw: {
           type: 'list',
           of: {
@@ -101,9 +125,8 @@ const TOOLS: Readonly<Record<string, ToolSpec>> = {
             powerFactor: { type: 'number' },
           },
         },
-        relayCandidates: { type: 'list', of: INTEGER },
       },
-      required: ['protocolVersion', 'profile', 'relayDp', 'raw', 'decoded', 'relayCandidates'],
+      required: ['protocolVersion', 'profile', 'raw', 'decoded'],
     },
   },
 };
@@ -114,30 +137,9 @@ function configSchema(profiles: readonly SocketProfile[]): ConfigSchema {
       profile: {
         type: 'enum',
         title: 'Datapoint layout',
-        description: 'Which datapoint is the relay, and what scale each measurement is sent in.',
+        description: 'Which datapoint is the relay, what scale each measurement is sent in, and which settings the plug has.',
         default: profiles[0]!.id,
         options: profiles.map((profile) => ({ value: profile.id, label: profile.label })),
-      },
-      relayDp: {
-        type: 'number',
-        title: 'Relay datapoint',
-        description: 'When the plug’s relay is not on the layout’s usual datapoint. The check step works it out when it can.',
-        integer: true,
-        min: 1,
-        max: 255,
-      },
-      bootBehaviour: {
-        type: 'enum',
-        title: 'After a power cut the relay comes back',
-        description:
-          'Establish this with a real power-cut test. A plug that comes back off can strand a flat station with no way to charge, so automation will not rely on one that is unknown.',
-        default: 'unknown',
-        options: [
-          { value: 'unknown', label: 'Not tested yet' },
-          { value: 'on', label: 'On' },
-          { value: 'off', label: 'Off' },
-          { value: 'last', label: 'Last state' },
-        ],
       },
       pollSeconds: { type: 'number', title: 'Poll interval', default: 10, min: 2, max: 300, unit: 's', integer: true },
     },
@@ -147,41 +149,55 @@ function configSchema(profiles: readonly SocketProfile[]): ConfigSchema {
 const profileOf = (profiles: readonly SocketProfile[], id: unknown): SocketProfile =>
   profiles.find((profile) => profile.id === id) ?? profiles[0]!;
 
-/** What was read, as the readings report it. */
-type State = { reading: SocketReading; at: string } | null;
+/** Everything the plug has said, merged: a push carries only what changed. */
+type State = { dps: Dps; at: string } | null;
 
-function readingsOf(state: State): Reading[] {
+function readingsOf(profile: SocketProfile, state: State): Reading[] {
   if (!state) return [];
-  const { reading, at } = state;
-  const value = (v: number | undefined) => (v === undefined ? null : v);
+  const { dps, at } = state;
+  const reading = decodeSocket(profile, dps);
+  const value = (v: number | boolean | undefined): Value => (v === undefined ? null : v);
   return [
-    { key: 'watts', value: value(reading.watts), at },
-    { key: 'volts', value: value(reading.volts), at },
-    { key: 'amps', value: value(reading.amps), at },
-    { key: 'kwh', value: value(reading.kwh), at },
-    { key: 'hz', value: value(reading.hz), at },
-    { key: 'relay', value: reading.relayOn ?? null, at },
+    ...(Object.keys(profile.metrics) as (keyof SocketProfile['metrics'])[]).map((name) => ({ key: name, value: value(reading[name]), at })),
+    { key: 'relay', value: value(reading.relayOn), at },
+    ...(profile.datapoints ?? []).map((point) => ({ key: point.key, value: datapointValue(point, dps), at })),
   ];
+}
+
+const writable = (profile: SocketProfile) => new Map((profile.datapoints ?? []).filter((point) => point.access === 'write').map((point) => [point.key, point]));
+
+/** The datapoints a patch of writable attributes is sent as. */
+function dpsOf(profile: SocketProfile, patch: Readonly<Record<string, Value>>): Dps {
+  const points = writable(profile);
+  const dps: Dps = {};
+  for (const [key, value] of Object.entries(patch)) {
+    const point = points.get(key);
+    if (!point) throw new Error(`The plug has no setting ${key}`);
+    dps[String(point.dp)] = datapointRaw(point, value);
+  }
+  return dps;
 }
 
 /** The session over a plug — real, or simulated behind the same shape. */
 function socketSession(options: {
+  profile: SocketProfile;
   read: () => State;
   health: () => SessionHealth;
-  set: (on: boolean) => Promise<void>;
+  send: (dps: Dps) => Promise<void>;
   identity: string | null;
   tools?: Readonly<Record<string, ToolRun>>;
   close: () => Promise<void>;
 }): DeviceSession {
-  return {
+  const { profile } = options;
+  const session: DeviceSession = {
     health: options.health,
-    readings: () => readingsOf(options.read()),
+    readings: () => readingsOf(profile, options.read()),
     async command(request) {
       if (request.capability !== 'switch' || request.command !== 'set' || typeof request.args.on !== 'boolean') {
         return { accepted: false, error: `A socket takes no ${request.capability}.${request.command}` };
       }
       try {
-        await options.set(request.args.on);
+        await options.send(relayDps(profile.relay, request.args.on));
         return { accepted: true };
       } catch (error) {
         return { accepted: false, error: (error as Error).message };
@@ -191,28 +207,61 @@ function socketSession(options: {
     ...(options.tools ? { tools: options.tools } : {}),
     close: options.close,
   };
+  if (writable(profile).size) {
+    session.write = async (patch) => {
+      await options.send(dpsOf(profile, patch));
+      // What the plug reports now, not what was asked for: the gateway compares.
+      const values = new Map(readingsOf(profile, options.read()).map((reading) => [reading.key, reading.value]));
+      return Object.fromEntries(Object.keys(patch).map((key) => [key, values.get(key) ?? null]));
+    };
+  }
+  return session;
+}
+
+/** Raises a profile's events as the datapoints that carry them change: a trip, a mode that cut the relay. */
+function eventsFrom(profile: SocketProfile, ctx: DeviceContext<SocketConfig>) {
+  const last = new Map<string, Value>();
+  return (dps: Dps) => {
+    for (const point of profile.datapoints ?? []) {
+      if (!point.raises || dps[String(point.dp)] === undefined) continue;
+      const value = datapointValue(point, dps);
+      const before = last.get(point.key);
+      last.set(point.key, value);
+      // The first reading is what was already so, not something happening now.
+      if (before === undefined || value === before || value === null || value === point.raises.clear) continue;
+      ctx.event(point.raises.event, { reason: value });
+    }
+  };
 }
 
 async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly SocketProfile[]): Promise<DeviceSession> {
   const connection = ctx.connection;
   if (!connection) throw new Error('A plug session needs a connection');
   const profile = profileOf(profiles, ctx.config.profile);
-  const relayDp = ctx.config.relayDp ?? profile.relay.dp;
-  const link = linkOver(connection, (message) => ctx.log.info(message));
+  const raise = eventsFrom(profile, ctx);
 
   let state: State = null;
-  let lastRaw: Dps = {};
   let lastError: string | null = null;
   let lastOk: number | null = null;
   const pollMs = ctx.config.pollSeconds * 1000;
 
   const ingest = (dps: Dps) => {
     if (!Object.keys(dps).length) return;
-    lastRaw = { ...lastRaw, ...dps };
-    state = { reading: decodeSocket(profile, lastRaw, relayDp), at: new Date().toISOString() };
+    state = { dps: { ...state?.dps, ...dps }, at: new Date().toISOString() };
     lastOk = Date.now();
     lastError = null;
+    raise(state.dps);
   };
+
+  // A plug tells of every change it sees — at the plug, from its maker's app, its own
+  // protection — and, with fast refresh on, its readings every second.
+  const link = linkOver(connection, {
+    log: (message) => ctx.log.info(message),
+    onPush: (dps) => {
+      ingest(dps);
+      ctx.changed();
+    },
+  });
 
   const poll = async () => {
     try {
@@ -232,6 +281,7 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
   void poll();
 
   return socketSession({
+    profile,
     read: () => state,
     identity: tuyaIdentity(String(connection.config.deviceId ?? '')),
     health: () => {
@@ -242,34 +292,34 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
         lastReadingAt: state?.at ?? null,
       };
     },
-    set: async (on) => {
+    send: async (dps) => {
       if (ctx.readOnly) throw new Error('Every hardware write is refused: this holder is read-only');
-      const dps = await link.set({ [String(relayDp)]: on });
-      if (Object.keys(dps).length) ingest(dps);
-      else await poll();
+      ingest(await link.set(dps));
+      // The answer to a set is often empty; what the plug reports now is the truth.
+      await poll();
     },
-    tools: { datapoints: async () => datapointsAnswer(link.version, profile, relayDp, await link.status()) },
+    tools: { datapoints: async () => datapointsAnswer(link.version, profile, await link.status()) },
     close: () => link.close(),
   });
 }
 
-/** A plug that is not there: a relay, and a load that draws while it is on. */
-/** What the datapoints tool answers: every datapoint raw, what the profile makes of them, and which on/offs could be the relay. */
-function datapointsAnswer(protocolVersion: string, profile: SocketProfile, relayDp: number, dps: Dps) {
-  const decoded = decodeSocket(profile, dps, relayDp);
+/** What the datapoints tool answers: every datapoint raw, and what the profile makes of them. */
+function datapointsAnswer(protocolVersion: string, profile: SocketProfile, dps: Dps) {
+  const decoded = decodeSocket(profile, dps);
   return {
     protocolVersion,
     profile: profile.id,
-    relayDp,
     raw: Object.entries(dps).map(([dp, value]) => ({ dp: Number(dp), kind: typeof value, value: String(value) })),
     decoded: Object.fromEntries(Object.entries(decoded).map(([name, value]) => [name, value ?? null])),
-    relayCandidates: relayCandidates(dps),
   };
 }
 
+/** A plug that is not there: a relay, a load that draws while it is on, and settings that keep what they are told. */
 function simulatedSession(ctx: DeviceContext<SocketConfig>, profiles: readonly SocketProfile[]): DeviceSession {
+  const profile = profileOf(profiles, ctx.config.profile);
   let on = ctx.store.get<boolean>('simulator.on') ?? true;
   let kwh = ctx.store.get<number>('simulator.kwh') ?? 0;
+  const values: Record<string, Value> = ctx.store.get<Record<string, Value>>('simulator.values') ?? {};
   let at = new Date().toISOString();
   const watts = 240;
   ctx.schedule(1000, () => {
@@ -279,19 +329,35 @@ function simulatedSession(ctx: DeviceContext<SocketConfig>, profiles: readonly S
       ctx.store.set('simulator.kwh', kwh);
     }
   });
-  const reading = () => ({ relayOn: on, watts: on ? watts : 0, volts: 230, amps: on ? Math.round((watts / 230) * 100) / 100 : 0, kwh: Math.round(kwh * 1000) / 1000, hz: 50 });
-  const profile = profileOf(profiles, ctx.config.profile);
-  const relayDp = ctx.config.relayDp ?? profile.relay.dp;
+  const reading = (): SocketReading => ({
+    relayOn: on,
+    watts: on ? watts : 0,
+    volts: 230,
+    amps: on ? Math.round((watts / 230) * 100) / 100 : 0,
+    kwh: Math.round(kwh * 1000) / 1000,
+    hz: 50,
+    powerFactor: on ? 0.98 : 0,
+  });
+  // Its datapoints as a plug of its profile would send them, so it reads exactly as a real one.
+  const dps = () => encodeSocket(profile, reading(), values);
   return socketSession({
-    read: () => ({ reading: reading(), at }),
+    profile,
+    read: () => ({ dps: dps(), at }),
     identity: 'tuya-local:SIMULATED',
-    // Its datapoints as a plug of its profile would send them: the tool answers as it does for a real one.
-    tools: { datapoints: async () => datapointsAnswer('simulated', profile, relayDp, encodeSocket(profile, reading(), relayDp)) },
+    tools: { datapoints: async () => datapointsAnswer('simulated', profile, dps()) },
     health: () => ({ status: 'connected', detail: 'Simulated', lastReadingAt: at }),
-    set: async (next) => {
-      on = next;
+    send: async (sent) => {
+      const relay = String(profile.relay.dp);
+      if (sent[relay] !== undefined) {
+        on = sent[relay] === (profile.relay.on ?? true);
+        ctx.store.set('simulator.on', on);
+      }
+      for (const point of profile.datapoints ?? []) {
+        const raw = sent[String(point.dp)];
+        if (raw !== undefined) values[point.key] = datapointValue(point, { [String(point.dp)]: raw });
+      }
+      ctx.store.set('simulator.values', values);
       at = new Date().toISOString();
-      ctx.store.set('simulator.on', on);
     },
     close: async () => undefined,
   });
@@ -304,7 +370,7 @@ export function defineTuyaSocket(definition: SocketTypeDefinition): DeviceType<S
     kind: 'hardware',
     meta: { icon: 'power', ...definition.meta, category: 'smart-plug' },
     config: configSchema(profiles),
-    describe: () => DESCRIPTION,
+    describe: (config) => describeSocket(profileOf(profiles, config.profile)),
     tools: TOOLS,
     connections: [
       {
@@ -326,36 +392,26 @@ export function defineTuyaSocket(definition: SocketTypeDefinition): DeviceType<S
                 kind: 'form',
                 target: 'device',
                 title: 'Which socket is it?',
-                description: 'The layout decides which datapoint is the relay. The check step tells you if it looks wrong.',
+                description: 'The layout decides which datapoint is the relay and which settings the plug has. The check step reads it back.',
                 schema: { fields: { profile: configSchema(profiles).fields.profile! } },
               },
             ]
           : [],
     },
 
-    /**
-     * Reads the plug once: who it is, and whether the relay is where the layout
-     * says. When it is not — a model whose relay is datapoint 131, not 1 — the
-     * boolean that is there becomes the relay datapoint, and the check says so.
-     */
+    /** Reads the plug once: who it is, and what its layout makes of it. */
     async identify(connection: OpenConnection, ctx) {
       const profile = profileOf(profiles, ctx.config.profile);
-      const link = linkOver(connection, (message) => ctx.log.info(message));
+      const link = linkOver(connection, { log: (message) => ctx.log.info(message) });
       try {
-        const dps = await link.status();
-        const candidates = relayCandidates(dps);
-        const relayDp = typeof dps[String(profile.relay.dp)] === 'boolean' ? profile.relay.dp : (candidates[0] ?? profile.relay.dp);
-        const reading = decodeSocket(profile, dps, relayDp);
+        const reading = decodeSocket(profile, await link.status());
         const relay = reading.relayOn === undefined ? 'the relay could not be read' : `the relay is ${reading.relayOn ? 'on' : 'off'}`;
         const drawing = reading.watts === undefined ? '' : `, drawing ${Math.round(reading.watts)} W`;
-        const moved = relayDp !== profile.relay.dp ? ` Its relay is datapoint ${relayDp}, not ${profile.relay.dp}.` : '';
         return {
           identity: tuyaIdentity(String(connection.config.deviceId ?? '')),
-          // A socket does not say what model it is; the layout is a guess the
-          // relay check above confirms or corrects.
+          // A socket does not say what model it is; the layout is the person's choice.
           model: null,
-          summary: `Answering, Tuya ${link.version}: ${relay}${drawing}.${moved}`,
-          ...(relayDp !== profile.relay.dp ? { config: { relayDp } } : {}),
+          summary: `Answering, Tuya ${link.version}: ${relay}${drawing}.`,
         };
       } finally {
         await link.close();

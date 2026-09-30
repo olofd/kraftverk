@@ -235,13 +235,21 @@ The type as it stood before this mapping had five faults, all visible above:
 5. **Its check guessed the relay** as the first boolean datapoint, which on this
    plug is DP 1 — the wrong one.
 
-And what the plug offers that the adapter should expose: the protection
-settings (104–106, 139, 103, 137, 141), boot behaviour (138), fast refresh
-(140), screen and beep (107–111, 117, 116), the warning (132) as a problem,
-the CPU temperature, and the power factor. The plug's own modes and timers
-(118–130, 9) overlap with kraftverk's automations; they are worth reading (a
-mode that can switch the relay is something to show) before they are worth
-writing.
+All five are fixed: the profile in `src/type.ts` switches on 131, reads on/off
+from 131 then 132 then 1, scales energy by 3, reads the boot behaviour, and the
+socket type takes every push. Confirmed through the app on the real unit: the
+toggle switches it.
+
+**What is offered, and what is not.** The plug's own app is hard to understand:
+seven "device interface" modes, Auto, A and B, timers, a price mode. kraftverk
+does not copy it. As settings it offers what a person decides — *after a power
+cut*, the *safety cut-off* (limits, delay, back-on time) and the *display* —
+in plain words. The plug's modes and their values are **read, never offered**:
+kraftverk uses them to explain a cut ("a rule set in the maker's app switched
+it off"), and its automations do their job with more to go on. Pricing,
+timers, the countdown, the switch mode and fast refresh are left out; the
+Datapoints tool shows them raw. Fast refresh is kraftverk's to manage (on while
+someone is watching), not a switch for a person.
 
 ## 6. Still to establish
 

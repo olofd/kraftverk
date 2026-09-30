@@ -13,7 +13,7 @@ import { fromHex } from './bytes.ts';
 import { isRegion, REGIONS, TuyaCloud, TuyaCloudError } from './cloud.ts';
 import { decodeBroadcast, DISCOVERY_PORTS } from './discovery.ts';
 import type { ProtocolVersion } from './frame.ts';
-import { TUYA_PORT, TuyaLink } from './session.ts';
+import { TUYA_PORT, TuyaLink, type TuyaLinkOptions } from './session.ts';
 
 /**
  * The Tuya LAN protocol, 3.1 to 3.5: how most Wi-Fi smart plugs are spoken to
@@ -175,9 +175,10 @@ export default protocol;
 
 /**
  * A Tuya conversation over an open connection: its channel, and the device id,
- * version and local key setup stored with it.
+ * version and local key setup stored with it. `onPush` hears what the plug
+ * sends unasked.
  */
-export function linkOver(connection: OpenConnection, log?: (message: string) => void): TuyaLink {
+export function linkOver(connection: OpenConnection, options: Pick<TuyaLinkOptions, 'log' | 'onPush'> = {}): TuyaLink {
   if (connection.channel.kind !== 'bytes') throw new Error('Tuya local needs a byte stream');
   const localKey = connection.secrets.get('localKey');
   if (!localKey) throw new Error('No local key: add it in the plug’s connection settings');
@@ -188,6 +189,6 @@ export function linkOver(connection: OpenConnection, log?: (message: string) => 
     deviceId,
     localKey,
     version: (VERSIONS as readonly string[]).includes(version) ? (version as ProtocolVersion) : 'auto',
-    log,
+    ...options,
   });
 }

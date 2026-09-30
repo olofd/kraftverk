@@ -16,7 +16,7 @@ test('a tool is drawn from its declaration and run: the plug’s datapoints, ans
   await expect(page.getByText('Datapoints', { exact: true }).last()).toBeVisible();
   await page.getByRole('button', { name: 'Run' }).click();
   // The answer, checked against the declaration by whoever holds the plug.
-  await expect(page.getByText(/"relayCandidates"/)).toBeVisible();
+  await expect(page.getByText(/"raw"/)).toBeVisible();
   await expect(page.getByText(/"relayOn": true/)).toBeVisible();
 });
 
