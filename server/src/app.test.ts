@@ -448,6 +448,23 @@ describe('a device you have', () => {
     expect((await onBusAs(path, { method: 'PATCH', body: { name: 'Shed' } })).body.name).toBe('Shed');
   });
 
+  test('shows the picture its owner picks, for every app: one of its type’s; a photo of its own is not yet', async () => {
+    lampAt('lamp-1');
+    const lamp = await added('Hall lamp');
+    const path = `/devices/${enc(lamp.id)}`;
+    expect((await onBusAs(path)).body.picture).toBe('type:0');
+    expect((await onBusAs(`${path}/picture`, { method: 'PUT', body: { picture: 'type:2' } })).body.picture).toBe('type:2');
+    expect((await onBusAs(path)).body.picture).toBe('type:2');
+    // Kept for the device, and in the list as well.
+    expect(((await onBusAs('/devices')).body.devices as { id: string; picture: string }[]).find((device) => device.id === lamp.id)?.picture).toBe('type:2');
+    expect((await onBusAs(`${path}/picture`, { method: 'PUT', body: { picture: 2 } })).status).toBe(400);
+    expect((await onBusAs(`${path}/picture`, { method: 'PUT', body: { picture: 'type:x' } })).status).toBe(400);
+    const own = await onBusAs(`${path}/picture`, { method: 'PUT', body: { picture: 'own:front-door' } });
+    expect([own.status, own.body.error]).toEqual([400, 'A picture of its own cannot be added yet']);
+    // Back to the first: nothing kept.
+    expect((await onBusAs(`${path}/picture`, { method: 'PUT', body: { picture: 'type:0' } })).body.picture).toBe('type:0');
+  });
+
   test('an id with a percent sign is a 404, not a 500', async () => {
     expect((await as('/devices/abc%25def')).status).toBe(404);
     expect((await as('/devices/abc%25def/history?key=soc')).status).toBe(404);

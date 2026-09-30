@@ -165,7 +165,24 @@ export type DeviceView = {
   tools: ToolView[];
   readings: Reading[];
   health: ConnectionHealth;
+  /** Which picture it shows: its owner's pick, else its type's first (`type:0`). */
+  picture: PictureRef;
 };
+
+/**
+ * A picture of a device, by where it comes from:
+ *
+ * - `type:N` — its type's Nth picture, counting from 0: from its package
+ *   (`kraftverk.assets.images`), shipped with the app. One no longer there is
+ *   shown as the first.
+ * - `own:<id>` — reserved for a photo its owner takes of it: stored and served
+ *   by the server, at `/devices/:id/pictures/<id>`. Not built yet; nothing
+ *   else about a device changes when it is.
+ */
+export type PictureRef = `type:${number}` | `own:${string}`;
+
+/** `PUT /devices/:id/picture`: which picture to show. */
+export type PictureChoice = { picture: PictureRef };
 
 /** An installed type, and whether this server can hold a connection over each of its methods. */
 export type DeviceTypeListing = DeviceTypeView & {

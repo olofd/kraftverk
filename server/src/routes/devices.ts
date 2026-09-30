@@ -2,13 +2,15 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import type { AttributeWrite, CommandBody, DeviceChanges, DeviceEventView, DeviceHistory, DeviceTypeListing, ProblemView, ToolBody } from '@kraftverk/api-contract';
+import type { AttributeWrite, CommandBody, DeviceChanges, DeviceEventView, DeviceHistory, DeviceTypeListing, PictureChoice, ProblemView, ToolBody } from '@kraftverk/api-contract';
 import { CATEGORIES, capabilityIn, describeDeviceType, isSimulated, methodsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
 import { Confirmations, subjectOf } from '@kraftverk/gateway';
 import { runTool, ToolRefused, type ToolRefusal } from '@kraftverk/holder';
 
 import { actorOf } from '../auth/routes.ts';
 import { changesOf } from '../history/changes.ts';
+import { deleteAppState, setAppState } from '../history/db.ts';
+import { PICTURE_KEY, PICTURE_REF } from '../devices/registry.ts';
 import { resolutionOf, series } from '../history/sampler.ts';
 import { auditAbout, body, deviceOr404, type AppDeps } from './shared.ts';
 
@@ -124,7 +126,26 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
       removedAt: record.removedAt,
     });
     const { samples } = catalog.deleteForever(record.id);
+    deleteAppState(`${PICTURE_KEY}${record.id}`);
     return c.json({ ok: true, samples });
+  });
+
+  /**
+   * Which picture a device shows: an owner's choice, kept by the server so
+   * every app shows the same. Its type's pictures (`type:N`) are the app's, from
+   * its packages; one past them shows the first. A photo of its owner's own
+   * (`own:<id>`) is reserved: when it is built, it is uploaded to and served
+   * from `/devices/:id/pictures`, and chosen here the same way.
+   */
+  api.put('/devices/:id/picture', async (c) => {
+    const record = deviceOr404(catalog, c.req.param('id'));
+    const { picture } = (await body(c, z.object({ picture: z.string().regex(PICTURE_REF, 'type:0, type:1… (or, one day, own:<id>)') }).strict())) as PictureChoice;
+    // Not yet: a photo of its own is stored nowhere to show.
+    if (picture.startsWith('own:')) throw new HTTPException(400, { message: 'A picture of its own cannot be added yet' });
+    if (picture === 'type:0') deleteAppState(`${PICTURE_KEY}${record.id}`);
+    else setAppState(`${PICTURE_KEY}${record.id}`, picture);
+    auditAbout(c, 'device.picture', 'device', record.id, `Showed picture ${Number(picture.slice(5)) + 1} of "${record.name}"`, { picture });
+    return c.json(registry.find(record.id));
   });
 
   // --- settings, history, events and commands: the same for every device ---

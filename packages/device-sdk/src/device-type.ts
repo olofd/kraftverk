@@ -50,8 +50,6 @@ export type DeviceTypeMeta = {
   supportNote?: string;
   /** A Feather icon name, so the app can draw it with nothing from the package. */
   icon: string;
-  /** A product picture, as a path inside the package. Served by the server. */
-  image?: string;
   docsUrl?: string;
 };
 

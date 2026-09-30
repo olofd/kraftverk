@@ -20,6 +20,7 @@ import {
   removeDevice,
   removeLink as apiRemoveLink,
   renameDevice,
+  setDevicePicture,
   runDeviceTool,
   sendCommand,
   setConnectionSecrets,
@@ -29,6 +30,7 @@ import {
   type DeviceActions,
   type DeviceScreenProps,
   type DeviceView,
+  type PictureRef,
   type GatewayResult,
   type LinkView,
   type LiveState,
@@ -106,6 +108,8 @@ type DevicesContextValue = {
   /** Everything a device's own screens are handed. */
   screenProps: (device: DeviceView) => DeviceScreenProps;
   rename: (id: string, name: string) => Promise<void>;
+  /** Shows another picture (`type:N`): kept by the server, or this app in local mode. */
+  setPicture: (id: string, picture: PictureRef) => Promise<void>;
   remove: (id: string) => Promise<void>;
   deleteHistory: (id: string, name: string) => Promise<void>;
   prefer: (device: DeviceView, connection: ConnectionView) => Promise<void>;
@@ -192,6 +196,7 @@ function describeLocal(runtime: AppRuntime, device: LocalDevice, local: Map<stri
       transport: null,
       lastReadingAt: null,
     },
+    picture: device.picture ?? 'type:0',
   };
 }
 
@@ -604,6 +609,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       actionsFor,
       screenProps,
       rename: (id, name) => (mode === 'local' ? Promise.resolve(runtime.local.rename(id, name)) : mutate(() => renameDevice(id, name))),
+      setPicture: (id, picture) => (mode === 'local' ? Promise.resolve(runtime.local.setPicture(id, picture)) : mutate(() => setDevicePicture(id, picture))),
       remove: async (id) => {
         await runtime.sessions.close(id);
         if (mode === 'local') runtime.local.remove(id);

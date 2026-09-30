@@ -36,6 +36,7 @@ import type {
   PolicyValueView,
   RecipeView,
   SaveInput,
+  PictureRef,
   ServerLogLine,
   WriteResult,
   SightingView,
@@ -202,6 +203,12 @@ export async function fetchDeviceTypes(signal?: AbortSignal) {
 
 export async function renameDevice(id: string, name: string, signal?: AbortSignal) {
   const { data } = await api.patch<DeviceView>(devicePath(id), { name }, { signal });
+  return data;
+}
+
+/** Which picture a device shows: `type:N`, its type's Nth. */
+export async function setDevicePicture(id: string, picture: PictureRef, signal?: AbortSignal) {
+  const { data } = await api.put<DeviceView>(devicePath(id, '/picture'), { picture }, { signal });
   return data;
 }
 

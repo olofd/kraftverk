@@ -1,3 +1,4 @@
+import type { PictureRef } from '@kraftverk/api-client';
 import { linkKindSpec, type ConfigValues, type LinkEnd, type LinkKind } from '@kraftverk/device-sdk';
 
 import { readPreference, writePreference } from '../lib/preferences';
@@ -32,7 +33,16 @@ export function memorySecrets(): SecretStore {
  * here is readable by anything that can read this origin's storage.
  */
 
-export type LocalDevice = { id: string; typeId: string; name: string; identity: string | null; config: ConfigValues; addedAt: string };
+export type LocalDevice = {
+  id: string;
+  typeId: string;
+  name: string;
+  identity: string | null;
+  config: ConfigValues;
+  addedAt: string;
+  /** Which picture to show; absent until its owner picks one, and its type's first is shown. */
+  picture?: PictureRef;
+};
 export type LocalConnection = { id: string; deviceId: string; method: string; transport: string; address: string; config: ConfigValues; priority: number; lastConnectedAt: string | null };
 /** A fact about the house between two parts, as the server keeps one. */
 export type LocalLink = { id: string; kind: LinkKind; source: LinkEnd; target: LinkEnd };
@@ -180,6 +190,11 @@ export class LocalCatalog {
 
   rename(deviceId: string, name: string): void {
     this.#data = { ...this.#data, devices: this.#data.devices.map((device) => (device.id === deviceId ? { ...device, name } : device)) };
+    this.#write();
+  }
+
+  setPicture(deviceId: string, picture: PictureRef): void {
+    this.#data = { ...this.#data, devices: this.#data.devices.map((device) => (device.id === deviceId ? { ...device, picture } : device)) };
     this.#write();
   }
 

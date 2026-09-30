@@ -10,7 +10,7 @@
     "ui": "./ui/index.ts",
     "words": ["p280", "StationStatus", "StationSettings", "gridRelay", "core.station"],
     "assets": {
-      "image": "./assets/device-image.png"
+      "images": ["./assets/image-1.png"]
     }
   },
   "exports": {
@@ -22,7 +22,7 @@
     "./ui/registers": "./ui/registers.tsx",
     "./ui/contract": "./ui/contract.ts",
     "./ui/dashboard": "./ui/dashboard.tsx",
-    "./assets/device-image.png": "./assets/device-image.png"
+    "./assets/image-1.png": "./assets/image-1.png"
   },
   "scripts": {
     "test": "node ../../../scripts/run-bun.mjs test",

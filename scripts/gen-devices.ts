@@ -27,8 +27,8 @@ type Manifest = {
   kraftverk?: {
     deviceType?: string;
     ui?: string;
-    /** Pictures of the device, by what they are for: `image`, the device as it looks. */
-    assets?: { image?: string };
+    /** Pictures of the device as it looks, in order: the first is shown unless its owner picks another. */
+    assets?: { images?: string[] };
     protocol?: string;
     transport?: { definition?: string; server?: string; web?: string; native?: string };
   };
@@ -109,10 +109,11 @@ for (const { dir, manifest } of [...packages('packages/devices'), ...packages('p
     imports.push(`import ${local(manifest.name, 'Ui')} from '${exported(manifest, ui)}';`);
     screens.push(`  '${type.id}': ${local(manifest.name, 'Ui')},`);
   }
-  if (pictures?.image) {
-    checkImage(manifest, dir, pictures.image);
-    // require, not import: Metro makes the file an asset of the build, on the web and on a phone alike.
-    assets.push(`  '${type.id}': { image: require('${exported(manifest, pictures.image)}') },`);
+  if (pictures?.images?.length) {
+    for (const image of pictures.images) checkImage(manifest, dir, image);
+    // require, not import: Metro makes each file an asset of the build, on the web and on a phone alike.
+    const required = pictures.images.map((image) => `require('${exported(manifest, image)}')`).join(', ');
+    assets.push(`  '${type.id}': { images: [${required}] },`);
   }
 }
 

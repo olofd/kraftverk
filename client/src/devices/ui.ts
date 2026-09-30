@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react';
 import type { ImageSourcePropType } from 'react-native';
 
-import type { DeviceUi, DeviceView, PartSlotProps } from '@kraftverk/api-client';
+import type { DeviceUi, DeviceView, PartSlotProps, PictureRef } from '@kraftverk/api-client';
 import type { Part } from '@kraftverk/device-sdk';
 
 import { DEVICE_ASSETS, DEVICE_UI } from '../generated/registry';
@@ -10,13 +10,24 @@ export type { DeviceUi };
 
 /**
  * Pictures a device type ships, declared in its package.json
- * (`kraftverk.assets`) and checked by `npm run gen:devices`: `image` is the
- * device as it looks, on a transparent background.
+ * (`kraftverk.assets.images`) and checked by `npm run gen:devices`: the
+ * device as it looks, on a transparent background, in order.
  */
-export type DeviceAssets = { image?: ImageSourcePropType };
+export type DeviceAssets = { images: readonly ImageSourcePropType[] };
 
-/** A device's picture, by its type: every device of a type looks the same. Null for a type that ships none. */
-export const imageFor = (typeId: string | null | undefined): ImageSourcePropType | null => (typeId ? (DEVICE_ASSETS[typeId]?.image ?? null) : null);
+/** Every picture a type ships, in order: none for a type that ships none. */
+export const picturesOf = (typeId: string | null | undefined): readonly ImageSourcePropType[] => (typeId ? (DEVICE_ASSETS[typeId]?.images ?? []) : []);
+
+/**
+ * The picture shown for a type — or, given a device, the one its owner
+ * picked (`DeviceView.picture`), else its type's first. Null for a type that
+ * ships none. (A photo of its own, `own:<id>`, is not built yet: its type's first.)
+ */
+export const pictureFor = (typeId: string | null | undefined, picked: PictureRef = 'type:0'): ImageSourcePropType | null => {
+  const pictures = picturesOf(typeId);
+  const index = picked.startsWith('type:') ? Number(picked.slice(5)) : 0;
+  return pictures[index] ?? pictures[0] ?? null;
+};
 
 /**
  * Which pieces of its pages a device draws itself.

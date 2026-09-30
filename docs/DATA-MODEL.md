@@ -444,7 +444,7 @@ erDiagram
     json detail "{part: outlet.ac, capability: switch, command: set, args: {on: false}}"
   }
   app_state {
-    text key PK "automation.trigger.a-71c2d0e5f9a3:0 · automation.recheck.a-71c2d0e5f9a3 · gateway.lastSwitchAt.… · policy.values"
+    text key PK "automation.trigger.a-71c2d0e5f9a3:0 · automation.recheck.a-71c2d0e5f9a3 · device.picture.d-3f9a2c61b0e4 · gateway.lastSwitchAt.… · policy.values"
     text value "{last: true, heldSince: …, fired: false} · {loadWatts: 10}"
     text updated_at "2026-09-01T10:00:00Z"
   }

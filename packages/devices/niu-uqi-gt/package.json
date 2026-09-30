@@ -1,0 +1,33 @@
+{
+  "name": "@kraftverk/device-niu-uqi-gt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The NIU UQi GT (and GT Sport) as a model of its own: the common NIU scooter, with its pictures and, as it is mapped, what only it does.",
+  "type": "module",
+  "main": "./src/type.ts",
+  "kraftverk": {
+    "deviceType": "./src/type.ts",
+    "assets": {
+      "images": ["./assets/image-1.png", "./assets/image-2.png", "./assets/image-3.png"]
+    }
+  },
+  "exports": {
+    ".": "./src/type.ts",
+    "./type": "./src/type.ts",
+    "./assets/image-1.png": "./assets/image-1.png",
+    "./assets/image-2.png": "./assets/image-2.png",
+    "./assets/image-3.png": "./assets/image-3.png"
+  },
+  "scripts": {
+    "test": "node ../../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kraftverk/device-niu-scooter": "*",
+    "@kraftverk/device-sdk": "*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}

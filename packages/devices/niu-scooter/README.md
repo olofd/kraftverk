@@ -5,8 +5,8 @@ its charge, whether it is charging, its range, odometer and state. The first
 use: a smart plug in front of its charger stops it at a limit, with the shared
 "Charge between two levels" automation — this scooter's battery, that plug.
 
-Being mapped on a **2019 NIU UQi GT Sport** (48 V, one removable battery,
-1.5–2 kWh). Support is `experimental` until it has been.
+The common NIU scooter: a model with a package of its own builds on it
+(below). Support is `experimental` until a model has been mapped.
 
 ## How it is reached
 
@@ -83,24 +83,20 @@ The `app_id` is not stable: projects use `niu_ktdrr960`, `niu_8xt1afu6`,
   answered, v5 or v3), the batteries and the totals — position removed. How
   the model is mapped.
 
-## Mapping the UQi GT Sport — what only the real scooter can answer
+## Models
 
-As with the ATORCH: one thing at a time, read, write down what moved.
+This package is the **common** NIU scooter: how any scooter NIU's cloud
+speaks for is reached and read. It claims no model, and has no picture of
+its own — the NIU brand, on its icon.
 
-1. Sign in (the owner, in the app's Add flow). Does the list give `sn` or
-   `sn_id`? What model name?
-2. Which state call answers: v5, or only v3?
-3. `infoTimestamp`: how old while it sleeps, while it charges? That sets how
-   often to ask and how long a report is current.
-4. Charger plugged in with the plug off, then on: do `isConnected` and
-   `isCharging` follow, and how soon?
-5. `lockStatus`, `isAccOn`, `isFortificationOn`: lock it, unlock it, switch
-   it on, arm the alarm — which values?
-6. Battery info, totals, trips: which answer, and how their fields look.
-7. The charging-limit and command calls: whether this model has them at all
-   (expected: no). Asked only after we agree to.
+A model gets **a package of its own**, built on this one with
+`defineNiuScooter({ id, meta })`: its name, the model names NIU's account
+gives it (the check step offers the model's type for a scooter reporting one
+of them), its pictures, and — as it is mapped — what only that model does.
+It inherits everything else, and keeps what is still in common.
 
-Then: `support: 'verified'`, and what the values mean.
+- [`niu-uqi-gt`](../niu-uqi-gt/README.md) — the UQi GT and GT Sport, being
+  mapped on a 2019 GT Sport.
 
 ## Charging it to a limit
 

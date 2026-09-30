@@ -55,10 +55,30 @@ test('the device list follows the live stream: a new device appears without relo
   expect(String(readings.payload)).toContain('"readings"');
 });
 
-test('a NIU scooter is found under Vehicles, and its page draws its battery with no screen of its own', async ({ page, request }) => {
+test('a model has its pictures, and the one shown is its owner’s pick: tap the picture, choose another', async ({ page, request }) => {
+  const scooter = await addSimulated(request, 'niu.uqi-gt', unique('Scooter'));
+  await page.goto(`/device/${scooter.id}`);
+  await page.getByRole('button', { name: `Change the picture of ${scooter.name}` }).click();
+  const dialog = page.getByRole('dialog', { name: `The picture of ${scooter.name}` });
+  await expect(dialog.getByRole('radio')).toHaveCount(3);
+  await expect(dialog.getByRole('radio', { name: 'Picture 1' })).toHaveAttribute('aria-checked', 'true');
+  await dialog.getByRole('radio', { name: 'Picture 2' }).click();
+  await expect(dialog).toHaveCount(0);
+
+  // Kept by the server: every app shows the same.
+  const device = await (await request.get(`/api/devices/${scooter.id}`, { headers: { 'x-kraftverk-client': 'app' } })).json();
+  expect(device.picture).toBe('type:1');
+  await page.getByRole('button', { name: `Change the picture of ${scooter.name}` }).click();
+  await expect(page.getByRole('radio', { name: 'Picture 2' })).toHaveAttribute('aria-checked', 'true');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('a NIU scooter is found under Vehicles — the common one, and a model of its own — and its page draws its battery with no screen of its own', async ({ page, request }) => {
   await page.goto('/add-device');
   await page.getByText('Vehicles', { exact: true }).click();
   await expect(page.getByText('NIU scooter', { exact: true })).toBeVisible();
+  await expect(page.getByText('NIU UQi GT', { exact: true })).toBeVisible();
 
   const scooter = await addSimulated(request, 'niu.scooter', unique('Scooter'));
   await page.goto(`/device/${scooter.id}`);

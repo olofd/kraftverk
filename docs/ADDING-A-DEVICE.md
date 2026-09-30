@@ -124,14 +124,22 @@ in `package.json` under `kraftverk.ui` and `exports`, and run
 connection, and whether they reach it now (`reach`). It never learns whether
 that is the server or the app.
 
-**A picture** of the device makes it recognisable in lists and on its page.
-Put a PNG on a transparent background in `assets/` — at most 1024 px square
-and 512 KB; `npm run gen:devices` refuses anything larger, or opaque — and
-name it in `package.json` under `kraftverk.assets.image` and `exports`. The
-app draws it small beside the name in lists, and large on the device's own
-page. It stands for every device of the type, so it is shown only where the
-type is known: a device found on the network that might be one of several
-types gets no picture.
+**Pictures** of the device make it recognisable in lists and on its page.
+Put PNGs on a transparent background in `assets/`, named `image-1.png`,
+`image-2.png`… — each at most 1024 px square and 512 KB; `npm run gen:devices`
+refuses anything larger, or opaque — and list them, in order, in
+`package.json` under `kraftverk.assets.images`, and in `exports`. The first is
+shown unless a device's owner picks another in its settings; one is plenty.
+The app draws it small beside the name in lists, and large on the device's
+own page. A type's first picture stands for it where no device is chosen yet —
+the add screen — and only where the type is known: a device found on the
+network that might be one of several types gets none.
+
+**A model of a family** — one NIU among NIU scooters, one Tuya socket among
+Tuya sockets — is a package of its own, built on the family's
+(`defineNiuScooter`, `defineTuyaSocket`): its name, the model names it reports
+(the check step offers it for a device reporting one), its pictures, and what
+only it does. It inherits the rest. The family's package claims no model.
 
 ### What it brings to automations
 

@@ -6,6 +6,9 @@ import {
   type DeviceDescription,
   type DeviceInfo,
   type DeviceSession,
+  type DeviceType,
+  type DeviceTypeMeta,
+  type OpenConnection,
   type Reading,
   type SessionHealth,
   type ToolSpec,
@@ -284,21 +287,35 @@ function simulatedSession(ctx: DeviceContext<Config>): DeviceSession {
   };
 }
 
-export default defineDeviceType<Config>({
-  id: 'niu.scooter',
-  kind: 'hardware',
-  meta: {
-    name: 'NIU scooter',
-    brand: 'NIU',
-    models: ['UQi GT Sport', 'UQi GT'],
-    category: 'vehicle',
-    description: 'A NIU electric scooter, read from NIU’s cloud with your NIU account: its charge, whether it is charging, its range and its odometer. With a smart plug in front of its charger, charge it to a limit.',
-    support: 'experimental',
-    supportNote: 'Read from NIU’s cloud the way others found it; being mapped on a 2019 UQi GT Sport.',
-    icon: 'navigation',
-  },
-  config: { fields: {} },
-  describe: () => DESCRIPTION,
+/**
+ * A model of NIU scooter: what it is called, the names NIU gives it, how well
+ * it is known. Everything else — how it is reached, what it reports — is the
+ * common NIU scooter's, until the model shows it differs.
+ */
+export type NiuScooterModel = {
+  /** Stable forever: `niu.uqi-gt`. */
+  id: string;
+  meta: Omit<DeviceTypeMeta, 'brand' | 'category' | 'icon'> & { icon?: string };
+};
+
+/**
+ * A NIU scooter type: the common one, or a model's own (a package per model,
+ * with its pictures and, in time, what only that model does). Each model
+ * starts as this and keeps what it has in common.
+ */
+export function defineNiuScooter(model: NiuScooterModel): DeviceType<Config> {
+  return defineDeviceType<Config>({
+    id: model.id,
+    kind: 'hardware',
+    meta: { icon: 'navigation', ...model.meta, brand: 'NIU', category: 'vehicle' },
+    config: { fields: {} },
+    ...COMMON,
+  });
+}
+
+/** What every NIU scooter has in common: how it is reached and read, and what it reports. */
+const COMMON = {
+  describe: (): DeviceDescription => DESCRIPTION,
   tools: TOOLS,
   connections: [
     {
@@ -313,7 +330,7 @@ export default defineDeviceType<Config>({
     },
   ],
 
-  async identify(connection) {
+  async identify(connection: OpenConnection) {
     const { client, serial } = clientOver(connection);
     const scooters = await client.scooters();
     const scooter = scooters.find((candidate) => candidate.serial === serial);
@@ -336,7 +353,22 @@ export default defineDeviceType<Config>({
   },
 
   createSession: realSession,
-  createSimulator: async (ctx) => simulatedSession(ctx),
+  createSimulator: async (ctx: DeviceContext<Config>) => simulatedSession(ctx),
+} satisfies Omit<DeviceType<Config>, 'id' | 'kind' | 'meta' | 'config'>;
+
+/**
+ * Any NIU scooter NIU's cloud speaks for, whatever the model: the common
+ * one. A model with a package of its own is offered as that model instead
+ * when the check step reads its name.
+ */
+export default defineNiuScooter({
+  id: 'niu.scooter',
+  meta: {
+    name: 'NIU scooter',
+    description: 'A NIU electric scooter, read from NIU’s cloud with your NIU account: its charge, whether it is charging, its range and its odometer. With a smart plug in front of its charger, charge it to a limit.',
+    support: 'experimental',
+    supportNote: 'Read from NIU’s cloud the way others found it. A model of its own, where there is one, knows more.',
+  },
 });
 
 export type { NiuClient };

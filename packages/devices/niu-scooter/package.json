@@ -6,15 +6,11 @@
   "type": "module",
   "main": "./src/type.ts",
   "kraftverk": {
-    "deviceType": "./src/type.ts",
-    "assets": {
-      "image": "./assets/device-image.png"
-    }
+    "deviceType": "./src/type.ts"
   },
   "exports": {
     ".": "./src/type.ts",
-    "./type": "./src/type.ts",
-    "./assets/device-image.png": "./assets/device-image.png"
+    "./type": "./src/type.ts"
   },
   "scripts": {
     "test": "node ../../../scripts/run-bun.mjs test",

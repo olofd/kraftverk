@@ -168,16 +168,17 @@ The rule, checked in CI by `npm run check:architecture` (§7):
 ```
 packages/devices/atorch-s1w/
   package.json          "kraftverk": { "deviceType": "./src/type.ts", "ui": "./ui/index.ts",
-                                       "assets": { "image": "./assets/device-image.png" } },
+                                       "assets": { "images": ["./assets/image-1.png"] } },
                         and every entry listed in "exports"
   src/type.ts           export default defineDeviceType({...})   pure, no React: identify,
                         createSession, createSimulator and any setup steps of its own —
                         in this file, or split beside it as the type grows
   ui/index.ts           optional slots, export default { dashboard, parts, settings, tools } satisfies DeviceUi;
                         the generic pages draw whatever it leaves out
-  assets/               device-image.png: the device as it looks, on a transparent background,
-                        at most 1024 px and 512 KB (gen:devices checks); small beside its name
-                        in lists, large on its own page. Every device of the type shares it
+  assets/               image-1.png, image-2.png…: the device as it looks, on a transparent
+                        background, at most 1024 px and 512 KB each (gen:devices checks); small
+                        beside its name in lists, large on its own page. The first unless a
+                        device's owner picks another (kept by the server, per device)
   test/contract.test.ts checkDeviceTypeContract(type) from @kraftverk/device-sdk/testing
 ```
 
