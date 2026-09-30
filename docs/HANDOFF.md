@@ -112,9 +112,11 @@ and `.set-aside.*` copies on the server's volume are the owner's to delete.
 ## What is built, and what is not
 
 Measured against [NEXT-STEP-ARCHITECTURE.md](NEXT-STEP-ARCHITECTURE.md) §10
-(the phases) and §12 (findings J1–J40), as of 2026-09-30 (`32a218b`). All
-checks are green: typecheck, 727 unit tests, the architecture ratchet and 22
-end-to-end tests.
+(the phases) and §12 (findings J1–J40), as of 2026-09-30 (`32a218b`). The
+checks say whether they are green — `npm run typecheck`, `npm test`,
+`npm run check:architecture`, `npm run test:e2e` — and this page does not
+repeat them: counts written here went stale with every commit, and once
+said green over a red job.
 
 **Deployed 2026-09-30.** The push to GitLab carried the schema change of
 Phase 2 (`4b2be75`), so the NAS database was set aside once on start: the
