@@ -31,6 +31,7 @@ import { Screen } from '../src/components/Screen';
 import { ago, clock, dayOf, lasted, OUTCOME, useTone, type Look } from '../src/features/automations/looks';
 import { RunControl } from '../src/features/automations/RunControl';
 import { RunSteps, StepPlan } from '../src/features/automations/Steps';
+import { useReadAgain } from '../src/features/automations/useReadAgain';
 import { ASKED_AGAIN, confirmAction, withConfirmation } from '../src/lib/confirm';
 import { useDevices } from '../src/state/DevicesProvider';
 
@@ -44,11 +45,8 @@ import { useDevices } from '../src/state/DevicesProvider';
  * one does goes through the same gateway as a tap on a switch, and every run,
  * acting or not, is kept and shown.
  */
-/** How often an open page reads its automations again: what each reads now, what each last did. */
-const REFRESH_MS = 15_000;
-
 export default function AutomationsScreen() {
-  const { mode, devices, onAutomation } = useDevices();
+  const { mode, devices } = useDevices();
   const [recipes, setRecipes] = useState<RecipeView[] | null>(null);
   const [automations, setAutomations] = useState<AutomationView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -66,34 +64,17 @@ export default function AutomationsScreen() {
   }, []);
 
   useEffect(() => {
-    if (mode !== 'server') return;
-    void load();
-    // How each stands now, and what each last did, kept current while this is open.
-    const timer = setInterval(() => {
-      fetchAutomations()
-        .then(setAutomations)
-        .catch(() => undefined);
-    }, REFRESH_MS);
-    return () => clearInterval(timer);
+    if (mode === 'server') void load();
   }, [load, mode]);
 
-  // A run moving — started, a step taken, ended — is heard on the live stream, and read at once: a burst, once.
-  useEffect(() => {
-    if (mode !== 'server') return;
-    let reading: ReturnType<typeof setTimeout> | null = null;
-    const stop = onAutomation(() => {
-      reading ??= setTimeout(() => {
-        reading = null;
-        fetchAutomations()
-          .then(setAutomations)
-          .catch(() => undefined);
-      }, 250);
-    });
-    return () => {
-      stop();
-      if (reading) clearTimeout(reading);
-    };
-  }, [mode, onAutomation]);
+  // How each stands now, and what each last did, kept current while this is open: read again when a run
+  // moves, when readings move (what each reads now), and polled only while the live stream is down.
+  const readAgain = useCallback(() => {
+    fetchAutomations()
+      .then(setAutomations)
+      .catch(() => undefined);
+  }, []);
+  useReadAgain(readAgain, { followReadings: true });
 
   if (mode !== 'server') {
     return (
