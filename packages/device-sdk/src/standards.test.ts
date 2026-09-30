@@ -30,11 +30,11 @@ describe('standard meanings', () => {
     }
   });
 
-  test('an on/off is a binary sensor or a switch, and a number is a sensor', () => {
+  test('an on/off is a binary sensor or a switch, and a number is a sensor — or, a setting, a number', () => {
     for (const id of meanings) {
       const platform = MEANING_PROJECTIONS[id].homeAssistant.platform;
       const onOff = STANDARD_MEANINGS[id].type === 'boolean';
-      expect({ id, platform: onOff ? platform !== 'sensor' : platform === 'sensor' }).toEqual({ id, platform: true });
+      expect({ id, platform: onOff ? platform === 'binary_sensor' || platform === 'switch' : platform === 'sensor' || platform === 'number' }).toEqual({ id, platform: true });
     }
   });
 

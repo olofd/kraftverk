@@ -210,7 +210,10 @@ screen part. Standard recipes stay free of product words.
    builds. A recipe cannot name a key, so the settings every station has
    need standard meanings: a charge ceiling, a reserve floor, a mains
    charging power. The P280 maps its registers to them in its package, and
-   `write` takes `means` as well as `key`.
+   `write` takes `means` as well as `key`. **Done, 2026-09-30:**
+   `battery.chargeLimit`, `battery.dischargeFloor`, `power.in.ac.max`; a
+   number's `step` is now enforced, and the P280's AC charging power is a
+   number in its five steps.
 2. **Time of day in expressions.** `{ within: { from, to } }` is true between
    two clock times, across midnight, on the owner's clock. It is usable in
    `if`, `becomes` and waits.

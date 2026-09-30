@@ -62,7 +62,8 @@ type Expr =
 
 type Step =
   | { command: { role: string; capability: CapabilityName; command: string; args: Record<string, Expr> } }
-  | { write: { role: string; key: string; value: Expr } }          // a setting the part keeps
+  | { write: { role: string; key: string; value: Expr } }          // a setting the part keeps, by its key
+  | { write: { role: string; means: string; value: Expr } }        //   or by a standard meaning, which a recipe can name
   | { start: { role: string; waitSeconds?: Expr } }                // another automation, waited for or not
   | { wait } | { waitUntil } | { ensure } | { choose } | { watch };   // SEQUENCES.md
 ```

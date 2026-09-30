@@ -149,6 +149,7 @@ const STATION_DESCRIPTION: DeviceDescription = {
     { key: 'soc', label: 'Battery', value: { type: 'number', unit: '%' }, quantity: 'percent', means: 'battery.soc' },
     { key: 'outlet.ac.on', part: 'outlet.ac', label: 'On', value: { type: 'boolean' }, means: 'switch.on' },
     { key: 'input.ac.present', part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'grid.present' },
+    { key: 'acLimit', label: 'AC charge limit', value: { type: 'number', unit: '%', min: 60, max: 100 }, means: 'battery.chargeLimit', access: 'write', category: 'config' },
   ],
   events: [{ id: 'mains.lost', label: 'Mains lost', level: 'warn', part: 'input.ac' }],
 };
@@ -562,6 +563,29 @@ describe('when a condition becomes true', () => {
     } finally {
       engine.stop();
     }
+  });
+});
+
+/*
+  A setting named by its standard meaning — as a recipe names one — is the
+  bound part's own setting with that meaning, written by its key.
+*/
+describe('a setting by what it means', () => {
+  test('is written as the station calls it, and reads as it does', async () => {
+    const { engine, store, written } = setup();
+    const created = store.create({
+      name: 'Charge to 80 %',
+      rule: { roles: { station: { label: 'Station', description: 'A station', capabilities: ['battery'] } }, params: { fields: {} }, when: [], then: [{ write: { role: 'station', means: 'battery.chargeLimit', value: { value: 80 } } }] },
+      madeFrom: null,
+      roles: { station: { device: STATION, part: 'main' } },
+      starts: {},
+      timeZone: ZONE,
+      recheckMinutes: null,
+    });
+    const automation = store.update(created.id, { mode: 'armed' })!;
+    expect(engine.steps(automation).steps.map((line) => line.text)).toEqual(['Set Garage P280’s AC charge limit to 80 %']);
+    expect((await engine.run(automation)).outcome).toBe('acted');
+    expect(written.map((intent) => intent.patch)).toEqual([{ acLimit: 80 }]);
   });
 });
 

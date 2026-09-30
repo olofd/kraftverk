@@ -88,7 +88,7 @@ type Step =
       then?: Step[];                                        //   if it stays true all that time
       else?: Step[];                                        //   the moment it is not, or cannot be told
     } }
-  | { write: { role: string; key: string; value: Expr } }   // a setting the part keeps (AUTOMATION-EDITOR.md)
+  | { write: { role: string; value: Expr } & ({ key: string } | { means: string }) }   // a setting the part keeps, by key or meaning
   | { start: { role: string; waitSeconds?: Expr } };        // another automation — waited for, at most so long
 
 type Rule = {

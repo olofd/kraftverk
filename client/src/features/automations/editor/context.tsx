@@ -75,9 +75,9 @@ export function useEditor() {
     };
     const vocabulary: RuleVocabulary = {
       fn: (id) => (functions.find((fn) => fn.id === id) as unknown as AutomationFunction | undefined) ?? null,
-      attribute: (role, key) => {
+      attribute: (role, target) => {
         const bound = partOf(role);
-        return bound ? writtenAttribute(bound.description, bound.part, key) : null;
+        return bound ? writtenAttribute(bound.description, bound.part, target) : null;
       },
     };
     /** One step in words, as its card shows it. */

@@ -7,12 +7,14 @@ import {
   isScalarType,
   MAIN_PART,
   stepKind,
+  writtenAttribute,
   type Command,
   type DeviceDescription,
   type Expr,
   type Step,
   type StepKind,
   type Value,
+  type Write,
 } from '@kraftverk/device-sdk';
 import { haptic, Icon } from '@kraftverk/ui';
 
@@ -252,17 +254,22 @@ function CommandFields({ command, set }: { command: Command; set: (command: Comm
 const startValue = (type: Parameters<typeof ValueField>[0]['type']): Value =>
   !type ? null : type.type === 'enum' ? (type.options[0]?.value ?? null) : type.type === 'boolean' ? true : type.type === 'number' ? (type.min ?? 0) : type.type === 'string' ? '' : null;
 
-/** A setting changed: a part, one of the settings it may be told — never one that can harm it — and its value. */
-function WriteFields({ write, set }: { write: Extract<Step, { write: unknown }>['write']; set: (write: Extract<Step, { write: unknown }>['write']) => void }) {
+/**
+ * A setting changed: a part, one of the settings it may be told — never one
+ * that can harm it — and its value. One a recipe names by its meaning shows as
+ * the part's setting that has it; another picked is named by its key.
+ */
+function WriteFields({ write, set }: { write: Write; set: (write: Write) => void }) {
   const editor = useEditor();
   const bound = editor.partOf(write.role);
   const settingsOf = (description: DeviceDescription, part: string) =>
     description.attributes.filter((attribute) => attribute.access === 'write' && !attribute.dangerous && isScalarType(attribute.value) && (attribute.part ?? MAIN_PART) === part);
   const settings = bound ? settingsOf(bound.description, bound.part) : [];
-  const chosen = settings.find((attribute) => attribute.key === write.key) ?? null;
+  const named = bound ? writtenAttribute(bound.description, bound.part, write) : null;
+  const chosen = settings.find((attribute) => attribute === named) ?? null;
   return (
     <YStack gap="$2.5">
-      <PartField role={write.role} fits={(description, part) => settingsOf(description, part).length > 0} onRole={(role) => set({ ...write, role, key: '' })} />
+      <PartField role={write.role} fits={(description, part) => settingsOf(description, part).length > 0} onRole={(role) => set({ role, key: '', value: write.value })} />
       {bound ? (
         <YStack gap="$1">
           <Label>Which setting</Label>
@@ -270,8 +277,8 @@ function WriteFields({ write, set }: { write: Extract<Step, { write: unknown }>[
             label="Which setting"
             chosen={chosen?.label ?? null}
             placeholder="Choose a setting"
-            options={settings.map((attribute) => ({ key: attribute.key, title: attribute.label, subtitle: attribute.section ?? attribute.description, value: attribute, selected: attribute.key === write.key }))}
-            onPick={(attribute) => set({ ...write, key: attribute.key, value: { value: startValue(attribute.value) } })}
+            options={settings.map((attribute) => ({ key: attribute.key, title: attribute.label, subtitle: attribute.section ?? attribute.description, value: attribute, selected: attribute === chosen }))}
+            onPick={(attribute) => set({ role: write.role, key: attribute.key, value: { value: startValue(attribute.value) } })}
           />
         </YStack>
       ) : null}

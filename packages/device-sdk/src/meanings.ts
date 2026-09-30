@@ -86,10 +86,16 @@ export type StandardMeaning =
 export const STANDARD_MEANINGS = {
   'battery.soc': { label: 'Charge', type: 'number', unit: '%', quantity: 'percent' },
   'battery.capacity': { label: 'Capacity', type: 'number', unit: 'Wh', quantity: 'energy' },
+  /** A setting a station keeps: the charge it stops charging from mains at. */
+  'battery.chargeLimit': { label: 'Charge limit', type: 'number', unit: '%', quantity: 'percent' },
+  /** A setting a station keeps: the charge below which it stops supplying its outputs. */
+  'battery.dischargeFloor': { label: 'Discharge floor', type: 'number', unit: '%', quantity: 'percent' },
   /** Everything coming in, from any source. */
   'power.in': { label: 'Input', type: 'number', unit: 'W', quantity: 'power' },
   'power.in.ac': { label: 'From mains', type: 'number', unit: 'W', quantity: 'power' },
   'power.in.solar': { label: 'Solar', type: 'number', unit: 'W', quantity: 'power' },
+  /** A setting a station keeps: how hard it charges from mains, at most. */
+  'power.in.ac.max': { label: 'Mains charging power', type: 'number', unit: 'W', quantity: 'power' },
   /** Everything a device supplies to what is plugged into it. */
   'power.out': { label: 'Output', type: 'number', unit: 'W', quantity: 'power' },
   /** What a device, or what is plugged through it, consumes: a plug's meter, an outlet's draw. */

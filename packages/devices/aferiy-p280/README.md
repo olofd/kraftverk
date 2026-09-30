@@ -15,7 +15,10 @@ MQTT broker) or Bluetooth LE, **without the vendor cloud**.
   versions.
 - **Full settings control** — charge limit, discharge floor, AC charging power,
   silent charging, charge scheduling, DC input type, standby timers, screen
-  timeout, light modes, and every output port.
+  timeout, light modes, and every output port. The charge limit, discharge
+  floor and AC charging power carry the standard meanings
+  `battery.chargeLimit`, `battery.dischargeFloor` and `power.in.ac.max`, so
+  a shared recipe can change them without knowing this station.
 - **Its own screens** — a live energy-flow dashboard, and settings grouped the
   way the station works rather than the way its registers are numbered.
 - **Two ways in** — a local MQTT broker the station connects to instead of the
@@ -147,7 +150,8 @@ hardware. Several things differ on a P280, and trusting the published values
 would give you plausible-looking wrong answers:
 
 - **AC charging power** spans 600–1800 W in five steps, not the documented
-  300–1100 W.
+  300–1100 W. It is a number in watts, stepping by 300; a wattage between
+  the steps is refused before it reaches register 13, whose values are 1–5.
 - **Register 48** is a bitmask reading `0x8040`, not the documented exact
   `0x8000`, so an equality check never sees the charging flag.
 - **Register 41 bit 2** is the *inverter*, not AC input. The published mask

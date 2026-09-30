@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { addSimulated, answer, link, press, unique } from './helpers';
+import { addSimulated, answer, link, press, unique, whose } from './helpers';
 
 const SOC = { read: { role: 'battery', means: 'battery.soc' } };
 
@@ -35,7 +35,7 @@ test('a charge window of your own, copied from the shared recipe', async ({ page
   await expect(status).toContainText('It can run as it is');
 
   // The recipe's values are in its blocks now: the window is the owner's to change.
-  await expect(status).toContainText(`${station.name}’s charge is below 15 %`);
+  await expect(status).toContainText(`${whose(station.name)} charge is below 15 %`);
   await press(page, 'Create');
   // Named after its recipe when not renamed, and read back as what it does.
   let card = page.getByRole('region', { name: 'Charge between two levels' }).last();
@@ -44,8 +44,8 @@ test('a charge window of your own, copied from the shared recipe', async ({ page
 
   // Right now: each condition it waits for, how it stands, and the reading it stands on.
   await expect(card.getByText('Right now')).toBeVisible();
-  await expect(card.getByText(`${station.name}’s charge is below 15 % for 2 min`, { exact: true })).toBeVisible();
-  await expect(card.getByText(`${station.name}’s charge is at least 50 %`, { exact: true }).first()).toBeVisible();
+  await expect(card.getByText(`${whose(station.name)} charge is below 15 % for 2 min`, { exact: true })).toBeVisible();
+  await expect(card.getByText(`${whose(station.name)} charge is at least 50 %`, { exact: true }).first()).toBeVisible();
   await expect(card.getByText(new RegExp(`^${station.name}: Charge \\d`)).first()).toBeVisible();
   // Once it has acted, what is switched by hand stays: until it is asked to keep things so.
   await expect(card.getByText(/what you switch by hand stays until one turns to yes again/)).toBeVisible();

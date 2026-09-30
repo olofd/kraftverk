@@ -11,9 +11,11 @@ import {
   problemPlace,
   ruleUses,
   takesSteps,
+  writtenAttribute,
   type BoundPart,
   type Rule,
   type Step,
+  type WriteTarget,
 } from './automation.ts';
 import type { DeviceDescription } from './description.ts';
 import { chargeBetween, mainsLost, startCharging } from './recipes.ts';
@@ -38,13 +40,28 @@ const PLUG: DeviceDescription = {
     { key: 'firmwareMode', label: 'Firmware mode', value: { type: 'boolean' }, access: 'write', dangerous: true },
   ],
 };
-const bound = (role: string): BoundPart | null => (role === 'plug' ? { name: 'Scooter plug', description: PLUG, part: 'main', capabilities: ['switch', 'powerMeter'] } : null);
-const vocabulary = { ...NO_FUNCTIONS, attribute: (role: string, key: string) => (role === 'plug' ? (PLUG.attributes.find((attribute) => attribute.key === key) ?? null) : null) };
-const names = (role: string) => (role === 'plug' ? 'Scooter plug' : role === 'charging' ? '“Charge the scooter”' : role);
+/** A station with settings every station has, by their standard meanings: its own keys are its package's. */
+const STATION: DeviceDescription = {
+  parts: [{ id: 'main', label: 'Station', kind: 'device', energy: { role: 'storage' } }],
+  attributes: [
+    { key: 'soc', label: 'Charge', value: { type: 'number', unit: '%' }, means: 'battery.soc' },
+    { key: 'acLimit', label: 'AC charge limit', value: { type: 'number', unit: '%', min: 60, max: 100 }, means: 'battery.chargeLimit', access: 'write' },
+    { key: 'acWatts', label: 'AC charging power', value: { type: 'number', unit: 'W', min: 600, max: 1800, step: 300 }, means: 'power.in.ac.max', access: 'write' },
+  ],
+};
+const bound = (role: string): BoundPart | null =>
+  role === 'plug'
+    ? { name: 'Scooter plug', description: PLUG, part: 'main', capabilities: ['switch', 'powerMeter'] }
+    : role === 'station'
+      ? { name: 'Garage station', description: STATION, part: 'main', capabilities: ['battery'] }
+      : null;
+const vocabulary = { ...NO_FUNCTIONS, attribute: (role: string, target: WriteTarget) => { const part = bound(role); return part ? writtenAttribute(part.description, part.part, target) : null; } };
+const names = (role: string) => (role === 'plug' ? 'Scooter plug' : role === 'station' ? 'Garage station' : role === 'charging' ? '“Charge the scooter”' : role);
 
 const rule = (then: Step[], extra: Partial<Rule> = {}): Rule => ({
   roles: {
     plug: { label: 'Plug', description: 'A plug', capabilities: ['switch', 'powerMeter'] },
+    station: { label: 'Station', description: 'A station', capabilities: ['battery'] },
     charging: { automation: true, label: 'Charging', description: 'The charging sequence' },
   },
   params: { fields: {} },
@@ -199,5 +216,38 @@ describe('a recipe, copied', () => {
     const defaults = Object.fromEntries(Object.entries(startCharging.params.fields).map(([key, field]) => [key, ('default' in field ? field.default : null) as never]));
     expect(describeSteps(copy, {}, recipeNames).steps.map((line) => line.text)).toEqual(describeSteps(startCharging, defaults, recipeNames).steps.map((line) => line.text));
     expect(describeSteps(copy, {}, recipeNames).steps[3]!.text).toStartWith('Make sure Scooter plug’s power is above 50 W within 20 s');
+  });
+});
+
+/*
+  A setting by its standard meaning (docs/PLAN-RUN-AND-CHAIN.md, Phase 4):
+  what a recipe names, since it cannot know a product's keys. The part that
+  fills the role says which of its settings has the meaning.
+*/
+describe('change a setting by what it means', () => {
+  const limit = (value: unknown): Step => ({ write: { role: 'station', means: 'battery.chargeLimit', value: { value: value as never } } });
+
+  test('checked: a standard meaning — by key or by meaning, not both — and, bound, a setting there that has it', () => {
+    expect(checkRule(rule([limit(80)]), NO_FUNCTIONS)).toEqual([]);
+    expect(checkRule(rule([{ write: { role: 'station', means: 'station.limit', value: { value: 80 } } }]), NO_FUNCTIONS)).toEqual(['then[0].write.means: "station.limit" is not a standard meaning']);
+    expect(checkRule(rule([{ write: { role: 'station', means: 'battery.chargeLimit', key: 'acLimit', value: { value: 80 } } as never }]), NO_FUNCTIONS)).toEqual([
+      'then[0].write: a setting by its key or by its meaning, not both',
+    ]);
+    expect(checkBinding(rule([limit(80)]), bound)).toEqual([]);
+    expect(checkBinding(rule([limit(40)]), bound)).toEqual(['Station: AC charge limit must be at least 60']);
+    expect(checkBinding(rule([{ write: { role: 'plug', means: 'battery.chargeLimit', value: { value: 80 } } }]), bound)).toEqual(['Plug: Scooter plug has no setting that is its charge limit']);
+    // A reading with the meaning is not a setting.
+    expect(checkBinding(rule([{ write: { role: 'station', means: 'battery.soc', value: { value: 80 } } }]), bound)).toEqual(['Station: Garage station has no setting that is its charge']);
+  });
+
+  test('a value between steps is refused: 600, 900 … 1800 W, never 700', () => {
+    const power = (watts: number): Step => ({ write: { role: 'station', means: 'power.in.ac.max', value: { value: watts } } });
+    expect(checkBinding(rule([power(1200)]), bound)).toEqual([]);
+    expect(checkBinding(rule([power(700)]), bound)).toEqual(['Station: AC charging power must be in steps of 300 from 600']);
+  });
+
+  test('reads as the device names it once bound, and as the meaning before', () => {
+    expect(describeSteps(rule([limit(80)]), {}, names, vocabulary).steps[0]!.text).toBe('Set Garage station’s AC charge limit to 80 %');
+    expect(describeSteps(rule([limit(80)]), {}, (role) => (role === 'station' ? 'the station' : role)).steps[0]!.text).toBe('Set the station’s Charge limit to 80');
   });
 });

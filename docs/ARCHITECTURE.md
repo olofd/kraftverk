@@ -384,7 +384,10 @@ The standard meanings start small and grow only when something needs them:
 `power.in.solar`, `power.out`, `power.draw`, `energy.total`, `voltage.ac`,
 `current.ac`, `frequency.ac`, `grid.present`, `switch.on`, `temperature.air`,
 `sky.cloudCover` (`meanings.ts`) — each named by what it measures, the part
-saying where. An on/off has no quantity: it is a boolean, drawn as a band. `validateDescription` checks every rule, and
+saying where — and three a station keeps as settings, so a recipe can change
+them without naming a product's keys: `battery.chargeLimit`,
+`battery.dischargeFloor` and `power.in.ac.max` (a `number` in Home
+Assistant). An on/off has no quantity: it is a boolean, drawn as a band. `validateDescription` checks every rule, and
 the contract suite checks a session keeps its description.
 
 ### 4.3 Connection methods and setup

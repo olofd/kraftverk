@@ -48,6 +48,7 @@ import {
   type StepLine,
   type Trigger,
   type Value,
+  type Write,
 } from '@kraftverk/device-sdk';
 import type { ActionGateway, GatewayResult, WriteResult } from '@kraftverk/gateway';
 import { deviceReader, type LiveBus, type LiveMessage } from '@kraftverk/holder';
@@ -387,6 +388,12 @@ export class AutomationEngine {
     });
   }
 
+  /** The key of the setting a write names — by its key, or by its meaning — on the part filling its role; null when it has none. */
+  #settingKey(binding: RoleBinding, write: Write): string | null {
+    const device = this.deps.device(binding);
+    return device ? (writtenAttribute(device.description, binding.part, write)?.key ?? null) : null;
+  }
+
   /** Whether a setting already reads what it would be set to — as the write step itself decides. */
   #settingSo(write: PlannedWrite): boolean {
     const device = this.deps.device(write.binding);
@@ -418,8 +425,9 @@ export class AutomationEngine {
       } else if ('write' in step) {
         const binding = automation.roles[step.write.role];
         const value = await evaluate(step.write.value, scope, []).catch(() => null);
-        if (!binding || value === null) return { unknown: scope.name(step.write.role) };
-        planned.push({ write: { binding, key: step.write.key, value } });
+        const key = binding ? this.#settingKey(binding, step.write) : null;
+        if (!binding || value === null || !key) return { unknown: scope.name(step.write.role) };
+        planned.push({ write: { binding, key, value } });
       }
     }
     return planned;
@@ -687,10 +695,10 @@ export class AutomationEngine {
   #vocabulary(automation: AutomationRecord): RuleVocabulary {
     return {
       fn: (id) => this.deps.library.fn(id),
-      attribute: (role, key) => {
+      attribute: (role, target) => {
         const binding = automation.roles[role];
         const device = binding ? this.deps.device(binding) : null;
-        return device ? writtenAttribute(device.description, binding!.part, key) : null;
+        return device ? writtenAttribute(device.description, binding!.part, target) : null;
       },
     };
   }
@@ -1101,7 +1109,7 @@ export class AutomationEngine {
    * setting is — and not written at all when the part already reads it, so
    * a setting's own dwell is not spent on what is already so.
    */
-  async #write(live: LiveRun, write: Extract<Step, { write: unknown }>['write'], depth: number, within: string | null, what: string): Promise<Walked> {
+  async #write(live: LiveRun, write: Write, depth: number, within: string | null, what: string): Promise<Walked> {
     const value = await evaluate(write.value, this.#scope(live.automation, live.rule), []).catch(() => null);
     const binding = live.automation.roles[write.role];
     const device = binding ? this.deps.device(binding) : null;
@@ -1114,14 +1122,20 @@ export class AutomationEngine {
       this.#end(live, entry, 'failed', 'Could not tell what to set it to');
       return 'failed';
     }
-    const reading = device.device ? readingOf(device.device.readings(), write.key) : null;
+    // By its key, or by what it means: the setting of this part that has the meaning.
+    const key = this.#settingKey(binding, write);
+    if (!key) {
+      this.#end(live, entry, 'failed', `${device.name} has no such setting`);
+      return 'failed';
+    }
+    const reading = device.device ? readingOf(device.device.readings(), key) : null;
     if (reading && String(reading.value) === String(value)) {
       this.#end(live, entry, 'already', 'It already was');
       return 'ok';
     }
     let result: WriteResult;
     try {
-      result = await this.deps.gateway.write({ deviceId: binding.device, patch: { [write.key]: value }, actor: 'automation', by: actorOf(live.automation) });
+      result = await this.deps.gateway.write({ deviceId: binding.device, patch: { [key]: value }, actor: 'automation', by: actorOf(live.automation) });
     } catch (error) {
       result = { outcome: 'failed', detail: (error as Error).message };
     }
@@ -1243,7 +1257,8 @@ export class AutomationEngine {
           const value = await evaluate(step.write.value, scope, []).catch(() => null);
           const binding = automation.roles[step.write.role];
           const reader = binding ? this.deps.device(binding)?.device : null;
-          const reading = reader ? readingOf(reader.readings(), step.write.key) : null;
+          const key = binding ? this.#settingKey(binding, step.write) : null;
+          const reading = reader && key ? readingOf(reader.readings(), key) : null;
           const already = value !== null && reading !== null && String(reading.value) === String(value);
           steps.push({ kind: 'write', depth: 0, within: null, what, outcome: already ? 'already' : 'would', detail: already ? 'It is so now' : '', at, endedAt: at, until: null });
         } else {

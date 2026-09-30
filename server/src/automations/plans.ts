@@ -89,10 +89,10 @@ export function plans({ catalog, sessions, library, engine, automations }: PlanD
   /** What the words need: the installed functions, and each setting a step changes as its device names it. */
   const vocabularyOf = (roles: Record<string, RoleBinding>): RuleVocabulary => ({
     fn: (id) => library.fn(id),
-    attribute: (role, key) => {
+    attribute: (role, target) => {
       const binding = roles[role];
       const record = binding ? catalog.get(binding.device) : null;
-      return record && binding ? writtenAttribute(sessions.description(record), binding.part, key) : null;
+      return record && binding ? writtenAttribute(sessions.description(record), binding.part, target) : null;
     },
   });
 

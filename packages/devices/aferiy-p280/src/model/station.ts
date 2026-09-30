@@ -1,4 +1,5 @@
 import {
+  AC_CHARGING_WATTS,
   chargeRateToWatts,
   decodeFirmware,
   decodeSettings,
@@ -176,8 +177,12 @@ export function settingsWrites(patch: StationSettingsPatch): [register: number, 
     writes.push([HOLDING.AC_CHARGING_UPPER_LIMIT, Math.round(patch.chargeLimit * 10)]);
   if (patch.dischargeFloor !== undefined)
     writes.push([HOLDING.DISCHARGE_LOWER_LIMIT, Math.round(patch.dischargeFloor * 10)]);
-  if (patch.acChargingWatts !== undefined)
+  if (patch.acChargingWatts !== undefined) {
+    // One of its five steps, or nothing: a wattage between them has no register value, and 0 is none of them.
+    if (!AC_CHARGING_WATTS.includes(patch.acChargingWatts))
+      throw new Error(`AC charging power is one of ${AC_CHARGING_WATTS.join(', ')} W, not ${patch.acChargingWatts}`);
     writes.push([HOLDING.AC_CHARGING_RATE, wattsToChargeRate(patch.acChargingWatts)]);
+  }
   // The station adjusts MAX_CHARGING_CURRENT itself in response to this, so
   // callers must re-read rather than assume the rest of the settings held.
   if (patch.dcInputType !== undefined)

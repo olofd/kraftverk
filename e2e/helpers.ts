@@ -35,6 +35,9 @@ export async function link(request: APIRequestContext, source: { device: string;
 /** A name no other test uses. */
 export const unique = (name: string) => `${name} ${Math.random().toString(36).slice(2, 6)}`;
 
+/** "Garage P280 k2fa’s", "Garage P280 k2fs’": whose, as the app says it — a name that ends in s takes only the mark. */
+export const whose = (name: string) => (name.endsWith('s') ? `${name}’` : `${name}’s`);
+
 /**
  * The app's own question, answered: what it says, then yes or no. The app asks
  * in a dialog of its own, not the browser's `confirm` — which some browsers

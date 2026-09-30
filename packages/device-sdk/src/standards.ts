@@ -22,7 +22,8 @@ export type NoProjection = { none: string };
 
 // --- Home Assistant -----------------------------------------------------------
 
-export type HomeAssistantPlatform = 'sensor' | 'binary_sensor' | 'switch';
+/** A `number` is a value Home Assistant can set: a station's charge limit. */
+export type HomeAssistantPlatform = 'sensor' | 'binary_sensor' | 'switch' | 'number';
 
 /**
  * Home Assistant's sensor device class for a quantity, and the units it
@@ -102,6 +103,14 @@ export const MEANING_PROJECTIONS: Readonly<Record<StandardMeaningId, MeaningProj
     homeAssistant: { platform: 'sensor', deviceClass: 'energy_storage' },
     matter: { none: 'Matter states battery capacity in mAh, not energy' },
   },
+  'battery.chargeLimit': {
+    homeAssistant: { platform: 'number', deviceClass: null },
+    matter: { none: 'Matter has no setting for the charge a store stops charging at' },
+  },
+  'battery.dischargeFloor': {
+    homeAssistant: { platform: 'number', deviceClass: null },
+    matter: { none: 'Matter has no setting for the charge a store stops supplying at' },
+  },
   'power.in': {
     homeAssistant: { platform: 'sensor', deviceClass: null },
     matter: { cluster: 'ElectricalPowerMeasurement', attribute: 'ActivePower', scale: 1000 },
@@ -113,6 +122,10 @@ export const MEANING_PROJECTIONS: Readonly<Record<StandardMeaningId, MeaningProj
   'power.in.solar': {
     homeAssistant: { platform: 'sensor', deviceClass: null },
     matter: { cluster: 'ElectricalPowerMeasurement', attribute: 'ActivePower', scale: 1000 },
+  },
+  'power.in.ac.max': {
+    homeAssistant: { platform: 'number', deviceClass: null },
+    matter: { none: 'Matter has no setting for how hard a store charges from mains' },
   },
   'power.out': {
     homeAssistant: { platform: 'sensor', deviceClass: null },

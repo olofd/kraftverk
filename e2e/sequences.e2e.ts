@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { addSimulated, answer, press, unique } from './helpers';
+import { addSimulated, answer, press, unique, whose } from './helpers';
 
 /*
   Sequences built in the editor (docs/AUTOMATION-EDITOR.md): the owner's
@@ -119,7 +119,7 @@ test('built from nothing: a time, a setting changed, and another automation star
 
   const status = page.getByRole('status');
   await expect(status).toContainText('It can run as it is');
-  await expect(status).toContainText(`At 07:00 on weekdays, set ${meter.name}’s Brightness to 7`);
+  await expect(status).toContainText(`At 07:00 on weekdays, set ${whose(meter.name)} Brightness to 7`);
   await expect(status).toContainText(`start “${child}” and wait until it ends — at most 10 min`);
   await press(page, 'Create');
 

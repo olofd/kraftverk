@@ -101,12 +101,11 @@ export type Step =
    */
   | { watch: { condition: Expr; seconds: Expr; then?: readonly Step[]; else?: readonly Step[] } }
   /**
-   * Change a setting the part filling a role offers, by its key — "switch the
-   * plug's live readings on" — through the gateway, read back as any setting.
-   * Never one its device declares dangerous. By key, so for a rule bound to
-   * its owner's own devices: a recipe cannot name one.
+   * Change a setting the part filling a role offers — "switch the plug's live
+   * readings on" — through the gateway, read back as any setting. Never one
+   * its device declares dangerous.
    */
-  | { write: { role: string; key: string; value: Expr } }
+  | { write: Write }
   /**
    * Start the automation filling a role, as a person's play would — and, with
    * `waitSeconds`, wait until its run ends: done if it acted, not if it did
@@ -315,6 +314,16 @@ function fits(wanted: Shape, given: Shape): boolean {
   return true;
 }
 
+/**
+ * Which setting a `write` changes: by its key, for a rule its owner built on
+ * their own devices — or by a standard meaning ("battery.chargeLimit"), which
+ * a recipe can name without knowing any product.
+ */
+export type WriteTarget = { key: string; means?: never } | { means: string; key?: never };
+
+/** A `write` step: the part's setting, and its value. */
+export type Write = { role: string; value: Expr } & WriteTarget;
+
 export type RuleVocabulary = {
   /** The installed function with this id, or null. */
   fn(id: string): AutomationFunction | null;
@@ -323,7 +332,7 @@ export type RuleVocabulary = {
    * is filled: what its words say ("Live readings") and how its value reads.
    * Absent, or not known, and the setting is named by its key.
    */
-  attribute?(role: string, key: string): AttributeSpec | null;
+  attribute?(role: string, target: WriteTarget): AttributeSpec | null;
 };
 
 /** The standard meanings a part offering these capabilities reports. */
@@ -518,7 +527,11 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       else if ('write' in step) {
         // Which setting, and whether the value fits it, is the bound part's to say (`checkBinding`).
         role(step.write.role, `${at}.write`);
-        if (typeof step.write.key !== 'string' || !step.write.key.trim()) problems.push(`${at}.write.key: which setting?`);
+        const { key, means } = step.write as { key?: unknown; means?: unknown };
+        if (key !== undefined && means !== undefined) problems.push(`${at}.write: a setting by its key or by its meaning, not both`);
+        else if (means !== undefined) {
+          if (typeof means !== 'string' || !standardMeaning(means)) problems.push(`${at}.write.means: "${String(means)}" is not a standard meaning`);
+        } else if (typeof key !== 'string' || !key.trim()) problems.push(`${at}.write.key: which setting?`);
         const got = shape(step.write.value, `${at}.write.value`, { calls: true });
         if (got.type === 'structure') problems.push(`${at}.write.value: a setting is set to a value, not a list or an object`);
       } else if ('start' in step) {
@@ -631,14 +644,14 @@ export function ruleUses(rule: Rule): {
   /** The roles whose reachability it asks about: what a device's health moving can change. */
   reaches: string[];
   /** The settings it changes: each checked against the part that fills its role. */
-  writes: { role: string; key: string; value: Expr }[];
+  writes: Write[];
   /** The roles of the automations it starts. */
   starts: string[];
 } {
   const reads: { role: string; means: string }[] = [];
   const calls: { fn: string; role: string }[] = [];
   const reaches: string[] = [];
-  const writes: { role: string; key: string; value: Expr }[] = [];
+  const writes: Write[] = [];
   const starts: string[] = [];
   const walk = (expr: Expr | undefined): void => {
     if (!expr) return;
@@ -742,9 +755,9 @@ export function checkBinding(rule: Rule, bound: (role: string) => BoundPart | nu
   for (const write of writes) {
     const part = bound(write.role);
     if (!part) continue;
-    const attribute = writtenAttribute(part.description, part.part, write.key);
+    const attribute = writtenAttribute(part.description, part.part, write);
     const who = rule.roles[write.role]?.label ?? write.role;
-    if (!attribute) problems.push(`${who}: ${part.name} has no setting "${write.key}"`);
+    if (!attribute) problems.push(`${who}: ${part.name} has no setting ${write.means !== undefined ? `that is its ${(standardMeaning(write.means)?.label ?? write.means).toLowerCase()}` : `"${write.key}"`}`);
     else if (attribute.access !== 'write') problems.push(`${who}: ${attribute.label} of ${part.name} is read, not set`);
     else if (attribute.dangerous) problems.push(`${who}: ${attribute.label} of ${part.name} can harm it, and is never changed by an automation`);
     else if ('value' in write.value) {
@@ -755,9 +768,15 @@ export function checkBinding(rule: Rule, bound: (role: string) => BoundPart | nu
   return problems;
 }
 
-/** The setting a `write` changes, on the part filling its role: what its words and its value are held to. */
-export const writtenAttribute = (description: DeviceDescription, part: string, key: string): AttributeSpec | null =>
-  description.attributes.find((candidate) => candidate.key === key && (candidate.part ?? MAIN_PART) === part) ?? null;
+/**
+ * The setting a `write` changes, on the part filling its role — by its key,
+ * or the one there that has its meaning and can be set: what its words and
+ * its value are held to.
+ */
+export const writtenAttribute = (description: DeviceDescription, part: string, target: WriteTarget): AttributeSpec | null =>
+  description.attributes.find(
+    (candidate) => (candidate.part ?? MAIN_PART) === part && (target.means !== undefined ? candidate.means === target.means && candidate.access === 'write' : candidate.key === target.key)
+  ) ?? null;
 
 /** Whether a rule reads anything of this role: its `becomes` triggers are evaluated when that part's readings move. */
 export const readsRole = (rule: Rule, role: string): boolean => ruleUses(rule).reads.some((read) => read.role === role);
@@ -1108,8 +1127,9 @@ function wording(rule: Rule, params: Readonly<Record<string, Value>>, name: (rol
     return capability === 'switch' && command === 'set' ? `turn ${name(role)} ${values.join(' ')}` : `${capability}.${command} ${name(role)} (${values.join(', ')})`;
   };
   /** "set Scooter plug’s Live readings to on": the setting as its device names it, the value as it reads. */
-  const write = ({ role, key, value }: Extract<Step, { write: unknown }>['write']): string => {
-    const attribute = vocabulary?.attribute?.(role, key) ?? null;
+  const write = (step: Write): string => {
+    const { role, value } = step;
+    const attribute = vocabulary?.attribute?.(role, step) ?? null;
     const known = evaluateNow(value, settled);
     const said =
       known === null
@@ -1122,8 +1142,10 @@ function wording(rule: Rule, params: Readonly<Record<string, Value>>, name: (rol
               ? (known ? 'on' : 'off')
               : shown(known, attribute?.value.type === 'number' ? (attribute.value.unit ?? '') : '');
     // No setting chosen yet: said as what it is about, not as an empty name.
-    if (!key.trim()) return `set a setting of ${name(role)}`;
-    return `set ${whose(name(role), attribute?.label ?? key)} to ${said}`;
+    // By meaning, before a part fills it: as the meaning is called.
+    const label = attribute?.label ?? (step.means !== undefined ? (standardMeaning(step.means)?.label ?? step.means) : step.key);
+    if (!label.trim()) return `set a setting of ${name(role)}`;
+    return `set ${whose(name(role), label)} to ${said}`;
   };
   /** "start “Charge the scooter” and wait until it ends — at most 5 min". */
   const start = ({ role, waitSeconds }: Extract<Step, { start: unknown }>['start']): string =>

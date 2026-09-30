@@ -55,6 +55,17 @@ export const KEYS = {
   packSoc: (pack: number) => `pack.${pack}.soc`,
 } as const;
 
+/**
+ * The settings every station has, by their standard meanings: what a recipe
+ * names without knowing this station's keys. The AC charge limit is the
+ * charge limit — solar may fill past it, as the station decides.
+ */
+const SETTING_MEANINGS: Record<string, string> = {
+  chargeLimit: 'battery.chargeLimit',
+  dischargeFloor: 'battery.dischargeFloor',
+  acChargingWatts: 'power.in.ac.max',
+};
+
 /** Where each setting is grouped on a generic settings screen. */
 const SECTIONS: Record<string, string> = {
   chargeLimit: 'Battery',
@@ -154,6 +165,7 @@ export function describeStation(packs = 0): DeviceDescription {
         label: field.title,
         ...(field.description ? { description: field.description } : {}),
         value: valueTypeOf(field),
+        ...(SETTING_MEANINGS[key] ? { means: SETTING_MEANINGS[key] } : {}),
         access: 'write',
         category: 'config',
         section: SECTIONS[key] ?? 'Other',
@@ -200,16 +212,15 @@ export const SETTINGS_SCHEMA: ConfigSchema = {
       integer: true,
     },
     acChargingWatts: {
-      type: 'enum',
+      type: 'number',
       title: 'AC charging power',
-      description: 'How hard the station pulls from the wall. These five steps are the P280’s.',
-      options: [
-        { value: '600', label: '600 W' },
-        { value: '900', label: '900 W' },
-        { value: '1200', label: '1.2 kW' },
-        { value: '1500', label: '1.5 kW' },
-        { value: '1800', label: '1.8 kW' },
-      ],
+      description: 'How hard the station pulls from the wall: 600 W to 1.8 kW, in the P280’s five steps.',
+      min: 600,
+      max: 1800,
+      step: 300,
+      unit: 'W',
+      integer: true,
+      presentation: 'slider',
     },
     acSilentCharging: {
       type: 'boolean',
@@ -388,7 +399,7 @@ export function settingsToValues(settings: StationSettings): Record<string, stri
   return {
     chargeLimit: settings.chargeLimit,
     dischargeFloor: settings.dischargeFloor,
-    acChargingWatts: String(settings.acChargingWatts),
+    acChargingWatts: settings.acChargingWatts,
     acSilentCharging: settings.acSilentCharging,
     dcInputType: settings.dcInputType,
     maxChargingCurrent: settings.maxChargingCurrent,
@@ -405,7 +416,6 @@ export function settingsToValues(settings: StationSettings): Record<string, stri
 }
 
 const NUMERIC_ENUMS = new Set([
-  'acChargingWatts',
   'usbStandbyMinutes',
   'acStandbyMinutes',
   'dcStandbyMinutes',

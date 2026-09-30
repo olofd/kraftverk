@@ -117,6 +117,11 @@ export function checkValue(type: ValueType, given: unknown): ValueCheck {
       if (type.integer && !Number.isInteger(numeric)) return { ok: false, problem: 'must be a whole number' };
       if (type.min !== undefined && numeric < type.min) return { ok: false, problem: `must be at least ${type.min}` };
       if (type.max !== undefined && numeric > type.max) return { ok: false, problem: `must be at most ${type.max}` };
+      // A step is a promise to whoever reads the value: 600, 900 … 1800 W, never 700.
+      if (type.step !== undefined && type.step > 0) {
+        const steps = (numeric - (type.min ?? 0)) / type.step;
+        if (Math.abs(steps - Math.round(steps)) > 1e-9) return { ok: false, problem: `must be in steps of ${type.step}${type.min !== undefined ? ` from ${type.min}` : ''}` };
+      }
       return { ok: true, value: numeric };
     }
 
