@@ -53,4 +53,23 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   return resolve(context, moduleName, platform);
 };
 
+/**
+ * No gzip for the development bundle.
+ *
+ * Expo's dev server gzips bundles on the fly, and on this repository's ~8 MB
+ * development bundle that turns a 0.2 s response into ten seconds on every
+ * reload (measured on Windows: uncompressed 0.2 s, gzipped 10.3 s). The
+ * compression middleware decides when the response starts, from the request's
+ * Accept-Encoding, so dropping that header before Metro answers serves the
+ * bundle as it is. Over localhost or a home network, the size costs nothing.
+ */
+const enhanceMiddleware = config.server.enhanceMiddleware;
+config.server.enhanceMiddleware = (middleware, server) => {
+  const inner = enhanceMiddleware ? enhanceMiddleware(middleware, server) : middleware;
+  return (req, res, next) => {
+    if (req.url && /\.(bundle|map)(\?|$)/.test(req.url)) delete req.headers['accept-encoding'];
+    return inner(req, res, next);
+  };
+};
+
 module.exports = config;
