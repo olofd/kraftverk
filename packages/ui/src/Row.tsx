@@ -55,7 +55,7 @@ export function ToggleRow({ checked, onCheckedChange, disabled, pending, subtitl
       subtitle={pending ? `${checked ? 'Switching on' : 'Switching off'} — waiting for the device` : subtitle}
       disabled={disabled}
       accessory={
-        <Toggle checked={checked} disabled={disabled} pending={pending} onCheckedChange={onCheckedChange} />
+        <Toggle checked={checked} label={rest.title} disabled={disabled} pending={pending} onCheckedChange={onCheckedChange} />
       }
     />
   );

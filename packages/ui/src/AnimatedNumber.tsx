@@ -50,6 +50,8 @@ export function AnimatedNumber({
   return (
     <Text
       fontSize={fontSize}
+      // Its own line height: the theme's is set for body text, and cut a large figure in half.
+      lineHeight={Math.round(fontSize * 1.15)}
       fontWeight={fontWeight}
       color={color}
       fontVariant={['tabular-nums']}

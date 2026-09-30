@@ -98,8 +98,21 @@ const DATAPOINTS: readonly ProfileDatapoint[] = [
     },
     // The plug's words are its screen's pages: "safety_protection" is the price and bill page, "wifi1" the protection page. Neither runs a rule.
     wire: { none: ['safety_protection', 'wifi1'], lowPower: 'outage_a', highPower: 'outage_b', timedOff: 'timing_close', timedOn: 'timing_open', cycle: 'loop_timing' },
+    // Written only to clear it — "leave the switching to kraftverk" — never offered as a choice.
+    access: 'write',
     ...FACT,
     example: 'none',
+  },
+  {
+    dp: 140,
+    key: 'live',
+    label: 'Live readings',
+    description: 'The plug sends its readings every second instead of when asked, then stops by itself after five minutes.',
+    value: { type: 'boolean' },
+    // Not a setting: the screens turn it on while someone is watching.
+    access: 'write',
+    ...FACT,
+    example: false,
   },
   { dp: 119, key: 'lowPowerWatts', label: 'Low-draw rule: under', value: number('W', 1, 999), quantity: 'power', ...FACT, example: 100 },
   { dp: 120, key: 'lowPowerMinutes', label: 'Low-draw rule: for', value: number('min', 1, 99), quantity: 'duration', ...FACT, example: 10 },
@@ -181,9 +194,9 @@ const DATAPOINTS: readonly ProfileDatapoint[] = [
 
 /**
  * Its datapoints, as the unit showed them (README.md §4). Left out on purpose:
- * the countdown and timers (9, 124–130), pricing (101, 102, 136), fast refresh
- * (140, which kraftverk manages itself), the switch mode (112) and the reset
- * buttons (113–116). The Datapoints tool still shows every one raw.
+ * the countdown and timers (9, 124–130), pricing (101, 102, 136), the switch
+ * mode (112) and the reset buttons (113–116). The Datapoints tool still shows
+ * every one raw.
  */
 export const ATORCH_S1: SocketProfile = {
   id: 'atorch-s1',

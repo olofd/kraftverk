@@ -84,7 +84,8 @@ export function SegmentedControl<T extends string | number>({
                 colour on later renders — which is what made the switches
                 flash. The choice changes at once instead.
               */
-              backgroundColor={selected ? theme.card?.val : 'transparent'}
+              // The choice filled with the accent: seen at a glance, not a shade darker than the rest.
+              backgroundColor={selected ? theme.accent?.val : 'transparent'}
               hoverStyle={selected || locked ? undefined : { backgroundColor: '$backgroundHover' }}
               pressStyle={locked ? undefined : { opacity: 0.7 }}
               onPress={() => {
@@ -96,7 +97,7 @@ export function SegmentedControl<T extends string | number>({
               <Text
                 fontSize={13}
                 fontWeight={selected ? '700' : '500'}
-                color={selected ? '$color' : '$muted'}
+                color={selected ? (theme.background?.val as string) : '$muted'}
               >
                 {option.label}
               </Text>

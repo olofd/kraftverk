@@ -110,8 +110,11 @@ describe('the ATORCH S1W', () => {
   });
 
   test('offers as settings only what a person decides: the power cut, the safety cut-off, the display', () => {
-    const settings = atorch.describe({ profile: ATORCH_S1.id, pollSeconds: 10 }).attributes.filter((attribute) => attribute.access === 'write');
+    const attributes = atorch.describe({ profile: ATORCH_S1.id, pollSeconds: 10 }).attributes;
+    const settings = attributes.filter((attribute) => attribute.category === 'config');
     expect([...new Set(settings.map((attribute) => attribute.section))]).toEqual(['Power', 'Safety cut-off', 'Display']);
+    // Written by the screens, never offered: live readings while someone watches, and clearing the plug's own rule.
+    expect(attributes.filter((attribute) => attribute.access === 'write' && attribute.category !== 'config').map((attribute) => attribute.key)).toEqual(['rule', 'live']);
   });
 
   test('writes a setting as the plug spells it, and answers with what it reports afterwards', async () => {

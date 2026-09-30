@@ -251,6 +251,22 @@ timers, the countdown, the switch mode and fast refresh are left out; the
 Datapoints tool shows them raw. Fast refresh is kraftverk's to manage (on while
 someone is watching), not a switch for a person.
 
+### Its screens (`ui/`)
+
+- **Dashboard:** what it draws now, large; the power button; **live readings**
+  (DP 140) as a switch beside it, renewed while the page is open, so readings
+  arrive every second; tiles for voltage (drawn inside its cut-off window),
+  current (against its limit), energy, the temperature inside, frequency and
+  power factor; and, when the plug switched itself off, a card saying why in
+  plain words and counting down to when it comes back — or, for a rule set in
+  the maker's app, offering to switch it on and to stop that rule.
+- **Settings:** readings go live as it opens, so a change is seen landing.
+  *After a power cut* as three choices; the *safety cut-off* as sliders — the
+  voltage window as one range with the mains marked on it, current and power
+  with what is drawn now marked, each warning before it is written if it would
+  cut at once; *its screen* as sliders and choices.
+- The wording is in `ui/words.ts`, tested on its own: never the maker's terms.
+
 ## 6. Still to establish
 
 - Whether every setting accepts a local write (DP 140 does; so do DPs 1 and 131).

@@ -27,6 +27,8 @@ const TRAVEL = TRACK_WIDTH - THUMB - INSET * 2;
 
 export type ToggleProps = {
   checked: boolean;
+  /** What it switches, for a screen reader: the row's title. */
+  label?: string;
   onCheckedChange: (next: boolean) => void;
   disabled?: boolean;
   /**
@@ -39,7 +41,7 @@ export type ToggleProps = {
   pending?: boolean;
 };
 
-export function Toggle({ checked, onCheckedChange, disabled, pending }: ToggleProps) {
+export function Toggle({ checked, label, onCheckedChange, disabled, pending }: ToggleProps) {
   const theme = useTheme();
   const locked = disabled || pending;
 
@@ -124,6 +126,7 @@ export function Toggle({ checked, onCheckedChange, disabled, pending }: TogglePr
         type: 'button',
         role: 'switch',
         'aria-checked': checked,
+        'aria-label': label,
         'aria-busy': pending || undefined,
         disabled: locked,
         onClick: flip,
@@ -151,6 +154,7 @@ export function Toggle({ checked, onCheckedChange, disabled, pending }: TogglePr
     <XStack
       role="switch"
       aria-checked={checked}
+      aria-label={label}
       aria-disabled={locked}
       aria-busy={pending || undefined}
       width={TRACK_WIDTH}

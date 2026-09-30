@@ -46,7 +46,7 @@ test('turning off a plug that carries a load says how much, and once confirmed, 
   });
   await power.click();
   await expect(power).toHaveAttribute('aria-checked', 'false');
-  await expect(page.getByText('0 W', { exact: true }).first()).toBeVisible();
+  await expect(page.getByLabel('Drawing 0 W')).toBeVisible();
 });
 
 test('a switch is operated from the keyboard: Tab to it, Space asks the same question a tap does', async ({ page, request }) => {

@@ -12,6 +12,7 @@ import type { DeviceUi } from '../devices/ui';
 import deviceAferiyP280Type from '@kraftverk/device-aferiy-p280/type';
 import deviceAferiyP280Ui from '@kraftverk/device-aferiy-p280/ui';
 import deviceAtorchS1wType from '@kraftverk/device-atorch-s1w';
+import deviceAtorchS1wUi from '@kraftverk/device-atorch-s1w/ui';
 import deviceTuyaPlugType from '@kraftverk/device-tuya-plug/type';
 import serviceOpenMeteoType from '@kraftverk/service-open-meteo';
 import protocolOpenMeteo from '@kraftverk/protocol-open-meteo';
@@ -37,6 +38,7 @@ export const DEVICE_TYPES: readonly DeviceType<any>[] = [
 /** Screens a device type ships, by device type id. */
 export const DEVICE_UI: Readonly<Record<string, DeviceUi>> = {
   'aferiy.p280': deviceAferiyP280Ui,
+  'atorch.s1w': deviceAtorchS1wUi,
 };
 
 export const PROTOCOLS: readonly Protocol[] = [

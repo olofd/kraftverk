@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Slider, Text, XStack, YStack } from 'tamagui';
 
 import { PendingMark } from './PendingMark';
+import { SliderMarker, type Marker } from './SliderMarker';
 
 type Props = {
   title: string;
@@ -11,6 +12,16 @@ type Props = {
   max: number;
   step?: number;
   format?: (value: number) => string;
+  /** What the ends of the track mean, when the numbers alone do not say: "Dim", "Bright". */
+  ends?: readonly [string, string];
+  /** Where the thing measured is now, drawn on the track: the mains voltage against a voltage limit. */
+  marker?: Marker | null;
+  /**
+   * What is wrong with the value as it stands, said beside it: "Above the mains
+   * voltage: it would cut at once". Worked out by the caller for the value being
+   * dragged, so it is said before anything is written.
+   */
+  warn?: (value: number) => string | null;
   disabled?: boolean;
   /**
    * The device has not confirmed `value` yet: the thumb stays where it was
@@ -29,6 +40,9 @@ export function SliderRow({
   max,
   step = 1,
   format = (v) => String(v),
+  ends,
+  marker,
+  warn,
   disabled,
   pending,
   onCommit,
@@ -40,6 +54,8 @@ export function SliderRow({
   useEffect(() => {
     if (!dragging) setLocal(value);
   }, [value, dragging]);
+
+  const warning = warn?.(local) ?? null;
 
   return (
     <YStack gap="$3" paddingHorizontal="$4" paddingVertical="$3" opacity={disabled ? 0.45 : 1}>
@@ -55,35 +71,56 @@ export function SliderRow({
           ) : null}
         </YStack>
         <YStack alignItems="flex-end" gap={2}>
-          <Text fontSize={15} fontWeight="700" color="$accent" fontVariant={['tabular-nums']}>
+          <Text fontSize={15} fontWeight="700" color={warning ? '$warning' : '$accent'} fontVariant={['tabular-nums']}>
             {format(local)}
           </Text>
           {pending ? <PendingMark /> : null}
         </YStack>
       </XStack>
 
-      <Slider
-        size="$2"
-        min={min}
-        max={max}
-        step={step}
-        disabled={disabled || pending}
-        aria-busy={pending || undefined}
-        value={[local]}
-        onValueChange={([next]) => {
-          setDragging(true);
-          if (typeof next === 'number') setLocal(next);
-        }}
-        onSlideEnd={() => {
-          setDragging(false);
-          if (local !== value) onCommit(local);
-        }}
-      >
-        <Slider.Track backgroundColor="$backgroundPress">
-          <Slider.TrackActive backgroundColor="$accent" />
-        </Slider.Track>
-        <Slider.Thumb index={0} circular size="$1" borderColor="$borderColor" />
-      </Slider>
+      <YStack position="relative" paddingTop={marker ? 28 : 0}>
+        {marker ? <SliderMarker marker={marker} min={min} max={max} /> : null}
+        <Slider
+          size="$2"
+          min={min}
+          max={max}
+          step={step}
+          disabled={disabled || pending}
+          aria-busy={pending || undefined}
+          aria-label={title}
+          value={[Math.min(max, Math.max(min, local))]}
+          onValueChange={([next]) => {
+            setDragging(true);
+            if (typeof next === 'number') setLocal(next);
+          }}
+          onSlideEnd={() => {
+            setDragging(false);
+            if (local !== value) onCommit(local);
+          }}
+        >
+          <Slider.Track backgroundColor="$backgroundPress">
+            <Slider.TrackActive backgroundColor={warning ? '$warning' : '$accent'} />
+          </Slider.Track>
+          <Slider.Thumb index={0} circular size="$1" backgroundColor="$white" borderWidth={3} borderColor={warning ? '$warning' : '$accent'} />
+        </Slider>
+      </YStack>
+
+      {ends ? (
+        <XStack justifyContent="space-between">
+          <Text fontSize={11} color="$muted">
+            {ends[0]}
+          </Text>
+          <Text fontSize={11} color="$muted">
+            {ends[1]}
+          </Text>
+        </XStack>
+      ) : null}
+
+      {warning ? (
+        <Text fontSize={12} color="$warning" lineHeight={17}>
+          {warning}
+        </Text>
+      ) : null}
     </YStack>
   );
 }

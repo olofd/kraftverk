@@ -27,6 +27,10 @@ export { Toggle, type ToggleProps } from './Toggle';
 export { SchemaForm, isComplete } from './SchemaForm';
 export { SegmentedControl } from './SegmentedControl';
 export { SliderRow } from './SliderRow';
+export { RangeSliderRow } from './RangeSliderRow';
+export { type Marker } from './SliderMarker';
+export { StatTile } from './StatTile';
+export { PowerButton } from './PowerButton';
 
 export { haptic } from './haptics';
 export { WriteGate, WriteInFlightError, type WriteSnapshot } from './writeGate';

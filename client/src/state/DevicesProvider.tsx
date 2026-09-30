@@ -37,7 +37,7 @@ import {
   type SavedDeviceId,
   type VersionInfo,
 } from '@kraftverk/api-client';
-import { CATEGORIES, clientId, connectionId, deviceCapabilities, linkId, MAIN_PART, methodOf, partsOf, savedDeviceId, type DeviceType } from '@kraftverk/device-sdk';
+import { CATEGORIES, clientId, connectionId, deviceCapabilities, linkId, MAIN_PART, methodOf, partsOf, savedDeviceId, SIMULATED_METHOD_ID, type DeviceType } from '@kraftverk/device-sdk';
 import { runTool, toHold, toolsOf, withInUse } from '@kraftverk/holder';
 
 import { confirmAction } from '../lib/confirm';
@@ -536,7 +536,8 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
           waiting: holder === 'this-app' ? 'Connecting from this app…' : holder === 'server' ? 'Waiting for the server…' : device.health.detail,
           via,
         },
-        readOnly: holder === 'this-app' ? !runtime.allowWrites : (version?.readOnly ?? false),
+        // A simulated device has no hardware to protect, and the gateway writes to it whatever the mode.
+        readOnly: inUse?.method === SIMULATED_METHOD_ID ? false : holder === 'this-app' ? !runtime.allowWrites : (version?.readOnly ?? false),
         version: holder === 'server' ? version : null,
       };
     },
