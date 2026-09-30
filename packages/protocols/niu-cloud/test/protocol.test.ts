@@ -103,8 +103,10 @@ describe('signing in', () => {
     });
     expect(result.ok).toBe(true);
     expect(result.choices).toEqual([
-      expect.objectContaining({ id: 'N0TAREALSERIAL01', label: 'Blixten', name: 'Blixten', address: NIU_API, config: { account: 'rider@example.test', password: 'correct horse', serial: 'N0TAREALSERIAL01' } }),
+      expect.objectContaining({ id: 'N0TAREALSERIAL01', label: 'Blixten', name: 'Blixten', config: { account: 'rider@example.test', password: 'correct horse', serial: 'N0TAREALSERIAL01' } }),
     ]);
+    // Its connection's address is fixed: a choice with one of its own would be chosen as if typed, and refused.
+    expect(result.choices![0]!.address).toBeUndefined();
   });
 
   test('the scooter list takes sn or sn_id, as a list or as items', () => {

@@ -454,7 +454,8 @@ function FormStep({ flow, step, onNext, onBack, onNamed }: StepProps & { step: E
     void run(async () => {
       if (choice) {
         await apply(choice.config);
-        if (choice.address) {
+        // A method with an address of its own has nothing to choose.
+        if (choice.address && choice.address !== flow.address) {
           // Heard on the network: chosen as the list would; otherwise as if typed.
           await flow.choose({ address: choice.address }).catch(() => flow.choose({ manual: choice.address! }));
         }

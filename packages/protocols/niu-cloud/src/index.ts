@@ -1,6 +1,6 @@
 import type { ConfigSchema, OpenConnection, Protocol, SetupAction, SetupChoice } from '@kraftverk/device-sdk';
 
-import { NIU_ACCOUNT, NIU_API, NiuClient, NiuError, signIn, type NiuHttp } from './api.ts';
+import { NIU_ACCOUNT, NiuClient, NiuError, signIn, type NiuHttp } from './api.ts';
 
 export * from './api.ts';
 export { md5Hex } from './md5.ts';
@@ -61,9 +61,8 @@ const signInAction: SetupAction = {
         id: scooter.serial,
         label: scooter.name ?? scooter.model ?? 'NIU scooter',
         detail: [scooter.model, `serial ${scooter.serial}`].filter(Boolean).join(' · '),
+        // No address: the connection's is NIU's API, fixed, so there is nothing to choose.
         config: { account, password, serial: scooter.serial },
-        // Always reached at the API; nothing to find on a network.
-        address: NIU_API,
         ...(scooter.name ? { name: scooter.name } : {}),
         recommended: scooters.length === 1,
       }));
