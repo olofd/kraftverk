@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { Card, DeviceCard, Row, RowSeparator, SectionLabel, haptic } from '@kraftverk/ui';
+import { Card, DeviceCard, Row, RowSeparator, SectionLabel, haptic, Icon } from '@kraftverk/ui';
 import { fetchFound, type DeviceView, type FoundView } from '@kraftverk/api-client';
 import { attributesOf, CATEGORIES, MAIN_PART } from '@kraftverk/device-sdk';
 
@@ -98,7 +97,7 @@ export default function DevicesScreen() {
             size="$3"
             backgroundColor="$accent"
             color="$background"
-            icon={<Feather name="plus" size={14} color={theme.background?.val} />}
+            icon={<Icon name="plus" size={14} color={theme.background?.val} />}
             onPress={() => {
               haptic();
               router.push('/add-device');
@@ -124,7 +123,7 @@ export default function DevicesScreen() {
             <Row
               title="Add a device"
               subtitle={addSubtitle(installed)}
-              accessory={<Feather name="plus" size={16} color={theme.muted?.val} />}
+              accessory={<Icon name="plus" size={16} color={theme.muted?.val} />}
             />
           </Pressable>
           {mode === 'server' ? (
@@ -134,7 +133,7 @@ export default function DevicesScreen() {
                 <Row
                   title="Automations"
                   subtitle="What happens on its own: “if tomorrow is sunny, turn the plug on”"
-                  accessory={<Feather name="chevron-right" size={16} color={theme.muted?.val} />}
+                  accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />}
                 />
               </Pressable>
             </>
@@ -146,7 +145,7 @@ export default function DevicesScreen() {
                 <Row
                   title="Problems"
                   subtitle={problemCount ? `${problemCount} warning${problemCount === 1 ? '' : 's'} or error${problemCount === 1 ? '' : 's'} your devices reported` : 'None reported'}
-                  accessory={<Feather name={problemCount ? 'alert-triangle' : 'chevron-right'} size={16} color={problemCount ? theme.warning?.val : theme.muted?.val} />}
+                  accessory={<Icon name={problemCount ? 'alert-triangle' : 'chevron-right'} size={16} color={problemCount ? theme.warning?.val : theme.muted?.val} />}
                 />
               </Pressable>
             </>
@@ -158,7 +157,7 @@ export default function DevicesScreen() {
                 <Row
                   title="Removed devices"
                   subtitle={`${removed.length} kept with their history, to bring back or delete`}
-                  accessory={<Feather name="chevron-right" size={16} color={theme.muted?.val} />}
+                  accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />}
                 />
               </Pressable>
             </>
@@ -168,7 +167,7 @@ export default function DevicesScreen() {
             <Row
               title="App settings"
               subtitle={mode === 'local' ? 'Servers, and what this app may do' : 'Accounts, connectivity, servers and this install'}
-              accessory={<Feather name="chevron-right" size={16} color={theme.muted?.val} />}
+              accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />}
             />
           </Pressable>
         </Card>
@@ -241,13 +240,13 @@ function FoundNearYou() {
                       <DeviceImage typeId={first.typeId} size={36} />
                     ) : (
                       <YStack width={36} height={36} alignItems="center" justifyContent="center">
-                        <Feather name="help-circle" size={20} color={theme.muted?.val} />
+                        <Icon name="help-circle" size={20} color={theme.muted?.val} />
                       </YStack>
                     )
                   }
                   title={entry.name}
                   subtitle={`${first.name}${entry.types.length > 1 ? ` or ${entry.types.length - 1} more` : ''} · ${entry.detail ?? entry.address}`}
-                  accessory={<Feather name="plus" size={16} color={theme.accent?.val} />}
+                  accessory={<Icon name="plus" size={16} color={theme.accent?.val} />}
                 />
               </Pressable>
             </YStack>

@@ -1,6 +1,5 @@
-import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Card, InfoCard, Row, SectionLabel } from '@kraftverk/ui';
+import { Card, InfoCard, Row, SectionLabel, Icon } from '@kraftverk/ui';
 import { Text, useTheme, XStack, YStack } from 'tamagui';
 
 import type { DeviceView } from '@kraftverk/api-client';
@@ -58,7 +57,7 @@ function WhereWritesGo({ device }: { device: DeviceView }) {
 
   return (
     <XStack alignItems="center" gap="$2.5" paddingHorizontal="$1">
-      <Feather name={icon} size={13} color={theme[tone]?.val ?? theme.muted?.val} />
+      <Icon name={icon} size={13} color={theme[tone]?.val ?? theme.muted?.val} />
       <Text fontSize={12} color={tone} lineHeight={17} flex={1}>
         {message}
       </Text>
@@ -80,7 +79,7 @@ function Tools({ device }: { device: DeviceView }) {
           <Row
             title={workbench?.label ?? 'Tools'}
             subtitle={workbench?.description ?? names}
-            accessory={<Feather name="chevron-right" size={16} color={theme.muted?.val} />}
+            accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />}
           />
         </Pressable>
       </Card>

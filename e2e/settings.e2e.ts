@@ -29,3 +29,28 @@ test('a slider moved from the keyboard is written once, when the keys stop', asy
   // And the row follows the device again: nothing refused, nothing left dragging.
   await expect(page.getByText(/Too soon/)).toHaveCount(0);
 });
+
+test('a button that cannot be undone asks first, in the server’s words; no runs nothing, yes runs it once', async ({ page, request }) => {
+  const plug = await addSimulated(request, 'atorch.s1w', unique('Desk plug'));
+  const ran = async () => {
+    const audit = await (await request.get(`/api/audit?resourceKind=device&resource=${encodeURIComponent(plug.id)}`, { headers: { 'x-kraftverk-client': 'app' } })).json();
+    return (audit as { kind: string }[]).filter((entry) => entry.kind === 'device.tool').length;
+  };
+
+  await page.goto(`/device/${plug.id}/settings`);
+  const reset = page.getByRole('button', { name: 'Reset', exact: true });
+
+  let asked = '';
+  page.once('dialog', async (dialog) => {
+    asked = dialog.message();
+    await dialog.dismiss();
+  });
+  await reset.click();
+  await expect.poll(() => asked).toContain('cannot be brought back');
+  await expect(page.getByText('Not confirmed')).toBeVisible();
+  expect(await ran()).toBe(0);
+
+  page.once('dialog', (dialog) => dialog.accept());
+  await reset.click();
+  await expect.poll(ran).toBe(1);
+});

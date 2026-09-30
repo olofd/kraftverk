@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon, type IconName } from '@kraftverk/ui';
 import Svg, {
   Circle,
   ClipPath,
@@ -96,7 +96,7 @@ type Point = { x: number; y: number };
 type Node = {
   id: string;
   label: string;
-  icon: React.ComponentProps<typeof Feather>['name'];
+  icon: IconName;
   x: number;
   y: number;
   /** Path in flow order: source first, destination last. */
@@ -741,7 +741,7 @@ function NodeBadge({ node, scale, tint }: { node: Node; scale: number; tint: str
         borderWidth={1.5}
         borderColor={active ? tint : '$borderColor'}
       >
-        <Feather
+        <Icon
           name={node.icon}
           size={15 * Math.min(scale, 1.1)}
           color={active ? tint : (theme.muted?.val ?? '#888')}

@@ -18,6 +18,7 @@ export { DeviceCard, type DeviceCardDevice } from './DeviceCard';
 export { EnergyFlow } from './EnergyFlow';
 export { energyFlowOf, type Flow, type FlowNode } from './energy';
 export { EventList, type ListedEvent } from './EventList';
+export { Icon, type IconName } from './Icon';
 export { InfoCard, PartCard, ReadingRow } from './PartCard';
 export { ToolPanel } from './ToolPanel';
 export { ModeRow } from './ModeRow';

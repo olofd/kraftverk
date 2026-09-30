@@ -1,4 +1,4 @@
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@kraftverk/ui';
 import { Button, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { useDevices } from '../state/DevicesProvider';
@@ -26,7 +26,7 @@ export function ConnectionBanner() {
       borderWidth={1}
       borderColor="$danger"
     >
-      <Feather name="wifi-off" size={18} color={theme.danger?.val ?? '#ef4444'} />
+      <Icon name="wifi-off" size={18} color={theme.danger?.val ?? '#ef4444'} />
       <YStack flex={1} gap={2}>
         <Text fontSize={14} fontWeight="700" color="$danger">
           {`Can't reach ${servers.active.name}`}

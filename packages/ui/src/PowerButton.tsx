@@ -1,9 +1,9 @@
 import { createElement } from 'react';
-import { Feather } from '@expo/vector-icons';
 import { ActivityIndicator, Platform } from 'react-native';
 import { useTheme, YStack } from 'tamagui';
 
 import { haptic } from './haptics';
+import { Icon } from './Icon';
 
 type Props = {
   on: boolean;
@@ -50,7 +50,7 @@ export function PowerButton({ on, label, onChange, disabled, pending, size = 76 
       {pending ? (
         <ActivityIndicator color={on ? '#ffffff' : theme.muted?.val} />
       ) : (
-        <Feather name="power" size={size * 0.4} color={on ? '#ffffff' : theme.muted?.val} />
+        <Icon name="power" size={size * 0.4} color={on ? '#ffffff' : theme.muted?.val} />
       )}
     </YStack>
   );

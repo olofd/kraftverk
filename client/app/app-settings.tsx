@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Platform } from 'react-native';
-import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Button, Input, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { Card, Row, RowSeparator, SectionLabel, ToggleRow, haptic } from '@kraftverk/ui';
+import { Card, Row, RowSeparator, SectionLabel, ToggleRow, haptic, Icon } from '@kraftverk/ui';
 import { describeError, fetchResetAvailability, getApiBaseUrl, resetDatabase, setPolicyValue } from '@kraftverk/api-client';
 import { POLICY_VALUES, type PolicyValueName } from '@kraftverk/device-sdk';
 
@@ -26,7 +25,7 @@ export default function AppSettingsScreen() {
   const auth = useAuth();
   const theme = useTheme();
   const [allowWrites, setAllowWrites] = useState(runtime.allowWrites);
-  const chevron = <Feather name="chevron-right" size={16} color={theme.muted?.val} />;
+  const chevron = <Icon name="chevron-right" size={16} color={theme.muted?.val} />;
 
   useEffect(() => runtime.subscribe(() => setAllowWrites(runtime.allowWrites)), [runtime]);
 
@@ -279,7 +278,7 @@ function Servers() {
             title="Local only"
             subtitle="This app keeps its own devices and holds every connection. No history, and nothing runs while the app is closed."
             accessory={
-              servers.active ? null : <Feather name="check" size={16} color={theme.accent?.val} />
+              servers.active ? null : <Icon name="check" size={16} color={theme.accent?.val} />
             }
           />
         </Pressable>
@@ -299,12 +298,12 @@ function Servers() {
                 accessory={
                   <XStack alignItems="center" gap="$2">
                     {servers.active?.id === server.id ? (
-                      <Feather name="check" size={16} color={theme.accent?.val} />
+                      <Icon name="check" size={16} color={theme.accent?.val} />
                     ) : null}
                     <Button
                       size="$2"
                       borderColor="$danger"
-                      icon={<Feather name="trash-2" size={12} color={theme.danger?.val} />}
+                      icon={<Icon name="trash-2" size={12} color={theme.danger?.val} />}
                       onPress={() => {
                         haptic();
                         setProblem(null);
@@ -375,7 +374,7 @@ function Servers() {
         <Button
           size="$3"
           alignSelf="flex-start"
-          icon={<Feather name="plus" size={14} color={theme.color?.val} />}
+          icon={<Icon name="plus" size={14} color={theme.color?.val} />}
           onPress={() => {
             haptic();
             setAdding(true);

@@ -1,7 +1,6 @@
-import { Feather } from '@expo/vector-icons';
 import { Text, useTheme, XStack } from 'tamagui';
 
-import { Card } from '@kraftverk/ui';
+import { Card, Icon } from '@kraftverk/ui';
 
 /**
  * Why the last change did not happen.
@@ -17,7 +16,7 @@ export function WriteRefused({ message }: { message: string | null }) {
   return (
     <Card borderColor="$danger" role="alert">
       <XStack gap="$2.5" alignItems="flex-start">
-        <Feather name="alert-circle" size={15} color={theme.danger?.val} style={{ marginTop: 2 }} />
+        <Icon name="alert-circle" size={15} color={theme.danger?.val} style={{ marginTop: 2 }} />
         <Text flex={1} fontSize={13} color="$danger" lineHeight={19}>
           {message}
         </Text>

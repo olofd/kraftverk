@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Feather } from '@expo/vector-icons';
 import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { describeError, fetchTransportDiagnostic, fetchTransports, type TransportList } from '@kraftverk/api-client';
-import { Card, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
+import { Card, Row, RowSeparator, SectionLabel, Icon } from '@kraftverk/ui';
 
 import { Screen } from '../src/components/Screen';
 import { PLATFORM } from '../src/runtime/registry';
@@ -49,7 +48,7 @@ export default function ConnectivityScreen() {
           {list?.transports.map((transport) => (
             <Card key={transport.id} gap="$2">
               <XStack alignItems="center" gap="$2">
-                <Feather
+                <Icon
                   name={transport.availability.ok ? 'check-circle' : 'alert-circle'}
                   size={16}
                   color={transport.availability.ok ? theme.success?.val : theme.warning?.val}

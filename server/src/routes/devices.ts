@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import type { AttributeWrite, CommandBody, DeviceChanges, DeviceEventView, DeviceHistory, DeviceTypeListing, ProblemView, ToolRun } from '@kraftverk/api-contract';
+import type { AttributeWrite, CommandBody, DeviceChanges, DeviceEventView, DeviceHistory, DeviceTypeListing, ProblemView, ToolBody } from '@kraftverk/api-contract';
 import { CATEGORIES, capabilityIn, describeDeviceType, isSimulated, methodsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
 import { Confirmations, subjectOf } from '@kraftverk/gateway';
 import { runTool, ToolRefused, type ToolRefusal } from '@kraftverk/holder';
@@ -290,7 +290,7 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
 
   api.post('/devices/:id/tools/:name', async (c) => {
     const name = c.req.param('name');
-    const request: ToolRun = await body(
+    const request: ToolBody = await body(
       c,
       z
         .object({

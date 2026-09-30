@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { RefreshControl } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@kraftverk/ui';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScrollView, Text, useTheme, XStack, YStack } from 'tamagui';
@@ -68,7 +68,7 @@ export function Screen({ title, subtitle, back, backTo, status, aside, children 
               router.canGoBack() ? router.back() : router.replace(backTo ?? '/')
             }
           >
-            <Feather name="chevron-left" size={16} color={theme.muted?.val} />
+            <Icon name="chevron-left" size={16} color={theme.muted?.val} />
             <Text fontSize={14} fontWeight="600" color="$muted">
               {back}
             </Text>

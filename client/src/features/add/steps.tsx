@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Feather } from '@expo/vector-icons';
 import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { describeError, type CheckOutcome, type ConfigValues, type SetupActionResult, type SetupActionView, type SetupChoice, type SetupStepView, type SightingView } from '@kraftverk/api-client';
-import { Card, isComplete, Row, RowSeparator, SchemaForm, haptic } from '@kraftverk/ui';
+import { Card, isComplete, Row, RowSeparator, SchemaForm, haptic, Icon } from '@kraftverk/ui';
 
 import { Pressable } from '../../components/Pressable';
 import { QrCode } from '../../components/QrCode';
@@ -98,7 +97,7 @@ function StepFrame({
       </YStack>
       {children}
       <XStack justifyContent="space-between" alignItems="center" paddingTop="$1">
-        <Button size="$3" chromeless icon={<Feather name="chevron-left" size={16} color={theme.muted?.val} />} onPress={onBack} color="$muted">
+        <Button size="$3" chromeless icon={<Icon name="chevron-left" size={16} color={theme.muted?.val} />} onPress={onBack} color="$muted">
           Back
         </Button>
         {next ? (
@@ -197,7 +196,7 @@ function ChooseStep({ flow, step, onNext, onBack, presetAddress }: StepProps & {
             Your browser shows its own list of nearby devices. Pick yours there.
           </Text>
           <XStack gap="$2" flexWrap="wrap">
-            <Button size="$3" {...PRIMARY} disabled={busy} icon={<Feather name="bluetooth" size={14} color={theme.background?.val} />} onPress={() => openChooser(false)}>
+            <Button size="$3" {...PRIMARY} disabled={busy} icon={<Icon name="bluetooth" size={14} color={theme.background?.val} />} onPress={() => openChooser(false)}>
               Choose your device
             </Button>
             <Button size="$3" disabled={busy} onPress={() => openChooser(true)}>
@@ -224,7 +223,7 @@ function ChooseStep({ flow, step, onNext, onBack, presetAddress }: StepProps & {
                     title={sighting.name}
                     subtitle={sighting.claimedBy ? `Already yours: ${sighting.claimedBy.name}` : (sighting.detail ?? sighting.address)}
                     disabled={sighting.claimedBy !== null}
-                    accessory={<Feather name={sighting.claimedBy ? 'check' : 'chevron-right'} size={16} color={theme.muted?.val} />}
+                    accessory={<Icon name={sighting.claimedBy ? 'check' : 'chevron-right'} size={16} color={theme.muted?.val} />}
                   />
                 </Pressable>
               </YStack>
@@ -491,7 +490,7 @@ function FormStep({ flow, step, onNext, onBack, onNamed }: StepProps & { step: E
       {step.actions.length && !typing ? (
         <Pressable onPress={() => setTyping(true)}>
           <XStack alignItems="center" gap="$2" paddingHorizontal="$2" paddingVertical="$2">
-            <Feather name="edit-3" size={14} color={theme.muted?.val} />
+            <Icon name="edit-3" size={14} color={theme.muted?.val} />
             <Text fontSize={13} color="$muted">
               I have them already — type them in
             </Text>

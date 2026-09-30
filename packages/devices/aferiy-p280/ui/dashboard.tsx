@@ -1,8 +1,7 @@
 import type { ReactNode } from 'react';
-import { Feather } from '@expo/vector-icons';
 import { Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { AnimatedNumber } from '@kraftverk/ui';
+import { AnimatedNumber, Icon } from '@kraftverk/ui';
 import { Card, SectionLabel } from '@kraftverk/ui';
 import { EnergyFlow } from './energy-flow';
 import { ModeRow } from '@kraftverk/ui';
@@ -102,7 +101,7 @@ function DashboardView({
       {waitingForDevice || !hasReading ? (
         <Card borderColor="$warning" gap="$2">
           <XStack alignItems="center" gap="$2">
-            <Feather name="radio" size={15} color={theme.warning?.val} />
+            <Icon name="radio" size={15} color={theme.warning?.val} />
             <Text fontSize={14} fontWeight="700" color="$warning">
               {!hasReading || status.link.state === 'waiting' ? 'Waiting for the station' : 'Station offline'}
             </Text>

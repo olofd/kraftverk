@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
@@ -13,7 +12,7 @@ import {
   type SaveInput,
 } from '@kraftverk/api-client';
 import { describeDeviceType, isSimulated, LINK_KIND_IDS, linkableParts, linkKindSpec, MAIN_PART, methodOf, type DeviceDescription } from '@kraftverk/device-sdk';
-import { Card, Row, RowSeparator, SectionLabel, haptic } from '@kraftverk/ui';
+import { Card, Row, RowSeparator, SectionLabel, haptic, Icon } from '@kraftverk/ui';
 
 import { DeviceImage } from '../src/components/DeviceImage';
 import { Pressable } from '../src/components/Pressable';
@@ -333,12 +332,12 @@ export default function AddDeviceScreen() {
 
 // --- 1 · what are you adding ------------------------------------------------------
 
-/** Whether a type answers to what was typed: every word somewhere in its name, brand, models or description. */
-/** Finding the device on the network, when an earlier step already found it: passed over going forward. The last step is never passed over. */
+/** Finding the device on the network, when an earlier step already found it: passed over both ways. The last step is never passed over. */
 function skipsChoose(flow: SetupFlow, index: number): boolean {
   return flow.plan[index]?.kind === 'choose' && flow.address !== null && index < flow.plan.length - 1;
 }
 
+/** Whether a type answers to what was typed: every word somewhere in its name, brand, models or description. */
 function matches(type: DeviceTypeListing, query: string): boolean {
   const text = [type.meta.name, type.meta.brand, ...(type.meta.models ?? []), type.meta.description, (CATEGORIES as Record<string, { label: string }>)[type.meta.category]?.label]
     .filter(Boolean)
@@ -384,7 +383,7 @@ function Categories({ types, onPick }: { types: DeviceTypeListing[]; onPick: (id
                   {index > 0 ? <RowSeparator /> : null}
                   <Pressable disabled={count === 0} onPress={() => onPick(id)}>
                     <XStack alignItems="center" gap="$3" paddingLeft="$4">
-                      <Feather name={featherName(spec.icon)} size={18} color={count ? theme.accent?.val : theme.muted?.val} />
+                      <Icon name={featherName(spec.icon)} size={18} color={count ? theme.accent?.val : theme.muted?.val} />
                       <YStack flex={1}>
                         <Row title={spec.label} subtitle={count ? installed.map((type) => type.meta.name).join(', ') : 'No package for these is installed'} disabled={count === 0} />
                       </YStack>
@@ -423,7 +422,7 @@ function Types({ types, onPick, onBack }: { types: DeviceTypeListing[]; onPick: 
                 leading={<DeviceImage typeId={type.id} size={40} />}
                 title={type.meta.name}
                 subtitle={[type.meta.description, SUPPORT[type.meta.support], type.meta.models?.length ? `Models: ${type.meta.models.join(', ')}` : null].filter(Boolean).join(' · ')}
-                accessory={<Feather name="chevron-right" size={16} color={theme.muted?.val} />}
+                accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />}
               />
             </Pressable>
           </YStack>
@@ -459,7 +458,7 @@ function Ways({ ways, busy, onPick, onBack }: { ways: Way[]; busy: boolean; onPi
                 title={`${way.label}${way.recommended ? ' · recommended' : ''}`}
                 subtitle={way.available ? way.description : (way.reason ?? 'Not available here')}
                 disabled={!way.available}
-                accessory={<Feather name={way.holder === 'server' ? 'server' : PLATFORM === 'web' ? 'monitor' : 'smartphone'} size={16} color={theme.muted?.val} />}
+                accessory={<Icon name={way.holder === 'server' ? 'server' : PLATFORM === 'web' ? 'monitor' : 'smartphone'} size={16} color={theme.muted?.val} />}
               />
             </Pressable>
           </YStack>
@@ -479,11 +478,10 @@ function Ways({ ways, busy, onPick, onBack }: { ways: Way[]; busy: boolean; onPi
  * Where you are in setting it up: "Step 2 of 5", and a bar of as many segments.
  * Done ones are filled, and a tap on one goes back to it with everything kept;
  * the step's own title is the heading below, so it is not said twice.
- */
-/**
- * Where the person is among the steps. `steps` are the ones they go through,
- * each with its place in the plan: a step the flow skipped (finding a device
- * an earlier step already found) is not counted, nor drawn as done.
+ *
+ * `steps` are the ones the person goes through, each with its place in the
+ * plan: a step the flow passed over (finding a device an earlier step already
+ * found) is not counted, nor drawn as done.
  */
 function Progress({ steps, at, onGoTo }: { steps: { title: string; index: number }[]; at: number; onGoTo: (index: number) => void }) {
   const now = Math.max(0, steps.findIndex((step) => step.index === at));
@@ -701,7 +699,7 @@ function Finish({
         <YStack gap="$2">
           <SectionLabel>Name it</SectionLabel>
           <Card gap="$2">
-            <Input size="$3" value={name} maxLength={60} onChangeText={setName} backgroundColor="$background" borderColor="$borderColor" />
+            <Input size="$3" value={name} maxLength={60} onChangeText={setName} backgroundColor="$background" borderColor="$borderColor" aria-label="Its name" />
             <Text fontSize={12} color="$muted">
               {flow.holder === 'server' ? 'Held by your server.' : `Held by ${HERE}.`}
             </Text>

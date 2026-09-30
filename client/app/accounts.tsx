@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Feather } from '@expo/vector-icons';
 import { Button, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { Card, Row, RowSeparator, SectionLabel, haptic } from '@kraftverk/ui';
+import { Card, Row, RowSeparator, SectionLabel, haptic, Icon } from '@kraftverk/ui';
 import {
   addAccount,
   changeOwnPassword,
@@ -82,7 +81,7 @@ function SignedIn() {
             accessory={
               <Button
                 size="$2"
-                icon={<Feather name="log-out" size={12} color={theme.color?.val} />}
+                icon={<Icon name="log-out" size={12} color={theme.color?.val} />}
                 onPress={() => {
                   haptic();
                   void logOut();
@@ -177,7 +176,7 @@ function AccountRow({
                 <Button
                   size="$2"
                   borderColor="$danger"
-                  icon={<Feather name="trash-2" size={12} color={theme.danger?.val} />}
+                  icon={<Icon name="trash-2" size={12} color={theme.danger?.val} />}
                   onPress={() => setAction('confirm-remove')}
                 >
                   Remove
@@ -284,7 +283,7 @@ function AddAccount({ onAdded }: { onAdded: () => Promise<void> }) {
       <Button
         size="$3"
         alignSelf="flex-start"
-        icon={<Feather name="user-plus" size={14} color={theme.color?.val} />}
+        icon={<Icon name="user-plus" size={14} color={theme.color?.val} />}
         onPress={() => {
           haptic();
           setOpen(true);

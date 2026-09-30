@@ -200,7 +200,7 @@ export type CommandBody = { args: Record<string, Value>; reason?: string; confir
  * it cannot undo is refused first with 409 `{ error, needsConfirmation }`: the
  * token for a person's yes, presented here as `confirmation`.
  */
-export type ToolRun = { input?: Record<string, Value>; confirmation?: string };
+export type ToolBody = { input?: Record<string, Value>; confirmation?: string };
 
 export type SeriesPoint = { at: string; value: number };
 

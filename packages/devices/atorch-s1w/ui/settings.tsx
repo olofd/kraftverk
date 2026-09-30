@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Feather } from '@expo/vector-icons';
 import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import type { DeviceScreenProps } from '@kraftverk/api-client';
-import { Card, RangeSliderRow, RowSeparator, SectionLabel, SegmentedControl, SliderRow, ToggleRow } from '@kraftverk/ui';
+import { Card, RangeSliderRow, RowSeparator, SectionLabel, SegmentedControl, SliderRow, ToggleRow, Icon } from '@kraftverk/ui';
 
 import { LiveStrip, useLive } from './live';
 import { usePlug, type Plug } from './plug';
@@ -196,7 +195,7 @@ function SafetyCutOff({ plug }: { plug: Plug }) {
         />
       </Card>
       <XStack gap="$2" paddingHorizontal="$2" alignItems="flex-start">
-        <Feather name="info" size={13} color={theme.muted?.val as string} style={{ marginTop: 2 }} />
+        <Icon name="info" size={13} color={theme.muted?.val as string} style={{ marginTop: 2 }} />
         <Text fontSize={12} color="$muted" lineHeight={17} flex={1}>
           Each limit is checked against what the plug measures now, and kraftverk asks before one that could cut the power is written.
         </Text>
@@ -328,7 +327,7 @@ function ButtonRow({
         borderColor={tone === 'danger' ? '$danger' : '$borderColor'}
         borderWidth={1}
         color={tone === 'danger' ? '$danger' : '$color'}
-        icon={busy ? <Spinner size="small" /> : <Feather name={done ? 'check' : icon} size={14} color={color as string} />}
+        icon={busy ? <Spinner size="small" /> : <Icon name={done ? 'check' : icon} size={14} color={color as string} />}
         onPress={() => {
           setBusy(true);
           void onPress()

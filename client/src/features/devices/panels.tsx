@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
@@ -17,21 +16,7 @@ import {
   type LinkKind,
   type Part,
 } from '@kraftverk/device-sdk';
-import {
-  Card,
-  DeviceCard,
-  EnergyFlow,
-  EventList,
-  PartCard,
-  Row,
-  RowSeparator,
-  SchemaForm,
-  SectionLabel,
-  ToggleRow,
-  haptic,
-  readingFor,
-  useWriteGate,
-} from '@kraftverk/ui';
+import { Card, DeviceCard, EnergyFlow, EventList, PartCard, Row, RowSeparator, SchemaForm, SectionLabel, ToggleRow, haptic, readingFor, useWriteGate, Icon } from '@kraftverk/ui';
 
 import { MeasurementChart } from '../../components/MeasurementChart';
 import { Pressable } from '../../components/Pressable';
@@ -53,7 +38,7 @@ import { useDevices } from '../../state/DevicesProvider';
 
 export function DeviceIcon({ device, size = 16 }: { device: DeviceView; size?: number }) {
   const theme = useTheme();
-  return <Feather name={featherName(device.meta.icon, 'zap')} size={size} color={isOnline(device.health) ? theme.accent?.val : theme.muted?.val} />;
+  return <Icon name={featherName(device.meta.icon, 'zap')} size={size} color={isOnline(device.health) ? theme.accent?.val : theme.muted?.val} />;
 }
 
 export function Overview({ device }: { device: DeviceView }) {
@@ -172,7 +157,7 @@ export function Parts({ device }: { device: DeviceView }) {
             readings={device.readings}
             accessory={
               <Pressable onPress={() => router.push(`/device/${encodeURIComponent(device.id)}/part/${encodeURIComponent(part.id)}`)}>
-                <Row title={`More about ${part.label.toLowerCase()}`} accessory={<Feather name="chevron-right" size={16} color={theme.muted?.val} />} />
+                <Row title={`More about ${part.label.toLowerCase()}`} accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />} />
               </Pressable>
             }
           />
@@ -430,7 +415,7 @@ export function Connections({ device }: { device: DeviceView }) {
                       {connection.secrets.length ? ` · ${connection.secrets.join(', ')} kept` : ''}
                     </Text>
                   </YStack>
-                  {connection.inUse ? <Feather name="check-circle" size={16} color={theme.success?.val} /> : null}
+                  {connection.inUse ? <Icon name="check-circle" size={16} color={theme.success?.val} /> : null}
                 </XStack>
                 {ordered.length > 1 ? (
                   <XStack gap="$2">
@@ -460,7 +445,7 @@ export function Connections({ device }: { device: DeviceView }) {
         )}
         <RowSeparator />
         <Pressable onPress={() => router.push(`/add-device?attach=${encodeURIComponent(device.id)}&type=${encodeURIComponent(device.typeId)}`)}>
-          <Row title="Add another way to reach it" accessory={<Feather name="plus" size={16} color={theme.muted?.val} />} />
+          <Row title="Add another way to reach it" accessory={<Icon name="plus" size={16} color={theme.muted?.val} />} />
         </Pressable>
       </Card>
       {error ? (
@@ -562,7 +547,7 @@ export function Links({ device }: { device: DeviceView }) {
                     other: otherName(candidate.other.name, candidate.otherPart.id === MAIN_PART ? '' : candidate.otherPart.label),
                   })}
                   subtitle={linkKindSpec(candidate.kind).description}
-                  accessory={<Feather name="plus" size={16} color={theme.muted?.val} />}
+                  accessory={<Icon name="plus" size={16} color={theme.muted?.val} />}
                 />
               </Pressable>
             </YStack>
@@ -622,7 +607,7 @@ export function Manage({ device }: { device: DeviceView }) {
             Name
           </Text>
           <XStack gap="$2">
-            <Input flex={1} size="$3" value={name} maxLength={60} onChangeText={setName} backgroundColor="$background" borderColor="$borderColor" />
+            <Input flex={1} size="$3" value={name} maxLength={60} onChangeText={setName} backgroundColor="$background" borderColor="$borderColor" aria-label="Name" />
             {dirty ? (
               <Button
                 size="$3"
@@ -652,7 +637,7 @@ export function Manage({ device }: { device: DeviceView }) {
           title="Remove this device"
           subtitle={mode === 'server' ? 'Its history is kept, to bring back or delete later' : 'Deleted from this app'}
           accessory={
-            <Button size="$2" disabled={busy} borderColor="$danger" icon={<Feather name="trash-2" size={13} color={theme.danger?.val} />} onPress={() => void removeIt()}>
+            <Button size="$2" disabled={busy} borderColor="$danger" icon={<Icon name="trash-2" size={13} color={theme.danger?.val} />} onPress={() => void removeIt()}>
               Remove
             </Button>
           }

@@ -1,8 +1,7 @@
-import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Text, useTheme } from 'tamagui';
 
-import { Card, Row, RowSeparator } from '@kraftverk/ui';
+import { Card, Row, RowSeparator, Icon } from '@kraftverk/ui';
 
 import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
@@ -28,7 +27,7 @@ export default function RemovedDevicesScreen() {
               <Row
                 title={device.name}
                 subtitle={`${device.meta.name} · removed ${device.removedAt ? new Date(device.removedAt).toLocaleDateString() : ''}`}
-                accessory={<Feather name="chevron-right" size={16} color={theme.muted?.val} />}
+                accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />}
               />
             </Pressable>
           ))

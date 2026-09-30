@@ -19,8 +19,11 @@ export function confirmAction(title: string, message: string, confirmLabel = 'Co
   );
 }
 
-/** Said when a yes came after its question lapsed, and it is asked again. */
-export const ASKED_AGAIN = 'A yes lasts a minute, and that one came later: here is the question again, with how things are now.';
+/**
+ * Said when a yes no longer counted and the question is asked again. Usually
+ * it came after its minute; it may also be that the server restarted.
+ */
+export const ASKED_AGAIN = 'That yes no longer counted: a yes lasts a minute. Here is the question again, with how things are now.';
 
 /**
  * Sends what the server may want a person's yes for, and asks them for as long

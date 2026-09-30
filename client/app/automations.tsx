@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Feather } from '@expo/vector-icons';
 import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import {
@@ -23,7 +22,7 @@ import {
   type RoleBinding,
 } from '@kraftverk/api-client';
 import { capabilitiesOf, MAIN_PART, meetsNeed, partsOf } from '@kraftverk/device-sdk';
-import { Card, Row, RowSeparator, SchemaForm, SectionLabel, SegmentedControl, haptic, isComplete } from '@kraftverk/ui';
+import { Card, Row, RowSeparator, SchemaForm, SectionLabel, SegmentedControl, haptic, isComplete, Icon } from '@kraftverk/ui';
 
 import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
@@ -122,7 +121,7 @@ export default function AutomationsScreen() {
           }}
         />
       ) : automations ? (
-        <Button alignSelf="flex-start" size="$3" backgroundColor="$accent" color="$background" icon={<Feather name="plus" size={14} />} onPress={() => (haptic(), setCreating(true))}>
+        <Button alignSelf="flex-start" size="$3" backgroundColor="$accent" color="$background" icon={<Icon name="plus" size={14} />} onPress={() => (haptic(), setCreating(true))}>
           New automation
         </Button>
       ) : null}
@@ -282,7 +281,7 @@ function AutomationCard({
             borderColor={automation.mode === 'off' ? '$borderColor' : '$accent'}
             backgroundColor={badge.filled ? '$accent' : 'transparent'}
           >
-            <Feather name={badge.icon} size={12} color={badge.filled ? theme.background?.val : automation.mode === 'off' ? theme.muted?.val : theme.accent?.val} />
+            <Icon name={badge.icon} size={12} color={badge.filled ? theme.background?.val : automation.mode === 'off' ? theme.muted?.val : theme.accent?.val} />
             <Text fontSize={12} fontWeight="700" color={badge.filled ? '$background' : automation.mode === 'off' ? '$muted' : '$accent'}>
               {badge.label}
             </Text>
@@ -300,7 +299,7 @@ function AutomationCard({
           </Text>
           {automation.when.map((trigger) => (
             <XStack key={trigger} gap="$2" alignItems="flex-start">
-              <Feather name="clock" size={13} color={theme.muted?.val} style={{ marginTop: 3 }} />
+              <Icon name="clock" size={13} color={theme.muted?.val} style={{ marginTop: 3 }} />
               <Text flex={1} fontSize={13} color="$color" lineHeight={19}>
                 {trigger}
               </Text>
@@ -331,7 +330,7 @@ function AutomationCard({
       <YStack gap="$2">
         <Pressable onPress={() => (haptic(), setShowHistory((open) => !open))}>
           <XStack alignItems="center" gap="$2" paddingVertical="$1">
-            <Feather name={showHistory ? 'chevron-down' : 'chevron-right'} size={16} color={theme.muted?.val} />
+            <Icon name={showHistory ? 'chevron-down' : 'chevron-right'} size={16} color={theme.muted?.val} />
             <Text fontSize={14} fontWeight="700" color="$color">
               History
             </Text>
@@ -350,7 +349,7 @@ function AutomationCard({
       ) : null}
 
       <XStack gap="$2" flexWrap="wrap">
-        <Button size="$3" disabled={busy || !recipe} icon={<Feather name="edit-3" size={14} color={theme.color?.val} />} onPress={() => (haptic(), setEditing(true))}>
+        <Button size="$3" disabled={busy || !recipe} icon={<Icon name="edit-3" size={14} color={theme.color?.val} />} onPress={() => (haptic(), setEditing(true))}>
           Edit
         </Button>
         <Button size="$3" disabled={busy} onPress={() => void act(async () => setChecked(await checkAutomation(automation.id)), 'It could not be checked')}>
@@ -388,7 +387,7 @@ function History({ entries, name }: { entries: AuditEntry[] | null; name: string
           <YStack key={entry.id}>
             {index > 0 ? <RowSeparator /> : null}
             <XStack gap="$3" paddingHorizontal="$3" paddingVertical="$2.5" alignItems="flex-start">
-              <Feather name={look.icon as never} size={15} color={(theme[look.tone.slice(1) as keyof typeof theme] as { val?: string } | undefined)?.val} style={{ marginTop: 2 }} />
+              <Icon name={look.icon as never} size={15} color={(theme[look.tone.slice(1) as keyof typeof theme] as { val?: string } | undefined)?.val} style={{ marginTop: 2 }} />
               <YStack flex={1} gap={2}>
                 <Text fontSize={13} color="$color" lineHeight={19}>
                   {summary}
@@ -439,7 +438,7 @@ function RunLine({ label, run, empty }: { label: string; run: AutomationRun | nu
   const look = OUTCOME[run.outcome];
   return (
     <XStack gap="$2" alignItems="flex-start">
-      <Feather name={look.icon as never} size={14} color={(theme[look.tone.slice(1) as keyof typeof theme] as { val?: string } | undefined)?.val} style={{ marginTop: 3 }} />
+      <Icon name={look.icon as never} size={14} color={(theme[look.tone.slice(1) as keyof typeof theme] as { val?: string } | undefined)?.val} style={{ marginTop: 3 }} />
       <Text flex={1} fontSize={13} color="$color" lineHeight={19}>
         <Text fontWeight="700">{label}</Text>, {when(run.at)}: {run.summary}
       </Text>

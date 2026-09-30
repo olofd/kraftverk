@@ -9,6 +9,13 @@ import { portKey, settingsKeys, withPending, writesInFlight, type StationWriteKe
 import type { StationView } from './contract';
 
 /**
+ * How long a confirmed value is shown over readings that do not say it yet:
+ * long enough for them to catch up, short enough that a change made elsewhere
+ * in between is not hidden for long.
+ */
+const CONFIRMED_HOLD_MS = 15_000;
+
+/**
  * One station, as its screens draw it: read from its readings — the ones every
  * screen, the history and the automations see, which the app keeps live — and
  * nothing else. It asks the station nothing of its own.
@@ -19,9 +26,6 @@ import type { StationView } from './contract';
  * gateway's readback can arrive a moment before the live reading does, and a
  * switch must not flick back in between (see `writeGate.ts` in `@kraftverk/ui`).
  */
-/** How long a confirmed value is shown over readings that do not say it yet. */
-const CONFIRMED_HOLD_MS = 15_000;
-
 export function useStation({ device, actions, reach, readOnly, version }: DeviceScreenProps): StationView {
   const [writeError, setWriteError] = useState<string | null>(null);
   const [gate, writes] = useWriteGate<StationWriteKey>();

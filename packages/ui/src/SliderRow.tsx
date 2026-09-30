@@ -65,12 +65,13 @@ export function SliderRow({
             </Text>
           ) : null}
         </YStack>
-        <YStack alignItems="flex-end" gap={2}>
+        {/* Beside the value, not under it: the row keeps its height while a write settles. */}
+        <XStack alignItems="center" gap="$2">
+          {pending ? <PendingMark /> : null}
           <Text fontSize={15} fontWeight="700" color={warning ? '$warning' : '$accent'} fontVariant={['tabular-nums']}>
             {format(local)}
           </Text>
-          {pending ? <PendingMark /> : null}
-        </YStack>
+        </XStack>
       </XStack>
 
       <YStack position="relative" paddingTop={marker ? 28 : 0}>

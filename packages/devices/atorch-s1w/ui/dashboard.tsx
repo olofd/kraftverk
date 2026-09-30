@@ -1,8 +1,7 @@
-import { Feather } from '@expo/vector-icons';
 import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import type { DeviceScreenProps } from '@kraftverk/api-client';
-import { AnimatedNumber, Card, PowerButton, StatTile } from '@kraftverk/ui';
+import { AnimatedNumber, Card, PowerButton, StatTile, Icon } from '@kraftverk/ui';
 
 import { LiveStrip, useLive, type Live } from './live';
 import { usePlug, type Plug } from './plug';
@@ -98,7 +97,7 @@ function CutCard({ cut, plug }: { cut: Cut; plug: Plug }) {
   return (
     <Card padding="$4" gap="$3" borderWidth={1} borderColor="$warning">
       <XStack alignItems="center" gap="$2">
-        <Feather name={cut.byRule ? 'clock' : 'shield'} size={18} color={theme.warning?.val as string} />
+        <Icon name={cut.byRule ? 'clock' : 'shield'} size={18} color={theme.warning?.val as string} />
         <Text fontSize={16} fontWeight="700" color="$color" flex={1}>
           {cut.title}
         </Text>
@@ -156,7 +155,7 @@ function Tiles({ plug }: { plug: Plug }) {
   const fixed = (value: number | null, digits: number) => (value === null ? '—' : value.toFixed(digits));
 
   const nearLimit = volts !== null && low !== null && high !== null && (volts - low < 10 || high - volts < 10);
-  const icon = (name: 'activity' | 'trending-up' | 'thermometer' | 'bar-chart-2' | 'radio' | 'percent') => <Feather name={name} size={13} color={theme.muted?.val as string} />;
+  const icon = (name: 'activity' | 'trending-up' | 'thermometer' | 'bar-chart-2' | 'radio' | 'percent') => <Icon name={name} size={13} color={theme.muted?.val as string} />;
 
   return (
     <XStack flexWrap="wrap" gap="$3">
@@ -204,7 +203,7 @@ function Safety({ plug }: { plug: Plug }) {
   return (
     <Card padding="$4" gap="$2">
       <XStack alignItems="center" gap="$2">
-        <Feather name="shield" size={16} color={(guarded ? theme.success?.val : theme.warning?.val) as string} />
+        <Icon name="shield" size={16} color={(guarded ? theme.success?.val : theme.warning?.val) as string} />
         <Text fontSize={15} fontWeight="700" color="$color">
           Safety
         </Text>

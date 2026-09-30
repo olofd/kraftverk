@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@kraftverk/ui';
 import { useTheme, XStack, YStack } from 'tamagui';
 
 /**
@@ -72,7 +72,7 @@ export function Pressable({
       <YStack flex={1}>{children}</YStack>
       {choice ? (
         <YStack paddingRight="$4">
-          <Feather name={selected ? 'check-circle' : 'circle'} size={20} color={selected ? accent : (theme.muted?.val as string)} />
+          <Icon name={selected ? 'check-circle' : 'circle'} size={20} color={selected ? accent : (theme.muted?.val as string)} />
         </YStack>
       ) : null}
     </XStack>
