@@ -31,6 +31,13 @@ export type { AppDeps } from './routes/shared.ts';
 const DEV_PORTS = new Set(['8081', '19006']);
 
 /**
+ * What an allowed browser elsewhere may send: every method a route answers
+ * to. One missing fails that route's preflight — PUT was, and a picture or a
+ * home policy value could not be set from the app in development.
+ */
+export const CORS_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] as const;
+
+/**
  * Which browsers may call this server with the session cookie.
  *
  * The app the web container serves is same-origin and needs no CORS at all,
@@ -117,7 +124,7 @@ export function createApp(deps: AppDeps) {
     '/api/*',
     cors({
       origin: corsOrigin(config),
-      allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowMethods: [...CORS_METHODS],
       // The forgery header must be allowed, or the app's own writes would fail
       // their preflight — and it is exactly what a foreign origin cannot send.
       allowHeaders: ['Content-Type', CLIENT_HEADER],

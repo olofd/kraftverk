@@ -8,7 +8,7 @@ import { savedDeviceId } from '@kraftverk/device-sdk';
 
 import { ActionGateway } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
-import { corsOrigin, createApp } from './app.ts';
+import { CORS_METHODS, corsOrigin, createApp } from './app.ts';
 import { AutomationEngine, serverDevices } from './automations/engine.ts';
 import { AutomationLibrary } from './automations/library.ts';
 import { AutomationStore } from './automations/store.ts';
@@ -1331,6 +1331,13 @@ describe('browsers from elsewhere', () => {
     for (const origin of ['http://192.168.1.140:5000', 'http://192.168.1.140', 'http://diskstation.local:5001', 'https://evil.example']) {
       expect((await preflight(origin)).headers.get('access-control-allow-origin')).toBeNull();
     }
+  });
+
+  test('an allowed browser elsewhere may send every method a route answers to', () => {
+    const used = new Set(simulated.app.routes.filter((route) => route.path.startsWith('/api/')).map((route) => route.method));
+    used.delete('ALL');
+    expect([...used].filter((method) => !(CORS_METHODS as readonly string[]).includes(method))).toEqual([]);
+    expect(used.has('PUT')).toBe(true);
   });
 
   test('the Expo dev server is allowed in development, and nothing but named origins in production', () => {
