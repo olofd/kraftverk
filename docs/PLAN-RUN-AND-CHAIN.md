@@ -54,6 +54,22 @@ the end of each phase.
 
 Small, each its own commit. Numbers are for reference in commits.
 
+**Done, 2026-09-30.**
+
+| Items | How it ended |
+|---|---|
+| 1–4, 7–17 | Fixed, each its own commit that names its item; checked in the browser where it shows there; typecheck, unit tests, the architecture check and the e2e suite green |
+| 5, 6 | Left to the automation editor, which replaces the recipe editor they are about |
+| 7 (one button) | "Try it" and "What would it do now?" become one with play (Phase 2) |
+| 12 | Tested as far as it can be without the plug in hand; what is still to learn is in its README |
+
+**Found on the way, and fixed too:**
+- PUT was missing from the methods allowed to a browser elsewhere, so a
+  picture or a policy value could not be set from the app in development.
+- The mode switch (Off / Only watch / Act) could not be reached by keyboard.
+- The picture control could not be pressed by keyboard.
+- Uploaded readings from an app-held device never reached the live stream.
+
 ### Automations: engine and gateway
 
 1. **The gateway forgets a run's switch counts when it ends.** `#runSwitches`
