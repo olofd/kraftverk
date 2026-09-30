@@ -515,12 +515,30 @@ from its kind's — and applies, per part:
   reading taken after the command: a station's `grid.present` following the
   plug that feeds it;
 - for a write: only attributes that can be written, held to their types, a
-  dangerous one confirmed by a person and never changed by an automation;
+  dangerous one confirmed by a person and never changed by an automation; and
+  what is left of its dwell, so a screen keeps the control busy that long
+  rather than let the next nudge be refused;
 - an audit entry naming the account, the automation or the client.
 
 The gateway's rules are shared code, not a server route's: when a phone or
 browser holds a device's connection, the same rules run there, and the audit
 entry is sent to the server (queued while offline).
+
+A type's **tools** are not commands and do not pass through the gateway; the
+holder checks them against their declaration (`runTool`), refuses one that
+writes while read-only, and audits it. One that declares what it cannot undo
+(`ToolSpec.confirm`) is confirmed as a command is: the server refuses it with a
+token for a person's yes, good once, for a minute.
+
+**The one write outside it.** A session may keep up, by itself, a state a
+person asked for through the gateway, and nothing more: the socket profile's
+`refresh` renews a plug's fast readings (the ATORCH's datapoint 140) when the
+plug lets them lapse, for as long as the `live` attribute — written through
+the gateway, audited — says so. It is a heartbeat, not a control: it changes
+nothing a person can see or rely on beyond what they asked, is never sent
+while read-only, never twice within ten seconds, and stops when the wish runs
+out. Anything else a session would write on its own is a command, and goes
+through the gateway; the next exception has to argue against this paragraph.
 
 ### 4.7 At runtime
 

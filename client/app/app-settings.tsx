@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -144,10 +144,13 @@ function HomePolicy() {
   const [problem, setProblem] = useState<string | null>(null);
   const names = Object.keys(POLICY_VALUES) as PolicyValueName[];
   const inForce = (name: PolicyValueName) => runtime.policyValues[name] ?? POLICY_VALUES[name].default;
+  // Enter and the blur after it both save, before either has settled: what is
+  // on its way is sent once.
+  const saving = useRef(new Map<PolicyValueName, string>());
 
   const save = async (name: PolicyValueName) => {
     const typed = values[name];
-    if (typed === undefined) return;
+    if (typed === undefined || saving.current.get(name) === typed) return;
     const value = typed.trim() === '' ? null : Number(typed.replace(',', '.'));
     const spec = POLICY_VALUES[name];
     if (value !== null && !(Number.isFinite(value) && value >= spec.min && value <= spec.max)) {
@@ -156,6 +159,7 @@ function HomePolicy() {
     }
     setProblem(null);
     const typedNoMore = () => setValues(({ [name]: _typed, ...rest }) => rest);
+    saving.current.set(name, typed);
     try {
       if (mode === 'server') {
         const now = await setPolicyValue(name, value);
@@ -167,6 +171,8 @@ function HomePolicy() {
       typedNoMore();
     } catch (err) {
       setProblem(describeError(err) || 'That did not work');
+    } finally {
+      saving.current.delete(name);
     }
   };
 

@@ -2,8 +2,9 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import type { AttributeWrite, CommandBody, DeviceChanges, DeviceEventView, DeviceHistory, DeviceTypeListing, ProblemView } from '@kraftverk/api-contract';
+import type { AttributeWrite, CommandBody, DeviceChanges, DeviceEventView, DeviceHistory, DeviceTypeListing, ProblemView, ToolRun } from '@kraftverk/api-contract';
 import { CATEGORIES, capabilityIn, describeDeviceType, isSimulated, methodsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
+import { Confirmations, subjectOf } from '@kraftverk/gateway';
 import { runTool, ToolRefused, type ToolRefusal } from '@kraftverk/holder';
 
 import { actorOf } from '../auth/routes.ts';
@@ -282,9 +283,28 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
     return c.json(await run(c, c.req.param('id'), name, c.req.query()));
   });
 
+  // A tool that says what it cannot undo waits for a person's yes, as a
+  // consequential command does in the gateway: a token bound to this device,
+  // tool, input and person, good once, for a minute.
+  const toolConfirmations = new Confirmations();
+
   api.post('/devices/:id/tools/:name', async (c) => {
-    const input = await body(c, z.record(z.string().max(64), z.union([z.string().max(4096), z.number(), z.boolean(), z.null()])));
-    return c.json(await run(c, c.req.param('id'), c.req.param('name'), input));
+    const name = c.req.param('name');
+    const request: ToolRun = await body(
+      c,
+      z
+        .object({
+          input: z.record(z.string().max(64), z.union([z.string().max(4096), z.number(), z.boolean(), z.null()])).optional(),
+          confirmation: z.string().max(64).optional(),
+        })
+        .strict()
+    );
+    const { record, spec } = toolOf(c.req.param('id'), name);
+    if (spec.writes && spec.confirm) {
+      const subject = subjectOf({ device: record.id, tool: name, input: request.input ?? {}, by: actorOf(c) });
+      if (!toolConfirmations.accept(request.confirmation, subject)) return c.json({ error: spec.confirm, needsConfirmation: toolConfirmations.ask(subject) }, 409);
+    }
+    return c.json(await run(c, c.req.param('id'), name, request.input ?? {}));
   });
 
   return api;

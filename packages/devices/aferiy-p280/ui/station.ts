@@ -19,11 +19,14 @@ import type { StationView } from './contract';
  * gateway's readback can arrive a moment before the live reading does, and a
  * switch must not flick back in between (see `writeGate.ts` in `@kraftverk/ui`).
  */
+/** How long a confirmed value is shown over readings that do not say it yet. */
+const CONFIRMED_HOLD_MS = 15_000;
+
 export function useStation({ device, actions, reach, readOnly, version }: DeviceScreenProps): StationView {
   const [writeError, setWriteError] = useState<string | null>(null);
   const [gate, writes] = useWriteGate<StationWriteKey>();
-  /** What the station confirmed, shown until its readings catch up. */
-  const [confirmed, setConfirmed] = useState<ReadonlyMap<StationWriteKey, unknown>>(new Map());
+  /** What the station confirmed, and when: shown until its readings catch up. */
+  const [confirmed, setConfirmed] = useState<ReadonlyMap<StationWriteKey, { value: unknown; at: number }>>(new Map());
 
   const inUse = device.connections.find((connection) => connection.inUse) ?? null;
   const seen = useMemo(
@@ -38,18 +41,33 @@ export function useStation({ device, actions, reach, readOnly, version }: Device
     [device.readings, device.info, device.health, inUse?.address]
   );
 
-  // A confirmed value goes once the readings say it too.
+  // A confirmed value goes once the readings say it too, or, since someone
+  // else may have changed it again before they caught up, once they have had
+  // time to: then the readings are what is so.
   useEffect(() => {
     if (!confirmed.size) return;
-    const agreed = [...confirmed].filter(([key, value]) =>
-      key.startsWith('port:')
-        ? seen.status?.ports.find((port) => `port:${port.id}` === key)?.enabled === value
-        : (seen.settings as Record<string, unknown> | null)?.[key] === value
+    const now = Date.now();
+    const done = [...confirmed].filter(
+      ([key, { value, at }]) =>
+        now - at >= CONFIRMED_HOLD_MS ||
+        (key.startsWith('port:')
+          ? seen.status?.ports.find((port) => `port:${port.id}` === key)?.enabled === value
+          : (seen.settings as Record<string, unknown> | null)?.[key] === value)
     );
-    if (agreed.length) setConfirmed((current) => new Map([...current].filter(([key]) => !agreed.some(([done]) => done === key))));
+    if (done.length) {
+      setConfirmed((current) => new Map([...current].filter(([key]) => !done.some(([gone]) => gone === key))));
+      return;
+    }
+    // Readings may stop coming: look again when the first hold runs out.
+    const next = Math.min(...[...confirmed.values()].map(({ at }) => at + CONFIRMED_HOLD_MS));
+    const timer = setTimeout(() => setConfirmed((current) => new Map(current)), Math.max(0, next - now));
+    return () => clearTimeout(timer);
   }, [confirmed, seen]);
 
-  const hold = (values: Record<string, unknown>) => setConfirmed((current) => new Map([...current, ...(Object.entries(values) as [StationWriteKey, unknown][])]));
+  const hold = (values: Record<string, unknown>) => {
+    const at = Date.now();
+    setConfirmed((current) => new Map([...current, ...Object.entries(values).map(([key, value]) => [key as StationWriteKey, { value, at }] as const)]));
+  };
 
   const updateSettings = useCallback(
     async (patch: StationSettingsPatch) => {
@@ -87,7 +105,7 @@ export function useStation({ device, actions, reach, readOnly, version }: Device
   );
 
   const pending = useMemo(() => writesInFlight(writes.pending), [writes.pending]);
-  const shown = useMemo(() => withPending(seen.status, seen.settings, new Map([...confirmed, ...writes.pending])), [confirmed, seen, writes.pending]);
+  const shown = useMemo(() => withPending(seen.status, seen.settings, new Map([...[...confirmed].map(([key, { value }]) => [key, value] as const), ...writes.pending])), [confirmed, seen, writes.pending]);
 
   return {
     status: shown.status,

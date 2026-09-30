@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
 import { Slider, Text, XStack, YStack } from 'tamagui';
 
 import { PendingMark } from './PendingMark';
 import { SliderMarker, type Marker } from './SliderMarker';
+import { useSlide } from './useSlide';
 
 type Props = {
   title: string;
@@ -28,7 +28,7 @@ type Props = {
    * released, and cannot be moved again until it does.
    */
   pending?: boolean;
-  /** Fired once on release, so we don't PATCH on every pixel of the drag. */
+  /** Fired once, on release or when the keys stop, so we don't PATCH on every pixel of the drag. */
   onCommit: (value: number) => void;
 };
 
@@ -47,13 +47,8 @@ export function SliderRow({
   pending,
   onCommit,
 }: Props) {
-  const [local, setLocal] = useState(value);
-  const [dragging, setDragging] = useState(false);
-
-  // Follow the server while idle, but never yank the thumb mid-drag.
-  useEffect(() => {
-    if (!dragging) setLocal(value);
-  }, [value, dragging]);
+  const slide = useSlide(value, String, onCommit);
+  const local = slide.local;
 
   const warning = warn?.(local) ?? null;
 
@@ -90,18 +85,16 @@ export function SliderRow({
           aria-label={title}
           value={[Math.min(max, Math.max(min, local))]}
           onValueChange={([next]) => {
-            setDragging(true);
-            if (typeof next === 'number') setLocal(next);
+            if (typeof next === 'number') slide.change(() => next);
           }}
-          onSlideEnd={() => {
-            setDragging(false);
-            if (local !== value) onCommit(local);
-          }}
+          onSlideStart={slide.onSlideStart}
+          onSlideEnd={slide.onSlideEnd}
         >
           <Slider.Track backgroundColor="$backgroundPress">
             <Slider.TrackActive backgroundColor={warning ? '$warning' : '$accent'} />
           </Slider.Track>
-          <Slider.Thumb index={0} circular size="$1" backgroundColor="$white" borderWidth={3} borderColor={warning ? '$warning' : '$accent'} />
+          {/* The thumb is what a keyboard and a screen reader reach: it carries the name. */}
+          <Slider.Thumb index={0} circular size="$1" backgroundColor="$white" borderWidth={3} borderColor={warning ? '$warning' : '$accent'} aria-label={title} />
         </Slider>
       </YStack>
 

@@ -157,6 +157,12 @@ export type WriteResult = {
   values?: Readonly<Record<string, Value>>;
   /** Refused only because a person has to confirm it: the token to send back with the retry. */
   needsConfirmation?: string;
+  /**
+   * Once written, how much of its dwell is left: the same settings, written
+   * again by the same kind of actor sooner, are refused. A screen keeps the
+   * control busy that long rather than let a nudge be refused.
+   */
+  settlingMs?: number;
 };
 
 export type GatewayDeps = {
@@ -555,13 +561,15 @@ export class ActionGateway {
     note('settings.intent', `${device.name}: changing ${described}`, { patch: changed });
 
     let values: Readonly<Record<string, Value>>;
-    for (const key of keys) this.#memory.set(`gateway.lastWriteAt.${intent.deviceId}:${key}`, String(Date.now()));
+    const writtenAt = Date.now();
+    const settlingMs = () => Math.max(0, writeDwell - (Date.now() - writtenAt));
+    for (const key of keys) this.#memory.set(`gateway.lastWriteAt.${intent.deviceId}:${key}`, String(writtenAt));
     try {
       values = await session.write(changed);
     } catch (error) {
       const detail = (error as Error).message;
       note('settings.failed', `${device.name}: changing ${described} failed: ${detail}`);
-      return { outcome: 'failed', detail };
+      return { outcome: 'failed', detail, settlingMs: settlingMs() };
     }
 
     // The device's own word, read back: what it reports now, not what was sent.
@@ -570,7 +578,7 @@ export class ActionGateway {
     const verified = agrees() || (await this.#eventually(agrees));
     const detail = verified ? `Changed ${described}, confirmed by the device` : `It accepted the change, but does not report ${labelled(keys)} as set`;
     note(`settings.${verified ? 'verified' : 'unverified'}`, `${device.name}: ${detail}`, { patch: changed });
-    return { outcome: verified ? 'verified' : 'unverified', detail, values: reported() };
+    return { outcome: verified ? 'verified' : 'unverified', detail, values: reported(), settlingMs: settlingMs() };
   }
 
   #ageOf(iso: string | null): number {

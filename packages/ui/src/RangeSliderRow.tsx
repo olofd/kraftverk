@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
 import { Slider, Text, XStack, YStack } from 'tamagui';
 
 import { PendingMark } from './PendingMark';
 import { SliderMarker, type Marker } from './SliderMarker';
+import { useSlide } from './useSlide';
 
 type Range = readonly [number, number];
 
@@ -24,7 +24,7 @@ type Props = {
   warn?: (value: Range) => string | null;
   disabled?: boolean;
   pending?: boolean;
-  /** On release, with only the ends that moved. */
+  /** On release, or when the keys stop, with only the ends that moved. */
   onCommit: (low: number | null, high: number | null) => void;
 };
 
@@ -49,14 +49,13 @@ export function RangeSliderRow({
   pending,
   onCommit,
 }: Props) {
-  const [local, setLocal] = useState<Range>(value);
-  const [dragging, setDragging] = useState(false);
-
-  useEffect(() => {
-    if (!dragging) setLocal(value);
-    // The pair, by its ends: a new array with the same ends is no change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value[0], value[1], dragging]);
+  // The pair, by its ends: a new array with the same ends is no change.
+  const slide = useSlide<Range>(value, (v) => v.join(' '), (next, from) => {
+    const low = next[0] !== from[0] ? next[0] : null;
+    const high = next[1] !== from[1] ? next[1] : null;
+    if (low !== null || high !== null) onCommit(low, high);
+  });
+  const local = slide.local;
 
   const warning = warn?.(local) ?? null;
   const clamp = (v: number) => Math.min(max, Math.max(min, v));
@@ -104,16 +103,11 @@ export function RangeSliderRow({
           onValueChange={(next) => {
             const [low, high] = next;
             if (typeof low !== 'number' || typeof high !== 'number') return;
-            setDragging(true);
             // The ends never cross, nor come closer than the gap.
-            setLocal((was) => (low !== was[0] ? [Math.min(low, high - gap), high] : [low, Math.max(high, low + gap)]));
+            slide.change((was) => (low !== was[0] ? [Math.min(low, high - gap), high] : [low, Math.max(high, low + gap)]));
           }}
-          onSlideEnd={() => {
-            setDragging(false);
-            const low = local[0] !== value[0] ? local[0] : null;
-            const high = local[1] !== value[1] ? local[1] : null;
-            if (low !== null || high !== null) onCommit(low, high);
-          }}
+          onSlideStart={slide.onSlideStart}
+          onSlideEnd={slide.onSlideEnd}
         >
           <Slider.Track backgroundColor="$backgroundPress">
             <Slider.TrackActive backgroundColor={warning ? '$warning' : '$accent'} />

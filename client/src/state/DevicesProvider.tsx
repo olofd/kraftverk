@@ -40,7 +40,7 @@ import {
 import { CATEGORIES, clientId, connectionId, deviceCapabilities, linkId, MAIN_PART, methodOf, partsOf, savedDeviceId, SIMULATED_METHOD_ID, type DeviceType } from '@kraftverk/device-sdk';
 import { runTool, toHold, toolsOf, withInUse } from '@kraftverk/holder';
 
-import { confirmAction } from '../lib/confirm';
+import { ASKED_AGAIN, confirmAction, withConfirmation } from '../lib/confirm';
 import type { LocalDevice } from '../runtime/local';
 import { AppRuntime } from '../runtime/runtime';
 import type { HeldDevice } from '../runtime/sessions';
@@ -68,6 +68,18 @@ const POLL_MS = 5000;
 const POLL_WHILE_LIVE_MS = 60_000;
 /** Updates from the stream are applied together, this often at most: one redraw for a burst. */
 const APPLY_MS = 100;
+/** The longest a write is held for its dwell: a person's is two seconds. */
+const MAX_SETTLE_MS = 10_000;
+
+/**
+ * A write, answered once the setting may be written again: the gateway
+ * refuses a second write to it within its dwell, so the control that wrote it
+ * stays busy that long rather than let the next nudge be refused.
+ */
+async function settled<R extends { settlingMs?: number }>(result: R): Promise<R> {
+  if (result.settlingMs) await new Promise((resolve) => setTimeout(resolve, Math.min(result.settlingMs!, MAX_SETTLE_MS)));
+  return result;
+}
 
 /** How reachable the thing holding the list is. */
 export type Connection = 'connecting' | 'online' | 'offline' | 'idle';
@@ -436,17 +448,18 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   /** Sends a command or a settings write, and when the gateway only wants a person to confirm, asks them. */
   const confirmed = useCallback(
     async <R extends { outcome: GatewayResult['outcome']; detail: string; needsConfirmation?: string }>(send: (confirmation?: string) => Promise<R>): Promise<R> => {
-      const first = await send();
-      if (!first.needsConfirmation) return first;
-      const yes = await confirmAction('Confirm', first.detail.replace(/^This (action )?needs explicit confirmation\. /, ''), 'Do it');
-      if (!yes) return { ...first, detail: 'Not confirmed', needsConfirmation: undefined };
-      // The token the refusal handed out: good for this intent, from this person, once.
-      return send(first.needsConfirmation);
+      // The token a refusal hands out: good for this intent, from this person, once, for a minute.
+      const { answer, declined } = await withConfirmation(
+        send,
+        (result) => (result.needsConfirmation ? { token: result.needsConfirmation, reason: result.detail.replace(/^This (action )?needs explicit confirmation\. /, '') } : null),
+        (reason, again) => confirmAction('Confirm', again ? `${ASKED_AGAIN}\n\n${reason}` : reason, 'Do it')
+      );
+      return declined ? { ...answer, detail: 'Not confirmed', needsConfirmation: undefined } : answer;
     },
     []
   );
 
-  /** A tool that says what it cannot undo is asked about first, whatever screen runs it; no, and it does not run. */
+  /** A tool this app runs itself that says what it cannot undo is asked about first, as the server does for its own; no, and it does not run. */
   const confirmedTool = useCallback(async (spec: { label: string; confirm?: string } | undefined) => {
     if (!spec?.confirm) return;
     if (!(await confirmAction(`${spec.label}?`, spec.confirm, spec.label))) throw new Error('Not confirmed');
@@ -486,7 +499,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
                 by: runtime.clientId ? `app:${runtime.clientId}` : 'this app',
                 confirmation,
               })
-            ),
+            ).then(settled),
           command: (input: CommandInput) =>
             confirmed((confirmation) =>
               runtime.gateway.execute({
@@ -507,12 +520,19 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       if (holder === 'server') {
         const inUse = device.connections.find((connection) => connection.inUse) ?? device.connections.find((connection) => connection.heldBy.kind === 'server');
         return {
+          // The server asks, for a tool that cannot be undone: its question, with a token for the yes.
           tool: async <T,>(name: string, input?: Record<string, unknown>) => {
             const spec = device.tools.find((tool) => tool.name === name);
-            await confirmedTool(spec);
-            return runDeviceTool<T>(device.id, name, { input, writes: spec?.writes ?? false });
+            const label = spec?.label ?? name;
+            const { answer, declined } = await withConfirmation(
+              (confirmation) => runDeviceTool<T>(device.id, name, { input, writes: spec?.writes ?? false, confirmation }),
+              (result) => ('needsConfirmation' in result ? { token: result.needsConfirmation, reason: result.reason } : null),
+              (reason, again) => confirmAction(`${label}?`, again ? `${ASKED_AGAIN}\n\n${reason}` : reason, label)
+            );
+            if (declined || !('answer' in answer)) throw new Error('Not confirmed');
+            return answer.answer;
           },
-          write: (patch) => confirmed((confirmation) => writeDeviceAttributes(device.id, { patch, confirmation })),
+          write: (patch) => confirmed((confirmation) => writeDeviceAttributes(device.id, { patch, confirmation })).then(settled),
           command: (input) => confirmed((confirmation) => sendCommand(device.id, { ...input, confirmation })),
           diagnostic: inUse ? <T,>(name: string, query?: Record<string, string | number>) => fetchTransportDiagnostic<T>(inUse.transport, name, query) : null,
         };

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Feather } from '@expo/vector-icons';
 import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
@@ -360,8 +360,16 @@ function Bill({ plug }: { plug: Plug }) {
   }, [price]);
   const typed = Number(draft.replace(',', '.'));
   const valid = draft.trim() !== '' && Number.isFinite(typed) && typed >= 0 && typed <= 999.99;
+  // Enter and the blur after it both commit, before either write has settled:
+  // the price on its way is sent once.
+  const sending = useRef<number | null>(null);
   const commit = () => {
-    if (valid && Math.round(typed * 100) !== Math.round((price ?? -1) * 100)) void plug.write({ price: Math.round(typed * 100) / 100 });
+    const cents = Math.round(typed * 100);
+    if (!valid || cents === Math.round((price ?? -1) * 100) || cents === sending.current) return;
+    sending.current = cents;
+    void plug.write({ price: cents / 100 }).finally(() => {
+      sending.current = null;
+    });
   };
   return (
     <YStack gap="$2">

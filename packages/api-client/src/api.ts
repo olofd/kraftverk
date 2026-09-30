@@ -272,16 +272,31 @@ export async function sendCommand(
  * One of a device type's own tools, declared as data: a register dump, a raw
  * frame. Reads are a GET, anything that writes a POST — the server checks the
  * input and the answer against the declaration, and refuses and audits
- * accordingly.
+ * accordingly. One that cannot be undone answers with the question for a
+ * person's yes, asked again with `confirmation`.
  */
-export async function runDeviceTool<T = unknown>(id: string, name: string, options: { input?: Record<string, unknown>; writes?: boolean } = {}, signal?: AbortSignal): Promise<T> {
+export async function runDeviceTool<T = unknown>(
+  id: string,
+  name: string,
+  options: { input?: Record<string, unknown>; writes?: boolean; confirmation?: string } = {},
+  signal?: AbortSignal
+): Promise<{ answer: T } | { needsConfirmation: string; reason: string }> {
   const path = devicePath(id, `/tools/${encodeURIComponent(name)}`);
   if (options.writes) {
-    const { data } = await api.post<T>(path, options.input ?? {}, { signal, timeout: 30_000 });
-    return data;
+    const response = await api.post<T | { error: string; needsConfirmation?: string }>(path, { input: options.input ?? {}, confirmation: options.confirmation }, {
+      signal,
+      timeout: 30_000,
+      validateStatus: (status) => status === 200 || status === 409,
+    });
+    if (response.status === 409) {
+      const refusal = response.data as { error: string; needsConfirmation?: string };
+      if (refusal.needsConfirmation) return { needsConfirmation: refusal.needsConfirmation, reason: refusal.error };
+      throw new Error(refusal.error);
+    }
+    return { answer: response.data as T };
   }
   const { data } = await api.get<T>(path, { params: options.input, signal, timeout: 30_000 });
-  return data;
+  return { answer: data };
 }
 
 // --- connections and links ------------------------------------------------------

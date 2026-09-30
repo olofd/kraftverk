@@ -172,9 +172,8 @@ export default function AddDeviceScreen() {
   const next = useCallback(() => {
     if (!flow) return;
     setStepIndex((index) => {
-      let to = Math.min(index + 1, flow.plan.length - 1);
-      if (flow.plan[to]?.kind === 'choose' && flow.address && to < flow.plan.length - 1) to += 1;
-      return to;
+      const to = Math.min(index + 1, flow.plan.length - 1);
+      return skipsChoose(flow, to) ? to + 1 : to;
     });
   }, [flow]);
 
@@ -190,7 +189,9 @@ export default function AddDeviceScreen() {
       return;
     }
     setOutcome(null);
-    setStepIndex(stepIndex - 1);
+    // Past a step it passed over going forward, as the progress bar does.
+    const to = stepIndex - 1;
+    setStepIndex(skipsChoose(flow, to) && to > 0 ? to - 1 : to);
   }, [flow, stepIndex]);
 
   /** Straight to an earlier step, from the progress bar. */
@@ -256,7 +257,12 @@ export default function AddDeviceScreen() {
 
       {(stage === 'steps' || stage === 'finish') && flow ? (
         <Progress
-          steps={[...flow.plan.map((step) => step.title), attachTo ? 'Add it' : 'Name it']}
+          steps={[
+            ...flow.plan
+              .map((step, index) => ({ title: step.title, index, skipped: skipsChoose(flow, index) && index !== stepIndex }))
+              .filter((step) => !step.skipped),
+            { title: attachTo ? 'Add it' : 'Name it', index: flow.plan.length },
+          ]}
           at={stage === 'finish' ? flow.plan.length : stepIndex}
           onGoTo={goTo}
         />
@@ -328,6 +334,11 @@ export default function AddDeviceScreen() {
 // --- 1 · what are you adding ------------------------------------------------------
 
 /** Whether a type answers to what was typed: every word somewhere in its name, brand, models or description. */
+/** Finding the device on the network, when an earlier step already found it: passed over going forward. The last step is never passed over. */
+function skipsChoose(flow: SetupFlow, index: number): boolean {
+  return flow.plan[index]?.kind === 'choose' && flow.address !== null && index < flow.plan.length - 1;
+}
+
 function matches(type: DeviceTypeListing, query: string): boolean {
   const text = [type.meta.name, type.meta.brand, ...(type.meta.models ?? []), type.meta.description, (CATEGORIES as Record<string, { label: string }>)[type.meta.category]?.label]
     .filter(Boolean)
@@ -469,28 +480,37 @@ function Ways({ ways, busy, onPick, onBack }: { ways: Way[]; busy: boolean; onPi
  * Done ones are filled, and a tap on one goes back to it with everything kept;
  * the step's own title is the heading below, so it is not said twice.
  */
-function Progress({ steps, at, onGoTo }: { steps: string[]; at: number; onGoTo: (index: number) => void }) {
+/**
+ * Where the person is among the steps. `steps` are the ones they go through,
+ * each with its place in the plan: a step the flow skipped (finding a device
+ * an earlier step already found) is not counted, nor drawn as done.
+ */
+function Progress({ steps, at, onGoTo }: { steps: { title: string; index: number }[]; at: number; onGoTo: (index: number) => void }) {
+  const now = Math.max(0, steps.findIndex((step) => step.index === at));
   return (
     <YStack gap="$2">
       <Text fontSize={12} fontWeight="700" color="$muted" letterSpacing={0.6} textTransform="uppercase">
-        Step {Math.min(at + 1, steps.length)} of {steps.length}
+        Step {now + 1} of {steps.length}
       </Text>
-      <XStack gap={4} role="list" aria-label="Setup steps">
-        {steps.map((title, index) => {
-          const done = index < at;
+      <XStack gap={4} aria-label="Setup steps">
+        {steps.map((step, position) => {
+          const done = position < now;
           return (
             <YStack
-              key={`${title}-${index}`}
+              key={`${step.title}-${step.index}`}
               flex={1}
-              role="listitem"
-              aria-label={`${title}${done ? ', done — go back to it' : index === at ? ', now' : ''}`}
-              aria-current={index === at ? 'step' : undefined}
+              // A done step is a button: Tab reaches it, Enter or Space goes back to it.
+              role={done ? 'button' : undefined}
+              tabIndex={done ? 0 : undefined}
+              aria-label={`${step.title}${done ? ', done: go back to it' : position === now ? ', now' : ''}`}
+              aria-current={position === now ? 'step' : undefined}
               paddingVertical={6}
               cursor={done ? 'pointer' : 'default'}
-              onPress={done ? () => onGoTo(index) : undefined}
+              onPress={done ? () => onGoTo(step.index) : undefined}
               hoverStyle={done ? { opacity: 0.7 } : undefined}
+              focusVisibleStyle={done ? { outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid', borderRadius: 4 } : undefined}
             >
-              <YStack height={6} borderRadius={3} backgroundColor={index <= at ? '$accent' : '$backgroundPress'} opacity={done ? 0.55 : 1} />
+              <YStack height={6} borderRadius={3} backgroundColor={position <= now ? '$accent' : '$backgroundPress'} opacity={done ? 0.55 : 1} />
             </YStack>
           );
         })}

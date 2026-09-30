@@ -27,7 +27,7 @@ import { Card, Row, RowSeparator, SchemaForm, SectionLabel, SegmentedControl, ha
 
 import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
-import { confirmAction } from '../src/lib/confirm';
+import { ASKED_AGAIN, confirmAction, withConfirmation } from '../src/lib/confirm';
 import { useDevices } from '../src/state/DevicesProvider';
 
 /**
@@ -182,6 +182,10 @@ function when(at: string): string {
   return `${date.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${time}`;
 }
 
+/** The server's question, when a change to an automation wants a person's yes. */
+const wantsYes = (answer: Awaited<ReturnType<typeof updateAutomation>>) =>
+  'needsConfirmation' in answer ? { token: answer.needsConfirmation, reason: answer.reason } : null;
+
 function AutomationCard({
   automation,
   recipes,
@@ -230,12 +234,11 @@ function AutomationCard({
 
   const setMode = (mode: AutomationMode) =>
     act(async () => {
-      let answer = await updateAutomation(automation.id, { mode });
-      if ('needsConfirmation' in answer) {
-        const yes = await confirmAction(`Let “${automation.name}” act on its own?`, `${automation.sentence}\n\n${answer.reason}`, 'Let it act');
-        if (!yes) return;
-        answer = await updateAutomation(automation.id, { mode, confirmation: answer.needsConfirmation });
-      }
+      const { answer } = await withConfirmation(
+        (confirmation) => updateAutomation(automation.id, { mode, confirmation }),
+        wantsYes,
+        (reason, again) => confirmAction(`Let “${automation.name}” act on its own?`, `${again ? `${ASKED_AGAIN}\n\n` : ''}${automation.sentence}\n\n${reason}`, 'Let it act')
+      );
       if ('automation' in answer) onChanged(answer.automation);
     }, 'That did not work');
 
@@ -411,8 +414,9 @@ function Rehearsed({ rehearsal }: { rehearsal: Rehearsal }) {
       <Text fontSize={13} fontWeight="700" color="$color">
         On the last week: {rehearsal.runs.length ? `${rehearsal.runs.length} run${rehearsal.runs.length === 1 ? '' : 's'}${rehearsal.runs.length > shown.length ? `, the last ${shown.length} shown` : ''}` : 'it would not have run'}
       </Text>
-      {shown.map((run) => (
-        <RunLine key={run.at} label="Would have" run={{ at: run.at, outcome: run.outcome, summary: run.summary }} empty="" />
+      {/* Two triggers can fire in one minute: the run's place, not its time, tells them apart. */}
+      {shown.map((run, index) => (
+        <RunLine key={`${index}:${run.at}`} label="Would have" run={{ at: run.at, outcome: run.outcome, summary: run.summary }} empty="" />
       ))}
       {rehearsal.caveats.map((caveat) => (
         <Text key={caveat} fontSize={12} color="$muted" lineHeight={17}>
@@ -516,12 +520,11 @@ function Editor({
         return;
       }
       const changes = { name: chosenName, roles, params };
-      let answer = await updateAutomation(existing.id, changes);
-      if ('needsConfirmation' in answer) {
-        const yes = await confirmAction(`Change “${existing.name}” while it acts?`, answer.reason, 'Change it');
-        if (!yes) return;
-        answer = await updateAutomation(existing.id, { ...changes, confirmation: answer.needsConfirmation });
-      }
+      const { answer } = await withConfirmation(
+        (confirmation) => updateAutomation(existing.id, { ...changes, confirmation }),
+        wantsYes,
+        (reason, again) => confirmAction(`Change “${existing.name}” while it acts?`, again ? `${ASKED_AGAIN}\n\n${reason}` : reason, 'Change it')
+      );
       if ('automation' in answer) onSaved(answer.automation);
     } catch (err) {
       setProblem(describeError(err) || 'It could not be saved');

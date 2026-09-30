@@ -526,17 +526,35 @@ describe('a device you have', () => {
     expect((await onBusAs(`${base}/ping`)).body).toEqual({ pong: true, room: 'Hall' });
     expect((await onBusAs(`${base}/blink`)).status).toBe(405);
     expect((await onBusAs(`${base}/nothing`)).status).toBe(404);
-    expect((await onBusAs(`${base}/blink`, { method: 'POST', body: { times: 2 } })).body).toEqual({ blinked: 2 });
+    expect((await onBusAs(`${base}/blink`, { method: 'POST', body: { input: { times: 2 } } })).body).toEqual({ blinked: 2 });
     // Its input is checked against what it asks for before it runs.
-    const outOfRange = await onBusAs(`${base}/blink`, { method: 'POST', body: { times: 500 } });
+    const outOfRange = await onBusAs(`${base}/blink`, { method: 'POST', body: { input: { times: 500 } } });
     expect(outOfRange.status).toBe(400);
     expect(outOfRange.body.error).toBe('Times must be at most 99');
-    const refused = await onBusAs(`${base}/blink`, { method: 'POST', body: { times: 99 } });
+    const refused = await onBusAs(`${base}/blink`, { method: 'POST', body: { input: { times: 99 } } });
     expect(refused.status).toBe(409);
     expect(refused.body.error).toContain('overheat');
     const kinds = ((await onBusAs('/audit')).body as { kind: string; actor: string }[]).filter((entry) => entry.kind.startsWith('device.tool'));
     expect(kinds.map((entry) => entry.kind).sort()).toEqual(['device.tool', 'device.tool-refused', 'device.tool-refused']);
     expect(kinds.every((entry) => entry.actor === 'olof')).toBe(true);
+  });
+
+  test('a tool that cannot be undone waits for a person’s yes: a token for this tool and this person, good once', async () => {
+    const plug = await added('Desk plug', { server: simulated, typeId: 'atorch.s1w' });
+    const reset = `/devices/${enc(plug.id)}/tools/resetEnergy`;
+
+    const asked = await as(reset, { method: 'POST', body: {} });
+    expect(asked.status).toBe(409);
+    expect(asked.body).toMatchObject({ needsConfirmation: expect.any(String) });
+    expect(asked.body.error).toContain('zero');
+    // A word anyone could send is no yes.
+    expect((await as(reset, { method: 'POST', body: { confirmation: 'yes' } })).body).toMatchObject({ needsConfirmation: expect.any(String) });
+
+    const token = (await as(reset, { method: 'POST', body: {} })).body.needsConfirmation as string;
+    expect((await as(reset, { method: 'POST', body: { confirmation: token } })).status).toBe(200);
+    expect((await as(reset, { method: 'POST', body: { confirmation: token } })).status).toBe(409);
+    // A tool that can be undone just runs.
+    expect((await as(`/devices/${enc(plug.id)}/tools/rotateScreen`, { method: 'POST', body: {} })).status).toBe(200);
   });
 
   test('a read-only server refuses a tool that writes to hardware before it runs; a simulated device has none', async () => {

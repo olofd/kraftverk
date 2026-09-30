@@ -195,6 +195,13 @@ export type AttributeWrite = { patch: Record<string, Value>; confirmation?: stri
 /** `POST /devices/:id/parts/:part/commands/:capability/:command`. */
 export type CommandBody = { args: Record<string, Value>; reason?: string; confirmation?: string };
 
+/**
+ * `POST /devices/:id/tools/:name`, for a tool that writes. One that says what
+ * it cannot undo is refused first with 409 `{ error, needsConfirmation }`: the
+ * token for a person's yes, presented here as `confirmation`.
+ */
+export type ToolRun = { input?: Record<string, Value>; confirmation?: string };
+
 export type SeriesPoint = { at: string; value: number };
 
 export type DeviceHistory = {

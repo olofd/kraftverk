@@ -51,6 +51,23 @@ type Series = { attribute: AttributeSpec; points: { at: number; value: ScalarVal
 const valueOf = (attribute: AttributeSpec, row: { value: number | null; text: string | null }): ScalarValue | null =>
   row.text !== null ? row.text : row.value === null ? null : attribute.value.type === 'boolean' ? row.value !== 0 : row.value;
 
+/**
+ * Where `t` goes in times sorted oldest first: the index of the first one
+ * after it. Fourteen days of minute samples are twenty thousand points,
+ * looked up at every moment: halving, not walking.
+ */
+function after(times: readonly { at: number }[] | readonly number[], t: number): number {
+  let low = 0;
+  let high = times.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    const item = times[middle]!;
+    if ((typeof item === 'number' ? item : item.at) <= t) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
 export async function rehearse(recipe: Recipe, automation: Rehearsed, source: RehearseSource, window: { from: Date; to: Date }): Promise<Rehearsal> {
   const from = window.from.toISOString();
   const to = window.to.toISOString();
@@ -93,11 +110,7 @@ export async function rehearse(recipe: Recipe, automation: Rehearsed, source: Re
     read: (role, means) => {
       const found = series.get(`${role}:${means}`);
       if (!found) return null;
-      let latest: { at: number; value: ScalarValue } | undefined;
-      for (const point of found.points) {
-        if (point.at > t) break;
-        latest = point;
-      }
+      const latest = found.points[after(found.points, t) - 1];
       // A sample older than its attribute stays current was not known then.
       if (!latest || t - latest.at > currentForOf(found.attribute) + SAMPLE_SLACK_MS) return null;
       const unit = found.attribute.value.type === 'number' ? (found.attribute.value.unit ?? '') : '';
@@ -134,9 +147,9 @@ export async function rehearse(recipe: Recipe, automation: Rehearsed, source: Re
   // A hold is looked at again when it has run its time, as the engine's timer does, sample or not.
   const queue = [...moments].sort((a, b) => a - b);
   const lookAgainAt = (t: number) => {
-    if (t > end || queue.includes(t)) return;
-    const index = queue.findIndex((moment) => moment > t);
-    queue.splice(index < 0 ? queue.length : index, 0, t);
+    const index = after(queue, t);
+    if (t > end || queue[index - 1] === t) return;
+    queue.splice(index, 0, t);
   };
   for (let index = 0; index < queue.length; index++) {
     const t = queue[index]!;
