@@ -126,6 +126,8 @@ type LiveRun = {
   asked: boolean;
   /** Who stopped it, once someone has. */
   stoppedBy: string | null;
+  /** Its automation was deleted while it ran: it ends at the next step, and is neither kept nor on the timeline. */
+  gone: boolean;
   /** What a wait is woken by when it is stopped. */
   wake: Set<() => void>;
   /** How often its rule may switch each role's part, at most: what it tells the gateway. */
@@ -176,6 +178,8 @@ export class AutomationEngine {
   #running = new Set<string>();
   /** Runs taking steps now, by automation. */
   #live = new Map<string, LiveRun>();
+  /** Runs of commands alone, acting now: not shown as running, but stopped all the same when their automation goes. */
+  #once = new Map<string, LiveRun>();
   /** Each `becomes` trigger's state, read once from the store, and its hold when one is waiting it out. */
   #becoming = new Map<string, { state: TriggerState; hold: ReturnType<typeof setTimeout> | null }>();
   /** Which automations each device's messages concern, by store revision: not every automation for every reading. */
@@ -229,8 +233,11 @@ export class AutomationEngine {
 
   /** Lets go of an automation that is gone: a run it takes is stopped; what the store kept went with it. */
   forget(automationId: string): void {
-    const live = this.#live.get(automationId);
-    if (live) this.#stopLive(live, 'its automation was deleted');
+    const live = this.#live.get(automationId) ?? this.#once.get(automationId);
+    if (live) {
+      live.gone = true;
+      this.#stopLive(live, 'its automation was deleted');
+    }
     for (const [key, entry] of this.#becoming) {
       if (!key.startsWith(`${automationId}:`)) continue;
       if (entry.hold) clearTimeout(entry.hold);
@@ -659,7 +666,7 @@ export class AutomationEngine {
       Object.assign(run, { outcome, summary, steps, endedAt: run.at });
       if (!options.check) {
         run.id = this.deps.store.ran(automation.id, run);
-        this.#note(automation, run, device);
+        if (run.id) this.#note(automation, run, device);
       }
       return run;
     };
@@ -699,6 +706,7 @@ export class AutomationEngine {
       run,
       asked: run.startedBy !== null,
       stoppedBy: null,
+      gone: false,
       wake: new Set(),
       allowance: this.#allowance(recipe, scope),
     };
@@ -708,7 +716,10 @@ export class AutomationEngine {
       live.id = run.id = this.deps.store.beginRun(automation.id, run);
       this.#live.set(automation.id, live);
       this.#moved(live);
-    } else live.id = `once-${automation.id}-${at.getTime()}`;
+    } else {
+      live.id = `once-${automation.id}-${at.getTime()}`;
+      this.#once.set(automation.id, live);
+    }
     options.onBegun?.(run);
 
     let walked: Walked;
@@ -730,14 +741,19 @@ export class AutomationEngine {
     run.endedAt = this.#now().toISOString();
     const device = actsOn(automation, recipe);
     if (stepped) {
-      this.deps.store.endRun(live.id, run);
       this.#live.delete(automation.id);
-      this.#note(automation, run, device);
-      this.#moved(live);
+      if (!live.gone) {
+        this.deps.store.endRun(live.id, run);
+        this.#note(automation, run, device);
+      }
+      this.deps.bus?.publish({ kind: 'automation', automationId: automation.id });
     } else {
-      run.id = this.deps.store.ran(automation.id, run);
-      this.#note(automation, run, device);
+      this.#once.delete(automation.id);
+      // Deleted while it ran, told or not: its runs went with it, and so does this one.
+      run.id = live.gone ? null : this.deps.store.ran(automation.id, run);
+      if (run.id) this.#note(automation, run, device);
     }
+    if (live.gone) run.id = null;
     return run;
   }
 

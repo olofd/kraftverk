@@ -279,6 +279,21 @@ describe('starting a charge', () => {
     expect(run.summary).toStartWith('Stopped by olof after it turned Garage station — AC outlets on');
   });
 
+  test('deleted while it waits: it stops, does what it does if stopped, and is neither kept nor on the timeline', async () => {
+    const { engine, make, store, recorded, switches } = setup({ reachableAfterMs: 10_000 });
+    const automation = make('standard.start-charging', QUICK);
+    await engine.startAsked(automation.id, 'olof');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    store.delete(automation.id);
+    engine.forget(automation.id);
+    for (let waited = 0; waited < 5_000 && engine.running(automation.id); waited += 10) await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(engine.running(automation.id)).toBeNull();
+    expect(switches()).toEqual(['supply on', 'charger off', 'supply off']);
+    expect(store.runs(automation.id)).toEqual([]);
+    expect(recorded.filter((entry) => entry.resource === automation.id && entry.kind !== 'automation.started')).toEqual([]);
+  });
+
   test('while it runs: kept at every step, said on the live bus, its readings wanted fresh — one run at a time', async () => {
     const { engine, make, ended, store, heard, fresh } = setup({ wakesOnSwitch: 2 });
     const automation = make('standard.start-charging', QUICK);

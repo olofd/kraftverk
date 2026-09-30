@@ -571,7 +571,10 @@ export type AutomationChanges = {
 export type AutomationMode = 'off' | 'observe' | 'armed';
 
 export type AutomationRun = {
-  /** Which run it is; null for what it would do, asked, which is not kept. */
+  /**
+   * Which run it is; null when it is not kept: what it would do, asked, or a
+   * run whose automation was deleted while it ran. Its outcome says which.
+   */
   id: string | null;
   /** When it started. */
   at: string;

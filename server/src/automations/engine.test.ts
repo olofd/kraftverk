@@ -256,12 +256,13 @@ describe('at a time of day', () => {
     expect(sent[0]!.reason).toContain('Tomorrow looks sunny');
   });
 
-  test('deleted while it ran, its run goes with it: nothing is kept, and nothing throws', async () => {
-    const { engine, store, sunny } = setup();
+  test('deleted while it ran, its run goes with it: nothing is kept or on the timeline, and nothing throws', async () => {
+    const { engine, store, sunny, recorded } = setup();
     const automation = sunny({}, 'armed');
     store.delete(automation.id);
     expect(await engine.run(automation)).toMatchObject({ outcome: 'acted', id: null });
     expect(store.runs(automation.id)).toEqual([]);
+    expect(recorded).toEqual([]);
   });
 
   test('a condition not met is idle; one it cannot tell is unknown, and neither acts', async () => {

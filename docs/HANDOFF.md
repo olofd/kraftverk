@@ -113,7 +113,7 @@ and `.set-aside.*` copies on the server's volume are the owner's to delete.
 
 Measured against [NEXT-STEP-ARCHITECTURE.md](NEXT-STEP-ARCHITECTURE.md) §10
 (the phases) and §12 (findings J1–J40), as of 2026-09-30 (`32a218b`). All
-checks are green: typecheck, 726 unit tests, the architecture ratchet and 22
+checks are green: typecheck, 727 unit tests, the architecture ratchet and 22
 end-to-end tests.
 
 **Deployed 2026-09-30.** The push to GitLab carried the schema change of
