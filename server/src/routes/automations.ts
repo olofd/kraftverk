@@ -3,7 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
 import type { AutomationRuns, RecipeView } from '@kraftverk/api-contract';
-import { describeSteps, isTimeZone, startsWhenAsked, takesSteps, type Recipe, type Value } from '@kraftverk/device-sdk';
+import { describeSteps, isTimeZone, startsWhenAsked, takesSteps, type AutomationId, type Recipe, type Value } from '@kraftverk/device-sdk';
 import { Confirmations, subjectOf } from '@kraftverk/gateway';
 
 import { actorOf } from '../auth/routes.ts';
@@ -26,7 +26,9 @@ const params = z.record(z.string().min(1).max(40), z.union([z.string().max(200),
 /** Minutes between looks that keep things so, a day at most; null, never. */
 const recheckMinutes = z.number().int().min(1).max(1440).nullable();
 
-export function automationRoutes({ automations, engine, library, catalog, sessions }: AppDeps): Hono {
+export function automationRoutes({ automations, engine, library, catalog, sessions, bus }: AppDeps): Hono {
+  /** An automation made, changed or deleted, said on the live stream: every open app reads it again. No device list does. */
+  const moved = (automationId: AutomationId) => bus.publish({ kind: 'automation', automationId });
   const api = new Hono();
   /** Arming is confirmed as a command is: a token bound to this automation, these changes and this person, once. */
   const arming = new Confirmations();
@@ -133,6 +135,7 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
     const created = automations.create({ name: input.name, recipe: input.recipe, roles: checked.roles, params: checked.params, timeZone: input.timeZone, recheckMinutes: input.recheckMinutes ?? null });
     auditAbout(c, 'automation.created', 'automation', created.id, `Made the automation "${created.name}", only watching`, { recipe: created.recipe, roles: created.roles, params: created.params, recheckMinutes: created.recheckMinutes });
     engine.poke(created.id);
+    moved(created.id);
     return c.json(view(created));
   });
 
@@ -201,6 +204,7 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
     });
     // Its conditions, looked at now, after the change is on the timeline: let act while one holds, it acts at once.
     if (startsAfresh) engine.poke(updated.id);
+    moved(updated.id);
     return c.json(view(updated));
   });
 
@@ -209,6 +213,7 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
     if (!current || !automations.delete(current.id)) throw new HTTPException(404, { message: 'No such automation' });
     engine.forget(current.id);
     auditAbout(c, 'automation.deleted', 'automation', current.id, `Deleted the automation "${current.name}"`);
+    moved(current.id);
     return c.json({ ok: true });
   });
 

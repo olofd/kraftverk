@@ -86,9 +86,12 @@ export function heldRoutes({ catalog, connections, clients, remote, sessions, ev
       audit({ at: new Date().toISOString(), kind: 'device.mismatch', actor: actorOf(c), resourceKind: 'device', resource: record.id, summary: `${record.name}'s connection from ${client.name} reaches ${said} instead`, detail: { expected: record.identity } });
       throw new HTTPException(409, { message: 'That connection reaches a different device, not the one you added' });
     }
+    // What every open app's list shows changes only when the device does, or comes back: then it reads the list again.
+    let listChanged = remote.latest(record.id) === null;
     if (said && !record.identity && !catalog.byIdentity(said).active) {
       catalog.update(record.id, { identity: said });
       audit({ at: new Date().toISOString(), kind: 'device.identified', actor: actorOf(c), resourceKind: 'device', resource: record.id, summary: `${record.name} answered for the first time, as ${said}` });
+      listChanged = true;
     }
 
     if (input.description) {
@@ -96,10 +99,14 @@ export function heldRoutes({ catalog, connections, clients, remote, sessions, ev
       const problems = validateDescription(description, record.typeId);
       if (problems.length) throw new HTTPException(400, { message: `That description does not hold: ${problems.join('; ')}` });
       // Sent only when the device describes itself: the type's own the server has already.
-      catalog.describe(record.id, description, (input.info as DeviceInfo | undefined) ?? null, 'device');
+      if (catalog.describe(record.id, description, (input.info as DeviceInfo | undefined) ?? null, 'device')) listChanged = true;
     }
     const description = sessions.description(catalog.get(record.id)!);
     const counts = remote.accept(record.id, { clientId: client.id, connectionId: connection.id }, input.readings, keptAttributes(description));
+    // What it reads now, said on the live stream as a device the server holds says it; the rest went to history.
+    const latest = remote.latest(record.id);
+    if (counts.live && latest) bus.publish({ kind: 'readings', deviceId: record.id, readings: latest.readings });
+    if (listChanged && latest) bus.publish({ kind: 'changed', deviceId: record.id });
     // Its on/offs and modes, when each changed: queued ones land in their place in time.
     recordChanges(record.id, loggedAttributes(description), input.readings);
     // Its events, kept as the server's own are: only what its description declares, at the level it declares.

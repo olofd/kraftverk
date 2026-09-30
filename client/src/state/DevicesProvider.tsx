@@ -236,7 +236,8 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     automationListeners.current.add(listener);
     return () => void automationListeners.current.delete(listener);
   }, []);
-  const [live, setLive] = useState<LiveState>('down');
+  // Opening at first: the stream reads the list when it opens, and says so if it cannot.
+  const [live, setLive] = useState<LiveState>('connecting');
   const [heard, setHeard] = useState<{ deviceId: string; count: number } | null>(null);
   const polling = mode === 'server' && allowed;
 
@@ -332,28 +333,36 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     };
   }, [load, polling]);
 
+  /*
+    The list read without the stream: every few seconds while it is down, and
+    now and then while it is up, in case a change was missed. While it is
+    opening, nothing — its hello reads the list, and a stream that fails says
+    so and is down. Reading here as well was the list read twice, or three
+    times, every time the app opened. Signed out, the list is emptied.
+  */
   useEffect(() => {
+    if (!polling) {
+      void load();
+      return;
+    }
+    if (live === 'connecting') return;
     let timer: ReturnType<typeof setInterval> | undefined;
     // Set once this run is cleaned up: a read still in flight must not start a timer nobody will stop.
     let done = false;
     const every = live === 'live' ? POLL_WHILE_LIVE_MS : POLL_MS;
     const start = () => {
-      if (polling && !done) timer ??= setInterval(() => void load(), every);
+      if (!done && AppState.currentState !== 'background') timer ??= setInterval(() => void load(), every);
     };
     const stop = () => {
       if (timer) clearInterval(timer);
       timer = undefined;
     };
-    if (live !== 'live') {
+    if (live === 'down' && AppState.currentState !== 'background') {
       setLoading((was) => was || served.length === 0);
       void load().then(start);
     } else start();
-    const subscription = AppState.addEventListener('change', (next) => {
-      if (next === 'active') {
-        void load();
-        start();
-      } else stop();
-    });
+    // Back in front, the stream opens again and its hello reads the list; this only picks up its clock again.
+    const subscription = AppState.addEventListener('change', (next) => (next === 'active' ? start() : stop()));
     return () => {
       done = true;
       stop();

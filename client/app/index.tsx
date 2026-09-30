@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { router } from 'expo-router';
+import { router, useIsFocused } from 'expo-router';
 import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { Card, DeviceCard, Row, RowSeparator, SectionLabel, haptic, Icon } from '@kraftverk/ui';
@@ -11,6 +11,7 @@ import { Pressable } from '../src/components/Pressable';
 import { pictureFor } from '../src/devices/ui';
 import { Screen } from '../src/components/Screen';
 import { DeviceIcon } from '../src/features/devices/panels';
+import { useAuth } from '../src/state/AuthProvider';
 import { useDevices } from '../src/state/DevicesProvider';
 
 /** What can be added, from the categories something installed is in: "Power stations, smart plugs, weather". */
@@ -200,8 +201,12 @@ function DeviceList({ devices }: { devices: DeviceView[] }) {
 function FoundNearYou() {
   const [found, setFound] = useState<FoundView[]>([]);
   const theme = useTheme();
+  const { allowed } = useAuth();
+  // The home page stays under every page opened from it: it looks for what is near only while it is seen.
+  const seen = useIsFocused();
 
   useEffect(() => {
+    if (!allowed || !seen) return;
     let live = true;
     const load = () =>
       fetchFound()
@@ -213,7 +218,7 @@ function FoundNearYou() {
       live = false;
       clearInterval(timer);
     };
-  }, []);
+  }, [allowed, seen]);
 
   if (found.length === 0) return null;
 

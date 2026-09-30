@@ -76,11 +76,15 @@ export function corsOrigin(config: Pick<ServerConfig, 'allowedOrigins' | 'develo
  * routes with `app.request()`.
  */
 /**
- * Changes whose outcome the live stream already carries — a reading moves —
- * or that are not about devices at all. Every other change made through the
- * API tells listening apps to read the list again.
+ * Writes that change what an app's list of devices shows: a device saved,
+ * renamed or removed, its connections, its picture, a link, an app forgotten
+ * (the connections it held), everything reset. Each tells every open app to
+ * read the list again — and nothing else does. A reading, a command or a
+ * setting arrives on the live stream as itself, an automation as its own
+ * message, a reading an app sends in as readings (routes/held.ts); a setup
+ * step, an app saying who it is and a policy value change no list.
  */
-const QUIET_CHANGES = /^\/api\/(auth|users)\/|\/commands\/|\/attributes$|\/tools\/|\/rehearse$|^\/api\/mcp$/;
+const LIST_CHANGES = /^\/api\/(setup\/[^/]+\/save|devices\/[^/]+(\/connections(\/[^/]+)*|\/picture)?|links(\/[^/]+)?|clients\/[^/]+|admin\/reset)$/;
 
 export function createApp(deps: AppDeps) {
   const { config, startedAt } = deps;
@@ -142,7 +146,7 @@ export function createApp(deps: AppDeps) {
   // Something changed that a list shows — a device, a connection, a link: every open app hears it.
   api.use('*', async (c, next) => {
     await next();
-    if (['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) || c.res.status >= 400 || QUIET_CHANGES.test(c.req.path)) return;
+    if (['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) || c.res.status >= 400 || !LIST_CHANGES.test(c.req.path)) return;
     deps.bus.publish({ kind: 'changed', deviceId: null });
   });
   api.route('/auth', accounts.auth);

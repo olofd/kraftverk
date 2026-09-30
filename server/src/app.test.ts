@@ -7,7 +7,7 @@ import type { LiveUpdate } from '@kraftverk/api-contract';
 import { savedDeviceId } from '@kraftverk/device-sdk';
 
 import { ActionGateway } from '@kraftverk/gateway';
-import { LiveBus } from '@kraftverk/holder';
+import { LiveBus, type LiveMessage } from '@kraftverk/holder';
 import { CORS_METHODS, corsOrigin, createApp } from './app.ts';
 import { AutomationEngine, serverDevices } from './automations/engine.ts';
 import { AutomationLibrary } from './automations/library.ts';
@@ -695,12 +695,22 @@ describe('a connection a browser holds', () => {
     const device = (await onBusAs(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: 'Desk lamp' } })).body;
     const connectionId = device.connections[0].id;
 
+    const heard: LiveMessage[] = [];
+    const stop = onBus.live.subscribe((message) => void heard.push(message));
     const past = new Date(Date.now() - 3_600_000).toISOString();
     const sent = await onBusAs(`/devices/${enc(device.id)}/readings`, {
       method: 'POST',
       body: { clientId: client.id, connectionId, readings: [{ key: 'on', value: true, at: new Date().toISOString() }, { key: 'on', value: false, at: past }] },
     });
     expect(sent.body).toEqual({ live: 1, history: 1, refused: 0 });
+    // Said on the live stream as a device the server holds says it; back after being away, every list reads it again.
+    expect(heard.map((message) => message.kind)).toEqual(['readings', 'changed']);
+    expect(heard[0]).toMatchObject({ deviceId: device.id, readings: [{ key: 'on', value: true }] });
+    // Its readings after that are readings, and nothing else: no app reads its whole list for them.
+    heard.length = 0;
+    await onBusAs(`/devices/${enc(device.id)}/readings`, { method: 'POST', body: { clientId: client.id, connectionId, readings: [{ key: 'on', value: true, at: new Date().toISOString() }] } });
+    expect(heard.map((message) => message.kind)).toEqual(['readings']);
+    stop();
 
     const view = (await onBusAs(`/devices/${enc(device.id)}`)).body;
     expect(view.readings).toEqual([expect.objectContaining({ key: 'on', value: true })]);
@@ -1267,6 +1277,49 @@ describe('the live stream', () => {
       expect((await as(`/devices/${enc(lamp.id)}/parts/main/commands/switch/set`, { method: 'POST', body: { args: { on: false } } })).status).toBe(200);
       await until(() => updates.slice(before).some((update) => update.type === 'readings' && update.deviceId === lamp.id && update.readings[0]?.value === false));
       expect(updates.slice(before).some((update) => update.type === 'changed')).toBe(false);
+      socket.close();
+    } finally {
+      http.stop(true);
+    }
+  });
+
+  test('only what changes a list of devices says so: an automation says itself, a policy value and a setup step nothing', async () => {
+    const http = serve(simulated);
+    try {
+      const { socket, updates } = await open(http.port!, { cookie: `${SESSION_COOKIE}=${session}` });
+      const plug = await added('Heater plug', { server: simulated, typeId: 'atorch.s1w' });
+      await until(() => updates.some((update) => update.type === 'changed'));
+      const settled = async () => new Promise((resolve) => setTimeout(resolve, 300));
+      await settled();
+
+      let before = updates.length;
+      expect((await as('/policy/loadWatts', { method: 'PUT', body: { value: 25 } })).status).toBe(200);
+      expect((await as('/setup', { method: 'POST', body: { typeId: 'aferiy.p280', methodId: 'simulated' } })).status).toBe(200);
+      await settled();
+      expect(updates.slice(before).filter((update) => update.type === 'changed' || update.type === 'automation')).toEqual([]);
+
+      const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
+      await settled();
+      before = updates.length;
+      const created = await as('/automations', {
+        method: 'POST',
+        body: {
+          name: 'Start charging',
+          recipe: 'standard.start-charging',
+          roles: { supply: { device: station.id, part: 'outlet.ac' }, charger: { device: plug.id, part: 'main' } },
+          params: {},
+          timeZone: 'Europe/Stockholm',
+        },
+      });
+      expect(created.status).toBe(200);
+      await until(() => updates.slice(before).some((update) => update.type === 'automation' && update.id === created.body.id));
+      await settled();
+      expect(updates.slice(before).some((update) => update.type === 'changed')).toBe(false);
+
+      // A link changes what a device's page shows: the list is read again.
+      before = updates.length;
+      await as('/links', { method: 'POST', body: { kind: 'feeds', source: { device: plug.id, part: 'main' }, target: { device: station.id, part: 'input.ac' } } });
+      await until(() => updates.slice(before).some((update) => update.type === 'changed'));
       socket.close();
     } finally {
       http.stop(true);

@@ -104,7 +104,11 @@ rather than a person's session, is still to come.
 | `{ type: 'readings', deviceId, readings }` | Only the readings whose values moved: merge them by key |
 | `{ type: 'health', deviceId, health }` | A device's health, when it changed (and at least every 30 s while readings keep arriving) |
 | `{ type: 'event', deviceId, event }` | Something a device said happened |
-| `{ type: 'changed', deviceId: null }` | Something the stream does not carry in detail changed — a device added, renamed or removed, a connection, a link, what a device is: read the list again |
+| `{ type: 'automation', id }` | An automation was made, changed or deleted, or a run of it moved (started, a step, ended): read the automations again |
+| `{ type: 'changed', deviceId: null }` | What a list of devices shows changed, and the stream does not carry it in detail — a device saved, renamed or removed, a connection, its picture, a link, an app forgotten, what a device is, one an app holds coming back: read the list again. Nothing else says it: a setup step, a policy value, a command or a setting does not |
+
+Readings an app sends for a device it holds (`POST /devices/:id/readings`)
+go out as `readings`, as a server-held device's do.
 
 For each socket, the updates waiting to be sent are combined: a reading by its key, health by its device. They go out at most four
 times a second. A socket that is not draining is sent nothing until it does,
