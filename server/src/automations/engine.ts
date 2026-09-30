@@ -459,6 +459,10 @@ export class AutomationEngine {
     this.#running.add(automation.id);
     try {
       return await this.run(automation, { why, startedBy });
+    } catch (error) {
+      // Started by a trigger, nobody waits on it: what went wrong is said, never left to bring the server down.
+      console.error(`[automations] ${automation.id} could not run:`, error);
+      return null;
     } finally {
       this.#running.delete(automation.id);
     }
@@ -484,10 +488,15 @@ export class AutomationEngine {
     if (automation.mode !== 'armed') return this.run(automation, { check: true, why: `Started by ${by}` });
 
     let begun!: (run: RunResult) => void;
-    const started = new Promise<RunResult>((resolve) => (begun = resolve));
+    let failed!: (error: unknown) => void;
+    const started = new Promise<RunResult>((resolve, reject) => ((begun = resolve), (failed = reject)));
     this.#running.add(automation.id);
     void this.run(automation, { why: `Started by ${by}`, startedBy: by, onBegun: (run) => begun(run) })
-      .then((run) => begun(run))
+      .then(begun, (error: unknown) => {
+        // Before it began, the one who asked is told; after, it is said here.
+        console.error(`[automations] ${automation.id} could not run:`, error);
+        failed(error);
+      })
       .finally(() => this.#running.delete(automation.id));
     return started;
   }

@@ -228,13 +228,19 @@ export class AutomationStore {
       .run(run.endedAt ?? new Date().toISOString(), run.outcome, run.summary, detailOf(run), runId);
   }
 
-  /** A run that was over as it began — commands alone, or nothing to do — kept at once. */
-  ran(automationId: string, run: RunResult): string {
+  /**
+   * A run that was over as it began — commands alone, or nothing to do — kept
+   * at once. Null when its automation was deleted while it ran: its runs went
+   * with it, and so does this one.
+   */
+  ran(automationId: string, run: RunResult): string | null {
     const id = `r-${randomBytes(8).toString('hex')}`;
-    db()
-      .query('INSERT INTO automation_run (id, automation_id, started_at, ended_at, outcome, started_by, why, summary, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(id, automationId, run.at, run.endedAt ?? run.at, run.outcome, run.startedBy, run.why, run.summary, detailOf(run));
-    return id;
+    const kept = db()
+      .query(
+        'INSERT INTO automation_run (id, automation_id, started_at, ended_at, outcome, started_by, why, summary, detail) SELECT ?, id, ?, ?, ?, ?, ?, ?, ? FROM automation WHERE id = ?'
+      )
+      .run(id, run.at, run.endedAt ?? run.at, run.outcome, run.startedBy, run.why, run.summary, detailOf(run), automationId);
+    return kept.changes > 0 ? id : null;
   }
 
   /** Runs that never ended: interrupted, when found as the server starts. */
