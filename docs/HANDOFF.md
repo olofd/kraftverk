@@ -164,6 +164,11 @@ From the Phase 1 review:
 
 ### Next steps
 
+**First, [PLAN-RUN-AND-CHAIN.md](PLAN-RUN-AND-CHAIN.md)**: the fixes from
+setting up the charging sequences and from the review of 5b4ff32–3d9b245;
+play, home-page shortcuts, timers and chaining; then the language for
+import and export. The steps below follow it.
+
 In this order, each small and each keeping the checks green:
 
 1. **Finish Phase 3's findings.**
