@@ -417,7 +417,7 @@ function Editor({
 
           <YStack gap="$2">
             <SectionLabel>Name</SectionLabel>
-            <Input size="$3" value={name} placeholder={recipe.label} onChangeText={setName} backgroundColor="$background" borderColor="$borderColor" accessibilityLabel="Name" />
+            <Input size="$3" value={name} placeholder={recipe.label} onChangeText={setName} backgroundColor="$background" borderColor="$borderColor" aria-label="Name" />
           </YStack>
         </>
       ) : null}

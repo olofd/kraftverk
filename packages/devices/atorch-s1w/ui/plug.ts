@@ -96,7 +96,6 @@ export function usePlug(props: DeviceScreenProps): Plug {
   the screens and nothing renews it: it stops within five minutes by itself.
 */
 
-const LAPSES_AFTER_S = 300;
 const wishes = new Map<string, boolean>();
 const listeners = new Set<() => void>();
 const wish = (id: string, wanted: boolean) => {
@@ -105,18 +104,19 @@ const wish = (id: string, wanted: boolean) => {
 };
 
 export type Live = {
+  /** Readings arrive every second now. */
   on: boolean;
-  /** Asked for, and kept on while a screen is open. */
+  /** Wanted: kept on while one of its screens is open. What the switch shows. */
   kept: boolean;
-  /** Seconds until the plug stops by itself, when it is on and not kept. */
-  left: number | null;
   pending: boolean;
   set: (on: boolean) => void;
 };
 
 /**
  * Whether readings are live, and a way to ask. `keep` asks as the screen
- * opens — the settings, where a change is watched as it lands.
+ * opens — the settings, where a change is watched as it lands. A plug that is
+ * live when a screen opens is kept live too: whoever turned it on wanted it,
+ * and a countdown to a stop nobody asked for says nothing useful.
  */
 export function useLive(plug: Plug, options: { keep?: boolean } = {}): Live {
   const id = plug.props.device.id;
@@ -136,6 +136,11 @@ export function useLive(plug: Plug, options: { keep?: boolean } = {}): Live {
     if (options.keep) wish(id, true);
   }, [id, options.keep]);
 
+  // Live already, and nobody here has said otherwise: keep it.
+  useEffect(() => {
+    if (on && !wishes.has(id)) wish(id, true);
+  }, [id, on]);
+
   // Renew when the plug lets it lapse, while wanted and a screen is open.
   useEffect(() => {
     if (!kept || on || pending || !canChange) return;
@@ -143,22 +148,9 @@ export function useLive(plug: Plug, options: { keep?: boolean } = {}): Live {
     return () => clearTimeout(timer);
   }, [kept, on, pending, canChange, write]);
 
-  // Counts down from when it came on.
-  const [since, setSince] = useState<number | null>(null);
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    setSince(on ? Date.now() : null);
-  }, [on]);
-  useEffect(() => {
-    if (!on) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [on]);
-
   return {
     on,
     kept,
-    left: on && !kept && since !== null ? Math.max(0, LAPSES_AFTER_S - (now - since) / 1000) : null,
     pending,
     set: (next) => {
       wish(id, next);

@@ -105,12 +105,10 @@ export function safetySummary(read: Read): string {
   const high = num(read('maxVoltage'));
   const amps = num(read('maxCurrent'));
   const power = num(read('maxPower'));
-  const parts = [
-    low !== null && high !== null ? `outside ${trim(low)}–${trim(high)} V` : null,
-    amps !== null ? `above ${trim(amps, 2)} A` : null,
-    power !== null ? `above ${watts(power)}` : null,
-  ].filter((part): part is string => part !== null);
-  return parts.length ? `Cuts the power ${parts.slice(0, -1).join(', ')}${parts.length > 1 ? ' or ' : ''}${parts.at(-1)}.` : 'Cuts the power when something is wrong.';
+  const supply = low !== null && high !== null ? `the mains leaves ${trim(low)}–${trim(high)} V` : null;
+  const load = [amps !== null ? `${trim(amps, 2)} A` : null, power !== null ? watts(power) : null].filter((part): part is string => part !== null);
+  const reasons = [supply, load.length ? `the load passes ${load.join(' or ')}` : null].filter((part): part is string => part !== null);
+  return reasons.length ? `Cuts the power if ${reasons.join(', or ')}.` : 'Cuts the power when something is wrong.';
 }
 
 /**

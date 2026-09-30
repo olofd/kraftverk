@@ -183,7 +183,7 @@ export default function AddDeviceScreen() {
             onChangeText={setQuery}
             backgroundColor="$background"
             borderColor="$borderColor"
-            accessibilityLabel="Search by brand or model"
+            aria-label="Search by brand or model"
           />
           {query.trim() ? (
             <Types

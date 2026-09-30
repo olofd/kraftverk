@@ -74,8 +74,9 @@ export function Screen({ title, subtitle, back, backTo, status, children }: Prop
         ) : null}
 
         <XStack alignItems="flex-end" justifyContent="space-between" gap="$3">
-          <YStack gap={2}>
-            <Text fontSize={30} fontWeight="800" letterSpacing={-0.8} color="$color">
+          {/* The title takes what is left and wraps: a long name must not push the status off the screen. */}
+          <YStack gap={2} flex={1} flexShrink={1}>
+            <Text fontSize={30} lineHeight={34} fontWeight="800" letterSpacing={-0.8} color="$color">
               {title}
             </Text>
             {subtitle ? (

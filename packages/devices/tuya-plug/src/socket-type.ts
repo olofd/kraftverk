@@ -288,7 +288,8 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
       const fresh = lastOk !== null && Date.now() - lastOk < pollMs * 2.5;
       return {
         status: fresh ? 'connected' : lastError ? (link.connected || connection.channel.connected ? 'error' : 'offline') : 'connecting',
-        detail: fresh ? `Answering, Tuya ${link.version}` : (lastError ?? 'Connecting'),
+        // Said for the page's header: the protocol version is the Datapoints tool's to show.
+        detail: fresh ? 'Connected' : (lastError ?? 'Connecting'),
         lastReadingAt: state?.at ?? null,
       };
     },

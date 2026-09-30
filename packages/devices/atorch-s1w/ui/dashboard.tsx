@@ -53,7 +53,7 @@ function Hero({ plug, live, cut }: { plug: Plug; live: Live; cut: Cut | null }) 
   const volts = plug.number('volts');
   const amps = plug.number('amps');
   const drawing = watts !== null && watts >= 1;
-  const status = on ? (drawing ? 'On — powering what is plugged in' : 'On — nothing is drawing') : cut ? 'Off — it switched itself off' : 'Off';
+  const status = on ? (drawing ? 'On · powering something' : 'On · nothing drawing') : cut ? 'Off · it cut itself off' : 'Off';
 
   return (
     <Card padding="$5" gap="$4">
@@ -75,7 +75,7 @@ function Hero({ plug, live, cut }: { plug: Plug; live: Live; cut: Cut | null }) 
             </Text>
           </XStack>
           <Text fontSize={13} color="$muted" fontVariant={['tabular-nums']}>
-            {[volts === null ? null : `${trim(volts)} V`, amps === null ? null : `${trim(amps, 2)} A`].filter(Boolean).join('  ·  ') || 'Waiting for its first reading'}
+            {[volts === null ? null : `${volts.toFixed(1)} V`, amps === null ? null : `${amps.toFixed(2)} A`].filter(Boolean).join('  ·  ') || 'Waiting for its first reading'}
           </Text>
         </YStack>
         <PowerButton on={on} label="Power" pending={plug.pending('relay')} disabled={!plug.canChange} onChange={(next) => void plug.switchTo(next)} />
@@ -119,11 +119,7 @@ function Pulse({ active }: { active: boolean }) {
 
 function LiveStrip({ live, disabled }: { live: Live; disabled: boolean }) {
   const title = live.on ? 'Live' : 'Live readings';
-  const detail = live.on
-    ? live.kept
-      ? 'A reading every second, for as long as you are here.'
-      : `A reading every second for ${clock(live.left ?? 0)} more.`
-    : 'A reading every second while you watch — for when you are changing something.';
+  const detail = live.on ? 'A reading every second while you are here.' : live.kept ? 'Asking the plug…' : 'A reading every second while you watch.';
   return (
     <XStack alignItems="center" gap="$3" backgroundColor="$background" borderRadius="$4" paddingHorizontal="$3" paddingVertical={10}>
       <Pulse active={live.on} />
@@ -135,7 +131,7 @@ function LiveStrip({ live, disabled }: { live: Live; disabled: boolean }) {
           {detail}
         </Text>
       </YStack>
-      <Toggle label="Live readings" checked={live.on || (live.kept && live.pending)} pending={live.pending} disabled={disabled} onCheckedChange={live.set} />
+      <Toggle label="Live readings" checked={live.kept} pending={live.pending} disabled={disabled} onCheckedChange={live.set} />
     </XStack>
   );
 }
@@ -199,7 +195,10 @@ function Tiles({ plug }: { plug: Plug }) {
   const kwh = plug.number('kwh');
   const hz = plug.number('hz');
   const pf = plug.number('powerFactor');
+  const drawing = (plug.number('watts') ?? 0) >= 1;
   const guarded = plug.value('safetyCutOff') !== false;
+  // Fixed decimals: a figure that updates every second must not change width as its digits do.
+  const fixed = (value: number | null, digits: number) => (value === null ? '—' : value.toFixed(digits));
 
   const nearLimit = volts !== null && low !== null && high !== null && (volts - low < 10 || high - volts < 10);
   const icon = (name: 'activity' | 'trending-up' | 'thermometer' | 'bar-chart-2' | 'radio' | 'percent') => <Feather name={name} size={13} color={theme.muted?.val as string} />;
@@ -209,7 +208,7 @@ function Tiles({ plug }: { plug: Plug }) {
       <StatTile
         label="Voltage"
         icon={icon('activity')}
-        value={volts === null ? '—' : trim(volts)}
+        value={fixed(volts, 1)}
         unit="V"
         position={guarded && volts !== null && low !== null && high !== null ? (volts - low) / (high - low) : null}
         note={guarded && low !== null && high !== null ? `Safe between ${trim(low)} and ${trim(high)} V` : null}
@@ -218,22 +217,27 @@ function Tiles({ plug }: { plug: Plug }) {
       <StatTile
         label="Current"
         icon={icon('trending-up')}
-        value={amps === null ? '—' : trim(amps, 2)}
+        value={fixed(amps, 2)}
         unit="A"
         position={guarded && amps !== null && maxAmps ? amps / maxAmps : null}
         note={guarded && maxAmps ? `Cuts above ${trim(maxAmps, 2)} A` : null}
       />
-      <StatTile label="Energy" icon={icon('bar-chart-2')} value={kwh === null ? '—' : trim(kwh, 2)} unit="kWh" note="Counted by the plug, in total" />
+      <StatTile label="Energy" icon={icon('bar-chart-2')} value={fixed(kwh, 2)} unit="kWh" note="Counted by the plug, in total" />
       <StatTile
         label="Inside the plug"
         icon={icon('thermometer')}
-        value={temperature === null ? '—' : trim(temperature, 0)}
+        value={fixed(temperature, 0)}
         unit="°C"
         tone={temperature !== null && temperature >= 70 ? 'danger' : temperature !== null && temperature >= 60 ? 'warning' : 'normal'}
         note={temperature !== null && temperature >= 60 ? 'Hot: check what is plugged in' : null}
       />
-      <StatTile label="Frequency" icon={icon('radio')} value={hz === null ? '—' : trim(hz, 2)} unit="Hz" />
-      <StatTile label="Power factor" icon={icon('percent')} value={pf === null ? '—' : trim(pf, 2)} note="1 means every watt drawn does work" />
+      <StatTile label="Frequency" icon={icon('radio')} value={fixed(hz, 2)} unit="Hz" note="Of the mains" />
+      <StatTile
+        label="Power factor"
+        icon={icon('percent')}
+        value={drawing ? fixed(pf, 2) : '—'}
+        note={drawing ? 'How much of the current does work: 1 is all of it' : 'Nothing is drawing'}
+      />
     </XStack>
   );
 }
@@ -258,9 +262,6 @@ function Safety({ plug }: { plug: Plug }) {
           {AFTER_A_CUT[afterCut]}
         </Text>
       ) : null}
-      <Text fontSize={12} color="$muted">
-        Change these under Settings.
-      </Text>
     </Card>
   );
 }

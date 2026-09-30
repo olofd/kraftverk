@@ -29,7 +29,7 @@ describe('what the plug did, in words', () => {
 
   test('the safety cut-off in one line', () => {
     expect(safetySummary(reading({ safetyCutOff: true, minVoltage: 140.5, maxVoltage: 257.7, maxCurrent: 16.01, maxPower: 4499 }))).toBe(
-      'Cuts the power outside 140.5–257.7 V, above 16.01 A or above 4.5 kW.'
+      'Cuts the power if the mains leaves 140.5–257.7 V, or the load passes 16.01 A or 4.5 kW.'
     );
     expect(safetySummary(reading({ safetyCutOff: false }))).toContain('nothing protects');
   });
