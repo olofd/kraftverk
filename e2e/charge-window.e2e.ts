@@ -32,8 +32,8 @@ test('a charge window of your own, made from the shared recipe', async ({ page, 
 
   // Right now: each condition it waits for, how it stands, and the reading it stands on.
   await expect(card.getByText('Right now')).toBeVisible();
-  await expect(card.getByText(`${station.name}'s charge is below 15 % for 2 min`)).toBeVisible();
-  await expect(card.getByText(`${station.name}'s charge is at least 50 %`)).toBeVisible();
+  await expect(card.getByText(`${station.name}’s charge is below 15 % for 2 min`)).toBeVisible();
+  await expect(card.getByText(`${station.name}’s charge is at least 50 %`)).toBeVisible();
   await expect(card.getByText(new RegExp(`^${station.name}: Charge \\d`))).toBeVisible();
   // Once it has acted, what is switched by hand stays: until it is asked to keep things so.
   await expect(card.getByText(/what you switch by hand stays until one turns to yes again/)).toBeVisible();

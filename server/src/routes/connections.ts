@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import { isLinkKind, isSecretField, linkFits, linkKindSpec, MAIN_PART, partsOf, savedDeviceId } from '@kraftverk/device-sdk';
+import { isLinkKind, isSecretField, linkFits, linkKindSpec, partName, partsOf, savedDeviceId } from '@kraftverk/device-sdk';
 
 import { userOf } from '../auth/routes.ts';
 import { connectionSchema } from '../devices/setup/index.ts';
@@ -75,9 +75,8 @@ export function connectionRoutes({ catalog, connections, links, clients, types, 
   const endName = (end: { device: string; part: string }): string => {
     const record = catalog.get(savedDeviceId(end.device));
     if (!record) return 'a removed device';
-    if (end.part === MAIN_PART) return record.name;
     const part = partsOf(record.removedAt ? record.description : sessions.description(record)).find((candidate) => candidate.id === end.part);
-    return `${record.name} — ${part?.label ?? end.part}`;
+    return partName(record.name, end.part, part?.label ?? end.part);
   };
 
   const LINK_END = z.object({ device: z.string().min(1).max(80), part: z.string().min(1).max(80) }).strict();

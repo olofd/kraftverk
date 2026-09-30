@@ -6,12 +6,14 @@ import {
   checkBinding,
   describeExpr,
   describeSteps,
+  settledChoice,
   evaluate,
   evaluateNow,
   isCurrent,
   isScalar,
   localTime,
   MAIN_PART,
+  partName,
   partsOf,
   readingOf,
   readsRole,
@@ -843,14 +845,19 @@ export class AutomationEngine {
     for (const step of steps) {
       if (stopping()) return 'stopped';
       const kind = stepKind(step);
-      const line = describeSteps({ ...live.recipe, then: [step], otherwise: [] }, this.#settled(live.automation, live.recipe), (role) => scope().name(role), this.deps.library).steps[0]!;
       let walked: Walked = 'ok';
+      /** The step in words, as its plan shows it. */
+      const what = () => describeSteps({ ...live.recipe, then: [step], otherwise: [] }, this.#settled(live.automation, live.recipe), (role) => scope().name(role), this.deps.library).steps[0]!.text;
+      // A choice its owner already made is no step of its own: the steps it chose are taken in its place.
+      const chosen = 'choose' in step ? settledChoice(live.recipe, step, this.#settled(live.automation, live.recipe)) : null;
 
-      if ('command' in step) {
+      if (chosen) {
+        walked = await this.#walk(live, chosen, depth, within, mode);
+      } else if ('command' in step) {
         walked = await this.#command(live, step.command, depth, within);
       } else if ('wait' in step) {
         const seconds = this.#seconds(step.wait.seconds, scope(), 3_600) ?? 1;
-        const entry = this.#add(live, { kind, depth, within, what: line.text, outcome: 'waiting', detail: `For ${secondsText(seconds)}`, until: this.#after(seconds) });
+        const entry = this.#add(live, { kind, depth, within, what: what(), outcome: 'waiting', detail: `For ${secondsText(seconds)}`, until: this.#after(seconds) });
         const woke = await this.#sleep(live, seconds, mode === 'otherwise');
         if (woke === 'stopped') {
           this.#end(live, entry, 'stopped', `Stopped by ${live.stoppedBy}`);
@@ -858,7 +865,7 @@ export class AutomationEngine {
         } else this.#end(live, entry, 'done', `Waited ${secondsText(seconds)}`);
       } else if ('waitUntil' in step) {
         const seconds = this.#seconds(step.waitUntil.atMostSeconds, scope(), 3_600) ?? 1;
-        const entry = this.#add(live, { kind, depth, within, what: line.text, outcome: 'waiting', detail: 'Waiting', until: this.#after(seconds) });
+        const entry = this.#add(live, { kind, depth, within, what: what(), outcome: 'waiting', detail: 'Waiting', until: this.#after(seconds) });
         const came = await this.#until(live, step.waitUntil.condition, seconds);
         if (came.outcome === 'met') this.#end(live, entry, 'met', `${came.seconds < 1 ? 'At once' : `After ${secondsText(came.seconds)}`}${came.saw ? ` — ${came.saw}` : ''}`);
         else if (came.outcome === 'stopped') (this.#end(live, entry, 'stopped', `Stopped by ${live.stoppedBy}`), (walked = 'stopped'));
@@ -868,7 +875,7 @@ export class AutomationEngine {
         const seconds = this.#seconds(withinSeconds, scope(), 600) ?? 1;
         const triesValue = evaluateNow(triesExpr, scope());
         const tries = typeof triesValue === 'number' ? Math.max(0, Math.min(10, Math.floor(triesValue))) : 0;
-        const entry = this.#add(live, { kind, depth, within, what: line.text, outcome: 'waiting', detail: 'Watching', until: this.#after(seconds) });
+        const entry = this.#add(live, { kind, depth, within, what: what(), outcome: 'waiting', detail: 'Watching', until: this.#after(seconds) });
         for (let attempt = 0; ; attempt++) {
           Object.assign(entry, { until: this.#after(seconds), detail: attempt === 0 ? 'Watching' : `Watching, after try ${attempt} of ${tries}` });
           this.#moved(live);
@@ -898,11 +905,11 @@ export class AutomationEngine {
         const trace: string[] = [];
         const holds = await evaluate(step.choose.if, scope(), trace).catch(() => null);
         const branch = holds === true ? step.choose.then : (step.choose.else ?? []);
-        this.#add(live, { kind, depth, within, what: line.text, outcome: 'done', detail: `${holds === true ? 'It is so' : holds === false ? 'It is not so' : 'It cannot be told, so taken as not so'}${trace.length ? ` — ${trace.join('; ')}` : ''}`, until: null });
+        this.#add(live, { kind, depth, within, what: what(), outcome: 'done', detail: `${holds === true ? 'It is so' : holds === false ? 'It is not so' : 'It cannot be told, so taken as not so'}${trace.length ? ` — ${trace.join('; ')}` : ''}`, until: null });
         walked = await this.#walk(live, branch, depth + 1, holds === true ? 'Then' : 'Otherwise', mode);
       } else {
         const seconds = this.#seconds(step.watch.seconds, scope(), 3_600) ?? 1;
-        const entry = this.#add(live, { kind, depth, within, what: line.text, outcome: 'waiting', detail: 'Watching', until: this.#after(seconds) });
+        const entry = this.#add(live, { kind, depth, within, what: what(), outcome: 'waiting', detail: 'Watching', until: this.#after(seconds) });
         const held = await this.#hold(live, step.watch.condition, seconds, mode === 'otherwise');
         if (held.outcome === 'stopped') {
           this.#end(live, entry, 'stopped', `Stopped by ${live.stoppedBy}`);
@@ -987,20 +994,30 @@ export class AutomationEngine {
   /** What it would do, each step as it would take it: its commands evaluated as they stand now. */
   async #wouldDo(automation: AutomationRecord, recipe: Recipe, scope: RuleScope, detail: string): Promise<RunStep[] | { unknown: string }> {
     const at = this.#now().toISOString();
-    const lines = this.steps(automation).steps;
+    const settled = this.#settled(automation, recipe);
     const steps: RunStep[] = [];
     const flatten = (line: StepLine, depth: number, within: string | null) => {
       steps.push({ kind: line.kind, depth, within, what: line.text, outcome: 'would', detail, at, endedAt: at, until: null });
       for (const branch of line.branches) for (const inner of branch.steps) flatten(inner, depth + 1, branch.label);
     };
-    for (const [index, step] of recipe.then.entries()) {
-      if ('command' in step) {
-        const planned = await this.#planCommand(automation, step.command, scope);
-        if ('unknown' in planned) return planned;
-        steps.push({ kind: 'command', depth: 0, within: null, what: capitalise(planned.what), outcome: 'would', detail, at, endedAt: at, until: null });
-      } else flatten(lines[index]!, 0, null);
-    }
-    return steps;
+    const visit = async (list: readonly Step[]): Promise<{ unknown: string } | null> => {
+      for (const step of list) {
+        // A choice its owner already made: the steps it chose, in its place.
+        const chosen = 'choose' in step ? settledChoice(recipe, step, settled) : null;
+        if (chosen) {
+          const unknown = await visit(chosen);
+          if (unknown) return unknown;
+        } else if ('command' in step) {
+          const planned = await this.#planCommand(automation, step.command, scope);
+          if ('unknown' in planned) return planned;
+          steps.push({ kind: 'command', depth: 0, within: null, what: capitalise(planned.what), outcome: 'would', detail, at, endedAt: at, until: null });
+        } else {
+          for (const line of describeSteps({ ...recipe, then: [step], otherwise: [] }, settled, (role) => scope.name(role), this.deps.library).steps) flatten(line, 0, null);
+        }
+      }
+      return null;
+    };
+    return (await visit(recipe.then)) ?? steps;
   }
 
   /** In `seconds` of a step, as an instant. */
@@ -1115,7 +1132,7 @@ export const serverDevices =
     const part = partsOf(description, record.name).find((candidate) => candidate.id === binding.part) ?? null;
     const session = removed ? null : sessions.get(record.id);
     return {
-      name: binding.part === MAIN_PART || !part ? record.name : `${record.name} — ${part.label}`,
+      name: partName(record.name, binding.part, part?.label),
       removed,
       hasPart: part !== null,
       part: binding.part,

@@ -166,7 +166,7 @@ describe('saying what it does', () => {
 
   test('or from the rule itself, when it has none: what a DSL or an AI wrote reads too', () => {
     expect(describeRule(lowBattery, { below: 20, minutes: 5, action: 'off' }, name)).toBe(
-      "When Garage P280's charge is below 20 % for 5 min, turn Heater plug off."
+      "When Garage P280’s charge is below 20 % for 5 min, turn Heater plug off."
     );
   });
 });

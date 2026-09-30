@@ -11,7 +11,7 @@ import {
   type DeviceView,
   type SaveInput,
 } from '@kraftverk/api-client';
-import { describeDeviceType, isSimulated, LINK_KIND_IDS, linkableParts, linkKindSpec, MAIN_PART, methodOf, type DeviceDescription } from '@kraftverk/device-sdk';
+import { describeDeviceType, isSimulated, LINK_KIND_IDS, linkableParts, linkKindSpec, MAIN_PART, methodOf, partName, type DeviceDescription } from '@kraftverk/device-sdk';
 import { Card, Row, RowSeparator, SectionLabel, haptic, Icon } from '@kraftverk/ui';
 
 import { DeviceImage } from '../src/components/DeviceImage';
@@ -638,7 +638,7 @@ function Finish({
         const options = devices.flatMap((other) =>
           linkableParts(kind, other.description, role === 'source' ? 'target' : 'source').map((otherPart) => ({
             value: `${other.id}|${otherPart.id}`,
-            title: otherPart.id === MAIN_PART ? other.name : `${other.name} — ${otherPart.label}`,
+            title: partName(other.name, otherPart.id, otherPart.label),
             subtitle: other.meta.name,
           }))
         );

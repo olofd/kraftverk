@@ -85,8 +85,8 @@ describe('charging between two levels', () => {
   test('says when it runs, a trigger at a time', () => {
     const name = (role: string) => (role === 'battery' ? 'Garage P280' : 'ATORCH plug');
     expect(describeTriggers(chargeBetween, params, name)).toEqual([
-      "When Garage P280's charge is below 15 % for 2 min",
-      "When Garage P280's charge is at least 50 %",
+      "When Garage P280’s charge is below 15 % for 2 min",
+      "When Garage P280’s charge is at least 50 %",
     ]);
   });
 });

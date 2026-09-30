@@ -1,7 +1,7 @@
 import { HTTPException } from 'hono/http-exception';
 
 import type { AutomationView, Rehearsal, RoleBinding } from '@kraftverk/api-contract';
-import { capabilitiesOf, describeRule, describeTriggers, MAIN_PART, meetsNeed, partsOf, savedDeviceId, startsWhenAsked, takesSteps, validateConfig, type ConfigValues, type Value } from '@kraftverk/device-sdk';
+import { capabilitiesOf, describeRule, describeTriggers, meetsNeed, partName, partsOf, savedDeviceId, startsWhenAsked, takesSteps, validateConfig, type ConfigValues, type Value } from '@kraftverk/device-sdk';
 
 import type { DeviceCatalog } from '../devices/catalog.ts';
 import type { DeviceSessionManager } from '../devices/sessions.ts';
@@ -22,17 +22,16 @@ export const REHEARSAL_MAX_HOURS = 14 * 24;
 export type PlanDeps = { catalog: DeviceCatalog; sessions: DeviceSessionManager; library: AutomationLibrary; engine: AutomationEngine };
 
 export function plans({ catalog, sessions, library, engine }: PlanDeps) {
-  /** "Garage station", or "Garage station's AC outlets": how a role's part is named. */
-  const partName = (binding: RoleBinding | undefined): string => {
+  /** "Garage station", or "Garage station — AC outlets": how a role's part is named, as everywhere else. */
+  const roleName = (binding: RoleBinding | undefined): string => {
     const record = binding ? catalog.get(binding.device) : null;
     if (!binding || !record) return 'a device you no longer have';
-    const part = partsOf(record.description).find((candidate) => candidate.id === binding.part);
-    return binding.part === MAIN_PART || !part ? record.name : `${record.name}'s ${part.label}`;
+    return partName(record.name, binding.part, partsOf(record.description).find((candidate) => candidate.id === binding.part)?.label);
   };
 
   const view = (automation: AutomationRecord): AutomationView => {
     const recipe = library.recipe(automation.recipe);
-    const name = (role: string) => partName(automation.roles[role]);
+    const name = (role: string) => roleName(automation.roles[role]);
     const { lookedAt: _lookedAt, ...shown } = automation;
     return {
       ...shown,
@@ -80,7 +79,7 @@ export function plans({ catalog, sessions, library, engine }: PlanDeps) {
     return rehearse(recipe, automation, {
       device: (binding) => {
         const record = catalog.get(binding.device);
-        return record ? { name: partName(binding), description: sessions.description(record) } : null;
+        return record ? { name: roleName(binding), description: sessions.description(record) } : null;
       },
       samples: (deviceId, key, start, end) =>
         db().query<{ at: string; value: number | null; text: string | null }, [string, string, string, string]>('SELECT at, value, text FROM sample WHERE device_id = ? AND key = ? AND at >= ? AND at <= ? ORDER BY at').all(deviceId, key, start, end),
@@ -92,5 +91,5 @@ export function plans({ catalog, sessions, library, engine }: PlanDeps) {
     }, { from, to });
   };
 
-  return { view, validated, rehearsed, partName };
+  return { view, validated, rehearsed, roleName };
 }

@@ -458,12 +458,12 @@ describe('when a condition becomes true', () => {
       summary: 'Would turn Heater plug on',
       why: 'Asked what it would do now',
       saw: ['Garage P280: Charge 63 %'],
-      conditions: [{ text: "Garage P280's charge is below 20 %", holds: false }],
+      conditions: [{ text: "Garage P280’s charge is below 20 %", holds: false }],
     });
     context.station.soc = 12;
-    expect((await context.engine.run(automation, { check: true })).conditions).toEqual([{ text: "Garage P280's charge is below 20 %", holds: true }]);
+    expect((await context.engine.run(automation, { check: true })).conditions).toEqual([{ text: "Garage P280’s charge is below 20 %", holds: true }]);
     // And as the card shows it, now.
-    expect(context.engine.judge(automation)).toEqual({ conditions: [{ text: "Garage P280's charge is below 20 %", holds: true }], saw: ['Garage P280: Charge 12 %'] });
+    expect(context.engine.judge(automation)).toEqual({ conditions: [{ text: "Garage P280’s charge is below 20 %", holds: true }], saw: ['Garage P280: Charge 12 %'] });
   });
 
   test('unknown — a device gone quiet — is neither a start nor an end', async () => {
@@ -517,7 +517,7 @@ describe('keeping things so', () => {
     context.at(new Date(MORNING.getTime() + 10 * MINUTE));
     await engine.tick();
     expect(sent.map((intent) => intent.args.on)).toEqual([false, false]);
-    expect(sent[1]!.reason).toContain("Looked again after 10 min, and it still holds: Garage P280's charge is at least 50 %");
+    expect(sent[1]!.reason).toContain("Looked again after 10 min, and it still holds: Garage P280’s charge is at least 50 %");
     expect(sent[1]!.reason).toContain('Garage P280: Charge 74 %');
 
     // Not again before its time.

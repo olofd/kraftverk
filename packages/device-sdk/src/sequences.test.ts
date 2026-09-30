@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { checkRule, describeRule, describeSteps, describeTriggers, evaluateNow, ruleCommands, ruleUses, SEQUENCE_LIMITS, startsWhenAsked, takesSteps, type Rule, type RuleScope, type Step } from './automation.ts';
+import { checkRule, describeRule, describeSteps, describeTriggers, evaluateNow, ruleCommands, ruleUses, SEQUENCE_LIMITS, settledChoice, startsWhenAsked, takesSteps, type Rule, type RuleScope, type Step, whose } from './automation.ts';
 import { chargeBetween, startCharging, stopCharging } from './recipes.ts';
 
 /**
@@ -100,20 +100,37 @@ describe('read back', () => {
       'Turn Garage station’s AC outlets on',
       'Wait until Scooter plug can be reached — at most 2 min',
       'Turn Scooter plug on',
-      ["Make sure Scooter plug's power is above 50 W within 20 s — if not, try again, at most 3 times", [['Each time', ['Turn Scooter plug off', 'Wait 5 s', 'Turn Scooter plug on']]]],
+      ["Make sure Scooter plug’s power is above 50 W within 20 s — if not, try again, at most 3 times", [['Each time', ['Turn Scooter plug off', 'Wait 5 s', 'Turn Scooter plug on']]]],
     ]);
-    expect(flat(otherwise)).toEqual([['If you chose “Switch it and its supply off again”', [['Then', ['Turn Scooter plug off', 'Turn Garage station’s AC outlets off']]]]]);
+    // What its owner chose is no step: the steps it chose, in its place.
+    expect(flat(otherwise)).toEqual(['Turn Scooter plug off', 'Turn Garage station’s AC outlets off']);
     expect(describeTriggers(startCharging, defaults(startCharging), names)).toEqual(['When you start it']);
+  });
+
+  test('a choice its settings decide reads as what it chose; one left on does nothing if it fails', () => {
+    const leftOn = { ...defaults(startCharging), ifItFails: 'leaveOn' };
+    expect(describeSteps(startCharging, leftOn, names).otherwise).toEqual([]);
+    // A choice that turns on what is read is still a step.
+    const reading: Rule = { ...stopCharging, then: [{ choose: { if: { compare: 'gt', left: { read: { role: 'supply', means: 'power.draw' } }, right: { value: 10 } }, then: [{ command: { role: 'supply', capability: 'switch', command: 'set', args: { on: { value: false } } } }] } }] };
+    expect(describeSteps(reading, defaults(stopCharging), names).steps.map((line) => line.text)).toEqual(['If the power of Garage station’s AC outlets is above 10']);
+    expect(settledChoice(startCharging, startCharging.otherwise![0] as Extract<Step, { choose: unknown }>, leftOn)).toEqual([]);
+  });
+
+  test('something of a part, as English says it', () => {
+    expect(whose('Garage P280', 'charge')).toBe('Garage P280’s charge');
+    expect(whose('Garage P280 — AC outlets', 'power')).toBe('Garage P280 — AC outlets’ power');
+    expect(whose('what powers the charger', 'power')).toBe('the power of what powers the charger');
+    expect(whose('the charger’s plug', 'power')).toBe('the power of the charger’s plug');
   });
 
   test('stopping a charge, in one sentence: the plug off, then the supply only if nothing else draws', () => {
     expect(describeRule(stopCharging, defaults(stopCharging), names)).toBe(
-      "When you start it, turn Scooter plug off, then watch whether Garage station’s AC outlets' power is below 10 W, and if it stays so turn Garage station’s AC outlets off."
+      "When you start it, turn Scooter plug off, then watch whether the power of Garage station’s AC outlets is below 10 W, and if it stays so turn Garage station’s AC outlets off."
     );
     const { steps } = describeSteps(stopCharging, defaults(stopCharging), names);
     expect(steps[1]).toEqual({
       kind: 'watch',
-      text: "Watch for 5 s whether Garage station’s AC outlets' power is below 10 W",
+      text: "Watch for 5 s whether the power of Garage station’s AC outlets is below 10 W",
       branches: [{ label: 'If it stays so', steps: [{ kind: 'command', text: 'Turn Garage station’s AC outlets off', branches: [] }] }],
     });
   });

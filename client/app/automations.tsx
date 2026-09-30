@@ -23,7 +23,7 @@ import {
   type RecipeView,
   type RoleBinding,
 } from '@kraftverk/api-client';
-import { capabilitiesOf, MAIN_PART, meetsNeed, partsOf } from '@kraftverk/device-sdk';
+import { capabilitiesOf, meetsNeed, partName, partsOf } from '@kraftverk/device-sdk';
 import { Card, Row, RowSeparator, SchemaForm, SectionLabel, SegmentedControl, haptic, isComplete, Icon, type IconName } from '@kraftverk/ui';
 
 import { Pressable } from '../src/components/Pressable';
@@ -92,7 +92,7 @@ export default function AutomationsScreen() {
   const replace = (next: AutomationView) => setAutomations((all) => all?.map((candidate) => (candidate.id === next.id ? next : candidate)) ?? null);
 
   return (
-    <Screen back="Your devices" title="Automations" subtitle="What happens on its own">
+    <Screen back="Your devices" title="Automations" subtitle="What runs on its own, and what you start">
       {error ? (
         <Card borderColor="$danger">
           <Text fontSize={13} color="$danger">
@@ -823,7 +823,7 @@ function Editor({
             .flatMap((device) =>
               partsOf(device.description, device.name)
                 .filter((part) => meetsNeed(spec, capabilitiesOf(device.description, part.id)))
-                .map((part) => ({ device, part, title: part.id === MAIN_PART ? device.name : `${device.name} — ${part.label}` }))
+                .map((part) => ({ device, part, title: partName(device.name, part.id, part.label) }))
             ),
         ])
       ),

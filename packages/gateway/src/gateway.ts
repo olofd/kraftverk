@@ -11,6 +11,7 @@ import {
   linkKindSpec,
   MAIN_PART,
   partsOf,
+  partName,
   readingOf,
   standardMeaning,
   type AttributeSpec,
@@ -524,8 +525,7 @@ export class ActionGateway {
 
   /** "Garage station — Mains", or the device's name for its main part. */
   #partName(device: GatewayDevice, part: string): string {
-    if (part === MAIN_PART) return device.name;
-    return `${device.name} — ${partsOf(device.description).find((candidate) => candidate.id === part)?.label ?? part}`;
+    return partName(device.name, part, partsOf(device.description).find((candidate) => candidate.id === part)?.label ?? part);
   }
 
   /**

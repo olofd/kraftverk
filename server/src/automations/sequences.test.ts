@@ -238,14 +238,13 @@ describe('starting a charge', () => {
     const ensure = run.steps.find((step) => step.kind === 'ensure')!;
     expect(ensure.outcome).toBe('timed-out');
     expect(ensure.detail).toStartWith('Not in 2 tries — Scooter plug: Power 0.4 W');
-    // What it does after: the choice, and within it — a level deeper — both off.
+    // What it does after: both off, as its owner chose — the choice itself is no step.
     const after = run.steps.slice(run.steps.findIndex((step) => step.within === 'After a step did not succeed'));
     expect(after.map((step) => [step.depth, step.within, step.what])).toEqual([
-      [0, 'After a step did not succeed', 'If you chose “Switch it and its supply off again”'],
-      [1, 'Then', 'Turn Scooter plug off'],
-      [1, 'Then', 'Turn Garage station — AC outlets off'],
+      [0, 'After a step did not succeed', 'Turn Scooter plug off'],
+      [0, 'After a step did not succeed', 'Turn Garage station — AC outlets off'],
     ]);
-    expect(run.summary).toStartWith("Did not succeed: make sure Scooter plug's power is above 50 W within 5 s");
+    expect(run.summary).toStartWith("Did not succeed: make sure Scooter plug’s power is above 50 W within 5 s");
     expect(run.summary).toEndWith('then turned Scooter plug off, turned Garage station — AC outlets off');
   });
 
@@ -326,7 +325,7 @@ describe('starting a charge', () => {
       'Turn Garage station — AC outlets on',
       'Wait until Scooter plug can be reached — at most 20 s',
       'Turn Scooter plug on',
-      "Make sure Scooter plug's power is above 50 W within 5 s — if not, try again, at most 3 times",
+      "Make sure Scooter plug’s power is above 50 W within 5 s — if not, try again, at most 3 times",
       '  Turn Scooter plug off',
       '  Wait 3 s',
       '  Turn Scooter plug on',

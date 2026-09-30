@@ -100,6 +100,10 @@ type Rule = {
 Six kinds of step, each general, none about charging: **do** (a command),
 **pause**, **wait until**, **make sure** (with retries), **choose**, and
 **watch**. Steps nest — a choice and a watch hold steps — at most four deep.
+A choice its settings alone decide — "if you chose to switch them off
+again" — is no step a person follows: it reads, is tried and runs as the
+steps it chose, in its place (`settledChoice`). Only a choice that turns on
+what is read as it runs shows as "If …".
 Where failing is allowed (`then`, and the choices and watches in it) a step
 may wait for what might not come; in a retry, or in `otherwise`, it may not:
 it would fail again. So stopping a charge is, generally:

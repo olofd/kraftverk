@@ -132,7 +132,7 @@ export default function DevicesScreen() {
               <Pressable onPress={() => router.push('/automations')}>
                 <Row
                   title="Automations"
-                  subtitle="What happens on its own: “if tomorrow is sunny, turn the plug on”"
+                  subtitle="What runs on its own, and what you start: “if tomorrow is sunny, turn the plug on”, “start charging”"
                   accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />}
                 />
               </Pressable>

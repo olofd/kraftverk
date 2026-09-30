@@ -1049,7 +1049,7 @@ describe('automations', () => {
     expect(check.status).toBe(200);
     expect(check.body.saw.join(' ')).toContain('Garage P280: Charge');
     // Its card says how each condition stands now, and what it read to say so.
-    expect(window.body.now.conditions.map((condition: { text: string }) => condition.text)).toEqual(["Garage P280's charge is below 15 % for 2 min", "Garage P280's charge is at least 50 %"]);
+    expect(window.body.now.conditions.map((condition: { text: string }) => condition.text)).toEqual(["Garage P280’s charge is below 15 % for 2 min", "Garage P280’s charge is at least 50 %"]);
 
     // It can keep things so; a time of day and an event have nothing to keep.
     const { recipes } = (await as('/automations/recipes')).body as { recipes: { id: string; hasConditions: boolean }[] };
@@ -1096,7 +1096,7 @@ describe('automations', () => {
     // Only the part that says when mains is lost can fill the role.
     expect((await shed('main')).status).toBe(400);
     const made = await shed('input.ac');
-    expect(made.body).toMatchObject({ problems: [], sentence: "When Garage P280's Mains loses mains power, turn Heater plug off." });
+    expect(made.body).toMatchObject({ problems: [], sentence: "When Garage P280 — Mains loses mains power, turn Heater plug off." });
   });
 
   test('a role takes only a device that fits it', async () => {
@@ -1147,7 +1147,7 @@ describe('automations', () => {
       'Turn Garage P280 — AC outlets on',
       'Wait until Scooter plug can be reached — at most 20 s',
       'Turn Scooter plug on',
-      "Make sure Scooter plug's power is above 50 W within 10 s — if not, try again, at most once",
+      "Make sure Scooter plug’s power is above 50 W within 10 s — if not, try again, at most once",
     ]);
     const path = `/automations/${created.id}`;
 
@@ -1212,7 +1212,7 @@ describe('automations', () => {
     expect((await make('outlet.garage-door')).body.error).toContain('has no part');
     const made = await make('outlet.dc');
     expect(made.status).toBe(200);
-    expect(made.body.sentence).toContain("Garage P280's 12V DC / car port");
+    expect(made.body.sentence).toContain("Garage P280 — 12V DC / car port");
   });
 
   test('says when a device it uses has been removed', async () => {

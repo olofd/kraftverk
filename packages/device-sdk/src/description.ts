@@ -208,6 +208,14 @@ export function partsOf(description: DeviceDescription, mainLabel?: string): Par
   return [main, ...declared.filter((part) => part.id !== MAIN_PART)];
 }
 
+/**
+ * A part as a person reads it, the one way everywhere — screens, steps,
+ * sentences, the audit: "Garage station — AC outlets", or the device's own name
+ * for its main part (or a part it no longer has).
+ */
+export const partName = (deviceName: string, part: string, label: string | null | undefined): string =>
+  part === MAIN_PART || !label ? deviceName : `${deviceName} — ${label}`;
+
 export const attributesOf = (description: DeviceDescription, part: string): AttributeSpec[] =>
   description.attributes.filter((attribute) => partOf(attribute) === part);
 

@@ -714,6 +714,35 @@ export function evaluateNow(expr: Expr, scope: RuleScope, trace: string[] = []):
   return null; // a call: not here
 }
 
+/**
+ * What can be known from an automation's settings alone: each setting as it
+ * stands (or its default), and nothing read — "turn it on", not "turn it
+ * (action is on)".
+ */
+function settledScope(rule: Rule, params: Readonly<Record<string, Value>>, name: (role: string) => string = (role) => role): RuleScope {
+  return {
+    param: (key) => {
+      const field = rule.params.fields[key];
+      return (params[key] ?? (field && 'default' in field ? field.default : undefined) ?? null) as Value;
+    },
+    read: () => null,
+    reachable: () => ({ reachable: null, detail: 'not known until it runs' }),
+    name,
+  };
+}
+
+/**
+ * The steps a choice takes when its settings alone decide it — "if you chose
+ * to switch them off again" — or null when it turns on what is read as it
+ * runs. A choice its owner has already made is not a step to follow: it
+ * reads, and runs, as the steps it chose.
+ */
+export function settledChoice(rule: Rule, step: Extract<Step, { choose: unknown }>, params: Readonly<Record<string, Value>>): readonly Step[] | null {
+  const decided = evaluateNow(step.choose.if, settledScope(rule, params));
+  if (typeof decided !== 'boolean') return null;
+  return decided ? step.choose.then : (step.choose.else ?? []);
+}
+
 // --- saying what it does ---------------------------------------------------------
 
 /** A number of seconds as a person says it: "20 s", "2 min", "1 min 30 s", "1 h". */
@@ -740,8 +769,16 @@ export function paramText(schema: ConfigSchema, name: string, value: Value): str
 
 const OP_WORDS: Record<CompareOp, string> = { lt: 'is below', le: 'is at most', gt: 'is above', ge: 'is at least', eq: 'is', ne: 'is not' };
 
-/** "Garage station's", "AC outlets'": whose, as English says it. */
-export const possessive = (name: string): string => (/s$/i.test(name) ? `${name}'` : `${name}'s`);
+/**
+ * Something of a part, as English says it: "Garage station’s charge",
+ * "Garage station — AC outlets’ power" — or, when the name is a clause or
+ * already whose, "the power of what powers the charger", "the power of the
+ * charger’s plug", never "the charger’s plug’s power".
+ */
+export const whose = (name: string, thing: string): string => {
+  if (/^(what|which|whatever|whichever)\b/i.test(name) || /[’']s\b/.test(name)) return `the ${thing} of ${name}`;
+  return /s$/i.test(name) ? `${name}’ ${thing}` : `${name}’s ${thing}`;
+};
 
 /** One expression of a rule, in words, with its settings filled in: "Garage station's charge is below 15 %". */
 export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<string, Value>>, name: (role: string) => string, vocabulary?: RuleVocabulary): string {
@@ -757,7 +794,7 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
   const text = (expr: Expr): string => {
     if ('value' in expr) return shown(expr.value);
     if ('param' in expr) return param(expr.param);
-    if ('read' in expr) return `${possessive(name(expr.read.role))} ${standardMeaning(expr.read.means)?.label.toLowerCase() ?? expr.read.means}`;
+    if ('read' in expr) return whose(name(expr.read.role), standardMeaning(expr.read.means)?.label.toLowerCase() ?? expr.read.means);
     if ('reachable' in expr) return `${name(expr.reachable)} can be reached`;
     if ('call' in expr) return `${vocabulary?.fn(expr.call)?.label.toLowerCase() ?? expr.call} by ${name(expr.role)}`;
     if ('compare' in expr) return chosen(expr) ?? `${text(expr.left)} ${OP_WORDS[expr.compare]} ${text(expr.right)}`;
@@ -796,16 +833,7 @@ export type StepLine = {
 /** How a rule's words are put together: its settings as they stand, and its parts by name. */
 function wording(rule: Rule, params: Readonly<Record<string, Value>>, name: (role: string) => string, vocabulary?: RuleVocabulary) {
   const text = (expr: Expr): string => describeExpr(rule, expr, params, name, vocabulary);
-  // What can be known from the settings alone — "turn it on", not "turn it (action is on)".
-  const settled: RuleScope = {
-    param: (key) => {
-      const field = rule.params.fields[key];
-      return (params[key] ?? (field && 'default' in field ? field.default : undefined) ?? null) as Value;
-    },
-    read: () => null,
-    reachable: () => ({ reachable: null, detail: 'not known until it runs' }),
-    name,
-  };
+  const settled = settledScope(rule, params, name);
   const seconds = (expr: Expr): string => {
     const known = evaluateNow(expr, settled);
     return typeof known === 'number' ? secondsText(known) : text(expr);
@@ -821,9 +849,18 @@ function wording(rule: Rule, params: Readonly<Record<string, Value>>, name: (rol
     });
     return capability === 'switch' && command === 'set' ? `turn ${name(role)} ${values.join(' ')}` : `${capability}.${command} ${name(role)} (${values.join(', ')})`;
   };
+  /** Steps as they read: a choice its settings decide is the steps it chose, in its place. */
+  const steps = <T>(list: readonly Step[] | undefined, each: (step: Step) => T): T[] =>
+    (list ?? []).flatMap((step) => {
+      const chosen = 'choose' in step ? settledChoice(rule, step, params) : null;
+      return chosen ? steps(chosen, each) : [each(step)];
+    });
+  const lines = (list: readonly Step[] | undefined): StepLine[] => steps(list, line);
   const line = (step: Step): StepLine => {
-    const lines = (steps: readonly Step[] | undefined) => (steps ?? []).map(line);
-    const group = (label: string, steps: readonly Step[] | undefined) => (steps?.length ? [{ label, steps: lines(steps) }] : []);
+    const group = (label: string, list: readonly Step[] | undefined) => {
+      const inner = lines(list);
+      return inner.length ? [{ label, steps: inner }] : [];
+    };
     if ('command' in step) return { kind: 'command', text: capitalise(command(step.command)), branches: [] };
     if ('wait' in step) return { kind: 'wait', text: `Wait ${seconds(step.wait.seconds)}`, branches: [] };
     if ('waitUntil' in step) return { kind: 'waitUntil', text: `Wait until ${text(step.waitUntil.condition)} — at most ${seconds(step.waitUntil.atMostSeconds)}`, branches: [] };
@@ -848,10 +885,15 @@ function wording(rule: Rule, params: Readonly<Record<string, Value>>, name: (rol
     if ('wait' in step) return `wait ${seconds(step.wait.seconds)}`;
     if ('waitUntil' in step) return `wait until ${text(step.waitUntil.condition)}`;
     if ('ensure' in step) return `make sure ${text(step.ensure.condition)}`;
-    if ('choose' in step) return `if ${text(step.choose.if)}, ${(step.choose.then.map(brief).join(' and ') || 'nothing')}${step.choose.else?.length ? `, otherwise ${step.choose.else.map(brief).join(' and ')}` : ''}`;
-    return `watch whether ${text(step.watch.condition)}${step.watch.then?.length ? `, and if it stays so ${step.watch.then.map(brief).join(' and ')}` : ''}`;
+    if ('choose' in step) {
+      const otherwise = briefs(step.choose.else);
+      return `if ${text(step.choose.if)}, ${briefs(step.choose.then).join(' and ') || 'nothing'}${otherwise.length ? `, otherwise ${otherwise.join(' and ')}` : ''}`;
+    }
+    const then = briefs(step.watch.then);
+    return `watch whether ${text(step.watch.condition)}${then.length ? `, and if it stays so ${then.join(' and ')}` : ''}`;
   };
-  return { text, line, brief };
+  const briefs = (list: readonly Step[] | undefined): string[] => steps(list, brief);
+  return { text, lines, briefs };
 }
 
 /**
@@ -859,8 +901,8 @@ function wording(rule: Rule, params: Readonly<Record<string, Value>>, name: (rol
  * sequence as — and what it does if a step does not succeed.
  */
 export function describeSteps(rule: Rule, params: Readonly<Record<string, Value>>, name: (role: string) => string, vocabulary?: RuleVocabulary): { steps: StepLine[]; otherwise: StepLine[] } {
-  const { line } = wording(rule, params, name, vocabulary);
-  return { steps: rule.then.map(line), otherwise: (rule.otherwise ?? []).map(line) };
+  const { lines } = wording(rule, params, name, vocabulary);
+  return { steps: lines(rule.then), otherwise: lines(rule.otherwise) };
 }
 
 /**
@@ -872,7 +914,7 @@ export function describeRule(rule: Rule & { sentence?: string }, params: Readonl
   const param = (key: string) => paramText(rule.params, key, params[key] ?? null);
   if (rule.sentence) return rule.sentence.replace(/\{(\w+)\}/g, (_, key: string) => (key in rule.roles ? name(key) : param(key)));
 
-  const { text, brief } = wording(rule, params, name, vocabulary);
+  const { text, briefs } = wording(rule, params, name, vocabulary);
   const minutes = (expr: Expr) => ('value' in expr ? `${text(expr)} min` : text(expr));
   const when = rule.when
     .map((trigger) =>
@@ -885,7 +927,7 @@ export function describeRule(rule: Rule & { sentence?: string }, params: Readonl
             : `when ${text(trigger.becomes)}${trigger.heldForMinutes ? ` for ${minutes(trigger.heldForMinutes)}` : ''}`
     )
     .join(', or ');
-  const sentence = `${when}${rule.if ? `, if ${text(rule.if)}` : ''}, ${rule.then.map(brief).join(', then ')}.`;
+  const sentence = `${when}${rule.if ? `, if ${text(rule.if)}` : ''}, ${briefs(rule.then).join(', then ')}.`;
   return capitalise(sentence);
 }
 
