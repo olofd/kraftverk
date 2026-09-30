@@ -25,6 +25,23 @@ the end of each phase.
   started at a time of day on chosen weekdays, set per automation.
 - **Shortcuts on the first page.** An automation can be put on the home
   page, for the whole home, with a play (or stop) button and its state.
+- **An automation editor, not a recipe picker** (the owner, 2026-09-30).
+  - Today the app only lets you choose a ready-made recipe and set its
+    sliders. The language underneath is general blocks, but you cannot add,
+    remove, reorder or nest them.
+  - Every automation owns its rule, built by its owner from blocks:
+    - a block for any command a device's part offers;
+    - a block for any setting it can write, such as the Zigbee plug's fast
+      refresh after it has been reached;
+    - pause, wait until, make sure (with its retry), if / otherwise, and
+      watch;
+    - start another automation;
+    - conditions built from readings, comparisons, and / or / not.
+  - Recipes become starting points: copied into a new automation, then
+    edited like any other.
+  - The server checks every save against the language's limits.
+  - **This reshapes Phase 2**, and brings the write step forward from
+    Phase 4. It is redesigned, and written here, once Phase 1 is done.
 
 ## Phase 0 — ship what is waiting
 
