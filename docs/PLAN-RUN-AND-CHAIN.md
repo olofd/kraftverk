@@ -164,153 +164,13 @@ Small, each its own commit. Numbers are for reference in commits.
 17. **HANDOFF states no counts.** "Every check is green" is said by the
     checks; HANDOFF drops the test numbers it keeps getting wrong.
 
-## Phase 2 — running and chaining (one schema change)
+## Phase 2 — the automation editor (one schema change)
 
-All the schema changes of this phase land in **one** commit, so the home
-server's database is set aside once: its devices (four, the Zigbee plug's
-key among them) and its automations are added again after the deploy.
-
-### The data model
-
-```sql
--- automation gains a column (in its one CREATE TABLE): on the home page,
--- and where; NULL, not on it. Unique among those that are.
-home_place INTEGER CHECK (home_place IS NULL OR home_place >= 0)
-CREATE UNIQUE INDEX automation_home ON automation (home_place) WHERE home_place IS NOT NULL;
-
--- A sequence's timers: a time of day on chosen weekdays (bit 0 = Monday).
-CREATE TABLE automation_schedule (
-  automation_id TEXT NOT NULL REFERENCES automation (id) ON DELETE CASCADE,
-  at            TEXT NOT NULL CHECK (at GLOB '[0-2][0-9]:[0-5][0-9]'),
-  days          INTEGER NOT NULL CHECK (days BETWEEN 1 AND 127),
-  PRIMARY KEY (automation_id, at)
-);
-
--- A role is filled by a part of a device, or by another automation.
-CREATE TABLE automation_role (
-  automation_id TEXT NOT NULL REFERENCES automation (id) ON DELETE CASCADE,
-  role          TEXT NOT NULL,
-  device_id     TEXT REFERENCES device (id) ON DELETE CASCADE,
-  part          TEXT,
-  starts        TEXT REFERENCES automation (id) ON DELETE CASCADE,
-  PRIMARY KEY (automation_id, role),
-  CHECK ((device_id IS NOT NULL AND part IS NOT NULL AND starts IS NULL)
-      OR (device_id IS NULL AND part IS NULL AND starts IS NOT NULL))
-);
-
--- Which run started this one, when another automation did.
-automation_run.started_by_run TEXT REFERENCES automation_run (id) ON DELETE SET NULL
-```
-
-The NULLs mean something: not on the home page; a role filled by an
-automation, not a device; a run no other run started. An automation
-deleted takes the roles that start it with it, and the automations that
-used it say "a role has nothing to start", as they do for a deleted device.
-
-### Play
-
-- **API.** `POST /automations/:id/start` always runs it for real (409 when
-  off, or already running). `POST /:id/check` stays "what would it do". The
-  start route's check-when-observing branch goes.
-- **Engine.** `startAsked` no longer turns into a check when the mode is
-  observe; it refuses only when off. The mode is read by the triggers alone.
-- **App.**
-  - The card leads with a play button (▶ Start, or ■ Stop while it runs).
-  - Played while only watching, it asks first: "This switches the AC
-    outlets and the Smart plug for real. It still only watches on its own."
-  - "What would it do?" is the second button.
-  - `RunControl` loses "Try it".
-- **Assistant.** The `start` tool follows the same rule, and says in its
-  answer that it acted.
-
-### Shortcuts on the first page
-
-- **API.** `PATCH /automations/:id { homePlace }`, audited. `GET /automations`
-  carries `homePlace`.
-- **App.**
-  - A "Put on the home page" switch on the card, and reordering in the
-    home page's edit mode.
-  - The home page gets a "Shortcuts" row above the devices. Each shortcut
-    is a tile with the name, a play or stop button, the step it is in
-    (counting down, as on the card) and the last outcome.
-  - A live `automation` message refreshes the tile.
-
-### Timers
-
-- **Language.** Nothing new in a rule: a timer belongs to the automation,
-  not its recipe. Only automations started when asked (`startsWhenAsked`)
-  take timers; the others keep their recipe's triggers.
-- **Engine.** Each tick checks the timers: due at its time on a chosen day,
-  on the owner's clock, within the grace, and not already started since.
-  This is the same rule as `#dueAt`, taken out of it and shared.
-  - Only watching: the run is kept as "would-act".
-  - Acting: it runs.
-  - Off: nothing.
-- **App.** A "When it starts on its own" section on the card: add a time,
-  pick weekdays (Mon–Sun chips, "Every day", "Weekdays"), remove.
-- **Rehearsal.** For a sequence with timers, it says what each timer would
-  have done at its times, as far as history can tell (the first command
-  step), and no further.
-
-### Chaining: the start step
-
-- **Language** (`packages/device-sdk/src/automation.ts`).
-  - Step `{ start: { role, wait?: boolean } }`.
-  - A role may need an automation that can be started:
-    `{ automation: { startsWhenAsked: true } }`.
-  - `describeSteps` reads "Start ‹name›", or "Start ‹name› and wait until it
-    ends — at most …" when it waits.
-  - A wait has its limit like every wait: `SEQUENCE_LIMITS.waitSeconds`, or
-    a param.
-  - `ruleUses` and `takesSteps` learn the step.
-  - A `start` is allowed in `then` and in a `choose`, not in a retry, and
-    in `otherwise` only without `wait`.
-- **Checker at save.**
-  - The started automation exists and is started when asked.
-  - No cycle: the chain from this automation through its `starts` roles
-    never comes back to it.
-  - A chain is at most four deep.
-- **Engine.**
-  - The step calls `startAsked` with the run that started it. It is refused,
-    with the reason as the step's detail, when the target is off, already
-    running, or deeper than allowed.
-  - With `wait`, the step lasts until the started run ends, and succeeds
-    when that run acted.
-  - Stopping the parent while it waits stops the child too.
-  - The child's commands are asked by whoever asked the parent (a person's
-    play gives the whole chain a person's dwell; a timer or a condition
-    gives it the automation's).
-  - Only watching, a parent says it would start the child and does not.
-- **Recipes.** Open-Meteo ships "Start by the forecast": once a day at a
-  time, if the day looks sunny (or cloudy, as chosen), start an automation.
-  The forecast switch stays beside it.
-- **App.**
-  - The editor lists automations as the parts that can fill a start role.
-  - The card's step reads "Start ‹name›" and links to it.
-  - A started run says "Started by ‹parent name›" and links back to the
-    run that started it.
-
-### Tests and checks for Phase 2
-
-- **Language.** The start step's checks (cycle, depth, allowed places) and
-  its description.
-- **Engine.**
-  - Play in each mode.
-  - Timers due and not due, in each mode.
-  - A chain with and without `wait`.
-  - A stop that stops the child.
-  - A refused start.
-  - A deleted child: the parent says so.
-- **HTTP.** Start in observe acts; `homePlace` round-trips; schedules are
-  validated.
-- **E2E.** Play a sequence from its card and from the home page; the tile
-  follows the run; a forecast automation starts the charging sequence and
-  both runs show, linked.
-- **Docs.** SEQUENCES.md (play, timers, start step), AUTOMATIONS.md (the
-  mode governs its own triggers only), DATA-MODEL.md, API.md.
-- **On the home server.** Re-add the devices, make "Start charging the
-  scooter" and "Stop charging the scooter", put both on the home page,
-  play them, then chain start charging behind "Start by the forecast".
+Designed in [AUTOMATION-EDITOR.md](AUTOMATION-EDITOR.md), which replaces what
+stood here. Every automation owns its rule, built from blocks; recipes are
+starting points; play runs any automation; timers are triggers with
+weekdays; "change a setting" and "start another automation" are blocks;
+shortcuts on the home page. Its order of work is at its end.
 
 ## Phase 3 — decided on paper first
 
@@ -338,14 +198,12 @@ design note before any code.
 In this order; each is small and pure in the SDK, then its engine and
 screen part. Standard recipes stay free of product words.
 
-1. **A write step.** `{ write: { role, means, value } }` for a writable
-   setting.
-   - The checker refuses a dangerous attribute; the role must be bound to
-     a part that has it writable.
-   - It goes through the gateway's write path, verified by reading back.
-   - Needs standard meanings for the settings every station has: a charge
-     ceiling, a reserve floor, a mains charging power. The P280 maps its
-     registers to them in its package.
+1. **Standard meanings for settings, so recipes can write them.** The
+   write step itself comes in Phase 2, by attribute key, for rules a person
+   builds. A recipe cannot name a key, so the settings every station has
+   need standard meanings: a charge ceiling, a reserve floor, a mains
+   charging power. The P280 maps its registers to them in its package, and
+   `write` takes `means` as well as `key`.
 2. **Time of day in expressions.** `{ within: { from, to } }` is true between
    two clock times, across midnight, on the owner's clock. It is usable in
    `if`, `becomes` and waits.
