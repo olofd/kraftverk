@@ -11,7 +11,9 @@ import {
   linkCandidates,
   linkKindSpec,
   MAIN_PART,
+  partName,
   partsOf,
+  switchConsequence,
   type ConfigValues,
   type LinkKind,
   type Part,
@@ -106,7 +108,13 @@ export function Controls({ device, part }: { device: DeviceView; part?: string }
               {index > 0 ? <RowSeparator /> : null}
               <ToggleRow
                 title={toggle.part.id === MAIN_PART ? toggle.attribute.label : toggle.part.label}
-                subtitle={toggle.attribute.consequence}
+                subtitle={switchConsequence(
+                  toggle.attribute.consequence,
+                  // What it feeds, as its links say: only then is it said.
+                  device.links
+                    .filter((link) => link.role === 'source' && link.part === toggle.part.id)
+                    .map((link) => ({ kind: link.kind, target: partName(link.other.name, link.other.part, link.other.partLabel) }))
+                )}
                 checked={value === true}
                 disabled={unavailable}
                 pending={pending}

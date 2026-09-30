@@ -32,6 +32,13 @@ export type LinkKindSpec = {
   description: string;
   /** Asked while adding the source, and the target. */
   question: { fromSide: string; toSide: string };
+  /**
+   * What switching the source off does to the target, said beside the
+   * source's switch only when this link is there — `{target}` is the
+   * target's name: a plug that feeds a station warns of it; one the station
+   * feeds does not.
+   */
+  whenSourceOff: string;
   /** One source part may have at most one target of this kind. */
   onePerSource: boolean;
   /**
@@ -60,6 +67,7 @@ export const LINK_KINDS = {
       fromSide: 'What is plugged into this?',
       toSide: 'Is it charged through something that switches?',
     },
+    whenSourceOff: 'It feeds {target}, which loses its mains while this is off.',
     onePerSource: true,
     evidence: { means: 'grid.present', follows: 'switch.on' },
     consequential: true,
@@ -76,6 +84,17 @@ export const linkKindSpec = (kind: LinkKind): LinkKindSpec => LINK_KINDS[kind];
 
 /** One end of a link: a part of a device. */
 export type LinkEnd<Device = string> = { device: Device; part: string };
+
+/**
+ * What switching a part off does, said beside its switch: its own
+ * consequence, and what each link it is the source of adds — "It feeds
+ * Garage station — Mains, which loses its mains while this is off". Nothing
+ * a link does not show.
+ */
+export function switchConsequence(own: string | undefined, sourceOf: readonly { kind: LinkKind; target: string }[]): string | undefined {
+  const said = [own, ...sourceOf.map((link) => LINK_KINDS[link.kind].whenSourceOff.split('{target}').join(link.target))].filter(Boolean);
+  return said.length ? said.join(' ') : undefined;
+}
 
 /** Whether one part may be linked to another by `kind`: the source offers what the link goes through, the target what it reaches. */
 export const linkFits = (kind: LinkKind, source: DeviceDescription, sourcePart: string, target: DeviceDescription, targetPart: string): boolean =>

@@ -85,10 +85,12 @@ const METER: Readonly<Record<keyof SocketProfile['metrics'], AttributeSpec>> = {
 
 const RELAY: AttributeSpec = {
   key: 'relay',
-  label: 'Power',
+  // "Switch", not "Power": power is what it draws.
+  label: 'Switch',
   value: { type: 'boolean' },
   means: 'switch.on',
-  consequence: 'Switches off whatever is plugged into it. If it feeds a station, the station then runs from its battery and solar.',
+  // What it feeds, when a link says so, the app adds from the link.
+  consequence: 'Switches off whatever is plugged into it.',
 };
 
 /**

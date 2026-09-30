@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import { conditionHolds, POLICY_VALUES, thresholdOf, type CommandResult } from './capabilities.ts';
-import { capabilitiesOf, currentForOf, deviceCapabilities, isCurrent, MAIN_PART, partIcon, partsOf, validateDescription, type DeviceDescription, type Reading } from './description.ts';
+import { capabilitiesOf, currentForOf, deviceCapabilities, isCurrent, MAIN_PART, partIcon, partName, partsOf, validateDescription, type DeviceDescription, type Reading } from './description.ts';
 import { defineDeviceType, type DeviceContext, type DeviceSession, type DeviceType } from './device-type.ts';
+import { switchConsequence } from './links.ts';
 import { checkDeviceTypeContract } from './testing.ts';
 
 /*
@@ -236,5 +237,21 @@ describe('checking a description', () => {
     expect(broken((d) => ({ ...d, attributes: [...d.attributes, { key: 'own', label: 'Own', value: { type: 'number' }, means: 'power.own' }] }))).toContain(
       'attribute "own" means "power.own", which is not a standard meaning; a type\'s own are namespaced by the type, like "station.own"'
     );
+  });
+});
+
+describe('naming a part, and what switching it off does', () => {
+  test('a part reads as its device and its label; the main part as the device', () => {
+    expect(partName('Garage station', 'outlet.ac', 'AC outlets')).toBe('Garage station — AC outlets');
+    expect(partName('Garage station', MAIN_PART, 'Device')).toBe('Garage station');
+    expect(partName('Garage station', 'gone', undefined)).toBe('Garage station');
+  });
+
+  test('a switch warns of what it feeds only when a link says it feeds it', () => {
+    expect(switchConsequence('Switches off whatever is plugged into it.', [])).toBe('Switches off whatever is plugged into it.');
+    expect(switchConsequence('Switches off whatever is plugged into it.', [{ kind: 'feeds', target: 'Garage station — Mains' }])).toBe(
+      'Switches off whatever is plugged into it. It feeds Garage station — Mains, which loses its mains while this is off.'
+    );
+    expect(switchConsequence(undefined, [])).toBeUndefined();
   });
 });
