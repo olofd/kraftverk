@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Image, Modal, Platform } from 'react-native';
 import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
@@ -6,10 +6,18 @@ import type { DeviceView, PictureRef } from '@kraftverk/api-client';
 import { Icon, haptic } from '@kraftverk/ui';
 
 import { DeviceImage } from '../../components/DeviceImage';
+import { useDialogFocus } from '../../lib/useDialogFocus';
 import { picturesOf } from '../../devices/ui';
 import { useDevices } from '../../state/DevicesProvider';
 
 const SIZE = 104;
+
+/** Enter or Space presses what a keyboard is on, as they press a button: a stack given a role is not given its keys. */
+const pressedBy = (press: () => void) => (event: { key: string; preventDefault: () => void }) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  press();
+};
 
 /**
  * A device's picture on its own page — and, where its type ships more than
@@ -38,6 +46,7 @@ export function DevicePicture({ device }: { device: DeviceView }) {
         pressStyle={{ opacity: 0.8 }}
         focusVisibleStyle={{ outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid' }}
         onPress={() => (haptic(), setOpen(true))}
+        onKeyDown={pressedBy(() => setOpen(true)) as never}
       >
         {shown}
         {/* A small mark says it can be changed, without taking over the picture. */}
@@ -56,16 +65,10 @@ function PicturePicker({ device, count, onClose }: { device: DeviceView; count: 
   const { setPicture } = useDevices();
   const [saving, setSaving] = useState<PictureRef | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const boxRef = useRef<HTMLElement | null>(null);
 
-  // Escape closes it, as any dialog.
-  useEffect(() => {
-    if (Platform.OS !== 'web') return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  // As any dialog: the keyboard starts inside it and stays there, Escape closes it, and focus goes back to the picture.
+  useDialogFocus(true, boxRef, onClose);
 
   const choose = async (picture: PictureRef) => {
     if (picture === device.picture) return onClose();
@@ -84,6 +87,7 @@ function PicturePicker({ device, count, onClose }: { device: DeviceView; count: 
   const content = (
     <YStack flex={1} alignItems="center" justifyContent="center" padding="$4" backgroundColor="rgba(8,12,20,0.6)" onPress={onClose}>
       <YStack
+        ref={boxRef as never}
         role="dialog"
         aria-modal
         aria-label={`The picture of ${device.name}`}
@@ -163,6 +167,7 @@ function Choice({ selected, busy, label, onPress, children }: { selected: boolea
       pressStyle={{ scale: 0.97 }}
       focusVisibleStyle={{ outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid' }}
       onPress={onPress}
+      onKeyDown={pressedBy(onPress) as never}
     >
       {children}
       {selected || busy ? (

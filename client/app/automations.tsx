@@ -261,7 +261,7 @@ function AutomationCard({
     }, 'That did not work');
 
   const remove = async () => {
-    if (!(await confirmAction(`Delete “${automation.name}”?`, `${automation.running ? 'Its run is stopped first. ' : ''}It stops, and is gone. Everything it did stays on the timeline.`, 'Delete'))) return;
+    if (!(await confirmAction(`Delete “${automation.name}”?`, `${automation.running ? 'Its run is stopped first. ' : ''}It stops, and is gone. Everything it did stays on the timeline.`, 'Delete', 'dangerous'))) return;
     await act(async () => {
       await deleteAutomation(automation.id);
       onDeleted();

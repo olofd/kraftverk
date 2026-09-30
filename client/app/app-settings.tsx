@@ -439,7 +439,7 @@ function ResetEverything() {
   const ask = async () => {
     haptic();
     const message = 'Every device, all recorded history, every connection and its secrets will be deleted. This cannot be undone.';
-    if (await confirmAction('Erase everything?', message, 'Erase')) void wipe();
+    if (await confirmAction('Erase everything?', message, 'Erase', 'dangerous')) void wipe();
   };
 
   // Nothing to say until the server has answered.

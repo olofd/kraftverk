@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { haptic } from './haptics';
@@ -39,6 +40,31 @@ export function SegmentedControl<T extends string | number>({
   */
   const theme = useTheme();
   const locked = disabled || pending;
+  const refs = useRef<(HTMLElement | null)[]>([]);
+  // One stop for Tab: the chosen option, or the first when none is.
+  const current = Math.max(0, options.findIndex((option) => option.value === value));
+
+  const choose = (option: Option<T>) => {
+    if (locked || option.value === value) return;
+    haptic();
+    onChange(option.value);
+  };
+  /*
+    The keyboard, as a radio group's: the arrows move between the options,
+    and Space or Enter chooses the one it is on. Moving does not choose —
+    a choice here can be consequential (letting an automation act asks
+    first), so it is made on purpose, never by passing over it.
+  */
+  const onKeyDown = (index: number) => (event: { key: string; preventDefault: () => void }) => {
+    const step = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0;
+    if (step) {
+      event.preventDefault();
+      refs.current[(index + step + options.length) % options.length]?.focus();
+    } else if (event.key === ' ' || event.key === 'Enter') {
+      event.preventDefault();
+      choose(options[index]!);
+    }
+  };
 
   return (
     <YStack gap="$3" paddingHorizontal="$4" paddingVertical="$3" opacity={disabled ? 0.45 : 1}>
@@ -62,17 +88,22 @@ export function SegmentedControl<T extends string | number>({
         padding={3}
         gap={3}
         role="radiogroup"
+        aria-label={title}
         aria-busy={pending || undefined}
       >
-        {options.map((option) => {
+        {options.map((option, index) => {
           const selected = option.value === value;
           return (
             <XStack
               key={option.value}
+              ref={((element: HTMLElement | null) => void (refs.current[index] = element)) as never}
               flex={1}
               role="radio"
               aria-checked={selected}
               aria-disabled={locked || undefined}
+              tabIndex={index === current ? 0 : -1}
+              onKeyDown={onKeyDown(index) as never}
+              focusVisibleStyle={{ outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid', outlineOffset: 1 }}
               justifyContent="center"
               paddingVertical="$2"
               borderRadius="$2"
@@ -88,11 +119,7 @@ export function SegmentedControl<T extends string | number>({
               backgroundColor={selected ? theme.accent?.val : 'transparent'}
               hoverStyle={selected || locked ? undefined : { backgroundColor: '$backgroundHover' }}
               pressStyle={locked ? undefined : { opacity: 0.7 }}
-              onPress={() => {
-                if (locked || selected) return;
-                haptic();
-                onChange(option.value);
-              }}
+              onPress={() => choose(option)}
             >
               <Text
                 fontSize={13}

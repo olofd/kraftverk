@@ -42,7 +42,7 @@ import {
 import { CATEGORIES, clientId, connectionId, deviceCapabilities, linkId, MAIN_PART, methodOf, partsOf, savedDeviceId, SIMULATED_METHOD_ID, type DeviceType } from '@kraftverk/device-sdk';
 import { runTool, toHold, toolsOf, withInUse } from '@kraftverk/holder';
 
-import { ASKED_AGAIN, confirmAction, withConfirmation } from '../lib/confirm';
+import { ASKED_AGAIN, confirmAction, withConfirmation, type ConfirmTone } from '../lib/confirm';
 import type { LocalDevice } from '../runtime/local';
 import { AppRuntime } from '../runtime/runtime';
 import type { HeldDevice } from '../runtime/sessions';
@@ -466,14 +466,18 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     [mode, runtime]
   );
 
-  /** Sends a command or a settings write, and when the gateway only wants a person to confirm, asks them. */
+  /**
+   * Sends a command or a settings write, and when the gateway only wants a
+   * person to confirm, asks them — as dangerous when what it touches is
+   * declared so, as careful otherwise.
+   */
   const confirmed = useCallback(
-    async <R extends { outcome: GatewayResult['outcome']; detail: string; needsConfirmation?: string }>(send: (confirmation?: string) => Promise<R>): Promise<R> => {
+    async <R extends { outcome: GatewayResult['outcome']; detail: string; needsConfirmation?: string }>(send: (confirmation?: string) => Promise<R>, tone: ConfirmTone = 'careful'): Promise<R> => {
       // The token a refusal hands out: good for this intent, from this person, once, for a minute.
       const { answer, declined } = await withConfirmation(
         send,
         (result) => (result.needsConfirmation ? { token: result.needsConfirmation, reason: result.detail.replace(/^This (action )?needs explicit confirmation\. /, '') } : null),
-        (reason, again) => confirmAction('Confirm', again ? `${ASKED_AGAIN}\n\n${reason}` : reason, 'Do it')
+        (reason, again) => confirmAction('Confirm', again ? `${ASKED_AGAIN}\n\n${reason}` : reason, 'Do it', tone)
       );
       return declined ? { ...answer, detail: 'Not confirmed', needsConfirmation: undefined } : answer;
     },
@@ -483,12 +487,16 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   /** A tool this app runs itself that says what it cannot undo is asked about first, as the server does for its own; no, and it does not run. */
   const confirmedTool = useCallback(async (spec: { label: string; confirm?: string } | undefined) => {
     if (!spec?.confirm) return;
-    if (!(await confirmAction(`${spec.label}?`, spec.confirm, spec.label))) throw new Error('Not confirmed');
+    // A tool asks only when it declares what it cannot undo.
+    if (!(await confirmAction(`${spec.label}?`, spec.confirm, spec.label, 'dangerous'))) throw new Error('Not confirmed');
   }, []);
 
   const actionsFor = useCallback(
     (device: DeviceView): DeviceActions => {
       const holder = holderOf(device);
+      /** A write is dangerous when it touches a setting its device declares so: one that can harm the hardware. */
+      const toneOf = (patch: Record<string, unknown>): ConfirmTone =>
+        device.description.attributes.some((attribute) => attribute.dangerous && attribute.key in patch) ? 'dangerous' : 'careful';
       if (holder === 'this-app') {
         const session = () => {
           const open = runtime.sessions.get(device.id);
@@ -512,14 +520,16 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
           },
           // The gateway's write, here as on the server: types, confirmation, read-back, audit.
           write: (patch) =>
-            confirmed((confirmation) =>
-              runtime.gateway.write({
-                deviceId: device.id as SavedDeviceId,
-                patch,
-                actor: 'user',
-                by: runtime.clientId ? `app:${runtime.clientId}` : 'this app',
-                confirmation,
-              })
+            confirmed(
+              (confirmation) =>
+                runtime.gateway.write({
+                  deviceId: device.id as SavedDeviceId,
+                  patch,
+                  actor: 'user',
+                  by: runtime.clientId ? `app:${runtime.clientId}` : 'this app',
+                  confirmation,
+                }),
+              toneOf(patch)
             ).then(settled),
           command: (input: CommandInput) =>
             confirmed((confirmation) =>
@@ -548,12 +558,12 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
             const { answer, declined } = await withConfirmation(
               (confirmation) => runDeviceTool<T>(device.id, name, { input, writes: spec?.writes ?? false, confirmation }),
               (result) => ('needsConfirmation' in result ? { token: result.needsConfirmation, reason: result.reason } : null),
-              (reason, again) => confirmAction(`${label}?`, again ? `${ASKED_AGAIN}\n\n${reason}` : reason, label)
+              (reason, again) => confirmAction(`${label}?`, again ? `${ASKED_AGAIN}\n\n${reason}` : reason, label, 'dangerous')
             );
             if (declined || !('answer' in answer)) throw new Error('Not confirmed');
             return answer.answer;
           },
-          write: (patch) => confirmed((confirmation) => writeDeviceAttributes(device.id, { patch, confirmation })).then(settled),
+          write: (patch) => confirmed((confirmation) => writeDeviceAttributes(device.id, { patch, confirmation }), toneOf(patch)).then(settled),
           command: (input) => confirmed((confirmation) => sendCommand(device.id, { ...input, confirmation })),
           diagnostic: inUse ? <T,>(name: string, query?: Record<string, string | number>) => fetchTransportDiagnostic<T>(inUse.transport, name, query) : null,
         };

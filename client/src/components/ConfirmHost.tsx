@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Platform } from 'react-native';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
 import { setConfirmHost, type ConfirmRequest } from '../lib/confirm';
+import { useDialogFocus } from '../lib/useDialogFocus';
 
 /**
  * Where the app asks a person to confirm something, on the web: drawn by the
@@ -36,40 +36,8 @@ export function ConfirmHost() {
     setQueue((current) => current.slice(1));
   };
 
-  useEffect(() => {
-    if (!asked || Platform.OS !== 'web') return;
-    const before = document.activeElement as HTMLElement | null;
-    const focusYes = setTimeout(() => yesRef.current?.focus(), 30);
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        answer(false);
-        return;
-      }
-      if (event.key !== 'Tab' || !boxRef.current) return;
-      // Round and round its two buttons, never out to the page behind it.
-      const focusable = [...boxRef.current.querySelectorAll<HTMLElement>('button, [role="button"], [tabindex="0"]')];
-      if (!focusable.length) return;
-      const first = focusable[0]!;
-      const last = focusable[focusable.length - 1]!;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener('keydown', onKey, true);
-    return () => {
-      clearTimeout(focusYes);
-      document.removeEventListener('keydown', onKey, true);
-      // Back to where the person was: the switch they pressed.
-      before?.focus?.();
-    };
-    // answer closes over the question being asked, which is what the effect is keyed on.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asked]);
+  // Starts on its yes, round and round its two buttons, Escape says no, and back to what was pressed after.
+  useDialogFocus(asked !== undefined, boxRef, () => answer(false), { start: yesRef, key: asked });
 
   if (!asked) return null;
   return (
@@ -117,7 +85,15 @@ export function ConfirmHost() {
           <Button size="$4" chromeless onPress={() => answer(false)}>
             Cancel
           </Button>
-          <Button ref={yesRef as never} size="$4" backgroundColor="$danger" color="$white" fontWeight="700" pressStyle={{ opacity: 0.85 }} onPress={() => answer(true)}>
+          <Button
+            ref={yesRef as never}
+            size="$4"
+            backgroundColor={asked.tone === 'dangerous' ? '$danger' : '$accent'}
+            color={asked.tone === 'dangerous' ? '$white' : '$background'}
+            fontWeight="700"
+            pressStyle={{ opacity: 0.85 }}
+            onPress={() => answer(true)}
+          >
             {asked.confirmLabel}
           </Button>
         </XStack>

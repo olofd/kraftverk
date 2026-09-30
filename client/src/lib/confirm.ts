@@ -1,7 +1,16 @@
 import { Alert, Platform } from 'react-native';
 
+/**
+ * How much a yes can cost, and so how its button looks: `careful` — it does
+ * something real, worth a second look (let an automation act, switch off what
+ * draws) — or `dangerous` — it cannot be undone, or can harm the hardware
+ * (delete, erase, a setting declared dangerous, a tool that says what it
+ * cannot undo). Only a dangerous yes is drawn in the danger colour.
+ */
+export type ConfirmTone = 'careful' | 'dangerous';
+
 /** One question for a person, and where their answer goes. */
-export type ConfirmRequest = { title: string; message: string; confirmLabel: string; resolve: (yes: boolean) => void };
+export type ConfirmRequest = { title: string; message: string; confirmLabel: string; tone: ConfirmTone; resolve: (yes: boolean) => void };
 
 let host: ((request: ConfirmRequest) => void) | null = null;
 
@@ -17,11 +26,11 @@ export function setConfirmHost(next: ((request: ConfirmRequest) => void) | null)
  * the browser's `confirm` answers no at once, showing nothing, wherever dialogs
  * are suppressed, and everything that needed a yes silently did not happen.
  */
-export function confirmAction(title: string, message: string, confirmLabel = 'Continue'): Promise<boolean> {
+export function confirmAction(title: string, message: string, confirmLabel = 'Continue', tone: ConfirmTone = 'careful'): Promise<boolean> {
   if (Platform.OS === 'web') {
     if (host) {
       const ask = host;
-      return new Promise((resolve) => ask({ title, message, confirmLabel, resolve }));
+      return new Promise((resolve) => ask({ title, message, confirmLabel, tone, resolve }));
     }
     // Before the app has mounted its own: the browser's, the only one there is.
     // eslint-disable-next-line no-alert
@@ -30,7 +39,7 @@ export function confirmAction(title: string, message: string, confirmLabel = 'Co
   return new Promise((resolve) =>
     Alert.alert(title, message, [
       { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-      { text: confirmLabel, style: 'destructive', onPress: () => resolve(true) },
+      { text: confirmLabel, style: tone === 'dangerous' ? 'destructive' : 'default', onPress: () => resolve(true) },
     ])
   );
 }

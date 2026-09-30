@@ -585,7 +585,7 @@ export function Manage({ device }: { device: DeviceView }) {
       mode === 'server'
         ? `${device.name} leaves your list, and its connections go. Its history is kept: add the same device again to bring it back.`
         : `${device.name} and how it is reached are deleted from this app.`;
-    if (!(await confirmAction('Remove this device?', message, 'Remove'))) return;
+    if (!(await confirmAction('Remove this device?', message, 'Remove', 'dangerous'))) return;
     setBusy(true);
     setError(null);
     try {
