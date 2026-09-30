@@ -206,6 +206,8 @@ function violation(file, area, specifier) {
       if (/^@kraftverk\/transport-/.test(specifier)) return 'a device type imports a transport: it is handed a connection';
       const serverSafe = file.startsWith(`${area.root}src/`);
       if (serverSafe && UI_ONLY.test(specifier)) return 'server-side device code imports UI';
+      // Its own screens included: what the server loads never depends on a package's page.
+      if (serverSafe && target && target.startsWith(`${area.root}ui/`)) return "server-side device code imports its package's screens";
       if (serverSafe && shipped && BUILT_IN.test(specifier)) return 'device code imports a platform built-in: it runs in the app too';
       // The SDK, protocols, and a family's base type by name (the ATORCH S1W is a Tuya socket).
       return null;

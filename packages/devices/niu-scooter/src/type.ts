@@ -16,7 +16,7 @@ import {
 } from '@kraftverk/device-sdk';
 import { clientOver, NIU_API, NiuError, parseState, type NiuBatteryHealth, type NiuClient, type NiuVehicle, type NiuState, type NiuTotals } from '@kraftverk/protocol-niu-cloud';
 
-import { ago, REPORT_TRUSTED_MS } from '../ui/words.ts';
+import { ago, REPORT_TRUSTED_MS } from './report.ts';
 
 /**
  * A NIU electric scooter, as NIU's cloud tells of it (README.md).

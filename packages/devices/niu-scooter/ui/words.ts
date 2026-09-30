@@ -1,5 +1,7 @@
 import type { Value } from '@kraftverk/device-sdk';
 
+import { ago, REPORT_TRUSTED_MS } from '../src/report.ts';
+
 /**
  * What the scooter is doing, in words a person reads at a glance — never
  * NIU's field names. Pure, so every sentence is tested.
@@ -8,9 +10,6 @@ import type { Value } from '@kraftverk/device-sdk';
 type Read = (key: string) => Value;
 
 const num = (value: Value): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
-
-/** How long a report is trusted while the scooter charges or is switched on — its readings' `currentFor` (src/type.ts). */
-export const REPORT_TRUSTED_MS = 30 * 60_000;
 
 export type Doing = {
   /** "Charging", "Parked"… */
@@ -56,16 +55,6 @@ export function doingOf(read: Read): Doing {
 
 /** A charge's colour: low is a warning, very low a danger. */
 export const levelTone = (soc: number | null): 'danger' | 'warning' | 'normal' => (soc === null ? 'normal' : soc < 15 ? 'danger' : soc < 30 ? 'warning' : 'normal');
-
-/** How long ago, in words: "just now", "12 minutes ago", "3 hours ago", "2 days ago". */
-export function ago(at: string, now = Date.now()): string {
-  const minutes = Math.max(0, Math.round((now - Date.parse(at)) / 60_000));
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 48) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
-  return `${Math.round(hours / 24)} days ago`;
-}
 
 /**
  * When it last reported, and whether that still holds: parked, its charge

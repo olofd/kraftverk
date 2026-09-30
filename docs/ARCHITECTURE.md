@@ -156,9 +156,11 @@ The rule, checked in CI by `npm run check:architecture` (§7):
   built-ins. It has no idea what a P280 is.
 - **A device type** imports the SDK and protocols, and — in its `ui/` folder
   only — `@kraftverk/ui`, `@kraftverk/api-client`, React and Tamagui (peer
-  dependencies). Never a transport, the server or the app: it is handed an
-  open connection. It is pure too, because it runs in whichever holder has
-  its connection. A **family** may build on another device type's package, by
+  dependencies). Its `src/` never imports its own `ui/`: the server loads
+  `src/`, and what both need lives there. Never a transport, the server or
+  the app: it is handed an open connection. It is pure too, because it runs
+  in whichever holder has its connection. A **family** may build on another
+  device type's package, by
   its name and never by a path: the ATORCH S1W is `@kraftverk/device-tuya-plug`'s
   generic socket with a profile of its own.
 - **No third-party runtime dependencies** in a device type, protocol or

@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 
 import type { Value } from '@kraftverk/device-sdk';
 
-import { ago, doingOf, levelTone, reportLine, span } from './words.ts';
+import { ago } from '../src/report.ts';
+import { doingOf, levelTone, reportLine, span } from './words.ts';
 
 const reading = (values: Record<string, Value>) => (key: string): Value => values[key] ?? null;
 const NOW = Date.parse('2026-09-30T12:00:00Z');
