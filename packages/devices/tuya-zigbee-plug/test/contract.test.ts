@@ -25,6 +25,7 @@ function gateway(dps: Dps) {
   let clientNonce: Uint8Array = new Uint8Array();
   const remoteNonce = bytes('fedcba9876543210');
   const sent: Dps[] = [];
+  let queries = 0;
   const frame = (command: number, payload: Uint8Array, withKey = sessionKey) => encodeFrame({ version: '3.4', key: withKey, sequence: 1, command, payload });
   const channel = fakeByteChannel((written) => {
     const out: Uint8Array[] = [];
@@ -41,6 +42,7 @@ function gateway(dps: Dps) {
         sessionKey = sessionKeyOf('3.4', key, clientNonce, mixed);
         reader = new FrameReader('3.4', sessionKey);
       } else if (got.command === CMD.DP_QUERY_NEW) {
+        queries += 1;
         const asked = JSON.parse(new TextDecoder().decode(got.payload)) as { cid?: string };
         // Asked of itself, a gateway answers with its own datapoints: not the plug's.
         out.push(frame(CMD.DP_QUERY_NEW, bytes(JSON.stringify(asked.cid === CID ? { dps, cid: CID } : { dps: { '4': false, '32': 'normal' } }))));
@@ -57,7 +59,15 @@ function gateway(dps: Dps) {
   });
   /** Says something unasked, as the gateway does: a push, a report of which plugs it reaches. */
   const say = (command: number, json: unknown) => channel.push(frame(command, bytes(JSON.stringify(json))));
-  return { channel, sent, say };
+  return {
+    channel,
+    sent,
+    say,
+    /** How often the plug has been asked for its datapoints. */
+    get queries() {
+      return queries;
+    },
+  };
 }
 
 const over = (channel: ReturnType<typeof gateway>['channel']) =>
@@ -91,11 +101,14 @@ async function session(dps: Dps) {
   await new Promise((resolve) => setTimeout(resolve, 300));
   const reading = (key: string) => opened.readings().find((candidate) => candidate.key === key);
   const value = (key: string) => reading(key)?.value;
-  const poll = async () => {
-    await scheduled[0]!();
+  const run = async (index: number) => {
+    await scheduled[index]!();
     await new Promise((resolve) => setTimeout(resolve, 100));
   };
-  return { device, opened, value, reading, poll };
+  // Its poll, and the tick that asks often while someone waits on its readings.
+  const poll = () => run(0);
+  const freshTick = () => run(1);
+  return { device, opened, value, reading, poll, freshTick, scheduled };
 }
 
 const MAPPED: Dps = { '1': true, '9': 0, '17': 43230, '18': 4310, '19': 9970, '20': 2310, '27': 'memory', '28': 'relay', '29': false };
@@ -151,6 +164,25 @@ describe('the Tuya Zigbee plug', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(value('watts')).toBe(0);
     expect(opened.health().status).not.toBe('offline');
+    await opened.close();
+  });
+
+  test('all who wait on its readings share one lease and one clock: asked often until the latest of them', async () => {
+    const { device, opened, freshTick, scheduled } = await session({ ...MAPPED });
+    const clocks = scheduled.length;
+    const asked = device.queries;
+    // Nobody waits: the tick asks nothing.
+    await freshTick();
+    expect(device.queries).toBe(asked);
+
+    // Two wait, one longer: an earlier end does not cut the later one short, and no second clock starts.
+    opened.wantFresh!(Date.now() + 60_000);
+    opened.wantFresh!(Date.now() + 1);
+    expect(scheduled.length).toBe(clocks);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await freshTick();
+    await freshTick();
+    expect(device.queries).toBe(asked + 2);
     await opened.close();
   });
 
