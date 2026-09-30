@@ -65,6 +65,12 @@ the answers above. No serials, no places.
 | Switched on (the alarm sounds if a charger goes in with it off), charger in, charging, switched off | 31 s after: `isAccOn` 0, `isCharging` still 0. A minute later a new report, sent switched off: `isCharging` 1, `leftTime` "0.2" | It notices charging within about a minute, and reports it while off. The NIU app agreed |
 | Left charging, switched off | Reports at about 16:40:56, 16:45:15, 16:50:15 — every 4½–5 min. Still 88 %, `leftTime` still "0.2", 10 min into charging | Charging switched off, **a report every ~5 min**: a charge limit stops 1–2 % late. Whether 88 % stood still or NIU's % lags: **to see** |
 
+**Paused here** at the owner's word: NIU's own app is as slow to update its
+figures, and has been for years — the cloud is the limit, not this package.
+It stays in, experimental. Left for another day: whether the % moves while
+charging (it stood at 88 % for 10 min), unplugging, the seat and
+`lockStatus`, parked for hours, and a plug in front of the charger.
+
 The alarm: armed when switched off (a charger going in sets it off), yet
 `isFortificationOn` stays `""` — so `alarmArmed` is never known on this
 model.
