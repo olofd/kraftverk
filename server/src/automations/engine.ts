@@ -700,11 +700,11 @@ export class AutomationEngine {
       return over('failed', `Could not decide: ${(error as Error).message}`);
     }
 
+    // Only asked, or only watching: what it would do, said once — why it did not act is the run's own why and outcome.
     if (options.check || automation.mode !== 'armed') {
-      const detail = options.check ? 'You only asked what it would do' : 'It only watches: let it act to have it done';
-      const steps = await this.#wouldDo(automation, recipe, scope, detail);
+      const steps = await this.#wouldDo(automation, recipe, scope);
       if ('unknown' in steps) return over('unknown', `Could not tell what to send ${steps.unknown}`);
-      const said = steps.filter((step) => step.depth === 0).map((step) => lowerFirst(step.what));
+      const said = steps.filter((step) => step.depth === 0).map((step) => `${lowerFirst(step.what)}${step.outcome === 'already' ? ' (already so)' : ''}`);
       return over('would-act', `Would ${said.join(', then ')}`, steps, actsOn(automation, recipe));
     }
 
@@ -991,13 +991,17 @@ export class AutomationEngine {
     return parts.length ? capitalise(parts.join('; ')) : 'Nothing needed doing';
   }
 
-  /** What it would do, each step as it would take it: its commands evaluated as they stand now. */
-  async #wouldDo(automation: AutomationRecord, recipe: Recipe, scope: RuleScope, detail: string): Promise<RunStep[] | { unknown: string }> {
+  /**
+   * What it would do, each step as it would take it: its commands evaluated
+   * as they stand now, and one already so said to be — as far as it can be
+   * told before the steps before it have run.
+   */
+  async #wouldDo(automation: AutomationRecord, recipe: Recipe, scope: RuleScope): Promise<RunStep[] | { unknown: string }> {
     const at = this.#now().toISOString();
     const settled = this.#settled(automation, recipe);
     const steps: RunStep[] = [];
     const flatten = (line: StepLine, depth: number, within: string | null) => {
-      steps.push({ kind: line.kind, depth, within, what: line.text, outcome: 'would', detail, at, endedAt: at, until: null });
+      steps.push({ kind: line.kind, depth, within, what: line.text, outcome: 'would', detail: '', at, endedAt: at, until: null });
       for (const branch of line.branches) for (const inner of branch.steps) flatten(inner, depth + 1, branch.label);
     };
     const visit = async (list: readonly Step[]): Promise<{ unknown: string } | null> => {
@@ -1010,7 +1014,8 @@ export class AutomationEngine {
         } else if ('command' in step) {
           const planned = await this.#planCommand(automation, step.command, scope);
           if ('unknown' in planned) return planned;
-          steps.push({ kind: 'command', depth: 0, within: null, what: capitalise(planned.what), outcome: 'would', detail, at, endedAt: at, until: null });
+          const already = this.#alreadySo(planned);
+          steps.push({ kind: 'command', depth: 0, within: null, what: capitalise(planned.what), outcome: already ? 'already' : 'would', detail: already ? 'It is so now' : '', at, endedAt: at, until: null });
         } else {
           for (const line of describeSteps({ ...recipe, then: [step], otherwise: [] }, settled, (role) => scope.name(role), this.deps.library).steps) flatten(line, 0, null);
         }

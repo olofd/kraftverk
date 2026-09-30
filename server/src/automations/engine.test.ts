@@ -244,10 +244,19 @@ describe('at a time of day', () => {
       // Why, what it read — the function's own words — and what it would have done, each on its own.
       why: 'As it was set up to',
       saw: ['Tomorrow looks sunny: 15 % cloud'],
-      steps: [{ kind: 'command', depth: 0, what: 'Turn Heater plug on', outcome: 'would', detail: 'It only watches: let it act to have it done' }],
+      steps: [{ kind: 'command', depth: 0, what: 'Turn Heater plug on', outcome: 'would', detail: '' }],
     });
     expect(sent).toEqual([]);
     expect(recorded[0]).toMatchObject({ kind: 'automation.would-act', actor: 'automation:Test automation', resourceKind: 'automation', detail: { device: PLUG } });
+  });
+
+  test('what it would do says what is already so, as it stands now', async () => {
+    const { engine, sunny, plug } = setup();
+    plug.on = true;
+    expect(await engine.run(sunny(), { check: true })).toMatchObject({
+      summary: 'Would turn Heater plug on (already so)',
+      steps: [{ what: 'Turn Heater plug on', outcome: 'already', detail: 'It is so now' }],
+    });
   });
 
   test('armed, it acts through the gateway, as an automation, with its reason', async () => {
