@@ -17,6 +17,23 @@ test('a channel reaches its own origin and no other', async () => {
   expect(asked).toHaveLength(1);
 });
 
+test('a protocol may name a host beside its API — a sign-in host — and every other is still refused', async () => {
+  const asked: string[] = [];
+  const fake = (async (url: URL | string) => {
+    asked.push(String(url));
+    return new Response('{}');
+  }) as typeof fetch;
+  const channel = httpChannel('https://api.example.test', fake, ['https://account.example.test']);
+
+  await channel.fetch('/v5/list');
+  await channel.fetch('https://account.example.test/oauth2/token');
+  expect(asked).toEqual(['https://api.example.test/v5/list', 'https://account.example.test/oauth2/token']);
+  await expect(channel.fetch('https://elsewhere.test/steal')).rejects.toThrow('is all this connection may reach');
+  // Only HTTPS, there too.
+  expect(() => httpChannel('https://api.example.test', fake, ['http://account.example.test'])).toThrow('not an HTTPS address');
+  expect(channel.describe?.()).toMatchObject({ origin: 'https://api.example.test', alsoOrigins: ['https://account.example.test'] });
+});
+
 test('an address must be HTTPS', () => {
   expect(originOf('https://api.example.test/path')).toBe('https://api.example.test');
   expect(() => originOf('http://api.example.test')).toThrow('not an HTTPS address');

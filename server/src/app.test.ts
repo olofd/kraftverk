@@ -275,7 +275,7 @@ describe('everything needs a session', () => {
 describe('what can be added', () => {
   test('every installed type, by category, with how it can be reached and whether this server can', async () => {
     const { body } = await as('/device-types');
-    expect(Object.keys(body.categories)).toEqual(['power-station', 'smart-plug', 'weather']);
+    expect(Object.keys(body.categories)).toEqual(['power-station', 'smart-plug', 'weather', 'vehicle']);
     const p280 = body.types.find((type: { id: string }) => type.id === 'aferiy.p280');
     expect(p280.meta.category).toBe('power-station');
     // Its own ways, and simulated — which every type has, and a server can always hold.
@@ -659,6 +659,17 @@ describe('a connection a browser holds', () => {
     expect(saved.text).not.toContain('never-here');
     // The server does not hold it, and says who does.
     expect(saved.body.health.detail).toBe('Held by Olof’s laptop, not by this server');
+  });
+
+  test('a way only a server holds is refused to an app: a vendor account’s password stays on the server', async () => {
+    const client = (await as('/clients', { method: 'POST', body: { name: 'Olof’s laptop', platform: 'web', transports: ['https'] }, server: simulated })).body as { id: string };
+    const refused = await as('/setup/app', {
+      method: 'POST',
+      body: { clientId: client.id, typeId: 'niu.scooter', methodId: 'cloud', address: 'https://app-api-fk.niu.com', identified: { identity: 'niu-cloud:X', model: null, summary: 'x' } },
+      server: simulated,
+    });
+    expect(refused.status).toBe(400);
+    expect(refused.body.error).toContain('held only by your server');
   });
 
   test('sends its readings: live ones are the device’s state, queued ones become history', async () => {

@@ -103,6 +103,12 @@ export default function AddDeviceScreen() {
         if (mode === 'local') rows.push({ methodId: method.id, label: `${method.label}, from ${HERE}`, description: method.description, holder: 'this-app', available: true, reason: null, recommended: false });
         return rows;
       }
+      // A way only a server holds is not offered here: a vendor account's password stays on the server.
+      // With no server, it is shown, and why it cannot be used.
+      if (method.serverOnly) {
+        if (mode === 'local') rows.push({ methodId: method.id, label: method.label, description: method.description, holder: 'server', available: false, reason: `It needs a server: ${method.serverOnly}`, recommended: false });
+        return rows;
+      }
       const definition = runtime.registry.definition(method.transport);
       if (definition?.platforms.includes(PLATFORM) && runtime.registry.protocols.get(method.protocol)?.bindings[method.transport]) {
         const here = runtime.registry.available(method.transport);

@@ -48,6 +48,8 @@ const DEFAULT_PRECISION: Record<Quantity, number> = {
   humidity: 0,
   illuminance: 0,
   signal: 0,
+  distance: 0,
+  speed: 0,
 };
 
 type Formatted = Pick<AttributeSpec, 'value' | 'quantity' | 'means'>;
@@ -113,7 +115,7 @@ const withUnit = (unit: string, digits: number, value: number): string => {
  */
 export const startsAtZero = (quantity: Quantity | null): boolean =>
   quantity === 'power' || quantity === 'energy' || quantity === 'percent' || quantity === 'current' ||
-  quantity === 'duration' || quantity === 'illuminance';
+  quantity === 'duration' || quantity === 'illuminance' || quantity === 'distance' || quantity === 'speed';
 
 /** A percentage is 0–100 whatever the data did; nothing else has fixed bounds. */
 export const fixedRange = (quantity: Quantity | null): [number, number] | null =>

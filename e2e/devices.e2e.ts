@@ -54,3 +54,15 @@ test('the device list follows the live stream: a new device appears without relo
   const readings = await live.waitForEvent('framereceived', (frame) => String(frame.payload).includes('"type":"readings"'));
   expect(String(readings.payload)).toContain('"readings"');
 });
+
+test('a NIU scooter is found under Vehicles, and its page draws its battery with no screen of its own', async ({ page, request }) => {
+  await page.goto('/add-device');
+  await page.getByText('Vehicles', { exact: true }).click();
+  await expect(page.getByText('NIU scooter', { exact: true })).toBeVisible();
+
+  const scooter = await addSimulated(request, 'niu.scooter', unique('Scooter'));
+  await page.goto(`/device/${scooter.id}`);
+  await expect(page.getByText('Battery', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Charge', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Range', { exact: true }).first()).toBeVisible();
+});

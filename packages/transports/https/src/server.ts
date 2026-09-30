@@ -8,8 +8,8 @@ const createHttpsTransport: TransportFactory = (): Transport => ({
   available: () => ({ ok: true }),
   async start() {},
   async stop() {},
-  async open(address) {
-    return httpChannel(address);
+  async open(address, options) {
+    return httpChannel(address, fetch, options.alsoOrigins);
   },
 });
 

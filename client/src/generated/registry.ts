@@ -13,8 +13,10 @@ import deviceAferiyP280Type from '@kraftverk/device-aferiy-p280/type';
 import deviceAferiyP280Ui from '@kraftverk/device-aferiy-p280/ui';
 import deviceAtorchS1wType from '@kraftverk/device-atorch-s1w';
 import deviceAtorchS1wUi from '@kraftverk/device-atorch-s1w/ui';
+import deviceNiuScooterType from '@kraftverk/device-niu-scooter';
 import deviceTuyaPlugType from '@kraftverk/device-tuya-plug/type';
 import serviceOpenMeteoType from '@kraftverk/service-open-meteo';
+import protocolNiuCloud from '@kraftverk/protocol-niu-cloud';
 import protocolOpenMeteo from '@kraftverk/protocol-open-meteo';
 import protocolSydpower from '@kraftverk/protocol-sydpower';
 import protocolTuyaLocal from '@kraftverk/protocol-tuya-local';
@@ -31,6 +33,7 @@ import transportMqtt from '@kraftverk/transport-mqtt';
 export const DEVICE_TYPES: readonly DeviceType<any>[] = [
   deviceAferiyP280Type,
   deviceAtorchS1wType,
+  deviceNiuScooterType,
   deviceTuyaPlugType,
   serviceOpenMeteoType,
 ];
@@ -45,9 +48,11 @@ export const DEVICE_UI: Readonly<Record<string, DeviceUi>> = {
 export const DEVICE_ASSETS: Readonly<Record<string, DeviceAssets>> = {
   'aferiy.p280': { image: require('@kraftverk/device-aferiy-p280/assets/device-image.png') },
   'atorch.s1w': { image: require('@kraftverk/device-atorch-s1w/assets/device-image.png') },
+  'niu.scooter': { image: require('@kraftverk/device-niu-scooter/assets/device-image.png') },
 };
 
 export const PROTOCOLS: readonly Protocol[] = [
+  protocolNiuCloud,
   protocolOpenMeteo,
   protocolSydpower,
   protocolTuyaLocal,

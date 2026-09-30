@@ -1,0 +1,31 @@
+{
+  "name": "@kraftverk/device-niu-scooter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A NIU electric scooter, read from NIU's cloud with the owner's account: its charge, charging, range and odometer.",
+  "type": "module",
+  "main": "./src/type.ts",
+  "kraftverk": {
+    "deviceType": "./src/type.ts",
+    "assets": {
+      "image": "./assets/device-image.png"
+    }
+  },
+  "exports": {
+    ".": "./src/type.ts",
+    "./type": "./src/type.ts",
+    "./assets/device-image.png": "./assets/device-image.png"
+  },
+  "scripts": {
+    "test": "node ../../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kraftverk/device-sdk": "*",
+    "@kraftverk/protocol-niu-cloud": "*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}

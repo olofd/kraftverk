@@ -31,7 +31,11 @@ export type Quantity =
   | 'humidity'
   | 'illuminance'
   /** Radio signal strength, in dBm. Diagnostic by nature. */
-  | 'signal';
+  | 'signal'
+  /** How far: a vehicle's range, its odometer. */
+  | 'distance'
+  /** How fast something moves. */
+  | 'speed';
 
 export const QUANTITIES: readonly Quantity[] = [
   'power',
@@ -45,6 +49,8 @@ export const QUANTITIES: readonly Quantity[] = [
   'humidity',
   'illuminance',
   'signal',
+  'distance',
+  'speed',
 ];
 
 /**

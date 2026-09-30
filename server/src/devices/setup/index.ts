@@ -130,6 +130,7 @@ export class SetupService {
     if (!type) throw new SetupError(`Nothing installed here knows what "${input.typeId}" is`, 404);
     const method = type.connections.find((candidate) => candidate.id === input.methodId);
     if (!method) throw new SetupError(`${type.meta.name} has no way called "${input.methodId}"`);
+    if (method.serverOnly) throw new SetupError(`${method.label} is held only by your server: ${method.serverOnly}`);
     const protocol = this.deps.protocols.get(method.protocol) ?? null;
     const secret = new Set(
       Object.entries(connectionSchema(method, protocol).fields)

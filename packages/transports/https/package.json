@@ -2,7 +2,7 @@
   "name": "@kraftverk/transport-https",
   "version": "0.2.0",
   "private": true,
-  "description": "The internet, over HTTPS, for services: one origin per channel, so a device type reaches the API it was set up with and nothing else.",
+  "description": "The internet, over HTTPS, for services and cloud devices: each channel reaches its address and the few origins its protocol declares beside it (a sign-in host), and nothing else.",
   "type": "module",
   "main": "src/index.ts",
   "kraftverk": {

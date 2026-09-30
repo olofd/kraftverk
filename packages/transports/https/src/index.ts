@@ -27,11 +27,13 @@ export function originOf(address: string): string {
 }
 
 /**
- * A channel to one origin, over whatever `fetch` the platform has. The same on
- * every platform, which is why each platform's entry is two lines.
+ * A channel to one origin — and to the few its protocol declares beside it —
+ * over whatever `fetch` the platform has. The same on every platform, which is
+ * why each platform's entry is two lines.
  */
-export function httpChannel(address: string, fetcher: typeof fetch = fetch): HttpChannel {
+export function httpChannel(address: string, fetcher: typeof fetch = fetch, alsoOrigins: readonly string[] = []): HttpChannel {
   const origin = originOf(address);
+  const allowed = new Set([origin, ...alsoOrigins.map(originOf)]);
   let connected = true;
   const listeners = new Set<(connected: boolean) => void>();
   const set = (next: boolean) => {
@@ -51,7 +53,7 @@ export function httpChannel(address: string, fetcher: typeof fetch = fetch): Htt
     },
     async fetch(path, init) {
       const url = new URL(path, origin);
-      if (url.origin !== origin) throw new Error(`${url.origin} is not ${origin}, which is all this connection may reach`);
+      if (!allowed.has(url.origin)) throw new Error(`${url.origin} is not ${[...allowed].join(' or ')}, which is all this connection may reach`);
       const { timeoutMs = 10_000, ...rest } = init ?? {};
       try {
         const response = await fetcher(url, { ...rest, signal: rest.signal ?? AbortSignal.timeout(timeoutMs) });
@@ -63,7 +65,7 @@ export function httpChannel(address: string, fetcher: typeof fetch = fetch): Htt
         throw error;
       }
     },
-    describe: () => ({ origin, connected }),
+    describe: () => ({ origin, ...(allowed.size > 1 ? { alsoOrigins: [...allowed].filter((other) => other !== origin) } : {}), connected }),
     async close() {
       listeners.clear();
     },

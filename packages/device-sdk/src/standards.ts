@@ -41,6 +41,8 @@ export const HOME_ASSISTANT_QUANTITIES: Readonly<Record<Quantity, { deviceClass:
   humidity: { deviceClass: 'humidity', units: ['%'] },
   illuminance: { deviceClass: 'illuminance', units: ['lx'] },
   signal: { deviceClass: 'signal_strength', units: ['dBm', 'dB'] },
+  distance: { deviceClass: 'distance', units: ['km', 'm', 'mi'] },
+  speed: { deviceClass: 'speed', units: ['km/h', 'm/s', 'mph'] },
 };
 
 /** Home Assistant uses the same three state classes, by the same names. */

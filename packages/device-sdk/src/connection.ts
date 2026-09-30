@@ -94,12 +94,17 @@ export type MessageChannel = ChannelBase & {
 };
 
 /**
- * HTTP to one origin: the address. A device type reaches that host and no
- * other through it, which is what keeps a weather service from calling home.
+ * HTTP to one origin: the address — and to the few more its protocol declares
+ * (`OpenOptions.alsoOrigins`: a sign-in host beside an API). A device type
+ * reaches those hosts and no other through it, which is what keeps a weather
+ * service from calling home.
  */
 export type HttpChannel = ChannelBase & {
   readonly kind: 'http';
-  /** `path` is resolved against the address; a different origin is refused. */
+  /**
+   * `path` is resolved against the address; a full URL may name a declared
+   * origin instead. Any other origin is refused.
+   */
   fetch(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<Response>;
 };
 
@@ -119,6 +124,12 @@ export type OpenOptions = {
   writeSpacingMs?: number;
   /** TCP: the port on the address. */
   port?: number;
+  /**
+   * HTTPS: the other origins of the same service the channel may reach besides
+   * its address — a sign-in host beside the API. Declared by the protocol,
+   * never typed by a person; every other origin is still refused.
+   */
+  alsoOrigins?: readonly string[];
 };
 
 // --- finding devices ----------------------------------------------------------
@@ -405,6 +416,13 @@ export type ConnectionMethod = {
   address?: string;
   /** Choices of this method's own, stored with the connection. Never secrets. */
   config?: ConfigSchema;
+  /**
+   * Held only by a server, and why: "your account password stays on your server".
+   * An app is not offered it, and the server refuses to save one an app would
+   * hold — a vendor account's password does not belong in a browser, and some
+   * clouds do not answer a web page at all.
+   */
+  serverOnly?: string;
   /** Steps of the type's own for this method, after those its layers supply. */
   steps?: readonly SetupStep[];
 };

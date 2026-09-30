@@ -27,6 +27,7 @@ export const CATEGORIES = {
   'power-station': { label: 'Power stations', singular: 'power station', icon: 'battery-charging' },
   'smart-plug': { label: 'Smart plugs', singular: 'smart plug', icon: 'power' },
   weather: { label: 'Weather', singular: 'weather forecast', icon: 'cloud' },
+  vehicle: { label: 'Vehicles', singular: 'vehicle', icon: 'navigation' },
 } as const satisfies Record<string, CategorySpec>;
 
 export type CategoryId = keyof typeof CATEGORIES;

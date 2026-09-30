@@ -113,14 +113,18 @@ packages/
   transports/ble/        @kraftverk/transport-ble        server (noble), web (Web Bluetooth), native (the phone)
   transports/lan/        @kraftverk/transport-lan        TCP and UDP on the home network; server only for now —
                                                          a native entry needs a socket library, a reviewed dependency
-  transports/https/      @kraftverk/transport-https      the internet, address-scoped; everywhere
+  transports/https/      @kraftverk/transport-https      the internet, address-scoped (plus the origins a protocol
+                                                         declares beside it: a sign-in host); everywhere
   protocols/sydpower/    @kraftverk/protocol-sydpower    MODBUS-style frames, CRC, register blocks, the register-68 rule;
                                                          bindings for mqtt (topics, broker policy) and ble (service, framing)
   protocols/tuya-local/  @kraftverk/protocol-tuya-local  frames, crypto, handshake, discovery packets, the local key;
                                                          a binding for lan
   protocols/open-meteo/  @kraftverk/protocol-open-meteo  the Open-Meteo API's requests and answers; a binding for https
+  protocols/niu-cloud/   @kraftverk/protocol-niu-cloud   the NIU cloud as the NIU app speaks it: sign-in, tokens, the
+                                                         state; a binding for https reaching NIU's two hosts
   devices/aferiy-p280/   @kraftverk/device-aferiy-p280   a device type: power-station
   devices/atorch-s1w/    @kraftverk/device-atorch-s1w    smart-plug
+  devices/niu-scooter/   @kraftverk/device-niu-scooter   vehicle: a NIU scooter through NIU's cloud (being mapped)
   devices/tuya-plug/     @kraftverk/device-tuya-plug     smart-plug: the generic Tuya energy socket, with profiles
   services/open-meteo/   @kraftverk/service-open-meteo   weather, a service
   gateway/               @kraftverk/gateway              the action gateway's rules: pure, run by whichever holder has the connection
