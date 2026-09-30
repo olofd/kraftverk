@@ -8,7 +8,7 @@ import type { CommandIntent, GatewayResult } from '@kraftverk/gateway';
 import { LiveBus, type LiveMessage } from '@kraftverk/holder';
 
 import { closeDb, db } from '../history/db.ts';
-import { AutomationEngine, RunRefusal, type EngineDevice } from './engine.ts';
+import { AutomationEngine, RunRefusal, type Asker, type EngineDevice } from './engine.ts';
 import { AutomationLibrary } from './library.ts';
 import { AutomationStore } from './store.ts';
 
@@ -78,6 +78,7 @@ function setup(world: Partial<World> = {}) {
   const recorded: AuditRecord[] = [];
   const heard: LiveMessage[] = [];
   const fresh: { device: string; until: number }[] = [];
+  const runsEnded: string[] = [];
   const reachable = () => state.supplyOn && state.reachableAfterMs !== null && Date.now() - state.supplyOnAt >= state.reachableAfterMs;
   const charging = () => state.plugOn && reachable() && state.wakesOnSwitch !== null && state.plugSwitchedOn >= state.wakesOnSwitch;
   const now = () => new Date().toISOString();
@@ -146,6 +147,7 @@ function setup(world: Partial<World> = {}) {
         }
         return { outcome: 'verified', detail: 'Done — confirmed by the device', deviceAgreed: true };
       },
+      runEnded: (runId: string) => void runsEnded.push(runId),
     },
     record: (entry) => recorded.push(entry),
     bus,
@@ -166,8 +168,11 @@ function setup(world: Partial<World> = {}) {
     throw new Error('The run never ended');
   };
   const switches = () => sent.map((intent) => `${intent.deviceId === STATION ? 'supply' : 'charger'} ${intent.args.on ? 'on' : 'off'}`);
-  return { engine, store, state, sent, recorded, heard, fresh, make, ended, switches };
+  return { engine, store, state, sent, recorded, heard, fresh, runsEnded, make, ended, switches };
 }
+
+/** A person asking. */
+const OLOF: Asker = { name: 'olof', actor: 'user' };
 
 /** A few seconds of a step, fast: how long the charger is given, and how long it is switched off. */
 const QUICK = { reachSeconds: 20, withinSeconds: 5, offSeconds: 3, tries: 3 };
@@ -176,7 +181,7 @@ describe('starting a charge', () => {
   test('a charger that draws at once: the supply on, the plug when it can be reached, then on — and made sure of', async () => {
     const { engine, make, ended, switches, store } = setup({ reachableAfterMs: 20 });
     const automation = make('standard.start-charging', QUICK);
-    const begun = await engine.startAsked(automation.id, 'olof');
+    const begun = await engine.startAsked(automation.id, OLOF);
     expect(begun).toMatchObject({ outcome: 'running', startedBy: 'olof', why: 'Started by olof' });
 
     const run = await ended(automation.id);
@@ -195,9 +200,9 @@ describe('starting a charge', () => {
   });
 
   test('a charger that stays idle is switched off and on again until it draws — no more often than its tries — and the gateway is told the run’s allowance', async () => {
-    const { engine, make, ended, switches, sent } = setup({ wakesOnSwitch: 3 });
+    const { engine, make, ended, switches, sent, runsEnded } = setup({ wakesOnSwitch: 3 });
     const automation = make('standard.start-charging', QUICK);
-    await engine.startAsked(automation.id, 'olof');
+    await engine.startAsked(automation.id, OLOF);
     const run = await ended(automation.id);
 
     expect(switches()).toEqual(['supply on', 'charger on', 'charger off', 'charger on', 'charger off', 'charger on']);
@@ -216,14 +221,16 @@ describe('starting a charge', () => {
     ]);
     // Every switch is the run's, a person's, with what its rule allows: on, then off and on 3 times, then off if it fails.
     expect(new Set(sent.map((intent) => intent.run?.id))).toEqual(new Set([run.id!]));
-    expect(sent.every((intent) => intent.run?.asked === true && intent.actor === 'automation')).toBe(true);
+    expect(sent.every((intent) => intent.run?.askedBy === 'user' && intent.actor === 'automation')).toBe(true);
     expect(sent.find((intent) => intent.deviceId === PLUG)!.run!.switches).toBe(1 + 2 * 3 + 1);
+    // Ended, the gateway is told, and counts nothing more for it.
+    expect(runsEnded).toEqual([run.id!]);
   });
 
   test('a charger that never draws: it gives up after its tries, says why — and switches both off again, as chosen', async () => {
     const { engine, make, ended, switches } = setup({ wakesOnSwitch: null });
     const automation = make('standard.start-charging', { ...QUICK, tries: 2 });
-    await engine.startAsked(automation.id, 'olof');
+    await engine.startAsked(automation.id, OLOF);
     const run = await ended(automation.id);
 
     expect(run.outcome).toBe('failed');
@@ -245,7 +252,7 @@ describe('starting a charge', () => {
   test('left on, as chosen: nothing is switched off when it gives up', async () => {
     const { engine, make, ended, switches } = setup({ wakesOnSwitch: null });
     const automation = make('standard.start-charging', { ...QUICK, tries: 1, ifItFails: 'leaveOn' });
-    await engine.startAsked(automation.id, 'olof');
+    await engine.startAsked(automation.id, OLOF);
     expect((await ended(automation.id)).outcome).toBe('failed');
     expect(switches()).toEqual(['supply on', 'charger on', 'charger off', 'charger on']);
   });
@@ -253,7 +260,7 @@ describe('starting a charge', () => {
   test('a plug that never comes back: it waits as long as it may, then stops — its supply switched off again', async () => {
     const { engine, make, ended, switches } = setup({ reachableAfterMs: null });
     const automation = make('standard.start-charging', { ...QUICK, reachSeconds: 10 });
-    await engine.startAsked(automation.id, 'olof');
+    await engine.startAsked(automation.id, OLOF);
     const run = await ended(automation.id);
 
     expect(run.outcome).toBe('failed');
@@ -266,7 +273,7 @@ describe('starting a charge', () => {
   test('stopped while it waits: the step ends as stopped, and what it does if stopped runs', async () => {
     const { engine, make, ended, switches } = setup({ reachableAfterMs: 10_000 });
     const automation = make('standard.start-charging', QUICK);
-    await engine.startAsked(automation.id, 'olof');
+    await engine.startAsked(automation.id, OLOF);
     await new Promise((resolve) => setTimeout(resolve, 20));
     const stopping = engine.stopAsked(automation.id, 'olof');
     expect(stopping.outcome).toBe('running');
@@ -282,7 +289,7 @@ describe('starting a charge', () => {
   test('deleted while it waits: it stops, does what it does if stopped, and is neither kept nor on the timeline', async () => {
     const { engine, make, store, recorded, switches } = setup({ reachableAfterMs: 10_000 });
     const automation = make('standard.start-charging', QUICK);
-    await engine.startAsked(automation.id, 'olof');
+    await engine.startAsked(automation.id, OLOF);
     await new Promise((resolve) => setTimeout(resolve, 20));
     store.delete(automation.id);
     engine.forget(automation.id);
@@ -297,8 +304,8 @@ describe('starting a charge', () => {
   test('while it runs: kept at every step, said on the live bus, its readings wanted fresh — one run at a time', async () => {
     const { engine, make, ended, store, heard, fresh } = setup({ wakesOnSwitch: 2 });
     const automation = make('standard.start-charging', QUICK);
-    await engine.startAsked(automation.id, 'olof');
-    await expect(engine.startAsked(automation.id, 'olof')).rejects.toThrow('It is already running');
+    await engine.startAsked(automation.id, OLOF);
+    await expect(engine.startAsked(automation.id, OLOF)).rejects.toThrow('It is already running');
     const midway = store.get(automation.id)!;
     expect(midway.running).toMatchObject({ outcome: 'running', startedBy: 'olof' });
     expect(midway.running!.steps.length).toBeGreaterThan(0);
@@ -312,7 +319,7 @@ describe('starting a charge', () => {
   test('only watching, it says what it would do — every step — and sends nothing; off, or not started when asked, it is not started', async () => {
     const { engine, make, sent, store } = setup();
     const watching = make('standard.start-charging', QUICK, 'observe');
-    const would = await engine.startAsked(watching.id, 'olof');
+    const would = await engine.startAsked(watching.id, OLOF);
     expect(would.outcome).toBe('would-act');
     expect(would.id).toBeNull();
     expect(would.steps.map((step) => `${'  '.repeat(step.depth)}${step.what}`)).toEqual([
@@ -328,7 +335,7 @@ describe('starting a charge', () => {
     expect(store.get(watching.id)!.lastRun).toBeNull();
 
     const off = make('standard.start-charging', QUICK, 'off');
-    await expect(engine.startAsked(off.id, 'olof')).rejects.toThrow(RunRefusal);
+    await expect(engine.startAsked(off.id, OLOF)).rejects.toThrow(RunRefusal);
     const window = store.create({
       name: 'Window',
       recipe: 'standard.charge-between',
@@ -337,7 +344,7 @@ describe('starting a charge', () => {
       timeZone: 'Europe/Stockholm',
       recheckMinutes: null,
     });
-    await expect(engine.startAsked(window.id, 'olof')).rejects.toThrow('It is not started when asked');
+    await expect(engine.startAsked(window.id, OLOF)).rejects.toThrow('It is not started when asked');
   });
 
   test('a run the server stopped during is ended as interrupted when it starts again — never resumed', async () => {
@@ -375,7 +382,7 @@ describe('stopping a charge', () => {
     const { engine, make, ended, switches, state } = setup();
     Object.assign(state, { supplyOn: true, plugOn: true, plugSwitchedOn: 1, othersWatts: 3 });
     const automation = make('standard.stop-charging', { watchSeconds: 5, othersBelow: 10 });
-    await engine.startAsked(automation.id, 'olof');
+    await engine.startAsked(automation.id, OLOF);
     const run = await ended(automation.id);
     expect(switches()).toEqual(['charger off', 'supply off']);
     expect(run.steps[1]).toMatchObject({ kind: 'watch', outcome: 'met' });
@@ -386,7 +393,7 @@ describe('stopping a charge', () => {
     const { engine, make, ended, switches, state } = setup();
     Object.assign(state, { supplyOn: true, plugOn: true, plugSwitchedOn: 1, othersWatts: 45 });
     const automation = make('standard.stop-charging', { watchSeconds: 5, othersBelow: 10 });
-    await engine.startAsked(automation.id, 'olof');
+    await engine.startAsked(automation.id, OLOF);
     const run = await ended(automation.id);
     expect(switches()).toEqual(['charger off']);
     expect(run.steps[1]).toMatchObject({ kind: 'watch', outcome: 'not-met' });

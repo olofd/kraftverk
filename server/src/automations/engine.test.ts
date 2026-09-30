@@ -192,6 +192,7 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
         if (intent.deviceId === PLUG && typeof intent.args.on === 'boolean') plug.on = intent.args.on;
         return { outcome: 'verified', detail: 'Switched, confirmed by the device', deviceAgreed: true };
       },
+      runEnded: () => {},
     },
     record: (entry) => recorded.push(entry),
     bus,

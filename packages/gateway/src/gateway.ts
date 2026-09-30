@@ -80,12 +80,13 @@ export type CommandIntent = {
    * the run says its rule may, nor than the gateway's own ceiling: what makes
    * sure a charger that stays idle is switched off and on again, a few times
    * at most. The run's first switch of a part meets the dwell as any command
-   * does — a person's, when a person started the run.
+   * does — that of whoever started the run. Its counts are let go when the
+   * run ends (`runEnded`).
    */
   run?: {
     id: string;
-    /** A person, or an assistant for one, started it. */
-    asked: boolean;
+    /** Who asked for it: a person, or an assistant for one; null, its own triggers started it. */
+    askedBy: 'user' | 'agent' | null;
     /** How often its rule may switch this part within it, at most. */
     switches: number;
   };
@@ -294,17 +295,28 @@ export class ActionGateway {
   /** Serialises everything, so "exactly one command" survives concurrent callers. */
   #gate: Promise<void> = Promise.resolve();
   /**
-   * How often each run has switched each part: a run's allowance. Kept in
-   * memory only — a run does not outlive the process that ran it: one found
-   * unended on start was interrupted, never resumed.
+   * How often each run going now has switched each part, by run and then by
+   * part: a run's allowance. Kept in memory only — a run does not outlive
+   * the process that ran it: one found unended on start was interrupted,
+   * never resumed. Let go when the run ends.
    */
-  #runSwitches = new Map<string, number>();
+  #runSwitches = new Map<string, Map<string, number>>();
 
   constructor(deps: GatewayDeps) {
     this.#deps = deps;
     this.#policy = { ...DEFAULT_POLICY, ...deps.policy };
     this.#record = deps.record;
     this.#ledger = deps.ledger ?? memoryLedger();
+  }
+
+  /** A run has ended: what it switched no longer counts against anything. */
+  runEnded(runId: string): void {
+    this.#runSwitches.delete(runId);
+  }
+
+  /** How many runs the gateway is counting switches for now: for tests. */
+  get runsCounted(): number {
+    return this.#runSwitches.size;
   }
 
   /*
@@ -386,7 +398,7 @@ export class ActionGateway {
     const key = this.#key(intent);
     const sinceLast = Date.now() - this.#lastSwitchAt(intent);
     // Within a run that already switched this part: its allowance, held to the gateway's own gap and ceiling.
-    const inRun = intent.run ? (this.#runSwitches.get(`${intent.run.id}|${key}`) ?? 0) : 0;
+    const inRun = intent.run ? (this.#runSwitches.get(intent.run.id)?.get(key) ?? 0) : 0;
     if (intent.run && inRun > 0) {
       const allowed = Math.min(intent.run.switches, this.#policy.runSwitchCeiling);
       if (inRun >= allowed) return refuse(`It has been switched ${inRun} times in this run, as often as it may be`);
@@ -394,8 +406,8 @@ export class ActionGateway {
         return refuse(`Too soon: it was switched ${Math.round(sinceLast / 1000)} s ago in this run, and is given ${Math.round(this.#policy.runGapMs / 1000)} s between switches`);
       }
     } else {
-      // A person's run switches as a person would; an automation's own, as an automation.
-      const actor = intent.run?.asked ? 'user' : intent.actor;
+      // A run switches first as whoever asked for it would: a person as a person, an assistant as an assistant.
+      const actor = intent.run?.askedBy ?? intent.actor;
       const dwell = actor === 'automation' ? this.#policy.automationDwellMs : actor === 'agent' ? this.#policy.agentDwellMs : this.#policy.userDwellMs;
       if (this.#lastSwitchAt(intent) > 0 && sinceLast < dwell) {
         // Said as what it is: a pause that protects the relay and what it feeds, and how long is left of it.
@@ -480,7 +492,10 @@ export class ActionGateway {
 
     // 6. Exactly one command.
     this.#ledger.switched(intent.deviceId, intent.part, Date.now());
-    if (intent.run) this.#runSwitches.set(`${intent.run.id}|${key}`, inRun + 1);
+    if (intent.run) {
+      const counts = this.#runSwitches.get(intent.run.id) ?? new Map<string, number>();
+      this.#runSwitches.set(intent.run.id, counts.set(key, inRun + 1));
+    }
     const sentAt = Date.now();
     const result = await session.command({ part: intent.part, capability: intent.capability, command: intent.command, args: intent.args });
     if (!result.accepted) {

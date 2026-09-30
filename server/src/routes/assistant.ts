@@ -169,9 +169,9 @@ export function assistantRoutes(deps: AppDeps): Hono {
       inputSchema: object({ automation: text('The automation id, from `automations`') }, ['automation']),
       run: async (args, c) => {
         const input = z.object({ automation: z.string().min(1).max(80) }).parse(args);
-        const by = `assistant for ${actorOf(c)}`;
         try {
-          const run = await engine.startAsked(input.automation, by);
+          // An assistant's run switches first as an assistant would: its own dwell, not a person's.
+          const run = await engine.startAsked(input.automation, { name: `assistant for ${actorOf(c)}`, actor: 'agent' });
           if (run.outcome === 'would-act') return `It only watches, so nothing was switched. It would: ${run.steps.map((step) => `${'  '.repeat(step.depth)}${step.what}`).join('; ')}`;
           auditAbout(c, 'automation.started', 'automation', input.automation, `An assistant started "${automations.get(input.automation)?.name ?? input.automation}"`, { run: run.id });
           return `Started. Its steps: ${view(automations.get(input.automation)!).steps.map((step) => step.text).join('; ')}`;

@@ -76,9 +76,8 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
   api.post('/automations/:id/start', async (c) => {
     const current = automations.get(c.req.param('id'));
     if (!current) throw new HTTPException(404, { message: 'No such automation' });
-    const by = actorOf(c);
     try {
-      const run = await engine.startAsked(current.id, by);
+      const run = await engine.startAsked(current.id, { name: actorOf(c), actor: 'user' });
       if (run.outcome !== 'would-act') auditAbout(c, 'automation.started', 'automation', current.id, `Started "${current.name}"`, { run: run.id });
       return c.json(view(automations.get(current.id) ?? current));
     } catch (error) {

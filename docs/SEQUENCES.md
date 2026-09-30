@@ -225,15 +225,15 @@ allowance.** A command can say it belongs to a run of a sequence:
 type CommandIntent = … & {
   run?: {
     id: string;          // the run
-    asked: boolean;      // a person — or an assistant for one — started it
+    askedBy: 'user' | 'agent' | null; // who asked for it; null, its own triggers started it
     switches: number;    // how often its rule may switch this part within it
   };
 };
 ```
 
-- The **first** switch of a part in a run meets the dwell as any command
-  does: a run a person started is given a person's dwell (seconds), one
-  started by its own triggers an automation's (minutes).
+- The **first** switch of a part in a run meets the dwell of whoever asked for
+  the run: a person's (seconds), an assistant's (a minute), or, started by its
+  own triggers, an automation's (minutes).
 - **Within the run**, the same part may be switched again after the
   gateway's own least gap (`runGapMs`, 3 s), up to what the rule allows — its
   commands to that part, a retry's as often as its tries — and never more
@@ -241,6 +241,8 @@ type CommandIntent = … & {
   asks.
 - Outside the run, nothing changes: the next automation or person to switch
   the part meets the dwell from the run's last switch.
+- When the run ends, the engine tells the gateway (`runEnded`), which forgets
+  what it counted for it.
 - A run's switches are counted in memory: a run does not outlive its process.
 - Consent is as for any automation: letting it act was confirmed, and its
   commands go as `actor: 'automation'`. Nobody is asked mid-run.

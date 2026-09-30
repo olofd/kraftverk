@@ -96,7 +96,7 @@ export type AutomationEngineDeps = {
   store: AutomationStore;
   library: Pick<AutomationLibrary, 'recipe' | 'fn'>;
   device: (binding: RoleBinding) => EngineDevice | null;
-  gateway: Pick<ActionGateway, 'execute'>;
+  gateway: Pick<ActionGateway, 'execute' | 'runEnded'>;
   record: (entry: AuditRecord) => void;
   /** What devices say as they say it: events and readings start runs; and where a run in progress is said to have moved. */
   bus?: LiveBus;
@@ -116,14 +116,21 @@ const LOOK_EVERY_SECONDS = 1;
 /** Why a run cannot be started or stopped, in words for the person who asked. */
 export class RunRefusal extends Error {}
 
+/**
+ * Who asked for a run: a person, or an assistant for one. `name` is how the
+ * run says it ("olof", "assistant for olof"); `actor` is how the gateway
+ * treats its first switches — a person's dwell, or an assistant's.
+ */
+export type Asker = { name: string; actor: 'user' | 'agent' };
+
 /** A run taking steps now: its record as it goes, and whether someone has stopped it. */
 type LiveRun = {
   id: string;
   automation: AutomationRecord;
   recipe: Recipe;
   run: RunResult;
-  /** A person, or an assistant for one, started it. */
-  asked: boolean;
+  /** Who asked for it; null, its own triggers started it. */
+  askedBy: Asker['actor'] | null;
   /** Who stopped it, once someone has. */
   stoppedBy: string | null;
   /** Its automation was deleted while it ran: it ends at the next step, and is neither kept nor on the timeline. */
@@ -461,11 +468,11 @@ export class AutomationEngine {
     return !Number.isFinite(lastStarted) || lastStarted < time.getTime();
   }
 
-  async #runAndKeep(automation: AutomationRecord, why: string, startedBy: string | null = null): Promise<RunResult | null> {
+  async #runAndKeep(automation: AutomationRecord, why: string): Promise<RunResult | null> {
     if (this.#running.has(automation.id)) return null;
     this.#running.add(automation.id);
     try {
-      return await this.run(automation, { why, startedBy });
+      return await this.run(automation, { why });
     } catch (error) {
       // Started by a trigger, nobody waits on it: what went wrong is said, never left to bring the server down.
       console.error(`[automations] ${automation.id} could not run:`, error);
@@ -484,7 +491,7 @@ export class AutomationEngine {
    * run is answered as it stands once it has begun; it goes on taking its
    * steps, said on the live bus as it does.
    */
-  async startAsked(automationId: string, by: string): Promise<RunResult> {
+  async startAsked(automationId: string, by: Asker): Promise<RunResult> {
     const automation = this.deps.store.get(automationId);
     const recipe = automation ? this.deps.library.recipe(automation.recipe) : null;
     if (!automation) throw new RunRefusal('No such automation');
@@ -492,13 +499,13 @@ export class AutomationEngine {
     if (!recipe.when.some((trigger) => 'asked' in trigger)) throw new RunRefusal('It is not started when asked: it runs on its own, as it is set up to');
     if (automation.mode === 'off') throw new RunRefusal('It is off: turn it on to start it');
     if (this.#running.has(automation.id)) throw new RunRefusal('It is already running');
-    if (automation.mode !== 'armed') return this.run(automation, { check: true, why: `Started by ${by}` });
+    if (automation.mode !== 'armed') return this.run(automation, { check: true, why: `Started by ${by.name}` });
 
     let begun!: (run: RunResult) => void;
     let failed!: (error: unknown) => void;
     const started = new Promise<RunResult>((resolve, reject) => ((begun = resolve), (failed = reject)));
     this.#running.add(automation.id);
-    void this.run(automation, { why: `Started by ${by}`, startedBy: by, onBegun: (run) => begun(run) })
+    void this.run(automation, { why: `Started by ${by.name}`, askedBy: by, onBegun: (run) => begun(run) })
       .then(begun, (error: unknown) => {
         // Before it began, the one who asked is told; after, it is said here.
         console.error(`[automations] ${automation.id} could not run:`, error);
@@ -642,9 +649,10 @@ export class AutomationEngine {
    * condition stood and each step it took, so a person can follow it. `check`
    * only decides and says what would happen, and is neither kept nor acted
    * on, whatever the mode. A run that takes steps is said on the live bus at
-   * every step, and `onBegun` is given it once it has begun.
+   * every step, and `onBegun` is given it once it has begun. `askedBy`: who
+   * asked for it; none, its own triggers started it.
    */
-  async run(automation: AutomationRecord, options: { check?: boolean; why?: string; startedBy?: string | null; onBegun?: (run: RunResult) => void } = {}): Promise<RunResult> {
+  async run(automation: AutomationRecord, options: { check?: boolean; why?: string; askedBy?: Asker | null; onBegun?: (run: RunResult) => void } = {}): Promise<RunResult> {
     const at = this.#now();
     const recipe = this.deps.library.recipe(automation.recipe);
     const why = options.why ?? (options.check ? 'Asked what it would do now' : 'As it was set up to');
@@ -653,7 +661,7 @@ export class AutomationEngine {
       id: null,
       at: at.toISOString(),
       endedAt: null,
-      startedBy: options.startedBy ?? null,
+      startedBy: options.askedBy?.name ?? null,
       outcome: 'running',
       summary: '',
       why,
@@ -704,7 +712,7 @@ export class AutomationEngine {
       automation,
       recipe,
       run,
-      asked: run.startedBy !== null,
+      askedBy: options.askedBy?.actor ?? null,
       stoppedBy: null,
       gone: false,
       wake: new Set(),
@@ -732,6 +740,8 @@ export class AutomationEngine {
       walked = 'failed';
       this.#add(live, { kind: 'command', depth: 0, within: null, what: 'The run itself', outcome: 'failed', detail: (error as Error).message, until: null });
     }
+    // It switches nothing more: the gateway lets go of what it counted for it.
+    this.deps.gateway.runEnded(live.id);
 
     const top = run.steps;
     const refused = top.some((step) => step.outcome === 'refused');
@@ -937,7 +947,7 @@ export class AutomationEngine {
         reason,
         actor: 'automation',
         by: `automation:${live.automation.name}`,
-        run: { id: live.id, asked: live.asked, switches: live.allowance[planned.role] ?? 1 },
+        run: { id: live.id, askedBy: live.askedBy, switches: live.allowance[planned.role] ?? 1 },
       });
     } catch (error) {
       outcome = { outcome: 'failed', detail: (error as Error).message };

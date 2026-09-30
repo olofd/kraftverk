@@ -545,7 +545,7 @@ describe('dwell', () => {
 
   test('within a run, a part it switched may be switched again after the least gap, as often as the run may — no more', async () => {
     const { gateway, plug } = harness({ feeds: false, policy: { runGapMs: 30 } });
-    const run = { id: 'r-1', asked: false, switches: 3 };
+    const run = { id: 'r-1', askedBy: null, switches: 3 };
     const pause = () => new Promise((resolve) => setTimeout(resolve, 40));
 
     expect((await gateway.execute(cut({ run }))).outcome).toBe('verified');
@@ -566,7 +566,7 @@ describe('dwell', () => {
 
   test('a run no rule may make a relay chatter with: the gateway’s own ceiling holds whatever a run says', async () => {
     const { gateway, plug } = harness({ feeds: false, policy: { runGapMs: 1, runSwitchCeiling: 2 } });
-    const run = { id: 'r-2', asked: false, switches: 50 };
+    const run = { id: 'r-2', askedBy: null, switches: 50 };
     for (const on of [false, true, false]) {
       await new Promise((resolve) => setTimeout(resolve, 5));
       await gateway.execute(cut({ args: { on }, run }));
@@ -574,14 +574,24 @@ describe('dwell', () => {
     expect(plug.commands).toEqual([false, true]);
   });
 
-  test('a run a person started switches as a person would: its first switch of a part meets a person’s dwell', async () => {
-    const { gateway, plug } = harness({ feeds: false });
+  test('a run switches first as whoever asked for it would: a person as a person, an assistant as an assistant', async () => {
+    const { gateway, plug } = harness({ feeds: false, policy: { agentDwellMs: 5_000 } });
     await gateway.execute(cut());
     await new Promise((resolve) => setTimeout(resolve, 60));
-    // An automation's own run would still be inside its dwell; one a person asked for is not.
-    expect((await gateway.execute(cut({ args: { on: true }, run: { id: 'r-3', asked: false, switches: 1 } }))).detail).toContain('Too soon');
-    expect((await gateway.execute(cut({ args: { on: true }, run: { id: 'r-4', asked: true, switches: 1 } }))).outcome).toBe('verified');
+    // An automation's own run, and one an assistant asked for, are still inside their dwell; one a person asked for is not.
+    expect((await gateway.execute(cut({ args: { on: true }, run: { id: 'r-3', askedBy: null, switches: 1 } }))).detail).toContain('given 10 s');
+    expect((await gateway.execute(cut({ args: { on: true }, run: { id: 'r-4', askedBy: 'agent', switches: 1 } }))).detail).toContain('given 5 s');
+    expect((await gateway.execute(cut({ args: { on: true }, run: { id: 'r-5', askedBy: 'user', switches: 1 } }))).outcome).toBe('verified');
     expect(plug.commands).toEqual([false, true]);
+  });
+
+  test('a run that has ended is let go: its switches are no longer counted', async () => {
+    const { gateway } = harness({ feeds: false, policy: { runGapMs: 1 } });
+    const run = { id: 'r-6', askedBy: 'user' as const, switches: 2 };
+    await gateway.execute(cut({ run }));
+    expect(gateway.runsCounted).toBe(1);
+    gateway.runEnded(run.id);
+    expect(gateway.runsCounted).toBe(0);
   });
 
   /*
