@@ -1,12 +1,12 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { Feather } from '@expo/vector-icons';
-import { Animated } from 'react-native';
-import { Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
+import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import type { DeviceScreenProps } from '@kraftverk/api-client';
 import { Card, RangeSliderRow, RowSeparator, SectionLabel, SegmentedControl, SliderRow, ToggleRow } from '@kraftverk/ui';
 
-import { useLive, usePlug, type Plug } from './plug';
+import { LiveStrip, useLive } from './live';
+import { usePlug, type Plug } from './plug';
 import { loadWarning, minutes, trim, voltageWarning, watts } from './words';
 
 const AFTER_A_CUT = [
@@ -34,15 +34,15 @@ const LANGUAGES = [
 
 /**
  * The ATORCH's settings: what happens after a power cut, its safety cut-off,
- * and its screen. Nothing else the plug has is offered — its own modes and
- * timers are kraftverk's automations' job.
+ * its screen, and the bill it shows. Its own modes and timers are not offered
+ * — kraftverk's automations do that job (src/type.ts says why each is left out).
  *
- * Readings go live while this is open, so a change is seen landing: move a
- * limit and watch the plug take it.
+ * Live readings are a switch at the top, so a change can be watched landing:
+ * turn them on, move a limit, and see the plug take it.
  */
 export function PlugSettings(props: DeviceScreenProps) {
   const plug = usePlug(props);
-  const live = useLive(plug, { keep: true });
+  const live = useLive(plug);
 
   if (!props.device.readings.length) {
     return (
@@ -57,40 +57,19 @@ export function PlugSettings(props: DeviceScreenProps) {
 
   return (
     <YStack gap="$4">
-      <LiveNote on={live.on} />
+      <Card padding="$2">
+        <LiveStrip live={live} disabled={!plug.canChange} />
+      </Card>
       <PowerCut plug={plug} />
       <SafetyCutOff plug={plug} />
       <Display plug={plug} />
+      <Bill plug={plug} />
       {plug.error ? (
         <Text fontSize={13} color="$danger" lineHeight={18} paddingHorizontal="$2">
           {plug.error}
         </Text>
       ) : null}
     </YStack>
-  );
-}
-
-function LiveNote({ on }: { on: boolean }) {
-  const theme = useTheme();
-  const opacity = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    if (!on) return;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, { toValue: 0.25, duration: 700, useNativeDriver: false }),
-        Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: false }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [on, opacity]);
-  return (
-    <XStack alignItems="center" gap="$2" paddingHorizontal="$2">
-      <Animated.View style={{ width: 8, height: 8, borderRadius: 4, opacity, backgroundColor: (on ? theme.success?.val : theme.muted?.val) as string }} />
-      <Text fontSize={12} color="$muted">
-        {on ? 'Live: each change shows here within a second.' : 'Turning on live readings, so each change shows as it lands…'}
-      </Text>
-    </XStack>
   );
 }
 
@@ -291,6 +270,146 @@ function Display({ plug }: { plug: Plug }) {
           disabled={locked}
           pending={plug.pending('language')}
           onChange={(next) => void plug.write({ language: next })}
+        />
+        <RowSeparator />
+        <ButtonRow
+          title="Turn the screen around"
+          subtitle="Upside down, or back: for a plug that sits the other way up in its socket."
+          label="Turn it"
+          icon="rotate-cw"
+          disabled={locked}
+          onPress={() => plug.press('rotateScreen')}
+        />
+      </Card>
+    </YStack>
+  );
+}
+
+/** A row whose action happens once: its title and why, and a button. */
+function ButtonRow({
+  title,
+  subtitle,
+  label,
+  icon,
+  tone,
+  disabled,
+  onPress,
+}: {
+  title: string;
+  subtitle: string;
+  label: string;
+  icon: 'rotate-cw' | 'rotate-ccw';
+  tone?: 'danger';
+  disabled: boolean;
+  onPress: () => Promise<boolean>;
+}) {
+  const theme = useTheme();
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!done) return;
+    const timer = setTimeout(() => setDone(false), 2500);
+    return () => clearTimeout(timer);
+  }, [done]);
+  const color = tone === 'danger' ? theme.danger?.val : theme.color?.val;
+  return (
+    <XStack alignItems="center" gap="$3" paddingHorizontal="$4" paddingVertical="$3" opacity={disabled ? 0.45 : 1}>
+      <YStack flex={1} gap={2}>
+        <Text fontSize={15} fontWeight="600" color="$color">
+          {title}
+        </Text>
+        <Text fontSize={12} color="$muted" lineHeight={17}>
+          {subtitle}
+        </Text>
+      </YStack>
+      <Button
+        size="$3"
+        disabled={disabled || busy}
+        borderColor={tone === 'danger' ? '$danger' : '$borderColor'}
+        borderWidth={1}
+        color={tone === 'danger' ? '$danger' : '$color'}
+        icon={busy ? <Spinner size="small" /> : <Feather name={done ? 'check' : icon} size={14} color={color as string} />}
+        onPress={() => {
+          setBusy(true);
+          void onPress()
+            .then((ran) => setDone(ran))
+            .finally(() => setBusy(false));
+        }}
+      >
+        {done ? 'Done' : label}
+      </Button>
+    </XStack>
+  );
+}
+
+/**
+ * What the plug's screen shows as a bill: the energy it counted times a price.
+ * kraftverk keeps its own history of the energy; this is only what the plug
+ * shows on itself, and its counter can be set back to zero.
+ */
+function Bill({ plug }: { plug: Plug }) {
+  const locked = !plug.canChange;
+  const price = plug.number('price');
+  const cost = plug.number('cost');
+  const kwh = plug.number('kwh');
+  const [draft, setDraft] = useState(price === null ? '' : price.toFixed(2));
+  useEffect(() => {
+    if (!plug.pending('price')) setDraft(price === null ? '' : price.toFixed(2));
+    // What was typed is left alone while its write is on its way.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [price]);
+  const typed = Number(draft.replace(',', '.'));
+  const valid = draft.trim() !== '' && Number.isFinite(typed) && typed >= 0 && typed <= 999.99;
+  const commit = () => {
+    if (valid && Math.round(typed * 100) !== Math.round((price ?? -1) * 100)) void plug.write({ price: Math.round(typed * 100) / 100 });
+  };
+  return (
+    <YStack gap="$2">
+      <SectionLabel>The bill on its screen</SectionLabel>
+      <Card>
+        <XStack alignItems="center" gap="$3" paddingHorizontal="$4" paddingVertical="$3" opacity={locked ? 0.45 : 1}>
+          <YStack flex={1} gap={2}>
+            <Text fontSize={15} fontWeight="600" color="$color">
+              Price per kWh
+            </Text>
+            <Text fontSize={12} color="$muted" lineHeight={17}>
+              In your own currency: the plug keeps no unit.
+            </Text>
+          </YStack>
+          <Input
+            width={110}
+            size="$3"
+            textAlign="right"
+            keyboardType="decimal-pad"
+            value={draft}
+            onChangeText={setDraft}
+            onBlur={commit}
+            onSubmitEditing={commit}
+            disabled={locked || plug.pending('price')}
+            aria-label="Price per kWh"
+            borderColor={valid || draft === '' ? '$borderColor' : '$danger'}
+            backgroundColor="$background"
+          />
+        </XStack>
+        <RowSeparator />
+        <XStack alignItems="center" justifyContent="space-between" paddingHorizontal="$4" paddingVertical="$3">
+          <Text fontSize={13} color="$muted">
+            It shows
+          </Text>
+          <Text fontSize={13} color="$color" fontVariant={['tabular-nums']}>
+            {kwh === null ? '—' : `${kwh.toFixed(2)} kWh`}
+            {cost === null ? '' : ` · ${cost.toFixed(2)}`}
+          </Text>
+        </XStack>
+        <RowSeparator />
+        <ButtonRow
+          title="Reset the energy counter"
+          subtitle="Sets its energy total and cost back to zero. kraftverk’s own history of it is kept."
+          label="Reset"
+          icon="rotate-ccw"
+          tone="danger"
+          disabled={locked}
+          onPress={() => plug.press('resetEnergy')}
         />
       </Card>
     </YStack>

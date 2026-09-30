@@ -243,28 +243,41 @@ toggle switches it.
 **What is offered, and what is not.** The plug's own app is hard to understand:
 seven "device interface" modes, Auto, A and B, timers, a price mode. kraftverk
 does not copy it. As settings it offers what a person decides — *after a power
-cut*, the *safety cut-off* (limits, delay, back-on time) and the *display* —
-in plain words. The plug's modes and their values are **read, never offered**:
-kraftverk uses them to explain a cut ("a rule set in the maker's app switched
-it off"), and its automations do their job with more to go on. Pricing,
-timers, the countdown, the switch mode and fast refresh are left out; the
-Datapoints tool shows them raw. Fast refresh is kraftverk's to manage (on while
-someone is watching), not a switch for a person.
+cut*, the *safety cut-off* (limits, delay, back-on time), the *display* and
+the *price per kWh* its screen bills by — in plain words, and its two safe
+buttons: turning the screen around and resetting its counter. Live readings
+are a switch of their own. The plug's modes and their values are **read,
+never offered**: kraftverk uses them to explain a cut ("a rule set in the
+maker's app switched it off"), can stop one, and its automations do their job
+with more to go on. Left out, the Datapoints tool showing each raw: the timers
+and the countdown (kraftverk's automations time things), the price mode (tiers
+B and C had no settings in the app), the switch mode ("normally open" was
+never tried, and may stop remote switching), and resetting Wi-Fi or every
+setting (the plug leaves the network).
 
 ### Its screens (`ui/`)
 
-- **Dashboard:** what it draws now, large; the power button; **live readings**
-  (DP 140) as a switch beside it, renewed while the page is open, so readings
-  arrive every second; tiles for voltage (drawn inside its cut-off window),
+- **Live readings** (DP 140) are kept by the plug's session on the server, not
+  by any screen: switched on, they stay on for a quarter of an hour — the
+  session turning the plug's fast refresh back on each time it lapses — and a
+  screen that shows them extends that while it is open, but only while they
+  are on. Switched off, they are off, for every screen and every person.
+- **Buttons** the plug is told once are tools: *Turn the screen around*
+  (DP 116), and *Reset the energy counter* (DP 113), which the app asks about
+  first because the plug's total cannot be brought back.
+- **Dashboard:** what it draws now, large; the power button; live readings as
+  a switch beside it; tiles for voltage (drawn inside its cut-off window),
   current (against its limit), energy, the temperature inside, frequency and
   power factor; and, when the plug switched itself off, a card saying why in
   plain words and counting down to when it comes back — or, for a rule set in
   the maker's app, offering to switch it on and to stop that rule.
-- **Settings:** readings go live as it opens, so a change is seen landing.
+- **Settings:** the live-readings switch at the top, to watch a change land.
   *After a power cut* as three choices; the *safety cut-off* as sliders — the
   voltage window as one range with the mains marked on it, current and power
   with what is drawn now marked, each warning before it is written if it would
-  cut at once; *its screen* as sliders and choices.
+  cut at once; *its screen* as sliders and choices, and turning it around;
+  *the bill on its screen*: the price per kWh, what it shows, and resetting
+  its counter.
 - The wording is in `ui/words.ts`, tested on its own: never the maker's terms.
 
 ## 6. Still to establish

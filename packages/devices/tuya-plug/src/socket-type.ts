@@ -70,6 +70,27 @@ const RELAY: AttributeSpec = {
   consequence: 'Switches off whatever is plugged into it. If it feeds a station, the station then runs from its battery and solar.',
 };
 
+/**
+ * Live readings, for a plug whose profile has a fast refresh: wanted or not,
+ * and until when. The wish is the session's — one for every screen and every
+ * person — so switching it off switches it off, and no screen turns it back on.
+ */
+const LIVE: readonly AttributeSpec[] = [
+  {
+    key: 'live',
+    label: 'Live readings',
+    description: 'A reading every second instead of every few. It stays on for a quarter of an hour at a time, and a screen that shows it keeps it on while it is open.',
+    value: { type: 'boolean' },
+    access: 'write',
+    category: 'diagnostic',
+    history: false,
+  },
+  { key: 'liveUntil', label: 'Live until', value: { type: 'timestamp' }, category: 'diagnostic', history: false },
+];
+
+/** How long live readings stay wanted after they are asked for: long enough to change something and watch it land. */
+const LIVE_LEASE_MS = 15 * 60_000;
+
 /** A profile datapoint as the attribute it is: the wire details left behind. */
 const attributeOf = ({ dp: _dp, scale: _scale, wire: _wire, example: _example, raises: _raises, ...attribute }: ProfileDatapoint): AttributeSpec => attribute;
 
@@ -86,6 +107,7 @@ export function describeSocket(profile: SocketProfile): DeviceDescription {
       ...(Object.keys(METER) as (keyof SocketProfile['metrics'])[]).filter((name) => profile.metrics[name]).map((name) => METER[name]),
       RELAY,
       ...(profile.datapoints ?? []).map(attributeOf),
+      ...(profile.refresh ? LIVE : []),
     ],
     ...(events.length ? { events } : {}),
   };
@@ -93,7 +115,17 @@ export function describeSocket(profile: SocketProfile): DeviceDescription {
 
 const INTEGER = { type: 'number', integer: true } as const;
 
-/** The plug's tools, as data: what the app draws and the contract checks. */
+/** The plug's tools, as data: what the app draws and the contract checks — the datapoints, and each profile's buttons. */
+const toolsOf = (profiles: readonly SocketProfile[]): Readonly<Record<string, ToolSpec>> => ({
+  ...TOOLS,
+  ...Object.fromEntries(
+    profiles.flatMap((profile) => profile.buttons ?? []).map((button) => [
+      button.id,
+      { label: button.label, description: button.description, writes: true, answer: { type: 'boolean' }, ...(button.confirm ? { confirm: button.confirm } : {}) } satisfies ToolSpec,
+    ])
+  ),
+});
+
 const TOOLS: Readonly<Record<string, ToolSpec>> = {
   datapoints: {
     label: 'Datapoints',
@@ -152,16 +184,83 @@ const profileOf = (profiles: readonly SocketProfile[], id: unknown): SocketProfi
 /** Everything the plug has said, merged: a push carries only what changed. */
 type State = { dps: Dps; at: string } | null;
 
-function readingsOf(profile: SocketProfile, state: State): Reading[] {
+function readingsOf(profile: SocketProfile, state: State, live: Live | null): Reading[] {
   if (!state) return [];
   const { dps, at } = state;
   const reading = decodeSocket(profile, dps);
   const value = (v: number | boolean | undefined): Value => (v === undefined ? null : v);
+  const until = live?.until() ?? 0;
   return [
     ...(Object.keys(profile.metrics) as (keyof SocketProfile['metrics'])[]).map((name) => ({ key: name, value: value(reading[name]), at })),
     { key: 'relay', value: value(reading.relayOn), at },
     ...(profile.datapoints ?? []).map((point) => ({ key: point.key, value: datapointValue(point, dps), at })),
+    ...(live
+      ? [
+          { key: 'live', value: until > Date.now(), at },
+          { key: 'liveUntil', value: until > Date.now() ? new Date(until).toISOString() : null, at },
+        ]
+      : []),
   ];
+}
+
+/** Live readings, as a session keeps them: wanted until a time, and kept on until then. */
+type Live = {
+  until(): number;
+  set(on: boolean): Promise<void>;
+  /** What the plug said: a lapse it reports is renewed at once while live readings are wanted. */
+  heard(dps: Dps): void;
+};
+
+/**
+ * The fast refresh, kept on for as long as it is wanted. The plug turns it off
+ * itself after a few minutes; while it is wanted, the session turns it back on
+ * — when the plug says it lapsed, and on a timer in case the plug says
+ * nothing. Unwanted, it is left to lapse, or turned off at once when asked.
+ *
+ * Kept by the session, not by any screen: one wish, which a person switching
+ * it off ends everywhere. The wish itself arrives through the gateway, as a
+ * write of `live`; turning the refresh back on is the session keeping its
+ * readings flowing, like its heartbeat, and switches nothing a person uses.
+ */
+function liveOf(ctx: DeviceContext<SocketConfig>, refresh: NonNullable<SocketProfile['refresh']>, send: (dps: Dps) => Promise<void>, raw: () => Dps): Live {
+  const dp = String(refresh.dp);
+  let until = ctx.store.get<number>('live.until') ?? 0;
+  const wanted = () => until > Date.now();
+  // One renewal at a time, and not again straight after: the read that follows
+  // a renewal may still show the lapse, and must not set off another.
+  let renewing = false;
+  let renewedAt = 0;
+  const renew = () => {
+    if (!wanted() || raw()[dp] === true || ctx.readOnly || renewing || Date.now() - renewedAt < 10_000) return;
+    renewing = true;
+    renewedAt = Date.now();
+    send({ [dp]: true })
+      .catch((error: unknown) => ctx.log.warn(`live readings: ${(error as Error).message}`))
+      .finally(() => {
+        renewing = false;
+      });
+  };
+  // Often enough that a lapse is noticed within the plug's own refresh; the plug usually says so first.
+  ctx.schedule(Math.min(30_000, refresh.lapsesAfterMs / 4), () => {
+    if (until && !wanted()) {
+      until = 0;
+      ctx.store.set('live.until', 0);
+      ctx.changed();
+    }
+    renew();
+  });
+  return {
+    until: () => until,
+    heard(dps) {
+      if (dps[dp] === false) renew();
+    },
+    async set(on) {
+      until = on ? Date.now() + LIVE_LEASE_MS : 0;
+      ctx.store.set('live.until', until);
+      await send({ [dp]: on });
+      ctx.changed();
+    },
+  };
 }
 
 const writable = (profile: SocketProfile) => new Map((profile.datapoints ?? []).filter((point) => point.access === 'write').map((point) => [point.key, point]));
@@ -184,14 +283,26 @@ function socketSession(options: {
   read: () => State;
   health: () => SessionHealth;
   send: (dps: Dps) => Promise<void>;
+  /** Live readings, for a profile with a fast refresh. */
+  live: Live | null;
   identity: string | null;
   tools?: Readonly<Record<string, ToolRun>>;
   close: () => Promise<void>;
 }): DeviceSession {
-  const { profile } = options;
+  const { profile, live } = options;
+  // A button is pressed by writing true to it: the plug acts, and says so.
+  const buttons = Object.fromEntries(
+    (profile.buttons ?? []).map((button): [string, ToolRun] => [
+      button.id,
+      async () => {
+        await options.send({ [String(button.dp)]: true });
+        return true;
+      },
+    ])
+  );
   const session: DeviceSession = {
     health: options.health,
-    readings: () => readingsOf(profile, options.read()),
+    readings: () => readingsOf(profile, options.read(), live),
     async command(request) {
       if (request.capability !== 'switch' || request.command !== 'set' || typeof request.args.on !== 'boolean') {
         return { accepted: false, error: `A socket takes no ${request.capability}.${request.command}` };
@@ -204,14 +315,19 @@ function socketSession(options: {
       }
     },
     identity: () => ({ id: options.identity, name: null }),
-    ...(options.tools ? { tools: options.tools } : {}),
+    tools: { ...options.tools, ...buttons },
     close: options.close,
   };
-  if (writable(profile).size) {
+  if (writable(profile).size || live) {
     session.write = async (patch) => {
-      await options.send(dpsOf(profile, patch));
+      const { live: wanted, ...settings } = patch;
+      if (wanted !== undefined) {
+        if (!live) throw new Error('This plug has no live readings');
+        await live.set(wanted === true);
+      }
+      if (Object.keys(settings).length) await options.send(dpsOf(profile, settings));
       // What the plug reports now, not what was asked for: the gateway compares.
-      const values = new Map(readingsOf(profile, options.read()).map((reading) => [reading.key, reading.value]));
+      const values = new Map(readingsOf(profile, options.read(), live).map((reading) => [reading.key, reading.value]));
       return Object.fromEntries(Object.keys(patch).map((key) => [key, values.get(key) ?? null]));
     };
   }
@@ -245,12 +361,15 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
   let lastOk: number | null = null;
   const pollMs = ctx.config.pollSeconds * 1000;
 
+  // Declared before it is defined: live readings send through it, and it reads what live readings heard.
+  let live: Live | null = null;
   const ingest = (dps: Dps) => {
     if (!Object.keys(dps).length) return;
     state = { dps: { ...state?.dps, ...dps }, at: new Date().toISOString() };
     lastOk = Date.now();
     lastError = null;
     raise(state.dps);
+    live?.heard(dps);
   };
 
   // A plug tells of every change it sees — at the plug, from its maker's app, its own
@@ -280,9 +399,18 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
   // Not awaited: a plug that is unplugged must not stop its session opening.
   void poll();
 
+  const send = async (dps: Dps) => {
+    if (ctx.readOnly) throw new Error('Every hardware write is refused: this holder is read-only');
+    ingest(await link.set(dps));
+    // The answer to a set is often empty; what the plug reports now is the truth.
+    await poll();
+  };
+  live = profile.refresh ? liveOf(ctx, profile.refresh, send, () => state?.dps ?? {}) : null;
+
   return socketSession({
     profile,
     read: () => state,
+    live,
     identity: tuyaIdentity(String(connection.config.deviceId ?? '')),
     health: () => {
       const fresh = lastOk !== null && Date.now() - lastOk < pollMs * 2.5;
@@ -293,12 +421,7 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
         lastReadingAt: state?.at ?? null,
       };
     },
-    send: async (dps) => {
-      if (ctx.readOnly) throw new Error('Every hardware write is refused: this holder is read-only');
-      ingest(await link.set(dps));
-      // The answer to a set is often empty; what the plug reports now is the truth.
-      await poll();
-    },
+    send,
     tools: { datapoints: async () => datapointsAnswer(link.version, profile, await link.status()) },
     close: () => link.close(),
   });
@@ -341,25 +464,31 @@ function simulatedSession(ctx: DeviceContext<SocketConfig>, profiles: readonly S
   });
   // Its datapoints as a plug of its profile would send them, so it reads exactly as a real one.
   const dps = () => encodeSocket(profile, reading(), values);
+  // A simulated fast refresh never lapses: it is on while it is wanted.
+  let refreshing = false;
+  const send = async (sent: Dps) => {
+    const relay = String(profile.relay.dp);
+    if (sent[relay] !== undefined) {
+      on = sent[relay] === (profile.relay.on ?? true);
+      ctx.store.set('simulator.on', on);
+    }
+    if (profile.refresh && sent[String(profile.refresh.dp)] !== undefined) refreshing = sent[String(profile.refresh.dp)] === true;
+    for (const point of profile.datapoints ?? []) {
+      const raw = sent[String(point.dp)];
+      if (raw !== undefined) values[point.key] = datapointValue(point, { [String(point.dp)]: raw });
+    }
+    ctx.store.set('simulator.values', values);
+    at = new Date().toISOString();
+  };
+  const live = profile.refresh ? liveOf(ctx, profile.refresh, send, () => ({ [String(profile.refresh!.dp)]: refreshing })) : null;
   return socketSession({
     profile,
     read: () => ({ dps: dps(), at }),
+    live,
     identity: 'tuya-local:SIMULATED',
     tools: { datapoints: async () => datapointsAnswer('simulated', profile, dps()) },
     health: () => ({ status: 'connected', detail: 'Simulated', lastReadingAt: at }),
-    send: async (sent) => {
-      const relay = String(profile.relay.dp);
-      if (sent[relay] !== undefined) {
-        on = sent[relay] === (profile.relay.on ?? true);
-        ctx.store.set('simulator.on', on);
-      }
-      for (const point of profile.datapoints ?? []) {
-        const raw = sent[String(point.dp)];
-        if (raw !== undefined) values[point.key] = datapointValue(point, { [String(point.dp)]: raw });
-      }
-      ctx.store.set('simulator.values', values);
-      at = new Date().toISOString();
-    },
+    send,
     close: async () => undefined,
   });
 }
@@ -372,7 +501,7 @@ export function defineTuyaSocket(definition: SocketTypeDefinition): DeviceType<S
     meta: { icon: 'power', ...definition.meta, category: 'smart-plug' },
     config: configSchema(profiles),
     describe: (config) => describeSocket(profileOf(profiles, config.profile)),
-    tools: TOOLS,
+    tools: toolsOf(profiles),
     connections: [
       {
         id: 'lan',

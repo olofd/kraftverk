@@ -1,12 +1,11 @@
-import { useEffect, useRef } from 'react';
 import { Feather } from '@expo/vector-icons';
-import { Animated } from 'react-native';
 import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import type { DeviceScreenProps } from '@kraftverk/api-client';
-import { AnimatedNumber, Card, PowerButton, StatTile, Toggle } from '@kraftverk/ui';
+import { AnimatedNumber, Card, PowerButton, StatTile } from '@kraftverk/ui';
 
-import { useLive, usePlug, type Live, type Plug } from './plug';
+import { LiveStrip, useLive, type Live } from './live';
+import { usePlug, type Plug } from './plug';
 import { clock, cutOf, safetySummary, trim, type Cut } from './words';
 
 const AFTER_A_CUT: Record<string, string> = {
@@ -89,50 +88,6 @@ function Hero({ plug, live, cut }: { plug: Plug; live: Live; cut: Cut | null }) 
         </Text>
       ) : null}
     </Card>
-  );
-}
-
-/** A dot that breathes while readings arrive every second. */
-function Pulse({ active }: { active: boolean }) {
-  const theme = useTheme();
-  const opacity = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    if (!active) {
-      opacity.setValue(1);
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, { toValue: 0.25, duration: 700, useNativeDriver: false }),
-        Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: false }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [active, opacity]);
-  return (
-    <Animated.View
-      style={{ width: 10, height: 10, borderRadius: 5, opacity, backgroundColor: active ? (theme.success?.val as string) : (theme.muted?.val as string) }}
-    />
-  );
-}
-
-function LiveStrip({ live, disabled }: { live: Live; disabled: boolean }) {
-  const title = live.on ? 'Live' : 'Live readings';
-  const detail = live.on ? 'A reading every second while you are here.' : live.kept ? 'Asking the plug…' : 'A reading every second while you watch.';
-  return (
-    <XStack alignItems="center" gap="$3" backgroundColor="$background" borderRadius="$4" paddingHorizontal="$3" paddingVertical={10}>
-      <Pulse active={live.on} />
-      <YStack flex={1} gap={1}>
-        <Text fontSize={14} fontWeight="700" color="$color">
-          {title}
-        </Text>
-        <Text fontSize={12} color="$muted" lineHeight={16}>
-          {detail}
-        </Text>
-      </YStack>
-      <Toggle label="Live readings" checked={live.kept} pending={live.pending} disabled={disabled} onCheckedChange={live.set} />
-    </XStack>
   );
 }
 

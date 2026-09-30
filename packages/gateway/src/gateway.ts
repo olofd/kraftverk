@@ -332,7 +332,8 @@ export class ActionGateway {
     const dwell = intent.actor === 'automation' ? this.#policy.automationDwellMs : intent.actor === 'agent' ? this.#policy.agentDwellMs : this.#policy.userDwellMs;
     const sinceLast = Date.now() - this.#lastSwitchAt(key);
     if (this.#lastSwitchAt(key) > 0 && sinceLast < dwell) {
-      return refuse(`Too soon: ${Math.ceil((dwell - sinceLast) / 1000)} s of the dwell time remains`);
+      // Said as what it is: a pause that protects the relay and what it feeds, and how long is left of it.
+      return refuse(`Too soon: it was switched ${Math.round(sinceLast / 1000)} s ago, and is given ${Math.round(dwell / 1000)} s between switches. Try again in ${Math.ceil((dwell - sinceLast) / 1000)} s`);
     }
 
     // 3. Freshness: acting on stale readings is how mains is cut at exactly the wrong moment.
@@ -527,7 +528,8 @@ export class ActionGateway {
     if (settling) return refuse(`Too soon: ${writable.get(settling.key)!.label} was changed ${Math.round(settling.since / 1000)} s ago; ${Math.ceil((writeDwell - settling.since) / 1000)} s of the dwell time remains`);
 
     const risky = keys.filter((key) => writable.get(key)!.dangerous);
-    if (risky.length && intent.actor !== 'user') return refuse(`${intent.actor === 'agent' ? 'An assistant' : 'An automation'} may not change ${risky.join(', ')}: it can damage the hardware. A person can, in the app`);
+    const labelled = (list: readonly string[]) => list.map((key) => writable.get(key)?.label ?? key).join(', ');
+    if (risky.length && intent.actor !== 'user') return refuse(`${intent.actor === 'agent' ? 'An assistant' : 'An automation'} may not change ${labelled(risky)}: it can damage the hardware. A person can, in the app`);
     const subject = subjectOf({ device: intent.deviceId, patch: changed, by: intent.by });
     if (risky.length && !this.#confirmations.accept(intent.confirmation, subject)) {
       const labels = risky.map((key) => writable.get(key)!.label).join(', ');
@@ -536,7 +538,21 @@ export class ActionGateway {
 
     const note = (kind: string, summary: string, detail?: unknown) =>
       this.#record({ at: new Date().toISOString(), kind, actor: intent.by, resourceKind: 'device', resource: intent.deviceId, summary, detail });
-    note('settings.intent', `${device.name}: changing ${keys.join(', ')}`, { patch: changed });
+    // The timeline in the words the screens use: "Brightness to 8", "After a power cut to Stay off".
+    const described = keys
+      .map((key) => {
+        const attribute = writable.get(key)!;
+        const value = changed[key];
+        const shown =
+          attribute.value.type === 'enum'
+            ? (attribute.value.options.find((option) => option.value === value)?.label ?? String(value))
+            : attribute.value.type === 'boolean'
+              ? value ? 'on' : 'off'
+              : `${String(value)}${attribute.value.type === 'number' && attribute.value.unit ? ` ${attribute.value.unit}` : ''}`;
+        return `${attribute.label} to ${shown}`;
+      })
+      .join(', ');
+    note('settings.intent', `${device.name}: changing ${described}`, { patch: changed });
 
     let values: Readonly<Record<string, Value>>;
     for (const key of keys) this.#memory.set(`gateway.lastWriteAt.${intent.deviceId}:${key}`, String(Date.now()));
@@ -544,7 +560,7 @@ export class ActionGateway {
       values = await session.write(changed);
     } catch (error) {
       const detail = (error as Error).message;
-      note('settings.failed', `${device.name}: changing ${keys.join(', ')} failed: ${detail}`);
+      note('settings.failed', `${device.name}: changing ${described} failed: ${detail}`);
       return { outcome: 'failed', detail };
     }
 
@@ -552,7 +568,7 @@ export class ActionGateway {
     const reported = () => Object.fromEntries(keys.map((key) => [key, readingOf(session.readings(), key)?.value ?? values[key] ?? null]));
     const agrees = () => keys.every((key) => String(reported()[key]) === String(changed[key]));
     const verified = agrees() || (await this.#eventually(agrees));
-    const detail = verified ? `Changed ${keys.join(', ')}, confirmed by the device` : `It accepted the change, but does not report ${keys.join(', ')} as set`;
+    const detail = verified ? `Changed ${described}, confirmed by the device` : `It accepted the change, but does not report ${labelled(keys)} as set`;
     note(`settings.${verified ? 'verified' : 'unverified'}`, `${device.name}: ${detail}`, { patch: changed });
     return { outcome: verified ? 'verified' : 'unverified', detail, values: reported() };
   }

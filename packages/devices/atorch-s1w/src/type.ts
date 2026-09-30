@@ -23,6 +23,7 @@ const number = (unit: string | undefined, min: number, max: number, step?: numbe
 
 const SAFETY = 'Safety cut-off';
 const DISPLAY = 'Display';
+const BILL = 'Bill';
 
 /** A limit whose wrong value cuts what the plug feeds, or stops protecting it. */
 const LIMIT = { access: 'write', category: 'config', section: SAFETY, dangerous: true } as const;
@@ -103,17 +104,6 @@ const DATAPOINTS: readonly ProfileDatapoint[] = [
     ...FACT,
     example: 'none',
   },
-  {
-    dp: 140,
-    key: 'live',
-    label: 'Live readings',
-    description: 'The plug sends its readings every second instead of when asked, then stops by itself after five minutes.',
-    value: { type: 'boolean' },
-    // Not a setting: the screens turn it on while someone is watching.
-    access: 'write',
-    ...FACT,
-    example: false,
-  },
   { dp: 119, key: 'lowPowerWatts', label: 'Low-draw rule: under', value: number('W', 1, 999), quantity: 'power', ...FACT, example: 100 },
   { dp: 120, key: 'lowPowerMinutes', label: 'Low-draw rule: for', value: number('min', 1, 99), quantity: 'duration', ...FACT, example: 10 },
   { dp: 121, key: 'highPowerWatts', label: 'High-draw rule: over', value: number('W', 1, 9999), quantity: 'power', ...FACT, example: 500 },
@@ -190,13 +180,35 @@ const DATAPOINTS: readonly ProfileDatapoint[] = [
     section: DISPLAY,
     example: 'english',
   },
+
+  // --- the bill on its screen ------------------------------------------------------------------
+  {
+    dp: 101,
+    key: 'price',
+    label: 'Price per kWh',
+    description: 'What its screen multiplies the energy by to show a cost. In your own currency: the plug keeps no unit.',
+    value: number(undefined, 0, 999.99, 0.01),
+    scale: 2,
+    access: 'write',
+    category: 'config',
+    section: BILL,
+    example: 1,
+  },
+  { dp: 102, key: 'cost', label: 'Cost on its screen', value: { type: 'number', precision: 2, min: 0 }, scale: 3, category: 'diagnostic', example: 0 },
 ];
 
 /**
- * Its datapoints, as the unit showed them (README.md §4). Left out on purpose:
- * the countdown and timers (9, 124–130), pricing (101, 102, 136), the switch
- * mode (112) and the reset buttons (113–116). The Datapoints tool still shows
- * every one raw.
+ * Its datapoints, as the unit showed them (README.md §4). Left out on purpose,
+ * the Datapoints tool still showing each raw:
+ * - the countdown and timers (9, 124–130): kraftverk's automations time things,
+ *   and say why when they act;
+ * - the price mode (136): tiers B and C have no settings the app showed;
+ * - the switch mode (112): "normally open" was never tried, and may stop the
+ *   plug being switched remotely;
+ * - resetting Wi-Fi and every setting (114, 115): the plug leaves the network.
+ * The plug's own rules (118–122) are read, to explain a cut, and can be
+ * stopped; they are not set from here, because switching the plug from
+ * kraftverk takes it out of Auto and ends them anyway.
  */
 export const ATORCH_S1: SocketProfile = {
   id: 'atorch-s1',
@@ -212,6 +224,18 @@ export const ATORCH_S1: SocketProfile = {
     powerFactor: { dp: 134, scale: 2 },
   },
   datapoints: DATAPOINTS,
+  // "Faster refresh after activation": readings every second, lapsing after five minutes (README.md §4).
+  refresh: { dp: 140, lapsesAfterMs: 5 * 60_000 },
+  buttons: [
+    { id: 'rotateScreen', dp: 116, label: 'Turn the screen around', description: 'Turns what the plug’s screen shows upside down, or back: for a plug that sits the other way up in its socket.' },
+    {
+      id: 'resetEnergy',
+      dp: 113,
+      label: 'Reset the energy counter',
+      description: 'Sets the energy total the plug counts, and the cost its screen shows, back to zero. kraftverk’s own history is kept.',
+      confirm: 'The plug’s energy total and cost go back to zero, and cannot be brought back. kraftverk’s history of it is kept.',
+    },
+  ],
 };
 
 export default defineTuyaSocket({

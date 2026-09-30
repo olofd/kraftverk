@@ -14,7 +14,8 @@ test('a tool is drawn from its declaration and run: the plug’s datapoints, ans
   await page.goto(`/device/${plug.id}/settings`);
   await page.getByText('Tools', { exact: true }).last().click();
   await expect(page.getByText('Datapoints', { exact: true }).last()).toBeVisible();
-  await page.getByRole('button', { name: 'Run' }).click();
+  // The datapoints are the first of its tools; its buttons — the screen, the counter — follow.
+  await page.getByRole('button', { name: 'Run' }).first().click();
   // The answer, checked against the declaration by whoever holds the plug.
   await expect(page.getByText(/"raw"/)).toBeVisible();
   await expect(page.getByText(/"relayOn": true/)).toBeVisible();

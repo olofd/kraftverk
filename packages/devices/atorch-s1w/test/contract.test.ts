@@ -112,7 +112,7 @@ describe('the ATORCH S1W', () => {
   test('offers as settings only what a person decides: the power cut, the safety cut-off, the display', () => {
     const attributes = atorch.describe({ profile: ATORCH_S1.id, pollSeconds: 10 }).attributes;
     const settings = attributes.filter((attribute) => attribute.category === 'config');
-    expect([...new Set(settings.map((attribute) => attribute.section))]).toEqual(['Power', 'Safety cut-off', 'Display']);
+    expect([...new Set(settings.map((attribute) => attribute.section))]).toEqual(['Power', 'Safety cut-off', 'Display', 'Bill']);
     // Written by the screens, never offered: live readings while someone watches, and clearing the plug's own rule.
     expect(attributes.filter((attribute) => attribute.access === 'write' && attribute.category !== 'config').map((attribute) => attribute.key)).toEqual(['rule', 'live']);
   });
@@ -133,6 +133,36 @@ describe('the ATORCH S1W', () => {
     expect(value('relay')).toBe(false);
     expect(value('cutBy')).toBe('lowPower');
     expect(events).toEqual([{ id: 'cut', data: { reason: 'lowPower' } }]);
+    await opened.close();
+  });
+
+  test('live readings are one wish: on until a time, off at once, and nobody turns them back on', async () => {
+    const { device, opened, value } = await session({ '131': 'open', '140': false });
+    expect(await opened.write!({ live: true })).toEqual({ live: true });
+    expect(device.sent.at(-1)).toEqual({ '140': true });
+    expect(Date.parse(String(value('liveUntil')))).toBeGreaterThan(Date.now() + 10 * 60_000);
+
+    // The plug lets it lapse, and says so: wanted, it is turned back on at once.
+    device.channel.push(encodeFrame({ version: '3.3', key: bytes(KEY), sequence: 9, command: CMD.STATUS, payload: bytes(JSON.stringify({ dps: { '140': false } })) }));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(device.sent.at(-1)).toEqual({ '140': true });
+
+    // Switched off: off at once, and a lapse after that is left alone.
+    expect(await opened.write!({ live: false })).toEqual({ live: false });
+    expect(device.sent.at(-1)).toEqual({ '140': false });
+    const sent = device.sent.length;
+    device.channel.push(encodeFrame({ version: '3.3', key: bytes(KEY), sequence: 10, command: CMD.STATUS, payload: bytes(JSON.stringify({ dps: { '140': false } })) }));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(device.sent.length).toBe(sent);
+    expect(value('live')).toBe(false);
+    await opened.close();
+  });
+
+  test('its buttons are tools that press once: the screen turned, the counter zeroed after asking', async () => {
+    const { device, opened } = await session({ '131': 'open' });
+    expect(await opened.tools!.rotateScreen!({})).toBe(true);
+    expect(device.sent.at(-1)).toEqual({ '116': true });
+    expect(atorch.tools?.resetEnergy?.confirm).toContain('cannot be brought back');
     await opened.close();
   });
 

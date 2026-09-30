@@ -70,7 +70,26 @@ export type SocketProfile = {
     powerFactor?: Metric;
   };
   datapoints?: readonly ProfileDatapoint[];
+  /**
+   * A switch that has the plug send its readings every second instead of when
+   * asked, and which it turns off itself after a while. Readings are live for
+   * as long as someone wants them: the session turns it back on each time it
+   * lapses, until that is no longer wanted.
+   */
+  refresh?: { dp: number; lapsesAfterMs: number };
+  /** Things the plug does when told once — turn its screen around, zero its counter — rather than values it keeps. */
+  buttons?: readonly SocketButton[];
   notes?: string;
+};
+
+export type SocketButton = {
+  id: string;
+  /** Written `true` to press it. */
+  dp: number;
+  label: string;
+  description: string;
+  /** Asked before it is pressed, when pressing it cannot be undone: what is lost. */
+  confirm?: string;
 };
 
 /** The layout most generic Tuya energy sockets use. */

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import type { DeviceScreenProps } from '@kraftverk/api-client';
 import type { Value } from '@kraftverk/device-sdk';
@@ -21,6 +21,8 @@ export type Plug = {
   error: string | null;
   write: (patch: Record<string, Value>) => Promise<void>;
   switchTo: (on: boolean) => Promise<void>;
+  /** Presses one of the plug's buttons — its tools: the app asks first where one cannot be undone. True when it ran. */
+  press: (button: string) => Promise<boolean>;
 };
 
 export function usePlug(props: DeviceScreenProps): Plug {
@@ -52,6 +54,7 @@ export function usePlug(props: DeviceScreenProps): Plug {
           const at = Date.now();
           setAnswered((was) => ({ ...was, ...Object.fromEntries(Object.entries(result.values!).map(([key, v]) => [key, { value: v, at }])) }));
         }
+        // "Not confirmed" included: it says why the control went back.
         if (result.outcome === 'refused' || result.outcome === 'failed') setError(result.detail);
       } catch (thrown) {
         setError((thrown as Error).message);
@@ -74,8 +77,23 @@ export function usePlug(props: DeviceScreenProps): Plug {
     [actions, gate]
   );
 
+  const press = useCallback(
+    async (button: string) => {
+      setError(null);
+      try {
+        await actions.tool(button);
+        return true;
+      } catch (thrown) {
+        setError((thrown as Error).message);
+        return false;
+      }
+    },
+    [actions]
+  );
+
   return {
     props,
+    press,
     value,
     number,
     pending: (key) => snapshot.pending.has(key),
@@ -86,75 +104,3 @@ export function usePlug(props: DeviceScreenProps): Plug {
   };
 }
 
-/*
-  Live readings.
-
-  The plug sends a reading every second while its fast refresh is on, and turns
-  it off itself after five minutes. A person who asks for live readings wants
-  them while they are looking, so the wish is kept here, per device, and every
-  screen that shows it renews the refresh when the plug lets it lapse. Leave
-  the screens and nothing renews it: it stops within five minutes by itself.
-*/
-
-const wishes = new Map<string, boolean>();
-const listeners = new Set<() => void>();
-const wish = (id: string, wanted: boolean) => {
-  wishes.set(id, wanted);
-  for (const listener of listeners) listener();
-};
-
-export type Live = {
-  /** Readings arrive every second now. */
-  on: boolean;
-  /** Wanted: kept on while one of its screens is open. What the switch shows. */
-  kept: boolean;
-  pending: boolean;
-  set: (on: boolean) => void;
-};
-
-/**
- * Whether readings are live, and a way to ask. `keep` asks as the screen
- * opens — the settings, where a change is watched as it lands. A plug that is
- * live when a screen opens is kept live too: whoever turned it on wanted it,
- * and a countdown to a stop nobody asked for says nothing useful.
- */
-export function useLive(plug: Plug, options: { keep?: boolean } = {}): Live {
-  const id = plug.props.device.id;
-  const [, rerender] = useState(0);
-  useEffect(() => {
-    const listener = () => rerender((n) => n + 1);
-    listeners.add(listener);
-    return () => void listeners.delete(listener);
-  }, []);
-
-  const on = plug.value('live') === true;
-  const pending = plug.pending('live');
-  const kept = wishes.get(id) ?? false;
-  const { canChange, write } = plug;
-
-  useEffect(() => {
-    if (options.keep) wish(id, true);
-  }, [id, options.keep]);
-
-  // Live already, and nobody here has said otherwise: keep it.
-  useEffect(() => {
-    if (on && !wishes.has(id)) wish(id, true);
-  }, [id, on]);
-
-  // Renew when the plug lets it lapse, while wanted and a screen is open.
-  useEffect(() => {
-    if (!kept || on || pending || !canChange) return;
-    const timer = setTimeout(() => void write({ live: true }), 400);
-    return () => clearTimeout(timer);
-  }, [kept, on, pending, canChange, write]);
-
-  return {
-    on,
-    kept,
-    pending,
-    set: (next) => {
-      wish(id, next);
-      void write({ live: next });
-    },
-  };
-}

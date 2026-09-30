@@ -152,6 +152,12 @@ export type ToolSpec = {
   /** Changes something on the device. */
   writes: boolean;
   /**
+   * What cannot be undone once it has run — "the energy total and the cost go
+   * back to zero" — asked of a person before it runs. None for a tool whose
+   * effect is harmless or reversible.
+   */
+  confirm?: string;
+  /**
    * It checks read-only mode itself, call by call, so the core does not refuse
    * it outright while read-only: a raw frame that is plainly a read changes
    * nothing, and reading undocumented registers is how a unit is brought up.

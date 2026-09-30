@@ -20,6 +20,7 @@ export function ToolPanel({
   why,
 }: {
   tool: ToolSpec & { name: string };
+  /** Runs it — and, for a tool that says what it cannot undo, asks a person first: the app's actions do. */
   run: (input: ConfigValues) => Promise<unknown>;
   /** It cannot be run now: the device is not answering, or writes are off. */
   disabled?: boolean;

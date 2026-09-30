@@ -446,6 +446,12 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  /** A tool that says what it cannot undo is asked about first, whatever screen runs it; no, and it does not run. */
+  const confirmedTool = useCallback(async (spec: { label: string; confirm?: string } | undefined) => {
+    if (!spec?.confirm) return;
+    if (!(await confirmAction(`${spec.label}?`, spec.confirm, spec.label))) throw new Error('Not confirmed');
+  }, []);
+
   const actionsFor = useCallback(
     (device: DeviceView): DeviceActions => {
       const holder = holderOf(device);
@@ -459,6 +465,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
           // The holder's own check, as on the server: the input the tool asks for, the answer it declares.
           tool: async <T,>(name: string, input: Record<string, unknown> = {}) => {
             const spec = runtime.registry.types.get(device.typeId)?.tools?.[name];
+            await confirmedTool(spec);
             try {
               const answer = await runTool({ deviceName: device.name, name, spec, session: session(), input, readOnly: !runtime.allowWrites });
               if (spec?.writes) runtime.uplink?.audit({ at: new Date().toISOString(), kind: 'device.tool', resourceKind: 'device', resource: device.id, summary: `Ran ${spec.label.toLowerCase()} on "${device.name}"`, detail: { tool: name, input } });
@@ -500,8 +507,11 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       if (holder === 'server') {
         const inUse = device.connections.find((connection) => connection.inUse) ?? device.connections.find((connection) => connection.heldBy.kind === 'server');
         return {
-          tool: <T,>(name: string, input?: Record<string, unknown>) =>
-            runDeviceTool<T>(device.id, name, { input, writes: device.tools.find((tool) => tool.name === name)?.writes ?? false }),
+          tool: async <T,>(name: string, input?: Record<string, unknown>) => {
+            const spec = device.tools.find((tool) => tool.name === name);
+            await confirmedTool(spec);
+            return runDeviceTool<T>(device.id, name, { input, writes: spec?.writes ?? false });
+          },
           write: (patch) => confirmed((confirmation) => writeDeviceAttributes(device.id, { patch, confirmation })),
           command: (input) => confirmed((confirmation) => sendCommand(device.id, { ...input, confirmation })),
           diagnostic: inUse ? <T,>(name: string, query?: Record<string, string | number>) => fetchTransportDiagnostic<T>(inUse.transport, name, query) : null,
@@ -517,7 +527,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         diagnostic: null,
       };
     },
-    [confirmed, holderOf, runtime]
+    [confirmed, confirmedTool, holderOf, runtime]
   );
 
   const screenProps = useCallback(
