@@ -237,7 +237,10 @@ screen part. Standard recipes stay free of product words.
 5. **Richer time triggers on recipes.** `at` takes weekdays (as the timers in
    Phase 2 do), an interval ("every 15 minutes"), and sunrise and sunset
    from the home's place. "When tomorrow's prices arrive" is a service
-   event and already works.
+   event and already works. **The interval is done, 2026-09-30:**
+   `{ every: minutes }`, 5 to 720, on the owner's clock from midnight, once
+   a slot. **Sunrise and sunset wait on a decision:** the home has no place
+   of its own yet — only a weather service's configured place.
 6. **Smaller.**
    - A role filled by an ordered list of parts ("shed these loads in this
      order").

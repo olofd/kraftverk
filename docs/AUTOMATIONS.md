@@ -48,6 +48,7 @@ type Rule = {
 
 type Trigger =
   | { at: Expr; days?: Weekday[] }                 // at "07:00" on the owner's clock, every day or on these
+  | { every: Expr }                                // every so many minutes, on the clock from midnight
   | { event: { role: string; event: string } }     // something a device said happened
   | { becomes: Expr; heldForMinutes?: Expr };      // a condition turning true, and staying true
 
@@ -189,6 +190,10 @@ The server's engine runs every automation the same way:
   owner's clock and on the days it names (`days`, none for every day), up to
   an hour late (a server that was down at 07:00 still
   acts at 07:20).
+- **`every`**: looked at every half minute; due once in each slot of so many
+  minutes on the owner's clock, counted from midnight (every 15: :00, :15,
+  :30, :45). A server that was down runs once, at the latest slot, and does
+  not catch up.
 - **`event`**: heard on the live bus as the device raises it.
 - **`becomes`**: evaluated when a reading of a bound device moves, from the
   live bus, and on the half-minute clock besides — a battery sitting at 8 %

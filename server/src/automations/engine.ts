@@ -7,6 +7,8 @@ import {
   checkBinding,
   clockTime,
   describeExpr,
+  EVERY_MINUTES,
+  slotOf,
   describeSteps,
   describeTriggers,
   settledChoice,
@@ -312,8 +314,8 @@ export class AutomationEngine {
       for (const automation of this.deps.store.list()) {
         if (automation.mode === 'off') continue;
         const rule = automation.rule;
-        const due = rule.when.find((trigger) => 'at' in trigger && this.#dueAt(automation, rule, trigger, now));
-        if (due && 'at' in due) {
+        const due = rule.when.find((trigger) => ('at' in trigger && this.#dueAt(automation, rule, trigger, now)) || ('every' in trigger && this.#dueEvery(automation, rule, trigger, now)));
+        if (due) {
           // A run that takes steps goes on by itself: the clock does not wait for it.
           // Why, as the trigger reads: "Every day at 07:00", "At 07:00 on weekdays".
           const why = describeTriggers({ ...rule, when: [due] }, this.#settled(automation, rule), (role) => this.#scope(automation, rule, now).name(role), this.#vocabulary(automation))[0]!;
@@ -533,6 +535,17 @@ export class AutomationEngine {
     if (since < 0 || since > GRACE_MS) return false;
     const lastStarted = Math.max(...[automation.lastRun?.at, automation.running?.at].map((at) => Date.parse(at ?? '')).filter(Number.isFinite));
     return !Number.isFinite(lastStarted) || lastStarted < time.getTime();
+  }
+
+  /** Whether an interval's latest slot, on the owner's clock, has come and it has not run since: once a slot, never catching up. */
+  #dueEvery(automation: AutomationRecord, rule: Rule, trigger: Extract<Trigger, { every: unknown }>, now: Date): boolean {
+    const every = evaluateNow(trigger.every, this.#scope(automation, rule));
+    if (typeof every !== 'number' || every < EVERY_MINUTES.min || every > EVERY_MINUTES.max) return false;
+    const today = localTime(now, automation.timeZone);
+    const slot = slotOf(today.hour * 60 + today.minute, every);
+    const time = zonedInstant({ ...today, hour: Math.floor(slot / 60), minute: slot % 60 }, automation.timeZone);
+    const lastStarted = Math.max(...[automation.lastRun?.at, automation.running?.at].map((at) => Date.parse(at ?? '')).filter(Number.isFinite));
+    return time.getTime() <= now.getTime() && (!Number.isFinite(lastStarted) || lastStarted < time.getTime());
   }
 
   async #runAndKeep(automation: AutomationRecord, why: string): Promise<RunResult | null> {

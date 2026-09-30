@@ -5,6 +5,7 @@ import {
   currentForOf,
   evaluate,
   evaluateNow,
+  EVERY_MINUTES,
   localTime,
   minutesOf,
   ruleUses,
@@ -159,6 +160,16 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
         if (!runsOn(trigger, date)) continue;
         const instant = zonedInstant({ ...date, hour, minute }, automation.timeZone).getTime();
         if (instant >= start && instant <= end && !fired.some((run) => run.at === instant)) fired.push({ at: instant, because: `It is ${at}` });
+      }
+    } else if ('every' in trigger) {
+      const every = evaluateNow(trigger.every, scopeAt(start));
+      if (typeof every !== 'number' || every < EVERY_MINUTES.min || every > EVERY_MINUTES.max) continue;
+      for (let day = start - 86_400_000; day <= end + 86_400_000; day += 86_400_000) {
+        const date = localTime(new Date(day), automation.timeZone);
+        for (let slot = 0; slot < 24 * 60; slot += every) {
+          const instant = zonedInstant({ ...date, hour: Math.floor(slot / 60), minute: slot % 60 }, automation.timeZone).getTime();
+          if (instant >= start && instant <= end && !fired.some((run) => run.at === instant)) fired.push({ at: instant, because: `Every ${every} min` });
+        }
       }
     } else if ('event' in trigger) {
       const binding = automation.roles[trigger.event.role];

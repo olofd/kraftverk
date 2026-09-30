@@ -802,3 +802,37 @@ describe('between two times of day', () => {
     engine.stop();
   });
 });
+
+describe('every so many minutes', () => {
+  test('once a slot on the owner’s clock — not again within it, and again at the next', async () => {
+    const context = setup({ now: zonedInstant({ year: 2026, month: 6, day: 15, hour: 7, minute: 40 }, ZONE) });
+    const { engine, store, sent } = context;
+    const created = store.create({
+      name: 'Every quarter',
+      rule: {
+        roles: { switch: { label: 'Plug', description: 'A plug', capabilities: ['switch'] } },
+        params: { fields: {} },
+        when: [{ every: { value: 15 } }],
+        then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
+      },
+      madeFrom: null,
+      roles: { switch: { device: PLUG, part: 'main' } },
+      starts: {},
+      timeZone: ZONE,
+      recheckMinutes: null,
+    });
+    store.update(created.id, { mode: 'armed' });
+    // 07:40: the 07:30 slot has come, and it has not run in it.
+    await engine.tick();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.reason).toContain('Every 15 min');
+    context.at(zonedInstant({ year: 2026, month: 6, day: 15, hour: 7, minute: 44 }, ZONE));
+    await engine.tick();
+    expect(sent).toHaveLength(1);
+    // 07:45: the next.
+    context.at(zonedInstant({ year: 2026, month: 6, day: 15, hour: 7, minute: 45 }, ZONE));
+    await engine.tick();
+    expect(sent).toHaveLength(2);
+    engine.stop();
+  });
+});

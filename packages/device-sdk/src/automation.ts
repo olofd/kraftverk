@@ -67,6 +67,12 @@ export const calculate = (op: MathOp, left: Value, right: Value): Value => {
   return op === 'add' ? left + right : op === 'subtract' ? left - right : op === 'min' ? Math.min(left, right) : Math.max(left, right);
 };
 
+/** How often an `every` trigger may run, in minutes: not more often than a look to keep things so, at least twice a day. */
+export const EVERY_MINUTES = { min: 5, max: 720 } as const;
+
+/** The start of the slot an `every` trigger is in at a minute of the day: every 15, at 07:40, is 07:30. */
+export const slotOf = (minuteOfDay: number, every: number): number => Math.floor(minuteOfDay / every) * every;
+
 /** A time of day as a rule writes it: "07:00", "22:30". */
 export const CLOCK_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -97,6 +103,13 @@ export const runsOn = (trigger: Extract<Trigger, { at: unknown }>, date: { year:
 export type Trigger =
   /** At this time — "07:00" — on the automation's own clock: every day, or only on `days`. */
   | { at: Expr; days?: readonly Weekday[] }
+  /**
+   * Every so many minutes, on the owner's clock from midnight: every 15 is
+   * :00, :15, :30 and :45. Once a slot; a server that was down runs once, at
+   * the latest, and does not catch up. `if` narrows it: "every 15 minutes,
+   * between 22:00 and 06:00".
+   */
+  | { every: Expr }
   /** When the part filling a role raises an event its description declares. */
   | { event: { role: string; event: string } }
   /**
@@ -536,6 +549,13 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         for (const day of trigger.days) if (!WEEKDAYS.includes(day)) problems.push(`${where}.days: "${String(day)}" is not a day of the week`);
         if (new Set(trigger.days).size !== trigger.days.length) problems.push(`${where}.days: a day is named twice`);
       }
+    } else if ('every' in trigger) {
+      const got = shape(trigger.every, `${where}.every`, { calls: false });
+      if (!fits({ type: 'number', unit: 'min' }, got)) problems.push(`${where}.every: expected a number of minutes, got ${said(got)}`);
+      const minutes = 'value' in trigger.every ? trigger.every.value : null;
+      if (typeof minutes === 'number' && (!Number.isInteger(minutes) || minutes < EVERY_MINUTES.min || minutes > EVERY_MINUTES.max)) {
+        problems.push(`${where}.every: whole minutes, from ${EVERY_MINUTES.min} to ${EVERY_MINUTES.max}`);
+      }
     } else if ('event' in trigger) {
       role(trigger.event.role, `${where}.event`);
       if (!trigger.event.event?.trim()) problems.push(`${where}.event: which event?`);
@@ -749,6 +769,7 @@ export function ruleUses(rule: Rule): {
   const events: { role: string; event: string }[] = [];
   for (const trigger of rule.when) {
     if ('at' in trigger) walk(trigger.at);
+    if ('every' in trigger) walk(trigger.every);
     else if ('event' in trigger) events.push(trigger.event);
     else if ('becomes' in trigger) (walk(trigger.becomes), walk(trigger.heldForMinutes));
   }
@@ -1072,6 +1093,7 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
   }
   const when = rule.when.map((trigger): Trigger => {
     if ('at' in trigger) return { ...trigger, at: expr(trigger.at) };
+    if ('every' in trigger) return { every: expr(trigger.every) };
     if ('becomes' in trigger) return { becomes: expr(trigger.becomes), ...(trigger.heldForMinutes ? { heldForMinutes: expr(trigger.heldForMinutes) } : {}) };
     return trigger;
   });
@@ -1188,6 +1210,7 @@ export function describeTriggers(rule: Rule, params: Readonly<Record<string, Val
   const text = (expr: Expr): string => describeExpr(rule, expr, params, name, vocabulary);
   return rule.when.map((trigger) => {
     if ('at' in trigger) return trigger.days && daysText(trigger.days) !== 'every day' ? `At ${text(trigger.at)} ${daysText(trigger.days)}` : `Every day at ${text(trigger.at)}`;
+    if ('every' in trigger) return `Every ${'value' in trigger.every ? `${text(trigger.every)} min` : text(trigger.every)}`;
     if ('event' in trigger) return `When ${name(trigger.event.role)} reports ${eventWords(rule, trigger.event.role, trigger.event.event)}`;
     const held = trigger.heldForMinutes ? ` for ${'value' in trigger.heldForMinutes ? `${text(trigger.heldForMinutes)} min` : text(trigger.heldForMinutes)}` : '';
     return `When ${text(trigger.becomes)}${held}`;
@@ -1324,9 +1347,11 @@ export function describeRule(rule: Rule & { sentence?: string }, params: Readonl
     .map((trigger) =>
       'at' in trigger
         ? `at ${text(trigger.at)}${trigger.days && daysText(trigger.days) !== 'every day' ? ` ${daysText(trigger.days)}` : ''}`
-        : 'event' in trigger
-          ? `when ${name(trigger.event.role)} reports ${eventWords(rule, trigger.event.role, trigger.event.event)}`
-          : `when ${text(trigger.becomes)}${trigger.heldForMinutes ? ` for ${minutes(trigger.heldForMinutes)}` : ''}`
+        : 'every' in trigger
+          ? `every ${minutes(trigger.every)}`
+          : 'event' in trigger
+            ? `when ${name(trigger.event.role)} reports ${eventWords(rule, trigger.event.role, trigger.event.event)}`
+            : `when ${text(trigger.becomes)}${trigger.heldForMinutes ? ` for ${minutes(trigger.heldForMinutes)}` : ''}`
     )
     .join(', or ');
   // No trigger: it is played, or started — the sentence is what it does.

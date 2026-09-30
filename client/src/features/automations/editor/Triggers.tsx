@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { MAIN_PART, type Expr, type Trigger } from '@kraftverk/device-sdk';
+import { EVERY_MINUTES, MAIN_PART, type Expr, type Trigger } from '@kraftverk/device-sdk';
 import { haptic, Icon } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
@@ -12,21 +12,22 @@ import { Chips, DaysField, Label, NumberField, Picker, TimeField } from './field
 
 /*
   When an automation runs on its own (docs/AUTOMATION-EDITOR.md): at a time
-  on chosen days, when something holds (for a while), or when a device says
-  something happened. None at all is an automation you start — and any can
+  on chosen days, every so many minutes, when something holds (for a while),
+  or when a device says something happened. None at all is an automation you start — and any can
   be started with ▶.
 */
 
-type TriggerKind = 'at' | 'becomes' | 'event';
+type TriggerKind = 'at' | 'every' | 'becomes' | 'event';
 
-const TRIGGER_KINDS: { value: TriggerKind; label: string; says: string; icon: 'clock' | 'activity' | 'bell' }[] = [
+const TRIGGER_KINDS: { value: TriggerKind; label: string; says: string; icon: 'clock' | 'repeat' | 'activity' | 'bell' }[] = [
   { value: 'at', label: 'At a time', says: 'A time of day, every day or on the days you choose.', icon: 'clock' },
+  { value: 'every', label: 'Every so often', says: 'Every so many minutes, on the clock: every 15 is on the hour, and at :15, :30 and :45.', icon: 'repeat' },
   { value: 'becomes', label: 'When something holds', says: 'When a condition turns true — and, if you like, has stayed true a while.', icon: 'activity' },
   { value: 'event', label: 'When a device says so', says: 'When a device reports something happened: mains lost, a charge started.', icon: 'bell' },
 ];
 
 const blankTrigger = (kind: TriggerKind): Trigger =>
-  kind === 'at' ? { at: { value: '07:00' } } : kind === 'becomes' ? { becomes: { value: true } } : { event: { role: '', event: '' } };
+  kind === 'at' ? { at: { value: '07:00' } } : kind === 'every' ? { every: { value: 15 } } : kind === 'becomes' ? { becomes: { value: true } } : { event: { role: '', event: '' } };
 
 /** Its triggers, each with its fields and a way to remove it, and a way to add one. */
 export function Triggers() {
@@ -105,6 +106,18 @@ function TriggerFields({ trigger, set }: { trigger: Trigger; set: (trigger: Trig
             }}
           />
         </YStack>
+      </YStack>
+    );
+  }
+  if ('every' in trigger) {
+    const minutes = 'value' in trigger.every && typeof trigger.every.value === 'number' ? trigger.every.value : null;
+    return (
+      <YStack gap="$1">
+        <Label>Every</Label>
+        <NumberField label="Every" value={minutes} unit="min" onChange={(next) => set({ every: { value: next } })} />
+        <Text fontSize={12} color="$muted">
+          From {EVERY_MINUTES.min} minutes to {EVERY_MINUTES.max / 60} hours. Add a condition it must meet to keep it to some hours.
+        </Text>
       </YStack>
     );
   }

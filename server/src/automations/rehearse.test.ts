@@ -86,3 +86,20 @@ describe('a window of the day, rehearsed', () => {
     ]);
   });
 });
+
+describe('every so many minutes, rehearsed', () => {
+  test('runs at each slot of the window, on the owner’s clock', async () => {
+    const quarterly = inlineParams(
+      {
+        roles: { charger: { label: 'Charger plug', description: 'What charges it', capabilities: ['switch'] } },
+        params: { fields: {} },
+        when: [{ every: { value: 30 } }],
+        then: [{ command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
+      },
+      {}
+    );
+    const hours = { from: new Date('2026-09-29T06:00:00.000Z'), to: new Date('2026-09-29T07:59:00.000Z') };
+    const rehearsal = await rehearse(quarterly, automation, source([]), hours);
+    expect(rehearsal.runs.map((run) => run.at)).toEqual(['2026-09-29T06:00:00.000Z', '2026-09-29T06:30:00.000Z', '2026-09-29T07:00:00.000Z', '2026-09-29T07:30:00.000Z']);
+  });
+});

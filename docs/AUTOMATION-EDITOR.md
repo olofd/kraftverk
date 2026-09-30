@@ -246,7 +246,8 @@ recipe to start from), top to bottom:
 1. **Name.**
 2. **When it runs on its own** — the triggers, each a row that can be
    removed. "Add": at a time (a time and weekday chips: every day,
-   weekdays, or chosen days), when something holds (a condition, and for
+   weekdays, or chosen days), every so often (minutes, on the clock), when
+   something holds (a condition, and for
    how long), or when a device says something (a part, and one of the
    events it declares). Under them: "You can always start it with ▶".
 3. **Only if** — an optional condition.
