@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { addSimulated, link, unique } from './helpers';
+import { addSimulated, answer, link, unique } from './helpers';
 
 /*
   What makes a command consequential is declared — by the capability, and by
@@ -19,13 +19,8 @@ test('cutting a plug that feeds a station is confirmed first, naming the part it
 
   // Answered by a handler set before the click: a dialog that opens while the click is still settling blocks the page,
   // and a test that waits for the click before answering waits for itself.
-  let asked = '';
-  page.once('dialog', async (dialog) => {
-    asked = dialog.message();
-    await dialog.dismiss();
-  });
   await power.click();
-  await expect.poll(() => asked).toContain(`This feeds ${station.name} — Mains and has never been switched from here: confirm it is the right one`);
+  expect(await answer(page, false)).toContain(`This feeds ${station.name} — Mains and has never been switched from here: confirm it is the right one`);
 
   // Not confirmed: nothing was sent, and it is still on.
   await expect(page.getByText('Not confirmed')).toBeVisible();
@@ -39,12 +34,9 @@ test('turning off a plug that carries a load says how much, and once confirmed, 
   const power = page.getByRole('switch').first();
   await expect(power).toHaveAttribute('aria-checked', 'true');
 
-  page.once('dialog', async (dialog) => {
-    // As switch.set declares it: off, while it draws more than 5 W.
-    expect(dialog.message()).toContain('Power is 240 W');
-    await dialog.accept();
-  });
   await power.click();
+  // As switch.set declares it: off, while it draws more than 5 W.
+  expect(await answer(page, true)).toContain('Power is 240 W');
   await expect(power).toHaveAttribute('aria-checked', 'false');
   await expect(page.getByLabel('Drawing 0 W')).toBeVisible();
 });
@@ -58,11 +50,10 @@ test('a switch is operated from the keyboard: Tab to it, Space asks the same que
   await power.focus();
   await expect(power).toBeFocused();
 
-  page.once('dialog', async (dialog) => {
-    expect(dialog.message()).toContain('Power is 240 W');
-    await dialog.accept();
-  });
   await page.keyboard.press('Space');
+  // The question takes the keyboard: its yes is where Enter lands.
+  await expect(page.getByRole('alertdialog')).toContainText('Power is 240 W');
+  await page.keyboard.press('Enter');
   await expect(power).toHaveAttribute('aria-checked', 'false');
 });
 
@@ -80,14 +71,9 @@ test('how much is a load is the home’s to say: set in App settings, the same p
     await page.goto(`/device/${plug.id}`);
     const power = page.getByRole('switch').first();
     await expect(power).toHaveAttribute('aria-checked', 'true');
-    let asked = false;
-    page.on('dialog', (dialog) => {
-      asked = true;
-      void dialog.dismiss();
-    });
     await power.click();
     await expect(power).toHaveAttribute('aria-checked', 'false');
-    expect(asked).toBe(false);
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
   } finally {
     await request.put('/api/policy/loadWatts', { data: { value: null } });
   }

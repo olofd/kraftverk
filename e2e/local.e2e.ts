@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { press } from './helpers';
+import { answer, press } from './helpers';
 
 /*
   The app with no server at all: it keeps its own devices and holds every
@@ -28,10 +28,7 @@ test('without a server, the app adds a simulated plug and switches it itself, th
   await expect(power).toHaveAttribute('aria-checked', 'true');
 
   // The same rule as on a server: off while it carries a load is confirmed.
-  page.once('dialog', async (dialog) => {
-    expect(dialog.message()).toContain('Power is 240 W');
-    await dialog.accept();
-  });
   await power.click();
+  expect(await answer(page, true)).toContain('Power is 240 W');
   await expect(power).toHaveAttribute('aria-checked', 'false');
 });

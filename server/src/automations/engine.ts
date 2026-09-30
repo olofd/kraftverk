@@ -1,4 +1,4 @@
-import type { AutomationMode, AutomationRun, RoleBinding } from '@kraftverk/api-contract';
+import type { AutomationMode, AutomationRun, ConditionState, RoleBinding, RunAction } from '@kraftverk/api-contract';
 import {
   attributeMeaning,
   capabilitiesOf,
@@ -24,6 +24,7 @@ import {
   type CapabilityName,
   type ConfigValues,
   type DeviceDescription,
+  type Expr,
   type Recipe,
   type RulePart,
   type RuleScope,
@@ -193,6 +194,20 @@ export class AutomationEngine {
     this.#memory.set(`automation.recheck.${automationId}`, this.#now().toISOString());
   }
 
+  /**
+   * Looks at an automation's conditions at once — just made, changed or
+   * armed — rather than at the next reading or the next tick: armed while a
+   * condition already holds, it acts now.
+   */
+  poke(automationId: string): void {
+    const automation = this.deps.store.get(automationId);
+    const recipe = automation ? this.deps.library.recipe(automation.recipe) : null;
+    if (!automation || !recipe || automation.mode === 'off') return;
+    recipe.when.forEach((trigger, index) => {
+      if ('becomes' in trigger) this.#becomes(automation, recipe, trigger, index);
+    });
+  }
+
   /** Forgets everything kept for an automation that is gone. */
   forget(automationId: string): void {
     this.reset(automationId);
@@ -226,7 +241,7 @@ export class AutomationEngine {
         if (automation.mode === 'off') continue;
         const recipe = this.deps.library.recipe(automation.recipe);
         const due = recipe?.when.find((trigger) => 'at' in trigger && this.#dueAt(automation, recipe, trigger, now));
-        if (due) await this.#runAndKeep(automation, null);
+        if (due && 'at' in due) await this.#runAndKeep(automation, `Every day at ${String(evaluateNow(due.at, this.#scope(automation, recipe!, now)))}`);
         // A condition is looked at on the clock too, not only when a reading moves: a battery that sits
         // at 8 % sends nothing, and an automation just armed must still see it is below its level.
         recipe?.when.forEach((trigger, index) => {
@@ -259,12 +274,11 @@ export class AutomationEngine {
       // Fired and still true: a hold still waiting it out, or a condition that has ended, is not one.
       const state = this.#becoming.get(`${automation.id}:${index}`)?.state;
       if (!state?.last || !state.fired) continue;
-      const trace: string[] = [];
-      if (evaluateNow(trigger.becomes, scope, trace) !== true) continue;
+      if (evaluateNow(trigger.becomes, scope) !== true) continue;
       const planned = await this.#plan(automation, recipe, scope);
       if ('unknown' in planned) continue;
       if (planned.every((action) => this.#alreadySo(action))) return;
-      await this.#runAndKeep(automation, `Checked again, every ${automation.recheckMinutes} min: ${trace.join('; ')}`);
+      await this.#runAndKeep(automation, `Looked again after ${automation.recheckMinutes} min, and it still holds: ${this.#said(automation, recipe, trigger.becomes)}`);
       return;
     }
   }
@@ -374,26 +388,24 @@ export class AutomationEngine {
     // True, and already dealt with — or already waiting it out.
     if (state.fired || entry.hold) return;
 
-    const trace: string[] = [];
-    evaluateNow(trigger.becomes, scope, trace);
+    const said = this.#said(automation, recipe, trigger.becomes);
     const minutes = trigger.heldForMinutes ? Number(evaluateNow(trigger.heldForMinutes, scope)) : 0;
-    const fire = (because: string) => {
+    const fire = (why: string) => {
       state.fired = true;
       keep();
-      void this.#runAndKeep(this.deps.store.get(automation.id) ?? automation, because);
+      void this.#runAndKeep(this.deps.store.get(automation.id) ?? automation, why);
     };
     const since = Date.parse(state.heldSince ?? this.#now().toISOString());
     const remaining = minutes > 0 ? since + minutes * 60_000 - this.#now().getTime() : 0;
     if (remaining <= 0) {
-      fire(minutes > 0 ? `${trace.join('; ')}, for ${minutes} min` : trace.join('; '));
+      fire(minutes > 0 ? `${said}, for ${minutes} min` : said);
       return;
     }
     entry.hold = setTimeout(() => {
       entry.hold = null;
       // Still true, all this time? Only then.
-      const held: string[] = [];
-      if (evaluateNow(trigger.becomes, this.#scope(automation, recipe), held) !== true) return;
-      fire(`${held.join('; ')}, for ${minutes} min`);
+      if (evaluateNow(trigger.becomes, this.#scope(automation, recipe)) !== true) return;
+      fire(`${said}, for ${minutes} min`);
     }, remaining);
     (entry.hold as { unref?: () => void }).unref?.();
   }
@@ -409,11 +421,11 @@ export class AutomationEngine {
     return automation.lastRunAt === null || Date.parse(automation.lastRunAt) < time.getTime();
   }
 
-  async #runAndKeep(automation: AutomationRecord, because: string | null): Promise<void> {
+  async #runAndKeep(automation: AutomationRecord, why: string): Promise<void> {
     if (this.#running.has(automation.id)) return;
     this.#running.add(automation.id);
     try {
-      const result = await this.run(automation, { because });
+      const result = await this.run(automation, { why });
       this.deps.store.ran(automation.id, result);
     } finally {
       this.#running.delete(automation.id);
@@ -451,61 +463,107 @@ export class AutomationEngine {
     };
   }
 
+  /** Its settings as a sentence reads them: each one's value, or its default. */
+  #settled(automation: AutomationRecord, recipe: Recipe): Record<string, Value> {
+    const scope = this.#scope(automation, recipe);
+    return Object.fromEntries(Object.keys(recipe.params.fields).map((key) => [key, scope.param(key)]));
+  }
+
+  /** A condition in words, its settings filled in: "Garage station's charge is at least 50 %". */
+  #said(automation: AutomationRecord, recipe: Recipe, expr: Expr): string {
+    const scope = this.#scope(automation, recipe);
+    return describeExpr(recipe, expr, this.#settled(automation, recipe), (role) => scope.name(role), this.deps.library);
+  }
+
   /**
-   * One run. `check` only decides and says what would happen — the editor's
-   * "Check now" — and is neither recorded nor acted on, whatever the mode.
+   * Each condition an automation waits for, as it stands at `at`, and what it
+   * read to say so: how a run explains itself, and what its card shows now.
    */
-  async run(automation: AutomationRecord, options: { check?: boolean; because?: string | null } = {}): Promise<RunResult> {
+  judge(automation: AutomationRecord, at = this.#now()): { conditions: ConditionState[]; saw: string[] } {
+    const recipe = this.deps.library.recipe(automation.recipe);
+    if (!recipe) return { conditions: [], saw: [] };
+    const scope = this.#scope(automation, recipe, at);
+    const saw: string[] = [];
+    const conditions = recipe.when.flatMap((trigger): ConditionState[] => {
+      if (!('becomes' in trigger)) return [];
+      const holds = evaluateNow(trigger.becomes, scope, saw);
+      const minutes = trigger.heldForMinutes ? Number(evaluateNow(trigger.heldForMinutes, scope)) : 0;
+      const text = `${this.#said(automation, recipe, trigger.becomes)}${minutes > 0 ? ` for ${minutes} min` : ''}`;
+      return [{ text, holds: typeof holds === 'boolean' ? holds : null }];
+    });
+    return { conditions, saw: [...new Set(saw)] };
+  }
+
+  /** When it next looks again to keep things so: null when it does not, or is off. */
+  nextLookAt(automation: AutomationRecord): string | null {
+    if (!automation.recheckMinutes || automation.mode === 'off') return null;
+    const since = Math.max(...[this.#memory.get(`automation.recheck.${automation.id}`), automation.lastRunAt].map((at) => Date.parse(at ?? '')).filter(Number.isFinite));
+    const next = Number.isFinite(since) ? since + automation.recheckMinutes * 60_000 : this.#now().getTime();
+    return new Date(Math.max(next, this.#now().getTime())).toISOString();
+  }
+
+  /**
+   * One run, and what it came to — with why it ran, what it read, how each
+   * condition stood and what it did, so a person can follow it. `check` only
+   * decides and says what would happen, and is neither recorded nor acted on,
+   * whatever the mode.
+   */
+  async run(automation: AutomationRecord, options: { check?: boolean; why?: string } = {}): Promise<RunResult> {
     const at = this.#now();
-    const result = (outcome: RunResult['outcome'], summary: string): RunResult => ({ at: at.toISOString(), outcome, summary });
     const recipe = this.deps.library.recipe(automation.recipe);
     const actor = `automation:${automation.name}`;
-    // A run is about its automation; the device it acted on, if any, is in the detail.
-    const note = (entry: RunResult, device?: string, detail?: unknown) => {
-      if (!options.check) this.deps.record({ at: entry.at, kind: `automation.${entry.outcome}`, actor, resourceKind: 'automation', resource: automation.id, summary: `${automation.name}: ${entry.summary}`, detail: { ...(device ? { device } : {}), ...(detail as object) } });
-      return entry;
+    const why = options.why ?? (options.check ? 'Asked what it would do now' : 'As it was set up to');
+    const judged = this.judge(automation, at);
+    let saw = judged.saw;
+    // A run is about its automation; the device it acted on, if any, is in the detail, with the run itself.
+    const finish = (outcome: RunResult['outcome'], summary: string, actions: RunAction[] = [], device?: string): RunResult => {
+      const run: RunResult = { at: at.toISOString(), outcome, summary, why, saw, conditions: judged.conditions, actions };
+      if (!options.check) {
+        this.deps.record({
+          at: run.at,
+          kind: `automation.${outcome}`,
+          actor,
+          resourceKind: 'automation',
+          resource: automation.id,
+          summary: `${automation.name}: ${summary}`,
+          detail: { ...(device ? { device } : {}), why, saw, conditions: run.conditions, actions },
+        });
+      }
+      return run;
     };
 
-    if (!recipe) return note(result('unknown', `This server has no recipe "${automation.recipe}": the package that brought it is not installed`));
+    if (!recipe) return finish('unknown', `This server has no recipe "${automation.recipe}": the package that brought it is not installed`);
     const problems = this.roleProblems(automation);
-    if (problems.length) return note(result('unknown', problems.join('; ')));
+    if (problems.length) return finish('unknown', problems.join('; '));
 
     const scope = this.#scope(automation, recipe, at);
-    const trace: string[] = options.because ? [options.because] : [];
-    // A check is not started by its trigger: say what it read, once, and whether each condition it waits for holds now.
-    if (options.check) {
-      const read: string[] = [];
-      const judged: string[] = [];
-      const settled = Object.fromEntries(Object.keys(recipe.params.fields).map((key) => [key, scope.param(key)]));
-      for (const trigger of recipe.when) {
-        if (!('becomes' in trigger)) continue;
-        const holds = evaluateNow(trigger.becomes, scope, read);
-        const condition = describeExpr(recipe, trigger.becomes, settled, (role) => scope.name(role), this.deps.library);
-        judged.push(`${condition}: ${holds === true ? 'yes, now' : holds === false ? 'not now' : 'cannot be judged now'}`);
-      }
-      if (judged.length) trace.push(...new Set(read), ...judged);
-    }
     try {
       if (recipe.if) {
+        const trace: string[] = [];
         const condition = await evaluate(recipe.if, scope, trace);
-        if (condition === null) return note(result('unknown', trace.join('; ') || 'It could not tell'), undefined, { trace });
-        if (condition !== true) return note(result('idle', trace.join('; ') || 'The condition is not met'), undefined, { trace });
+        saw = [...new Set([...saw, ...trace])];
+        // In the words of what it asked — "Tomorrow looks cloudy: 90 % cloud" — or, with none, the condition's own.
+        const said = trace.join('; ');
+        if (condition === null) return finish('unknown', said || `Could not tell whether ${this.#said(automation, recipe, recipe.if)}`);
+        if (condition !== true) return finish('idle', said || `Not now: it is not so that ${this.#said(automation, recipe, recipe.if)}`);
       }
     } catch (error) {
-      return note(result('failed', `Could not decide: ${(error as Error).message}`));
+      return finish('failed', `Could not decide: ${(error as Error).message}`);
     }
-    const reason = trace.join('; ');
 
     // What it will do, each action's arguments evaluated: an unknown one is not guessed.
     const planned = await this.#plan(automation, recipe, scope);
-    if ('unknown' in planned) return note(result('unknown', `Could not tell what to send ${planned.unknown}`));
+    if ('unknown' in planned) return finish('unknown', `Could not tell what to send ${planned.unknown}`);
     const target = planned[0]?.binding.device;
     if (options.check || automation.mode !== 'armed') {
-      return note(result('would-act', `Would ${planned.map((action) => action.what).join(', then ')}.${reason ? ` ${reason}` : ''}`), target, { trace, planned });
+      const detail = options.check ? 'You only asked what it would do' : 'It only watches: let it act to have it sent';
+      return finish('would-act', `Would ${planned.map((action) => action.what).join(', then ')}`, planned.map((action) => ({ what: capitalise(action.what), outcome: 'would', detail })), target);
     }
 
     // Armed: through the gateway, in order, as an automation.
-    const outcomes: { action: (typeof planned)[number]; outcome: GatewayResult }[] = [];
+    const actions: RunAction[] = [];
+    let last: GatewayResult['outcome'] = 'verified';
+    const reason = `${automation.name}: ${why}${saw.length ? ` (${saw.join('; ')})` : ''}`;
     for (const action of planned) {
       const outcome = await this.deps.gateway.execute({
         deviceId: action.binding.device,
@@ -513,27 +571,31 @@ export class AutomationEngine {
         capability: action.capability,
         command: action.command,
         args: action.args,
-        reason: `${automation.name}: ${reason || 'as it was set up to'}`,
+        reason,
         actor: 'automation',
         by: actor,
       });
-      outcomes.push({ action, outcome });
+      last = outcome.outcome;
+      const already = outcome.outcome === 'verified' && outcome.detail.startsWith('Already');
+      actions.push({
+        what: capitalise(action.what),
+        outcome: already ? 'already' : outcome.outcome === 'verified' ? 'done' : outcome.outcome,
+        detail: outcome.detail,
+      });
       if (outcome.outcome !== 'verified') break; // what follows may depend on it
     }
-    const last = outcomes.at(-1)!;
-    const kind = last.outcome.outcome === 'verified' ? 'acted' : last.outcome.outcome;
-    const said = outcomes
-      .map(({ action, outcome }) =>
-        outcome.outcome === 'verified' && outcome.detail.startsWith('Already')
-          ? `${action.name} was already ${action.what.split(' ').at(-1)}`
-          : outcome.outcome === 'verified'
-            ? `${capitalise(action.what)}: ${outcome.detail}`
-            : outcome.outcome === 'refused'
-              ? `Did not ${action.what}: ${outcome.detail}`
-              : `Tried to ${action.what}: ${outcome.detail}`
+    const summary = actions
+      .map((action) =>
+        action.outcome === 'done'
+          ? pastOf(action.what)
+          : action.outcome === 'already'
+            ? `${action.what}: it already was`
+            : action.outcome === 'refused'
+              ? `Did not ${lowerFirst(action.what)}: ${action.detail}`
+              : `Tried to ${lowerFirst(action.what)}: ${action.detail}`
       )
-      .join('. ');
-    return note(result(kind, `${said}.${reason ? ` ${reason}` : ''}`.replace('..', '.')), target, { trace, gateway: outcomes.map(({ outcome }) => outcome) });
+      .join('; ');
+    return finish(last === 'verified' ? 'acted' : last, summary, actions, target);
   }
 
   /** Why an automation cannot run as its roles are filled: a removed device, a part that no longer fits, a meaning it does not report. */
@@ -559,6 +621,9 @@ export class AutomationEngine {
 }
 
 const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+/** "Turn Heater plug off" as done: "Turned Heater plug off"; anything else, "Sent …". */
+const pastOf = (what: string) => (/^turn /i.test(what) ? `Turned ${what.slice(5)}` : `Sent ${lowerFirst(what)}`);
 
 /**
  * Parts of devices as the server holds them, for the engine: a removed device

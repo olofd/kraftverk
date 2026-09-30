@@ -35,5 +35,20 @@ export async function link(request: APIRequestContext, source: { device: string;
 /** A name no other test uses. */
 export const unique = (name: string) => `${name} ${Math.random().toString(36).slice(2, 6)}`;
 
+/**
+ * The app's own question, answered: what it says, then yes or no. The app asks
+ * in a dialog of its own, not the browser's `confirm` — which some browsers
+ * answer no to at once, showing nothing.
+ */
+export async function answer(page: Page, yes: boolean): Promise<string> {
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog).toBeVisible();
+  const said = await dialog.innerText();
+  const buttons = dialog.getByRole('button');
+  await (yes ? buttons.last() : dialog.getByRole('button', { name: 'Cancel' })).click();
+  await expect(dialog).toHaveCount(0);
+  return said;
+}
+
 /** Presses the row, card or option whose text is exactly this. */
 export const press = (page: Page, text: string) => page.getByText(text, { exact: true }).first().click();

@@ -233,7 +233,14 @@ describe('at a time of day', () => {
   test('observing, it says what it would have done, with the function’s reason — and sends nothing', async () => {
     const { engine, sunny, sent, recorded } = setup();
     const result = await engine.run(sunny());
-    expect(result).toMatchObject({ outcome: 'would-act', summary: 'Would turn Heater plug on. Tomorrow looks sunny: 15 % cloud' });
+    expect(result).toMatchObject({
+      outcome: 'would-act',
+      summary: 'Would turn Heater plug on',
+      // Why, what it read — the function's own words — and what it would have done, each on its own.
+      why: 'As it was set up to',
+      saw: ['Tomorrow looks sunny: 15 % cloud'],
+      actions: [{ what: 'Turn Heater plug on', outcome: 'would', detail: 'It only watches: let it act to have it sent' }],
+    });
     expect(sent).toEqual([]);
     expect(recorded[0]).toMatchObject({ kind: 'automation.would-act', actor: 'automation:Test automation', resourceKind: 'automation', detail: { device: PLUG } });
   });
@@ -344,6 +351,20 @@ describe('when a condition becomes true', () => {
     }
   });
 
+  test('let act while its condition holds, it acts at once, not at the next reading', async () => {
+    const context = setup();
+    const { engine, station, sent } = context;
+    station.soc = 8;
+    const automation = low(context);
+    engine.poke(automation.id);
+    await settle();
+    expect(sent).toHaveLength(1);
+    // Looked at again, nothing new: once.
+    engine.poke(automation.id);
+    await settle();
+    expect(sent).toHaveLength(1);
+  });
+
   test('its state survives a restart: nothing fires twice, and what turned true meanwhile fires', async () => {
     const memory = keptMemory();
     const first = setup({ memory });
@@ -420,9 +441,16 @@ describe('when a condition becomes true', () => {
     const context = setup();
     const automation = low(context);
     context.station.soc = 63;
-    expect((await context.engine.run(automation, { check: true })).summary).toBe("Would turn Heater plug on. Garage P280: Charge 63 %; Garage P280's charge is below 20 %: not now");
+    expect(await context.engine.run(automation, { check: true })).toMatchObject({
+      summary: 'Would turn Heater plug on',
+      why: 'Asked what it would do now',
+      saw: ['Garage P280: Charge 63 %'],
+      conditions: [{ text: "Garage P280's charge is below 20 %", holds: false }],
+    });
     context.station.soc = 12;
-    expect((await context.engine.run(automation, { check: true })).summary).toContain("Garage P280: Charge 12 %; Garage P280's charge is below 20 %: yes, now");
+    expect((await context.engine.run(automation, { check: true })).conditions).toEqual([{ text: "Garage P280's charge is below 20 %", holds: true }]);
+    // And as the card shows it, now.
+    expect(context.engine.judge(automation)).toEqual({ conditions: [{ text: "Garage P280's charge is below 20 %", holds: true }], saw: ['Garage P280: Charge 12 %'] });
   });
 
   test('unknown — a device gone quiet — is neither a start nor an end', async () => {
@@ -476,7 +504,7 @@ describe('keeping things so', () => {
     context.at(new Date(MORNING.getTime() + 10 * MINUTE));
     await engine.tick();
     expect(sent.map((intent) => intent.args.on)).toEqual([false, false]);
-    expect(sent[1]!.reason).toContain('Checked again, every 10 min');
+    expect(sent[1]!.reason).toContain("Looked again after 10 min, and it still holds: Garage P280's charge is at least 50 %");
     expect(sent[1]!.reason).toContain('Garage P280: Charge 74 %');
 
     // Not again before its time.

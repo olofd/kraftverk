@@ -29,6 +29,9 @@ const parse = <T>(json: string | null, fallback: T): T => {
   }
 };
 
+/** A last run as runs are now said: one kept before a run said why and what it did is shown as none; the timeline still has it. */
+const runOf = (run: RunResult | null): RunResult | null => (run && Array.isArray(run.actions) && Array.isArray(run.conditions) ? run : null);
+
 const toRecord = (row: Row): AutomationRecord => ({
   id: automationId(row.id),
   name: row.name,
@@ -41,7 +44,7 @@ const toRecord = (row: Row): AutomationRecord => ({
   createdAt: row.created_at,
   updatedAt: row.updated_at,
   lastRunAt: row.last_run_at,
-  lastResult: parse<RunResult | null>(row.last_result, null),
+  lastResult: runOf(parse<RunResult | null>(row.last_result, null)),
 });
 
 /** The automations you made. Validation is the caller's: this only keeps them. */

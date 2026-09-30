@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TamaguiProvider, Theme } from 'tamagui';
 
 import config, { BACKGROUNDS } from '../tamagui.config';
+import { ConfirmHost } from '../src/components/ConfirmHost';
 import { AuthGate } from '../src/features/auth/SignIn';
 import { AuthProvider } from '../src/state/AuthProvider';
 import { DevicesProvider } from '../src/state/DevicesProvider';
@@ -47,6 +48,8 @@ export default function RootLayout() {
                 </DevicesProvider>
               </AuthGate>
             </AuthProvider>
+            {/* Where the app asks for a yes, on the web: above every screen, signed in or not. */}
+            <ConfirmHost />
           </ServersProvider>
         </SafeAreaProvider>
       </Theme>

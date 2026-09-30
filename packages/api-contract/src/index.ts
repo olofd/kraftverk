@@ -551,7 +551,36 @@ export type AutomationRun = {
     | 'unknown' // it could not tell
     | 'refused' // the gateway said no
     | 'failed'; // the command errored
+  /** The run in one line, for a timeline or an assistant: "Turned Heater plug off". */
   summary: string;
+  /**
+   * What started it, in words: "Garage station's charge is at least 50 %",
+   * "Every day at 07:00", "Looked again after 10 min: … still holds", "Asked
+   * what it would do now".
+   */
+  why: string;
+  /** What it read to decide, as it was then: "Garage station: Charge 74.2 %". */
+  saw: string[];
+  /** Each condition it waits for, as it stood then. */
+  conditions: ConditionState[];
+  /** What it did, or would have, each with how it went. Empty when it did nothing. */
+  actions: RunAction[];
+};
+
+/** One condition an automation waits for, and whether it holds: null when it cannot be judged (a device gone quiet). */
+export type ConditionState = { text: string; holds: boolean | null };
+
+export type RunAction = {
+  /** "Turn Heater plug off". */
+  what: string;
+  /**
+   * done: carried out, and the device agrees; already: it already was;
+   * unverified: sent, not proven; refused: the gateway said no; failed: it
+   * errored; would: only watching, so nothing was sent.
+   */
+  outcome: 'done' | 'already' | 'unverified' | 'refused' | 'failed' | 'would';
+  /** In the gateway's words: "Confirmed by the device", "Too soon: …". */
+  detail: string;
 };
 
 export type AutomationView = {
@@ -577,6 +606,10 @@ export type AutomationView = {
   updatedAt: string;
   lastRunAt: string | null;
   lastResult: AutomationRun | null;
+  /** Each condition it waits for, as it stands now, and what it reads to say so. */
+  now: { conditions: ConditionState[]; saw: string[] };
+  /** When it next looks again to keep things so; null when it does not, or is off. */
+  nextLookAt: string | null;
   /** Why it cannot run as it is: a removed device. Empty when it can. */
   problems: string[];
 };

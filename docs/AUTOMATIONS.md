@@ -195,8 +195,28 @@ it on for an armed automation is confirmed as arming is.
 
 A run evaluates `if`, then each action: an automation that **observes** says
 what it would have done; one **armed** sends it through the gateway as
-`actor: 'automation'`. Every run is on the timeline with its trace. Arming is
-confirmed with a token bound to the automation, its changes and the person.
+`actor: 'automation'`. Arming is confirmed with a token bound to the
+automation, its changes and the person.
+
+**A run explains itself.** Each is kept — on the automation as its last run,
+and on the timeline — with what started it (`why`: "Garage station's charge is
+at least 50 %", "Every day at 07:00", "Looked again after 10 min, and it still
+holds: …"), what it read (`saw`), how each condition stood (`conditions`) and
+what it did (`actions`, each done, already so, refused, failed, unverified, or
+not sent while it only watches), with a one-line `summary`. The app's card
+shows how each condition stands **now**, with the readings it stands on and
+when it next looks again; its last run; what it would do now; and its history,
+day by day, each run opening to what it read and did, each change saying who
+made it and what changed ("Only watching → Acting", "Keep it so: off → every
+10 min").
+
+A change to what an automation watches, or to whether it may act, starts its
+conditions afresh and looks at them at once: let act while one already
+holds, it acts then, not at the next reading. A new name, or how often it
+keeps things so, changes neither, and what it did stands.
+
+The app asks for every yes in a dialog of its own, not the browser's
+`confirm`, which some browsers answer no to at once, showing nothing.
 
 **Rehearsal** walks a rule through a window of history — the minute samples
 of everything it reads, the events it waits for, its times of day — with the

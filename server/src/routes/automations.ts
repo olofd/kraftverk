@@ -79,7 +79,8 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
     if (!isTimeZone(input.timeZone)) throw new HTTPException(400, { message: `"${input.timeZone}" is not a time zone` });
     const checked = validated(input.recipe, input);
     const created = automations.create({ name: input.name, recipe: input.recipe, roles: checked.roles, params: checked.params, timeZone: input.timeZone, recheckMinutes: input.recheckMinutes ?? null });
-    auditAbout(c, 'automation.created', 'automation', created.id, `Made the automation "${created.name}", observing`, { recipe: created.recipe, roles: created.roles, params: created.params, recheckMinutes: created.recheckMinutes });
+    auditAbout(c, 'automation.created', 'automation', created.id, `Made the automation "${created.name}", only watching`, { recipe: created.recipe, roles: created.roles, params: created.params, recheckMinutes: created.recheckMinutes });
+    engine.poke(created.id);
     return c.json(view(created));
   });
 
@@ -112,18 +113,26 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
     const { confirmation, ...changes } = input;
     const subject = subjectOf({ automation: current.id, changes, by: actorOf(c) });
     if (needsConfirming && !arming.accept(confirmation, subject)) {
-      return c.json(
-        { error: 'An armed automation switches things on its own, with nobody watching. Confirm to arm it.', needsConfirmation: arming.ask(subject) },
-        409
-      );
+      // What the yes is to, in words: letting it act, keeping things so while it does, or changing what it does.
+      const error =
+        current.mode !== 'armed'
+          ? 'It will switch things on its own, with nobody watching.'
+          : recheckChanged && checked === null
+            ? input.recheckMinutes
+              ? `It acts on its own: every ${input.recheckMinutes} min it will switch back what was switched by hand against it.`
+              : 'It acts on its own: from now on, what is switched by hand stays until a condition comes true again.'
+            : 'It acts on its own: what it does will change.';
+      return c.json({ error, needsConfirmation: arming.ask(subject) }, 409);
     }
     if (armedAfter) {
       const problems = engine.roleProblems({ ...current, ...(checked ?? {}) });
       if (problems.length) throw new HTTPException(409, { message: `It cannot act as it is: ${problems.join('; ')}` });
     }
 
-    // What it watches may have changed: its conditions start afresh.
-    engine.reset(current.id);
+    // What it watches, or how it may act, changed: its conditions start afresh, and one already true is its edge.
+    // A new name, or how often it keeps things so, changes neither: what it did stands.
+    const startsAfresh = checked !== null || (input.mode !== undefined && input.mode !== current.mode);
+    if (startsAfresh) engine.reset(current.id);
     const updated = automations.update(current.id, {
       ...(input.name ? { name: input.name } : {}),
       ...(checked ?? {}),
@@ -131,11 +140,13 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
       ...(input.mode ? { mode: input.mode } : {}),
       ...(input.recheckMinutes !== undefined ? { recheckMinutes: input.recheckMinutes } : {}),
     })!;
-    const said = input.mode && input.mode !== current.mode ? { off: 'Turned off', observe: 'Set to observe only', armed: 'Armed: it now acts on its own' }[input.mode] : 'Changed';
-    auditAbout(c, input.mode === 'armed' ? 'automation.armed' : 'automation.changed', 'automation', updated.id, `${said}: "${updated.name}"`, {
+    const said = input.mode && input.mode !== current.mode ? { off: 'Turned off', observe: 'Set to only watch', armed: 'Let act on its own' }[input.mode] : 'Changed';
+    auditAbout(c, input.mode === 'armed' && current.mode !== 'armed' ? 'automation.armed' : 'automation.changed', 'automation', updated.id, `${said}: "${updated.name}"`, {
       before: { mode: current.mode, roles: current.roles, params: current.params, recheckMinutes: current.recheckMinutes },
       after: { mode: updated.mode, roles: updated.roles, params: updated.params, recheckMinutes: updated.recheckMinutes },
     });
+    // Its conditions, looked at now, after the change is on the timeline: let act while one holds, it acts at once.
+    if (startsAfresh) engine.poke(updated.id);
     return c.json(view(updated));
   });
 

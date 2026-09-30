@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { addSimulated, unique } from './helpers';
+import { addSimulated, answer, unique } from './helpers';
 
 /*
   A setting is changed as a person means it: once, whether the slider was
@@ -40,17 +40,12 @@ test('a button that cannot be undone asks first, in the server’s words; no run
   await page.goto(`/device/${plug.id}/settings`);
   const reset = page.getByRole('button', { name: 'Reset', exact: true });
 
-  let asked = '';
-  page.once('dialog', async (dialog) => {
-    asked = dialog.message();
-    await dialog.dismiss();
-  });
   await reset.click();
-  await expect.poll(() => asked).toContain('cannot be brought back');
+  expect(await answer(page, false)).toContain('cannot be brought back');
   await expect(page.getByText('Not confirmed')).toBeVisible();
   expect(await ran()).toBe(0);
 
-  page.once('dialog', (dialog) => dialog.accept());
   await reset.click();
+  await answer(page, true);
   await expect.poll(ran).toBe(1);
 });

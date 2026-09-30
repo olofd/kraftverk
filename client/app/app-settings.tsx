@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { Button, Input, Text, useTheme, XStack, YStack } from 'tamagui';
 
@@ -7,6 +6,7 @@ import { Card, Row, RowSeparator, SectionLabel, ToggleRow, haptic, Icon } from '
 import { describeError, fetchResetAvailability, getApiBaseUrl, resetDatabase, setPolicyValue } from '@kraftverk/api-client';
 import { POLICY_VALUES, type PolicyValueName } from '@kraftverk/device-sdk';
 
+import { confirmAction } from '../src/lib/confirm';
 import { completeUrl } from '../src/lib/servers';
 import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
@@ -436,31 +436,10 @@ function ResetEverything() {
     }
   };
 
-  const confirmed = () => {
-    const message =
-      'Every device, all recorded history, every connection and its secrets will be deleted. ' +
-      'This cannot be undone.';
-    if (Platform.OS === 'web') {
-      // eslint-disable-next-line no-alert
-      return typeof confirm === 'function' && confirm(message);
-    }
-    return true; // native goes through Alert below
-  };
-
-  const ask = () => {
+  const ask = async () => {
     haptic();
-    const message =
-      'Every device, all recorded history, every connection and its secrets will be deleted. ' +
-      'This cannot be undone.';
-
-    if (Platform.OS === 'web') {
-      if (confirmed()) void wipe();
-      return;
-    }
-    Alert.alert('Erase everything?', message, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Erase', style: 'destructive', onPress: () => void wipe() },
-    ]);
+    const message = 'Every device, all recorded history, every connection and its secrets will be deleted. This cannot be undone.';
+    if (await confirmAction('Erase everything?', message, 'Erase')) void wipe();
   };
 
   // Nothing to say until the server has answered.

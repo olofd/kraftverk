@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import {
@@ -14,6 +14,8 @@ import {
   type AuditEntry,
   type AutomationMode,
   type AutomationRun,
+  type ConditionState,
+  type RunAction,
   type Rehearsal,
   type AutomationView,
   type ConfigValues,
@@ -22,7 +24,7 @@ import {
   type RoleBinding,
 } from '@kraftverk/api-client';
 import { capabilitiesOf, MAIN_PART, meetsNeed, partsOf } from '@kraftverk/device-sdk';
-import { Card, Row, RowSeparator, SchemaForm, SectionLabel, SegmentedControl, haptic, isComplete, Icon } from '@kraftverk/ui';
+import { Card, Row, RowSeparator, SchemaForm, SectionLabel, SegmentedControl, haptic, isComplete, Icon, type IconName } from '@kraftverk/ui';
 
 import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
@@ -39,6 +41,9 @@ import { useDevices } from '../src/state/DevicesProvider';
  * one does goes through the same gateway as a tap on a switch, and every run,
  * acting or not, is kept and shown.
  */
+/** How often an open page reads its automations again: what each reads now, what each last did. */
+const REFRESH_MS = 15_000;
+
 export default function AutomationsScreen() {
   const { mode, devices } = useDevices();
   const [recipes, setRecipes] = useState<RecipeView[] | null>(null);
@@ -58,7 +63,15 @@ export default function AutomationsScreen() {
   }, []);
 
   useEffect(() => {
-    if (mode === 'server') void load();
+    if (mode !== 'server') return;
+    void load();
+    // How each stands now, and what each last did, kept current while this is open.
+    const timer = setInterval(() => {
+      fetchAutomations()
+        .then(setAutomations)
+        .catch(() => undefined);
+    }, REFRESH_MS);
+    return () => clearInterval(timer);
   }, [load, mode]);
 
   if (mode !== 'server') {
@@ -161,41 +174,67 @@ const recheckSays = (minutes: number | null) =>
     : 'Once it has acted, it leaves things be until a condition comes true again: you can switch by hand in between.';
 
 /** Each mode its own shape as well as its colour: acting is filled, and cannot be mistaken for watching. */
-const BADGE: Record<AutomationMode, { label: string; icon: 'pause' | 'eye' | 'zap'; filled: boolean }> = {
+const BADGE: Record<AutomationMode, { label: string; icon: IconName; filled: boolean }> = {
   off: { label: 'Off', icon: 'pause', filled: false },
   observe: { label: 'Only watching', icon: 'eye', filled: false },
   armed: { label: 'Acting', icon: 'zap', filled: true },
 };
 
-type Look = { icon: string; tone: '$success' | '$warning' | '$accent' | '$muted' | '$danger' | '$color' };
+type Tone = '$success' | '$warning' | '$accent' | '$muted' | '$danger' | '$color' | '$background';
+type Look = { icon: IconName; tone: Tone };
 
+/** A run, by what it came to. */
 const OUTCOME: Record<AutomationRun['outcome'], Look> = {
-  acted: { icon: 'check-circle', tone: '$success' },
-  unverified: { icon: 'alert-circle', tone: '$warning' },
+  acted: { icon: 'check', tone: '$success' },
+  unverified: { icon: 'alert-triangle', tone: '$warning' },
   'would-act': { icon: 'eye', tone: '$accent' },
-  idle: { icon: 'minus-circle', tone: '$muted' },
+  idle: { icon: 'minus', tone: '$muted' },
   unknown: { icon: 'help-circle', tone: '$warning' },
   refused: { icon: 'slash', tone: '$warning' },
-  failed: { icon: 'x-circle', tone: '$danger' },
+  failed: { icon: 'x', tone: '$danger' },
 };
 
-/** What a history entry is: a run, by its outcome, or a change made to the automation. */
-function lookOf(kind: string): Look {
-  const outcome = kind.replace(/^automation\./, '') as AutomationRun['outcome'];
-  if (outcome in OUTCOME) return OUTCOME[outcome];
-  if (kind === 'automation.armed') return { icon: 'zap', tone: '$success' };
-  if (kind === 'automation.created') return { icon: 'plus-circle', tone: '$color' };
-  return { icon: 'edit-3', tone: '$color' };
+/** One thing a run did, by how it went. */
+const ACTION: Record<RunAction['outcome'], Look & { label: string }> = {
+  done: { icon: 'check', tone: '$success', label: 'Done' },
+  already: { icon: 'check', tone: '$muted', label: 'Already so' },
+  unverified: { icon: 'alert-triangle', tone: '$warning', label: 'Not confirmed' },
+  refused: { icon: 'slash', tone: '$warning', label: 'Refused' },
+  failed: { icon: 'x', tone: '$danger', label: 'Failed' },
+  would: { icon: 'eye', tone: '$accent', label: 'Not sent' },
+};
+
+/** A change made to an automation, as its history shows it. */
+const CHANGE: Record<string, Look> = {
+  'automation.created': { icon: 'plus', tone: '$color' },
+  'automation.proposed': { icon: 'message-circle', tone: '$color' },
+  'automation.armed': { icon: 'zap', tone: '$success' },
+  'automation.changed': { icon: 'edit-3', tone: '$color' },
+};
+
+/** A theme colour by its token, for what takes a colour rather than a token: an icon. */
+function useTone(): (tone: Tone) => string | undefined {
+  const theme = useTheme();
+  return (tone) => (theme[tone.slice(1) as keyof typeof theme] as { val?: string } | undefined)?.val;
 }
 
-/** "Today 14:02", "Yesterday 07:00", "12 Sep 07:00". */
-function when(at: string): string {
-  const date = new Date(at);
-  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(date).setHours(0, 0, 0, 0)) / 86_400_000);
-  if (days === 0) return `Today ${time}`;
-  if (days === 1) return `Yesterday ${time}`;
-  return `${date.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${time}`;
+/** "14:02". */
+const clock = (at: string) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+/** "Today", "Yesterday", "12 Sep". */
+function dayOf(at: string): string {
+  const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(at).setHours(0, 0, 0, 0)) / 86_400_000);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  return new Date(at).toLocaleDateString([], { day: 'numeric', month: 'short' });
+}
+
+/** "Just now", "12 min ago", "Today 14:02", "12 Sep 07:00". */
+function ago(at: string): string {
+  const seconds = (Date.now() - Date.parse(at)) / 1000;
+  if (seconds < 45) return 'Just now';
+  if (seconds < 3600) return `${Math.max(1, Math.round(seconds / 60))} min ago`;
+  return `${dayOf(at)} ${clock(at)}`;
 }
 
 /** The server's question, when a change to an automation wants a person's yes. */
@@ -215,7 +254,7 @@ function AutomationCard({
   onChanged: (next: AutomationView) => void;
   onDeleted: () => void;
 }) {
-  const theme = useTheme();
+  const tone = useTone();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [checked, setChecked] = useState<AutomationRun | null>(null);
@@ -225,10 +264,11 @@ function AutomationCard({
   const [showHistory, setShowHistory] = useState(false);
   const recipe = recipes.find((candidate) => candidate.id === automation.recipe) ?? null;
   const badge = BADGE[automation.mode];
+  const canKeep = recipe?.hasConditions ?? automation.now.conditions.length > 0;
 
-  // Its history: every run and every change, as the audit timeline has them. Read again when it changes.
+  // Its history: every run and every change, as the audit timeline has them. Read again when it runs or changes.
   const loadHistory = useCallback(() => {
-    fetchAudit({ resourceKind: 'automation', resource: automation.id, limit: 50 })
+    fetchAudit({ resourceKind: 'automation', resource: automation.id, limit: 100 })
       .then(setHistory)
       .catch(() => setHistory([]));
   }, [automation.id]);
@@ -248,18 +288,20 @@ function AutomationCard({
     }
   };
 
-  const setMode = (mode: AutomationMode) =>
+  /** A change the server may want a yes for: asked in its words, again if the yes came too late. */
+  const change = (changes: { mode?: AutomationMode; recheckMinutes?: number | null }, title: string, yes: string) =>
     act(async () => {
       const { answer } = await withConfirmation(
-        (confirmation) => updateAutomation(automation.id, { mode, confirmation }),
+        (confirmation) => updateAutomation(automation.id, { ...changes, confirmation }),
         wantsYes,
-        (reason, again) => confirmAction(`Let “${automation.name}” act on its own?`, `${again ? `${ASKED_AGAIN}\n\n` : ''}${automation.sentence}\n\n${reason}`, 'Let it act')
+        // What the yes is to comes first; what the automation does, below it.
+        (reason, again) => confirmAction(title, `${again ? `${ASKED_AGAIN}\n\n` : ''}${reason}\n\n${automation.sentence}`, yes)
       );
       if ('automation' in answer) onChanged(answer.automation);
     }, 'That did not work');
 
   const remove = async () => {
-    if (!(await confirmAction(`Delete “${automation.name}”?`, 'It stops, and is gone. What it did stays in the audit timeline.', 'Delete'))) return;
+    if (!(await confirmAction(`Delete “${automation.name}”?`, 'It stops, and is gone. Everything it did stays on the timeline.', 'Delete'))) return;
     await act(async () => {
       await deleteAutomation(automation.id);
       onDeleted();
@@ -282,10 +324,10 @@ function AutomationCard({
   }
 
   return (
-    <Card gap="$4">
+    <Card gap="$4" role="region" aria-label={automation.name}>
       <YStack gap="$2">
         <XStack alignItems="center" justifyContent="space-between" gap="$3">
-          <Text fontSize={17} fontWeight="800" color="$color" flex={1}>
+          <Text fontSize={18} fontWeight="800" color="$color" flex={1}>
             {automation.name}
           </Text>
           <XStack
@@ -298,65 +340,110 @@ function AutomationCard({
             borderColor={automation.mode === 'off' ? '$borderColor' : '$accent'}
             backgroundColor={badge.filled ? '$accent' : 'transparent'}
           >
-            <Icon name={badge.icon} size={12} color={badge.filled ? theme.background?.val : automation.mode === 'off' ? theme.muted?.val : theme.accent?.val} />
+            <Icon name={badge.icon} size={12} color={badge.filled ? tone('$background') : automation.mode === 'off' ? tone('$muted') : tone('$accent')} />
             <Text fontSize={12} fontWeight="700" color={badge.filled ? '$background' : automation.mode === 'off' ? '$muted' : '$accent'}>
               {badge.label}
             </Text>
           </XStack>
         </XStack>
-        <Text fontSize={14} color="$color" lineHeight={20}>
+        <Text fontSize={14} color="$muted" lineHeight={21}>
           {automation.sentence}
         </Text>
       </YStack>
 
-      {automation.when.length ? (
-        <YStack gap="$1.5">
-          <Text fontSize={12} fontWeight="700" color="$muted" textTransform="uppercase" letterSpacing={0.6}>
-            When it runs
+      {automation.problems.length ? (
+        <XStack gap="$2" alignItems="flex-start" padding="$3" borderRadius="$4" backgroundColor="$backgroundPress">
+          <Icon name="alert-triangle" size={15} color={tone('$warning')} style={{ marginTop: 2 }} />
+          <Text flex={1} fontSize={13} color="$color" lineHeight={19}>
+            It cannot run as it is: {automation.problems.join('; ')}.
           </Text>
-          {automation.when.map((trigger) => (
-            <XStack key={trigger} gap="$2" alignItems="flex-start">
-              <Icon name="clock" size={13} color={theme.muted?.val} style={{ marginTop: 3 }} />
-              <Text flex={1} fontSize={13} color="$color" lineHeight={19}>
-                {trigger}
-              </Text>
-            </XStack>
-          ))}
-          {automation.recheckMinutes ? (
-            <XStack gap="$2" alignItems="flex-start">
-              <Icon name="refresh-cw" size={13} color={theme.muted?.val} style={{ marginTop: 3 }} />
-              <Text flex={1} fontSize={13} color="$color" lineHeight={19}>
-                And every {every(automation.recheckMinutes)}, while a condition still holds, unless it is already so
-              </Text>
-            </XStack>
-          ) : null}
-          <Text fontSize={12} color="$muted" lineHeight={17}>
-            A condition is looked at every time the device it reads reports.
-            {automation.recheckMinutes ? '' : ' Once it has acted, what you switch by hand stays until a condition comes true again.'}
+        </XStack>
+      ) : null}
+
+      <Now automation={automation} />
+
+      <YStack gap="$2">
+        <Heading>{automation.lastResult ? `Last run · ${ago(automation.lastResult.at)}` : 'Last run'}</Heading>
+        {automation.lastResult ? (
+          <RunDetail run={automation.lastResult} />
+        ) : (
+          <Text fontSize={13} color="$muted" lineHeight={19}>
+            It has not run yet: none of its conditions has come true since it was made.
           </Text>
+        )}
+      </YStack>
+
+      {checked ? (
+        <YStack gap="$2" padding="$3" borderRadius="$4" borderWidth={1} borderColor="$accent">
+          <XStack alignItems="center" justifyContent="space-between">
+            <Heading>If it ran now</Heading>
+            <Button size="$2" chromeless circular aria-label="Close" icon={<Icon name="x" size={14} color={tone('$muted')} />} onPress={() => setChecked(null)} />
+          </XStack>
+          <RunDetail run={checked} showConditions />
         </YStack>
       ) : null}
 
-      {automation.problems.length ? (
-        <Text fontSize={13} color="$warning" lineHeight={19}>
-          It cannot run as it is: {automation.problems.join('; ')}.
-        </Text>
-      ) : null}
+      {rehearsal ? <Rehearsed rehearsal={rehearsal} onClose={() => setRehearsal(null)} /> : null}
 
       <Card inset backgroundColor="$background">
-        <SegmentedControl title="What it may do" subtitle={MODE_SAYS[automation.mode]} value={automation.mode} options={MODES} disabled={busy} onChange={(mode) => void setMode(mode)} />
+        <SegmentedControl
+          title="What it may do"
+          subtitle={MODE_SAYS[automation.mode]}
+          value={automation.mode}
+          options={MODES}
+          disabled={busy}
+          onChange={(mode) => void change({ mode }, `Let “${automation.name}” act on its own?`, 'Let it act')}
+        />
+        {canKeep ? (
+          <>
+            <RowSeparator />
+            <SegmentedControl
+              title="Keep it so"
+              subtitle={recheckSays(automation.recheckMinutes)}
+              value={automation.recheckMinutes ?? 0}
+              options={RECHECK}
+              disabled={busy}
+              onChange={(minutes) =>
+                void change(
+                  { recheckMinutes: minutes || null },
+                  minutes ? `Check “${automation.name}” every ${every(minutes)}?` : `Stop checking “${automation.name}” again?`,
+                  minutes ? `Every ${every(minutes)}` : 'Stop'
+                )
+              }
+            />
+          </>
+        ) : null}
       </Card>
 
-      <YStack gap="$2">
-        <RunLine label="Last run" run={automation.lastResult} empty="It has not run yet: none of its conditions has come true." />
-        {checked ? <RunLine label="Right now" run={checked} empty="" /> : null}
-        {rehearsal ? <Rehearsed rehearsal={rehearsal} /> : null}
-      </YStack>
+      {problem ? (
+        <XStack gap="$2" alignItems="flex-start" role="alert">
+          <Icon name="alert-circle" size={15} color={tone('$danger')} style={{ marginTop: 2 }} />
+          <Text flex={1} fontSize={13} color="$danger" lineHeight={19}>
+            {problem}
+          </Text>
+        </XStack>
+      ) : null}
 
-      <YStack gap="$2">
-        <Pressable onPress={() => (haptic(), setShowHistory((open) => !open))}>
+      <XStack gap="$2" flexWrap="wrap" alignItems="center">
+        <Button size="$3" disabled={busy || !recipe} icon={<Icon name="edit-3" size={14} color={tone('$color')} />} onPress={() => (haptic(), setEditing(true))}>
+          Edit
+        </Button>
+        <Button size="$3" disabled={busy} icon={<Icon name="play" size={14} color={tone('$color')} />} onPress={() => void act(async () => setChecked(await checkAutomation(automation.id)), 'It could not be checked')}>
+          What would it do now?
+        </Button>
+        <Button size="$3" disabled={busy} icon={<Icon name="rewind" size={14} color={tone('$color')} />} onPress={() => void act(async () => setRehearsal(await rehearseAutomation(automation.id)), 'It could not be rehearsed')}>
+          Rehearse last week
+        </Button>
+        <XStack flex={1} />
+        <Button size="$3" chromeless color="$danger" disabled={busy} icon={<Icon name="trash-2" size={14} color={tone('$danger')} />} onPress={() => void remove()}>
+          Delete
+        </Button>
+      </XStack>
+
+      <YStack gap="$2" borderTopWidth={1} borderColor="$borderColor" paddingTop="$3">
+        <Pressable onPress={() => (haptic(), setShowHistory((open) => !open))} label={showHistory ? 'Hide history' : 'Show history'}>
           <XStack alignItems="center" gap="$2" paddingVertical="$1">
-            <Icon name={showHistory ? 'chevron-down' : 'chevron-right'} size={16} color={theme.muted?.val} />
+            <Icon name={showHistory ? 'chevron-down' : 'chevron-right'} size={16} color={tone('$muted')} />
             <Text fontSize={14} fontWeight="700" color="$color">
               History
             </Text>
@@ -365,36 +452,221 @@ function AutomationCard({
             </Text>
           </XStack>
         </Pressable>
-        {showHistory ? <History entries={history} name={automation.name} /> : null}
+        {showHistory ? <Timeline entries={history} automation={automation} recipe={recipe} /> : null}
       </YStack>
-
-      {problem ? (
-        <Text fontSize={13} color="$danger" lineHeight={19}>
-          {problem}
-        </Text>
-      ) : null}
-
-      <XStack gap="$2" flexWrap="wrap">
-        <Button size="$3" disabled={busy || !recipe} icon={<Icon name="edit-3" size={14} color={theme.color?.val} />} onPress={() => (haptic(), setEditing(true))}>
-          Edit
-        </Button>
-        <Button size="$3" disabled={busy} onPress={() => void act(async () => setChecked(await checkAutomation(automation.id)), 'It could not be checked')}>
-          What would it do now?
-        </Button>
-        <Button size="$3" disabled={busy} onPress={() => void act(async () => setRehearsal(await rehearseAutomation(automation.id)), 'It could not be rehearsed')}>
-          Rehearse on last week
-        </Button>
-        <Button size="$3" chromeless color="$danger" disabled={busy} onPress={() => void remove()}>
-          Delete
-        </Button>
-      </XStack>
     </Card>
   );
 }
 
-/** Every run and change, newest first, as the timeline has them. */
-function History({ entries, name }: { entries: AuditEntry[] | null; name: string }) {
-  const theme = useTheme();
+/** A small heading inside a card. */
+function Heading({ children }: { children: ReactNode }) {
+  return (
+    <Text fontSize={11} fontWeight="800" color="$muted" textTransform="uppercase" letterSpacing={0.8}>
+      {children}
+    </Text>
+  );
+}
+
+/** What it read, each value a chip: "Garage station: Charge 74.2 %". */
+function Readings({ saw }: { saw: readonly string[] }) {
+  if (!saw.length) return null;
+  return (
+    <XStack gap="$1.5" flexWrap="wrap">
+      {saw.map((reading) => (
+        <XStack key={reading} paddingHorizontal="$2" paddingVertical={3} borderRadius={999} backgroundColor="$backgroundPress">
+          <Text fontSize={12} color="$color" fontVariant={['tabular-nums']}>
+            {reading}
+          </Text>
+        </XStack>
+      ))}
+    </XStack>
+  );
+}
+
+/** Each condition, and whether it holds: a filled mark, an empty one, or a question. */
+function Conditions({ conditions }: { conditions: readonly ConditionState[] }) {
+  const tone = useTone();
+  return (
+    <YStack gap="$2">
+      {conditions.map((condition) => {
+        const [mark, said, color] =
+          condition.holds === true ? (['check', 'Yes', '$success'] as const) : condition.holds === false ? (['circle', 'Not now', '$muted'] as const) : (['help-circle', 'Cannot tell', '$warning'] as const);
+        return (
+          <XStack key={condition.text} gap="$2.5" alignItems="center">
+            <YStack
+              width={20}
+              height={20}
+              borderRadius={10}
+              alignItems="center"
+              justifyContent="center"
+              backgroundColor={condition.holds === true ? '$success' : 'transparent'}
+              borderWidth={condition.holds === true ? 0 : 1.5}
+              borderColor={color}
+            >
+              {condition.holds === false ? null : <Icon name={mark} size={12} color={condition.holds === true ? '#ffffff' : tone(color)} />}
+            </YStack>
+            <Text flex={1} fontSize={13} color="$color" lineHeight={19}>
+              {condition.text}
+            </Text>
+            <Text fontSize={12} fontWeight="700" color={color}>
+              {said}
+            </Text>
+          </XStack>
+        );
+      })}
+    </YStack>
+  );
+}
+
+/**
+ * How it stands now: each condition it waits for, what it reads to say so,
+ * and when it next looks. An automation that waits for no condition — a time
+ * of day, an event — says when it runs instead.
+ */
+function Now({ automation }: { automation: AutomationView }) {
+  const tone = useTone();
+  const { conditions, saw } = automation.now;
+  return (
+    <YStack gap="$2.5" padding="$3" borderRadius="$4" backgroundColor="$background">
+      <XStack alignItems="center" justifyContent="space-between" gap="$2">
+        <Heading>{conditions.length ? 'Right now' : 'When it runs'}</Heading>
+        {automation.nextLookAt ? (
+          <XStack alignItems="center" gap={5}>
+            <Icon name="refresh-cw" size={11} color={tone('$muted')} />
+            <Text fontSize={12} color="$muted">
+              Looks again {clock(automation.nextLookAt)}
+            </Text>
+          </XStack>
+        ) : null}
+      </XStack>
+      {conditions.length ? (
+        <>
+          <Conditions conditions={conditions} />
+          <Readings saw={saw} />
+          <Text fontSize={12} color="$muted" lineHeight={17}>
+            It runs when one of these turns to yes, and looks at them every time the device reports.
+            {automation.recheckMinutes
+              ? ` Every ${every(automation.recheckMinutes)} it also runs again while one still holds, unless all is already so.`
+              : ' Once it has acted, what you switch by hand stays until one turns to yes again.'}
+          </Text>
+        </>
+      ) : (
+        automation.when.map((trigger) => (
+          <XStack key={trigger} gap="$2" alignItems="flex-start">
+            <Icon name="clock" size={13} color={tone('$muted')} style={{ marginTop: 3 }} />
+            <Text flex={1} fontSize={13} color="$color" lineHeight={19}>
+              {trigger}
+            </Text>
+          </XStack>
+        ))
+      )}
+    </YStack>
+  );
+}
+
+/** A run's mark: its outcome's icon in a tinted circle. */
+function Mark({ look, size = 28 }: { look: Look; size?: number }) {
+  const tone = useTone();
+  return (
+    <YStack width={size} height={size} borderRadius={size / 2} alignItems="center" justifyContent="center" backgroundColor="$backgroundPress" borderWidth={1.5} borderColor={look.tone}>
+      <Icon name={look.icon} size={Math.round(size * 0.5)} color={tone(look.tone)} />
+    </YStack>
+  );
+}
+
+/**
+ * One run, told the way a person asks about it: what happened, why, what it
+ * read, and how each thing it did went — and, when asked, how each condition
+ * stood.
+ */
+function RunDetail({ run, showConditions }: { run: AutomationRun; showConditions?: boolean }) {
+  const tone = useTone();
+  const look = OUTCOME[run.outcome];
+  return (
+    <XStack gap="$3" alignItems="flex-start">
+      <Mark look={look} />
+      <YStack flex={1} gap="$2">
+        <YStack gap={2}>
+          <Text fontSize={15} fontWeight="700" color="$color" lineHeight={21}>
+            {run.summary}
+          </Text>
+          <XStack gap={5} alignItems="flex-start">
+            <Icon name="corner-down-right" size={12} color={tone('$muted')} style={{ marginTop: 3 }} />
+            <Text flex={1} fontSize={13} color="$muted" lineHeight={19}>
+              {run.why}
+            </Text>
+          </XStack>
+        </YStack>
+        <Readings saw={run.saw} />
+        {showConditions && run.conditions.length ? <Conditions conditions={run.conditions} /> : null}
+        {run.actions.map((action, index) => {
+          const said = ACTION[action.outcome];
+          return (
+            <XStack key={`${index}:${action.what}`} gap="$2" alignItems="flex-start">
+              <Icon name={said.icon} size={13} color={tone(said.tone)} style={{ marginTop: 3 }} />
+              <Text flex={1} fontSize={13} color="$color" lineHeight={19}>
+                <Text fontWeight="700" color={said.tone}>
+                  {said.label}
+                </Text>
+                {`  ${action.detail}`}
+              </Text>
+            </XStack>
+          );
+        })}
+      </YStack>
+    </XStack>
+  );
+}
+
+/** A history entry that is a run: what the audit kept of it, as a run, when it kept that much. */
+function runOf(entry: AuditEntry): AutomationRun | null {
+  const outcome = entry.kind.replace(/^automation\./, '');
+  if (!(outcome in OUTCOME)) return null;
+  const detail = (entry.detail ?? {}) as Partial<AutomationRun>;
+  return {
+    at: entry.at,
+    outcome: outcome as AutomationRun['outcome'],
+    summary: entry.summary,
+    why: detail.why ?? '',
+    saw: detail.saw ?? [],
+    conditions: detail.conditions ?? [],
+    actions: detail.actions ?? [],
+  };
+}
+
+type Changed = { mode?: AutomationMode; recheckMinutes?: number | null; params?: ConfigValues; roles?: Record<string, RoleBinding> };
+
+/** What a change changed, in words: "Only watching → Acting", "Stop charging at: 50 % → 60 %". */
+function changesOf(entry: AuditEntry, recipe: RecipeView | null): string[] {
+  const detail = entry.detail as { before?: Changed; after?: Changed } | null;
+  const before = detail?.before;
+  const after = detail?.after;
+  if (!before || !after) return [];
+  const said: string[] = [];
+  if (before.mode !== after.mode && after.mode) said.push(`${BADGE[before.mode ?? 'observe'].label} → ${BADGE[after.mode].label}`);
+  if ((before.recheckMinutes ?? null) !== (after.recheckMinutes ?? null)) {
+    const keep = (minutes: number | null | undefined) => (minutes ? `every ${every(minutes)}` : 'off');
+    said.push(`Keep it so: ${keep(before.recheckMinutes)} → ${keep(after.recheckMinutes)}`);
+  }
+  for (const [key, value] of Object.entries(after.params ?? {})) {
+    const was = before.params?.[key];
+    if (was === value) continue;
+    const field = recipe?.params.fields[key];
+    const unit = field && 'unit' in field && field.unit ? ` ${field.unit}` : '';
+    said.push(`${field?.title ?? key}: ${was ?? '—'}${was === undefined ? '' : unit} → ${value}${unit}`);
+  }
+  if (JSON.stringify(before.roles ?? {}) !== JSON.stringify(after.roles ?? {})) said.push('Its devices changed');
+  return said;
+}
+
+/**
+ * Its history, as a timeline: day by day, newest first, each run with why it
+ * ran, what it read and what came of it — a tap opens one — and each change
+ * made to it, with who made it and what changed.
+ */
+function Timeline({ entries, automation, recipe }: { entries: AuditEntry[] | null; automation: AutomationView; recipe: RecipeView | null }) {
+  const tone = useTone();
+  const [open, setOpen] = useState<number | null>(null);
   if (!entries) return <Spinner size="small" color="$accent" alignSelf="flex-start" />;
   if (!entries.length) {
     return (
@@ -403,72 +675,137 @@ function History({ entries, name }: { entries: AuditEntry[] | null; name: string
       </Text>
     );
   }
-  return (
-    <Card inset backgroundColor="$background">
-      {entries.map((entry, index) => {
-        const look = lookOf(entry.kind);
-        // The timeline says whose it is — "Charge window: …" — which this card already does.
-        const summary = entry.summary.startsWith(`${name}: `) ? entry.summary.slice(name.length + 2) : entry.summary;
-        return (
-          <YStack key={entry.id}>
-            {index > 0 ? <RowSeparator /> : null}
-            <XStack gap="$3" paddingHorizontal="$3" paddingVertical="$2.5" alignItems="flex-start">
-              <Icon name={look.icon as never} size={15} color={(theme[look.tone.slice(1) as keyof typeof theme] as { val?: string } | undefined)?.val} style={{ marginTop: 2 }} />
-              <YStack flex={1} gap={2}>
-                <Text fontSize={13} color="$color" lineHeight={19}>
-                  {summary}
-                </Text>
-                <Text fontSize={11} color="$muted">
-                  {when(entry.at)}
-                  {entry.actor && !entry.actor.startsWith('automation:') ? ` · ${entry.actor}` : ''}
-                </Text>
-              </YStack>
-            </XStack>
-          </YStack>
-        );
-      })}
-    </Card>
-  );
-}
+  // The timeline says whose each entry is — "Charge window: …" — which this card already does.
+  const own = (summary: string) =>
+    (summary.startsWith(`${automation.name}: `) ? summary.slice(automation.name.length + 2) : summary)
+      .replace(`: "${automation.name}"`, '')
+      .replace(` "${automation.name}"`, '');
+  const days = entries.reduce<{ day: string; entries: AuditEntry[] }[]>((grouped, entry) => {
+    const day = dayOf(entry.at);
+    const last = grouped.at(-1);
+    if (last?.day === day) last.entries.push(entry);
+    else grouped.push({ day, entries: [entry] });
+    return grouped;
+  }, []);
 
-/** What it would have done on the last week of history, run by run, and what history could not show. */
-function Rehearsed({ rehearsal }: { rehearsal: Rehearsal }) {
-  const shown = rehearsal.runs.slice(-10);
   return (
-    <YStack gap="$1.5">
-      <Text fontSize={13} fontWeight="700" color="$color">
-        On the last week: {rehearsal.runs.length ? `${rehearsal.runs.length} run${rehearsal.runs.length === 1 ? '' : 's'}${rehearsal.runs.length > shown.length ? `, the last ${shown.length} shown` : ''}` : 'it would not have run'}
-      </Text>
-      {/* Two triggers can fire in one minute: the run's place, not its time, tells them apart. */}
-      {shown.map((run, index) => (
-        <RunLine key={`${index}:${run.at}`} label="Would have" run={{ at: run.at, outcome: run.outcome, summary: run.summary }} empty="" />
-      ))}
-      {rehearsal.caveats.map((caveat) => (
-        <Text key={caveat} fontSize={12} color="$muted" lineHeight={17}>
-          {caveat}.
-        </Text>
+    <YStack gap="$3">
+      {days.map(({ day, entries: onDay }) => (
+        <YStack key={day} gap="$1">
+          <Heading>{day}</Heading>
+          {onDay.map((entry, index) => {
+            const run = runOf(entry);
+            const look = run ? OUTCOME[run.outcome] : (CHANGE[entry.kind] ?? { icon: 'edit-3', tone: '$color' });
+            const expanded = open === entry.id;
+            const changes = run ? [] : changesOf(entry, recipe);
+            const by = entry.actor && !entry.actor.startsWith('automation:') ? entry.actor : null;
+            const row = (
+              <XStack gap="$3" alignItems="stretch">
+                {/* The rail: a mark for each entry, joined to the next. */}
+                <YStack width={24} alignItems="center">
+                  <Mark look={look} size={24} />
+                  {index < onDay.length - 1 ? <YStack flex={1} width={2} marginTop={2} backgroundColor="$borderColor" borderRadius={1} /> : null}
+                </YStack>
+                <YStack flex={1} gap={3} paddingBottom="$3">
+                  <XStack gap="$2" alignItems="flex-start">
+                    <Text flex={1} fontSize={14} fontWeight={run ? '700' : '600'} color="$color" lineHeight={20}>
+                      {run ? run.summary && own(run.summary) : own(entry.summary)}
+                    </Text>
+                    <Text fontSize={12} color="$muted" fontVariant={['tabular-nums']} marginTop={2}>
+                      {clock(entry.at)}
+                    </Text>
+                  </XStack>
+                  {run?.why ? (
+                    <Text fontSize={12} color="$muted" lineHeight={17}>
+                      {run.why}
+                    </Text>
+                  ) : null}
+                  {changes.map((line) => (
+                    <Text key={line} fontSize={12} color="$color" lineHeight={17}>
+                      {line}
+                    </Text>
+                  ))}
+                  {by ? (
+                    <Text fontSize={12} color="$muted">
+                      by {by}
+                    </Text>
+                  ) : null}
+                  {expanded && run ? (
+                    <YStack gap="$2" marginTop="$1.5">
+                      <Readings saw={run.saw} />
+                      {run.conditions.length ? <Conditions conditions={run.conditions} /> : null}
+                      {run.actions.map((action, actionIndex) => {
+                        const said = ACTION[action.outcome];
+                        return (
+                          <XStack key={`${actionIndex}:${action.what}`} gap="$2" alignItems="flex-start">
+                            <Icon name={said.icon} size={13} color={tone(said.tone)} style={{ marginTop: 3 }} />
+                            <Text flex={1} fontSize={13} color="$color" lineHeight={19}>
+                              <Text fontWeight="700" color={said.tone}>
+                                {said.label}
+                              </Text>
+                              {`  ${action.detail}`}
+                            </Text>
+                          </XStack>
+                        );
+                      })}
+                    </YStack>
+                  ) : null}
+                </YStack>
+              </XStack>
+            );
+            // A run with more to say opens on a tap; a change says all it has.
+            const more = run && (run.saw.length || run.conditions.length || run.actions.length);
+            return more ? (
+              <Pressable key={entry.id} onPress={() => setOpen(expanded ? null : entry.id)} label={`${own(entry.summary)}, ${clock(entry.at)}: ${expanded ? 'hide' : 'show'} what it read and did`}>
+                {row}
+              </Pressable>
+            ) : (
+              <YStack key={entry.id}>{row}</YStack>
+            );
+          })}
+        </YStack>
       ))}
     </YStack>
   );
 }
 
-function RunLine({ label, run, empty }: { label: string; run: AutomationRun | null; empty: string }) {
-  const theme = useTheme();
-  if (!run) {
-    return (
-      <Text fontSize={13} color="$muted" lineHeight={19}>
-        {label}: {empty}
-      </Text>
-    );
-  }
-  const look = OUTCOME[run.outcome];
+/** What it would have done on the last week of history, run by run, and what history could not show. */
+function Rehearsed({ rehearsal, onClose }: { rehearsal: Rehearsal; onClose: () => void }) {
+  const tone = useTone();
+  const shown = rehearsal.runs.slice(-10).reverse();
+  const count = rehearsal.runs.length;
   return (
-    <XStack gap="$2" alignItems="flex-start">
-      <Icon name={look.icon as never} size={14} color={(theme[look.tone.slice(1) as keyof typeof theme] as { val?: string } | undefined)?.val} style={{ marginTop: 3 }} />
-      <Text flex={1} fontSize={13} color="$color" lineHeight={19}>
-        <Text fontWeight="700">{label}</Text>, {when(run.at)}: {run.summary}
+    <YStack gap="$2.5" padding="$3" borderRadius="$4" borderWidth={1} borderColor="$borderColor">
+      <XStack alignItems="center" justifyContent="space-between">
+        <Heading>On the last week</Heading>
+        <Button size="$2" chromeless circular aria-label="Close" icon={<Icon name="x" size={14} color={tone('$muted')} />} onPress={onClose} />
+      </XStack>
+      <Text fontSize={14} fontWeight="700" color="$color">
+        {count ? `It would have run ${count} time${count === 1 ? '' : 's'}${count > shown.length ? `; the last ${shown.length}:` : ':'}` : 'It would not have run.'}
       </Text>
-    </XStack>
+      {/* Two triggers can fire in one minute: the run's place, not its time, tells them apart. */}
+      {shown.map((run, index) => (
+        <XStack key={`${index}:${run.at}`} gap="$2.5" alignItems="flex-start">
+          <Mark look={OUTCOME[run.outcome]} size={22} />
+          <YStack flex={1} gap={1}>
+            <Text fontSize={13} color="$color" lineHeight={19}>
+              {run.summary}
+            </Text>
+            <Text fontSize={11} color="$muted">
+              {dayOf(run.at)} {clock(run.at)}
+            </Text>
+          </YStack>
+        </XStack>
+      ))}
+      {rehearsal.caveats.map((caveat) => (
+        <XStack key={caveat} gap="$2" alignItems="flex-start">
+          <Icon name="info" size={12} color={tone('$muted')} style={{ marginTop: 3 }} />
+          <Text flex={1} fontSize={12} color="$muted" lineHeight={17}>
+            {caveat}.
+          </Text>
+        </XStack>
+      ))}
+    </YStack>
   );
 }
 

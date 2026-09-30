@@ -38,6 +38,8 @@ export function plans({ catalog, sessions, library, engine }: PlanDeps) {
       recipeLabel: recipe?.label ?? automation.recipe,
       sentence: recipe ? describeRule(recipe, automation.params as Record<string, Value>, name, library) : automation.recipe,
       when: recipe ? describeTriggers(recipe, automation.params as Record<string, Value>, name, library) : [],
+      now: engine.judge(automation),
+      nextLookAt: engine.nextLookAt(automation),
       problems: engine.roleProblems(automation),
     };
   };

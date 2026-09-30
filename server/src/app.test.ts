@@ -1017,7 +1017,9 @@ describe('automations', () => {
     // A pack of it fills the battery role as well as the station does.
     const check = await as(`/automations/${window.body.id}/check`, { method: 'POST' });
     expect(check.status).toBe(200);
-    expect(check.body.summary).toContain('Garage P280: Charge');
+    expect(check.body.saw.join(' ')).toContain('Garage P280: Charge');
+    // Its card says how each condition stands now, and what it read to say so.
+    expect(window.body.now.conditions.map((condition: { text: string }) => condition.text)).toEqual(["Garage P280's charge is below 15 % for 2 min", "Garage P280's charge is at least 50 %"]);
 
     // It can keep things so; a time of day and an event have nothing to keep.
     const { recipes } = (await as('/automations/recipes')).body as { recipes: { id: string; hasConditions: boolean }[] };
@@ -1036,6 +1038,14 @@ describe('automations', () => {
     expect((await as(path, { method: 'PATCH', body: { recheckMinutes: 5, confirmation: refused.body.needsConfirmation } })).body.recheckMinutes).toBe(5);
     // The same again changes nothing, and asks nothing.
     expect((await as(path, { method: 'PATCH', body: { recheckMinutes: 5 } })).status).toBe(200);
+
+    // A new name is not a new start: what it did stands, and it does not run again for it.
+    const runs = () => ((as('/audit') as Promise<{ body: { kind: string; resource: string }[] }>).then(({ body: entries }) => entries.filter((entry) => entry.resource === window.body.id && entry.kind !== 'automation.changed' && entry.kind !== 'automation.armed' && entry.kind !== 'automation.created').length));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const before = await runs();
+    expect((await as(path, { method: 'PATCH', body: { name: 'Charge window, renamed' } })).status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(await runs()).toBe(before);
   });
 
   test('the shared recipes, on a station: a battery that runs low, and mains that goes — each a part that fits', async () => {
