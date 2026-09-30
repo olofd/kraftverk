@@ -55,7 +55,9 @@ function gateway(dps: Dps) {
     }
     return out;
   });
-  return { channel, sent };
+  /** Says something unasked, as the gateway does: a push, a report of which plugs it reaches. */
+  const say = (command: number, json: unknown) => channel.push(frame(command, bytes(JSON.stringify(json))));
+  return { channel, sent, say };
 }
 
 const over = (channel: ReturnType<typeof gateway>['channel']) =>
@@ -74,19 +76,26 @@ const quiet = { info: () => {}, warn: () => {}, error: () => {} };
 /** A real session over a scripted gateway, the way a holder opens one. */
 async function session(dps: Dps) {
   const device = gateway(dps);
+  // What it asks to run on a clock, run when a test says: its poll first.
+  const scheduled: (() => unknown)[] = [];
   const opened = await plugType.createSession({
     config: { profile: ZIGBEE_PLUG.id, pollSeconds: 60 },
     connection: over(device.channel),
     log: quiet,
     readOnly: false,
     store: { get: () => undefined, set: () => {}, delete: () => {} },
-    schedule: () => {},
+    schedule: (_ms: number, run: () => unknown) => void scheduled.push(run),
     changed: () => {},
     event: () => {},
   } as never);
   await new Promise((resolve) => setTimeout(resolve, 300));
-  const value = (key: string) => opened.readings().find((reading) => reading.key === key)?.value;
-  return { device, opened, value };
+  const reading = (key: string) => opened.readings().find((candidate) => candidate.key === key);
+  const value = (key: string) => reading(key)?.value;
+  const poll = async () => {
+    await scheduled[0]!();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  };
+  return { device, opened, value, reading, poll };
 }
 
 const MAPPED: Dps = { '1': true, '9': 0, '17': 43230, '18': 4310, '19': 9970, '20': 2310, '27': 'memory', '28': 'relay', '29': false };
@@ -117,6 +126,31 @@ describe('the Tuya Zigbee plug', () => {
     expect(await opened.command({ part: 'main', capability: 'switch', command: 'set', args: { on: false } })).toEqual({ accepted: true });
     expect(device.sent).toEqual([{ '1': false }]);
     expect(value('relay')).toBe(false);
+    await opened.close();
+  });
+
+  test('while its gateway says it cannot reach the plug, the gateway’s memory is not taken for the plug’s word', async () => {
+    const dps = { ...MAPPED };
+    const { device, opened, value, reading, poll } = await session(dps);
+    expect(value('watts')).toBe(997);
+    const before = reading('watts')!.at;
+
+    device.say(CMD.LAN_EXT_STREAM, { reqType: 'subdev_online_stat_report', data: { online: [], offline: [CID] } });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(opened.health()).toMatchObject({ status: 'offline', detail: 'Its gateway cannot reach it: is it plugged in?' });
+
+    // Asked now, the gateway answers from what it remembers: not a reading, so it ages as a silent plug's does.
+    dps['19'] = 0;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await poll();
+    expect(value('watts')).toBe(997);
+    expect(reading('watts')!.at).toBe(before);
+
+    // The plug itself speaking ends it: reachable again, and its word taken.
+    device.say(CMD.STATUS, { protocol: 4, t: 2, data: { dps: { '19': 0 }, cid: CID } });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(value('watts')).toBe(0);
+    expect(opened.health().status).not.toBe('offline');
     await opened.close();
   });
 

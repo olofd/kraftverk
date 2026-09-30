@@ -101,3 +101,13 @@ counts hundredths of a kWh.
   counts on it).
 - A second plug behind the same gateway (each its own connection: expected
   to work).
+- **How soon the gateway says a plug that lost its power is gone.** Until it
+  reports the plug offline, a query is still answered from its memory, and
+  the session takes that answer as current. Once it reports it, the session
+  takes nothing more from memory until the plug speaks again (tested).
+  - To learn: unplug the plug while listening, and time the
+    `subdev_online_stat_report`.
+  - Also: whether a query to a powered plug always brings its own
+    `"type":"query"` push. Captured so far, not every query did, and those
+    that came carried only some datapoints. So the query-answer push cannot
+    yet stand in for the memory answer.
