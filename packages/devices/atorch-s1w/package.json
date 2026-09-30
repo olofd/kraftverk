@@ -7,12 +7,16 @@
   "main": "src/type.ts",
   "kraftverk": {
     "deviceType": "./src/type.ts",
-    "ui": "./ui/index.ts"
+    "ui": "./ui/index.ts",
+    "assets": {
+      "image": "./assets/device-image.png"
+    }
   },
   "exports": {
     ".": "./src/type.ts",
     "./type": "./src/type.ts",
-    "./ui": "./ui/index.ts"
+    "./ui": "./ui/index.ts",
+    "./assets/device-image.png": "./assets/device-image.png"
   },
   "scripts": {
     "test": "node ../../../scripts/run-bun.mjs test",

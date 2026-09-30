@@ -8,11 +8,13 @@ type RowProps = {
   subtitle?: string;
   /** Right-hand content: a Switch, a value label, a chevron… */
   accessory?: ReactNode;
+  /** Left-hand content: the device's picture, an icon. */
+  leading?: ReactNode;
   disabled?: boolean;
 };
 
 /** A single line in a settings/list card. */
-export function Row({ title, subtitle, accessory, disabled }: RowProps) {
+export function Row({ title, subtitle, accessory, leading, disabled }: RowProps) {
   return (
     <XStack
       alignItems="center"
@@ -22,6 +24,7 @@ export function Row({ title, subtitle, accessory, disabled }: RowProps) {
       paddingVertical="$3"
       opacity={disabled ? 0.45 : 1}
     >
+      {leading}
       <YStack flex={1} gap={2}>
         <Text fontSize={15} fontWeight="600" color="$color">
           {title}

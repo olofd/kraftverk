@@ -124,6 +124,15 @@ in `package.json` under `kraftverk.ui` and `exports`, and run
 connection, and whether they reach it now (`reach`). It never learns whether
 that is the server or the app.
 
+**A picture** of the device makes it recognisable in lists and on its page.
+Put a PNG on a transparent background in `assets/` — at most 1024 px square
+and 512 KB; `npm run gen:devices` refuses anything larger, or opaque — and
+name it in `package.json` under `kraftverk.assets.image` and `exports`. The
+app draws it small beside the name in lists, and large on the device's own
+page. It stands for every device of the type, so it is shown only where the
+type is known: a device found on the network that might be one of several
+types gets no picture.
+
 ### What it brings to automations
 
 A device's package decides what automations can do with it

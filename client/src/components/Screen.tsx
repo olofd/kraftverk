@@ -24,6 +24,8 @@ type Props = {
   backTo?: string;
   /** Overrides the header status, for screens that are about one device. */
   status?: ScreenStatus;
+  /** Beside the title, on the right: the device's picture. The status then sits under the title. */
+  aside?: ReactNode;
   children: ReactNode;
 };
 
@@ -31,7 +33,7 @@ type Props = {
  * Shared page chrome: safe-area padding, a centred max-width column so the web
  * build doesn't stretch to 2000px, pull-to-refresh, and the offline banner.
  */
-export function Screen({ title, subtitle, back, backTo, status, children }: Props) {
+export function Screen({ title, subtitle, back, backTo, status, aside, children }: Props) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { connection, refresh } = useDevices();
@@ -73,7 +75,7 @@ export function Screen({ title, subtitle, back, backTo, status, children }: Prop
           </XStack>
         ) : null}
 
-        <XStack alignItems="flex-end" justifyContent="space-between" gap="$3">
+        <XStack alignItems={aside ? 'center' : 'flex-end'} justifyContent="space-between" gap="$3">
           {/* The title takes what is left and wraps: a long name must not push the status off the screen. */}
           <YStack gap={2} flex={1} flexShrink={1}>
             <Text fontSize={30} lineHeight={34} fontWeight="800" letterSpacing={-0.8} color="$color">
@@ -84,8 +86,13 @@ export function Screen({ title, subtitle, back, backTo, status, children }: Prop
                 {subtitle}
               </Text>
             ) : null}
+            {aside ? (
+              <XStack marginTop="$2">
+                <StatusDot status={status} />
+              </XStack>
+            ) : null}
           </YStack>
-          <StatusDot status={status} />
+          {aside ?? <StatusDot status={status} />}
         </XStack>
 
         <ConnectionBanner />

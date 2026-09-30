@@ -7,7 +7,9 @@ import { Card, DeviceCard, Row, RowSeparator, SectionLabel, haptic } from '@kraf
 import { fetchFound, type DeviceView, type FoundView } from '@kraftverk/api-client';
 import { attributesOf, CATEGORIES, MAIN_PART } from '@kraftverk/device-sdk';
 
+import { DeviceImage } from '../src/components/DeviceImage';
 import { Pressable } from '../src/components/Pressable';
+import { imageFor } from '../src/devices/ui';
 import { Screen } from '../src/components/Screen';
 import { DeviceIcon } from '../src/features/devices/panels';
 import { useDevices } from '../src/state/DevicesProvider';
@@ -183,6 +185,7 @@ function DeviceList({ devices }: { devices: DeviceView[] }) {
           key={device.id}
           device={{ name: device.name, subtitle: device.meta.name, health: device.health, attributes: attributesOf(device.description, MAIN_PART), readings: device.readings }}
           icon={<DeviceIcon device={device} />}
+          image={imageFor(device.typeId)}
           onPress={() => router.push(`/device/${encodeURIComponent(device.id)}`)}
         />
       ))}
@@ -232,6 +235,16 @@ function FoundNearYou() {
                 }
               >
                 <Row
+                  leading={
+                    // Its picture only when it is known what it is: one model's picture on "one of several plugs" would be a guess drawn as a fact.
+                    entry.types.length === 1 && imageFor(first.typeId) ? (
+                      <DeviceImage typeId={first.typeId} size={36} />
+                    ) : (
+                      <YStack width={36} height={36} alignItems="center" justifyContent="center">
+                        <Feather name="help-circle" size={20} color={theme.muted?.val} />
+                      </YStack>
+                    )
+                  }
                   title={entry.name}
                   subtitle={`${first.name}${entry.types.length > 1 ? ` or ${entry.types.length - 1} more` : ''} · ${entry.detail ?? entry.address}`}
                   accessory={<Feather name="plus" size={16} color={theme.accent?.val} />}

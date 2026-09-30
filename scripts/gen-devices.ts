@@ -27,6 +27,8 @@ type Manifest = {
   kraftverk?: {
     deviceType?: string;
     ui?: string;
+    /** Pictures of the device, by what they are for: `image`, the device as it looks. */
+    assets?: { image?: string };
     protocol?: string;
     transport?: { definition?: string; server?: string; web?: string; native?: string };
   };
@@ -60,14 +62,44 @@ function packages(parent: string): { dir: string; manifest: Manifest }[] {
   });
 }
 
+/**
+ * What a device image must be to go in the app: a PNG, on a transparent
+ * background so it sits on a card in either theme, and small enough that a
+ * list of devices does not download megabytes. It is never drawn larger than a
+ * few hundred points, so 1024 pixels is room for a sharp screen with margin.
+ */
+const IMAGE_MAX_PX = 1024;
+const IMAGE_MAX_BYTES = 512 * 1024;
+
+function checkImage(manifest: Manifest, dir: string, file: string): void {
+  const where = `${manifest.name}: ${file}`;
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(resolve(dir, file));
+  } catch {
+    throw new Error(`${where} does not exist`);
+  }
+  const png = bytes.length > 26 && bytes.toString('latin1', 1, 4) === 'PNG';
+  if (!png) throw new Error(`${where} must be a PNG`);
+  const width = bytes.readUInt32BE(16);
+  const height = bytes.readUInt32BE(20);
+  const colourType = bytes[25];
+  // Colour types 4 and 6 carry alpha; a palette image may carry it in a tRNS chunk.
+  const transparent = colourType === 4 || colourType === 6 || bytes.includes('tRNS');
+  if (!transparent) throw new Error(`${where} must have a transparent background, so it sits on a card in light and dark alike`);
+  if (width > IMAGE_MAX_PX || height > IMAGE_MAX_PX) throw new Error(`${where} is ${width}×${height}; at most ${IMAGE_MAX_PX}×${IMAGE_MAX_PX} — it is never drawn larger than a few hundred points`);
+  if (bytes.length > IMAGE_MAX_BYTES) throw new Error(`${where} is ${Math.round(bytes.length / 1024)} KB; at most ${IMAGE_MAX_BYTES / 1024} KB, or every list of devices downloads it`);
+}
+
 const imports: string[] = [];
 const types: string[] = [];
 const screens: string[] = [];
+const assets: string[] = [];
 const protocols: string[] = [];
 const transports: string[] = [];
 
 for (const { dir, manifest } of [...packages('packages/devices'), ...packages('packages/services')]) {
-  const { deviceType, ui } = manifest.kraftverk ?? {};
+  const { deviceType, ui, assets: pictures } = manifest.kraftverk ?? {};
   if (!deviceType) continue;
   const type = ((await import(pathToFileURL(resolve(dir, deviceType)).href)) as { default?: { id?: string } }).default;
   if (!type?.id) throw new Error(`${manifest.name}: its deviceType entry has no default export with an id`);
@@ -76,6 +108,11 @@ for (const { dir, manifest } of [...packages('packages/devices'), ...packages('p
   if (ui) {
     imports.push(`import ${local(manifest.name, 'Ui')} from '${exported(manifest, ui)}';`);
     screens.push(`  '${type.id}': ${local(manifest.name, 'Ui')},`);
+  }
+  if (pictures?.image) {
+    checkImage(manifest, dir, pictures.image);
+    // require, not import: Metro makes the file an asset of the build, on the web and on a phone alike.
+    assets.push(`  '${type.id}': { image: require('${exported(manifest, pictures.image)}') },`);
   }
 }
 
@@ -110,7 +147,7 @@ const lines = [
   '',
   "import type { DeviceType, Protocol, TransportDefinition, TransportFactory } from '@kraftverk/device-sdk';",
   '',
-  "import type { DeviceUi } from '../devices/ui';",
+  "import type { DeviceAssets, DeviceUi } from '../devices/ui';",
   '',
   ...imports,
   '',
@@ -124,6 +161,11 @@ const lines = [
   ...screens,
   '};',
   '',
+  '/** Pictures a device type ships, by device type id. */',
+  'export const DEVICE_ASSETS: Readonly<Record<string, DeviceAssets>> = {',
+  ...assets,
+  '};',
+  '',
   'export const PROTOCOLS: readonly Protocol[] = [',
   ...protocols,
   '];',
@@ -135,7 +177,7 @@ const lines = [
   '',
 ];
 const source = lines.join('\n');
-const summary = `${types.length} device type(s), ${screens.length} with screens, ${protocols.length} protocol(s), ${transports.length} transport(s)`;
+const summary = `${types.length} device type(s), ${screens.length} with screens, ${assets.length} with a picture, ${protocols.length} protocol(s), ${transports.length} transport(s)`;
 
 if (process.argv.includes('--check')) {
   let current = '';

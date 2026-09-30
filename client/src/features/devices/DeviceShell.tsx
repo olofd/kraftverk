@@ -5,7 +5,9 @@ import { Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import type { ConnectionStatus, DeviceView } from '@kraftverk/api-client';
 
+import { DeviceImage } from '../../components/DeviceImage';
 import { Screen } from '../../components/Screen';
+import { imageFor } from '../../devices/ui';
 import { useDevice, useDevices, type Connection } from '../../state/DevicesProvider';
 
 /**
@@ -106,7 +108,13 @@ export function DeviceShell({ id, tab, children }: { id: string | undefined; tab
   const path = `/device/${encodeURIComponent(device.id)}`;
 
   return (
-    <Screen back="Your devices" title={device.name} subtitle={device.meta.name} status={deviceStatus(device)}>
+    <Screen
+      back="Your devices"
+      title={device.name}
+      subtitle={device.meta.name}
+      status={deviceStatus(device)}
+      aside={imageFor(device.typeId) ? <DeviceImage typeId={device.typeId} size={104} /> : undefined}
+    >
       {device.removedAt ? null : (
         <DeviceTabs
           tab={tab}

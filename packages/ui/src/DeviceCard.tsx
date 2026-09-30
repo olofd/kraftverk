@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Image, type ImageSourcePropType } from 'react-native';
 import { Text, XStack, YStack } from 'tamagui';
 
 import type { AttributeSpec, ConnectionHealth, Reading } from '@kraftverk/device-sdk';
@@ -51,12 +52,14 @@ type Props = {
   device: DeviceCardDevice;
   /** Supplied by the app: this package has no icon set of its own. */
   icon?: ReactNode;
+  /** The device as it looks, from its package: drawn small, in place of the icon. */
+  image?: ImageSourcePropType | null;
   /** Up to two more attributes under the headline. */
   secondary?: readonly AttributeSpec[];
   onPress?: () => void;
 };
 
-export function DeviceCard({ device, icon, secondary, onPress }: Props) {
+export function DeviceCard({ device, icon, image, secondary, onPress }: Props) {
   const online = isOnline(device.health);
   const [primary, ...rest] = shownAttributes(device.attributes);
   const primaryReading = primary ? readingFor(device.readings, primary.key) : undefined;
@@ -104,7 +107,12 @@ export function DeviceCard({ device, icon, secondary, onPress }: Props) {
     >
       <XStack alignItems="flex-start" justifyContent="space-between" gap="$3">
         <XStack alignItems="center" gap="$2.5" flex={1}>
-          {icon}
+          {image ? (
+            // Small, where the icon would be: in a list the picture says which device, not anything about it.
+            <Image source={image} resizeMode="contain" style={{ width: 36, height: 36 }} accessibilityIgnoresInvertColors />
+          ) : (
+            icon
+          )}
           <YStack flex={1} gap={2}>
             <Text fontSize={16} fontWeight="700" color="$color" numberOfLines={1}>
               {device.name}

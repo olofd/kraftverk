@@ -1,11 +1,22 @@
 import type { ComponentType } from 'react';
+import type { ImageSourcePropType } from 'react-native';
 
 import type { DeviceUi, DeviceView, PartSlotProps } from '@kraftverk/api-client';
 import type { Part } from '@kraftverk/device-sdk';
 
-import { DEVICE_UI } from '../generated/registry';
+import { DEVICE_ASSETS, DEVICE_UI } from '../generated/registry';
 
 export type { DeviceUi };
+
+/**
+ * Pictures a device type ships, declared in its package.json
+ * (`kraftverk.assets`) and checked by `npm run gen:devices`: `image` is the
+ * device as it looks, on a transparent background.
+ */
+export type DeviceAssets = { image?: ImageSourcePropType };
+
+/** A device's picture, by its type: every device of a type looks the same. Null for a type that ships none. */
+export const imageFor = (typeId: string | null | undefined): ImageSourcePropType | null => (typeId ? (DEVICE_ASSETS[typeId]?.image ?? null) : null);
 
 /**
  * Which pieces of its pages a device draws itself.

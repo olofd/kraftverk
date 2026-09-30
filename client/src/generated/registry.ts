@@ -7,7 +7,7 @@
 
 import type { DeviceType, Protocol, TransportDefinition, TransportFactory } from '@kraftverk/device-sdk';
 
-import type { DeviceUi } from '../devices/ui';
+import type { DeviceAssets, DeviceUi } from '../devices/ui';
 
 import deviceAferiyP280Type from '@kraftverk/device-aferiy-p280/type';
 import deviceAferiyP280Ui from '@kraftverk/device-aferiy-p280/ui';
@@ -39,6 +39,12 @@ export const DEVICE_TYPES: readonly DeviceType<any>[] = [
 export const DEVICE_UI: Readonly<Record<string, DeviceUi>> = {
   'aferiy.p280': deviceAferiyP280Ui,
   'atorch.s1w': deviceAtorchS1wUi,
+};
+
+/** Pictures a device type ships, by device type id. */
+export const DEVICE_ASSETS: Readonly<Record<string, DeviceAssets>> = {
+  'aferiy.p280': { image: require('@kraftverk/device-aferiy-p280/assets/device-image.png') },
+  'atorch.s1w': { image: require('@kraftverk/device-atorch-s1w/assets/device-image.png') },
 };
 
 export const PROTOCOLS: readonly Protocol[] = [

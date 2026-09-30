@@ -8,7 +8,10 @@
   "kraftverk": {
     "deviceType": "./src/type.ts",
     "ui": "./ui/index.ts",
-    "words": ["p280", "StationStatus", "StationSettings", "gridRelay", "core.station"]
+    "words": ["p280", "StationStatus", "StationSettings", "gridRelay", "core.station"],
+    "assets": {
+      "image": "./assets/device-image.png"
+    }
   },
   "exports": {
     ".": "./src/index.ts",
@@ -18,7 +21,8 @@
     "./ui/settings": "./ui/settings.tsx",
     "./ui/registers": "./ui/registers.tsx",
     "./ui/contract": "./ui/contract.ts",
-    "./ui/dashboard": "./ui/dashboard.tsx"
+    "./ui/dashboard": "./ui/dashboard.tsx",
+    "./assets/device-image.png": "./assets/device-image.png"
   },
   "scripts": {
     "test": "node ../../../scripts/run-bun.mjs test",

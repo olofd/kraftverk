@@ -15,6 +15,7 @@ import {
 import { describeDeviceType, isSimulated, LINK_KIND_IDS, linkableParts, linkKindSpec, MAIN_PART, methodOf, type DeviceDescription } from '@kraftverk/device-sdk';
 import { Card, Row, RowSeparator, SectionLabel, haptic } from '@kraftverk/ui';
 
+import { DeviceImage } from '../src/components/DeviceImage';
 import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
 import { AppFlow, ServerFlow, type SetupFlow } from '../src/features/add/flows';
@@ -351,8 +352,9 @@ function Types({ types, onPick, onBack }: { types: DeviceTypeListing[]; onPick: 
             {index > 0 ? <RowSeparator /> : null}
             <Pressable onPress={() => onPick(type.id)}>
               <Row
+                leading={<DeviceImage typeId={type.id} size={40} />}
                 title={type.meta.name}
-                subtitle={[type.meta.brand, type.meta.description, SUPPORT[type.meta.support], type.meta.models?.length ? `Models: ${type.meta.models.join(', ')}` : null].filter(Boolean).join(' · ')}
+                subtitle={[type.meta.description, SUPPORT[type.meta.support], type.meta.models?.length ? `Models: ${type.meta.models.join(', ')}` : null].filter(Boolean).join(' · ')}
                 accessory={<Feather name="chevron-right" size={16} color={theme.muted?.val} />}
               />
             </Pressable>
