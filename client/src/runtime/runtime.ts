@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
 import type { DeviceSession, DeviceStore, PolicyValues, SavedDeviceId } from '@kraftverk/device-sdk';
-import { ActionGateway, type GatewayLedger } from '@kraftverk/gateway';
+import { ActionGateway, type GatewayLedger, type LedgerMark } from '@kraftverk/gateway';
 import { Failover } from '@kraftverk/holder';
 import { fetchDeviceStore, registerClient, type AuditUpload, type DeviceView } from '@kraftverk/api-client';
 
@@ -300,13 +300,18 @@ export class AppRuntime {
 
 /** The gateway's memory of the devices this app holds, in its own storage: a restart of the app is no way around the dwell. */
 const preferenceLedger: GatewayLedger = {
-  lastSwitch: (device, part) => millis(readPreference(`kraftverk.gateway.switched.${device}:${part}`)),
-  switched: (device, part, at) => writePreference(`kraftverk.gateway.switched.${device}:${part}`, String(at)),
-  lastWrite: (device, attribute) => millis(readPreference(`kraftverk.gateway.written.${device}:${attribute}`)),
-  wrote: (device, attribute, at) => writePreference(`kraftverk.gateway.written.${device}:${attribute}`, String(at)),
+  lastSwitch: (device, part) => markOf(readPreference(`kraftverk.gateway.switched.${device}:${part}`)),
+  switched: (device, part, mark) => writePreference(`kraftverk.gateway.switched.${device}:${part}`, JSON.stringify(mark)),
+  lastWrite: (device, attribute) => markOf(readPreference(`kraftverk.gateway.written.${device}:${attribute}`)),
+  wrote: (device, attribute, mark) => writePreference(`kraftverk.gateway.written.${device}:${attribute}`, JSON.stringify(mark)),
 };
 
-function millis(kept: string | null): number | null {
-  const value = kept === null ? Number.NaN : Number(kept);
-  return Number.isFinite(value) ? value : null;
+/** A mark as kept: when, and by whom — or nothing, when what is kept is not one. */
+function markOf(kept: string | null): LedgerMark | null {
+  try {
+    const mark = kept === null ? null : (JSON.parse(kept) as Partial<LedgerMark> | null);
+    return mark && typeof mark.at === 'number' && Number.isFinite(mark.at) && typeof mark.by === 'string' ? { at: mark.at, by: mark.by } : null;
+  } catch {
+    return null;
+  }
 }

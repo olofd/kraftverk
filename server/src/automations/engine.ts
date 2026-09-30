@@ -3,6 +3,7 @@ import {
   attributeMeaning,
   capabilitiesOf,
   capabilityIn,
+  changedRoles,
   checkBinding,
   describeExpr,
   describeSteps,
@@ -105,11 +106,17 @@ export type EngineDevice = RulePart & {
 /** One action a run would take: the command, its arguments evaluated, and how it reads. */
 type PlannedAction = { binding: RoleBinding; role: string; name: string; capability: CapabilityName; command: string; args: Record<string, Value>; what: string };
 
+/** A setting a run would change, its value evaluated. */
+type PlannedWrite = { binding: RoleBinding; key: string; value: Value };
+
+/** What a rule of commands and settings alone would change: a command, or a setting. */
+type Planned = { command: PlannedAction } | { write: PlannedWrite };
+
 export type AutomationEngineDeps = {
   store: AutomationStore;
   library: Pick<AutomationLibrary, 'fn'>;
   device: (binding: RoleBinding) => EngineDevice | null;
-  gateway: Pick<ActionGateway, 'execute' | 'write' | 'runEnded'>;
+  gateway: Pick<ActionGateway, 'execute' | 'write' | 'runEnded' | 'lastSwitch' | 'lastWrite'>;
   record: (entry: AuditRecord) => void;
   /** What devices say as they say it: events and readings start runs; and where a run in progress is said to have moved. */
   bus?: LiveBus;
@@ -128,6 +135,10 @@ const LOOK_EVERY_SECONDS = 1;
 
 /** How many automations deep one may start another, counting the first: a chain stays one a person can follow. */
 export const CHAIN_LIMIT = 4;
+
+/** How the gateway's audit and memory name what an automation did: by its id, which a rename does not change. */
+const AUTOMATION_ACTOR = 'automation:';
+const actorOf = (automation: Pick<AutomationRecord, 'id'>): string => `${AUTOMATION_ACTOR}${automation.id}`;
 
 /** Why a run cannot be started or stopped, in words for the person who asked. */
 export class RunRefusal extends Error {}
@@ -149,6 +160,10 @@ type LiveRun = {
   asker: Asker | null;
   /** The automations whose runs started this one, the first first: what a `start` step may not start again. */
   chain: readonly AutomationId[];
+  /** The first run of its chain: runs of one chain hold their parts together. */
+  root: symbol;
+  /** The parts it holds while it runs — every part it may change, as `device:part` — and what it calls each. */
+  holds: ReadonlyMap<string, string>;
   /** Who stopped it, once someone has. */
   stoppedBy: string | null;
   /** Its automation was deleted while it ran: it ends at the next step, and is neither kept nor on the timeline. */
@@ -336,7 +351,16 @@ export class AutomationEngine {
       if (evaluateNow(trigger.becomes, scope) !== true) continue;
       const planned = await this.#plan(automation, rule, scope);
       if ('unknown' in planned) continue;
-      if (planned.every((action) => this.#alreadySo(action))) return;
+      const differing = planned.filter((change) => !('command' in change ? this.#alreadySo(change.command) : this.#settingSo(change.write)));
+      if (!differing.length) return;
+      // The last edge wins: what another automation set since stays, until a condition of this one turns to
+      // yes again. What a person or an assistant changed is switched back: that is what keeping things so is for.
+      const own = actorOf(automation);
+      const others = differing.some((change) => {
+        const by = ('command' in change ? this.deps.gateway.lastSwitch(change.command.binding.device, change.command.binding.part) : this.deps.gateway.lastWrite(change.write.binding.device, change.write.key))?.by;
+        return by !== undefined && by.startsWith(AUTOMATION_ACTOR) && by !== own;
+      });
+      if (others) return;
       await this.#runAndKeep(automation, `Looked again after ${automation.recheckMinutes} min, and it still holds: ${this.#said(automation, rule, trigger.becomes)}`);
       return;
     }
@@ -363,6 +387,14 @@ export class AutomationEngine {
     });
   }
 
+  /** Whether a setting already reads what it would be set to — as the write step itself decides. */
+  #settingSo(write: PlannedWrite): boolean {
+    const device = this.deps.device(write.binding);
+    if (!device?.device || device.removed) return false;
+    const reading = readingOf(device.device.readings(), write.key);
+    return reading !== null && String(reading.value) === String(write.value);
+  }
+
   /** One command as it would be sent, its arguments evaluated: an unknown one is not guessed. */
   async #planCommand(automation: AutomationRecord, command: Command, scope: RuleScope): Promise<PlannedAction | { unknown: string }> {
     const args: Record<string, Value> = {};
@@ -375,14 +407,20 @@ export class AutomationEngine {
     return { binding, role: command.role, name, capability: command.capability, command: command.command, args, what };
   }
 
-  /** What a rule of commands alone would do, each evaluated: an unknown one is not guessed. */
-  async #plan(automation: AutomationRecord, rule: Rule, scope: RuleScope): Promise<PlannedAction[] | { unknown: string }> {
-    const planned: PlannedAction[] = [];
+  /** What a rule of commands and settings alone would change, each evaluated: an unknown one is not guessed. */
+  async #plan(automation: AutomationRecord, rule: Rule, scope: RuleScope): Promise<Planned[] | { unknown: string }> {
+    const planned: Planned[] = [];
     for (const step of rule.then) {
-      if (!('command' in step)) continue;
-      const action = await this.#planCommand(automation, step.command, scope);
-      if ('unknown' in action) return action;
-      planned.push(action);
+      if ('command' in step) {
+        const action = await this.#planCommand(automation, step.command, scope);
+        if ('unknown' in action) return action;
+        planned.push({ command: action });
+      } else if ('write' in step) {
+        const binding = automation.roles[step.write.role];
+        const value = await evaluate(step.write.value, scope, []).catch(() => null);
+        if (!binding || value === null) return { unknown: scope.name(step.write.role) };
+        planned.push({ write: { binding, key: step.write.key, value } });
+      }
     }
     return planned;
   }
@@ -779,6 +817,21 @@ export class AutomationEngine {
       return over('would-act', `Would ${said.join(', then ')}`, steps, actsOn(automation, rule));
     }
 
+    // Automations take turns with a part: one a run of another chain holds is not changed under it, and this
+    // run does nothing rather than wait — what starts it starts it again (docs/SHARED-PARTS-AND-RESERVE.md).
+    const holds = new Map(
+      changedRoles(rule).flatMap((role): [string, string][] => {
+        const binding = automation.roles[role];
+        return binding ? [[`${binding.device}:${binding.part}`, scope.name(role)]] : [];
+      })
+    );
+    const root = from?.root ?? Symbol(automation.id);
+    for (const other of [...this.#live.values(), ...this.#once.values()]) {
+      if (other.root === root) continue;
+      const shared = [...holds.keys()].find((key) => other.holds.has(key));
+      if (shared) return over('refused', `${capitalise(holds.get(shared)!)} is in use by ${quoted(other.automation.name)}, running now`, [], actsOn(automation, rule));
+    }
+
     // Acting: step by step, through the gateway, as an automation — kept and said as it goes when it takes steps.
     const live: LiveRun = {
       id: '',
@@ -787,6 +840,8 @@ export class AutomationEngine {
       run,
       asker: options.askedBy ?? null,
       chain: options.chain ?? [],
+      root,
+      holds,
       stoppedBy: null,
       gone: false,
       wake: new Set(),
@@ -1029,7 +1084,7 @@ export class AutomationEngine {
         args: planned.args,
         reason,
         actor: 'automation',
-        by: `automation:${live.automation.name}`,
+        by: actorOf(live.automation),
         run: { id: live.id, askedBy: live.asker?.actor ?? null, switches: live.allowance[planned.role] ?? 1 },
       });
     } catch (error) {
@@ -1066,7 +1121,7 @@ export class AutomationEngine {
     }
     let result: WriteResult;
     try {
-      result = await this.deps.gateway.write({ deviceId: binding.device, patch: { [write.key]: value }, actor: 'automation', by: `automation:${live.automation.name}` });
+      result = await this.deps.gateway.write({ deviceId: binding.device, patch: { [write.key]: value }, actor: 'automation', by: actorOf(live.automation) });
     } catch (error) {
       result = { outcome: 'failed', detail: (error as Error).message };
     }

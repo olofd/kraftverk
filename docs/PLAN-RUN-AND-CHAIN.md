@@ -177,6 +177,9 @@ shortcuts on the home page. Its order of work is at its end.
 
 ## Phase 3 — decided on paper first
 
+**Done, 2026-09-30.** Deploying it sets the home server's database aside
+once more (the gateway's memory records who).
+
 Two decisions shape every energy automation after this. Each gets a short
 design note before any code: both are decided in
 [SHARED-PARTS-AND-RESERVE.md](SHARED-PARTS-AND-RESERVE.md).

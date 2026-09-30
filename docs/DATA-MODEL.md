@@ -471,11 +471,13 @@ erDiagram
     text device_id PK "d-5b2e90c4a1d3"
     text part PK "main · outlet.ac"
     text switched_at "2026-10-16T17:02:10Z · what the dwell counts from"
+    text switched_by "olof · automation:a-71c2d0e5f9a3 · who, as the intent said it"
   }
   device_write {
     text device_id PK "d-5b2e90c4a1d3"
     text attribute PK "afterPowerCut"
     text written_at "2026-10-16T17:05:00Z"
+    text written_by "automation:a-71c2d0e5f9a3"
   }
   audit {
     int id PK "4812"
@@ -489,7 +491,7 @@ erDiagram
   }
   app_state {
     text key PK "policy.values · what the home sets as a whole, nothing about one device or automation"
-    text value "{loadWatts: 10}"
+    text value "{loadWatts: 10, reserveSoc: 20}"
     text updated_at "2026-09-01T10:00:00Z"
   }
   transport_kv {
@@ -543,7 +545,7 @@ erDiagram
 | `audit.resource_kind` | What an entry is about, as a kind and an id together, so the timeline can be asked for one device's, one automation's, one account's. | with every entry |
 | `device_event` | What devices said happened, beside their history. | when a device raises one |
 | `device.picture` | Which picture a device shows: its owner's pick, the same in every app. | on its page |
-| `device_switch`, `device_write` | The gateway's memory of each part and setting: when it was last switched or written — what the dwell counts from, so a restart is no way around it. A part never switched has no row: its first switch through a consequential link is confirmed. | by the gateway, at each switch and write |
+| `device_switch`, `device_write` | The gateway's memory of each part and setting: when it was last switched or written, and by whom — what the dwell counts from, so a restart is no way around it, and what lets an automation that keeps things so leave what another automation set. A part never switched has no row: its first switch through a consequential link is confirmed. | by the gateway, at each switch and write |
 | `automation`, `automation_role` | An automation: its own rule, the recipe it was copied from, its clock, mode and place on the home page; and what fills each role — a part of a device, or another automation a step starts — a row each, so a device's page asks which automations it can start; an automation deleted takes with it the roles that would start it, and those that did say they have nothing to start. | made, changed |
 | `automation_trigger` | Each `becomes` trigger's state, so a restart continues a hold and never fires one twice. | as its conditions are looked at |
 | `automation_run` | Every run, with each step it took; the unended one is running now, written at every step — one at a time, held by a unique index. A restart ends it as interrupted (docs/SEQUENCES.md). | as it runs |

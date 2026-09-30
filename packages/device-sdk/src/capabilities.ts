@@ -55,6 +55,15 @@ export const POLICY_VALUES = {
     min: 0,
     max: 10_000,
   },
+  // What a store is kept for — a power cut — is the home's to say; none is set for it (docs/SHARED-PARTS-AND-RESERVE.md).
+  reserveSoc: {
+    label: 'A reserve to keep',
+    description: 'Automations and assistants do not switch on what drains a battery below this, and you are asked first. 0: no reserve.',
+    unit: '%',
+    default: 0,
+    min: 0,
+    max: 100,
+  },
 } as const satisfies Record<string, PolicyValueSpec>;
 
 export type PolicyValueName = keyof typeof POLICY_VALUES;
@@ -115,6 +124,13 @@ export type CapabilityCommand = {
   sets: Readonly<Record<string, string>>;
   /** When it needs a person to confirm it: never, when absent; `'always'`; or as declared. */
   consequential?: Consequence | 'always';
+  /**
+   * When it drains the store behind its part — `{ when: { arg: 'on', is: true } }`,
+   * switching a load on. On a part whose energy role is `load`, of a device
+   * with a `storage` part, the gateway keeps the home's reserve (`reserveSoc`)
+   * for it: below it, refused to automations and assistants, asked of a person.
+   */
+  drains?: { when: { arg: string; is: ScalarValue } };
 };
 
 /** Data a capability answers on request that is not a value now: a forecast. */
@@ -162,6 +178,8 @@ export const CAPABILITIES = {
         sets: { on: 'on' },
         // Turning off what carries a load, or what feeds another device, is a deliberate act. How much is a load is the home's to say.
         consequential: { when: { arg: 'on', is: false }, if: [{ means: 'power.draw', above: { policy: 'loadWatts' } }] },
+        // Switching on a station's outlet runs it from its battery: the home's reserve is kept for it.
+        drains: { when: { arg: 'on', is: true } },
       },
     },
     queries: {},

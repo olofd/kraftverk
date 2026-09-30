@@ -171,7 +171,7 @@ scan of JSON. The database is set aside and started afresh for it
 | `automation_role` | What fills each role: a part of a device, `(automation, role) → (device, part)`, or another automation a step starts, `(automation, role) → starts`; exactly one of the two, foreign keys to each. A device page lists what it can start by asking here (`automation_role_device`). |
 | `automation_trigger` | Each `becomes` trigger's state, by its place in the rule: whether it held, since when, whether this hold ran it. Forgotten when the automation starts afresh. |
 | `automation_run` | **Every run.** When it started and ended, how it came out, who started it (NULL: its own triggers), the run of another automation whose step started it (`started_by_run`), why, its summary, and — in `detail` — what it read, how its conditions stood and **each step it took**. The unended row is the run in progress: written at every step, so a screen follows it and a restart finds it. **One run of an automation at a time**, held by a unique index on the unended row. Its last run is its latest ended one. |
-| `device_switch`, `device_write` | The gateway's memory of each part it switched and each setting it wrote: when, last — what the dwell counts from. Rows of the device, gone with it. |
+| `device_switch`, `device_write` | The gateway's memory of each part it switched and each setting it wrote: when, last, and by whom — what the dwell counts from. Rows of the device, gone with it. |
 
 Beside them, `device.picture` (which picture a device shows) became a column
 too, and `app_state` keeps only what the home sets as a whole.
@@ -224,6 +224,11 @@ too, and `app_state` keeps only what the home sets as a whole.
   refused when the rule is checked, and again when it runs.
 - **Keeping things so** is for rules that act at once: a sequence is started,
   not kept, and the server refuses a `recheckMinutes` for one.
+- **Parts are shared in turn.** A run holds every part it may change until
+  it ends, with the runs of its own chain; another automation's run that
+  needs one is refused and changes nothing — *"Scooter plug is in use by
+  “Start charging”, running now"* — so "Stop charging" cannot pull the plug
+  from under "Start charging" as it makes sure (SHARED-PARTS-AND-RESERVE.md).
 - **Its summary** leads with what changed, says once what was already so, and
   what it made sure of as the reading it saw: *"All was already so; Scooter
   plug: Power 240 W, at once"*; *"Did not succeed: make sure … — not in 3

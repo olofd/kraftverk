@@ -266,6 +266,12 @@ function AutomationCard({ automation, onChanged, onDeleted }: { automation: Auto
             Made from “{automation.madeFrom.label}”
           </Text>
         ) : null}
+        {/* Others that change what it changes: while one runs, the other waits its turn — its run is refused. */}
+        {automation.sharedWith.map((other) => (
+          <Text key={other.id} fontSize={12} color="$muted" lineHeight={17}>
+            Also changed by “{other.name}”: {other.parts.join(', ')}
+          </Text>
+        ))}
       </YStack>
 
       {automation.problems.length ? (

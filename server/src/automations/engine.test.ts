@@ -16,7 +16,7 @@ import {
   type DeviceType,
   type Value,
 } from '@kraftverk/device-sdk';
-import type { CommandIntent, GatewayResult } from '@kraftverk/gateway';
+import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
 
 import { closeDb, db } from '../history/db.ts';
@@ -117,6 +117,15 @@ const kit = {
         when: [{ event: { role: 'station', event: 'mains.lost' } }],
         then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: TURN } } }],
       }),
+      defineRecipe({
+        id: 'test.kit.dark',
+        label: 'Dark when charged',
+        description: 'When the battery is charged, the plug’s light off',
+        roles: { battery: { label: 'Battery', description: 'A battery', capabilities: ['battery'] }, plug: { label: 'Plug', description: 'A plug', capabilities: ['switch'] } },
+        params: { fields: {} },
+        when: [{ becomes: { compare: 'ge', left: { read: { role: 'battery', means: 'battery.soc' } }, right: { value: 50 } } }],
+        then: [{ write: { role: 'plug', key: 'light', value: { value: false } } }],
+      }),
     ],
   },
 } as unknown as DeviceType<any>;
@@ -125,7 +134,10 @@ const kit = {
 
 const PLUG_DESCRIPTION: DeviceDescription = {
   parts: [{ id: MAIN_PART, label: 'Plug', kind: 'outlet', offers: ['switch'] }],
-  attributes: [{ key: 'on', label: 'On', value: { type: 'boolean' }, means: 'switch.on' }],
+  attributes: [
+    { key: 'on', label: 'On', value: { type: 'boolean' }, means: 'switch.on' },
+    { key: 'light', label: 'Indicator light', value: { type: 'boolean' }, access: 'write', category: 'config' },
+  ],
 };
 const STATION_DESCRIPTION: DeviceDescription = {
   parts: [
@@ -159,10 +171,13 @@ const asEngineDevice = (device: Omit<EngineDevice, 'reachable' | 'wantFresh'>): 
 /** Two engines on one database are one server, restarted: what they keep is in the store. */
 function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: boolean } = {}) {
   const sent: CommandIntent[] = [];
+  const written: WriteIntent[] = [];
   const recorded: AuditRecord[] = [];
+  /** The gateway's memory: who last switched each part, and wrote each setting. */
+  const ledger = memoryLedger();
   const station = { soc: 50 as Value };
-  /** Whether the plug is on, as it reports it: unknown until a test says. */
-  const plug = { on: null as Value };
+  /** Whether the plug is on, as it reports it: unknown until a test says; and its light. */
+  const plug = { on: null as Value, light: true as Value };
   let now = options.now ?? MORNING;
   const devices: Record<string, EngineDevice> = Object.fromEntries(Object.entries({
     [`${FORECAST}:main`]: {
@@ -175,7 +190,7 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
       offline: 'Not answering',
       capabilities: ['weather.forecast'],
     },
-    [`${PLUG}:main`]: { name: 'Heater plug', removed: options.plugRemoved ?? false, hasPart: true, part: 'main', description: PLUG_DESCRIPTION, device: reader(() => (plug.on === null ? [] : [{ key: 'on', value: plug.on }]), () => now), offline: 'n/a', capabilities: ['switch'] },
+    [`${PLUG}:main`]: { name: 'Heater plug', removed: options.plugRemoved ?? false, hasPart: true, part: 'main', description: PLUG_DESCRIPTION, device: reader(() => (plug.on === null ? [] : [{ key: 'on', value: plug.on }, { key: 'light', value: plug.light }]), () => now), offline: 'n/a', capabilities: ['switch'] },
     [`${STATION}:main`]: { name: 'Garage P280', removed: false, hasPart: true, part: 'main', description: STATION_DESCRIPTION, device: reader(() => [{ key: 'soc', value: station.soc }], () => now), offline: 'n/a', capabilities: ['battery'] },
     [`${STATION}:outlet.ac`]: { name: 'Garage P280 — AC outlets', removed: false, hasPart: true, part: 'outlet.ac', description: STATION_DESCRIPTION, device: null, offline: 'n/a', capabilities: ['switch'] },
     [`${STATION}:input.ac`]: { name: 'Garage P280 — Mains', removed: false, hasPart: true, part: 'input.ac', description: STATION_DESCRIPTION, device: null, offline: 'n/a', capabilities: ['acInput'] },
@@ -189,12 +204,20 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
     gateway: {
       execute: async (intent: CommandIntent): Promise<GatewayResult> => {
         sent.push(intent);
+        ledger.switched(intent.deviceId, intent.part, { at: now.getTime(), by: intent.by });
         // The plug does as it is told, and reports it.
         if (intent.deviceId === PLUG && typeof intent.args.on === 'boolean') plug.on = intent.args.on;
         return { outcome: 'verified', detail: 'Switched, confirmed by the device', deviceAgreed: true };
       },
-      write: async () => ({ outcome: 'verified', detail: 'Changed, confirmed by the device' }),
+      write: async (intent: WriteIntent) => {
+        written.push(intent);
+        for (const key of Object.keys(intent.patch)) ledger.wrote(intent.deviceId, key, { at: now.getTime(), by: intent.by });
+        if (intent.deviceId === PLUG && typeof intent.patch.light === 'boolean') plug.light = intent.patch.light;
+        return { outcome: 'verified', detail: 'Changed, confirmed by the device' };
+      },
       runEnded: () => {},
+      lastSwitch: (device, part) => ledger.lastSwitch(device, part),
+      lastWrite: (device, attribute) => ledger.lastWrite(device, attribute),
     },
     record: (entry) => recorded.push(entry),
     bus,
@@ -210,7 +233,7 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
   const sunny = (params: Record<string, string | number> = {}, mode: AutomationRecord['mode'] = 'observe', switchPart = { device: PLUG, part: 'main' }) =>
     make('test.kit.sunny', { forecast: { device: FORECAST, part: 'main' }, switch: switchPart }, params, mode);
   const readingsMoved = () => bus.publish({ kind: 'readings', deviceId: STATION, readings: [] });
-  return { engine, store, bus, sent, recorded, make, sunny, station, plug, readingsMoved, at: (next: Date) => (now = next) };
+  return { engine, store, bus, sent, written, recorded, ledger, make, sunny, station, plug, readingsMoved, at: (next: Date) => (now = next), now: () => now };
 }
 
 /** 07:05 in Stockholm on a summer day: after the default run time. */
@@ -295,8 +318,10 @@ describe('at a time of day', () => {
 
   test('armed, it acts through the gateway, as an automation, with its reason', async () => {
     const { engine, sunny, sent } = setup();
-    expect((await engine.run(sunny({}, 'armed'))).outcome).toBe('acted');
-    expect(sent).toEqual([expect.objectContaining({ deviceId: PLUG, part: 'main', capability: 'switch', command: 'set', args: { on: true }, actor: 'automation', by: 'automation:Test automation' })]);
+    const automation = sunny({}, 'armed');
+    expect((await engine.run(automation)).outcome).toBe('acted');
+    // Named by its id, which a rename does not change: how keeping things so tells its own switches from another's.
+    expect(sent).toEqual([expect.objectContaining({ deviceId: PLUG, part: 'main', capability: 'switch', command: 'set', args: { on: true }, actor: 'automation', by: `automation:${automation.id}` })]);
     expect(sent[0]!.reason).toContain('Tomorrow looks sunny');
   });
 
@@ -358,7 +383,7 @@ describe('at a time of day', () => {
       store,
       library: new AutomationLibrary([], () => {}),
       device: () => null,
-      gateway: { execute: async () => ({ outcome: 'verified', detail: 'x', deviceAgreed: true }), write: async () => ({ outcome: 'verified', detail: 'x' }), runEnded: () => {} },
+      gateway: { execute: async () => ({ outcome: 'verified', detail: 'x', deviceAgreed: true }), write: async () => ({ outcome: 'verified', detail: 'x' }), runEnded: () => {}, lastSwitch: () => null, lastWrite: () => null },
       record: () => {},
     });
     expect(bare.steps(low).steps.map((line) => line.text)).toEqual(['Turn a device you no longer have on']);
@@ -636,6 +661,51 @@ describe('keeping things so', () => {
     await engine.tick();
     engine.stop();
     expect(sent).toEqual([]);
+  });
+
+  test('what another automation set since stays — the last edge wins — and what a person set is switched back', async () => {
+    const context = setup();
+    const { engine, station, plug, sent, ledger } = context;
+    station.soc = 74;
+    plug.on = true;
+    const kept = window(context, 10);
+    await engine.hear({ kind: 'readings', deviceId: STATION, readings: [] });
+    await settle();
+    expect(sent.map((intent) => [intent.args.on, intent.by])).toEqual([[false, `automation:${kept.id}`]]);
+
+    // Another automation turns it on: its edge stands, look after look.
+    plug.on = true;
+    ledger.switched(PLUG, 'main', { at: context.now().getTime(), by: 'automation:a-other' });
+    context.at(new Date(MORNING.getTime() + 10 * MINUTE));
+    await engine.tick();
+    context.at(new Date(MORNING.getTime() + 20 * MINUTE));
+    await engine.tick();
+    expect(sent).toHaveLength(1);
+
+    // A person turns it on after that: switched back at the next look.
+    ledger.switched(PLUG, 'main', { at: context.now().getTime(), by: 'olof' });
+    context.at(new Date(MORNING.getTime() + 30 * MINUTE));
+    await engine.tick();
+    expect(sent.map((intent) => intent.args.on)).toEqual([false, false]);
+  });
+
+  test('a setting it changes is kept so too', async () => {
+    const context = setup();
+    const { engine, station, plug, written, make } = context;
+    station.soc = 74;
+    plug.on = true;
+    const dark = make('test.kit.dark', { battery: { device: STATION, part: 'main' }, plug: { device: PLUG, part: 'main' } }, {}, 'armed', 10);
+    await engine.hear({ kind: 'readings', deviceId: STATION, readings: [] });
+    await settle();
+    expect(written.map((intent) => [intent.patch, intent.by])).toEqual([[{ light: false }, `automation:${dark.id}`]]);
+
+    // Put back on by hand: off again at the next look — and not written while it already is.
+    plug.light = true;
+    context.at(new Date(MORNING.getTime() + 10 * MINUTE));
+    await engine.tick();
+    context.at(new Date(MORNING.getTime() + 20 * MINUTE));
+    await engine.tick();
+    expect(written.map((intent) => intent.patch)).toEqual([{ light: false }, { light: false }]);
   });
 });
 

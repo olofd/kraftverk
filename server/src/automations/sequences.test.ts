@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { inlineParams, MAIN_PART, savedDeviceId, startCharging, stopCharging, type AuditRecord, type AutomationId, type DeviceDescription, type DeviceReader, type Rule } from '@kraftverk/device-sdk';
-import type { CommandIntent, GatewayResult, WriteIntent, WriteResult } from '@kraftverk/gateway';
+import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent, type WriteResult } from '@kraftverk/gateway';
 import { LiveBus, type LiveMessage } from '@kraftverk/holder';
 
 import { closeDb, db } from '../history/db.ts';
@@ -83,6 +83,7 @@ function setup(world: Partial<World> = {}) {
   const fresh: { device: string; until: number }[] = [];
   const runsEnded: string[] = [];
   const writes: WriteIntent[] = [];
+  const ledger = memoryLedger();
   const reachable = () => state.supplyOn && state.reachableAfterMs !== null && Date.now() - state.supplyOnAt >= state.reachableAfterMs;
   const charging = () => state.plugOn && reachable() && state.wakesOnSwitch !== null && state.plugSwitchedOn >= state.wakesOnSwitch;
   const now = () => new Date().toISOString();
@@ -140,6 +141,7 @@ function setup(world: Partial<World> = {}) {
     gateway: {
       execute: async (intent: CommandIntent): Promise<GatewayResult> => {
         sent.push(intent);
+        ledger.switched(intent.deviceId, intent.part, { at: Date.now(), by: intent.by });
         const on = intent.args.on === true;
         if (intent.deviceId === STATION) {
           if (on && !state.supplyOn) state.supplyOnAt = Date.now();
@@ -158,6 +160,8 @@ function setup(world: Partial<World> = {}) {
         return { outcome: 'verified', detail: 'Changed Live readings to on, confirmed by the device' };
       },
       runEnded: (runId: string) => void runsEnded.push(runId),
+      lastSwitch: (device, part) => ledger.lastSwitch(device, part),
+      lastWrite: (device, attribute) => ledger.lastWrite(device, attribute),
     },
     record: (entry) => recorded.push(entry),
     bus,
@@ -506,5 +510,54 @@ describe('blocks its owner builds', () => {
     expect(second.steps[0]).toMatchObject({ kind: 'start', outcome: 'refused' });
     expect(['It is already running', 'It is already in this chain: started again, it would start itself']).toContain(second.steps[0]!.detail);
     expect(first.outcome).toBe('failed');
+  });
+});
+
+/*
+  Automations that share a part (docs/SHARED-PARTS-AND-RESERVE.md): a run
+  holds every part it may change while it runs; another automation's run
+  that needs one is refused, and changes nothing; runs of one chain hold
+  together.
+*/
+describe('automations that share a part', () => {
+  test('stopping the charge while it is being started is refused, and changes nothing — then takes its steps once the other has ended', async () => {
+    const { make, engine, ended, switches, recorded } = setup({ reachableAfterMs: 10_000 });
+    const start = make('standard.start-charging', QUICK);
+    const stop = make('standard.stop-charging');
+    await engine.startAsked(start.id, OLOF);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    const refused = await engine.startAsked(stop.id, OLOF);
+    expect(refused).toMatchObject({ outcome: 'refused', summary: 'Scooter plug is in use by “Start charging the scooter”, running now', steps: [] });
+    expect(switches()).toEqual(['supply on']);
+    // Kept, and on the timeline: its card says why it did nothing.
+    expect(recorded.some((entry) => entry.kind === 'automation.refused' && entry.summary.includes('is in use by “Start charging the scooter”'))).toBe(true);
+
+    engine.stopAsked(start.id, 'olof');
+    expect((await ended(start.id)).outcome).toBe('stopped');
+    await engine.startAsked(stop.id, OLOF);
+    // Its turn now: it takes its steps — the plug, unpowered with its supply off, then answers for itself.
+    const second = await ended(stop.id);
+    expect(second.summary).not.toContain('is in use');
+    expect(second.steps[0]).toMatchObject({ kind: 'command', what: 'Turn Scooter plug off' });
+  });
+
+  test('a chain holds together: one that starts another and then switches the plug they share is not held back by itself', async () => {
+    const { own, make, engine, ended, switches } = setup({ reachableAfterMs: 20 });
+    const charge = make('standard.start-charging', QUICK);
+    const evening = own(
+      'Evening',
+      {
+        roles: { charger: { label: 'The charger’s plug', description: 'The plug the charger is in', capabilities: ['switch'] }, charging: { automation: true, label: 'The charging', description: 'What charges the scooter' } },
+        when: [],
+        then: [{ start: { role: 'charging', waitSeconds: { value: 60 } } }, { command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: false } } } }],
+      },
+      { starts: { charging: charge.id } }
+    );
+    await engine.startAsked(evening.id, OLOF);
+    const [parent, child] = [await ended(evening.id), await ended(charge.id)];
+    expect(child.outcome).toBe('acted');
+    expect(parent.outcome).toBe('acted');
+    expect(switches()).toEqual(['supply on', 'charger on', 'charger off']);
   });
 });

@@ -91,23 +91,27 @@ export const SCHEMA = `
   );
 
   /*
-    What the gateway remembers of each part it switched: when, last. The dwell
-    counts from it, so a restart is no way around it; a part with no row has
-    never been switched from here, and its first switch through a link that
-    makes it consequential is confirmed.
+    What the gateway remembers of each part it switched: when, last, and by
+    whom (the intent's by: "olof", "automation:a-…"). The dwell counts from
+    it, so a restart is no way around it; a part with no row has never been
+    switched from here, and its first switch through a link that makes it
+    consequential is confirmed. Who is what lets an automation that keeps
+    things so leave what another automation set (docs/SHARED-PARTS-AND-RESERVE.md).
   */
   CREATE TABLE device_switch (
     device_id   TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
     part        TEXT NOT NULL,
     switched_at TEXT NOT NULL,
+    switched_by TEXT NOT NULL,
     PRIMARY KEY (device_id, part)
   );
 
-  /* And when each setting it wrote was written, last: one write per setting per dwell. */
+  /* And when each setting it wrote was written, last, and by whom: one write per setting per dwell. */
   CREATE TABLE device_write (
     device_id  TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
     attribute  TEXT NOT NULL,
     written_at TEXT NOT NULL,
+    written_by TEXT NOT NULL,
     PRIMARY KEY (device_id, attribute)
   );
 

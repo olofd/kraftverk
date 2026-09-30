@@ -5,6 +5,8 @@ the two decisions every energy automation after it stands on. It builds on
 [AUTOMATIONS.md](AUTOMATIONS.md), [SEQUENCES.md](SEQUENCES.md) and
 [AUTOMATION-EDITOR.md](AUTOMATION-EDITOR.md).
 
+**Status:** built, 2026-09-30, as written here.
+
 ## 1. Automations that share a part
 
 ### The problem

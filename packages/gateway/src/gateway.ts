@@ -14,6 +14,7 @@ import {
   partName,
   readingOf,
   standardMeaning,
+  thresholdOf,
   type AttributeSpec,
   type CapabilityCommand,
   type CapabilityId,
@@ -152,28 +153,34 @@ export const DEFAULT_POLICY: GatewayPolicy = {
   runSwitchCeiling: 12,
 };
 
+/** When something was last switched or written, in milliseconds, and by whom — the intent's `by`: "olof", "automation:a-…". */
+export type LedgerMark = { at: number; by: string };
+
 /**
- * What the gateway remembers of each device, in milliseconds: when each part
- * was last switched — what its dwell counts from; a part never switched has
- * never been, and its first switch through a consequential link is confirmed —
- * and when each setting was last written: one write per setting per dwell.
+ * What the gateway remembers of each device: when each part was last
+ * switched, and by whom — what its dwell counts from; a part never switched
+ * has never been, and its first switch through a consequential link is
+ * confirmed — and when each setting was last written, and by whom: one write
+ * per setting per dwell. Who is what lets an automation that keeps things so
+ * tell a person's change from another automation's
+ * (docs/SHARED-PARTS-AND-RESERVE.md).
  */
 export type GatewayLedger = {
-  lastSwitch(device: SavedDeviceId, part: string): number | null;
-  switched(device: SavedDeviceId, part: string, at: number): void;
-  lastWrite(device: SavedDeviceId, attribute: string): number | null;
-  wrote(device: SavedDeviceId, attribute: string, at: number): void;
+  lastSwitch(device: SavedDeviceId, part: string): LedgerMark | null;
+  switched(device: SavedDeviceId, part: string, mark: LedgerMark): void;
+  lastWrite(device: SavedDeviceId, attribute: string): LedgerMark | null;
+  wrote(device: SavedDeviceId, attribute: string, mark: LedgerMark): void;
 };
 
 /** A ledger kept in memory: for tests, and a holder with nowhere else to keep one. */
 export function memoryLedger(): GatewayLedger {
-  const switches = new Map<string, number>();
-  const writes = new Map<string, number>();
+  const switches = new Map<string, LedgerMark>();
+  const writes = new Map<string, LedgerMark>();
   return {
     lastSwitch: (device, part) => switches.get(`${device}:${part}`) ?? null,
-    switched: (device, part, at) => void switches.set(`${device}:${part}`, at),
+    switched: (device, part, mark) => void switches.set(`${device}:${part}`, mark),
     lastWrite: (device, attribute) => writes.get(`${device}:${attribute}`) ?? null,
-    wrote: (device, attribute, at) => void writes.set(`${device}:${attribute}`, at),
+    wrote: (device, attribute, mark) => void writes.set(`${device}:${attribute}`, mark),
   };
 }
 
@@ -311,9 +318,40 @@ export class ActionGateway {
     this.#ledger = deps.ledger ?? memoryLedger();
   }
 
+  /**
+   * Why a command would draw a store below the home's reserve, in words —
+   * "Garage station's charge is 18 %, below the 20 % reserve" — or null when it
+   * would not: no reserve set, a command that does not drain as it is called,
+   * a part that is no load, or a device with no store of its own. A charge not
+   * known, or read too long ago, is below it: unknown is never the safe answer
+   * (docs/SHARED-PARTS-AND-RESERVE.md).
+   */
+  #belowReserve(device: GatewayDevice, intent: CommandIntent, spec: CapabilityCommand, readingsNow: () => readonly Reading[], values: PolicyValues): string | null {
+    const reserve = thresholdOf({ policy: 'reserveSoc' }, values);
+    if (reserve <= 0 || !spec.drains || intent.args[spec.drains.when.arg] !== spec.drains.when.is) return null;
+    const parts = partsOf(device.description);
+    if (parts.find((part) => part.id === intent.part)?.energy?.role !== 'load') return null;
+    const store = parts.find((part) => part.energy?.role === 'storage' && !part.parent);
+    const attribute = store ? attributeMeaning(device.description, store.id, 'battery.soc') : null;
+    if (!attribute) return null;
+    const reading = readingOf(readingsNow(), attribute.key);
+    if (!this.#fresh(attribute, reading) || typeof reading?.value !== 'number') return `${device.name}'s charge is not known now, so the ${reserve} % reserve cannot be kept`;
+    return reading.value < reserve ? `${device.name}'s charge is ${Math.round(reading.value)} %, below the ${reserve} % reserve` : null;
+  }
+
   /** A run has ended: what it switched no longer counts against anything. */
   runEnded(runId: string): void {
     this.#runSwitches.delete(runId);
+  }
+
+  /** Who last switched a part from here, and when; null, nobody ever has. */
+  lastSwitch(deviceId: SavedDeviceId, part: string): LedgerMark | null {
+    return this.#ledger.lastSwitch(deviceId, part);
+  }
+
+  /** Who last wrote a setting from here, and when; null, nobody ever has. */
+  lastWrite(deviceId: SavedDeviceId, attribute: string): LedgerMark | null {
+    return this.#ledger.lastWrite(deviceId, attribute);
   }
 
   /** How many runs the gateway is counting switches for now: for tests. */
@@ -327,7 +365,7 @@ export class ActionGateway {
     the confirmation a new plug needs because A had already been switched.
   */
   #key = (intent: Pick<CommandIntent, 'deviceId' | 'part'>) => `${intent.deviceId}:${intent.part}`;
-  #lastSwitchAt = (intent: Pick<CommandIntent, 'deviceId' | 'part'>) => this.#ledger.lastSwitch(intent.deviceId, intent.part) ?? 0;
+  #lastSwitchAt = (intent: Pick<CommandIntent, 'deviceId' | 'part'>) => this.#ledger.lastSwitch(intent.deviceId, intent.part)?.at ?? 0;
   #everSwitched = (intent: Pick<CommandIntent, 'deviceId' | 'part'>) => this.#ledger.lastSwitch(intent.deviceId, intent.part) !== null;
 
   /**
@@ -445,7 +483,8 @@ export class ActionGateway {
       const reading = readingOf(readingsNow(), attribute.key);
       return { value: reading?.value ?? null, current: this.#fresh(attribute, reading) };
     };
-    const declared = declaredConsequence(spec, intent.args, partValue, this.#deps.policyValues?.() ?? {});
+    const values = this.#deps.policyValues?.() ?? {};
+    const declared = declaredConsequence(spec, intent.args, partValue, values);
     const whenMatches = spec.consequential !== undefined && (spec.consequential === 'always' || !spec.consequential.when || intent.args[spec.consequential.when.arg] === spec.consequential.when.is);
     const consequentialLink = links.find((link) => link.kind.consequential) ?? null;
     const firstThroughLink = consequentialLink !== null && !this.#everSwitched(intent);
@@ -458,8 +497,14 @@ export class ActionGateway {
         : (declared.because ?? 'This needs confirming');
     // An agent cannot say yes for a person: what needs one is theirs to do, in the app, and the refusal says so.
     if (intent.actor === 'agent' && (consequential || firstThroughLink)) return refuse(`A person has to do this, in the app: it needs their confirmation. ${why}.`);
-    if (intent.actor === 'user' && (consequential || firstThroughLink) && !this.#confirmations.accept(intent.confirmation, subject)) {
-      return { ...refuse(`This action needs explicit confirmation. ${why}.`), needsConfirmation: this.#confirmations.ask(subject) };
+    // The home's reserve, for what drains a store — unless it is already so: what was not drained is not now.
+    const alreadySo = settings.every((setting) => readingOf(readingsNow(), setting.attribute.key)?.value === setting.value);
+    const reserve = alreadySo ? null : this.#belowReserve(device, intent, spec, readingsNow, values);
+    if (reserve && intent.actor !== 'user') return refuse(`${reserve}: it is kept for when it is needed, and only a person may draw on it`);
+    const asks = consequential || firstThroughLink || reserve !== null;
+    if (intent.actor === 'user' && asks && !this.#confirmations.accept(intent.confirmation, subject)) {
+      const said = [consequential || firstThroughLink ? why : null, reserve].filter((reason) => reason !== null).join('. ');
+      return { ...refuse(`This action needs explicit confirmation. ${said}.`), needsConfirmation: this.#confirmations.ask(subject) };
     }
 
     const agrees = () => settings.every((setting) => readingOf(readingsNow(), setting.attribute.key)?.value === setting.value);
@@ -493,7 +538,7 @@ export class ActionGateway {
     });
 
     // 6. Exactly one command.
-    this.#ledger.switched(intent.deviceId, intent.part, Date.now());
+    this.#ledger.switched(intent.deviceId, intent.part, { at: Date.now(), by: intent.by });
     if (intent.run) {
       const counts = this.#runSwitches.get(intent.run.id) ?? new Map<string, number>();
       this.#runSwitches.set(intent.run.id, counts.set(key, inRun + 1));
@@ -612,7 +657,7 @@ export class ActionGateway {
     // A setting written moments ago is still settling: one write per setting per dwell, whoever asks.
     const writeDwell = intent.actor === 'automation' ? this.#policy.automationDwellMs : intent.actor === 'agent' ? this.#policy.agentDwellMs : this.#policy.userWriteDwellMs;
     const settling = keys
-      .map((key) => ({ key, since: Date.now() - (this.#ledger.lastWrite(intent.deviceId, key) ?? 0) }))
+      .map((key) => ({ key, since: Date.now() - (this.#ledger.lastWrite(intent.deviceId, key)?.at ?? 0) }))
       .find(({ since }) => since < writeDwell);
     if (settling) return refuse(`Too soon: ${writable.get(settling.key)!.label} was changed ${Math.round(settling.since / 1000)} s ago; ${Math.ceil((writeDwell - settling.since) / 1000)} s of the dwell time remains`);
 
@@ -646,7 +691,7 @@ export class ActionGateway {
     let values: Readonly<Record<string, Value>>;
     const writtenAt = Date.now();
     const settlingMs = () => Math.max(0, writeDwell - (Date.now() - writtenAt));
-    for (const key of keys) this.#ledger.wrote(intent.deviceId, key, writtenAt);
+    for (const key of keys) this.#ledger.wrote(intent.deviceId, key, { at: writtenAt, by: intent.by });
     try {
       values = await session.write(changed);
     } catch (error) {

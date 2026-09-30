@@ -318,7 +318,7 @@ automations until promoted to the library.
 
 | Capability | Attributes (meaning) | Commands and queries | Consequential |
 |---|---|---|---|
-| `switch` | `on` (`switch.on`, required) | `set(on)` sets `on` | turning off while `power.draw` is above the home's `loadWatts` (5 W until set), or not known; or while it is the source of a consequential link |
+| `switch` | `on` (`switch.on`, required) | `set(on)` sets `on`; turning on **drains** the store behind a load part | turning off while `power.draw` is above the home's `loadWatts` (5 W until set), or not known; or while it is the source of a consequential link. Turning a load on while its device's charge is below the home's `reserveSoc` (none until set): refused to automations and assistants, confirmed by a person |
 | `powerMeter` | `activePower` (`power.draw`, required), `voltage`, `activeCurrent`, `frequency`, `energyImported` | — | — |
 | `battery` | `soc` (`battery.soc`, required), `capacity` | — | — |
 | `acInput` | `present` (`grid.present`, required), `activePower`; events `mains.lost`, `mains.restored` | — | — |
@@ -510,6 +510,10 @@ from its kind's — and applies, per part:
 - thresholds a declaration names rather than fixes: the capability says what is
   consequential, the home says how much (`POLICY_VALUES`, set in App settings,
   kept by the server in `app_state` and served at `/api/policy`);
+- the home's **reserve**: a command declared to drain (`drains`) — turning a
+  load part on — on a device with a `storage` part, changing something, while
+  that store's `battery.soc` is below `reserveSoc` or not known: refused to
+  automations and agents, confirmed by a person (docs/SHARED-PARTS-AND-RESERVE.md);
 - confirmation as a **token**, not a word: the refusal hands out one bound to
   the device, part, command and arguments (or the patch) and the person,
   good once, for a minute; the retry presents it. Arming an automation is

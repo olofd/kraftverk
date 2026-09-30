@@ -71,6 +71,12 @@ empty: the core names no product, and every device is found, not listed.
   does on its own); `at` triggers take weekdays; chains go four deep and
   never back on themselves; any automation can be a shortcut on the home
   page.
+- **Shared parts and a reserve** (2026-09-30,
+  [SHARED-PARTS-AND-RESERVE.md](SHARED-PARTS-AND-RESERVE.md)): a run holds
+  the parts it may change, and another automation's run that needs one is
+  refused; keeping things so leaves what another automation set; the
+  gateway refuses automations what drains a battery below the home's
+  `reserveSoc`.
 - **The gateway asks when it cannot tell**: a declared condition on a
   reading that is missing or stale counts as holding. How much is a load is
   the home's (`loadWatts`, App settings → Safety, `/api/policy`), and a
@@ -148,7 +154,7 @@ plug are added again. The set-aside file is kept beside the new one.
 From the Phase 1 review:
 
 - Unknown load asks. A missing or stale reading now needs confirmation.
-- The 5 W threshold is the home's `loadWatts`, in App settings → Safety and at `/api/policy`.
+- The 5 W threshold is the home's `loadWatts`, in App settings → Safety and at `/api/policy`. Beside it, `reserveSoc`: none until the home sets one.
 - Trigger state is persisted.
 - The P280 state tool is gone.
 - Phase 2 was bundled with the confirmation nonce.
@@ -177,9 +183,8 @@ From the Phase 1 review:
 ### Next steps
 
 **First, the rest of [PLAN-RUN-AND-CHAIN.md](PLAN-RUN-AND-CHAIN.md)**: its
-Phases 1 (fixes) and 2 (the automation editor) are done; next, Phase 3 —
-parts shared between automations, decided on paper first — then Phase 4,
-the language for import and export. The steps below follow it.
+Phases 1 (fixes), 2 (the automation editor) and 3 (shared parts, the
+reserve) are done; next, Phase 4, the language for import and export. The steps below follow it.
 
 In this order, each small and each keeping the checks green:
 

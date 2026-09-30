@@ -82,11 +82,12 @@ type StationReading = { present: boolean | null; at: string | null; connected: b
 /** A station: its mains an input part with `acInput`, and an outlet part it switches itself. */
 const STATION_DESCRIPTION: DeviceDescription = {
   parts: [
-    { id: MAIN_PART, label: 'Station', kind: 'device' },
-    { id: 'input.ac', label: 'Mains', kind: 'input' },
-    { id: 'outlet.ac', label: 'AC outlets', kind: 'outlet', offers: ['switch'] },
+    { id: MAIN_PART, label: 'Station', kind: 'device', energy: { role: 'storage' } },
+    { id: 'input.ac', label: 'Mains', kind: 'input', energy: { role: 'source' } },
+    { id: 'outlet.ac', label: 'AC outlets', kind: 'outlet', offers: ['switch'], energy: { role: 'load' } },
   ],
   attributes: [
+    { key: 'soc', label: 'Battery', value: { type: 'number', unit: '%' }, quantity: 'percent', means: 'battery.soc' },
     { key: 'input.ac.present', part: 'input.ac', label: 'Mains present', value: { type: 'boolean' }, means: 'grid.present' },
     { key: 'outlet.ac.on', part: 'outlet.ac', label: 'AC outlets', value: { type: 'boolean' }, means: 'switch.on' },
     { key: 'outlet.ac.watts', part: 'outlet.ac', label: 'AC draw', value: { type: 'number', unit: 'W' }, quantity: 'power', means: 'power.draw' },
@@ -96,6 +97,8 @@ const STATION_DESCRIPTION: DeviceDescription = {
 class StubStation {
   reading: StationReading | (() => StationReading) = { present: true, at: now(), connected: true };
   outlet = { on: true as boolean | null, watts: 40 as number | null };
+  /** Its battery's charge; not known, when null. */
+  soc: number | null = 60;
   outletCommands: [string, boolean][] = [];
 
   #current(): StationReading {
@@ -109,6 +112,7 @@ class StubStation {
         const reading = this.#current();
         return [
           ...(reading?.at ? [{ key: 'input.ac.present', value: reading.present, at: reading.at }] : []),
+          { key: 'soc', value: this.soc, at: now() },
           { key: 'outlet.ac.on', value: this.outlet.on, at: now() },
           { key: 'outlet.ac.watts', value: this.outlet.watts, at: now() },
         ];
@@ -158,7 +162,7 @@ function harness(
   const stationSession = station.session();
   const ledger = options.ledger ?? memoryLedger();
   // Most cases are about a plug that has been switched before; the first switch has its own test.
-  if (options.everSwitched !== false && ledger.lastSwitch(PLUG, MAIN_PART) === null) ledger.switched(PLUG, MAIN_PART, 0);
+  if (options.everSwitched !== false && ledger.lastSwitch(PLUG, MAIN_PART) === null) ledger.switched(PLUG, MAIN_PART, { at: 0, by: 'olof' });
 
   const devices: Record<string, GatewayDevice> = {
     [PLUG]: { name: 'Heater plug', session: plugSession, description: PLUG_DESCRIPTION, offline: 'Not answering' },
@@ -627,5 +631,75 @@ describe('dwell', () => {
     const refused = [first, second].filter((result) => result.outcome === 'refused');
     expect(refused).toHaveLength(1);
     expect(refused[0]!.detail).toContain('Too soon');
+  });
+});
+
+/*
+  The home's reserve (docs/SHARED-PARTS-AND-RESERVE.md): switching on what
+  drains a station's battery below it is refused to automations and
+  assistants, and asked of a person. None is set until the home sets one.
+*/
+describe('a reserve the home keeps', () => {
+  const on = (overrides: Partial<CommandIntent> = {}) => cut({ deviceId: STATION, part: 'outlet.ac', args: { on: true }, ...overrides });
+  const low = (policyValues: PolicyValues = { reserveSoc: 20 }) => {
+    const context = harness({ policyValues });
+    context.station.outlet = { on: false, watts: 0 };
+    context.station.soc = 15;
+    return context;
+  };
+
+  test('none set: nothing is read, and an automation switches its outlets on at any charge', async () => {
+    const { gateway, station } = low({});
+    expect((await gateway.execute(on())).outcome).toBe('verified');
+    expect(station.outletCommands).toEqual([['outlet.ac', true]]);
+  });
+
+  test('below it, an automation and an assistant are refused, in words, and nothing is sent', async () => {
+    const { gateway, station } = low();
+    expect(await gateway.execute(on())).toMatchObject({
+      outcome: 'refused',
+      detail: "Garage P280's charge is 15 %, below the 20 % reserve: it is kept for when it is needed, and only a person may draw on it",
+    });
+    expect((await gateway.execute(on({ actor: 'agent', by: 'assistant for olof' }))).outcome).toBe('refused');
+    expect(station.outletCommands).toEqual([]);
+  });
+
+  test('below it, a person is asked — and with their yes, it is done', async () => {
+    const { gateway, station } = low();
+    const asked = await gateway.execute(on({ actor: 'user', by: 'olof' }));
+    // Read before it is matched: matching against expect.any puts the matcher in its place.
+    const confirmation = (asked as { needsConfirmation: string }).needsConfirmation;
+    expect(typeof confirmation).toBe('string');
+    expect(asked).toMatchObject({ outcome: 'refused', detail: "This action needs explicit confirmation. Garage P280's charge is 15 %, below the 20 % reserve." });
+    expect(await gateway.execute(on({ actor: 'user', by: 'olof', confirmation }))).toMatchObject({ outcome: 'verified' });
+    expect(station.outletCommands).toEqual([['outlet.ac', true]]);
+  });
+
+  test('above it, or already on, or switching off: the reserve has nothing to say', async () => {
+    const above = low();
+    above.station.soc = 40;
+    expect((await above.gateway.execute(on())).outcome).toBe('verified');
+
+    const already = low();
+    already.station.outlet = { on: true, watts: 0 };
+    expect(await already.gateway.execute(on())).toMatchObject({ outcome: 'verified', detail: 'Already on' });
+
+    const off = low();
+    off.station.outlet = { on: true, watts: 0 };
+    expect((await off.gateway.execute(on({ args: { on: false } }))).outcome).toBe('verified');
+  });
+
+  test('a charge not known is not taken for enough', async () => {
+    const { gateway, station } = low();
+    station.soc = null;
+    expect(await gateway.execute(on())).toMatchObject({ outcome: 'refused', detail: "Garage P280's charge is not known now, so the 20 % reserve cannot be kept: it is kept for when it is needed, and only a person may draw on it" });
+  });
+
+  test('a plug has no store behind it: the reserve is not about it', async () => {
+    const { gateway, plug } = harness({ policyValues: { reserveSoc: 20 } });
+    plug.on = false;
+    // Sent — whatever the station it feeds then says of its mains.
+    expect((await gateway.execute(cut({ args: { on: true } }))).outcome).not.toBe('refused');
+    expect(plug.commands).toEqual([true]);
   });
 });

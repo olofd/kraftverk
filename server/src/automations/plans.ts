@@ -3,6 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import type { AutomationDraft, AutomationDraftView, AutomationView, Rehearsal, RoleBinding } from '@kraftverk/api-contract';
 import {
   capabilitiesOf,
+  changedRoles,
   checkBinding,
   checkRule,
   describeRule,
@@ -109,11 +110,32 @@ export function plans({ catalog, sessions, library, engine, automations }: PlanD
     };
   };
 
+  /** The parts an automation may change, by `device:part`, each with what fills it. */
+  const changedParts = (automation: Pick<AutomationRecord, 'rule' | 'roles'>): Map<string, RoleBinding> =>
+    new Map(
+      changedRoles(automation.rule).flatMap((role): [string, RoleBinding][] => {
+        const binding = automation.roles[role];
+        return binding ? [[`${binding.device}:${binding.part}`, binding]] : [];
+      })
+    );
+
+  /** The other automations that change a part this one changes, and which parts, as everywhere else names them. */
+  const sharedWith = (automation: AutomationRecord): AutomationView['sharedWith'] => {
+    const mine = changedParts(automation);
+    if (!mine.size) return [];
+    return automations.list().flatMap((other) => {
+      if (other.id === automation.id) return [];
+      const shared = [...changedParts(other).keys()].filter((key) => mine.has(key));
+      return shared.length ? [{ id: other.id, name: other.name, parts: shared.map((key) => roleName(mine.get(key))) }] : [];
+    });
+  };
+
   const view = (automation: AutomationRecord): AutomationView => {
     const { lookedAt: _lookedAt, madeFrom, ...shown } = automation;
     return {
       ...shown,
       madeFrom: madeFrom ? { id: madeFrom, label: library.recipe(madeFrom)?.label ?? madeFrom } : null,
+      sharedWith: sharedWith(automation),
       ...said(automation.rule, automation.roles, automation.starts),
       now: engine.judge(automation),
       nextLookAt: engine.nextLookAt(automation),

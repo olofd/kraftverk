@@ -1208,6 +1208,17 @@ describe('automations', () => {
     expect((await as(`${path}/start`, { method: 'POST' })).status).toBe(409);
   }, 30_000);
 
+  test('each says which others change the parts it changes', async () => {
+    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
+    const plug = await added('Scooter plug', { server: simulated, typeId: 'tuya.zigbee-plug' });
+    const roles = { supply: { device: station.id, part: 'outlet.ac' }, charger: whole(plug) };
+    const start = (await create('Start charging the scooter', 'standard.start-charging', roles, { reachSeconds: 20, withinSeconds: 10, tries: 1 })).body;
+    const stop = (await create('Stop charging the scooter', 'standard.stop-charging', roles)).body;
+    expect(stop.sharedWith).toEqual([{ id: start.id, name: 'Start charging the scooter', parts: ['Garage P280 — AC outlets', 'Scooter plug'] }]);
+    const again = ((await as('/automations')).body.automations as { id: string; sharedWith: { id: string }[] }[]).find((one) => one.id === start.id)!;
+    expect(again.sharedWith.map((other) => other.id)).toEqual([stop.id]);
+  });
+
   test('one starts another: a chain that would come back to itself is refused, and one whose other is deleted says so', async () => {
     const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
     const plug = await added('Scooter plug', { server: simulated, typeId: 'tuya.zigbee-plug' });

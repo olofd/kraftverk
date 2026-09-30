@@ -691,6 +691,13 @@ export function ruleCommands(rule: Rule): Command[] {
 }
 
 /**
+ * The roles whose parts a rule may change — every part a command or a
+ * setting names, whichever way it goes: what a run of it holds while it runs,
+ * and what it shares with another automation (docs/SHARED-PARTS-AND-RESERVE.md).
+ */
+export const changedRoles = (rule: Rule): string[] => [...new Set([...ruleCommands(rule).map((command) => command.role), ...ruleUses(rule).writes.map((write) => write.role)])];
+
+/**
  * Whether a rule takes steps — waits, choices, another automation, a
  * fallback — rather than sending its commands and settings at once.
  */

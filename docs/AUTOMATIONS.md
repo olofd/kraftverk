@@ -209,8 +209,11 @@ nothing recorded, when every attribute its commands set (as the capability
 declares `sets`) already reads what it would be set to. The owner's charge
 window: switched off at 74 %, switched back on by hand, it is off again at
 the next look. Between the two levels no condition holds, and nothing is
-changed: the window stays a window. Time-of-day and event triggers have
-nothing to keep. The gateway's dwell still applies to every run, and turning
+changed: the window stays a window. What another automation set since it
+last acted is left — the last edge wins, and the two do not undo each other
+at every look; what a person or an assistant changed is switched back. A
+setting it changes is kept so as a command is. Time-of-day and event
+triggers have nothing to keep. The gateway's dwell still applies to every run, and turning
 it on for an armed automation is confirmed as arming is.
 
 A run evaluates `if`, then each action: an automation that **observes** says
@@ -234,6 +237,14 @@ when it next looks again; its last run; what it would do now; and its history,
 day by day, each run opening to what it read and did, each change saying who
 made it and what changed ("Only watching → Acting", "Keep it so: off → every
 10 min").
+
+**Automations take turns with a part.** A run holds every part it may
+change while it runs — with the runs of its own chain — and another
+automation's run that needs one is refused, not queued, and says which and
+whose; people and assistants are never held. Each automation's card says
+which others change the same parts (`sharedWith`). And the gateway keeps the
+home's **reserve**: below `reserveSoc`, switching on what drains a station's
+battery is refused to an automation (docs/SHARED-PARTS-AND-RESERVE.md).
 
 A change to what an automation watches, or to whether it may act, starts its
 conditions afresh and looks at them at once: let act while one already

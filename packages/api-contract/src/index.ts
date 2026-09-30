@@ -708,10 +708,17 @@ export type AutomationView = RoleFills & {
   mode: AutomationMode;
   /**
    * Keeping things so: every this many minutes, a condition that still holds
-   * runs it again, unless what it would do is already so. Null: what it did
-   * stays until a condition turns true again, and a person may change it.
+   * runs it again, unless what it would do is already so — or another
+   * automation set it since: the last edge wins. Null: what it did stays
+   * until a condition turns true again, and a person may change it.
    */
   recheckMinutes: number | null;
+  /**
+   * The other automations that change parts it changes, and which: "Also
+   * changed by “Stop charging”: Scooter plug". While one runs, the other's run
+   * that needs a part it holds is refused (docs/SHARED-PARTS-AND-RESERVE.md).
+   */
+  sharedWith: { id: AutomationId; name: string; parts: string[] }[];
   createdAt: string;
   updatedAt: string;
   /** Its latest run that has ended; null before its first. */
