@@ -120,6 +120,7 @@ packages/
   protocols/tuya-local/  @kraftverk/protocol-tuya-local  frames, crypto, handshake, discovery packets, the local key;
                                                          a binding for lan
   protocols/open-meteo/  @kraftverk/protocol-open-meteo  the Open-Meteo API's requests and answers; a binding for https
+  protocols/elprisetjustnu/ @kraftverk/protocol-elprisetjustnu the elprisetjustnu.se price API; a binding for https
   protocols/niu-cloud/   @kraftverk/protocol-niu-cloud   the NIU cloud as the NIU app speaks it: sign-in, tokens, the
                                                          state; a binding for https reaching NIU's two hosts
   devices/aferiy-p280/   @kraftverk/device-aferiy-p280   a device type: power-station
@@ -130,6 +131,7 @@ packages/
   devices/tuya-zigbee-plug/ @kraftverk/device-tuya-zigbee-plug smart-plug: a Zigbee socket behind a Tuya gateway, reached
                                                          through the gateway (`ip#zigbee-address` on the lan transport)
   services/open-meteo/   @kraftverk/service-open-meteo   weather, a service
+  services/elprisetjustnu/ @kraftverk/service-elprisetjustnu energy-price: Sweden's electricity prices, a service
   gateway/               @kraftverk/gateway              the action gateway's rules: pure, run by whichever holder has the connection
   api-contract/          @kraftverk/api-contract         the HTTP API's shapes, types only: declared once, imported by the server and the app
   holder/                @kraftverk/holder               what every holder does with a device: open, watch, fail over, judge a check; pure
@@ -322,6 +324,7 @@ automations until promoted to the library.
 | `powerMeter` | `activePower` (`power.draw`, required), `voltage`, `activeCurrent`, `frequency`, `energyImported` | — | — |
 | `battery` | `soc` (`battery.soc`, required), `capacity` | — | — |
 | `acInput` | `present` (`grid.present`, required), `activePower`; events `mains.lost`, `mains.restored` | — | — |
+| `energyPrice` | `now` (`price.now`, required), `rank` (`price.rank`) | — | — |
 | `weather.forecast` | — | query `hourly(hours)`, answering a list of `{at, temperature, cloudCover, precipitation, irradiance}` | — |
 
 **Projections** (`standards.ts`): every standard meaning, quantity, state class
@@ -387,7 +390,9 @@ The standard meanings start small and grow only when something needs them:
 saying where — and three a station keeps as settings, so a recipe can change
 them without naming a product's keys: `battery.chargeLimit`,
 `battery.dischargeFloor` and `power.in.ac.max` (a `number` in Home
-Assistant). An on/off has no quantity: it is a boolean, drawn as a band. `validateDescription` checks every rule, and
+Assistant); and `price.now` and `price.rank`, what electricity costs now
+(in the provider's currency: a meaning may allow several units) and where the
+hour stands among the day's by price. An on/off has no quantity: it is a boolean, drawn as a band. `validateDescription` checks every rule, and
 the contract suite checks a session keeps its description.
 
 ### 4.3 Connection methods and setup

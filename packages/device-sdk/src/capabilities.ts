@@ -213,6 +213,13 @@ export const CAPABILITIES = {
       'mains.restored': { label: 'Mains back', level: 'info', description: 'Mains power came back.' },
     },
   },
+  energyPrice: {
+    label: 'Energy price',
+    // What electricity costs now, and where this hour stands among the day's.
+    attributes: { now: { means: 'price.now', required: true }, rank: { means: 'price.rank' } },
+    commands: {},
+    queries: {},
+  },
   'weather.forecast': {
     label: 'Weather forecast',
     attributes: {},

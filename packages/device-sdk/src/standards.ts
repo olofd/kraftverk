@@ -44,6 +44,8 @@ export const HOME_ASSISTANT_QUANTITIES: Readonly<Record<Quantity, { deviceClass:
   signal: { deviceClass: 'signal_strength', units: ['dBm', 'dB'] },
   distance: { deviceClass: 'distance', units: ['km', 'm', 'mi'] },
   speed: { deviceClass: 'speed', units: ['km/h', 'm/s', 'mph'] },
+  price: { deviceClass: 'monetary', units: ['EUR/kWh', 'SEK/kWh', 'NOK/kWh', 'DKK/kWh'] },
+  rank: { deviceClass: null, units: [''] },
 };
 
 /** Home Assistant uses the same three state classes, by the same names. */
@@ -165,6 +167,14 @@ export const MEANING_PROJECTIONS: Readonly<Record<StandardMeaningId, MeaningProj
     // Hundredths of a degree.
     matter: { cluster: 'TemperatureMeasurement', attribute: 'MeasuredValue', scale: 100 },
   },
+  'price.now': {
+    homeAssistant: { platform: 'sensor', deviceClass: null },
+    matter: { none: 'Matter states tariffs in clusters kraftverk does not project yet' },
+  },
+  'price.rank': {
+    homeAssistant: { platform: 'sensor', deviceClass: null },
+    matter: { none: 'Matter has no rank of an hour by price' },
+  },
   'sky.cloudCover': {
     homeAssistant: { platform: 'sensor', deviceClass: null },
     matter: { none: 'Matter has no cloud-cover measurement' },
@@ -196,6 +206,10 @@ export const CAPABILITY_PROJECTIONS: Readonly<Record<CapabilityName, CapabilityP
   acInput: {
     homeAssistant: { platforms: ['binary_sensor', 'sensor'], commands: {} },
     matter: { clusters: ['PowerSource'], commands: {} },
+  },
+  energyPrice: {
+    homeAssistant: { platforms: ['sensor'], commands: {} },
+    matter: { none: 'Matter states tariffs in clusters kraftverk does not project yet' },
   },
   'weather.forecast': {
     homeAssistant: { none: 'MQTT discovery has no weather platform, and Home Assistant has its own forecasts' },

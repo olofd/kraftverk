@@ -9,7 +9,7 @@ import {
   homeAssistantEntityOf,
   isProjected,
 } from './standards.ts';
-import { STANDARD_MEANINGS, type StandardMeaning, type StandardMeaningId } from './meanings.ts';
+import { STANDARD_MEANINGS, unitsOfMeaning, type StandardMeaning, type StandardMeaningId } from './meanings.ts';
 
 /*
   The projections into Home Assistant and Matter (docs/ARCHITECTURE.md §8
@@ -26,7 +26,7 @@ describe('standard meanings', () => {
     for (const id of meanings) {
       const meaning: StandardMeaning = STANDARD_MEANINGS[id];
       if (meaning.type !== 'number') continue;
-      expect({ id, ok: HOME_ASSISTANT_QUANTITIES[meaning.quantity].units.includes(meaning.unit) }).toEqual({ id, ok: true });
+      expect({ id, ok: unitsOfMeaning(meaning).every((unit) => HOME_ASSISTANT_QUANTITIES[meaning.quantity].units.includes(unit)) }).toEqual({ id, ok: true });
     }
   });
 

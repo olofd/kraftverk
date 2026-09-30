@@ -37,6 +37,8 @@ export function observedAt(at: string, now = new Date()): string {
 
 /** How many decimals a kind is worth, when the device does not say. */
 const DEFAULT_PRECISION: Record<Quantity, number> = {
+  price: 2,
+  rank: 0,
   power: 0,
   energy: 0,
   percent: 0,

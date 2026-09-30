@@ -8,7 +8,7 @@ import {
   type CapabilityId,
   type CapabilitySpec,
 } from './capabilities.ts';
-import { QUANTITIES, STANDARD_NAMESPACES, STATE_CLASSES, standardMeaning, type Quantity, type StateClass } from './meanings.ts';
+import { QUANTITIES, STANDARD_NAMESPACES, STATE_CLASSES, standardMeaning, unitsOfMeaning, type Quantity, type StateClass } from './meanings.ts';
 import type { ConfigField } from './schema.ts';
 import { checkValue, isScalarType, valueTypeProblems, type ScalarValueType, type Value, type ValueType } from './values.ts';
 
@@ -447,8 +447,8 @@ export function validateDescription(description: DeviceDescription, typeId = 'br
       if (attribute.value?.type !== 'boolean') problem(`${where} means ${attribute.means}, which is on or off, but is not a boolean`);
     } else if (standard) {
       const standardState = standard.stateClass ?? 'measurement';
-      if (attribute.value?.type !== 'number' || (attribute.value.unit ?? '') !== standard.unit || quantityOf(attribute) !== standard.quantity) {
-        problem(`${where} means ${attribute.means}, which is ${standard.quantity} in "${standard.unit}"`);
+      if (attribute.value?.type !== 'number' || !unitsOfMeaning(standard).includes(attribute.value.unit ?? '') || quantityOf(attribute) !== standard.quantity) {
+        problem(`${where} means ${attribute.means}, which is ${standard.quantity} in ${unitsOfMeaning(standard).map((unit) => `"${unit}"`).join(' or ')}`);
       } else if ((attribute.stateClass ?? 'measurement') !== standardState) {
         problem(`${where} means ${attribute.means}, which is ${standardState}, but is declared ${attribute.stateClass ?? 'measurement'}`);
       }

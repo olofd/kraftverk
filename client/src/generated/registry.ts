@@ -19,7 +19,9 @@ import deviceNiuUqiGtType from '@kraftverk/device-niu-uqi-gt';
 import deviceNiuUqiGtUi from '@kraftverk/device-niu-uqi-gt/ui';
 import deviceTuyaPlugType from '@kraftverk/device-tuya-plug/type';
 import deviceTuyaZigbeePlugType from '@kraftverk/device-tuya-zigbee-plug';
+import serviceElprisetjustnuType from '@kraftverk/service-elprisetjustnu';
 import serviceOpenMeteoType from '@kraftverk/service-open-meteo';
+import protocolElprisetjustnu from '@kraftverk/protocol-elprisetjustnu';
 import protocolNiuCloud from '@kraftverk/protocol-niu-cloud';
 import protocolOpenMeteo from '@kraftverk/protocol-open-meteo';
 import protocolSydpower from '@kraftverk/protocol-sydpower';
@@ -41,6 +43,7 @@ export const DEVICE_TYPES: readonly DeviceType<any>[] = [
   deviceNiuUqiGtType,
   deviceTuyaPlugType,
   deviceTuyaZigbeePlugType,
+  serviceElprisetjustnuType,
   serviceOpenMeteoType,
 ];
 
@@ -60,6 +63,7 @@ export const DEVICE_ASSETS: Readonly<Record<string, DeviceAssets>> = {
 };
 
 export const PROTOCOLS: readonly Protocol[] = [
+  protocolElprisetjustnu,
   protocolNiuCloud,
   protocolOpenMeteo,
   protocolSydpower,

@@ -275,7 +275,7 @@ describe('everything needs a session', () => {
 describe('what can be added', () => {
   test('every installed type, by category, with how it can be reached and whether this server can', async () => {
     const { body } = await as('/device-types');
-    expect(Object.keys(body.categories)).toEqual(['power-station', 'smart-plug', 'weather', 'vehicle']);
+    expect(Object.keys(body.categories)).toEqual(['power-station', 'smart-plug', 'weather', 'energy-price', 'vehicle']);
     const p280 = body.types.find((type: { id: string }) => type.id === 'aferiy.p280');
     expect(p280.meta.category).toBe('power-station');
     // Its own ways, and simulated — which every type has, and a server can always hold.
@@ -1044,6 +1044,7 @@ describe('automations', () => {
     expect(recipes.map((recipe: { id: string }) => recipe.id).sort()).toEqual([
       'open-meteo.weather.forecast-switch',
       'standard.charge-between',
+      'standard.cheap-hours',
       'standard.low-battery',
       'standard.mains-lost',
       'standard.start-charging',

@@ -35,7 +35,11 @@ export type Quantity =
   /** How far: a vehicle's range, its odometer. */
   | 'distance'
   /** How fast something moves. */
-  | 'speed';
+  | 'speed'
+  /** What energy costs, in a currency per unit: "SEK/kWh". */
+  | 'price'
+  /** A place in an order, 1 first: the cheapest hour of the day. No unit. */
+  | 'rank';
 
 export const QUANTITIES: readonly Quantity[] = [
   'power',
@@ -51,6 +55,8 @@ export const QUANTITIES: readonly Quantity[] = [
   'signal',
   'distance',
   'speed',
+  'price',
+  'rank',
 ];
 
 /**
@@ -71,8 +77,19 @@ export const STATE_CLASSES: readonly StateClass[] = ['measurement', 'total', 'to
  * attribute claiming it keeps — or an on/off.
  */
 export type StandardMeaning =
-  | { label: string; type: 'number'; unit: string; quantity: Quantity; stateClass?: StateClass }
+  | {
+      label: string;
+      type: 'number';
+      unit: string;
+      /** Other units an attribute claiming it may be in instead — a price is in its provider's currency — each one Home Assistant takes for the quantity. */
+      units?: readonly string[];
+      quantity: Quantity;
+      stateClass?: StateClass;
+    }
   | { label: string; type: 'boolean' };
+
+/** The units an attribute with this meaning may be in: its own, or one of the others it allows. */
+export const unitsOfMeaning = (meaning: Extract<StandardMeaning, { type: 'number' }>): readonly string[] => [meaning.unit, ...(meaning.units ?? [])];
 
 /**
  * Meanings every device that has them shares.
@@ -111,6 +128,10 @@ export const STANDARD_MEANINGS = {
   'temperature.air': { label: 'Temperature', type: 'number', unit: '°C', quantity: 'temperature' },
   /** How much of the sky is cloud, measured or forecast. */
   'sky.cloudCover': { label: 'Cloud cover', type: 'number', unit: '%', quantity: 'percent' },
+  /** What electricity costs now, per kWh, in the provider's currency. */
+  'price.now': { label: 'Electricity price', type: 'number', unit: 'EUR/kWh', units: ['SEK/kWh', 'NOK/kWh', 'DKK/kWh'], quantity: 'price' },
+  /** Where the hour now stands among the day's hours by price: 1 is the cheapest. "The cheapest four hours" is a rank of 4 or less. */
+  'price.rank': { label: 'Price rank', type: 'number', unit: '', quantity: 'rank' },
 } as const satisfies Record<string, StandardMeaning>;
 
 export type StandardMeaningId = keyof typeof STANDARD_MEANINGS;

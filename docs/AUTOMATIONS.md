@@ -174,6 +174,9 @@ product still gets them.
   and nothing clicks in between.
 - **When mains power is lost** — on `acInput`'s own `mains.lost`, from any
   station that raises it.
+- **In the cheapest hours** — switch something on in the day's cheapest
+  hours by the electricity price (`price.rank`, from any part offering
+  `energyPrice`), off in the others.
 
 A recipe may use any installed package's functions; one whose function is
 missing is refused at start, saying which.

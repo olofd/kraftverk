@@ -37,6 +37,19 @@ test('a forecast fetched a while ago is still current: its card is not drawn as 
   await expect(card).not.toContainText('as of');
 });
 
+test('electricity prices: the price now in the currency chosen, and where the hour stands today', async ({ page, request }) => {
+  const prices = await addSimulated(request, 'elprisetjustnu.prices', unique('Prices'), { area: 'SE3', currency: 'SEK' });
+
+  await page.goto('/');
+  const card = page.getByRole('button', { name: new RegExp(`^${prices.name},`) });
+  await expect(card).toBeVisible();
+  await expect(card).toContainText('SEK/kWh');
+
+  await page.goto(`/device/${prices.id}`);
+  await expect(page.getByText('Electricity price', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Price rank today', { exact: true }).first()).toBeVisible();
+});
+
 test('the device list follows the live stream: a new device appears without reloading', async ({ page, request }) => {
   // The socket, through the same origin as the app — as the web container serves it.
   const opened = page.waitForEvent('websocket', (socket) => socket.url().endsWith('/api/live'));

@@ -230,6 +230,10 @@ screen part. Standard recipes stay free of product words.
      understand.
    - Needs a money quantity and the meanings `price.now` and `price.rank`.
    - Open-Meteo is the model: readings beside its forecast query.
+   - **Done, 2026-09-30:** `packages/services/elprisetjustnu` (and its
+     protocol): Sweden's prices per quarter hour, the rank of hours; the
+     quantities `price` and `rank`, the capability `energyPrice`, and the
+     standard recipe "In the cheapest hours".
 5. **Richer time triggers on recipes.** `at` takes weekdays (as the timers in
    Phase 2 do), an interval ("every 15 minutes"), and sunrise and sunset
    from the home's place. "When tomorrow's prices arrive" is a service

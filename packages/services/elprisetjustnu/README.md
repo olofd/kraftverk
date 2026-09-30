@@ -1,0 +1,47 @@
+# Elpriset just nu — Sweden's electricity prices
+
+A service, not hardware: the day-ahead electricity price for a Swedish price
+area, from [elprisetjustnu.se](https://www.elprisetjustnu.se/elpris-api) —
+free, with no account and no key. Only the price area is sent, to ask for
+its prices.
+
+## What it reports
+
+One part, the price area, offering `energyPrice`:
+
+| Attribute | Meaning | What it is |
+|---|---|---|
+| `price` | `price.now` | What electricity costs in the quarter hour now, per kWh, in SEK or EUR as chosen — the market price, without tax, fees or your supplier's margin. |
+| `rank` | `price.rank` | Where the hour now stands among the day's hours by price: 1 is the cheapest. |
+
+- **Periods are quarter hours** since Nord Pool moved to them in October
+  2025. A **rank is of hours**, each at the average of its four quarters,
+  so "the four cheapest hours" means what it says.
+- **A day is the Swedish calendar day**: 23 hours in March, 25 in October,
+  and ranked among those.
+- **A day known only in part ranks nothing**: the rank is unknown rather
+  than "cheapest" among the hours that happen to be known.
+- A reading's time is when its quarter hour began, and it stays current for
+  20 minutes: prices are published facts, not measurements.
+
+## How it asks
+
+- `GET /api/v1/prices/YYYY/MM-DD_SEn.json`, today's and tomorrow's, every
+  30 minutes. Tomorrow's is published after about 13:00; asked for before,
+  it answers 404, which is "not yet", not an error.
+- What was fetched is kept (the device's store), so a restart has today's
+  prices at once; a failed fetch leaves them in use as long as they cover
+  now.
+
+## In automations
+
+The shared recipe **"In the cheapest hours"** (`standard.cheap-hours`)
+switches something on in the day's cheapest hours and off in the others:
+any part offering `energyPrice` fills its role, so another price service
+would too. A rule of your own can use `price.rank` and `price.now` like any
+reading — "only if the price is below 0.50".
+
+## Simulated
+
+A made-up day, cheap at night and dear in the morning and early evening,
+per quarter hour, with no network.

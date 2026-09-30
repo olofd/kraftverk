@@ -427,7 +427,8 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       if (spec && !meaningsOfNeed(spec).has(expr.read.means)) {
         problems.push(`${where}: ${expr.read.role} asks for nothing that reports ${expr.read.means}`);
       }
-      return standard.type === 'boolean' ? { type: 'boolean' } : { type: 'number', unit: standard.unit || null };
+      // One in any of several units — a price, in its provider's currency — is compared in its own, known once bound.
+      return standard.type === 'boolean' ? { type: 'boolean' } : { type: 'number', unit: standard.units ? null : standard.unit || null };
     }
     if ('call' in expr) {
       if (!options.calls) problems.push(`${where}: "becomes" is evaluated on every reading, so it cannot call ${expr.call}`);
@@ -1133,7 +1134,7 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
   const unitOf = (expr: Expr): string => {
     if ('math' in expr) return unitOf(expr.left) || unitOf(expr.right);
     const standard = 'read' in expr ? standardMeaning(expr.read.means) : null;
-    return standard?.type === 'number' ? standard.unit : '';
+    return standard?.type === 'number' && !standard.units ? standard.unit : '';
   };
   const text = (expr: Expr, unit = ''): string => {
     if ('value' in expr) return typeof expr.value === 'number' ? shown(expr.value, unit) : shown(expr.value);

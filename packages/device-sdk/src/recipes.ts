@@ -221,4 +221,30 @@ export const stopCharging = defineRecipe({
   ],
 });
 
-export const STANDARD_RECIPES: readonly Recipe[] = [lowBattery, chargeBetween, mainsLost, startCharging, stopCharging];
+const rank: Expr = { read: { role: 'prices', means: 'price.rank' } };
+
+/**
+ * "Charge in the day's four cheapest hours" — from any service that reports
+ * what an hour's price ranks among the day's (`energyPrice`). Two edges, as
+ * the charge window has: into the cheapest hours it turns on, out of them it
+ * turns off, and it sets the switch to "among the cheapest?" either way.
+ */
+export const cheapHours = defineRecipe({
+  id: 'standard.cheap-hours',
+  label: 'In the cheapest hours',
+  description: 'Switch something on in the day’s cheapest hours, by the electricity price, and off again in the others: a charger, a heater.',
+  sentence: 'Turn {switch} on in the {hours} cheapest hours of the day by {prices}, off in the others.',
+  roles: {
+    prices: { label: 'Prices', description: 'Where the electricity prices come from', capabilities: ['energyPrice'] },
+    switch: { label: 'What to switch', description: 'A plug, or one outlet of a station', capabilities: ['switch'] },
+  },
+  params: {
+    fields: {
+      hours: { type: 'number', title: 'How many hours', description: 'How many of the day’s hours it is on: the cheapest that many.', min: 1, max: 23, step: 1, integer: true, default: 4 },
+    },
+  },
+  when: [{ becomes: { compare: 'le', left: rank, right: { param: 'hours' } } }, { becomes: { compare: 'gt', left: rank, right: { param: 'hours' } } }],
+  then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { compare: 'le', left: rank, right: { param: 'hours' } } } } }],
+});
+
+export const STANDARD_RECIPES: readonly Recipe[] = [lowBattery, chargeBetween, mainsLost, startCharging, stopCharging, cheapHours];

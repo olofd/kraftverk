@@ -27,6 +27,7 @@ export const CATEGORIES = {
   'power-station': { label: 'Power stations', singular: 'power station', icon: 'battery-charging' },
   'smart-plug': { label: 'Smart plugs', singular: 'smart plug', icon: 'power' },
   weather: { label: 'Weather', singular: 'weather forecast', icon: 'cloud' },
+  'energy-price': { label: 'Electricity prices', singular: 'electricity price', icon: 'tag' },
   vehicle: { label: 'Vehicles', singular: 'vehicle', icon: 'navigation' },
 } as const satisfies Record<string, CategorySpec>;
 

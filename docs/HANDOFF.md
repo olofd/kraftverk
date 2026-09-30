@@ -30,9 +30,9 @@ empty: the core names no product, and every device is found, not listed.
 
 - **The layers are packages**: `packages/transports` (mqtt with the broker,
   ble with server, web and native entries, lan, https), `packages/protocols`
-  (sydpower, tuya-local, open-meteo, niu-cloud), `packages/devices`
+  (sydpower, tuya-local, open-meteo, elprisetjustnu, niu-cloud), `packages/devices`
   (aferiy-p280, tuya-plug, atorch-s1w, tuya-zigbee-plug, niu-scooter,
-  niu-uqi-gt), `packages/services` (open-meteo) and
+  niu-uqi-gt), `packages/services` (open-meteo, elprisetjustnu) and
   `packages/gateway`. The server finds them at start; the app binds them in
   through `client/src/generated/registry.ts`.
 - **The device model** (2026-09-29, ARCHITECTURE.md §4.2, steps 23–26 and
