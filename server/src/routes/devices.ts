@@ -9,8 +9,7 @@ import { runTool, ToolRefused, type ToolRefusal } from '@kraftverk/holder';
 
 import { actorOf } from '../auth/routes.ts';
 import { changesOf } from '../history/changes.ts';
-import { deleteAppState, setAppState } from '../history/db.ts';
-import { PICTURE_KEY, PICTURE_REF } from '../devices/registry.ts';
+import { PICTURE_REF } from '../devices/registry.ts';
 import { resolutionOf, series } from '../history/sampler.ts';
 import { auditAbout, body, deviceOr404, type AppDeps } from './shared.ts';
 
@@ -126,7 +125,6 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
       removedAt: record.removedAt,
     });
     const { samples } = catalog.deleteForever(record.id);
-    deleteAppState(`${PICTURE_KEY}${record.id}`);
     return c.json({ ok: true, samples });
   });
 
@@ -142,8 +140,8 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
     const { picture } = (await body(c, z.object({ picture: z.string().regex(PICTURE_REF, 'type:0, type:1… (or, one day, own:<id>)') }).strict())) as PictureChoice;
     // Not yet: a photo of its own is stored nowhere to show.
     if (picture.startsWith('own:')) throw new HTTPException(400, { message: 'A picture of its own cannot be added yet' });
-    if (picture === 'type:0') deleteAppState(`${PICTURE_KEY}${record.id}`);
-    else setAppState(`${PICTURE_KEY}${record.id}`, picture);
+    // Its type's first is what it shows with no pick: kept as none.
+    catalog.setPicture(record.id, picture === 'type:0' ? null : picture);
     auditAbout(c, 'device.picture', 'device', record.id, `Showed picture ${Number(picture.slice(5)) + 1} of "${record.name}"`, { picture });
     return c.json(registry.find(record.id));
   });

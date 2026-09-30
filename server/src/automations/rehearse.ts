@@ -72,11 +72,16 @@ export async function rehearse(recipe: Recipe, automation: Rehearsed, source: Re
   const from = window.from.toISOString();
   const to = window.to.toISOString();
   const caveats: string[] = [];
+  // Started when asked, and by nothing else: history holds no moment it would have started on its own.
+  if (recipe.when.every((trigger) => 'asked' in trigger)) {
+    return { from, to, runs: [], caveats: ['It starts when you ask, never on its own: there is no moment in history it would have started'] };
+  }
   const uses = ruleUses(recipe);
   const name = (role: string) => {
     const binding = automation.roles[role];
     return (binding && source.device(binding)?.name) ?? 'a device you no longer have';
   };
+  for (const role of uses.reaches) caveats.push(`Whether ${name(role)} could be reached is not kept in history: taken as unknown`);
 
   // Every reading the rule makes, as a series from history.
   const series = new Map<string, Series | null>();
@@ -103,6 +108,7 @@ export async function rehearse(recipe: Recipe, automation: Rehearsed, source: Re
   for (const call of uses.calls) caveats.push(`It asks ${call.fn} of ${name(call.role)}, which history does not keep: taken as unknown`);
 
   const scopeAt = (t: number): RuleScope => ({
+    reachable: () => ({ reachable: null, detail: 'history does not keep whether it could be reached' }),
     param: (param) => {
       const field = recipe.params.fields[param];
       return (automation.params[param] ?? (field && 'default' in field ? field.default : undefined) ?? null) as Value;
@@ -189,7 +195,14 @@ export async function rehearse(recipe: Recipe, automation: Rehearsed, source: Re
     }
     const done: string[] = [];
     let unknown = false;
-    for (const { command } of recipe.then) {
+    for (const step of recipe.then) {
+      // What a step that waits or chooses would have done depends on what the commands before it changed, which
+      // history cannot show: said, not guessed — and nothing after it, which depends on it.
+      if (!('command' in step)) {
+        done.push('then take its steps, which history cannot show');
+        break;
+      }
+      const { command } = step;
       const args: Record<string, Value> = {};
       for (const [arg, expr] of Object.entries(command.args)) args[arg] = await evaluate(expr, scope, []);
       if (Object.values(args).some((value) => value === null)) unknown = true;

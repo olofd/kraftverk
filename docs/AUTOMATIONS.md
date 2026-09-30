@@ -5,7 +5,9 @@
 and sentences (`packages/device-sdk/src/automation.ts`), recipes and
 functions from packages, events from the station, and one engine with all
 three triggers. The last section is the direction the contract is shaped for,
-not a promise of when.
+not a promise of when. **Sequences** — steps that wait, make sure, choose and
+watch, started when you ask — are [SEQUENCES.md](SEQUENCES.md), built
+2026-09-30 on the same language and engine.
 
 ## The problem with recipes as code
 
@@ -37,13 +39,15 @@ type Rule = {
   params: ConfigSchema;               // its settings, in the one value system
   when:   Trigger[];                  // any of these starts a run
   if?:    Expr;                       // must be true; unknown means "do nothing, and say why"
-  then:   Action[];                   // through the gateway, like any command
+  then:   Step[];                     // in order: commands, and — a sequence — waits, choices (SEQUENCES.md)
+  otherwise?: Step[];                 // if a step does not succeed, or it is stopped
 };
 
 type Trigger =
   | { at: Expr }                                   // every day at "07:00", on the owner's clock
   | { event: { role: string; event: string } }     // something a device said happened
-  | { becomes: Expr; heldForMinutes?: Expr };      // a condition turning true, and staying true
+  | { becomes: Expr; heldForMinutes?: Expr }       // a condition turning true, and staying true
+  | { asked: true };                               // when a person — or an assistant for one — starts it
 
 type Expr =
   | { value: Value }                               // a literal
@@ -51,10 +55,12 @@ type Expr =
   | { read: { role: string; means: string } }      // a part's current value, by meaning
   | { call: string; role: string; args?: Record<string, Expr> }  // a package's function
   | { compare: 'lt' | 'le' | 'gt' | 'ge' | 'eq' | 'ne'; left: Expr; right: Expr }
-  | { all: Expr[] } | { any: Expr[] } | { not: Expr };
+  | { all: Expr[] } | { any: Expr[] } | { not: Expr }
+  | { reachable: string };                         // the part filling a role can be reached now
 
-type Action =
-  | { command: { role: string; capability: CapabilityName; command: string; args: Record<string, Expr> } };
+type Step =
+  | { command: { role: string; capability: CapabilityName; command: string; args: Record<string, Expr> } }
+  | { wait } | { waitUntil } | { ensure } | { choose } | { watch };   // SEQUENCES.md
 ```
 
 Every name in a rule is one the device model already has: roles ask for
@@ -104,10 +110,12 @@ The language grows, but only by what passes two tests:
    is one an AI can get wrong without anyone knowing until it runs.
 
 What fails either belongs in a package **function** — typed at its edges,
-answering, never acting — not in the language. Arithmetic over readings,
-waits between actions, notifications and schedules on some days are
-candidates; each goes in only when it passes both, and one at a time. That
-discipline is what keeps "an AI writes data inside the same rails" true.
+answering, never acting — not in the language. Waits between actions went
+in that way — six kinds of step, each bounded, each read back as a line of a
+numbered list (SEQUENCES.md). Arithmetic over readings, notifications and
+schedules on some days are candidates; each goes in only when it passes
+both, and one at a time. That discipline is what keeps "an AI writes data
+inside the same rails" true.
 
 ## What a package contributes
 
@@ -233,9 +241,12 @@ now"; for an assistant, the `rehearse` and `propose` tools.
 
 An automation is its recipe's id (`standard.charge-between`,
 `open-meteo.weather.forecast-switch`), which part of which device fills each
-role, its settings, its clock and its mode. The rule is
+role (`automation_role`), its settings, its clock and its mode. The rule is
 the recipe's, resolved when it runs, so a package that improves a recipe
-improves every automation made from it.
+improves every automation made from it. Each `becomes` trigger's state is a
+row (`automation_trigger`), and every run is one (`automation_run`) — the
+running one unended, one at a time — with each step it took
+(docs/DATA-MODEL.md, docs/SEQUENCES.md).
 
 ## Where this goes (not built)
 

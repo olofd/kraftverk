@@ -13,6 +13,7 @@ import type {
   AuthState,
   AutomationChanges,
   AutomationRun,
+  AutomationRuns,
   AutomationView,
   NewAutomation,
   CheckOutcome,
@@ -378,16 +379,49 @@ export async function deleteAutomation(id: string) {
   await api.delete(`/automations/${encodeURIComponent(id)}`);
 }
 
-/** What it would do right now: decided, never acted on. */
 /** When it would have run on the last hours of history, and what it would have done. Nothing is sent. */
 export async function rehearseAutomation(id: string, hours = 24 * 7) {
   const { data } = await api.get<Rehearsal>(`/automations/${encodeURIComponent(id)}/rehearse`, { params: { hours }, timeout: 30_000 });
   return data;
 }
 
+/** What it would do right now: decided, never acted on. */
 export async function checkAutomation(id: string) {
   const { data } = await api.post<AutomationRun>(`/automations/${encodeURIComponent(id)}/check`, {}, { timeout: 30_000 });
   return data;
+}
+
+/** The automations a device fills a role of: what its page can start. */
+export async function fetchAutomationsFor(deviceId: string, signal?: AbortSignal) {
+  const { data } = await api.get<{ automations: AutomationView[] }>('/automations', { params: { device: deviceId }, signal });
+  return data.automations;
+}
+
+/** Its runs, the latest first, each with every step it took. */
+export async function fetchAutomationRuns(id: string, limit = 50, signal?: AbortSignal) {
+  const { data } = await api.get<AutomationRuns>(`/automations/${encodeURIComponent(id)}/runs`, { params: { limit }, signal });
+  return data.runs;
+}
+
+/** A refusal said in the server's words: "It is already running". */
+async function asked(request: Promise<{ status: number; data: AutomationView | { error: string } }>): Promise<AutomationView> {
+  const { status, data } = await request;
+  if (status === 409) throw new Error((data as { error: string }).error);
+  return data as AutomationView;
+}
+
+/**
+ * Starts one started when asked (docs/SEQUENCES.md): answered with it as it
+ * is once its run has begun — or, only watching, with what it would do as
+ * its last check. A refusal — off, already running — is thrown in its words.
+ */
+export function startAutomation(id: string) {
+  return asked(api.post(`/automations/${encodeURIComponent(id)}/start`, {}, { validateStatus: (status) => status === 200 || status === 409, timeout: 30_000 }));
+}
+
+/** Stops its run: the step it is in ends, and what it does if stopped runs. */
+export function stopAutomation(id: string) {
+  return asked(api.post(`/automations/${encodeURIComponent(id)}/stop`, {}, { validateStatus: (status) => status === 200 || status === 409 }));
 }
 
 // --- adding a device, held by the server ----------------------------------------

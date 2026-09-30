@@ -2,7 +2,6 @@ import type { ConnectionView, DeviceView, LinkView, PictureRef } from '@kraftver
 import { deviceCapabilities, MAIN_PART, methodOf, partsOf, type DeviceDescription, type SavedDeviceId } from '@kraftverk/device-sdk';
 import { activeConnection, toolsOf } from '@kraftverk/holder';
 
-import { appStatesUnder } from '../history/db.ts';
 import type { TransportHost } from '../runtime/transports.ts';
 import type { DeviceCatalog, DeviceRecord } from './catalog.ts';
 import type { ClientRecord, ClientStore } from './clients.ts';
@@ -37,8 +36,6 @@ type Joined = {
   secrets: Map<string, string[]>;
   links: Map<SavedDeviceId, LinkRecord[]>;
   clients: Map<string, ClientRecord>;
-  /** Which picture each device's owner picked, where one did. */
-  pictures: Map<string, string>;
 };
 
 export class DeviceRegistry {
@@ -87,7 +84,6 @@ export class DeviceRegistry {
       secrets: this.deps.connections.secretFieldsByConnection(),
       links,
       clients: new Map(this.deps.clients.all().map((client) => [client.id, client])),
-      pictures: appStatesUnder(PICTURE_KEY),
     };
   }
 
@@ -179,15 +175,12 @@ export class DeviceRegistry {
               lastReadingAt: remote.at,
             }
           : this.deps.sessions.health(record),
-      picture: pictureOf(joined.pictures.get(record.id)),
+      picture: pictureOf(record.picture),
     };
   }
 }
 
-/** Where the picture a device's owner picked is kept: an app decision, beside the others in `app_state`. */
-export const PICTURE_KEY = 'device.picture.';
-
 /** What a picture reference may be: one of its type's, or (not built yet) its owner's own. */
 export const PICTURE_REF = /^(type:(0|[1-9]\d?)|own:[a-z0-9-]{1,40})$/;
 
-const pictureOf = (kept: string | undefined): PictureRef => (kept && PICTURE_REF.test(kept) ? (kept as PictureRef) : 'type:0');
+const pictureOf = (kept: string | null): PictureRef => (kept && PICTURE_REF.test(kept) ? (kept as PictureRef) : 'type:0');

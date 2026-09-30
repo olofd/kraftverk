@@ -27,6 +27,7 @@ export const AGENT_RULES = [
   'A command that needs a person’s confirmation — turning off a load, cutting what feeds a station — is refused to an assistant: say what you would do and let the person do it in the app.',
   'A setting that can damage the hardware is never changed by an assistant.',
   'An automation you propose only observes until a person arms it: rehearse it, and say what it would have done.',
+  'A sequence a person set up to be started when asked — "start charging the scooter" — you may start for them: say what its steps are first, then follow it with `automations` until it ends, and say how it went.',
   'A value that is not current is not known now: do not act on it; say it is stale.',
 ];
 

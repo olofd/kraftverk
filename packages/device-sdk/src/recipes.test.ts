@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { checkBinding, checkRule, describeRule, describeTriggers, evaluate, evaluateNow, type Expr, type RuleScope } from './automation.ts';
+import { checkBinding, checkRule, describeRule, describeTriggers, evaluate, evaluateNow, type Command, type Expr, type RuleScope } from './automation.ts';
 import { capabilitiesOf, MAIN_PART, type DeviceDescription } from './description.ts';
 import { chargeBetween, lowBattery, mainsLost, STANDARD_RECIPES } from './recipes.ts';
 import type { Value } from './values.ts';
@@ -42,10 +42,11 @@ describe('charging between two levels', () => {
   const scope = (soc: Value, overrides: Record<string, Value> = {}): RuleScope => ({
     param: (name) => ({ ...params, ...overrides })[name as keyof typeof params] ?? null,
     read: (_role, means) => (means === 'battery.soc' && typeof soc === 'number' ? { value: soc, label: 'Charge', unit: '%' } : null),
+    reachable: () => ({ reachable: true, detail: 'connected' }),
     name: (role) => (role === 'battery' ? 'Garage P280' : 'ATORCH plug'),
   });
   const [falls, reaches] = chargeBetween.when.map((trigger) => (trigger as { becomes: Expr }).becomes) as [Expr, Expr];
-  const on = chargeBetween.then[0]!.command.args.on!;
+  const on = (chargeBetween.then[0] as { command: Command }).command.args.on!;
 
   test('is filled by a station and the plug that feeds it', () => {
     const bound = (role: string) =>

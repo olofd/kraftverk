@@ -1,4 +1,4 @@
-import { defineRecipe, type Expr, type Recipe, type RoleSpec } from './automation.ts';
+import { defineRecipe, type Expr, type Recipe, type RoleSpec, type Step } from './automation.ts';
 
 /**
  * Recipes in the shared vocabulary (docs/AUTOMATIONS.md): rules that name only
@@ -108,4 +108,117 @@ export const chargeBetween = defineRecipe({
   then: [{ command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { compare: 'lt', left: soc, right: { param: 'high' } } } } }],
 });
 
-export const STANDARD_RECIPES: readonly Recipe[] = [lowBattery, chargeBetween, mainsLost];
+// --- sequences (docs/SEQUENCES.md) ------------------------------------------------------
+
+const SUPPLY: RoleSpec = {
+  label: 'What powers the charger',
+  description: 'What switches power to the charger’s plug and measures what it gives: a station’s AC output, a plug',
+  capabilities: ['switch', 'powerMeter'],
+};
+const CHARGER: RoleSpec = {
+  label: 'The charger’s plug',
+  description: 'The smart plug the charger is in: it switches the charger and measures what it draws',
+  capabilities: ['switch', 'powerMeter'],
+};
+
+const set = (role: string, on: boolean): Step => ({ command: { role, capability: 'switch', command: 'set', args: { on: { value: on } } } });
+const draws = (role: string): Expr => ({ read: { role, means: 'power.draw' } });
+
+/**
+ * "Start charging": power the charger, wait for its plug, switch it on, and
+ * make sure it charges — waking a charger that stays idle when its power
+ * comes on by switching it off and on again, a few times at most. If it never
+ * does, what it switched on is switched off again, unless its owner chose to
+ * leave it.
+ */
+export const startCharging = defineRecipe({
+  id: 'standard.start-charging',
+  label: 'Start charging',
+  description:
+    'When you start it: power a charger through its supply, switch its plug on, and make sure it draws — switching it off and on again if it stays idle, a few times at most.',
+  roles: { supply: SUPPLY, charger: CHARGER },
+  params: {
+    fields: {
+      reachSeconds: {
+        type: 'number',
+        title: 'Wait for the charger’s plug',
+        description: 'It has no power until the supply is on, and needs a moment to be reachable again.',
+        unit: 's',
+        min: 10,
+        max: 600,
+        step: 10,
+        default: 120,
+      },
+      chargingAbove: { type: 'number', title: 'Charging when it draws over', description: 'An idle charger draws next to nothing; a charging one, far more.', unit: 'W', min: 5, max: 500, step: 5, default: 50 },
+      withinSeconds: { type: 'number', title: 'Give it', description: 'How long the charger is given to start drawing, each time.', unit: 's', min: 5, max: 120, step: 5, default: 20 },
+      offSeconds: { type: 'number', title: 'Off for', description: 'When it does not start: how long its plug is switched off before it is switched on again.', unit: 's', min: 3, max: 60, step: 1, default: 5 },
+      tries: { type: 'number', title: 'Tries at most', description: 'How often it is switched off and on again before it gives up.', min: 1, max: 5, step: 1, integer: true, default: 3 },
+      ifItFails: {
+        type: 'enum',
+        title: 'If it never starts charging',
+        options: [
+          { value: 'switchOff', label: 'Switch it and its supply off again' },
+          { value: 'leaveOn', label: 'Leave them on' },
+        ],
+        default: 'switchOff',
+      },
+    },
+  },
+  when: [{ asked: true }],
+  then: [
+    set('supply', true),
+    { waitUntil: { condition: { reachable: 'charger' }, atMostSeconds: { param: 'reachSeconds' } } },
+    set('charger', true),
+    {
+      ensure: {
+        condition: { compare: 'gt', left: draws('charger'), right: { param: 'chargingAbove' } },
+        withinSeconds: { param: 'withinSeconds' },
+        tries: { param: 'tries' },
+        retry: [set('charger', false), { wait: { seconds: { param: 'offSeconds' } } }, set('charger', true)],
+      },
+    },
+  ],
+  otherwise: [{ choose: { if: { compare: 'eq', left: { param: 'ifItFails' }, right: { value: 'switchOff' } }, then: [set('charger', false), set('supply', false)] } }],
+});
+
+/**
+ * "Stop charging": in reverse — the charger's plug off at once, then its
+ * supply, but only if nothing else draws from it: the supply is watched for a
+ * few seconds after the charger is off, and left on if anything draws more
+ * than a little.
+ */
+export const stopCharging = defineRecipe({
+  id: 'standard.stop-charging',
+  label: 'Stop charging',
+  description:
+    'When you start it: switch a charger’s plug off, then its supply — unless something else still draws from the supply, watched for a few seconds after the charger is off.',
+  roles: { supply: SUPPLY, charger: CHARGER },
+  params: {
+    fields: {
+      watchSeconds: { type: 'number', title: 'Watch the supply for', description: 'After the charger is off, how long the supply is watched for anything else drawing from it.', unit: 's', min: 3, max: 120, step: 1, default: 5 },
+      othersBelow: {
+        type: 'number',
+        title: 'Nothing else draws below',
+        description: 'What the supply may still give with the charger off and count as nothing: its own idle draw.',
+        unit: 'W',
+        min: 1,
+        max: 200,
+        step: 1,
+        default: 10,
+      },
+    },
+  },
+  when: [{ asked: true }],
+  then: [
+    set('charger', false),
+    {
+      watch: {
+        condition: { compare: 'lt', left: draws('supply'), right: { param: 'othersBelow' } },
+        seconds: { param: 'watchSeconds' },
+        then: [set('supply', false)],
+      },
+    },
+  ],
+});
+
+export const STANDARD_RECIPES: readonly Recipe[] = [lowBattery, chargeBetween, mainsLost, startCharging, stopCharging];

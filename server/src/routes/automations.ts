@@ -2,11 +2,12 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import type { RecipeView } from '@kraftverk/api-contract';
-import { isTimeZone } from '@kraftverk/device-sdk';
+import type { AutomationRuns, RecipeView } from '@kraftverk/api-contract';
+import { describeSteps, isTimeZone, startsWhenAsked, takesSteps, type Recipe, type Value } from '@kraftverk/device-sdk';
 import { Confirmations, subjectOf } from '@kraftverk/gateway';
 
 import { actorOf } from '../auth/routes.ts';
+import { RunRefusal } from '../automations/engine.ts';
 import { plans, REHEARSAL_MAX_HOURS } from '../automations/plans.ts';
 import { auditAbout, body, type AppDeps } from './shared.ts';
 
@@ -33,21 +34,72 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
 
   api.get('/automations/recipes', (c) =>
     c.json({
-      recipes: library.recipes().map(
-        ({ recipe, from }): RecipeView => ({
+      recipes: library.recipes().map(({ recipe, from }): RecipeView => {
+        const defaults = Object.fromEntries(Object.entries(recipe.params.fields).map(([key, field]) => [key, ('default' in field ? field.default : null) as Value]));
+        return {
           id: recipe.id,
           label: recipe.label,
           description: recipe.description,
           from,
           hasConditions: recipe.when.some((trigger) => 'becomes' in trigger),
+          startsWhenAsked: startsWhenAsked(recipe),
+          takesSteps: takesSteps(recipe),
+          // Its steps as making one shows them: each role by its label, each setting at its default.
+          steps: describeSteps(recipe, defaults, (role) => lowerFirst(recipe.roles[role]?.label ?? role), library).steps,
           roles: recipe.roles,
           params: recipe.params,
-        })
-      ),
+        };
+      }),
     })
   );
 
-  api.get('/automations', (c) => c.json({ automations: automations.list().map(view) }));
+  /** Every automation — or, with `?device=`, those a device fills a role of: what its page can start. */
+  api.get('/automations', (c) => {
+    const device = c.req.query('device');
+    return c.json({ automations: (device ? automations.usingDevice(device) : automations.list()).map(view) });
+  });
+
+  /** Its runs, the latest first, each with every step it took. */
+  api.get('/automations/:id/runs', (c) => {
+    const current = automations.get(c.req.param('id'));
+    if (!current) throw new HTTPException(404, { message: 'No such automation' });
+    const limit = z.coerce.number().int().min(1).max(200).default(50).parse(c.req.query('limit') ?? 50);
+    return c.json({ runs: automations.runs(current.id, limit) } satisfies AutomationRuns);
+  });
+
+  /**
+   * Starts one that is started when asked (docs/SEQUENCES.md): one that acts
+   * takes its steps from now on, and is answered as it stands once begun;
+   * one that only watches answers with what it would do. On the timeline,
+   * with who started it.
+   */
+  api.post('/automations/:id/start', async (c) => {
+    const current = automations.get(c.req.param('id'));
+    if (!current) throw new HTTPException(404, { message: 'No such automation' });
+    const by = actorOf(c);
+    try {
+      const run = await engine.startAsked(current.id, by);
+      if (run.outcome !== 'would-act') auditAbout(c, 'automation.started', 'automation', current.id, `Started "${current.name}"`, { run: run.id });
+      return c.json(view(automations.get(current.id) ?? current));
+    } catch (error) {
+      if (error instanceof RunRefusal) throw new HTTPException(409, { message: error.message });
+      throw error;
+    }
+  });
+
+  /** Stops its run: the step it is in ends, and what it does if stopped — switching back off — runs. */
+  api.post('/automations/:id/stop', (c) => {
+    const current = automations.get(c.req.param('id'));
+    if (!current) throw new HTTPException(404, { message: 'No such automation' });
+    try {
+      engine.stopAsked(current.id, actorOf(c));
+      auditAbout(c, 'automation.stopping', 'automation', current.id, `Stopped "${current.name}"`);
+      return c.json(view(automations.get(current.id) ?? current));
+    } catch (error) {
+      if (error instanceof RunRefusal) throw new HTTPException(409, { message: error.message });
+      throw error;
+    }
+  });
 
   /**
    * A rule rehearsed on what happened, before it is made or after: when it
@@ -78,6 +130,7 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
     );
     if (!isTimeZone(input.timeZone)) throw new HTTPException(400, { message: `"${input.timeZone}" is not a time zone` });
     const checked = validated(input.recipe, input);
+    if (input.recheckMinutes && !keepsSo(checked.recipe)) throw new HTTPException(400, { message: KEEPS_SO_ONLY });
     const created = automations.create({ name: input.name, recipe: input.recipe, roles: checked.roles, params: checked.params, timeZone: input.timeZone, recheckMinutes: input.recheckMinutes ?? null });
     auditAbout(c, 'automation.created', 'automation', created.id, `Made the automation "${created.name}", only watching`, { recipe: created.recipe, roles: created.roles, params: created.params, recheckMinutes: created.recheckMinutes });
     engine.poke(created.id);
@@ -103,6 +156,8 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
     );
     if (input.timeZone && !isTimeZone(input.timeZone)) throw new HTTPException(400, { message: `"${input.timeZone}" is not a time zone` });
     const validRecipe = input.roles || input.params ? validated(current.recipe, { roles: input.roles ?? current.roles, params: input.params ?? current.params }) : null;
+    const recipe = library.recipe(current.recipe);
+    if (input.recheckMinutes && recipe && !keepsSo(recipe)) throw new HTTPException(400, { message: KEEPS_SO_ONLY });
     const checked = validRecipe ? { roles: validRecipe.roles, params: validRecipe.params } : null;
 
     // Arming — and changing what an armed one does — is a deliberate act.
@@ -167,3 +222,9 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
 
   return api;
 }
+
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+
+/** Keeping things so is looking again at a condition that still holds, to do at once what it did: for such a rule alone. */
+const keepsSo = (recipe: Recipe): boolean => recipe.when.some((trigger) => 'becomes' in trigger) && !takesSteps(recipe);
+const KEEPS_SO_ONLY = 'Only an automation that waits for a condition, and does what it does at once, can keep things so: a sequence is started, not kept';

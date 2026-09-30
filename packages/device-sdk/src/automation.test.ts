@@ -124,6 +124,7 @@ describe('running it', () => {
   const scope = (soc: Value, params: Record<string, Value> = {}): RuleScope => ({
     param: (name) => ({ below: 20, action: 'on', ...params })[name] ?? null,
     read: (_role, means) => (means === 'battery.soc' && typeof soc === 'number' ? { value: soc, label: 'Charge', unit: '%' } : null),
+    reachable: () => ({ reachable: true, detail: 'connected' }),
     call: async (_fn, _role, args) => sky.evaluate({ part: { name: 'Weather', part: 'main', device: null, offline: '' }, args, now: new Date(), timeZone: 'UTC' }),
     name: () => 'Garage P280',
   });

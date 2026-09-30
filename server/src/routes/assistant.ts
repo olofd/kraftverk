@@ -6,6 +6,7 @@ import { isTimeZone, savedDeviceId, type CapabilitySpec, type Value } from '@kra
 import { deviceReader } from '@kraftverk/holder';
 
 import { actorOf } from '../auth/routes.ts';
+import { RunRefusal } from '../automations/engine.ts';
 import { plans, REHEARSAL_MAX_HOURS } from '../automations/plans.ts';
 import { AGENT_RULES, vocabularyOf, worldOf, worldText } from '../assistant/world.ts';
 import { recentAudit } from '../history/db.ts';
@@ -138,6 +139,62 @@ export function assistantRoutes(deps: AppDeps): Hono {
         const input = planInput.extend({ hours: z.number().min(1).max(REHEARSAL_MAX_HOURS).default(24 * 7) }).omit({ name: true }).parse(args);
         const checked = validated(input.recipe, input);
         return rehearsalText(await rehearsed(input.recipe, { roles: checked.roles, params: checked.params, timeZone: input.timeZone }, input.hours));
+      },
+    },
+    {
+      name: 'automations',
+      description:
+        'The automations there are: each one’s id, what it does in a sentence, whether it acts or only watches, whether it is started when asked (a sequence: "start charging the scooter"), and whether it runs now — with the step it is in.',
+      inputSchema: object({}),
+      run: async () => {
+        const all = automations.list().map(view);
+        if (!all.length) return 'No automations yet.';
+        return all
+          .map((automation) => {
+            const running = automation.running;
+            const current = running ? [...running.steps].reverse().find((step) => step.outcome === 'waiting') : null;
+            return [
+              `${automation.name} [${automation.id}] — ${automation.mode === 'armed' ? 'acts' : automation.mode === 'observe' ? 'only watches' : 'off'}${automation.startsWhenAsked ? ', started when asked' : ''}`,
+              `  ${automation.sentence}`,
+              running ? `  Running since ${running.at}${current ? `: ${current.what}` : ''}` : automation.lastRun ? `  Last run ${automation.lastRun.at}: ${automation.lastRun.summary}` : '  Never run',
+            ].join('\n');
+          })
+          .join('\n');
+      },
+    },
+    {
+      name: 'start',
+      description:
+        'Start an automation that is started when asked — a sequence such as "start charging the scooter". One that acts takes its steps from now, each through the gateway; one that only watches answers with what it would do. Say what it will do before starting it, and follow it with `automations`.',
+      inputSchema: object({ automation: text('The automation id, from `automations`') }, ['automation']),
+      run: async (args, c) => {
+        const input = z.object({ automation: z.string().min(1).max(80) }).parse(args);
+        const by = `assistant for ${actorOf(c)}`;
+        try {
+          const run = await engine.startAsked(input.automation, by);
+          if (run.outcome === 'would-act') return `It only watches, so nothing was switched. It would: ${run.steps.map((step) => `${'  '.repeat(step.depth)}${step.what}`).join('; ')}`;
+          auditAbout(c, 'automation.started', 'automation', input.automation, `An assistant started "${automations.get(input.automation)?.name ?? input.automation}"`, { run: run.id });
+          return `Started. Its steps: ${view(automations.get(input.automation)!).steps.map((step) => step.text).join('; ')}`;
+        } catch (error) {
+          if (error instanceof RunRefusal) return `Not started: ${error.message}`;
+          throw error;
+        }
+      },
+    },
+    {
+      name: 'stop',
+      description: 'Stop an automation’s run in progress: the step it is in ends, and what it does if stopped — switching back off what it switched on — runs.',
+      inputSchema: object({ automation: text('The automation id') }, ['automation']),
+      run: async (args, c) => {
+        const input = z.object({ automation: z.string().min(1).max(80) }).parse(args);
+        try {
+          engine.stopAsked(input.automation, `assistant for ${actorOf(c)}`);
+          auditAbout(c, 'automation.stopping', 'automation', input.automation, `An assistant stopped "${automations.get(input.automation)?.name ?? input.automation}"`);
+          return 'Stopping: what it does if stopped is running now.';
+        } catch (error) {
+          if (error instanceof RunRefusal) return `Not stopped: ${error.message}`;
+          throw error;
+        }
       },
     },
     {

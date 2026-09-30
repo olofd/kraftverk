@@ -53,6 +53,14 @@ empty: the core names no product, and every device is found, not listed.
   (`transport_kv`, `TransportContext.store`), and what each audit entry is
   about (`resource_kind`, filterable at `/audit`). One-per-source links are
   held by a partial unique index, not only by code.
+- **Sequences** (2026-09-30, [SEQUENCES.md](SEQUENCES.md)): an automation's
+  steps may wait, wait until, make sure (with retries), choose and watch —
+  bounded, checked, read back as numbered steps — and one may be started when
+  asked. Every run is a row with its steps (`automation_run`); roles and
+  trigger state are rows too; the gateway lets a run switch a part again
+  within its declared allowance. `standard.start-charging` and
+  `standard.stop-charging` drive a charger through its supply; the app shows a
+  run step by step as it goes, and a device's page offers what it can start.
 - **The gateway asks when it cannot tell**: a declared condition on a
   reading that is missing or stale counts as holding. How much is a load is
   the home's (`loadWatts`, App settings → Safety, `/api/policy`), and a
@@ -105,7 +113,7 @@ and `.set-aside.*` copies on the server's volume are the owner's to delete.
 
 Measured against [NEXT-STEP-ARCHITECTURE.md](NEXT-STEP-ARCHITECTURE.md) §10
 (the phases) and §12 (findings J1–J40), as of 2026-09-30 (`32a218b`). All
-checks are green: typecheck, 702 unit tests, the architecture ratchet and 21
+checks are green: typecheck, 725 unit tests, the architecture ratchet and 22
 end-to-end tests.
 
 **Deployed 2026-09-30.** The push to GitLab carried the schema change of

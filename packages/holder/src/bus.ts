@@ -1,4 +1,4 @@
-import type { ConnectionHealth, EventLevel, Reading, SavedDeviceId, Value } from '@kraftverk/device-sdk';
+import type { AutomationId, ConnectionHealth, EventLevel, Reading, SavedDeviceId, Value } from '@kraftverk/device-sdk';
 
 /**
  * What a holder hears from the devices it holds, as it happens
@@ -30,7 +30,9 @@ export type LiveMessage =
    * What you have changed — a device added, renamed or removed, a connection
    * or a link — or something a holder elsewhere reported: read the list again.
    */
-  | { kind: 'changed'; deviceId: SavedDeviceId | null };
+  | { kind: 'changed'; deviceId: SavedDeviceId | null }
+  /** An automation moved: a run started, took a step or ended. What its screen follows, as it goes. */
+  | { kind: 'automation'; automationId: AutomationId };
 
 export type LiveListener = (message: LiveMessage) => void;
 

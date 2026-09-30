@@ -123,6 +123,12 @@ type DevicesContextValue = {
   problems: typeof fetchProblems | null;
   /** The last event the live stream carried, counted, so a list of events knows to read again. */
   heard: { deviceId: string; count: number } | null;
+  /**
+   * Hears, from the live stream, that an automation moved — a run started,
+   * took a step or ended — for as long as a screen showing it is open. Returns
+   * how to stop hearing.
+   */
+  onAutomation: (listener: (id: string) => void) => () => void;
 };
 
 /** Who holds a device's connection in use: the server, this app, another app, or nobody right now. */
@@ -224,6 +230,12 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   const [unreachable, setUnreachable] = useState(false);
   const [version, setVersion] = useState<VersionInfo | null>(null);
   const [tick, setTick] = useState(0);
+  /** Who hears that an automation moved: the screens showing one, while they are open. */
+  const automationListeners = useRef(new Set<(id: string) => void>());
+  const onAutomation = useCallback((listener: (id: string) => void) => {
+    automationListeners.current.add(listener);
+    return () => void automationListeners.current.delete(listener);
+  }, []);
   const [live, setLive] = useState<LiveState>('down');
   const [heard, setHeard] = useState<{ deviceId: string; count: number } | null>(null);
   const polling = mode === 'server' && allowed;
@@ -292,6 +304,10 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       // Hello: read the list, and apply what follows on top of it.
       if (update.type === 'hello' || update.type === 'changed') return readAgain();
       if (update.type === 'event') return setHeard((last) => ({ deviceId: update.deviceId, count: (last?.count ?? 0) + 1 }));
+      if (update.type === 'automation') {
+        for (const listener of automationListeners.current) listener(update.id);
+        return;
+      }
       if (update.type !== 'readings' && update.type !== 'health') return;
       pending.push(update);
       applying ??= setTimeout(apply, APPLY_MS);
@@ -647,8 +663,9 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       events: mode === 'server' ? fetchDeviceEvents : null,
       problems: mode === 'server' ? fetchProblems : null,
       heard,
+      onAutomation,
     }),
-    [actionsFor, devices, error, heard, holderOf, live, load, loading, mode, mutate, removed, runtime, screenProps, unreachable, version]
+    [actionsFor, devices, error, heard, holderOf, live, load, loading, mode, mutate, onAutomation, removed, runtime, screenProps, unreachable, version]
   );
 
   return <DevicesContext.Provider value={value}>{children}</DevicesContext.Provider>;

@@ -69,6 +69,11 @@ export const SCHEMA = `
     /* Whose word the description is: its type's, for its config, or the device's own. */
     description_source TEXT NOT NULL DEFAULT 'type' CHECK (description_source IN ('type', 'device')),
     info        TEXT,
+    /*
+      Which picture it shows, its owner's pick: one of its type's (type:N), or
+      — not built yet — a photo of its own (own:<id>). NULL: its type's first.
+    */
+    picture     TEXT CHECK (picture IS NULL OR picture GLOB 'type:[0-9]*' OR picture GLOB 'own:?*'),
     added_at    TEXT NOT NULL,
     removed_at  TEXT
   );
@@ -83,6 +88,27 @@ export const SCHEMA = `
     first_seen TEXT NOT NULL,
     last_seen  TEXT NOT NULL,
     PRIMARY KEY (device_id, key)
+  );
+
+  /*
+    What the gateway remembers of each part it switched: when, last. The dwell
+    counts from it, so a restart is no way around it; a part with no row has
+    never been switched from here, and its first switch through a link that
+    makes it consequential is confirmed.
+  */
+  CREATE TABLE device_switch (
+    device_id   TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
+    part        TEXT NOT NULL,
+    switched_at TEXT NOT NULL,
+    PRIMARY KEY (device_id, part)
+  );
+
+  /* And when each setting it wrote was written, last: one write per setting per dwell. */
+  CREATE TABLE device_write (
+    device_id  TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
+    attribute  TEXT NOT NULL,
+    written_at TEXT NOT NULL,
+    PRIMARY KEY (device_id, attribute)
   );
 
   /* Each device's own storage: what its session keeps between runs. */
@@ -203,27 +229,87 @@ export const SCHEMA = `
   CREATE INDEX device_event_problems ON device_event (level, at) WHERE level <> 'info';
 
   /*
-    Automations: a recipe, the parts of devices that fill its roles, its
-    settings and the owner's clock. Devices are named in roles, not by foreign
-    key: an automation whose device is removed stays, and says it cannot run.
+    Automations (docs/AUTOMATIONS.md, docs/SEQUENCES.md): a recipe — a rule an
+    installed package ships, by id — its settings (JSON: their shape is the
+    recipe's schema), the owner's clock, and whether it may act.
     recheck_minutes: how often a condition that still holds is looked at
     again, to keep things so; NULL, never — what it did stays until a
-    condition turns true again.
+    condition turns true again. looked_at: when it last did, or when it
+    started afresh (changed, let act); counted from with its last run. NULL:
+    not yet, since it was made.
   */
   CREATE TABLE automation (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,
     recipe          TEXT NOT NULL,
-    roles           TEXT NOT NULL,
     params          TEXT NOT NULL,
     time_zone       TEXT NOT NULL,
     mode            TEXT NOT NULL CHECK (mode IN ('off', 'observe', 'armed')),
     recheck_minutes INTEGER CHECK (recheck_minutes IS NULL OR recheck_minutes BETWEEN 1 AND 1440),
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL,
-    last_run_at TEXT,
-    last_result TEXT
+    looked_at       TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
   );
+
+  /*
+    Which part of which device fills each of an automation's roles. A device
+    removed stays a device (removed_at), so its automations stay and say they
+    cannot run; one deleted takes its roles with it, and they say a role has
+    no device. What uses a device is asked here: a device's page lists the
+    automations it can start.
+  */
+  CREATE TABLE automation_role (
+    automation_id TEXT NOT NULL REFERENCES automation (id) ON DELETE CASCADE,
+    role          TEXT NOT NULL,
+    device_id     TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
+    part          TEXT NOT NULL,
+    PRIMARY KEY (automation_id, role)
+  );
+  CREATE INDEX automation_role_device ON automation_role (device_id);
+
+  /*
+    Each "becomes" trigger's state, by its place in the recipe's triggers:
+    whether its condition held when last looked at, since when it has held,
+    and whether this hold has run it. Kept so a restart continues where it
+    was: a hold resumes with the time it had left, and nothing fires twice.
+    None kept — an automation just made, changed or let act — and a
+    condition already true is its edge. Forgotten whenever it starts afresh.
+  */
+  CREATE TABLE automation_trigger (
+    automation_id TEXT NOT NULL REFERENCES automation (id) ON DELETE CASCADE,
+    trigger       INTEGER NOT NULL CHECK (trigger >= 0),
+    holds         INTEGER NOT NULL CHECK (holds IN (0, 1)),
+    held_since    TEXT,
+    fired         INTEGER NOT NULL CHECK (fired IN (0, 1)),
+    PRIMARY KEY (automation_id, trigger),
+    CHECK (holds = 1 OR (held_since IS NULL AND fired = 0))
+  );
+
+  /*
+    Each time an automation ran, or runs now (docs/SEQUENCES.md): when it
+    started and ended, how it came out, why, and — in detail — what it read,
+    how its conditions stood and each step it took. started_by: the person or
+    assistant who started it; NULL, its own triggers did. ended_at NULL: it is
+    running, and its row is written at every step, so a screen follows it and
+    a restart finds it: a run found unended on start was interrupted, and is
+    ended as such, not resumed. One run of an automation at a time, held
+    here. An automation's last run is its latest ended one; the timeline
+    names a run by its id. What it would do, asked, is not a run: not kept.
+  */
+  CREATE TABLE automation_run (
+    id            TEXT PRIMARY KEY,
+    automation_id TEXT NOT NULL REFERENCES automation (id) ON DELETE CASCADE,
+    started_at    TEXT NOT NULL,
+    ended_at      TEXT,
+    outcome       TEXT NOT NULL CHECK (outcome IN ('acted', 'unverified', 'would-act', 'idle', 'unknown', 'refused', 'failed', 'running', 'stopped', 'interrupted')),
+    started_by    TEXT,
+    why           TEXT NOT NULL,
+    summary       TEXT NOT NULL,
+    detail        TEXT NOT NULL,
+    CHECK ((ended_at IS NULL) = (outcome = 'running'))
+  );
+  CREATE INDEX automation_run_recent ON automation_run (automation_id, started_at);
+  CREATE UNIQUE INDEX automation_run_one_at_a_time ON automation_run (automation_id) WHERE ended_at IS NULL;
 
   /* What a transport keeps between runs, its own: a Bluetooth bond, a Matter fabric, a broker's credentials. */
   CREATE TABLE transport_kv (
@@ -233,7 +319,10 @@ export const SCHEMA = `
     PRIMARY KEY (transport, key)
   );
 
-  /* Decisions the server keeps: the gateway's memory of each part's last switch, each trigger's state. */
+  /*
+    What the home has set as a whole, by name: its policy values (how much is a
+    load). Nothing about one device or one automation: those are theirs.
+  */
   CREATE TABLE app_state (
     key        TEXT PRIMARY KEY,
     value      TEXT NOT NULL,

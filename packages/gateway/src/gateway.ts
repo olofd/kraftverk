@@ -73,6 +73,22 @@ export type CommandIntent = {
    * command through a link that makes its source consequential.
    */
   confirmation?: string;
+  /**
+   * A step of a run of an automation that takes steps (docs/SEQUENCES.md).
+   * Within the run, a part it already switched may be switched again sooner
+   * than the dwell — after the gateway's own least gap, and no more often than
+   * the run says its rule may, nor than the gateway's own ceiling: what makes
+   * sure a charger that stays idle is switched off and on again, a few times
+   * at most. The run's first switch of a part meets the dwell as any command
+   * does — a person's, when a person started the run.
+   */
+  run?: {
+    id: string;
+    /** A person, or an assistant for one, started it. */
+    asked: boolean;
+    /** How often its rule may switch this part within it, at most. */
+    switches: number;
+  };
 };
 
 /** Who is asking, as policy sees it. */
@@ -116,6 +132,10 @@ export type GatewayPolicy = {
   userWriteDwellMs: number;
   /** How long the device and the parts it is linked to are given to agree. */
   verifyTimeoutMs: number;
+  /** Within one run, the least gap between two switches of a part, whatever its rule asks. */
+  runGapMs: number;
+  /** Within one run, the most switches of one part, whatever its rule asks. */
+  runSwitchCeiling: number;
 };
 
 export const DEFAULT_POLICY: GatewayPolicy = {
@@ -125,7 +145,34 @@ export const DEFAULT_POLICY: GatewayPolicy = {
   agentDwellMs: 60_000,
   userWriteDwellMs: 2_000,
   verifyTimeoutMs: 30_000,
+  runGapMs: 3_000,
+  runSwitchCeiling: 12,
 };
+
+/**
+ * What the gateway remembers of each device, in milliseconds: when each part
+ * was last switched — what its dwell counts from; a part never switched has
+ * never been, and its first switch through a consequential link is confirmed —
+ * and when each setting was last written: one write per setting per dwell.
+ */
+export type GatewayLedger = {
+  lastSwitch(device: SavedDeviceId, part: string): number | null;
+  switched(device: SavedDeviceId, part: string, at: number): void;
+  lastWrite(device: SavedDeviceId, attribute: string): number | null;
+  wrote(device: SavedDeviceId, attribute: string, at: number): void;
+};
+
+/** A ledger kept in memory: for tests, and a holder with nowhere else to keep one. */
+export function memoryLedger(): GatewayLedger {
+  const switches = new Map<string, number>();
+  const writes = new Map<string, number>();
+  return {
+    lastSwitch: (device, part) => switches.get(`${device}:${part}`) ?? null,
+    switched: (device, part, at) => void switches.set(`${device}:${part}`, at),
+    lastWrite: (device, attribute) => writes.get(`${device}:${attribute}`) ?? null,
+    wrote: (device, attribute, at) => void writes.set(`${device}:${attribute}`, at),
+  };
+}
 
 /** A link from a part, as the gateway walks it. */
 export type OutgoingLink = { kind: LinkKind; target: LinkEnd<SavedDeviceId> };
@@ -180,11 +227,12 @@ export type GatewayDeps = {
   record: (entry: AuditRecord) => void;
   policy?: Partial<GatewayPolicy>;
   /**
-   * Where each part's last switch is remembered. The server passes its
-   * database, so a restart is not a way around the dwell time; tests keep it
-   * in memory.
+   * What it remembers of each device: when each part was last switched and
+   * each setting last written. The server keeps it in its database, an app in
+   * its own storage, so a restart is not a way around the dwell time; tests,
+   * and a gateway given none, keep it in memory.
    */
-  memory?: { get(key: string): string | null; set(key: string, value: string): void };
+  ledger?: GatewayLedger;
   /** What the home has set of the values a declaration may name — how much is a load. What it has not set takes its default. */
   policyValues?: () => PolicyValues;
 };
@@ -241,17 +289,22 @@ export class ActionGateway {
   #deps: GatewayDeps;
   #policy: GatewayPolicy;
   #record: (entry: AuditRecord) => void;
-  #memory: NonNullable<GatewayDeps['memory']>;
+  #ledger: GatewayLedger;
   #confirmations = new Confirmations();
   /** Serialises everything, so "exactly one command" survives concurrent callers. */
   #gate: Promise<void> = Promise.resolve();
+  /**
+   * How often each run has switched each part: a run's allowance. Kept in
+   * memory only — a run does not outlive the process that ran it: one found
+   * unended on start was interrupted, never resumed.
+   */
+  #runSwitches = new Map<string, number>();
 
   constructor(deps: GatewayDeps) {
     this.#deps = deps;
     this.#policy = { ...DEFAULT_POLICY, ...deps.policy };
     this.#record = deps.record;
-    const kept = new Map<string, string>();
-    this.#memory = deps.memory ?? { get: (key) => kept.get(key) ?? null, set: (key, value) => void kept.set(key, value) };
+    this.#ledger = deps.ledger ?? memoryLedger();
   }
 
   /*
@@ -260,12 +313,8 @@ export class ActionGateway {
     the confirmation a new plug needs because A had already been switched.
   */
   #key = (intent: Pick<CommandIntent, 'deviceId' | 'part'>) => `${intent.deviceId}:${intent.part}`;
-  #lastSwitchAt = (key: string) => Number(this.#memory.get(`gateway.lastSwitchAt.${key}`) ?? 0) || 0;
-  #everSwitched = (key: string) => this.#memory.get(`gateway.everSwitched.${key}`) === '1';
-  #switched(key: string, at: number): void {
-    this.#memory.set(`gateway.lastSwitchAt.${key}`, String(at));
-    this.#memory.set(`gateway.everSwitched.${key}`, '1');
-  }
+  #lastSwitchAt = (intent: Pick<CommandIntent, 'deviceId' | 'part'>) => this.#ledger.lastSwitch(intent.deviceId, intent.part) ?? 0;
+  #everSwitched = (intent: Pick<CommandIntent, 'deviceId' | 'part'>) => this.#ledger.lastSwitch(intent.deviceId, intent.part) !== null;
 
   /**
    * One at a time, whatever arrives together.
@@ -335,11 +384,23 @@ export class ActionGateway {
     if (this.#deps.isReadOnly(intent.deviceId)) return refuse(this.#deps.readOnlyReason ?? 'The server is in read-only mode');
 
     const key = this.#key(intent);
-    const dwell = intent.actor === 'automation' ? this.#policy.automationDwellMs : intent.actor === 'agent' ? this.#policy.agentDwellMs : this.#policy.userDwellMs;
-    const sinceLast = Date.now() - this.#lastSwitchAt(key);
-    if (this.#lastSwitchAt(key) > 0 && sinceLast < dwell) {
-      // Said as what it is: a pause that protects the relay and what it feeds, and how long is left of it.
-      return refuse(`Too soon: it was switched ${Math.round(sinceLast / 1000)} s ago, and is given ${Math.round(dwell / 1000)} s between switches. Try again in ${Math.ceil((dwell - sinceLast) / 1000)} s`);
+    const sinceLast = Date.now() - this.#lastSwitchAt(intent);
+    // Within a run that already switched this part: its allowance, held to the gateway's own gap and ceiling.
+    const inRun = intent.run ? (this.#runSwitches.get(`${intent.run.id}|${key}`) ?? 0) : 0;
+    if (intent.run && inRun > 0) {
+      const allowed = Math.min(intent.run.switches, this.#policy.runSwitchCeiling);
+      if (inRun >= allowed) return refuse(`It has been switched ${inRun} times in this run, as often as it may be`);
+      if (sinceLast < this.#policy.runGapMs) {
+        return refuse(`Too soon: it was switched ${Math.round(sinceLast / 1000)} s ago in this run, and is given ${Math.round(this.#policy.runGapMs / 1000)} s between switches`);
+      }
+    } else {
+      // A person's run switches as a person would; an automation's own, as an automation.
+      const actor = intent.run?.asked ? 'user' : intent.actor;
+      const dwell = actor === 'automation' ? this.#policy.automationDwellMs : actor === 'agent' ? this.#policy.agentDwellMs : this.#policy.userDwellMs;
+      if (this.#lastSwitchAt(intent) > 0 && sinceLast < dwell) {
+        // Said as what it is: a pause that protects the relay and what it feeds, and how long is left of it.
+        return refuse(`Too soon: it was switched ${Math.round(sinceLast / 1000)} s ago, and is given ${Math.round(dwell / 1000)} s between switches. Try again in ${Math.ceil((dwell - sinceLast) / 1000)} s`);
+      }
     }
 
     // 3. Freshness: acting on stale readings is how mains is cut at exactly the wrong moment.
@@ -373,7 +434,7 @@ export class ActionGateway {
     const declared = declaredConsequence(spec, intent.args, partValue, this.#deps.policyValues?.() ?? {});
     const whenMatches = spec.consequential !== undefined && (spec.consequential === 'always' || !spec.consequential.when || intent.args[spec.consequential.when.arg] === spec.consequential.when.is);
     const consequentialLink = links.find((link) => link.kind.consequential) ?? null;
-    const firstThroughLink = consequentialLink !== null && !this.#everSwitched(key);
+    const firstThroughLink = consequentialLink !== null && !this.#everSwitched(intent);
     const consequential = declared.matches || (whenMatches && consequentialLink !== null);
     const subject = subjectOf({ device: intent.deviceId, part: intent.part, capability: intent.capability, command: intent.command, args: intent.args, by: intent.by });
     const why = firstThroughLink
@@ -418,7 +479,8 @@ export class ActionGateway {
     });
 
     // 6. Exactly one command.
-    this.#switched(key, Date.now());
+    this.#ledger.switched(intent.deviceId, intent.part, Date.now());
+    if (intent.run) this.#runSwitches.set(`${intent.run.id}|${key}`, inRun + 1);
     const sentAt = Date.now();
     const result = await session.command({ part: intent.part, capability: intent.capability, command: intent.command, args: intent.args });
     if (!result.accepted) {
@@ -529,7 +591,7 @@ export class ActionGateway {
     // A setting written moments ago is still settling: one write per setting per dwell, whoever asks.
     const writeDwell = intent.actor === 'automation' ? this.#policy.automationDwellMs : intent.actor === 'agent' ? this.#policy.agentDwellMs : this.#policy.userWriteDwellMs;
     const settling = keys
-      .map((key) => ({ key, since: Date.now() - (Number(this.#memory.get(`gateway.lastWriteAt.${intent.deviceId}:${key}`) ?? 0) || 0) }))
+      .map((key) => ({ key, since: Date.now() - (this.#ledger.lastWrite(intent.deviceId, key) ?? 0) }))
       .find(({ since }) => since < writeDwell);
     if (settling) return refuse(`Too soon: ${writable.get(settling.key)!.label} was changed ${Math.round(settling.since / 1000)} s ago; ${Math.ceil((writeDwell - settling.since) / 1000)} s of the dwell time remains`);
 
@@ -563,7 +625,7 @@ export class ActionGateway {
     let values: Readonly<Record<string, Value>>;
     const writtenAt = Date.now();
     const settlingMs = () => Math.max(0, writeDwell - (Date.now() - writtenAt));
-    for (const key of keys) this.#memory.set(`gateway.lastWriteAt.${intent.deviceId}:${key}`, String(writtenAt));
+    for (const key of keys) this.#ledger.wrote(intent.deviceId, key, writtenAt);
     try {
       values = await session.write(changed);
     } catch (error) {

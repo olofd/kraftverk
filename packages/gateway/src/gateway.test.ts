@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { MAIN_PART, savedDeviceId, type CommandResult, type ConnectionHealth, type DeviceDescription, type DeviceSession, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
 
-import { ActionGateway, type CommandIntent, type GatewayDevice, type OutgoingLink } from './gateway.ts';
+import { ActionGateway, memoryLedger, type CommandIntent, type GatewayDevice, type GatewayLedger, type GatewayPolicy, type OutgoingLink } from './gateway.ts';
 
 /**
  * The guards that stand between a web request and the hardware.
@@ -133,12 +133,13 @@ function harness(
     readOnly?: boolean;
     feeds?: boolean;
     stationSession?: boolean;
-    memory?: GatewayMemory;
+    ledger?: GatewayLedger;
     everSwitched?: boolean;
     /** More links, from a part: `{ '<device>:<part>': [target, part] }`. */
     links?: Record<string, OutgoingLink[]>;
     devices?: Record<string, GatewayDevice>;
     policyValues?: PolicyValues;
+    policy?: Partial<GatewayPolicy>;
   } = {}
 ): Harness {
   const plug = options.plug ?? new StubPlug();
@@ -146,9 +147,9 @@ function harness(
   const events: string[] = [];
   const plugSession = plug.session();
   const stationSession = station.session();
-  const memory = options.memory ?? inMemory();
+  const ledger = options.ledger ?? memoryLedger();
   // Most cases are about a plug that has been switched before; the first switch has its own test.
-  if (options.everSwitched !== false) memory.set(`gateway.everSwitched.${PLUG}:${MAIN_PART}`, '1');
+  if (options.everSwitched !== false && ledger.lastSwitch(PLUG, MAIN_PART) === null) ledger.switched(PLUG, MAIN_PART, 0);
 
   const devices: Record<string, GatewayDevice> = {
     [PLUG]: { name: 'Heater plug', session: plugSession, description: PLUG_DESCRIPTION, offline: 'Not answering' },
@@ -164,10 +165,10 @@ function harness(
     linksFrom: (id, part) => links[`${id}:${part}`] ?? [],
     isReadOnly: () => options.readOnly === true,
     record: (entry) => events.push(entry.kind),
-    memory,
+    ledger,
     policyValues: () => options.policyValues ?? {},
     // Short timeouts: these tests are about the decisions, not the clock.
-    policy: { verifyTimeoutMs: 300, userDwellMs: 50, automationDwellMs: 10_000 },
+    policy: { verifyTimeoutMs: 300, userDwellMs: 50, automationDwellMs: 10_000, ...options.policy },
   });
   return {
     gateway,
@@ -179,12 +180,6 @@ function harness(
     },
   };
 }
-
-type GatewayMemory = { get(key: string): string | null; set(key: string, value: string): void };
-const inMemory = (): GatewayMemory => {
-  const kept = new Map<string, string>();
-  return { get: (key) => kept.get(key) ?? null, set: (key, value) => void kept.set(key, value) };
-};
 
 const cut = (overrides: Partial<CommandIntent> = {}): CommandIntent => ({
   deviceId: PLUG,
@@ -533,19 +528,60 @@ describe('dwell', () => {
   });
 
   test('each device has its own dwell time, and it survives a restart', async () => {
-    const memory = inMemory();
-    const first = harness({ memory });
+    const ledger = memoryLedger();
+    const first = harness({ ledger });
     await first.gateway.execute(cut());
     expect(first.plug.commands).toEqual([false]);
 
     // A new process, the same database: still too soon for this plug.
-    const restarted = harness({ memory });
+    const restarted = harness({ ledger });
     expect((await restarted.gateway.execute(cut({ args: { on: true } }))).detail).toContain('Too soon');
 
     // The station's outlet has a clock of its own.
     restarted.station.outlet = { on: true, watts: 0 };
     const outlet = await restarted.gateway.execute(cut({ deviceId: STATION, part: 'outlet.ac' }));
     expect(outlet.outcome).toBe('verified');
+  });
+
+  test('within a run, a part it switched may be switched again after the least gap, as often as the run may — no more', async () => {
+    const { gateway, plug } = harness({ feeds: false, policy: { runGapMs: 30 } });
+    const run = { id: 'r-1', asked: false, switches: 3 };
+    const pause = () => new Promise((resolve) => setTimeout(resolve, 40));
+
+    expect((await gateway.execute(cut({ run }))).outcome).toBe('verified');
+    // Off and on again at once: the run's own gap, not the automation's dwell — but not sooner than it.
+    expect((await gateway.execute(cut({ args: { on: true }, run }))).detail).toContain('in this run');
+    await pause();
+    expect((await gateway.execute(cut({ args: { on: true }, run }))).outcome).toBe('verified');
+    await pause();
+    expect((await gateway.execute(cut({ run }))).outcome).toBe('verified');
+    await pause();
+    // Three switches is its allowance.
+    expect((await gateway.execute(cut({ args: { on: true }, run }))).detail).toBe('It has been switched 3 times in this run, as often as it may be');
+    expect(plug.commands).toEqual([false, true, false]);
+
+    // Outside the run, the dwell stands, counted from the run's last switch.
+    expect((await gateway.execute(cut({ args: { on: true } }))).detail).toContain('Too soon');
+  });
+
+  test('a run no rule may make a relay chatter with: the gateway’s own ceiling holds whatever a run says', async () => {
+    const { gateway, plug } = harness({ feeds: false, policy: { runGapMs: 1, runSwitchCeiling: 2 } });
+    const run = { id: 'r-2', asked: false, switches: 50 };
+    for (const on of [false, true, false]) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await gateway.execute(cut({ args: { on }, run }));
+    }
+    expect(plug.commands).toEqual([false, true]);
+  });
+
+  test('a run a person started switches as a person would: its first switch of a part meets a person’s dwell', async () => {
+    const { gateway, plug } = harness({ feeds: false });
+    await gateway.execute(cut());
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    // An automation's own run would still be inside its dwell; one a person asked for is not.
+    expect((await gateway.execute(cut({ args: { on: true }, run: { id: 'r-3', asked: false, switches: 1 } }))).detail).toContain('Too soon');
+    expect((await gateway.execute(cut({ args: { on: true }, run: { id: 'r-4', asked: true, switches: 1 } }))).outcome).toBe('verified');
+    expect(plug.commands).toEqual([false, true]);
   });
 
   /*

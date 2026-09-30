@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
+import { Button, Input, Spinner, Text, XStack, YStack } from 'tamagui';
 
 import {
   checkAutomation,
@@ -8,6 +8,7 @@ import {
   deleteAutomation,
   describeError,
   fetchAudit,
+  fetchAutomationRuns,
   fetchAutomations,
   fetchRecipes,
   updateAutomation,
@@ -15,7 +16,6 @@ import {
   type AutomationMode,
   type AutomationRun,
   type ConditionState,
-  type RunAction,
   type Rehearsal,
   type AutomationView,
   type ConfigValues,
@@ -28,6 +28,9 @@ import { Card, Row, RowSeparator, SchemaForm, SectionLabel, SegmentedControl, ha
 
 import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
+import { ago, clock, dayOf, lasted, OUTCOME, useTone, type Look } from '../src/features/automations/looks';
+import { RunControl } from '../src/features/automations/RunControl';
+import { RunSteps, StepPlan } from '../src/features/automations/Steps';
 import { ASKED_AGAIN, confirmAction, withConfirmation } from '../src/lib/confirm';
 import { useDevices } from '../src/state/DevicesProvider';
 
@@ -45,7 +48,7 @@ import { useDevices } from '../src/state/DevicesProvider';
 const REFRESH_MS = 15_000;
 
 export default function AutomationsScreen() {
-  const { mode, devices } = useDevices();
+  const { mode, devices, onAutomation } = useDevices();
   const [recipes, setRecipes] = useState<RecipeView[] | null>(null);
   const [automations, setAutomations] = useState<AutomationView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +76,24 @@ export default function AutomationsScreen() {
     }, REFRESH_MS);
     return () => clearInterval(timer);
   }, [load, mode]);
+
+  // A run moving — started, a step taken, ended — is heard on the live stream, and read at once: a burst, once.
+  useEffect(() => {
+    if (mode !== 'server') return;
+    let reading: ReturnType<typeof setTimeout> | null = null;
+    const stop = onAutomation(() => {
+      reading ??= setTimeout(() => {
+        reading = null;
+        fetchAutomations()
+          .then(setAutomations)
+          .catch(() => undefined);
+      }, 250);
+    });
+    return () => {
+      stop();
+      if (reading) clearTimeout(reading);
+    };
+  }, [mode, onAutomation]);
 
   if (mode !== 'server') {
     return (
@@ -150,11 +171,13 @@ const MODES: { value: AutomationMode; label: string }[] = [
   { value: 'armed', label: 'Act' },
 ];
 
-const MODE_SAYS: Record<AutomationMode, string> = {
-  off: 'It does nothing, and does not look.',
-  observe: 'It decides, and says here what it would have done. Nothing is switched.',
-  armed: 'It acts on its own, through the same checks as a tap on a switch.',
-};
+/** What each mode means — for one started when asked, as it is started. */
+const modeSays = (mode: AutomationMode, asked: boolean): string =>
+  ({
+    off: asked ? 'It cannot be started.' : 'It does nothing, and does not look.',
+    observe: asked ? 'Tried, it says what it would do. Nothing is switched.' : 'It decides, and says here what it would have done. Nothing is switched.',
+    armed: asked ? 'Started, it takes its steps, each through the same checks as a tap on a switch.' : 'It acts on its own, through the same checks as a tap on a switch.',
+  })[mode];
 
 /** How often it may look again to keep things so, in minutes; 0 is never. */
 const RECHECK: { value: number; label: string }[] = [
@@ -180,62 +203,15 @@ const BADGE: Record<AutomationMode, { label: string; icon: IconName; filled: boo
   armed: { label: 'Acting', icon: 'zap', filled: true },
 };
 
-type Tone = '$success' | '$warning' | '$accent' | '$muted' | '$danger' | '$color' | '$background';
-type Look = { icon: IconName; tone: Tone };
-
-/** A run, by what it came to. */
-const OUTCOME: Record<AutomationRun['outcome'], Look> = {
-  acted: { icon: 'check', tone: '$success' },
-  unverified: { icon: 'alert-triangle', tone: '$warning' },
-  'would-act': { icon: 'eye', tone: '$accent' },
-  idle: { icon: 'minus', tone: '$muted' },
-  unknown: { icon: 'help-circle', tone: '$warning' },
-  refused: { icon: 'slash', tone: '$warning' },
-  failed: { icon: 'x', tone: '$danger' },
-};
-
-/** One thing a run did, by how it went. */
-const ACTION: Record<RunAction['outcome'], Look & { label: string }> = {
-  done: { icon: 'check', tone: '$success', label: 'Done' },
-  already: { icon: 'check', tone: '$muted', label: 'Already so' },
-  unverified: { icon: 'alert-triangle', tone: '$warning', label: 'Not confirmed' },
-  refused: { icon: 'slash', tone: '$warning', label: 'Refused' },
-  failed: { icon: 'x', tone: '$danger', label: 'Failed' },
-  would: { icon: 'eye', tone: '$accent', label: 'Not sent' },
-};
-
 /** A change made to an automation, as its history shows it. */
 const CHANGE: Record<string, Look> = {
   'automation.created': { icon: 'plus', tone: '$color' },
   'automation.proposed': { icon: 'message-circle', tone: '$color' },
   'automation.armed': { icon: 'zap', tone: '$success' },
   'automation.changed': { icon: 'edit-3', tone: '$color' },
+  'automation.started': { icon: 'play', tone: '$accent' },
+  'automation.stopping': { icon: 'square', tone: '$muted' },
 };
-
-/** A theme colour by its token, for what takes a colour rather than a token: an icon. */
-function useTone(): (tone: Tone) => string | undefined {
-  const theme = useTheme();
-  return (tone) => (theme[tone.slice(1) as keyof typeof theme] as { val?: string } | undefined)?.val;
-}
-
-/** "14:02". */
-const clock = (at: string) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-/** "Today", "Yesterday", "12 Sep". */
-function dayOf(at: string): string {
-  const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(at).setHours(0, 0, 0, 0)) / 86_400_000);
-  if (days === 0) return 'Today';
-  if (days === 1) return 'Yesterday';
-  return new Date(at).toLocaleDateString([], { day: 'numeric', month: 'short' });
-}
-
-/** "Just now", "12 min ago", "Today 14:02", "12 Sep 07:00". */
-function ago(at: string): string {
-  const seconds = (Date.now() - Date.parse(at)) / 1000;
-  if (seconds < 45) return 'Just now';
-  if (seconds < 3600) return `${Math.max(1, Math.round(seconds / 60))} min ago`;
-  return `${dayOf(at)} ${clock(at)}`;
-}
 
 /** The server's question, when a change to an automation wants a person's yes. */
 const wantsYes = (answer: Awaited<ReturnType<typeof updateAutomation>>) =>
@@ -260,21 +236,24 @@ function AutomationCard({
   const [checked, setChecked] = useState<AutomationRun | null>(null);
   const [rehearsal, setRehearsal] = useState<Rehearsal | null>(null);
   const [editing, setEditing] = useState(false);
-  const [history, setHistory] = useState<AuditEntry[] | null>(null);
+  const [history, setHistory] = useState<History | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showPlan, setShowPlan] = useState(false);
   const recipe = recipes.find((candidate) => candidate.id === automation.recipe) ?? null;
   const badge = BADGE[automation.mode];
-  const canKeep = recipe?.hasConditions ?? automation.now.conditions.length > 0;
+  const asked = automation.startsWhenAsked;
+  const canKeep = !automation.takesSteps && (recipe?.hasConditions ?? automation.now.conditions.length > 0);
+  const onlyAsked = asked && automation.when.every((trigger) => trigger === 'When you start it');
 
-  // Its history: every run and every change, as the audit timeline has them. Read again when it runs or changes.
+  // Its history: every run it kept, and every change made to it. Read again when it runs or changes.
   const loadHistory = useCallback(() => {
-    fetchAudit({ resourceKind: 'automation', resource: automation.id, limit: 100 })
-      .then(setHistory)
-      .catch(() => setHistory([]));
+    Promise.all([fetchAutomationRuns(automation.id, 100), fetchAudit({ resourceKind: 'automation', resource: automation.id, limit: 100 })])
+      .then(([runs, entries]) => setHistory({ runs, changes: entries.filter((entry) => !isRunEntry(entry)) }))
+      .catch(() => setHistory({ runs: [], changes: [] }));
   }, [automation.id]);
   useEffect(() => {
     if (showHistory) loadHistory();
-  }, [loadHistory, showHistory, automation.updatedAt, automation.lastRunAt]);
+  }, [loadHistory, showHistory, automation.updatedAt, automation.lastRun?.id, automation.running === null]);
 
   const act = async (work: () => Promise<void>, failure: string) => {
     setBusy(true);
@@ -301,7 +280,7 @@ function AutomationCard({
     }, 'That did not work');
 
   const remove = async () => {
-    if (!(await confirmAction(`Delete “${automation.name}”?`, 'It stops, and is gone. Everything it did stays on the timeline.', 'Delete'))) return;
+    if (!(await confirmAction(`Delete “${automation.name}”?`, `${automation.running ? 'Its run is stopped first. ' : ''}It stops, and is gone. Everything it did stays on the timeline.`, 'Delete'))) return;
     await act(async () => {
       await deleteAutomation(automation.id);
       onDeleted();
@@ -324,7 +303,7 @@ function AutomationCard({
   }
 
   return (
-    <Card gap="$4" role="region" aria-label={automation.name}>
+    <Card gap="$4" role="region" aria-label={automation.name} borderWidth={automation.running ? 1 : 0} borderColor="$accent">
       <YStack gap="$2">
         <XStack alignItems="center" justifyContent="space-between" gap="$3">
           <Text fontSize={18} fontWeight="800" color="$color" flex={1}>
@@ -360,23 +339,55 @@ function AutomationCard({
         </XStack>
       ) : null}
 
-      <Now automation={automation} />
+      {asked ? <RunControl automation={automation} onChanged={onChanged} onTried={setChecked} /> : null}
 
-      <YStack gap="$2">
-        <Heading>{automation.lastResult ? `Last run · ${ago(automation.lastResult.at)}` : 'Last run'}</Heading>
-        {automation.lastResult ? (
-          <RunDetail run={automation.lastResult} />
-        ) : (
-          <Text fontSize={13} color="$muted" lineHeight={19}>
-            It has not run yet: none of its conditions has come true since it was made.
-          </Text>
-        )}
-      </YStack>
+      {automation.running ? (
+        <YStack gap="$2.5" padding="$3" borderRadius="$4" backgroundColor="$background" borderWidth={1} borderColor="$accent">
+          <XStack alignItems="center" gap="$2">
+            <Heading>Now</Heading>
+            <Text fontSize={12} color="$muted">
+              {automation.running.startedBy ? `started by ${automation.running.startedBy}` : automation.running.why} · {clock(automation.running.at)}
+            </Text>
+          </XStack>
+          <RunSteps run={automation.running} />
+        </YStack>
+      ) : onlyAsked ? null : (
+        <Now automation={automation} />
+      )}
+
+      {automation.takesSteps ? (
+        <YStack gap="$2.5">
+          {automation.running ? (
+            <Pressable onPress={() => (haptic(), setShowPlan((open) => !open))} label={showPlan ? 'Hide what it does' : 'Show what it does'}>
+              <XStack alignItems="center" gap="$2">
+                <Icon name={showPlan ? 'chevron-down' : 'chevron-right'} size={14} color={tone('$muted')} />
+                <Heading>What it does</Heading>
+              </XStack>
+            </Pressable>
+          ) : (
+            <Heading>What it does</Heading>
+          )}
+          {!automation.running || showPlan ? <StepPlan steps={automation.steps} otherwise={automation.otherwise} /> : null}
+        </YStack>
+      ) : null}
+
+      {automation.running ? null : (
+        <YStack gap="$2">
+          <Heading>{automation.lastRun ? `Last run · ${ago(automation.lastRun.at)}` : 'Last run'}</Heading>
+          {automation.lastRun ? (
+            <RunDetail run={automation.lastRun} />
+          ) : (
+            <Text fontSize={13} color="$muted" lineHeight={19}>
+              {asked ? 'It has not been started yet.' : 'It has not run yet: none of its conditions has come true since it was made.'}
+            </Text>
+          )}
+        </YStack>
+      )}
 
       {checked ? (
         <YStack gap="$2" padding="$3" borderRadius="$4" borderWidth={1} borderColor="$accent">
           <XStack alignItems="center" justifyContent="space-between">
-            <Heading>If it ran now</Heading>
+            <Heading>{asked ? 'If it were started now' : 'If it ran now'}</Heading>
             <Button size="$2" chromeless circular aria-label="Close" icon={<Icon name="x" size={14} color={tone('$muted')} />} onPress={() => setChecked(null)} />
           </XStack>
           <RunDetail run={checked} showConditions />
@@ -387,12 +398,12 @@ function AutomationCard({
 
       <Card inset backgroundColor="$background">
         <SegmentedControl
-          title="What it may do"
-          subtitle={MODE_SAYS[automation.mode]}
+          title={asked ? 'When started' : 'What it may do'}
+          subtitle={modeSays(automation.mode, asked)}
           value={automation.mode}
           options={MODES}
           disabled={busy}
-          onChange={(mode) => void change({ mode }, `Let “${automation.name}” act on its own?`, 'Let it act')}
+          onChange={(mode) => void change({ mode }, asked ? `Let “${automation.name}” act when started?` : `Let “${automation.name}” act on its own?`, 'Let it act')}
         />
         {canKeep ? (
           <>
@@ -425,15 +436,17 @@ function AutomationCard({
       ) : null}
 
       <XStack gap="$2" flexWrap="wrap" alignItems="center">
-        <Button size="$3" disabled={busy || !recipe} icon={<Icon name="edit-3" size={14} color={tone('$color')} />} onPress={() => (haptic(), setEditing(true))}>
+        <Button size="$3" disabled={busy || !recipe || automation.running !== null} icon={<Icon name="edit-3" size={14} color={tone('$color')} />} onPress={() => (haptic(), setEditing(true))}>
           Edit
         </Button>
-        <Button size="$3" disabled={busy} icon={<Icon name="play" size={14} color={tone('$color')} />} onPress={() => void act(async () => setChecked(await checkAutomation(automation.id)), 'It could not be checked')}>
+        <Button size="$3" disabled={busy} icon={<Icon name="help-circle" size={14} color={tone('$color')} />} onPress={() => void act(async () => setChecked(await checkAutomation(automation.id)), 'It could not be checked')}>
           What would it do now?
         </Button>
-        <Button size="$3" disabled={busy} icon={<Icon name="rewind" size={14} color={tone('$color')} />} onPress={() => void act(async () => setRehearsal(await rehearseAutomation(automation.id)), 'It could not be rehearsed')}>
-          Rehearse last week
-        </Button>
+        {onlyAsked ? null : (
+          <Button size="$3" disabled={busy} icon={<Icon name="rewind" size={14} color={tone('$color')} />} onPress={() => void act(async () => setRehearsal(await rehearseAutomation(automation.id)), 'It could not be rehearsed')}>
+            Rehearse last week
+          </Button>
+        )}
         <XStack flex={1} />
         <Button size="$3" chromeless color="$danger" disabled={busy} icon={<Icon name="trash-2" size={14} color={tone('$danger')} />} onPress={() => void remove()}>
           Delete
@@ -452,7 +465,7 @@ function AutomationCard({
             </Text>
           </XStack>
         </Pressable>
-        {showHistory ? <Timeline entries={history} automation={automation} recipe={recipe} /> : null}
+        {showHistory ? <Timeline history={history} automation={automation} recipe={recipe} /> : null}
       </YStack>
     </Card>
   );
@@ -547,13 +560,15 @@ function Now({ automation }: { automation: AutomationView }) {
             It runs when one of these turns to yes, and looks at them every time the device reports.
             {automation.recheckMinutes
               ? ` Every ${every(automation.recheckMinutes)} it also runs again while one still holds, unless all is already so.`
-              : ' Once it has acted, what you switch by hand stays until one turns to yes again.'}
+              : automation.takesSteps
+                ? ''
+                : ' Once it has acted, what you switch by hand stays until one turns to yes again.'}
           </Text>
         </>
       ) : (
         automation.when.map((trigger) => (
           <XStack key={trigger} gap="$2" alignItems="flex-start">
-            <Icon name="clock" size={13} color={tone('$muted')} style={{ marginTop: 3 }} />
+            <Icon name={trigger === 'When you start it' ? 'play' : 'clock'} size={13} color={tone('$muted')} style={{ marginTop: 3 }} />
             <Text flex={1} fontSize={13} color="$color" lineHeight={19}>
               {trigger}
             </Text>
@@ -576,8 +591,8 @@ function Mark({ look, size = 28 }: { look: Look; size?: number }) {
 
 /**
  * One run, told the way a person asks about it: what happened, why, what it
- * read, and how each thing it did went — and, when asked, how each condition
- * stood.
+ * read, and each step it took and how it went — and, when asked, how each
+ * condition stood.
  */
 function RunDetail({ run, showConditions }: { run: AutomationRun; showConditions?: boolean }) {
   const tone = useTone();
@@ -594,45 +609,23 @@ function RunDetail({ run, showConditions }: { run: AutomationRun; showConditions
             <Icon name="corner-down-right" size={12} color={tone('$muted')} style={{ marginTop: 3 }} />
             <Text flex={1} fontSize={13} color="$muted" lineHeight={19}>
               {run.why}
+              {lasted(run)}
             </Text>
           </XStack>
         </YStack>
         <Readings saw={run.saw} />
         {showConditions && run.conditions.length ? <Conditions conditions={run.conditions} /> : null}
-        {run.actions.map((action, index) => {
-          const said = ACTION[action.outcome];
-          return (
-            <XStack key={`${index}:${action.what}`} gap="$2" alignItems="flex-start">
-              <Icon name={said.icon} size={13} color={tone(said.tone)} style={{ marginTop: 3 }} />
-              <Text flex={1} fontSize={13} color="$color" lineHeight={19}>
-                <Text fontWeight="700" color={said.tone}>
-                  {said.label}
-                </Text>
-                {`  ${action.detail}`}
-              </Text>
-            </XStack>
-          );
-        })}
+        {run.steps.length ? <RunSteps run={run} /> : null}
       </YStack>
     </XStack>
   );
 }
 
-/** A history entry that is a run: what the audit kept of it, as a run, when it kept that much. */
-function runOf(entry: AuditEntry): AutomationRun | null {
-  const outcome = entry.kind.replace(/^automation\./, '');
-  if (!(outcome in OUTCOME)) return null;
-  const detail = (entry.detail ?? {}) as Partial<AutomationRun>;
-  return {
-    at: entry.at,
-    outcome: outcome as AutomationRun['outcome'],
-    summary: entry.summary,
-    why: detail.why ?? '',
-    saw: detail.saw ?? [],
-    conditions: detail.conditions ?? [],
-    actions: detail.actions ?? [],
-  };
-}
+/** A timeline entry that stands for a run: its full story is the run itself, read from its runs. */
+const isRunEntry = (entry: AuditEntry) => entry.kind.replace(/^automation\./, '') in OUTCOME;
+
+/** Its history: every run it kept, and every change made to it. */
+type History = { runs: AutomationRun[]; changes: AuditEntry[] };
 
 type Changed = { mode?: AutomationMode; recheckMinutes?: number | null; params?: ConfigValues; roles?: Record<string, RoleBinding> };
 
@@ -659,15 +652,20 @@ function changesOf(entry: AuditEntry, recipe: RecipeView | null): string[] {
   return said;
 }
 
+type Entry = { at: string; key: string } & ({ run: AutomationRun } | { change: AuditEntry });
+
 /**
  * Its history, as a timeline: day by day, newest first, each run with why it
- * ran, what it read and what came of it — a tap opens one — and each change
- * made to it, with who made it and what changed.
+ * ran and what came of it — a tap opens its steps — and each change made to
+ * it, with who made it and what changed.
  */
-function Timeline({ entries, automation, recipe }: { entries: AuditEntry[] | null; automation: AutomationView; recipe: RecipeView | null }) {
-  const tone = useTone();
-  const [open, setOpen] = useState<number | null>(null);
-  if (!entries) return <Spinner size="small" color="$accent" alignSelf="flex-start" />;
+function Timeline({ history, automation, recipe }: { history: History | null; automation: AutomationView; recipe: RecipeView | null }) {
+  const [open, setOpen] = useState<string | null>(null);
+  if (!history) return <Spinner size="small" color="$accent" alignSelf="flex-start" />;
+  const entries: Entry[] = [
+    ...history.runs.filter((run) => run.outcome !== 'running').map((run): Entry => ({ at: run.at, key: `run:${run.id}`, run })),
+    ...history.changes.map((change): Entry => ({ at: change.at, key: `change:${change.id}`, change })),
+  ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   if (!entries.length) {
     return (
       <Text fontSize={13} color="$muted" lineHeight={19}>
@@ -680,7 +678,7 @@ function Timeline({ entries, automation, recipe }: { entries: AuditEntry[] | nul
     (summary.startsWith(`${automation.name}: `) ? summary.slice(automation.name.length + 2) : summary)
       .replace(`: "${automation.name}"`, '')
       .replace(` "${automation.name}"`, '');
-  const days = entries.reduce<{ day: string; entries: AuditEntry[] }[]>((grouped, entry) => {
+  const days = entries.reduce<{ day: string; entries: Entry[] }[]>((grouped, entry) => {
     const day = dayOf(entry.at);
     const last = grouped.at(-1);
     if (last?.day === day) last.entries.push(entry);
@@ -694,11 +692,12 @@ function Timeline({ entries, automation, recipe }: { entries: AuditEntry[] | nul
         <YStack key={day} gap="$1">
           <Heading>{day}</Heading>
           {onDay.map((entry, index) => {
-            const run = runOf(entry);
-            const look = run ? OUTCOME[run.outcome] : (CHANGE[entry.kind] ?? { icon: 'edit-3', tone: '$color' });
-            const expanded = open === entry.id;
-            const changes = run ? [] : changesOf(entry, recipe);
-            const by = entry.actor && !entry.actor.startsWith('automation:') ? entry.actor : null;
+            const run = 'run' in entry ? entry.run : null;
+            const change = 'change' in entry ? entry.change : null;
+            const look = run ? OUTCOME[run.outcome] : (CHANGE[change!.kind] ?? { icon: 'edit-3', tone: '$color' });
+            const expanded = open === entry.key;
+            const changes = change ? changesOf(change, recipe) : [];
+            const by = run?.startedBy ?? (change?.actor && !change.actor.startsWith('automation:') ? change.actor : null);
             const row = (
               <XStack gap="$3" alignItems="stretch">
                 {/* The rail: a mark for each entry, joined to the next. */}
@@ -709,13 +708,13 @@ function Timeline({ entries, automation, recipe }: { entries: AuditEntry[] | nul
                 <YStack flex={1} gap={3} paddingBottom="$3">
                   <XStack gap="$2" alignItems="flex-start">
                     <Text flex={1} fontSize={14} fontWeight={run ? '700' : '600'} color="$color" lineHeight={20}>
-                      {run ? run.summary && own(run.summary) : own(entry.summary)}
+                      {run ? run.summary : own(change!.summary)}
                     </Text>
                     <Text fontSize={12} color="$muted" fontVariant={['tabular-nums']} marginTop={2}>
                       {clock(entry.at)}
                     </Text>
                   </XStack>
-                  {run?.why ? (
+                  {run?.why && !run.startedBy ? (
                     <Text fontSize={12} color="$muted" lineHeight={17}>
                       {run.why}
                     </Text>
@@ -728,39 +727,27 @@ function Timeline({ entries, automation, recipe }: { entries: AuditEntry[] | nul
                   {by ? (
                     <Text fontSize={12} color="$muted">
                       by {by}
+                      {run ? lasted(run) : ''}
                     </Text>
                   ) : null}
                   {expanded && run ? (
                     <YStack gap="$2" marginTop="$1.5">
                       <Readings saw={run.saw} />
                       {run.conditions.length ? <Conditions conditions={run.conditions} /> : null}
-                      {run.actions.map((action, actionIndex) => {
-                        const said = ACTION[action.outcome];
-                        return (
-                          <XStack key={`${actionIndex}:${action.what}`} gap="$2" alignItems="flex-start">
-                            <Icon name={said.icon} size={13} color={tone(said.tone)} style={{ marginTop: 3 }} />
-                            <Text flex={1} fontSize={13} color="$color" lineHeight={19}>
-                              <Text fontWeight="700" color={said.tone}>
-                                {said.label}
-                              </Text>
-                              {`  ${action.detail}`}
-                            </Text>
-                          </XStack>
-                        );
-                      })}
+                      <RunSteps run={run} />
                     </YStack>
                   ) : null}
                 </YStack>
               </XStack>
             );
             // A run with more to say opens on a tap; a change says all it has.
-            const more = run && (run.saw.length || run.conditions.length || run.actions.length);
+            const more = run && (run.saw.length || run.conditions.length || run.steps.length);
             return more ? (
-              <Pressable key={entry.id} onPress={() => setOpen(expanded ? null : entry.id)} label={`${own(entry.summary)}, ${clock(entry.at)}: ${expanded ? 'hide' : 'show'} what it read and did`}>
+              <Pressable key={entry.key} onPress={() => setOpen(expanded ? null : entry.key)} label={`${run.summary}, ${clock(entry.at)}: ${expanded ? 'hide' : 'show'} what it read and did`}>
                 {row}
               </Pressable>
             ) : (
-              <YStack key={entry.id}>{row}</YStack>
+              <YStack key={entry.key}>{row}</YStack>
             );
           })}
         </YStack>
@@ -919,7 +906,11 @@ function Editor({
               <YStack key={candidate.id}>
                 {index > 0 ? <RowSeparator /> : null}
                 <Pressable selected={recipe?.id === candidate.id} onPress={() => (setRecipe(candidate), setParams(defaults(candidate)), setRoles({}))}>
-                  <Row title={candidate.label} subtitle={candidate.from ? `${candidate.description} From ${candidate.from.name}.` : candidate.description} />
+                  <Row
+                    title={candidate.label}
+                    subtitle={candidate.from ? `${candidate.description} From ${candidate.from.name}.` : candidate.description}
+                    accessory={candidate.takesSteps || candidate.startsWhenAsked ? <Kinds recipe={candidate} /> : undefined}
+                  />
                 </Pressable>
               </YStack>
             ))}
@@ -929,6 +920,14 @@ function Editor({
 
       {recipe ? (
         <>
+          {recipe.takesSteps && !existing ? (
+            <YStack gap="$2">
+              <SectionLabel>What it will do</SectionLabel>
+              <Card inset backgroundColor="$background" padding="$3">
+                <StepPlan steps={recipe.steps} />
+              </Card>
+            </YStack>
+          ) : null}
           {Object.entries(recipe.roles).map(([role, spec]) => (
             <YStack key={role} gap="$2">
               <SectionLabel>{spec.label}</SectionLabel>
@@ -986,7 +985,9 @@ function Editor({
       ) : null}
       {existing ? null : (
         <Text fontSize={12} color="$muted" lineHeight={18}>
-          It starts by only watching: it decides and says what it would have done, and switches nothing until you let it act.
+          {recipe?.startsWhenAsked
+            ? 'It starts by only watching: trying it says what it would do, and switches nothing until you let it act. Then Start takes its steps.'
+            : 'It starts by only watching: it decides and says what it would have done, and switches nothing until you let it act.'}
         </Text>
       )}
       <XStack gap="$2" justifyContent="flex-end">
@@ -998,5 +999,23 @@ function Editor({
         </Button>
       </XStack>
     </Card>
+  );
+}
+
+/** What kind of automation a recipe makes, as small marks: it takes steps; you start it. */
+function Kinds({ recipe }: { recipe: RecipeView }) {
+  const tone = useTone();
+  const marks = [...(recipe.takesSteps ? [{ icon: 'list' as const, label: 'Steps' }] : []), ...(recipe.startsWhenAsked ? [{ icon: 'play' as const, label: 'You start it' }] : [])];
+  return (
+    <YStack gap={4} alignItems="flex-end">
+      {marks.map((mark) => (
+        <XStack key={mark.label} gap={4} alignItems="center" paddingHorizontal="$2" paddingVertical={2} borderRadius={999} borderWidth={1} borderColor="$accent">
+          <Icon name={mark.icon} size={10} color={tone('$accent')} />
+          <Text fontSize={11} fontWeight="700" color="$accent">
+            {mark.label}
+          </Text>
+        </XStack>
+      ))}
+    </YStack>
   );
 }

@@ -19,7 +19,7 @@ import type { CommandIntent, GatewayResult } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
 
 import { closeDb, db } from '../history/db.ts';
-import { AutomationEngine, type AutomationRecord, type EngineDevice, type TriggerMemory } from './engine.ts';
+import { AutomationEngine, type AutomationRecord, type EngineDevice } from './engine.ts';
 import { AutomationLibrary } from './library.ts';
 import { AutomationStore } from './store.ts';
 
@@ -41,6 +41,14 @@ afterAll(() => {
 });
 beforeEach(() => {
   db().exec('DELETE FROM automation');
+  // The devices its roles name, as the catalog keeps them: a role names a device that exists.
+  db().exec('DELETE FROM device');
+  const insert = db().query("INSERT INTO device (id, type_id, name, description, added_at) VALUES (?, 'test.device', ?, '{\"parts\":[],\"attributes\":[]}', '2026-06-01T00:00:00Z')");
+  for (const [id, name] of [
+    ['d-forecast', 'Weather'],
+    ['d-plug', 'Heater plug'],
+    ['d-station', 'Garage P280'],
+  ] as const) insert.run(id, name);
 });
 
 const ZONE = 'Europe/Stockholm';
@@ -140,25 +148,22 @@ const reader = (readings: () => { key: string; value: Value }[], clock: () => Da
   query: async () => [],
 });
 
-/** Trigger state kept as the server keeps it: across engines, as across restarts. */
-const keptMemory = (): TriggerMemory & { kept: Map<string, string> } => {
-  const kept = new Map<string, string>();
-  return {
-    kept,
-    get: (key) => kept.get(key) ?? null,
-    set: (key, value) => void kept.set(key, value),
-    forget: (prefix) => [...kept.keys()].filter((key) => key.startsWith(prefix)).forEach((key) => kept.delete(key)),
-  };
-};
+/** A device as the engine sees it: reachable when it has a session, and asked for nothing more. */
+const asEngineDevice = (device: Omit<EngineDevice, 'reachable' | 'wantFresh'>): EngineDevice => ({
+  ...device,
+  reachable: () => ({ reachable: device.device !== null, detail: device.offline }),
+  wantFresh: () => {},
+});
 
-function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: boolean; memory?: TriggerMemory } = {}) {
+/** Two engines on one database are one server, restarted: what they keep is in the store. */
+function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: boolean } = {}) {
   const sent: CommandIntent[] = [];
   const recorded: AuditRecord[] = [];
   const station = { soc: 50 as Value };
   /** Whether the plug is on, as it reports it: unknown until a test says. */
   const plug = { on: null as Value };
   let now = options.now ?? MORNING;
-  const devices: Record<string, EngineDevice> = {
+  const devices: Record<string, EngineDevice> = Object.fromEntries(Object.entries({
     [`${FORECAST}:main`]: {
       name: 'Weather',
       removed: false,
@@ -173,7 +178,7 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
     [`${STATION}:main`]: { name: 'Garage P280', removed: false, hasPart: true, part: 'main', description: STATION_DESCRIPTION, device: reader(() => [{ key: 'soc', value: station.soc }], () => now), offline: 'n/a', capabilities: ['battery'] },
     [`${STATION}:outlet.ac`]: { name: 'Garage P280 — AC outlets', removed: false, hasPart: true, part: 'outlet.ac', description: STATION_DESCRIPTION, device: null, offline: 'n/a', capabilities: ['switch'] },
     [`${STATION}:input.ac`]: { name: 'Garage P280 — Mains', removed: false, hasPart: true, part: 'input.ac', description: STATION_DESCRIPTION, device: null, offline: 'n/a', capabilities: ['acInput'] },
-  };
+  } satisfies Record<string, Omit<EngineDevice, 'reachable' | 'wantFresh'>>).map(([key, device]) => [key, asEngineDevice(device)]));
   const store = new AutomationStore();
   const bus = new LiveBus();
   const engine = new AutomationEngine({
@@ -191,7 +196,6 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
     record: (entry) => recorded.push(entry),
     bus,
     now: () => now,
-    ...(options.memory ? { memory: options.memory } : {}),
   });
   const make = (recipe: string, roles: AutomationRecord['roles'], params: Record<string, string | number> = {}, mode: AutomationRecord['mode'] = 'observe', recheckMinutes: number | null = null) => {
     const created = store.create({ name: 'Test automation', recipe, roles, params, timeZone: ZONE, recheckMinutes });
@@ -226,8 +230,8 @@ describe('at a time of day', () => {
     await engine.tick();
     await engine.tick();
     expect(sent).toHaveLength(1);
-    expect(store.get(armed.id)!.lastResult).toMatchObject({ outcome: 'acted' });
-    expect(store.get(off.id)!.lastRunAt).toBeNull();
+    expect(store.get(armed.id)!.lastRun).toMatchObject({ outcome: 'acted' });
+    expect(store.get(off.id)!.lastRun).toBeNull();
   });
 
   test('observing, it says what it would have done, with the function’s reason — and sends nothing', async () => {
@@ -239,7 +243,7 @@ describe('at a time of day', () => {
       // Why, what it read — the function's own words — and what it would have done, each on its own.
       why: 'As it was set up to',
       saw: ['Tomorrow looks sunny: 15 % cloud'],
-      actions: [{ what: 'Turn Heater plug on', outcome: 'would', detail: 'It only watches: let it act to have it sent' }],
+      steps: [{ kind: 'command', depth: 0, what: 'Turn Heater plug on', outcome: 'would', detail: 'It only watches: let it act to have it done' }],
     });
     expect(sent).toEqual([]);
     expect(recorded[0]).toMatchObject({ kind: 'automation.would-act', actor: 'automation:Test automation', resourceKind: 'automation', detail: { device: PLUG } });
@@ -366,8 +370,7 @@ describe('when a condition becomes true', () => {
   });
 
   test('its state survives a restart: nothing fires twice, and what turned true meanwhile fires', async () => {
-    const memory = keptMemory();
-    const first = setup({ memory });
+    const first = setup();
     first.station.soc = 10;
     const automation = low(first);
     await first.engine.tick();
@@ -376,7 +379,7 @@ describe('when a condition becomes true', () => {
     first.engine.stop();
 
     // The same database, a new process: still low, and already dealt with.
-    const second = setup({ memory });
+    const second = setup();
     second.station.soc = 10;
     second.bus.subscribe(() => {});
     await second.engine.hear({ kind: 'readings', deviceId: STATION, readings: [] });
@@ -386,16 +389,16 @@ describe('when a condition becomes true', () => {
 
     // Changing it starts it afresh: its condition, already true, is its edge again.
     second.engine.reset(automation.id);
-    // Only when it changed is kept: what keeping things so counts from.
-    expect([...memory.kept.keys()].filter((key) => key.includes(automation.id))).toEqual([`automation.recheck.${automation.id}`]);
+    // What its triggers saw is forgotten; when it changed is kept: what keeping things so counts from.
+    expect(second.store.trigger(automation.id, 0)).toBeNull();
+    expect(second.store.get(automation.id)!.lookedAt).not.toBeNull();
     await second.engine.tick();
     await settle();
     expect(second.sent).toHaveLength(1);
   });
 
   test('a hold that was running when the server stopped resumes with the time it had left', async () => {
-    const memory = keptMemory();
-    const first = setup({ memory });
+    const first = setup();
     first.station.soc = 10;
     const automation = low(first, { minutes: 5 });
     await first.engine.tick();
@@ -403,13 +406,13 @@ describe('when a condition becomes true', () => {
     first.engine.stop();
 
     // Five minutes later, a new process: it has held long enough, and runs at once.
-    const second = setup({ memory, now: new Date(MORNING.getTime() + 5 * 60_000 + 1_000) });
+    const second = setup({ now: new Date(MORNING.getTime() + 5 * 60_000 + 1_000) });
     second.station.soc = 10;
     await second.engine.tick();
     await settle();
     expect(second.sent).toHaveLength(1);
     expect(second.sent[0]!.reason).toContain('for 5 min');
-    expect(JSON.parse(memory.get(`automation.trigger.${automation.id}:0`)!)).toMatchObject({ last: true, fired: true });
+    expect(second.store.trigger(automation.id, 0)).toMatchObject({ last: true, fired: true });
   });
 
   test('held for a while: only if it stays true that long', async () => {

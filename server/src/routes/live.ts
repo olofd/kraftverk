@@ -3,7 +3,7 @@ import { getCookie } from 'hono/cookie';
 import type { UpgradeWebSocket, WSContext } from 'hono/ws';
 
 import type { ConnectionHealth, LiveUpdate } from '@kraftverk/api-contract';
-import type { Reading, SavedDeviceId } from '@kraftverk/device-sdk';
+import type { AutomationId, Reading, SavedDeviceId } from '@kraftverk/device-sdk';
 import type { LiveMessage } from '@kraftverk/holder';
 
 import { hostName } from '../auth/host.ts';
@@ -69,6 +69,8 @@ class Outbox {
   health = new Map<SavedDeviceId, ConnectionHealth>();
   events: LiveUpdate[] = [];
   changed = false;
+  /** Automations that moved: each is said once, however often it moved since. */
+  automations = new Set<AutomationId>();
 
   add(message: LiveMessage): void {
     switch (message.kind) {
@@ -92,6 +94,9 @@ class Outbox {
       case 'described':
       case 'changed':
         this.changed = true;
+        return;
+      case 'automation':
+        this.automations.add(message.automationId);
     }
   }
 
@@ -103,10 +108,12 @@ class Outbox {
     for (const [deviceId, readings] of this.readings) updates.push({ type: 'readings', deviceId, readings: [...readings.values()] });
     for (const [deviceId, health] of this.health) updates.push({ type: 'health', deviceId, health });
     updates.push(...this.events);
+    for (const id of this.automations) updates.push({ type: 'automation', id });
     this.readings.clear();
     this.health.clear();
     this.events = [];
     this.changed = false;
+    this.automations.clear();
     return updates;
   }
 }

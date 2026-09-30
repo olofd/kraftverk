@@ -203,19 +203,6 @@ export function appState(key: string): string | null {
   );
 }
 
-/** Every decision kept under a prefix, by the rest of its key: each device's picture, in one read. */
-export function appStatesUnder(prefix: string): Map<string, string> {
-  const rows = db()
-    .query<{ key: string; value: string }, [string]>("SELECT key, value FROM app_state WHERE key LIKE ? ESCAPE '\\'")
-    .all(`${prefix.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
-  return new Map(rows.map((row) => [row.key.slice(prefix.length), row.value]));
-}
-
-/** Forgets every decision kept under a prefix: an automation's triggers, when it changes or goes. */
-export function deleteAppState(prefix: string): void {
-  db().query("DELETE FROM app_state WHERE key LIKE ? ESCAPE '\\'").run(`${prefix.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
-}
-
 export function setAppState(key: string, value: string): void {
   db()
     .query(

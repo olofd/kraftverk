@@ -206,6 +206,14 @@ export interface DeviceSession {
   identity?(): { id: string | null; name: string | null };
   /** The tools its type declares that this session can run: a simulator may run fewer. */
   readonly tools?: Readonly<Record<string, ToolRun>>;
+  /**
+   * Someone is waiting on its readings until then — a step of an automation
+   * watching whether a charger draws (docs/SEQUENCES.md): report as often as
+   * it sensibly can until that time, then as before. How often, and for how
+   * long at most, is the device's own business; asked again, the later time
+   * holds. A session that reports as often as it can already need not have it.
+   */
+  wantFresh?(until: number): void;
   close(): Promise<void>;
 }
 

@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
 import type { DeviceSession, DeviceStore, PolicyValues, SavedDeviceId } from '@kraftverk/device-sdk';
-import { ActionGateway } from '@kraftverk/gateway';
+import { ActionGateway, type GatewayLedger } from '@kraftverk/gateway';
 import { Failover } from '@kraftverk/holder';
 import { fetchDeviceStore, registerClient, type AuditUpload, type DeviceView } from '@kraftverk/api-client';
 
@@ -147,7 +147,7 @@ export class AppRuntime {
       isReadOnly: (id) => !this.#allowWrites && !this.sessions.simulated(id),
       readOnlyReason: 'Writes from this app are off: allow them in App settings',
       record: (entry) => audit(entry),
-      memory: { get: (key) => readPreference(`kraftverk.gateway.${key}`), set: (key, value) => writePreference(`kraftverk.gateway.${key}`, value) },
+      ledger: preferenceLedger,
       policyValues: () => this.#policyValues,
     });
     this.uplink?.start();
@@ -296,4 +296,17 @@ export class AppRuntime {
     await this.sessions.closeAll();
     await this.registry.stopAll();
   }
+}
+
+/** The gateway's memory of the devices this app holds, in its own storage: a restart of the app is no way around the dwell. */
+const preferenceLedger: GatewayLedger = {
+  lastSwitch: (device, part) => millis(readPreference(`kraftverk.gateway.switched.${device}:${part}`)),
+  switched: (device, part, at) => writePreference(`kraftverk.gateway.switched.${device}:${part}`, String(at)),
+  lastWrite: (device, attribute) => millis(readPreference(`kraftverk.gateway.written.${device}:${attribute}`)),
+  wrote: (device, attribute, at) => writePreference(`kraftverk.gateway.written.${device}:${attribute}`, String(at)),
+};
+
+function millis(kept: string | null): number | null {
+  const value = kept === null ? Number.NaN : Number(kept);
+  return Number.isFinite(value) ? value : null;
 }

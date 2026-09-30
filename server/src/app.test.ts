@@ -902,7 +902,7 @@ describe('an assistant', () => {
     // A notification is heard, and not answered.
     expect((await mcp('notifications/initialized', {}, null)).status).toBe(202);
     const names = (await mcp('tools/list')).body.result.tools.map((listed: { name: string }) => listed.name);
-    expect(names).toEqual(['world', 'vocabulary', 'command', 'query', 'receipts', 'rehearse', 'propose']);
+    expect(names).toEqual(['world', 'vocabulary', 'command', 'query', 'receipts', 'rehearse', 'automations', 'start', 'stop', 'propose']);
     expect((await mcp('tools/call', { name: 'rm -rf' })).body.error.code).toBe(-32602);
   });
 
@@ -1013,6 +1013,8 @@ describe('automations', () => {
       'standard.charge-between',
       'standard.low-battery',
       'standard.mains-lost',
+      'standard.start-charging',
+      'standard.stop-charging',
     ]);
     expect(recipes.find((recipe: { id: string }) => recipe.id === 'open-meteo.weather.forecast-switch')).toMatchObject({
       from: { typeId: 'open-meteo.weather', name: 'Open-Meteo' },
@@ -1126,6 +1128,56 @@ describe('automations', () => {
     const audit = (await as('/audit')).body as { kind: string; actor: string }[];
     expect(audit.find((entry) => entry.kind === 'automation.armed')).toMatchObject({ actor: 'olof' });
   });
+
+  test('a sequence you start: tried while it watches, started once it acts, kept as it goes, and its runs listed', async () => {
+    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
+    const plug = await added('Scooter plug', { server: simulated, typeId: 'tuya.zigbee-plug' });
+    const body = {
+      name: 'Start charging the scooter',
+      recipe: 'standard.start-charging',
+      roles: { supply: { device: station.id, part: 'outlet.ac' }, charger: whole(plug) },
+      params: { reachSeconds: 20, withinSeconds: 10, offSeconds: 3, tries: 1 },
+      timeZone: 'Europe/Stockholm',
+    };
+    // A sequence is started, not kept so.
+    expect((await as('/automations', { method: 'POST', body: { ...body, recheckMinutes: 10 } })).status).toBe(400);
+    const created = (await as('/automations', { method: 'POST', body })).body;
+    expect(created).toMatchObject({ startsWhenAsked: true, takesSteps: true, running: null, lastRun: null, when: ['When you start it'] });
+    expect(created.steps.map((step: { text: string }) => step.text)).toEqual([
+      'Turn Garage P280 — AC outlets on',
+      'Wait until Scooter plug can be reached — at most 20 s',
+      'Turn Scooter plug on',
+      "Make sure Scooter plug's power is above 50 W within 10 s — if not, try again, at most once",
+    ]);
+    const path = `/automations/${created.id}`;
+
+    // Only watching: tried, it runs nothing and keeps nothing.
+    expect((await as(`${path}/start`, { method: 'POST' })).body).toMatchObject({ running: null, lastRun: null });
+
+    const asked = await as(path, { method: 'PATCH', body: { mode: 'armed' } });
+    await as(path, { method: 'PATCH', body: { mode: 'armed', confirmation: asked.body.needsConfirmation } });
+    const started = await as(`${path}/start`, { method: 'POST' });
+    expect(started.body.running).toMatchObject({ outcome: 'running', startedBy: 'olof', why: 'Started by olof' });
+
+    // It takes its steps: the station's outlet on, the plug reachable and on, and drawing.
+    type Run = { outcome: string; steps: { kind: string; outcome: string }[] };
+    let run: Run | null = null;
+    for (let waited = 0; waited < 20_000 && !run; waited += 100) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const now = ((await as('/automations')).body.automations as { id: string; running: unknown; lastRun: Run | null }[]).find((one) => one.id === created.id)!;
+      if (!now.running) run = now.lastRun;
+    }
+    expect(run).toMatchObject({ outcome: 'acted' });
+    // Simulated, the outlet and the plug may be on already: "already so" is as good as done.
+    expect(run!.steps.map((step) => `${step.kind} ${step.outcome.replace('already', 'done')}`)).toEqual(['command done', 'waitUntil met', 'command done', 'ensure met']);
+    const runs = (await as(`${path}/runs`)).body.runs;
+    expect(runs).toHaveLength(1);
+    // Asked of either device, it is among those its page can start.
+    expect((await as(`/automations?device=${plug.id}`)).body.automations.map((one: { id: string }) => one.id)).toEqual([created.id]);
+    expect((await as(`${path}/stop`, { method: 'POST' })).body).toMatchObject({ error: 'It is not running' });
+    const kinds = ((await as('/audit')).body as { kind: string }[]).map((entry) => entry.kind);
+    expect(kinds).toEqual(expect.arrayContaining(['automation.started', 'automation.acted']));
+  }, 30_000);
 
   test('checks what it would do now without doing it, and is deleted', async () => {
     const { weather, plug } = await weatherAndPlug();

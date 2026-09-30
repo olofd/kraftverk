@@ -36,6 +36,8 @@ export type DeviceRecord = {
   descriptionSource: DescriptionSource;
   /** What it has said about itself. Null until it has. */
   info: DeviceInfo | null;
+  /** Which picture it shows, its owner's pick: `type:N`, one day `own:<id>`. Null: its type's first. */
+  picture: string | null;
 };
 
 type Row = {
@@ -47,6 +49,7 @@ type Row = {
   description: string;
   description_source: DescriptionSource;
   info: string | null;
+  picture: string | null;
   added_at: string;
   removed_at: string | null;
 };
@@ -63,6 +66,7 @@ const toRecord = (row: Row): DeviceRecord => ({
   description: JSON.parse(row.description) as DeviceDescription,
   descriptionSource: row.description_source,
   info: row.info === null ? null : (JSON.parse(row.info) as DeviceInfo),
+  picture: row.picture,
 });
 
 export class DeviceCatalog {
@@ -112,6 +116,7 @@ export class DeviceCatalog {
       // Its type's word, until it says more itself.
       descriptionSource: 'type',
       info: null,
+      picture: null,
     };
     db().transaction(() => {
       db()
@@ -176,6 +181,12 @@ export class DeviceCatalog {
       .query('UPDATE device SET name = ?, config = ?, identity = ? WHERE id = ?')
       .run(next.name, JSON.stringify(next.config), next.identity, id);
     return next;
+  }
+
+  /** Which picture it shows: its owner's pick, or null for its type's first. */
+  setPicture(id: SavedDeviceId, picture: string | null): DeviceRecord | null {
+    db().query('UPDATE device SET picture = ? WHERE id = ?').run(picture, id);
+    return this.get(id);
   }
 
   /**

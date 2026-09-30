@@ -1,7 +1,7 @@
 import { HTTPException } from 'hono/http-exception';
 
 import type { AutomationView, Rehearsal, RoleBinding } from '@kraftverk/api-contract';
-import { capabilitiesOf, describeRule, describeTriggers, MAIN_PART, meetsNeed, partsOf, savedDeviceId, validateConfig, type ConfigValues, type Value } from '@kraftverk/device-sdk';
+import { capabilitiesOf, describeRule, describeTriggers, MAIN_PART, meetsNeed, partsOf, savedDeviceId, startsWhenAsked, takesSteps, validateConfig, type ConfigValues, type Value } from '@kraftverk/device-sdk';
 
 import type { DeviceCatalog } from '../devices/catalog.ts';
 import type { DeviceSessionManager } from '../devices/sessions.ts';
@@ -33,14 +33,20 @@ export function plans({ catalog, sessions, library, engine }: PlanDeps) {
   const view = (automation: AutomationRecord): AutomationView => {
     const recipe = library.recipe(automation.recipe);
     const name = (role: string) => partName(automation.roles[role]);
+    const { lookedAt: _lookedAt, ...shown } = automation;
     return {
-      ...automation,
+      ...shown,
       recipeLabel: recipe?.label ?? automation.recipe,
       sentence: recipe ? describeRule(recipe, automation.params as Record<string, Value>, name, library) : automation.recipe,
       when: recipe ? describeTriggers(recipe, automation.params as Record<string, Value>, name, library) : [],
       now: engine.judge(automation),
       nextLookAt: engine.nextLookAt(automation),
       problems: engine.roleProblems(automation),
+      ...engine.steps(automation),
+      takesSteps: recipe ? takesSteps(recipe) : false,
+      startsWhenAsked: recipe ? startsWhenAsked(recipe) : false,
+      // The engine's word while it runs — fresher than the row, which it writes after.
+      running: engine.running(automation.id) ?? automation.running,
     };
   };
 

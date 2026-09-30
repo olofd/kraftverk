@@ -112,6 +112,11 @@ const LIVE: readonly AttributeSpec[] = [
 /** How long live readings stay wanted after they are asked for: long enough to change something and watch it land. */
 const LIVE_LEASE_MS = 15 * 60_000;
 
+/** While someone waits on its readings (`wantFresh`): asked this often… */
+const FRESH_EVERY_MS = 2_000;
+/** …for at most this long a time, whatever was asked. */
+const FRESH_AT_MOST_MS = 5 * 60_000;
+
 /** A profile datapoint as the attribute it is: the wire details left behind. */
 const attributeOf = ({ dp: _dp, scale: _scale, wire: _wire, example: _example, raises: _raises, ...attribute }: ProfileDatapoint): AttributeSpec => attribute;
 
@@ -308,6 +313,8 @@ function socketSession(options: {
   live: Live | null;
   identity: string | null;
   tools?: Readonly<Record<string, ToolRun>>;
+  /** Someone waits on its readings until then: a real plug is asked more often. */
+  wantFresh?: (until: number) => void;
   close: () => Promise<void>;
 }): DeviceSession {
   const { profile, live } = options;
@@ -337,6 +344,7 @@ function socketSession(options: {
     },
     identity: () => ({ id: options.identity, name: null }),
     tools: { ...options.tools, ...buttons },
+    ...(options.wantFresh ? { wantFresh: options.wantFresh } : {}),
     close: options.close,
   };
   if (writable(profile).size || live) {
@@ -416,6 +424,9 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
       // An empty reply is not a reading: recording it would refresh the
       // freshness clock with nothing behind it.
       if (!Object.keys(dps).length) throw new Error('The plug answered with no datapoints');
+      // Behind a gateway that says it cannot reach the plug, the answer is the gateway's memory, not the
+      // plug's word: not taken, so its readings age as a silent plug's do. Its own pushes end that.
+      if (unreachable) return;
       ingest(dps);
     } catch (error) {
       // The last reading is left alone rather than zeroed: its time says how
@@ -426,6 +437,15 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
   ctx.schedule(pollMs, poll);
   // Not awaited: a plug that is unplugged must not stop its session opening.
   void poll();
+
+  // Someone waits on its readings: asked every couple of seconds until then — never for long.
+  let freshUntil = 0;
+  ctx.schedule(FRESH_EVERY_MS, () => {
+    if (Date.now() < freshUntil) void poll();
+  });
+  const wantFresh = (until: number) => {
+    freshUntil = Math.max(freshUntil, Math.min(until, Date.now() + FRESH_AT_MOST_MS));
+  };
 
   const send = async (dps: Dps) => {
     if (ctx.readOnly) throw new Error('Every hardware write is refused: this holder is read-only');
@@ -451,6 +471,7 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
       };
     },
     send,
+    wantFresh,
     tools: { datapoints: async () => datapointsAnswer(link.version, profile, await link.status()) },
     close: () => link.close(),
   });

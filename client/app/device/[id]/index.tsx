@@ -2,6 +2,7 @@ import { useLocalSearchParams } from 'expo-router';
 
 import type { DeviceView } from '@kraftverk/api-client';
 
+import { DeviceAutomations } from '../../../src/features/automations/DeviceAutomations';
 import { DeviceShell } from '../../../src/features/devices/DeviceShell';
 import { Controls, Energy, Events, History, Overview, Parts, Readings } from '../../../src/features/devices/panels';
 import { RemovedDevice } from '../../../src/features/devices/removed';
@@ -41,6 +42,8 @@ function Dashboard({ device }: { device: DeviceView }) {
           <Parts device={device} />
         </>
       )}
+      {/* What you start with it — a sequence it is part of — for every device alike. */}
+      <DeviceAutomations deviceId={device.id} />
       <History device={device} />
       <Events device={device} />
     </>

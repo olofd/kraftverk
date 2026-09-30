@@ -17,7 +17,8 @@ import { RemoteReadings } from './devices/remote.ts';
 import { DeviceSessionManager } from './devices/sessions.ts';
 import { SetupService } from './devices/setup/index.ts';
 import { DeviceTypeRegistry } from './devices/types.ts';
-import { appState, audit, closeDb, deleteAppState, setAppState } from './history/db.ts';
+import { databaseLedger } from './devices/ledger.ts';
+import { audit, closeDb } from './history/db.ts';
 import { policyValues } from './history/policy.ts';
 import { ChangeLog } from './history/changes.ts';
 import { transportStore } from './history/transport-store.ts';
@@ -190,7 +191,7 @@ const gateway = new ActionGateway({
   linksFrom: (id, part) => links.from(id, part).map((link) => ({ kind: link.kind, target: link.target })),
   isReadOnly: (id) => config.readOnly && !sessions.simulated(id),
   record: audit,
-  memory: { get: appState, set: setAppState },
+  ledger: databaseLedger(),
   policyValues,
 });
 
@@ -215,9 +216,8 @@ const engine = new AutomationEngine({
   gateway,
   record: audit,
   bus,
-  // Each trigger's state survives a restart, as the gateway's dwell memory does.
-  memory: { get: appState, set: setAppState, forget: deleteAppState },
 });
+// Its triggers' state and its runs are in the database: a restart continues them, and ends as interrupted a run it cut short.
 engine.start();
 
 /** The web container, the one proxy whose "home-network entrance" stamp is believed. */

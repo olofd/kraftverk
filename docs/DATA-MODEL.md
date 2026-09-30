@@ -332,6 +332,12 @@ erDiagram
   users ||--o{ client : "signed in on"
   users ||--o{ sessions : "has"
   client |o--o{ sessions : "belongs to"
+  device ||--o{ device_switch : "was switched"
+  device ||--o{ device_write : "was written"
+  automation ||--o{ automation_role : "is filled by"
+  device ||--o{ automation_role : "fills"
+  automation ||--o{ automation_trigger : "watches with"
+  automation ||--o{ automation_run : "ran"
 
   device {
     text id PK "d-3f9a2c61b0e4"
@@ -342,6 +348,7 @@ erDiagram
     json description "{parts: [...], attributes: [...], events: [...]} · the latest, the type's or its own"
     text description_source "type · device · whose word the description is"
     json info "{manufacturer: AFERIY, model: P280, firmware: {...}} · null until it has said"
+    text picture "type:1 · own:<id> one day · null: its type's first"
     text added_at "2026-09-27T19:40:00Z"
     text removed_at "null · set by Remove · history kept"
   }
@@ -422,16 +429,48 @@ erDiagram
   }
   automation {
     text id PK "a-71c2d0e5f9a3"
-    text name "Sunny heater"
-    text recipe "open-meteo.weather.forecast-switch · standard.charge-between"
-    json roles "{forecast: {device: d-8e1d44a0f2b7, part: main}, switch: {device: d-3f9a2c61b0e4, part: outlet.dc}} · not foreign keys"
-    json params "{at: 07:00, day: tomorrow, condition: sunny, cloudMax: 40, action: on}"
+    text name "Sunny heater · Start charging the scooter"
+    text recipe "open-meteo.weather.forecast-switch · standard.start-charging"
+    json params "{at: 07:00, day: tomorrow, action: on} · the recipe's settings"
     text time_zone "Europe/Stockholm · the owner's clock"
     text mode "off · observe · armed"
     int recheck_minutes "10 · null: never; how often a condition that still holds keeps things so"
+    text looked_at "when it last looked again · null: not yet"
     text created_at "2026-10-15T08:00:00Z"
-    text last_run_at "2026-10-16T05:00:12Z"
-    json last_result "{outcome: acted, summary: Turn Heater plug on…}"
+  }
+  automation_role {
+    text automation_id PK "a-71c2d0e5f9a3"
+    text role PK "charger"
+    text device_id FK "d-3f9a2c61b0e4"
+    text part "main · outlet.ac"
+  }
+  automation_trigger {
+    text automation_id PK "a-71c2d0e5f9a3"
+    int trigger PK "0 · its place in the recipe's when"
+    int holds "1"
+    text held_since "2026-10-16T05:00:12Z"
+    int fired "1"
+  }
+  automation_run {
+    text id PK "r-5b2e90c4a1d3f7e2"
+    text automation_id FK "a-71c2d0e5f9a3"
+    text started_at "2026-10-16T17:02:00Z"
+    text ended_at "2026-10-16T17:03:41Z · null: running now, one at a time"
+    text outcome "acted · failed · stopped · interrupted · running · …"
+    text started_by "olof · null: its own triggers"
+    text why "Started by olof"
+    text summary "Scooter plug: Power 238 W, after 2 tries"
+    json detail "{saw, conditions, steps: [{kind, depth, within, what, outcome, detail, at, endedAt, until}]}"
+  }
+  device_switch {
+    text device_id PK "d-5b2e90c4a1d3"
+    text part PK "main · outlet.ac"
+    text switched_at "2026-10-16T17:02:10Z · what the dwell counts from"
+  }
+  device_write {
+    text device_id PK "d-5b2e90c4a1d3"
+    text attribute PK "afterPowerCut"
+    text written_at "2026-10-16T17:05:00Z"
   }
   audit {
     int id PK "4812"
@@ -444,8 +483,8 @@ erDiagram
     json detail "{part: outlet.ac, capability: switch, command: set, args: {on: false}}"
   }
   app_state {
-    text key PK "automation.trigger.a-71c2d0e5f9a3:0 · automation.recheck.a-71c2d0e5f9a3 · device.picture.d-3f9a2c61b0e4 · gateway.lastSwitchAt.… · policy.values"
-    text value "{last: true, heldSince: …, fired: false} · {loadWatts: 10}"
+    text key PK "policy.values · what the home sets as a whole, nothing about one device or automation"
+    text value "{loadWatts: 10}"
     text updated_at "2026-09-01T10:00:00Z"
   }
   transport_kv {
@@ -498,6 +537,11 @@ erDiagram
 | `meta` | What the database is: the schema it was made with, when, and by which version — what the set-aside message reports. | when the database is made |
 | `audit.resource_kind` | What an entry is about, as a kind and an id together, so the timeline can be asked for one device's, one automation's, one account's. | with every entry |
 | `device_event` | What devices said happened, beside their history. | when a device raises one |
+| `device.picture` | Which picture a device shows: its owner's pick, the same in every app. | on its page |
+| `device_switch`, `device_write` | The gateway's memory of each part and setting: when it was last switched or written — what the dwell counts from, so a restart is no way around it. A part never switched has no row: its first switch through a consequential link is confirmed. | by the gateway, at each switch and write |
+| `automation`, `automation_role` | An automation: its recipe, settings, clock and mode; and which part of which device fills each role — a row each, so a device's page asks which automations it can start. | made, changed |
+| `automation_trigger` | Each `becomes` trigger's state, so a restart continues a hold and never fires one twice. | as its conditions are looked at |
+| `automation_run` | Every run, with each step it took; the unended one is running now, written at every step — one at a time, held by a unique index. A restart ends it as interrupted (docs/SEQUENCES.md). | as it runs |
 
 ### Rules the schema and the code enforce
 

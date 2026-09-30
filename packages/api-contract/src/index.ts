@@ -41,6 +41,8 @@ import type {
   ResourceKind,
   SavedDeviceId,
   SetupStepView,
+  StepKind,
+  StepLine,
   ToolSpec,
   TransportDefinition,
   Value,
@@ -60,6 +62,8 @@ export type {
   LinkId,
   Reach,
   ResourceKind,
+  StepKind,
+  StepLine,
   ToolSpec,
   CategoryId,
   CategorySpec,
@@ -359,7 +363,9 @@ export type LiveUpdate =
   | { type: 'readings'; deviceId: SavedDeviceId; readings: Reading[] }
   | { type: 'health'; deviceId: SavedDeviceId; health: ConnectionHealth }
   | { type: 'event'; deviceId: SavedDeviceId; event: LiveEvent }
-  | { type: 'changed'; deviceId: SavedDeviceId | null };
+  | { type: 'changed'; deviceId: SavedDeviceId | null }
+  /** An automation moved: a run started, took a step, or ended. Read it again. */
+  | { type: 'automation'; id: AutomationId };
 
 // --- adding a device ----------------------------------------------------------
 
@@ -528,6 +534,12 @@ export type RecipeView = {
   from: { typeId: string; name: string } | null;
   /** It waits for a condition to come true: only then can an automation of it keep things so (`recheckMinutes`). */
   hasConditions: boolean;
+  /** Started when you ask: from its card, a device's page, or the assistant. */
+  startsWhenAsked: boolean;
+  /** It takes steps — waits, makes sure, chooses — rather than sending its commands at once. */
+  takesSteps: boolean;
+  /** Its steps in words, its roles named by their labels and its settings at their defaults: what making one shows. */
+  steps: StepLine[];
   /** What each role asks of a part: every one of `capabilities`, and one of `oneOf` when given. */
   roles: Record<
     string,
@@ -559,45 +571,73 @@ export type AutomationChanges = {
 export type AutomationMode = 'off' | 'observe' | 'armed';
 
 export type AutomationRun = {
+  /** Which run it is; null for what it would do, asked, which is not kept. */
+  id: string | null;
+  /** When it started. */
   at: string;
+  /** The person or assistant who started it; null when its own triggers did. */
+  startedBy: string | null;
+  /** When it ended; null while it runs. A run of commands alone ends as it starts. */
+  endedAt: string | null;
   outcome:
-    | 'acted' // the gateway carried it out, verified
+    | 'acted' // what it did, the gateway carried out, verified
     | 'unverified' // the gateway sent it, but the effect is not proven
     | 'would-act' // observing: it would have acted
     | 'idle' // the condition was not met
     | 'unknown' // it could not tell
     | 'refused' // the gateway said no
-    | 'failed'; // the command errored
+    | 'failed' // a command errored, or a step did not succeed: waited in vain, never made sure
+    | 'running' // it is taking its steps now
+    | 'stopped' // someone stopped it
+    | 'interrupted'; // the server restarted while it ran: it was ended, not resumed
   /** The run in one line, for a timeline or an assistant: "Turned Heater plug off". */
   summary: string;
   /**
    * What started it, in words: "Garage station's charge is at least 50 %",
    * "Every day at 07:00", "Looked again after 10 min: … still holds", "Asked
-   * what it would do now".
+   * what it would do now", "Started by olof".
    */
   why: string;
   /** What it read to decide, as it was then: "Garage station: Charge 74.2 %". */
   saw: string[];
   /** Each condition it waits for, as it stood then. */
   conditions: ConditionState[];
-  /** What it did, or would have, each with how it went. Empty when it did nothing. */
-  actions: RunAction[];
+  /**
+   * Each step it took, or would have, in order, as it went — nested steps
+   * after the step they belong to, one level deeper. Empty when it did
+   * nothing.
+   */
+  steps: RunStep[];
 };
 
 /** One condition an automation waits for, and whether it holds: null when it cannot be judged (a device gone quiet). */
 export type ConditionState = { text: string; holds: boolean | null };
 
-export type RunAction = {
-  /** "Turn Heater plug off". */
+/** A step of a run, as it went (docs/SEQUENCES.md). */
+export type RunStep = {
+  kind: StepKind;
+  /** How deep it is: 0 for the rule's own steps, 1 for a step within one — a retry's, a choice's. */
+  depth: number;
+  /** What it is within, for a step with depth: "Try 2 of 3", "If it stays so", "After a step did not succeed". */
+  within: string | null;
+  /** "Turn Heater plug off", "Wait until Charger plug can be reached — at most 2 min". */
   what: string;
   /**
-   * done: carried out, and the device agrees; already: it already was;
-   * unverified: sent, not proven; refused: the gateway said no; failed: it
-   * errored; would: only watching, so nothing was sent.
+   * A command — done: carried out, and the device agrees; already: it
+   * already was; unverified: sent, not proven; refused: the gateway said no;
+   * failed: it errored; would: only watching, so nothing was sent.
+   * A wait, a watch, making sure — waiting: now; met: it came true (a watch:
+   * it stayed so); not-met: a watch that saw it not so; timed-out: it never
+   * came true in time (making sure: in all its tries); done: a pause over, a
+   * choice made. stopped: someone stopped the run here.
    */
-  outcome: 'done' | 'already' | 'unverified' | 'refused' | 'failed' | 'would';
-  /** In the gateway's words: "Confirmed by the device", "Too soon: …". */
+  outcome: 'done' | 'already' | 'unverified' | 'refused' | 'failed' | 'would' | 'waiting' | 'met' | 'not-met' | 'timed-out' | 'stopped';
+  /** In the gateway's words, or the engine's: "Confirmed by the device", "After 23 s", "Charger plug draws 238 W". */
   detail: string;
+  at: string;
+  endedAt: string | null;
+  /** While it waits: until when, at the latest. */
+  until: string | null;
 };
 
 export type AutomationView = {
@@ -621,12 +661,24 @@ export type AutomationView = {
   recheckMinutes: number | null;
   createdAt: string;
   updatedAt: string;
-  lastRunAt: string | null;
-  lastResult: AutomationRun | null;
+  /** Its latest run that has ended; null before its first. */
+  lastRun: AutomationRun | null;
   /** Each condition it waits for, as it stands now, and what it reads to say so. */
   now: { conditions: ConditionState[]; saw: string[] };
   /** When it next looks again to keep things so; null when it does not, or is off. */
   nextLookAt: string | null;
   /** Why it cannot run as it is: a removed device. Empty when it can. */
   problems: string[];
+  /** What it does, step by step, in words — and what it does if a step does not succeed. */
+  steps: StepLine[];
+  otherwise: StepLine[];
+  /** It takes steps rather than sending its commands at once. */
+  takesSteps: boolean;
+  /** Started when you ask: `POST /automations/:id/start` (docs/SEQUENCES.md). */
+  startsWhenAsked: boolean;
+  /** The run it is taking now, step by step as it goes; null when none runs. */
+  running: AutomationRun | null;
 };
+
+/** `GET /automations/:id/runs`: its runs, the latest first — each with every step it took. */
+export type AutomationRuns = { runs: AutomationRun[] };
