@@ -24,12 +24,26 @@ test('a charge window of your own, made from the shared recipe', async ({ page, 
   await press(page, plug.name);
   await expect(page.getByRole('status')).toHaveCount(0);
 
-  await press(page, 'Save');
-  // Named after its recipe when not named, and read back as what it does.
+  await press(page, 'Create');
+  // Named after its recipe when not named, and read back as what it does — and when it runs.
   await expect(page.getByText(`Charge ${station.name} with ${plug.name}: on when it stays below 15 % for 2 min, off when it reaches 50 %.`)).toBeVisible();
+  await expect(page.getByText(`When ${station.name}'s charge is below 15 % for 2 min`)).toBeVisible();
+  await expect(page.getByText('Only watching').last()).toBeVisible();
+
+  // Changed after it was made: a new name, kept.
+  const renamed = unique('Charge window');
+  await page.getByText('Edit', { exact: true }).last().click();
+  await page.getByLabel('Name').fill(renamed);
+  await press(page, 'Save changes');
+  await expect(page.getByText(renamed, { exact: true })).toBeVisible();
+
+  // Its history: made, then changed.
+  await page.getByText('History', { exact: true }).last().click();
+  await expect(page.getByText(/Made the automation/).last()).toBeVisible();
+  await expect(page.getByText(new RegExp(`Changed: "${renamed}"`)).last()).toBeVisible();
 
   // Checked now: the station's charge, and each edge it waits for, in words.
-  await page.getByText('Check now').last().click();
+  await page.getByText('What would it do now?').last().click();
   const said = page.getByText(/^Right now,/).last();
   await expect(said).toContainText(`${station.name}'s charge is below 15 %:`);
   await expect(said).toContainText(`${station.name}'s charge is at least 50 %:`);

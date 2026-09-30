@@ -576,6 +576,21 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
   return text(expr);
 }
 
+/**
+ * When a rule runs, one sentence a trigger: "When Station's charge is below
+ * 15 % for 2 min", "Every day at 07:00". What a person reads to know how often
+ * it looks, and at what.
+ */
+export function describeTriggers(rule: Rule, params: Readonly<Record<string, Value>>, name: (role: string) => string, vocabulary?: RuleVocabulary): string[] {
+  const text = (expr: Expr): string => describeExpr(rule, expr, params, name, vocabulary);
+  return rule.when.map((trigger) => {
+    if ('at' in trigger) return `Every day at ${text(trigger.at)}`;
+    if ('event' in trigger) return `When ${name(trigger.event.role)} reports ${trigger.event.event.replace(/[._-]+/g, ' ')}`;
+    const held = trigger.heldForMinutes ? ` for ${'value' in trigger.heldForMinutes ? `${text(trigger.heldForMinutes)} min` : text(trigger.heldForMinutes)}` : '';
+    return `When ${text(trigger.becomes)}${held}`;
+  });
+}
+
 export function describeRule(rule: Rule & { sentence?: string }, params: Readonly<Record<string, Value>>, name: (role: string) => string, vocabulary?: RuleVocabulary): string {
   const param = (key: string) => paramText(rule.params, key, params[key] ?? null);
   if (rule.sentence) return rule.sentence.replace(/\{(\w+)\}/g, (_, key: string) => (key in rule.roles ? name(key) : param(key)));

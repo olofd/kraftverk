@@ -1,7 +1,7 @@
 import { HTTPException } from 'hono/http-exception';
 
 import type { AutomationView, Rehearsal, RoleBinding } from '@kraftverk/api-contract';
-import { capabilitiesOf, describeRule, MAIN_PART, meetsNeed, partsOf, savedDeviceId, validateConfig, type ConfigValues, type Value } from '@kraftverk/device-sdk';
+import { capabilitiesOf, describeRule, describeTriggers, MAIN_PART, meetsNeed, partsOf, savedDeviceId, validateConfig, type ConfigValues, type Value } from '@kraftverk/device-sdk';
 
 import type { DeviceCatalog } from '../devices/catalog.ts';
 import type { DeviceSessionManager } from '../devices/sessions.ts';
@@ -32,10 +32,12 @@ export function plans({ catalog, sessions, library, engine }: PlanDeps) {
 
   const view = (automation: AutomationRecord): AutomationView => {
     const recipe = library.recipe(automation.recipe);
+    const name = (role: string) => partName(automation.roles[role]);
     return {
       ...automation,
       recipeLabel: recipe?.label ?? automation.recipe,
-      sentence: recipe ? describeRule(recipe, automation.params as Record<string, Value>, (role) => partName(automation.roles[role]), library) : automation.recipe,
+      sentence: recipe ? describeRule(recipe, automation.params as Record<string, Value>, name, library) : automation.recipe,
+      when: recipe ? describeTriggers(recipe, automation.params as Record<string, Value>, name, library) : [],
       problems: engine.roleProblems(automation),
     };
   };

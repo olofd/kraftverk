@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { checkBinding, checkRule, describeRule, evaluate, evaluateNow, type Expr, type RuleScope } from './automation.ts';
+import { checkBinding, checkRule, describeRule, describeTriggers, evaluate, evaluateNow, type Expr, type RuleScope } from './automation.ts';
 import { capabilitiesOf, MAIN_PART, type DeviceDescription } from './description.ts';
 import { chargeBetween, lowBattery, mainsLost, STANDARD_RECIPES } from './recipes.ts';
 import type { Value } from './values.ts';
@@ -79,5 +79,13 @@ describe('charging between two levels', () => {
     const name = (role: string) => (role === 'battery' ? 'Garage P280' : 'ATORCH plug');
     expect(describeRule(chargeBetween, params, name)).toBe('Charge Garage P280 with ATORCH plug: on when it stays below 15 % for 2 min, off when it reaches 50 %.');
     expect(describeRule(lowBattery, { below: 20, minutes: 5, action: 'on' }, name)).toBe('When Garage P280 stays below 20 % for 5 min, turn ATORCH plug on.');
+  });
+
+  test('says when it runs, a trigger at a time', () => {
+    const name = (role: string) => (role === 'battery' ? 'Garage P280' : 'ATORCH plug');
+    expect(describeTriggers(chargeBetween, params, name)).toEqual([
+      "When Garage P280's charge is below 15 % for 2 min",
+      "When Garage P280's charge is at least 50 %",
+    ]);
   });
 });

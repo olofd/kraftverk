@@ -551,6 +551,8 @@ export type AutomationView = {
   recipeLabel: string;
   /** What it does, in a sentence: "At 07:00, if tomorrow looks sunny by Weather, turn Heater plug on." */
   sentence: string;
+  /** When it runs, a sentence a trigger: "When Station's charge is below 15 % for 2 min". */
+  when: string[];
   roles: Record<string, RoleBinding>;
   params: ConfigValues;
   timeZone: string;

@@ -1,6 +1,7 @@
 import { Input, Text, XStack, YStack } from 'tamagui';
 
 import { Row, RowSeparator, ToggleRow } from './Row';
+import { SliderRow } from './SliderRow';
 import { haptic } from './haptics';
 import { presentationOf, type ConfigField, type ConfigSchema, type ConfigValues } from '@kraftverk/device-sdk';
 
@@ -105,7 +106,10 @@ function Field({
                 borderRadius="$3"
                 borderWidth={1}
                 borderColor={selected ? '$accent' : '$borderColor'}
-                backgroundColor={selected ? '$backgroundPress' : 'transparent'}
+                // Filled with the accent: which one is chosen is seen, not looked for.
+                backgroundColor={selected ? '$accent' : 'transparent'}
+                role="radio"
+                aria-checked={selected}
                 cursor="pointer"
                 pressStyle={{ opacity: 0.7 }}
                 onPress={() => {
@@ -114,7 +118,7 @@ function Field({
                   onChange(name, option.value);
                 }}
               >
-                <Text fontSize={13} fontWeight={selected ? '700' : '500'} color={selected ? '$color' : '$muted'}>
+                <Text fontSize={13} fontWeight={selected ? '700' : '500'} color={selected ? '$background' : '$muted'}>
                   {option.label}
                 </Text>
               </XStack>
@@ -128,6 +132,35 @@ function Field({
   const secret = presentationOf(field) === 'secret';
   const multiline = presentationOf(field) === 'multiline';
   const numeric = field.type === 'number';
+
+  /*
+    A number with ends is a slider: asked for (`presentation: 'slider'`), or a
+    range a thumb can cover — a minimum, a maximum and no more than a couple of
+    hundred steps between them. Typing "15" into a box for a percentage is
+    what a form does when it knows nothing about the number.
+  */
+  if (field.type === 'number' && field.min !== undefined && field.max !== undefined) {
+    const step = field.step ?? (field.integer ? 1 : undefined) ?? 1;
+    const steps = (field.max - field.min) / step;
+    if (presentationOf(field) === 'slider' || (steps > 0 && steps <= 200)) {
+      const current = typeof value === 'number' ? value : typeof field.default === 'number' ? field.default : field.min;
+      const decimals = Math.max(0, -Math.floor(Math.log10(step)));
+      return (
+        <SliderRow
+          title={field.title}
+          subtitle={field.description}
+          value={current}
+          min={field.min}
+          max={field.max}
+          step={step}
+          format={(v) => `${v.toFixed(decimals)}${field.unit ? ` ${field.unit}` : ''}`}
+          ends={[`${field.min}${field.unit ? ` ${field.unit}` : ''}`, `${field.max}${field.unit ? ` ${field.unit}` : ''}`]}
+          disabled={disabled}
+          onCommit={(next) => onChange(name, Number(next.toFixed(decimals)))}
+        />
+      );
+    }
+  }
 
   return (
     <YStack gap="$2" paddingHorizontal="$4" paddingVertical="$3" opacity={disabled ? 0.45 : 1}>
