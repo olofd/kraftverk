@@ -216,7 +216,9 @@ screen part. Standard recipes stay free of product words.
    number in its five steps.
 2. **Time of day in expressions.** `{ within: { from, to } }` is true between
    two clock times, across midnight, on the owner's clock. It is usable in
-   `if`, `becomes` and waits.
+   `if`, `becomes` and waits. **Done, 2026-09-30:** the half-minute look
+   sees a window open with nothing reported, rehearsal looks at each
+   window's edges, and the editor has "Time of day".
 3. **Arithmetic.** `add`, `subtract`, `min` and `max` over numbers, with
    units checked as compares check them.
 4. **A price as readings.**

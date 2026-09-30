@@ -127,6 +127,7 @@ describe('running it', () => {
     reachable: () => ({ reachable: true, detail: 'connected' }),
     call: async (_fn, _role, args) => sky.evaluate({ part: { name: 'Weather', part: 'main', device: null, offline: '' }, args, now: new Date(), timeZone: 'UTC' }),
     name: () => 'Garage P280',
+    clock: () => '12:00',
   });
   const low = (lowBattery.when[0] as { becomes: Expr }).becomes;
 

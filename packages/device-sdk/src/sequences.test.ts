@@ -83,7 +83,7 @@ describe('the language', () => {
   });
 
   test('can be reached is its holder’s word: yes or no, never unknown — and says why not', () => {
-    const scope = (reachable: boolean): RuleScope => ({ param: () => null, read: () => null, reachable: () => ({ reachable, detail: 'Its gateway cannot reach it' }), name: names });
+    const scope = (reachable: boolean): RuleScope => ({ param: () => null, read: () => null, reachable: () => ({ reachable, detail: 'Its gateway cannot reach it' }), name: names, clock: () => '12:00' });
     const trace: string[] = [];
     expect(evaluateNow({ reachable: 'charger' }, scope(false), trace)).toBe(false);
     expect(trace).toEqual(['Scooter plug: cannot be reached (Its gateway cannot reach it)']);

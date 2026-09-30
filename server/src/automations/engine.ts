@@ -5,6 +5,7 @@ import {
   capabilityIn,
   changedRoles,
   checkBinding,
+  clockTime,
   describeExpr,
   describeSteps,
   describeTriggers,
@@ -498,7 +499,7 @@ export class AutomationEngine {
     // True, and already dealt with — or already waiting it out.
     if (state.fired || entry.hold) return;
 
-    const said = this.#said(automation, rule, trigger.becomes);
+    const said = capitalise(this.#said(automation, rule, trigger.becomes));
     const minutes = trigger.heldForMinutes ? Number(evaluateNow(trigger.heldForMinutes, scope)) : 0;
     const fire = (why: string) => {
       state.fired = true;
@@ -656,6 +657,7 @@ export class AutomationEngine {
       return device && !device.removed ? device : null;
     };
     return {
+      clock: () => clockTime(now, automation.timeZone),
       // An automation's own rule has no settings: its values are in its blocks. A recipe's are its defaults.
       param: (name) => {
         const field = rule.params.fields[name];
@@ -734,7 +736,7 @@ export class AutomationEngine {
       if (!('becomes' in trigger)) return [];
       const holds = evaluateNow(trigger.becomes, scope, saw);
       const minutes = trigger.heldForMinutes ? Number(evaluateNow(trigger.heldForMinutes, scope)) : 0;
-      const text = `${this.#said(automation, rule, trigger.becomes)}${minutes > 0 ? ` for ${minutes} min` : ''}`;
+      const text = `${capitalise(this.#said(automation, rule, trigger.becomes))}${minutes > 0 ? ` for ${minutes} min` : ''}`;
       return [{ text, holds: typeof holds === 'boolean' ? holds : null }];
     });
     return { conditions, saw: [...new Set(saw)] };

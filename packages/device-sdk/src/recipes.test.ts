@@ -44,6 +44,7 @@ describe('charging between two levels', () => {
     read: (_role, means) => (means === 'battery.soc' && typeof soc === 'number' ? { value: soc, label: 'Charge', unit: '%' } : null),
     reachable: () => ({ reachable: true, detail: 'connected' }),
     name: (role) => (role === 'battery' ? 'Garage P280' : 'ATORCH plug'),
+    clock: () => '12:00',
   });
   const [falls, reaches] = chargeBetween.when.map((trigger) => (trigger as { becomes: Expr }).becomes) as [Expr, Expr];
   const on = (chargeBetween.then[0] as { command: Command }).command.args.on!;

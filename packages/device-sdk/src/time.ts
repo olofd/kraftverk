@@ -44,6 +44,12 @@ export function localTime(date: Date, timeZone: string): LocalTime {
   return { year: Number(parts.year), month: Number(parts.month), day: Number(parts.day), hour: Number(parts.hour), minute: Number(parts.minute) };
 }
 
+/** The time of day a clock in `timeZone` shows at `date`, as a rule writes one: "07:05". */
+export function clockTime(date: Date, timeZone: string): string {
+  const { hour, minute } = localTime(date, timeZone);
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
 /**
  * The instant a clock in `timeZone` shows this time. Found by correcting a
  * guess by the zone's offset, twice, which settles across a daylight-saving

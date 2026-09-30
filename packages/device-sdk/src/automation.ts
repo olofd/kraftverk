@@ -41,7 +41,27 @@ export type Expr =
    * Whether the part filling a role can be reached now: its holder says it is
    * connected. Never unknown — not being reachable is the answer.
    */
-  | { reachable: string };
+  | { reachable: string }
+  /**
+   * Whether the owner's clock is between two times of day, "HH:MM": from
+   * `from`, up to but not at `to` — across midnight when `to` comes first
+   * ("22:00" to "06:00" is the night). Unknown where there is no clock: a
+   * rule's settings alone cannot say what time it is.
+   */
+  | { within: { from: Expr; to: Expr } };
+
+/** A time of day as a rule writes it: "07:00", "22:30". */
+export const CLOCK_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** Minutes since midnight of a time of day, "HH:MM"; null for anything else. */
+export const minutesOf = (time: Value): number | null => {
+  if (typeof time !== 'string' || !CLOCK_TIME.test(time)) return null;
+  const [hour, minute] = time.split(':').map(Number);
+  return hour! * 60 + minute!;
+};
+
+/** Whether a minute of the day is within a window of the day: from it, up to but not at its end — across midnight when the end comes first. */
+export const inWindow = (minute: number, from: number, to: number): boolean => (from <= to ? minute >= from && minute < to : minute >= from || minute < to);
 
 /** A day of the week, on the automation's own clock. */
 export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
@@ -420,6 +440,24 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       role(expr.reachable, where);
       return { type: 'boolean' };
     }
+    if ('within' in expr) {
+      const ends = [
+        ['from', expr.within?.from],
+        ['to', expr.within?.to],
+      ] as const;
+      for (const [end, given] of ends) {
+        if (!given) {
+          problems.push(`${where}.within.${end}: a time of day is "HH:MM"`);
+          continue;
+        }
+        const got = shape(given, `${where}.within.${end}`, options);
+        if (!fits({ type: 'string', options: null }, got)) problems.push(`${where}.within.${end}: expected a time of day, got ${said(got)}`);
+        else if ('value' in given && minutesOf(given.value) === null) problems.push(`${where}.within.${end}: a time of day is "HH:MM"`);
+      }
+      const [from, to] = [expr.within?.from, expr.within?.to];
+      if (from && to && 'value' in from && 'value' in to && minutesOf(from.value) !== null && from.value === to.value) problems.push(`${where}.within: from ${String(from.value)} to the same time is no window`);
+      return { type: 'boolean' };
+    }
     if ('compare' in expr) {
       if (!['lt', 'le', 'gt', 'ge', 'eq', 'ne'].includes(expr.compare)) problems.push(`${where}: "${expr.compare}" is not a comparison`);
       const left = shape(expr.left, `${where}.left`, options);
@@ -463,7 +501,7 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
     if ('at' in trigger) {
       const got = shape(trigger.at, `${where}.at`, { calls: false });
       if (!fits({ type: 'string', options: null }, got)) problems.push(`${where}.at: expected a time of day, got ${said(got)}`);
-      if ('value' in trigger.at && (typeof trigger.at.value !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(trigger.at.value))) problems.push(`${where}.at: a time of day is "HH:MM"`);
+      if ('value' in trigger.at && (typeof trigger.at.value !== 'string' || !CLOCK_TIME.test(trigger.at.value))) problems.push(`${where}.at: a time of day is "HH:MM"`);
       if (trigger.days !== undefined) {
         if (!trigger.days.length) problems.push(`${where}.days: on no day, it never runs`);
         for (const day of trigger.days) if (!WEEKDAYS.includes(day)) problems.push(`${where}.days: "${String(day)}" is not a day of the week`);
@@ -647,16 +685,20 @@ export function ruleUses(rule: Rule): {
   writes: Write[];
   /** The roles of the automations it starts. */
   starts: string[];
+  /** The windows of the day it looks at: when each opens and closes, something may turn true. */
+  windows: { from: Expr; to: Expr }[];
 } {
   const reads: { role: string; means: string }[] = [];
   const calls: { fn: string; role: string }[] = [];
   const reaches: string[] = [];
   const writes: Write[] = [];
+  const windows: { from: Expr; to: Expr }[] = [];
   const starts: string[] = [];
   const walk = (expr: Expr | undefined): void => {
     if (!expr) return;
     if ('read' in expr) reads.push(expr.read);
     else if ('reachable' in expr) reaches.push(expr.reachable);
+    else if ('within' in expr) (windows.push(expr.within), walk(expr.within.from), walk(expr.within.to));
     else if ('call' in expr) (calls.push({ fn: expr.call, role: expr.role }), Object.values(expr.args ?? {}).forEach(walk));
     else if ('compare' in expr) (walk(expr.left), walk(expr.right));
     else if ('all' in expr) expr.all.forEach(walk);
@@ -684,7 +726,7 @@ export function ruleUses(rule: Rule): {
   walk(rule.if);
   walkSteps(rule.then);
   walkSteps(rule.otherwise ?? []);
-  return { reads, events, calls, reaches: [...new Set(reaches)], writes, starts: [...new Set(starts)] };
+  return { reads, events, calls, reaches: [...new Set(reaches)], writes, starts: [...new Set(starts)], windows };
 }
 
 /** Every command a rule may send, in its steps, retries and `otherwise`: what its roles must be able to take. */
@@ -794,6 +836,8 @@ export type RuleScope = {
   reachable(role: string): { reachable: boolean | null; detail: string };
   /** How a role's part is named: "Garage station". */
   name(role: string): string;
+  /** The time of day on the owner's clock, as "HH:MM"; null where there is none. */
+  clock(): string | null;
 };
 
 const compare = (op: CompareOp, left: Value, right: Value): Value => {
@@ -871,6 +915,13 @@ export function evaluateNow(expr: Expr, scope: RuleScope, trace: string[] = []):
     trace.push(`${scope.name(expr.reachable)}: ${reachable ? 'can be reached' : `cannot be reached (${detail})`}`);
     return reachable;
   }
+  if ('within' in expr) {
+    const now = scope.clock();
+    const [from, to] = [minutesOf(evaluateNow(expr.within.from, scope)), minutesOf(evaluateNow(expr.within.to, scope))];
+    if (now === null || from === null || to === null) return null;
+    trace.push(`It is ${now}`);
+    return inWindow(minutesOf(now)!, from, to);
+  }
   if ('compare' in expr) return compare(expr.compare, evaluateNow(expr.left, scope, trace), evaluateNow(expr.right, scope, trace));
   if ('all' in expr) return combine('all', expr.all.map((part) => evaluateNow(part, scope, trace)));
   if ('any' in expr) return combine('any', expr.any.map((part) => evaluateNow(part, scope, trace)));
@@ -895,6 +946,7 @@ function settledScope(rule: Rule, params: Readonly<Record<string, Value>>, name:
     read: () => null,
     reachable: () => ({ reachable: null, detail: 'not known until it runs' }),
     name,
+    clock: () => null,
   };
 }
 
@@ -930,6 +982,7 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
   function expr(given: Expr): Expr {
     if ('param' in given) return { value: scope.param(given.param) };
     if ('call' in given) return given.args ? { call: given.call, role: given.role, args: args(given.args) } : given;
+    if ('within' in given) return { within: { from: expr(given.within.from), to: expr(given.within.to) } };
     if ('compare' in given) {
       const left = expr(given.left);
       const right = expr(given.right);
@@ -1050,6 +1103,7 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
     // What it reports, not chosen yet: "a reading" rather than an empty name.
     if ('read' in expr) return whose(name(expr.read.role), standardMeaning(expr.read.means)?.label.toLowerCase() || expr.read.means || 'reading');
     if ('reachable' in expr) return `${name(expr.reachable)} can be reached`;
+    if ('within' in expr) return `it is between ${text(expr.within.from)} and ${text(expr.within.to)}`;
     if ('call' in expr) return `${vocabulary?.fn(expr.call)?.label.toLowerCase() ?? expr.call} by ${name(expr.role)}`;
     if ('compare' in expr) return chosen(expr) ?? `${text(expr.left, unitOf(expr.right))} ${OP_WORDS[expr.compare]} ${text(expr.right, unitOf(expr.left))}`;
     if ('all' in expr) return expr.all.map((part) => text(part)).join(' and ');

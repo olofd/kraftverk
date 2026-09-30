@@ -5,22 +5,23 @@ import { Icon } from '@kraftverk/ui';
 
 import { useTone } from '../looks';
 import { pickPart, useEditor, type PartOption } from './context';
-import { Chips, Label, Picker, ValueField } from './fields';
+import { Chips, Label, Picker, TimeField, ValueField } from './fields';
 
 /*
   A condition, built without showing an expression (docs/AUTOMATION-EDITOR.md):
   a part and something it reports compared with a value in that reading's own
-  unit or options; whether a part can be reached; or what a package's function
-  says of a part. Rows join as "all of" or "any of", a group may hold a group,
+  unit or options; whether a part can be reached; the time of day, between
+  two times; or what a package's function says of a part. Rows join as "all of" or "any of", a group may hold a group,
   and a row may be turned round ("not"). One the editor cannot draw as rows is
   said in words, and replaced whole.
 */
 
-type Kind = 'reading' | 'reachable' | 'ask' | 'all' | 'any';
+type Kind = 'reading' | 'reachable' | 'time' | 'ask' | 'all' | 'any';
 
 const KIND_OPTIONS: { value: Kind; label: string }[] = [
   { value: 'reading', label: 'A reading' },
   { value: 'reachable', label: 'Can be reached' },
+  { value: 'time', label: 'Time of day' },
   { value: 'ask', label: 'Ask a package' },
   { value: 'all', label: 'All of' },
   { value: 'any', label: 'Any of' },
@@ -44,6 +45,8 @@ function kindOf(expr: Expr): Kind | null {
   if ('all' in expr) return 'all';
   if ('any' in expr) return 'any';
   if ('reachable' in expr) return 'reachable';
+  // Between two times it can draw; one whose ends are not times of day it cannot.
+  if ('within' in expr) return 'value' in expr.within.from && 'value' in expr.within.to ? 'time' : null;
   if ('compare' in expr && 'read' in expr.left && 'value' in expr.right) return 'reading';
   if ('compare' in expr && 'call' in expr.left && 'value' in expr.right) return 'ask';
   return null;
@@ -64,6 +67,8 @@ function blankOf(kind: Kind, role: string | null): Expr {
       return { compare: 'gt', left: { read: { role: role ?? '', means: '' } }, right: { value: 0 } };
     case 'reachable':
       return { reachable: role ?? '' };
+    case 'time':
+      return { within: { from: { value: '22:00' }, to: { value: '06:00' } } };
     case 'ask':
       return { compare: 'eq', left: { call: '', role: role ?? '', args: {} }, right: { value: true } };
     case 'all':
@@ -108,6 +113,8 @@ export function ConditionField({ label, expr, onChange, depth = 0 }: { label: st
         <Group expr={inner as Extract<Expr, { all: unknown } | { any: unknown }>} onChange={put} depth={depth} label={label} />
       ) : kind === 'reachable' ? (
         <Reachable expr={inner as Extract<Expr, { reachable: unknown }>} onChange={put} label={label} />
+      ) : kind === 'time' ? (
+        <TimeOfDay expr={inner as Extract<Expr, { within: unknown }>} onChange={put} />
       ) : kind === 'reading' ? (
         <Reading expr={inner as Extract<Expr, { compare: unknown }>} onChange={put} label={label} />
       ) : (
@@ -165,6 +172,29 @@ function Reachable({ expr, onChange, label }: { expr: Extract<Expr, { reachable:
     <YStack gap="$1.5">
       <Label>Can this be reached now?</Label>
       <PartChoice label={`${label}: which part`} role={expr.reachable} fits={() => true} onRole={(role) => onChange({ reachable: role })} />
+    </YStack>
+  );
+}
+
+/** Between two times of day, on the owner's clock: past midnight when the second comes first. */
+function TimeOfDay({ expr, onChange }: { expr: Extract<Expr, { within: unknown }>; onChange: (expr: Expr) => void }) {
+  const at = (end: Expr) => ('value' in end && typeof end.value === 'string' ? end.value : '00:00');
+  const [from, to] = [at(expr.within.from), at(expr.within.to)];
+  return (
+    <YStack gap="$1.5">
+      <Label>It is between</Label>
+      <XStack gap="$2.5" alignItems="center" flexWrap="wrap">
+        <TimeField label="From" value={from} onChange={(next) => onChange({ within: { from: { value: next }, to: expr.within.to } })} />
+        <Text fontSize={13} color="$muted">
+          and
+        </Text>
+        <TimeField label="Until" value={to} onChange={(next) => onChange({ within: { from: expr.within.from, to: { value: next } } })} />
+      </XStack>
+      {to < from ? (
+        <Text fontSize={12} color="$muted">
+          Across midnight: from {from} until {to} the next morning.
+        </Text>
+      ) : null}
     </YStack>
   );
 }

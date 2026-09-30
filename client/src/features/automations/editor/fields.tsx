@@ -202,8 +202,8 @@ export function DaysField({ value, onChange }: { value: readonly Weekday[] | und
 
 const twoDigits = (value: number) => String(value).padStart(2, '0');
 
-/** A time of day, "07:00": hours and minutes, typed. */
-export function TimeField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+/** A time of day, "07:00": hours and minutes, typed. `label` tells two apart: "From: hour", "Until: hour". */
+export function TimeField({ value, onChange, label }: { value: string; onChange: (value: string) => void; label?: string }) {
   const [hour = '07', minute = '00'] = value.split(':');
   const put = (h: number | null, m: number | null) => {
     const hh = Math.min(23, Math.max(0, h ?? 0));
@@ -212,11 +212,11 @@ export function TimeField({ value, onChange }: { value: string; onChange: (value
   };
   return (
     <XStack alignItems="center" gap="$1.5">
-      <NumberField label="Hour" value={Number(hour)} width={56} shown={twoDigits} onChange={(h) => put(h, Number(minute))} />
+      <NumberField label={label ? `${label}: hour` : 'Hour'} value={Number(hour)} width={56} shown={twoDigits} onChange={(h) => put(h, Number(minute))} />
       <Text fontSize={16} fontWeight="700" color="$color">
         :
       </Text>
-      <NumberField label="Minute" value={Number(minute)} width={56} shown={twoDigits} onChange={(m) => put(Number(hour), m)} />
+      <NumberField label={label ? `${label}: minute` : 'Minute'} value={Number(minute)} width={56} shown={twoDigits} onChange={(m) => put(Number(hour), m)} />
     </XStack>
   );
 }

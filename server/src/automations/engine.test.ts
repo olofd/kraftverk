@@ -761,3 +761,44 @@ describe('when a device says something happened', () => {
     expect(engine.roleProblems(automation)).toContain('Mains input: Garage P280 cannot do that');
   });
 });
+
+/*
+  Time of day in a condition: the half-minute look sees a window open with
+  nothing reported, and on the owner's clock.
+*/
+describe('between two times of day', () => {
+  test('a charge through the night: on as the window opens, on the owner’s clock — once', async () => {
+    const context = setup({ now: zonedInstant({ year: 2026, month: 6, day: 15, hour: 21, minute: 59 }, ZONE) });
+    const { engine, store, sent } = context;
+    const created = store.create({
+      name: 'Night charge',
+      rule: {
+        roles: { switch: { label: 'Charger', description: 'What charges it', capabilities: ['switch'] } },
+        params: { fields: {} },
+        when: [{ becomes: { within: { from: { value: '22:00' }, to: { value: '06:00' } } } }],
+        then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
+      },
+      madeFrom: null,
+      roles: { switch: { device: PLUG, part: 'main' } },
+      starts: {},
+      timeZone: ZONE,
+      recheckMinutes: null,
+    });
+    const automation = store.update(created.id, { mode: 'armed' })!;
+    expect(engine.judge(automation).conditions.map((condition) => [condition.text, condition.holds])).toEqual([['It is between 22:00 and 06:00', false]]);
+    await engine.tick();
+    expect(sent).toEqual([]);
+
+    context.at(zonedInstant({ year: 2026, month: 6, day: 15, hour: 22, minute: 0 }, ZONE));
+    await engine.tick();
+    await settle();
+    expect(sent.map((intent) => intent.args.on)).toEqual([true]);
+    expect(sent[0]!.reason).toContain('It is between 22:00 and 06:00 (It is 22:00)');
+
+    // Still night: it does not run again.
+    context.at(zonedInstant({ year: 2026, month: 6, day: 16, hour: 1, minute: 30 }, ZONE));
+    await engine.tick();
+    expect(sent).toHaveLength(1);
+    engine.stop();
+  });
+});

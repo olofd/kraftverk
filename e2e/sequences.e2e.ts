@@ -136,3 +136,34 @@ test('built from nothing: a time, a setting changed, and another automation star
   await started.getByText('History', { exact: true }).click();
   await expect(started.getByText(new RegExp(`by “${name}”`)).first()).toBeVisible();
 });
+
+test('through the night: a window of the day, across midnight, is what starts it', async ({ page, request }) => {
+  const plug = await addSimulated(request, 'tuya.zigbee-plug', unique('Scooter plug'));
+  await page.goto('/automation/new');
+  await press(page, 'Nothing');
+  const name = unique('Night charge');
+  await page.getByLabel('Name').fill(name);
+
+  // When the clock is between 23:00 and 05:00.
+  await press(page, 'Add a trigger');
+  await page.getByRole('button', { name: 'Add: When something holds' }).click();
+  await page.getByRole('radio', { name: 'Time of day' }).click();
+  await page.getByLabel('From: hour').fill('23');
+  await page.getByLabel('Until: hour').fill('5');
+  await expect(page.getByText('Across midnight: from 23:00 until 05:00 the next morning.')).toBeVisible();
+
+  // The plug on.
+  await press(page, 'Add a step');
+  await page.getByRole('button', { name: 'Add: Switch or send' }).click();
+  await pick(page, 'Which part', plug.name);
+
+  const status = page.getByRole('status');
+  await expect(status).toContainText('It can run as it is');
+  await expect(status).toContainText(`When it is between 23:00 and 05:00, turn ${plug.name} on.`);
+  await press(page, 'Create');
+
+  // Right now: the window, and whether the clock is in it.
+  const card = page.getByRole('region', { name });
+  await expect(card.getByText('Right now')).toBeVisible();
+  await expect(card.getByText('It is between 23:00 and 05:00', { exact: true })).toBeVisible();
+});

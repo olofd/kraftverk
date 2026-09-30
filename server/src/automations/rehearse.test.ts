@@ -65,3 +65,24 @@ describe('a rule rehearsed on history', () => {
     expect((await rehearse(inlineParams(chargeBetween, { ...SETTINGS, minutes: 5 }), automation, source(once), later)).runs).toEqual([]);
   });
 });
+
+describe('a window of the day, rehearsed', () => {
+  test('runs as it opens each evening, with no sample to say so', async () => {
+    const nightly = inlineParams(
+      {
+        roles: { charger: { label: 'Charger plug', description: 'What charges it', capabilities: ['switch'] } },
+        params: { fields: {} },
+        when: [{ becomes: { within: { from: { value: '22:00' }, to: { value: '06:00' } } } }],
+        then: [{ command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
+      },
+      {}
+    );
+    const twoDays = { from: new Date('2026-09-28T12:00:00.000Z'), to: new Date('2026-09-30T12:00:00.000Z') };
+    const rehearsal = await rehearse(nightly, automation, source([]), twoDays);
+    // 22:00 in Stockholm, summer time: 20:00 UTC.
+    expect(rehearsal.runs.map((run) => [run.at, run.outcome])).toEqual([
+      ['2026-09-28T20:00:00.000Z', 'would-act'],
+      ['2026-09-29T20:00:00.000Z', 'would-act'],
+    ]);
+  });
+});

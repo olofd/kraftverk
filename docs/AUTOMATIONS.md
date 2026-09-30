@@ -58,7 +58,8 @@ type Expr =
   | { call: string; role: string; args?: Record<string, Expr> }  // a package's function
   | { compare: 'lt' | 'le' | 'gt' | 'ge' | 'eq' | 'ne'; left: Expr; right: Expr }
   | { all: Expr[] } | { any: Expr[] } | { not: Expr }
-  | { reachable: string };                         // the part filling a role can be reached now
+  | { reachable: string }                          // the part filling a role can be reached now
+  | { within: { from: Expr; to: Expr } };          // the owner's clock is between two times, "22:00" to "06:00" across midnight
 
 type Step =
   | { command: { role: string; capability: CapabilityName; command: string; args: Record<string, Expr> } }

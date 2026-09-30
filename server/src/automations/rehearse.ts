@@ -1,10 +1,12 @@
 import type { Rehearsal, RoleBinding } from '@kraftverk/api-contract';
 import {
   attributeMeaning,
+  clockTime,
   currentForOf,
   evaluate,
   evaluateNow,
   localTime,
+  minutesOf,
   ruleUses,
   runsOn,
   standardMeaning,
@@ -108,6 +110,7 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
   for (const call of uses.calls) caveats.push(`It asks ${call.fn} of ${name(call.role)}, which history does not keep: taken as unknown`);
 
   const scopeAt = (t: number): RuleScope => ({
+    clock: () => clockTime(new Date(t), automation.timeZone),
     reachable: () => ({ reachable: null, detail: 'history does not keep whether it could be reached' }),
     // An automation's own rule has no settings: its values are in its blocks.
     param: (param) => {
@@ -131,6 +134,17 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
   const end = window.to.getTime();
   const moments = new Set<number>();
   for (const found of series.values()) for (const point of found?.points ?? []) if (point.at >= start && point.at <= end) moments.add(point.at);
+  // And each window of the day it looks at, as it opens and closes, on the owner's clock.
+  for (const window of uses.windows) {
+    for (const edge of [window.from, window.to]) {
+      const minutes = minutesOf(evaluateNow(edge, scopeAt(start)));
+      if (minutes === null) continue;
+      for (let day = start - 86_400_000; day <= end + 86_400_000; day += 86_400_000) {
+        const instant = zonedInstant({ ...localTime(new Date(day), automation.timeZone), hour: Math.floor(minutes / 60), minute: minutes % 60 }, automation.timeZone).getTime();
+        if (instant >= start && instant <= end) moments.add(instant);
+      }
+    }
+  }
 
   type Fired = { at: number; because: string };
   const fired: Fired[] = [];

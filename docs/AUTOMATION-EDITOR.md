@@ -277,8 +277,9 @@ recipe to start from), top to bottom:
 
 **The condition editor** builds an expression without showing one:
 - A row is a part and something it reports, compared with a value in that
-  reading's own unit or options; or "can be reached"; or a function a
-  package offers ("looks sunny by Weather"), with its arguments.
+  reading's own unit or options; or "can be reached"; or the time of day,
+  between two times (across midnight when the second comes first); or a
+  function a package offers ("looks sunny by Weather"), with its arguments.
 - Rows are joined with "all of" or "any of". A group can hold a group, and
   a row can be turned into "not".
 - A condition the editor cannot draw as rows is shown in words, and can
