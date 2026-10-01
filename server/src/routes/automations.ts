@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import type { AutomationDraft, AutomationKit, AutomationRuns, RecipeView } from '@kraftverk/api-contract';
+import type { AutomationDraft, AutomationKit, AutomationRuns, RecipeView, RunReadings } from '@kraftverk/api-contract';
 import { automationId, describeSteps, isTimeZone, savedDeviceId, takesSteps, type AutomationId, type Rule, type Value } from '@kraftverk/device-sdk';
 import { Confirmations, subjectOf } from '@kraftverk/gateway';
 
@@ -101,6 +101,15 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
     if (!current) throw new HTTPException(404, { message: 'No such automation' });
     const limit = z.coerce.number().int().min(1).max(200).default(50).parse(c.req.query('limit') ?? 50);
     return c.json({ runs: automations.runs(current.id, limit) } satisfies AutomationRuns);
+  });
+
+  /** What every device one of its runs used said while it ran, second by second: to read back what happened. */
+  api.get('/automations/:id/runs/:runId/readings', (c) => {
+    const current = automations.get(c.req.param('id'));
+    if (!current) throw new HTTPException(404, { message: 'No such automation' });
+    const readings = engine.runReadings(current, c.req.param('runId'));
+    if (!readings) throw new HTTPException(404, { message: 'No such run' });
+    return c.json(readings satisfies RunReadings);
   });
 
   /**

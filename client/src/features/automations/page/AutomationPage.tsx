@@ -375,7 +375,7 @@ function Activity({ automation }: { automation: AutomationView }) {
           <RunSteps run={running} />
         </YStack>
       ) : automation.lastRun ? (
-        <RunDetail run={automation.lastRun} />
+        <RunDetail run={automation.lastRun} automationId={automation.id} />
       ) : (
         <Empty>{automation.when.length ? 'It has not run yet: nothing that starts it has happened since it was made.' : 'It has not been started yet.'}</Empty>
       )}

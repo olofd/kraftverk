@@ -740,3 +740,15 @@ export type AutomationView = RoleFills & {
 
 /** `GET /automations/:id/runs`: its runs, the latest first — each with every step it took. */
 export type AutomationRuns = { runs: AutomationRun[] };
+
+/** One thing a device said while a run ran: a reading as it changed, or whether it could be reached (`key` "@health"). */
+export type RunReading = { device: string; key: string; at: string; value: Value };
+
+/**
+ * What every device a run uses said while it ran, the earliest first — and,
+ * for each device, its name and each key's label and unit, to say them.
+ */
+export type RunReadings = {
+  readings: RunReading[];
+  devices: Record<string, { name: string; keys: Record<string, { label: string; unit: string | null }> }>;
+};

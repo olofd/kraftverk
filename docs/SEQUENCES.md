@@ -212,6 +212,13 @@ too, and `app_state` keeps only what the home sets as a whole.
   to 15 s before its clock starts. On the owner's chain, Stop charging read
   the station's outlets at 190 W a moment after the charger's plug went off
   — the station's reading from before — and left the supply on.
+- **What the devices said, kept.** While a run that takes steps runs, every
+  reading of every device it uses is kept each time it changes, at the time
+  the device took it, with whether the device could be reached
+  (`automation_run_reading`; `GET /automations/:id/runs/:runId/readings`).
+  A run's Activity shows it as "What the devices said": a switch and the
+  watts that followed it, side by side. The minute samples of history cannot
+  say what happened inside a 20 s try.
 - **`otherwise`** runs when a step does not succeed or someone stops the run:
   each of its steps tried whatever the others do, and not itself stopped.
 - **Observing.** An automation that only watches cannot walk a sequence on

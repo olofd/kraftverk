@@ -340,6 +340,7 @@ erDiagram
   automation ||--o{ automation_trigger : "watches with"
   automation ||--o{ automation_run : "ran"
   automation_run |o--o{ automation_run : "started"
+  automation_run ||--o{ automation_run_reading : "heard"
 
   device {
     text id PK "d-3f9a2c61b0e4"
@@ -467,6 +468,13 @@ erDiagram
     text summary "Scooter plug: Power 238 W, after 2 tries"
     json detail "{saw, conditions, steps: [{kind, depth, within, what, outcome, detail, at, endedAt, until}]}"
   }
+  automation_run_reading {
+    text run_id FK "r-5b2e90c4a1d3f7e2"
+    text device_id "d-5b2e90c4a1d3 · not a key: a device removed since leaves its readings"
+    text key "watts · outlet.ac.watts · @health"
+    text at "2026-10-16T17:02:07.300Z · when the device took it"
+    json value "269 · true · \"offline: Its gateway cannot reach it\""
+  }
   device_switch {
     text device_id PK "d-5b2e90c4a1d3"
     text part PK "main · outlet.ac"
@@ -549,6 +557,7 @@ erDiagram
 | `automation`, `automation_role` | An automation: its own rule, the recipe it was copied from, its clock, mode and place on the home page; and what fills each role — a part of a device, or another automation a step starts — a row each, so a device's page asks which automations it can start; an automation deleted takes with it the roles that would start it, and those that did say they have nothing to start. | made, changed |
 | `automation_trigger` | Each `becomes` trigger's state, so a restart continues a hold and never fires one twice. | as its conditions are looked at |
 | `automation_run` | Every run, with each step it took; the unended one is running now, written at every step — one at a time, held by a unique index. A restart ends it as interrupted (docs/SEQUENCES.md). | as it runs |
+| `automation_run_reading` | What every device a run that takes steps uses said while it ran: each reading each time it changed, at the time the device took it, and whether it could be reached (`@health`) — looked at every second, at most 20 000 a run, gone with its run. What its Activity shows as "What the devices said", and what a run is debugged from. | every second while it runs |
 
 ### Rules the schema and the code enforce
 

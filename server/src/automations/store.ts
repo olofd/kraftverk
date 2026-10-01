@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 
-import type { RoleBinding } from '@kraftverk/api-contract';
-import { automationId, savedDeviceId, type AutomationId, type Rule } from '@kraftverk/device-sdk';
+import type { RoleBinding, RunReading } from '@kraftverk/api-contract';
+import { automationId, savedDeviceId, type AutomationId, type Rule, type Value } from '@kraftverk/device-sdk';
 
 import { db } from '../history/db.ts';
 import type { AutomationMode, AutomationRecord, RunResult } from './engine.ts';
@@ -323,6 +323,24 @@ export class AutomationStore {
       .query<RunRow, []>(`${RUN_SELECT} WHERE r.ended_at IS NULL`)
       .all()
       .map((row) => ({ automationId: row.automation_id, run: runOf(row) }));
+  }
+
+  /** What devices said while a run ran: kept as they come, a batch at a time. */
+  recordReadings(runId: string, readings: readonly RunReading[]): void {
+    if (!readings.length) return;
+    const insert = db().query('INSERT INTO automation_run_reading (run_id, device_id, key, at, value) VALUES (?, ?, ?, ?, ?)');
+    db().transaction(() => {
+      for (const reading of readings) insert.run(runId, reading.device, reading.key, reading.at, JSON.stringify(reading.value));
+    })();
+  }
+
+  /** What devices said while one of an automation's runs ran, the earliest first; null when the run is not one of its. */
+  runReadings(automationId: string, runId: string): RunReading[] | null {
+    if (!db().query('SELECT 1 FROM automation_run WHERE id = ? AND automation_id = ?').get(runId, automationId)) return null;
+    return db()
+      .query<{ device_id: string; key: string; at: string; value: string }, [string]>('SELECT device_id, key, at, value FROM automation_run_reading WHERE run_id = ? ORDER BY at, rowid')
+      .all(runId)
+      .map((row) => ({ device: row.device_id, key: row.key, at: row.at, value: JSON.parse(row.value) as Value }));
   }
 
   /** An automation's runs, the latest first. */

@@ -56,6 +56,9 @@ test('start charging: copied from its recipe, its parts chosen, run from its pag
   const activity = page.getByRole('region', { name: 'Activity' });
   await expect(activity.getByText(`Turn ${plug.name} on`).first()).toBeVisible();
   await expect(activity.getByText(/^At once — /).first()).toBeVisible();
+  // What each device said while it ran, second by second: the plug's power among it.
+  await activity.getByRole('button', { name: 'What the devices said while it ran: show' }).first().click();
+  await expect(activity.getByRole('list', { name: 'What the devices said' }).first()).toContainText(`${plug.name} · Power`);
 
   // Its history: the run, started by its owner.
   await activity.getByText('History', { exact: true }).click();

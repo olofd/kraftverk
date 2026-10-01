@@ -17,6 +17,7 @@ import type {
   AutomationKit,
   AutomationRun,
   AutomationRuns,
+  RunReadings,
   AutomationView,
   NewAutomation,
   CheckOutcome,
@@ -417,6 +418,12 @@ export async function fetchAutomationsFor(deviceId: string, signal?: AbortSignal
 export async function fetchAutomationRuns(id: string, limit = 50, signal?: AbortSignal) {
   const { data } = await api.get<AutomationRuns>(`/automations/${encodeURIComponent(id)}/runs`, { params: { limit }, signal });
   return data.runs;
+}
+
+/** What every device one of its runs used said while it ran, second by second. */
+export async function fetchRunReadings(id: string, runId: string, signal?: AbortSignal) {
+  const { data } = await api.get<RunReadings>(`/automations/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/readings`, { signal });
+  return data;
 }
 
 /** A refusal said in the server's words: "It is already running". */

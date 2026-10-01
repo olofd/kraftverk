@@ -241,6 +241,31 @@ describe('starting a charge', () => {
     expect(store.get(automation.id)).toMatchObject({ running: null, lastRun: { id: run.id, outcome: 'acted' } });
   });
 
+  test('what every device said while it ran is kept with the run, at the time each said it — to read back what happened', async () => {
+    const { engine, make, ended, store } = setup({ reachableAfterMs: 20 });
+    const automation = make('standard.start-charging', QUICK);
+    await engine.startAsked(automation.id, OLOF);
+    const run = await ended(automation.id);
+
+    const kept = engine.runReadings(store.get(automation.id)!, run.id!)!;
+    const said = (device: string, key: string) => kept.readings.filter((reading) => reading.device === device && reading.key === key).map((reading) => reading.value);
+    // The plug: out of reach until the supply came on, then switched on, and drawing.
+    expect(said(PLUG, '@health')).toEqual(['offline: Its gateway cannot reach it', 'connected']);
+    expect(said(PLUG, 'relay')).toContain(true);
+    expect(said(PLUG, 'watts')).toContain(240);
+    // The station: its outlets on, and what they gave.
+    expect(said(STATION, 'outlet.ac.on')).toEqual(expect.arrayContaining([false, true]));
+    expect(said(STATION, 'outlet.ac.watts')).toContain(240);
+    // In order, and said in words.
+    const times = kept.readings.map((reading) => reading.at);
+    expect(times).toEqual([...times].sort());
+    expect(kept.devices[PLUG]!.keys.watts).toEqual({ label: 'Power', unit: 'W' });
+    expect(kept.devices[STATION]!.keys['outlet.ac.watts']).toEqual({ label: 'AC outlets: AC draw', unit: 'W' });
+    expect(kept.devices[PLUG]!.keys['@health']!.label).toBe('Reachable');
+    // Another automation's run is not read through this one.
+    expect(engine.runReadings({ ...store.get(automation.id)!, id: 'a-other' as never }, run.id!)).toBeNull();
+  });
+
   test('a charger that stays idle is switched off and on again until it draws — no more often than its tries — and the gateway is told the run’s allowance', async () => {
     const { engine, make, ended, switches, sent, runsEnded } = setup({ wakesOnSwitch: 3 });
     const automation = make('standard.start-charging', QUICK);

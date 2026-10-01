@@ -1,4 +1,4 @@
-import type { AutomationMode, AutomationRun, ConditionState, RoleBinding, RunStep } from '@kraftverk/api-contract';
+import type { AutomationMode, AutomationRun, ConditionState, RoleBinding, RunReading, RunReadings, RunStep } from '@kraftverk/api-contract';
 import {
   attributeMeaning,
   capabilitiesOf,
@@ -28,6 +28,7 @@ import {
   runsOn,
   ruleCommands,
   ruleUses,
+  savedDeviceId,
   secondsText,
   standardMeaning,
   stepKind,
@@ -142,6 +143,8 @@ const LOOK_EVERY_SECONDS = 1;
  * still says what its outlets gave before the plug on them was switched off.
  */
 const SETTLE_AT_MOST_SECONDS = 15;
+/** What devices said while one run ran: at most this many readings kept, so a run left waiting long cannot fill the disk. */
+const READINGS_PER_RUN = 20_000;
 
 /** How many automations deep one may start another, counting the first: a chain stays one a person can follow. */
 export const CHAIN_LIMIT = 4;
@@ -184,6 +187,8 @@ type LiveRun = {
   allowance: Record<string, number>;
   /** When it last changed something — switched a part, changed a setting: what is judged after is read after. 0, not yet. */
   changedAt: number;
+  /** Stops keeping what its devices say, after one last look; null for a run that takes no steps. */
+  listening: (() => void) | null;
 };
 
 type Walked = 'ok' | 'failed' | 'stopped';
@@ -878,12 +883,14 @@ export class AutomationEngine {
       wake: new Set(),
       allowance: this.#allowance(rule, scope),
       changedAt: 0,
+      listening: null,
     };
     const stepped = takesSteps(rule);
     if (stepped) {
       run.summary = 'Running';
       live.id = run.id = this.deps.store.beginRun(automation.id, run);
       this.#live.set(automation.id, live);
+      live.listening = this.#listen(live);
       this.#moved(live);
     } else {
       live.id = `once-${automation.id}-${at.getTime()}`;
@@ -903,6 +910,7 @@ export class AutomationEngine {
     }
     // It switches nothing more: the gateway lets go of what it counted for it.
     this.deps.gateway.runEnded(live.id);
+    live.listening?.();
 
     const top = run.steps;
     const refused = top.some((step) => step.outcome === 'refused');
@@ -1343,6 +1351,72 @@ export class AutomationEngine {
       const device = binding ? this.deps.device(binding) : null;
       device?.wantFresh(until);
     }
+  }
+
+  /**
+   * Keeps what every device the run uses says while it runs: every reading,
+   * each time it changes, at the time the device took it — and whether it
+   * can be reached, each time that changes. Looked at every second, and once
+   * more as it ends; returns what ends it.
+   */
+  #listen(live: LiveRun): () => void {
+    const devices = new Map<string, EngineDevice>();
+    for (const binding of Object.values(live.automation.roles)) {
+      const device = this.deps.device(binding);
+      if (device && !devices.has(binding.device)) devices.set(binding.device, device);
+    }
+    const seen = new Map<string, string>();
+    let kept = 0;
+    const look = () => {
+      const batch: RunReading[] = [];
+      const keep = (device: string, key: string, at: string, value: Value, mark: string) => {
+        const id = `${device} ${key}`;
+        if (seen.get(id) === mark || kept >= READINGS_PER_RUN) return;
+        seen.set(id, mark);
+        kept += 1;
+        batch.push({ device, key, at, value });
+      };
+      for (const [id, device] of devices) {
+        const reach = device.reachable();
+        const health = reach.reachable ? 'connected' : `offline: ${reach.detail}`;
+        keep(id, '@health', this.#now().toISOString(), health, health);
+        for (const reading of device.device?.readings() ?? []) keep(id, reading.key, reading.at, reading.value, `${reading.at} ${JSON.stringify(reading.value)}`);
+      }
+      try {
+        this.deps.store.recordReadings(live.id, batch);
+      } catch {
+        // Its automation deleted while it ran: its run, and what was kept with it, are gone.
+      }
+    };
+    look();
+    const timer = setInterval(look, LOOK_EVERY_SECONDS * (this.deps.secondMs ?? 1000));
+    return () => {
+      clearInterval(timer);
+      look();
+    };
+  }
+
+  /**
+   * What every device a run used said while it ran, with each device's name
+   * and each key's label and unit — null when the run is not one of this
+   * automation's.
+   */
+  runReadings(automation: AutomationRecord, runId: string): RunReadings | null {
+    const readings = this.deps.store.runReadings(automation.id, runId);
+    if (!readings) return null;
+    const devices: RunReadings['devices'] = {};
+    for (const id of new Set(readings.map((reading) => reading.device))) {
+      // As a whole — its name alone — or else as the run used it.
+      const bound = Object.values(automation.roles).find((binding) => binding.device === id);
+      const device = this.deps.device({ device: savedDeviceId(id), part: MAIN_PART }) ?? (bound ? this.deps.device(bound) : null);
+      const keys: Record<string, { label: string; unit: string | null }> = { '@health': { label: 'Reachable', unit: null } };
+      for (const attribute of device?.description.attributes ?? []) {
+        const part = attribute.part && attribute.part !== MAIN_PART ? (device!.description.parts ?? []).find((each) => each.id === attribute.part)?.label : null;
+        keys[attribute.key] = { label: part ? `${part}: ${attribute.label}` : attribute.label, unit: unitOf(attribute) ?? null };
+      }
+      devices[id] = { name: device?.name ?? id, keys };
+    }
+    return { readings, devices };
   }
 
   /**

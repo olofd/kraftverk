@@ -329,6 +329,24 @@ export const SCHEMA = `
   CREATE INDEX automation_run_started_by_run ON automation_run (started_by_run);
   CREATE UNIQUE INDEX automation_run_one_at_a_time ON automation_run (automation_id) WHERE ended_at IS NULL;
 
+  /*
+    What each device a run uses said while it ran — every reading of every
+    part, each time it changed, at the time the device took it — so a run
+    can be read back second by second: what the plug drew after each switch,
+    what the station gave, when a part could not be reached. Kept for runs
+    that take steps, with their run. key: the attribute's key, or
+    '@health' for whether it could be reached ("connected", "offline: …").
+    value: the reading as JSON. At most 20 000 rows a run.
+  */
+  CREATE TABLE automation_run_reading (
+    run_id    TEXT NOT NULL REFERENCES automation_run (id) ON DELETE CASCADE,
+    device_id TEXT NOT NULL,
+    key       TEXT NOT NULL,
+    at        TEXT NOT NULL,
+    value     TEXT NOT NULL
+  );
+  CREATE INDEX automation_run_reading_run ON automation_run_reading (run_id, at);
+
   /* What a transport keeps between runs, its own: a Bluetooth bond, a Matter fabric, a broker's credentials. */
   CREATE TABLE transport_kv (
     transport TEXT NOT NULL,
