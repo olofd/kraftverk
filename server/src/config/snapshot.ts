@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { writeConfig } from '@kraftverk/config';
+import { readConfig, writeConfig } from '@kraftverk/config';
 import type { AuditRecord } from '@kraftverk/device-sdk';
 
 import { databaseFile, onAudit } from '../history/db.ts';
@@ -87,7 +87,8 @@ export class ConfigSnapshot {
    * wrote.
    */
   write(): boolean {
-    const { document, context } = exportConfig(this.deps, { secrets: 'kept' });
+    const before = existsSync(this.file) ? readFileSync(this.file, 'utf8') : null;
+    const { document, context } = exportConfig(this.deps, { secrets: 'kept', keptBefore: before ? (readConfig(before).document?.secrets ?? {}) : {} });
     const text = writeConfig(document, {
       ...context,
       heading: [
@@ -97,8 +98,8 @@ export class ConfigSnapshot {
       ].join('\n'),
     });
     mkdirSync(dirname(this.file), { recursive: true });
-    if (existsSync(this.file) && readFileSync(this.file, 'utf8') === text) return false;
-    if (existsSync(this.file)) {
+    if (before === text) return false;
+    if (before !== null) {
       for (let n = KEPT - 1; n >= 1; n--) if (existsSync(`${this.file}.${n}`)) renameSync(`${this.file}.${n}`, `${this.file}.${n + 1}`);
       renameSync(this.file, `${this.file}.1`);
     }

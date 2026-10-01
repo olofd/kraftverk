@@ -22,7 +22,7 @@ import type { LinkStore } from '../devices/links.ts';
 import type { DeviceTypeRegistry } from '../devices/types.ts';
 import { policyValues } from '../history/policy.ts';
 import type { ProtocolRegistry } from '../runtime/protocols.ts';
-import { keep, sealWith } from './seal.ts';
+import { keep, openKept, sealWith } from './seal.ts';
 
 /*
   The server's configuration as a document (docs/CONFIG.md): everything it
@@ -57,6 +57,12 @@ export type ExportOptions = {
   automations?: readonly string[];
   secrets: SecretsMode;
   passphrase?: string;
+  /**
+   * Kept: how each secret was kept before, by its name — reused while it
+   * still opens to the same value, so a snapshot that has not changed is not
+   * written again for a fresh seal of the same key.
+   */
+  keptBefore?: Record<string, string>;
 };
 
 export type Exported = {
@@ -113,9 +119,11 @@ export function exportConfig(deps: ConfigDeps, options: ExportOptions): Exported
       case 'sealed':
         document.secrets[name] = sealWith(options.passphrase!, value);
         return { secret: name };
-      case 'kept':
-        document.secrets[name] = keep(value);
+      case 'kept': {
+        const before = options.keptBefore?.[name];
+        document.secrets[name] = before !== undefined && openKept(before) === value ? before : keep(value);
         return { secret: name };
+      }
     }
   };
 

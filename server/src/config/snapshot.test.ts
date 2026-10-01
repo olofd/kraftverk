@@ -13,6 +13,7 @@ import { LAMP, lampProtocol, lampType } from '../devices/testing.ts';
 import { DeviceTypeRegistry } from '../devices/types.ts';
 import { audit, closeDb } from '../history/db.ts';
 import { ProtocolRegistry } from '../runtime/protocols.ts';
+import { openKept } from './seal.ts';
 import { ConfigSnapshot } from './snapshot.ts';
 
 /*
@@ -56,8 +57,10 @@ describe('the configuration kept beside the database', () => {
     const { document, problems } = readConfig(text);
     expect(problems).toEqual([]);
     expect(document!.devices['hall-lamp']).toMatchObject({ type: 'test.lamp', connect: [{ via: 'bus', address: 'lamp-1', secrets: { pin: { secret: 'hall-lamp.pin' } } }] });
-    // No server key in a test: kept as the database keeps it.
-    expect(document!.secrets['hall-lamp.pin']).toBe('pin-from-a-test');
+    // Kept as the database keeps it — sealed with the server's key where it has one — and opened again by this server.
+    const kept = document!.secrets['hall-lamp.pin']!;
+    expect(kept.startsWith('sealed:server:') === Boolean(process.env.KRAFTVERK_SECRET_KEY)).toBe(true);
+    expect(openKept(kept)).toBe('pin-from-a-test');
     expect(snapshot.write()).toBe(false);
   });
 
