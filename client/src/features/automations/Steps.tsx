@@ -14,13 +14,13 @@ import { KIND, STEP, stopwatch, took, useNow, useTone } from './looks';
  */
 
 /** What it does, step by step, and what it does if a step does not succeed. */
-export function StepPlan({ steps, otherwise }: { steps: readonly StepLine[]; otherwise?: readonly StepLine[] }) {
+export function StepPlan({ steps, otherwise, numbered = true }: { steps: readonly StepLine[]; otherwise?: readonly StepLine[]; numbered?: boolean }) {
   const tone = useTone();
   return (
     <YStack gap="$3">
       <YStack gap="$2.5" role="list" aria-label="Its steps">
         {steps.map((line, index) => (
-          <PlanLine key={`${index}:${line.text}`} line={line} number={index + 1} />
+          <PlanLine key={`${index}:${line.text}`} line={line} number={numbered ? index + 1 : undefined} />
         ))}
       </YStack>
       {otherwise?.length ? (

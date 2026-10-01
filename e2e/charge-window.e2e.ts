@@ -23,7 +23,7 @@ test('a charge window of your own, copied from the shared recipe', async ({ page
   await link(request, { device: plug.id, part: 'main' }, { device: station.id, part: 'input.ac' });
 
   await page.goto('/automations');
-  await press(page, 'New automation');
+  await page.getByRole('button', { name: 'New automation' }).click();
   await press(page, 'Charge between two levels');
 
   // Nothing chosen yet: it says what is missing rather than greying out Create in silence.
@@ -37,49 +37,52 @@ test('a charge window of your own, copied from the shared recipe', async ({ page
   // The recipe's values are in its blocks now: the window is the owner's to change.
   await expect(status).toContainText(`${whose(station.name)} charge is below 15 %`);
   await press(page, 'Create');
-  // Named after its recipe when not renamed, and read back as what it does.
-  let card = page.getByRole('region', { name: 'Charge between two levels' }).last();
-  await expect(card.getByText('Made from “Charge between two levels”')).toBeVisible();
-  await expect(card.getByText('Only watching')).toBeVisible();
+  // Named after its recipe when not renamed, and opened on its own page: only watching on its own, at first.
+  await expect(page.getByRole('heading', { level: 1, name: 'Charge between two levels' })).toBeVisible();
+  const main = page.getByRole('main');
+  await expect(main.getByText('Made from “Charge between two levels”.')).toBeVisible();
+  await expect(main.getByRole('radio', { name: 'Watch only' })).toHaveAttribute('aria-checked', 'true');
 
   // Right now: each condition it waits for, how it stands, and the reading it stands on.
-  await expect(card.getByText('Right now')).toBeVisible();
-  await expect(card.getByText(`${whose(station.name)} charge is below 15 % for 2 min`, { exact: true })).toBeVisible();
-  await expect(card.getByText(`${whose(station.name)} charge is at least 50 %`, { exact: true }).first()).toBeVisible();
-  await expect(card.getByText(new RegExp(`^${station.name}: Charge \\d`)).first()).toBeVisible();
+  const now = page.getByRole('region', { name: 'Right now' });
+  await expect(now.getByText(`${whose(station.name)} charge is below 15 % for 2 min`, { exact: true })).toBeVisible();
+  await expect(now.getByText(`${whose(station.name)} charge is at least 50 %`, { exact: true })).toBeVisible();
+  await expect(now.getByText(new RegExp(`^${station.name}: Charge \\d`))).toBeVisible();
   // Once it has acted, what is switched by hand stays: until it is asked to keep things so.
-  await expect(card.getByText(/what you switch by hand stays until one turns to yes again/)).toBeVisible();
+  await expect(now.getByText(/what you switch by hand stays until one turns to yes again/)).toBeVisible();
 
-  // Changed after it was made, in the editor: a new name.
+  // Changed after it was made, in the editor: a new name — saved with Enter, back on its page.
   const renamed = unique('Charge window');
-  await card.getByText('Edit', { exact: true }).click();
+  await main.getByRole('button', { name: 'Edit' }).click();
   await expect(page.getByText(/^Change “Charge between two levels”/)).toBeVisible();
   await page.getByLabel('Name').fill(renamed);
   await expect(page.getByRole('status')).toContainText('It can run as it is');
-  await press(page, 'Save changes');
-  card = page.getByRole('region', { name: renamed });
-  await expect(card.getByText(renamed, { exact: true })).toBeVisible();
+  await page.getByLabel('Name').press('Enter');
+  await expect(page.getByRole('heading', { level: 1, name: renamed })).toBeVisible();
 
-  // Kept so, on the card: a look every ten minutes — not asked, while it only watches.
-  await card.getByRole('radio', { name: '10 min' }).click();
-  await expect(card.getByText(/Every 10 min it also runs again while one still holds/)).toBeVisible();
-  await expect(card.getByText(/^Looks again \d/)).toBeVisible();
+  // Kept so, on its page: a look every ten minutes — not asked, while it only watches.
+  await main.getByRole('radio', { name: '10 min' }).click();
+  await expect(now.getByText(/Every 10 min it also runs again while one still holds/)).toBeVisible();
+  await expect(now.getByText(/^Looks again \d/)).toBeVisible();
 
   // Its history: made, then changed, and what changed.
-  await card.getByText('History', { exact: true }).click();
-  await expect(card.getByText(/Made the automation/)).toBeVisible();
-  await expect(card.getByText('Changed', { exact: true }).first()).toBeVisible();
-  await expect(card.getByText('Keep it so: off → every 10 min')).toBeVisible();
+  const activity = page.getByRole('region', { name: 'Activity' });
+  await activity.getByText('History', { exact: true }).click();
+  await expect(activity.getByText(/Made the automation/)).toBeVisible();
+  await expect(activity.getByText('Changed', { exact: true }).first()).toBeVisible();
+  await expect(activity.getByText('Keep it so: off → every 10 min')).toBeVisible();
 
-  // What it would do now: what it would send, why, and each condition as it stands.
-  await card.getByText('What would it do now?').click();
-  await expect(card.getByText('If it ran now')).toBeVisible();
-  await expect(card.getByText('Asked what it would do now')).toBeVisible();
-  await expect(card.getByText(/^Would turn /).last()).toBeVisible();
+  // What it would do now, under ⋯: what it would send, why, and each condition as it stands.
+  await main.getByRole('button', { name: 'More' }).click();
+  await main.getByRole('button', { name: 'What would it do now?' }).click();
+  const checked = page.getByRole('region', { name: 'If it ran now' });
+  await expect(checked.getByText('Asked what it would do now')).toBeVisible();
+  await expect(checked.getByText(/^Would turn /).first()).toBeVisible();
 
   // Rehearsed on the last week: this server has kept almost none of it, and says what it could.
-  await card.getByText('Rehearse last week').click();
-  await expect(card.getByText('On the last week')).toBeVisible();
+  await main.getByRole('button', { name: 'More' }).click();
+  await main.getByRole('button', { name: 'Rehearse on last week' }).click();
+  await expect(page.getByRole('heading', { level: 2, name: 'On the last week' })).toBeVisible();
 });
 
 test('an automation is let act only with a yes, in the app’s own words, and deleted the same way', async ({ page, request }) => {
@@ -106,21 +109,26 @@ test('an automation is let act only with a yes, in the app’s own words, and de
   });
   expect(made.ok(), await made.text()).toBe(true);
 
+  // Opened from its card in the list.
   await page.goto('/automations');
-  const card = page.getByRole('region', { name });
-  const act = card.getByRole('radio', { name: 'Act' });
+  await page.getByRole('button', { name: new RegExp(`^${name}: `) }).click();
+  const main = page.getByRole('main');
+  const act = main.getByRole('radio', { name: 'Act' });
 
   // No: nothing changes.
   await act.click();
   expect(await answer(page, false)).toContain('on its own');
-  await expect(card.getByText('Only watching')).toBeVisible();
+  await expect(main.getByRole('radio', { name: 'Watch only' })).toHaveAttribute('aria-checked', 'true');
 
   // Yes: it acts.
   await act.click();
   await answer(page, true);
-  await expect(card.getByText('Acting')).toBeVisible();
+  await expect(act).toHaveAttribute('aria-checked', 'true');
 
-  await card.getByRole('button', { name: 'Delete' }).click();
+  // Deleted from under ⋯, asked first: back to the list, and gone from it.
+  await main.getByRole('button', { name: 'More' }).click();
+  await main.getByRole('button', { name: 'Delete' }).click();
   expect(await answer(page, true)).toContain('It stops, and is gone');
-  await expect(page.getByRole('region', { name })).toHaveCount(0);
+  await expect(page).toHaveURL(/\/automations$/);
+  await expect(page.getByRole('group', { name })).toHaveCount(0);
 });

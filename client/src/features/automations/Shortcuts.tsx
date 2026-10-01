@@ -2,17 +2,17 @@ import { useCallback, useEffect, useState } from 'react';
 import { YStack } from 'tamagui';
 
 import { fetchAutomations, type AutomationView } from '@kraftverk/api-client';
-import { Card, RowSeparator, SectionLabel } from '@kraftverk/ui';
+import { SectionLabel } from '@kraftverk/ui';
 
 import { useAuth } from '../../state/AuthProvider';
 import { useDevices } from '../../state/DevicesProvider';
-import { RunControl } from './RunControl';
+import { AutomationCard } from './AutomationCard';
 import { useReadAgain } from './useReadAgain';
 
 /**
  * The automations put on the home page (docs/AUTOMATION-EDITOR.md), in their
- * places: each a tile to start it — or stop it — the step it is in while it
- * runs, and how it last went. Nothing when none is there, or no server runs
+ * places: each the same card as in the list of automations — run it, or stop
+ * it, and see how it stands; its name opens its page. Nothing when none is there, or no server runs
  * them.
  */
 export function Shortcuts() {
@@ -36,16 +36,9 @@ export function Shortcuts() {
   return (
     <YStack gap="$2">
       <SectionLabel>Shortcuts</SectionLabel>
-      <Card inset>
-        {shortcuts.map((automation, index) => (
-          <YStack key={automation.id}>
-            {index > 0 ? <RowSeparator /> : null}
-            <YStack paddingHorizontal="$4" paddingVertical="$3">
-              <RunControl automation={automation} onChanged={replace} compact />
-            </YStack>
-          </YStack>
-        ))}
-      </Card>
+      {shortcuts.map((automation) => (
+        <AutomationCard key={automation.id} automation={automation} onChanged={replace} />
+      ))}
     </YStack>
   );
 }

@@ -408,7 +408,7 @@ function ActionCard({
         <YStack gap="$3">
           {asks ? (
             <Card inset backgroundColor="$background">
-              <SchemaForm schema={action.input!} values={input} disabled={busy} onChange={(name, value) => setInput((before) => ({ ...before, [name]: value }))} />
+              <SchemaForm schema={action.input!} values={input} disabled={busy} onChange={(name, value) => setInput((before) => ({ ...before, [name]: value }))} onSubmit={() => (!busy && ready ? void run(input) : undefined)} />
             </Card>
           ) : null}
           <Button alignSelf="flex-start" size="$3" {...(primary ? PRIMARY : {})} disabled={busy || !ready} opacity={busy || !ready ? 0.5 : 1} onPress={() => void run(input)}>
@@ -449,6 +449,13 @@ function FormStep({ flow, step, onNext, onBack, onNamed }: StepProps & { step: E
     }
   };
 
+  const canContinue = !busy && isComplete(step.schema, values, flow.secrets);
+  const proceed = () =>
+    void run(async () => {
+      await apply(values);
+      onNext();
+    });
+
   /** A helper's answer: its values, and — when it knows — where the device is and what it is called. */
   const done = (choice: SetupChoice | null) =>
     void run(async () => {
@@ -470,19 +477,7 @@ function FormStep({ flow, step, onNext, onBack, onNamed }: StepProps & { step: E
       title={step.title}
       description={step.description ?? step.schema.help}
       onBack={onBack}
-      next={
-        typing
-          ? {
-              label: 'Continue',
-              disabled: busy || !isComplete(step.schema, values, flow.secrets),
-              onPress: () =>
-                void run(async () => {
-                  await apply(values);
-                  onNext();
-                }),
-            }
-          : undefined
-      }
+      next={typing ? { label: 'Continue', disabled: !canContinue, onPress: proceed } : undefined}
     >
       {step.actions.map((action, index) => (
         <ActionCard key={action.id} flow={flow} stepId={step.id} action={action} primary={index === 0} busy={busy} setBusy={setBusy} onDone={done} />
@@ -501,7 +496,7 @@ function FormStep({ flow, step, onNext, onBack, onNamed }: StepProps & { step: E
 
       {typing ? (
         <Card inset>
-          <SchemaForm schema={step.schema} values={values} secretsSet={flow.secrets} disabled={busy} onChange={(name, value) => setValues((before) => ({ ...before, [name]: value }))} />
+          <SchemaForm schema={step.schema} values={values} secretsSet={flow.secrets} disabled={busy} onChange={(name, value) => setValues((before) => ({ ...before, [name]: value }))} onSubmit={() => (canContinue ? proceed() : undefined)} />
         </Card>
       ) : null}
       <ErrorLine message={error} />

@@ -71,6 +71,10 @@ empty: the core names no product, and every device is found, not listed.
   does on its own); `at` triggers take weekdays; chains go four deep and
   never back on themselves; any automation can be a shortcut on the home
   page.
+- **Automations at a glance** (2026-10-01,
+  [AUTOMATIONS-UX.md](AUTOMATIONS-UX.md)): each automation a small card with
+  a play button — the same in the list, on the home page and on a device's
+  page — and a page of its own, its parts in groups. Phase 1 of 3.
 - **Shared parts and a reserve** (2026-09-30,
   [SHARED-PARTS-AND-RESERVE.md](SHARED-PARTS-AND-RESERVE.md)): a run holds
   the parts it may change, and another automation's run that needs one is

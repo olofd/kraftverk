@@ -146,6 +146,8 @@ const light = {
 
   placeholderColor: palette.slate5,
   outlineColor: palette.blue,
+  // What is selected in a field: Tamagui's inputs read this, and without it a selection is not seen at all.
+  selectionColor: 'rgba(59, 130, 246, 0.3)',
 
   shadowColor: 'rgba(15, 23, 42, 0.16)',
   shadowColorHover: 'rgba(15, 23, 42, 0.24)',
@@ -183,6 +185,7 @@ const dark: typeof light = {
 
   placeholderColor: palette.slate6,
   outlineColor: palette.blue,
+  selectionColor: 'rgba(59, 130, 246, 0.45)',
 
   shadowColor: 'rgba(0, 0, 0, 0.6)',
   shadowColorHover: 'rgba(0, 0, 0, 0.7)',

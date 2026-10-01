@@ -1220,6 +1220,18 @@ describe('automations', () => {
     expect(again.sharedWith.map((other) => other.id)).toEqual([stop.id]);
   });
 
+  test('one automation is read on its own, for its page — and one that is not there says so', async () => {
+    const plug = await added('Scooter plug', { server: simulated, typeId: 'tuya.zigbee-plug' });
+    const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
+    const made = (await create('Start charging the scooter', 'standard.start-charging', { supply: { device: station.id, part: 'outlet.ac' }, charger: whole(plug) })).body;
+    const one = await as(`/automations/${made.id}`);
+    expect(one.status).toBe(200);
+    expect(one.body).toMatchObject({ id: made.id, name: 'Start charging the scooter', takesSteps: true, running: null });
+    expect((await as('/automations/a-000000000000')).status).toBe(404);
+    // The recipes are not taken for an automation's id.
+    expect((await as('/automations/recipes')).body.recipes.length).toBeGreaterThan(0);
+  });
+
   test('one starts another: a chain that would come back to itself is refused, and one whose other is deleted says so', async () => {
     const station = await added('Garage P280', { server: simulated, typeId: 'aferiy.p280' });
     const plug = await added('Scooter plug', { server: simulated, typeId: 'tuya.zigbee-plug' });
@@ -1286,7 +1298,8 @@ describe('automations', () => {
     const check = await as(`/automations/${created.id}/check`, { method: 'POST' });
     expect(check.status).toBe(200);
     expect(['would-act', 'idle']).toContain(check.body.outcome);
-    expect((await as(`/automations/${created.id}`)).status).toBe(404); // no GET by id: the list is the view
+    // Read on its own, for its page — checking it changed nothing.
+    expect((await as(`/automations/${created.id}`)).body).toMatchObject({ id: created.id, lastRun: null });
     expect((await as(`/automations/${created.id}`, { method: 'DELETE' })).status).toBe(200);
     expect((await as('/automations')).body.automations).toEqual([]);
   });

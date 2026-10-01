@@ -59,8 +59,12 @@ foresaw and move its sliders:
 7. **The server checks every draft, not only every save.** The editor
    sends the draft as it changes and shows what is wrong, and how it
    reads, as the person builds.
-   - One checker, one describer, on the server: the app never judges a
-     rule by itself.
+   - One checker, on the server: the app never judges a rule by itself.
+   - The words for each block, as it is typed, come from the SDK's pure
+     describers, in the app (`editor/context.tsx`) — the same code the
+     server runs, so they agree; the server's check stays the authority on
+     problems and on the saved sentence. (Amended 2026-10-01: this decision
+     first said only the server describes.)
 
 ## The language, as it changes (`packages/device-sdk/src/automation.ts`)
 
@@ -226,12 +230,17 @@ that acts), and `stop` stops. It does not build rules; a person does.
 
 ## The app
 
-**The list (`/automations`):**
-- Each card has a play button (■ Stop while it runs) and says what it is
-  doing now.
-- The mode is set on the card, as today.
-- "Edit" opens the editor; "What would it do now?" stays.
-- "Try it" goes: play and "what would it do" say the two things apart.
+**The list (`/automations`), since 2026-10-01 (docs/AUTOMATIONS-UX.md):**
+- Each automation is a small card — what starts it, its name, how it
+  stands in a line, and a play button (■ Stop while it runs). The same
+  card on the home page and on a device's page.
+- Its name opens **its own page** (`/automation/:id`): Run, Edit, ⋯ (What
+  would it do now, Rehearse, Delete), and each part of it in a group of its
+  own — When, Only if, Does, If a step fails, Right now, On its own (the
+  mode), Activity. The editor is `/automation/:id/edit` and
+  `/automation/new`.
+- A device's page ends with the automations it takes part in — the same
+  list, and New, which starts from that device.
 
 **The home page:**
 - A "Shortcuts" row, before the devices, with each automation put there

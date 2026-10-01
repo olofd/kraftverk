@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Spinner, Text, XStack, YStack } from 'tamagui';
 
@@ -17,16 +17,16 @@ import {
 import { capabilitiesOf, isAutomationRole, meetsNeed, partName, partsOf } from '@kraftverk/device-sdk';
 import { Card, haptic, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
-import { Pressable } from '../../src/components/Pressable';
-import { Screen } from '../../src/components/Screen';
-import { BlockList } from '../../src/features/automations/editor/Blocks';
-import { EditorProvider, useEditor } from '../../src/features/automations/editor/context';
-import { EMPTY, fromRecipe, OTHERWISE, pruned, rolesOf, THEN, type Draft } from '../../src/features/automations/editor/draft';
-import { Picker } from '../../src/features/automations/editor/fields';
-import { OnlyIf, Triggers } from '../../src/features/automations/editor/Triggers';
-import { useTone } from '../../src/features/automations/looks';
-import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../src/lib/confirm';
-import { useDevices } from '../../src/state/DevicesProvider';
+import { Pressable } from '../../../components/Pressable';
+import { Screen } from '../../../components/Screen';
+import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../../lib/confirm';
+import { useDevices } from '../../../state/DevicesProvider';
+import { useTone } from '../looks';
+import { BlockList } from './Blocks';
+import { EditorProvider, useEditor } from './context';
+import { EMPTY, fromRecipe, OTHERWISE, pruned, rolesOf, THEN, type Draft } from './draft';
+import { Picker } from './fields';
+import { OnlyIf, Triggers } from './Triggers';
 
 /**
  * Building an automation from blocks, or changing one
@@ -37,9 +37,9 @@ import { useDevices } from '../../src/state/DevicesProvider';
  * from nothing, or from a recipe copied. The server checks the draft as it
  * is built, and says how it reads.
  */
-export default function AutomationEditorScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const creating = id === 'new';
+/** `from`: the device a new one was started from — where back, and Cancel, return to. */
+export function EditorScreen({ id, from }: { id: string | null; from?: { id: string; name: string } | null }) {
+  const creating = id === null;
   const { devices } = useDevices();
   const [kit, setKit] = useState<AutomationKit | null>(null);
   const [automations, setAutomations] = useState<AutomationView[] | null>(null);
@@ -67,10 +67,12 @@ export default function AutomationEditorScreen() {
   }, [creating, id]);
 
   const existing = automations?.find((automation) => automation.id === id) ?? null;
+  // Back, and Cancel: to the automation being changed, the device a new one was started from, or the list.
+  const back = existing ? { label: existing.name, to: `/automation/${existing.id}` } : from ? { label: from.name, to: `/device/${from.id}` } : { label: 'Automations', to: '/automations' };
   const title = creating ? 'New automation' : existing ? `Change “${existing.name}”` : 'Automation';
 
   return (
-    <Screen back="Automations" backTo="/automations" title={title} subtitle="What starts it, what it must meet, and the steps it takes">
+    <Screen back={back.label} backTo={back.to} title={title} subtitle="What starts it, what it must meet, and the steps it takes">
       {error ? (
         <Card borderColor="$danger">
           <Text fontSize={13} color="$danger">
@@ -94,7 +96,7 @@ export default function AutomationEditorScreen() {
             functions: kit.functions,
           }}
         >
-          <Editing existing={existing} madeFrom={madeFrom} />
+          <Editing existing={existing} madeFrom={madeFrom} cancelTo={back.to} />
         </EditorProvider>
       )}
     </Screen>
@@ -128,7 +130,7 @@ function StartFrom({ recipes, onChoose }: { recipes: readonly RecipeView[]; onCh
 }
 
 /** The draft being built: every section, the live check, and saving. */
-function Editing({ existing, madeFrom }: { existing: AutomationView | null; madeFrom: string | null }) {
+function Editing({ existing, madeFrom, cancelTo }: { existing: AutomationView | null; madeFrom: string | null; cancelTo: string }) {
   const tone = useTone();
   const editor = useEditor();
   const { draft } = editor;
@@ -157,7 +159,10 @@ function Editing({ existing, madeFrom }: { existing: AutomationView | null; made
     try {
       const body = { name: draft.name.trim(), rule: kept.rule, roles: kept.roles, starts: kept.starts };
       if (!existing) {
-        await createAutomation({ ...body, madeFrom, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+        const made = await createAutomation({ ...body, madeFrom, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+        // Made: its own page, in place of the editor.
+        router.replace(`/automation/${made.id}`);
+        return;
       } else {
         // One that acts on its own asks first: what it does changes.
         const { answer, declined } = await withConfirmation(
@@ -167,7 +172,7 @@ function Editing({ existing, madeFrom }: { existing: AutomationView | null; made
         );
         if (declined || !('automation' in answer)) return;
       }
-      router.replace('/automations');
+      router.replace(`/automation/${existing.id}`);
     } catch (err) {
       setProblem(describeError(err) || 'It could not be saved');
     } finally {
@@ -179,7 +184,7 @@ function Editing({ existing, madeFrom }: { existing: AutomationView | null; made
     <YStack gap="$4">
       <YStack gap="$2">
         <SectionLabel>Name</SectionLabel>
-        <Input size="$4" value={draft.name} placeholder="What to call it: “Morning charge”" aria-label="Name" backgroundColor="$card" borderColor="$borderColor" onChangeText={(name) => editor.change((current) => ({ ...current, name }))} />
+        <Input size="$4" value={draft.name} placeholder="What to call it: “Morning charge”" aria-label="Name" backgroundColor="$card" borderColor="$borderColor" onChangeText={(name) => editor.change((current) => ({ ...current, name }))} onSubmitEditing={() => (ready && !busy ? void save() : undefined)} />
       </YStack>
 
       <Parts />
@@ -221,7 +226,7 @@ function Editing({ existing, madeFrom }: { existing: AutomationView | null; made
         </Text>
       ) : null}
       <XStack gap="$2" justifyContent="flex-end">
-        <Button size="$4" chromeless color="$muted" disabled={busy} onPress={() => router.replace('/automations')}>
+        <Button size="$4" chromeless color="$muted" disabled={busy} onPress={() => router.replace(cancelTo)}>
           Cancel
         </Button>
         <Button size="$4" backgroundColor="$accent" color="$background" disabled={busy || !ready} opacity={busy || !ready ? 0.5 : 1} onPress={() => void save()}>

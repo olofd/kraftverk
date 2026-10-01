@@ -328,6 +328,7 @@ export function GenericSettings({ device }: { device: DeviceView }) {
                 values={{ ...(values as ConfigValues), ...(draft as ConfigValues) }}
                 disabled={busy || !isOnline(device.health)}
                 onChange={(name, value) => setDraft((current) => ({ ...current, [name]: value as Value }))}
+                onSubmit={() => (pending && !busy ? void save() : undefined)}
               />
             )}
           </Card>
@@ -606,6 +607,15 @@ export function Manage({ device }: { device: DeviceView }) {
     }
   };
 
+  const saveName = () => {
+    haptic();
+    setBusy(true);
+    setError(null);
+    rename(device.id, name.trim())
+      .catch((err: unknown) => setError(describeError(err) || 'That name could not be saved'))
+      .finally(() => setBusy(false));
+  };
+
   return (
     <YStack gap="$2">
       <SectionLabel>Manage</SectionLabel>
@@ -615,22 +625,9 @@ export function Manage({ device }: { device: DeviceView }) {
             Name
           </Text>
           <XStack gap="$2">
-            <Input flex={1} size="$3" value={name} maxLength={60} onChangeText={setName} backgroundColor="$background" borderColor="$borderColor" aria-label="Name" />
+            <Input flex={1} size="$3" value={name} maxLength={60} onChangeText={setName} onSubmitEditing={() => (dirty && !busy ? saveName() : undefined)} backgroundColor="$background" borderColor="$borderColor" aria-label="Name" />
             {dirty ? (
-              <Button
-                size="$3"
-                backgroundColor="$accent"
-                color="$background"
-                disabled={busy}
-                onPress={() => {
-                  haptic();
-                  setBusy(true);
-                  setError(null);
-                  rename(device.id, name.trim())
-                    .catch((err: unknown) => setError(describeError(err) || 'That name could not be saved'))
-                    .finally(() => setBusy(false));
-                }}
-              >
+              <Button size="$3" backgroundColor="$accent" color="$background" disabled={busy} onPress={saveName}>
                 Save
               </Button>
             ) : null}

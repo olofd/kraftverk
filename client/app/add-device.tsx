@@ -705,7 +705,7 @@ function Finish({
         <YStack gap="$2">
           <SectionLabel>Name it</SectionLabel>
           <Card gap="$2">
-            <Input size="$3" value={name} maxLength={60} onChangeText={setName} backgroundColor="$background" borderColor="$borderColor" aria-label="Its name" />
+            <Input size="$3" value={name} maxLength={60} onChangeText={setName} onSubmitEditing={() => (!busy && (attachTo || name.trim()) ? void save() : undefined)} backgroundColor="$background" borderColor="$borderColor" aria-label="Its name" />
             <Text fontSize={12} color="$muted">
               {flow.holder === 'server' ? 'Held by your server.' : `Held by ${HERE}.`}
             </Text>

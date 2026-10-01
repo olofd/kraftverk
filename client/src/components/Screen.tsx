@@ -58,27 +58,34 @@ export function Screen({ title, subtitle, back, backTo, status, aside, children 
     >
       <YStack width="100%" maxWidth={560} gap="$4">
         {back ? (
-          <XStack
-            alignItems="center"
-            gap="$1.5"
-            alignSelf="flex-start"
-            cursor="pointer"
-            pressStyle={{ opacity: 0.6 }}
-            onPress={() =>
-              router.canGoBack() ? router.back() : router.replace(backTo ?? '/')
-            }
-          >
-            <Icon name="chevron-left" size={16} color={theme.muted?.val} />
-            <Text fontSize={14} fontWeight="600" color="$muted">
-              {back}
-            </Text>
+          // The way back, as navigation: reachable by Tab, operable by Enter, and a landmark to jump to.
+          <XStack role="navigation" aria-label="Back" alignSelf="flex-start">
+            <XStack
+              role="button"
+              tabIndex={0}
+              aria-label={`Back to ${back}`}
+              alignItems="center"
+              gap="$1.5"
+              minHeight={44}
+              cursor="pointer"
+              pressStyle={{ opacity: 0.6 }}
+              focusVisibleStyle={{ outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid' }}
+              onPress={() =>
+                router.canGoBack() ? router.back() : router.replace(backTo ?? '/')
+              }
+            >
+              <Icon name="chevron-left" size={16} color={theme.muted?.val} />
+              <Text fontSize={14} fontWeight="600" color="$muted">
+                {back}
+              </Text>
+            </XStack>
           </XStack>
         ) : null}
 
         <XStack alignItems={aside ? 'center' : 'flex-end'} justifyContent="space-between" gap="$3">
           {/* The title takes what is left and wraps: a long name must not push the status off the screen. */}
           <YStack gap={2} flex={1} flexShrink={1}>
-            <Text fontSize={30} lineHeight={34} fontWeight="800" letterSpacing={-0.8} color="$color">
+            <Text role="heading" aria-level={1} fontSize={30} lineHeight={34} fontWeight="800" letterSpacing={-0.8} color="$color">
               {title}
             </Text>
             {subtitle ? (
@@ -97,7 +104,10 @@ export function Screen({ title, subtitle, back, backTo, status, aside, children 
 
         <ConnectionBanner />
 
-        {children}
+        {/* What the screen is about: the landmark a screen reader goes to first. */}
+        <YStack role="main" gap="$4">
+          {children}
+        </YStack>
       </YStack>
     </ScrollView>
   );

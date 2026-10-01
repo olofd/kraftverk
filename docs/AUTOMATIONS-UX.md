@@ -208,9 +208,33 @@ Built once in `packages/ui`, used everywhere:
 - The e2e flows that exist (copy a recipe, build from nothing, a chain, a
   night window) are kept, rewritten for the new controls.
 
+## Decided with the owner, 2026-10-01
+
+- **Small cards, full width**: what starts it, its name, how it stands, and
+  a play button. **The same card** in the list, on the home page, and on a
+  device's page.
+- **A page per automation**, opened from its card: a view mode, and an edit
+  mode — Edit turns the same page editable in place, with a sticky Cancel /
+  Save bar (phase 2; until then Edit opens the editor).
+- **Groups that cannot be missed**: each part of an automation a bounded box
+  with a header; an empty one says so inside its box.
+- **On a device's page**, at the bottom: the same list, kept to the
+  automations that device takes part in, and New, which starts from that
+  device.
+
+The plan in full, with what the owner's review found in the running app (lost
+expressions, a broken "when something holds" blank, Enter that does not
+submit, invisible text selection, no headings or landmarks), is the plan
+these phases follow.
+
 ## Phases
 
 Each phase is pushed on its own, green, so it can be tried on the NAS.
+
+**Phase 1 done, 2026-10-01**: the card, the list, the automation's page in
+view mode with its groups and ⋯ menu, the device page's list, and the
+general fixes — the selection colour, Enter that submits every form,
+headings and landmarks (and a back link a keyboard can reach).
 
 1. **U1 — Fix what is broken (small).** Pill rows that wrap, never
    overflow; a `DurationField` and a native `TimeField`; 44 px targets; step

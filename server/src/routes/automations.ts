@@ -88,6 +88,13 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
     return c.json({ automations: (device ? automations.usingDevice(device) : automations.list()).map(view) });
   });
 
+  /** One automation, as its own page shows it. */
+  api.get('/automations/:id', (c) => {
+    const current = automations.get(c.req.param('id'));
+    if (!current) throw new HTTPException(404, { message: 'No such automation' });
+    return c.json(view(current));
+  });
+
   /** Its runs, the latest first, each with every step it took. */
   api.get('/automations/:id/runs', (c) => {
     const current = automations.get(c.req.param('id'));

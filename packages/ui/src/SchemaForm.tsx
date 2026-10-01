@@ -24,6 +24,7 @@ export function SchemaForm({
   secretsSet = [],
   onChange,
   disabled,
+  onSubmit,
 }: {
   schema: ConfigSchema;
   values: ConfigValues;
@@ -31,6 +32,8 @@ export function SchemaForm({
   secretsSet?: string[];
   onChange: (name: string, value: string | number | boolean | undefined) => void;
   disabled?: boolean;
+  /** Enter in a one-line field: what the form's own button does. */
+  onSubmit?: () => void;
 }) {
   const fields = Object.entries(schema.fields);
 
@@ -52,6 +55,7 @@ export function SchemaForm({
             hasSecret={secretsSet.includes(name)}
             disabled={disabled}
             onChange={onChange}
+            onSubmit={onSubmit}
           />
         </YStack>
       ))}
@@ -66,6 +70,7 @@ function Field({
   hasSecret,
   disabled,
   onChange,
+  onSubmit,
 }: {
   name: string;
   field: ConfigField;
@@ -73,6 +78,7 @@ function Field({
   hasSecret: boolean;
   disabled?: boolean;
   onChange: (name: string, value: string | number | boolean | undefined) => void;
+  onSubmit?: () => void;
 }) {
   if (field.type === 'boolean') {
     return (
@@ -184,6 +190,7 @@ function Field({
         type={secret ? 'password' : 'text'}
         multiline={multiline}
         numberOfLines={multiline ? 4 : undefined}
+        onSubmitEditing={multiline ? undefined : onSubmit}
         autoComplete={secret ? 'off' : undefined}
         autoCapitalize="none"
         autoCorrect={false}

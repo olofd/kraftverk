@@ -60,7 +60,7 @@ export function RemovedDevice({ device }: { device: DeviceView }) {
             Deletes {device.name} and everything it recorded. This cannot be undone here: only a backup of the
             server brings it back. Type its name to confirm.
           </Text>
-          <Input size="$3" value={typed} onChangeText={setTyped} placeholder={device.name} backgroundColor="$background" borderColor="$borderColor" />
+          <Input size="$3" value={typed} onChangeText={setTyped} onSubmitEditing={() => (!busy && typed.trim() === device.name ? void remove() : undefined)} placeholder={device.name} aria-label="Its name, typed to confirm" backgroundColor="$background" borderColor="$borderColor" />
           <Button
             size="$3"
             borderColor="$danger"

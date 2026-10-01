@@ -42,10 +42,10 @@ function Dashboard({ device }: { device: DeviceView }) {
           <Parts device={device} />
         </>
       )}
-      {/* What you start with it — a sequence it is part of — for every device alike. */}
-      <DeviceAutomations deviceId={device.id} />
       <History device={device} />
       <Events device={device} />
+      {/* At the bottom, for every device alike: the automations it takes part in, and a new one made from here. */}
+      <DeviceAutomations device={device} />
     </>
   );
 }

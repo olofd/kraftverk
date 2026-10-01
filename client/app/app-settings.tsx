@@ -333,8 +333,10 @@ function Servers() {
             autoFocus
             value={draft}
             placeholder="192.168.1.10:3333"
+            aria-label="The server's address"
             autoCapitalize="none"
             onChangeText={setDraft}
+            onSubmitEditing={() => (!busy && draft.trim() ? void save() : undefined)}
             backgroundColor="$background"
             borderColor="$borderColor"
           />
@@ -472,6 +474,8 @@ function ResetEverything() {
               autoComplete="off"
               autoCapitalize="none"
               onChangeText={setSecret}
+              onSubmitEditing={() => (!busy && secret.trim() ? ask() : undefined)}
+              aria-label="Reset passphrase"
               backgroundColor="$background"
               borderColor="$borderColor"
             />

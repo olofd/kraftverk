@@ -359,6 +359,12 @@ export async function fetchAutomations(signal?: AbortSignal) {
   return data.automations;
 }
 
+/** One automation, as its own page shows it. */
+export async function fetchAutomation(id: string, signal?: AbortSignal) {
+  const { data } = await api.get<AutomationView>(`/automations/${encodeURIComponent(id)}`, { signal });
+  return data;
+}
+
 export async function createAutomation(input: NewAutomation) {
   const { data } = await api.post<AutomationView>('/automations', input);
   return data;
