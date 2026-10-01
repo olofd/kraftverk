@@ -430,10 +430,26 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
    */
   const measuredAt: Record<string, string> = {};
   const metricDps = new Set(Object.values(profile.metrics).map((metric) => String(metric.dp)));
+  /*
+    What the meter reads at once — power, current, voltage, all but the
+    energy count, which the plug pushes on its own. Behind a gateway a push
+    of any of them is the plug having measured them all: the gateway pushes
+    only what changed, so the rest measured the same. (A plug drawing nothing
+    pushed its current flickering 0–30 mA every 2 s, and its 0 W stood
+    "as of" half an hour before.)
+  */
+  const meterDps = new Set(
+    (Object.entries(profile.metrics) as [keyof SocketProfile['metrics'], { dp: number } | undefined][])
+      .filter(([name, metric]) => metric && name !== 'kwh')
+      .map(([, metric]) => String(metric!.dp))
+  );
   const ingest = (dps: Dps, pushed = false) => {
     if (!Object.keys(dps).length) return;
     const now = new Date().toISOString();
-    if (behindGateway) for (const [dp, value] of Object.entries(dps)) if (metricDps.has(dp) && (pushed || state?.dps[dp] !== value || !measuredAt[dp])) measuredAt[dp] = now;
+    if (behindGateway) {
+      for (const [dp, value] of Object.entries(dps)) if (metricDps.has(dp) && (pushed || state?.dps[dp] !== value || !measuredAt[dp])) measuredAt[dp] = now;
+      if (pushed && Object.keys(dps).some((dp) => meterDps.has(dp))) for (const dp of meterDps) measuredAt[dp] = now;
+    }
     state = { dps: { ...state?.dps, ...dps }, at: now, ...(behindGateway ? { measuredAt: { ...measuredAt } } : {}) };
     lastOk = Date.now();
     lastError = null;

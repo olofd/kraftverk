@@ -51,8 +51,11 @@ A Zigbee plug has no IP address and no key of its own. kraftverk speaks to its
   `0x08 {"protocol":4,"data":{"dps":{"18":4336,"19":10100},"cid":…,"type":"query"}}`.
   What did not change is not pushed: asked again with the fan steady, nothing
   came. So a silent refresh proves nothing — the plug may have measured the
-  same, or not be there. Every poll asks one; what it brings is dated as
-  measured, and a value it does not bring keeps its time.
+  same, or not be there. Every poll asks one. A push of any of power,
+  current and voltage dates all three as measured — the plug read its meter,
+  and the rest measured the same (a plug drawing nothing pushed its current
+  flickering 0–30 mA, its 0 W never). Nothing pushed, they keep their time.
+  Energy keeps its own: the plug pushes it on its own.
 - **Named bare** (`"cid":"<cid>"`, as tinytuya sends it) it is acknowledged
   the same, and the plug is not asked: why it seemed to do nothing before.
   Wrapped in the data, as a control is (`{"protocol":5,"data":{"cid":…,"dpId":[…]}}`),

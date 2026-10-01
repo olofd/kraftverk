@@ -268,6 +268,21 @@ describe('the Tuya Zigbee plug', () => {
     expect(reading('watts')!.at).toBe(measured);
   });
 
+  test('a push of any of its meter is all of it measured: 0 W that stays 0 W is as new as the current that moved; energy keeps its own time', async () => {
+    // As on the owner's server: nothing drawing, the current flickering 0–30 mA, the power 0 W throughout.
+    const dps = { ...MAPPED, '18': 0, '19': 0 };
+    const { device, reading, poll } = await session(dps);
+    const before = { watts: reading('watts')!.at, kwh: reading('kwh')!.at };
+    device.measure({ '18': 30, '19': 0, '20': 2310 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await poll();
+    expect(device.refreshes).not.toHaveLength(0);
+    expect(reading('amps')!.value).toBe(0.03);
+    expect(Date.parse(reading('watts')!.at)).toBeGreaterThan(Date.parse(before.watts));
+    expect(reading('volts')!.at).toBe(reading('watts')!.at);
+    expect(reading('kwh')!.at).toBe(before.kwh);
+  });
+
   test('all who wait on its readings share one lease and one clock: asked often until the latest of them', async () => {
     const { device, opened, freshTick, scheduled } = await session({ ...MAPPED });
     const clocks = scheduled.length;
