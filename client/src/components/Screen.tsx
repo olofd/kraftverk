@@ -42,6 +42,13 @@ export function Screen({ title, subtitle, back, backTo, status, aside, children,
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { connection, refresh, views } = useDevices();
+  /*
+    A screen's own status — a device's health, in its own words, which can be
+    a whole error — goes under the title, where it has the width to wrap. On
+    the right it took the width, and squeezed the title to a letter a line.
+    The app's own Online, short, stays on the right.
+  */
+  const statusBelow = Boolean(aside || status);
 
   const page = (
     <ScrollView
@@ -100,13 +107,13 @@ export function Screen({ title, subtitle, back, backTo, status, aside, children,
                 {subtitle}
               </Text>
             ) : null}
-            {aside ? (
+            {statusBelow ? (
               <XStack marginTop="$2">
                 <StatusDot status={status} />
               </XStack>
             ) : null}
           </YStack>
-          {aside ?? <StatusDot status={status} />}
+          {aside ?? (statusBelow ? null : <StatusDot status={status} />)}
         </XStack>
 
         <ConnectionBanner />
@@ -165,9 +172,10 @@ function StatusDot({ status }: { status?: ScreenStatus }) {
           : 'Offline');
 
   return (
-    <XStack alignItems="center" gap="$2" paddingBottom={6}>
-      <YStack width={8} height={8} borderRadius={999} backgroundColor={color} />
-      <Text fontSize={12} fontWeight="600" color="$muted">
+    <XStack alignItems="center" gap="$2" paddingBottom={6} flexShrink={1}>
+      <YStack width={8} height={8} borderRadius={999} backgroundColor={color} flexShrink={0} />
+      {/* Two lines at most: the whole of a long one is on the page below. */}
+      <Text fontSize={12} fontWeight="600" color="$muted" flexShrink={1} numberOfLines={2}>
         {label}
       </Text>
     </XStack>
