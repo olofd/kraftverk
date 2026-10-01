@@ -318,8 +318,11 @@ function fakePlug(version: ProtocolVersion, key: Uint8Array, dps: Record<string,
 /**
  * A Tuya Zigbee gateway, as the RSH GW018-DM behaves (a Zigbee plug's README):
  * 3.4, its own datapoints, and devices behind it by cid. A query naming a
- * device answers what the gateway last heard, then pushes what the device
- * says now; a control is acknowledged empty, then the change is pushed.
+ * device answers what the gateway last heard, and asks the device nothing. A
+ * refresh naming it in a list, as Smart Life sends it, has it measure: what
+ * changed is pushed. Named bare, as tinytuya does, it is acknowledged and
+ * nothing more. A control is acknowledged empty, then the change is pushed.
+ * `fresh`: what each device measures now.
  */
 function fakeGateway(key: Uint8Array, children: Record<string, Record<string, string | number | boolean>>, fresh: Record<string, Record<string, number>> = {}) {
   let reader = new FrameReader('3.4', key);
@@ -350,11 +353,17 @@ function fakeGateway(key: Uint8Array, children: Record<string, Record<string, st
         if (!asked.cid) out.push(frame(CMD.DP_QUERY_NEW, { dps: own }));
         else if (child) {
           out.push(frame(CMD.DP_QUERY_NEW, { dps: child, cid: asked.cid }));
-          const now = fresh[asked.cid];
-          if (now) {
-            Object.assign(child, now);
-            out.push(frame(CMD.STATUS, { protocol: 4, t: 1, data: { dps: now, cid: asked.cid, type: 'query' } }));
-          }
+        }
+      } else if (got.command === CMD.UPDATEDPS) {
+        const asked = JSON.parse(text(got.payload)) as { dpId: number[]; cid?: string | string[] };
+        out.push(frame(CMD.UPDATEDPS, new Uint8Array()));
+        for (const cid of Array.isArray(asked.cid) ? asked.cid : []) {
+          const child = children[cid];
+          const now = fresh[cid] ?? {};
+          const changed = Object.fromEntries(asked.dpId.map(String).filter((dp) => now[dp] !== undefined && now[dp] !== child?.[dp]).map((dp) => [dp, now[dp]!]));
+          if (!child || !Object.keys(changed).length) continue;
+          Object.assign(child, changed);
+          out.push(frame(CMD.STATUS, { protocol: 4, t: 1, data: { dps: changed, cid, type: 'query' } }));
         }
       } else if (got.command === CMD.CONTROL_NEW) {
         const asked = JSON.parse(text(got.payload)) as { data: { cid: string; dps: Record<string, boolean> } };
@@ -399,15 +408,24 @@ describe('a device behind a gateway', () => {
     await link.close();
   });
 
-  test('hears what the gateway says of it — the fresh reading after a query, a change — and nothing of another device', async () => {
+  test('hears what the gateway says of it — what a refresh had it measure, a change — and nothing of another device', async () => {
     const gateway = fakeGateway(utf8(GATEWAY_KEY), { [PLUG]: { '1': true, '19': 0 }, [OTHER]: { '1': true } }, { [PLUG]: { '19': 9970, '18': 4310 } });
     const pushed: Record<string, unknown>[] = [];
     const presence: boolean[] = [];
     const link = new TuyaLink(gateway, { deviceId: 'bfplug', localKey: GATEWAY_KEY, version: '3.4', cid: PLUG, onPush: (dps) => pushed.push(dps), onPresence: (online) => presence.push(online) });
-    // A query is answered with what the gateway last heard; what the plug says now follows as a push — heard.
-    expect(await link.status()).toMatchObject({ '1': true });
+    // A query is answered with what the gateway last heard, and has the plug measure nothing.
+    expect(await link.status()).toEqual({ '1': true, '19': 0 });
     await Bun.sleep(5);
-    expect(pushed).toContainEqual({ '19': 9970, '18': 4310 });
+    expect(pushed).toEqual([]);
+    // A refresh does: what changed follows as a push — heard. Asked again, nothing has changed, and nothing is said.
+    await link.refresh([18, 19, 20]);
+    await Bun.sleep(5);
+    expect(pushed).toEqual([{ '19': 9970, '18': 4310 }]);
+    await link.refresh([18, 19, 20]);
+    await Bun.sleep(5);
+    expect(pushed).toHaveLength(1);
+    // The gateway's memory has what was measured.
+    expect(await link.status()).toEqual({ '1': true, '19': 9970, '18': 4310 });
 
     gateway.say(CMD.STATUS, { protocol: 4, t: 2, data: { dps: { '1': false }, cid: OTHER } });
     gateway.say(CMD.STATUS, { protocol: 4, t: 2, data: { dps: { '1': false }, cid: PLUG } });

@@ -145,6 +145,24 @@ export class TuyaLink {
     return this.#query();
   }
 
+  /**
+   * Asks the device to measure datapoints again. What changed comes as a push
+   * (`onPush`), within a moment; what did not change is not said again, so
+   * silence is no proof the device measured. Nothing waits for it: the
+   * acknowledgement is the gateway's, not the device's.
+   *
+   * Behind a gateway it is how the device is asked at all — a query answers
+   * from the gateway's memory, and a Zigbee plug's power is in it only while
+   * something asks. The device is named in a list, as Smart Life does on the
+   * home network; named bare, as tinytuya does, a gateway acknowledges it and
+   * asks nothing (packages/devices/tuya-zigbee-plug/README.md).
+   */
+  async refresh(dps: readonly number[]): Promise<void> {
+    await this.#ensure();
+    const { cid } = this.#options;
+    await this.#send(CMD.UPDATEDPS, utf8(JSON.stringify(cid ? { dpId: dps, cid: [cid] } : { dpId: dps })));
+  }
+
   /** Writes datapoints. The caller is the action gateway's path, never a screen directly. */
   async set(dps: Dps): Promise<Dps> {
     await this.#ensure();
@@ -333,8 +351,8 @@ export class TuyaLink {
     /*
       Behind a gateway, the device is named at the top — `{"cid": …}`; in the
       data, as a control does it, the gateway answers for itself instead. The
-      gateway answers from what it last heard, at once, and asks the device:
-      what is fresh arrives a few seconds later, as a push.
+      gateway answers from what it last heard, at once, and asks the device
+      nothing: `refresh` does.
     */
     const payload = cid
       ? modern
@@ -372,6 +390,8 @@ export class TuyaLink {
         if (presence?.online.includes(cid)) this.#options.onPresence?.(true);
         else if (presence?.offline.includes(cid)) this.#options.onPresence?.(false);
       }
+      // A refresh it would not take is said: nothing else would tell.
+      if (frame.command === CMD.UPDATEDPS && frame.returnCode !== 0) this.#options.log?.(`a refresh was refused: ${text(frame.payload) || `code ${frame.returnCode}`}`);
       return;
     }
     const [waiter] = this.#waiters.splice(index, 1);

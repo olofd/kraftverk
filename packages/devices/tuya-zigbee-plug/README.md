@@ -41,35 +41,44 @@ A Zigbee plug has no IP address and no key of its own. kraftverk speaks to its
   top level** → the plug's datapoints, with its cid. In the data instead
   (`{"protocol":4,"data":{"cid":…,"ctype":0}}`, as a control does it), the
   gateway answers for itself: `{"4":false,"32":"normal"}`.
-- **A query is answered from the gateway's memory, at once.** The gateway then
-  asks the plug over Zigbee, and pushes what it says a few seconds later:
-  `0x08 {"protocol":4,"data":{"dps":{"18":4310,"19":9970},"cid":…,"type":"query"}}`.
-  The session takes both.
+- **A query is answered from the gateway's memory, at once, and asks the plug
+  nothing** (2026-10-01: a 1 kW fan drawing, the same 1011.0 W answered every
+  10 s for over a minute).
+- **A refresh has the plug measure — named in a list.** `UPDATEDPS (0x12)`
+  with `{"dpId":[18,19,20],"cid":["<cid>"]}`, as Smart Life sends it on the
+  home network (its `DP_QUERY_GENERAL`), → an empty 0x12 acknowledgement, and
+  within ~0.1 s a push of what changed:
+  `0x08 {"protocol":4,"data":{"dps":{"18":4336,"19":10100},"cid":…,"type":"query"}}`.
+  What did not change is not pushed: asked again with the fan steady, nothing
+  came. So a silent refresh proves nothing — the plug may have measured the
+  same, or not be there. Every poll asks one; what it brings is dated as
+  measured, and a value it does not bring keeps its time.
+- **Named bare** (`"cid":"<cid>"`, as tinytuya sends it) it is acknowledged
+  the same, and the plug is not asked: why it seemed to do nothing before.
+  Wrapped in the data, as a control is (`{"protocol":5,"data":{"cid":…,"dpId":[…]}}`),
+  it is refused at once, rc 1 `query dp failed`.
+- **Unknown `0x40` requests can wedge it**: after a run of guessed `reqType`s,
+  the gateway took every connection and reset it at once, for half an hour,
+  until its power was cycled. Send it only what is known.
 - **Switched:** `CONTROL_NEW (0x0d)` with
   `{"protocol":5,"t":…,"data":{"cid":…,"ctype":0,"dps":{"1":true}}}` → an
   empty 0x0d acknowledgement, then the push `{"1":true}` within 0.2 s.
 - **Every change is pushed** within seconds, whoever made it — the app, the
   button, the countdown, a schedule: `0x08 {"protocol":4,"data":{"dps":{"1":true},"cid":…}}`.
-- **Power and current are pushed while a load changes**, not at once:
-  switching a 1 kW fan off pushed the relay only, but a scooter charger
-  switched on (2026-10-01) brought its first power push 7.3 s later
-  (`{"18":1297,"19":2970,"20":2340}`), and pushes every 5–20 s after as it
-  settled. A query in between is answered from the gateway's memory, which
-  holds the last push. Asked once a second for a minute with nothing
-  drawing, the answer never changed and no `"type":"query"` push came.
-- **`UPDATEDPS` (0x12) brings nothing through the gateway**: sent with the
-  plug's cid and `"dpId":[18,19,20]` before every query, no push followed.
+- **Power and current are not pushed on their own** — this plug (a TS011F)
+  measures them when asked, as Zigbee2MQTT knows of its newer firmware. Pushes
+  seen while a load changed (a charger's first, 7.3 s after it was switched
+  on) came while something was asking: Smart Life open, or the gateway after
+  a restart. Energy is pushed on its own (`{"17":43350}`, 120 Wh on from the
+  last).
 - **Switched off, it does not push the load falling**: the gateway kept
   answering 269 W for minutes with the relay off, until the owner opened the
-  plug in Smart Life — then it said 0 W. So the app has a way to have the
-  plug measure again that a local query does not (to learn: what it sends).
-  The session reads power and current as 0 while the relay is off: nothing
-  flows through the meter then.
+  plug in Smart Life — then it said 0 W. The session reads power and current
+  as 0 while the relay is off: nothing flows through the meter then.
 - **Right after a switch, the gateway's memory lags the plug**: a query sent
   as the relay's push arrives can still say the old state. The session takes
   the plug's push over the memory for a few seconds, and does not query
-  straight after a switch. **Energy is** pushed on its own
-  (`{"17":43350}`, 120 Wh on from the last).
+  straight after a switch.
 - **Several connections at once** are fine, and each hears every push: a
   listener stayed connected while two others switched the plug, and heard
   both.
@@ -94,11 +103,10 @@ A Zigbee plug has no IP address and no key of its own. kraftverk speaks to its
   day): with the charger drawing 240 W — the station feeding it said so — the
   gateway answered 0 W from its memory every two seconds for minutes, and no
   push came. Opening the plug in Smart Life had it measure again at once
-  (the owner). So a metric behind a gateway is dated by when the plug last
-  measured it — pushed it, or an answer changed it — never by the gateway
-  answering the same again: an automation waiting for the plug's power reads
-  "not known" rather than "0 W", and its page shows how old it is. What the
-  app sends to have it measure is still to learn.
+  (the owner): the app's refresh, above, which every poll now sends. A metric
+  behind a gateway is dated by when the plug last measured it — pushed it, or
+  an answer changed it — never by the gateway answering the same again: a
+  page shows how old it is.
 
 ## Datapoints
 
@@ -146,7 +154,6 @@ counts hundredths of a kWh.
   takes nothing more from memory until the plug speaks again (tested).
   - To learn: unplug the plug while listening, and time the
     `subdev_online_stat_report`.
-  - Also: whether a query to a powered plug always brings its own
-    `"type":"query"` push. Captured so far, not every query did, and those
-    that came carried only some datapoints. So the query-answer push cannot
-    yet stand in for the memory answer.
+  - Also: whether a refresh to a plug that lost its power is refused, or
+    acknowledged and silent. Acknowledged and silent, it cannot tell the plug
+    gone from the plug measuring the same.

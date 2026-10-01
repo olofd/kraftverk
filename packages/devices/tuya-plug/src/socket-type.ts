@@ -459,9 +459,17 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
     },
   });
 
+  const metricsAsked = [...metricDps].map(Number);
   const poll = async () => {
     try {
       const dps = await link.status();
+      /*
+        Behind a gateway the answer is its memory, and the plug measures only
+        when asked — a Zigbee plug's power stays what it was until then, for
+        hours (README.md). So it is asked, after the answer: what changed comes
+        as a push a moment later, dated as measured.
+      */
+      if (behindGateway) await link.refresh(metricsAsked);
       // An empty reply is not a reading: recording it would refresh the
       // freshness clock with nothing behind it.
       if (!Object.keys(dps).length) throw new Error('The plug answered with no datapoints');

@@ -17,7 +17,12 @@ const bytes = (text: string) => new TextEncoder().encode(text);
 
 type Dps = Record<string, number | boolean | string>;
 
-/** A 3.4 gateway with the plug behind it: its datapoints `dps`, keeping what it is sent. */
+/**
+ * A 3.4 gateway with the plug behind it: its memory of the plug `dps`, keeping
+ * what it is sent. A query answers from that memory. A refresh naming the plug
+ * in a list has it measure: what it measures now (`measure`) and the memory does
+ * not have is pushed, and kept.
+ */
 function gateway(dps: Dps) {
   const key = bytes(KEY);
   let reader = new FrameReader('3.4', key);
@@ -25,6 +30,8 @@ function gateway(dps: Dps) {
   let clientNonce: Uint8Array = new Uint8Array();
   const remoteNonce = bytes('fedcba9876543210');
   const sent: Dps[] = [];
+  const refreshes: unknown[] = [];
+  let measuring: Dps = {};
   let queries = 0;
   const frame = (command: number, payload: Uint8Array, withKey = sessionKey) => encodeFrame({ version: '3.4', key: withKey, sequence: 1, command, payload });
   const channel = fakeByteChannel((written) => {
@@ -53,6 +60,15 @@ function gateway(dps: Dps) {
         Object.assign(dps, asked.data.dps);
         out.push(frame(CMD.CONTROL_NEW, new Uint8Array()));
         out.push(frame(CMD.STATUS, bytes(JSON.stringify({ protocol: 4, t: 1, data: { dps: asked.data.dps, cid: CID } }))));
+      } else if (got.command === CMD.UPDATEDPS) {
+        const asked = JSON.parse(new TextDecoder().decode(got.payload)) as { dpId: number[]; cid?: unknown };
+        refreshes.push(asked);
+        out.push(frame(CMD.UPDATEDPS, new Uint8Array()));
+        if (!Array.isArray(asked.cid) || !asked.cid.includes(CID)) continue;
+        const changed = Object.fromEntries(asked.dpId.map(String).filter((dp) => measuring[dp] !== undefined && measuring[dp] !== dps[dp]).map((dp) => [dp, measuring[dp]!]));
+        if (!Object.keys(changed).length) continue;
+        Object.assign(dps, changed);
+        out.push(frame(CMD.STATUS, bytes(JSON.stringify({ protocol: 4, t: 1, data: { dps: changed, cid: CID, type: 'query' } }))));
       }
     }
     return out;
@@ -62,7 +78,10 @@ function gateway(dps: Dps) {
   return {
     channel,
     sent,
+    refreshes,
     say,
+    /** What the plug measures, when something has it measure. */
+    measure: (now: Dps) => void (measuring = now),
     /** How often the plug has been asked for its datapoints. */
     get queries() {
       return queries;
@@ -226,6 +245,27 @@ describe('the Tuya Zigbee plug', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(value('watts')).toBe(240);
     expect(Date.parse(reading('watts')!.at)).toBeGreaterThan(Date.parse(changed));
+  });
+
+  test('each poll has the plug measure: what changed comes at once, as measured now; the same measured again keeps its time', async () => {
+    // As on the owner's server: the gateway remembers 0 W, the plug draws 240 W, and says so only when asked.
+    const dps = { ...MAPPED, '18': 0, '19': 0 };
+    const { device, value, reading, poll } = await session(dps);
+    const before = reading('watts')!.at;
+    device.measure({ '18': 1050, '19': 2400, '20': 2310 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await poll();
+    expect(value('watts')).toBe(240);
+    expect(value('amps')).toBe(1.05);
+    const measured = reading('watts')!.at;
+    expect(Date.parse(measured)).toBeGreaterThan(Date.parse(before));
+    // Asked as Smart Life asks, by its Zigbee address in a list, for what it measures.
+    expect(device.refreshes.at(-1)).toEqual({ dpId: [18, 19, 20, 17], cid: [CID] });
+    // Measured the same again: nothing is pushed, and nothing proves it measured — its time stays.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await poll();
+    expect(value('watts')).toBe(240);
+    expect(reading('watts')!.at).toBe(measured);
   });
 
   test('all who wait on its readings share one lease and one clock: asked often until the latest of them', async () => {
