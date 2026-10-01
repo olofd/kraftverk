@@ -90,6 +90,16 @@ A Zigbee plug has no IP address and no key of its own. kraftverk speaks to its
   not proven by the connection alone: after a run switches power, the engine
   holds a device reachable only once it has been heard from since.
 
+- **After the gateway lost its power, the plug stopped measuring** (the same
+  day): with the charger drawing 240 W — the station feeding it said so — the
+  gateway answered 0 W from its memory every two seconds for minutes, and no
+  push came. Opening the plug in Smart Life had it measure again at once
+  (the owner). So a metric behind a gateway is dated by when the plug last
+  measured it — pushed it, or an answer changed it — never by the gateway
+  answering the same again: an automation waiting for the plug's power reads
+  "not known" rather than "0 W", and its page shows how old it is. What the
+  app sends to have it measure is still to learn.
+
 ## Datapoints
 
 Each changed in the Smart Life app, one at a time, while kraftverk listened.

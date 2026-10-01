@@ -201,6 +201,33 @@ describe('the Tuya Zigbee plug', () => {
     await opened.close();
   });
 
+  test('its power is as old as the plug\'s last measurement — the gateway answering the same from memory does not make it new', async () => {
+    // As on the owner's server after the gateway lost its power: the plug drew 240 W, the gateway kept answering 0 W.
+    const dps = { ...MAPPED, '18': 0, '19': 0 };
+    const { device, value, reading, poll } = await session(dps);
+    const measured = reading('watts')!.at;
+    const relayAt = reading('relay')!.at;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await poll();
+    // Answered again from memory: the same 0 W, as old as it was; the relay, the gateway's answer, now.
+    expect(value('watts')).toBe(0);
+    expect(reading('watts')!.at).toBe(measured);
+    expect(reading('amps')!.at).toBe(measured);
+    expect(Date.parse(reading('relay')!.at)).toBeGreaterThan(Date.parse(relayAt));
+    // A changed value in an answer is new: something had the plug measure, and told the gateway.
+    dps['19'] = 2310;
+    await poll();
+    expect(value('watts')).toBe(231);
+    const changed = reading('watts')!.at;
+    expect(Date.parse(changed)).toBeGreaterThan(Date.parse(measured));
+    // And the plug measuring — a push — is new.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    device.say(CMD.STATUS, { protocol: 4, t: 2, data: { dps: { '19': 2400, '18': 1050 }, cid: CID } });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(value('watts')).toBe(240);
+    expect(Date.parse(reading('watts')!.at)).toBeGreaterThan(Date.parse(changed));
+  });
+
   test('all who wait on its readings share one lease and one clock: asked often until the latest of them', async () => {
     const { device, opened, freshTick, scheduled } = await session({ ...MAPPED });
     const clocks = scheduled.length;

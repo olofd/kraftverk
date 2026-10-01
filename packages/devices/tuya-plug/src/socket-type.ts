@@ -217,12 +217,19 @@ function configSchema(profiles: readonly SocketProfile[], pollSeconds = 10): Con
 const profileOf = (profiles: readonly SocketProfile[], id: unknown): SocketProfile =>
   profiles.find((profile) => profile.id === id) ?? profiles[0]!;
 
-/** Everything the plug has said, merged: a push carries only what changed. */
-type State = { dps: Dps; at: string } | null;
+/**
+ * Everything the plug has said, merged: a push carries only what changed.
+ * `measuredAt`: behind a gateway, when the plug itself last measured each
+ * metric's datapoint — pushed it, or a changed value came — by datapoint; a
+ * gateway answering from its memory says nothing new of what flows now.
+ */
+type State = { dps: Dps; at: string; measuredAt?: Readonly<Record<string, string>> } | null;
 
 function readingsOf(profile: SocketProfile, state: State, live: Live | null): Reading[] {
   if (!state) return [];
   const { dps, at } = state;
+  // A metric as old as its measurement: behind a gateway, not refreshed by the gateway's memory of it.
+  const measured = (name: keyof SocketProfile['metrics']) => state.measuredAt?.[String(profile.metrics[name]?.dp)] ?? at;
   const reading = decodeSocket(profile, dps);
   const value = (v: number | boolean | undefined): Value => (v === undefined ? null : v);
   const until = live?.until() ?? 0;
@@ -236,7 +243,7 @@ function readingsOf(profile: SocketProfile, state: State, live: Live | null): Re
   const open = reading.relayOn === false;
   const drawn = (name: keyof SocketProfile['metrics']) => open && (name === 'watts' || name === 'amps');
   return [
-    ...(Object.keys(profile.metrics) as (keyof SocketProfile['metrics'])[]).map((name) => ({ key: name, value: drawn(name) ? 0 : value(reading[name]), at })),
+    ...(Object.keys(profile.metrics) as (keyof SocketProfile['metrics'])[]).map((name) => ({ key: name, value: drawn(name) ? 0 : value(reading[name]), at: drawn(name) ? at : measured(name) })),
     { key: 'relay', value: value(reading.relayOn), at },
     ...(profile.datapoints ?? []).map((point) => ({ key: point.key, value: datapointValue(point, dps), at })),
     ...(live
@@ -414,9 +421,20 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
   const behindGateway = cidOfAddress(connection.address) !== null;
   /** When the plug itself last said each datapoint. */
   const pushedAt = new Map<string, number>();
-  const ingest = (dps: Dps) => {
+  /**
+   * When the plug last measured each metric, behind a gateway: what it pushed,
+   * or what an answer changed. The same value answered again is the gateway's
+   * memory — after the gateway or the plug lost power, kept for as long as
+   * nothing has the plug measure again (README.md) — so it does not make an
+   * old measurement new.
+   */
+  const measuredAt: Record<string, string> = {};
+  const metricDps = new Set(Object.values(profile.metrics).map((metric) => String(metric.dp)));
+  const ingest = (dps: Dps, pushed = false) => {
     if (!Object.keys(dps).length) return;
-    state = { dps: { ...state?.dps, ...dps }, at: new Date().toISOString() };
+    const now = new Date().toISOString();
+    if (behindGateway) for (const [dp, value] of Object.entries(dps)) if (metricDps.has(dp) && (pushed || state?.dps[dp] !== value || !measuredAt[dp])) measuredAt[dp] = now;
+    state = { dps: { ...state?.dps, ...dps }, at: now, ...(behindGateway ? { measuredAt: { ...measuredAt } } : {}) };
     lastOk = Date.now();
     lastError = null;
     raise(state.dps);
@@ -432,7 +450,7 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
     onPush: (dps) => {
       unreachable = false;
       for (const dp of Object.keys(dps)) pushedAt.set(dp, Date.now());
-      ingest(dps);
+      ingest(dps, true);
       ctx.changed();
     },
     onPresence: (online) => {
