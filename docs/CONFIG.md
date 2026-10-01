@@ -107,12 +107,18 @@ describes.
   - a reading: `role.meaning` — `charger.power.draw`, `station.battery.soc`;
   - `role reachable`;
   - numbers with units — `50 W`, `15 %`, `30 min` — times of day `07:00`,
-    `"text"`, `true`, `false`;
+    `"text"`, `true`, `false`. A number beside a reading is in the unit
+    that reading is in — its standard meaning's (`power.draw` is in W), or
+    the part's own: one written in another unit of the same quantity is
+    converted (`2 kW` beside a reading in W is 2000), one of another
+    quantity is a problem (`50 °C` beside W);
   - `< <= > >= == !=`, joined with `and`, `or`, `not`, and parentheses;
   - `time between 23:00 and 05:00` (across midnight when the end comes first);
   - `+`, `-`, `min(a, b)`, `max(a, b)`;
   - a package's function: `call open-meteo.weather.skyLooks(forecast, cloudMax = 40)`.
-- **Lengths of time**: `5 s`, `2 min`, `1 h`.
+- **Lengths of time**: `5 s`, `2 min`, `1 h` — always with their unit: a
+  bare `15` would be seconds to a wait and minutes to `every`, so it is
+  refused.
 - **What fills a role** (`uses:`): `device-key` or `device-key.part`; another
   automation as `{ automation: key }`. A role's label and what it needs come
   from what the rule does with it; say them only when they differ:

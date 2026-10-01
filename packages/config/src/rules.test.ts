@@ -136,6 +136,29 @@ describe('a rule, written and read back', () => {
 describe('lengths of time', () => {
   test('written in the largest unit that says them whole, and read in any', () => {
     expect([5, 90, 120, 3600, 0].map(durationText)).toEqual(['5 s', '90 s', '2 min', '1 h', '0 s']);
-    expect(['5 s', '2 min', '1 h', '1.5 min', 30, 'soon'].map(durationSeconds)).toEqual([5, 120, 3600, 90, 30, null]);
+    // A bare number says no unit: seconds in one place, minutes in another, it is refused.
+    expect(['5 s', '2 min', '1 h', '1.5 min', 30, 'soon'].map(durationSeconds)).toEqual([5, 120, 3600, 90, null, null]);
+    for (const [step, path] of [[{ wait: 15 }, ['a', 'do', 0, 'wait']], [{ 'wait until': 'plug reachable', 'at most': '15' }, ['a', 'do', 0, 'at most']]] as const) {
+      expect(ruleFromConfig({ do: [step] }, ['a']).issues).toEqual([{ message: 'A length of time says its unit: "15 s", "15 min" or "15 h"', path }]);
+    }
+    expect(ruleFromConfig({ when: [{ every: 15 }], do: [] }, ['a']).issues).toEqual([{ message: 'A length of time says its unit: "15 s", "15 min" or "15 h"', path: ['a', 'when', 0, 'every'] }]);
+  });
+});
+
+describe('units', () => {
+  const read = (condition: string, context = {}) => ruleFromConfig({ uses: { plug: 'plug' }, when: [{ becomes: condition }], do: [] }, ['a'], context);
+  test('a number beside a reading is in its unit: converted from another of the same quantity, refused from another quantity', () => {
+    // power.draw is in W, its standard meaning says.
+    expect(read('plug.power.draw > 2 kW').rule!.when[0]).toEqual({ becomes: { compare: 'gt', left: { read: { role: 'plug', means: 'power.draw' } }, right: { value: 2000 } } });
+    expect(read('plug.power.draw > 2.2 kW').rule!.when[0]).toMatchObject({ becomes: { right: { value: 2200 } } });
+    expect(read('plug.power.draw < 50 W').rule!.when[0]).toMatchObject({ becomes: { right: { value: 50 } } });
+    expect(read('plug.power.draw > 50 °C').issues).toEqual([{ message: 'That is read in W: "°C" is not a unit of it', path: ['a', 'when', 0, 'becomes'], offset: 18 }]);
+    // A unit on a reading that has none: refused.
+    expect(read('plug.price.rank <= 4 W').issues[0]!.message).toBe('That is read in no unit: "W" is not one');
+    // A type's own meaning: its part's unit, as the context says it — or, unknown, the number as written.
+    expect(read('plug.acme.flow > 2 kW', { unitOf: () => 'W' }).rule!.when[0]).toMatchObject({ becomes: { right: { value: 2000 } } });
+    expect(read('plug.acme.flow > 2 kW').rule!.when[0]).toMatchObject({ becomes: { right: { value: 2 } } });
+    // Beside a sum, too: the charge limit less 5 %.
+    expect(read('plug.battery.soc < plug.battery.chargeLimit - 5 %').issues).toEqual([]);
   });
 });

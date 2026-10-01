@@ -1,8 +1,9 @@
 import { randomBytes } from 'node:crypto';
 
 import type { ImportApplied, ImportItem, ImportPlan } from '@kraftverk/api-contract';
-import { checkDocument, MAIN, MODE_IN_FILE, MODE_OF_FILE, readConfig, useOf, useText, type AutomationEntry, type ConfigDocument, type DeviceEntry, type SecretValue } from '@kraftverk/config';
+import { checkDocument, MAIN, MODE_IN_FILE, MODE_OF_FILE, readConfig, useOf, useText, type AutomationEntry, type ConfigDocument, type DeviceEntry, type SecretValue, type WriteContext } from '@kraftverk/config';
 import {
+  attributeMeaning,
   capabilitiesOf,
   isSecretField,
   checkBinding,
@@ -14,6 +15,7 @@ import {
   partsOf,
   POLICY_VALUES,
   takesSteps,
+  unitOf,
   validateConfig,
   type AutomationId,
   type BoundPart,
@@ -99,7 +101,7 @@ const secretKey = (device: string, index: number, field: string) => `${device}.$
 export function planImport(deps: ImportDeps, text: string, options: { mode: ImportMode; passphrase?: string; by: string; kept?: boolean; lenient?: boolean }): ImportPlan {
   const vocabulary = serverVocabulary(deps);
   // A restore reads what it can: an entry it cannot read is left out and said, never the whole home lost for it.
-  const read = readConfig(text, {}, (document) => checkDocument(document, vocabulary, { hasSecret: () => true, uses: 'leave' }), { partial: options.lenient });
+  const read = readConfig(text, unitsOfFile(deps, text), (document) => checkDocument(document, vocabulary, { hasSecret: () => true, uses: 'leave' }), { partial: options.lenient });
   const empty: ImportPlan = { id: null, from: read.from, problems: read.problems.map((each) => ({ ...each, path: [...each.path] })), devices: [], links: [], automations: [], policy: [], needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
   if (!read.document) return empty;
   const document = read.document;
@@ -256,6 +258,31 @@ export function planImport(deps: ImportDeps, text: string, options: { mode: Impo
     plans.set(id, { view, document, mode: options.mode, secrets, by: options.by, expiresAt: Date.now() + PLAN_TTL_MS, turnedOff });
   }
   return view;
+}
+
+/**
+ * The unit of what each role of each automation in a file reads — from the
+ * part filling it, a device the file brings or one here — so a number written
+ * beside a type's own reading is checked and converted as one beside a
+ * standard reading is. Read once roughly for what fills each role; the plan
+ * reads again with it.
+ */
+function unitsOfFile(deps: ImportDeps, text: string): WriteContext {
+  const first = readConfig(text, {}, undefined, { partial: true }).document;
+  if (!first) return {};
+  const describe = (key: string) => {
+    const brought = first.devices[key];
+    return brought ? (deps.types.get(brought.type)?.describe(brought.settings as never) ?? null) : (deps.catalog.byKey(key)?.description ?? null);
+  };
+  return {
+    unitIn: (automation, role, means) => {
+      const use = first.automations[automation]?.uses[role];
+      if (!use || 'automation' in use) return null;
+      const description = describe(use.device);
+      const attribute = description ? attributeMeaning(description, use.part, means) : null;
+      return attribute ? unitOf(attribute) || null : null;
+    },
+  };
 }
 
 /** Where a path is in the text: the reader's own placing, for problems the plan finds after reading. */

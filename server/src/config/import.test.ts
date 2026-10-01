@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { writeConfig } from '@kraftverk/config';
-import type { Rule } from '@kraftverk/device-sdk';
+import { defineDeviceType, MAIN_PART, type Rule } from '@kraftverk/device-sdk';
 
 import { AutomationLibrary } from '../automations/library.ts';
 import { plans } from '../automations/plans.ts';
@@ -223,6 +223,42 @@ automations:
     // A device's own, too: its problems in its own text.
     const device = planImport(deps, 'type: test.lamp\nname: Cellar lamp\nconnect:\n  - via: bus\n    address: lamp-cellar\n', { mode: 'merge', by: 'olof' });
     expect(device.devices).toEqual([{ key: 'cellar-lamp', name: 'Cellar lamp', action: 'add', changes: [] }]);
+  });
+
+  test('a number beside a type\'s own reading is in the unit of the part filling its role: converted, or refused', async () => {
+    const refused = deps.types.install(
+      defineDeviceType({
+        id: 'test.flow',
+        kind: 'hardware',
+        meta: { name: 'Test flow meter', category: 'smart-plug', support: 'experimental', icon: 'sun', models: ['F1'] },
+        describe: () => ({
+          parts: [{ id: MAIN_PART, label: 'Meter', kind: 'meter', offers: ['powerMeter'] }],
+          attributes: [
+            { key: 'power', label: 'Power', value: { type: 'number', unit: 'W' }, means: 'power.draw' },
+            { key: 'flow', label: 'Flow', value: { type: 'number', unit: 'W' }, means: 'test.flow' },
+          ],
+        }),
+        config: { fields: {} },
+        connections: [{ id: 'bus', label: 'Test bus', protocol: 'lampish', transport: 'bus', reach: 'local' }],
+        async identify() {
+          return { identity: null, model: null, summary: 'A meter.' };
+        },
+        async createSession() {
+          throw new Error('not in this test');
+        },
+        async createSimulator() {
+          throw new Error('not in this test');
+        },
+      })
+    );
+    expect(refused).toEqual([]);
+    const text = (limit: string) =>
+      `kraftverk: 1\ndevices:\n  meter:\n    type: test.flow\n    name: Meter\n    connect:\n      - via: simulated\nautomations:\n  flowing:\n    name: Flowing\n    clock: Europe/Stockholm\n    uses:\n      meter: { part: meter, needs: [powerMeter] }\n    when:\n      - becomes: meter.test.flow > ${limit}\n    do:\n      - wait: 1 s\n`;
+    const plan = planImport(deps, text('2 kW'), { mode: 'merge', by: 'olof' });
+    expect(plan.problems).toEqual([]);
+    await applyImport(deps, plan.id!, 'olof', {});
+    expect(deps.automations.byKey('flowing')!.rule.when[0]).toMatchObject({ becomes: { right: { value: 2000 } } });
+    expect(planImport(deps, text('2 °C'), { mode: 'merge', by: 'olof' }).problems.map((problem) => problem.message)).toEqual(['That is read in W: "°C" is not a unit of it']);
   });
 
   test('simulated devices share their address: no claim on it, as setup makes none', () => {

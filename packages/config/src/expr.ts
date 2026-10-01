@@ -13,16 +13,20 @@ import type { CompareOp, Expr, MathOp, Value } from '@kraftverk/device-sdk';
   atom — a value, a reading, `role reachable`, `time between … and …`,
   `min( , )`, `max( , )`, `call id(role, name = …)`, `$setting`, or
   parentheses. A number may carry a unit (`50 W`, `15 %`): it is kept beside
-  the expression, for a check against what the other side reads, and is not
-  part of it — the language's numbers take the unit of what they are compared
-  with.
+  the expression, with where it was written, and the rule reader checks it
+  against what the other side reads — converting `2 kW` beside a reading in W
+  to 2000, refusing `50 °C` beside one in W. The language's numbers are in the
+  unit of what they are compared with.
 */
 
 /** Where a text went wrong: a message, and how far into the text. */
 export type ExprError = { message: string; offset: number };
 
+/** A unit written after a number, and where in the text: what the rule reader checks it by. */
+export type WrittenUnit = { unit: string; at: number };
+
 /** A parsed expression, with the unit written after each number that had one, by the value it became. */
-export type Parsed = { ok: true; expr: Expr; units: WeakMap<Expr, string> } | { ok: false; error: ExprError };
+export type Parsed = { ok: true; expr: Expr; units: WeakMap<Expr, WrittenUnit> } | { ok: false; error: ExprError };
 
 /** What printing may ask: the unit of what a role's part reads, so a number beside it says it. */
 export type PrintContext = { unitOf?: (role: string, means: string) => string | null };
@@ -115,7 +119,7 @@ function tokenize(text: string): Token[] {
 
 /** Reads an expression's text; every problem with where it is. */
 export function parseExpr(text: string): Parsed {
-  const units = new WeakMap<Expr, string>();
+  const units = new WeakMap<Expr, WrittenUnit>();
   let tokens: Token[];
   try {
     tokens = tokenize(text);
@@ -179,7 +183,7 @@ export function parseExpr(text: string): Parsed {
     switch (token.kind) {
       case 'number': {
         const expr: Expr = { value: token.value };
-        if (token.unit) units.set(expr, token.unit);
+        if (token.unit) units.set(expr, { unit: token.unit, at: token.at });
         return expr;
       }
       case 'time':
@@ -195,7 +199,7 @@ export function parseExpr(text: string): Parsed {
         if (token.value === '-' && peek().kind === 'number') {
           const number = next() as Extract<Token, { kind: 'number' }>;
           const expr: Expr = { value: -number.value };
-          if (number.unit) units.set(expr, number.unit);
+          if (number.unit) units.set(expr, { unit: number.unit, at: token.at });
           return expr;
         }
         if (token.value === '$') {

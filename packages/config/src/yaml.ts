@@ -103,7 +103,7 @@ function withoutTroubled(document: ConfigDocument, issues: readonly Issue[]): Co
 }
 
 /** A whole document's data read: brought to this version, its shape and meaning checked. */
-function readWhole(parsed: Parsed & { data: Record<string, unknown> }, context: PrintContext, check?: Check, options: ReadOptions = {}): { document: ConfigDocument | null; problems: Problem[]; from: number | null } {
+function readWhole(parsed: Parsed & { data: Record<string, unknown> }, context: WriteContext, check?: Check, options: ReadOptions = {}): { document: ConfigDocument | null; problems: Problem[]; from: number | null } {
   const migrated = migrate(parsed.data);
   if (!migrated.ok) return { document: null, from: null, problems: [parsed.place({ message: migrated.message, path: ['kraftverk'] })] };
   const read = documentFromData(migrated.document, context, options);
@@ -123,7 +123,7 @@ function readWhole(parsed: Parsed & { data: Record<string, unknown> }, context: 
  * shows — is read as a document of that one, under a key made from its name
  * (`holds`).
  */
-export function readConfig(text: string, context: PrintContext = {}, check?: Check, options: ReadOptions = {}): { document: ConfigDocument | null; problems: Problem[]; from: number | null; holds: Holds } {
+export function readConfig(text: string, context: WriteContext = {}, check?: Check, options: ReadOptions = {}): { document: ConfigDocument | null; problems: Problem[]; from: number | null; holds: Holds } {
   const parsed = parseYaml(text);
   if (parsed.problems.length) return { document: null, from: null, problems: parsed.problems, holds: null };
   const data = parsed.data;

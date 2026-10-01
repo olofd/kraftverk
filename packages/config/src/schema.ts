@@ -127,9 +127,9 @@ function deviceSchema(types: readonly VocabularyType[]): Schema {
   };
 }
 
-/** A length of time — "5 s", "2 min", "1 h" — or an expression for one. */
+/** A length of time — "5 s", "2 min", "1 h" — or an expression for one. Never a bare number: it would say no unit. */
 const DURATION: Schema = {
-  anyOf: [{ type: 'string', description: 'A length of time: "5 s", "2 min", "1 h" — or an expression.' }, { type: 'number', description: 'Seconds.' }, { type: 'object' }],
+  anyOf: [{ type: 'string', pattern: '\\D', description: 'A length of time with its unit: "5 s", "2 min", "1 h" — or an expression.' }, { type: 'object' }],
 };
 
 /** A condition or value: an expression's text — or a plain value, or the rule's own data. */

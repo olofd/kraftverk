@@ -21,7 +21,7 @@ describe('reading a condition', () => {
   test('a reading against a number with its unit, and the unit kept beside it', () => {
     const parsed = parseExpr('charger.power.draw > 50 W');
     expect(parsed.ok && parsed.expr).toEqual({ compare: 'gt', left: read('charger', 'power.draw'), right: { value: 50 } });
-    if (parsed.ok && 'compare' in parsed.expr) expect(parsed.units.get(parsed.expr.right)).toBe('W');
+    if (parsed.ok && 'compare' in parsed.expr) expect(parsed.units.get(parsed.expr.right)?.unit).toBe('W');
   });
 
   test('"and" binds before "or", "not" before both; parentheses where they are written', () => {

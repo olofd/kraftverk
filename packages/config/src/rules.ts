@@ -1,6 +1,6 @@
-import { isAutomationRole, type CapabilityName, type Expr, type Rule, type RoleSpec, type Step, type Trigger, type Weekday, WEEKDAYS } from '@kraftverk/device-sdk';
+import { isAutomationRole, standardMeaning, type CapabilityName, type Expr, type Rule, type RoleSpec, type Step, type Trigger, type Weekday, WEEKDAYS } from '@kraftverk/device-sdk';
 
-import { parseExpr, printExpr, type PrintContext } from './expr.ts';
+import { parseExpr, printExpr, type PrintContext, type WrittenUnit } from './expr.ts';
 
 /*
   An automation's rule as a configuration file writes it (docs/CONFIG.md):
@@ -35,12 +35,39 @@ export function durationText(seconds: number): string {
   return `${seconds} s`;
 }
 
-/** A number of seconds from "5 s", "2 min", "1 h" — or a bare number, seconds. Null for anything else. */
+/** A number of seconds from "5 s", "2 min", "1 h". Null for anything else — a bare number too: it says no unit. */
 export function durationSeconds(data: Data): number | null {
-  if (typeof data === 'number') return data;
   if (typeof data !== 'string') return null;
   const match = DURATION.exec(data.trim());
   return match ? Number(match[1]) * SECONDS[match[2] as keyof typeof SECONDS] : null;
+}
+
+// --- units ----------------------------------------------------------------------------------
+
+/** Units of one quantity, each by how many of the first it is. */
+const UNIT_FAMILIES: readonly Readonly<Record<string, number>>[] = [
+  { W: 1, kW: 1000, MW: 1_000_000 },
+  { Wh: 1, kWh: 1000, MWh: 1_000_000 },
+  { A: 1, mA: 0.001 },
+  { V: 1, mV: 0.001, kV: 1000 },
+  { Hz: 1, kHz: 1000 },
+  { s: 1, min: 60, h: 3600 },
+];
+
+/** What a number written in one unit is multiplied by to be in another: 1 when the same, null when they are not one quantity's. */
+function conversion(written: string, into: string): number | null {
+  if (written === into) return 1;
+  const family = UNIT_FAMILIES.find((units) => written in units && into in units);
+  return family ? family[written]! / family[into]! : null;
+}
+
+/** A converted number without the float's dust: 2.2 kW is 2200 W, not 2200.0000000000005. */
+const round = (value: number) => Math.round(value * 1e9) / 1e9;
+
+/** The unit a standard meaning's readings are in — none for one that may be in several (a price's currency). */
+function standardUnit(means: string): string | null {
+  const meaning = standardMeaning(means);
+  return meaning && meaning.type === 'number' && !meaning.units?.length ? meaning.unit : null;
 }
 
 // --- reading ------------------------------------------------------------------------------
@@ -59,25 +86,65 @@ class Reader {
     if (typeof data === 'string') {
       const parsed = parseExpr(data);
       if (!parsed.ok) this.fail(parsed.error.message, path, parsed.error.offset);
-      return parsed.expr;
+      return this.inUnits(parsed.expr, parsed.units, path);
     }
     if (typeof data === 'number' || typeof data === 'boolean' || data === null) return { value: data };
     if (isRecord(data)) return data as Expr;
     return this.fail('Expected an expression', path);
   }
 
-  /** A length of time, in seconds — "5 s", "2 min" — or an expression for one. */
+  /**
+   * Each number written with a unit, in the unit of what it is beside: "2 kW"
+   * beside a reading in W is 2000; "50 °C" beside one is a problem, where it
+   * is. What a reading is in is the part's own word (the context), or its
+   * standard meaning's; beside nothing that says one, a number is kept as
+   * written.
+   */
+  private inUnits(expr: Expr, units: WeakMap<Expr, WrittenUnit>, path: Path): Expr {
+    const unitOfReading = (each: Expr): string | null =>
+      'read' in each ? (this.context.unitOf?.(each.read.role, each.read.means) ?? standardUnit(each.read.means)) : 'math' in each ? (unitOfReading(each.left) ?? unitOfReading(each.right)) : null;
+    const visit = (each: Expr, beside: string | null): Expr => {
+      if ('value' in each) {
+        const written = units.get(each);
+        if (!written || beside === null || typeof each.value !== 'number') return each;
+        const factor = conversion(written.unit, beside);
+        if (factor === null) return this.fail(`That is read in ${beside || 'no unit'}: "${written.unit}" is not ${beside ? `a unit of it` : 'one'}`, path, written.at);
+        return { value: round(each.value * factor) };
+      }
+      if ('compare' in each) {
+        const unit = unitOfReading(each.left) ?? unitOfReading(each.right);
+        return { ...each, left: visit(each.left, unit), right: visit(each.right, unit) };
+      }
+      if ('math' in each) {
+        const unit = beside ?? unitOfReading(each);
+        return { ...each, left: visit(each.left, unit), right: visit(each.right, unit) };
+      }
+      if ('all' in each) return { all: each.all.map((one) => visit(one, null)) };
+      if ('any' in each) return { any: each.any.map((one) => visit(one, null)) };
+      if ('not' in each) return { not: visit(each.not, null) };
+      return each;
+    };
+    return visit(expr, null);
+  }
+
+  /** A length of time, in seconds — "5 s", "2 min" — or an expression for one. A bare number is refused: seconds here, minutes there, it would mean what it does not say. */
   seconds(data: Data, path: Path): Expr {
     const seconds = durationSeconds(data);
     if (seconds !== null) return { value: seconds };
-    return this.expr(data, path);
+    return this.lengthOfTime(data, path);
   }
 
   /** A length of time the rule keeps in minutes: "2 min", "90 s". */
   minutes(data: Data, path: Path): Expr {
-    if (typeof data === 'number') return { value: data };
     const seconds = durationSeconds(data);
     if (seconds !== null) return { value: seconds / 60 };
+    return this.lengthOfTime(data, path);
+  }
+
+  /** A length of time that is not "5 s": an expression for one — never a bare number, which says no unit. */
+  private lengthOfTime(data: Data, path: Path): Expr {
+    const bare = typeof data === 'number' || (typeof data === 'string' && /^\s*-?\d+(\.\d+)?\s*$/.test(data));
+    if (bare) return this.fail(`A length of time says its unit: "${String(data).trim()} s", "${String(data).trim()} min" or "${String(data).trim()} h"`, path);
     return this.expr(data, path);
   }
 
