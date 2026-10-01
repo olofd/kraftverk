@@ -25,7 +25,7 @@ Last updated 2026-09-30.
 next-step plan's phases 0, 1, 2 and 5 and the assistant minimum — see *What
 is built, and what is not* below. Work happens on `main`; GitHub checks every push, and pushing it to the
 owner's own Forgejo checks it again and deploys it to the owner's NAS over SSH
-([CI.md](CI.md)). The broker container is updated by the manual `Broker`
+([CI.md](CI.md); the NAS connection: [NAS-DEPLOY.md](NAS-DEPLOY.md)). The broker container is updated by the manual `Broker`
 workflow, which drops the station for about a minute. The architecture baseline is
 empty: the core names no product, and every device is found, not listed.
 
