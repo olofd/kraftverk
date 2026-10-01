@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 #
-# The pipeline, from your own machine: checks main's last commit, builds its
-# images, attacks them, and puts them on the server — the server and the app
-# replaced, the station kept connected.
+# The pipeline without Forgejo: .forgejo/workflows/pipeline.yml's stages, run
+# from your own machine, in order — for when no Forgejo is running.
 #
 #   npm run ship              the server and the app
 #   npm run ship -- broker    the same, then the broker recreated: the station
@@ -10,22 +9,16 @@
 #
 # Needs git, bash and Docker here — macOS, Linux, or Windows through WSL. The
 # checks and the smoke test run in containers (ci/Dockerfile), so they are the
-# same on every machine, and on the commit as committed, not the working tree.
+# same on every machine, and on main's last commit as committed, not the
+# working tree.
 #
-# The installation is described outside the repository, in KRAFTVERK_DEPLOY_ENV
-# (default ~/.config/kraftverk/deploy.env) — see scripts/deploy.env.example.
-# KRAFTVERK_DEPLOY_HOST there is the server's Docker: ssh://<user>@<host>, and
-# the images are copied there and deployed over SSH with your own key; empty,
-# and this machine's Docker is the server's, as for a pipeline running on the
-# server itself.
+# The installation is described in KRAFTVERK_DEPLOY_ENV (default
+# ~/.config/kraftverk/deploy.env; scripts/deploy.env.example), as for the
+# pipeline's deploy job.
 #
 # Images reach the server only after passing. A commit whose images are there
 # already has passed, so its checks are not repeated: running this again after
-# a failed deploy, or for the broker, goes straight to the deploy.
-#
-# Each stage is a script of its own — scripts/ci/check.sh, scripts/ci/images.sh,
-# scripts/ci/smoke-docker.sh, scripts/deploy.sh — for a CI server to run the
-# same way. docs/CI.md.
+# a failed deploy, or for the broker, goes straight to the deploy. docs/CI.md.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -45,6 +38,7 @@ if ! deploy_host=$(. "$config" && [ -n "${KRAFTVERK_DEPLOY_HOST+set}" ] && print
   echo "$config does not set KRAFTVERK_DEPLOY_HOST (empty for this machine's Docker), or does not read as a shell file." >&2
   exit 1
 fi
+export KRAFTVERK_DEPLOY_ENV=$config
 
 branch=$(git symbolic-ref --short -q HEAD || true)
 if [ "$branch" != main ]; then
@@ -57,7 +51,6 @@ server_image=kraftverk-server:$commit
 web_image=kraftverk-web:$commit
 [ -z "$(git status --porcelain)" ] || echo "Uncommitted changes are not shipped: this ships $short as committed."
 
-# The server's Docker.
 on_server() {
   if [ -n "$deploy_host" ]; then DOCKER_HOST=$deploy_host docker "$@"; else docker "$@"; fi
 }
@@ -66,11 +59,9 @@ step() { printf '\n==== %s\n' "$1"; }
 
 work=$(mktemp -d)
 run_id=$$
-locked=0
 finish() {
   status=$?
   docker rm --force "kraftverk-check-$run_id" "kraftverk-smoke-$run_id" > /dev/null 2>&1 || true
-  [ "$locked" = 0 ] || on_server rm kraftverk-deploying > /dev/null 2>&1 || true
   rm -rf "$work"
   exit $status
 }
@@ -95,16 +86,8 @@ in_checks() {
 if on_server image inspect "$server_image" "$web_image" > /dev/null 2>&1; then
   step "$short has passed before and is on the server: straight to the deploy"
 else
-  # Named for what it is made of — ci/Dockerfile and the lockfile's
-  # Playwright — and built only when that changes.
-  playwright=$(sed -n '/"node_modules\/@playwright\/test": {/{n;s/.*"version": "\([^"]*\)".*/\1/p;q;}' "$work/package-lock.json")
-  checks_image=kraftverk-ci:$(git rev-parse --short=12 HEAD:ci/Dockerfile)-$playwright
-  if ! docker image inspect "$checks_image" > /dev/null 2>&1; then
-    step "The checks image"
-    docker build --quiet --tag "$checks_image" --build-arg "PLAYWRIGHT_VERSION=$playwright" - < "$work/ci/Dockerfile" > /dev/null
-  fi
-
   step "Checks: $short"
+  checks_image=$(bash "$work/scripts/ci/checks-image.sh")
   if ! in_checks "kraftverk-check-$run_id" -v kraftverk-npm-cache:/root/.npm -- bash scripts/ci/check.sh; then
     rm -rf e2e-report e2e-results
     docker cp "kraftverk-check-$run_id:/src/e2e-report" e2e-report > /dev/null 2>&1 || true
@@ -126,30 +109,13 @@ else
     [ ! -f smoke-logs.txt ] || echo "The stack's logs are in smoke-logs.txt." >&2
     exit 1
   fi
-
-  if [ -n "$deploy_host" ]; then
-    step "The images, to the server"
-    docker save --platform linux/amd64 "$server_image" "$web_image" | on_server load
-  fi
 fi
 
 step "The deploy"
-# One change to the running system at a time: a container that only holds the
-# name is the lock, wherever the deploy runs from.
-if ! on_server create --name kraftverk-deploying --label "se.kraftverk.deploying=$short" "$server_image" true > /dev/null; then
-  echo "Another deploy is running, or one stopped without cleaning up. If none is running:" >&2
-  echo "  docker rm kraftverk-deploying   (on the server)" >&2
-  exit 1
+bash "$work/scripts/ci/release.sh" "$commit"
+if [ "$what" = broker ]; then
+  step "The broker"
+  bash "$work/scripts/ci/release.sh" "$commit" broker
 fi
-locked=1
-(
-  set -a
-  . "$config"
-  set +a
-  export KRAFTVERK_SERVER_IMAGE=$server_image KRAFTVERK_WEB_IMAGE=$web_image
-  if [ -n "$deploy_host" ]; then export DOCKER_HOST=$deploy_host; fi
-  bash "$work/scripts/deploy.sh"
-  if [ "$what" = broker ]; then bash "$work/scripts/deploy.sh" broker; fi
-)
 
 step "Shipped $short"

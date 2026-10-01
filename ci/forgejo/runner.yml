@@ -1,0 +1,31 @@
+# The runner in ci/forgejo/compose.yml. Its registration is in /data/.runner,
+# written once by ci/forgejo/setup.sh.
+
+log:
+  level: info
+
+runner:
+  file: .runner
+  # One job at a time. The stack job's smoke test owns its ports and its
+  # compose project while it runs, and a NAS has few cores to share.
+  capacity: 1
+  timeout: 1h
+  # The label .forgejo/workflows asks for. Every job there names its own image.
+  labels:
+    - docker:docker://node:24.21.0-bookworm
+
+cache:
+  enabled: true
+
+container:
+  # The machine's own network: the smoke test reaches the ports the stack
+  # publishes, and checkout reaches Forgejo at its ROOT_URL.
+  network: host
+  privileged: false
+  # Never mounted unasked. The jobs that build, start and ship images ask for
+  # this machine's Docker by name, and nothing else may be mounted.
+  docker_host: "-"
+  valid_volumes:
+    - /var/run/docker.sock
+  # Images this machine built — the checks image — are used as they are.
+  force_pull: false

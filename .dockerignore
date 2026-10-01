@@ -19,6 +19,7 @@ server/data
 **/.env.*
 
 .github
+.forgejo
 ci
 
 client/.expo

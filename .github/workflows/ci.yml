@@ -1,7 +1,8 @@
 # Validation, on every push and pull request. Nothing here deploys.
 #
-# The same checks run again before every deploy, from the owner's machine:
-# scripts/ship.sh, docs/CI.md. Where it deploys to is not in this repository.
+# The same checks run again before every deploy, in kraftverk's Forgejo
+# pipeline: .forgejo/workflows, docs/CI.md. Where it deploys to is not in this
+# repository.
 
 name: CI
 

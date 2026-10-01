@@ -175,7 +175,7 @@ settings and secrets: keep it out of any repository, readable only by you.
 | `KRAFTVERK_PUBLIC_PORT` | `8090` | Where the reverse proxy forwards the internet to, on loopback |
 | `KRAFTVERK_MQTT_PORT` | `1883` | Where stations connect |
 | `KRAFTVERK_API_PORT` | `3333` | The server's own port, on loopback |
-| `KRAFTVERK_SERVER_IMAGE` / `KRAFTVERK_WEB_IMAGE` | `kraftverk-server` / `kraftverk-web` | Images to run — built here by default, or put here by a deploy ([CI.md](CI.md#the-deploy)) |
+| `KRAFTVERK_SERVER_IMAGE` / `KRAFTVERK_WEB_IMAGE` | `kraftverk-server` / `kraftverk-web` | Images to run — built here by default, or put here by a deploy ([CI.md](CI.md#the-pipeline-on-forgejo)) |
 
 Set in the compose file, and best left alone: `BROKER_SPAWN=0`, `BROKER_HOST`,
 `BROKER_ADMIN_URL` (how the server finds the broker service) and
@@ -298,8 +298,8 @@ docker compose restart kraftverk   # after changing the server's environment; th
 docker compose down                # stop; the volume survives
 ```
 
-`npm run ship` does this from your own machine, over SSH, after checking
-the commit — see [CI.md](CI.md#the-deploy).
+The pipeline's deploy does this after checking the commit — see
+[CI.md](CI.md#the-pipeline-on-forgejo).
 
 The broker is left out of updates on purpose. It runs from the same image as
 the server, so a plain `docker compose up -d --build` would recreate it for

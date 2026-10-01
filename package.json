@@ -48,7 +48,7 @@
     "test:e2e": "node e2e/run.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit -p e2e",
     "//check:architecture": "The dependency rule, the product-identifier ratchet (docs/ARCHITECTURE.md section 7) and a current device registry. Add -- --update to record an improvement.",
-    "//ship": "The pipeline, from your own machine: main's last commit checked, built, attacked and deployed to the server, the station kept connected; -- broker also recreates the broker. Needs Docker and a deploy.env (scripts/deploy.env.example). See docs/CI.md.",
+    "//ship": "The Forgejo pipeline's stages without Forgejo, from your own machine: main's last commit checked, built, attacked and deployed to the server, the station kept connected; -- broker also recreates the broker. Needs Docker and a deploy.env (scripts/deploy.env.example). See docs/CI.md.",
     "ship": "bash scripts/ship.sh",
     "check:architecture": "node scripts/architecture.mjs && node scripts/run-bun.mjs scripts/gen-devices.ts --check",
     "//gen:devices": "Writes the app's registry of device types, protocols, transports and screens from the installed packages (client/src/generated/registry.ts). Run it after adding a package; CI checks it is current.",

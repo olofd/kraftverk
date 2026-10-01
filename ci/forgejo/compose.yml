@@ -1,0 +1,61 @@
+# Forgejo and its runner: kraftverk's pipeline (.forgejo/workflows) on a
+# machine of your own, with no hosted service. ci/forgejo/setup.sh starts it and
+# sets it up; docs/CI.md.
+#
+# The same file runs on your Mac or PC now, and on a server — the NAS — later:
+# there, set FORGEJO_ROOT_URL to the address it is reached by, and
+# FORGEJO_BIND to the address to listen on.
+#
+# The runner starts each job in a container of its own on this machine's
+# Docker, and the jobs that build and start images use that Docker too — so
+# what the pipeline tests is what is on this machine to ship.
+
+name: kraftverk-forgejo
+
+services:
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:16
+    restart: unless-stopped
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      FORGEJO__server__ROOT_URL: ${FORGEJO_ROOT_URL:-http://localhost:3000/}
+      FORGEJO__server__HTTP_PORT: "3000"
+      # Pushes go over HTTP, with a token: no second SSH server on this machine.
+      FORGEJO__server__DISABLE_SSH: "true"
+      FORGEJO__database__DB_TYPE: sqlite3
+      FORGEJO__security__INSTALL_LOCK: "true"
+      # One account, made by setup.sh; nobody signs up, nothing is public.
+      FORGEJO__service__DISABLE_REGISTRATION: "true"
+      FORGEJO__service__REQUIRE_SIGNIN_VIEW: "true"
+      FORGEJO__repository__DEFAULT_PRIVATE: private
+      FORGEJO__actions__ENABLED: "true"
+    ports:
+      - "${FORGEJO_BIND:-127.0.0.1}:3000:3000"
+    volumes:
+      # Repositories, runs, secrets: the volume is the Forgejo.
+      - forgejo-data:/data
+
+  runner:
+    image: data.forgejo.org/forgejo/runner:13
+    restart: unless-stopped
+    depends_on: [forgejo]
+    # The Docker socket is root's; so is this runner. It runs only this
+    # Forgejo's jobs, and this Forgejo has one account.
+    user: "0:0"
+    # The machine's own network, as its jobs have (runner.yml): Forgejo at
+    # FORGEJO_ROOT_URL, and the runner's cache, are where the jobs look.
+    network_mode: host
+    working_dir: /data
+    command: forgejo-runner daemon --config /etc/forgejo-runner/config.yml
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - ./runner.yml:/etc/forgejo-runner/config.yml:ro
+      # Its registration, written by setup.sh.
+      - runner-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  forgejo-data:
+  runner-data:

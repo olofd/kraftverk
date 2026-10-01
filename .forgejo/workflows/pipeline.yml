@@ -1,0 +1,105 @@
+# kraftverk's pipeline on Forgejo: every push to main checked, built,
+# attacked, and — while the repository's KRAFTVERK_DEPLOY variable is "on" —
+# deployed to the server, the station kept connected. The broker is recreated
+# only by hand: broker.yml.
+#
+# The same checks as GitHub's .github/workflows/ci.yml, which Forgejo does not
+# run: this directory takes its place. The same stages, the same scripts, as
+# scripts/ship.sh. Forgejo and the runner: ci/forgejo/. docs/CI.md.
+#
+# The jobs that build and start images mount the runner's machine's Docker
+# (ci/forgejo/runner.yml allows that one volume): the images the stack job
+# builds and attacks are the very ones the deploy job ships.
+
+name: Pipeline
+
+on:
+  push:
+    branches: [main]
+
+env:
+  SERVER_IMAGE: kraftverk-server:${{ github.sha }}
+  WEB_IMAGE: kraftverk-web:${{ github.sha }}
+
+jobs:
+  checks-image:
+    name: The image the checks run in
+    runs-on: docker
+    container:
+      image: docker:29-cli
+      volumes: [/var/run/docker.sock:/var/run/docker.sock]
+    timeout-minutes: 20
+    steps:
+      - name: Tools
+        shell: sh
+        run: apk add --no-cache bash git nodejs
+      - uses: actions/checkout@v4
+      # Built only when ci/Dockerfile or the lockfile's Playwright changed;
+      # the checks job runs in it by this name.
+      - run: docker tag "$(bash scripts/ci/checks-image.sh)" kraftverk-ci:pipeline
+
+  checks:
+    name: Typecheck, test, build the app, and the app end to end
+    needs: checks-image
+    runs-on: docker
+    container:
+      image: kraftverk-ci:pipeline
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/ci/check.sh
+      - name: Keep the report
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: e2e-report
+          path: |
+            e2e-report/
+            e2e-results/
+          retention-days: 7
+
+  stack:
+    name: Build the images, run the stack, attack it
+    runs-on: docker
+    container:
+      image: docker:29-cli
+      volumes: [/var/run/docker.sock:/var/run/docker.sock]
+    timeout-minutes: 40
+    steps:
+      - name: Tools
+        shell: sh
+        run: apk add --no-cache bash coreutils curl git nodejs
+      - uses: actions/checkout@v4
+      - run: bash scripts/ci/images.sh "$SERVER_IMAGE" "$WEB_IMAGE"
+      - run: SMOKE_BUILD=0 KRAFTVERK_SERVER_IMAGE="$SERVER_IMAGE" KRAFTVERK_WEB_IMAGE="$WEB_IMAGE" bash scripts/ci/smoke-docker.sh
+      - name: Keep the stack's logs
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: smoke-logs
+          path: smoke-logs.txt
+          retention-days: 7
+
+  deploy:
+    name: Deploy the server and the app
+    # Both must pass: `stack` built and attacked the very images shipped here.
+    needs: [checks, stack]
+    if: vars.KRAFTVERK_DEPLOY == 'on'
+    runs-on: docker
+    container:
+      image: docker:29-cli
+      volumes: [/var/run/docker.sock:/var/run/docker.sock]
+    timeout-minutes: 20
+    steps:
+      - name: Tools
+        shell: sh
+        run: apk add --no-cache bash git nodejs openssh-client
+      - uses: actions/checkout@v4
+      - name: The installation
+        run: bash ci/forgejo/installation.sh
+        env:
+          DEPLOY_ENV: ${{ secrets.DEPLOY_ENV }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_SSH_CONFIG: ${{ secrets.DEPLOY_SSH_CONFIG }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+      - run: bash scripts/ci/release.sh "$GITHUB_SHA"
