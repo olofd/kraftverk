@@ -327,11 +327,15 @@ function fakeGateway(key: Uint8Array, children: Record<string, Record<string, st
   let clientNonce: Uint8Array | null = null;
   const remoteNonce = utf8('fedcba9876543210');
   let sequence = 200;
+  /** Its power cut: it answers nothing, and closes nothing — its connection still looks open. */
+  let silent = false;
+  let resets = 0;
   const own = { '4': false, '32': 'normal' };
   const frame = (command: number, body: unknown, withKey = sessionKey) =>
     encodeFrame({ version: '3.4', key: withKey, sequence: sequence++, command, payload: body instanceof Uint8Array ? body : utf8(JSON.stringify(body)) });
   const channel = fakeByteChannel((bytes) => {
     const out: Uint8Array[] = [];
+    if (silent) return out;
     for (const got of reader.push(bytes)) {
       if (got.command === CMD.SESS_KEY_NEG_START) {
         clientNonce = got.payload;
@@ -364,6 +368,18 @@ function fakeGateway(key: Uint8Array, children: Record<string, Record<string, st
   return Object.assign(channel, {
     /** Something the gateway says unasked: a change at a device, or who it can reach. */
     say: (command: number, body: unknown) => channel.push(frame(command, body)),
+    /** Its power cut, or back. */
+    power: (on: boolean) => void (silent = !on),
+    /** A connection opened afresh: refused while it has no power. */
+    reset: async () => {
+      resets += 1;
+      reader = new FrameReader('3.4', key);
+      sessionKey = key;
+      channel.setConnected(false);
+      if (!silent) channel.setConnected(true);
+    },
+    /** How often a connection to it was opened afresh. */
+    resets: () => resets,
   });
 }
 
@@ -399,6 +415,32 @@ describe('a device behind a gateway', () => {
     await Bun.sleep(5);
     expect(pushed.filter((dps) => dps['1'] === false)).toHaveLength(1);
     expect(presence).toEqual([false]);
+    await link.close();
+  });
+
+  test('a gateway that loses its power closes nothing: its silence is taken for the connection gone — at a request, or between heartbeats', async () => {
+    const gateway = fakeGateway(utf8(GATEWAY_KEY), { [PLUG]: { '1': false } });
+    const said: string[] = [];
+    const link = new TuyaLink(gateway, { deviceId: 'bfplug', localKey: GATEWAY_KEY, version: '3.4', cid: PLUG, requestTimeoutMs: 40, heartbeatMs: 25, log: (message) => said.push(message) });
+    expect(await link.status()).toEqual({ '1': false });
+    expect(link.connected).toBe(true);
+    // Its power cut: a request is not answered, nothing else is heard — the connection is gone, opened afresh, and refused.
+    gateway.power(false);
+    await expect(link.set({ '1': true })).rejects.toThrow('did not answer');
+    expect(link.connected).toBe(false);
+    expect(gateway.resets()).toBe(1);
+    expect(said).toContain('the connection is gone: nothing heard for 0 s');
+    expect(said).toContain('the connection is gone: nothing heard for 0 s');
+    // Back: the next request connects again, and is answered.
+    gateway.power(true);
+    await gateway.reset();
+    expect(await link.status()).toEqual({ '1': false });
+    expect(link.connected).toBe(true);
+    // Idle, and its power cut again: two heartbeats of silence are enough.
+    gateway.power(false);
+    await Bun.sleep(120);
+    expect(link.connected).toBe(false);
+    expect(said.filter((line) => line.startsWith('the connection is gone')).length).toBe(2);
     await link.close();
   });
 

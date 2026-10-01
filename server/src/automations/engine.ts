@@ -1464,13 +1464,32 @@ export class AutomationEngine {
 
   /**
    * Whether every reading a condition reads was taken since the run last
-   * changed something. A reading from before says how things were, not how
+   * changed something — and every device it asks can be reached has been
+   * heard from since. A reading from before says how things were, not how
    * they are now: judged on, a supply still giving 190 W a moment after the
    * charger on it was switched off reads as "something else draws".
    */
   #readSince(live: LiveRun, condition: Expr): boolean {
     if (!live.changedAt) return true;
-    const { reads } = ruleUses({ ...live.rule, when: [], then: [{ waitUntil: { condition, atMostSeconds: { value: 1 } } }], otherwise: [] });
+    const { reads, reaches } = ruleUses({ ...live.rule, when: [], then: [{ waitUntil: { condition, atMostSeconds: { value: 1 } } }], otherwise: [] });
+    /*
+      Whether it can be reached, likewise: only once something has been heard
+      from it since. Its connection's word alone is not enough — a device
+      that lost its power with the run's last change (a plug, and the gateway
+      it is reached through, on the outlets just switched) keeps a connection
+      that looks open for a while, and a command sent into it is lost.
+    */
+    const heardFrom = (device: string): number | null => {
+      const times = [...live.heard].filter(([which]) => which.startsWith(`${device} `)).map(([, at]) => at);
+      return times.length ? Math.max(...times) : null;
+    };
+    const reachedSince = reaches.every((role) => {
+      const binding = live.automation.roles[role];
+      const heard = binding ? heardFrom(binding.device) : null;
+      // One that says nothing at all is judged by its connection, as it is.
+      return heard === null || heard >= live.changedAt;
+    });
+    if (!reachedSince) return false;
     return reads.every(({ role, means }) => {
       const binding = live.automation.roles[role];
       const device = binding ? this.deps.device(binding) : null;

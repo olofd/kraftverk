@@ -23,7 +23,7 @@ export const TUYA_PORT = 6668;
 
 const CONNECT_TIMEOUT_MS = 5_000;
 const REQUEST_TIMEOUT_MS = 5_000;
-const HEARTBEAT_MS = 15_000;
+const HEARTBEAT_MS = 10_000;
 
 export type TuyaLinkOptions = {
   deviceId: string;
@@ -35,6 +35,10 @@ export type TuyaLinkOptions = {
    */
   version: ProtocolVersion | 'auto';
   log?: (message: string) => void;
+  /** How long a request waits for its answer; 5 s unless said (a test says less). */
+  requestTimeoutMs?: number;
+  /** How often an idle session says it is there; 10 s unless said. */
+  heartbeatMs?: number;
   /** Datapoints the device sends unasked: a change at the plug, or its own refresh. */
   onPush?: (dps: Dps) => void;
   /**
@@ -98,6 +102,8 @@ export class TuyaLink {
   #readyFor = -1;
   #establishing: Promise<void> | null = null;
   #heartbeat: ReturnType<typeof setInterval> | null = null;
+  /** When anything at all last came from the device, by this clock: what tells a live connection from one whose device has gone. */
+  #heardAt = 0;
   #waiters: Waiter[] = [];
   #detach: (() => void)[];
 
@@ -110,6 +116,7 @@ export class TuyaLink {
     this.#reader = new FrameReader(this.#version, this.#localKey);
     this.#detach = [
       channel.onData((bytes) => {
+        this.#heardAt = Date.now();
         for (const frame of this.#reader.push(bytes)) this.#deliver(frame);
       }),
       channel.onConnectedChange((connected) => {
@@ -250,12 +257,21 @@ export class TuyaLink {
     if (Object.keys(probe).length === 0) throw new Error('connected, but no datapoints could be decoded — usually a wrong local key');
 
     this.#readyFor = epoch;
-    // These devices drop an idle connection, and on 3.4/3.5 that costs the
-    // session key as well as the socket.
+    /*
+      These devices drop an idle connection, and on 3.4/3.5 that costs the
+      session key as well as the socket: a heartbeat keeps it. And one that
+      loses its power closes nothing — its connection looks open for minutes,
+      until it is back and refuses it. So a heartbeat is answered, or the
+      connection is taken for gone: two beats of silence, and it is opened
+      afresh — which fails, and says so, until the device is there again.
+    */
     this.#stopHeartbeat();
+    const beat = this.#options.heartbeatMs ?? HEARTBEAT_MS;
     this.#heartbeat = setInterval(() => {
-      if (this.connected) void this.#send(CMD.HEART_BEAT, utf8('{}')).catch(() => {});
-    }, HEARTBEAT_MS);
+      if (!this.connected) return;
+      if (Date.now() - this.#heardAt > beat * 2) return void this.#gone(`nothing heard for ${Math.round((Date.now() - this.#heardAt) / 1000)} s`);
+      void this.#send(CMD.HEART_BEAT, utf8('{}')).catch(() => {});
+    }, beat);
   }
 
   #connectedWithin(ms: number): Promise<void> {
@@ -374,8 +390,11 @@ export class TuyaLink {
         const index = this.#waiters.indexOf(waiter);
         if (index < 0) return;
         this.#waiters.splice(index, 1);
-        reject(new Error(`The device did not answer command 0x${command.toString(16)} in ${REQUEST_TIMEOUT_MS}ms`));
-      }, REQUEST_TIMEOUT_MS);
+        const timeout = this.#options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
+        reject(new Error(`The device did not answer command 0x${command.toString(16)} in ${timeout}ms`));
+        // Not a word of anything while it waited: not this request unanswered, the connection gone.
+        if (this.connected && Date.now() - this.#heardAt >= timeout) this.#gone(`nothing heard for ${Math.round(timeout / 1000)} s`);
+      }, this.#options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS);
     });
     await this.#send(command, payload);
     return waiting;
@@ -391,6 +410,19 @@ export class TuyaLink {
       iv: this.#version === '3.5' ? randomBytes(12) : undefined,
     });
     await this.#channel.write(frame);
+  }
+
+  /**
+   * The connection taken for gone: whoever waits is told, and it is opened
+   * afresh — the next request connects again, and fails until the device is
+   * there to answer.
+   */
+  #gone(why: string): void {
+    this.#options.log?.(`the connection is gone: ${why}`);
+    this.#stopHeartbeat();
+    this.#readyFor = -1;
+    this.#failWaiters(`The connection was lost: ${why}`);
+    void this.#channel.reset?.().catch(() => undefined);
   }
 
   #stopHeartbeat(): void {

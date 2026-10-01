@@ -81,10 +81,15 @@ type World = {
   supplyReadsEveryMs: number;
   /** How far ahead of this server's clock the station's own is, which it stamps its readings with. */
   supplyClockAheadMs: number;
+  /**
+   * Its gateway on the same outlets, as the owner's is: while the plug cannot be reached, its connection still
+   * looks open — what it said last stays, stamped when it said it, and a command sent to it is lost.
+   */
+  plugLooksConnected: boolean;
 };
 
 function setup(world: Partial<World> = {}) {
-  const state: World = { supplyOn: false, othersWatts: 0, plugOn: false, reachableAfterMs: 0, supplyOnAt: 0, wakesOnSwitch: 1, plugSwitchedOn: 0, live: false, plugGapMs: 0, plugSwitchedAt: 0, supplyReadsEveryMs: 0, supplyClockAheadMs: 0, ...world };
+  const state: World = { supplyOn: false, othersWatts: 0, plugOn: false, reachableAfterMs: 0, supplyOnAt: 0, wakesOnSwitch: 1, plugSwitchedOn: 0, live: false, plugGapMs: 0, plugSwitchedAt: 0, supplyReadsEveryMs: 0, supplyClockAheadMs: 0, plugLooksConnected: false, ...world };
   const sent: CommandIntent[] = [];
   const recorded: AuditRecord[] = [];
   const heard: LiveMessage[] = [];
@@ -112,6 +117,17 @@ function setup(world: Partial<World> = {}) {
       if (!sample || Date.now() - sample.at >= state.supplyReadsEveryMs) sample = { at: Date.now(), readings: supplyReadings() };
       const at = new Date(sample.at + state.supplyClockAheadMs).toISOString();
       return sample.readings.map((reading) => ({ ...reading, at }));
+    },
+    query: async () => [],
+  };
+  /** The plug's readings: fresh while it can be reached; else, while its connection looks open, the last it said, as it said them. */
+  let plugLast: { key: string; value: boolean | number; at: string }[] = [];
+  const plugReader: DeviceReader = {
+    health: () => ({ status: reachable() || state.plugLooksConnected ? 'connected' : 'offline', detail: reachable() || state.plugLooksConnected ? 'Connected' : 'Its gateway cannot reach it', lastReadingAt: now() }),
+    readings: () => {
+      if (reachable()) plugLast = [{ key: 'relay', value: state.plugOn }, { key: 'watts', value: charging() ? 240 : 0.4 }, { key: 'live', value: state.live }].map((reading) => ({ ...reading, at: now() }));
+      else if (!state.plugLooksConnected) return [];
+      return plugLast;
     },
     query: async () => [],
   };
@@ -143,11 +159,8 @@ function setup(world: Partial<World> = {}) {
       'Scooter plug',
       MAIN_PART,
       SOCKET,
-      reader(
-        () => (reachable() ? [{ key: 'relay', value: state.plugOn }, { key: 'watts', value: charging() ? 240 : 0.4 }, { key: 'live', value: state.live }] : []),
-        reachable
-      ),
-      reachable
+      plugReader,
+      () => reachable() || state.plugLooksConnected
     ),
   };
   const store = new AutomationStore();
@@ -172,6 +185,8 @@ function setup(world: Partial<World> = {}) {
           if (on && !state.supplyOn) state.supplyOnAt = Date.now();
           state.supplyOn = on;
         } else {
+          // Into a connection that only looks open: lost.
+          if (!reachable() && state.plugLooksConnected) return { outcome: 'failed', detail: 'The device did not answer command 0xd in 5000ms' };
           if (!reachable()) return { outcome: 'refused', detail: 'Its current state is not known, so it is not switched blind' };
           if (on && !state.plugOn) state.plugSwitchedOn += 1;
           state.plugOn = on;
@@ -507,6 +522,26 @@ describe('starting a charge', () => {
     expect(run.summary).toBe('Interrupted: the server stopped during “Wait until Scooter plug can be reached — at most 2 min”. It was not resumed — check what it had switched');
     expect(store.get(automation.id)!.running).toBeNull();
     expect(restarted.recorded.concat(recorded).some((entry) => entry.kind === 'automation.interrupted')).toBe(true);
+  });
+});
+
+describe('a gateway on the outlets it waits for', () => {
+  test('the plug can be reached only once it is heard from since the outlets came on — not on its connection\'s word, which looks open while its gateway has no power', async () => {
+    const { engine, make, ended, switches, state, devices } = setup({ plugLooksConnected: true, reachableAfterMs: 10 * SECOND_MS });
+    // It said something while it had power, then lost it: its connection still looks open.
+    Object.assign(state, { supplyOn: true, supplyOnAt: Date.now() - 1000 });
+    expect(devices[`${PLUG}:main`]!.device!.readings().length).toBeGreaterThan(0);
+    const automation = make('standard.start-charging', QUICK);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Its power cut, then the run.
+    state.supplyOn = false;
+    await engine.startAsked(automation.id, OLOF);
+    const run = await ended(automation.id);
+    expect(run.outcome).toBe('acted');
+    expect(switches()).toEqual(['supply on', 'charger on']);
+    // It waited for the plug to be heard from — not "At once".
+    expect(run.steps[1]).toMatchObject({ kind: 'waitUntil', outcome: 'met' });
+    expect(run.steps[1]!.detail).not.toMatch(/^At once/);
   });
 });
 

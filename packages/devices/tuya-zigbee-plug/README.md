@@ -77,6 +77,19 @@ A Zigbee plug has no IP address and no key of its own. kraftverk speaks to its
   every so often. A plug reported offline is shown as "Its gateway cannot
   reach it".
 
+- **A gateway that loses its power closes nothing** (measured 2026-10-01, the
+  gateway on the same switched outlets as the plug): its connection kept
+  looking open for six minutes, until the gateway was back and reset it; a
+  command sent into it in between was lost ("did not answer command 0xd").
+  The link now takes silence for the connection gone — a request unanswered
+  with nothing else heard, or two heartbeats (10 s apart) without an answer —
+  and opens it afresh, which fails until the gateway answers again.
+- **Back on power, the gateway took ~24 s** to accept a connection again; its
+  answers to queries came at once, from its memory. No presence report, and
+  no push from the plug, came as the plug rejoined. So "can be reached" is
+  not proven by the connection alone: after a run switches power, the engine
+  holds a device reachable only once it has been heard from since.
+
 ## Datapoints
 
 Each changed in the Smart Life app, one at a time, while kraftverk listened.
