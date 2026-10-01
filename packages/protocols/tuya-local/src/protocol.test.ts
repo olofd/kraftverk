@@ -476,6 +476,29 @@ describe('a device behind a gateway', () => {
     await expect(link.status()).rejects.toThrow('says nothing of');
     await link.close();
   }, 30_000);
+
+  test('a gateway that closes the connection while a request is written fails the request, and nothing else', async () => {
+    // As one with every connection taken does: the handshake goes out, and the connection is closed under it.
+    const channel: ReturnType<typeof fakeByteChannel> = Object.assign(
+      fakeByteChannel(() => {
+        channel.setConnected(false);
+        throw new Error('Connection closed');
+      }),
+      { reset: async () => channel.setConnected(true) }
+    );
+    const unhandled: unknown[] = [];
+    const note = (reason: unknown) => void unhandled.push(reason);
+    process.on('unhandledRejection', note);
+    try {
+      const link = new TuyaLink(channel, { deviceId: 'bfgw', localKey: GATEWAY_KEY, version: '3.4', cid: PLUG });
+      await expect(link.status()).rejects.toThrow('Connection closed');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(unhandled).toEqual([]);
+      await link.close();
+    } finally {
+      process.off('unhandledRejection', note);
+    }
+  });
 });
 
 describe('a conversation with a plug', () => {

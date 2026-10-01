@@ -396,7 +396,15 @@ export class TuyaLink {
         if (this.connected && Date.now() - this.#heardAt >= timeout) this.#gone(`nothing heard for ${Math.round(timeout / 1000)} s`);
       }, this.#options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS);
     });
-    await this.#send(command, payload);
+    // A connection closed while the request is written fails the waiter before it is returned to anyone: handled here, said below.
+    waiting.catch(() => undefined);
+    try {
+      await this.#send(command, payload);
+    } catch (error) {
+      const index = this.#waiters.findIndex((waiter) => waiter.match === match);
+      if (index >= 0) this.#waiters.splice(index, 1);
+      throw error;
+    }
     return waiting;
   }
 

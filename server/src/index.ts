@@ -85,6 +85,16 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   });
 }
 
+/*
+  A promise rejected with no one listening — a bug, always — is said, not
+  died of. A process that ends at one restarts into the same condition: a
+  device closing every connection had the server down in a loop, logging in
+  to every cloud account at each start until they refused it.
+*/
+process.on('unhandledRejection', (reason) => {
+  console.error('[server] A promise failed with no one to tell — a bug; kept running:', reason);
+});
+
 const startedAt = new Date();
 
 /**
