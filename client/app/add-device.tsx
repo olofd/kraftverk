@@ -19,6 +19,7 @@ import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
 import { AppFlow, ServerFlow, type SetupFlow } from '../src/features/add/flows';
 import { StepView } from '../src/features/add/steps';
+import { secretWords } from '../src/features/config/shared';
 import { confirmAction } from '../src/lib/confirm';
 import { featherName } from '../src/lib/icons';
 import { PLATFORM } from '../src/runtime/registry';
@@ -757,7 +758,7 @@ function Finish({
 
       {keepsSecrets ? (
         <YStack gap="$2">
-          <SectionLabel>Its {flow.secrets.join(', ')}</SectionLabel>
+          <SectionLabel>Its {secretWords(flow.secrets)}</SectionLabel>
           <Card inset>
             <ToggleRow
               title="May leave in plain text"
@@ -773,7 +774,7 @@ function Finish({
                     on &&
                     !(await confirmAction(
                       'Let it leave in plain text?',
-                      `An export that asks for plain text will carry its ${flow.secrets.join(', ')} as it is. Anyone who has the file — a backup, a mail, a shared folder — can then reach the device as you do.\n\nAn export sealed with a passphrase carries it safely without this. You can change this later, under its settings.`,
+                      `An export that asks for plain text will carry its ${secretWords(flow.secrets)} as it is. Anyone who has the file — a backup, a mail, a shared folder — can then reach the device as you do.\n\nAn export sealed with a passphrase carries it safely without this. You can change this later, under its settings.`,
                       'Let it leave',
                       'dangerous'
                     ))

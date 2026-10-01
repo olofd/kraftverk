@@ -46,7 +46,7 @@ test('a device exported from its settings, removed, and imported again: back und
   expect((await request.delete(`/api/devices/${plug.id}`, { headers: HEADERS })).ok()).toBe(true);
   await page.goto('/add-device');
   await page.getByText('From a configuration', { exact: true }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Configuration' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Import' })).toBeVisible();
   await write(page, 'The configuration to import', exported);
   await page.getByRole('button', { name: 'Read it' }).click();
   await expect(page.getByText(/^brought back, with its history/)).toBeVisible();

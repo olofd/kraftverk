@@ -23,6 +23,7 @@ import { Card, Chips, DeviceCard, EnergyFlow, EventList, PartCard, Row, RowSepar
 import { MeasurementChart } from '../../components/MeasurementChart';
 import { Pressable } from '../../components/Pressable';
 import { confirmAction } from '../../lib/confirm';
+import { secretWords } from '../config/shared';
 import { partSlotFor } from '../../devices/ui';
 import { fedBy, feedsTo, settingsForms, togglesOf, type Toggle } from './model';
 import { featherName } from '../../lib/icons';
@@ -396,7 +397,7 @@ export function Connections({ device }: { device: DeviceView }) {
                           ? `Standing by · last connected ${new Date(connection.lastConnectedAt).toLocaleString()}`
                           : 'Standing by'}
                       {` · ${connection.address}`}
-                      {connection.secrets.length ? ` · ${connection.secrets.join(', ')} kept` : ''}
+                      {connection.secrets.length ? ` · ${secretWords(connection.secrets)} kept` : ''}
                     </Text>
                   </YStack>
                   {connection.inUse ? <Icon name="check-circle" size={16} color={theme.success?.val} /> : null}
@@ -409,8 +410,8 @@ export function Connections({ device }: { device: DeviceView }) {
                       </Text>
                       <Text fontSize={12} color={connection.secretsExportable ? '$warning' : '$muted'} lineHeight={17}>
                         {connection.secretsExportable
-                          ? `An export that asks for plain text carries its ${connection.secrets.join(', ')} as it is: anyone with the file has it.`
-                          : `Off: an export leaves its ${connection.secrets.join(', ')} out, or seals it with a passphrase.`}
+                          ? `An export that asks for plain text carries its ${secretWords(connection.secrets)} as it is: anyone with the file has it.`
+                          : `Off: an export leaves its ${secretWords(connection.secrets)} out, or seals it with a passphrase.`}
                       </Text>
                     </YStack>
                     <Switch
@@ -423,7 +424,7 @@ export function Connections({ device }: { device: DeviceView }) {
                           on &&
                           !(await confirmAction(
                             'Let its secrets leave in plain text?',
-                            `An export that asks for plain text will carry ${device.name}’s ${connection.secrets.join(', ')} as it is. Anyone who has the file — a backup, a mail, a shared folder — can then reach the device as you do.\n\nAn export sealed with a passphrase carries it safely without this.`,
+                            `An export that asks for plain text will carry ${device.name}’s ${secretWords(connection.secrets)} as it is. Anyone who has the file — a backup, a mail, a shared folder — can then reach the device as you do.\n\nAn export sealed with a passphrase carries it safely without this.`,
                             'Let it leave',
                             'dangerous'
                           ))

@@ -4,8 +4,8 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { yaml, yamlLanguage } from '@codemirror/lang-yaml';
 import { bracketMatching, HighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language';
 import { lintGutter, setDiagnostics, type Diagnostic } from '@codemirror/lint';
-import { Compartment, EditorState, type Extension } from '@codemirror/state';
-import { drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, hoverTooltip, keymap, lineNumbers, tooltips } from '@codemirror/view';
+import { Compartment, EditorState, RangeSetBuilder, type Extension } from '@codemirror/state';
+import { Decoration, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, hoverTooltip, keymap, lineNumbers, tooltips, ViewPlugin, type DecorationSet, type ViewUpdate } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 import { stateExtensions, updateSchema } from 'codemirror-json-schema';
 import { yamlCompletion, yamlSchemaHover } from 'codemirror-json-schema/yaml';
@@ -63,6 +63,7 @@ export function YamlEditor({ value, onChange, problems = [], schema = null, labe
           EditorState.tabSize.of(2),
           // Long lines wrap, indented as they began: a phone is narrow, and a line scrolled sideways hides its end.
           EditorView.lineWrapping,
+          hangingIndent,
           indentUnit.of('  '),
           yaml(),
           stateExtensions(schema ?? undefined),
@@ -123,6 +124,37 @@ export function YamlEditor({ value, onChange, problems = [], schema = null, labe
     </YStack>
   );
 }
+
+/**
+ * A wrapped line continues under where its own text began, not at the
+ * margin: in YAML the indentation says what belongs to what, and a
+ * continuation at the margin reads as a line of its own.
+ */
+const hangingIndent = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = this.build(view);
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.viewportChanged) this.decorations = this.build(update.view);
+    }
+    build(view: EditorView): DecorationSet {
+      const builder = new RangeSetBuilder<Decoration>();
+      for (const { from, to } of view.visibleRanges) {
+        for (let at = from; at <= to; ) {
+          const line = view.state.doc.lineAt(at);
+          // Its indentation, and a list item's "- " with it.
+          const lead = /^(\s*(?:- )*)/.exec(line.text)?.[1]?.length ?? 0;
+          if (lead) builder.add(line.from, line.from, Decoration.line({ attributes: { style: `padding-left: calc(${lead}ch + 6px); text-indent: -${lead}ch` } }));
+          at = line.to + 1;
+        }
+      }
+      return builder.finish();
+    }
+  },
+  { decorations: (plugin) => plugin.decorations }
+);
 
 const editableAs = (readOnly: boolean): Extension => [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)];
 

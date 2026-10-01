@@ -51,7 +51,12 @@ export default function ConfigurationScreen() {
   }
 
   return (
-    <Screen back="App settings" backTo="/app-settings" title="Configuration" subtitle="Your home as one file: to keep, move, or write by hand">
+    <Screen
+      back={params.import ? 'Add a device' : 'App settings'}
+      backTo={params.import ? '/add-device' : '/app-settings'}
+      title={params.import ? 'Import' : 'Configuration'}
+      subtitle={params.import ? 'A device, an automation, or a whole home, from a configuration' : 'Your home as one file: to keep, move, or write by hand'}
+    >
       {error ? (
         <Card borderColor="$danger">
           <Text fontSize={14} color="$danger">

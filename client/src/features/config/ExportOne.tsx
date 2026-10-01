@@ -9,6 +9,7 @@ import { confirmAction } from '../../lib/confirm';
 import { fileNameOf, saveText } from '../../lib/download';
 import { useTone } from '../automations/looks';
 import { YamlEditor } from './YamlEditor';
+import { secretWords } from './shared';
 
 /** Passphrases shorter than this are refused by the server: an export travels. */
 const PASSPHRASE_MIN = 12;
@@ -39,7 +40,7 @@ export function ExportOne({ what, name, secrets = [], plainAllowed = false }: { 
   const run = async () => {
     if (busy || short) return;
     haptic();
-    if (mode === 'plain' && !(await confirmAction('Export in plain text?', `The file will carry its ${secrets.join(', ')} as it is: anyone who has it can reach the device as you do.`, 'Export', 'dangerous'))) return;
+    if (mode === 'plain' && !(await confirmAction('Export in plain text?', `The file will carry its ${secretWords(secrets)} as it is: anyone who has it can reach the device as you do.`, 'Export', 'dangerous'))) return;
     setBusy(true);
     setProblem(null);
     try {
@@ -59,7 +60,7 @@ export function ExportOne({ what, name, secrets = [], plainAllowed = false }: { 
         <YStack marginHorizontal="$-4">
           <SegmentedControl
             title="Its secrets"
-            subtitle={mode === 'none' ? `Its ${secrets.join(', ')} left out: given again after importing.` : mode === 'sealed' ? 'Sealed with a passphrase you choose: opened only by kraftverk, given it.' : 'As it is, as you allowed: anyone with the file has it.'}
+            subtitle={mode === 'none' ? `Its ${secretWords(secrets)} left out: given again after importing.` : mode === 'sealed' ? 'Sealed with a passphrase you choose: opened only by kraftverk, given it.' : 'As it is, as you allowed: anyone with the file has it.'}
             value={mode}
             options={options}
             onChange={setMode}
