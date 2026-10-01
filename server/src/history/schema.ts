@@ -61,6 +61,8 @@ export const SCHEMA = `
   */
   CREATE TABLE device (
     id          TEXT PRIMARY KEY,
+    /* Its name in configuration (docs/CONFIG.md): what a file and an import know it by. One device you have to a key. */
+    key         TEXT NOT NULL CHECK (key GLOB '[a-z0-9]*' AND key NOT GLOB '*[^a-z0-9-]*' AND length(key) <= 63),
     type_id     TEXT NOT NULL,
     identity    TEXT,
     name        TEXT NOT NULL,
@@ -78,6 +80,7 @@ export const SCHEMA = `
     removed_at  TEXT
   );
   CREATE UNIQUE INDEX device_identity ON device (identity) WHERE identity IS NOT NULL AND removed_at IS NULL;
+  CREATE UNIQUE INDEX device_key ON device (key) WHERE removed_at IS NULL;
 
   /* Every attribute a device has ever had: what its history is labelled by, after a part is gone. */
   CREATE TABLE device_attribute (
@@ -133,6 +136,8 @@ export const SCHEMA = `
     address           TEXT NOT NULL,
     priority          INTEGER NOT NULL DEFAULT 0,
     config            TEXT NOT NULL DEFAULT '{}',
+    /* Whether its secrets may leave in an export as plain text: its owner's choice, warned against, off unless chosen. */
+    secrets_exportable INTEGER NOT NULL CHECK (secrets_exportable IN (0, 1)),
     created_at        TEXT NOT NULL,
     last_connected_at TEXT
   );
@@ -246,6 +251,8 @@ export const SCHEMA = `
   */
   CREATE TABLE automation (
     id              TEXT PRIMARY KEY,
+    /* Its name in configuration, as a device's key is. */
+    key             TEXT NOT NULL UNIQUE CHECK (key GLOB '[a-z0-9]*' AND key NOT GLOB '*[^a-z0-9-]*' AND length(key) <= 63),
     name            TEXT NOT NULL,
     rule            TEXT NOT NULL,
     made_from       TEXT,

@@ -156,6 +156,8 @@ function describeLocal(runtime: AppRuntime, device: LocalDevice, local: Map<stri
       inUse: held?.connection.id === connection.id,
       lastConnectedAt: connection.lastConnectedAt,
       secrets: Object.keys(runtime.local.secrets(connection.id)),
+      // A phone's own: never in a server's export.
+      secretsExportable: false,
       config: connection.config,
     })
   );
@@ -176,6 +178,8 @@ function describeLocal(runtime: AppRuntime, device: LocalDevice, local: Map<stri
   });
   return {
     id: savedDeviceId(device.id),
+    // Held by this phone alone, it is in no configuration: known by its id.
+    key: device.id,
     typeId: device.typeId,
     installed: Boolean(type),
     name: device.name,

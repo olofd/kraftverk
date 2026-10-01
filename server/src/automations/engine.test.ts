@@ -44,7 +44,7 @@ beforeEach(() => {
   db().exec('DELETE FROM automation');
   // The devices its roles name, as the catalog keeps them: a role names a device that exists.
   db().exec('DELETE FROM device');
-  const insert = db().query("INSERT INTO device (id, type_id, name, description, added_at) VALUES (?, 'test.device', ?, '{\"parts\":[],\"attributes\":[]}', '2026-06-01T00:00:00Z')");
+  const insert = db().query("INSERT INTO device (id, key, type_id, name, description, added_at) VALUES (?1, ?1, 'test.device', ?2, '{\"parts\":[],\"attributes\":[]}', '2026-06-01T00:00:00Z')");
   for (const [id, name] of [
     ['d-forecast', 'Weather'],
     ['d-plug', 'Heater plug'],

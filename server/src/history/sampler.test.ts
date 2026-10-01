@@ -46,7 +46,7 @@ const describedBy = (readings: Reading[], extra: AttributeSpec[] = []): DeviceDe
 /** A registry holding one device with the given readings, saved as history needs it to be. */
 const registry = (id: string, readings: Reading[], description = describedBy(readings)) => {
   db()
-    .query("INSERT OR IGNORE INTO device (id, name, config, description, added_at, type_id) VALUES (?, ?, '{}', ?, ?, 'test.device')")
+    .query("INSERT OR IGNORE INTO device (id, key, name, config, description, added_at, type_id) VALUES (?1, ?1, ?2, '{}', ?3, ?4, 'test.device')")
     .run(id, id, JSON.stringify(description), new Date().toISOString());
   return { all: async () => [{ id, readings, description }] } as unknown as DeviceRegistry;
 };

@@ -43,7 +43,7 @@ afterAll(() => {
 
 beforeEach(() => {
   db().exec('DELETE FROM sample_change; DELETE FROM device');
-  db().query("INSERT INTO device (id, type_id, name, description, added_at) VALUES (?, 'test.station', 'Station', '{}', ?)").run(STATION, at(0));
+  db().query("INSERT INTO device (id, key, type_id, name, description, added_at) VALUES (?1, ?1, 'test.station', 'Station', '{}', ?2)").run(STATION, at(0));
 });
 
 describe('the change log', () => {

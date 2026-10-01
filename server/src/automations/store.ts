@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 
 import type { RoleBinding, RunLog, RunLogDevice, RunLogKey, RunLogReach, RunLogReading, RunLogRole } from '@kraftverk/api-contract';
+import { KEY, keyFrom } from '@kraftverk/config';
 import { automationId, savedDeviceId, type AutomationId, type Quantity, type Rule, type Value } from '@kraftverk/device-sdk';
 
 import { db } from '../history/db.ts';
@@ -16,6 +17,7 @@ import type { AutomationMode, AutomationRecord, RunResult } from './engine.ts';
 
 type Row = {
   id: string;
+  key: string;
   name: string;
   rule: string;
   made_from: string | null;
@@ -133,6 +135,7 @@ export class AutomationStore {
     );
     return rows.map((row) => ({
       id: automationId(row.id),
+      key: row.key,
       name: row.name,
       rule: parse<Rule>(row.rule, EMPTY_RULE),
       madeFrom: row.made_from,
@@ -180,14 +183,21 @@ export class AutomationStore {
     for (const [role, started] of Object.entries(starts)) automation.run(id, role, started);
   }
 
-  create(input: AutomationInput): AutomationRecord {
+  /** Whether an automation is known by this key. */
+  keyTaken(key: string, except?: string): boolean {
+    return db().query<{ id: string }, [string]>('SELECT id FROM automation WHERE key = ?').all(key).some((row) => row.id !== except);
+  }
+
+  create(input: AutomationInput & { key?: string }): AutomationRecord {
+    if (input.key !== undefined && (!KEY.test(input.key) || this.keyTaken(input.key))) throw new Error(`"${input.key}" is not a free key: lowercase letters, digits and dashes, and not another automation's`);
     const id = automationId(`a-${randomBytes(6).toString('hex')}`);
+    const key = input.key ?? keyFrom(input.name, (taken) => this.keyTaken(taken), 'automation');
     const now = new Date().toISOString();
     db().transaction(() => {
       db()
         // Not looked at yet: the engine says when it looks, on its own clock.
-        .query('INSERT INTO automation (id, name, rule, made_from, time_zone, mode, recheck_minutes, home_place, looked_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)')
-        .run(id, input.name, JSON.stringify(input.rule), input.madeFrom, input.timeZone, 'observe', input.recheckMinutes, now, now);
+        .query('INSERT INTO automation (id, key, name, rule, made_from, time_zone, mode, recheck_minutes, home_place, looked_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)')
+        .run(id, key, input.name, JSON.stringify(input.rule), input.madeFrom, input.timeZone, 'observe', input.recheckMinutes, now, now);
       this.#setRoles(id, input.roles, input.starts);
     })();
     this.#revision += 1;
@@ -195,14 +205,17 @@ export class AutomationStore {
   }
 
   /** A change: a new rule comes with what fills its roles. */
-  update(id: string, changes: Partial<Pick<AutomationRecord, 'name' | 'rule' | 'roles' | 'starts' | 'timeZone' | 'mode' | 'recheckMinutes'>>): AutomationRecord | null {
+  update(id: string, changes: Partial<Pick<AutomationRecord, 'key' | 'name' | 'rule' | 'roles' | 'starts' | 'timeZone' | 'mode' | 'recheckMinutes'>>): AutomationRecord | null {
     const current = this.get(id);
     if (!current) return null;
+    if (changes.key !== undefined && changes.key !== current.key && (!KEY.test(changes.key) || this.keyTaken(changes.key, id))) {
+      throw new Error(`"${changes.key}" is not a free key: lowercase letters, digits and dashes, and not another automation's`);
+    }
     const next = { ...current, ...changes };
     db().transaction(() => {
       db()
-        .query('UPDATE automation SET name = ?, rule = ?, time_zone = ?, mode = ?, recheck_minutes = ?, updated_at = ? WHERE id = ?')
-        .run(next.name, JSON.stringify(next.rule), next.timeZone, next.mode, next.recheckMinutes, new Date().toISOString(), id);
+        .query('UPDATE automation SET key = ?, name = ?, rule = ?, time_zone = ?, mode = ?, recheck_minutes = ?, updated_at = ? WHERE id = ?')
+        .run(next.key, next.name, JSON.stringify(next.rule), next.timeZone, next.mode, next.recheckMinutes, new Date().toISOString(), id);
       if (changes.roles || changes.starts) this.#setRoles(id, next.roles, next.starts);
     })();
     this.#revision += 1;

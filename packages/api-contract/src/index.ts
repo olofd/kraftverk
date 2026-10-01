@@ -137,6 +137,8 @@ export type ConnectionView = {
   lastConnectedAt: string | null;
   /** Which secrets it has, by field — never their values. */
   secrets: string[];
+  /** Whether its secrets may leave in an export as plain text: its owner's choice, off unless chosen (docs/CONFIG.md). */
+  secretsExportable: boolean;
   config: Record<string, unknown>;
 };
 
@@ -157,6 +159,8 @@ export type ToolView = ToolSpec & { name: string };
 /** A saved device, joined to what it is doing right now. */
 export type DeviceView = {
   id: SavedDeviceId;
+  /** Its name in configuration: what a file and an import know it by (docs/CONFIG.md). */
+  key: string;
   typeId: string;
   /** Whether an installed type claims it. */
   installed: boolean;
@@ -693,6 +697,8 @@ export type RunStep = {
 
 export type AutomationView = RoleFills & {
   id: AutomationId;
+  /** Its name in configuration: what a file and an import know it by (docs/CONFIG.md). */
+  key: string;
   name: string;
   /** Its own rule, as its owner built it (docs/AUTOMATION-EDITOR.md). */
   rule: Rule;

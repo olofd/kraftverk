@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { KEY, keyFrom } from '@kraftverk/config';
 import { partOf, savedDeviceId, type AttributeSpec, type DescriptionSource, type DeviceDescription, type DeviceInfo, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import { db } from '../history/db.ts';
@@ -20,6 +21,8 @@ import { db } from '../history/db.ts';
 
 export type DeviceRecord = {
   id: SavedDeviceId;
+  /** Its name in configuration: `garage-station`, what a file and an import know it by (docs/CONFIG.md). */
+  key: string;
   /** The device type: `acme.plug`. Stable forever. */
   typeId: string;
   /** Its own permanent id, read from the device — `acme:AABBCC001122` — or null until it has said. */
@@ -42,6 +45,7 @@ export type DeviceRecord = {
 
 type Row = {
   id: string;
+  key: string;
   type_id: string;
   identity: string | null;
   name: string;
@@ -57,6 +61,7 @@ type Row = {
 const toRecord = (row: Row): DeviceRecord => ({
   // The database row is a boundary: this is where a string becomes an identity.
   id: savedDeviceId(row.id),
+  key: row.key,
   typeId: row.type_id,
   identity: row.identity,
   name: row.name,
@@ -98,7 +103,13 @@ export class DeviceCatalog {
     return { active: rows.find((record) => !record.removedAt) ?? null, removed: rows.filter((record) => record.removedAt) };
   }
 
-  add(input: { typeId: string; name: string; description: DeviceDescription; identity?: string | null; config?: Record<string, unknown> }): DeviceRecord {
+  /** Whether a device you have is known by this key. */
+  keyTaken(key: string, except?: SavedDeviceId): boolean {
+    return db().query<{ id: string }, [string]>('SELECT id FROM device WHERE key = ? AND removed_at IS NULL').all(key).some((row) => row.id !== except);
+  }
+
+  add(input: { typeId: string; name: string; description: DeviceDescription; identity?: string | null; config?: Record<string, unknown>; key?: string }): DeviceRecord {
+    if (input.key !== undefined && (!KEY.test(input.key) || this.keyTaken(input.key))) throw new Error(`"${input.key}" is not a free key: lowercase letters, digits and dashes, and not another device's`);
     const record: DeviceRecord = {
       /*
         Opaque: an id that says what the device is invites code that reads it,
@@ -106,6 +117,8 @@ export class DeviceCatalog {
         form — history is keyed by them (docs/DATA-MODEL.md §3).
       */
       id: savedDeviceId(`d-${randomUUID().replaceAll('-', '').slice(0, 12)}`),
+      // Made from its name unless given: a file's key, kept as the file has it.
+      key: input.key ?? keyFrom(input.name, (key) => this.keyTaken(key), 'device'),
       typeId: input.typeId,
       identity: input.identity ?? null,
       name: input.name,
@@ -120,8 +133,8 @@ export class DeviceCatalog {
     };
     db().transaction(() => {
       db()
-        .query('INSERT INTO device (id, type_id, identity, name, config, description, added_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(record.id, record.typeId, record.identity, record.name, JSON.stringify(record.config), JSON.stringify(record.description), record.addedAt);
+        .query('INSERT INTO device (id, key, type_id, identity, name, config, description, added_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(record.id, record.key, record.typeId, record.identity, record.name, JSON.stringify(record.config), JSON.stringify(record.description), record.addedAt);
       this.#recordAttributes(record.id, record.description, record.addedAt);
     })();
     return record;
@@ -168,18 +181,22 @@ export class DeviceCatalog {
     for (const attribute of description.attributes) upsert.run(id, attribute.key, partOf(attribute), JSON.stringify(attribute), at, at);
   }
 
-  update(id: SavedDeviceId, changes: { name?: string; config?: Record<string, unknown>; identity?: string | null }): DeviceRecord | null {
+  update(id: SavedDeviceId, changes: { name?: string; config?: Record<string, unknown>; identity?: string | null; key?: string }): DeviceRecord | null {
     const existing = this.get(id);
     if (!existing) return null;
+    if (changes.key !== undefined && changes.key !== existing.key && (!KEY.test(changes.key) || this.keyTaken(changes.key, id))) {
+      throw new Error(`"${changes.key}" is not a free key: lowercase letters, digits and dashes, and not another device's`);
+    }
     const next: DeviceRecord = {
       ...existing,
+      key: changes.key ?? existing.key,
       name: changes.name?.trim() || existing.name,
       config: changes.config ?? existing.config,
       identity: changes.identity === undefined ? existing.identity : changes.identity,
     };
     db()
-      .query('UPDATE device SET name = ?, config = ?, identity = ? WHERE id = ?')
-      .run(next.name, JSON.stringify(next.config), next.identity, id);
+      .query('UPDATE device SET key = ?, name = ?, config = ?, identity = ? WHERE id = ?')
+      .run(next.key, next.name, JSON.stringify(next.config), next.identity, id);
     return next;
   }
 
@@ -216,8 +233,10 @@ export class DeviceCatalog {
     if (record.identity && this.byIdentity(record.identity).active) {
       throw new Error('You already have that device');
     }
-    db().query('UPDATE device SET removed_at = NULL WHERE id = ?').run(id);
-    return { ...record, removedAt: null };
+    // Its key back, unless a device you have has it since: then one made from its name.
+    const key = this.keyTaken(record.key) ? keyFrom(record.name, (taken) => this.keyTaken(taken), 'device') : record.key;
+    db().query('UPDATE device SET removed_at = NULL, key = ? WHERE id = ?').run(key, id);
+    return { ...record, key, removedAt: null };
   }
 
   /** Everything a device's session keeps between runs, by key. */

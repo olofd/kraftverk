@@ -94,6 +94,27 @@ describe('the device catalog', () => {
     add('One', 'sydpower:AABBCC000002');
     expect(() => add('Two', 'sydpower:AABBCC000002')).toThrow();
   });
+
+  test('its key, its name in configuration: made from its name, one device to a key, changed only to a free one', () => {
+    const first = add('Kitchen Plug');
+    const second = add('Kitchen plug');
+    expect([first.key, second.key]).toEqual(['kitchen-plug', 'kitchen-plug-2']);
+    // Given, as a file gives it: kept as it is — but not one taken, nor one that is not a key.
+    expect(catalog.add({ description: LAMP, typeId: 'aferiy.p280', name: 'Whatever', key: 'hall-lamp' }).key).toBe('hall-lamp');
+    expect(() => catalog.add({ description: LAMP, typeId: 'aferiy.p280', name: 'Again', key: 'hall-lamp' })).toThrow('not a free key');
+    expect(() => catalog.update(first.id, { key: 'Kitchen_Plug' })).toThrow('not a free key');
+    expect(() => catalog.update(first.id, { key: 'kitchen-plug-2' })).toThrow('not a free key');
+    expect(catalog.update(first.id, { key: 'counter-plug' })?.key).toBe('counter-plug');
+    // A name changed leaves the key as it is: files that name it still do.
+    expect(catalog.update(first.id, { name: 'Coffee' })?.key).toBe('counter-plug');
+  });
+
+  test('brought back, it has its key again — or one made from its name, when another has it since', () => {
+    const gone = add('Porch light');
+    catalog.remove(gone.id);
+    add('Porch light');
+    expect(catalog.restore(gone.id)?.key).toBe('porch-light-2');
+  });
 });
 
 describe('removing a device', () => {

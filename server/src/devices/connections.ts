@@ -30,6 +30,8 @@ export type ConnectionRecord = {
   priority: number;
   /** The method's own choices, and the protocol's non-secret credentials. */
   config: Record<string, unknown>;
+  /** Whether its secrets may leave in an export as plain text: its owner's choice, off unless chosen (docs/CONFIG.md). */
+  secretsExportable: boolean;
   createdAt: string;
   lastConnectedAt: string | null;
 };
@@ -43,6 +45,7 @@ type Row = {
   address: string;
   priority: number;
   config: string;
+  secrets_exportable: number;
   created_at: string;
   last_connected_at: string | null;
 };
@@ -56,6 +59,7 @@ const toRecord = (row: Row): ConnectionRecord => ({
   address: row.address,
   priority: row.priority,
   config: JSON.parse(row.config) as Record<string, unknown>,
+  secretsExportable: row.secrets_exportable === 1,
   createdAt: row.created_at,
   lastConnectedAt: row.last_connected_at,
 });
@@ -92,6 +96,7 @@ export class ConnectionStore {
     address: string;
     config?: Record<string, unknown>;
     priority?: number;
+    secretsExportable?: boolean;
   }): ConnectionRecord {
     const existing = this.forDevice(input.deviceId);
     const record: ConnectionRecord = {
@@ -104,24 +109,25 @@ export class ConnectionStore {
       // A new way to reach a device comes after the ones it already has.
       priority: input.priority ?? (existing.length ? Math.max(...existing.map((c) => c.priority)) + 1 : 0),
       config: input.config ?? {},
+      secretsExportable: input.secretsExportable ?? false,
       createdAt: new Date().toISOString(),
       lastConnectedAt: null,
     };
     db()
       .query(
-        'INSERT INTO device_connection (id, device_id, method, transport, held_by, address, priority, config, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO device_connection (id, device_id, method, transport, held_by, address, priority, config, secrets_exportable, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
       )
-      .run(record.id, record.deviceId, record.method, record.transport, record.heldBy, record.address, record.priority, JSON.stringify(record.config), record.createdAt);
+      .run(record.id, record.deviceId, record.method, record.transport, record.heldBy, record.address, record.priority, JSON.stringify(record.config), record.secretsExportable ? 1 : 0, record.createdAt);
     return record;
   }
 
-  update(id: string, changes: { priority?: number; config?: Record<string, unknown>; address?: string }): ConnectionRecord | null {
+  update(id: string, changes: { priority?: number; config?: Record<string, unknown>; address?: string; secretsExportable?: boolean }): ConnectionRecord | null {
     const existing = this.get(id);
     if (!existing) return null;
     const next = { ...existing, ...Object.fromEntries(Object.entries(changes).filter(([, value]) => value !== undefined)) };
     db()
-      .query('UPDATE device_connection SET priority = ?, config = ?, address = ? WHERE id = ?')
-      .run(next.priority, JSON.stringify(next.config), next.address, id);
+      .query('UPDATE device_connection SET priority = ?, config = ?, address = ?, secrets_exportable = ? WHERE id = ?')
+      .run(next.priority, JSON.stringify(next.config), next.address, next.secretsExportable ? 1 : 0, id);
     return next;
   }
 

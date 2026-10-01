@@ -130,6 +130,7 @@ export class DeviceRegistry {
         inUse: active?.id === connection.id,
         lastConnectedAt: connection.lastConnectedAt,
         secrets: joined.secrets.get(connection.id) ?? [],
+        secretsExportable: connection.secretsExportable,
         config: connection.config,
       };
     });
@@ -144,6 +145,7 @@ export class DeviceRegistry {
 
     return {
       id: record.id,
+      key: record.key,
       typeId: record.typeId,
       installed: type !== null,
       name: record.name,

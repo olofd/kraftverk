@@ -176,6 +176,7 @@ const connection = (id: string, priority: number, reachable: boolean | null, hel
   inUse: false,
   lastConnectedAt: null,
   secrets: [],
+  secretsExportable: false,
   config: {},
 });
 

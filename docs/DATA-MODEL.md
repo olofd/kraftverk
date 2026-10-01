@@ -348,6 +348,7 @@ erDiagram
 
   device {
     text id PK "d-3f9a2c61b0e4"
+    text key "garage-p280 · its name in configuration · one device you have to a key"
     text type_id "aferiy.p280 · a DeviceType id · never changes"
     text identity "sydpower:AABBCC001122 · read from the device · null until first read"
     text name "Garage P280"
@@ -368,6 +369,7 @@ erDiagram
     text address "AABBCC001122 · 192.0.2.41 · a browser's Bluetooth handle"
     int priority "0 = preferred · 1 = the fallback"
     json config "{} · the method's own choices · {protocolVersion: 3.4}"
+    int secrets_exportable "0 · 1: its secrets may leave in plain text, its owner's choice"
     text created_at "2026-09-27T19:40:00Z"
     text last_connected_at "2026-09-27T21:02:10Z"
   }
@@ -436,6 +438,7 @@ erDiagram
   }
   automation {
     text id PK "a-71c2d0e5f9a3"
+    text key "start-charging-the-scooter · its name in configuration · unique"
     text name "Sunny heater · Start charging the scooter"
     json rule "{roles, params: {fields: {}}, when, if, then, otherwise} · its own, checked before it is kept"
     text made_from "standard.start-charging · the recipe it was copied from · null: built from nothing"

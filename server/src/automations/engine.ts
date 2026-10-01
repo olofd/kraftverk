@@ -70,6 +70,8 @@ export type { AutomationMode };
 
 export type AutomationRecord = {
   id: AutomationId;
+  /** Its name in configuration: what a file and an import know it by (docs/CONFIG.md). */
+  key: string;
   name: string;
   /** Its own rule, as its owner built it — or copied it from a recipe (docs/AUTOMATION-EDITOR.md). */
   rule: Rule;

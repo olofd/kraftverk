@@ -48,6 +48,7 @@ const CORE = [
   'client/app/',
   'packages/api-client/',
   'packages/api-contract/',
+  'packages/config/',
   'packages/ui/',
   'packages/device-sdk/',
   'packages/gateway/',
@@ -57,7 +58,7 @@ const CORE = [
  * The core both holders run: the server and the app. Pure, like a protocol —
  * no platform built-in — or the app could not run it.
  */
-const SHARED_CORE = /^packages\/(api-contract|device-sdk|gateway|holder)\/src\//;
+const SHARED_CORE = /^packages\/(api-contract|config|device-sdk|gateway|holder)\/src\//;
 /** The one file per side allowed to import every device type. */
 const GENERATED = ['server/src/generated/', 'client/src/generated/'];
 

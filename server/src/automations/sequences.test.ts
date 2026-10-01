@@ -33,7 +33,7 @@ afterAll(() => {
 beforeEach(() => {
   db().exec('DELETE FROM automation');
   db().exec('DELETE FROM device');
-  const insert = db().query("INSERT INTO device (id, type_id, name, description, added_at) VALUES (?, 'test.device', ?, '{\"parts\":[],\"attributes\":[]}', '2026-06-01T00:00:00Z')");
+  const insert = db().query("INSERT INTO device (id, key, type_id, name, description, added_at) VALUES (?1, ?1, 'test.device', ?2, '{\"parts\":[],\"attributes\":[]}', '2026-06-01T00:00:00Z')");
   insert.run('d-station', 'Garage station');
   insert.run('d-scooter-plug', 'Scooter plug');
 });
@@ -681,5 +681,19 @@ describe('automations that share a part', () => {
     expect(child.outcome).toBe('acted');
     expect(parent.outcome).toBe('acted');
     expect(switches()).toEqual(['supply on', 'charger on', 'charger off']);
+  });
+});
+
+describe('an automation in configuration', () => {
+  test('its key: made from its name, one automation to a key, changed only to a free one', () => {
+    const { make, store } = setup();
+    const first = make('standard.start-charging');
+    const second = make('standard.start-charging');
+    expect(first.key).toMatch(/^start-charging-the-scooter(-\d+)?$/);
+    expect(second.key).not.toBe(first.key);
+    expect(() => store.update(first.id, { key: second.key })).toThrow('not a free key');
+    expect(() => store.update(first.id, { key: 'Not A Key' })).toThrow('not a free key');
+    expect(store.update(first.id, { key: 'scooter-start' })?.key).toBe('scooter-start');
+    expect(store.update(first.id, { name: 'Renamed' })?.key).toBe('scooter-start');
   });
 });
