@@ -1,6 +1,8 @@
 import { isNode, isScalar, LineCounter, parseDocument, Document, Scalar, type Node, type ScalarTag } from 'yaml';
 
-import { documentFromData, documentToData, emptyDocument, keyFrom, SecretRef, type AutomationEntry, type ConfigDocument, type DeviceEntry, type WriteContext } from './document.ts';
+import { keyFrom } from '@kraftverk/device-sdk';
+
+import { documentFromData, documentToData, emptyDocument, SecretRef, type AutomationEntry, type ConfigDocument, type DeviceEntry, type WriteContext } from './document.ts';
 import type { PrintContext } from './expr.ts';
 import { CURRENT_VERSION, migrate } from './migrate.ts';
 import type { Issue } from './rules.ts';

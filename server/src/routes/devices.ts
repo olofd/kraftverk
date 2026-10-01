@@ -3,8 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
 import type { AttributeWrite, CommandBody, DeviceChanges, DeviceEventView, DeviceHistory, DeviceTypeListing, PictureChoice, ProblemView, ToolBody } from '@kraftverk/api-contract';
-import { KEY } from '@kraftverk/config';
-import { CATEGORIES, capabilityIn, describeDeviceType, isSimulated, methodsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
+import { CATEGORIES, capabilityIn, describeDeviceType, isSimulated, KEY, methodsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
 import { Confirmations, subjectOf } from '@kraftverk/gateway';
 import { runTool, ToolRefused, type ToolRefusal } from '@kraftverk/holder';
 

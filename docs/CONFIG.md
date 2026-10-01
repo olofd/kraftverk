@@ -22,6 +22,7 @@ and check a file with the same code.
 kraftverk: 1                      # the document's version: required
 
 home:
+  clock: Europe/Stockholm          # what an automation that says no clock keeps time in
   policy: { loadWatts: 50, reserveSoc: 20 }
 
 devices:
@@ -239,6 +240,11 @@ change to the document's shape adds a migration from n to n + 1
 (`packages/config/src/migrate.ts`) with a kept fixture of version n, so every
 newer kraftverk reads every older file. A file from a newer kraftverk is
 refused, saying so.
+
+The fixtures are `packages/config/fixtures/vN.yaml`, never changed once
+kept; `migrate.test.ts` fails while a version lacks its fixture, a version
+below this one lacks its migration, or any fixture does not read — with
+nothing wrong — and write back the same.
 
 ## Importing
 

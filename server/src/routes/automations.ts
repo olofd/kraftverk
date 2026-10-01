@@ -3,8 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
 import type { AutomationDraft, AutomationKit, AutomationRuns, RecipeView, RunLog } from '@kraftverk/api-contract';
-import { automationId, describeSteps, isTimeZone, savedDeviceId, takesSteps, type AutomationId, type Rule, type Value } from '@kraftverk/device-sdk';
-import { KEY } from '@kraftverk/config';
+import { automationId, describeSteps, isTimeZone, KEY, savedDeviceId, takesSteps, type AutomationId, type Rule, type Value } from '@kraftverk/device-sdk';
 import { Confirmations, subjectOf } from '@kraftverk/gateway';
 
 import { actorOf } from '../auth/routes.ts';

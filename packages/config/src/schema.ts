@@ -1,6 +1,6 @@
 import type { ConfigField, ConfigSchema } from '@kraftverk/device-sdk';
 
-import { KEY } from './document.ts';
+import { KEY } from '@kraftverk/device-sdk';
 import { CURRENT_VERSION } from './migrate.ts';
 import type { Vocabulary, VocabularyMethod, VocabularyType } from './vocabulary.ts';
 
@@ -208,12 +208,12 @@ function automationSchema(vocabulary: Vocabulary): Schema {
   return {
     type: 'object',
     title: 'An automation',
-    required: ['name', 'clock'],
+    required: ['name'],
     additionalProperties: false,
     properties: {
       name: { type: 'string', minLength: 1 },
       mode: { enum: ['off', 'watch', 'act'], enumDescriptions: ['Off: it does nothing on its own', 'Watch only: it says what it would have done', 'Act: it acts on its own'], default: 'watch' },
-      clock: { type: 'string', description: 'The time zone its times of day are in: "Europe/Stockholm".' },
+      clock: { type: 'string', description: 'The time zone its times of day are in: "Europe/Stockholm". The home’s, when it says none.' },
       recheck: { $ref: '#/$defs/duration' },
       'home page': { type: 'integer', minimum: 0, description: 'Its place among the home page’s shortcuts.' },
       'made from': { type: 'string', description: 'The recipe it was copied from.' },
@@ -272,6 +272,7 @@ export function configJsonSchema(vocabulary: Vocabulary): Schema {
         type: 'object',
         additionalProperties: false,
         properties: {
+          clock: { type: 'string', description: 'The time zone the home’s automations keep time in, when one says none of its own: "Europe/Stockholm".' },
           policy: {
             type: 'object',
             additionalProperties: false,

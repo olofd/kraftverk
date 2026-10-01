@@ -45,6 +45,7 @@ export function checkDocument(document: ConfigDocument, vocabulary: Vocabulary, 
   };
 
   // The home.
+  if (document.home.clock !== null && !isTimeZone(document.home.clock)) problem(`"${document.home.clock}" is not a time zone: "Europe/Stockholm"`, ['home', 'clock']);
   for (const [name, value] of Object.entries(document.home.policy)) {
     const spec = vocabulary.policy[name];
     if (!spec) problem(`"${name}" is not one of the home's values: ${Object.keys(vocabulary.policy).join(', ')}`, ['home', 'policy', name]);

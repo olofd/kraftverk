@@ -80,6 +80,16 @@ type Kept = {
 const PLAN_TTL_MS = 15 * 60_000;
 const plans = new Map<string, Kept>();
 
+/**
+ * Plans past their time forgotten — and the secrets each opened with them:
+ * on every use of the plans, and each minute besides, so an opened key does
+ * not wait in memory for the next import to be made.
+ */
+function forgetExpired(now = Date.now()): void {
+  for (const [id, kept] of plans) if (kept.expiresAt < now) (kept.secrets.clear(), plans.delete(id));
+}
+setInterval(forgetExpired, 60_000).unref?.();
+
 
 export class ImportError extends Error {
   constructor(
@@ -254,7 +264,7 @@ export function planImport(deps: ImportDeps, text: string, options: { mode: Impo
   const id = placed.length ? null : `p-${randomBytes(9).toString('base64url')}`;
   const view: ImportPlan = { id, from: read.from, problems: placed, devices, links, automations, policy, needs, notes };
   if (id) {
-    for (const [planId, kept] of plans) if (kept.expiresAt < Date.now()) plans.delete(planId);
+    forgetExpired();
     plans.set(id, { view, document, mode: options.mode, secrets, by: options.by, expiresAt: Date.now() + PLAN_TTL_MS, turnedOff });
   }
   return view;
@@ -409,6 +419,7 @@ export type ImportChoices = {
 
 /** A kept plan, if it is this person's and still current. */
 export function keptPlan(id: string, by: string): ImportPlan | null {
+  forgetExpired();
   const kept = plans.get(id);
   return kept && kept.by === by && kept.expiresAt > Date.now() ? kept.view : null;
 }
@@ -419,6 +430,7 @@ export function keptPlan(id: string, by: string): ImportPlan | null {
  * in the plan's `needs.confirm`.
  */
 export async function applyImport(deps: ImportDeps, id: string, by: string, choices: ImportChoices, options: { lenient?: boolean } = {}): Promise<ImportApplied> {
+  forgetExpired();
   const kept = plans.get(id);
   if (!kept || kept.by !== by || kept.expiresAt < Date.now()) throw new ImportError('That plan has gone: read the file again', [], 404);
   const { document, view } = kept;
@@ -526,6 +538,8 @@ export async function applyImport(deps: ImportDeps, id: string, by: string, choi
     }
   })();
 
+  // Used up: its opened secrets go with it.
+  kept.secrets.clear();
   plans.delete(id);
   // Open what was added, close what was removed; what watches starts afresh, and looks now.
   await deps.sessions.sync(deps.catalog.list());

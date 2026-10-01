@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { KEY, keyFrom } from '@kraftverk/config';
+import { KEY, keyFrom } from '@kraftverk/device-sdk';
 import { partOf, savedDeviceId, type AttributeSpec, type DescriptionSource, type DeviceDescription, type DeviceInfo, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import { db } from '../history/db.ts';

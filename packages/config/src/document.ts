@@ -1,4 +1,4 @@
-import type { Rule } from '@kraftverk/device-sdk';
+import { KEY, type Rule } from '@kraftverk/device-sdk';
 
 import { CURRENT_VERSION } from './migrate.ts';
 import { durationSeconds, durationText, ruleFromConfig, ruleToConfig, useOf, useText, type Issue, type Use } from './rules.ts';
@@ -68,35 +68,14 @@ export type AutomationEntry = {
 
 export type ConfigDocument = {
   version: number;
-  home: { policy: Record<string, number> };
+  /** The home's values, and its clock: the time zone an automation that says none of its own keeps time in. */
+  home: { policy: Record<string, number>; clock: string | null };
   devices: Record<string, DeviceEntry>;
   links: LinkEntry[];
   automations: Record<string, AutomationEntry>;
   /** Secrets by name, for `!secret name`: sealed in an export, or plain where they may be. */
   secrets: Record<string, string>;
 };
-
-/** A key a file knows a device or an automation by: lowercase letters, digits and dashes. */
-export const KEY = /^[a-z0-9][a-z0-9-]{0,62}$/;
-
-/**
- * A key from a name, for something you have just named: "Garage Station 2" is
- * `garage-station-2`, "Laddare för skotern" `laddare-for-skotern` — and, when
- * `taken` says one is someone else's, `-2`, `-3` after it.
- */
-export function keyFrom(name: string, taken: (key: string) => boolean, fallback = 'item'): string {
-  const base =
-    name
-      .normalize('NFKD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 56)
-      .replace(/-+$/, '') || fallback;
-  if (!taken(base)) return base;
-  for (let n = 2; ; n++) if (!taken(`${base}-${n}`)) return `${base}-${n}`;
-}
 
 /** A secret's name, written `!secret name`, as the YAML reads it. */
 export class SecretRef {
@@ -137,11 +116,16 @@ export function documentFromData(data: unknown, context: WriteContext = {}, opti
 
   // The home.
   const policy: Record<string, number> = {};
+  let homeClock: string | null = null;
   if (data.home !== undefined) {
     if (!isRecord(data.home)) problem('"home" is a map', ['home']);
-    else if (data.home.policy !== undefined) {
-      if (!isRecord(data.home.policy)) problem('"policy" is a map of the home\'s values', ['home', 'policy']);
-      else for (const [name, value] of Object.entries(data.home.policy)) typeof value === 'number' ? (policy[name] = value) : problem('A policy value is a number', ['home', 'policy', name]);
+    else {
+      for (const field of Object.keys(data.home)) if (!['policy', 'clock'].includes(field)) problem(`"${field}" is not part of the home: it has policy and clock`, ['home', field]);
+      if (data.home.clock !== undefined) homeClock = text(data.home.clock, ['home', 'clock'], 'its clock: the time zone its automations keep time in ("clock: Europe/Stockholm")');
+      if (data.home.policy !== undefined) {
+        if (!isRecord(data.home.policy)) problem('"policy" is a map of the home\'s values', ['home', 'policy']);
+        else for (const [name, value] of Object.entries(data.home.policy)) typeof value === 'number' ? (policy[name] = value) : problem('A policy value is a number', ['home', 'policy', name]);
+      }
     }
   }
 
@@ -227,7 +211,8 @@ export function documentFromData(data: unknown, context: WriteContext = {}, opti
       for (const field of Object.keys(entry)) if (![...own, ...rules].includes(field)) problem(`"${field}" is not part of an automation: it has ${[...own, ...rules].join(', ')}`, [...path, field]);
       const name = text(entry.name, [...path, 'name'], 'its name');
       const mode = entry.mode === undefined ? 'watch' : MODES.includes(entry.mode as Mode) ? (entry.mode as Mode) : (problem('"mode" is off, watch or act', [...path, 'mode']), 'watch');
-      const clock = text(entry.clock, [...path, 'clock'], 'its clock: the time zone its times are in ("clock: Europe/Stockholm")');
+      // Its own clock, or the home's.
+      const clock = entry.clock === undefined && homeClock ? homeClock : text(entry.clock, [...path, 'clock'], 'its clock: the time zone its times are in ("clock: Europe/Stockholm"), or the home\'s ("home: { clock: … }")');
       const recheck = entry.recheck === undefined || entry.recheck === null ? null : durationSeconds(entry.recheck);
       if (entry.recheck !== undefined && entry.recheck !== null && (recheck === null || recheck % 60 !== 0)) problem('"recheck" is how often it looks again, in whole minutes ("15 min")', [...path, 'recheck']);
       const homePlace = entry['home page'] === undefined || entry['home page'] === null ? null : Number.isInteger(entry['home page']) ? (entry['home page'] as number) : (problem('"home page" is its place among the shortcuts: 0, 1, 2 …', [...path, 'home page']), null);
@@ -247,7 +232,7 @@ export function documentFromData(data: unknown, context: WriteContext = {}, opti
 
   // Partial: what could be read, beside every problem — whose entries the reader leaves out (`readConfig`).
   if (issues.length && !options.partial) return { document: null, issues };
-  return { document: { version: CURRENT_VERSION, home: { policy }, devices, links, automations, secrets }, issues };
+  return { document: { version: CURRENT_VERSION, home: { policy, clock: homeClock }, devices, links, automations, secrets }, issues };
 }
 
 /** How a document is written: as `PrintContext` — and the unit of what a role reads in one automation, where roles of the same name fill different parts. */
@@ -296,7 +281,9 @@ export function documentToData(document: ConfigDocument, context: WriteContext =
   );
   return {
     kraftverk: document.version,
-    ...(Object.keys(document.home.policy).length ? { home: { policy: document.home.policy } } : {}),
+    ...(Object.keys(document.home.policy).length || document.home.clock !== null
+      ? { home: { ...(document.home.clock !== null ? { clock: document.home.clock } : {}), ...(Object.keys(document.home.policy).length ? { policy: document.home.policy } : {}) } }
+      : {}),
     ...(Object.keys(document.devices).length ? { devices } : {}),
     ...(document.links.length ? { links: document.links.map((link) => ({ [link.kind]: { from: useText(link.from), to: useText(link.to) } })) } : {}),
     ...(Object.keys(document.automations).length ? { automations } : {}),
@@ -305,4 +292,4 @@ export function documentToData(document: ConfigDocument, context: WriteContext =
 }
 
 /** An empty document of this version. */
-export const emptyDocument = (): ConfigDocument => ({ version: CURRENT_VERSION, home: { policy: {} }, devices: {}, links: [], automations: {}, secrets: {} });
+export const emptyDocument = (): ConfigDocument => ({ version: CURRENT_VERSION, home: { policy: {}, clock: null }, devices: {}, links: [], automations: {}, secrets: {} });

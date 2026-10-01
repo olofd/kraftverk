@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
 import { describeError } from '@kraftverk/api-client';
-import { KEY } from '@kraftverk/config';
+import { KEY } from '@kraftverk/device-sdk';
 import { haptic } from '@kraftverk/ui';
 
 /**

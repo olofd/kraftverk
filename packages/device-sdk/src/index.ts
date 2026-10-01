@@ -13,6 +13,7 @@
  */
 
 export * from './identity.ts';
+export * from './keys.ts';
 export * from './values.ts';
 export * from './schema.ts';
 export * from './meanings.ts';
