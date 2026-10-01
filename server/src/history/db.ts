@@ -39,6 +39,9 @@ const DEFAULT_FILE = () => resolve(import.meta.dirname, '../../data/kraftverk.db
  * path under a test runner turns a silent, order-dependent data loss into a
  * failure on the first line that causes it.
  */
+/** Where the database is: `KRAFTVERK_DB`, or the default beside the server. What the configuration kept beside it is kept beside. */
+export const databaseFile = (): string => file();
+
 const file = () => {
   const configured = process.env.KRAFTVERK_DB;
   if (configured) return configured;
@@ -273,8 +276,24 @@ export function openSecret(stored: string, encrypted: boolean): string | null {
 
 // --- audit -----------------------------------------------------------------
 
+const auditListeners = new Set<(entry: AuditRecord) => void>();
+
+/** Hears each line added to the timeline, after it is added: what follows a change without each route saying so. Returns what stops it. */
+export function onAudit(listener: (entry: AuditRecord) => void): () => void {
+  auditListeners.add(listener);
+  return () => void auditListeners.delete(listener);
+}
+
 /** Adds a line to the timeline. What the API returns of it is the contract's `AuditEntry`. */
 export function audit(entry: AuditRecord): void {
+  try {
+    write(entry);
+  } finally {
+    for (const listener of auditListeners) listener(entry);
+  }
+}
+
+function write(entry: AuditRecord): void {
   db()
     .query('INSERT INTO audit (at, kind, actor, resource_kind, resource, summary, detail) VALUES (?, ?, ?, ?, ?, ?, ?)')
     .run(

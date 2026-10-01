@@ -263,6 +263,56 @@ async function added(name: string, options: Parameters<typeof checked>[0] = {}) 
   return saved.body as { id: string; name: string; identity: string | null };
 }
 
+describe('configuration', () => {
+  test('its JSON Schema is open to an editor, which cannot log in — and names nothing you have', async () => {
+    lampAt('lamp-1');
+    await added('Hall lamp');
+    const schema = await call('/config/schema.json', { server: onBus });
+    expect(schema.status).toBe(200);
+    expect(schema.body.$defs.device.properties.type.enum).toContain('test.lamp');
+    expect(schema.text).not.toContain('hall-lamp');
+    // What you have is the vocabulary's, behind the gate.
+    expect((await call('/config/vocabulary', { server: onBus })).status).toBe(401);
+    const vocabulary = await onBusAs('/config/vocabulary');
+    expect(vocabulary.body.devices.map((device: { key: string }) => device.key)).toContain('hall-lamp');
+  });
+
+  test('an export: each device by its key, how it is reached — and its secret left out, sealed, or plain only where allowed', async () => {
+    lampAt('lamp-1');
+    const lamp = await added('Hall lamp');
+    const device = await onBusAs(`/devices/${lamp.id}`);
+    const connection = device.body.connections[0].id as string;
+    expect((await onBusAs(`/devices/${lamp.id}/connections/${connection}/secrets`, { method: 'PUT', body: { pin: 'pin-from-a-test' } })).status).toBe(200);
+
+    const none = await onBusAs('/config/export', { method: 'POST', body: {} });
+    expect(none.status).toBe(200);
+    expect(none.body.text).toContain('# yaml-language-server: $schema=http://192.168.1.140:3333/api/config/schema.json');
+    expect(none.body.text).toContain('hall-lamp:\n    type: test.lamp\n    name: Hall lamp');
+    expect(none.body.text).not.toContain('pin-from-a-test');
+    expect(none.body.notes).toContain("Hall lamp's pin is left out: give it again after importing");
+
+    // Plain only where its owner allowed it: not here.
+    const plain = await onBusAs('/config/export', { method: 'POST', body: { secrets: 'plain' } });
+    expect(plain.body.text).not.toContain('pin-from-a-test');
+    expect(plain.body.notes).toContain("Hall lamp's pin is left out: its owner has not let it leave in plain text");
+
+    // Sealed: under its name, opened only by the passphrase.
+    expect((await onBusAs('/config/export', { method: 'POST', body: { secrets: 'sealed', passphrase: 'short' } })).status).toBe(400);
+    const sealed = await onBusAs('/config/export', { method: 'POST', body: { secrets: 'sealed', passphrase: 'a passphrase of some length' } });
+    expect(sealed.body.text).toContain('pin: !secret hall-lamp.pin');
+    expect(sealed.body.text).toMatch(/hall-lamp\.pin: sealed:v1:/);
+    expect(sealed.body.text).not.toContain('pin-from-a-test');
+    // Secrets that left are on the timeline; a plain export without any is not.
+    const timeline = (await onBusAs('/audit')).body as { kind: string }[];
+    expect(timeline.filter((entry) => entry.kind === 'config.exported').length).toBe(2);
+
+    // One device alone, by its key.
+    const one = await onBusAs('/config/export', { method: 'POST', body: { devices: ['hall-lamp'], automations: [] } });
+    expect(one.body.text).toContain('hall-lamp:');
+    expect(one.body.text).not.toContain('home:');
+  });
+});
+
 describe('everything needs a session', () => {
   test('every route answers 401 without one', async () => {
     for (const path of ['/devices', '/devices/removed', '/device-types', '/transports', '/found', '/audit', '/version', '/diagnostics/log', '/clients']) {
@@ -326,6 +376,7 @@ describe('adding a device', () => {
       expect.objectContaining({ address: 'lamp-1', name: 'Lamp lamp-1', claimedBy: null }),
     ]);
 
+    lampAt('lamp-1');
     const lamp = await added('Hall lamp');
     expect(lamp.identity).toBe('lampish:LAMP-1');
     const view = (await onBusAs(`/devices/${enc(lamp.id)}`)).body;
@@ -335,6 +386,7 @@ describe('adding a device', () => {
 
   test('the same lamp again is yours: its address is marked, and it is not added twice', async () => {
     lampAt('lamp-1');
+    lampAt('lamp-1');
     const lamp = await added('Hall lamp');
     const { id, check } = await checked();
     expect(check).toMatchObject({ outcome: 'yours', device: { id: lamp.id, name: 'Hall lamp' } });
@@ -343,6 +395,7 @@ describe('adding a device', () => {
   });
 
   test('a removed lamp is offered back, with its history', async () => {
+    lampAt('lamp-1');
     lampAt('lamp-1');
     const lamp = await added('Hall lamp');
     db().query("INSERT INTO sample (device_id, part, key, at, value) VALUES (?, 'main', ?, ?, ?)").run(lamp.id, 'on', new Date().toISOString(), 1);
@@ -361,6 +414,7 @@ describe('adding a device', () => {
     lampAt('lamp-1');
     lampAt('lamp-1b', { serial: 'LAMP-1' });
     lampAt('lamp-2');
+    lampAt('lamp-1');
     const lamp = await added('Hall lamp');
 
     const other = await checked({ methodId: 'backup', address: 'lamp-2' });
@@ -442,6 +496,7 @@ describe('adding a device', () => {
 describe('a device you have', () => {
   test('is renamed, and nothing else about it is changed through that route', async () => {
     lampAt('lamp-1');
+    lampAt('lamp-1');
     const lamp = await added('Hall lamp');
     const path = `/devices/${enc(lamp.id)}`;
     expect((await onBusAs(path, { method: 'PATCH', body: { typeId: 'aferiy.p280' } })).status).toBe(400);
@@ -449,6 +504,7 @@ describe('a device you have', () => {
   });
 
   test('shows the picture its owner picks, for every app: one of its type’s; a photo of its own is not yet', async () => {
+    lampAt('lamp-1');
     lampAt('lamp-1');
     const lamp = await added('Hall lamp');
     const path = `/devices/${enc(lamp.id)}`;
@@ -472,6 +528,7 @@ describe('a device you have', () => {
 
   test('removing keeps its history; deleting it takes the name typed back', async () => {
     lampAt('lamp-1');
+    lampAt('lamp-1');
     const lamp = await added('Hall lamp');
     const path = `/devices/${enc(lamp.id)}`;
     expect((await onBusAs(`${path}/delete-history`, { method: 'POST', body: { name: 'Hall lamp' } })).status).toBe(409);
@@ -489,6 +546,7 @@ describe('a device you have', () => {
   });
 
   test('a command to a part goes through the gateway, and switches the lamp', async () => {
+    lampAt('lamp-1');
     lampAt('lamp-1');
     const lamp = await added('Hall lamp');
     await new Promise((resolve) => setTimeout(resolve, 30)); // its first reading
@@ -532,6 +590,7 @@ describe('a device you have', () => {
   });
 
   test('its type’s tools: a read is a GET, a write is a POST and is audited, refusals too', async () => {
+    lampAt('lamp-1');
     lampAt('lamp-1');
     const lamp = await added('Hall lamp');
     const base = `/devices/${enc(lamp.id)}/tools`;
@@ -595,6 +654,7 @@ describe('connections and links', () => {
   test('the last way to reach a device cannot be removed; another can, and can be preferred', async () => {
     lampAt('lamp-1');
     lampAt('lamp-1b', { serial: 'LAMP-1' });
+    lampAt('lamp-1');
     const lamp = await added('Hall lamp');
     const base = `/devices/${enc(lamp.id)}/connections`;
     const only = (await onBusAs(`/devices/${enc(lamp.id)}`)).body.connections[0].id;
@@ -609,6 +669,7 @@ describe('connections and links', () => {
   });
 
   test('secrets are replaced write-only, and only fields that are secrets', async () => {
+    lampAt('lamp-1');
     lampAt('lamp-1');
     const lamp = await added('Hall lamp');
     const connection = (await onBusAs(`/devices/${enc(lamp.id)}`)).body.connections[0].id;
@@ -791,6 +852,7 @@ describe('a connection a browser holds', () => {
 
   test('a browser that cannot tell which station it reached attaches on the person’s word', async () => {
     lampAt('lamp-1');
+    lampAt('lamp-1');
     const lamp = await added('Hall lamp');
     const client = await browser();
     const started = await heldSetup(client.id, { identity: null, model: 'L1', summary: 'On.' }, { methodId: 'backup' });
@@ -801,6 +863,7 @@ describe('a connection a browser holds', () => {
   });
 
   test('the reachable connection highest in the list is in use: the app takes over while the server cannot reach it, and gives it back', async () => {
+    lampAt('lamp-1');
     lampAt('lamp-1');
     const lamp = await added('Hall lamp');
     const client = await browser();
@@ -1466,6 +1529,7 @@ describe('the server', () => {
     // Each way it could be added as: the type, by each method that reaches it.
     expect(found[0].types.map((type: { methodId: string }) => type.methodId)).toEqual(['bus', 'backup']);
 
+    lampAt('lamp-1');
     await added('Hall lamp');
     expect((await onBusAs('/found')).body.found.map((entry: { address: string }) => entry.address)).toEqual(['lamp-2']);
   });

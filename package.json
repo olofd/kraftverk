@@ -51,6 +51,8 @@
     "check:architecture": "node scripts/architecture.mjs && node scripts/run-bun.mjs scripts/gen-devices.ts --check",
     "//gen:devices": "Writes the app's registry of device types, protocols, transports and screens from the installed packages (client/src/generated/registry.ts). Run it after adding a package; CI checks it is current.",
     "gen:devices": "node scripts/run-bun.mjs scripts/gen-devices.ts",
+    "//config": "Checks a configuration file against what is installed, or prints its JSON Schema: npm run config -- check kraftverk.yaml. See docs/CONFIG.md.",
+    "config": "node scripts/run-bun.mjs scripts/config.ts",
     "//new": "Starts a device type, protocol or transport that already keeps its contract. See docs/ADDING-A-DEVICE.md.",
     "new:device": "node scripts/run-bun.mjs scripts/new-package.ts device",
     "new:protocol": "node scripts/run-bun.mjs scripts/new-package.ts protocol",

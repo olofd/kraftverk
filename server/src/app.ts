@@ -23,6 +23,7 @@ import { setupRoutes } from './routes/setup.ts';
 import { transportRoutes } from './routes/transports.ts';
 import { assistantRoutes } from './routes/assistant.ts';
 import { automationRoutes } from './routes/automations.ts';
+import { configRoutes } from './routes/config.ts';
 
 export type { AppDeps } from './routes/shared.ts';
 
@@ -173,6 +174,7 @@ export function createApp(deps: AppDeps) {
   api.route('/', heldRoutes(deps));
   api.route('/', transportRoutes(deps));
   api.route('/', automationRoutes(deps));
+  api.route('/', configRoutes(deps));
   api.route('/', assistantRoutes(deps));
   api.route('/', liveRoutes(deps, upgradeWebSocket, corsOrigin(config)));
 

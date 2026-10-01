@@ -243,8 +243,11 @@ export function documentFromData(data: unknown, context: PrintContext = {}): { d
   return { document: { version: CURRENT_VERSION, home: { policy }, devices, links, automations, secrets }, issues };
 }
 
+/** How a document is written: as `PrintContext` — and the unit of what a role reads in one automation, where roles of the same name fill different parts. */
+export type WriteContext = PrintContext & { unitIn?: (automation: string, role: string, means: string) => string | null };
+
 /** A document as data, in the order a person reads it: what a YAML file is written from. */
-export function documentToData(document: ConfigDocument, context: PrintContext = {}): Record<string, unknown> {
+export function documentToData(document: ConfigDocument, context: WriteContext = {}): Record<string, unknown> {
   const devices = Object.fromEntries(
     Object.entries(document.devices).map(([key, device]) => [
       key,
@@ -279,7 +282,7 @@ export function documentToData(document: ConfigDocument, context: PrintContext =
         ...(automation.recheckMinutes !== null ? { recheck: durationText(automation.recheckMinutes * 60) } : {}),
         ...(automation.homePlace !== null ? { 'home page': automation.homePlace } : {}),
         ...(automation.madeFrom !== null ? { 'made from': automation.madeFrom } : {}),
-        ...ruleToConfig(automation.rule, automation.uses, context),
+        ...ruleToConfig(automation.rule, automation.uses, context.unitIn ? { unitOf: (role, means) => context.unitIn!(key, role, means) } : context),
       },
     ])
   );

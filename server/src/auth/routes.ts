@@ -50,10 +50,12 @@ export const SESSION_COOKIE = 'kraftverk_session';
 export const CLIENT_HEADER = 'x-kraftverk-client';
 
 /**
- * The only paths reachable without a session: the way in. Each does one narrow
- * thing, and none reads or changes anything but its own session.
+ * The only paths reachable without a session: the way in — each doing one
+ * narrow thing, none reading or changing anything but its own session — and
+ * the configuration's JSON Schema, which an editor fetches without logging in:
+ * the installed types only, nothing you have (`routes/config.ts`).
  */
-const OPEN = new Set(['/api/auth/state', '/api/auth/setup', '/api/auth/login', '/api/auth/logout']);
+const OPEN = new Set(['/api/auth/state', '/api/auth/setup', '/api/auth/login', '/api/auth/logout', '/api/config/schema.json']);
 
 /**
  * The health check, for the container's own healthcheck — which runs inside

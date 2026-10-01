@@ -270,6 +270,22 @@ nothing new is checked, explained or run.
   configuration", the DSL text read-only, so the language can be learnt from
   what you built.
 
+## The app's own editor (the owner, 2026-10-01)
+
+Each automation's page — and each device's — shows its configuration, and
+can be edited as YAML instead of through the form: checked as it is typed,
+**in the app**, by the same code the server runs. So everything that reads
+and checks is in `packages/config` (pure, shared core): the document, the
+DSL, the JSON Schema from a vocabulary, and the meaning check; one entry's
+own YAML is read and written as the document it belongs to would be
+(`readAutomationYaml`, `writeAutomationYaml`, the same for devices). The
+editor: CodeMirror 6 with its YAML language and `codemirror-json-schema` —
+schema completion, hover and lint — light enough for a phone's browser, the
+kraftverk check's problems shown in it by line; on a phone's own app, a text
+field with the same problems listed. Saving goes to the server, which checks
+again and keeps it as an edit made in the form would be. A device's page
+shows its configuration read-only first; editing it there follows.
+
 ## 5. Phases (each green and pushed)
 
 1. **Model and language** — **done, 2026-10-01**:
@@ -281,7 +297,9 @@ nothing new is checked, explained or run.
    - Round-trip tests: every standard recipe, every rule in the e2e and
      engine tests, and the owner's charging pair as written above all give
      `parse(print(rule)) ≡ rule`.
-2. **Export and the schema**: `export.ts`, the JSON Schema and its route,
+2. **Export and the schema** — **done, 2026-10-01** (with the vocabulary, the
+   JSON Schema and the meaning check in the shared package, so the app runs
+   them too): `export.ts`, the JSON Schema and its route,
    the snapshot writer, the CLI `check`. The schema is checked in tests by
    validating fixture documents with `ajv` (a dev dependency).
 3. **Import and restore**: plan and apply, references and rebinding,

@@ -22,6 +22,7 @@ import type { EventStore } from '../devices/events.ts';
 import type { DeviceRegistry } from '../devices/registry.ts';
 import type { RemoteReadings } from '../devices/remote.ts';
 import type { DeviceSessionManager } from '../devices/sessions.ts';
+import type { ConfigSnapshot } from '../config/snapshot.ts';
 import type { SetupService } from '../devices/setup/index.ts';
 import type { DeviceTypeRegistry } from '../devices/types.ts';
 import { audit } from '../history/db.ts';
@@ -70,6 +71,8 @@ export type AppDeps = {
   startedAt: Date;
   /** Login guessing; a fresh one unless a test wants to share it. */
   limiter?: LoginLimiter;
+  /** The configuration kept beside the database (docs/CONFIG.md); none in a test that does not ask for one. */
+  snapshot?: ConfigSnapshot;
 };
 
 /**

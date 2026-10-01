@@ -2,6 +2,7 @@ import { ActionGateway } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
 import { createApp } from './app.ts';
 import { AutomationEngine, serverDevices } from './automations/engine.ts';
+import { ConfigSnapshot } from './config/snapshot.ts';
 import { AutomationLibrary } from './automations/library.ts';
 import { AutomationStore } from './automations/store.ts';
 import { ProxyDirectory } from './auth/trust.ts';
@@ -224,7 +225,21 @@ engine.start();
 const proxies = new ProxyDirectory(config.trustedProxies);
 proxies.start();
 
+/*
+  The configuration kept beside the database (docs/CONFIG.md): written now,
+  and again after every change to it, so a database set aside for a new
+  schema leaves a home to restore.
+*/
+const snapshot = new ConfigSnapshot({ catalog, connections, links, automations, types, protocols });
+snapshot.start();
+try {
+  snapshot.write();
+} catch (error) {
+  console.warn(`[config] The configuration could not be kept beside the database: ${(error as Error).message}`);
+}
+
 const { app, websocket } = createApp({
+  snapshot,
   config,
   catalog,
   connections,
@@ -252,6 +267,7 @@ const { app, websocket } = createApp({
 
 // Everything is running: from here on, stopping also closes what was opened.
 onStop(
+  () => snapshot.stop(),
   () => engine.stop(),
   () => sampler.stop(),
   () => changeLog.stop(),
