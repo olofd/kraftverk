@@ -41,11 +41,13 @@ type Props = {
 export function Screen({ title, subtitle, back, backTo, status, aside, children, footer }: Props) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
-  const { connection, refresh } = useDevices();
+  const { connection, refresh, views } = useDevices();
 
   const page = (
     <ScrollView
       flex={1}
+      // A touch says someone is using the app: the server keeps reading what it shows more often.
+      onTouchStart={() => views.used()}
       backgroundColor="$background"
       contentContainerStyle={{
         paddingTop: insets.top + 16,

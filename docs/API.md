@@ -122,11 +122,36 @@ travels with the socket), and two more rules do too: a browser page from
 another website is refused by its `Origin` (a WebSocket cannot carry the
 `X-Kraftverk-Client` header, so this takes its place; the native app sends
 no Origin), and the socket is closed (code `4401`) within a minute of its
-session ending. What an app sends on it is ignored.
+session ending.
 
 The app reads the list when the socket opens, and polls every five seconds
 only while it is down; closes it in the background; and opens it again with a
 growing wait, up to half a minute. Nothing depends on it being up.
+
+### What the app says back: what its screen shows
+
+The one message an app sends on the socket (`ViewReport`); anything else is
+ignored:
+
+```json
+{ "type": "view", "screen": "device/[id]", "showing": [{ "kind": "device", "id": "d-…" }] }
+```
+
+- **`screen`** is the route, never an address with ids in it (`home`,
+  `device/[id]`, `automation/[id]`). **`showing`** is what is on it:
+  `{ kind: 'device' | 'automation', id }`, each once.
+- **A fact, not a request.** The server keeps it while the socket is open
+  (`server/src/attention`), and what follows is its own judgement: today, a
+  device shown is read more often — the same wish an automation waiting on it
+  makes (`wantFresh`), renewed every 10 s while it is shown and lapsing 30 s
+  after.
+- **When it is said:** when what the screen shows changes (settled for
+  0.25 s), each time the socket opens, and at most once a minute while
+  someone uses the app (a touch, a click, a key, a scroll). An app that says
+  nothing for ten minutes is taken for unattended: a page left open in a tab
+  overnight keeps nothing fresh.
+- Kept in memory only, per open socket, with who is signed in on it: nothing
+  of it is written down.
 
 ## Environment
 

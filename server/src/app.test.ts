@@ -9,6 +9,7 @@ import { inlineParams, savedDeviceId, startCharging, type Rule, type Value } fro
 import { ActionGateway } from '@kraftverk/gateway';
 import { LiveBus, type LiveMessage } from '@kraftverk/holder';
 import { CORS_METHODS, corsOrigin, createApp } from './app.ts';
+import { Attention } from './attention/attention.ts';
 import { AutomationEngine, serverDevices } from './automations/engine.ts';
 import { AutomationLibrary } from './automations/library.ts';
 import { AutomationStore } from './automations/store.ts';
@@ -53,6 +54,7 @@ const PROXY = '172.20.0.9';
 type Server = {
   app: ReturnType<typeof createApp>['app'];
   websocket: ReturnType<typeof createApp>['websocket'];
+  attention: Attention;
   live: LiveBus;
   sessions: DeviceSessionManager;
   setup: SetupService;
@@ -126,7 +128,9 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
   const library = new AutomationLibrary(types.all(), () => {});
   const engine = new AutomationEngine({ store: automations, library, device: serverDevices(catalog, sessions), gateway, record: audit, bus: live });
 
+  const attention = new Attention();
   const { app, websocket } = createApp({
+    attention,
     config,
     catalog,
     connections,
@@ -154,6 +158,7 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
   return {
     app,
     websocket,
+    attention,
     live,
     sessions,
     setup,
@@ -1556,6 +1561,24 @@ describe('the live stream', () => {
       await as('/links', { method: 'POST', body: { kind: 'feeds', source: { device: plug.id, part: 'main' }, target: { device: station.id, part: 'input.ac' } } });
       await until(() => updates.slice(before).some((update) => update.type === 'changed'));
       socket.close();
+    } finally {
+      http.stop(true);
+    }
+  });
+
+  test('hears what the app’s screen shows, and who is signed in on it; forgets it when the socket closes; reads nothing else it says', async () => {
+    const http = serve(simulated);
+    try {
+      const { socket } = await open(http.port!, { cookie: `${SESSION_COOKIE}=${session}` });
+      const plug = { kind: 'device', id: 'd-somewhere' } as const;
+      socket.send('not json');
+      socket.send(JSON.stringify({ type: 'view', screen: 'device', showing: [{ kind: 'nonsense', id: 'x' }] }));
+      socket.send(JSON.stringify({ type: 'view', screen: 'device', showing: [plug] }));
+      await until(() => simulated.attention.watched(plug as never));
+      expect(simulated.attention.viewers()).toEqual([expect.objectContaining({ person: 'olof', screen: 'device', showing: [plug] })]);
+      socket.close();
+      await until(() => simulated.attention.viewers().length === 0);
+      expect(simulated.attention.watched(plug as never)).toBe(false);
     } finally {
       http.stop(true);
     }

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
+import { useSegments } from 'expo-router';
 import axios from 'axios';
 
 import {
@@ -36,6 +37,7 @@ import {
   type GatewayResult,
   type LinkView,
   type LiveState,
+  type LiveStream,
   type LiveUpdate,
   type NewLink,
   type SavedDeviceId,
@@ -51,6 +53,7 @@ import type { HeldDevice } from '../runtime/sessions';
 import { useAuth } from './AuthProvider';
 import { applyLive } from './live';
 import { useServers, type Mode } from './ServersProvider';
+import { createViews, type Views } from './views';
 
 /**
  * The things you have, whoever holds them.
@@ -135,6 +138,8 @@ type DevicesContextValue = {
    * how to stop hearing.
    */
   onAutomation: (listener: (id: string) => void) => () => void;
+  /** What the screen shows, told to the server (`useShowing`, `views.ts`). */
+  views: Views;
 };
 
 /** Who holds a device's connection in use: the server, this app, another app, or nobody right now. */
@@ -251,6 +256,27 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   const [heard, setHeard] = useState<{ deviceId: string; count: number } | null>(null);
   const polling = mode === 'server' && allowed;
 
+  /*
+    What the screen shows, said to the server over the live stream: the
+    screen by its route, and the things its parts show (`useShowing`). The
+    server judges what follows — a device looked at is read more often.
+  */
+  const stream = useRef<LiveStream | null>(null);
+  const views = useMemo(() => createViews((view) => stream.current?.say(view)), []);
+  const segments = useSegments();
+  const route = segments.join('/') || 'home';
+  useEffect(() => views.screen(route), [route, views]);
+  // Using the app says someone is there; on the web, any key, click or scroll. A phone's touches are each screen's (`Screen`).
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const used = () => views.used();
+    const events = ['pointerdown', 'keydown', 'wheel'] as const;
+    for (const event of events) document.addEventListener(event, used, { passive: true });
+    return () => {
+      for (const event of events) document.removeEventListener(event, used);
+    };
+  }, [views]);
+
   // Any change in what this app holds is something a card shows.
   useEffect(() => runtime.subscribe(() => setTick((n) => n + 1)), [runtime]);
   useEffect(() => runtime.local.subscribe(() => setTick((n) => n + 1)), [runtime]);
@@ -293,7 +319,6 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   // The live stream: while it is up, what changed arrives as it changes, and the list is not polled.
   useEffect(() => {
     if (!polling) return;
-    let stream: { close(): void } | null = null;
     let pending: LiveUpdate[] = [];
     let applying: ReturnType<typeof setTimeout> | null = null;
     let reading: ReturnType<typeof setTimeout> | null = null;
@@ -324,11 +349,12 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       applying ??= setTimeout(apply, APPLY_MS);
     };
     const start = () => {
-      stream ??= openLive({ onUpdate, onState: setLive });
+      // Each time it opens, it says what the screen shows: the server keeps that only while it is open.
+      stream.current ??= openLive({ onUpdate, onState: setLive, view: () => views.current() });
     };
     const stop = () => {
-      stream?.close();
-      stream = null;
+      stream.current?.close();
+      stream.current = null;
       setLive('down');
     };
 
@@ -341,7 +367,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       if (applying) clearTimeout(applying);
       if (reading) clearTimeout(reading);
     };
-  }, [load, polling]);
+  }, [load, polling, views]);
 
   /*
     The list read without the stream: every few seconds while it is down, and
@@ -695,8 +721,9 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       problems: mode === 'server' ? fetchProblems : null,
       heard,
       onAutomation,
+      views,
     }),
-    [actionsFor, devices, error, heard, holderOf, live, load, loading, mode, mutate, onAutomation, removed, runtime, screenProps, unreachable, version]
+    [actionsFor, devices, error, heard, holderOf, live, load, loading, mode, mutate, onAutomation, removed, runtime, screenProps, unreachable, version, views]
   );
 
   return <DevicesContext.Provider value={value}>{children}</DevicesContext.Provider>;

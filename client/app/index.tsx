@@ -14,6 +14,7 @@ import { Shortcuts } from '../src/features/automations/Shortcuts';
 import { DeviceIcon } from '../src/features/devices/panels';
 import { useAuth } from '../src/state/AuthProvider';
 import { useDevices } from '../src/state/DevicesProvider';
+import { useShowing } from '../src/state/useShowing';
 
 /** What can be added, from the categories something installed is in: "Power stations, smart plugs, weather". */
 const addSubtitle = (installed: readonly { meta: { category: string } }[]) =>
@@ -53,6 +54,8 @@ export default function DevicesScreen() {
   }, [heard?.count, problems]);
   const hardware = devices.filter((device) => device.kind === 'hardware');
   const services = devices.filter((device) => device.kind === 'service');
+  // Every device here shows its readings: while this page is in front, the server reads them more often.
+  useShowing(devices.map((device) => ({ kind: 'device', id: device.id })));
 
   const subtitle =
     mode === 'local'

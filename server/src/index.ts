@@ -3,6 +3,8 @@ import { existsSync } from 'node:fs';
 import { ActionGateway } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
 import { createApp } from './app.ts';
+import { Attention } from './attention/attention.ts';
+import { keepWatchedFresh } from './attention/freshness.ts';
 import { AutomationEngine, serverDevices } from './automations/engine.ts';
 import { plans } from './automations/plans.ts';
 import { restoreFrom } from './config/restore.ts';
@@ -268,7 +270,15 @@ try {
   console.warn(`[config] The configuration could not be kept beside the database: ${(error as Error).message}`);
 }
 
+/*
+  What the people using kraftverk are looking at, said by their apps — and
+  what follows from it: a device someone looks at is read more often.
+*/
+const attention = new Attention();
+const stopFreshness = keepWatchedFresh(attention, (device, until) => sessions.get(device)?.wantFresh?.(until));
+
 const { app, websocket } = createApp({
+  attention,
   snapshot,
   config,
   catalog,
@@ -297,6 +307,7 @@ const { app, websocket } = createApp({
 
 // Everything is running: from here on, stopping also closes what was opened.
 onStop(
+  stopFreshness,
   () => snapshot.stop(),
   () => engine.stop(),
   () => sampler.stop(),

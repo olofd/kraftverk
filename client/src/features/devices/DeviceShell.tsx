@@ -9,6 +9,7 @@ import { DevicePicture } from './DevicePicture';
 import { Screen } from '../../components/Screen';
 import { pictureFor } from '../../devices/ui';
 import { useDevice, useDevices, type Connection } from '../../state/DevicesProvider';
+import { useShowing } from '../../state/useShowing';
 
 /**
  * A device's health, as the header's one dot. Five states collapse into four
@@ -86,6 +87,8 @@ function DeviceTabs({ tab, onChange }: { tab: DeviceTab; onChange: (next: Device
 export function DeviceShell({ id, tab, children }: { id: string | undefined; tab: DeviceTab; children: (device: DeviceView) => ReactNode }) {
   const device = useDevice(id);
   const { loading } = useDevices();
+  // Every page of a device shows it: while one is in front, the server reads it more often.
+  useShowing(device ? [{ kind: 'device', id: device.id }] : []);
 
   if (!device) {
     return (

@@ -2,12 +2,15 @@ import { Hono, type MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { UpgradeWebSocket, WSContext } from 'hono/ws';
 
-import type { ConnectionHealth, LiveUpdate } from '@kraftverk/api-contract';
-import type { AutomationId, Reading, SavedDeviceId } from '@kraftverk/device-sdk';
+import { z } from 'zod';
+
+import type { ConnectionHealth, LiveUpdate, ShownThing, ViewReport } from '@kraftverk/api-contract';
+import { automationId, savedDeviceId, type AutomationId, type Reading, type SavedDeviceId } from '@kraftverk/device-sdk';
 import type { LiveMessage } from '@kraftverk/holder';
 
+import type { ViewerHandle } from '../attention/attention.ts';
 import { hostName } from '../auth/host.ts';
-import { SESSION_COOKIE } from '../auth/routes.ts';
+import { SESSION_COOKIE, userOf } from '../auth/routes.ts';
 import { sessionAlive } from '../auth/store.ts';
 import type { AppDeps } from './shared.ts';
 
@@ -16,8 +19,10 @@ import type { AppDeps } from './shared.ts';
  *
  * What devices say reaches the server's bus as it happens (the session
  * manager publishes what moved); this passes it on to every app that is
- * listening, so none has to ask every few seconds. Server to app only: what
- * an app sends is ignored.
+ * listening, so none has to ask every few seconds. The one thing an app says
+ * back is what its screen shows (`ViewReport`), kept in the server's
+ * attention while the socket is open (`attention/attention.ts`); anything
+ * else it sends is ignored.
  *
  * Per socket, what is waiting is coalesced — a reading by its key, health by
  * its device — and sent at most four times a second, so a device that
@@ -61,6 +66,34 @@ export function originAllowed(origin: string | undefined, requestHost: string | 
   if (name && deps.config.allowedHosts.has(name)) return true;
   // An origin allowed to call the API with the session anyway.
   return cors(origin) !== null;
+}
+
+/** What an app may say its screen shows; anything else it sends is not read. */
+const SHOWN_ID = z.string().min(1).max(64);
+const VIEW_REPORT = z
+  .object({
+    type: z.literal('view'),
+    screen: z.string().min(1).max(64),
+    showing: z.array(z.discriminatedUnion('kind', [z.object({ kind: z.literal('device'), id: SHOWN_ID }).strict(), z.object({ kind: z.literal('automation'), id: SHOWN_ID }).strict()])).max(500),
+  })
+  .strict();
+/** Larger than any view an app could say: not parsed. */
+const MAX_REPORT_BYTES = 64 * 1024;
+
+/** What an app said, if it is a view of its screen. */
+export function viewReportOf(data: unknown): ViewReport | null {
+  if (typeof data !== 'string' || data.length > MAX_REPORT_BYTES) return null;
+  let json: unknown;
+  try {
+    json = JSON.parse(data);
+  } catch {
+    return null;
+  }
+  const parsed = VIEW_REPORT.safeParse(json);
+  if (!parsed.success) return null;
+  // Where a string off the wire becomes an id: named, as at every edge.
+  const showing = parsed.data.showing.map((thing): ShownThing => (thing.kind === 'device' ? { kind: 'device', id: savedDeviceId(thing.id) } : { kind: 'automation', id: automationId(thing.id) }));
+  return { type: 'view', screen: parsed.data.screen, showing };
 }
 
 /** What one socket has waiting. */
@@ -133,11 +166,18 @@ export function liveRoutes(deps: AppDeps, upgradeWebSocket: UpgradeWebSocket, co
     fromHere,
     upgradeWebSocket((c) => {
       const token = getCookie(c, SESSION_COOKIE);
+      const person = userOf(c)?.username ?? null;
       const outbox = new Outbox();
+      let viewer: ViewerHandle | null = null;
       let stop = () => {};
 
       return {
+        onMessage: (event) => {
+          const view = viewReportOf(event.data);
+          if (view) viewer?.report(view);
+        },
         onOpen: (_event, ws: WSContext) => {
+          viewer = deps.attention.open(person);
           const send = (update: LiveUpdate) => ws.send(JSON.stringify(update));
           /*
             A send is scheduled when something is waiting, at most every
@@ -163,6 +203,8 @@ export function liveRoutes(deps: AppDeps, upgradeWebSocket: UpgradeWebSocket, co
             if (!sessionAlive(token)) ws.close(SIGNED_OUT, 'Signed out');
           }, SESSION_CHECK_MS);
           stop = () => {
+            viewer?.close();
+            viewer = null;
             unsubscribe();
             if (pending) clearTimeout(pending);
             pending = null;

@@ -6,6 +6,7 @@ import { savedDeviceId, type ResourceKind } from '@kraftverk/device-sdk';
 
 import type { ActionGateway } from '@kraftverk/gateway';
 import type { LiveBus } from '@kraftverk/holder';
+import type { Attention } from '../attention/attention.ts';
 import type { AutomationEngine } from '../automations/engine.ts';
 import type { AutomationLibrary } from '../automations/library.ts';
 import type { AutomationStore } from '../automations/store.ts';
@@ -61,6 +62,8 @@ export type AppDeps = {
   events: EventStore;
   /** What devices say as they say it, and what changed: the live stream's source. */
   bus: LiveBus;
+  /** What each app with the live stream open says its screen shows, now. */
+  attention: Attention;
   automations: AutomationStore;
   engine: AutomationEngine;
   /** The recipes and functions the installed packages bring. */

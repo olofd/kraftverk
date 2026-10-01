@@ -1,4 +1,4 @@
-import type { LiveUpdate } from '@kraftverk/api-contract';
+import type { LiveUpdate, ViewReport } from '@kraftverk/api-contract';
 
 import { getApiBaseUrl } from './api';
 
@@ -12,6 +12,10 @@ import { getApiBaseUrl } from './api';
  * polls, as it did before there was a stream; nothing depends on it being up.
  *
  * The session cookie goes with the socket, the way it goes with every request.
+ *
+ * The one thing it says back is what the app's screen shows (`ViewReport`):
+ * when it is told to, and again each time the socket opens, since the server
+ * keeps it only while the socket is open.
  */
 
 export type LiveState = 'connecting' | 'live' | 'down';
@@ -30,19 +34,34 @@ export function liveUrl(base: string = getApiBaseUrl()): string {
 export type LiveOptions = {
   onUpdate: (update: LiveUpdate) => void;
   onState?: (state: LiveState) => void;
+  /** What the screen shows now: said each time the socket opens. */
+  view?: () => ViewReport | null;
   /** Where it is; the server the app points at, when not given. */
   url?: string;
   /** For tests: how a socket is made. */
   socket?: (url: string) => WebSocket;
 };
 
+/** An open stream: closed with `close()`; `say` tells the server what the screen shows, if the socket is up. */
+export type LiveStream = { close(): void; say(view: ViewReport): void };
+
 /** Opens the stream and keeps it open until `close()`. */
-export function openLive(options: LiveOptions): { close(): void } {
+export function openLive(options: LiveOptions): LiveStream {
   let socket: WebSocket | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let failures = 0;
   let closed = false;
+  /** Said hello: the server is listening. */
+  let open = false;
   const state = (next: LiveState) => options.onState?.(next);
+  const say = (view: ViewReport | null | undefined) => {
+    if (!view || !open || !socket) return;
+    try {
+      socket.send(JSON.stringify(view));
+    } catch {
+      // Closing as it was said: said again when it opens.
+    }
+  };
 
   const connect = () => {
     if (closed) return;
@@ -64,13 +83,16 @@ export function openLive(options: LiveOptions): { close(): void } {
       }
       if (update.type === 'hello') {
         opened = true;
+        open = true;
         failures = 0;
         state('live');
+        say(options.view?.());
       }
       options.onUpdate(update);
     };
     socket.onclose = () => {
       socket = null;
+      open = false;
       if (closed) return;
       if (!opened) failures += 1;
       retry();
@@ -91,9 +113,11 @@ export function openLive(options: LiveOptions): { close(): void } {
   return {
     close: () => {
       closed = true;
+      open = false;
       if (timer) clearTimeout(timer);
       socket?.close();
       socket = null;
     },
+    say,
   };
 }

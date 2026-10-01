@@ -22,6 +22,7 @@ import { Card, Icon, RowSeparator, SegmentedControl, ToggleRow, haptic, type Ico
 import { Pressable } from '../../../components/Pressable';
 import { Screen } from '../../../components/Screen';
 import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../../lib/confirm';
+import { useShowing } from '../../../state/useShowing';
 import { startsBy } from '../AutomationCard';
 import { AutomationForm } from '../editor/AutomationForm';
 import { clock, useTone } from '../looks';
@@ -60,6 +61,8 @@ export function AutomationPage({ id, edit = null }: { id: string; edit?: 'form' 
   useEffect(load, [load]);
   // A run moving, or a reading it stands on: read again, so the page follows it.
   useReadAgain(load, { followReadings: true });
+  // It, and the devices it uses: while it is in front, the server reads them more often.
+  useShowing(automation ? [{ kind: 'automation', id: automation.id }, ...Object.values(automation.roles).map((role) => ({ kind: 'device' as const, id: role.device }))] : []);
 
   if (!automation) {
     return (

@@ -383,6 +383,20 @@ export type LiveUpdate =
   /** An automation moved: a run started, took a step, or ended. Read it again. */
   | { type: 'automation'; id: AutomationId };
 
+/** Something a screen shows: a device, an automation. More kinds as screens show more. */
+export type ShownThing = { kind: 'device'; id: SavedDeviceId } | { kind: 'automation'; id: AutomationId };
+
+/**
+ * What an app says over `GET /api/live`, app to server: what it shows now.
+ *
+ * A fact, not a request — the server judges what follows from it: a device
+ * someone is looking at is read more often. Said when the screen changes,
+ * again each time the stream opens, and at most once a minute while someone
+ * uses the app; an app that says nothing for ten minutes is taken for
+ * unattended. `screen` names the screen (`device`, `home`), not the address.
+ */
+export type ViewReport = { type: 'view'; screen: string; showing: ShownThing[] };
+
 // --- adding a device ----------------------------------------------------------
 
 /** What the check step found. */
