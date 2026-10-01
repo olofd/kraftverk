@@ -77,7 +77,7 @@ const toRecord = (row: Row): DeviceRecord => ({
 export class DeviceCatalog {
   /** The devices you have: not removed. */
   list(): DeviceRecord[] {
-    return db().query<Row, []>('SELECT * FROM device WHERE removed_at IS NULL ORDER BY added_at').all().map(toRecord);
+    return db().query<Row, []>('SELECT * FROM device WHERE removed_at IS NULL ORDER BY added_at, rowid').all().map(toRecord);
   }
 
   /** Devices removed and kept, newest first: what can be brought back. */
@@ -101,6 +101,12 @@ export class DeviceCatalog {
   byIdentity(identity: string): { active: DeviceRecord | null; removed: DeviceRecord[] } {
     const rows = db().query<Row, [string]>('SELECT * FROM device WHERE identity = ? ORDER BY removed_at DESC').all(identity).map(toRecord);
     return { active: rows.find((record) => !record.removedAt) ?? null, removed: rows.filter((record) => record.removedAt) };
+  }
+
+  /** The device you have known by this key, or null. */
+  byKey(key: string): DeviceRecord | null {
+    const row = db().query<Row, [string]>('SELECT * FROM device WHERE key = ? AND removed_at IS NULL').get(key);
+    return row ? toRecord(row) : null;
   }
 
   /** Whether a device you have is known by this key. */

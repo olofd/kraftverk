@@ -20,6 +20,12 @@ export type CheckOptions = {
    * server's. Unknown by default.
    */
   hasSecret?: (name: string) => boolean;
+  /**
+   * Whether the devices an automation's roles name are checked here: an
+   * import leaves them to itself, and asks for one you have where a file
+   * names one you do not.
+   */
+  uses?: 'check' | 'leave';
 };
 
 type Path = (string | number)[];
@@ -102,7 +108,9 @@ export function checkDocument(document: ConfigDocument, vocabulary: Vocabulary, 
     const path: Path = ['automations', key];
     if (!isTimeZone(automation.clock)) problem(`"${automation.clock}" is not a time zone: "Europe/Stockholm"`, [...path, 'clock']);
     for (const [role, use] of Object.entries(automation.uses)) {
-      if ('device' in use) part(use, [...path, 'uses', role]);
+      if ('device' in use) {
+        if (options.uses !== 'leave') part(use, [...path, 'uses', role]);
+      }
       else if (!(use.automation in document.automations) && !vocabulary.automations.some((each) => each.key === use.automation)) {
         problem(`There is no automation "${use.automation}", in the file or on the server`, [...path, 'uses', role]);
       }

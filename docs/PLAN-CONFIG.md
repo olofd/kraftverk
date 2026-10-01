@@ -302,7 +302,9 @@ shows its configuration read-only first; editing it there follows.
    them too): `export.ts`, the JSON Schema and its route,
    the snapshot writer, the CLI `check`. The schema is checked in tests by
    validating fixture documents with `ajv` (a dev dependency).
-3. **Import and restore**: plan and apply, references and rebinding,
+3. **Import and restore** — **done, 2026-10-01** (a removed device is brought
+   back with its history; proven on a server whose database was moved
+   aside: 4 devices and 5 automations restored, connected): plan and apply, references and rebinding,
    secrets, confirmation, and restore at start on a fresh database.
 4. **The app**: the Configuration screen, export from a device and an
    automation, keys, the exportable choice in Advanced and in the add flow,

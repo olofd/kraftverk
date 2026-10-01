@@ -90,6 +90,7 @@ describe('a configuration file', () => {
       address: '192.0.2.10#a4c1380000000001',
       settings: { deviceId: 'bf7c0000000000000000zp', protocolVersion: '3.4' },
       secrets: { localKey: { secret: 'smart-plug-key' } },
+      exportable: false,
     });
     expect(document!.links).toEqual([{ kind: 'feeds', from: { device: 'ac-in-meter', part: 'main' }, to: { device: 'garage-p280', part: 'input.ac' } }]);
     const morning = document!.automations.morning!;

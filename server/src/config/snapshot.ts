@@ -6,6 +6,7 @@ import type { AuditRecord } from '@kraftverk/device-sdk';
 
 import { databaseFile, onAudit } from '../history/db.ts';
 import { exportConfig, type ConfigDeps } from './export.ts';
+import type { Restored } from './restore.ts';
 
 /*
   The configuration kept beside the database (docs/CONFIG.md): the whole of
@@ -39,6 +40,8 @@ export class ConfigSnapshot {
   #timer: ReturnType<typeof setTimeout> | null = null;
   #stop: (() => void) | null = null;
   #writtenAt: string | null = null;
+  /** What restoring it did as the server started, when it did. */
+  restored: Restored | null = null;
 
   constructor(
     private deps: ConfigDeps,

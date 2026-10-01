@@ -1,7 +1,11 @@
+import { existsSync } from 'node:fs';
+
 import { ActionGateway } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
 import { createApp } from './app.ts';
 import { AutomationEngine, serverDevices } from './automations/engine.ts';
+import { plans } from './automations/plans.ts';
+import { restoreFrom } from './config/restore.ts';
 import { ConfigSnapshot } from './config/snapshot.ts';
 import { AutomationLibrary } from './automations/library.ts';
 import { AutomationStore } from './automations/store.ts';
@@ -19,7 +23,7 @@ import { DeviceSessionManager } from './devices/sessions.ts';
 import { SetupService } from './devices/setup/index.ts';
 import { DeviceTypeRegistry } from './devices/types.ts';
 import { databaseLedger } from './devices/ledger.ts';
-import { audit, closeDb } from './history/db.ts';
+import { audit, closeDb, startedFresh } from './history/db.ts';
 import { policyValues } from './history/policy.ts';
 import { ChangeLog } from './history/changes.ts';
 import { transportStore } from './history/transport-store.ts';
@@ -231,9 +235,25 @@ proxies.start();
   schema leaves a home to restore.
 */
 const snapshot = new ConfigSnapshot({ catalog, connections, links, automations, types, protocols });
+/*
+  A database started afresh this run — a new schema set the old one aside —
+  is restored from the configuration kept beside it, before anything is
+  written over that. A restore with problems leaves the kept file as it is
+  until something changes; it is copied aside first in any case.
+*/
+let restoring = true;
+if (startedFresh().fresh && existsSync(snapshot.path)) {
+  const { checked } = plans({ catalog, sessions, library, engine, automations });
+  const restored = await restoreFrom({ catalog, connections, links, automations, types, protocols, sessions, library, engine, checked }, snapshot.path);
+  snapshot.restored = restored;
+  if (restored) {
+    console.log(`[config] Restored from the configuration kept beside the database: ${restored.applied ? `${restored.applied.devices.added.length} devices, ${restored.applied.automations.added.length} automations` : 'nothing'}${restored.problems.length ? `; ${restored.problems.length} problems: ${restored.problems.join('; ')}` : ''}`);
+    restoring = !restored.applied;
+  }
+}
 snapshot.start();
 try {
-  snapshot.write();
+  if (!restoring || !startedFresh().fresh) snapshot.write();
 } catch (error) {
   console.warn(`[config] The configuration could not be kept beside the database: ${(error as Error).message}`);
 }

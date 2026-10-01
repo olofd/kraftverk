@@ -154,7 +154,7 @@ export class AutomationStore {
   }
 
   list(): AutomationRecord[] {
-    return this.#records(db().query<Row, []>('SELECT * FROM automation ORDER BY created_at').all());
+    return this.#records(db().query<Row, []>('SELECT * FROM automation ORDER BY created_at, rowid').all());
   }
 
   get(id: string): AutomationRecord | null {
@@ -181,6 +181,11 @@ export class AutomationStore {
     for (const [role, binding] of Object.entries(roles)) part.run(id, role, binding.device, binding.part);
     const automation = db().query('INSERT INTO automation_role (automation_id, role, device_id, part, starts) VALUES (?, ?, NULL, NULL, ?)');
     for (const [role, started] of Object.entries(starts)) automation.run(id, role, started);
+  }
+
+  /** The automation known by this key, or null. */
+  byKey(key: string): AutomationRecord | null {
+    return this.#records(db().query<Row, [string]>('SELECT * FROM automation WHERE key = ?').all(key))[0] ?? null;
   }
 
   /** Whether an automation is known by this key. */

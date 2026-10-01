@@ -96,7 +96,18 @@ function deviceSchema(types: readonly VocabularyType[]): Schema {
       connect: {
         type: 'array',
         description: 'The ways it is reached, preferred first.',
-        items: { type: 'object', required: ['via'], additionalProperties: false, properties: { via: { type: 'string' }, address: { type: 'string' }, settings: { type: 'object' }, secrets: { type: 'object' } } },
+        items: {
+          type: 'object',
+          required: ['via'],
+          additionalProperties: false,
+          properties: {
+            via: { type: 'string' },
+            address: { type: 'string' },
+            settings: { type: 'object' },
+            secrets: { type: 'object' },
+            exportable: { type: 'boolean', description: 'Whether its secrets may leave in an export as plain text: off unless chosen, and warned against.' },
+          },
+        },
       },
     },
     allOf: types.map((type) => ({

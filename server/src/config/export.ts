@@ -141,7 +141,7 @@ export function exportConfig(deps: ConfigDeps, options: ExportOptions): Exported
         const value = secret(device, connection, field);
         if (value) secrets[field] = value;
       }
-      connect.push({ via: connection.method, address: method?.address ? null : connection.address, settings: scalars(connection.config), secrets });
+      connect.push({ via: connection.method, address: method?.address ? null : connection.address, settings: scalars(connection.config), secrets, exportable: connection.secretsExportable });
     }
     const entry: DeviceEntry = { type: device.typeId, name: device.name, identity: device.identity, picture: device.picture, settings: scalars(device.config), connect };
     document.devices[device.key] = entry;

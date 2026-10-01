@@ -26,8 +26,12 @@ export type Scalar = string | number | boolean;
  */
 export type SecretValue = { secret: string } | { sealed: string } | { plain: string };
 
-/** One way a device is reached: a method of its type, the address there, its settings, its secrets. */
-export type ConnectEntry = { via: string; address: string | null; settings: Record<string, Scalar>; secrets: Record<string, SecretValue> };
+/**
+ * One way a device is reached: a method of its type, the address there, its
+ * settings, its secrets — and whether its owner lets those secrets leave in
+ * plain text (`exportable: true`, written only when so).
+ */
+export type ConnectEntry = { via: string; address: string | null; settings: Record<string, Scalar>; secrets: Record<string, SecretValue>; exportable: boolean };
 
 export type DeviceEntry = {
   type: string;
@@ -164,7 +168,8 @@ export function documentFromData(data: unknown, context: PrintContext = {}): { d
           problem('Expected a way to reach it: via, address, settings, secrets', at);
           continue;
         }
-        for (const field of Object.keys(way)) if (!['via', 'address', 'settings', 'secrets'].includes(field)) problem(`"${field}" is not part of a way to reach it: via, address, settings and secrets`, [...at, field]);
+        for (const field of Object.keys(way)) if (!['via', 'address', 'settings', 'secrets', 'exportable'].includes(field)) problem(`"${field}" is not part of a way to reach it: via, address, settings, secrets and exportable`, [...at, field]);
+        if (way.exportable !== undefined && typeof way.exportable !== 'boolean') problem('"exportable" is true or false: whether its secrets may leave in plain text', [...at, 'exportable']);
         const via = text(way.via, [...at, 'via'], 'how it is reached ("via: lan")');
         const secrets: Record<string, SecretValue> = {};
         if (way.secrets !== undefined && way.secrets !== null) {
@@ -178,7 +183,7 @@ export function documentFromData(data: unknown, context: PrintContext = {}): { d
             }
         }
         if (way.address !== undefined && way.address !== null && typeof way.address !== 'string') problem('An address is text', [...at, 'address']);
-        if (via) connect.push({ via, address: typeof way.address === 'string' ? way.address : null, settings: scalars(way.settings, [...at, 'settings']), secrets });
+        if (via) connect.push({ via, address: typeof way.address === 'string' ? way.address : null, settings: scalars(way.settings, [...at, 'settings']), secrets, exportable: way.exportable === true });
       }
       const optional = (field: 'identity' | 'picture') => (entry[field] === undefined || entry[field] === null ? null : typeof entry[field] === 'string' ? entry[field] : (problem(`"${field}" is text`, [...path, field]), null));
       if (type && name) devices[key] = { type, name, identity: optional('identity'), picture: optional('picture'), settings: scalars(entry.settings, [...path, 'settings']), connect };
@@ -266,6 +271,7 @@ export function documentToData(document: ConfigDocument, context: WriteContext =
                 ...(Object.keys(way.secrets).length
                   ? { secrets: Object.fromEntries(Object.entries(way.secrets).map(([field, value]) => [field, 'secret' in value ? new SecretRef(value.secret) : 'sealed' in value ? value.sealed : value.plain])) }
                   : {}),
+                ...(way.exportable ? { exportable: true } : {}),
               })),
             }
           : {}),

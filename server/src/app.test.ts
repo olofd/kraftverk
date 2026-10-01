@@ -311,6 +311,36 @@ describe('configuration', () => {
     expect(one.body.text).toContain('hall-lamp:');
     expect(one.body.text).not.toContain('home:');
   });
+
+  test('an import: planned — nothing written — then applied; what it takes away confirmed first', async () => {
+    lampAt('lamp-1');
+    const lamp = await added('Hall lamp');
+    const text = (await onBusAs('/config/export', { method: 'POST', body: {} })).body.text as string;
+    // Removed, then imported again from its own export: back under its key.
+    expect((await onBusAs(`/devices/${lamp.id}`, { method: 'DELETE' })).status).toBe(200);
+    const plan = await onBusAs('/config/plan', { method: 'POST', body: { text } });
+    expect(plan.status).toBe(200);
+    // The lamp you removed, brought back with its history — not a new one beside it.
+    expect(plan.body.devices).toEqual([{ key: 'hall-lamp', name: 'Hall lamp', action: 'add', changes: [expect.stringMatching(/^brought back, with its history \(removed \d{4}-\d{2}-\d{2}\)$/)] }]);
+    const applied = await onBusAs('/config/apply', { method: 'POST', body: { plan: plan.body.id } });
+    expect(applied.status).toBe(200);
+    expect(applied.body.devices.added).toEqual(['hall-lamp']);
+    expect((await onBusAs('/devices')).body.devices.map((device: { id: string; key: string }) => [device.id, device.key])).toEqual([[lamp.id, 'hall-lamp']]);
+    // A file with nothing in it, replacing: the lamp would go — asked first, then done.
+    const replacing = await onBusAs('/config/plan', { method: 'POST', body: { text: 'kraftverk: 1\n', mode: 'replace' } });
+    expect(replacing.body.needs.confirm).toEqual(['"Hall lamp" is removed: Hall lamp — their history is kept']);
+    const asked = await onBusAs('/config/apply', { method: 'POST', body: { plan: replacing.body.id } });
+    expect(asked.status).toBe(409);
+    const done = await onBusAs('/config/apply', { method: 'POST', body: { plan: replacing.body.id, confirmation: asked.body.needsConfirmation } });
+    expect(done.status).toBe(200);
+    expect(done.body.devices.removed).toEqual(['hall-lamp']);
+    // What it did is on the timeline.
+    expect(((await onBusAs('/audit')).body as { kind: string }[]).filter((entry) => entry.kind === 'config.imported').length).toBe(2);
+    // A file that is not one: its problems, at their lines, and no plan to apply.
+    const wrong = await onBusAs('/config/plan', { method: 'POST', body: { text: 'kraftverk: 1\ndevices:\n  x:\n    type: test.nothing\n    name: X\n' } });
+    expect(wrong.body.id).toBeNull();
+    expect(wrong.body.problems[0]).toMatchObject({ message: 'No installed device type is called "test.nothing"', line: 4 });
+  });
 });
 
 describe('everything needs a session', () => {

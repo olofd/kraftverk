@@ -59,6 +59,14 @@ const file = () => {
 export type Db = Database;
 
 let database: Db | null = null;
+/** Whether the database open now was started this run — new, or a new one after one of another schema was set aside — and what was set aside. */
+let started: { fresh: boolean; setAside: string | null } = { fresh: false, setAside: null };
+
+/**
+ * Whether the database was started afresh as it opened: what the server
+ * restores the configuration kept beside it into (docs/CONFIG.md).
+ */
+export const startedFresh = (): { fresh: boolean; setAside: string | null } => (db(), started);
 
 /** The version of kraftverk this is, as its package says: what a new database records it was made by. */
 const VERSION = (() => {
@@ -94,6 +102,7 @@ export function db(): Db {
   const path = file();
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
   database = openSchema(path);
+  started = { fresh: Boolean((database as { created?: boolean }).created), setAside: (database as { setAside?: string }).setAside ?? null };
   return database;
 }
 
@@ -121,7 +130,7 @@ export function closeDb(): void {
  *
  * Exported for tests.
  */
-export function openSchema(path: string, schema = SCHEMA): Db & { setAside?: string } {
+export function openSchema(path: string, schema = SCHEMA): Db & { setAside?: string; created?: boolean } {
   const fingerprint = schemaFingerprint(schema);
   let handle = open(path);
   const version = handle.query<{ user_version: number }, []>('PRAGMA user_version').get()?.user_version ?? 0;
@@ -150,7 +159,7 @@ export function openSchema(path: string, schema = SCHEMA): Db & { setAside?: str
     remember.run('created_at', new Date().toISOString());
     remember.run('created_by_version', VERSION);
   })();
-  return Object.assign(handle, setAside ? { setAside } : {});
+  return Object.assign(handle, { created: true }, setAside ? { setAside } : {});
 }
 
 /**

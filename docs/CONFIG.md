@@ -1,8 +1,9 @@
 # Configuration: a home in one file
 
-**Status:** the language, the export, the JSON Schema and the snapshot kept
-beside the database are built (2026-10-01; [PLAN-CONFIG.md](PLAN-CONFIG.md)
-phases 1–2). Import, restore after a reset and the app's editor follow.
+**Status:** the language, the export, the JSON Schema, import, and the
+snapshot kept beside the database — restored by itself after a reset — are
+built (2026-10-01; [PLAN-CONFIG.md](PLAN-CONFIG.md) phases 1–3). The app's
+screens and editor follow.
 
 A kraftverk home — its devices, how each is reached, the links between them,
 its automations and the home's own values — written as one YAML document.
@@ -115,7 +116,10 @@ describes.
 - **What fills a role** (`uses:`): `device-key` or `device-key.part`; another
   automation as `{ automation: key }`. A role's label and what it needs come
   from what the rule does with it; say them only when they differ:
-  `{ part: …, label: …, description: …, needs: [switch, powerMeter] }`.
+  `{ part: …, label: …, description: …, needs: [switch, powerMeter] }`. A
+  role the rule only reads or changes a setting of asks for no capability of
+  its own, and the language refuses a role any device would do: say its
+  `needs`. (A file kraftverk writes always does.)
 
 Anything text cannot say exactly — a list as a value — is kept as the rule's
 own data in its place; a file the server writes always reads back the same.
@@ -176,6 +180,48 @@ change to the document's shape adds a migration from n to n + 1
 newer kraftverk reads every older file. A file from a newer kraftverk is
 refused, saying so.
 
+## Importing
+
+An import is two steps, and the first writes nothing:
+
+1. **The plan** (`POST /config/plan` with the file's text): every problem at
+   its line — none, and it can be applied — and what becomes of each device,
+   link, automation and home value, matched **by key**: added, changed (each
+   change in words), left as it is, or — replacing rather than merging —
+   removed. And what it still needs:
+   - the **passphrase** its sealed secrets were sealed with;
+   - a **secret** a way to reach a device needs, which the file does not
+     carry and the device does not already have;
+   - a **device of yours** for each role naming one you do not have — the
+     plan lists those of your devices' parts that can do what the role
+     needs;
+   - a **yes** to each automation it would set acting on its own, and to
+     what replacing would remove.
+2. **The apply** (`POST /config/apply`): the plan, with those answers, in one
+   transaction — an automation that fails the checks an automation made in
+   the app passes undoes the devices added for it too. What it asks a yes
+   to is a 409 with `needsConfirmation`, sent back as `confirmation`.
+
+A device's type is what it is: a key naming a device of another type is a
+problem, not a change. A device you removed — the same type, by its identity
+or its key — is **brought back with its history**, not added beside it. An
+app's own ways to reach a device are not in a configuration: its keys live
+on the phone.
+
+## Restoring after a reset
+
+When the server starts on a database it has just made — a new schema set the
+old one aside, or there was none — and a configuration is kept beside it,
+it restores from it before anything is written over it: the file is copied
+aside first (`kraftverk.before-<time>.yaml`, never rotated), then imported
+as a merge that asks nothing — its secrets are the server's own, and what
+acted acts again. A secret the server's key no longer opens leaves its
+device restored without it, to be given again. What happened is on the
+timeline (`config.restored`, or `config.restore-failed` with its
+problems), in the server's log, and in `GET /api/config/snapshot`'s
+`restored`. Accounts are not in a configuration: after a reset, the first
+account is made again from the home network, as on a new server.
+
 ## Where it is kept
 
 Beside the database, in `config/kraftverk.yaml` (`/data/config/` in the
@@ -195,4 +241,13 @@ written.
   secrets: none | sealed | plain, passphrase? }` → `{ text, notes }`: the file,
   and what could not go in. An export that carries secrets is on the
   timeline.
-- `GET /config/snapshot` — the snapshot's path and when it was last written.
+- `POST /config/plan` — `{ text, mode: merge | replace, passphrase? }` → the
+  plan (`ImportPlan`): `id` (null when its problems stop it), `problems` with
+  lines, `devices`, `links`, `automations`, `policy`, `needs`, `notes`.
+- `POST /config/apply` — `{ plan, include?: { devices?, automations? },
+  secrets?: { "device.field": value }, rebind?: { "automation.role":
+  "device-key.part" }, confirmation? }` → what it did (`ImportApplied`); a
+  409 with `needsConfirmation` first when it sets something acting or
+  removes; 400 with `problems` when it cannot be applied.
+- `GET /config/snapshot` — the snapshot's path, when it was last written,
+  and what restoring it last did.
