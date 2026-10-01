@@ -757,8 +757,8 @@ export type AutomationRuns = { runs: AutomationRun[] };
 /** A problem in a configuration file: what, the path to it, and its line and column when there is text (docs/CONFIG.md). */
 export type ConfigProblem = { message: string; path: (string | number)[]; line: number | null; column: number | null };
 
-/** What an import does to one device or automation: added, changed — and how — left as it is, or removed. */
-export type ImportItem = { key: string; name: string; action: 'add' | 'change' | 'same' | 'remove'; changes: string[] };
+/** What an import does to one device or automation: added, brought back (a device you removed, with its history), changed — and how — left as it is, or removed. */
+export type ImportItem = { key: string; name: string; action: 'add' | 'restore' | 'change' | 'same' | 'remove'; changes: string[] };
 
 /**
  * What importing a file would do, nothing yet done (`POST /config/plan`):
@@ -793,7 +793,8 @@ export type ImportPlan = {
 
 /** What applying a plan did. */
 export type ImportApplied = {
-  devices: { added: string[]; changed: string[]; removed: string[] };
+  /** `restored`: devices you had removed, brought back with their history. */
+  devices: { added: string[]; restored: string[]; changed: string[]; removed: string[] };
   automations: { added: string[]; changed: string[]; removed: string[] };
   links: { added: number; removed: number };
   policy: string[];

@@ -1,4 +1,3 @@
-import { router } from 'expo-router';
 import { useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
@@ -8,6 +7,7 @@ import { Card, haptic, Icon, RowSeparator, SectionLabel } from '@kraftverk/ui';
 import { useDevices } from '../../state/DevicesProvider';
 import { useTone } from '../automations/looks';
 import { deviceYaml } from './entries';
+import { ExportOne } from './ExportOne';
 import { KeyField } from './KeyField';
 import { YamlEditor } from './YamlEditor';
 
@@ -23,7 +23,10 @@ export function DeviceConfig({ device }: { device: DeviceView }) {
   const { mode, setKey } = useDevices();
   const [shown, setShown] = useState<ReturnType<typeof deviceYaml> | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   if (mode !== 'server') return null;
+  const ways = device.connections.filter((connection) => connection.heldBy.kind === 'server');
+  const secrets = [...new Set(ways.flatMap((connection) => connection.secrets))];
 
   const show = async () => {
     haptic();
@@ -47,10 +50,11 @@ export function DeviceConfig({ device }: { device: DeviceView }) {
             <Button size="$3" minHeight={44} icon={<Icon name={shown ? 'eye-off' : 'eye'} size={16} color={tone('$color')} />} onPress={() => void show()}>
               {shown ? 'Hide its configuration' : 'Show as configuration'}
             </Button>
-            <Button size="$3" minHeight={44} icon={<Icon name="download" size={16} color={tone('$color')} />} onPress={() => (haptic(), router.push(`/configuration?devices=${encodeURIComponent(device.key)}`))}>
+            <Button size="$3" minHeight={44} icon={<Icon name="download" size={16} color={tone('$color')} />} onPress={() => (haptic(), setExporting((was) => !was))}>
               Export
             </Button>
           </XStack>
+          {exporting ? <ExportOne what={{ devices: [device.key] }} name={device.name} secrets={secrets} plainAllowed={ways.some((connection) => connection.secretsExportable && connection.secrets.length > 0)} /> : null}
           {problem ? (
             <Text fontSize={13} color="$danger" lineHeight={19} role="alert">
               {problem}

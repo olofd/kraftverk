@@ -1,4 +1,3 @@
-import { router } from 'expo-router';
 import { useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
@@ -8,6 +7,7 @@ import { haptic, Icon, RowSeparator } from '@kraftverk/ui';
 import { useTone } from '../automations/looks';
 import { Group } from '../automations/page/Group';
 import { automationYaml } from './entries';
+import { ExportOne } from './ExportOne';
 import { KeyField } from './KeyField';
 import { YamlEditor } from './YamlEditor';
 
@@ -21,6 +21,7 @@ export function AutomationConfig({ automation, onChanged, onEditYaml }: { automa
   const tone = useTone();
   const [shown, setShown] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const show = async () => {
     haptic();
@@ -62,10 +63,11 @@ export function AutomationConfig({ automation, onChanged, onEditYaml }: { automa
           >
             Edit as YAML
           </Button>
-          <Button size="$3" minHeight={44} icon={<Icon name="download" size={16} color={tone('$color')} />} onPress={() => (haptic(), router.push(`/configuration?automations=${encodeURIComponent(automation.key)}`))}>
+          <Button size="$3" minHeight={44} icon={<Icon name="download" size={16} color={tone('$color')} />} onPress={() => (haptic(), setExporting((was) => !was))}>
             Export
           </Button>
         </XStack>
+        {exporting ? <ExportOne what={{ automations: [automation.key] }} name={automation.name} /> : null}
         {problem ? (
           <Text fontSize={13} color="$danger" lineHeight={19} role="alert">
             {problem}

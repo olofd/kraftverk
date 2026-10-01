@@ -21,7 +21,7 @@ import { EMPTY, fromRecipe, type Draft } from './draft';
 export function NewAutomation({ from }: { from: string | null }) {
   const { devices } = useDevices();
   const { kit, error } = useEditorKit();
-  const [start, setStart] = useState<{ draft: Draft; madeFrom: string | null } | null>(null);
+  const [start, setStart] = useState<{ draft: Draft; madeFrom: string | null; view: 'form' | 'yaml' } | null>(null);
   const device = from ? (devices.find((candidate) => candidate.id === from) ?? null) : null;
   const back = device ? { label: device.name, to: `/device/${device.id}` } : { label: 'Automations', to: '/automations' };
 
@@ -33,6 +33,7 @@ export function NewAutomation({ from }: { from: string | null }) {
         madeFrom={start.madeFrom}
         prefer={device?.id ?? null}
         back={back}
+        view={start.view}
         onSaved={(made) => router.replace(`/automation/${made.id}`)}
         onCancel={() => router.replace(back.to)}
       />
@@ -52,7 +53,8 @@ export function NewAutomation({ from }: { from: string | null }) {
         <StartFrom
           recipes={kit.recipes}
           fits={(recipe) => (device ? recipeFits(recipe, device) : false)}
-          onChoose={(recipe) => setStart({ draft: recipe ? fromRecipe(recipe) : EMPTY, madeFrom: recipe?.id ?? null })}
+          onChoose={(recipe) => setStart({ draft: recipe ? fromRecipe(recipe) : EMPTY, madeFrom: recipe?.id ?? null, view: 'form' })}
+          onYaml={() => setStart({ draft: EMPTY, madeFrom: null, view: 'yaml' })}
         />
       )}
     </Screen>

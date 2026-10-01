@@ -34,7 +34,7 @@ export async function restoreFrom(deps: ImportDeps, file: string): Promise<Resto
   for (const need of plan.needs.secrets) problems.push(`${need.deviceName} needs its ${need.title} again`);
   try {
     const applied = await applyImport(deps, plan.id, by, { secrets: {}, rebind: {} }, { lenient: true });
-    const count = applied.devices.added.length + applied.devices.changed.length;
+    const count = applied.devices.added.length + applied.devices.restored.length + applied.devices.changed.length;
     audit({
       at,
       kind: 'config.restored',

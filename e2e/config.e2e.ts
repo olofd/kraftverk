@@ -32,25 +32,26 @@ test('a device exported from its settings, removed, and imported again: back und
   await page.goto(`/device/${plug.id}/settings`);
   await expect(page.getByLabel('Name in configuration')).toHaveValue(key);
   await page.getByRole('button', { name: 'Show as configuration' }).click();
-  expect(await textOf(page, `${plug.name}, as configuration`)).toContain(`type: tuya.zigbee-plug\nname: ${plug.name}`);
+  const own = await textOf(page, `${plug.name}, as configuration`);
+  expect(own).toContain(`type: tuya.zigbee-plug\nname: ${plug.name}`);
+  // Exported where it is: a file of just it.
   await page.getByRole('button', { name: 'Export' }).click();
-
-  // The configuration screen, that device chosen.
-  await expect(page.getByRole('heading', { level: 1, name: 'Configuration' })).toBeVisible();
-  await expect(page.getByRole('switch', { name: plug.name })).toBeChecked();
-  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  await page.getByRole('button', { name: 'Make the file' }).click();
   await page.getByRole('button', { name: 'Show it' }).click();
-  const exported = await textOf(page, 'The exported configuration');
+  const exported = await textOf(page, `${plug.name}, exported`);
   expect(exported).toContain(`devices:\n  ${key}:\n    type: tuya.zigbee-plug`);
   expect(exported).not.toContain('automations:');
 
-  // Removed — then imported again from its own file.
+  // Removed — then imported again from its own file, as adding a device offers.
   expect((await request.delete(`/api/devices/${plug.id}`, { headers: HEADERS })).ok()).toBe(true);
+  await page.goto('/add-device');
+  await page.getByText('From a configuration', { exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Configuration' })).toBeVisible();
   await write(page, 'The configuration to import', exported);
   await page.getByRole('button', { name: 'Read it' }).click();
   await expect(page.getByText(/^brought back, with its history/)).toBeVisible();
   await page.getByRole('button', { name: 'Import', exact: true }).click();
-  await expect(page.getByText('1 device added.')).toBeVisible();
+  await expect(page.getByText('1 device brought back, with its history.')).toBeVisible();
   const back = (await (await request.get('/api/devices', { headers: HEADERS })).json()).devices.find((device: { key: string }) => device.key === key);
   expect(back?.id).toBe(plug.id);
 });
@@ -126,4 +127,52 @@ test('an import naming a device you do not have: one of yours, chosen, fills it 
   const imported = (await (await request.get('/api/automations', { headers: HEADERS })).json()).automations.find((each: { key: string }) => each.key === key);
   expect(imported.mode).toBe('armed');
   expect(imported.roles.plug.device).toBe(plug.id);
+});
+
+test('one device\'s own YAML imported as it is; an automation exported from its page and pasted into a new one written as YAML', async ({ page, request }) => {
+  // A device, as its page shows it: no file around it, its key made from its name.
+  const name = unique('Attic plug');
+  const key = name.toLowerCase().replace(/ /g, '-');
+  await page.goto('/configuration?import=1');
+  await write(page, 'The configuration to import', `type: atorch.s1w\nname: ${name}\nconnect:\n  - via: simulated\n`);
+  await page.getByRole('button', { name: 'Read it' }).click();
+  await expect(page.getByText(`Read as one device, known by "${key}"`)).toBeVisible();
+  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await expect(page.getByText('1 device added.')).toBeVisible();
+  const plug = (await (await request.get('/api/devices', { headers: HEADERS })).json()).devices.find((device: { key: string }) => device.key === key);
+  expect(plug?.name).toBe(name);
+  await expect.poll(async () => (await (await request.get(`/api/devices/${plug.id}`, { headers: HEADERS })).json()).health.status).toBe('connected');
+
+  // An automation built here, exported from its page...
+  const made = await request.post('/api/automations', {
+    headers: HEADERS,
+    data: {
+      name: unique('Attic on'),
+      rule: { roles: { plug: { label: 'Plug', description: 'Plug', capabilities: ['switch'] } }, params: { fields: {} }, when: [{ at: { value: '08:15' } }], then: [{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { value: true } } } }] },
+      roles: { plug: { device: plug.id, part: 'main' } },
+      starts: {},
+      timeZone: 'Europe/Stockholm',
+    },
+  });
+  expect(made.ok(), await made.text()).toBe(true);
+  const original = await made.json();
+  await page.goto(`/automation/${original.id}`);
+  const config = page.getByRole('region', { name: 'Configuration' });
+  await config.getByRole('button', { name: 'Export' }).click();
+  await config.getByRole('button', { name: 'Make the file' }).click();
+  await config.getByRole('button', { name: 'Show it' }).click();
+  const file = await textOf(page, `${original.name}, exported`);
+  expect(file).toContain(`automations:\n  ${original.key}:`);
+
+  // ...and pasted, under another key, into a new automation written as YAML: made as it says.
+  await page.goto('/automations');
+  await page.getByRole('button', { name: 'New automation' }).click();
+  await page.getByText('As YAML', { exact: true }).click();
+  await expect(page.getByRole('radio', { name: 'YAML' })).toBeChecked();
+  await write(page, 'New automation, as configuration', file.replace(`  ${original.key}:`, '  attic-copy:').replace('08:15', '09:45'));
+  await expect(page.getByText('Ready', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Create' }).click();
+  await expect(page.getByRole('region', { name: 'When' }).getByText(/at 09:45/)).toBeVisible();
+  const copy = (await (await request.get('/api/automations', { headers: HEADERS })).json()).automations.find((each: { key: string }) => each.key === 'attic-copy');
+  expect(copy?.roles.plug.device).toBe(plug.id);
 });

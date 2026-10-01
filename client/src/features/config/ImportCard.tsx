@@ -17,6 +17,7 @@ type Mode = 'merge' | 'replace';
 /** How each thing an import does reads, and looks. */
 const ACTION: Record<ImportItem['action'], { label: string; tone: Tone }> = {
   add: { label: 'New', tone: '$success' },
+  restore: { label: 'Back', tone: '$success' },
   change: { label: 'Changed', tone: '$accent' },
   same: { label: 'The same', tone: '$muted' },
   remove: { label: 'Removed', tone: '$danger' },
@@ -82,7 +83,7 @@ export function ImportCard({ vocabulary, restored, onApplied }: { vocabulary: Vo
       <SectionLabel>Import</SectionLabel>
       <Card gap="$3">
         <Text fontSize={13} color="$muted" lineHeight={19}>
-          Paste a configuration{Platform.OS === 'web' ? ', or open a file' : ''}. Reading it changes nothing: it says what it would do, and what it still needs.
+          Paste a configuration{Platform.OS === 'web' ? ', or open a file' : ''} — a whole home, or one device or automation, as its page shows it. Reading it changes nothing: it says what it would do, and what it still needs.
         </Text>
         {Platform.OS === 'web' ? (
           <Button alignSelf="flex-start" size="$3" minHeight={44} icon={<Icon name="folder" size={16} color={tone('$color')} />} onPress={openFile}>
@@ -413,16 +414,19 @@ function Items({ title, items, chosen, onChoose }: { title: string; items: Impor
 /** What an import did. */
 function AppliedView({ applied }: { applied: ImportApplied }) {
   const tone = useTone();
+  // Each count says what it counts: "1 device brought back", "2 automations deleted".
+  const count = (n: number, one: string, done: string) => (n ? `${n} ${one}${n === 1 ? '' : 's'} ${done}` : null);
   const said = [
-    applied.devices.added.length && `${applied.devices.added.length} device${applied.devices.added.length === 1 ? '' : 's'} added`,
-    applied.devices.changed.length && `${applied.devices.changed.length} changed`,
-    applied.devices.removed.length && `${applied.devices.removed.length} removed`,
-    applied.automations.added.length && `${applied.automations.added.length} automation${applied.automations.added.length === 1 ? '' : 's'} added`,
-    applied.automations.changed.length && `${applied.automations.changed.length} changed`,
-    applied.automations.removed.length && `${applied.automations.removed.length} deleted`,
-    applied.links.added && `${applied.links.added} link${applied.links.added === 1 ? '' : 's'} added`,
-    applied.links.removed && `${applied.links.removed} removed`,
-    applied.policy.length && `${applied.policy.length} of the home’s values set`,
+    count(applied.devices.added.length, 'device', 'added'),
+    count(applied.devices.restored.length, 'device', `brought back, with ${applied.devices.restored.length === 1 ? 'its' : 'their'} history`),
+    count(applied.devices.changed.length, 'device', 'changed'),
+    count(applied.devices.removed.length, 'device', 'removed, history kept'),
+    count(applied.automations.added.length, 'automation', 'added'),
+    count(applied.automations.changed.length, 'automation', 'changed'),
+    count(applied.automations.removed.length, 'automation', 'deleted'),
+    count(applied.links.added, 'link', 'added'),
+    count(applied.links.removed, 'link', 'removed'),
+    applied.policy.length ? `${applied.policy.length} of the home’s values set` : null,
   ].filter(Boolean);
   return (
     <Card gap="$2" borderColor="$success" role="status">

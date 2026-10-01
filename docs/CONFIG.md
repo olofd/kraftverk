@@ -171,6 +171,16 @@ installed in this checkout (`devices=a,b automations=c` for keys the server
 has but the file does not carry), and `npm run config -- schema` prints the
 schema.
 
+## One device, one automation
+
+A file need not be a whole home. One device's or one automation's own YAML —
+what its page shows, with no `kraftverk:` around it — imports as a file of
+that one, under a key made from its name (`readConfig`'s `holds`; the
+plan says so, and that the one you have by that key is changed to it). An
+export of one device or one automation is a whole file of just it, and
+imports anywhere; an automation's names the devices it uses, which the server
+it goes to must have — or be given one of its own for each.
+
 ## In the app
 
 - **App settings → Configuration**: when the copy beside the server was last
@@ -183,13 +193,18 @@ schema.
   each role naming a device you do not have (yours, and those the file
   adds), what it asks a yes to — and applied.
 - **A device's settings → Configuration**: its key, changed in place; what it
-  is as configuration, its secrets by name only; and an export of it alone.
+  is as configuration, its secrets by name only; and an export of it alone,
+  made where it is — its secrets left out, sealed, or plain if allowed.
+  **Add a device → From a configuration** imports one: a file exported from
+  here or another server, or its own YAML as its page shows it.
   Under **Connections**, a server-held way with secrets says whether they may
   leave in plain text — off unless chosen, turning it on warned against —
   and adding a device asks the same, off.
 - **An automation's page → Configuration**: its key; what it is as
   configuration, to read and to learn the language from what you built;
-  **Edit as YAML**; and an export of it alone. Its form writes it either way
+  **Edit as YAML**; and an export of it alone, made where it is. **New
+  automation → As YAML** writes one from nothing — or from a file of one
+  automation pasted in, which is made under the key the file gives it. Its form writes it either way
   — **Form** or **YAML** at the top — the same draft: a change in its YAML
   is read back into the form as soon as it reads right, and saved as the
   form saves it, letting it act asked first. Its YAML may say what the form

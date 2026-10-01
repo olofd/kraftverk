@@ -42,8 +42,12 @@ export function automationYaml(
   return { text: writeAutomationYaml(entry, context), context };
 }
 
-/** An automation's YAML read: its entry — or null — and every problem, placed in its text, as the server would find them. */
-export function readAutomationText(text: string, key: string, vocabulary: Vocabulary, context: PrintContext): { entry: AutomationEntry | null; problems: Problem[] } {
+/**
+ * An automation's YAML read: its entry — or null — every problem, placed in
+ * its text, as the server would find them; and its key: a whole file of just
+ * it, pasted in, says its own.
+ */
+export function readAutomationText(text: string, key: string, vocabulary: Vocabulary, context: PrintContext): { entry: AutomationEntry | null; problems: Problem[]; key: string } {
   return readAutomationYaml(text, key, context, (document) => checkDocument(document, vocabulary));
 }
 

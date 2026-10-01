@@ -20,16 +20,20 @@ type Draft = { name: string; rule: Rule; roles: Record<string, RoleBinding>; sta
 export function useAutomationYaml({
   automationKey,
   madeFrom,
+  madeFromFixed,
   devices,
   automations,
   onRead,
 }: {
   /** Its key: where its problems are said to be. A new one has none yet. */
   automationKey: string;
+  /** The recipe it was copied from. An automation that exists keeps it; a new one is made from what its YAML says. */
   madeFrom: string | null;
+  madeFromFixed: boolean;
   devices: readonly DeviceView[];
   automations: readonly Pick<AutomationView, 'id' | 'key'>[];
-  onRead: (read: { draft: Draft; settings: AutomationSettings }) => void;
+  /** What it read: the draft and settings — and the key a whole file pasted in gives it, when it differs. */
+  onRead: (read: { draft: Draft; settings: AutomationSettings; key: string | null; madeFrom: string | null }) => void;
 }) {
   const [vocabulary, setVocabulary] = useState<Vocabulary | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -75,13 +79,13 @@ export function useAutomationYaml({
     const timer = setTimeout(() => {
       const result = readAutomationText(text, automationKey, vocabulary, context);
       const found: TextProblem[] = [...result.problems];
-      if (result.entry && result.entry.madeFrom !== madeFrom) found.push({ message: madeFrom ? `"made from" says where it was copied from: ${madeFrom}. It does not change` : '"made from" says which recipe it was copied from: it was built from nothing', line: null, column: null });
+      if (madeFromFixed && result.entry && result.entry.madeFrom !== madeFrom) found.push({ message: madeFrom ? `"made from" says where it was copied from: ${madeFrom}. It does not change` : '"made from" says which recipe it was copied from: it was built from nothing', line: null, column: null });
       setProblems(found);
       setReading(false);
-      if (result.entry && !found.length) read.current(draftOfEntry(result.entry, devices, automations));
+      if (result.entry && !found.length) read.current({ ...draftOfEntry(result.entry, devices, automations), key: result.key !== automationKey ? result.key : null, madeFrom: result.entry.madeFrom });
     }, 200);
     return () => clearTimeout(timer);
-  }, [reading, text, vocabulary, automationKey, context, madeFrom, devices, automations]);
+  }, [reading, text, vocabulary, automationKey, context, madeFrom, madeFromFixed, devices, automations]);
 
   const schema = useMemo(() => (vocabulary ? entryJsonSchema(vocabulary, 'automation') : null), [vocabulary]);
   return { text, change, open, problems, reading, ready: vocabulary !== null, error, schema };

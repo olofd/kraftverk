@@ -143,6 +143,7 @@ export function configRoutes(deps: AppDeps): Hono {
         actor: by,
         summary: `Imported a configuration: ${[
           applied.devices.added.length && `${applied.devices.added.length} devices added`,
+          applied.devices.restored.length && `${applied.devices.restored.length} brought back`,
           applied.devices.changed.length && `${applied.devices.changed.length} changed`,
           applied.devices.removed.length && `${applied.devices.removed.length} removed`,
           applied.automations.added.length && `${applied.automations.added.length} automations added`,

@@ -363,6 +363,7 @@ const SECTION_LABELS: Record<Section, string> = { devices: 'Devices', services: 
 
 function Categories({ types, onPick }: { types: DeviceTypeListing[]; onPick: (id: string) => void }) {
   const theme = useTheme();
+  const { mode } = useDevices();
   /*
     Where a shelf goes is what is installed on it says: services when all of
     it is, devices otherwise. A shelf with nothing on it has nothing to say
@@ -402,6 +403,21 @@ function Categories({ types, onPick }: { types: DeviceTypeListing[]; onPick: (id
           </Card>
         </YStack>
       ))}
+      {mode === 'server' ? (
+        <YStack gap="$2">
+          <SectionLabel>Already described</SectionLabel>
+          <Card inset>
+            <Pressable onPress={() => router.push('/configuration?import=1')}>
+              <XStack alignItems="center" gap="$3" paddingLeft="$4">
+                <Icon name="file-text" size={18} color={theme.accent?.val} />
+                <YStack flex={1}>
+                  <Row title="From a configuration" subtitle="A device exported from here or another server, or written by hand: pasted, or opened as a file" />
+                </YStack>
+              </XStack>
+            </Pressable>
+          </Card>
+        </YStack>
+      ) : null}
     </>
   );
 }

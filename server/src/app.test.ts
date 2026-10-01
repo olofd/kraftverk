@@ -366,10 +366,10 @@ describe('configuration', () => {
     const plan = await onBusAs('/config/plan', { method: 'POST', body: { text } });
     expect(plan.status).toBe(200);
     // The lamp you removed, brought back with its history — not a new one beside it.
-    expect(plan.body.devices).toEqual([{ key: 'hall-lamp', name: 'Hall lamp', action: 'add', changes: [expect.stringMatching(/^brought back, with its history \(removed \d{4}-\d{2}-\d{2}\)$/)] }]);
+    expect(plan.body.devices).toEqual([{ key: 'hall-lamp', name: 'Hall lamp', action: 'restore', changes: [expect.stringMatching(/^brought back, with its history \(removed \d{4}-\d{2}-\d{2}\)$/)] }]);
     const applied = await onBusAs('/config/apply', { method: 'POST', body: { plan: plan.body.id } });
     expect(applied.status).toBe(200);
-    expect(applied.body.devices.added).toEqual(['hall-lamp']);
+    expect(applied.body.devices.restored).toEqual(['hall-lamp']);
     expect((await onBusAs('/devices')).body.devices.map((device: { id: string; key: string }) => [device.id, device.key])).toEqual([[lamp.id, 'hall-lamp']]);
     // A file with nothing in it, replacing: the lamp would go — asked first, then done.
     const replacing = await onBusAs('/config/plan', { method: 'POST', body: { text: 'kraftverk: 1\n', mode: 'replace' } });

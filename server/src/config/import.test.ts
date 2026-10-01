@@ -209,6 +209,22 @@ automations:
     expect(deps.automations.byKey('evening')!.roles.lamp!.device).toBe(deps.catalog.byKey('porch-lamp')!.id);
   });
 
+  test('one automation\'s own YAML — as its page shows it — is imported under a key made from its name', async () => {
+    aHome();
+    const text = 'name: Evening\nclock: Europe/Stockholm\nuses:\n  lamp: porch-lamp\nwhen:\n  - at: "19:00"\ndo:\n  - turn on: lamp\n';
+    const plan = planImport(deps, text, { mode: 'merge', by: 'olof' });
+    expect(plan.problems).toEqual([]);
+    expect(plan.automations).toEqual([{ key: 'evening', name: 'Evening', action: 'add', changes: [] }]);
+    expect(plan.notes).toEqual(['Read as one automation, known by "evening"']);
+    await applyImport(deps, plan.id!, 'olof', {});
+    expect(deps.automations.byKey('evening')!.roles.lamp!.device).toBe(deps.catalog.byKey('porch-lamp')!.id);
+    // Again: the one by that key is changed to it, and said so.
+    expect(planImport(deps, text.replace('19:00', '20:00'), { mode: 'merge', by: 'olof' }).notes).toEqual(['Read as one automation, known by "evening": the one you have by that key is changed to it']);
+    // A device's own, too: its problems in its own text.
+    const device = planImport(deps, 'type: test.lamp\nname: Cellar lamp\nconnect:\n  - via: bus\n    address: lamp-cellar\n', { mode: 'merge', by: 'olof' });
+    expect(device.devices).toEqual([{ key: 'cellar-lamp', name: 'Cellar lamp', action: 'add', changes: [] }]);
+  });
+
   test('simulated devices share their address: no claim on it, as setup makes none', () => {
     deps.connections.add({ deviceId: deps.catalog.add({ typeId: 'test.lamp', name: 'Sim lamp', description: LAMP }).id, method: 'simulated', transport: 'simulated', heldBy: null, address: 'simulated' });
     const text = 'kraftverk: 1\ndevices:\n  other-sim:\n    type: test.lamp\n    name: Other sim\n    connect:\n      - via: simulated\n';

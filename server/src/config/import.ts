@@ -102,6 +102,8 @@ export function planImport(deps: ImportDeps, text: string, options: { mode: Impo
   const problem = (message: string, path: (string | number)[]) => void problems.push({ message, path, line: null, column: null });
   const needs: ImportPlan['needs'] = { passphrase: null, secrets: [], rebind: [], confirm: [] };
   const notes: string[] = [];
+  // One device's or automation's own YAML, as its page shows it: read under a key made from its name, which an import matches by.
+  if (read.holds) notes.push(`Read as one ${read.holds.kind === 'devices' ? 'device' : 'automation'}, known by "${read.holds.key}"${(read.holds.kind === 'devices' ? deps.catalog.byKey(read.holds.key) : deps.automations.byKey(read.holds.key)) ? ': the one you have by that key is changed to it' : ''}`);
   const secrets = new Map<string, string>();
 
   // Secrets: opened now, or said to be needed.
@@ -154,7 +156,7 @@ export function planImport(deps: ImportDeps, text: string, options: { mode: Impo
       }
     });
     const back = existing ? null : removedMatch(deps, key, entry);
-    devices.push(existing ? { key, name: entry.name, ...deviceChanges(deps, existing, entry, secrets, key) } : { key, name: entry.name, action: 'add', changes: back ? [`brought back, with its history (removed ${back.removedAt!.slice(0, 10)})`] : [] });
+    devices.push(existing ? { key, name: entry.name, ...deviceChanges(deps, existing, entry, secrets, key) } : { key, name: entry.name, action: back ? 'restore' : 'add', changes: back ? [`brought back, with its history (removed ${back.removedAt!.slice(0, 10)})`] : [] });
   }
   if (needs.passphrase) notes.push(needs.passphrase === 'missing' ? 'It carries secrets sealed with a passphrase: give it to open them' : 'The passphrase given does not open its secrets');
 
@@ -339,7 +341,7 @@ export async function applyImport(deps: ImportDeps, id: string, by: string, choi
   for (const need of view.needs.rebind) if (automationsIn(need.automation) && !choices.rebind?.[`${need.automation}.${need.role}`]) missing.push(`"${document.automations[need.automation]?.name}": a device for ${need.label}`);
   if (missing.length) throw new ImportError(`It still needs ${missing.join('; ')}`, missing);
 
-  const applied: ImportApplied = { devices: { added: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, policy: [] };
+  const applied: ImportApplied = { devices: { added: [], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, policy: [] };
   const touched: AutomationId[] = [];
   const forgotten: AutomationId[] = [];
 
@@ -355,7 +357,7 @@ export async function applyImport(deps: ImportDeps, id: string, by: string, choi
       if (item.action === 'same') continue;
       const entry = document.devices[item.key]!;
       writeDevice(deps, item.key, entry, kept.secrets, choices.secrets ?? {});
-      (item.action === 'add' ? applied.devices.added : applied.devices.changed).push(item.key);
+      (item.action === 'add' ? applied.devices.added : item.action === 'restore' ? applied.devices.restored : applied.devices.changed).push(item.key);
     }
 
     // Links: the file's between the devices there are now; those it does not have, when replacing.

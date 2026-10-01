@@ -1,6 +1,6 @@
 import { isNode, isScalar, LineCounter, parseDocument, Document, Scalar, type Node, type ScalarTag } from 'yaml';
 
-import { documentFromData, documentToData, emptyDocument, SecretRef, type AutomationEntry, type ConfigDocument, type DeviceEntry, type WriteContext } from './document.ts';
+import { documentFromData, documentToData, emptyDocument, keyFrom, SecretRef, type AutomationEntry, type ConfigDocument, type DeviceEntry, type WriteContext } from './document.ts';
 import type { PrintContext } from './expr.ts';
 import { CURRENT_VERSION, migrate } from './migrate.ts';
 import type { Issue } from './rules.ts';
@@ -59,38 +59,83 @@ function parseYaml(text: string): Parsed {
 
 const isRecord = (data: unknown): data is Record<string, unknown> => typeof data === 'object' && data !== null && !Array.isArray(data);
 
-/** A file read: its document, brought to this version — or null — and every problem, placed. */
-export function readConfig(text: string, context: PrintContext = {}, check?: Check): { document: ConfigDocument | null; problems: Problem[]; from: number | null } {
-  const { data, problems, place } = parseYaml(text);
-  if (problems.length) return { document: null, from: null, problems };
-  if (!isRecord(data)) return { document: null, from: null, problems: [place({ message: 'A configuration is a map: kraftverk, devices, automations …', path: [] })] };
-  const migrated = migrate(data);
-  if (!migrated.ok) return { document: null, from: null, problems: [place({ message: migrated.message, path: ['kraftverk'] })] };
+/** What a text is: a whole document, or one device's or one automation's own YAML — by the key it is read under. */
+export type Holds = { kind: 'devices' | 'automations'; key: string } | null;
+
+/** One entry's own YAML, by what is at its top: a device says its `type`; an automation what it does. A document says `kraftverk`. */
+function entryKind(data: Record<string, unknown>): 'devices' | 'automations' | null {
+  if ('kraftverk' in data) return null;
+  if ('type' in data) return 'devices';
+  return ['do', 'uses', 'when', 'clock', 'only if', 'if a step fails'].some((field) => field in data) ? 'automations' : null;
+}
+
+/** An entry's data read as the document it would be part of: the same checks, its own problems placed in its own text. */
+function readWrapped(parsed: Parsed, kind: 'automations' | 'devices', key: string, context: PrintContext, check?: Check, around?: ConfigDocument): { document: ConfigDocument | null; problems: Problem[] } {
+  const { [kind]: _theirs, ...rest } = around ? (documentToData(around, context) as Record<string, unknown>) : { kraftverk: CURRENT_VERSION };
+  const whole = { ...rest, kraftverk: CURRENT_VERSION, [kind]: { [key]: parsed.data } };
+  const own = (issue: Issue): Problem | null =>
+    issue.path[0] === kind && issue.path[1] === key ? parsed.place({ ...issue, path: issue.path.slice(2) }) : issue.path[0] === 'secrets' ? null : { ...issue, line: null, column: null };
+  const placed = (issues: Issue[]) => issues.map(own).filter((problem): problem is Problem => problem !== null);
+  const read = documentFromData(whole, context);
+  if (!read.document) return { document: null, problems: placed(read.issues) };
+  const meaning = placed(check?.(read.document) ?? []);
+  return { document: meaning.length ? null : read.document, problems: meaning };
+}
+
+/** A whole document's data read: brought to this version, its shape and meaning checked. */
+function readWhole(parsed: Parsed & { data: Record<string, unknown> }, context: PrintContext, check?: Check): { document: ConfigDocument | null; problems: Problem[]; from: number | null } {
+  const migrated = migrate(parsed.data);
+  if (!migrated.ok) return { document: null, from: null, problems: [parsed.place({ message: migrated.message, path: ['kraftverk'] })] };
   const read = documentFromData(migrated.document, context);
-  if (!read.document) return { document: null, from: migrated.from, problems: read.issues.map(place) };
+  if (!read.document) return { document: null, from: migrated.from, problems: read.issues.map(parsed.place) };
   const meaning = check?.(read.document) ?? [];
-  return { document: meaning.length ? null : read.document, from: migrated.from, problems: meaning.map(place) };
+  return { document: meaning.length ? null : read.document, from: migrated.from, problems: meaning.map(parsed.place) };
+}
+
+/**
+ * A file read: its document, brought to this version — or null — and every
+ * problem, placed. A device's or an automation's own YAML — what its page
+ * shows — is read as a document of that one, under a key made from its name
+ * (`holds`).
+ */
+export function readConfig(text: string, context: PrintContext = {}, check?: Check): { document: ConfigDocument | null; problems: Problem[]; from: number | null; holds: Holds } {
+  const parsed = parseYaml(text);
+  if (parsed.problems.length) return { document: null, from: null, problems: parsed.problems, holds: null };
+  const data = parsed.data;
+  if (!isRecord(data)) return { document: null, from: null, problems: [parsed.place({ message: 'A configuration is a map: kraftverk, devices, automations …', path: [] })], holds: null };
+  const kind = entryKind(data);
+  if (kind) {
+    const key = keyFrom(typeof data.name === 'string' ? data.name : '', () => false, kind === 'devices' ? 'device' : 'automation');
+    return { ...readWrapped(parsed, kind, key, context, check), from: CURRENT_VERSION, holds: { kind, key } };
+  }
+  return { ...readWhole({ ...parsed, data }, context, check), holds: null };
 }
 
 /**
  * One entry's YAML read — an automation's or a device's own, as its page
  * edits it — as the document it would be part of reads it: the same checks,
- * its problems placed in the entry's own text.
+ * its problems placed in the entry's own text. A whole document holding just
+ * one such entry is read too — one exported, pasted — and says its key.
  */
-function readEntry<T>(kind: 'automations' | 'devices', text: string, key: string, context: PrintContext, check?: Check, around?: ConfigDocument): { entry: T | null; problems: Problem[] } {
-  const { data, problems, place } = parseYaml(text);
-  if (problems.length) return { entry: null, problems };
-  if (!isRecord(data)) return { entry: null, problems: [place({ message: kind === 'automations' ? 'An automation is a map: name, uses, do …' : 'A device is a map: type, name, connect …', path: [] })] };
-  const { [kind]: _theirs, ...rest } = around ? (documentToData(around, context) as Record<string, unknown>) : { kraftverk: CURRENT_VERSION };
-  const whole = { ...rest, kraftverk: CURRENT_VERSION, [kind]: { [key]: data } };
-  // Its own problems: those under it, placed in its text.
-  const own = (issue: Issue): Problem | null =>
-    issue.path[0] === kind && issue.path[1] === key ? place({ ...issue, path: issue.path.slice(2) }) : issue.path[0] === 'secrets' ? null : { ...issue, line: null, column: null };
-  const read = documentFromData(whole, context);
-  if (!read.document) return { entry: null, problems: read.issues.map(own).filter((problem): problem is Problem => problem !== null) };
-  const meaning = (check?.(read.document) ?? []).map(own).filter((problem): problem is Problem => problem !== null);
-  const entry = (read.document[kind] as Record<string, T>)[key] ?? null;
-  return { entry: meaning.length ? null : entry, problems: meaning };
+function readEntry<T>(kind: 'automations' | 'devices', text: string, key: string, context: PrintContext, check?: Check, around?: ConfigDocument): { entry: T | null; problems: Problem[]; key: string } {
+  const parsed = parseYaml(text);
+  if (parsed.problems.length) return { entry: null, problems: parsed.problems, key };
+  const data = parsed.data;
+  if (!isRecord(data)) return { entry: null, problems: [parsed.place({ message: kind === 'automations' ? 'An automation is a map: name, uses, do …' : 'A device is a map: type, name, connect …', path: [] })], key };
+  if ('kraftverk' in data) {
+    const one = kind === 'automations' ? 'automation' : 'device';
+    const others = kind === 'automations' ? 'devices' : 'automations';
+    const held = isRecord(data[kind]) ? Object.keys(data[kind] as Record<string, unknown>) : [];
+    const beside = ['home', 'links', others].filter((field) => field in data && !(Array.isArray(data[field]) ? data[field].length === 0 : isRecord(data[field]) && Object.keys(data[field] as object).length === 0));
+    if (held.length !== 1 || beside.length) {
+      return { entry: null, key, problems: [parsed.place({ message: `Here is one ${one}: a file with ${held.length === 1 ? beside.join(' and ') : `${held.length} ${kind}`} in it is imported under App settings → Configuration`, path: [] })] };
+    }
+    const read = readWhole({ ...parsed, data }, context, check);
+    const own = held[0]!;
+    return { entry: (read.document?.[kind] as Record<string, T> | undefined)?.[own] ?? null, problems: read.problems, key: own };
+  }
+  const read = readWrapped(parsed, kind, key, context, check, around);
+  return { entry: (read.document?.[kind] as Record<string, T> | undefined)?.[key] ?? null, problems: read.problems, key };
 }
 
 /** An automation's own YAML read, every problem placed in it. */

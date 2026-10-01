@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { readConfig, schemaLine, writeConfig } from './yaml.ts';
+import { readAutomationYaml, readConfig, readDeviceYaml, schemaLine, writeConfig } from './yaml.ts';
 
 /*
   A whole configuration file: read, written back and read again the same; a
@@ -142,5 +142,37 @@ automations:
     expect(readConfig('devices: [').problems[0]).toMatchObject({ line: 1 });
     expect(readConfig('devices: {}').problems[0]!.message).toBe('The document says which version it is: "kraftverk: 1" at its top');
     expect(readConfig('kraftverk: 9').problems[0]).toMatchObject({ message: 'It was written by a newer kraftverk (version 9); this one reads up to version 1', line: 1, column: 12 });
+  });
+});
+
+describe('one device or one automation, on its own', () => {
+  const DEVICE = 'type: acme.plug\nname: Cellar plug\nconnect:\n  - via: lan\n    address: 192.0.2.10\n';
+  const AUTOMATION = 'name: Cellar light\nclock: Europe/Stockholm\nuses:\n  plug: cellar-plug\ndo:\n  - turn on: plug\n';
+
+  test('its own YAML — what its page shows — is read as a file of that one, under a key made from its name', () => {
+    const device = readConfig(DEVICE);
+    expect(device.problems).toEqual([]);
+    expect(device.holds).toEqual({ kind: 'devices', key: 'cellar-plug' });
+    expect(Object.keys(device.document!.devices)).toEqual(['cellar-plug']);
+    const automation = readConfig(AUTOMATION);
+    expect(automation.holds).toEqual({ kind: 'automations', key: 'cellar-light' });
+    expect(automation.document!.automations['cellar-light']!.uses).toEqual({ plug: { device: 'cellar-plug', part: 'main' } });
+    // Its problems are placed in its own text.
+    expect(readConfig(AUTOMATION.replace('turn on: plug', 'wait: forever')).problems).toMatchObject([{ line: 6, column: 18 }]);
+    // A file says its version; a map that is neither a file nor one entry is still asked for it.
+    expect(readConfig('devices: {}').holds).toBeNull();
+  });
+
+  test('a whole file of just that one, pasted where its YAML is written, is read too — under the key the file gives it', () => {
+    const file = writeConfig(readConfig(AUTOMATION).document!);
+    const read = readAutomationYaml(file, 'anything');
+    expect(read.problems).toEqual([]);
+    expect(read.key).toBe('cellar-light');
+    expect(read.entry!.name).toBe('Cellar light');
+    const device = readDeviceYaml(writeConfig(readConfig(DEVICE).document!), 'anything');
+    expect(device.key).toBe('cellar-plug');
+    // More than one, or devices beside it: that is the Configuration screen's.
+    const both = writeConfig({ ...readConfig(DEVICE).document!, automations: readConfig(AUTOMATION).document!.automations });
+    expect(readAutomationYaml(both, 'anything').problems.map((problem) => problem.message)).toEqual(['Here is one automation: a file with devices in it is imported under App settings → Configuration']);
   });
 });

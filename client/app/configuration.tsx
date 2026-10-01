@@ -19,7 +19,7 @@ import { useDevices } from '../src/state/DevicesProvider';
  * device's or an automation's page, its export starts with that one chosen.
  */
 export default function ConfigurationScreen() {
-  const params = useLocalSearchParams<{ devices?: string; automations?: string }>();
+  const params = useLocalSearchParams<{ devices?: string; automations?: string; import?: string }>();
   const { devices, mode, refresh } = useDevices();
   const [automations, setAutomations] = useState<AutomationView[] | null>(null);
   const [vocabulary, setVocabulary] = useState<Vocabulary | null>(null);
@@ -59,9 +59,10 @@ export default function ConfigurationScreen() {
           </Text>
         </Card>
       ) : null}
-      <Kept snapshot={snapshot} />
-      {automations ? <ExportCard key={`${params.devices}|${params.automations}`} devices={active} automations={automations} chosen={chosen} /> : null}
-      <ImportCard vocabulary={vocabulary} restored={Boolean(snapshot?.restored)} onApplied={() => (void refresh(), load())} />
+      {params.import ? null : <Kept snapshot={snapshot} />}
+      {params.import ? null : automations ? <ExportCard key={`${params.devices}|${params.automations}`} devices={active} automations={automations} chosen={chosen} /> : null}
+      <ImportCard vocabulary={vocabulary} restored={!params.import && Boolean(snapshot?.restored)} onApplied={() => (void refresh(), load())} />
+      {params.import ? <Kept snapshot={snapshot} /> : null}
       <InAnEditor />
     </Screen>
   );

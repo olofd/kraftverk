@@ -173,16 +173,21 @@ function Editing({
   );
   const [settings, setSettings] = useState<AutomationSettings>(before);
   const settingsChanged = (Object.keys(before) as (keyof AutomationSettings)[]).filter((name) => settings[name] !== before[name]);
-  const changed = JSON.stringify(draft) !== JSON.stringify(initial) || settingsChanged.length > 0;
 
   // Written as YAML instead: the same draft, read back from the text as soon as it reads right.
   const [view, setView] = useState<View>('form');
+  /** The key a whole file pasted into its YAML gives it: what it is made under, or renamed to. */
+  const [key, setKey] = useState<string | null>(null);
+  /** A new one's recipe, as its YAML says it. */
+  const [recipe, setRecipe] = useState(madeFrom);
+  const changed = JSON.stringify(draft) !== JSON.stringify(initial) || settingsChanged.length > 0 || key !== null;
   const yaml = useAutomationYaml({
     automationKey: existing?.key ?? 'new',
     madeFrom,
+    madeFromFixed: existing !== null,
     devices: editor.devices,
     automations: editor.automations,
-    onRead: (read) => (editor.change(() => read.draft), setSettings(read.settings)),
+    onRead: (read) => (editor.change(() => read.draft), setSettings(read.settings), setKey(read.key), existing ? undefined : setRecipe(read.madeFrom)),
   });
   const switchTo = (next: View) => {
     if (next === view) return;
@@ -227,13 +232,13 @@ function Editing({
     try {
       const body = { name: draft.name.trim(), rule: kept.rule, roles: kept.roles, starts: kept.starts };
       // What its YAML changed beyond what the form edits.
-      const changes = Object.fromEntries(settingsChanged.map((name) => [name, settings[name]]));
+      const changes = { ...Object.fromEntries(settingsChanged.map((name) => [name, settings[name]])), ...(key && key !== existing?.key ? { key } : {}) };
       const letAct = settings.mode === 'armed' && before.mode !== 'armed';
       const ask = (name: string) => (reason: string, again: boolean) =>
         confirmAction(letAct ? `Let “${name}” act on its own?` : `Change “${name}” while it acts?`, `${again ? `${ASKED_AGAIN}\n\n` : ''}${reason}\n\n${check?.sentence ?? ''}`, letAct ? 'Let it act' : 'Change it');
       const wants = (result: Awaited<ReturnType<typeof updateAutomation>>) => ('needsConfirmation' in result ? { token: result.needsConfirmation, reason: result.reason } : null);
       if (!existing) {
-        const made = await createAutomation({ ...body, madeFrom, timeZone: settings.timeZone, recheckMinutes: settings.recheckMinutes });
+        const made = await createAutomation({ ...body, ...(key ? { key } : {}), madeFrom: recipe, timeZone: settings.timeZone, recheckMinutes: settings.recheckMinutes });
         // A new one only watches, off the home page: what its YAML says beyond that, set as it would be on its page.
         const { mode, homePlace } = changes as Partial<AutomationSettings>;
         if (mode === undefined && homePlace === undefined) return onSaved(made);
@@ -475,7 +480,7 @@ function Uses({ problems }: { problems: readonly string[] }) {
  * the owner's to change. Started from a device, the recipes it can take part
  * in come first.
  */
-export function StartFrom({ recipes, fits, onChoose }: { recipes: readonly RecipeView[]; fits: (recipe: RecipeView) => boolean; onChoose: (recipe: RecipeView | null) => void }) {
+export function StartFrom({ recipes, fits, onChoose, onYaml }: { recipes: readonly RecipeView[]; fits: (recipe: RecipeView) => boolean; onChoose: (recipe: RecipeView | null) => void; onYaml: () => void }) {
   const tone = useTone();
   const ordered = [...recipes].sort((a, b) => Number(fits(b)) - Number(fits(a)));
   return (
@@ -483,6 +488,10 @@ export function StartFrom({ recipes, fits, onChoose }: { recipes: readonly Recip
       <Card inset backgroundColor="$background">
         <Pressable onPress={() => (haptic(), onChoose(null))} label="Start from nothing">
           <Row title="Nothing" subtitle="Build it block by block: what starts it, and each step it takes." accessory={<Icon name="plus" size={18} color={tone('$accent')} />} />
+        </Pressable>
+        <RowSeparator />
+        <Pressable onPress={() => (haptic(), onYaml())} label="Write it as YAML">
+          <Row title="As YAML" subtitle="Write it in a configuration’s words — or paste one exported from here or another server." accessory={<Icon name="code" size={18} color={tone('$accent')} />} />
         </Pressable>
         {ordered.map((recipe) => (
           <YStack key={recipe.id}>
