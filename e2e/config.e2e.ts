@@ -78,7 +78,12 @@ test('an automation as YAML: shown on its page, written so, checked as it is typ
   expect(made.ok(), await made.text()).toBe(true);
   const automation = await made.json();
 
+  // Rarely needed beside Run and Edit: under ⋯, a page of its own — the menu's first item has the focus.
   await page.goto(`/automation/${automation.id}`);
+  await page.getByRole('button', { name: 'More' }).click();
+  await expect(page.getByRole('menu').getByRole('button').first()).toBeFocused();
+  await page.getByRole('button', { name: 'As configuration' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'As configuration' })).toBeVisible();
   const config = page.getByRole('region', { name: 'Configuration' });
   await config.getByRole('button', { name: 'Show as configuration' }).click();
   const shown = await textOf(page, `${name}, as configuration`);
@@ -101,6 +106,7 @@ test('an automation as YAML: shown on its page, written so, checked as it is typ
   await expect(page.getByRole('region', { name: 'When' }).getByText('At 06:30 on weekdays')).toBeVisible();
 
   // Its key, changed in place.
+  await page.goto(`/automation/${automation.id}/configuration`);
   await page.getByLabel('Name in configuration').fill('heater-morning');
   await config.getByRole('button', { name: 'Save' }).click();
   await expect(config.getByText('heater-morning', { exact: true })).toBeVisible();
@@ -156,7 +162,7 @@ test('one device\'s own YAML imported as it is; an automation exported from its 
   });
   expect(made.ok(), await made.text()).toBe(true);
   const original = await made.json();
-  await page.goto(`/automation/${original.id}`);
+  await page.goto(`/automation/${original.id}/configuration`);
   const config = page.getByRole('region', { name: 'Configuration' });
   await config.getByRole('button', { name: 'Export' }).click();
   await config.getByRole('button', { name: 'Make the file' }).click();

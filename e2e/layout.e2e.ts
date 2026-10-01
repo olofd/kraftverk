@@ -99,6 +99,13 @@ for (const width of [320, 375]) {
     // Its form: a trigger, a step with its condition, and the step within a step, all open.
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
     await page.getByRole('button', { name: /^Change trigger 2: / }).click();
+    // Its days are one Tab stop, the arrows moving between them.
+    const days = page.getByRole('group', { name: 'Days of the week' });
+    expect(await days.locator('[role=checkbox][tabindex="0"]').count()).toBe(1);
+    await days.getByRole('checkbox', { name: 'Monday' }).focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(days.getByRole('checkbox', { name: 'Tuesday' })).toBeFocused();
+    expect(await days.locator('[role=checkbox][tabindex="0"]').count()).toBe(1);
     await page.getByRole('button', { name: /^Open step: Turn / }).click();
     await page.getByRole('button', { name: /^Turn it: what kind: .*Choose$/ }).click();
     await expect(page.getByText('On while this holds, off when it does not:')).toBeVisible();
@@ -193,7 +200,8 @@ for (const width of [320, 375]) {
       },
     });
     expect(made.ok(), await made.text()).toBe(true);
-    await page.goto(`/automation/${(await made.json()).id}`);
+    await page.goto(`/automation/${(await made.json()).id}/configuration`);
+    expect(await problems(page)).toEqual([]);
     await page.getByRole('region', { name: 'Configuration' }).getByRole('button', { name: 'Edit as YAML' }).click();
     await expect(page.getByRole('radio', { name: 'YAML' })).toBeChecked();
     await page.getByRole('textbox', { name: /, as configuration$/ }).click();

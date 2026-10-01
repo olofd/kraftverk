@@ -193,8 +193,13 @@ type LiveRun = {
   wake: Set<() => void>;
   /** How often its rule may switch each role's part, at most: what it tells the gateway. */
   allowance: Record<string, number>;
-  /** When it last changed something — switched a part, changed a setting: what is judged after is read after. 0, not yet. */
+  /** When it last changed something — switched a part, changed a setting: what is judged after is read after. 0, not yet. By this server's clock. */
   changedAt: number;
+  /**
+   * When this server heard each reading it uses take its value now, by "device key": by its own clock, the one
+   * `changedAt` is on — not the reading's `at`, which a device with a clock of its own may stamp.
+   */
+  heard: Map<string, number>;
   /** Its log, for a run that takes steps: `look` keeps what its devices say now; `stop` ends it, after one last look. Null for a run that takes none. */
   log: { look: () => void; stop: () => void } | null;
 };
@@ -891,6 +896,7 @@ export class AutomationEngine {
       wake: new Set(),
       allowance: this.#allowance(rule, scope),
       changedAt: 0,
+      heard: new Map(),
       log: null,
     };
     const stepped = takesSteps(rule);
@@ -1388,8 +1394,10 @@ export class AutomationEngine {
     const keep = (log: Parameters<AutomationStore['recordLog']>[1]) => {
       try {
         this.deps.store.recordLog(live.id, log);
-      } catch {
-        // Its automation deleted while it ran: its run, and its log, are gone with it.
+      } catch (error) {
+        // Its automation deleted while it ran: its run, and its log, are gone with it — that, and only that, is expected.
+        if (live.gone || !this.deps.store.get(live.automation.id)) return;
+        console.error(`[automations] the log of a run of "${live.automation.name}" could not be kept: ${(error as Error).message}`);
       }
     };
     keep({ devices: [...devices].map(([id, device]) => ({ id, name: device.deviceName, typeId: device.typeId })), roles });
@@ -1411,8 +1419,11 @@ export class AutomationEngine {
       for (const reading of readings) {
         const mark = `${reading.at} ${JSON.stringify(reading.value)}`;
         const which = `${id} ${reading.key}`;
-        if (last.get(which) === mark || kept >= READINGS_PER_RUN) continue;
+        if (last.get(which) === mark) continue;
         last.set(which, mark);
+        // Heard now, by this server's clock: what a wait judges by, whatever the device stamped.
+        live.heard.set(which, Date.now());
+        if (kept >= READINGS_PER_RUN) continue;
         if (!described.has(which)) {
           described.add(which);
           log.keys.push(logKeyOf(id, reading.key, device.description));
@@ -1466,7 +1477,10 @@ export class AutomationEngine {
       const attribute = device ? attributeMeaning(device.description, device.part, means) : null;
       const reading = device?.device && attribute ? readingOf(device.device.readings(), attribute.key) : null;
       // Nothing to wait for: what cannot be read is judged as it is.
-      return !reading || Date.parse(reading.at) >= live.changedAt;
+      if (!reading) return true;
+      // When this server heard it take its value, by the clock changedAt is on; the reading's own time only when the run has not heard it.
+      const heard = live.heard.get(`${binding!.device} ${reading.key}`) ?? Date.parse(reading.at);
+      return heard >= live.changedAt;
     });
   }
 

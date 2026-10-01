@@ -79,10 +79,12 @@ type World = {
   plugSwitchedAt: number;
   /** How often the station takes a reading, in real milliseconds: between two, it says what it last saw. 0, every time it is asked. */
   supplyReadsEveryMs: number;
+  /** How far ahead of this server's clock the station's own is, which it stamps its readings with. */
+  supplyClockAheadMs: number;
 };
 
 function setup(world: Partial<World> = {}) {
-  const state: World = { supplyOn: false, othersWatts: 0, plugOn: false, reachableAfterMs: 0, supplyOnAt: 0, wakesOnSwitch: 1, plugSwitchedOn: 0, live: false, plugGapMs: 0, plugSwitchedAt: 0, supplyReadsEveryMs: 0, ...world };
+  const state: World = { supplyOn: false, othersWatts: 0, plugOn: false, reachableAfterMs: 0, supplyOnAt: 0, wakesOnSwitch: 1, plugSwitchedOn: 0, live: false, plugGapMs: 0, plugSwitchedAt: 0, supplyReadsEveryMs: 0, supplyClockAheadMs: 0, ...world };
   const sent: CommandIntent[] = [];
   const recorded: AuditRecord[] = [];
   const heard: LiveMessage[] = [];
@@ -108,7 +110,7 @@ function setup(world: Partial<World> = {}) {
     health: () => ({ status: 'connected', detail: 'Connected', lastReadingAt: now() }),
     readings: () => {
       if (!sample || Date.now() - sample.at >= state.supplyReadsEveryMs) sample = { at: Date.now(), readings: supplyReadings() };
-      const at = new Date(sample.at).toISOString();
+      const at = new Date(sample.at + state.supplyClockAheadMs).toISOString();
       return sample.readings.map((reading) => ({ ...reading, at }));
     },
     query: async () => [],
@@ -528,6 +530,17 @@ describe('stopping a charge', () => {
     const automation = make('standard.stop-charging', { watchSeconds: 5, othersBelow: 10 });
     await engine.startAsked(automation.id, OLOF);
     const run = await ended(automation.id);
+    expect(switches()).toEqual(['charger off', 'supply off']);
+    expect(run.steps[1]!.detail).toBe('It stayed so for 5 s — Garage station — AC outlets: Power 3 W');
+  });
+
+  test('a station whose own clock runs ahead: what it said before is still from before — judged by when this server heard it, not by its stamp', async () => {
+    const { engine, make, ended, switches, state } = setup({ supplyReadsEveryMs: 40, supplyClockAheadMs: 10 * 60_000 });
+    Object.assign(state, { supplyOn: true, plugOn: true, plugSwitchedOn: 1, othersWatts: 3 });
+    const automation = make('standard.stop-charging', { watchSeconds: 5, othersBelow: 10 });
+    await engine.startAsked(automation.id, OLOF);
+    const run = await ended(automation.id);
+    // Stamped ten minutes ahead, its 243 W from before the charger went off would read as new: it is not.
     expect(switches()).toEqual(['charger off', 'supply off']);
     expect(run.steps[1]!.detail).toBe('It stayed so for 5 s — Garage station — AC outlets: Power 3 W');
   });

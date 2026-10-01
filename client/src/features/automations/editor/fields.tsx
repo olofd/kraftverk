@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import { Input, Text, XStack, YStack } from 'tamagui';
 
 import { secondsText, WEEKDAYS, type ValueType, type Value, type Weekday } from '@kraftverk/device-sdk';
-import { Chips, haptic, Icon, useRadioGroup } from '@kraftverk/ui';
+import { Chips, haptic, Icon, useRadioGroup, useToggleGroup } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
 import { useTone } from '../looks';
@@ -183,10 +183,12 @@ export function DaysField({ value, onChange }: { value: readonly Weekday[] | und
     if (!next.length) return;
     onChange(next.length === 7 ? undefined : next);
   };
+  // One Tab stop for the seven: the arrows move between them.
+  const keys = useToggleGroup(WEEKDAYS.length, (index) => toggle(WEEKDAYS[index]!));
   return (
     <YStack>
       <XStack justifyContent="space-between" rowGap={6} flexWrap="wrap" role="group" aria-label="Days of the week">
-        {WEEKDAYS.map((day) => {
+        {WEEKDAYS.map((day, index) => {
           const on = chosen.has(day);
           return (
             <XStack
@@ -194,7 +196,7 @@ export function DaysField({ value, onChange }: { value: readonly Weekday[] | und
               role="checkbox"
               aria-checked={on}
               aria-label={DAY_NAMES[day]}
-              tabIndex={0}
+              {...keys(index)}
               cursor="pointer"
               width={40}
               height={40}
@@ -206,13 +208,6 @@ export function DaysField({ value, onChange }: { value: readonly Weekday[] | und
               backgroundColor={on ? '$accent' : '$background'}
               focusVisibleStyle={{ outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid' }}
               onPress={() => (haptic(), toggle(day))}
-              onKeyDown={
-                ((event: { key: string; preventDefault: () => void }) => {
-                  if (event.key !== 'Enter' && event.key !== ' ') return;
-                  event.preventDefault();
-                  toggle(day);
-                }) as never
-              }
             >
               <Text fontSize={14} fontWeight="700" color={on ? '$background' : '$muted'}>
                 {DAY_NAMES[day].charAt(0)}

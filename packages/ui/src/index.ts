@@ -26,7 +26,7 @@ export { Row, RowSeparator, ToggleRow } from './Row';
 export { Toggle, type ToggleProps } from './Toggle';
 export { SchemaForm, isComplete } from './SchemaForm';
 export { Chips } from './Chips';
-export { useRadioGroup } from './radioGroup';
+export { useRadioGroup, useToggleGroup } from './radioGroup';
 export { SegmentedControl } from './SegmentedControl';
 export { SliderRow } from './SliderRow';
 export { RangeSliderRow } from './RangeSliderRow';

@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
 import {
@@ -22,7 +22,6 @@ import { Card, Icon, RowSeparator, SegmentedControl, ToggleRow, haptic, type Ico
 import { Pressable } from '../../../components/Pressable';
 import { Screen } from '../../../components/Screen';
 import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../../lib/confirm';
-import { AutomationConfig } from '../../config/AutomationConfig';
 import { startsBy } from '../AutomationCard';
 import { AutomationForm } from '../editor/AutomationForm';
 import { clock, useTone } from '../looks';
@@ -41,11 +40,17 @@ import { MODES, modeSays, RECHECK, recheckSays, wantsYes, every } from './modes'
  * What is rarely needed is under ⋯. Edit turns the same page into its form —
  * the same groups, editable — with Cancel and Save below it.
  */
-export function AutomationPage({ id }: { id: string }) {
+export function AutomationPage({ id, edit = null }: { id: string; edit?: 'form' | 'yaml' | null }) {
   const [automation, setAutomation] = useState<AutomationView | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Being changed: through the form, or as its YAML. */
-  const [editing, setEditing] = useState<'form' | 'yaml' | null>(null);
+  const [editing, setEditing] = useState<'form' | 'yaml' | null>(edit);
+
+  /** Edited, or not: the page again — and an address that does not open the form once more. */
+  const done = () => {
+    setEditing(null);
+    if (edit) router.setParams({ edit: undefined } as never);
+  };
 
   const load = useCallback(() => {
     fetchAutomation(id)
@@ -79,8 +84,8 @@ export function AutomationPage({ id }: { id: string }) {
         madeFrom={automation.madeFrom?.id ?? null}
         back={{ label: 'Automations', to: '/automations' }}
         view={editing}
-        onSaved={(next) => (setAutomation(next), setEditing(null))}
-        onCancel={() => setEditing(null)}
+        onSaved={(next) => (setAutomation(next), done())}
+        onCancel={done}
       />
     );
   }
@@ -155,8 +160,6 @@ function Page({ automation, onChanged, onEdit }: { automation: AutomationView; o
 
       <Activity automation={automation} />
 
-      <AutomationConfig automation={automation} onChanged={onChanged} onEditYaml={() => onEdit('yaml')} />
-
       {automation.madeFrom || automation.sharedWith.length ? (
         <YStack gap="$1.5" paddingHorizontal="$1">
           {automation.madeFrom ? (
@@ -193,6 +196,16 @@ function Header({
   const run = useRun(automation, onChanged);
   const [menu, setMenu] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const more = useRef<HTMLElement | null>(null);
+  const menuBox = useRef<HTMLElement | null>(null);
+  // Opened, its first item has the focus; Escape closes it, the focus back on ⋯ — as a menu does.
+  useEffect(() => {
+    if (menu) (menuBox.current?.querySelector('[role=button]') as HTMLElement | null)?.focus();
+  }, [menu]);
+  const close = () => {
+    setMenu(false);
+    more.current?.focus();
+  };
   const running = run.running !== null;
   // Not run yet: what starts it is its own group below, not this line as well.
   const status = !automation.running && !automation.lastRun && automation.mode !== 'off' && !automation.problems.length ? (automation.when.length ? 'Not run yet' : 'Not started yet') : run.status;
@@ -208,7 +221,7 @@ function Header({
   };
   const remove = () =>
     act(async () => {
-      if (!(await confirmAction(`Delete “${automation.name}”?`, `${automation.running ? 'Its run is stopped first. ' : ''}It stops, and is gone. Everything it did stays on the timeline.`, 'Delete', 'dangerous'))) return;
+      if (!(await confirmAction(`Delete “${automation.name}”?`, `${automation.running ? 'Its run is stopped first. ' : ''}It stops, and is gone — its runs and their logs with it. What it did stays on the timeline, said in words.`, 'Delete', 'dangerous'))) return;
       await deleteAutomation(automation.id);
       router.replace('/automations');
     }, 'It could not be deleted');
@@ -216,6 +229,7 @@ function Header({
   const items: { icon: IconName; label: string; danger?: boolean; onPress: () => void }[] = [
     { icon: 'help-circle', label: 'What would it do now?', onPress: () => void act(async () => onChecked(await checkAutomation(automation.id)), 'It could not be checked') },
     ...(automation.when.length ? [{ icon: 'rewind' as const, label: 'Rehearse on last week', onPress: () => void act(async () => onRehearsed(await rehearseAutomation(automation.id)), 'It could not be rehearsed') }] : []),
+    { icon: 'code', label: 'As configuration', onPress: () => (setMenu(false), router.push(`/automation/${encodeURIComponent(automation.id)}/configuration`)) },
     { icon: 'trash-2', label: 'Delete', danger: true, onPress: () => void remove() },
   ];
 
@@ -247,24 +261,33 @@ function Header({
         <Button size="$4" backgroundColor="$card" borderWidth={1} borderColor="$borderColor" disabled={running} opacity={running ? 0.5 : 1} icon={<Icon name="edit-3" size={16} color={tone('$color')} />} onPress={() => (haptic(), onEdit())}>
           Edit
         </Button>
-        <Button size="$4" width={48} circular backgroundColor="$card" borderWidth={1} borderColor="$borderColor" aria-label="More" aria-expanded={menu} icon={<Icon name="more-horizontal" size={18} color={tone('$color')} />} onPress={() => (haptic(), setMenu((open) => !open))} />
+        <Button ref={more as never} size="$4" width={48} circular backgroundColor="$card" borderWidth={1} borderColor="$borderColor" aria-label="More" aria-haspopup="menu" aria-expanded={menu} icon={<Icon name="more-horizontal" size={18} color={tone('$color')} />} onPress={() => (haptic(), setMenu((open) => !open))} />
       </XStack>
       {menu ? (
-        <Card inset role="menu" aria-label={`More for ${automation.name}`}>
-          {items.map((item, index) => (
-            <YStack key={item.label}>
-              {index > 0 ? <RowSeparator /> : null}
-              <Pressable onPress={item.onPress} label={item.label}>
-                <XStack alignItems="center" gap="$3" paddingHorizontal="$4" minHeight={48}>
-                  <Icon name={item.icon} size={18} color={tone(item.danger ? '$danger' : '$color')} />
-                  <Text flex={1} fontSize={15} color={item.danger ? '$danger' : '$color'}>
-                    {item.label}
-                  </Text>
-                </XStack>
-              </Pressable>
-            </YStack>
-          ))}
-        </Card>
+        <YStack
+          ref={menuBox as never}
+          onKeyDown={((event: { key: string; preventDefault: () => void }) => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            close();
+          }) as never}
+        >
+          <Card inset role="menu" aria-label={`More for ${automation.name}`}>
+            {items.map((item, index) => (
+              <YStack key={item.label}>
+                {index > 0 ? <RowSeparator /> : null}
+                <Pressable onPress={item.onPress} label={item.label}>
+                  <XStack alignItems="center" gap="$3" paddingHorizontal="$4" minHeight={48}>
+                    <Icon name={item.icon} size={18} color={tone(item.danger ? '$danger' : '$color')} />
+                    <Text flex={1} fontSize={15} color={item.danger ? '$danger' : '$color'}>
+                      {item.label}
+                    </Text>
+                  </XStack>
+                </Pressable>
+              </YStack>
+            ))}
+          </Card>
+        </YStack>
       ) : null}
       {run.problem || problem ? (
         <Text fontSize={13} color="$danger" lineHeight={19} role="alert">
