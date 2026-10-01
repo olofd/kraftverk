@@ -12,13 +12,14 @@ import {
   type SaveInput,
 } from '@kraftverk/api-client';
 import { describeDeviceType, isSimulated, LINK_KIND_IDS, linkableParts, linkKindSpec, MAIN_PART, methodOf, partName, type DeviceDescription } from '@kraftverk/device-sdk';
-import { Card, Row, RowSeparator, SectionLabel, haptic, Icon } from '@kraftverk/ui';
+import { Card, Row, RowSeparator, SectionLabel, ToggleRow, haptic, Icon } from '@kraftverk/ui';
 
 import { DeviceImage } from '../src/components/DeviceImage';
 import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
 import { AppFlow, ServerFlow, type SetupFlow } from '../src/features/add/flows';
 import { StepView } from '../src/features/add/steps';
+import { confirmAction } from '../src/lib/confirm';
 import { featherName } from '../src/lib/icons';
 import { PLATFORM } from '../src/runtime/registry';
 import { useDevices } from '../src/state/DevicesProvider';
@@ -627,6 +628,9 @@ function Finish({
   const [restore, setRestore] = useState<string | null>(outcome.outcome === 'removed' ? (outcome.devices[0]?.id ?? null) : null);
   /** By question, the other end chosen: "device|part", or empty for none. */
   const [links, setLinks] = useState<Record<string, string>>({});
+  /** Whether the secrets just given may leave in an export as plain text: off unless chosen, and warned against (docs/CONFIG.md). */
+  const [exportable, setExportable] = useState(false);
+  const keepsSecrets = flow.holder === 'server' && flow.secrets.length > 0;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -671,6 +675,7 @@ function Finish({
               }),
             };
       if (attachTo && outcome.outcome === 'no-answer') input.anyway = true;
+      if (keepsSecrets && exportable) input.secretsExportable = true;
       await onSaved(await flow.save(input));
     } catch (err) {
       setError(describeError(err) || 'It could not be saved');
@@ -733,6 +738,38 @@ function Finish({
             </YStack>
           ))
         : null}
+
+      {keepsSecrets ? (
+        <YStack gap="$2">
+          <SectionLabel>Its {flow.secrets.join(', ')}</SectionLabel>
+          <Card inset>
+            <ToggleRow
+              title="May leave in plain text"
+              subtitle={
+                exportable
+                  ? 'An export that asks for plain text carries it as it is: anyone with the file can reach the device as you do.'
+                  : 'Off: an export leaves it out, or seals it with a passphrase you choose. Kept safely on your server either way.'
+              }
+              checked={exportable}
+              onCheckedChange={(on) =>
+                void (async () => {
+                  if (
+                    on &&
+                    !(await confirmAction(
+                      'Let it leave in plain text?',
+                      `An export that asks for plain text will carry its ${flow.secrets.join(', ')} as it is. Anyone who has the file — a backup, a mail, a shared folder — can then reach the device as you do.\n\nAn export sealed with a passphrase carries it safely without this. You can change this later, under its settings.`,
+                      'Let it leave',
+                      'dangerous'
+                    ))
+                  )
+                    return;
+                  setExportable(on);
+                })()
+              }
+            />
+          </Card>
+        </YStack>
+      ) : null}
 
       <XStack justifyContent="space-between" alignItems="center">
         <Button size="$3" chromeless color="$muted" onPress={onBack}>

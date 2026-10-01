@@ -60,6 +60,10 @@ export default function AppSettingsScreen() {
                 <Row title="Removed devices" subtitle={removed.length ? `${removed.length} kept with their history` : 'None'} accessory={chevron} />
               </Pressable>
               <RowSeparator />
+              <Pressable onPress={() => router.push('/configuration')}>
+                <Row title="Configuration" subtitle="Your home as one file: export it, import one, and the copy kept beside the server" accessory={chevron} />
+              </Pressable>
+              <RowSeparator />
               <Pressable onPress={() => router.push('/server-log')}>
                 <Row title="Server log" subtitle="What the server has said lately — where to look when something is wrong" accessory={chevron} />
               </Pressable>

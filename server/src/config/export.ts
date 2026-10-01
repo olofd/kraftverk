@@ -1,20 +1,19 @@
 import {
+  automationEntryFrom,
   emptyDocument,
+  unitsFrom,
   vocabularyOf,
-  type AutomationEntry,
   type ConfigDocument,
   type ConnectEntry,
   type DeviceEntry,
-  type Mode,
   type Scalar,
   type SecretValue,
-  type Use,
+  type PrintContext,
   type Vocabulary,
   type WriteContext,
 } from '@kraftverk/config';
-import { attributeMeaning, methodsOf, partsOf, unitOf, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { methodsOf, partsOf, type SavedDeviceId } from '@kraftverk/device-sdk';
 
-import type { AutomationMode, AutomationRecord } from '../automations/engine.ts';
 import type { AutomationStore } from '../automations/store.ts';
 import type { DeviceCatalog, DeviceRecord } from '../devices/catalog.ts';
 import type { ConnectionStore } from '../devices/connections.ts';
@@ -80,8 +79,6 @@ export function serverVocabulary(deps: ConfigDeps): Vocabulary {
     automations: deps.automations.list().map((automation) => ({ key: automation.key, name: automation.name })),
   });
 }
-
-const MODE: Record<AutomationMode, Mode> = { off: 'off', observe: 'watch', armed: 'act' };
 
 const scalars = (values: Record<string, unknown>): Record<string, Scalar> =>
   Object.fromEntries(Object.entries(values).filter((entry): entry is [string, Scalar] => typeof entry[1] === 'string' || typeof entry[1] === 'number' || typeof entry[1] === 'boolean'));
@@ -157,49 +154,21 @@ export function exportConfig(deps: ConfigDeps, options: ExportOptions): Exported
   }
 
   // Automations: what fills each role, by key.
-  const keyOfDevice = (id: SavedDeviceId): string | null => deps.catalog.get(id)?.key ?? null;
+  const keyOf = { device: (id: string) => deps.catalog.get(id as SavedDeviceId)?.key ?? null, automation: (id: string) => deps.automations.get(id)?.key ?? null };
+  const describe = (id: string) => deps.catalog.get(id as SavedDeviceId)?.description ?? null;
   const elsewhere = new Set<string>();
-  const units = new Map<string, (role: string, means: string) => string | null>();
+  const units = new Map<string, PrintContext>();
   for (const automation of automations) {
-    const uses: Record<string, Use> = {};
-    for (const [role, binding] of Object.entries(automation.roles)) {
-      const key = keyOfDevice(binding.device);
-      if (!key) {
-        notes.push(`"${automation.name}": ${role} was filled by a device that is gone`);
-        continue;
-      }
-      uses[role] = { device: key, part: binding.part };
-      if (!carried.has(binding.device)) elsewhere.add(key);
+    const { entry, gone } = automationEntryFrom(automation, keyOf);
+    for (const role of gone) notes.push(`"${automation.name}": ${role} was filled by ${role in automation.starts ? 'an automation' : 'a device'} that is gone`);
+    for (const binding of Object.values(automation.roles)) {
+      const key = keyOf.device(binding.device);
+      if (key && !carried.has(binding.device)) elsewhere.add(key);
     }
-    for (const [role, started] of Object.entries(automation.starts)) {
-      const other = deps.automations.get(started);
-      if (other) uses[role] = { automation: other.key };
-    }
-    document.automations[automation.key] = entryOf(automation, uses);
-    units.set(automation.key, unitsOf(deps, automation));
+    document.automations[automation.key] = entry;
+    units.set(automation.key, unitsFrom(automation.roles, describe));
   }
   if (elsewhere.size && !everything) notes.push(`It names devices this file does not carry, which the server it goes to must have: ${[...elsewhere].sort().join(', ')}`);
 
-  return { document, notes, context: { unitIn: (automation, role, means) => units.get(automation)?.(role, means) ?? null } };
-}
-
-const entryOf = (automation: AutomationRecord, uses: Record<string, Use>): AutomationEntry => ({
-  name: automation.name,
-  mode: MODE[automation.mode],
-  clock: automation.timeZone,
-  recheckMinutes: automation.recheckMinutes,
-  homePlace: automation.homePlace,
-  madeFrom: automation.madeFrom,
-  uses,
-  rule: automation.rule,
-});
-
-/** The unit of what each role of an automation reads, from the part filling it: what a number beside it is written in. */
-function unitsOf(deps: ConfigDeps, automation: AutomationRecord): (role: string, means: string) => string | null {
-  return (role, means) => {
-    const binding = automation.roles[role];
-    const device = binding ? deps.catalog.get(binding.device) : null;
-    const attribute = device ? attributeMeaning(device.description, binding!.part, means) : null;
-    return attribute ? unitOf(attribute) || null : null;
-  };
+  return { document, notes, context: { unitIn: (automation, role, means) => units.get(automation)?.unitOf?.(role, means) ?? null } };
 }

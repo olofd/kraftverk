@@ -108,7 +108,7 @@ export function writeSaved(deps: SaveDeps, draft: Draft, input: SaveRequest, con
     if (claim && claim.deviceId !== record.id) throw new SetupError('Another device you have is already reached at that address', 409);
   }
 
-  const saved = deps.connections.add({ deviceId: record.id, method: method.id, transport: method.transport, heldBy: draft.heldBy, address, config: config.connection });
+  const saved = deps.connections.add({ deviceId: record.id, method: method.id, transport: method.transport, heldBy: draft.heldBy, address, config: config.connection, secretsExportable: draft.heldBy === null && input.secretsExportable === true });
   if (draft.secrets.size) deps.connections.setSecrets(saved.id, Object.fromEntries(draft.secrets));
 
   for (const link of input.links ?? []) {

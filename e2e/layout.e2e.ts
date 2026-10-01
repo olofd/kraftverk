@@ -97,7 +97,7 @@ for (const width of [320, 375]) {
     expect(await problems(page)).toEqual([]);
 
     // Its form: a trigger, a step with its condition, and the step within a step, all open.
-    await page.getByRole('button', { name: 'Edit' }).click();
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
     await page.getByRole('button', { name: /^Change trigger 2: / }).click();
     await page.getByRole('button', { name: /^Open step: Turn / }).click();
     await page.getByRole('button', { name: /^Turn it: what kind: .*Choose$/ }).click();
@@ -161,5 +161,45 @@ for (const width of [320, 375]) {
       expect(await problems(page)).toEqual([]);
       expect(await page.locator('[role=radiogroup]:not([aria-label])').count()).toBe(0);
     }
+  });
+
+  test(`at ${width} px: the configuration screen, an import's plan, and an automation written as YAML fit`, async ({ page, request }) => {
+    await page.setViewportSize({ width, height: 800 });
+    const plug = await addSimulated(request, 'atorch.s1w', unique('Plug'));
+
+    // An export of chosen things, and an import that names a device you do not have.
+    await page.goto('/configuration');
+    await page.getByRole('radio', { name: 'Choose' }).click();
+    await page.getByRole('radio', { name: 'Sealed' }).click();
+    expect(await problems(page)).toEqual([]);
+    const editor = page.getByRole('textbox', { name: 'The configuration to import' });
+    await editor.click();
+    await page.keyboard.insertText('kraftverk: 1\nautomations:\n  a-rather-long-key-for-a-narrow-screen:\n    name: Evening\n    clock: Europe/Stockholm\n    uses:\n      plug: some-plug-from-another-server-entirely\n    do:\n      - turn on: plug\n');
+    await page.getByRole('button', { name: 'Read it' }).click();
+    await expect(page.getByText('It still needs 1 device.')).toBeVisible();
+    await page.getByRole('button', { name: /^Plug: .*Choose$/ }).click();
+    await expect(page.getByText(plug.name, { exact: true }).last()).toBeVisible();
+    expect(await problems(page)).toEqual([]);
+
+    // An automation written as YAML, a problem in it said under it.
+    const made = await request.post('/api/automations', {
+      headers: HEADERS,
+      data: {
+        name: unique('Evening light'),
+        rule: { roles: { plug: { label: 'Plug', description: 'Plug', capabilities: ['switch'] } }, params: { fields: {} }, when: [], then: [{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { value: true } } } }] },
+        roles: { plug: { device: plug.id, part: 'main' } },
+        starts: {},
+        timeZone: 'Europe/Stockholm',
+      },
+    });
+    expect(made.ok(), await made.text()).toBe(true);
+    await page.goto(`/automation/${(await made.json()).id}`);
+    await page.getByRole('region', { name: 'Configuration' }).getByRole('button', { name: 'Edit as YAML' }).click();
+    await expect(page.getByRole('radio', { name: 'YAML' })).toBeChecked();
+    await page.getByRole('textbox', { name: /, as configuration$/ }).click();
+    await page.keyboard.press('ControlOrMeta+End');
+    await page.keyboard.insertText('oops: 1\n');
+    await expect(page.getByRole('alert').first()).toBeVisible();
+    expect(await problems(page)).toEqual([]);
   });
 }

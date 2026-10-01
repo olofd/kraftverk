@@ -105,6 +105,7 @@ export function setupRoutes({ setup, registry, clients }: AppDeps): Hono {
           mode: z.enum(['new', 'attach', 'restore']).default('new'),
           deviceId: z.string().min(1).max(80).optional(),
           anyway: z.boolean().optional(),
+          secretsExportable: z.boolean().optional(),
           links: z
             .array(
               z
@@ -123,6 +124,7 @@ export function setupRoutes({ setup, registry, clients }: AppDeps): Hono {
     );
     const record = await setup.save(id, input);
     if (input.anyway) auditAbout(c, 'device.saved-unchecked', 'device', record.id, `"${record.name}" was saved without answering the check`);
+    if (input.secretsExportable) auditAbout(c, 'device.exportable', 'device', record.id, `"${record.name}": its secrets may leave in an export as plain text`);
     return c.json(registry.find(record.id));
   });
 

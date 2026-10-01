@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, readFileSync } from 'node:fs';
 
-import type { ImportApplied } from '@kraftverk/api-contract';
+import type { ConfigRestored } from '@kraftverk/api-contract';
 
 import { audit } from '../history/db.ts';
 import { applyImport, ImportError, planImport, type ImportDeps } from './import.ts';
@@ -16,7 +16,7 @@ import { applyImport, ImportError, planImport, type ImportDeps } from './import.
   given it again.
 */
 
-export type Restored = { at: string; from: string; applied: ImportApplied | null; problems: string[] };
+export type Restored = ConfigRestored;
 
 export async function restoreFrom(deps: ImportDeps, file: string): Promise<Restored | null> {
   if (!existsSync(file)) return null;

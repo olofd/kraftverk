@@ -15,12 +15,15 @@ import {
   type RoleBinding,
 } from '@kraftverk/api-client';
 import { capabilitiesOf, isAutomationRole, meetsNeed, partsOf } from '@kraftverk/device-sdk';
-import { Card, haptic, Icon, Row, RowSeparator } from '@kraftverk/ui';
+import { Card, haptic, Icon, Row, RowSeparator, SegmentedControl } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
 import { Screen } from '../../../components/Screen';
 import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../../lib/confirm';
 import { useDevices } from '../../../state/DevicesProvider';
+import type { AutomationSettings } from '../../config/entries';
+import { useAutomationYaml } from '../../config/useAutomationYaml';
+import { YamlEditor } from '../../config/YamlEditor';
 import { useTone } from '../looks';
 import { Empty, Group } from '../page/Group';
 import { BlockList } from './Blocks';
@@ -53,6 +56,13 @@ export function useEditorKit() {
   return { kit, automations, error };
 }
 
+/** How it is written: block by block, or as its configuration's YAML. */
+type View = 'form' | 'yaml';
+const VIEWS: readonly { value: View; label: string }[] = [
+  { value: 'form', label: 'Form' },
+  { value: 'yaml', label: 'YAML' },
+];
+
 /** Where on the page a problem belongs, by the place the server gives it: "Trigger 1: …", "Step 2: …". */
 type Place = 'uses' | 'when' | 'onlyIf' | 'does' | 'fails' | 'other';
 const placeOf = (problem: string, labels: ReadonlySet<string>): Place =>
@@ -79,6 +89,7 @@ export function AutomationForm({
   madeFrom,
   prefer,
   back,
+  view,
   onSaved,
   onCancel,
 }: {
@@ -87,15 +98,18 @@ export function AutomationForm({
   madeFrom: string | null;
   prefer?: string | null;
   back: { label: string; to: string };
+  /** Which it opens on: the form, or its YAML (docs/CONFIG.md). The form when not said. */
+  view?: View;
   onSaved: (automation: AutomationView) => void;
   onCancel: () => void;
 }) {
-  const { devices } = useDevices();
+  const { devices, loading } = useDevices();
   const { kit, automations, error } = useEditorKit();
   const [draft, setDraft] = useState<Draft>(initial);
   const title = existing ? existing.name : 'New automation';
 
-  if (!kit || !automations) {
+  // Its devices too, before it is drawn: what fills each role is named from them, in the form and in its YAML.
+  if (!kit || !automations || loading) {
     return (
       <Screen back={back.label} backTo={back.to} title={title}>
         {error ? (
@@ -121,7 +135,7 @@ export function AutomationForm({
         prefer: prefer ?? null,
       }}
     >
-      <Editing existing={existing} initial={initial} madeFrom={madeFrom} back={back} title={title} onSaved={onSaved} onCancel={onCancel} />
+      <Editing existing={existing} initial={initial} madeFrom={madeFrom} back={back} title={title} view={view ?? 'form'} onSaved={onSaved} onCancel={onCancel} />
     </EditorProvider>
   );
 }
@@ -132,6 +146,7 @@ function Editing({
   madeFrom,
   back,
   title,
+  view: opensOn,
   onSaved,
   onCancel,
 }: {
@@ -140,6 +155,7 @@ function Editing({
   madeFrom: string | null;
   back: { label: string; to: string };
   title: string;
+  view: View;
   onSaved: (automation: AutomationView) => void;
   onCancel: () => void;
 }) {
@@ -150,7 +166,41 @@ function Editing({
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const kept = useMemo(() => pruned(draft), [draft]);
-  const changed = JSON.stringify(draft) !== JSON.stringify(initial);
+  // What the form does not edit, and its YAML does: its mode, clock, keeping it so, its place on the home page.
+  const before = useMemo<AutomationSettings>(
+    () => (existing ? { mode: existing.mode, timeZone: existing.timeZone, recheckMinutes: existing.recheckMinutes, homePlace: existing.homePlace } : { mode: 'observe', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, recheckMinutes: null, homePlace: null }),
+    [existing]
+  );
+  const [settings, setSettings] = useState<AutomationSettings>(before);
+  const settingsChanged = (Object.keys(before) as (keyof AutomationSettings)[]).filter((name) => settings[name] !== before[name]);
+  const changed = JSON.stringify(draft) !== JSON.stringify(initial) || settingsChanged.length > 0;
+
+  // Written as YAML instead: the same draft, read back from the text as soon as it reads right.
+  const [view, setView] = useState<View>('form');
+  const yaml = useAutomationYaml({
+    automationKey: existing?.key ?? 'new',
+    madeFrom,
+    devices: editor.devices,
+    automations: editor.automations,
+    onRead: (read) => (editor.change(() => read.draft), setSettings(read.settings)),
+  });
+  const switchTo = (next: View) => {
+    if (next === view) return;
+    // Back to the form only from YAML that reads right: the form shows what it read.
+    if (next === 'form' && (yaml.problems.length || yaml.reading)) {
+      setProblem('Fix its YAML first: the form shows what it says once it reads right.');
+      return;
+    }
+    setProblem(null);
+    if (next === 'yaml') yaml.open(pruned(editor.draft), settings);
+    setView(next);
+  };
+  useEffect(() => {
+    if (opensOn === 'yaml') switchTo('yaml');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const yamlProblems = view === 'yaml' ? yaml.problems.length : 0;
+  const yamlUnread = view === 'yaml' && (yaml.reading || !yaml.ready);
 
   // The server's word on the draft, as it is built: every problem, and how it reads — a moment after each change.
   const asked = useRef(0);
@@ -167,8 +217,8 @@ function Editing({
   const labels = new Set(Object.values(draft.rule.roles).map((spec) => spec.label));
   const problems = (place: Place) => (check?.problems ?? []).filter((one) => placeOf(one, labels) === place);
   const named = draft.name.trim().length > 0;
-  const ready = check !== null && check.problems.length === 0 && named;
-  const toFix = (check?.problems.length ?? 0) + (named ? 0 : 1);
+  const ready = check !== null && check.problems.length === 0 && named && yamlProblems === 0 && !yamlUnread;
+  const toFix = (check?.problems.length ?? 0) + (named ? 0 : 1) + yamlProblems;
 
   const save = async () => {
     if (!ready || busy) return;
@@ -176,16 +226,23 @@ function Editing({
     setProblem(null);
     try {
       const body = { name: draft.name.trim(), rule: kept.rule, roles: kept.roles, starts: kept.starts };
+      // What its YAML changed beyond what the form edits.
+      const changes = Object.fromEntries(settingsChanged.map((name) => [name, settings[name]]));
+      const letAct = settings.mode === 'armed' && before.mode !== 'armed';
+      const ask = (name: string) => (reason: string, again: boolean) =>
+        confirmAction(letAct ? `Let “${name}” act on its own?` : `Change “${name}” while it acts?`, `${again ? `${ASKED_AGAIN}\n\n` : ''}${reason}\n\n${check?.sentence ?? ''}`, letAct ? 'Let it act' : 'Change it');
+      const wants = (result: Awaited<ReturnType<typeof updateAutomation>>) => ('needsConfirmation' in result ? { token: result.needsConfirmation, reason: result.reason } : null);
       if (!existing) {
-        onSaved(await createAutomation({ ...body, madeFrom, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }));
+        const made = await createAutomation({ ...body, madeFrom, timeZone: settings.timeZone, recheckMinutes: settings.recheckMinutes });
+        // A new one only watches, off the home page: what its YAML says beyond that, set as it would be on its page.
+        const { mode, homePlace } = changes as Partial<AutomationSettings>;
+        if (mode === undefined && homePlace === undefined) return onSaved(made);
+        const { answer } = await withConfirmation((confirmation) => updateAutomation(made.id, { ...(mode !== undefined ? { mode } : {}), ...(homePlace !== undefined ? { homePlace } : {}), confirmation }), wants, ask(made.name));
+        onSaved('automation' in answer ? answer.automation : made);
         return;
       }
       // One that acts on its own asks first: what it does changes.
-      const { answer, declined } = await withConfirmation(
-        (confirmation) => updateAutomation(existing.id, { ...body, confirmation }),
-        (result) => ('needsConfirmation' in result ? { token: result.needsConfirmation, reason: result.reason } : null),
-        (reason, again) => confirmAction(`Change “${existing.name}” while it acts?`, `${again ? `${ASKED_AGAIN}\n\n` : ''}${reason}\n\n${check?.sentence ?? ''}`, 'Change it')
-      );
+      const { answer, declined } = await withConfirmation((confirmation) => updateAutomation(existing.id, { ...body, ...changes, confirmation }), wants, ask(existing.name));
       if (!declined && 'automation' in answer) onSaved(answer.automation);
     } catch (err) {
       setProblem(describeError(err) || 'It could not be saved');
@@ -229,55 +286,80 @@ function Editing({
   const nothingStarts = draft.rule.when.length === 0;
   return (
     <Screen back={back.label} backTo={back.to} title={title} footer={footer}>
-      <YStack gap="$1.5">
-        <Text fontSize={13} fontWeight="600" color="$muted">
-          Name
-        </Text>
-        <Input
-          size="$5"
-          fontSize={18}
-          fontWeight="700"
-          value={draft.name}
-          placeholder="What to call it: “Morning charge”"
-          aria-label="Name"
-          backgroundColor="$card"
-          borderColor={named ? '$borderColor' : '$warning'}
-          onChangeText={(name) => editor.change((current) => ({ ...current, name }))}
-          onSubmitEditing={() => void save()}
+      <Card inset>
+        <SegmentedControl
+          title="Write it"
+          subtitle={view === 'form' ? 'Block by block, each part in its group.' : 'As configuration: the words a file says it in, checked as you type.'}
+          value={view}
+          options={VIEWS}
+          onChange={switchTo}
         />
-      </YStack>
+      </Card>
+      {view === 'yaml' ? (
+        <Group icon="code" title="As configuration">
+          {yaml.error ? (
+            <Text fontSize={13} color="$danger" lineHeight={19} role="alert">
+              {yaml.error}
+            </Text>
+          ) : null}
+          <YamlEditor value={yaml.text} onChange={yaml.change} problems={yaml.problems} schema={yaml.schema} label={`${title}, as configuration`} minLines={14} />
+          <Text fontSize={13} color="$muted" lineHeight={19}>
+            Its name, what fills each role by its key, what starts it, what it does — and how it runs on its own. Saved as the form saves it.
+          </Text>
+        </Group>
+      ) : (
+        <>
+          <YStack gap="$1.5">
+            <Text fontSize={13} fontWeight="600" color="$muted">
+              Name
+            </Text>
+            <Input
+              size="$5"
+              fontSize={18}
+              fontWeight="700"
+              value={draft.name}
+              placeholder="What to call it: “Morning charge”"
+              aria-label="Name"
+              backgroundColor="$card"
+              borderColor={named ? '$borderColor' : '$warning'}
+              onChangeText={(name) => editor.change((current) => ({ ...current, name }))}
+              onSubmitEditing={() => void save()}
+            />
+          </YStack>
 
-      <Uses problems={problems('uses')} />
+          <Uses problems={problems('uses')} />
 
-      <Group icon="clock" title="When" summary={nothingStarts ? 'When started' : undefined}>
-        <Problems list={problems('when')} />
-        <Triggers />
-        <Text fontSize={13} color="$muted" lineHeight={19}>
-          Whatever starts it on its own, you can always run it yourself.
-        </Text>
-      </Group>
+          <Group icon="clock" title="When" summary={nothingStarts ? 'When started' : undefined}>
+            <Problems list={problems('when')} />
+            <Triggers />
+            <Text fontSize={13} color="$muted" lineHeight={19}>
+              Whatever starts it on its own, you can always run it yourself.
+            </Text>
+          </Group>
 
-      <Group icon="filter" title="Only if" summary={draft.rule.if ? undefined : 'Always'}>
-        <Problems list={problems('onlyIf')} />
-        <OnlyIf />
-      </Group>
+          <Group icon="filter" title="Only if" summary={draft.rule.if ? undefined : 'Always'}>
+            <Problems list={problems('onlyIf')} />
+            <OnlyIf />
+          </Group>
 
-      <Group icon="list" title="Does">
-        <Problems list={problems('does')} />
-        <BlockList path={THEN} label="What it does" />
-      </Group>
+          <Group icon="list" title="Does">
+            <Problems list={problems('does')} />
+            <BlockList path={THEN} label="What it does" />
+          </Group>
 
-      <Group icon="corner-up-left" title="If a step fails, or you stop it">
-        <Problems list={problems('fails')} />
-        <Text fontSize={13} color="$muted" lineHeight={19}>
-          Each of these is tried, whatever the others do: switching back off what it switched on.
-        </Text>
-        <BlockList path={OTHERWISE} label="If a step does not succeed" />
-      </Group>
+          <Group icon="corner-up-left" title="If a step fails, or you stop it">
+            <Problems list={problems('fails')} />
+            <Text fontSize={13} color="$muted" lineHeight={19}>
+              Each of these is tried, whatever the others do: switching back off what it switched on.
+            </Text>
+            <BlockList path={OTHERWISE} label="If a step does not succeed" />
+          </Group>
+        </>
+      )}
 
       <Group icon="message-square" title="How it reads">
         <YStack gap="$2" role="status" aria-live="polite">
-          <Problems list={problems('other')} />
+          <Problems list={view === 'yaml' ? (check?.problems ?? []) : problems('other')} />
           {check === null ? (
             <Spinner size="small" color="$accent" alignSelf="flex-start" />
           ) : check.problems.length === 0 ? (

@@ -20,6 +20,8 @@ import {
   removeDevice,
   removeLink as apiRemoveLink,
   renameDevice,
+  setDeviceKey,
+  setSecretsExportable,
   setDevicePicture,
   runDeviceTool,
   sendCommand,
@@ -108,6 +110,10 @@ type DevicesContextValue = {
   /** Everything a device's own screens are handed. */
   screenProps: (device: DeviceView) => DeviceScreenProps;
   rename: (id: string, name: string) => Promise<void>;
+  /** Its name in configuration (docs/CONFIG.md): server mode only. */
+  setKey: (id: string, key: string) => Promise<void>;
+  /** Whether a server-held connection's secrets may leave in an export as plain text: server mode only. */
+  setExportable: (device: DeviceView, connection: ConnectionView, exportable: boolean) => Promise<void>;
   /** Shows another picture (`type:N`): kept by the server, or this app in local mode. */
   setPicture: (id: string, picture: PictureRef) => Promise<void>;
   remove: (id: string) => Promise<void>;
@@ -648,6 +654,8 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       actionsFor,
       screenProps,
       rename: (id, name) => (mode === 'local' ? Promise.resolve(runtime.local.rename(id, name)) : mutate(() => renameDevice(id, name))),
+      setKey: (id, key) => (mode === 'local' ? Promise.reject(new Error('Configuration is the server’s')) : mutate(() => setDeviceKey(id, key))),
+      setExportable: (device, connection, exportable) => (mode === 'local' ? Promise.reject(new Error('Configuration is the server’s')) : mutate(() => setSecretsExportable(device.id, connection.id, exportable))),
       setPicture: (id, picture) => (mode === 'local' ? Promise.resolve(runtime.local.setPicture(id, picture)) : mutate(() => setDevicePicture(id, picture))),
       remove: async (id) => {
         await runtime.sessions.close(id);

@@ -1,9 +1,9 @@
 # Configuration: a home in one file
 
-**Status:** the language, the export, the JSON Schema, import, and the
-snapshot kept beside the database — restored by itself after a reset — are
-built (2026-10-01; [PLAN-CONFIG.md](PLAN-CONFIG.md) phases 1–3). The app's
-screens and editor follow.
+**Status:** built (2026-10-01; [PLAN-CONFIG.md](PLAN-CONFIG.md) phases 1–4):
+the language, the export, the JSON Schema, import, the snapshot kept beside
+the database — restored by itself after a reset — and the app's screens and
+YAML editor.
 
 A kraftverk home — its devices, how each is reached, the links between them,
 its automations and the home's own values — written as one YAML document.
@@ -170,6 +170,40 @@ prints each problem as `file:line:column: message` against the device types
 installed in this checkout (`devices=a,b automations=c` for keys the server
 has but the file does not carry), and `npm run config -- schema` prints the
 schema.
+
+## In the app
+
+- **App settings → Configuration**: when the copy beside the server was last
+  written, and what the last restore did — with its copy to import again
+  when it could not do it all; an **export** of everything or of chosen
+  devices and automations, its secrets left out, sealed with a passphrase,
+  or in plain text where allowed, then downloaded or shown; an **import**,
+  pasted or opened, checked as it is typed, then read into the plan — each
+  thing chosen or left out, a field for each secret it needs, a picker for
+  each role naming a device you do not have (yours, and those the file
+  adds), what it asks a yes to — and applied.
+- **A device's settings → Configuration**: its key, changed in place; what it
+  is as configuration, its secrets by name only; and an export of it alone.
+  Under **Connections**, a server-held way with secrets says whether they may
+  leave in plain text — off unless chosen, turning it on warned against —
+  and adding a device asks the same, off.
+- **An automation's page → Configuration**: its key; what it is as
+  configuration, to read and to learn the language from what you built;
+  **Edit as YAML**; and an export of it alone. Its form writes it either way
+  — **Form** or **YAML** at the top — the same draft: a change in its YAML
+  is read back into the form as soon as it reads right, and saved as the
+  form saves it, letting it act asked first. Its YAML may say what the form
+  does not: its mode, clock, keeping it so, its place on the home page. A
+  role nothing fills yet is written empty (`plug: ~`).
+
+The editor in a browser is CodeMirror with its YAML language: the JSON Schema
+— made in the app from the vocabulary — completes keys, values and your
+devices' keys and parts, and explains them on hover
+(`codemirror-json-schema`; its tooltips without the code highlighter it
+would load, `client/metro.config.js`). Every problem — the YAML's own, the
+document's, what it means — is found by `packages/config`, the same code
+the server checks with, marked where it is and listed under it. A phone's
+own app writes it in a text field, its problems listed the same.
 
 ## Versions
 

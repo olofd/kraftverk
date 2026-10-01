@@ -244,7 +244,7 @@ const snapshot = new ConfigSnapshot({ catalog, connections, links, automations, 
 let restoring = true;
 if (startedFresh().fresh && existsSync(snapshot.path)) {
   const { checked } = plans({ catalog, sessions, library, engine, automations });
-  const restored = await restoreFrom({ catalog, connections, links, automations, types, protocols, sessions, library, engine, checked }, snapshot.path);
+  const restored = await restoreFrom({ catalog, connections, links, automations, types, protocols, sessions, transports, library, engine, checked }, snapshot.path);
   snapshot.restored = restored;
   if (restored) {
     console.log(`[config] Restored from the configuration kept beside the database: ${restored.applied ? `${restored.applied.devices.added.length} devices, ${restored.applied.automations.added.length} automations` : 'nothing'}${restored.problems.length ? `; ${restored.problems.length} problems: ${restored.problems.join('; ')}` : ''}`);

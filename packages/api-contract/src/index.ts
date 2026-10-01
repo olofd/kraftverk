@@ -432,6 +432,8 @@ export type SaveInput = {
   anyway?: boolean;
   /** Links from or to the device being saved: which of its parts, and which part of a device you have. */
   links?: { kind: LinkKind; part: string; other: LinkEnd<string>; role: 'source' | 'target' }[];
+  /** Whether the connection's secrets may leave in an export as plain text: off unless chosen, and warned against (docs/CONFIG.md). */
+  secretsExportable?: boolean;
 };
 
 /** What an app learnt by reading a device itself, for a connection it will hold. */
@@ -601,7 +603,8 @@ export type AutomationDraftView = {
 };
 
 /** `POST /automations`. `timeZone` is the app's own clock: "Europe/Stockholm". `madeFrom`: the recipe it was copied from. */
-export type NewAutomation = AutomationDraft & { name: string; madeFrom?: string | null; timeZone: string; recheckMinutes?: number | null };
+/** `POST /automations`. `key`: its name in configuration; made from its name when not given. */
+export type NewAutomation = AutomationDraft & { name: string; key?: string; madeFrom?: string | null; timeZone: string; recheckMinutes?: number | null };
 
 /**
  * `PATCH /automations/:id`. A new rule comes with what fills its roles. Letting
@@ -610,6 +613,8 @@ export type NewAutomation = AutomationDraft & { name: string; madeFrom?: string 
  */
 export type AutomationChanges = Partial<AutomationDraft> & {
   name?: string;
+  /** Its name in configuration: lowercase letters, digits and dashes, no other automation's. */
+  key?: string;
   timeZone?: string;
   mode?: AutomationMode;
   recheckMinutes?: number | null;
@@ -793,6 +798,30 @@ export type ImportApplied = {
   links: { added: number; removed: number };
   policy: string[];
 };
+
+/** `POST /config/export`: everything, or the devices and automations chosen by key; secrets left out, sealed with a passphrase, or plain where allowed. */
+export type ConfigExportRequest = { devices?: string[]; automations?: string[]; secrets: 'none' | 'sealed' | 'plain'; passphrase?: string };
+
+/** An export: the file, and what could not go in (also in its heading). */
+export type ConfigExported = { text: string; notes: string[] };
+
+/** `POST /config/apply`: a plan, with the answers it asked for. */
+export type ImportAnswers = {
+  plan: string;
+  /** Only these, by key; everything the plan has when not given. */
+  include?: { devices?: string[]; automations?: string[] };
+  /** A secret the file did not carry: "device.field" → its value. */
+  secrets?: Record<string, string>;
+  /** A role naming a device you do not have: "automation.role" → "device-key.part". */
+  rebind?: Record<string, string>;
+  confirmation?: string;
+};
+
+/** What the server's last restore from the configuration kept beside its database did. */
+export type ConfigRestored = { at: string; from: string; applied: ImportApplied | null; problems: string[] };
+
+/** `GET /config/snapshot`: the configuration kept beside the database — where, when it was last written, and what restoring it last did. */
+export type ConfigSnapshotView = { path: string | null; writtenAt: string | null; restored: ConfigRestored | null };
 
 /** A device a run used, as it was when the run ran. */
 export type RunLogDevice = { id: string; name: string; typeId: string };

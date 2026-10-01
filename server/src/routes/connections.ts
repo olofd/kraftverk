@@ -69,6 +69,29 @@ export function connectionRoutes({ catalog, connections, links, clients, types, 
     return c.json(registry.find(record.id));
   });
 
+  /**
+   * Whether a connection's secrets may leave in an export as plain text
+   * (docs/CONFIG.md): its owner's choice, off unless chosen. Anyone with the
+   * file then has its key, so turning it on is warned against in the app.
+   */
+  api.patch('/devices/:id/connections/:connection', async (c) => {
+    const { record, connection } = connectionOf(c.req.param('id'), c.req.param('connection'));
+    const input = await body(c, z.object({ secretsExportable: z.boolean() }).strict());
+    if (connection.heldBy) throw new HTTPException(409, { message: 'That connection’s secrets are kept by the app that holds it, and never exported' });
+    if (input.secretsExportable !== connection.secretsExportable) {
+      connections.update(connection.id, { secretsExportable: input.secretsExportable });
+      auditAbout(
+        c,
+        'device.exportable',
+        'device',
+        record.id,
+        input.secretsExportable ? `"${record.name}": its ${connection.method} secrets may now leave in an export as plain text` : `"${record.name}": its ${connection.method} secrets no longer leave in plain text`,
+        { connection: connection.id, secretsExportable: input.secretsExportable }
+      );
+    }
+    return c.json(registry.find(record.id));
+  });
+
   // --- links ------------------------------------------------------------------
 
   /** "Garage station — Mains", or a device's name for its main part: how a link's ends read on the timeline. */

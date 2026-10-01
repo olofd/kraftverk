@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import type { AutomationDraft, AutomationKit, AutomationRuns, RecipeView, RunLog } from '@kraftverk/api-contract';
 import { automationId, describeSteps, isTimeZone, savedDeviceId, takesSteps, type AutomationId, type Rule, type Value } from '@kraftverk/device-sdk';
+import { KEY } from '@kraftverk/config';
 import { Confirmations, subjectOf } from '@kraftverk/gateway';
 
 import { actorOf } from '../auth/routes.ts';
@@ -179,6 +180,7 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
       draft
         .extend({
           name: z.string().trim().min(1).max(80),
+          key: z.string().trim().min(1).max(63).optional(),
           madeFrom: z.string().min(1).max(120).nullable().optional(),
           timeZone: z.string().min(1).max(64),
           recheckMinutes: recheckMinutes.optional(),
@@ -187,11 +189,14 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
     );
     if (!isTimeZone(input.timeZone)) throw new HTTPException(400, { message: `"${input.timeZone}" is not a time zone` });
     if (input.madeFrom && !library.recipe(input.madeFrom)) throw new HTTPException(400, { message: `There is no recipe called "${input.madeFrom}"` });
+    if (input.key !== undefined && !KEY.test(input.key)) throw new HTTPException(400, { message: 'A key is lowercase letters, digits and dashes: "start-charging"' });
+    if (input.key !== undefined && automations.keyTaken(input.key)) throw new HTTPException(409, { message: `Another automation is known by "${input.key}"` });
     const result = checked(asDraft(input), null);
     refuseProblems(result.problems);
     const kept = input.rule as unknown as Rule;
     if (input.recheckMinutes && !keepsSo(kept)) throw new HTTPException(400, { message: KEEPS_SO_ONLY });
     const created = automations.create({
+      ...(input.key !== undefined ? { key: input.key } : {}),
       name: input.name,
       rule: kept,
       madeFrom: input.madeFrom ?? null,
@@ -220,6 +225,7 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
       z
         .object({
           name: z.string().trim().min(1).max(80).optional(),
+          key: z.string().trim().min(1).max(63).optional(),
           // A new rule comes with what fills its roles: the three together, or none.
           rule: rule.optional(),
           roles: roles.optional(),
@@ -233,6 +239,10 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
         .strict()
     );
     if (input.timeZone && !isTimeZone(input.timeZone)) throw new HTTPException(400, { message: `"${input.timeZone}" is not a time zone` });
+    if (input.key !== undefined && input.key !== current.key) {
+      if (!KEY.test(input.key)) throw new HTTPException(400, { message: 'A key is lowercase letters, digits and dashes: "start-charging"' });
+      if (automations.keyTaken(input.key, current.id)) throw new HTTPException(409, { message: `Another automation is known by "${input.key}"` });
+    }
     const rebuilt = input.rule !== undefined || input.roles !== undefined || input.starts !== undefined;
     if (rebuilt && (!input.rule || !input.roles || !input.starts)) throw new HTTPException(400, { message: 'A new rule comes with what fills its roles: rule, roles and starts together' });
     const result = rebuilt ? checked(asDraft({ rule: input.rule!, roles: input.roles!, starts: input.starts! }), current.id) : null;
@@ -272,6 +282,7 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
     if (startsAfresh) engine.reset(current.id);
     let updated = automations.update(current.id, {
       ...(input.name ? { name: input.name } : {}),
+      ...(input.key ? { key: input.key } : {}),
       ...(changedRule ?? {}),
       ...(input.timeZone ? { timeZone: input.timeZone } : {}),
       ...(input.mode ? { mode: input.mode } : {}),
@@ -281,14 +292,16 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
     const said =
       input.mode && input.mode !== current.mode
         ? { off: 'Turned off', observe: 'Set to only watch on its own', armed: 'Let act on its own' }[input.mode]
-        : input.homePlace !== undefined && !changedRule && !input.name
+        : input.key !== undefined && input.key !== current.key && !changedRule && !input.name
+          ? `Known in configuration as ${input.key}`
+          : input.homePlace !== undefined && !changedRule && !input.name
           ? input.homePlace === null
             ? 'Taken off the home page'
             : 'Put on the home page'
           : 'Changed';
     auditAbout(c, input.mode === 'armed' && current.mode !== 'armed' ? 'automation.armed' : 'automation.changed', 'automation', updated.id, `${said}: "${updated.name}"`, {
-      before: { mode: current.mode, rule: current.rule, roles: current.roles, starts: current.starts, recheckMinutes: current.recheckMinutes, homePlace: current.homePlace },
-      after: { mode: updated.mode, rule: updated.rule, roles: updated.roles, starts: updated.starts, recheckMinutes: updated.recheckMinutes, homePlace: updated.homePlace },
+      before: { key: current.key, mode: current.mode, rule: current.rule, roles: current.roles, starts: current.starts, recheckMinutes: current.recheckMinutes, homePlace: current.homePlace },
+      after: { key: updated.key, mode: updated.mode, rule: updated.rule, roles: updated.roles, starts: updated.starts, recheckMinutes: updated.recheckMinutes, homePlace: updated.homePlace },
     });
     // Its conditions, looked at now, after the change is on the timeline: let act while one holds, it acts at once.
     if (startsAfresh) engine.poke(updated.id);

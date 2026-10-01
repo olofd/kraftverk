@@ -306,9 +306,11 @@ shows its configuration read-only first; editing it there follows.
    back with its history; proven on a server whose database was moved
    aside: 4 devices and 5 automations restored, connected): plan and apply, references and rebinding,
    secrets, confirmation, and restore at start on a fresh database.
-4. **The app**: the Configuration screen, export from a device and an
-   automation, keys, the exportable choice in Advanced and in the add flow,
-   and "Show as configuration".
+4. **The app** — **done, 2026-10-01** (with the owner's editor: an
+   automation's form written as YAML instead, CodeMirror and the schema in
+   a browser, a text field on a phone): the Configuration screen, export
+   from a device and an automation, keys, the exportable choice under a
+   device's connections and in the add flow, and "Show as configuration".
 5. **Docs**:
    - `docs/CONFIG.md`: the language reference with examples, the versioning
      rule, and the secrets modes;

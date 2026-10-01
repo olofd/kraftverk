@@ -219,22 +219,23 @@ function automationSchema(vocabulary: Vocabulary): Schema {
       'made from': { type: 'string', description: 'The recipe it was copied from.' },
       uses: {
         type: 'object',
-        description: 'Each role, and what fills it: "device-key" or "device-key.part" — or { automation: key } for one a step starts.',
+        description: 'Each role, and what fills it: "device-key" or "device-key.part" — or { automation: key } for one a step starts. Empty (~) while nothing fills it yet.',
         additionalProperties: {
           anyOf: [
             partRef,
+            { type: 'null', description: 'Nothing fills it yet.' },
             {
               type: 'object',
               required: ['part'],
               additionalProperties: false,
-              properties: { part: partRef, label: { type: 'string' }, description: { type: 'string' }, needs: { type: 'array', items: { type: 'string' } }, 'one of': { type: 'array', items: { type: 'string' } } },
+              properties: { part: { anyOf: [partRef, { type: 'null' }] }, label: { type: 'string' }, description: { type: 'string' }, needs: { type: 'array', items: { type: 'string' } }, 'one of': { type: 'array', items: { type: 'string' } } },
             },
             {
               type: 'object',
               required: ['automation'],
               additionalProperties: false,
               properties: {
-                automation: vocabulary.automations.length ? { anyOf: [{ enum: vocabulary.automations.map((each) => each.key) }, { type: 'string' }] } : { type: 'string' },
+                automation: { anyOf: [...(vocabulary.automations.length ? [{ enum: vocabulary.automations.map((each) => each.key) }] : []), { type: 'string' }, { type: 'null' }] },
                 label: { type: 'string' },
                 description: { type: 'string' },
               },

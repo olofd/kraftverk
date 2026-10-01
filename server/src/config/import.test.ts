@@ -48,7 +48,7 @@ beforeAll(() => {
   const engine = { reset: () => {}, poke: () => {}, forget: () => {} };
   const sessions = { sync: async (records: unknown[]) => void sessionsSynced.push(records.length), description: (record: { description: unknown }) => record.description };
   const { checked } = plans({ catalog, sessions: sessions as never, library, engine: engine as never, automations });
-  deps = { catalog, connections: new ConnectionStore(), links: new LinkStore(), automations, types, protocols, library, engine, sessions, checked };
+  deps = { catalog, connections: new ConnectionStore(), links: new LinkStore(), automations, types, protocols, library, engine, sessions, transports: { definition: () => null }, checked };
 });
 
 afterAll(() => {
@@ -196,10 +196,40 @@ automations:
         ],
       },
     ]);
+    // A device the same file adds can fill it too.
+    const withCellar = text.replace('automations:', 'devices:\n  attic-lamp:\n    type: test.lamp\n    name: Attic lamp\n    connect:\n      - via: simulated\nautomations:');
+    const planned = planImport(deps, withCellar, { mode: 'merge', by: 'olof' });
+    expect(planned.needs.rebind[0]!.candidates.map((candidate) => candidate.use)).toEqual(['hall-lamp', 'porch-lamp', 'attic-lamp']);
+    await applyImport(deps, planned.id!, 'olof', { rebind: { 'evening.lamp': 'attic-lamp' } });
+    expect(deps.automations.byKey('evening')!.roles.lamp!.device).toBe(deps.catalog.byKey('attic-lamp')!.id);
+    deps.automations.delete(deps.automations.byKey('evening')!.id);
     await expect(applyImport(deps, plan.id!, 'olof', {})).rejects.toThrow('a device for Lamp');
     const again = planImport(deps, text, { mode: 'merge', by: 'olof' });
     await applyImport(deps, again.id!, 'olof', { rebind: { 'evening.lamp': 'porch-lamp' } });
     expect(deps.automations.byKey('evening')!.roles.lamp!.device).toBe(deps.catalog.byKey('porch-lamp')!.id);
+  });
+
+  test('simulated devices share their address: no claim on it, as setup makes none', () => {
+    deps.connections.add({ deviceId: deps.catalog.add({ typeId: 'test.lamp', name: 'Sim lamp', description: LAMP }).id, method: 'simulated', transport: 'simulated', heldBy: null, address: 'simulated' });
+    const text = 'kraftverk: 1\ndevices:\n  other-sim:\n    type: test.lamp\n    name: Other sim\n    connect:\n      - via: simulated\n';
+    expect(planImport(deps, text, { mode: 'merge', by: 'olof' }).problems).toEqual([]);
+  });
+
+  test('a role nothing fills — written while it was being built — is a problem at its line, not an import that fails', () => {
+    aHome();
+    const text = `kraftverk: 1
+automations:
+  evening:
+    name: Evening
+    clock: Europe/Stockholm
+    uses:
+      lamp: ~
+    do:
+      - turn on: lamp
+`;
+    const plan = planImport(deps, text, { mode: 'merge', by: 'olof' });
+    expect(plan.id).toBeNull();
+    expect(plan.problems).toEqual([{ message: 'Lamp: nothing fills it — name a device for it', path: ['automations', 'evening', 'uses', 'lamp'], line: 7, column: 13 }]);
   });
 
   test('an automation that cannot be kept undoes the whole import — the devices added with it too', async () => {

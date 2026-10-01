@@ -54,7 +54,7 @@ test('a charge window of your own, copied from the shared recipe', async ({ page
   await expect(now.getByText(/what you switch by hand stays until one turns to yes again/)).toBeVisible();
 
   // Edit turns its page into its form: the same groups, editable. Cancel, asked first, keeps it as it was.
-  await main.getByRole('button', { name: 'Edit' }).click();
+  await main.getByRole('button', { name: 'Edit', exact: true }).click();
   await page.getByLabel('Name').fill('Not kept');
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   expect(await answer(page, true)).toContain('What you changed is not kept');
@@ -63,7 +63,7 @@ test('a charge window of your own, copied from the shared recipe', async ({ page
   // Changed, in its form: its step's "on while below 50 %" stays a condition — never a plain on or off —
   // and a new name, saved with Enter, back on its page.
   const renamed = unique('Charge window');
-  await main.getByRole('button', { name: 'Edit' }).click();
+  await main.getByRole('button', { name: 'Edit', exact: true }).click();
   await page.getByRole('button', { name: /^Open step: Turn .+ on if .+ below 50 %, off if not$/ }).click();
   await expect(page.getByText('On while this holds, off when it does not:')).toBeVisible();
   await page.getByLabel('Name').fill(renamed);

@@ -255,12 +255,12 @@ async function checked(options: { typeId?: string; methodId?: string; address?: 
   return { id, check: check.body };
 }
 
-async function added(name: string, options: Parameters<typeof checked>[0] = {}) {
+async function added(name: string, options: Parameters<typeof checked>[0] & { save?: Record<string, unknown> } = {}) {
   const server = options.server ?? onBus;
   const { id } = await checked(options);
-  const saved = await as(`/setup/${id}/save`, { method: 'POST', body: { name }, server });
+  const saved = await as(`/setup/${id}/save`, { method: 'POST', body: { name, ...options.save }, server });
   expect(saved.status).toBe(200);
-  return saved.body as { id: string; name: string; identity: string | null };
+  return saved.body as { id: string; key: string; name: string; identity: string | null; connections: { id: string; secretsExportable: boolean }[] };
 }
 
 describe('configuration', () => {
@@ -310,6 +310,51 @@ describe('configuration', () => {
     const one = await onBusAs('/config/export', { method: 'POST', body: { devices: ['hall-lamp'], automations: [] } });
     expect(one.body.text).toContain('hall-lamp:');
     expect(one.body.text).not.toContain('home:');
+
+    // Its owner lets its secrets leave in plain text: then a plain export carries them — and the choice is on the timeline.
+    const allowed = await onBusAs(`/devices/${lamp.id}/connections/${connection}`, { method: 'PATCH', body: { secretsExportable: true } });
+    expect(allowed.status).toBe(200);
+    expect(allowed.body.connections[0].secretsExportable).toBe(true);
+    const plainNow = await onBusAs('/config/export', { method: 'POST', body: { secrets: 'plain' } });
+    expect(plainNow.body.text).toContain('pin: pin-from-a-test');
+    expect(plainNow.body.text).toContain('exportable: true');
+    expect(((await onBusAs('/audit')).body as { kind: string }[]).some((entry) => entry.kind === 'device.exportable')).toBe(true);
+    await onBusAs(`/devices/${lamp.id}/connections/${connection}`, { method: 'PATCH', body: { secretsExportable: false } });
+    expect((await onBusAs('/config/export', { method: 'POST', body: { secrets: 'plain' } })).body.text).not.toContain('pin-from-a-test');
+  });
+
+  test('keys: a device and an automation renamed in configuration, never to one taken or not a key', async () => {
+    lampAt('lamp-1');
+    lampAt('lamp-2');
+    const hall = await added('Hall lamp');
+    // Its secrets let leave in plain text as it is added: its owner's choice, on the timeline.
+    const porch = await added('Porch lamp', { address: 'lamp-2', save: { secretsExportable: true } });
+    expect(porch.connections[0]!.secretsExportable).toBe(true);
+    expect(hall.connections[0]!.secretsExportable).toBe(false);
+    const lampOnRule = {
+      roles: { lamp: { label: 'Lamp', description: 'Lamp', capabilities: ['switch'] } },
+      params: { fields: {} },
+      when: [],
+      then: [{ command: { role: 'lamp', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
+    };
+    expect(hall.key).toBe('hall-lamp');
+    const keyed = await onBusAs(`/devices/${hall.id}`, { method: 'PATCH', body: { key: 'hallway' } });
+    expect(keyed.status).toBe(200);
+    expect(keyed.body.key).toBe('hallway');
+    expect(keyed.body.name).toBe('Hall lamp');
+    expect((await onBusAs(`/devices/${porch.id}`, { method: 'PATCH', body: { key: 'hallway' } })).status).toBe(409);
+    expect((await onBusAs(`/devices/${porch.id}`, { method: 'PATCH', body: { key: 'Not A Key' } })).status).toBe(400);
+    expect(((await onBusAs('/audit')).body as { kind: string; summary: string }[]).find((entry) => entry.kind === 'device.keyed')?.summary).toBe('"Hall lamp" is now known in configuration as hallway, not hall-lamp');
+
+    const automation = await onBusAs('/automations', { method: 'POST', body: { name: 'Lamp on', key: 'lamp-on', rule: lampOnRule, roles: { lamp: { device: hall.id, part: 'main' } }, starts: {}, timeZone: 'Europe/Stockholm' } });
+    expect(automation.status).toBe(200);
+    expect(automation.body.key).toBe('lamp-on');
+    const renamed = await onBusAs(`/automations/${automation.body.id}`, { method: 'PATCH', body: { key: 'hall-on' } });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.key).toBe('hall-on');
+    const other = await onBusAs('/automations', { method: 'POST', body: { name: 'Lamp on', rule: lampOnRule, roles: { lamp: { device: hall.id, part: 'main' } }, starts: {}, timeZone: 'Europe/Stockholm' } });
+    expect(other.body.key).toBe('lamp-on');
+    expect((await onBusAs(`/automations/${other.body.id}`, { method: 'PATCH', body: { key: 'hall-on' } })).status).toBe(409);
   });
 
   test('an import: planned — nothing written — then applied; what it takes away confirmed first', async () => {
@@ -340,6 +385,9 @@ describe('configuration', () => {
     const wrong = await onBusAs('/config/plan', { method: 'POST', body: { text: 'kraftverk: 1\ndevices:\n  x:\n    type: test.nothing\n    name: X\n' } });
     expect(wrong.body.id).toBeNull();
     expect(wrong.body.problems[0]).toMatchObject({ message: 'No installed device type is called "test.nothing"', line: 4 });
+    // The copy a restore was made from is imported again only when there was a restore; a file's text, or it — not both.
+    expect((await onBusAs('/config/plan', { method: 'POST', body: { restored: true } })).status).toBe(404);
+    expect((await onBusAs('/config/plan', { method: 'POST', body: { restored: true, text: 'kraftverk: 1\n' } })).status).toBe(400);
   });
 });
 

@@ -3,6 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
 import type { AttributeWrite, CommandBody, DeviceChanges, DeviceEventView, DeviceHistory, DeviceTypeListing, PictureChoice, ProblemView, ToolBody } from '@kraftverk/api-contract';
+import { KEY } from '@kraftverk/config';
 import { CATEGORIES, capabilityIn, describeDeviceType, isSimulated, methodsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
 import { Confirmations, subjectOf } from '@kraftverk/gateway';
 import { runTool, ToolRefused, type ToolRefusal } from '@kraftverk/holder';
@@ -83,14 +84,20 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
   api.patch('/devices/:id', async (c) => {
     const before = deviceOr404(catalog, c.req.param('id'));
     /*
-      A name, and nothing else. What a device *is* is its type, which does not
-      change; how it is reached is its connections, which have routes of their
-      own and checks of their own.
+      A name, and its key — the name a configuration knows it by — and
+      nothing else. What a device *is* is its type, which does not change; how
+      it is reached is its connections, which have routes of their own and
+      checks of their own.
     */
-    const changes = await body(c, z.object({ name: z.string().trim().min(1).max(60) }).strict());
+    const changes = await body(c, z.object({ name: z.string().trim().min(1).max(60).optional(), key: z.string().trim().min(1).max(63).optional() }).strict());
+    if (changes.key !== undefined && changes.key !== before.key) {
+      if (!KEY.test(changes.key)) throw new HTTPException(400, { message: 'A key is lowercase letters, digits and dashes: "garage-station"' });
+      if (catalog.keyTaken(changes.key, before.id)) throw new HTTPException(409, { message: `Another device is known by "${changes.key}"` });
+    }
     const updated = catalog.update(before.id, changes);
     if (!updated) throw new HTTPException(404, { message: 'No such device' });
     if (updated.name !== before.name) auditAbout(c, 'device.renamed', 'device', before.id, `Renamed "${before.name}" to "${updated.name}"`);
+    if (updated.key !== before.key) auditAbout(c, 'device.keyed', 'device', before.id, `"${updated.name}" is now known in configuration as ${updated.key}, not ${before.key}`, { before: before.key, after: updated.key });
     return c.json(registry.find(before.id));
   });
 

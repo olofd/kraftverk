@@ -22,6 +22,7 @@ import { Card, Icon, RowSeparator, SegmentedControl, ToggleRow, haptic, type Ico
 import { Pressable } from '../../../components/Pressable';
 import { Screen } from '../../../components/Screen';
 import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../../lib/confirm';
+import { AutomationConfig } from '../../config/AutomationConfig';
 import { startsBy } from '../AutomationCard';
 import { AutomationForm } from '../editor/AutomationForm';
 import { clock, useTone } from '../looks';
@@ -43,7 +44,8 @@ import { MODES, modeSays, RECHECK, recheckSays, wantsYes, every } from './modes'
 export function AutomationPage({ id }: { id: string }) {
   const [automation, setAutomation] = useState<AutomationView | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
+  /** Being changed: through the form, or as its YAML. */
+  const [editing, setEditing] = useState<'form' | 'yaml' | null>(null);
 
   const load = useCallback(() => {
     fetchAutomation(id)
@@ -76,15 +78,16 @@ export function AutomationPage({ id }: { id: string }) {
         initial={{ name: automation.name, rule: automation.rule, roles: automation.roles, starts: automation.starts }}
         madeFrom={automation.madeFrom?.id ?? null}
         back={{ label: 'Automations', to: '/automations' }}
-        onSaved={(next) => (setAutomation(next), setEditing(false))}
-        onCancel={() => setEditing(false)}
+        view={editing}
+        onSaved={(next) => (setAutomation(next), setEditing(null))}
+        onCancel={() => setEditing(null)}
       />
     );
   }
-  return <Page automation={automation} onChanged={setAutomation} onEdit={() => setEditing(true)} />;
+  return <Page automation={automation} onChanged={setAutomation} onEdit={(view) => setEditing(view)} />;
 }
 
-function Page({ automation, onChanged, onEdit }: { automation: AutomationView; onChanged: (next: AutomationView) => void; onEdit: () => void }) {
+function Page({ automation, onChanged, onEdit }: { automation: AutomationView; onChanged: (next: AutomationView) => void; onEdit: (view: 'form' | 'yaml') => void }) {
   const [checked, setChecked] = useState<AutomationRun | null>(null);
   const [rehearsal, setRehearsal] = useState<Rehearsal | null>(null);
   const onItsOwn = automation.when.length > 0;
@@ -94,7 +97,7 @@ function Page({ automation, onChanged, onEdit }: { automation: AutomationView; o
 
   return (
     <Screen back="Automations" backTo="/automations" title={automation.name}>
-      <Header automation={automation} onChanged={onChanged} onEdit={onEdit} onChecked={setChecked} onRehearsed={setRehearsal} />
+      <Header automation={automation} onChanged={onChanged} onEdit={() => onEdit('form')} onChecked={setChecked} onRehearsed={setRehearsal} />
 
       {checked ? (
         <Group icon="help-circle" title="If it ran now" summary="Nothing is sent">
@@ -151,6 +154,8 @@ function Page({ automation, onChanged, onEdit }: { automation: AutomationView; o
       <OnItsOwn automation={automation} onChanged={onChanged} />
 
       <Activity automation={automation} />
+
+      <AutomationConfig automation={automation} onChanged={onChanged} onEditYaml={() => onEdit('yaml')} />
 
       {automation.madeFrom || automation.sharedWith.length ? (
         <YStack gap="$1.5" paddingHorizontal="$1">

@@ -36,10 +36,24 @@ config.resolver.nodeModulesPaths = [
  */
 const OPTIONAL_NATIVE_MODULES = new Set(['react-native-ble-plx']);
 
+/**
+ * The YAML editor's schema support, without its code highlighter.
+ *
+ * `codemirror-json-schema` renders its tooltips with a module that loads
+ * shiki — its grammars, themes and WebAssembly — as soon as it is imported,
+ * to colour code in descriptions ours never have. Its `utils/markdown` is
+ * resolved to the app's own, which escapes the text and sets `code` as code.
+ */
+const SCHEMA_MARKDOWN = path.resolve(projectRoot, 'src/features/config/markdown.ts');
+
 const defaultResolveRequest = config.resolver.resolveRequest;
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   const resolve = defaultResolveRequest ?? context.resolveRequest;
+
+  if (/(^|\/)utils\/markdown(\.js)?$/.test(moduleName) && /codemirror-json-schema[\\/]/.test(context.originModulePath)) {
+    return { type: 'sourceFile', filePath: SCHEMA_MARKDOWN };
+  }
 
   if (OPTIONAL_NATIVE_MODULES.has(moduleName)) {
     if (platform === 'web') return { type: 'empty' };

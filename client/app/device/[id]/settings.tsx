@@ -5,6 +5,7 @@ import { Text, useTheme, XStack, YStack } from 'tamagui';
 import type { DeviceView } from '@kraftverk/api-client';
 
 import { Pressable } from '../../../src/components/Pressable';
+import { DeviceConfig } from '../../../src/features/config/DeviceConfig';
 import { DeviceShell } from '../../../src/features/devices/DeviceShell';
 import { Connections, GenericSettings, Links, Manage } from '../../../src/features/devices/panels';
 import { RemovedDevice } from '../../../src/features/devices/removed';
@@ -31,6 +32,7 @@ function DeviceSettings({ device }: { device: DeviceView }) {
       <Links device={device} />
       <InfoCard info={device.info} />
       <Tools device={device} />
+      <DeviceConfig device={device} />
       <Manage device={device} />
     </>
   );

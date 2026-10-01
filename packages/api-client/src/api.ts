@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import axios from 'axios';
 
 import type { ConfigValues, DeviceDescription, DeviceInfo, Reading, ResourceKind, SetupActionResult } from '@kraftverk/device-sdk';
+import type { Vocabulary } from '@kraftverk/config';
 import type { GatewayResult } from '@kraftverk/gateway';
 
 import type {
@@ -24,6 +25,12 @@ import type {
   ClientRecord,
   AttributeWrite,
   CommandBody,
+  ConfigExported,
+  ConfigExportRequest,
+  ConfigSnapshotView,
+  ImportAnswers,
+  ImportApplied,
+  ImportPlan,
   DeviceChanges,
   DeviceEventView,
   LiveEvent,
@@ -726,5 +733,59 @@ export async function fetchPolicy(signal?: AbortSignal) {
 /** Sets one, or puts it back to its default with null. Answers them all, as they now are. */
 export async function setPolicyValue(name: PolicyValueName, value: number | null) {
   const { data } = await api.put<PolicyValueView[]>(`/policy/${encodeURIComponent(name)}`, { value });
+  return data;
+}
+
+// --- configuration (docs/CONFIG.md) -----------------------------------------
+
+/** Its name in configuration: what a file and an import know it by. */
+export async function setDeviceKey(id: string, key: string) {
+  const { data } = await api.patch<DeviceView>(devicePath(id), { key });
+  return data;
+}
+
+/** Whether a connection's secrets may leave in an export as plain text: its owner's choice, warned against. */
+export async function setSecretsExportable(deviceId: string, connectionId: string, secretsExportable: boolean) {
+  const { data } = await api.patch<DeviceView>(devicePath(deviceId, `/connections/${connectionId}`), { secretsExportable });
+  return data;
+}
+
+/** What a configuration may name here: the installed types, their settings, ways and secrets, and the keys of what you have. */
+export async function fetchConfigVocabulary(signal?: AbortSignal) {
+  const { data } = await api.get<Vocabulary>('/config/vocabulary', { signal });
+  return data;
+}
+
+/** What you have as a configuration file, as asked — and what could not go in. */
+export async function exportConfig(request: ConfigExportRequest) {
+  const { data } = await api.post<ConfigExported>('/config/export', request);
+  return data;
+}
+
+/** What importing a file would do — nothing done yet. `restored`: the copy the last restore was made from, again. */
+export async function planImport(input: { text: string; mode: 'merge' | 'replace'; passphrase?: string } | { restored: true; mode: 'merge' | 'replace' }) {
+  const { data } = await api.post<ImportPlan>('/config/plan', input);
+  return data;
+}
+
+/**
+ * Applies a plan with its answers: what it did — or the yes it wants first, or
+ * why it cannot be applied, every problem listed.
+ */
+export async function applyImport(
+  answers: ImportAnswers
+): Promise<{ applied: ImportApplied } | { needsConfirmation: string; reason: string } | { refused: string; problems: string[] }> {
+  const response = await api.post<ImportApplied | { error: string; needsConfirmation?: string; problems?: string[] }>('/config/apply', answers, {
+    validateStatus: (status) => status === 200 || status === 400 || status === 409,
+  });
+  if (response.status === 200) return { applied: response.data as ImportApplied };
+  const refusal = response.data as { error: string; needsConfirmation?: string; problems?: string[] };
+  if (refusal.needsConfirmation) return { needsConfirmation: refusal.needsConfirmation, reason: refusal.error };
+  return { refused: refusal.error, problems: refusal.problems ?? [] };
+}
+
+/** The configuration kept beside the server's database: where, when it was last written, and what restoring it last did. */
+export async function fetchConfigSnapshot(signal?: AbortSignal) {
+  const { data } = await api.get<ConfigSnapshotView>('/config/snapshot', { signal });
   return data;
 }

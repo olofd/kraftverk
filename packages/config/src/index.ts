@@ -9,6 +9,7 @@
 
 export * from './check.ts';
 export * from './document.ts';
+export * from './entries.ts';
 export * from './expr.ts';
 export * from './migrate.ts';
 export * from './rules.ts';

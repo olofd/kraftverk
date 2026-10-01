@@ -1,0 +1,78 @@
+import { router } from 'expo-router';
+import { useState } from 'react';
+import { Button, Text, XStack, YStack } from 'tamagui';
+
+import { describeError, fetchConfigVocabulary, type DeviceView } from '@kraftverk/api-client';
+import { Card, haptic, Icon, RowSeparator, SectionLabel } from '@kraftverk/ui';
+
+import { useDevices } from '../../state/DevicesProvider';
+import { useTone } from '../automations/looks';
+import { deviceYaml } from './entries';
+import { KeyField } from './KeyField';
+import { YamlEditor } from './YamlEditor';
+
+/**
+ * A device as configuration (docs/CONFIG.md), under its settings: the key a
+ * file knows it by, changed in place; what it is and how the server reaches
+ * it, as the YAML a file says it in — its secrets by name, never their
+ * values — and an export of it alone. Server mode only: a configuration is
+ * the server's.
+ */
+export function DeviceConfig({ device }: { device: DeviceView }) {
+  const tone = useTone();
+  const { mode, setKey } = useDevices();
+  const [shown, setShown] = useState<ReturnType<typeof deviceYaml> | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  if (mode !== 'server') return null;
+
+  const show = async () => {
+    haptic();
+    if (shown) return setShown(null);
+    setProblem(null);
+    try {
+      setShown(deviceYaml(device, await fetchConfigVocabulary()));
+    } catch (err) {
+      setProblem(describeError(err) || 'It could not be read');
+    }
+  };
+
+  return (
+    <YStack gap="$2">
+      <SectionLabel>Configuration</SectionLabel>
+      <Card inset>
+        <KeyField value={device.key} label="Name in configuration" help="What a configuration file calls it, and what an import matches it by." onSave={(key) => setKey(device.id, key)} />
+        <RowSeparator />
+        <YStack padding="$4" paddingTop="$3" gap="$3">
+          <XStack gap="$2" flexWrap="wrap">
+            <Button size="$3" minHeight={44} icon={<Icon name={shown ? 'eye-off' : 'eye'} size={16} color={tone('$color')} />} onPress={() => void show()}>
+              {shown ? 'Hide its configuration' : 'Show as configuration'}
+            </Button>
+            <Button size="$3" minHeight={44} icon={<Icon name="download" size={16} color={tone('$color')} />} onPress={() => (haptic(), router.push(`/configuration?devices=${encodeURIComponent(device.key)}`))}>
+              Export
+            </Button>
+          </XStack>
+          {problem ? (
+            <Text fontSize={13} color="$danger" lineHeight={19} role="alert">
+              {problem}
+            </Text>
+          ) : null}
+          {shown ? (
+            <>
+              <YamlEditor value={shown.text} label={`${device.name}, as configuration`} minLines={4} />
+              {shown.secrets || shown.heldByApps ? (
+                <Text fontSize={12} color="$muted" lineHeight={17}>
+                  {[
+                    shown.secrets ? 'Its secrets by name only: their values stay on the server, and an export leaves them out, seals them, or carries them in plain text where allowed.' : null,
+                    shown.heldByApps ? `${shown.heldByApps === 1 ? 'A way an app holds is' : `${shown.heldByApps} ways apps hold are`} not in it: its keys live on the phone.` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                </Text>
+              ) : null}
+            </>
+          ) : null}
+        </YStack>
+      </Card>
+    </YStack>
+  );
+}

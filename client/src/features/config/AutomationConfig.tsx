@@ -1,0 +1,78 @@
+import { router } from 'expo-router';
+import { useState } from 'react';
+import { Button, Text, XStack, YStack } from 'tamagui';
+
+import { describeError, fetchAutomations, fetchDeviceList, updateAutomation, type AutomationView } from '@kraftverk/api-client';
+import { haptic, Icon, RowSeparator } from '@kraftverk/ui';
+
+import { useTone } from '../automations/looks';
+import { Group } from '../automations/page/Group';
+import { automationYaml } from './entries';
+import { KeyField } from './KeyField';
+import { YamlEditor } from './YamlEditor';
+
+/**
+ * An automation as configuration (docs/CONFIG.md), on its page: the key a
+ * file knows it by, changed in place; what it is, as the YAML a file says it
+ * in — to read, and to learn the language from what you built — and a way to
+ * write it so instead of through the form; and an export of it alone.
+ */
+export function AutomationConfig({ automation, onChanged, onEditYaml }: { automation: AutomationView; onChanged: (next: AutomationView) => void; onEditYaml: () => void }) {
+  const tone = useTone();
+  const [shown, setShown] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const show = async () => {
+    haptic();
+    if (shown !== null) return setShown(null);
+    setProblem(null);
+    try {
+      // The devices that fill its roles and the automations it starts, by their keys: read now, so none is missed while the app's own list is still coming.
+      const [devices, others] = await Promise.all([fetchDeviceList(), Object.keys(automation.starts).length ? fetchAutomations() : Promise.resolve([])]);
+      setShown(automationYaml({ ...automation, madeFrom: automation.madeFrom?.id ?? null }, devices, others).text);
+    } catch (err) {
+      setProblem(describeError(err) || 'It could not be read');
+    }
+  };
+
+  return (
+    <Group icon="code" title="Configuration" summary={automation.key} inset>
+      <KeyField
+        value={automation.key}
+        label="Name in configuration"
+        help="What a configuration file calls it, and what an import matches it by."
+        onSave={async (key) => {
+          const answer = await updateAutomation(automation.id, { key });
+          if ('automation' in answer) onChanged(answer.automation);
+        }}
+      />
+      <RowSeparator />
+      <YStack padding="$4" paddingTop="$1" gap="$3">
+        <XStack gap="$2" flexWrap="wrap">
+          <Button size="$3" minHeight={44} icon={<Icon name={shown !== null ? 'eye-off' : 'eye'} size={16} color={tone('$color')} />} onPress={() => void show()}>
+            {shown !== null ? 'Hide its configuration' : 'Show as configuration'}
+          </Button>
+          <Button
+            size="$3"
+            minHeight={44}
+            icon={<Icon name="edit-3" size={16} color={tone('$color')} />}
+            disabled={automation.running !== null}
+            opacity={automation.running ? 0.5 : 1}
+            onPress={() => (haptic(), onEditYaml())}
+          >
+            Edit as YAML
+          </Button>
+          <Button size="$3" minHeight={44} icon={<Icon name="download" size={16} color={tone('$color')} />} onPress={() => (haptic(), router.push(`/configuration?automations=${encodeURIComponent(automation.key)}`))}>
+            Export
+          </Button>
+        </XStack>
+        {problem ? (
+          <Text fontSize={13} color="$danger" lineHeight={19} role="alert">
+            {problem}
+          </Text>
+        ) : null}
+        {shown !== null ? <YamlEditor value={shown} label={`${automation.name}, as configuration`} /> : null}
+      </YStack>
+    </Group>
+  );
+}

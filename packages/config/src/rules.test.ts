@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { checkRule, inlineParams, isAutomationRole, STANDARD_RECIPES, type CapabilityName, type Recipe, type Rule, type Value } from '@kraftverk/device-sdk';
+import { checkRule, inlineParams, isAutomationRole, STANDARD_RECIPES, type CapabilityName, type Recipe, type Rule, type Value, type Weekday } from '@kraftverk/device-sdk';
 
 import { durationSeconds, durationText, ruleFromConfig, ruleToConfig, type Use } from './rules.ts';
 
@@ -33,6 +33,30 @@ describe('a rule, written and read back', () => {
       expect(read.uses).toEqual(uses);
     });
   }
+
+  test('days are written as a person says them: weekdays, weekends, or the list', () => {
+    const at = (days: Weekday[]) =>
+      ruleToConfig({ roles: {}, params: { fields: {} }, when: [{ at: { value: '07:00' }, days }], then: [] }, {}).when;
+    expect(at(['mon', 'tue', 'wed', 'thu', 'fri'])).toEqual([{ at: '07:00', days: 'weekdays' }]);
+    expect(at(['sat', 'sun'])).toEqual([{ at: '07:00', days: 'weekends' }]);
+    expect(at(['mon', 'fri'])).toEqual([{ at: '07:00', days: ['mon', 'fri'] }]);
+  });
+
+  test('roles nothing fills yet — a rule being built — are written empty and read back so', () => {
+    for (const recipe of STANDARD_RECIPES) {
+      const rule = copied(recipe);
+      const written = ruleToConfig(rule, {});
+      const read = ruleFromConfig(written as Record<string, unknown>, ['automations', 'a']);
+      expect(read.issues).toEqual([]);
+      expect(read.rule).toEqual(rule);
+      expect(read.uses).toEqual({});
+    }
+    // By hand: empty, as YAML writes it.
+    const read = ruleFromConfig({ uses: { plug: null, other: { automation: null } }, do: [{ 'turn on': 'plug' }, { start: 'other' }] }, ['automations', 'a']);
+    expect(read.issues).toEqual([]);
+    expect(read.uses).toEqual({});
+    expect(Object.keys(read.rule!.roles)).toEqual(['plug', 'other']);
+  });
 
   test('a rule with every kind of step and trigger, and what text cannot say kept as data', () => {
     const rule: Rule = {

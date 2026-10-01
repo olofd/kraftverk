@@ -319,6 +319,11 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path, conte
     for (const [role, data] of Object.entries(usesData)) {
       const at = [...path, 'uses', role];
       tryRead(reader, () => {
+        // Nothing fills it yet: a rule being built, as the app's editor writes one.
+        if (data === null) {
+          roles[role] = inferredRole(steps, role, false);
+          return;
+        }
         if (typeof data === 'string') {
           const use = useOf(data);
           if (!use) return reader.fail(`"${data}" is not a device's part: "device-key" or "device-key.part"`, at);
@@ -332,13 +337,15 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path, conte
         const label = typeof data.label === 'string' ? data.label : inferred.label;
         const description = typeof data.description === 'string' ? data.description : label;
         if (automation) {
-          uses[role] = { automation: reader.name(data.automation, [...at, 'automation'], 'the key of the automation it starts') };
+          if (data.automation !== null) uses[role] = { automation: reader.name(data.automation, [...at, 'automation'], 'the key of the automation it starts') };
           roles[role] = { automation: true, label, description };
           return;
         }
-        const use = useOf(reader.name(data.part, [...at, 'part'], 'the part that fills it ("part")'));
-        if (!use) return reader.fail(`"${String(data.part)}" is not a device's part`, [...at, 'part']);
-        uses[role] = use;
+        if (data.part !== null) {
+          const use = useOf(reader.name(data.part, [...at, 'part'], 'the part that fills it ("part")'));
+          if (!use) return reader.fail(`"${String(data.part)}" is not a device's part`, [...at, 'part']);
+          uses[role] = use;
+        }
         const capabilities = Array.isArray(data.needs) ? (data.needs as CapabilityName[]) : isAutomationRole(inferred) ? [] : inferred.capabilities;
         roles[role] = { label, description, capabilities, ...(Array.isArray(data['one of']) ? { oneOf: data['one of'] as CapabilityName[] } : {}) };
       });
@@ -351,6 +358,10 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path, conte
 }
 
 /** A rule and what fills its roles as a file's entry writes them: the order a person reads in. */
+/** Days as a person says them: "weekdays", "weekends", or the list. */
+const daysText = (days: readonly string[]): string | string[] =>
+  days.join() === 'mon,tue,wed,thu,fri' ? 'weekdays' : days.join() === 'sat,sun' ? 'weekends' : [...days];
+
 export function ruleToConfig(rule: Rule, uses: Record<string, Use>, context: PrintContext = {}): RuleEntry {
   const expr = (value: Expr): unknown => {
     if ('value' in value && (typeof value.value === 'number' || typeof value.value === 'boolean')) return value.value;
@@ -389,7 +400,7 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>, context: Pri
     return each.start.waitSeconds !== undefined ? { start: each.start.role, 'and wait': seconds(each.start.waitSeconds) } : { start: each.start.role };
   };
   const trigger = (each: Trigger): Record<string, unknown> => {
-    if ('at' in each) return each.days ? { at: time(each.at), days: [...each.days] } : { at: time(each.at) };
+    if ('at' in each) return each.days ? { at: time(each.at), days: daysText(each.days) } : { at: time(each.at) };
     if ('every' in each) return { every: minutes(each.every) };
     if ('event' in each) return { event: each.event.event, from: each.event.role };
     return each.heldForMinutes !== undefined ? { becomes: expr(each.becomes), for: minutes(each.heldForMinutes) } : { becomes: expr(each.becomes) };

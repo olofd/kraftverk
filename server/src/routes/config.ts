@@ -1,7 +1,10 @@
+import { existsSync, readFileSync } from 'node:fs';
+
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
+import type { ConfigExported, ConfigSnapshotView } from '@kraftverk/api-contract';
 import { configJsonSchema, writeConfig } from '@kraftverk/config';
 import { Confirmations, subjectOf } from '@kraftverk/gateway';
 
@@ -77,17 +80,31 @@ export function configRoutes(deps: AppDeps): Hono {
         detail: { devices: Object.keys(exported.document.devices), automations: Object.keys(exported.document.automations) },
       });
     }
-    return c.json({ text, notes: exported.notes });
+    return c.json({ text, notes: exported.notes } satisfies ConfigExported);
   });
 
   /**
    * What importing a file would do — nothing yet done: its problems with their
    * lines, what becomes of each device, link, automation and home value, and
    * what it still needs. `replace`: what the file does not have is removed.
+   * `restored`: the copy the last restore was made from, kept aside — to
+   * import again with its answers, when the restore could not do it all.
    */
   api.post('/config/plan', async (c) => {
-    const input = await body(c, z.object({ text: z.string().min(1).max(2_000_000), mode: z.enum(['merge', 'replace']).default('merge'), passphrase: z.string().max(200).optional() }).strict());
-    return c.json(planImport(importing, input.text, { mode: input.mode, passphrase: input.passphrase, by: actorOf(c) }));
+    const input = await body(
+      c,
+      z
+        .object({ text: z.string().min(1).max(2_000_000).optional(), restored: z.literal(true).optional(), mode: z.enum(['merge', 'replace']).default('merge'), passphrase: z.string().max(200).optional() })
+        .strict()
+        .refine((given) => (given.text === undefined) !== (given.restored === undefined), 'A file’s text, or the restored copy: one of them')
+    );
+    if (input.restored) {
+      const from = deps.snapshot?.restored?.from;
+      if (!from || !existsSync(from)) throw new HTTPException(404, { message: 'There is no restored copy to import again' });
+      // Its secrets are this server's own, sealed with its key.
+      return c.json(planImport(importing, readFileSync(from, 'utf8'), { mode: input.mode, kept: true, by: actorOf(c) }));
+    }
+    return c.json(planImport(importing, input.text!, { mode: input.mode, passphrase: input.passphrase, by: actorOf(c) }));
   });
 
   /**
@@ -149,7 +166,7 @@ export function configRoutes(deps: AppDeps): Hono {
   });
 
   /** The configuration kept beside the database: where, when it was last written, and what restoring it last did. */
-  api.get('/config/snapshot', (c) => c.json({ path: deps.snapshot?.path ?? null, writtenAt: deps.snapshot?.writtenAt ?? null, restored: deps.snapshot?.restored ?? null }));
+  api.get('/config/snapshot', (c) => c.json({ path: deps.snapshot?.path ?? null, writtenAt: deps.snapshot?.writtenAt ?? null, restored: deps.snapshot?.restored ?? null } satisfies ConfigSnapshotView));
 
   return api;
 }

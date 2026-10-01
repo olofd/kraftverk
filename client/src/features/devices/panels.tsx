@@ -18,7 +18,7 @@ import {
   type LinkKind,
   type Part,
 } from '@kraftverk/device-sdk';
-import { Card, Chips, DeviceCard, EnergyFlow, EventList, PartCard, Row, RowSeparator, SchemaForm, SectionLabel, ToggleRow, haptic, readingFor, useWriteGate, Icon } from '@kraftverk/ui';
+import { Card, Chips, DeviceCard, EnergyFlow, EventList, PartCard, Row, RowSeparator, SchemaForm, SectionLabel, Toggle as Switch, ToggleRow, haptic, readingFor, useWriteGate, Icon } from '@kraftverk/ui';
 
 import { MeasurementChart } from '../../components/MeasurementChart';
 import { Pressable } from '../../components/Pressable';
@@ -353,7 +353,7 @@ const heldByLabel = (connection: ConnectionView, clientId: string | null) =>
  * same steps as the device itself, and must reach this device.
  */
 export function Connections({ device }: { device: DeviceView }) {
-  const { prefer, removeConnection, runtime } = useDevices();
+  const { prefer, removeConnection, runtime, mode, setExportable } = useDevices();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const theme = useTheme();
@@ -401,6 +401,40 @@ export function Connections({ device }: { device: DeviceView }) {
                   </YStack>
                   {connection.inUse ? <Icon name="check-circle" size={16} color={theme.success?.val} /> : null}
                 </XStack>
+                {mode === 'server' && connection.heldBy.kind === 'server' && connection.secrets.length ? (
+                  <XStack alignItems="center" gap="$3">
+                    <YStack flex={1} gap={2}>
+                      <Text fontSize={14} fontWeight="600" color="$color">
+                        Its secrets may leave in plain text
+                      </Text>
+                      <Text fontSize={12} color={connection.secretsExportable ? '$warning' : '$muted'} lineHeight={17}>
+                        {connection.secretsExportable
+                          ? `An export that asks for plain text carries its ${connection.secrets.join(', ')} as it is: anyone with the file has it.`
+                          : `Off: an export leaves its ${connection.secrets.join(', ')} out, or seals it with a passphrase.`}
+                      </Text>
+                    </YStack>
+                    <Switch
+                      label="Its secrets may leave in plain text"
+                      checked={connection.secretsExportable}
+                      disabled={busy}
+                      onCheckedChange={(on) =>
+                      void act(async () => {
+                        if (
+                          on &&
+                          !(await confirmAction(
+                            'Let its secrets leave in plain text?',
+                            `An export that asks for plain text will carry ${device.name}’s ${connection.secrets.join(', ')} as it is. Anyone who has the file — a backup, a mail, a shared folder — can then reach the device as you do.\n\nAn export sealed with a passphrase carries it safely without this.`,
+                            'Let it leave',
+                            'dangerous'
+                          ))
+                        )
+                          return;
+                        await setExportable(device, connection, on);
+                      })
+                      }
+                    />
+                  </XStack>
+                ) : null}
                 {ordered.length > 1 ? (
                   <XStack gap="$2">
                     {index > 0 ? (

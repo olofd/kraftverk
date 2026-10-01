@@ -1,12 +1,13 @@
 import { randomBytes } from 'node:crypto';
 
 import type { ImportApplied, ImportItem, ImportPlan } from '@kraftverk/api-contract';
-import { checkDocument, MAIN, readConfig, useOf, useText, type AutomationEntry, type ConfigDocument, type DeviceEntry, type SecretValue } from '@kraftverk/config';
+import { checkDocument, MAIN, MODE_IN_FILE, MODE_OF_FILE, readConfig, useOf, useText, type AutomationEntry, type ConfigDocument, type DeviceEntry, type SecretValue } from '@kraftverk/config';
 import {
   capabilitiesOf,
   isSecretField,
   checkRule,
   isAutomationRole,
+  isSimulated,
   meetsNeed,
   methodsOf,
   partsOf,
@@ -20,12 +21,13 @@ import {
   type SavedDeviceId,
 } from '@kraftverk/device-sdk';
 
-import type { AutomationEngine, AutomationMode, AutomationRecord } from '../automations/engine.ts';
+import type { AutomationEngine, AutomationRecord } from '../automations/engine.ts';
 import { hasConditions, type Checked } from '../automations/plans.ts';
 import type { AutomationLibrary } from '../automations/library.ts';
 import type { DeviceRecord } from '../devices/catalog.ts';
 import type { DeviceSessionManager } from '../devices/sessions.ts';
 import { db } from '../history/db.ts';
+import type { TransportHost } from '../runtime/transports.ts';
 import { policyValues, setPolicyValue } from '../history/policy.ts';
 import { serverVocabulary, type ConfigDeps } from './export.ts';
 import { isSealed, openKept, openWith } from './seal.ts';
@@ -48,6 +50,8 @@ import { isSealed, openKept, openWith } from './seal.ts';
 
 export type ImportDeps = ConfigDeps & {
   sessions: Pick<DeviceSessionManager, 'sync'>;
+  /** Whether a transport's addresses belong to one device each. */
+  transports: Pick<TransportHost, 'definition'>;
   library: AutomationLibrary;
   engine: Pick<AutomationEngine, 'reset' | 'poke' | 'forget'>;
   /** The automation checks the API applies to an automation made or changed (`automations/plans.ts`). */
@@ -70,8 +74,6 @@ type Kept = {
 const PLAN_TTL_MS = 15 * 60_000;
 const plans = new Map<string, Kept>();
 
-const MODE: Record<AutomationEntry['mode'], AutomationMode> = { off: 'off', watch: 'observe', act: 'armed' };
-const MODE_WORDS: Record<AutomationMode, string> = { off: 'off', observe: 'watch', armed: 'act' };
 
 export class ImportError extends Error {
   constructor(
@@ -136,7 +138,9 @@ export function planImport(deps: ImportDeps, text: string, options: { mode: Impo
     entry.connect.forEach((way, index) => {
       const method = methodsOf(type).find((each) => each.id === way.via)!;
       const address = way.address ?? method.address ?? '';
-      const claim = deps.connections.claimant(method.transport, address);
+      // An address belongs to one device where its transport says so — never a simulator's, which every simulated device shares — as setup decides it.
+      const exclusive = !isSimulated(method) && deps.transports.definition(method.transport)?.exclusive !== false;
+      const claim = exclusive ? deps.connections.claimant(method.transport, address) : null;
       if (claim && claim.deviceId !== existing?.id) problem(`Another device you have is already reached at ${address}`, ['devices', key, 'connect', index, 'address']);
       const credentials = deps.protocols.get(method.protocol)?.credentials?.schema.fields ?? {};
       const had = existing ? deps.connections.forDevice(existing.id).find((connection) => connection.heldBy === null && connection.method === way.via) : undefined;
@@ -168,6 +172,8 @@ export function planImport(deps: ImportDeps, text: string, options: { mode: Impo
     const path = ['automations', key];
     for (const said of checkRule(entry.rule, deps.library)) problem(said, path);
     if (entry.recheckMinutes !== null && !(hasConditions(entry.rule) && !takesSteps(entry.rule))) problem('Only an automation that waits for a condition, and does what it does at once, can keep things so ("recheck")', [...path, 'recheck']);
+    // A role nothing fills — a rule written while it was being built — cannot run: said where it is.
+    for (const [role, spec] of Object.entries(entry.rule.roles)) if (!entry.uses[role]) problem(`${spec.label}: nothing fills it — name ${isAutomationRole(spec) ? 'an automation' : 'a device'} for it`, [...path, 'uses', role]);
     for (const [role, use] of Object.entries(entry.uses)) {
       const spec = entry.rule.roles[role];
       if ('automation' in use) {
@@ -177,7 +183,7 @@ export function planImport(deps: ImportDeps, text: string, options: { mode: Impo
       if (document.devices[use.device] || deps.catalog.byKey(use.device)) continue;
       // A device you do not have: one of yours that can do what the role needs.
       const need = spec && !isAutomationRole(spec) ? spec : null;
-      needs.rebind.push({ automation: key, role, label: spec?.label ?? role, wanted: useText(use), candidates: candidatesFor(deps, need) });
+      needs.rebind.push({ automation: key, role, label: spec?.label ?? role, wanted: useText(use), candidates: candidatesFor(deps, need, document) });
     }
     const existing = deps.automations.byKey(key);
     const acts = entry.mode === 'act' && (!existing || existing.mode !== 'armed' || !same(existing.rule, entry.rule) || existing.recheckMinutes !== entry.recheckMinutes);
@@ -233,9 +239,19 @@ function removedMatch(deps: ImportDeps, key: string, entry: DeviceEntry): Device
   return (entry.identity ? removed.find((device) => device.identity === entry.identity) : removed.find((device) => device.key === key)) ?? null;
 }
 
-/** Your devices' parts that can do what a role needs: what a role naming a device you do not have can be given instead. */
-function candidatesFor(deps: ImportDeps, need: PartRole | null): { use: string; name: string }[] {
-  return deps.catalog.list().flatMap((device) =>
+/**
+ * The parts that can do what a role needs: what a role naming a device you do
+ * not have can be given instead — your devices', and those the file adds.
+ */
+function candidatesFor(deps: ImportDeps, need: PartRole | null, document: ConfigDocument): { use: string; name: string }[] {
+  const yours = deps.catalog.list().map((device) => ({ key: device.key, name: device.name, description: device.description }));
+  const added = Object.entries(document.devices)
+    .filter(([key]) => !deps.catalog.byKey(key))
+    .flatMap(([key, entry]) => {
+      const type = deps.types.get(entry.type);
+      return type ? [{ key, name: entry.name, description: type.describe(entry.settings as never) }] : [];
+    });
+  return [...yours, ...added].flatMap((device) =>
     partsOf(device.description)
       .filter((part) => !need || meetsNeed(need, capabilitiesOf(device.description, part.id)))
       .map((part) => ({ use: useText({ device: device.key, part: part.id }), name: part.id === MAIN ? device.name : `${device.name} — ${part.label}` }))
@@ -272,7 +288,7 @@ function deviceChanges(deps: ImportDeps, existing: DeviceRecord, entry: DeviceEn
 function automationChanges(deps: ImportDeps, existing: AutomationRecord, entry: AutomationEntry): Pick<ImportItem, 'action' | 'changes'> {
   const changes: string[] = [];
   if (existing.name !== entry.name) changes.push(`name: ${existing.name} → ${entry.name}`);
-  if (existing.mode !== MODE[entry.mode]) changes.push(`${MODE_WORDS[existing.mode]} → ${entry.mode}`);
+  if (existing.mode !== MODE_OF_FILE[entry.mode]) changes.push(`${MODE_IN_FILE[existing.mode]} → ${entry.mode}`);
   if (!same(existing.rule, entry.rule)) changes.push('what it does');
   const keyOf = (id: SavedDeviceId) => deps.catalog.get(id)?.key ?? '?';
   for (const [role, use] of Object.entries(entry.uses)) {
@@ -387,7 +403,7 @@ export async function applyImport(deps: ImportDeps, id: string, by: string, choi
       }
       const result = deps.checked({ rule: entry.rule, roles, starts }, id);
       if (result.problems.length) throw new ImportError(`"${entry.name}" cannot be kept as it is`, result.problems.map((said) => `"${entry.name}": ${said}`));
-      deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, starts: result.starts, timeZone: entry.clock, mode: MODE[entry.mode], recheckMinutes: entry.recheckMinutes });
+      deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, starts: result.starts, timeZone: entry.clock, mode: MODE_OF_FILE[entry.mode], recheckMinutes: entry.recheckMinutes });
       if (entry.homePlace !== (existing?.homePlace ?? null)) deps.automations.placeOnHome(id, entry.homePlace);
       (existing ? applied.automations.changed : applied.automations.added).push(key);
       touched.push(id);
