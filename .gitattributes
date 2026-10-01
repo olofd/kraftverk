@@ -6,3 +6,4 @@ Dockerfile     text eol=lf
 Caddyfile      text eol=lf
 *.yml          text eol=lf
 .dockerignore  text eol=lf
+*.env.example  text eol=lf

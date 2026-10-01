@@ -24,7 +24,8 @@ Every push also checks the architecture — no device-specific code may leak
 into the core, and the count of what already has may only fall
 ([docs/ARCHITECTURE.md §7](ARCHITECTURE.md#7-guardrails-in-ci)) — and
 builds both Docker images, starts the stack and attacks it —
-on GitHub and on GitLab alike. See [docs/CI.md](CI.md).
+on GitHub, and again before every deploy (`npm run ship`). See
+[docs/CI.md](CI.md).
 
 ### End to end, in a browser
 

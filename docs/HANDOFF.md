@@ -23,9 +23,10 @@ Last updated 2026-09-30.
 
 **The plan's steps 0–15 are done** (ARCHITECTURE.md §8), and so are the
 next-step plan's phases 0, 1, 2 and 5 and the assistant minimum — see *What
-is built, and what is not* below. Work happens on `main`, and pushing it to
-GitLab deploys to the owner's NAS (GitHub runs CI only; see [CI.md](CI.md)). The broker container is updated by the
-manual `broker` job, which drops the station for about a minute. The architecture baseline is
+is built, and what is not* below. Work happens on `main`; GitHub checks every push, and `npm run ship` checks
+it again and deploys it to the owner's NAS from the owner's own machine, over
+SSH ([CI.md](CI.md)). The broker container is updated by
+`npm run ship -- broker`, which drops the station for about a minute. The architecture baseline is
 empty: the core names no product, and every device is found, not listed.
 
 - **The layers are packages**: `packages/transports` (mqtt with the broker,

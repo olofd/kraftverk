@@ -1,8 +1,7 @@
 # Validation, on every push and pull request. Nothing here deploys.
 #
-# The same checks run on GitLab from ci/gitlab/validate.yml, and only there
-# does anything go on to a deployment — defined in a private project, so that
-# where and how this is deployed is not published here.
+# The same checks run again before every deploy, from the owner's machine:
+# scripts/ship.sh, docs/CI.md. Where it deploys to is not in this repository.
 
 name: CI
 

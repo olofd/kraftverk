@@ -7,10 +7,10 @@
 #   SMOKE_BUILD=0   use the images already named by KRAFTVERK_SERVER_IMAGE and
 #                   KRAFTVERK_WEB_IMAGE instead of building (CI builds once and
 #                   tests what it will ship).
-#   SMOKE_HOST      where the published ports are (default 127.0.0.1). In
-#                   GitLab's Docker-in-Docker that is the `docker` service, and
-#                   the internet entrance has to be published there too:
-#                   KRAFTVERK_PUBLIC_BIND=0.0.0.0.
+#   SMOKE_HOST      where the published ports are (default 127.0.0.1). When
+#                   the Docker is another machine — a Docker-in-Docker service
+#                   — that machine, and the internet entrance has to be
+#                   published there too: KRAFTVERK_PUBLIC_BIND=0.0.0.0.
 #
 # Leaves the containers' logs in smoke-logs.txt, for when it fails.
 
