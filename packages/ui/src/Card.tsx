@@ -38,5 +38,5 @@ export const SectionLabel = styled(Text, {
   fontWeight: '700',
   letterSpacing: 0.8,
   textTransform: 'uppercase',
-  paddingHorizontal: '$1',
+  // No inset of its own: a label starts on the same edge as the card under it.
 });

@@ -323,6 +323,7 @@ function ButtonRow({
       </YStack>
       <Button
         size="$3"
+        minHeight={44}
         disabled={disabled || busy}
         borderColor={tone === 'danger' ? '$danger' : '$borderColor'}
         borderWidth={1}
@@ -385,7 +386,7 @@ function Bill({ plug }: { plug: Plug }) {
           </YStack>
           <Input
             width={110}
-            size="$3"
+            size="$4"
             textAlign="right"
             keyboardType="decimal-pad"
             value={draft}

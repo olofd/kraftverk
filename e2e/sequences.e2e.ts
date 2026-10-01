@@ -124,8 +124,11 @@ test('built from nothing: a time, a setting changed, and another automation star
   // What starts it on its own: seven in the morning, on weekdays.
   await press(page, 'Add a trigger');
   await page.getByRole('button', { name: 'Add: At a time' }).click();
-  await page.getByLabel('Hour').fill('7');
-  await page.getByRole('radio', { name: 'Weekdays' }).click();
+  // The browser's own time field.
+  await page.getByLabel('At', { exact: true }).fill('07:00');
+  // Weekdays: the weekend's two days switched off.
+  await page.getByRole('checkbox', { name: 'Saturday' }).click();
+  await page.getByRole('checkbox', { name: 'Sunday' }).click();
 
   // A setting the meter keeps: its brightness.
   await press(page, 'Add a step');
@@ -170,9 +173,10 @@ test('through the night: a window of the day, across midnight, is what starts it
   // When the clock is between 23:00 and 05:00.
   await press(page, 'Add a trigger');
   await page.getByRole('button', { name: 'Add: When something holds' }).click();
-  await page.getByRole('radio', { name: 'Time of day' }).click();
-  await page.getByLabel('From: hour').fill('23');
-  await page.getByLabel('Until: hour').fill('5');
+  // Its kind, picked from a list.
+  await pick(page, 'When: what kind', 'Time of day');
+  await page.getByLabel('From', { exact: true }).fill('23:00');
+  await page.getByLabel('Until', { exact: true }).fill('05:00');
   await expect(page.getByText('Across midnight: from 23:00 until 05:00 the next morning.')).toBeVisible();
 
   // The plug on.

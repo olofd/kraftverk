@@ -6,6 +6,7 @@ import {
   capabilityIn,
   isScalarType,
   MAIN_PART,
+  SEQUENCE_LIMITS,
   stepKind,
   writtenAttribute,
   type Command,
@@ -16,7 +17,7 @@ import {
   type Value,
   type Write,
 } from '@kraftverk/device-sdk';
-import { haptic, Icon } from '@kraftverk/ui';
+import { Chips, haptic, Icon, IconLabel } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
 import { confirmAction } from '../../../lib/confirm';
@@ -24,7 +25,7 @@ import { KIND as KIND_ICON, useTone } from '../looks';
 import { ConditionField } from './Condition';
 import { pickPart, useEditor } from './context';
 import { automationRole, blankStep, insertStep, KINDS, kindsFor, listAt, mayWait, moveStep, removeStep, secondsOf, within, withStep, type Branch, type ListPath } from './draft';
-import { Chips, Label, NumberField, Picker, SecondsField, ValueField } from './fields';
+import { DurationField, Label, NumberField, Picker, ValueField } from './fields';
 
 /*
   The blocks of a sequence (docs/AUTOMATION-EDITOR.md): each step a card —
@@ -46,6 +47,7 @@ export function BlockList({ path, label }: { path: ListPath; label: string }) {
       ))}
       <AddStep
         path={path}
+        list={label}
         onAdded={() => {
           // The new block opens, so its fields are there to fill.
           setOpened(steps.length);
@@ -55,53 +57,81 @@ export function BlockList({ path, label }: { path: ListPath; label: string }) {
   );
 }
 
-/** One block: a card with its kind and words, opened to its fields; the lists it holds beneath. */
+/**
+ * One block: its number, its kind's mark and its words — a tap opens its
+ * fields — and ⋯ for moving it and removing it, the only actions it has. The
+ * lists it holds beneath, on a thin rail, so nesting costs little width.
+ */
 function Block({ path, index, step, count, open, onToggle }: { path: ListPath; index: number; step: Step; count: number; open: boolean; onToggle: () => void }) {
   const tone = useTone();
   const editor = useEditor();
+  const [menu, setMenu] = useState(false);
   const kind = stepKind(step);
   const words = editor.said(step);
   const set = (next: Step) => editor.change((draft) => ({ ...draft, rule: withStep(draft.rule, path, index, () => next) }));
-  const move = (by: -1 | 1) => (haptic(), editor.change((draft) => ({ ...draft, rule: moveStep(draft.rule, path, index, by) })));
-  const remove = () => (haptic(), editor.change((draft) => ({ ...draft, rule: removeStep(draft.rule, path, index) })));
+  const move = (by: -1 | 1) => (haptic(), setMenu(false), editor.change((draft) => ({ ...draft, rule: moveStep(draft.rule, path, index, by) })));
+  const remove = () => (haptic(), setMenu(false), editor.change((draft) => ({ ...draft, rule: removeStep(draft.rule, path, index) })));
   const numbered = path.trail.length === 0 && path.root === 'then';
+  const actions = [
+    ...(index > 0 ? [{ icon: 'arrow-up' as const, label: 'Move up', onPress: () => move(-1) }] : []),
+    ...(index < count - 1 ? [{ icon: 'arrow-down' as const, label: 'Move down', onPress: () => move(1) }] : []),
+    { icon: 'trash-2' as const, label: 'Remove', danger: true, onPress: remove },
+  ];
 
   return (
-    <YStack role="listitem" aria-label={`${KINDS[kind].label}: ${words}`} gap="$2" padding="$3" borderRadius="$4" borderWidth={1} borderColor={open ? '$accent' : '$borderColor'} backgroundColor="$card">
+    <YStack role="listitem" aria-label={`${KINDS[kind].label}: ${words}`} gap="$3" padding="$3" borderRadius="$4" borderWidth={1} borderColor={open ? '$accent' : '$borderColor'} backgroundColor="$background">
       <XStack gap="$2.5" alignItems="flex-start">
         {numbered ? (
-          <YStack width={22} height={22} borderRadius={11} backgroundColor="$accent" alignItems="center" justifyContent="center" marginTop={1}>
-            <Text fontSize={12} fontWeight="800" color="$background">
-              {index + 1}
-            </Text>
+          <YStack height={44} justifyContent="center">
+            <YStack width={24} height={24} borderRadius={12} backgroundColor="$accent" alignItems="center" justifyContent="center">
+              <Text fontSize={12} lineHeight={24} fontWeight="800" color="$background">
+                {index + 1}
+              </Text>
+            </YStack>
           </YStack>
         ) : null}
-        <Icon name={KIND_ICON[kind]} size={15} color={tone('$muted')} style={{ marginTop: 4 }} />
         <YStack flex={1}>
           <Pressable onPress={onToggle} label={`${open ? 'Close' : 'Open'} step: ${words}`}>
-            <YStack gap={1}>
-              <Text fontSize={11} fontWeight="800" color="$muted" textTransform="uppercase" letterSpacing={0.6}>
-                {KINDS[kind].label}
-              </Text>
-              <Text fontSize={14} color="$color" lineHeight={20}>
-                {words}
-              </Text>
+            {/* Its first line centred where the number and ⋯ are, however many lines follow. */}
+            <YStack paddingVertical={11}>
+              <IconLabel icon={KIND_ICON[kind]} size={16} color={tone('$muted')} lineHeight={22}>
+                <Text fontSize={15} color="$color" lineHeight={22}>
+                  {words}
+                </Text>
+              </IconLabel>
             </YStack>
           </Pressable>
         </YStack>
-        <XStack gap={2}>
-          <Button size="$2" chromeless circular disabled={index === 0} opacity={index === 0 ? 0.3 : 1} aria-label={`Move up: ${words}`} icon={<Icon name="arrow-up" size={14} color={tone('$muted')} />} onPress={() => move(-1)} />
-          <Button size="$2" chromeless circular disabled={index === count - 1} opacity={index === count - 1 ? 0.3 : 1} aria-label={`Move down: ${words}`} icon={<Icon name="arrow-down" size={14} color={tone('$muted')} />} onPress={() => move(1)} />
-          <Button size="$2" chromeless circular aria-label={`Remove: ${words}`} icon={<Icon name="trash-2" size={14} color={tone('$danger')} />} onPress={remove} />
-        </XStack>
+        <Button width={44} height={44} circular chromeless aria-label={`Actions for step: ${words}`} aria-expanded={menu} icon={<Icon name="more-horizontal" size={18} color={tone('$muted')} />} onPress={() => (haptic(), setMenu((was) => !was))} />
       </XStack>
+
+      {menu ? (
+        <XStack gap="$2" flexWrap="wrap" role="menu" aria-label={`Actions for step: ${words}`}>
+          {actions.map((action) => (
+            <Button
+              key={action.label}
+              size="$3"
+              minHeight={44}
+              backgroundColor="$card"
+              borderWidth={1}
+              borderColor={action.danger ? '$danger' : '$borderColor'}
+              color={action.danger ? '$danger' : '$color'}
+              icon={<Icon name={action.icon} size={15} color={tone(action.danger ? '$danger' : '$color')} />}
+              aria-label={`${action.label}: ${words}`}
+              onPress={action.onPress}
+            >
+              {action.label}
+            </Button>
+          ))}
+        </XStack>
+      ) : null}
 
       {open ? <Fields path={path} step={step} set={set} /> : null}
 
       {/* The lists it holds: always shown, so a sequence's shape is seen whole. */}
       {branchesOf(step).map(({ branch, label }) => (
-        <YStack key={branch} gap="$1.5" marginLeft="$3" paddingLeft="$3" borderLeftWidth={2} borderColor="$borderColor">
-          <Text fontSize={11} fontWeight="800" color="$muted" textTransform="uppercase" letterSpacing={0.6}>
+        <YStack key={branch} gap="$2" paddingLeft="$2.5" borderLeftWidth={2} borderColor="$borderColor">
+          <Text fontSize={13} fontWeight="600" color="$muted">
             {label}
           </Text>
           <BlockList path={within(path, index, branch)} label={`${words}: ${label}`} />
@@ -150,7 +180,7 @@ function Fields({ path, step, set }: { path: ListPath; step: Step; set: (step: S
       <YStack gap="$2.5">
         <Label>That</Label>
         <ConditionField label="Make sure" expr={condition} onChange={(next) => put({ condition: next })} />
-        <Seconds label="Each try is given" expr={withinSeconds} set={(next) => put({ withinSeconds: next })} />
+        <Seconds label="Each try is given" expr={withinSeconds} max={SEQUENCE_LIMITS.trySeconds} set={(next) => put({ withinSeconds: next })} />
         <YStack gap="$1">
           <Label>Tries at most</Label>
           <NumberField label="Tries at most" value={secondsOf(tries)} onChange={(next) => put({ tries: { value: next } })} />
@@ -176,11 +206,12 @@ function Fields({ path, step, set }: { path: ListPath; step: Step; set: (step: S
   );
 }
 
-function Seconds({ label, expr, set }: { label: string; expr: Expr; set: (expr: Expr) => void }) {
+/** How long, as one field, with the most it may be: an hour for a wait, ten minutes for one try. */
+function Seconds({ label, expr, set, max = SEQUENCE_LIMITS.waitSeconds }: { label: string; expr: Expr; set: (expr: Expr) => void; max?: number }) {
   return (
-    <YStack gap="$1">
+    <YStack gap="$1.5">
       <Label>{label}</Label>
-      <SecondsField label={label} value={secondsOf(expr)} onChange={(next) => set({ value: next })} />
+      <DurationField label={label} value={secondsOf(expr)} max={max} onChange={(next) => set({ value: next })} />
     </YStack>
   );
 }
@@ -368,7 +399,8 @@ function StartFields({ start, waits, set }: { start: Extract<Step, { start: unkn
 }
 
 /** "Add a step": the kinds this list may take, each with what it does. */
-function AddStep({ path, onAdded }: { path: ListPath; onAdded: () => void }) {
+/** `list`: the list's name, so each of a page's several Add a step buttons says where it adds. */
+function AddStep({ path, list, onAdded }: { path: ListPath; list: string; onAdded: () => void }) {
   const tone = useTone();
   const editor = useEditor();
   const [open, setOpen] = useState(false);
@@ -390,31 +422,34 @@ function AddStep({ path, onAdded }: { path: ListPath; onAdded: () => void }) {
   };
   if (!open) {
     return (
-      <Button alignSelf="flex-start" size="$2" chromeless color="$accent" icon={<Icon name="plus" size={13} color={tone('$accent')} />} onPress={() => setOpen(true)}>
+      <Button alignSelf="flex-start" size="$3" minHeight={44} chromeless color="$accent" icon={<Icon name="plus" size={16} color={tone('$accent')} />} aria-label={`Add a step: ${list}`} onPress={() => setOpen(true)}>
         Add a step
       </Button>
     );
   }
   return (
-    <YStack gap="$1" padding="$2" borderRadius="$3" borderWidth={1} borderColor="$accent" role="menu" aria-label="Add a step">
-      {kindsFor(path).map((kind) => (
-        <Pressable key={kind} onPress={() => add(kind)} label={`Add: ${KINDS[kind].label}`}>
-          <XStack gap="$2.5" alignItems="flex-start" paddingHorizontal="$2" paddingVertical="$1.5">
-            <Icon name={KIND_ICON[kind]} size={15} color={tone('$accent')} style={{ marginTop: 2 }} />
-            <YStack flex={1} gap={1}>
-              <Text fontSize={14} fontWeight="700" color="$color">
-                {KINDS[kind].label}
-              </Text>
-              <Text fontSize={12} color="$muted" lineHeight={17}>
-                {KINDS[kind].says}
-              </Text>
+    <YStack borderRadius="$4" borderWidth={1} borderColor="$accent" overflow="hidden" backgroundColor="$background" role="menu" aria-label={`Add a step: ${list}`}>
+      {kindsFor(path).map((kind, index) => (
+        <YStack key={kind} borderTopWidth={index ? 1 : 0} borderColor="$borderColor">
+          <Pressable onPress={() => add(kind)} label={`Add: ${KINDS[kind].label}`}>
+            <YStack paddingHorizontal="$3" paddingVertical="$2.5">
+              <IconLabel icon={KIND_ICON[kind]} size={16} color={tone('$accent')} lineHeight={21} gap={10}>
+                <Text fontSize={15} fontWeight="700" color="$color" lineHeight={21}>
+                  {KINDS[kind].label}
+                </Text>
+                <Text fontSize={13} color="$muted" lineHeight={18}>
+                  {KINDS[kind].says}
+                </Text>
+              </IconLabel>
             </YStack>
-          </XStack>
-        </Pressable>
+          </Pressable>
+        </YStack>
       ))}
-      <Button alignSelf="flex-end" size="$2" chromeless color="$muted" onPress={() => setOpen(false)}>
-        Cancel
-      </Button>
+      <XStack borderTopWidth={1} borderColor="$borderColor" justifyContent="flex-end" padding="$1">
+        <Button size="$3" minHeight={44} chromeless color="$muted" onPress={() => setOpen(false)}>
+          Cancel
+        </Button>
+      </XStack>
     </YStack>
   );
 }

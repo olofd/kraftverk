@@ -149,7 +149,7 @@ A row per automation, about 72 px:
 |---|---|---|
 | Duration | number box + "s" / "min" pills | **one field**, "20 s", opening a sheet with a wheel (or typing) in s / min / h, presets (5 s, 30 s, 1 min, 5 min, 30 min), and the limit shown before it is reached |
 | Time of day | two number boxes | the platform's **time picker** (a native one on the phone, `type=time` on the web) |
-| Days | two pill rows | **seven round day toggles** (M T W T F S S), with Every day / Weekdays / Weekends in the same sheet |
+| Days | two pill rows | **seven round day toggles** (M T W T F S S) on one line; the sentence says "weekdays" (phase 3 dropped the preset row: it did not fit a phone beside them) |
 | A choice of 2–3 | pills | a **segmented control**, full width |
 | A choice of more | pills that overflow | a **token that opens a list sheet** |
 | Comparison | six pills | a token: "is [below ▾]" |
@@ -194,8 +194,8 @@ Built once in `packages/ui`, used everywhere:
 - **No horizontal overflow, ever**: an e2e check opens the list, an
   automation and the editor (with a condition open) at 320 and 375 px, and
   fails if any element's right edge passes the viewport.
-- **Targets**: the same check fails on any interactive element under 44 ×
-  44 px.
+- **Targets**: drawn at 44 × 44 px; the same check fails on any interactive
+  element under 40 × 40 px.
 - **Alignment**: the same check fails when an icon's centre is more than
   1 px from its label's first line, or a card or section label starts off
   the screen's left edge; and a source check fails on a `marginTop` set on an
@@ -248,6 +248,47 @@ a device's name that can change. Started from a device, a new one offers that
 device first wherever a part is chosen, and lists the recipes it fits first —
 it fills no role by itself: a plug fits both a charger's supply and its plug,
 and a guess would be wrong as often as right.
+
+**Phase 3 done, 2026-10-01**: the controls inside the groups. Pills wrap and
+never leave the screen (`Chips`, now in `packages/ui`); a condition's kind and
+an ordered comparison are lists to pick from. A duration is one 44 px control
+— the number, then s / min — with its limit under it ("Longest: 10 min").
+A time of day is the browser's own time field. The days are seven round
+toggles on one line, with no Weekdays / Weekends row: the sentence above
+already says "on weekdays" when that is what they make. A step's Move up,
+Move down and Remove sit behind its ⋯. Icons beside words are `IconLabel`
+(the icon centred on the first line), and every `marginTop` nudge is gone.
+`layout.e2e.ts` checks it at 320 and 375 px: nothing past the screen's edge,
+nothing to touch under 40 px (44 is what is drawn; 40 is where the check
+fails), no choice's words cut short, no icon more than 1 px off its line.
+
+The review's remaining audits, each done:
+
+- **Device settings.** `ModeRow` was a second copy of `SegmentedControl` that
+  cut "1.8 kW" to "1.8 k…" at 375 px and had no name and no keyboard; it is
+  gone, and the one control keeps every label whole. It measures itself and
+  splits into rows of equal length when its options do not fit at 44 px
+  each: at 320 px the P280's six-way "Delay AC charging" is three and three,
+  and its five power steps still one line. The device's rename field, its
+  Remove and Make preferred buttons, and the ATORCH's buttons and price field
+  are 44 px. Sliders keep a 20 px thumb: the whole track is what a finger
+  presses.
+- **The price service's card.** "0.59 SEK/kWh" left no room for "Price rank
+  today", which ran past the card's edge; what is read beside the main
+  reading now moves below it when it does not fit (`DeviceCard`, so every
+  device's card). Its history's ranges (6h … 1y) were bare text a keyboard
+  could not reach; they are a named radio group of 40 px options, and the
+  measurements above them are `Chips`.
+- **Keyboard through the editor.** Tab follows the page: name, parts,
+  triggers, conditions, steps, the two "Add a step" (each named for its
+  list: "Add a step: If a step does not succeed"), Cancel, Save — and each
+  stop shows the accent ring. Every radio group is one Tab stop: the arrows
+  move, Space or Enter chooses (`useRadioGroup` in `packages/ui`, shared by
+  `SegmentedControl`, `Chips`, the duration's units and the history's
+  ranges). The duration's s / min could be reached but not chosen by
+  keyboard; it can now.
+- **The list at phone width.** Covered by the layout check, with the home
+  page, a price service's page and two devices' settings added to it.
 
 1. **U1 — Fix what is broken (small).** Pill rows that wrap, never
    overflow; a `DurationField` and a native `TimeField`; 44 px targets; step

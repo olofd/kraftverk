@@ -1,10 +1,17 @@
-import { useRef } from 'react';
+import { useState } from 'react';
+import { Platform } from 'react-native';
 import { Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { haptic } from './haptics';
 import { PendingMark } from './PendingMark';
+import { useRadioGroup } from './radioGroup';
 
 type Option<T extends string | number> = { value: T; label: string };
+
+const PAD = 3;
+const GAP = 3;
+/** How wide an option is meant to be at the least: a finger's width. */
+const TOUCH = 44;
 
 type Props<T extends string | number> = {
   title: string;
@@ -40,31 +47,26 @@ export function SegmentedControl<T extends string | number>({
   */
   const theme = useTheme();
   const locked = disabled || pending;
-  const refs = useRef<(HTMLElement | null)[]>([]);
-  // One stop for Tab: the chosen option, or the first when none is.
-  const current = Math.max(0, options.findIndex((option) => option.value === value));
-
   const choose = (option: Option<T>) => {
     if (locked || option.value === value) return;
     haptic();
     onChange(option.value);
   };
+  const radio = useRadioGroup(
+    options.length,
+    options.findIndex((option) => option.value === value),
+    (index) => choose(options[index]!)
+  );
   /*
-    The keyboard, as a radio group's: the arrows move between the options,
-    and Space or Enter chooses the one it is on. Moving does not choose —
-    a choice here can be consequential (letting an automation act asks
-    first), so it is made on purpose, never by passing over it.
+    Rows of equal length. Six delays do not fit a 320 px phone at a finger's
+    width each: rather than five and one left over, they go three and three.
+    How many fit is known once it is laid out; until then, one row.
   */
-  const onKeyDown = (index: number) => (event: { key: string; preventDefault: () => void }) => {
-    const step = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0;
-    if (step) {
-      event.preventDefault();
-      refs.current[(index + step + options.length) % options.length]?.focus();
-    } else if (event.key === ' ' || event.key === 'Enter') {
-      event.preventDefault();
-      choose(options[index]!);
-    }
-  };
+  const [width, setWidth] = useState(0);
+  const inner = width - PAD * 2;
+  const fit = width ? Math.max(1, Math.floor((inner + GAP) / (TOUCH + GAP))) : options.length;
+  const perRow = Math.ceil(options.length / Math.ceil(options.length / Math.min(fit, options.length)));
+  const basis = width ? Math.floor((inner - GAP * (perRow - 1)) / perRow) : 0;
 
   return (
     <YStack gap="$3" paddingHorizontal="$4" paddingVertical="$3" opacity={disabled ? 0.45 : 1}>
@@ -85,26 +87,33 @@ export function SegmentedControl<T extends string | number>({
       <XStack
         backgroundColor="$backgroundPress"
         borderRadius="$3"
-        padding={3}
-        gap={3}
+        padding={PAD}
+        gap={GAP}
+        flexWrap="wrap"
         role="radiogroup"
         aria-label={title}
         aria-busy={pending || undefined}
+        onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
       >
         {options.map((option, index) => {
           const selected = option.value === value;
           return (
             <XStack
               key={option.value}
-              ref={((element: HTMLElement | null) => void (refs.current[index] = element)) as never}
-              flex={1}
+              {...radio(index)}
+              // Equal shares of a row; never narrower than the label, so a label longer than its share wraps the row rather than being cut.
+              flexGrow={1}
+              flexShrink={0}
+              flexBasis={basis}
+              minWidth={Platform.OS === 'web' ? ('max-content' as never) : undefined}
               role="radio"
               aria-checked={selected}
               aria-disabled={locked || undefined}
-              tabIndex={index === current ? 0 : -1}
-              onKeyDown={onKeyDown(index) as never}
               focusVisibleStyle={{ outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid', outlineOffset: 1 }}
               justifyContent="center"
+              alignItems="center"
+              minHeight={40}
+              paddingHorizontal={2}
               paddingVertical="$2"
               borderRadius="$2"
               cursor={locked ? 'default' : 'pointer'}

@@ -99,7 +99,7 @@ function Page({ automation, onChanged, onEdit }: { automation: AutomationView; o
       {checked ? (
         <Group icon="help-circle" title="If it ran now" summary="Nothing is sent">
           <RunDetail run={checked} showConditions />
-          <Button alignSelf="flex-start" size="$3" chromeless color="$muted" onPress={() => setChecked(null)}>
+          <Button alignSelf="flex-start" size="$3" minHeight={44} chromeless color="$muted" onPress={() => setChecked(null)}>
             Close
           </Button>
         </Group>

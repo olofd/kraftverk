@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
 import { EVERY_MINUTES, MAIN_PART, type Expr, type Trigger } from '@kraftverk/device-sdk';
-import { haptic, Icon } from '@kraftverk/ui';
+import { Chips, haptic, Icon, IconLabel } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
 import { useTone } from '../looks';
 import { blankCondition, ConditionField } from './Condition';
 import { pickPart, useEditor } from './context';
-import { Chips, DaysField, Label, NumberField, Picker, TimeField } from './fields';
+import { DaysField, Label, NumberField, Picker, TimeField } from './fields';
 
 /*
   When an automation runs on its own (docs/AUTOMATION-EDITOR.md): at a time
@@ -52,19 +52,25 @@ export function Triggers() {
         const said = editor.saidTrigger(trigger);
         return (
           <YStack key={index} gap="$3" padding="$3" borderRadius="$4" borderWidth={1} borderColor={open ? '$accent' : '$borderColor'} backgroundColor="$background" role="group" aria-label={`Trigger ${index + 1}`}>
-            <XStack alignItems="center" gap="$2">
+            <XStack alignItems="flex-start" gap="$2">
               <YStack flex={1}>
                 <Pressable onPress={() => setOpened(open ? null : index)} label={`${open ? 'Close' : 'Change'} trigger ${index + 1}: ${said}`}>
-                  <XStack alignItems="center" gap="$2.5" minHeight={44}>
-                    <Icon name={kind?.icon ?? 'clock'} size={16} color={tone('$accent')} />
-                    <Text flex={1} fontSize={15} color="$color" lineHeight={21}>
-                      {said}
-                    </Text>
-                    <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} color={tone('$muted')} />
+                  {/* Each mark on the first line of its words, however many lines they run to. */}
+                  <XStack alignItems="flex-start" gap="$2.5" paddingVertical={11}>
+                    <YStack flex={1}>
+                      <IconLabel icon={kind?.icon ?? 'clock'} size={16} color={tone('$accent')} lineHeight={22} gap={10}>
+                        <Text fontSize={15} color="$color" lineHeight={22}>
+                          {said}
+                        </Text>
+                      </IconLabel>
+                    </YStack>
+                    <YStack height={22} justifyContent="center">
+                      <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} color={tone('$muted')} />
+                    </YStack>
                   </XStack>
                 </Pressable>
               </YStack>
-              <Button size="$3" chromeless circular aria-label={`Remove trigger ${index + 1}`} icon={<Icon name="x" size={16} color={tone('$muted')} />} onPress={() => (haptic(), setOpened(null), put(when.filter((_, at) => at !== index)))} />
+              <Button width={44} height={44} chromeless circular aria-label={`Remove trigger ${index + 1}`} icon={<Icon name="x" size={16} color={tone('$muted')} />} onPress={() => (haptic(), setOpened(null), put(when.filter((_, at) => at !== index)))} />
             </XStack>
             {open ? <TriggerFields trigger={trigger} set={(next) => set(index, next)} /> : null}
           </YStack>
@@ -76,28 +82,27 @@ export function Triggers() {
         </Text>
       ) : null}
       {adding ? (
-        <YStack gap="$1" padding="$2" borderRadius="$3" borderWidth={1} borderColor="$accent" role="menu" aria-label="Add a trigger">
+        <YStack gap="$1" borderRadius="$4" borderWidth={1} borderColor="$accent" overflow="hidden" backgroundColor="$background" role="menu" aria-label="Add a trigger">
           {TRIGGER_KINDS.map((kind) => (
             <Pressable key={kind.value} onPress={() => (haptic(), put([...when, blankTrigger(kind.value)]), setOpened(when.length), setAdding(false))} label={`Add: ${kind.label}`}>
-              <XStack gap="$2.5" alignItems="flex-start" paddingHorizontal="$2" paddingVertical="$1.5">
-                <Icon name={kind.icon} size={15} color={tone('$accent')} style={{ marginTop: 2 }} />
-                <YStack flex={1} gap={1}>
-                  <Text fontSize={14} fontWeight="700" color="$color">
+              <YStack paddingHorizontal="$3" paddingVertical="$2.5">
+                <IconLabel icon={kind.icon} size={16} color={tone('$accent')} lineHeight={21} gap={10}>
+                  <Text fontSize={15} fontWeight="700" color="$color" lineHeight={21}>
                     {kind.label}
                   </Text>
-                  <Text fontSize={12} color="$muted" lineHeight={17}>
+                  <Text fontSize={13} color="$muted" lineHeight={18}>
                     {kind.says}
                   </Text>
-                </YStack>
-              </XStack>
+                </IconLabel>
+              </YStack>
             </Pressable>
           ))}
-          <Button alignSelf="flex-end" size="$2" chromeless color="$muted" onPress={() => setAdding(false)}>
+          <Button alignSelf="flex-end" size="$3" minHeight={44} chromeless color="$muted" onPress={() => setAdding(false)}>
             Cancel
           </Button>
         </YStack>
       ) : (
-        <Button alignSelf="flex-start" size="$2" chromeless color="$accent" icon={<Icon name="plus" size={13} color={tone('$accent')} />} onPress={() => setAdding(true)}>
+        <Button alignSelf="flex-start" size="$3" minHeight={44} chromeless color="$accent" icon={<Icon name="plus" size={16} color={tone('$accent')} />} onPress={() => setAdding(true)}>
           Add a trigger
         </Button>
       )}
@@ -113,7 +118,7 @@ function TriggerFields({ trigger, set }: { trigger: Trigger; set: (trigger: Trig
       <YStack gap="$2.5">
         <YStack gap="$1">
           <Label>At</Label>
-          <TimeField value={time} onChange={(at) => set({ ...trigger, at: { value: at } })} />
+          <TimeField label="At" value={time} onChange={(at) => set({ ...trigger, at: { value: at } })} />
         </YStack>
         <YStack gap="$1">
           <Label>On</Label>
@@ -181,7 +186,17 @@ function TriggerFields({ trigger, set }: { trigger: Trigger; set: (trigger: Trig
       {bound ? (
         <YStack gap="$1">
           <Label>Says</Label>
-          <Chips label="Says" options={events.map((event) => ({ value: event.id, label: event.label }))} value={trigger.event.event || null} onChange={(event) => set({ event: { ...trigger.event, event } })} />
+          {events.length <= 3 ? (
+            <Chips label="Says" options={events.map((event) => ({ value: event.id, label: event.label }))} value={trigger.event.event || null} onChange={(event) => set({ event: { ...trigger.event, event } })} />
+          ) : (
+            <Picker
+              label="Says"
+              chosen={events.find((event) => event.id === trigger.event.event)?.label ?? null}
+              placeholder="Choose what it says"
+              options={events.map((event) => ({ key: event.id, title: event.label, value: event.id, selected: event.id === trigger.event.event }))}
+              onPick={(event) => set({ event: { ...trigger.event, event } })}
+            />
+          )}
         </YStack>
       ) : null}
     </YStack>
@@ -205,7 +220,7 @@ export function OnlyIf() {
     });
   if (!condition) {
     return (
-      <Button alignSelf="flex-start" size="$3" chromeless color="$accent" icon={<Icon name="plus" size={14} color={tone('$accent')} />} onPress={() => (put(blankCondition(null)), setOpen(true))}>
+      <Button alignSelf="flex-start" size="$3" minHeight={44} chromeless color="$accent" icon={<Icon name="plus" size={16} color={tone('$accent')} />} onPress={() => (put(blankCondition(null)), setOpen(true))}>
         Add a condition it must meet
       </Button>
     );
@@ -213,18 +228,20 @@ export function OnlyIf() {
   const said = editor.saidExpr(condition);
   return (
     <YStack gap="$3" padding="$3" borderRadius="$4" borderWidth={1} borderColor={open ? '$accent' : '$borderColor'} backgroundColor="$background">
-      <XStack alignItems="center" gap="$2">
+      <XStack alignItems="flex-start" gap="$2">
         <YStack flex={1}>
           <Pressable onPress={() => setOpen((was) => !was)} label={`${open ? 'Close' : 'Change'} the condition: ${said}`}>
-            <XStack alignItems="center" gap="$2.5" minHeight={44}>
-              <Text flex={1} fontSize={15} color="$color" lineHeight={21}>
+            <XStack alignItems="flex-start" gap="$2.5" paddingVertical={11}>
+              <Text flex={1} fontSize={15} color="$color" lineHeight={22}>
                 {said.charAt(0).toUpperCase() + said.slice(1)}
               </Text>
-              <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} color={tone('$muted')} />
+              <YStack height={22} justifyContent="center">
+                <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} color={tone('$muted')} />
+              </YStack>
             </XStack>
           </Pressable>
         </YStack>
-        <Button size="$3" chromeless circular aria-label="Remove the condition" icon={<Icon name="x" size={16} color={tone('$muted')} />} onPress={() => (haptic(), setOpen(false), put(null))} />
+        <Button width={44} height={44} chromeless circular aria-label="Remove the condition" icon={<Icon name="x" size={16} color={tone('$muted')} />} onPress={() => (haptic(), setOpen(false), put(null))} />
       </XStack>
       {open ? <ConditionField label="Only if" expr={condition} onChange={put} /> : null}
     </YStack>

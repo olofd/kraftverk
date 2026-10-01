@@ -20,6 +20,8 @@ import { haptic } from './haptics';
 
 const TRACK_WIDTH = 46;
 const TRACK_HEIGHT = 28;
+/** How tall what a finger touches is: the track is drawn smaller, centred in it. */
+const TOUCH = 44;
 /** Equal on all four sides, which is what makes the thumb look centred. */
 const INSET = 3;
 const THUMB = TRACK_HEIGHT - INSET * 2;
@@ -131,13 +133,15 @@ export function Toggle({ checked, label, onCheckedChange, disabled, pending }: T
         disabled: locked,
         onClick: flip,
         style: {
+          // As tall as a finger needs, the track centred in it: what is touched is bigger than what is drawn.
           display: 'flex',
+          alignItems: 'center',
           width: TRACK_WIDTH,
-          height: TRACK_HEIGHT,
+          height: TOUCH,
           padding: 0,
           margin: 0,
           border: 'none',
-          borderRadius: 999,
+          borderRadius: TOUCH / 2,
           background: 'transparent',
           // Dimmed when it cannot be used at all; a pending switch stays bright, because the position it shows is the one being made true.
           opacity: disabled ? 0.5 : 1,
@@ -158,8 +162,9 @@ export function Toggle({ checked, label, onCheckedChange, disabled, pending }: T
       aria-disabled={locked}
       aria-busy={pending || undefined}
       width={TRACK_WIDTH}
-      height={TRACK_HEIGHT}
-      borderRadius={999}
+      height={TOUCH}
+      alignItems="center"
+      borderRadius={TOUCH / 2}
       // Dimmed when it cannot be used at all; a pending switch stays bright,
       // because the position it shows is the one being made true.
       opacity={disabled ? 0.5 : 1}

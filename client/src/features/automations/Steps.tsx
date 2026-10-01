@@ -2,7 +2,7 @@ import { Fragment } from 'react';
 import { Spinner, Text, XStack, YStack } from 'tamagui';
 
 import type { AutomationRun, RunStep, StepLine } from '@kraftverk/api-client';
-import { Icon } from '@kraftverk/ui';
+import { Icon, IconLabel } from '@kraftverk/ui';
 
 import { KIND, STEP, stopwatch, took, useNow, useTone } from './looks';
 
@@ -44,18 +44,24 @@ function PlanLine({ line, number }: { line: StepLine; number?: number }) {
   const tone = useTone();
   return (
     <YStack gap="$2" role="listitem">
+      {/* Its number and its kind, each in a box one line tall: centred on the first line of its words. */}
       <XStack gap="$2.5" alignItems="flex-start">
         {number !== undefined ? (
-          <YStack width={22} height={22} borderRadius={11} alignItems="center" justifyContent="center" backgroundColor="$accent" marginTop={1}>
-            <Text fontSize={11} fontWeight="800" color="$background">
-              {number}
-            </Text>
+          <YStack height={22} justifyContent="center">
+            <YStack width={22} height={22} borderRadius={11} alignItems="center" justifyContent="center" backgroundColor="$accent">
+              <Text fontSize={11} lineHeight={22} fontWeight="800" color="$background">
+                {number}
+              </Text>
+            </YStack>
           </YStack>
         ) : null}
-        <Icon name={KIND[line.kind]} size={14} color={tone('$muted')} style={{ marginTop: 4 }} />
-        <Text flex={1} fontSize={14} color="$color" lineHeight={21}>
-          {line.text}
-        </Text>
+        <YStack flex={1}>
+          <IconLabel icon={KIND[line.kind]} size={14} color={tone('$muted')} lineHeight={22}>
+            <Text fontSize={15} color="$color" lineHeight={22}>
+              {line.text}
+            </Text>
+          </IconLabel>
+        </YStack>
       </XStack>
       {line.branches.map((branch) => (
         <YStack key={branch.label} marginLeft={number !== undefined ? 32 : 10} paddingLeft="$3" borderLeftWidth={2} borderColor="$borderColor" gap="$2">

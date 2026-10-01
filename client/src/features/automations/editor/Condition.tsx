@@ -1,11 +1,11 @@
 import { Button, Text, XStack, YStack } from 'tamagui';
 
 import { MAIN_PART, meetsNeed, capabilitiesOf, type CompareOp, type Expr, type ValueType, type Value } from '@kraftverk/device-sdk';
-import { Icon } from '@kraftverk/ui';
+import { Chips, Icon, IconLabel } from '@kraftverk/ui';
 
 import { useTone } from '../looks';
 import { pickPart, useEditor, type PartOption } from './context';
-import { Chips, Label, Picker, TimeField, ValueField } from './fields';
+import { Label, Picker, TimeField, ValueField } from './fields';
 
 /*
   A condition, built without showing an expression (docs/AUTOMATION-EDITOR.md):
@@ -91,9 +91,16 @@ export function ConditionField({ label, expr, onChange, depth = 0 }: { label: st
   const put = (next: Expr) => onChange(negated ? { not: next } : next);
 
   return (
-    <YStack gap="$2" padding="$2.5" borderRadius="$3" borderWidth={1} borderColor="$borderColor" backgroundColor={depth % 2 ? '$background' : '$backgroundPress'} aria-label={label} role="group">
-      <XStack gap="$2" alignItems="center" flexWrap="wrap">
-        <Chips label={`${label}: what kind`} options={KIND_OPTIONS} value={kind} onChange={(next) => put(blankOf(next, roleOf(inner)))} />
+    <YStack gap="$3" padding="$3" borderRadius="$4" borderWidth={1} borderColor="$borderColor" backgroundColor={depth % 2 ? '$background' : '$card'} aria-label={label} role="group">
+      {/* Its kind among six: a list to pick from, not a row of pills wider than a phone. */}
+      <Picker
+        label={`${label}: what kind`}
+        chosen={KIND_OPTIONS.find((option) => option.value === kind)?.label ?? null}
+        placeholder="Choose what kind"
+        options={KIND_OPTIONS.map((option) => ({ key: option.value, title: option.label, value: option.value, selected: option.value === kind }))}
+        onPick={(next) => put(blankOf(next, roleOf(inner)))}
+      />
+      <XStack>
         <Chips
           label={`${label}: turned round`}
           options={[
@@ -106,12 +113,11 @@ export function ConditionField({ label, expr, onChange, depth = 0 }: { label: st
       </XStack>
 
       {kind === null ? (
-        <XStack gap="$2" alignItems="flex-start">
-          <Icon name="info" size={13} color={tone('$muted')} style={{ marginTop: 3 }} />
-          <Text flex={1} fontSize={13} color="$color" lineHeight={19}>
+        <IconLabel icon="info" size={14} color={tone('$muted')} lineHeight={20}>
+          <Text fontSize={14} color="$color" lineHeight={20}>
             {editor.saidExpr(inner)} — choose a kind above to replace it.
           </Text>
-        </XStack>
+        </IconLabel>
       ) : kind === 'all' || kind === 'any' ? (
         <Group expr={inner as Extract<Expr, { all: unknown } | { any: unknown }>} onChange={put} depth={depth} label={label} />
       ) : kind === 'reachable' ? (
@@ -140,10 +146,10 @@ function Group({ expr, onChange, depth, label }: { expr: Extract<Expr, { all: un
           <YStack flex={1}>
             <ConditionField label={`${label} ${index + 1}`} expr={part} depth={depth + 1} onChange={(next) => put(parts.map((one, at) => (at === index ? next : one)))} />
           </YStack>
-          <Button size="$2" chromeless circular aria-label={`Remove condition ${index + 1}`} icon={<Icon name="x" size={14} color={tone('$muted')} />} onPress={() => put(parts.filter((_, at) => at !== index))} />
+          <Button width={44} height={44} chromeless circular aria-label={`Remove condition ${index + 1}`} icon={<Icon name="x" size={16} color={tone('$muted')} />} onPress={() => put(parts.filter((_, at) => at !== index))} />
         </XStack>
       ))}
-      <Button alignSelf="flex-start" size="$2" chromeless icon={<Icon name="plus" size={13} color={tone('$accent')} />} color="$accent" onPress={() => put([...parts, blankOf('reading', null)])}>
+      <Button alignSelf="flex-start" size="$3" minHeight={44} chromeless icon={<Icon name="plus" size={16} color={tone('$accent')} />} color="$accent" onPress={() => put([...parts, blankOf('reading', null)])}>
         Add a condition
       </Button>
     </YStack>
@@ -231,10 +237,20 @@ function Reading({ expr, onChange, label }: { expr: Extract<Expr, { compare: unk
         />
       ) : null}
       {chosen ? (
-        <XStack gap="$2" alignItems="center" flexWrap="wrap">
-          <Chips label={`${label}: compared`} options={ordered ? NUMBER_OPS : EQUAL_OPS} value={expr.compare} onChange={(compare) => onChange({ ...expr, compare })} />
+        <YStack gap="$2">
+          {ordered ? (
+            <Picker
+              label={`${label}: compared`}
+              chosen={NUMBER_OPS.find((option) => option.value === expr.compare)?.label ?? null}
+              placeholder="Choose how"
+              options={NUMBER_OPS.map((option) => ({ key: option.value, title: option.label, value: option.value, selected: option.value === expr.compare }))}
+              onPick={(compare) => onChange({ ...expr, compare })}
+            />
+          ) : (
+            <Chips label={`${label}: compared`} options={EQUAL_OPS} value={expr.compare} onChange={(compare) => onChange({ ...expr, compare })} />
+          )}
           <ValueField label={`${label}: value`} type={type} value={value} onChange={(next: Value) => onChange({ ...expr, right: { value: next } })} />
-        </XStack>
+        </YStack>
       ) : null}
     </YStack>
   );

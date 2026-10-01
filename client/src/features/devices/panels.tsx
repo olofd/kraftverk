@@ -18,7 +18,7 @@ import {
   type LinkKind,
   type Part,
 } from '@kraftverk/device-sdk';
-import { Card, DeviceCard, EnergyFlow, EventList, PartCard, Row, RowSeparator, SchemaForm, SectionLabel, ToggleRow, haptic, readingFor, useWriteGate, Icon } from '@kraftverk/ui';
+import { Card, Chips, DeviceCard, EnergyFlow, EventList, PartCard, Row, RowSeparator, SchemaForm, SectionLabel, ToggleRow, haptic, readingFor, useWriteGate, Icon } from '@kraftverk/ui';
 
 import { MeasurementChart } from '../../components/MeasurementChart';
 import { Pressable } from '../../components/Pressable';
@@ -237,32 +237,7 @@ export function History({ device, part }: { device: DeviceView; part?: string })
     <YStack gap="$2">
       <SectionLabel>History</SectionLabel>
       <Card gap="$3">
-        <XStack flexWrap="wrap" gap="$1.5">
-          {chartable.map((spec) => (
-            <Text
-              key={spec.key}
-              role="radio"
-              tabIndex={0}
-              aria-checked={spec.key === selected.key}
-              fontSize={12}
-              fontWeight="600"
-              paddingHorizontal="$2.5"
-              paddingVertical="$1.5"
-              borderRadius="$3"
-              backgroundColor={spec.key === selected.key ? '$accent' : '$backgroundPress'}
-              color={spec.key === selected.key ? '$background' : '$muted'}
-              cursor="pointer"
-              pressStyle={{ opacity: 0.7 }}
-              focusVisibleStyle={{ outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid' }}
-              onPress={() => {
-                haptic();
-                setKey(spec.key);
-              }}
-            >
-              {label(spec)}
-            </Text>
-          ))}
-        </XStack>
+        <Chips label="Show" options={chartable.map((spec) => ({ value: spec.key, label: label(spec) }))} value={selected.key} onChange={setKey} />
         <MeasurementChart deviceId={device.id} measurement={selected} />
       </Card>
     </YStack>
@@ -341,12 +316,12 @@ export function GenericSettings({ device }: { device: DeviceView }) {
       ) : null}
       {pending ? (
         <XStack gap="$2">
-          <Button flex={1} size="$3" disabled={busy} onPress={() => setDraft({})}>
+          <Button flex={1} size="$3" minHeight={44} disabled={busy} onPress={() => setDraft({})}>
             Discard
           </Button>
           <Button
             flex={1}
-            size="$3"
+            size="$3" minHeight={44}
             backgroundColor="$accent"
             color="$background"
             disabled={busy}
@@ -429,12 +404,12 @@ export function Connections({ device }: { device: DeviceView }) {
                 {ordered.length > 1 ? (
                   <XStack gap="$2">
                     {index > 0 ? (
-                      <Button size="$2" disabled={busy} onPress={() => void act(() => prefer(device, connection))}>
+                      <Button size="$3" minHeight={44} disabled={busy} onPress={() => void act(() => prefer(device, connection))}>
                         Make preferred
                       </Button>
                     ) : null}
                     <Button
-                      size="$2"
+                      size="$3" minHeight={44}
                       disabled={busy}
                       onPress={() =>
                         void act(async () => {
@@ -529,7 +504,7 @@ export function Links({ device }: { device: DeviceView }) {
             <Row
               title={sentence({ kind: link.kind, role: link.role, mine: partLabel(link.part), other: otherName(link.other.name, link.other.partLabel) })}
               accessory={
-                <Button size="$2" disabled={busy} onPress={() => void act(() => removeLink(link))}>
+                <Button size="$3" minHeight={44} disabled={busy} onPress={() => void act(() => removeLink(link))}>
                   Remove
                 </Button>
               }
@@ -625,9 +600,9 @@ export function Manage({ device }: { device: DeviceView }) {
             Name
           </Text>
           <XStack gap="$2">
-            <Input flex={1} size="$3" value={name} maxLength={60} onChangeText={setName} onSubmitEditing={() => (dirty && !busy ? saveName() : undefined)} backgroundColor="$background" borderColor="$borderColor" aria-label="Name" />
+            <Input flex={1} size="$4" value={name} maxLength={60} onChangeText={setName} onSubmitEditing={() => (dirty && !busy ? saveName() : undefined)} backgroundColor="$background" borderColor="$borderColor" aria-label="Name" />
             {dirty ? (
-              <Button size="$3" backgroundColor="$accent" color="$background" disabled={busy} onPress={saveName}>
+              <Button size="$4" backgroundColor="$accent" color="$background" disabled={busy} onPress={saveName}>
                 Save
               </Button>
             ) : null}
@@ -642,7 +617,7 @@ export function Manage({ device }: { device: DeviceView }) {
           title="Remove this device"
           subtitle={mode === 'server' ? 'Its history is kept, to bring back or delete later' : 'Deleted from this app'}
           accessory={
-            <Button size="$2" disabled={busy} borderColor="$danger" icon={<Icon name="trash-2" size={13} color={theme.danger?.val} />} onPress={() => void removeIt()}>
+            <Button size="$3" minHeight={44} disabled={busy} borderColor="$danger" icon={<Icon name="trash-2" size={13} color={theme.danger?.val} />} onPress={() => void removeIt()}>
               Remove
             </Button>
           }

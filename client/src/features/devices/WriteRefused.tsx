@@ -1,6 +1,6 @@
-import { Text, useTheme, XStack } from 'tamagui';
+import { Text, useTheme } from 'tamagui';
 
-import { Card, Icon } from '@kraftverk/ui';
+import { Card, IconLabel } from '@kraftverk/ui';
 
 /**
  * Why the last change did not happen.
@@ -15,12 +15,11 @@ export function WriteRefused({ message }: { message: string | null }) {
 
   return (
     <Card borderColor="$danger" role="alert">
-      <XStack gap="$2.5" alignItems="flex-start">
-        <Icon name="alert-circle" size={15} color={theme.danger?.val} style={{ marginTop: 2 }} />
-        <Text flex={1} fontSize={13} color="$danger" lineHeight={19}>
+      <IconLabel icon="alert-circle" size={16} color={theme.danger?.val} lineHeight={19} gap={10}>
+        <Text fontSize={13} color="$danger" lineHeight={19}>
           {message}
         </Text>
-      </XStack>
+      </IconLabel>
     </Card>
   );
 }

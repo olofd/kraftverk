@@ -4,7 +4,7 @@ import { Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 import { AnimatedNumber, Icon } from '@kraftverk/ui';
 import { Card, SectionLabel } from '@kraftverk/ui';
 import { EnergyFlow } from './energy-flow';
-import { ModeRow } from '@kraftverk/ui';
+import { SegmentedControl } from '@kraftverk/ui';
 import { Row, RowSeparator, ToggleRow } from '@kraftverk/ui';
 import { formatDuration, formatUptime, formatWatts, formatWh } from '@kraftverk/ui';
 import type { LedMode } from '../src/model/types';
@@ -195,7 +195,7 @@ function DashboardView({
             <YStack key={port.id}>
               {index > 0 ? <RowSeparator /> : null}
               {port.id === 'led' ? (
-                <ModeRow
+                <SegmentedControl
                   title={port.label}
                   subtitle={
                     port.enabled

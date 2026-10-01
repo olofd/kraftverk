@@ -12,6 +12,7 @@ import {
   chartY,
   formatValue,
   haptic,
+  useRadioGroup,
 } from '@kraftverk/ui';
 
 /**
@@ -45,6 +46,11 @@ export function MeasurementChart({
   measurement: AttributeSpec;
 }) {
   const [hours, setHours] = useState<number>(24);
+  const choose = (index: number) => {
+    haptic();
+    setHours(RANGES[index]!.hours);
+  };
+  const radio = useRadioGroup(RANGES.length, RANGES.findIndex((range) => range.hours === hours), choose);
   const [points, setPoints] = useState<SeriesPoint[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [width, setWidth] = useState(0);
@@ -78,31 +84,37 @@ export function MeasurementChart({
 
   return (
     <YStack gap="$2.5">
-      <XStack justifyContent="space-between" alignItems="center">
+      {/* The ranges go below the title when both do not fit a line: a title is never squeezed to a word a line. */}
+      <XStack justifyContent="space-between" alignItems="center" flexWrap="wrap" columnGap="$2">
         <Text fontSize={12} color="$muted">
           {measurement.label}
         </Text>
-        <XStack gap="$1.5">
-          {RANGES.map((range) => (
-            <Text
-              key={range.hours}
-              fontSize={11}
-              fontWeight="700"
-              paddingHorizontal="$2"
-              paddingVertical="$1"
-              borderRadius="$2"
-              color={range.hours === hours ? '$color' : '$muted'}
-              backgroundColor={range.hours === hours ? '$backgroundPress' : 'transparent'}
-              cursor="pointer"
-              pressStyle={{ opacity: 0.6 }}
-              onPress={() => {
-                haptic();
-                setHours(range.hours);
-              }}
-            >
-              {range.label}
-            </Text>
-          ))}
+        <XStack gap={2} role="radiogroup" aria-label={`${measurement.label}: how far back`}>
+          {RANGES.map((range, index) => {
+            const chosen = range.hours === hours;
+            return (
+              <XStack
+                key={range.hours}
+                role="radio"
+                aria-checked={chosen}
+                {...radio(index)}
+                minWidth={40}
+                minHeight={40}
+                alignItems="center"
+                justifyContent="center"
+                borderRadius="$2"
+                backgroundColor={chosen ? '$backgroundPress' : 'transparent'}
+                cursor="pointer"
+                pressStyle={{ opacity: 0.6 }}
+                focusVisibleStyle={{ outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid' }}
+                onPress={() => choose(index)}
+              >
+                <Text fontSize={11} fontWeight="700" color={chosen ? '$color' : '$muted'}>
+                  {range.label}
+                </Text>
+              </XStack>
+            );
+          })}
         </XStack>
       </XStack>
 

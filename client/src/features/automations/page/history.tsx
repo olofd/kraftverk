@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
 import type { AuditEntry, AutomationMode, AutomationRun, AutomationView, ConditionState, Rehearsal } from '@kraftverk/api-client';
-import { Icon } from '@kraftverk/ui';
+import { Icon, IconLabel } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
 import { clock, dayOf, lasted, OUTCOME, useTone, type Look } from '../looks';
@@ -123,13 +123,12 @@ export function RunDetail({ run, showConditions }: { run: AutomationRun; showCon
           <Text fontSize={15} fontWeight="700" color="$color" lineHeight={21}>
             {run.summary}
           </Text>
-          <XStack gap={5} alignItems="flex-start">
-            <Icon name="corner-down-right" size={12} color={tone('$muted')} style={{ marginTop: 3 }} />
-            <Text flex={1} fontSize={13} color="$muted" lineHeight={19}>
+          <IconLabel icon="corner-down-right" size={12} color={tone('$muted')} lineHeight={19} gap={5}>
+            <Text fontSize={13} color="$muted" lineHeight={19}>
               {run.why}
               {lasted(run)}
             </Text>
-          </XStack>
+          </IconLabel>
         </YStack>
         <Readings saw={run.saw} />
         {showConditions && run.conditions.length ? <Conditions conditions={run.conditions} /> : null}
@@ -278,7 +277,7 @@ export function Rehearsed({ rehearsal, onClose }: { rehearsal: Rehearsal; onClos
     <YStack gap="$2.5" padding="$3" borderRadius="$4" borderWidth={1} borderColor="$borderColor">
       <XStack alignItems="center" justifyContent="space-between">
         <Heading>On the last week</Heading>
-        <Button size="$2" chromeless circular aria-label="Close" icon={<Icon name="x" size={14} color={tone('$muted')} />} onPress={onClose} />
+        <Button width={44} height={44} chromeless circular aria-label="Close" icon={<Icon name="x" size={16} color={tone('$muted')} />} onPress={onClose} />
       </XStack>
       <Text fontSize={14} fontWeight="700" color="$color">
         {count ? `It would have run ${count} time${count === 1 ? '' : 's'}${count > shown.length ? `; the last ${shown.length}:` : ':'}` : 'It would not have run.'}
@@ -298,12 +297,11 @@ export function Rehearsed({ rehearsal, onClose }: { rehearsal: Rehearsal; onClos
         </XStack>
       ))}
       {rehearsal.caveats.map((caveat) => (
-        <XStack key={caveat} gap="$2" alignItems="flex-start">
-          <Icon name="info" size={12} color={tone('$muted')} style={{ marginTop: 3 }} />
-          <Text flex={1} fontSize={12} color="$muted" lineHeight={17}>
+        <IconLabel key={caveat} icon="info" size={12} color={tone('$muted')} lineHeight={18}>
+          <Text fontSize={13} color="$muted" lineHeight={18}>
             {caveat}.
           </Text>
-        </XStack>
+        </IconLabel>
       ))}
     </YStack>
   );

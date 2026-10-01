@@ -133,7 +133,8 @@ export function DeviceCard({ device, icon, image, secondary, onPress }: Props) {
         />
       </XStack>
 
-      <XStack alignItems="flex-end" justifyContent="space-between" gap="$3">
+      {/* A wide reading ("0.59 SEK/kWh") leaves no room beside it on a phone: what is read beside it moves below, never past the card's edge. */}
+      <XStack alignItems="flex-end" justifyContent="space-between" columnGap="$3" rowGap="$2" flexWrap="wrap">
         <YStack gap={2}>
           <Text fontSize={30} fontWeight="800" letterSpacing={-1} color={primaryOld ? '$muted' : '$color'}>
             {primaryValue}
@@ -146,7 +147,7 @@ export function DeviceCard({ device, icon, image, secondary, onPress }: Props) {
         </YStack>
 
         {extras.length > 0 ? (
-          <YStack alignItems="flex-end" gap={3}>
+          <YStack alignItems="flex-end" gap={3} flexGrow={1}>
             {extras.map(({ spec, text, old }) => (
               <XStack key={spec.key} alignItems="baseline" gap="$2">
                 <Text fontSize={11} color="$muted">

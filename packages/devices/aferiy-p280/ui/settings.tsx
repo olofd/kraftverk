@@ -1,7 +1,6 @@
 import { Spinner, Text, YStack } from 'tamagui';
 
 import { Card, SectionLabel } from '@kraftverk/ui';
-import { ModeRow } from '@kraftverk/ui';
 import { Row, RowSeparator, ToggleRow } from '@kraftverk/ui';
 import { SegmentedControl } from '@kraftverk/ui';
 import { SliderRow } from '@kraftverk/ui';
@@ -186,7 +185,7 @@ function SettingsView({
         <Card inset>
           {/* Five discrete steps on the device (register 13 stores 1-5). The
               watt values are P280-specific — an F2400 spans 300-1100 W. */}
-          <ModeRow
+          <SegmentedControl
             title="AC charging power"
             subtitle="How hard the station pulls from the wall."
             value={settings.acChargingWatts}
@@ -236,7 +235,7 @@ function SettingsView({
             to it would drift under the user's finger, so offer fixed delays and
             report the remaining time separately.
           */}
-          <ModeRow
+          <SegmentedControl
             title="Delay AC charging"
             subtitle={
               settings.stopChargeAfterMinutes > 0
@@ -313,7 +312,7 @@ function SettingsView({
         <SectionLabel>Panel</SectionLabel>
         <Card inset>
           {/* Stored in seconds. BrightEMS offers exactly these four. */}
-          <ModeRow
+          <SegmentedControl
             title="Screen shutdown"
             subtitle="How long the station's own display stays lit."
             value={settings.screenRestSeconds}

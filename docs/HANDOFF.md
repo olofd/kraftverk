@@ -74,7 +74,9 @@ empty: the core names no product, and every device is found, not listed.
 - **Automations at a glance** (2026-10-01,
   [AUTOMATIONS-UX.md](AUTOMATIONS-UX.md)): each automation a small card with
   a play button — the same in the list, on the home page and on a device's
-  page — and a page of its own, its parts in groups. Phase 1 of 3.
+  page — and a page of its own, its parts in groups, which Edit turns into
+  its form in place. Controls that fit a 320 px phone, by keyboard too, kept
+  so by `e2e/layout.e2e.ts`. All three phases done.
 - **Shared parts and a reserve** (2026-09-30,
   [SHARED-PARTS-AND-RESERVE.md](SHARED-PARTS-AND-RESERVE.md)): a run holds
   the parts it may change, and another automation's run that needs one is
