@@ -127,13 +127,15 @@ LABEL se.kraftverk.image="server"
 
 WORKDIR /app
 
-# Every path the server writes to points into /data. The source tree stays a
+# Every path the server writes to — and the reset passphrase it reads
+# (docs/DOCKER.md) — points into /data. The source tree stays a
 # read-only image layer owned by root, which is both tidier and one less thing a
 # running container can damage.
 ENV NODE_ENV=production \
     KRAFTVERK_DB=/data/kraftverk.db \
     KRAFTVERK_BROKER_DIR=/data/broker \
     KRAFTVERK_LOG_DIR=/data/logs \
+    KRAFTVERK_RESET_SECRET_FILE=/data/reset-secret \
     PORT=3333 \
     HOST=0.0.0.0
 
