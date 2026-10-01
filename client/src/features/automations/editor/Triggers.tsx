@@ -6,7 +6,7 @@ import { haptic, Icon } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
 import { useTone } from '../looks';
-import { ConditionField } from './Condition';
+import { blankCondition, ConditionField } from './Condition';
 import { pickPart, useEditor } from './context';
 import { Chips, DaysField, Label, NumberField, Picker, TimeField } from './fields';
 
@@ -26,31 +26,50 @@ const TRIGGER_KINDS: { value: TriggerKind; label: string; says: string; icon: 'c
   { value: 'event', label: 'When a device says so', says: 'When a device reports something happened: mains lost, a charge started.', icon: 'bell' },
 ];
 
+/** A trigger of a kind to start from — one its fields can draw: a condition starts as a reading of a part still to choose. */
 const blankTrigger = (kind: TriggerKind): Trigger =>
-  kind === 'at' ? { at: { value: '07:00' } } : kind === 'every' ? { every: { value: 15 } } : kind === 'becomes' ? { becomes: { value: true } } : { event: { role: '', event: '' } };
+  kind === 'at' ? { at: { value: '07:00' } } : kind === 'every' ? { every: { value: 15 } } : kind === 'becomes' ? { becomes: blankCondition(null) } : { event: { role: '', event: '' } };
 
-/** Its triggers, each with its fields and a way to remove it, and a way to add one. */
+/**
+ * Its triggers: each one line — what starts it, in its own words — opened to
+ * change it, one at a time; a way to remove it, and a way to add one, which
+ * opens as it is added.
+ */
 export function Triggers() {
   const tone = useTone();
   const editor = useEditor();
   const when = editor.draft.rule.when;
   const [adding, setAdding] = useState(false);
+  const [opened, setOpened] = useState<number | null>(null);
   const put = (next: readonly Trigger[]) => editor.change((draft) => ({ ...draft, rule: { ...draft.rule, when: next } }));
   const set = (index: number, trigger: Trigger) => put(when.map((one, at) => (at === index ? trigger : one)));
 
   return (
     <YStack gap="$2">
-      {when.map((trigger, index) => (
-        <YStack key={index} gap="$2" padding="$3" borderRadius="$4" borderWidth={1} borderColor="$borderColor" backgroundColor="$card" role="group" aria-label={`Trigger ${index + 1}`}>
-          <XStack alignItems="center" justifyContent="space-between" gap="$2">
-            <Text fontSize={11} fontWeight="800" color="$muted" textTransform="uppercase" letterSpacing={0.6}>
-              {TRIGGER_KINDS.find((kind) => kind.value in trigger)?.label}
-            </Text>
-            <Button size="$2" chromeless circular aria-label={`Remove trigger ${index + 1}`} icon={<Icon name="trash-2" size={14} color={tone('$danger')} />} onPress={() => (haptic(), put(when.filter((_, at) => at !== index)))} />
-          </XStack>
-          <TriggerFields trigger={trigger} set={(next) => set(index, next)} />
-        </YStack>
-      ))}
+      {when.map((trigger, index) => {
+        const open = opened === index;
+        const kind = TRIGGER_KINDS.find((candidate) => candidate.value in trigger);
+        const said = editor.saidTrigger(trigger);
+        return (
+          <YStack key={index} gap="$3" padding="$3" borderRadius="$4" borderWidth={1} borderColor={open ? '$accent' : '$borderColor'} backgroundColor="$background" role="group" aria-label={`Trigger ${index + 1}`}>
+            <XStack alignItems="center" gap="$2">
+              <YStack flex={1}>
+                <Pressable onPress={() => setOpened(open ? null : index)} label={`${open ? 'Close' : 'Change'} trigger ${index + 1}: ${said}`}>
+                  <XStack alignItems="center" gap="$2.5" minHeight={44}>
+                    <Icon name={kind?.icon ?? 'clock'} size={16} color={tone('$accent')} />
+                    <Text flex={1} fontSize={15} color="$color" lineHeight={21}>
+                      {said}
+                    </Text>
+                    <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} color={tone('$muted')} />
+                  </XStack>
+                </Pressable>
+              </YStack>
+              <Button size="$3" chromeless circular aria-label={`Remove trigger ${index + 1}`} icon={<Icon name="x" size={16} color={tone('$muted')} />} onPress={() => (haptic(), setOpened(null), put(when.filter((_, at) => at !== index)))} />
+            </XStack>
+            {open ? <TriggerFields trigger={trigger} set={(next) => set(index, next)} /> : null}
+          </YStack>
+        );
+      })}
       {when.length === 0 ? (
         <Text fontSize={13} color="$muted" lineHeight={19}>
           Nothing starts it on its own: it runs when you start it, or another automation does.
@@ -59,7 +78,7 @@ export function Triggers() {
       {adding ? (
         <YStack gap="$1" padding="$2" borderRadius="$3" borderWidth={1} borderColor="$accent" role="menu" aria-label="Add a trigger">
           {TRIGGER_KINDS.map((kind) => (
-            <Pressable key={kind.value} onPress={() => (haptic(), put([...when, blankTrigger(kind.value)]), setAdding(false))} label={`Add: ${kind.label}`}>
+            <Pressable key={kind.value} onPress={() => (haptic(), put([...when, blankTrigger(kind.value)]), setOpened(when.length), setAdding(false))} label={`Add: ${kind.label}`}>
               <XStack gap="$2.5" alignItems="flex-start" paddingHorizontal="$2" paddingVertical="$1.5">
                 <Icon name={kind.icon} size={15} color={tone('$accent')} style={{ marginTop: 2 }} />
                 <YStack flex={1} gap={1}>
@@ -169,26 +188,45 @@ function TriggerFields({ trigger, set }: { trigger: Trigger; set: (trigger: Trig
   );
 }
 
-/** "Only if": a condition it must meet to act, whatever started it — or none. */
+/**
+ * "Only if": a condition it must meet to act, whatever started it — or none.
+ * Set, it reads as one line, opened to change it; a new one opens as it is
+ * added.
+ */
 export function OnlyIf() {
   const tone = useTone();
   const editor = useEditor();
   const condition = editor.draft.rule.if;
+  const [open, setOpen] = useState(false);
   const put = (next: Expr | null) =>
     editor.change((draft) => {
       const { if: _if, ...rest } = draft.rule;
       return { ...draft, rule: next ? { ...rest, if: next } : rest };
     });
-  return condition ? (
-    <YStack gap="$2">
-      <ConditionField label="Only if" expr={condition} onChange={put} />
-      <Button alignSelf="flex-start" size="$2" chromeless color="$danger" icon={<Icon name="x" size={13} color={tone('$danger')} />} onPress={() => put(null)}>
-        No condition
+  if (!condition) {
+    return (
+      <Button alignSelf="flex-start" size="$3" chromeless color="$accent" icon={<Icon name="plus" size={14} color={tone('$accent')} />} onPress={() => (put(blankCondition(null)), setOpen(true))}>
+        Add a condition it must meet
       </Button>
+    );
+  }
+  const said = editor.saidExpr(condition);
+  return (
+    <YStack gap="$3" padding="$3" borderRadius="$4" borderWidth={1} borderColor={open ? '$accent' : '$borderColor'} backgroundColor="$background">
+      <XStack alignItems="center" gap="$2">
+        <YStack flex={1}>
+          <Pressable onPress={() => setOpen((was) => !was)} label={`${open ? 'Close' : 'Change'} the condition: ${said}`}>
+            <XStack alignItems="center" gap="$2.5" minHeight={44}>
+              <Text flex={1} fontSize={15} color="$color" lineHeight={21}>
+                {said.charAt(0).toUpperCase() + said.slice(1)}
+              </Text>
+              <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} color={tone('$muted')} />
+            </XStack>
+          </Pressable>
+        </YStack>
+        <Button size="$3" chromeless circular aria-label="Remove the condition" icon={<Icon name="x" size={16} color={tone('$muted')} />} onPress={() => (haptic(), setOpen(false), put(null))} />
+      </XStack>
+      {open ? <ConditionField label="Only if" expr={condition} onChange={put} /> : null}
     </YStack>
-  ) : (
-    <Button alignSelf="flex-start" size="$2" chromeless color="$accent" icon={<Icon name="plus" size={13} color={tone('$accent')} />} onPress={() => put({ reachable: Object.keys(editor.draft.roles)[0] ?? '' })}>
-      Add a condition it must meet
-    </Button>
   );
 }

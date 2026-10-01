@@ -30,7 +30,8 @@ test('start charging: copied from its recipe, its parts chosen, run from its pag
 
   // The recipe's blocks, each yours to change; its parts still to choose.
   await expect(page.getByRole('listitem', { name: /^Wait until: Wait until the charger’s plug can be reached/ })).toBeVisible();
-  await expect(page.getByRole('status')).toContainText('What powers the charger: choose one of your devices');
+  // What is still to choose is said in the group it is about.
+  await expect(page.getByRole('region', { name: 'Uses' }).getByText('What powers the charger: choose one of your devices')).toBeVisible();
   await pick(page, 'What powers the charger', `${station.name} — AC outlets`);
   await pick(page, 'The charger’s plug', plug.name);
   await expect(page.getByRole('status')).toContainText('It can run as it is');
@@ -74,6 +75,16 @@ test('start charging: copied from its recipe, its parts chosen, run from its pag
   await automations.getByRole('button', { name: `New automation with ${plug.name}` }).click();
   await expect(page).toHaveURL(new RegExp(`/automation/new\\?device=${plug.id}$`));
   await expect(page.getByRole('button', { name: `Back to ${plug.name}` })).toBeVisible();
+  // From nothing, a step's part: the plug it was started from is offered first.
+  await press(page, 'Nothing');
+  await press(page, 'Add a step');
+  await page.getByRole('button', { name: 'Add: Switch or send' }).click();
+  await page.getByRole('button', { name: /^Which part: .*Choose$/ }).click();
+  await expect(page.getByRole('region', { name: 'Does' }).getByRole('radio').first()).toHaveAccessibleName(new RegExp(`^${plug.name}`));
+  // Left, asked first: nothing is made.
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect(await answer(page, true)).toContain('It is not made');
+  await expect(page).toHaveURL(new RegExp(`/device/${plug.id}$`));
   // Its card opens its page.
   await page.goto(`/device/${plug.id}`);
   await page.getByRole('button', { name: new RegExp(`^${name}: `) }).click();
@@ -104,8 +115,8 @@ test('built from nothing: a time, a setting changed, and another automation star
 
   await page.goto('/automation/new');
   await press(page, 'Nothing');
-  // Nothing in it yet: it says so, and what it still needs.
-  await expect(page.getByRole('status')).toContainText('What it does: it does nothing');
+  // Nothing in it yet: it says so, in the group it is about, and how it reads.
+  await expect(page.getByRole('region', { name: 'Does' }).getByText('What it does: it does nothing')).toBeVisible();
   await expect(page.getByRole('status')).toContainText('Nothing yet.');
   const name = unique('Morning');
   await page.getByLabel('Name').fill(name);

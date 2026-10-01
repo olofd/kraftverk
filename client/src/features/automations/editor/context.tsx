@@ -5,6 +5,7 @@ import {
   capabilitiesOf,
   describeExpr,
   describeSteps,
+  describeTriggers,
   isAutomationRole,
   meetsNeed,
   partName,
@@ -16,6 +17,7 @@ import {
   type Expr,
   type RuleVocabulary,
   type Step,
+  type Trigger,
 } from '@kraftverk/device-sdk';
 
 import { partRole, type Draft } from './draft';
@@ -33,6 +35,8 @@ export type EditorKit = {
   /** The other automations: what a "start" block may start. */
   automations: readonly AutomationView[];
   functions: readonly FunctionView[];
+  /** The device a new one was started from: its parts are offered first. */
+  prefer?: string | null;
 };
 
 const EditorContext = createContext<EditorKit | null>(null);
@@ -48,7 +52,7 @@ export type PartOption = { key: string; title: string; subtitle?: string; role: 
 export function useEditor() {
   const kit = useContext(EditorContext);
   if (!kit) throw new Error('The editor is used outside its provider');
-  const { draft, devices, automations, functions } = kit;
+  const { draft, devices, automations, functions, prefer } = kit;
 
   return useMemo(() => {
     const deviceOf = (binding: RoleBinding | undefined) => (binding ? devices.find((device) => device.id === binding.device) : undefined);
@@ -84,6 +88,8 @@ export function useEditor() {
     const said = (step: Step): string => describeSteps({ ...draft.rule, then: [step], otherwise: [] }, {}, name, vocabulary).steps[0]?.text ?? '';
     /** A condition in words. */
     const saidExpr = (expr: Expr): string => describeExpr(draft.rule, expr, {}, name, vocabulary);
+    /** What starts it, one trigger, in words: "At 07:00 on weekdays". */
+    const saidTrigger = (trigger: Trigger): string => describeTriggers({ ...draft.rule, when: [trigger] }, {}, name, vocabulary)[0] ?? '';
     /**
      * Every part a block may use: the draft's own first, by the names its
      * steps use, then each part of each of your devices that fits.
@@ -96,6 +102,8 @@ export function useEditor() {
       const taken = new Set(used.map((option) => `${option.binding.device}:${option.binding.part}`));
       const others = devices
         .filter((device) => !device.removedAt)
+        // The device it was started from, first: what its owner came to automate.
+        .sort((a, b) => Number(b.id === prefer) - Number(a.id === prefer))
         .flatMap((device) =>
           partsOf(device.description, device.name)
             .filter((part) => fits(device.description, part.id) && !taken.has(`${device.id}:${part.id}`))
@@ -108,11 +116,11 @@ export function useEditor() {
     };
     /** Parts that offer what a need asks. */
     const offering = (need: CapabilityNeed) => (description: DeviceDescription, part: string) => meetsNeed(need, capabilitiesOf(description, part));
-    return { ...kit, name, partOf, vocabulary, said, saidExpr, parts, offering };
-  }, [kit, draft, devices, automations, functions]);
+    return { ...kit, name, partOf, vocabulary, said, saidExpr, saidTrigger, parts, offering };
+  }, [kit, draft, devices, automations, functions, prefer]);
 }
 
 /** A part picked for a block: the role it fills — its own, or a new one — and the draft with it. */
 export function pickPart(draft: Draft, option: PartOption): { draft: Draft; role: string } {
-  return option.role ? { draft, role: option.role } : partRole(draft, option.binding, option.description, option.name);
+  return option.role ? { draft, role: option.role } : partRole(draft, option.binding, option.description);
 }

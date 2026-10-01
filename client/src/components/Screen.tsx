@@ -27,18 +27,23 @@ type Props = {
   /** Beside the title, on the right: the device's picture. The status then sits under the title. */
   aside?: ReactNode;
   children: ReactNode;
+  /**
+   * Kept below the page, not scrolled with it: what a form saves with — Cancel
+   * and Save, and whether it can be saved — always in reach.
+   */
+  footer?: ReactNode;
 };
 
 /**
  * Shared page chrome: safe-area padding, a centred max-width column so the web
  * build doesn't stretch to 2000px, pull-to-refresh, and the offline banner.
  */
-export function Screen({ title, subtitle, back, backTo, status, aside, children }: Props) {
+export function Screen({ title, subtitle, back, backTo, status, aside, children, footer }: Props) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { connection, refresh } = useDevices();
 
-  return (
+  const page = (
     <ScrollView
       flex={1}
       backgroundColor="$background"
@@ -110,6 +115,17 @@ export function Screen({ title, subtitle, back, backTo, status, aside, children 
         </YStack>
       </YStack>
     </ScrollView>
+  );
+  if (!footer) return page;
+  return (
+    <YStack flex={1} backgroundColor="$background">
+      {page}
+      <YStack borderTopWidth={1} borderColor="$borderColor" backgroundColor="$card" paddingHorizontal={16} paddingTop={12} paddingBottom={insets.bottom + 12} alignItems="center">
+        <YStack width="100%" maxWidth={560}>
+          {footer}
+        </YStack>
+      </YStack>
+    </YStack>
   );
 }
 

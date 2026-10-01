@@ -49,22 +49,22 @@ describe('blocks', () => {
 });
 
 describe('roles', () => {
-  test('a part picked fills one role, whatever uses it; one nothing uses is not kept', () => {
-    const first = partRole(EMPTY, plug, PLUG, 'Scooter plug');
+  test('a part picked fills one role, whatever uses it — labelled by what it is, not by a name that can change; one nothing uses is not kept', () => {
+    const first = partRole(EMPTY, plug, PLUG);
     expect(first.role).toBe('part1');
-    expect(first.draft.rule.roles.part1).toEqual({ label: 'Scooter plug', description: 'Scooter plug', capabilities: ['switch', 'powerMeter'] });
+    expect(first.draft.rule.roles.part1).toEqual({ label: 'Switch', description: 'Switch', capabilities: ['switch', 'powerMeter'] });
     // Picked again, for another block: the same role.
-    expect(partRole(first.draft, plug, PLUG, 'Scooter plug').role).toBe('part1');
+    expect(partRole(first.draft, plug, PLUG).role).toBe('part1');
     const used = { ...first.draft, rule: insertStep(first.draft.rule, THEN, 0, blankStep('command', 'part1')) };
     expect(checkRule(used.rule, { fn: () => null })).toEqual([]);
     expect(pruned(used).roles).toEqual({ part1: plug });
     expect(pruned(first.draft)).toMatchObject({ rule: { roles: {} }, roles: {} });
   });
 
-  test('an automation to start fills a role of its own kind', () => {
-    const { draft, role } = automationRole(EMPTY, 'a-charge' as AutomationId, '“Charge the scooter”');
+  test('an automation to start fills a role of its own kind, labelled as what it is', () => {
+    const { draft, role } = automationRole(EMPTY, 'a-charge' as AutomationId);
     expect(role).toBe('automation1');
-    expect(draft.rule.roles.automation1).toEqual({ automation: true, label: '“Charge the scooter”', description: '“Charge the scooter”' });
+    expect(draft.rule.roles.automation1).toEqual({ automation: true, label: 'Another automation', description: 'An automation it starts' });
     expect(draft.starts).toEqual({ automation1: 'a-charge' });
   });
 });

@@ -60,6 +60,9 @@ function roleOf(expr: Expr): string | null {
   return null;
 }
 
+/** A condition to start from: a reading of a part — the one given, or one still to choose. */
+export const blankCondition = (role: string | null): Expr => blankOf('reading', role);
+
 /** A condition of a kind, to start from: about the same part, where it was about one. */
 function blankOf(kind: Kind, role: string | null): Expr {
   switch (kind) {

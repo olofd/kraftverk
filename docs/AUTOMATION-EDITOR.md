@@ -237,8 +237,9 @@ that acts), and `stop` stops. It does not build rules; a person does.
 - Its name opens **its own page** (`/automation/:id`): Run, Edit, ⋯ (What
   would it do now, Rehearse, Delete), and each part of it in a group of its
   own — When, Only if, Does, If a step fails, Right now, On its own (the
-  mode), Activity. The editor is `/automation/:id/edit` and
-  `/automation/new`.
+  mode), Activity. Edit turns that page into its form, in place: the same
+  groups, editable, with Cancel and Save kept below it. A new one is
+  `/automation/new` — "Start from", then the same form.
 - A device's page ends with the automations it takes part in — the same
   list, and New, which starts from that device.
 

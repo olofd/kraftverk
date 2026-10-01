@@ -26,10 +26,12 @@ test('a charge window of your own, copied from the shared recipe', async ({ page
   await page.getByRole('button', { name: 'New automation' }).click();
   await press(page, 'Charge between two levels');
 
-  // Nothing chosen yet: it says what is missing rather than greying out Create in silence.
+  // Nothing chosen yet: it says what is missing, in the group it is about, rather than greying out Create in silence.
   const status = page.getByRole('status');
-  await expect(status).toContainText('Battery: choose one of your devices');
-  await expect(status).toContainText('What charges it: choose one of your devices');
+  const uses = page.getByRole('region', { name: 'Uses' });
+  await expect(uses.getByText('Battery: choose one of your devices')).toBeVisible();
+  await expect(uses.getByText('What charges it: choose one of your devices')).toBeVisible();
+  await expect(page.getByText('2 things to fix')).toBeVisible();
   await pick(page, 'Battery', station.name);
   await pick(page, 'What charges it', plug.name);
   await expect(status).toContainText('It can run as it is');
@@ -51,14 +53,24 @@ test('a charge window of your own, copied from the shared recipe', async ({ page
   // Once it has acted, what is switched by hand stays: until it is asked to keep things so.
   await expect(now.getByText(/what you switch by hand stays until one turns to yes again/)).toBeVisible();
 
-  // Changed after it was made, in the editor: a new name — saved with Enter, back on its page.
+  // Edit turns its page into its form: the same groups, editable. Cancel, asked first, keeps it as it was.
+  await main.getByRole('button', { name: 'Edit' }).click();
+  await page.getByLabel('Name').fill('Not kept');
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect(await answer(page, true)).toContain('What you changed is not kept');
+  await expect(page.getByRole('heading', { level: 1, name: 'Charge between two levels' })).toBeVisible();
+
+  // Changed, in its form: its step's "on while below 50 %" stays a condition — never a plain on or off —
+  // and a new name, saved with Enter, back on its page.
   const renamed = unique('Charge window');
   await main.getByRole('button', { name: 'Edit' }).click();
-  await expect(page.getByText(/^Change “Charge between two levels”/)).toBeVisible();
+  await page.getByRole('button', { name: /^Open step: Turn .+ on if .+ below 50 %, off if not$/ }).click();
+  await expect(page.getByText('On while this holds, off when it does not:')).toBeVisible();
   await page.getByLabel('Name').fill(renamed);
   await expect(page.getByRole('status')).toContainText('It can run as it is');
   await page.getByLabel('Name').press('Enter');
   await expect(page.getByRole('heading', { level: 1, name: renamed })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Does' }).getByText(/^Turn .+ on if .+ charge is below 50 %, off if not$/)).toBeVisible();
 
   // Kept so, on its page: a look every ten minutes — not asked, while it only watches.
   await main.getByRole('radio', { name: '10 min' }).click();

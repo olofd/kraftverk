@@ -23,6 +23,7 @@ import { Pressable } from '../../../components/Pressable';
 import { Screen } from '../../../components/Screen';
 import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../../lib/confirm';
 import { startsBy } from '../AutomationCard';
+import { AutomationForm } from '../editor/AutomationForm';
 import { clock, useTone } from '../looks';
 import { RunSteps, StepPlan } from '../Steps';
 import { useReadAgain } from '../useReadAgain';
@@ -36,11 +37,13 @@ import { MODES, modeSays, RECHECK, recheckSays, wantsYes, every } from './modes'
  * button that runs it, then each part of it in a group of its own — what
  * starts it, what it must meet, what it does, what it does if a step fails,
  * how it stands right now, what it does on its own, and what it has done.
- * Edit changes it; what is rarely needed is under ⋯.
+ * What is rarely needed is under ⋯. Edit turns the same page into its form —
+ * the same groups, editable — with Cancel and Save below it.
  */
 export function AutomationPage({ id }: { id: string }) {
   const [automation, setAutomation] = useState<AutomationView | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
 
   const load = useCallback(() => {
     fetchAutomation(id)
@@ -66,10 +69,22 @@ export function AutomationPage({ id }: { id: string }) {
       </Screen>
     );
   }
-  return <Page automation={automation} onChanged={setAutomation} />;
+  if (editing) {
+    return (
+      <AutomationForm
+        existing={automation}
+        initial={{ name: automation.name, rule: automation.rule, roles: automation.roles, starts: automation.starts }}
+        madeFrom={automation.madeFrom?.id ?? null}
+        back={{ label: 'Automations', to: '/automations' }}
+        onSaved={(next) => (setAutomation(next), setEditing(false))}
+        onCancel={() => setEditing(false)}
+      />
+    );
+  }
+  return <Page automation={automation} onChanged={setAutomation} onEdit={() => setEditing(true)} />;
 }
 
-function Page({ automation, onChanged }: { automation: AutomationView; onChanged: (next: AutomationView) => void }) {
+function Page({ automation, onChanged, onEdit }: { automation: AutomationView; onChanged: (next: AutomationView) => void; onEdit: () => void }) {
   const [checked, setChecked] = useState<AutomationRun | null>(null);
   const [rehearsal, setRehearsal] = useState<Rehearsal | null>(null);
   const onItsOwn = automation.when.length > 0;
@@ -79,7 +94,7 @@ function Page({ automation, onChanged }: { automation: AutomationView; onChanged
 
   return (
     <Screen back="Automations" backTo="/automations" title={automation.name}>
-      <Header automation={automation} onChanged={onChanged} onChecked={setChecked} onRehearsed={setRehearsal} />
+      <Header automation={automation} onChanged={onChanged} onEdit={onEdit} onChecked={setChecked} onRehearsed={setRehearsal} />
 
       {checked ? (
         <Group icon="help-circle" title="If it ran now" summary="Nothing is sent">
@@ -159,11 +174,13 @@ function Page({ automation, onChanged }: { automation: AutomationView; onChanged
 function Header({
   automation,
   onChanged,
+  onEdit,
   onChecked,
   onRehearsed,
 }: {
   automation: AutomationView;
   onChanged: (next: AutomationView) => void;
+  onEdit: () => void;
   onChecked: (run: AutomationRun) => void;
   onRehearsed: (rehearsal: Rehearsal) => void;
 }) {
@@ -222,7 +239,7 @@ function Header({
             Run
           </Button>
         )}
-        <Button size="$4" backgroundColor="$card" borderWidth={1} borderColor="$borderColor" disabled={running} opacity={running ? 0.5 : 1} icon={<Icon name="edit-3" size={16} color={tone('$color')} />} onPress={() => (haptic(), router.push(`/automation/${automation.id}/edit`))}>
+        <Button size="$4" backgroundColor="$card" borderWidth={1} borderColor="$borderColor" disabled={running} opacity={running ? 0.5 : 1} icon={<Icon name="edit-3" size={16} color={tone('$color')} />} onPress={() => (haptic(), onEdit())}>
           Edit
         </Button>
         <Button size="$4" width={48} circular backgroundColor="$card" borderWidth={1} borderColor="$borderColor" aria-label="More" aria-expanded={menu} icon={<Icon name="more-horizontal" size={18} color={tone('$color')} />} onPress={() => (haptic(), setMenu((open) => !open))} />

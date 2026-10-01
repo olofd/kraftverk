@@ -19,6 +19,7 @@ import {
 import { haptic, Icon } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
+import { confirmAction } from '../../../lib/confirm';
 import { KIND as KIND_ICON, useTone } from '../looks';
 import { ConditionField } from './Condition';
 import { pickPart, useEditor } from './context';
@@ -241,11 +242,47 @@ function CommandFields({ command, set }: { command: Command; set: (command: Comm
             return (
               <YStack key={name} gap="$1">
                 <Label>{isSwitch ? 'Turn it' : name}</Label>
-                <ValueField label={isSwitch ? 'Turn it' : name} type={type} value={arg && 'value' in arg ? arg.value : null} onChange={(next) => set({ ...command, args: { ...command.args, [name]: { value: next } } })} />
+                <ArgField label={isSwitch ? 'Turn it' : name} type={type} expr={arg} switchLike={isSwitch} onChange={(next) => set({ ...command, args: { ...command.args, [name]: next } })} />
               </YStack>
             );
           })
         : null}
+    </YStack>
+  );
+}
+
+/**
+ * A value a step sends: typed as a value — or, when it is worked out as the
+ * step runs ("on if the charge is below 50 %, off if not", as a copied charge
+ * window has it), kept as that: a condition stays a condition to change,
+ * anything else is said in words, and making it a fixed value is asked first.
+ * Never replaced by a tap.
+ */
+function ArgField({ label, type, expr, switchLike, onChange }: { label: string; type: Parameters<typeof ValueField>[0]['type']; expr: Expr | undefined; switchLike?: boolean; onChange: (expr: Expr) => void }) {
+  const editor = useEditor();
+  if (!expr || 'value' in expr) return <ValueField label={label} type={type} value={expr && 'value' in expr ? expr.value : null} onChange={(next) => onChange({ value: next })} />;
+  const fixed = async () => {
+    const said = editor.saidExpr(expr);
+    if (await confirmAction('Use a fixed value instead?', `Now it is worked out as it runs: ${said}. A fixed value is the same every time.`, 'Use a fixed value')) onChange({ value: startValue(type) });
+  };
+  const condition = type?.type === 'boolean';
+  return (
+    <YStack gap="$2">
+      {condition ? (
+        <>
+          <Text fontSize={13} color="$muted" lineHeight={19}>
+            {switchLike ? 'On while this holds, off when it does not:' : 'Yes while this holds, no when it does not:'}
+          </Text>
+          <ConditionField label={label} expr={expr} onChange={onChange} />
+        </>
+      ) : (
+        <Text fontSize={15} color="$color" lineHeight={21}>
+          {editor.saidExpr(expr)}
+        </Text>
+      )}
+      <Button alignSelf="flex-start" size="$3" chromeless color="$accent" onPress={() => void fixed()}>
+        Use a fixed value instead
+      </Button>
     </YStack>
   );
 }
@@ -285,7 +322,7 @@ function WriteFields({ write, set }: { write: Write; set: (write: Write) => void
       {chosen ? (
         <YStack gap="$1">
           <Label>Set it to</Label>
-          <ValueField label="Set it to" type={chosen.value} value={'value' in write.value ? write.value.value : null} onChange={(next) => set({ ...write, value: { value: next } })} />
+          <ArgField label="Set it to" type={chosen.value} expr={write.value} onChange={(next) => set({ ...write, value: next })} />
         </YStack>
       ) : null}
     </YStack>
@@ -306,7 +343,7 @@ function StartFields({ start, waits, set }: { start: Extract<Step, { start: unkn
           placeholder="Choose an automation"
           options={editor.automations.map((automation) => ({ key: automation.id, title: automation.name, subtitle: automation.sentence, value: automation, selected: automation.id === chosen }))}
           onPick={(automation) => {
-            const picked = automationRole(editor.draft, automation.id, `“${automation.name}”`);
+            const picked = automationRole(editor.draft, automation.id);
             editor.change(() => picked.draft);
             set({ ...start, role: picked.role });
           }}

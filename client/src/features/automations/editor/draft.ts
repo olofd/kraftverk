@@ -1,6 +1,7 @@
 import type { AutomationDraft, AutomationId, RecipeView, RoleBinding } from '@kraftverk/api-client';
 import {
   capabilitiesOf,
+  capabilityIn,
   inlineParams,
   isAutomationRole,
   NO_SETTINGS,
@@ -118,25 +119,28 @@ const freshRole = (rule: Rule, stem: string): string => {
 
 /**
  * The role a part fills in the draft: the one it already fills, or a new one
- * — asking for what the part offers, named as the part is.
+ * — asking for what the part offers, and labelled by what it is ("Switch",
+ * "Battery"), not by the device's name, which can change: whatever fills it
+ * is named from the device as it is now.
  */
-export function partRole(draft: Draft, binding: RoleBinding, description: DeviceDescription, name: string): { draft: Draft; role: string } {
+export function partRole(draft: Draft, binding: RoleBinding, description: DeviceDescription): { draft: Draft; role: string } {
   const found = Object.entries(draft.roles).find(([, bound]) => bound.device === binding.device && bound.part === binding.part);
   if (found) return { draft, role: found[0] };
   const role = freshRole(draft.rule, 'part');
   const capabilities = capabilitiesOf(description, binding.part).filter((capability): capability is CapabilityName => typeof capability === 'string');
+  const label = (capabilities[0] ? capabilityIn(description, capabilities[0])?.label : undefined) ?? 'A part';
   return {
     role,
     draft: {
       ...draft,
-      rule: { ...draft.rule, roles: { ...draft.rule.roles, [role]: { label: name, description: name, capabilities } } },
+      rule: { ...draft.rule, roles: { ...draft.rule.roles, [role]: { label, description: label, capabilities } } },
       roles: { ...draft.roles, [role]: binding },
     },
   };
 }
 
-/** The role an automation fills in the draft, to be started: the one it already fills, or a new one. */
-export function automationRole(draft: Draft, automation: AutomationId, name: string): { draft: Draft; role: string } {
+/** The role an automation fills in the draft, to be started: the one it already fills, or a new one — labelled as what it is, its name shown from the automation as it is now. */
+export function automationRole(draft: Draft, automation: AutomationId): { draft: Draft; role: string } {
   const found = Object.entries(draft.starts).find(([, started]) => started === automation);
   if (found) return { draft, role: found[0] };
   const role = freshRole(draft.rule, 'automation');
@@ -144,7 +148,7 @@ export function automationRole(draft: Draft, automation: AutomationId, name: str
     role,
     draft: {
       ...draft,
-      rule: { ...draft.rule, roles: { ...draft.rule.roles, [role]: { automation: true, label: name, description: name } } },
+      rule: { ...draft.rule, roles: { ...draft.rule.roles, [role]: { automation: true, label: 'Another automation', description: 'An automation it starts' } } },
       starts: { ...draft.starts, [role]: automation },
     },
   };

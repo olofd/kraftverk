@@ -236,6 +236,19 @@ view mode with its groups and ⋯ menu, the device page's list, and the
 general fixes — the selection colour, Enter that submits every form,
 headings and landmarks (and a back link a keyboard can reach).
 
+**Phase 2 done, 2026-10-01**: Edit turns the automation's page into its form
+in place — the same groups, editable, Cancel (asked first when something
+changed) and Save kept below the page, and what is wrong said in the group it
+is about; a new one is the same form after "Start from". Triggers and "Only
+if" read as one line, opened to change. A value worked out as it runs ("on
+while the charge is below 50 %") stays a condition, and becoming a fixed
+value is asked first. A new "When something holds" starts from a reading the
+editor can draw. A part's role is labelled by what it is ("Switch"), never by
+a device's name that can change. Started from a device, a new one offers that
+device first wherever a part is chosen, and lists the recipes it fits first —
+it fills no role by itself: a plug fits both a charger's supply and its plug,
+and a guess would be wrong as often as right.
+
 1. **U1 — Fix what is broken (small).** Pill rows that wrap, never
    overflow; a `DurationField` and a native `TimeField`; 44 px targets; step
    actions in a "⋯" menu instead of three icons; Delete into a menu; the
