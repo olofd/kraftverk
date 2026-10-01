@@ -340,7 +340,11 @@ erDiagram
   automation ||--o{ automation_trigger : "watches with"
   automation ||--o{ automation_run : "ran"
   automation_run |o--o{ automation_run : "started"
-  automation_run ||--o{ automation_run_reading : "heard"
+  automation_run ||--o{ automation_run_device : "used"
+  automation_run_device ||--o{ automation_run_role : "filled"
+  automation_run_device ||--o{ automation_run_key : "gave"
+  automation_run_key ||--o{ automation_run_reading : "read"
+  automation_run_device ||--o{ automation_run_reach : "could be reached"
 
   device {
     text id PK "d-3f9a2c61b0e4"
@@ -468,12 +472,44 @@ erDiagram
     text summary "Scooter plug: Power 238 W, after 2 tries"
     json detail "{saw, conditions, steps: [{kind, depth, within, what, outcome, detail, at, endedAt, until}]}"
   }
+  automation_run_device {
+    text run_id PK "r-5b2e90c4a1d3f7e2"
+    text device_id PK "d-5b2e90c4a1d3 · no reference to device: a log outlives its device"
+    text name "Garage station · as it was named then"
+    text type_id "acme.station"
+  }
+  automation_run_role {
+    text run_id PK "r-5b2e90c4a1d3f7e2"
+    text role PK "charger"
+    text label "The charger’s plug"
+    text device_id FK "d-9a8b7c6d5e4f"
+    text part "main"
+  }
+  automation_run_key {
+    text run_id PK "r-5b2e90c4a1d3f7e2"
+    text device_id PK "d-9a8b7c6d5e4f"
+    text key PK "watts · outlet.ac.watts"
+    text part "main · outlet.ac"
+    text label "Power · AC outlets draw"
+    text kind "number · boolean · enum · text"
+    text unit "W · null: none"
+    text quantity "power · null: none"
+    json words "{true, false} · [{value, label}] · null"
+  }
   automation_run_reading {
     text run_id FK "r-5b2e90c4a1d3f7e2"
-    text device_id "d-5b2e90c4a1d3 · not a key: a device removed since leaves its readings"
-    text key "watts · outlet.ac.watts · @health"
+    text device_id FK "d-9a8b7c6d5e4f"
+    text key FK "watts"
     text at "2026-10-16T17:02:07.300Z · when the device took it"
-    json value "269 · true · \"offline: Its gateway cannot reach it\""
+    text heard_at "2026-10-16T17:02:07.302Z · when the run saw it"
+    json value "297 · true · null: the device has not said"
+  }
+  automation_run_reach {
+    text run_id FK "r-5b2e90c4a1d3f7e2"
+    text device_id FK "d-9a8b7c6d5e4f"
+    text at "2026-10-16T17:02:00.010Z"
+    int reachable "0 · 1"
+    text detail "Its gateway cannot reach it: is it plugged in?"
   }
   device_switch {
     text device_id PK "d-5b2e90c4a1d3"
@@ -557,7 +593,8 @@ erDiagram
 | `automation`, `automation_role` | An automation: its own rule, the recipe it was copied from, its clock, mode and place on the home page; and what fills each role — a part of a device, or another automation a step starts — a row each, so a device's page asks which automations it can start; an automation deleted takes with it the roles that would start it, and those that did say they have nothing to start. | made, changed |
 | `automation_trigger` | Each `becomes` trigger's state, so a restart continues a hold and never fires one twice. | as its conditions are looked at |
 | `automation_run` | Every run, with each step it took; the unended one is running now, written at every step — one at a time, held by a unique index. A restart ends it as interrupted (docs/SEQUENCES.md). | as it runs |
-| `automation_run_reading` | What every device a run that takes steps uses said while it ran: each reading each time it changed, at the time the device took it, and whether it could be reached (`@health`) — looked at every second, at most 20 000 a run, gone with its run. What its Activity shows as "What the devices said", and what a run is debugged from. | every second while it runs |
+| `automation_run_device`, `automation_run_role`, `automation_run_key` | A run's log, as the run saw its world: each device it used (its name and type then), which part of which device filled each role, and what each value it kept is (part, label, kind, unit, quantity, the words for on/off and options) — so a log stays whole when a device is renamed, re-described or removed, or a role filled by another. | as a run that takes steps begins, and as a value is first seen |
+| `automation_run_reading`, `automation_run_reach` | Every reading each device a run uses gave while it ran — each time its value or time changed, at the time the device took it and the time the run heard it — and each change in whether it could be reached, and why not. Heard as each device says it on the live bus, whenever a step judges or a switch is made, and every second; at most 20 000 readings a run, gone with its run. What a run's log page draws, and what a run is debugged from. | as devices speak while it runs |
 
 ### Rules the schema and the code enforce
 

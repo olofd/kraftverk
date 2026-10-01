@@ -212,13 +212,25 @@ too, and `app_state` keeps only what the home sets as a whole.
   to 15 s before its clock starts. On the owner's chain, Stop charging read
   the station's outlets at 190 W a moment after the charger's plug went off
   — the station's reading from before — and left the supply on.
-- **What the devices said, kept.** While a run that takes steps runs, every
-  reading of every device it uses is kept each time it changes, at the time
-  the device took it, with whether the device could be reached
-  (`automation_run_reading`; `GET /automations/:id/runs/:runId/readings`).
-  A run's Activity shows it as "What the devices said": a switch and the
-  watts that followed it, side by side. The minute samples of history cannot
-  say what happened inside a 20 s try.
+- **A run's log.** While a run that takes steps runs, every reading of
+  every device it uses is kept each time its value or time changes — at the
+  time the device took it, and the time the run heard it — with each change
+  in whether the device could be reached, and why not. It is heard as each
+  device says it (the live bus), whenever a step judges readings or a switch
+  is made — so what a step acted on is always there — and every second. The
+  run keeps the devices and roles it used, and what each value is, as they
+  were: a log stays whole when a device is renamed or removed. Five tables
+  (`automation_run_device`, `_role`, `_key`, `_reading`, `_reach`; see
+  DATA-MODEL.md); `GET /automations/:id/runs/:runId/log`, or `?format=csv`.
+  The minute samples of history cannot say what happened inside a 20 s try.
+- **The run log page** (`/automation/:id/run/:runId`, "Run log" in a run's
+  Activity): how it came out; every step, those that changed something
+  numbered; every value drawn across the run — numbers held from one reading
+  to the next, on/off and options as bands, the time a device was out of
+  reach shaded, the numbered steps marked on every chart — with a cursor, set
+  by a tap or a step, that reads every value at one moment; every reading in
+  time order, with how late it was heard; by device, and only what changed;
+  and the whole log to download, as a table or raw.
 - **`otherwise`** runs when a step does not succeed or someone stops the run:
   each of its steps tried whatever the others do, and not itself stopped.
 - **Observing.** An automation that only watches cannot walk a sequence on

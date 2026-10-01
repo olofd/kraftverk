@@ -163,7 +163,9 @@ const reader = (readings: () => { key: string; value: Value }[], clock: () => Da
 });
 
 /** A device as the engine sees it: reachable when it has a session, and asked for nothing more. */
-const asEngineDevice = (device: Omit<EngineDevice, 'reachable' | 'wantFresh'>): EngineDevice => ({
+const asEngineDevice = (device: Omit<EngineDevice, 'reachable' | 'wantFresh' | 'deviceName' | 'typeId'>): EngineDevice => ({
+  deviceName: device.name,
+  typeId: 'test.device',
   ...device,
   reachable: () => ({ reachable: device.device !== null, detail: device.offline }),
   wantFresh: () => {},
@@ -195,7 +197,7 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
     [`${STATION}:main`]: { name: 'Garage P280', removed: false, hasPart: true, part: 'main', description: STATION_DESCRIPTION, device: reader(() => [{ key: 'soc', value: station.soc }], () => now), offline: 'n/a', capabilities: ['battery'] },
     [`${STATION}:outlet.ac`]: { name: 'Garage P280 — AC outlets', removed: false, hasPart: true, part: 'outlet.ac', description: STATION_DESCRIPTION, device: null, offline: 'n/a', capabilities: ['switch'] },
     [`${STATION}:input.ac`]: { name: 'Garage P280 — Mains', removed: false, hasPart: true, part: 'input.ac', description: STATION_DESCRIPTION, device: null, offline: 'n/a', capabilities: ['acInput'] },
-  } satisfies Record<string, Omit<EngineDevice, 'reachable' | 'wantFresh'>>).map(([key, device]) => [key, asEngineDevice(device)]));
+  } satisfies Record<string, Omit<EngineDevice, 'reachable' | 'wantFresh' | 'deviceName' | 'typeId'>>).map(([key, device]) => [key, asEngineDevice(device)]));
   const store = new AutomationStore();
   const bus = new LiveBus();
   const engine = new AutomationEngine({

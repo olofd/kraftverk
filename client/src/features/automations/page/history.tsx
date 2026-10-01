@@ -1,7 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { useRouter } from 'expo-router';
 import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
-import { describeError, fetchRunReadings, type AuditEntry, type AutomationMode, type AutomationRun, type AutomationView, type ConditionState, type Rehearsal, type RunReadings } from '@kraftverk/api-client';
+import type { AuditEntry, AutomationMode, AutomationRun, AutomationView, ConditionState, Rehearsal } from '@kraftverk/api-client';
 import { Icon, IconLabel } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
@@ -133,107 +134,28 @@ export function RunDetail({ run, showConditions, automationId }: { run: Automati
         <Readings saw={run.saw} />
         {showConditions && run.conditions.length ? <Conditions conditions={run.conditions} /> : null}
         {run.steps.length ? <RunSteps run={run} /> : null}
-        {automationId && run.steps.length ? <DevicesSaid automationId={automationId} run={run} /> : null}
+        {automationId && run.steps.length ? <RunLogLink automationId={automationId} run={run} /> : null}
       </YStack>
     </XStack>
   );
 }
 
-/** How many of what devices said are shown before "Show all". */
-const SAID_SHOWN = 200;
-
-/**
- * What every device the run used said while it ran, folded until asked: one
- * line each time a reading changed, at the second the device said it, all
- * devices in one order — so a switch and the watts that followed it read
- * side by side.
- */
-export function DevicesSaid({ automationId, run }: { automationId: string; run: AutomationRun }) {
-  const tone = useTone();
-  const [open, setOpen] = useState(false);
-  const [all, setAll] = useState(false);
-  const [said, setSaid] = useState<RunReadings | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-  useEffect(() => {
-    if (!open || said || !run.id) return;
-    const controller = new AbortController();
-    fetchRunReadings(automationId, run.id, controller.signal)
-      .then(setSaid)
-      .catch((error: unknown) => controller.signal.aborted || setProblem(describeError(error)));
-    return () => controller.abort();
-  }, [open, said, automationId, run.id]);
+/** The way to a run's log: every value its devices gave while it ran, on a page of its own. */
+export function RunLogLink({ automationId, run }: { automationId: string; run: AutomationRun }) {
+  const router = useRouter();
   if (!run.id) return null;
-
-  // A value said again is no news: each line is a change.
-  const lines: { key: string; at: string; device: string; what: string; value: string }[] = [];
-  if (said) {
-    const last = new Map<string, string>();
-    for (const reading of said.readings) {
-      const id = `${reading.device} ${reading.key}`;
-      const value = JSON.stringify(reading.value);
-      if (last.get(id) === value) continue;
-      last.set(id, value);
-      const device = said.devices[reading.device];
-      const key = device?.keys[reading.key];
-      lines.push({ key: `${id} ${reading.at}`, at: reading.at, device: device?.name ?? reading.device, what: key?.label ?? reading.key, value: valueText(reading.value, key?.unit ?? null) });
-    }
-  }
-  const shown = all ? lines : lines.slice(0, SAID_SHOWN);
   return (
-    <YStack gap="$1.5">
-      <Pressable onPress={() => setOpen(!open)} label={`What the devices said while it ran: ${open ? 'hide' : 'show'}`}>
-        <XStack minHeight={40} alignItems="center" gap="$1.5">
-          <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} color={tone('$accent')} />
-          <Text fontSize={13} fontWeight="600" color="$accent">
-            What the devices said
-          </Text>
-        </XStack>
-      </Pressable>
-      {open ? (
-        problem ? (
-          <Text fontSize={13} color="$warning">
-            {problem}
-          </Text>
-        ) : !said ? (
-          <Spinner size="small" alignSelf="flex-start" />
-        ) : !lines.length ? (
-          <Text fontSize={13} color="$muted">
-            Nothing was kept for this run.
-          </Text>
-        ) : (
-          <YStack gap={2} role="list" aria-label="What the devices said">
-            {shown.map((line) => (
-              <XStack key={line.key} gap="$2" alignItems="flex-start" role="listitem">
-                <Text fontSize={12} color="$muted" lineHeight={18} fontVariant={['tabular-nums']} width={58}>
-                  {secondOf(line.at)}
-                </Text>
-                <Text fontSize={12} color="$color" lineHeight={18} flex={1}>
-                  {line.device} · {line.what}: <Text fontWeight="700">{line.value}</Text>
-                </Text>
-              </XStack>
-            ))}
-            {lines.length > shown.length ? (
-              <Button size="$2" minHeight={40} chromeless alignSelf="flex-start" color="$accent" onPress={() => setAll(true)}>
-                {`Show all ${lines.length}`}
-              </Button>
-            ) : null}
-          </YStack>
-        )
-      ) : null}
-    </YStack>
+    <Button
+      size="$3"
+      minHeight={44}
+      alignSelf="flex-start"
+      icon={<Icon name="activity" size={16} />}
+      aria-label={`Run log: ${run.summary}`}
+      onPress={() => router.push(`/automation/${automationId}/run/${run.id}`)}
+    >
+      Run log
+    </Button>
   );
-}
-
-/** "14:03:07": the second a device said it. */
-const secondOf = (at: string) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-
-/** A reading as it reads: "269 W", "on", "connected". */
-function valueText(value: unknown, unit: string | null): string {
-  if (value === true) return 'on';
-  if (value === false) return 'off';
-  if (value === null || value === undefined) return '—';
-  if (typeof value === 'number') return unit ? `${value} ${unit}` : String(value);
-  return typeof value === 'string' ? value : JSON.stringify(value);
 }
 
 /** A timeline entry that stands for a run: its full story is the run itself, read from its runs. */
@@ -345,7 +267,7 @@ export function Timeline({ history, automation }: { history: History | null; aut
                       <Readings saw={run.saw} />
                       {run.conditions.length ? <Conditions conditions={run.conditions} /> : null}
                       <RunSteps run={run} />
-                      {run.steps.length ? <DevicesSaid automationId={automation.id} run={run} /> : null}
+                      {run.steps.length ? <RunLogLink automationId={automation.id} run={run} /> : null}
                     </YStack>
                   ) : null}
                 </YStack>

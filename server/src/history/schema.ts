@@ -330,22 +330,85 @@ export const SCHEMA = `
   CREATE UNIQUE INDEX automation_run_one_at_a_time ON automation_run (automation_id) WHERE ended_at IS NULL;
 
   /*
-    What each device a run uses said while it ran — every reading of every
-    part, each time it changed, at the time the device took it — so a run
-    can be read back second by second: what the plug drew after each switch,
-    what the station gave, when a part could not be reached. Kept for runs
-    that take steps, with their run. key: the attribute's key, or
-    '@health' for whether it could be reached ("connected", "offline: …").
-    value: the reading as JSON. At most 20 000 rows a run.
+    A run's log (docs/SEQUENCES.md): what every device a run that takes
+    steps used said while it ran, second by second — kept with the run, gone
+    with it, and readable on its own whatever happens to the devices after:
+    renamed, re-described, removed, or a role filled by another.
+
+    automation_run_device: each device the run used, as it was then — its
+    name and its type. Not a reference to device: a device removed since
+    leaves its runs' logs whole.
+  */
+  CREATE TABLE automation_run_device (
+    run_id    TEXT NOT NULL REFERENCES automation_run (id) ON DELETE CASCADE,
+    device_id TEXT NOT NULL,
+    name      TEXT NOT NULL,
+    type_id   TEXT NOT NULL,
+    PRIMARY KEY (run_id, device_id)
+  );
+
+  /* Which part of which device filled each of the run's roles as it ran: "The charger's plug" was Smart plug, main. */
+  CREATE TABLE automation_run_role (
+    run_id    TEXT NOT NULL,
+    role      TEXT NOT NULL,
+    label     TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    part      TEXT NOT NULL,
+    PRIMARY KEY (run_id, role),
+    FOREIGN KEY (run_id, device_id) REFERENCES automation_run_device (run_id, device_id) ON DELETE CASCADE
+  );
+
+  /*
+    What each value the run kept was, as its device described it then: its
+    part, its label, its kind — a number (with its unit and quantity, NULL
+    where it has none), on/off, one of some options, or text (anything else,
+    kept as JSON) — and, for on/off and options, the words its values are
+    said in (JSON: {"true","false"}, or [{value,label}]; NULL when none).
+  */
+  CREATE TABLE automation_run_key (
+    run_id    TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    key       TEXT NOT NULL,
+    part      TEXT NOT NULL,
+    label     TEXT NOT NULL,
+    kind      TEXT NOT NULL CHECK (kind IN ('number', 'boolean', 'enum', 'text')),
+    unit      TEXT,
+    quantity  TEXT,
+    words     TEXT,
+    PRIMARY KEY (run_id, device_id, key),
+    FOREIGN KEY (run_id, device_id) REFERENCES automation_run_device (run_id, device_id) ON DELETE CASCADE,
+    CHECK (kind = 'number' OR (unit IS NULL AND quantity IS NULL)),
+    CHECK (words IS NULL OR kind IN ('boolean', 'enum'))
+  );
+
+  /*
+    Every reading the run's devices gave while it ran: each time its value
+    or its time changed. at: when the device took it; heard_at: when the run
+    saw it — the two apart say how late a reading came. value: JSON, null
+    for "the device has not said". Looked at every second; at most 20 000
+    readings a run, so a run left waiting long cannot fill the disk.
   */
   CREATE TABLE automation_run_reading (
-    run_id    TEXT NOT NULL REFERENCES automation_run (id) ON DELETE CASCADE,
+    run_id    TEXT NOT NULL,
     device_id TEXT NOT NULL,
     key       TEXT NOT NULL,
     at        TEXT NOT NULL,
-    value     TEXT NOT NULL
+    heard_at  TEXT NOT NULL,
+    value     TEXT NOT NULL,
+    FOREIGN KEY (run_id, device_id, key) REFERENCES automation_run_key (run_id, device_id, key) ON DELETE CASCADE
   );
-  CREATE INDEX automation_run_reading_run ON automation_run_reading (run_id, at);
+  CREATE INDEX automation_run_reading_by_time ON automation_run_reading (run_id, at);
+
+  /* Whether each device could be reached while the run ran, each time that changed — and why not, in its holder's words. */
+  CREATE TABLE automation_run_reach (
+    run_id    TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    at        TEXT NOT NULL,
+    reachable INTEGER NOT NULL CHECK (reachable IN (0, 1)),
+    detail    TEXT NOT NULL,
+    FOREIGN KEY (run_id, device_id) REFERENCES automation_run_device (run_id, device_id) ON DELETE CASCADE
+  );
+  CREATE INDEX automation_run_reach_by_time ON automation_run_reach (run_id, at);
 
   /* What a transport keeps between runs, its own: a Bluetooth bond, a Matter fabric, a broker's credentials. */
   CREATE TABLE transport_kv (

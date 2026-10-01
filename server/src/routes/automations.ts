@@ -2,12 +2,13 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import type { AutomationDraft, AutomationKit, AutomationRuns, RecipeView, RunReadings } from '@kraftverk/api-contract';
+import type { AutomationDraft, AutomationKit, AutomationRuns, RecipeView, RunLog } from '@kraftverk/api-contract';
 import { automationId, describeSteps, isTimeZone, savedDeviceId, takesSteps, type AutomationId, type Rule, type Value } from '@kraftverk/device-sdk';
 import { Confirmations, subjectOf } from '@kraftverk/gateway';
 
 import { actorOf } from '../auth/routes.ts';
 import { RunRefusal } from '../automations/engine.ts';
+import { runLogCsv } from '../automations/runlog.ts';
 import { hasConditions, plans, REHEARSAL_MAX_HOURS } from '../automations/plans.ts';
 import { auditAbout, body, type AppDeps } from './shared.ts';
 
@@ -103,13 +104,21 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
     return c.json({ runs: automations.runs(current.id, limit) } satisfies AutomationRuns);
   });
 
-  /** What every device one of its runs used said while it ran, second by second: to read back what happened. */
-  api.get('/automations/:id/runs/:runId/readings', (c) => {
+  /**
+   * One of its runs with its log: every value its devices gave while it ran,
+   * second by second, and whether each could be reached — to read back what
+   * happened. `?format=csv`: the same, with its steps, as one table in time
+   * order, to download.
+   */
+  api.get('/automations/:id/runs/:runId/log', (c) => {
     const current = automations.get(c.req.param('id'));
     if (!current) throw new HTTPException(404, { message: 'No such automation' });
-    const readings = engine.runReadings(current, c.req.param('runId'));
-    if (!readings) throw new HTTPException(404, { message: 'No such run' });
-    return c.json(readings satisfies RunReadings);
+    const log = engine.runLog(current, c.req.param('runId'));
+    if (!log) throw new HTTPException(404, { message: 'No such run' });
+    if (c.req.query('format') !== 'csv') return c.json(log satisfies RunLog);
+    c.header('content-type', 'text/csv; charset=utf-8');
+    c.header('content-disposition', `attachment; filename="${current.name.replace(/[^\p{L}\p{N} _-]+/gu, '').trim() || 'run'} ${log.run.at.slice(0, 19).replace(/:/g, '-')}.csv"`);
+    return c.body(runLogCsv(log));
   });
 
   /**

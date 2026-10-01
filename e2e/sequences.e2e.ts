@@ -56,9 +56,24 @@ test('start charging: copied from its recipe, its parts chosen, run from its pag
   const activity = page.getByRole('region', { name: 'Activity' });
   await expect(activity.getByText(`Turn ${plug.name} on`).first()).toBeVisible();
   await expect(activity.getByText(/^At once — /).first()).toBeVisible();
-  // What each device said while it ran, second by second: the plug's power among it.
-  await activity.getByRole('button', { name: 'What the devices said while it ran: show' }).first().click();
-  await expect(activity.getByRole('list', { name: 'What the devices said' }).first()).toContainText(`${plug.name} · Power`);
+  // Its run log: every step, every value its devices gave while it ran, and the whole of it to take away.
+  await activity.getByRole('button', { name: /^Run log: / }).first().click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Run log' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Steps' }).getByText(`Turn ${plug.name} on`, { exact: true })).toBeVisible();
+  const values = page.getByRole('region', { name: 'Values' });
+  await expect(values.getByRole('group', { name: plug.name })).toContainText('The charger’s plug');
+  await expect(page.getByRole('list', { name: 'Every reading' })).toContainText(`${plug.name} · Power`);
+  // A step read back: every value at that moment.
+  await page.getByRole('button', { name: new RegExp(`^Turn ${plug.name} on, \\+0:`) }).click();
+  await expect(page.getByRole('toolbar', { name: 'Cursor' }).getByRole('status')).toHaveText(/^At \+0:/);
+  // As a table: its steps and readings, in time order.
+  const [, automationId, runId] = /\/automation\/([^/]+)\/run\/([^/]+)$/.exec(page.url())!;
+  const csv = await request.get(`/api/automations/${automationId}/runs/${runId}/log?format=csv`, { headers: HEADERS });
+  expect(csv.headers()['content-type']).toContain('text/csv');
+  const table = await csv.text();
+  expect(table.split('\r\n')[0]).toBe('at,heard_at,type,device_id,device,part,key,label,step,value,unit,detail');
+  expect(table).toContain(`,reading,${plug.id},${plug.name},main,watts,Power,`);
+  await page.goBack();
 
   // Its history: the run, started by its owner.
   await activity.getByText('History', { exact: true }).click();

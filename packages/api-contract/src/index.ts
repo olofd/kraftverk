@@ -30,6 +30,7 @@ import type {
   DeviceInfo,
   DeviceTypeMeta,
   DeviceTypeView,
+  EnumOption,
   EventLevel,
   LinkEnd,
   LinkId,
@@ -38,6 +39,7 @@ import type {
   AuditSubject,
   PolicyValueName,
   PolicyValueSpec,
+  Quantity,
   ResourceKind,
   SavedDeviceId,
   SetupStepView,
@@ -741,14 +743,49 @@ export type AutomationView = RoleFills & {
 /** `GET /automations/:id/runs`: its runs, the latest first — each with every step it took. */
 export type AutomationRuns = { runs: AutomationRun[] };
 
-/** One thing a device said while a run ran: a reading as it changed, or whether it could be reached (`key` "@health"). */
-export type RunReading = { device: string; key: string; at: string; value: Value };
+/** A device a run used, as it was when the run ran. */
+export type RunLogDevice = { id: string; name: string; typeId: string };
+
+/** Which part of which device filled one of the run's roles as it ran. */
+export type RunLogRole = { role: string; label: string; device: string; part: string };
 
 /**
- * What every device a run uses said while it ran, the earliest first — and,
- * for each device, its name and each key's label and unit, to say them.
+ * A value a run's log kept, as its device described it then: a number with
+ * its unit and quantity, on/off with the words for each, one of some options,
+ * or text (anything else, as JSON).
  */
-export type RunReadings = {
-  readings: RunReading[];
-  devices: Record<string, { name: string; keys: Record<string, { label: string; unit: string | null }> }>;
+export type RunLogKey = {
+  device: string;
+  key: string;
+  part: string;
+  label: string;
+  kind: 'number' | 'boolean' | 'enum' | 'text';
+  unit: string | null;
+  quantity: Quantity | null;
+  /** For on/off: how each is said; null when plainly on and off. */
+  words: { true: string; false: string } | null;
+  /** For one of some options: each option's label; null for any other kind. */
+  options: EnumOption[] | null;
+};
+
+/** A reading a run's device gave: when the device took it, and when the run heard it. */
+export type RunLogReading = { device: string; key: string; at: string; heardAt: string; value: Value };
+
+/** Whether a run's device could be reached, from when — and why not, in its holder's words. */
+export type RunLogReach = { device: string; at: string; reachable: boolean; detail: string };
+
+/**
+ * A run's log (`GET /automations/:id/runs/:runId/log`, docs/SEQUENCES.md):
+ * the run, the devices and roles it used and every value they gave while it
+ * ran, the earliest first — whole whatever became of the devices since.
+ */
+export type RunLog = {
+  run: AutomationRun;
+  devices: RunLogDevice[];
+  roles: RunLogRole[];
+  keys: RunLogKey[];
+  readings: RunLogReading[];
+  reach: RunLogReach[];
+  /** It gave more readings than a run keeps: those after the last kept are not here. */
+  capped: boolean;
 };

@@ -17,7 +17,7 @@ import type {
   AutomationKit,
   AutomationRun,
   AutomationRuns,
-  RunReadings,
+  RunLog,
   AutomationView,
   NewAutomation,
   CheckOutcome,
@@ -420,9 +420,17 @@ export async function fetchAutomationRuns(id: string, limit = 50, signal?: Abort
   return data.runs;
 }
 
-/** What every device one of its runs used said while it ran, second by second. */
-export async function fetchRunReadings(id: string, runId: string, signal?: AbortSignal) {
-  const { data } = await api.get<RunReadings>(`/automations/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/readings`, { signal });
+const runLogPath = (id: string, runId: string) => `/automations/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/log`;
+
+/** One of its runs with its log: every value its devices gave while it ran, second by second. */
+export async function fetchRunLog(id: string, runId: string, signal?: AbortSignal) {
+  const { data } = await api.get<RunLog>(runLogPath(id, runId), { signal });
+  return data;
+}
+
+/** The same log as one table — its steps, readings and reachability in time order — as CSV text. */
+export async function fetchRunLogCsv(id: string, runId: string): Promise<string> {
+  const { data } = await api.get<string>(runLogPath(id, runId), { params: { format: 'csv' }, responseType: 'text', transformResponse: (body: string) => body });
   return data;
 }
 

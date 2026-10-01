@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 
-import type { RoleBinding, RunReading } from '@kraftverk/api-contract';
-import { automationId, savedDeviceId, type AutomationId, type Rule, type Value } from '@kraftverk/device-sdk';
+import type { RoleBinding, RunLog, RunLogDevice, RunLogKey, RunLogReach, RunLogReading, RunLogRole } from '@kraftverk/api-contract';
+import { automationId, savedDeviceId, type AutomationId, type Quantity, type Rule, type Value } from '@kraftverk/device-sdk';
 
 import { db } from '../history/db.ts';
 import type { AutomationMode, AutomationRecord, RunResult } from './engine.ts';
@@ -325,22 +325,75 @@ export class AutomationStore {
       .map((row) => ({ automationId: row.automation_id, run: runOf(row) }));
   }
 
-  /** What devices said while a run ran: kept as they come, a batch at a time. */
-  recordReadings(runId: string, readings: readonly RunReading[]): void {
-    if (!readings.length) return;
-    const insert = db().query('INSERT INTO automation_run_reading (run_id, device_id, key, at, value) VALUES (?, ?, ?, ?, ?)');
-    db().transaction(() => {
-      for (const reading of readings) insert.run(runId, reading.device, reading.key, reading.at, JSON.stringify(reading.value));
+  /**
+   * A run's log, kept as it comes, in one transaction a look: the devices and
+   * roles it uses (as it begins), what each value it keeps is (the first time
+   * one is seen), every reading, and whether each device could be reached.
+   */
+  recordLog(runId: string, log: Partial<Pick<RunLog, 'devices' | 'roles' | 'keys' | 'readings' | 'reach'>>): void {
+    const { devices = [], roles = [], keys = [], readings = [], reach = [] } = log;
+    if (!devices.length && !roles.length && !keys.length && !readings.length && !reach.length) return;
+    const handle = db();
+    handle.transaction(() => {
+      const device = handle.query('INSERT INTO automation_run_device (run_id, device_id, name, type_id) VALUES (?, ?, ?, ?)');
+      for (const each of devices) device.run(runId, each.id, each.name, each.typeId);
+      const role = handle.query('INSERT INTO automation_run_role (run_id, role, label, device_id, part) VALUES (?, ?, ?, ?, ?)');
+      for (const each of roles) role.run(runId, each.role, each.label, each.device, each.part);
+      const key = handle.query('INSERT INTO automation_run_key (run_id, device_id, key, part, label, kind, unit, quantity, words) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      for (const each of keys) {
+        const words = each.kind === 'boolean' ? each.words : each.kind === 'enum' ? each.options : null;
+        key.run(runId, each.device, each.key, each.part, each.label, each.kind, each.unit, each.quantity, words ? JSON.stringify(words) : null);
+      }
+      const reading = handle.query('INSERT INTO automation_run_reading (run_id, device_id, key, at, heard_at, value) VALUES (?, ?, ?, ?, ?, ?)');
+      for (const each of readings) reading.run(runId, each.device, each.key, each.at, each.heardAt, JSON.stringify(each.value));
+      const reached = handle.query('INSERT INTO automation_run_reach (run_id, device_id, at, reachable, detail) VALUES (?, ?, ?, ?, ?)');
+      for (const each of reach) reached.run(runId, each.device, each.at, each.reachable ? 1 : 0, each.detail);
     })();
   }
 
-  /** What devices said while one of an automation's runs ran, the earliest first; null when the run is not one of its. */
-  runReadings(automationId: string, runId: string): RunReading[] | null {
-    if (!db().query('SELECT 1 FROM automation_run WHERE id = ? AND automation_id = ?').get(runId, automationId)) return null;
-    return db()
-      .query<{ device_id: string; key: string; at: string; value: string }, [string]>('SELECT device_id, key, at, value FROM automation_run_reading WHERE run_id = ? ORDER BY at, rowid')
+  /** One of an automation's runs with its log, the earliest first; null when the run is not one of its. */
+  runLog(automationId: string, runId: string): Omit<RunLog, 'capped'> | null {
+    const handle = db();
+    if (!handle.query('SELECT 1 FROM automation_run WHERE id = ? AND automation_id = ?').get(runId, automationId)) return null;
+    const run = this.run(runId);
+    if (!run) return null;
+    const devices = handle
+      .query<{ device_id: string; name: string; type_id: string }, [string]>('SELECT device_id, name, type_id FROM automation_run_device WHERE run_id = ? ORDER BY rowid')
       .all(runId)
-      .map((row) => ({ device: row.device_id, key: row.key, at: row.at, value: JSON.parse(row.value) as Value }));
+      .map((row): RunLogDevice => ({ id: row.device_id, name: row.name, typeId: row.type_id }));
+    const roles = handle
+      .query<{ role: string; label: string; device_id: string; part: string }, [string]>('SELECT role, label, device_id, part FROM automation_run_role WHERE run_id = ? ORDER BY rowid')
+      .all(runId)
+      .map((row): RunLogRole => ({ role: row.role, label: row.label, device: row.device_id, part: row.part }));
+    const keys = handle
+      .query<{ device_id: string; key: string; part: string; label: string; kind: RunLogKey['kind']; unit: string | null; quantity: string | null; words: string | null }, [string]>(
+        'SELECT device_id, key, part, label, kind, unit, quantity, words FROM automation_run_key WHERE run_id = ? ORDER BY rowid'
+      )
+      .all(runId)
+      .map(
+        (row): RunLogKey => ({
+          device: row.device_id,
+          key: row.key,
+          part: row.part,
+          label: row.label,
+          kind: row.kind,
+          unit: row.unit,
+          quantity: row.quantity as Quantity | null,
+          words: row.kind === 'boolean' && row.words ? (JSON.parse(row.words) as RunLogKey['words']) : null,
+          options: row.kind === 'enum' && row.words ? (JSON.parse(row.words) as RunLogKey['options']) : null,
+        })
+      );
+    const readings = handle
+      .query<{ device_id: string; key: string; at: string; heard_at: string; value: string }, [string]>(
+        'SELECT device_id, key, at, heard_at, value FROM automation_run_reading WHERE run_id = ? ORDER BY at, rowid'
+      )
+      .all(runId)
+      .map((row): RunLogReading => ({ device: row.device_id, key: row.key, at: row.at, heardAt: row.heard_at, value: JSON.parse(row.value) as Value }));
+    const reach = handle
+      .query<{ device_id: string; at: string; reachable: number; detail: string }, [string]>('SELECT device_id, at, reachable, detail FROM automation_run_reach WHERE run_id = ? ORDER BY at, rowid')
+      .all(runId)
+      .map((row): RunLogReach => ({ device: row.device_id, at: row.at, reachable: row.reachable === 1, detail: row.detail }));
+    return { run, devices, roles, keys, readings, reach };
   }
 
   /** An automation's runs, the latest first. */

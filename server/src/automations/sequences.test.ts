@@ -10,6 +10,7 @@ import { LiveBus, type LiveMessage } from '@kraftverk/holder';
 import { closeDb, db } from '../history/db.ts';
 import { AutomationEngine, RunRefusal, type Asker, type EngineDevice } from './engine.ts';
 import { AutomationLibrary } from './library.ts';
+import { runLogCsv } from './runlog.ts';
 import { AutomationStore } from './store.ts';
 
 /*
@@ -114,6 +115,8 @@ function setup(world: Partial<World> = {}) {
   };
   const device = (id: string, name: string, part: string, description: DeviceDescription, read: DeviceReader, connected: () => boolean): EngineDevice => ({
     name,
+    deviceName: id === STATION ? 'Garage station' : name,
+    typeId: id === STATION ? 'test.station' : 'test.plug',
     removed: false,
     hasPart: true,
     part,
@@ -210,7 +213,7 @@ function setup(world: Partial<World> = {}) {
     const created = store.create({ name, rule: { ...rule, params: { fields: {} } }, madeFrom: null, roles: partRoles, starts: fills.starts ?? {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
     return fills.mode === 'observe' ? created : store.update(created.id, { mode: fills.mode ?? 'armed' })!;
   };
-  return { engine, store, state, devices, sent, writes, recorded, heard, fresh, runsEnded, make, own, ended, switches };
+  return { engine, store, state, devices, bus, sent, writes, recorded, heard, fresh, runsEnded, make, own, ended, switches };
 }
 
 /** A person asking. */
@@ -241,29 +244,74 @@ describe('starting a charge', () => {
     expect(store.get(automation.id)).toMatchObject({ running: null, lastRun: { id: run.id, outcome: 'acted' } });
   });
 
-  test('what every device said while it ran is kept with the run, at the time each said it — to read back what happened', async () => {
+  test('its log: the devices and roles it used as they were, every value they gave at the time each gave it, and when each could be reached', async () => {
     const { engine, make, ended, store } = setup({ reachableAfterMs: 20 });
     const automation = make('standard.start-charging', QUICK);
     await engine.startAsked(automation.id, OLOF);
     const run = await ended(automation.id);
 
-    const kept = engine.runReadings(store.get(automation.id)!, run.id!)!;
-    const said = (device: string, key: string) => kept.readings.filter((reading) => reading.device === device && reading.key === key).map((reading) => reading.value);
+    const log = engine.runLog(store.get(automation.id)!, run.id!)!;
+    expect(log.run).toMatchObject({ id: run.id, outcome: 'acted' });
+    // As they were when it ran: each device's own name and type, and what filled each role.
+    expect(log.devices).toEqual([
+      { id: STATION, name: 'Garage station', typeId: 'test.station' },
+      { id: PLUG, name: 'Scooter plug', typeId: 'test.plug' },
+    ]);
+    expect(log.roles).toEqual([
+      { role: 'supply', label: 'What powers the charger', device: STATION, part: 'outlet.ac' },
+      { role: 'charger', label: 'The charger’s plug', device: PLUG, part: MAIN_PART },
+    ]);
+    // What each value is, as its device described it.
+    expect(log.keys.find((key) => key.device === STATION && key.key === 'outlet.ac.watts')).toEqual({
+      device: STATION, key: 'outlet.ac.watts', part: 'outlet.ac', label: 'AC outlets: AC draw', kind: 'number', unit: 'W', quantity: 'power', words: null, options: null,
+    });
+    expect(log.keys.find((key) => key.device === PLUG && key.key === 'relay')).toMatchObject({ kind: 'boolean', unit: null });
     // The plug: out of reach until the supply came on, then switched on, and drawing.
-    expect(said(PLUG, '@health')).toEqual(['offline: Its gateway cannot reach it', 'connected']);
+    expect(log.reach.filter((each) => each.device === PLUG).map((each) => each.reachable)).toEqual([false, true]);
+    expect(log.reach[0]!.detail).toBeString();
+    const said = (device: string, key: string) => log.readings.filter((reading) => reading.device === device && reading.key === key).map((reading) => reading.value);
     expect(said(PLUG, 'relay')).toContain(true);
     expect(said(PLUG, 'watts')).toContain(240);
-    // The station: its outlets on, and what they gave.
     expect(said(STATION, 'outlet.ac.on')).toEqual(expect.arrayContaining([false, true]));
-    expect(said(STATION, 'outlet.ac.watts')).toContain(240);
-    // In order, and said in words.
-    const times = kept.readings.map((reading) => reading.at);
+    // What a step judged on is there as it judged: the 240 W that made sure of it, heard by the time it was met.
+    const sure = log.run.steps.find((step) => step.kind === 'ensure')!;
+    expect(log.readings.some((reading) => reading.device === PLUG && reading.key === 'watts' && reading.value === 240 && reading.heardAt <= sure.endedAt!)).toBe(true);
+    // In time order, each with when it was heard — never before the device took it.
+    const times = log.readings.map((reading) => reading.at);
     expect(times).toEqual([...times].sort());
-    expect(kept.devices[PLUG]!.keys.watts).toEqual({ label: 'Power', unit: 'W' });
-    expect(kept.devices[STATION]!.keys['outlet.ac.watts']).toEqual({ label: 'AC outlets: AC draw', unit: 'W' });
-    expect(kept.devices[PLUG]!.keys['@health']!.label).toBe('Reachable');
+    expect(log.readings.every((reading) => reading.heardAt >= reading.at)).toBe(true);
+    expect(log.capped).toBe(false);
     // Another automation's run is not read through this one.
-    expect(engine.runReadings({ ...store.get(automation.id)!, id: 'a-other' as never }, run.id!)).toBeNull();
+    expect(engine.runLog({ id: 'a-other' as never }, run.id!)).toBeNull();
+  });
+
+  test('its log hears each reading as the device says it — not only at its next look', async () => {
+    const { engine, make, ended, store, bus } = setup({ reachableAfterMs: 10_000 });
+    const automation = make('standard.start-charging', QUICK);
+    await engine.startAsked(automation.id, OLOF);
+    // Said by the plug between two looks, and gone again before the next: only the bus has it.
+    const at = new Date().toISOString();
+    bus.publish({ kind: 'readings', deviceId: PLUG, readings: [{ key: 'watts', value: 77, at }] });
+    engine.stopAsked(automation.id, 'olof');
+    const run = await ended(automation.id);
+    const log = engine.runLog(store.get(automation.id)!, run.id!)!;
+    expect(log.readings.find((reading) => reading.device === PLUG && reading.key === 'watts' && reading.value === 77)).toMatchObject({ at });
+  });
+
+  test('its log as one table, in time order: its steps, the readings and when each device could be reached', async () => {
+    const { engine, make, ended, store } = setup({ reachableAfterMs: 20 });
+    const automation = make('standard.start-charging', QUICK);
+    await engine.startAsked(automation.id, OLOF);
+    const run = await ended(automation.id);
+    const csv = runLogCsv(engine.runLog(store.get(automation.id)!, run.id!)!);
+    const rows = csv.trimEnd().split('\r\n');
+    expect(rows[0]).toBe('at,heard_at,type,device_id,device,part,key,label,step,value,unit,detail');
+    // A step's words carry a dash and a comma-free sentence; one with a comma is quoted.
+    expect(rows.some((row) => row.includes(',step,') && row.includes('Turn Scooter plug on'))).toBe(true);
+    expect(rows.some((row) => row.includes(',reading,') && row.includes(`,${PLUG},Scooter plug,main,watts,Power,,240,W,`))).toBe(true);
+    expect(rows.some((row) => row.includes(',reach,') && row.includes(',Reachable,,false,'))).toBe(true);
+    const ats = rows.slice(1).map((row) => row.split(',')[0]!);
+    expect(ats).toEqual([...ats].sort());
   });
 
   test('a charger that stays idle is switched off and on again until it draws — no more often than its tries — and the gateway is told the run’s allowance', async () => {

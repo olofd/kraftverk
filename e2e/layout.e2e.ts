@@ -126,6 +126,33 @@ for (const width of [320, 375]) {
     await expect(page.getByRole('radiogroup', { name: /: how far back$/ })).toBeVisible();
     expect(await problems(page)).toEqual([]);
 
+    // A run's log: its steps, its values drawn, every reading — on a phone.
+    const quick = await request.post('/api/automations', {
+      headers: HEADERS,
+      data: {
+        name: unique('Quick switch'),
+        rule: {
+          roles: { plug: { label: 'Plug', description: 'The plug', capabilities: ['switch'] } },
+          params: { fields: {} },
+          when: [],
+          then: [{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { value: true } } } }, { wait: { seconds: { value: 1 } } }],
+        },
+        roles: { plug: { device: meter.id, part: 'main' } },
+        starts: {},
+        timeZone: 'Europe/Stockholm',
+      },
+    });
+    expect(quick.ok(), await quick.text()).toBe(true);
+    const quickId = (await quick.json()).id as string;
+    let started = await request.post(`/api/automations/${quickId}/start`, { headers: HEADERS, data: {} });
+    if (started.status() === 409) started = await request.post(`/api/automations/${quickId}/start`, { headers: HEADERS, data: { confirmation: (await started.json()).needsConfirmation } });
+    expect(started.ok(), await started.text()).toBe(true);
+    await expect.poll(async () => (await (await request.get(`/api/automations/${quickId}`, { headers: HEADERS })).json()).lastRun?.id ?? null, { timeout: 15_000 }).not.toBeNull();
+    const runId = (await (await request.get(`/api/automations/${quickId}`, { headers: HEADERS })).json()).lastRun.id as string;
+    await page.goto(`/automation/${quickId}/run/${runId}`);
+    await expect(page.getByRole('list', { name: 'Every reading' })).toBeVisible();
+    expect(await problems(page)).toEqual([]);
+
     // Five power steps, six delays: every label whole, each a named group.
     for (const device of [station, meter]) {
       await page.goto(`/device/${device.id}/settings`);
