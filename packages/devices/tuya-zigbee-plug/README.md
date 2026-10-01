@@ -59,6 +59,12 @@ A Zigbee plug has no IP address and no key of its own. kraftverk speaks to its
   drawing, the answer never changed and no `"type":"query"` push came.
 - **`UPDATEDPS` (0x12) brings nothing through the gateway**: sent with the
   plug's cid and `"dpId":[18,19,20]` before every query, no push followed.
+- **Switched off, it does not push the load falling**: the gateway kept
+  answering 269 W for minutes with the relay off, until the owner opened the
+  plug in Smart Life — then it said 0 W. So the app has a way to have the
+  plug measure again that a local query does not (to learn: what it sends).
+  The session reads power and current as 0 while the relay is off: nothing
+  flows through the meter then.
 - **Right after a switch, the gateway's memory lags the plug**: a query sent
   as the relay's push arrives can still say the old state. The session takes
   the plug's push over the memory for a few seconds, and does not query

@@ -163,6 +163,19 @@ describe('the Tuya Zigbee plug', () => {
     await opened.close();
   });
 
+  test('switched off, it draws nothing — whatever load the gateway still remembers', async () => {
+    const dps: Dps = { ...MAPPED, '18': 1179, '19': 2690 };
+    const { opened, value } = await session(dps);
+    expect(value('watts')).toBe(269);
+    await opened.command({ part: 'main', capability: 'switch', command: 'set', args: { on: false } });
+    expect(value('relay')).toBe(false);
+    expect(value('watts')).toBe(0);
+    expect(value('amps')).toBe(0);
+    // The voltage at its socket is still what it is.
+    expect(value('volts')).toBe(231);
+    await opened.close();
+  });
+
   test('while its gateway says it cannot reach the plug, the gateway’s memory is not taken for the plug’s word', async () => {
     const dps = { ...MAPPED };
     const { device, opened, value, reading, poll } = await session(dps);

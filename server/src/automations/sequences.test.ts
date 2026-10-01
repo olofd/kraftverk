@@ -76,10 +76,12 @@ type World = {
   /** The gateway’s gap between two switches of the plug in one run, in real milliseconds: refused within it, saying how long is left. */
   plugGapMs: number;
   plugSwitchedAt: number;
+  /** How often the station takes a reading, in real milliseconds: between two, it says what it last saw. 0, every time it is asked. */
+  supplyReadsEveryMs: number;
 };
 
 function setup(world: Partial<World> = {}) {
-  const state: World = { supplyOn: false, othersWatts: 0, plugOn: false, reachableAfterMs: 0, supplyOnAt: 0, wakesOnSwitch: 1, plugSwitchedOn: 0, live: false, plugGapMs: 0, plugSwitchedAt: 0, ...world };
+  const state: World = { supplyOn: false, othersWatts: 0, plugOn: false, reachableAfterMs: 0, supplyOnAt: 0, wakesOnSwitch: 1, plugSwitchedOn: 0, live: false, plugGapMs: 0, plugSwitchedAt: 0, supplyReadsEveryMs: 0, ...world };
   const sent: CommandIntent[] = [];
   const recorded: AuditRecord[] = [];
   const heard: LiveMessage[] = [];
@@ -95,6 +97,21 @@ function setup(world: Partial<World> = {}) {
     readings: () => readings().map((reading) => ({ ...reading, at: now() })),
     query: async () => [],
   });
+  /** The station's readings, taken as often as it takes them: older than now between two. */
+  let sample: { at: number; readings: { key: string; value: boolean | number }[] } | null = null;
+  const supplyReadings = () => [
+    { key: 'outlet.ac.on', value: state.supplyOn },
+    { key: 'outlet.ac.watts', value: state.supplyOn ? state.othersWatts + (charging() ? 240 : 0) : 0 },
+  ];
+  const sampled: DeviceReader = {
+    health: () => ({ status: 'connected', detail: 'Connected', lastReadingAt: now() }),
+    readings: () => {
+      if (!sample || Date.now() - sample.at >= state.supplyReadsEveryMs) sample = { at: Date.now(), readings: supplyReadings() };
+      const at = new Date(sample.at).toISOString();
+      return sample.readings.map((reading) => ({ ...reading, at }));
+    },
+    query: async () => [],
+  };
   const device = (id: string, name: string, part: string, description: DeviceDescription, read: DeviceReader, connected: () => boolean): EngineDevice => ({
     name,
     removed: false,
@@ -113,13 +130,7 @@ function setup(world: Partial<World> = {}) {
       'Garage station — AC outlets',
       'outlet.ac',
       OUTLET,
-      reader(
-        () => [
-          { key: 'outlet.ac.on', value: state.supplyOn },
-          { key: 'outlet.ac.watts', value: state.supplyOn ? state.othersWatts + (charging() ? 240 : 0) : 0 },
-        ],
-        () => true
-      ),
+      sampled,
       () => true
     ),
     [`${PLUG}:main`]: device(
@@ -199,7 +210,7 @@ function setup(world: Partial<World> = {}) {
     const created = store.create({ name, rule: { ...rule, params: { fields: {} } }, madeFrom: null, roles: partRoles, starts: fills.starts ?? {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
     return fills.mode === 'observe' ? created : store.update(created.id, { mode: fills.mode ?? 'armed' })!;
   };
-  return { engine, store, state, sent, writes, recorded, heard, fresh, runsEnded, make, own, ended, switches };
+  return { engine, store, state, devices, sent, writes, recorded, heard, fresh, runsEnded, make, own, ended, switches };
 }
 
 /** A person asking. */
@@ -434,6 +445,18 @@ describe('stopping a charge', () => {
     expect(switches()).toEqual(['charger off', 'supply off']);
     expect(run.steps[1]).toMatchObject({ kind: 'watch', outcome: 'met' });
     expect(run.steps[1]!.detail).toBe("It stayed so for 5 s — Garage station — AC outlets: Power 3 W");
+  });
+
+  test('the supply judged on what it reads since the charger went off — not on what it still said from before', async () => {
+    const { engine, make, ended, switches, state, devices } = setup({ supplyReadsEveryMs: 40 });
+    Object.assign(state, { supplyOn: true, plugOn: true, plugSwitchedOn: 1, othersWatts: 3 });
+    // The station's last reading, taken while the charger drew: 243 W.
+    expect(devices[`${STATION}:outlet.ac`]!.device!.readings().find((reading) => reading.key === 'outlet.ac.watts')!.value).toBe(243);
+    const automation = make('standard.stop-charging', { watchSeconds: 5, othersBelow: 10 });
+    await engine.startAsked(automation.id, OLOF);
+    const run = await ended(automation.id);
+    expect(switches()).toEqual(['charger off', 'supply off']);
+    expect(run.steps[1]!.detail).toBe('It stayed so for 5 s — Garage station — AC outlets: Power 3 W');
   });
 
   test('left on when something else still draws from the supply', async () => {

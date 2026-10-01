@@ -136,6 +136,12 @@ const GRACE_MS = 60 * 60_000;
 
 /** How often a step that waits looks at its condition, in seconds of the step. */
 const LOOK_EVERY_SECONDS = 1;
+/**
+ * After a run changes something, how long a step that judges readings waits
+ * for readings taken since, at most: a station that reports every few seconds
+ * still says what its outlets gave before the plug on them was switched off.
+ */
+const SETTLE_AT_MOST_SECONDS = 15;
 
 /** How many automations deep one may start another, counting the first: a chain stays one a person can follow. */
 export const CHAIN_LIMIT = 4;
@@ -176,6 +182,8 @@ type LiveRun = {
   wake: Set<() => void>;
   /** How often its rule may switch each role's part, at most: what it tells the gateway. */
   allowance: Record<string, number>;
+  /** When it last changed something — switched a part, changed a setting: what is judged after is read after. 0, not yet. */
+  changedAt: number;
 };
 
 type Walked = 'ok' | 'failed' | 'stopped';
@@ -869,6 +877,7 @@ export class AutomationEngine {
       gone: false,
       wake: new Set(),
       allowance: this.#allowance(rule, scope),
+      changedAt: 0,
     };
     const stepped = takesSteps(rule);
     if (stepped) {
@@ -1131,6 +1140,7 @@ export class AutomationEngine {
       outcome = await send();
     }
     const already = outcome.outcome === 'verified' && outcome.detail.startsWith('Already');
+    if (!already && (outcome.outcome === 'verified' || outcome.outcome === 'unverified')) live.changedAt = Date.now();
     this.#end(live, entry, already ? 'already' : outcome.outcome === 'verified' ? 'done' : outcome.outcome, outcome.detail);
     // Unverified is sent, and the step goes on: what follows may be what proves it — a charger that draws.
     return outcome.outcome === 'refused' || outcome.outcome === 'failed' ? 'failed' : 'ok';
@@ -1171,6 +1181,7 @@ export class AutomationEngine {
     } catch (error) {
       result = { outcome: 'failed', detail: (error as Error).message };
     }
+    if (result.outcome === 'verified' || result.outcome === 'unverified') live.changedAt = Date.now();
     this.#end(live, entry, result.outcome === 'verified' ? 'done' : result.outcome, result.detail);
     return result.outcome === 'refused' || result.outcome === 'failed' ? 'failed' : 'ok';
   }
@@ -1334,6 +1345,25 @@ export class AutomationEngine {
     }
   }
 
+  /**
+   * Whether every reading a condition reads was taken since the run last
+   * changed something. A reading from before says how things were, not how
+   * they are now: judged on, a supply still giving 190 W a moment after the
+   * charger on it was switched off reads as "something else draws".
+   */
+  #readSince(live: LiveRun, condition: Expr): boolean {
+    if (!live.changedAt) return true;
+    const { reads } = ruleUses({ ...live.rule, when: [], then: [{ waitUntil: { condition, atMostSeconds: { value: 1 } } }], otherwise: [] });
+    return reads.every(({ role, means }) => {
+      const binding = live.automation.roles[role];
+      const device = binding ? this.deps.device(binding) : null;
+      const attribute = device ? attributeMeaning(device.description, device.part, means) : null;
+      const reading = device?.device && attribute ? readingOf(device.device.readings(), attribute.key) : null;
+      // Nothing to wait for: what cannot be read is judged as it is.
+      return !reading || Date.parse(reading.at) >= live.changedAt;
+    });
+  }
+
   /** Waits until a condition is true, looking every second: at most `seconds`, or until the run is stopped. */
   async #until(live: LiveRun, condition: Expr, seconds: number): Promise<{ outcome: 'met' | 'timed-out' | 'stopped'; seconds: number; saw: string }> {
     this.#freshen(live, condition, seconds);
@@ -1341,7 +1371,8 @@ export class AutomationEngine {
     const unit = this.deps.secondMs ?? 1000;
     for (;;) {
       const saw: string[] = [];
-      const holds = evaluateNow(condition, this.#scope(live.automation, live.rule), saw);
+      // Met only on readings taken since the run last changed something.
+      const holds = this.#readSince(live, condition) ? evaluateNow(condition, this.#scope(live.automation, live.rule), saw) : null;
       const elapsed = (Date.now() - started) / unit;
       if (holds === true) return { outcome: 'met', seconds: elapsed, saw: [...new Set(saw)].join('; ') };
       if (live.stoppedBy !== null) return { outcome: 'stopped', seconds: elapsed, saw: '' };
@@ -1352,9 +1383,14 @@ export class AutomationEngine {
 
   /** Watches a condition for `seconds`: held if it is true every time it is looked at; not, the moment it is not — or cannot be told. */
   async #hold(live: LiveRun, condition: Expr, seconds: number, regardless: boolean): Promise<{ outcome: 'held' | 'broke' | 'stopped'; seconds: number; saw: string }> {
-    this.#freshen(live, condition, seconds);
-    const started = Date.now();
+    this.#freshen(live, condition, seconds + SETTLE_AT_MOST_SECONDS);
     const unit = this.deps.secondMs ?? 1000;
+    // Watched from the first readings taken since the run last changed something — or, if none come, from when it gave up waiting for them.
+    const settling = Date.now();
+    while (!this.#readSince(live, condition) && (Date.now() - settling) / unit < SETTLE_AT_MOST_SECONDS) {
+      if ((await this.#sleep(live, LOOK_EVERY_SECONDS, regardless)) === 'stopped') return { outcome: 'stopped', seconds: 0, saw: '' };
+    }
+    const started = Date.now();
     for (;;) {
       const saw: string[] = [];
       const holds = evaluateNow(condition, this.#scope(live.automation, live.rule), saw);

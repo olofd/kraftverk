@@ -226,8 +226,17 @@ function readingsOf(profile: SocketProfile, state: State, live: Live | null): Re
   const reading = decodeSocket(profile, dps);
   const value = (v: number | boolean | undefined): Value => (v === undefined ? null : v);
   const until = live?.until() ?? 0;
+  /*
+    Its relay open, nothing flows through its meter: no power, no current. A
+    plug behind a gateway pushes the relay when it is switched off, but not
+    the load falling to nothing — and the gateway answers from its memory of
+    the last load (269 W on a plug switched off minutes before) until
+    something has the plug measure again.
+  */
+  const open = reading.relayOn === false;
+  const drawn = (name: keyof SocketProfile['metrics']) => open && (name === 'watts' || name === 'amps');
   return [
-    ...(Object.keys(profile.metrics) as (keyof SocketProfile['metrics'])[]).map((name) => ({ key: name, value: value(reading[name]), at })),
+    ...(Object.keys(profile.metrics) as (keyof SocketProfile['metrics'])[]).map((name) => ({ key: name, value: drawn(name) ? 0 : value(reading[name]), at })),
     { key: 'relay', value: value(reading.relayOn), at },
     ...(profile.datapoints ?? []).map((point) => ({ key: point.key, value: datapointValue(point, dps), at })),
     ...(live

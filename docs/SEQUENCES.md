@@ -206,6 +206,12 @@ too, and `app_state` keeps only what the home sets as a whole.
   (`DeviceSession.wantFresh(until)`): a plug asked every 15 s is asked every
   2 s for the minute it is watched. What "fresh" costs is the device's
   business — its package decides how often, and for how long at most.
+- **Judged on readings taken since.** Once a run has switched a part or
+  changed a setting, a step that judges readings — wait until, make sure,
+  watch — judges only readings taken after that; a watch waits for them up
+  to 15 s before its clock starts. On the owner's chain, Stop charging read
+  the station's outlets at 190 W a moment after the charger's plug went off
+  — the station's reading from before — and left the supply on.
 - **`otherwise`** runs when a step does not succeed or someone stops the run:
   each of its steps tried whatever the others do, and not itself stopped.
 - **Observing.** An automation that only watches cannot walk a sequence on
