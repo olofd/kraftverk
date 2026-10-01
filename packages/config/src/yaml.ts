@@ -82,12 +82,37 @@ function readWrapped(parsed: Parsed, kind: 'automations' | 'devices', key: strin
   return { document: meaning.length ? null : read.document, problems: meaning };
 }
 
+/**
+ * Read partly: what reads right is kept, and each device, automation or link
+ * a problem is about is left out of the document — the problem said. What a
+ * restore does, so that one entry it cannot read does not lose the others.
+ */
+export type ReadOptions = { partial?: boolean };
+
+/** The document without the entries these problems are about. */
+function withoutTroubled(document: ConfigDocument, issues: readonly Issue[]): ConfigDocument {
+  const devices = { ...document.devices };
+  const automations = { ...document.automations };
+  const links = new Set<number>();
+  for (const { path } of issues) {
+    if (path[0] === 'devices' && typeof path[1] === 'string') delete devices[path[1]];
+    if (path[0] === 'automations' && typeof path[1] === 'string') delete automations[path[1]];
+    if (path[0] === 'links' && typeof path[1] === 'number') links.add(path[1]);
+  }
+  return { ...document, devices, automations, links: document.links.filter((_, index) => !links.has(index)) };
+}
+
 /** A whole document's data read: brought to this version, its shape and meaning checked. */
-function readWhole(parsed: Parsed & { data: Record<string, unknown> }, context: PrintContext, check?: Check): { document: ConfigDocument | null; problems: Problem[]; from: number | null } {
+function readWhole(parsed: Parsed & { data: Record<string, unknown> }, context: PrintContext, check?: Check, options: ReadOptions = {}): { document: ConfigDocument | null; problems: Problem[]; from: number | null } {
   const migrated = migrate(parsed.data);
   if (!migrated.ok) return { document: null, from: null, problems: [parsed.place({ message: migrated.message, path: ['kraftverk'] })] };
-  const read = documentFromData(migrated.document, context);
+  const read = documentFromData(migrated.document, context, options);
   if (!read.document) return { document: null, from: migrated.from, problems: read.issues.map(parsed.place) };
+  if (options.partial) {
+    const shaped = withoutTroubled(read.document, read.issues);
+    const meaning = check?.(shaped) ?? [];
+    return { document: withoutTroubled(shaped, meaning), from: migrated.from, problems: [...read.issues, ...meaning].map(parsed.place) };
+  }
   const meaning = check?.(read.document) ?? [];
   return { document: meaning.length ? null : read.document, from: migrated.from, problems: meaning.map(parsed.place) };
 }
@@ -98,7 +123,7 @@ function readWhole(parsed: Parsed & { data: Record<string, unknown> }, context: 
  * shows — is read as a document of that one, under a key made from its name
  * (`holds`).
  */
-export function readConfig(text: string, context: PrintContext = {}, check?: Check): { document: ConfigDocument | null; problems: Problem[]; from: number | null; holds: Holds } {
+export function readConfig(text: string, context: PrintContext = {}, check?: Check, options: ReadOptions = {}): { document: ConfigDocument | null; problems: Problem[]; from: number | null; holds: Holds } {
   const parsed = parseYaml(text);
   if (parsed.problems.length) return { document: null, from: null, problems: parsed.problems, holds: null };
   const data = parsed.data;
@@ -108,7 +133,7 @@ export function readConfig(text: string, context: PrintContext = {}, check?: Che
     const key = keyFrom(typeof data.name === 'string' ? data.name : '', () => false, kind === 'devices' ? 'device' : 'automation');
     return { ...readWrapped(parsed, kind, key, context, check), from: CURRENT_VERSION, holds: { kind, key } };
   }
-  return { ...readWhole({ ...parsed, data }, context, check), holds: null };
+  return { ...readWhole({ ...parsed, data }, context, check, options), holds: null };
 }
 
 /**

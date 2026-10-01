@@ -5,6 +5,7 @@ import { checkDocument, MAIN, MODE_IN_FILE, MODE_OF_FILE, readConfig, useOf, use
 import {
   capabilitiesOf,
   isSecretField,
+  checkBinding,
   checkRule,
   isAutomationRole,
   isSimulated,
@@ -15,6 +16,7 @@ import {
   takesSteps,
   validateConfig,
   type AutomationId,
+  type BoundPart,
   type ConfigValues,
   type PartRole,
   type PolicyValueName,
@@ -69,6 +71,8 @@ type Kept = {
   secrets: Map<string, string>;
   by: string;
   expiresAt: number;
+  /** Restoring: automations restored turned off, and why. */
+  turnedOff: Map<string, string[]>;
 };
 
 const PLAN_TTL_MS = 15 * 60_000;
@@ -92,16 +96,37 @@ const secretKey = (device: string, index: number, field: string) => `${device}.$
  * What importing a file would do. `kept`: the snapshot's own secrets, sealed
  * with this server's key, are opened as the server opens them.
  */
-export function planImport(deps: ImportDeps, text: string, options: { mode: ImportMode; passphrase?: string; by: string; kept?: boolean }): ImportPlan {
+export function planImport(deps: ImportDeps, text: string, options: { mode: ImportMode; passphrase?: string; by: string; kept?: boolean; lenient?: boolean }): ImportPlan {
   const vocabulary = serverVocabulary(deps);
-  const read = readConfig(text, {}, (document) => checkDocument(document, vocabulary, { hasSecret: () => true, uses: 'leave' }));
+  // A restore reads what it can: an entry it cannot read is left out and said, never the whole home lost for it.
+  const read = readConfig(text, {}, (document) => checkDocument(document, vocabulary, { hasSecret: () => true, uses: 'leave' }), { partial: options.lenient });
   const empty: ImportPlan = { id: null, from: read.from, problems: read.problems.map((each) => ({ ...each, path: [...each.path] })), devices: [], links: [], automations: [], policy: [], needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
   if (!read.document) return empty;
   const document = read.document;
   const problems: ImportPlan['problems'] = [];
-  const problem = (message: string, path: (string | number)[]) => void problems.push({ message, path, line: null, column: null });
   const needs: ImportPlan['needs'] = { passphrase: null, secrets: [], rebind: [], confirm: [] };
   const notes: string[] = [];
+  /*
+    Restoring, item by item: a device it cannot keep is left out, an
+    automation it cannot keep as it was is restored turned off — each said —
+    and everything else is restored. An import a person reads stops at its
+    first problem instead, for them to fix.
+  */
+  const leftOut = new Set<string>();
+  const turnedOff = new Map<string, string[]>();
+  const problem = (message: string, path: (string | number)[]) => {
+    if (options.lenient && path[0] === 'devices' && typeof path[1] === 'string') {
+      leftOut.add(path[1]);
+      notes.push(`${path[1]} is left out: ${message}`);
+      return;
+    }
+    if (options.lenient && path[0] === 'automations' && typeof path[1] === 'string') {
+      turnedOff.set(path[1], [...(turnedOff.get(path[1]) ?? []), message]);
+      return;
+    }
+    problems.push({ message, path, line: null, column: null });
+  };
+  if (options.lenient) for (const each of read.problems) notes.push(`${each.line ? `line ${each.line}: ` : ''}${each.message} — left out`);
   // One device's or automation's own YAML, as its page shows it: read under a key made from its name, which an import matches by.
   if (read.holds) notes.push(`Read as one ${read.holds.kind === 'devices' ? 'device' : 'automation'}, known by "${read.holds.key}"${(read.holds.kind === 'devices' ? deps.catalog.byKey(read.holds.key) : deps.automations.byKey(read.holds.key)) ? ': the one you have by that key is changed to it' : ''}`);
   const secrets = new Map<string, string>();
@@ -155,6 +180,7 @@ export function planImport(deps: ImportDeps, text: string, options: { mode: Impo
         else if (given || spec.required) needs.secrets.push({ device: key, deviceName: entry.name, field, title: spec.title });
       }
     });
+    if (leftOut.has(key)) continue;
     const back = existing ? null : removedMatch(deps, key, entry);
     devices.push(existing ? { key, name: entry.name, ...deviceChanges(deps, existing, entry, secrets, key) } : { key, name: entry.name, action: back ? 'restore' : 'add', changes: back ? [`brought back, with its history (removed ${back.removedAt!.slice(0, 10)})`] : [] });
   }
@@ -162,7 +188,7 @@ export function planImport(deps: ImportDeps, text: string, options: { mode: Impo
 
   // Links.
   const idOf = (key: string): SavedDeviceId | null => deps.catalog.byKey(key)?.id ?? null;
-  const links: ImportPlan['links'] = document.links.map((link) => {
+  const links: ImportPlan['links'] = document.links.filter((link) => !leftOut.has(link.from.device) && !leftOut.has(link.to.device)).map((link) => {
     const [from, to] = [idOf(link.from.device), idOf(link.to.device)];
     const there = from && to && deps.links.all().some((each) => each.kind === link.kind && each.source.device === from && each.source.part === link.from.part && each.target.device === to && each.target.part === link.to.part);
     return { kind: link.kind, from: useText(link.from), to: useText(link.to), action: there ? 'same' : 'add' };
@@ -182,11 +208,14 @@ export function planImport(deps: ImportDeps, text: string, options: { mode: Impo
         if (!document.automations[use.automation] && !deps.automations.byKey(use.automation)) problem(`There is no automation "${use.automation}", in the file or here`, [...path, 'uses', role]);
         continue;
       }
-      if (document.devices[use.device] || deps.catalog.byKey(use.device)) continue;
-      // A device you do not have: one of yours that can do what the role needs.
+      if ((document.devices[use.device] && !leftOut.has(use.device)) || deps.catalog.byKey(use.device)) continue;
+      // A device you do not have: one of yours that can do what the role needs — or, restoring, nothing yet.
       const need = spec && !isAutomationRole(spec) ? spec : null;
-      needs.rebind.push({ automation: key, role, label: spec?.label ?? role, wanted: useText(use), candidates: candidatesFor(deps, need, document) });
+      if (options.lenient) problem(`${spec?.label ?? role}: "${useText(use)}" is not here`, [...path, 'uses', role]);
+      else needs.rebind.push({ automation: key, role, label: spec?.label ?? role, wanted: useText(use), candidates: candidatesFor(deps, need, document) });
     }
+    // What fills each part, checked as the apply will: a part that cannot do what its role needs is said now, not after a yes.
+    for (const said of bindingProblems(deps, entry, document, leftOut)) problem(said.message, [...path, ...said.path]);
     const existing = deps.automations.byKey(key);
     const acts = entry.mode === 'act' && (!existing || existing.mode !== 'armed' || !same(existing.rule, entry.rule) || existing.recheckMinutes !== entry.recheckMinutes);
     if (acts) needs.confirm.push(`"${entry.name}" will act on its own${existing?.mode === 'armed' ? ', doing what the file says' : ''}`);
@@ -224,7 +253,7 @@ export function planImport(deps: ImportDeps, text: string, options: { mode: Impo
   const view: ImportPlan = { id, from: read.from, problems: placed, devices, links, automations, policy, needs, notes };
   if (id) {
     for (const [planId, kept] of plans) if (kept.expiresAt < Date.now()) plans.delete(planId);
-    plans.set(id, { view, document, mode: options.mode, secrets, by: options.by, expiresAt: Date.now() + PLAN_TTL_MS });
+    plans.set(id, { view, document, mode: options.mode, secrets, by: options.by, expiresAt: Date.now() + PLAN_TTL_MS, turnedOff });
   }
   return view;
 }
@@ -233,6 +262,42 @@ export function planImport(deps: ImportDeps, text: string, options: { mode: Impo
 function locate(text: string, path: (string | number)[]): { line: number | null; column: number | null } {
   const placed = readConfig(text, {}, () => [{ message: '', path }]).problems[0];
   return { line: placed?.line ?? null, column: placed?.column ?? null };
+}
+
+/**
+ * What fills each part role — a device here, or one the file brings —
+ * checked as an automation's own checks do: the part is there, it can do what
+ * the role needs, and it reports, raises and lets be written what the rule
+ * asks of it. A role filled by neither is said elsewhere (rebind, or not here).
+ */
+function bindingProblems(deps: ImportDeps, entry: AutomationEntry, document: ConfigDocument, leftOut: ReadonlySet<string>): { message: string; path: (string | number)[] }[] {
+  const found: { message: string; path: (string | number)[] }[] = [];
+  const bound = new Map<string, BoundPart>();
+  for (const [role, spec] of Object.entries(entry.rule.roles)) {
+    const use = entry.uses[role];
+    if (isAutomationRole(spec) || !use || 'automation' in use) continue;
+    const brought = leftOut.has(use.device) ? undefined : document.devices[use.device];
+    const here = deps.catalog.byKey(use.device);
+    // The file's own word on it first: what it will be once imported.
+    const description = brought ? deps.types.get(brought.type)?.describe(brought.settings as never) : here?.description;
+    const name = brought?.name ?? here?.name;
+    if (!description || !name) continue;
+    if (!partsOf(description).some((part) => part.id === use.part)) {
+      found.push({ message: `${spec.label}: ${name} has no part "${use.part}"`, path: ['uses', role] });
+      continue;
+    }
+    const capabilities = capabilitiesOf(description, use.part);
+    if (!meetsNeed(spec, capabilities)) {
+      found.push({ message: `${spec.label}: that part of ${name} cannot do what it needs (${spec.capabilities.join(', ')})`, path: ['uses', role] });
+      continue;
+    }
+    bound.set(role, { name: use.part === MAIN ? name : `${name} — ${use.part}`, description, part: use.part, capabilities });
+  }
+  // What the filled parts must report and let be written: once the rule itself holds.
+  if (checkRule(entry.rule, deps.library).length) return found;
+  const filled = Object.fromEntries(Object.entries(entry.rule.roles).filter(([role, spec]) => !isAutomationRole(spec) && bound.has(role)));
+  for (const said of checkBinding({ ...entry.rule, roles: filled }, (role) => bound.get(role) ?? null)) found.push({ message: said, path: [] });
+  return found;
 }
 
 /** A device you removed that this entry is: the same type, by its identity — or by its key, when the entry says none. Brought back, its history is its own again. */
@@ -338,11 +403,20 @@ export async function applyImport(deps: ImportDeps, id: string, by: string, choi
   const missing: string[] = [];
   // A restore asks nothing: a device whose secret is gone is restored without it.
   if (!options.lenient) for (const need of view.needs.secrets) if (devicesIn(need.device) && !choices.secrets?.[`${need.device}.${need.field}`]) missing.push(`${need.deviceName}: its ${need.title}`);
-  for (const need of view.needs.rebind) if (automationsIn(need.automation) && !choices.rebind?.[`${need.automation}.${need.role}`]) missing.push(`"${document.automations[need.automation]?.name}": a device for ${need.label}`);
+  if (!options.lenient) for (const need of view.needs.rebind) if (automationsIn(need.automation) && !choices.rebind?.[`${need.automation}.${need.role}`]) missing.push(`"${document.automations[need.automation]?.name}": a device for ${need.label}`);
   if (missing.length) throw new ImportError(`It still needs ${missing.join('; ')}`, missing);
 
-  const applied: ImportApplied = { devices: { added: [], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, policy: [] };
+  const applied: ImportApplied = { devices: { added: [], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, policy: [], notes: [] };
   const touched: AutomationId[] = [];
+  /** Restoring, each in a savepoint of its own: what fails is undone alone, said, and the rest goes on. */
+  const each = (what: string, work: () => void) => {
+    if (!options.lenient) return work();
+    try {
+      db().transaction(work)();
+    } catch (error) {
+      applied.notes.push(`${what} could not be restored: ${error instanceof ImportError && error.problems.length ? error.problems.join('; ') : (error as Error).message}`);
+    }
+  };
   const forgotten: AutomationId[] = [];
 
   db().transaction(() => {
@@ -356,8 +430,10 @@ export async function applyImport(deps: ImportDeps, id: string, by: string, choi
       }
       if (item.action === 'same') continue;
       const entry = document.devices[item.key]!;
-      writeDevice(deps, item.key, entry, kept.secrets, choices.secrets ?? {});
-      (item.action === 'add' ? applied.devices.added : item.action === 'restore' ? applied.devices.restored : applied.devices.changed).push(item.key);
+      each(entry.name, () => {
+        writeDevice(deps, item.key, entry, kept.secrets, choices.secrets ?? {});
+        (item.action === 'add' ? applied.devices.added : item.action === 'restore' ? applied.devices.restored : applied.devices.changed).push(item.key);
+      });
     }
 
     // Links: the file's between the devices there are now; those it does not have, when replacing.
@@ -404,11 +480,16 @@ export async function applyImport(deps: ImportDeps, id: string, by: string, choi
         if (device && named) roles[role] = { device: device.id, part: named.part };
       }
       const result = deps.checked({ rule: entry.rule, roles, starts }, id);
-      if (result.problems.length) throw new ImportError(`"${entry.name}" cannot be kept as it is`, result.problems.map((said) => `"${entry.name}": ${said}`));
-      deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, starts: result.starts, timeZone: entry.clock, mode: MODE_OF_FILE[entry.mode], recheckMinutes: entry.recheckMinutes });
-      if (entry.homePlace !== (existing?.homePlace ?? null)) deps.automations.placeOnHome(id, entry.homePlace);
-      (existing ? applied.automations.changed : applied.automations.added).push(key);
-      touched.push(id);
+      // Restoring, one that cannot be kept as it was is kept turned off — its rule, what still fills it — and said: its owner's work is not lost.
+      const why = [...new Set([...(kept.turnedOff.get(key) ?? []), ...result.problems])];
+      if (why.length && !options.lenient) throw new ImportError(`"${entry.name}" cannot be kept as it is`, why.map((said) => `"${entry.name}": ${said}`));
+      each(`"${entry.name}"`, () => {
+        deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, starts: result.starts, timeZone: entry.clock, mode: why.length ? 'off' : MODE_OF_FILE[entry.mode], recheckMinutes: entry.recheckMinutes });
+        if (entry.homePlace !== (existing?.homePlace ?? null)) deps.automations.placeOnHome(id, entry.homePlace);
+        (existing ? applied.automations.changed : applied.automations.added).push(key);
+        if (why.length) applied.notes.push(`"${entry.name}" is restored turned off: ${why.join('; ')}`);
+        touched.push(id);
+      });
     }
 
     // The home's values.

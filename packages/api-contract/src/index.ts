@@ -798,6 +798,8 @@ export type ImportApplied = {
   automations: { added: string[]; changed: string[]; removed: string[] };
   links: { added: number; removed: number };
   policy: string[];
+  /** What was done otherwise than the file says — restoring, an automation kept turned off, a device left out — each in words. */
+  notes: string[];
 };
 
 /** `POST /config/export`: everything, or the devices and automations chosen by key; secrets left out, sealed with a passphrase, or plain where allowed. */

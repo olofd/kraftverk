@@ -439,6 +439,11 @@ function AppliedView({ applied }: { applied: ImportApplied }) {
       <Text fontSize={14} color="$color" lineHeight={20}>
         {said.length ? `${said.join(', ')}.` : 'Nothing needed changing.'}
       </Text>
+      {applied.notes.map((note) => (
+        <Text key={note} fontSize={13} color="$warning" lineHeight={19}>
+          {note}
+        </Text>
+      ))}
     </Card>
   );
 }

@@ -113,7 +113,7 @@ const isRecord = (data: unknown): data is Record<string, unknown> => typeof data
  * each rule read. Null with problems when any part cannot be read; the
  * document's version is the migration's to have brought to this one.
  */
-export function documentFromData(data: unknown, context: PrintContext = {}): { document: ConfigDocument | null; issues: Issue[] } {
+export function documentFromData(data: unknown, context: PrintContext = {}, options: { partial?: boolean } = {}): { document: ConfigDocument | null; issues: Issue[] } {
   const issues: Issue[] = [];
   const problem = (message: string, path: Path) => void issues.push({ message, path });
   if (!isRecord(data)) return { document: null, issues: [{ message: 'A configuration is a map: kraftverk, home, devices, links, automations', path: [] }] };
@@ -244,7 +244,8 @@ export function documentFromData(data: unknown, context: PrintContext = {}): { d
     else for (const [name, value] of Object.entries(data.secrets)) typeof value === 'string' ? (secrets[name] = value) : problem('A secret is text: sealed, or the value itself', ['secrets', name]);
   }
 
-  if (issues.length) return { document: null, issues };
+  // Partial: what could be read, beside every problem — whose entries the reader leaves out (`readConfig`).
+  if (issues.length && !options.partial) return { document: null, issues };
   return { document: { version: CURRENT_VERSION, home: { policy }, devices, links, automations, secrets }, issues };
 }
 

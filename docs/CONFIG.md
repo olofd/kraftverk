@@ -252,7 +252,11 @@ An import is two steps, and the first writes nothing:
    to is a 409 with `needsConfirmation`, sent back as `confirmation`.
 
 A device's type is what it is: a key naming a device of another type is a
-problem, not a change. A device you removed — the same type, by its identity
+problem, not a change. What fills each role is checked in the plan as the
+apply checks it — the part is there, can do what the role needs, and
+reports and lets be written what the rule asks — so nothing is said only
+after the yes. An automation bound to a device you removed is exported with
+that role empty, and said: a file names no key the server does not list. A device you removed — the same type, by its identity
 or its key — is **brought back with its history**, not added beside it. An
 app's own ways to reach a device are not in a configuration: its keys live
 on the phone.
@@ -262,10 +266,16 @@ on the phone.
 When the server starts on a database it has just made — a new schema set the
 old one aside, or there was none — and a configuration is kept beside it,
 it restores from it before anything is written over it: the file is copied
-aside first (`kraftverk.before-<time>.yaml`, never rotated), then imported
-as a merge that asks nothing — its secrets are the server's own, and what
-acted acts again. A secret the server's key no longer opens leaves its
-device restored without it, to be given again. What happened is on the
+aside first (`kraftverk.before-<time>.yaml`, the last five kept), then
+imported as a merge that asks nothing — its secrets are the server's own,
+and what acted acts again. It restores **item by item**, each in a
+savepoint of its own: a device it cannot read or keep (a type no longer
+installed) is left out; an automation it cannot keep as it was — a role
+naming a device that is not there, a part that can no longer do what it
+needs — is kept **turned off**, its rule whole and what still fills it,
+for its owner to finish; everything else is restored. A secret the server's
+key no longer opens leaves its device restored without it, to be given
+again. Each is said. What happened is on the
 timeline (`config.restored`, or `config.restore-failed` with its
 problems), in the server's log, and in `GET /api/config/snapshot`'s
 `restored`. Accounts are not in a configuration: after a reset, the first

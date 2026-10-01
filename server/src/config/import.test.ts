@@ -248,7 +248,7 @@ automations:
     expect(plan.problems).toEqual([{ message: 'Lamp: nothing fills it — name a device for it', path: ['automations', 'evening', 'uses', 'lamp'], line: 7, column: 13 }]);
   });
 
-  test('an automation that cannot be kept undoes the whole import — the devices added with it too', async () => {
+  test('a part that cannot do what the rule asks is said in the plan — before a yes, not after', () => {
     const text = `kraftverk: 1
 devices:
   new-lamp:
@@ -269,10 +269,36 @@ automations:
         to: 50
 `;
     const plan = planImport(deps, text, { mode: 'merge', by: 'olof' });
+    expect(plan.id).toBeNull();
+    expect(plan.problems).toEqual([{ message: 'Lamp: New lamp has no setting "brightness"', path: ['automations', 'broken'], line: 11, column: 5 }]);
+  });
+
+  test('an automation that cannot be kept at the apply undoes the whole import — the devices added with it too', async () => {
+    const { hall } = aHome();
+    const text = `kraftverk: 1
+devices:
+  new-lamp:
+    type: test.lamp
+    name: New lamp
+    connect:
+      - via: bus
+        address: lamp-new
+automations:
+  evening:
+    name: Evening
+    clock: Europe/Stockholm
+    uses:
+      lamp: hall-lamp
+    do:
+      - turn on: lamp
+`;
+    const plan = planImport(deps, text, { mode: 'merge', by: 'olof' });
     expect(plan.problems).toEqual([]);
+    // Between the plan and the yes, the lamp it uses goes.
+    deps.catalog.remove(hall.id);
     await expect(applyImport(deps, plan.id!, 'olof', {})).rejects.toBeInstanceOf(ImportError);
     expect(deps.catalog.byKey('new-lamp')).toBeNull();
-    expect(deps.automations.byKey('broken')).toBeNull();
+    expect(deps.automations.byKey('evening')).toBeNull();
   });
 
   test('replacing: what the file does not have is removed — and asked a yes to', async () => {
@@ -320,5 +346,46 @@ describe('the snapshot kept beside the database', () => {
     expect(deps.automations.byKey('morning')).toMatchObject({ mode: 'armed', homePlace: 0 });
     expect(readdirSync(join(dir, 'config')).some((name) => name.startsWith('kraftverk.before-'))).toBe(true);
     expect(existsSync(file)).toBe(true);
+  });
+
+  test('restores item by item: an automation naming a removed device kept turned off, a device it cannot read left out — the rest restored', async () => {
+    const { hall, porch } = aHome();
+    // One that uses the porch lamp, which is then removed: its role is still bound to it.
+    const evening = deps.automations.create({ name: 'Evening', rule: lampRule, madeFrom: null, roles: { lamp: { device: porch.id, part: 'main' } }, starts: {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
+    deps.automations.update(evening.id, { mode: 'armed' });
+    deps.catalog.remove(porch.id);
+    const text = exported('kept');
+    // Its role is written empty: the file names no key the server does not list.
+    expect(text).toContain('lamp: null');
+    // And a device of a type no longer installed, beside the rest.
+    const file = join(dir, 'config', 'kraftverk.yaml');
+    const { mkdirSync } = await import('node:fs');
+    mkdirSync(join(dir, 'config'), { recursive: true });
+    writeFileSync(file, text.replace('devices:\n', 'devices:\n  attic-heater:\n    type: test.gone\n    name: Attic heater\n'));
+    db().exec('DELETE FROM automation; DELETE FROM device;');
+
+    const restored = await restoreFrom(deps, file);
+    expect(restored!.applied!.devices.added).toEqual(['hall-lamp']);
+    expect(deps.catalog.byKey('hall-lamp')!.identity).toBe(hall.identity);
+    expect(deps.automations.byKey('morning')).toMatchObject({ mode: 'armed', homePlace: 0 });
+    // Kept, turned off, its rule whole: its owner gives it a lamp again.
+    expect(deps.automations.byKey('evening')).toMatchObject({ mode: 'off', rule: lampRule, roles: {} });
+    expect(restored!.problems).toEqual([
+      expect.stringMatching(/^line \d+: No installed device type is called "test\.gone" — left out$/),
+      '"Evening" is restored turned off: Lamp: nothing fills it — name a device for it; Lamp: choose one of your devices',
+    ]);
+  });
+
+  test('of the copies a restore was made from, the last five are kept', async () => {
+    const { mkdirSync } = await import('node:fs');
+    const folder = join(dir, 'copies');
+    mkdirSync(folder, { recursive: true });
+    const file = join(folder, 'kraftverk.yaml');
+    for (let n = 0; n < 7; n++) writeFileSync(join(folder, `kraftverk.before-2026-01-0${n + 1}T00-00-00Z.yaml`), 'kraftverk: 1\n');
+    writeFileSync(file, 'kraftverk: 1\n');
+    await restoreFrom(deps, file);
+    const copies = readdirSync(folder).filter((name) => name.startsWith('kraftverk.before-')).sort();
+    expect(copies.length).toBe(5);
+    expect(copies[0]).toBe('kraftverk.before-2026-01-04T00-00-00Z.yaml');
   });
 });

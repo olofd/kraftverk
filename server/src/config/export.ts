@@ -154,13 +154,14 @@ export function exportConfig(deps: ConfigDeps, options: ExportOptions): Exported
   }
 
   // Automations: what fills each role, by key.
-  const keyOf = { device: (id: string) => deps.catalog.get(id as SavedDeviceId)?.key ?? null, automation: (id: string) => deps.automations.get(id)?.key ?? null };
+  // A device you removed fills nothing in a file: its role is written empty, and said.
+  const keyOf = { device: (id: string) => { const device = deps.catalog.get(id as SavedDeviceId); return device && !device.removedAt ? device.key : null; }, automation: (id: string) => deps.automations.get(id)?.key ?? null };
   const describe = (id: string) => deps.catalog.get(id as SavedDeviceId)?.description ?? null;
   const elsewhere = new Set<string>();
   const units = new Map<string, PrintContext>();
   for (const automation of automations) {
     const { entry, gone } = automationEntryFrom(automation, keyOf);
-    for (const role of gone) notes.push(`"${automation.name}": ${role} was filled by ${role in automation.starts ? 'an automation' : 'a device'} that is gone`);
+    for (const role of gone) notes.push(`"${automation.name}": ${automation.rule.roles[role]?.label ?? role} was filled by ${role in automation.starts ? 'an automation' : 'a device'} that is gone: written empty`);
     for (const binding of Object.values(automation.roles)) {
       const key = keyOf.device(binding.device);
       if (key && !carried.has(binding.device)) elsewhere.add(key);
