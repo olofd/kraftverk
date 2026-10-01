@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { AutomationId, RecipeView, RoleBinding } from '@kraftverk/api-client';
 import { checkRule, savedDeviceId, startCharging, stopCharging, type DeviceDescription, type Step } from '@kraftverk/device-sdk';
 
-import { automationRole, blankStep, EMPTY, fromRecipe, insertStep, kindsFor, listAt, mayWait, moveStep, OTHERWISE, partRole, pruned, removeStep, sameParts, THEN, withStep, within } from './draft';
+import { automationRole, blankStep, EMPTY, fromRecipe, insertStep, kindsFor, listAt, mayWait, moveStep, OTHERWISE, partRole, pruned, roleName, removeStep, sameParts, THEN, withStep, within } from './draft';
 
 /*
   The editor's draft, changed the way its screens change it: blocks added,
@@ -49,23 +49,30 @@ describe('blocks', () => {
 });
 
 describe('roles', () => {
-  test('a part picked fills one role, whatever uses it — labelled by what it is, not by a name that can change; one nothing uses is not kept', () => {
+  test('a part picked fills one role, whatever uses it — named and labelled by what it is, not by a name that can change; one nothing uses is not kept', () => {
     const first = partRole(EMPTY, plug, PLUG);
-    expect(first.role).toBe('part1');
-    expect(first.draft.rule.roles.part1).toEqual({ label: 'Switch', description: 'Switch', capabilities: ['switch', 'powerMeter'] });
+    // Named as a file says it, and its conditions read: switch, not part1.
+    expect(first.role).toBe('switch');
+    expect(first.draft.rule.roles.switch).toEqual({ label: 'Switch', description: 'Switch', capabilities: ['powerMeter', 'switch'] });
     // Picked again, for another block: the same role.
-    expect(partRole(first.draft, plug, PLUG).role).toBe('part1');
-    const used = { ...first.draft, rule: insertStep(first.draft.rule, THEN, 0, blankStep('command', 'part1')) };
+    expect(partRole(first.draft, plug, PLUG).role).toBe('switch');
+    // Another part of the same kind: switch2.
+    expect(partRole(first.draft, { ...plug, device: savedDeviceId('d-other') }, PLUG).role).toBe('switch2');
+    const used = { ...first.draft, rule: insertStep(first.draft.rule, THEN, 0, blankStep('command', 'switch')) };
     expect(checkRule(used.rule, { fn: () => null })).toEqual([]);
-    expect(pruned(used).roles).toEqual({ part1: plug });
+    expect(pruned(used).roles).toEqual({ switch: plug });
     expect(pruned(first.draft)).toMatchObject({ rule: { roles: {} }, roles: {} });
+    // A label with no letters to name it by: part.
+    expect(roleName(EMPTY.rule, '42')).toBe('part');
+    expect(roleName(EMPTY.rule, 'Laddare för skotern')).toBe('laddareForSkotern');
   });
 
   test('an automation to start fills a role of its own kind, labelled as what it is', () => {
     const { draft, role } = automationRole(EMPTY, 'a-charge' as AutomationId);
-    expect(role).toBe('automation1');
-    expect(draft.rule.roles.automation1).toEqual({ automation: true, label: 'Another automation', description: 'An automation it starts' });
-    expect(draft.starts).toEqual({ automation1: 'a-charge' });
+    expect(role).toBe('automation');
+    expect(draft.rule.roles.automation).toEqual({ automation: true, label: 'Another automation', description: 'An automation it starts' });
+    expect(draft.starts).toEqual({ automation: 'a-charge' });
+    expect(automationRole(draft, 'a-other' as AutomationId).role).toBe('automation2');
   });
 });
 

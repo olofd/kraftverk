@@ -112,9 +112,22 @@ export const mayWait = (path: ListPath): boolean => path.root === 'then' && !pat
 
 // --- roles ------------------------------------------------------------------------------
 
-/** A role name the language takes: camelCase, not yet in the rule. */
-const freshRole = (rule: Rule, stem: string): string => {
-  for (let n = 1; ; n += 1) if (!rule.roles[`${stem}${n}`]) return `${stem}${n}`;
+/**
+ * A role's name from its label, as a file says it and its conditions read:
+ * "Switch" is `switch`, "Power meter" `powerMeter` — and `switch2` beside
+ * another. camelCase, as the language takes it; `part` for a label of no
+ * letters it can use.
+ */
+export const roleName = (rule: Rule, label: string): string => {
+  const words = label
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((word) => word.toLowerCase());
+  const stem = words.length && /^[a-z]/.test(words[0]!) ? words.map((word, index) => (index ? word.charAt(0).toUpperCase() + word.slice(1) : word)).join('') : 'part';
+  if (!rule.roles[stem]) return stem;
+  for (let n = 2; ; n += 1) if (!rule.roles[`${stem}${n}`]) return `${stem}${n}`;
 };
 
 /**
@@ -126,9 +139,13 @@ const freshRole = (rule: Rule, stem: string): string => {
 export function partRole(draft: Draft, binding: RoleBinding, description: DeviceDescription): { draft: Draft; role: string } {
   const found = Object.entries(draft.roles).find(([, bound]) => bound.device === binding.device && bound.part === binding.part);
   if (found) return { draft, role: found[0] };
-  const role = freshRole(draft.rule, 'part');
-  const capabilities = capabilitiesOf(description, binding.part).filter((capability): capability is CapabilityName => typeof capability === 'string');
-  const label = (capabilities[0] ? capabilityIn(description, capabilities[0])?.label : undefined) ?? 'A part';
+  // What it offers, in the order a file infers it: a role asked for what the rule uses of it is written as just its part.
+  const capabilities = capabilitiesOf(description, binding.part)
+    .filter((capability): capability is CapabilityName => typeof capability === 'string')
+    .sort();
+  const offered = capabilitiesOf(description, binding.part).filter((capability): capability is CapabilityName => typeof capability === 'string');
+  const label = (offered[0] ? capabilityIn(description, offered[0])?.label : undefined) ?? 'A part';
+  const role = roleName(draft.rule, label);
   return {
     role,
     draft: {
@@ -143,7 +160,7 @@ export function partRole(draft: Draft, binding: RoleBinding, description: Device
 export function automationRole(draft: Draft, automation: AutomationId): { draft: Draft; role: string } {
   const found = Object.entries(draft.starts).find(([, started]) => started === automation);
   if (found) return { draft, role: found[0] };
-  const role = freshRole(draft.rule, 'automation');
+  const role = roleName(draft.rule, 'automation');
   return {
     role,
     draft: {

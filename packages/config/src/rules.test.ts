@@ -145,6 +145,27 @@ describe('lengths of time', () => {
   });
 });
 
+describe('what a role needs', () => {
+  test('is what the rule does with it: the commands it is sent, the standard readings it is read for, the events it raises', () => {
+    const read = ruleFromConfig(
+      {
+        uses: { station: 'garage-station', plug: 'smart-plug', mains: 'garage-station.input.ac' },
+        when: [{ becomes: 'station.battery.soc < 20 %' }, { event: 'mains.lost', from: 'mains' }],
+        do: [{ 'turn on': 'plug' }, { 'wait until': 'plug.power.draw > 50 W', 'at most': '20 s' }],
+      },
+      ['a']
+    );
+    expect(read.issues).toEqual([]);
+    expect(Object.fromEntries(Object.entries(read.rule!.roles).map(([role, spec]) => [role, 'capabilities' in spec ? spec.capabilities : null]))).toEqual({
+      station: ['battery'],
+      plug: ['powerMeter', 'switch'],
+      mains: ['acInput'],
+    });
+    // A role only read is no longer one any device would do.
+    expect(checkRule(read.rule!, { fn: () => null })).toEqual([]);
+  });
+});
+
 describe('units', () => {
   const read = (condition: string, context = {}) => ruleFromConfig({ uses: { plug: 'plug' }, when: [{ becomes: condition }], do: [] }, ['a'], context);
   test('a number beside a reading is in its unit: converted from another of the same quantity, refused from another quantity', () => {

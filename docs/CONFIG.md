@@ -121,11 +121,16 @@ describes.
   refused.
 - **What fills a role** (`uses:`): `device-key` or `device-key.part`; another
   automation as `{ automation: key }`. A role's label and what it needs come
-  from what the rule does with it; say them only when they differ:
+  from what the rule does with it — the commands it is sent, the standard
+  readings read from it (`battery.soc` asks for a battery, `power.draw` a
+  power meter), the events it raises (`mains.lost`, an AC input); say them
+  only when they differ:
   `{ part: …, label: …, description: …, needs: [switch, powerMeter] }`. A
-  role the rule only reads or changes a setting of asks for no capability of
-  its own, and the language refuses a role any device would do: say its
-  `needs`. (A file kraftverk writes always does.)
+  role the rule only changes a setting of, or asks only whether it can be
+  reached, asks for no capability, and the language refuses a role any
+  device would do: say its `needs`. (A file kraftverk writes always does.)
+  The app names a role from its label — `switch`, `battery`, `switch2` —
+  so what it builds reads as a file written by hand would.
 
 Anything text cannot say exactly — a list as a value — is kept as the rule's
 own data in its place; a file the server writes always reads back the same.

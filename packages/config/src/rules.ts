@@ -1,4 +1,4 @@
-import { isAutomationRole, standardMeaning, type CapabilityName, type Expr, type Rule, type RoleSpec, type Step, type Trigger, type Weekday, WEEKDAYS } from '@kraftverk/device-sdk';
+import { CAPABILITIES, isAutomationRole, ruleUses, standardMeaning, type CapabilityName, type Expr, type Rule, type RoleSpec, type Step, type Trigger, type Weekday, WEEKDAYS } from '@kraftverk/device-sdk';
 
 import { parseExpr, printExpr, type PrintContext, type WrittenUnit } from './expr.ts';
 
@@ -321,7 +321,32 @@ export function labelOf(role: string): string {
 }
 
 /** What a rule's own steps ask of a role's part: the capabilities its commands use. */
-function usedCapabilities(rule: Pick<Rule, 'then' | 'otherwise'>, role: string): string[] {
+/** What a rule does with its roles, as far as inferring them goes: its triggers, its condition and its steps. */
+export type RuleBody = Pick<Rule, 'when' | 'then' | 'otherwise' | 'if'>;
+
+/**
+ * The capability a standard meaning, or an event, belongs to — when it
+ * belongs to one only: reading `battery.soc` asks for a battery, reading
+ * `power.draw` for a power meter, `mains.lost` for an AC input.
+ */
+const CAPABILITY_OF = (() => {
+  const of = new Map<string, Set<string>>();
+  const add = (key: string, capability: string) => of.set(key, new Set([...(of.get(key) ?? []), capability]));
+  for (const [capability, spec] of Object.entries(CAPABILITIES)) {
+    for (const attribute of Object.values(spec.attributes as Record<string, { means: string }>)) add(`read:${attribute.means}`, capability);
+    for (const event of Object.keys((spec as { events?: Record<string, unknown> }).events ?? {})) add(`event:${event}`, capability);
+  }
+  return (key: string): string | null => {
+    const found = of.get(key);
+    return found?.size === 1 ? [...found][0]! : null;
+  };
+})();
+
+/**
+ * What a role is asked for, from what the rule does with it: the commands it
+ * is sent, the standard readings read from it, the events it raises.
+ */
+function usedCapabilities(rule: RuleBody, role: string): string[] {
   const used = new Set<string>();
   const walk = (steps: readonly Step[]) => {
     for (const step of steps) {
@@ -333,11 +358,15 @@ function usedCapabilities(rule: Pick<Rule, 'then' | 'otherwise'>, role: string):
   };
   walk(rule.then);
   walk(rule.otherwise ?? []);
+  const uses = ruleUses({ roles: {}, params: { fields: {} }, when: rule.when, ...(rule.if !== undefined ? { if: rule.if } : {}), then: rule.then, ...(rule.otherwise !== undefined ? { otherwise: rule.otherwise } : {}) });
+  const add = (capability: string | null) => void (capability && used.add(capability));
+  for (const read of uses.reads) if (read.role === role) add(CAPABILITY_OF(`read:${read.means}`));
+  for (const event of uses.events) if (event.role === role) add(CAPABILITY_OF(`event:${event.event}`));
   return [...used].sort();
 }
 
 /** A role as the file would have it said, when it says only what fills it. */
-export function inferredRole(rule: Pick<Rule, 'then' | 'otherwise'>, role: string, automation: boolean): RoleSpec {
+export function inferredRole(rule: RuleBody, role: string, automation: boolean): RoleSpec {
   const label = labelOf(role);
   return automation ? { automation: true, label, description: label } : { label, description: label, capabilities: usedCapabilities(rule, role) as CapabilityName[] };
 }
@@ -377,7 +406,7 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path, conte
   const otherwise = 'if a step fails' in entry ? tryRead(reader, () => reader.steps(entry['if a step fails'], [...path, 'if a step fails'])) : undefined;
   const params = 'params' in entry && isRecord(entry.params) ? (entry.params as Rule['params']) : { fields: {} };
 
-  const steps = { then, otherwise: otherwise ?? undefined };
+  const steps: RuleBody = { when, ...(condition !== undefined && condition !== null ? { if: condition } : {}), then, ...(otherwise !== undefined && otherwise !== null ? { otherwise } : {}) };
   const roles: Record<string, RoleSpec> = {};
   const uses: Record<string, Use> = {};
   const usesData = entry.uses ?? {};
