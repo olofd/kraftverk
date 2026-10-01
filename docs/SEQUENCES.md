@@ -273,8 +273,11 @@ In their packages, through two small additions to the device contract:
 
 - **`DeviceSession.wantFresh?(until: number)`** — someone is waiting on this
   device's readings until then; report as often as it sensibly can. The Tuya
-  socket polls every 2 s while wanted (the Zigbee plug's gateway asks the
-  plug each time), never longer than 5 minutes a time.
+  socket polls every 2 s while wanted, never longer than 5 minutes a time.
+  Behind a Zigbee gateway a poll is answered from the gateway's memory; the
+  plug pushes its power as a load changes — a charger's first watts 7 s
+  after it was switched on, on the owner's plug — so the memory is current
+  within seconds of the push (the plug's README).
 - **Reachability** is the session's health, as now: `connected` is reachable.
   The Tuya socket behind a gateway says *offline — its gateway cannot reach
   it* when the gateway reports the plug gone, and takes none of the gateway's

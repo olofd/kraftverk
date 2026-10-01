@@ -73,10 +73,13 @@ type World = {
   plugSwitchedOn: number;
   /** The plug’s live readings: a setting it may be told. */
   live: boolean;
+  /** The gateway’s gap between two switches of the plug in one run, in real milliseconds: refused within it, saying how long is left. */
+  plugGapMs: number;
+  plugSwitchedAt: number;
 };
 
 function setup(world: Partial<World> = {}) {
-  const state: World = { supplyOn: false, othersWatts: 0, plugOn: false, reachableAfterMs: 0, supplyOnAt: 0, wakesOnSwitch: 1, plugSwitchedOn: 0, live: false, ...world };
+  const state: World = { supplyOn: false, othersWatts: 0, plugOn: false, reachableAfterMs: 0, supplyOnAt: 0, wakesOnSwitch: 1, plugSwitchedOn: 0, live: false, plugGapMs: 0, plugSwitchedAt: 0, ...world };
   const sent: CommandIntent[] = [];
   const recorded: AuditRecord[] = [];
   const heard: LiveMessage[] = [];
@@ -140,10 +143,16 @@ function setup(world: Partial<World> = {}) {
     device: (binding) => devices[`${binding.device}:${binding.part}`] ?? null,
     gateway: {
       execute: async (intent: CommandIntent): Promise<GatewayResult> => {
+        if (intent.deviceId !== STATION && Date.now() - state.plugSwitchedAt < state.plugGapMs) {
+          return { outcome: 'refused', detail: 'Too soon', retryInMs: ((state.plugGapMs - (Date.now() - state.plugSwitchedAt)) * 1000) / SECOND_MS };
+        }
         sent.push(intent);
         ledger.switched(intent.deviceId, intent.part, { at: Date.now(), by: intent.by });
+        if (intent.deviceId !== STATION) state.plugSwitchedAt = Date.now();
         const on = intent.args.on === true;
         if (intent.deviceId === STATION) {
+          // As the gateway says it: a supply already as asked is not switched.
+          if (on === state.supplyOn) return { outcome: 'verified', detail: `Already ${on ? 'on' : 'off'}`, deviceAgreed: true };
           if (on && !state.supplyOn) state.supplyOnAt = Date.now();
           state.supplyOn = on;
         } else {
@@ -305,6 +314,23 @@ describe('starting a charge', () => {
     expect(run.steps.filter((step) => step.within === 'After it was stopped by olof').length).toBeGreaterThan(0);
     expect(switches()).toEqual(['supply on', 'charger off', 'supply off']);
     expect(run.summary).toStartWith('Stopped by olof after it turned Garage station — AC outlets on');
+  });
+
+  test('stopped just after the plug was switched on: switching it off again waits out the gateway’s gap — it is not left on', async () => {
+    // The charger never draws; the stop comes a moment after the plug was switched on, inside the gap.
+    const { engine, make, ended, switches } = setup({ supplyOn: true, wakesOnSwitch: null, plugGapMs: 60 });
+    const automation = make('standard.start-charging', QUICK);
+    await engine.startAsked(automation.id, OLOF);
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    engine.stopAsked(automation.id, 'olof');
+    const run = await ended(automation.id);
+
+    expect(run.outcome).toBe('stopped');
+    expect(switches()).toEqual(['supply on', 'charger on', 'charger off', 'supply off']);
+    // What was already so is not said as something it did.
+    expect(run.summary).toBe('Stopped by olof after it turned Scooter plug on; then turned Scooter plug off, turned Garage station — AC outlets off');
+    const off = run.steps.find((step) => step.within === 'After it was stopped by olof' && step.what.endsWith('off') && step.what.includes('plug'));
+    expect(off).toMatchObject({ outcome: 'done' });
   });
 
   test('deleted while it waits: it stops, does what it does if stopped, and is neither kept nor on the timeline', async () => {

@@ -181,6 +181,32 @@ export const rolesOf = (rule: Rule) => ({
   automations: Object.entries(rule.roles).filter(([, spec]) => isAutomationRole(spec)),
 });
 
+/**
+ * The parts another automation already uses for every part this draft still
+ * has to choose — the same role, filled with a part that fits it here: "Stop
+ * charging" copied after "Start charging" needs the same supply and plug.
+ * Each such automation, with what it would fill; none when nothing is left
+ * to choose.
+ */
+export function sameParts(
+  draft: Draft,
+  others: readonly { id: AutomationId; name: string; rule: Rule; roles: Record<string, RoleBinding> }[],
+  fits: (role: string, binding: RoleBinding) => boolean
+): { id: AutomationId; name: string; roles: Record<string, RoleBinding> }[] {
+  const open = rolesOf(draft.rule).parts.map(([role]) => role).filter((role) => !draft.roles[role]);
+  if (!open.length) return [];
+  return others.flatMap((other) => {
+    const fill: Record<string, RoleBinding> = {};
+    for (const role of open) {
+      const spec = other.rule.roles[role];
+      const binding = other.roles[role];
+      if (!spec || isAutomationRole(spec) || !binding || !fits(role, binding)) return [];
+      fill[role] = binding;
+    }
+    return [{ id: other.id, name: other.name, roles: fill }];
+  });
+}
+
 // --- starting points --------------------------------------------------------------------
 
 /** An automation built from nothing: no trigger, no step yet. */

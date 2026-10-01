@@ -99,7 +99,7 @@ describe('read back', () => {
       'Turn Garage station’s AC outlets on',
       'Wait until Scooter plug can be reached — at most 2 min',
       'Turn Scooter plug on',
-      ["Make sure Scooter plug’s power is above 50 W within 20 s — if not, try again, at most 3 times", [['Each time', ['Turn Scooter plug off', 'Wait 5 s', 'Turn Scooter plug on']]]],
+      ["Make sure Scooter plug’s power is above 50 W within 20 s — if not, try again, at most 5 times", [['Each time', ['Turn Scooter plug off', 'Wait 5 s', 'Turn Scooter plug on']]]],
     ]);
     // What its owner chose is no step: the steps it chose, in its place.
     expect(flat(otherwise)).toEqual(['Turn Scooter plug off', 'Turn Garage station’s AC outlets off']);

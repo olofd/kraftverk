@@ -1004,7 +1004,7 @@ export class AutomationEngine {
       if (chosen) {
         walked = await this.#walk(live, chosen, depth, within, mode);
       } else if ('command' in step) {
-        walked = await this.#command(live, step.command, depth, within);
+        walked = await this.#command(live, step.command, depth, within, mode === 'otherwise');
       } else if ('write' in step) {
         walked = await this.#write(live, step.write, depth, within, what());
       } else if ('start' in step) {
@@ -1086,7 +1086,7 @@ export class AutomationEngine {
   }
 
   /** A command, through the gateway, with the run's allowance: one step. */
-  async #command(live: LiveRun, command: Command, depth: number, within: string | null): Promise<Walked> {
+  async #command(live: LiveRun, command: Command, depth: number, within: string | null, regardless: boolean): Promise<Walked> {
     const scope = this.#scope(live.automation, live.rule);
     const planned = await this.#planCommand(live.automation, command, scope);
     if ('unknown' in planned) {
@@ -1097,21 +1097,38 @@ export class AutomationEngine {
     // Why, and what it read to decide: what the device's timeline says the command was for.
     const saw = live.run.saw;
     const reason = `${live.automation.name}: ${live.run.why}${saw.length ? ` (${saw.join('; ')})` : ''}`;
-    let outcome: GatewayResult;
-    try {
-      outcome = await this.deps.gateway.execute({
-        deviceId: planned.binding.device,
-        part: planned.binding.part,
-        capability: planned.capability,
-        command: planned.command,
-        args: planned.args,
-        reason,
-        actor: 'automation',
-        by: actorOf(live.automation),
-        run: { id: live.id, askedBy: live.asker?.actor ?? null, switches: live.allowance[planned.role] ?? 1 },
-      });
-    } catch (error) {
-      outcome = { outcome: 'failed', detail: (error as Error).message };
+    const send = async (): Promise<GatewayResult> => {
+      try {
+        return await this.deps.gateway.execute({
+          deviceId: planned.binding.device,
+          part: planned.binding.part,
+          capability: planned.capability,
+          command: planned.command,
+          args: planned.args,
+          reason,
+          actor: 'automation',
+          by: actorOf(live.automation),
+          run: { id: live.id, askedBy: live.asker?.actor ?? null, switches: live.allowance[planned.role] ?? 1 },
+        });
+      } catch (error) {
+        return { outcome: 'failed', detail: (error as Error).message };
+      }
+    };
+    let outcome = await send();
+    /*
+      Switched a moment ago in this run: the gateway's gap is waited out, and
+      it is sent once more — a plug to be switched off after a stop that came
+      just after it was switched on is still switched off, not left on.
+    */
+    if (outcome.outcome === 'refused' && outcome.retryInMs !== undefined) {
+      const seconds = Math.ceil(outcome.retryInMs / 1000);
+      Object.assign(entry, { detail: `Waiting ${secondsText(seconds)}: it was switched a moment ago`, until: this.#after(seconds) });
+      this.#moved(live);
+      if ((await this.#sleep(live, seconds, regardless)) === 'stopped') {
+        this.#end(live, entry, 'stopped', `Stopped by ${live.stoppedBy}`);
+        return 'stopped';
+      }
+      outcome = await send();
     }
     const already = outcome.outcome === 'verified' && outcome.detail.startsWith('Already');
     this.#end(live, entry, already ? 'already' : outcome.outcome === 'verified' ? 'done' : outcome.outcome, outcome.detail);
@@ -1222,17 +1239,17 @@ export class AutomationEngine {
     const steps = split < 0 ? live.run.steps : live.run.steps.slice(0, split);
     const later = split < 0 ? [] : live.run.steps.slice(split);
     const done = steps.filter((step) => ACTS.has(step.kind) && (step.outcome === 'done' || step.outcome === 'already' || step.outcome === 'unverified') && !step.within?.startsWith('Try'));
-    const did = done.map((step) => (step.outcome === 'already' ? `${lowerFirst(step.what)}: it already was` : lowerFirst(pastOf(step.what))));
+    // What it changed: what was already so is no deed of its own.
+    const changed = done.filter((step) => step.outcome !== 'already').map((step) => lowerFirst(pastOf(step.what)));
     const made = steps.filter((step) => step.kind === 'ensure' && step.outcome === 'met').map((step) => step.detail);
     const afterwards = later.filter((step) => ACTS.has(step.kind) && (step.outcome === 'done' || step.outcome === 'already'));
     const then = afterwards.length ? `; then ${afterwards.map((step) => lowerFirst(pastOf(step.what))).join(', ')}` : '';
-    if (walked === 'stopped') return `Stopped by ${live.stoppedBy}${did.length ? ` after it ${did.join(', ')}` : ''}${then}`;
+    if (walked === 'stopped') return `Stopped by ${live.stoppedBy}${changed.length ? ` after it ${changed.join(', ')}` : ''}${then}`;
     if (walked === 'failed') {
       const failing = steps.find((step) => step.depth === 0 && (step.outcome === 'timed-out' || step.outcome === 'failed' || step.outcome === 'refused')) ?? steps.find((step) => step.outcome === 'failed' || step.outcome === 'refused');
       return `Did not succeed: ${failing ? `${lowerFirst(failing.what)} — ${lowerFirst(failing.detail)}` : 'a step did not'}${then}`;
     }
     // What changed leads; what was already so is said once; what it made sure of is said as the reading it saw.
-    const changed = done.filter((step) => step.outcome !== 'already').map((step) => lowerFirst(pastOf(step.what)));
     const sure = made.map((detail) => {
       const [when = '', saw] = detail.split(' — ');
       return saw ? `${saw}, ${lowerFirst(when)}` : lowerFirst(detail);

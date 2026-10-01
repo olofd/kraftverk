@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { AutomationId, RecipeView, RoleBinding } from '@kraftverk/api-client';
-import { checkRule, savedDeviceId, startCharging, type DeviceDescription, type Step } from '@kraftverk/device-sdk';
+import { checkRule, savedDeviceId, startCharging, stopCharging, type DeviceDescription, type Step } from '@kraftverk/device-sdk';
 
-import { automationRole, blankStep, EMPTY, fromRecipe, insertStep, kindsFor, listAt, mayWait, moveStep, OTHERWISE, partRole, pruned, removeStep, THEN, withStep, within } from './draft';
+import { automationRole, blankStep, EMPTY, fromRecipe, insertStep, kindsFor, listAt, mayWait, moveStep, OTHERWISE, partRole, pruned, removeStep, sameParts, THEN, withStep, within } from './draft';
 
 /*
   The editor's draft, changed the way its screens change it: blocks added,
@@ -76,4 +76,18 @@ test('a recipe copied: its settings at their defaults, written into its blocks â
   expect(draft.rule.params).toEqual({ fields: {} });
   expect(draft.rule.then[1]).toEqual({ waitUntil: { condition: { reachable: 'charger' }, atMostSeconds: { value: 120 } } });
   expect(checkRule(draft.rule, { fn: () => null })).toEqual([]);
+});
+
+test('stop after start: the parts another automation uses for the same roles are offered, when they fit', () => {
+  const view = (recipe: typeof startCharging) => ({ id: recipe.id, label: recipe.label, rule: recipe }) as unknown as RecipeView;
+  const station: RoleBinding = { device: savedDeviceId('d-station'), part: 'ac' };
+  const start = { id: 'a-start' as AutomationId, name: 'Start charging the scooter', rule: fromRecipe(view(startCharging)).rule, roles: { supply: station, charger: plug } };
+  const unrelated = { id: 'a-other' as AutomationId, name: 'Heater', rule: { ...start.rule, roles: { heater: start.rule.roles.charger! } }, roles: { heater: plug } };
+  const stop = fromRecipe(view(stopCharging));
+
+  expect(sameParts(stop, [start, unrelated], () => true)).toEqual([{ id: start.id, name: start.name, roles: { supply: station, charger: plug } }]);
+  // A part that does not fit here is not offered.
+  expect(sameParts(stop, [start], (role) => role !== 'supply')).toEqual([]);
+  // Nothing left to choose, nothing offered.
+  expect(sameParts({ ...stop, roles: { supply: station, charger: plug } }, [start], () => true)).toEqual([]);
 });

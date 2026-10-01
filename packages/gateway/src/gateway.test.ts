@@ -572,7 +572,11 @@ describe('dwell', () => {
 
     expect((await gateway.execute(cut({ run }))).outcome).toBe('verified');
     // Off and on again at once: the run's own gap, not the automation's dwell — but not sooner than it.
-    expect((await gateway.execute(cut({ args: { on: true }, run }))).detail).toContain('in this run');
+    const early = await gateway.execute(cut({ args: { on: true }, run }));
+    expect(early.detail).toContain('in this run');
+    // How long is left of the gap, so the run can wait it out.
+    expect(early.retryInMs).toBeGreaterThan(0);
+    expect(early.retryInMs).toBeLessThanOrEqual(30);
     await pause();
     expect((await gateway.execute(cut({ args: { on: true }, run }))).outcome).toBe('verified');
     await pause();

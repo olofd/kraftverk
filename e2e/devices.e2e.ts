@@ -109,7 +109,8 @@ test('a NIU scooter is found under Vehicles — the common one, and a model of i
   // A model reported with its finish after its name is still that model: the check lets it be added as one.
   const scooter = await addSimulated(request, 'niu.uqi-gt', unique('Scooter'));
   await page.goto(`/device/${scooter.id}`);
-  await expect(page.getByRole('progressbar')).toBeVisible();
+  // Its battery, in percent: not the spinner a chart shows while it loads, which is a progress bar too.
+  await expect(page.locator('[role=progressbar][aria-valuemax="100"]')).toBeVisible();
   await expect(page.getByText(/^(Charging|Switched on|Parked)$/)).toBeVisible();
   await expect(page.getByText(/^Reported to NIU /)).toBeVisible();
   await expect(page.getByText('Its battery', { exact: true })).toBeVisible();

@@ -50,9 +50,19 @@ A Zigbee plug has no IP address and no key of its own. kraftverk speaks to its
   empty 0x0d acknowledgement, then the push `{"1":true}` within 0.2 s.
 - **Every change is pushed** within seconds, whoever made it — the app, the
   button, the countdown, a schedule: `0x08 {"protocol":4,"data":{"dps":{"1":true},"cid":…}}`.
-- **Power, current and voltage are not pushed**: switching a 1 kW fan off
-  pushed the relay only. They must be asked for — as Zigbee2MQTT documents
-  for this plug's firmware from 1.0.5. **Energy is** pushed on its own
+- **Power and current are pushed while a load changes**, not at once:
+  switching a 1 kW fan off pushed the relay only, but a scooter charger
+  switched on (2026-10-01) brought its first power push 7.3 s later
+  (`{"18":1297,"19":2970,"20":2340}`), and pushes every 5–20 s after as it
+  settled. A query in between is answered from the gateway's memory, which
+  holds the last push. Asked once a second for a minute with nothing
+  drawing, the answer never changed and no `"type":"query"` push came.
+- **`UPDATEDPS` (0x12) brings nothing through the gateway**: sent with the
+  plug's cid and `"dpId":[18,19,20]` before every query, no push followed.
+- **Right after a switch, the gateway's memory lags the plug**: a query sent
+  as the relay's push arrives can still say the old state. The session takes
+  the plug's push over the memory for a few seconds, and does not query
+  straight after a switch. **Energy is** pushed on its own
   (`{"17":43350}`, 120 Wh on from the last).
 - **Several connections at once** are fine, and each hears every push: a
   listener stayed connected while two others switched the plug, and heard

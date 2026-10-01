@@ -142,6 +142,27 @@ describe('the Tuya Zigbee plug', () => {
     await opened.close();
   });
 
+  test('switched, the plug’s own word stands over the gateway’s memory of before — no flicker back to off', async () => {
+    const dps: Dps = { ...MAPPED, '1': false };
+    const { device, opened, value, poll } = await session(dps);
+    const asked = device.queries;
+    expect(await opened.command({ part: 'main', capability: 'switch', command: 'set', args: { on: true } })).toEqual({ accepted: true });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Not asked again at once: the plug says it itself.
+    expect(device.queries).toBe(asked);
+    expect(value('relay')).toBe(true);
+
+    // The gateway's memory lags: asked now, it still says off — which is not taken over what the plug just pushed.
+    dps['1'] = false;
+    await poll();
+    expect(value('relay')).toBe(true);
+    // Its other datapoints are still taken from the answer.
+    dps['19'] = 2750;
+    await poll();
+    expect(value('watts')).toBe(275);
+    await opened.close();
+  });
+
   test('while its gateway says it cannot reach the plug, the gateway’s memory is not taken for the plug’s word', async () => {
     const dps = { ...MAPPED };
     const { device, opened, value, reading, poll } = await session(dps);

@@ -89,6 +89,13 @@ test('start charging: copied from its recipe, its parts chosen, run from its pag
   await page.goto(`/device/${plug.id}`);
   await page.getByRole('button', { name: new RegExp(`^${name}: `) }).click();
   await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
+
+  // Its stop, copied after it: the same two parts, in one tap.
+  await page.goto('/automation/new');
+  await press(page, 'Stop charging');
+  await page.getByRole('button', { name: `Same parts as “${name}”` }).click();
+  await expect(page.getByRole('status')).toContainText('It can run as it is');
+  await expect(page.getByRole('status')).toContainText(`Turn ${plug.name} off`);
 });
 
 test('built from nothing: a time, a setting changed, and another automation started and waited for', async ({ page, request }) => {

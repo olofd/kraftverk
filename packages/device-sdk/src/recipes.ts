@@ -152,7 +152,7 @@ export const startCharging = defineRecipe({
       chargingAbove: { type: 'number', title: 'Charging when it draws over', description: 'An idle charger draws next to nothing; a charging one, far more.', unit: 'W', min: 5, max: 500, step: 5, default: 50 },
       withinSeconds: { type: 'number', title: 'Give it', description: 'How long the charger is given to start drawing, each time.', unit: 's', min: 5, max: 120, step: 5, default: 20 },
       offSeconds: { type: 'number', title: 'Off for', description: 'When it does not start: how long its plug is switched off before it is switched on again.', unit: 's', min: 3, max: 60, step: 1, default: 5 },
-      tries: { type: 'number', title: 'Tries at most', description: 'How often it is switched off and on again before it gives up.', min: 1, max: 5, step: 1, integer: true, default: 3 },
+      tries: { type: 'number', title: 'Tries at most', description: 'How often it is switched off and on again before it gives up: some chargers need several.', min: 1, max: 5, step: 1, integer: true, default: 5 },
       ifItFails: {
         type: 'enum',
         title: 'If it never starts charging',

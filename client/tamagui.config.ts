@@ -146,7 +146,7 @@ const light = {
 
   placeholderColor: palette.slate5,
   outlineColor: palette.blue,
-  // What is selected in a field: Tamagui's inputs read this, and without it a selection is not seen at all.
+  // What is selected, in a field or in text: `selectionStyles` below paints it.
   selectionColor: 'rgba(59, 130, 246, 0.3)',
 
   shadowColor: 'rgba(15, 23, 42, 0.16)',
@@ -236,6 +236,13 @@ const config = createTamagui({
     // hydration-matching double render.
     disableSSR: true,
   },
+  /*
+    What is selected, seen. A theme's `selectionColor` alone did nothing:
+    Tamagui's input rule reads a variable only an input's own
+    `selectionColor` prop sets, so a selection was painted transparent. This
+    writes `::selection` for each theme, for every field and every text.
+  */
+  selectionStyles: (theme) => (theme.selectionColor ? { backgroundColor: theme.selectionColor } : null),
 });
 
 /**

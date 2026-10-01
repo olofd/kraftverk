@@ -24,7 +24,7 @@ export const ZIGBEE_PLUG: SocketProfile = {
   id: 'tuya-zigbee-plug-16a',
   label: 'Tuya Zigbee energy plug, 16 A',
   relay: { dp: 1 },
-  // Not pushed by the plug: asked for on every poll, and the gateway asks the plug (README.md).
+  // Pushed by the plug as a load changes, within seconds; a poll reads the gateway's memory of the last push (README.md).
   metrics: {
     amps: { dp: 18, scale: 3 },
     watts: { dp: 19, scale: 1 },
@@ -102,6 +102,6 @@ export default defineTuyaSocket({
   },
   profiles: [ZIGBEE_PLUG],
   reached: 'gateway',
-  // Each read has the gateway ask the plug over Zigbee: every 15 s is plenty for power, and gentle on the network.
+  // Power comes as the plug pushes it; a read only asks the gateway's memory: every 15 s, and every 2 s while an automation watches it.
   pollSeconds: 15,
 });

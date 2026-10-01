@@ -105,6 +105,9 @@ for (const width of [320, 375]) {
     await page.getByRole('button', { name: /^Open step: Make sure / }).click();
     await page.getByRole('button', { name: /^Open step: Wait 5 s/ }).click();
     expect(await problems(page)).toEqual([]);
+    // What is selected in a field is seen: painted, not transparent.
+    const selected = await page.getByLabel('Name', { exact: true }).evaluate((input) => getComputedStyle(input, '::selection').backgroundColor);
+    expect(selected).not.toBe('rgba(0, 0, 0, 0)');
   });
 
   test(`at ${width} px: the home page, a device's page and its settings fit and are big enough to touch`, async ({ page, request }) => {

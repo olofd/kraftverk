@@ -117,6 +117,12 @@ export type GatewayResult = {
    * person, once, for a minute. The detail says why it matters.
    */
   needsConfirmation?: string;
+  /**
+   * Refused only because the run switched this part a moment ago: the same
+   * intent is taken once this many milliseconds have passed. A run waits it
+   * out; a person is told.
+   */
+  retryInMs?: number;
 };
 
 export type GatewayPolicy = {
@@ -399,9 +405,9 @@ export class ActionGateway {
     const what = `${intent.part === MAIN_PART ? intent.capability : partLabel} ${argsShown}`.trim();
     const note = (kind: string, summary: string, detail?: unknown) =>
       this.#record({ at: new Date().toISOString(), kind, actor: intent.by, resourceKind: 'device', resource: intent.deviceId, summary, detail });
-    const refuse = (detail: string): GatewayResult => {
+    const refuse = (detail: string, extra: Partial<GatewayResult> = {}): GatewayResult => {
       this.#record({ at, kind: 'command.refused', actor: intent.by, resourceKind: 'device', resource: intent.deviceId, summary: `${what} refused: ${detail}`, detail: intent });
-      return { outcome: 'refused', detail };
+      return { outcome: 'refused', detail, ...extra };
     };
 
     // 1. A part that is here, offers this, and a command it takes, with the arguments it takes.
@@ -443,7 +449,7 @@ export class ActionGateway {
       const allowed = Math.min(intent.run.switches, this.#policy.runSwitchCeiling);
       if (inRun >= allowed) return refuse(`It has been switched ${inRun} times in this run, as often as it may be`);
       if (sinceLast < this.#policy.runGapMs) {
-        return refuse(`Too soon: it was switched ${Math.round(sinceLast / 1000)} s ago in this run, and is given ${Math.round(this.#policy.runGapMs / 1000)} s between switches`);
+        return refuse(`Too soon: it was switched ${Math.round(sinceLast / 1000)} s ago in this run, and is given ${Math.round(this.#policy.runGapMs / 1000)} s between switches`, { retryInMs: this.#policy.runGapMs - sinceLast });
       }
     } else {
       // A run switches first as whoever asked for it would: a person as a person, an assistant as an assistant.

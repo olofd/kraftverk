@@ -12,6 +12,7 @@ import {
   type AutomationKit,
   type AutomationView,
   type RecipeView,
+  type RoleBinding,
 } from '@kraftverk/api-client';
 import { capabilitiesOf, isAutomationRole, meetsNeed, partsOf } from '@kraftverk/device-sdk';
 import { Card, haptic, Icon, Row, RowSeparator } from '@kraftverk/ui';
@@ -24,7 +25,7 @@ import { useTone } from '../looks';
 import { Empty, Group } from '../page/Group';
 import { BlockList } from './Blocks';
 import { EditorProvider, useEditor } from './context';
-import { OTHERWISE, pruned, rolesOf, THEN, type Draft } from './draft';
+import { OTHERWISE, pruned, rolesOf, sameParts, THEN, type Draft } from './draft';
 import { Picker } from './fields';
 import { OnlyIf, Triggers } from './Triggers';
 
@@ -328,15 +329,36 @@ function Problems({ list }: { list: readonly string[] }) {
  */
 function Uses({ problems }: { problems: readonly string[] }) {
   const editor = useEditor();
+  const tone = useTone();
   const { parts, automations } = rolesOf(editor.draft.rule);
   if (!parts.length && !automations.length) return null;
+  const choices = (spec: (typeof parts)[number][1]) => editor.parts((description, part) => !isAutomationRole(spec) && meetsNeed(spec, capabilitiesOf(description, part)));
+  // What another automation already uses for the same roles, in one tap: a stop made after its start.
+  const fits = (role: string, binding: RoleBinding) => {
+    const spec = editor.draft.rule.roles[role];
+    return !!spec && choices(spec).some((option) => option.binding.device === binding.device && option.binding.part === binding.part);
+  };
+  const same = sameParts(editor.draft, editor.automations, fits).slice(0, 2);
   return (
     <Group icon="box" title="Uses" summary={`${parts.length + automations.length}`}>
       <Problems list={problems} />
+      {same.map((other) => (
+        <Button
+          key={other.id}
+          alignSelf="flex-start"
+          size="$3"
+          minHeight={44}
+          chromeless
+          color="$accent"
+          icon={<Icon name="copy" size={16} color={tone('$accent')} />}
+          onPress={() => (haptic(), editor.change((draft) => ({ ...draft, roles: { ...draft.roles, ...other.roles } })))}
+        >
+          {`Same parts as “${other.name}”`}
+        </Button>
+      ))}
       {parts.map(([role, spec]) => {
         if (isAutomationRole(spec)) return null;
-        const options = editor
-          .parts((description, part) => meetsNeed(spec, capabilitiesOf(description, part)))
+        const options = choices(spec)
           .filter((option) => option.role === null || option.role === role)
           .map((option) => ({ key: option.key, title: option.title, subtitle: option.subtitle, value: option.binding, selected: editor.draft.roles[role]?.device === option.binding.device && editor.draft.roles[role]?.part === option.binding.part }));
         return (

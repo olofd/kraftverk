@@ -17,6 +17,7 @@ import {
   type Value,
 } from '@kraftverk/device-sdk';
 import {
+  cidOfAddress,
   datapointRaw,
   datapointValue,
   decodeSocket,
@@ -118,6 +119,13 @@ const LIVE_LEASE_MS = 15 * 60_000;
 const FRESH_EVERY_MS = 2_000;
 /** …for at most this long a time, whatever was asked. */
 const FRESH_AT_MOST_MS = 5 * 60_000;
+
+/**
+ * Behind a gateway: how long a value the plug pushed outranks the gateway's
+ * memory. A query is answered from memory at once, and that memory can lag a
+ * push by a moment — a relay just switched on read back as off.
+ */
+const PUSH_OUTRANKS_MEMORY_MS = 5_000;
 
 /** A profile datapoint as the attribute it is: the wire details left behind. */
 const attributeOf = ({ dp: _dp, scale: _scale, wire: _wire, example: _example, raises: _raises, ...attribute }: ProfileDatapoint): AttributeSpec => attribute;
@@ -394,6 +402,9 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
 
   // Declared before it is defined: live readings send through it, and it reads what live readings heard.
   let live: Live | null = null;
+  const behindGateway = cidOfAddress(connection.address) !== null;
+  /** When the plug itself last said each datapoint. */
+  const pushedAt = new Map<string, number>();
   const ingest = (dps: Dps) => {
     if (!Object.keys(dps).length) return;
     state = { dps: { ...state?.dps, ...dps }, at: new Date().toISOString() };
@@ -411,6 +422,7 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
     log: (message) => ctx.log.info(message),
     onPush: (dps) => {
       unreachable = false;
+      for (const dp of Object.keys(dps)) pushedAt.set(dp, Date.now());
       ingest(dps);
       ctx.changed();
     },
@@ -429,6 +441,8 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
       // Behind a gateway that says it cannot reach the plug, the answer is the gateway's memory, not the
       // plug's word: not taken, so its readings age as a silent plug's do. Its own pushes end that.
       if (unreachable) return;
+      // What the plug pushed a moment ago is newer than the gateway's memory of it.
+      if (behindGateway) for (const dp of Object.keys(dps)) if (Date.now() - (pushedAt.get(dp) ?? 0) < PUSH_OUTRANKS_MEMORY_MS) delete dps[dp];
       ingest(dps);
     } catch (error) {
       // The last reading is left alone rather than zeroed: its time says how
@@ -452,8 +466,9 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
   const send = async (dps: Dps) => {
     if (ctx.readOnly) throw new Error('Every hardware write is refused: this holder is read-only');
     ingest(await link.set(dps));
-    // The answer to a set is often empty; what the plug reports now is the truth.
-    await poll();
+    // The answer to a set is often empty; what the plug reports now is the truth. Behind a gateway the plug
+    // pushes it within a moment, and asking at once would only bring the gateway's memory of before.
+    if (!behindGateway) await poll();
   };
   live = profile.refresh ? liveOf(ctx, profile.refresh, send, () => state?.dps ?? {}) : null;
 
