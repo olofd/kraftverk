@@ -14,12 +14,9 @@ import {
 import type { PrintContext } from '@kraftverk/automation';
 import { methodsOf, partsOf, type SavedDeviceId } from '@kraftverk/device-sdk';
 
-import type { AutomationStore } from '../automations/store.ts';
-import type { DeviceCatalog, DeviceRecord } from '../devices/catalog.ts';
-import type { ConnectionStore } from '../devices/connections.ts';
-import type { LinkStore } from '../devices/links.ts';
+import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, LinkStore } from '@kraftverk/store';
 import type { DeviceTypeRegistry } from '../devices/types.ts';
-import { policyValues } from '../history/policy.ts';
+import { policyValues } from '../platform/database.ts';
 import type { ProtocolRegistry } from '../runtime/protocols.ts';
 import { keep, openKept, sealWith } from './seal.ts';
 

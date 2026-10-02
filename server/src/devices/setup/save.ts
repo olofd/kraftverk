@@ -10,9 +10,7 @@ import {
   type SavedDeviceId,
 } from '@kraftverk/device-sdk';
 
-import type { DeviceCatalog, DeviceRecord } from '../catalog.ts';
-import type { ConnectionStore } from '../connections.ts';
-import type { LinkStore } from '../links.ts';
+import type { DeviceCatalog, DeviceRecord, ConnectionStore, LinkStore } from '@kraftverk/store';
 import { connectionSchema, SetupError, type Draft, type SaveRequest } from './draft.ts';
 
 /**

@@ -3,7 +3,7 @@ import { capabilitiesOf, partName, partsOf } from '@kraftverk/device-sdk';
 import type { EngineDevice } from '@kraftverk/automation-engine';
 import { deviceReader } from '@kraftverk/holder';
 
-import type { DeviceCatalog } from '../devices/catalog.ts';
+import type { DeviceCatalog } from '@kraftverk/store';
 import type { DeviceSessionManager } from '../devices/sessions.ts';
 
 /**

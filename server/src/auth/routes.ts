@@ -4,7 +4,7 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import { audit } from '../history/db.ts';
+import { audit } from '../platform/database.ts';
 import { LoginLimiter, limiterKeys } from './limiter.ts';
 import {
   AccountError,

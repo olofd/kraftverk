@@ -5,8 +5,8 @@ import { join } from 'node:path';
 
 import { Database } from 'bun:sqlite';
 
-import { openSchema } from './db.ts';
-import { SCHEMA, schemaFingerprint } from './schema.ts';
+import { openSchema } from './database.ts';
+import { SCHEMA, schemaFingerprint, type SqlDatabase } from '@kraftverk/store';
 
 /*
   One schema, strict version 1 (docs/ARCHITECTURE.md §9, decision 21): a new
@@ -26,7 +26,7 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-const tables = (handle: Database) =>
+const tables = (handle: SqlDatabase) =>
   handle
     .query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
     .all()

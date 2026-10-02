@@ -1,6 +1,6 @@
 import { isPolicyValueName, POLICY_VALUES, type PolicyValueName, type PolicyValues } from '@kraftverk/device-sdk';
 
-import { appState, setAppState } from './db.ts';
+import type { AppState } from './app-state.ts';
 
 /**
  * The values this home has set that declarations name — how much is a load —
@@ -10,9 +10,9 @@ import { appState, setAppState } from './db.ts';
 
 const KEY = 'policy.values';
 
-export function policyValues(): PolicyValues {
+export function policyValues(state: AppState): PolicyValues {
   try {
-    const kept = JSON.parse(appState(KEY) ?? '{}') as Record<string, unknown>;
+    const kept = JSON.parse(state.get(KEY) ?? '{}') as Record<string, unknown>;
     return Object.fromEntries(Object.entries(kept).filter(([name, value]) => isPolicyValueName(name) && typeof value === 'number' && Number.isFinite(value)));
   } catch {
     return {};
@@ -20,14 +20,14 @@ export function policyValues(): PolicyValues {
 }
 
 /** Sets one, within its bounds, or back to its default with null. Returns what is now in force. */
-export function setPolicyValue(name: PolicyValueName, value: number | null): PolicyValues {
-  const next: Record<string, number> = { ...policyValues() };
+export function setPolicyValue(state: AppState, name: PolicyValueName, value: number | null): PolicyValues {
+  const next: Record<string, number> = { ...policyValues(state) };
   if (value === null) delete next[name];
   else {
     const spec = POLICY_VALUES[name];
     if (!(value >= spec.min && value <= spec.max)) throw new RangeError(`${spec.label} is from ${spec.min} to ${spec.max} ${spec.unit}`);
     next[name] = value;
   }
-  setAppState(KEY, JSON.stringify(next));
+  state.set(KEY, JSON.stringify(next));
   return next;
 }

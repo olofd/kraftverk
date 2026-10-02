@@ -9,17 +9,15 @@ import type { Rule } from '@kraftverk/automation';
 
 import { AutomationLibrary } from '@kraftverk/automation-engine';
 import { plans } from '../automations/plans.ts';
-import { AutomationStore } from '../automations/store.ts';
-import { DeviceCatalog } from '../devices/catalog.ts';
-import { ConnectionStore } from '../devices/connections.ts';
-import { LinkStore } from '../devices/links.ts';
+import { AutomationStore, DeviceCatalog, ConnectionStore, LinkStore } from '@kraftverk/store';
 import { LAMP, lampProtocol, lampType } from '../devices/testing.ts';
 import { DeviceTypeRegistry } from '../devices/types.ts';
-import { closeDb, db } from '../history/db.ts';
+import { closeDb, db } from '../platform/database.ts';
 import { ProtocolRegistry } from '../runtime/protocols.ts';
 import { exportConfig } from './export.ts';
 import { applyImport, ImportError, planImport, type ImportDeps } from './import.ts';
 import { restoreFrom } from './restore.ts';
+import { serverSecrets } from '../platform/secrets.ts';
 
 /*
   A configuration imported: planned — nothing written — then applied, in one
@@ -43,13 +41,13 @@ beforeAll(() => {
   types.install(lampType);
   const protocols = new ProtocolRegistry();
   protocols.install(lampProtocol);
-  const catalog = new DeviceCatalog();
-  const automations = new AutomationStore();
+  const catalog = new DeviceCatalog(db());
+  const automations = new AutomationStore(db());
   const library = new AutomationLibrary([], () => {});
   const engine = { reset: () => {}, poke: () => {}, forget: () => {} };
   const sessions = { sync: async (records: unknown[]) => void sessionsSynced.push(records.length), description: (record: { description: unknown }) => record.description };
   const { checked } = plans({ catalog, sessions: sessions as never, library, engine: engine as never, automations });
-  deps = { catalog, connections: new ConnectionStore(), links: new LinkStore(), automations, types, protocols, library, engine, sessions, transports: { definition: () => null }, checked };
+  deps = { catalog, connections: new ConnectionStore(db(), serverSecrets), links: new LinkStore(db()), automations, types, protocols, library, engine, sessions, transports: { definition: () => null }, checked };
 });
 
 afterAll(() => {

@@ -5,16 +5,14 @@ import { join } from 'node:path';
 
 import { readConfig } from '@kraftverk/config';
 
-import { AutomationStore } from '../automations/store.ts';
-import { DeviceCatalog } from '../devices/catalog.ts';
-import { ConnectionStore } from '../devices/connections.ts';
-import { LinkStore } from '../devices/links.ts';
+import { AutomationStore, DeviceCatalog, ConnectionStore, LinkStore } from '@kraftverk/store';
 import { LAMP, lampProtocol, lampType } from '../devices/testing.ts';
 import { DeviceTypeRegistry } from '../devices/types.ts';
-import { audit, closeDb } from '../history/db.ts';
+import { audit, closeDb, db } from '../platform/database.ts';
 import { ProtocolRegistry } from '../runtime/protocols.ts';
 import { openKept } from './seal.ts';
 import { ConfigSnapshot } from './snapshot.ts';
+import { serverSecrets } from '../platform/secrets.ts';
 
 /*
   The configuration kept beside the database: written whole, its secrets kept
@@ -35,9 +33,9 @@ beforeAll(() => {
   types.install(lampType);
   const protocols = new ProtocolRegistry();
   protocols.install(lampProtocol);
-  catalog = new DeviceCatalog();
-  connections = new ConnectionStore();
-  snapshot = new ConfigSnapshot({ catalog, connections, links: new LinkStore(), automations: new AutomationStore(), types, protocols }, file);
+  catalog = new DeviceCatalog(db());
+  connections = new ConnectionStore(db(), serverSecrets);
+  snapshot = new ConfigSnapshot({ catalog, connections, links: new LinkStore(db()), automations: new AutomationStore(db()), types, protocols }, file);
 });
 
 afterAll(() => {

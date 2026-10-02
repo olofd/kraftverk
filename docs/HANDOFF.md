@@ -43,7 +43,7 @@ empty: the core names no product, and every device is found, not listed.
   says how long its value stays current; links join parts; tools, query
   answers and what makes a command consequential are declared as data and
   checked. There is one contract and one database schema
-  (`server/src/history/schema.ts`): a database from an older schema is set
+  (`packages/store/src/schema.ts`): a database from an older schema is set
   aside on start, and history is not carried over. Removing a device keeps its
   history.
 - **What the database holds besides** (Phase 2 of the next-step plan): a
@@ -226,7 +226,7 @@ machine whose network profile is Public, the station README's `profile=private` 
 rule does not apply. Bluetooth needs neither.
 
 **A test suite once deleted the owner's database, and the tests still passed.**
-Bun runs every test file in one process, sharing `history/db.ts`'s module-level
+Bun runs every test file in one process, sharing `platform/database.ts`'s module-level
 handle and `process.env`. Each server suite set `KRAFTVERK_DB` in `beforeAll` and
 cleared it in `afterAll`; the moment one file cleared it, the next file's
 `beforeEach` — several begin `DELETE FROM device; DELETE FROM sample` — reopened

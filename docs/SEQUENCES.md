@@ -386,8 +386,8 @@ tried on the owner's real station, plug and charger, with the owner watching.
 2. **Data model and contract** — `automation_run`, `automation_role`,
    `automation_trigger`, `looked_at`, `device_switch`/`device_write`,
    `device.picture`; `AutomationRun.steps` and its outcomes; `AutomationView`,
-   `RecipeView`, `LiveUpdate` — `history/schema.ts`, `automations/store.ts`,
-   `devices/ledger.ts`, `api-contract`. *Built.*
+   `RecipeView`, `LiveUpdate` — `packages/store` (`schema.ts`, `automations.ts`,
+   `ledger.ts`), `api-contract`. *Built.*
 3. **Engine** — the walker, waits, `otherwise`, stop, interrupted on start —
    `packages/automation-engine/src/engine.ts`; `sequences.test.ts`. *Built.*
 4. **Gateway** — a run's allowance; its memory as a ledger —

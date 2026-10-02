@@ -1,9 +1,9 @@
-import { randomUUID } from 'node:crypto';
 
 import { KEY, keyFrom } from '@kraftverk/device-sdk';
 import { partOf, savedDeviceId, type AttributeSpec, type DescriptionSource, type DeviceDescription, type DeviceInfo, type SavedDeviceId } from '@kraftverk/device-sdk';
 
-import { db } from '../history/db.ts';
+import type { SqlDatabase } from './database.ts';
+import { randomHex } from './ids.ts';
 
 /**
  * The devices you have added (docs/DATA-MODEL.md §3).
@@ -75,19 +75,25 @@ const toRecord = (row: Row): DeviceRecord => ({
 });
 
 export class DeviceCatalog {
+  readonly #db: SqlDatabase;
+
+  constructor(db: SqlDatabase) {
+    this.#db = db;
+  }
+
   /** The devices you have: not removed. */
   list(): DeviceRecord[] {
-    return db().query<Row, []>('SELECT * FROM device WHERE removed_at IS NULL ORDER BY added_at, rowid').all().map(toRecord);
+    return this.#db.query<Row, []>('SELECT * FROM device WHERE removed_at IS NULL ORDER BY added_at, rowid').all().map(toRecord);
   }
 
   /** Devices removed and kept, newest first: what can be brought back. */
   removed(): DeviceRecord[] {
-    return db().query<Row, []>('SELECT * FROM device WHERE removed_at IS NOT NULL ORDER BY removed_at DESC').all().map(toRecord);
+    return this.#db.query<Row, []>('SELECT * FROM device WHERE removed_at IS NOT NULL ORDER BY removed_at DESC').all().map(toRecord);
   }
 
   /** Any device, removed or not. Callers that mean "one you have" check `removedAt`. */
   get(id: SavedDeviceId): DeviceRecord | null {
-    const row = db().query<Row, [string]>('SELECT * FROM device WHERE id = ?').get(id);
+    const row = this.#db.query<Row, [string]>('SELECT * FROM device WHERE id = ?').get(id);
     return row ? toRecord(row) : null;
   }
 
@@ -99,19 +105,19 @@ export class DeviceCatalog {
 
   /** Who has this identity: the device you have with it, and removed ones that had it. */
   byIdentity(identity: string): { active: DeviceRecord | null; removed: DeviceRecord[] } {
-    const rows = db().query<Row, [string]>('SELECT * FROM device WHERE identity = ? ORDER BY removed_at DESC').all(identity).map(toRecord);
+    const rows = this.#db.query<Row, [string]>('SELECT * FROM device WHERE identity = ? ORDER BY removed_at DESC').all(identity).map(toRecord);
     return { active: rows.find((record) => !record.removedAt) ?? null, removed: rows.filter((record) => record.removedAt) };
   }
 
   /** The device you have known by this key, or null. */
   byKey(key: string): DeviceRecord | null {
-    const row = db().query<Row, [string]>('SELECT * FROM device WHERE key = ? AND removed_at IS NULL').get(key);
+    const row = this.#db.query<Row, [string]>('SELECT * FROM device WHERE key = ? AND removed_at IS NULL').get(key);
     return row ? toRecord(row) : null;
   }
 
   /** Whether a device you have is known by this key. */
   keyTaken(key: string, except?: SavedDeviceId): boolean {
-    return db().query<{ id: string }, [string]>('SELECT id FROM device WHERE key = ? AND removed_at IS NULL').all(key).some((row) => row.id !== except);
+    return this.#db.query<{ id: string }, [string]>('SELECT id FROM device WHERE key = ? AND removed_at IS NULL').all(key).some((row) => row.id !== except);
   }
 
   add(input: { typeId: string; name: string; description: DeviceDescription; identity?: string | null; config?: Record<string, unknown>; key?: string }): DeviceRecord {
@@ -122,7 +128,7 @@ export class DeviceCatalog {
         and what it says can stop being true. Ids already saved keep their old
         form — history is keyed by them (docs/DATA-MODEL.md §3).
       */
-      id: savedDeviceId(`d-${randomUUID().replaceAll('-', '').slice(0, 12)}`),
+      id: savedDeviceId(`d-${randomHex(6)}`),
       // Made from its name unless given: a file's key, kept as the file has it.
       key: input.key ?? keyFrom(input.name, (key) => this.keyTaken(key), 'device'),
       typeId: input.typeId,
@@ -137,8 +143,8 @@ export class DeviceCatalog {
       info: null,
       picture: null,
     };
-    db().transaction(() => {
-      db()
+    this.#db.transaction(() => {
+      this.#db
         .query('INSERT INTO device (id, key, type_id, identity, name, config, description, added_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
         .run(record.id, record.key, record.typeId, record.identity, record.name, JSON.stringify(record.config), JSON.stringify(record.description), record.addedAt);
       this.#recordAttributes(record.id, record.description, record.addedAt);
@@ -152,7 +158,7 @@ export class DeviceCatalog {
    * its description changed — a pack plugged in, a firmware that says more.
    */
   describe(id: SavedDeviceId, description: DeviceDescription, info: DeviceInfo | null, source: DescriptionSource): boolean {
-    const row = db()
+    const row = this.#db
       .query<{ description: string; description_source: DescriptionSource; info: string | null }, [string]>('SELECT description, description_source, info FROM device WHERE id = ?')
       .get(id);
     if (!row) return false; // removed since it was opened: nothing to describe
@@ -160,27 +166,27 @@ export class DeviceCatalog {
     const changed = row.description !== json;
     // Information a device has not given is not information it lost.
     const infoJson = info ? JSON.stringify(info) : null;
-    db().transaction(() => {
-      if (source !== row.description_source) db().query('UPDATE device SET description_source = ? WHERE id = ?').run(source, id);
+    this.#db.transaction(() => {
+      if (source !== row.description_source) this.#db.query('UPDATE device SET description_source = ? WHERE id = ?').run(source, id);
       if (changed) {
-        db().query('UPDATE device SET description = ? WHERE id = ?').run(json, id);
+        this.#db.query('UPDATE device SET description = ? WHERE id = ?').run(json, id);
         this.#recordAttributes(id, description, new Date().toISOString());
       }
-      if (infoJson !== null && infoJson !== row.info) db().query('UPDATE device SET info = ? WHERE id = ?').run(infoJson, id);
+      if (infoJson !== null && infoJson !== row.info) this.#db.query('UPDATE device SET info = ? WHERE id = ?').run(infoJson, id);
     })();
     return changed;
   }
 
   /** Every attribute the device has ever had, as last described: what its history is labelled by. */
   attributes(id: SavedDeviceId): AttributeSpec[] {
-    return db()
+    return this.#db
       .query<{ spec: string }, [string]>('SELECT spec FROM device_attribute WHERE device_id = ? ORDER BY first_seen, key')
       .all(id)
       .map((row) => JSON.parse(row.spec) as AttributeSpec);
   }
 
   #recordAttributes(id: SavedDeviceId, description: DeviceDescription, at: string): void {
-    const upsert = db().query(
+    const upsert = this.#db.query(
       `INSERT INTO device_attribute (device_id, key, part, spec, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT (device_id, key) DO UPDATE SET part = excluded.part, spec = excluded.spec, last_seen = excluded.last_seen`
     );
@@ -200,7 +206,7 @@ export class DeviceCatalog {
       config: changes.config ?? existing.config,
       identity: changes.identity === undefined ? existing.identity : changes.identity,
     };
-    db()
+    this.#db
       .query('UPDATE device SET key = ?, name = ?, config = ?, identity = ? WHERE id = ?')
       .run(next.key, next.name, JSON.stringify(next.config), next.identity, id);
     return next;
@@ -208,7 +214,7 @@ export class DeviceCatalog {
 
   /** Which picture it shows: its owner's pick, or null for its type's first. */
   setPicture(id: SavedDeviceId, picture: string | null): DeviceRecord | null {
-    db().query('UPDATE device SET picture = ? WHERE id = ?').run(picture, id);
+    this.#db.query('UPDATE device SET picture = ? WHERE id = ?').run(picture, id);
     return this.get(id);
   }
 
@@ -224,10 +230,10 @@ export class DeviceCatalog {
     const record = this.active(id);
     if (!record) return null;
     const removedAt = new Date().toISOString();
-    db().transaction(() => {
-      db().query('DELETE FROM device_connection WHERE device_id = ?').run(id);
-      db().query('DELETE FROM device_link WHERE source_device = ? OR target_device = ?').run(id, id);
-      db().query('UPDATE device SET removed_at = ? WHERE id = ?').run(removedAt, id);
+    this.#db.transaction(() => {
+      this.#db.query('DELETE FROM device_connection WHERE device_id = ?').run(id);
+      this.#db.query('DELETE FROM device_link WHERE source_device = ? OR target_device = ?').run(id, id);
+      this.#db.query('UPDATE device SET removed_at = ? WHERE id = ?').run(removedAt, id);
     })();
     return { ...record, removedAt };
   }
@@ -241,13 +247,13 @@ export class DeviceCatalog {
     }
     // Its key back, unless a device you have has it since: then one made from its name.
     const key = this.keyTaken(record.key) ? keyFrom(record.name, (taken) => this.keyTaken(taken), 'device') : record.key;
-    db().query('UPDATE device SET removed_at = NULL, key = ? WHERE id = ?').run(key, id);
+    this.#db.query('UPDATE device SET removed_at = NULL, key = ? WHERE id = ?').run(key, id);
     return { ...record, key, removedAt: null };
   }
 
   /** Everything a device's session keeps between runs, by key. */
   storeOf(id: SavedDeviceId): Record<string, unknown> {
-    const rows = db().query<{ key: string; value: string }, [string]>('SELECT key, value FROM device_kv WHERE device_id = ? ORDER BY key').all(id);
+    const rows = this.#db.query<{ key: string; value: string }, [string]>('SELECT key, value FROM device_kv WHERE device_id = ? ORDER BY key').all(id);
     return Object.fromEntries(rows.map((row) => [row.key, JSON.parse(row.value) as unknown]));
   }
 
@@ -258,9 +264,9 @@ export class DeviceCatalog {
    */
   deleteForever(id: SavedDeviceId): { samples: number } {
     let samples = 0;
-    db().transaction(() => {
-      samples = db().query('DELETE FROM sample WHERE device_id = ?').run(id).changes;
-      db().query('DELETE FROM device WHERE id = ?').run(id);
+    this.#db.transaction(() => {
+      samples = this.#db.query('DELETE FROM sample WHERE device_id = ?').run(id).changes;
+      this.#db.query('DELETE FROM device WHERE id = ?').run(id);
     })();
     return { samples };
   }

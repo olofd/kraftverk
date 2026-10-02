@@ -137,6 +137,8 @@ packages/
   config/                @kraftverk/config               the home as a document: YAML, its JSON Schema, migrations; pure
   automation-engine/     @kraftverk/automation-engine    runs automations: triggers, steps, runs and their logs, rehearsal, the library;
                                                          where they are kept is a port it declares; pure
+  store/                 @kraftverk/store                the data model in SQLite: one schema and every store, over a SQL port the
+                                                         server (bun:sqlite) and the app (expo-sqlite, sql.js) fill; pure
   gateway/               @kraftverk/gateway              the action gateway's rules: pure, run by whichever holder has the connection
   api-contract/          @kraftverk/api-contract         the HTTP API's shapes, types only: declared once, imported by the server and the app
   holder/                @kraftverk/holder               what every holder does with a device: open, watch, fail over, judge a check; pure
@@ -502,7 +504,7 @@ audit, app_state, users, sessions
 - **Remove keeps history;** deleting history is a separate, confirmed action.
 
 **One schema, not a chain of migrations** (decision 21). The schema is
-`server/src/history/schema.ts`, and its fingerprint is kept in the database's
+`packages/store/src/schema.ts`, and its fingerprint is kept in the database's
 `user_version`. A database made by any other schema is not changed: it is set
 aside beside itself — `kraftverk.db.set-aside.<time>` — and a new one started.
 Nothing is deleted; history from the old schema is not carried over. Every

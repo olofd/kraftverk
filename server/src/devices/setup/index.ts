@@ -16,12 +16,10 @@ import {
 } from '@kraftverk/device-sdk';
 import { judgeCheck, withTimeout } from '@kraftverk/holder';
 
-import { audit, db } from '../../history/db.ts';
+import { audit, db } from '../../platform/database.ts';
 import type { ProtocolRegistry } from '../../runtime/protocols.ts';
 import type { TransportHost } from '../../runtime/transports.ts';
-import type { DeviceCatalog, DeviceRecord } from '../catalog.ts';
-import type { ConnectionStore } from '../connections.ts';
-import type { LinkStore } from '../links.ts';
+import type { DeviceCatalog, DeviceRecord, ConnectionStore, LinkStore } from '@kraftverk/store';
 import type { DeviceSessionManager } from '../sessions.ts';
 import type { DeviceTypeRegistry } from '../types.ts';
 import { connectionSchema, DRAFT_TTL_MS, SetupError, viewOf, type Draft, type SaveRequest } from './draft.ts';

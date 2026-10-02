@@ -13,7 +13,7 @@ import { plans } from '../automations/plans.ts';
 import { exportConfig, serverVocabulary } from '../config/export.ts';
 import { applyImport, ImportError, keptPlan, planImport, type ImportDeps } from '../config/import.ts';
 import { PASSPHRASE_MIN } from '../config/seal.ts';
-import { audit } from '../history/db.ts';
+import { audit } from '../platform/database.ts';
 import { body, type AppDeps } from './shared.ts';
 
 /*

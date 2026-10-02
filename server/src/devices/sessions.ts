@@ -1,12 +1,10 @@
 import { isSimulated, methodOf, type ConnectionHealth, type DescriptionSource, type DeviceDescription, type DeviceInfo, type DeviceSession, type DeviceType, type SavedDeviceId } from '@kraftverk/device-sdk';
 import { Failover, identityVerdict, openDevice, OpenRefused, ReadingChanges, type DeviceEventMessage, type LiveBus, type OpenedDevice } from '@kraftverk/holder';
 
-import { audit } from '../history/db.ts';
+import { audit, deviceStore } from '../platform/database.ts';
 import type { ProtocolRegistry } from '../runtime/protocols.ts';
 import type { TransportHost } from '../runtime/transports.ts';
-import type { DeviceRecord } from './catalog.ts';
-import type { ConnectionRecord, ConnectionStore } from './connections.ts';
-import { deviceStore } from './store.ts';
+import type { DeviceRecord, ConnectionRecord, ConnectionStore } from '@kraftverk/store';
 import type { DeviceTypeRegistry } from './types.ts';
 
 /**

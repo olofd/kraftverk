@@ -2,7 +2,7 @@ import type { DeviceChange } from '@kraftverk/api-contract';
 import { partOf, type AttributeSpec, type DeviceDescription, type Reading, type SavedDeviceId, type Value } from '@kraftverk/device-sdk';
 import type { LiveBus } from '@kraftverk/holder';
 
-import { db } from './db.ts';
+import { db } from '../platform/database.ts';
 import { sampleOf } from './sampler.ts';
 
 /**

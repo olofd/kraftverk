@@ -13,29 +13,25 @@ import { CORS_METHODS, corsOrigin, createApp } from './app.ts';
 import { Attention } from './attention/attention.ts';
 import { AutomationEngine, AutomationLibrary } from '@kraftverk/automation-engine';
 import { serverDevices } from './automations/devices.ts';
-import { AutomationStore } from './automations/store.ts';
+import { AutomationStore, DeviceCatalog, ClientStore, ConnectionStore, LinkStore, EventStore } from '@kraftverk/store';
 import { CLIENT_HEADER, SESSION_COOKIE } from './auth/routes.ts';
 import { createFirstUser, createUser } from './auth/store.ts';
 import { CLIENT_IP_HEADER, EXPOSURE_HEADER, ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
-import { DeviceCatalog } from './devices/catalog.ts';
-import { ClientStore } from './devices/clients.ts';
-import { ConnectionStore } from './devices/connections.ts';
-import { LinkStore } from './devices/links.ts';
 import { Nearby } from './devices/nearby.ts';
 import { DeviceRegistry } from './devices/registry.ts';
 import { RemoteReadings } from './devices/remote.ts';
 import { DeviceSessionManager } from './devices/sessions.ts';
 import { SetupService } from './devices/setup/index.ts';
-import { EventStore } from './devices/events.ts';
 import { busDefinition, FakeBus, lampProtocol, lampType } from './devices/testing.ts';
 import { DeviceTypeRegistry } from './devices/types.ts';
-import { audit, closeDb, db, openSecret } from './history/db.ts';
-import { policyValues } from './history/policy.ts';
+import { audit, closeDb, db, policyValues } from './platform/database.ts';
+import { openSecret } from './platform/secrets.ts';
 import { Sampler } from './history/sampler.ts';
 import { originAllowed } from './routes/live.ts';
 import { ProtocolRegistry } from './runtime/protocols.ts';
 import { TransportHost } from './runtime/transports.ts';
+import { serverSecrets } from './platform/secrets.ts';
 
 /**
  * The server's routes, over HTTP, as the app and an attacker reach them.
@@ -80,11 +76,11 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
   // Only the bus: the installed transports would reach real radios and the network.
   await transports.startAll(['bus']);
 
-  const catalog = new DeviceCatalog();
-  const connections = new ConnectionStore();
-  const links = new LinkStore();
-  const clients = new ClientStore();
-  const events = new EventStore();
+  const catalog = new DeviceCatalog(db());
+  const connections = new ConnectionStore(db(), serverSecrets);
+  const links = new LinkStore(db());
+  const clients = new ClientStore(db());
+  const events = new EventStore(db());
   const live = new LiveBus();
   const sessions = new DeviceSessionManager({
     types,
@@ -125,7 +121,7 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
   });
   const proxies = new ProxyDirectory(PROXY);
   await proxies.refresh();
-  const automations = new AutomationStore();
+  const automations = new AutomationStore(db());
   const library = new AutomationLibrary(types.contributions(), () => {});
   const engine = new AutomationEngine({ store: automations, library, device: serverDevices(catalog, sessions), gateway, record: audit, bus: live });
 

@@ -6,15 +6,14 @@ import { join } from 'node:path';
 import { SIMULATED_ADDRESS, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT } from '@kraftverk/device-sdk';
 import { LiveBus, type LiveMessage } from '@kraftverk/holder';
 
-import { closeDb, db } from '../history/db.ts';
+import { closeDb, db } from '../platform/database.ts';
 import { ProtocolRegistry } from '../runtime/protocols.ts';
 import { TransportHost } from '../runtime/transports.ts';
-import { DeviceCatalog } from './catalog.ts';
-import { ClientStore } from './clients.ts';
-import { ConnectionStore } from './connections.ts';
+import { DeviceCatalog, ClientStore, ConnectionStore } from '@kraftverk/store';
 import { DeviceSessionManager } from './sessions.ts';
 import { busDefinition, FakeBus, LAMP, lampControl, lampProtocol, lampType, opened } from './testing.ts';
 import { DeviceTypeRegistry } from './types.ts';
+import { serverSecrets } from '../platform/secrets.ts';
 
 /**
  * One session per saved device, whatever it is, over the connection it is
@@ -59,9 +58,9 @@ const build = (options: { readOnly?: boolean; bus?: LiveBus } = {}) => {
 beforeAll(() => {
   process.env.KRAFTVERK_DB = join(dir, 'test.db');
   closeDb();
-  catalog = new DeviceCatalog();
-  connections = new ConnectionStore();
-  clients = new ClientStore();
+  catalog = new DeviceCatalog(db());
+  connections = new ConnectionStore(db(), serverSecrets);
+  clients = new ClientStore(db());
 });
 
 afterAll(async () => {

@@ -3,18 +3,16 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { closeDb, db } from '../history/db.ts';
+import { closeDb, db } from '../platform/database.ts';
 import { ProtocolRegistry } from '../runtime/protocols.ts';
 import { TransportHost } from '../runtime/transports.ts';
-import { DeviceCatalog } from './catalog.ts';
-import { ClientStore } from './clients.ts';
-import { ConnectionStore } from './connections.ts';
-import { LinkStore } from './links.ts';
+import { DeviceCatalog, ClientStore, ConnectionStore, LinkStore } from '@kraftverk/store';
 import { DeviceRegistry } from './registry.ts';
 import { RemoteReadings } from './remote.ts';
 import { DeviceSessionManager } from './sessions.ts';
 import { busDefinition, FakeBus, LAMP, lampProtocol, lampType } from './testing.ts';
 import { DeviceTypeRegistry } from './types.ts';
+import { serverSecrets } from '../platform/secrets.ts';
 
 /**
  * Every device described the same way: what it is, how it is reached, how it
@@ -35,10 +33,10 @@ const bus = new FakeBus();
 beforeAll(() => {
   process.env.KRAFTVERK_DB = join(dir, 'test.db');
   closeDb();
-  catalog = new DeviceCatalog();
-  connections = new ConnectionStore();
-  links = new LinkStore();
-  clients = new ClientStore();
+  catalog = new DeviceCatalog(db());
+  connections = new ConnectionStore(db(), serverSecrets);
+  links = new LinkStore(db());
+  clients = new ClientStore(db());
   const protocols = new ProtocolRegistry();
   protocols.install(lampProtocol);
   const transports = new TransportHost({ context: { env: {}, log: () => {}, audit: () => {} } });

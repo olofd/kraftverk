@@ -7,8 +7,7 @@ import { isPolicyValueName, POLICY_VALUES, RESOURCE_KINDS, type ResourceKind } f
 import { RESET_SECRET_MIN, resetSecret, resetSecretPath, secretMatches } from '../admin/reset.ts';
 import { LoginLimiter, limiterKeys } from '../auth/limiter.ts';
 import { actorOf, type createAuth } from '../auth/routes.ts';
-import { audit, recentAudit, resetDatabase } from '../history/db.ts';
-import { policyValues, setPolicyValue } from '../history/policy.ts';
+import { audit, recentAudit, resetDatabase, policyValues, setPolicyValue } from '../platform/database.ts';
 import { body, type AppDeps } from './shared.ts';
 
 /** Erasing everything, and the audit timeline. */

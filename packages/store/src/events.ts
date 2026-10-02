@@ -1,7 +1,7 @@
 import type { DeviceEventMessage } from '@kraftverk/holder';
 import { MAIN_PART, type EventLevel, type SavedDeviceId, type Value } from '@kraftverk/device-sdk';
 
-import { db } from '../history/db.ts';
+import type { SqlDatabase } from './database.ts';
 
 /**
  * What devices said happened — an overload trip, a button — kept beside their
@@ -32,20 +32,26 @@ const toRecord = (row: Row): DeviceEventRecord => ({
 });
 
 export class EventStore {
+  readonly #db: SqlDatabase;
+
+  constructor(db: SqlDatabase) {
+    this.#db = db;
+  }
+
   record(deviceId: SavedDeviceId, event: DeviceEventMessage): void {
-    db()
+    this.#db
       .query('INSERT INTO device_event (device_id, part, event, level, data, at) VALUES (?, ?, ?, ?, ?, ?)')
       .run(deviceId, event.part ?? MAIN_PART, event.id, event.level, event.data ? JSON.stringify(event.data) : null, event.at);
   }
 
   /** A device's most recent events, newest first. */
   recent(deviceId: SavedDeviceId, limit = 100): DeviceEventRecord[] {
-    return db().query<Row, [string, number]>('SELECT * FROM device_event WHERE device_id = ? ORDER BY at DESC, id DESC LIMIT ?').all(deviceId, limit).map(toRecord);
+    return this.#db.query<Row, [string, number]>('SELECT * FROM device_event WHERE device_id = ? ORDER BY at DESC, id DESC LIMIT ?').all(deviceId, limit).map(toRecord);
   }
 
   /** Warnings and errors across the devices you have — not those removed — newest first. */
   problems(limit = 100): (DeviceEventRecord & { deviceName: string })[] {
-    return db()
+    return this.#db
       .query<Row & { device_name: string }, [number]>(
         `SELECT device_event.*, device.name AS device_name FROM device_event JOIN device ON device.id = device_event.device_id
          WHERE device_event.level <> 'info' AND device.removed_at IS NULL ORDER BY device_event.at DESC, device_event.id DESC LIMIT ?`

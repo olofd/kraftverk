@@ -19,11 +19,10 @@ import {
   type RuleVocabulary,
 } from '@kraftverk/automation';
 
-import type { DeviceCatalog } from '../devices/catalog.ts';
+import type { DeviceCatalog, AutomationStore } from '@kraftverk/store';
 import type { DeviceSessionManager } from '../devices/sessions.ts';
-import { db } from '../history/db.ts';
+import { db } from '../platform/database.ts';
 import { CHAIN_LIMIT, quoted, type AutomationEngine, type AutomationRecord, type AutomationLibrary, rehearse } from '@kraftverk/automation-engine';
-import type { AutomationStore } from './store.ts';
 
 /**
  * What an automation is made of, checked the one way whoever makes it — a

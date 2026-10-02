@@ -2,7 +2,7 @@ import type { SeriesPoint } from '@kraftverk/api-contract';
 import { isCurrent, keepsHistory, partOf, type AttributeSpec, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
 
 import { pruneChanges } from './changes.ts';
-import { db } from './db.ts';
+import { db } from '../platform/database.ts';
 import type { DeviceRegistry } from '../devices/registry.ts';
 
 /**

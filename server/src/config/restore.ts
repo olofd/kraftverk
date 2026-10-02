@@ -3,7 +3,7 @@ import { basename, dirname, join } from 'node:path';
 
 import type { ConfigRestored } from '@kraftverk/api-contract';
 
-import { audit } from '../history/db.ts';
+import { audit } from '../platform/database.ts';
 import { applyImport, ImportError, planImport, type ImportDeps } from './import.ts';
 
 /*

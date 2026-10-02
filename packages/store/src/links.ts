@@ -1,9 +1,9 @@
 import type { LinkRecord } from '@kraftverk/api-contract';
-import { randomBytes } from 'node:crypto';
 
 import { linkId, linkKindSpec, savedDeviceId, type LinkEnd, type LinkKind, type SavedDeviceId } from '@kraftverk/device-sdk';
 
-import { db } from '../history/db.ts';
+import type { SqlDatabase } from './database.ts';
+import { randomHex } from './ids.ts';
 
 /**
  * Links: physical facts between parts of two devices, recorded once and read
@@ -25,18 +25,24 @@ const toRecord = (row: Row): LinkRecord => ({
 });
 
 export class LinkStore {
+  readonly #db: SqlDatabase;
+
+  constructor(db: SqlDatabase) {
+    this.#db = db;
+  }
+
   all(): LinkRecord[] {
-    return db().query<Row, []>('SELECT * FROM device_link ORDER BY created_at').all().map(toRecord);
+    return this.#db.query<Row, []>('SELECT * FROM device_link ORDER BY created_at').all().map(toRecord);
   }
 
   get(id: string): LinkRecord | null {
-    const row = db().query<Row, [string]>('SELECT * FROM device_link WHERE id = ?').get(id);
+    const row = this.#db.query<Row, [string]>('SELECT * FROM device_link WHERE id = ?').get(id);
     return row ? toRecord(row) : null;
   }
 
   /** Every link a device is either end of. */
   forDevice(deviceId: SavedDeviceId): LinkRecord[] {
-    return db()
+    return this.#db
       .query<Row, [string, string]>('SELECT * FROM device_link WHERE source_device = ? OR target_device = ? ORDER BY created_at')
       .all(deviceId, deviceId)
       .map(toRecord);
@@ -44,7 +50,7 @@ export class LinkStore {
 
   /** Every link whose source is this part of this device, of any kind: what the gateway walks. */
   from(deviceId: SavedDeviceId, part: string): LinkRecord[] {
-    return db()
+    return this.#db
       .query<Row, [string, string]>('SELECT * FROM device_link WHERE source_device = ? AND source_part = ? ORDER BY created_at')
       .all(deviceId, part)
       .map(toRecord);
@@ -57,17 +63,17 @@ export class LinkStore {
    */
   add(input: { kind: LinkKind; source: LinkEnd<SavedDeviceId>; target: LinkEnd<SavedDeviceId> }): LinkRecord {
     if (input.source.device === input.target.device) throw new Error('A device cannot be linked to itself');
-    const record: LinkRecord = { id: linkId(`l-${randomBytes(6).toString('hex')}`), ...input, createdAt: new Date().toISOString() };
+    const record: LinkRecord = { id: linkId(`l-${randomHex(6)}`), ...input, createdAt: new Date().toISOString() };
     const onePerSource = linkKindSpec(input.kind).onePerSource === true;
-    db().transaction(() => {
+    this.#db.transaction(() => {
       if (onePerSource) {
-        db().query('DELETE FROM device_link WHERE kind = ? AND source_device = ? AND source_part = ?').run(input.kind, input.source.device, input.source.part);
+        this.#db.query('DELETE FROM device_link WHERE kind = ? AND source_device = ? AND source_part = ?').run(input.kind, input.source.device, input.source.part);
       } else {
-        db()
+        this.#db
           .query('DELETE FROM device_link WHERE kind = ? AND source_device = ? AND source_part = ? AND target_device = ? AND target_part = ?')
           .run(input.kind, input.source.device, input.source.part, input.target.device, input.target.part);
       }
-      db()
+      this.#db
         .query('INSERT INTO device_link (id, kind, source_device, source_part, target_device, target_part, one_per_source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
         .run(record.id, record.kind, record.source.device, record.source.part, record.target.device, record.target.part, onePerSource ? 1 : 0, record.createdAt);
     })();
@@ -75,6 +81,6 @@ export class LinkStore {
   }
 
   remove(id: string): void {
-    db().query('DELETE FROM device_link WHERE id = ?').run(id);
+    this.#db.query('DELETE FROM device_link WHERE id = ?').run(id);
   }
 }

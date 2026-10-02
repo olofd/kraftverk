@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
-import { audit } from '../history/db.ts';
+import { audit } from '../platform/database.ts';
 import {
   AccountError,
   countUsers,

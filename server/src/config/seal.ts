@@ -1,12 +1,12 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
 
-import { openSecret, sealSecret } from '../history/db.ts';
+import { openSecret, sealSecret } from '../platform/secrets.ts';
 
 /*
   A secret sealed with a passphrase, for an export that carries its secrets
   (docs/CONFIG.md): "sealed:v1:<salt>:<iv>:<data>", base64url, the key from
   the passphrase by scrypt and the seal AES-256-GCM — the same cipher the
-  database seals its secrets with (`history/db.ts`), keyed by what its owner
+  database seals its secrets with (`platform/secrets.ts`), keyed by what its owner
   typed rather than by the server's key, so the file opens on any kraftverk
   that is given the passphrase, and on none that is not.
 */

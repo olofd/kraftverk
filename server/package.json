@@ -23,6 +23,7 @@
     "@kraftverk/device-sdk": "*",
     "@kraftverk/gateway": "*",
     "@kraftverk/holder": "*",
+    "@kraftverk/store": "*",
     "hono": "^4.13.1",
     "zod": "^4.4.3"
   },

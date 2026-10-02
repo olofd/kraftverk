@@ -3,10 +3,7 @@ import { deviceCapabilities, MAIN_PART, methodOf, partsOf, type DeviceDescriptio
 import { activeConnection, toolsOf } from '@kraftverk/holder';
 
 import type { TransportHost } from '../runtime/transports.ts';
-import type { DeviceCatalog, DeviceRecord } from './catalog.ts';
-import type { ClientRecord, ClientStore } from './clients.ts';
-import type { ConnectionRecord, ConnectionStore } from './connections.ts';
-import type { LinkRecord, LinkStore } from './links.ts';
+import type { DeviceCatalog, DeviceRecord, ClientRecord, ClientStore, ConnectionRecord, ConnectionStore, LinkRecord, LinkStore } from '@kraftverk/store';
 import type { RemoteReadings } from './remote.ts';
 import type { DeviceSessionManager } from './sessions.ts';
 import type { DeviceTypeRegistry } from './types.ts';

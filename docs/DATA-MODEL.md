@@ -696,7 +696,7 @@ page, with *Add a way to reach it*.
 
 ## 5. One schema
 
-The database is one definition, `server/src/history/schema.ts` — not a chain
+The database is one definition, `packages/store/src/schema.ts` — not a chain
 of migrations (ARCHITECTURE.md §4.5, decision 21: strict version 1 while
 kraftverk is in research and development). A database made by any other schema
 is set aside beside itself, untouched, and a new one is started; history from

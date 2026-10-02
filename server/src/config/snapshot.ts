@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { readConfig, writeConfig } from '@kraftverk/config';
 import type { AuditRecord } from '@kraftverk/device-sdk';
 
-import { databaseFile, onAudit } from '../history/db.ts';
+import { databaseFile, onAudit } from '../platform/database.ts';
 import { exportConfig, type ConfigDeps } from './export.ts';
 import type { Restored } from './restore.ts';
 

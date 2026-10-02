@@ -1,8 +1,9 @@
-import { randomBytes } from 'node:crypto';
 
 import { clientId, connectionId, savedDeviceId, type ClientId, type ConnectionId, type SavedDeviceId } from '@kraftverk/device-sdk';
 
-import { db, openSecret, sealSecret } from '../history/db.ts';
+import type { SqlDatabase } from './database.ts';
+import { randomHex } from './ids.ts';
+import type { SecretsAtRest } from './secrets.ts';
 
 /**
  * How each device is reached (docs/DATA-MODEL.md §3): one row per way, from
@@ -65,9 +66,17 @@ const toRecord = (row: Row): ConnectionRecord => ({
 });
 
 export class ConnectionStore {
+  readonly #db: SqlDatabase;
+  readonly #secrets: SecretsAtRest;
+
+  constructor(db: SqlDatabase, secrets: SecretsAtRest) {
+    this.#db = db;
+    this.#secrets = secrets;
+  }
+
   /** A device's connections, preferred first. */
   forDevice(deviceId: SavedDeviceId): ConnectionRecord[] {
-    return db()
+    return this.#db
       .query<Row, [string]>('SELECT * FROM device_connection WHERE device_id = ? ORDER BY priority, created_at')
       .all(deviceId)
       .map(toRecord);
@@ -76,7 +85,7 @@ export class ConnectionStore {
   /** Every connection, grouped by device, each group preferred first: one query for a whole list. */
   byDevice(): Map<SavedDeviceId, ConnectionRecord[]> {
     const grouped = new Map<SavedDeviceId, ConnectionRecord[]>();
-    for (const row of db().query<Row, []>('SELECT * FROM device_connection ORDER BY priority, created_at').all()) {
+    for (const row of this.#db.query<Row, []>('SELECT * FROM device_connection ORDER BY priority, created_at').all()) {
       const record = toRecord(row);
       grouped.set(record.deviceId, [...(grouped.get(record.deviceId) ?? []), record]);
     }
@@ -84,7 +93,7 @@ export class ConnectionStore {
   }
 
   get(id: string): ConnectionRecord | null {
-    const row = db().query<Row, [string]>('SELECT * FROM device_connection WHERE id = ?').get(id);
+    const row = this.#db.query<Row, [string]>('SELECT * FROM device_connection WHERE id = ?').get(id);
     return row ? toRecord(row) : null;
   }
 
@@ -100,7 +109,7 @@ export class ConnectionStore {
   }): ConnectionRecord {
     const existing = this.forDevice(input.deviceId);
     const record: ConnectionRecord = {
-      id: connectionId(`c-${randomBytes(6).toString('hex')}`),
+      id: connectionId(`c-${randomHex(6)}`),
       deviceId: input.deviceId,
       method: input.method,
       transport: input.transport,
@@ -113,7 +122,7 @@ export class ConnectionStore {
       createdAt: new Date().toISOString(),
       lastConnectedAt: null,
     };
-    db()
+    this.#db
       .query(
         'INSERT INTO device_connection (id, device_id, method, transport, held_by, address, priority, config, secrets_exportable, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
       )
@@ -125,7 +134,7 @@ export class ConnectionStore {
     const existing = this.get(id);
     if (!existing) return null;
     const next = { ...existing, ...Object.fromEntries(Object.entries(changes).filter(([, value]) => value !== undefined)) };
-    db()
+    this.#db
       .query('UPDATE device_connection SET priority = ?, config = ?, address = ?, secrets_exportable = ? WHERE id = ?')
       .run(next.priority, JSON.stringify(next.config), next.address, next.secretsExportable ? 1 : 0, id);
     return next;
@@ -136,19 +145,19 @@ export class ConnectionStore {
     const chosen = this.get(id);
     if (!chosen) return;
     const others = this.forDevice(chosen.deviceId).filter((connection) => connection.id !== id);
-    db().transaction(() => {
-      db().query('UPDATE device_connection SET priority = 0 WHERE id = ?').run(id);
-      others.forEach((connection, index) => db().query('UPDATE device_connection SET priority = ? WHERE id = ?').run(index + 1, connection.id));
+    this.#db.transaction(() => {
+      this.#db.query('UPDATE device_connection SET priority = 0 WHERE id = ?').run(id);
+      others.forEach((connection, index) => this.#db.query('UPDATE device_connection SET priority = ? WHERE id = ?').run(index + 1, connection.id));
     })();
   }
 
   remove(id: string): void {
-    db().query('DELETE FROM device_connection WHERE id = ?').run(id);
+    this.#db.query('DELETE FROM device_connection WHERE id = ?').run(id);
   }
 
   /** The device answered through this connection. */
   touch(id: string): void {
-    db().query('UPDATE device_connection SET last_connected_at = ? WHERE id = ?').run(new Date().toISOString(), id);
+    this.#db.query('UPDATE device_connection SET last_connected_at = ? WHERE id = ?').run(new Date().toISOString(), id);
   }
 
   /**
@@ -157,7 +166,7 @@ export class ConnectionStore {
    * two devices may not both claim it (docs/DATA-MODEL.md §3).
    */
   claimant(transport: string, address: string): { deviceId: SavedDeviceId; connectionId: string } | null {
-    const row = db()
+    const row = this.#db
       .query<{ id: string; device_id: string }, [string, string]>(
         `SELECT c.id, c.device_id FROM device_connection c JOIN device d ON d.id = c.device_id
          WHERE c.transport = ? AND UPPER(c.address) = UPPER(?) AND c.held_by IS NULL AND d.removed_at IS NULL`
@@ -170,15 +179,15 @@ export class ConnectionStore {
 
   /** One secret, opened: null when there is none, or it cannot be opened with the key this server has. */
   secret(connectionId: string, field: string): string | null {
-    const row = db()
+    const row = this.#db
       .query<{ value: string; encrypted: number }, [string, string]>('SELECT value, encrypted FROM connection_secret WHERE connection_id = ? AND field = ?')
       .get(connectionId, field);
-    return row ? openSecret(row.value, row.encrypted === 1) : null;
+    return row ? this.#secrets.open(row.value, row.encrypted === 1) : null;
   }
 
   /** Which secrets a connection has, by field — never their values. */
   secretFields(connectionId: string): string[] {
-    return db()
+    return this.#db
       .query<{ field: string }, [string]>('SELECT field FROM connection_secret WHERE connection_id = ? ORDER BY field')
       .all(connectionId)
       .map((row) => row.field);
@@ -187,20 +196,20 @@ export class ConnectionStore {
   /** The names of every connection's secrets, by connection: one query for a whole list. */
   secretFieldsByConnection(): Map<string, string[]> {
     const grouped = new Map<string, string[]>();
-    for (const row of db().query<{ connection_id: string; field: string }, []>('SELECT connection_id, field FROM connection_secret ORDER BY field').all()) {
+    for (const row of this.#db.query<{ connection_id: string; field: string }, []>('SELECT connection_id, field FROM connection_secret ORDER BY field').all()) {
       grouped.set(row.connection_id, [...(grouped.get(row.connection_id) ?? []), row.field]);
     }
     return grouped;
   }
 
   setSecrets(connectionId: string, values: Record<string, string>): void {
-    const upsert = db().query(
+    const upsert = this.#db.query(
       'INSERT INTO connection_secret (connection_id, field, value, encrypted) VALUES (?, ?, ?, ?) ' +
         'ON CONFLICT (connection_id, field) DO UPDATE SET value = excluded.value, encrypted = excluded.encrypted'
     );
-    db().transaction(() => {
+    this.#db.transaction(() => {
       for (const [field, value] of Object.entries(values)) {
-        const sealed = sealSecret(value);
+        const sealed = this.#secrets.seal(value);
         upsert.run(connectionId, field, sealed.value, sealed.encrypted ? 1 : 0);
       }
     })();

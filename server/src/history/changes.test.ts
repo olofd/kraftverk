@@ -7,7 +7,7 @@ import { savedDeviceId, type DeviceDescription, type Reading } from '@kraftverk/
 import { LiveBus } from '@kraftverk/holder';
 
 import { ChangeLog, changesOf, loggedAttributes, pruneChanges, recordChanges } from './changes.ts';
-import { closeDb, db } from './db.ts';
+import { closeDb, db } from '../platform/database.ts';
 
 /**
  * The state-change log: an on/off or a mode, the moment it changed — and

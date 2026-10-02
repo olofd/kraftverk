@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
-import { db } from '../history/db.ts';
+import { db } from '../platform/database.ts';
 
 /**
  * Accounts and sessions, in the server's own database.

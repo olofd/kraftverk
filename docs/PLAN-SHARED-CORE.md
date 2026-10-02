@@ -233,7 +233,17 @@ adapter to it (`serverDevices`) waits in `server/src/automations/devices.ts`
 for the hub. The planner (`plans.ts`) is built on the catalog, the session
 manager and the database, not the engine alone: it moves with them, in
 phase 5. The engine's own tests run against the SQLite store, and move
-with it in phase 3.
+with the hub in phase 5, where both are.
+Phase 3 (2026-10-02), the store — `@kraftverk/store`: the schema and every
+store that keeps only data (catalog, connections, links, events, apps,
+automations, the device and transport stores, the gateway's ledger,
+policy, app state, the timeline), each made from a `SqlDatabase`, ids from
+random values, secrets behind `SecretsAtRest`, and an adapter for sql.js.
+Its tests run on bun:sqlite and sql.js. The server's half is
+`server/src/platform/` — the file, setting an old schema aside, the one
+handle, its bindings of the stores to it, and sealing with its key. What
+mixes storage with logic — the sampler, the change log, remote readings —
+moves with the hub. 44 files of logic left.
 
 Each phase green and pushed. Files move first as they are (with git's
 history), then change. The server behaves as before throughout — the one

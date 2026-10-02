@@ -5,8 +5,7 @@ import { z } from 'zod';
 import { RESOURCE_KINDS, validateDescription, type AuditSubject, type DeviceDescription, type DeviceInfo, type ResourceKind } from '@kraftverk/device-sdk';
 
 import { actorOf } from '../auth/routes.ts';
-import { deviceStore } from '../devices/store.ts';
-import { audit } from '../history/db.ts';
+import { deviceStore, audit } from '../platform/database.ts';
 import { loggedAttributes, recordChanges } from '../history/changes.ts';
 import { keptAttributes } from '../history/sampler.ts';
 import { body, deviceOr404, ownClient, type AppDeps } from './shared.ts';

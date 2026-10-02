@@ -1,9 +1,9 @@
 import type { ClientRecord } from '@kraftverk/api-contract';
-import { randomBytes } from 'node:crypto';
 
 import { clientId } from '@kraftverk/device-sdk';
 
-import { db } from '../history/db.ts';
+import type { SqlDatabase } from './database.ts';
+import { randomHex } from './ids.ts';
 
 /**
  * The phones and browsers running the app, as the server knows them
@@ -30,17 +30,23 @@ const toRecord = (row: Row): ClientRecord => ({
 });
 
 export class ClientStore {
+  readonly #db: SqlDatabase;
+
+  constructor(db: SqlDatabase) {
+    this.#db = db;
+  }
+
   all(): ClientRecord[] {
-    return db().query<Row, []>('SELECT * FROM client').all().map(toRecord);
+    return this.#db.query<Row, []>('SELECT * FROM client').all().map(toRecord);
   }
 
   get(id: string): ClientRecord | null {
-    const row = db().query<Row, [string]>('SELECT * FROM client WHERE id = ?').get(id);
+    const row = this.#db.query<Row, [string]>('SELECT * FROM client WHERE id = ?').get(id);
     return row ? toRecord(row) : null;
   }
 
   forUser(userId: string): ClientRecord[] {
-    return db().query<Row, [string]>('SELECT * FROM client WHERE user_id = ? ORDER BY last_seen_at DESC').all(userId).map(toRecord);
+    return this.#db.query<Row, [string]>('SELECT * FROM client WHERE user_id = ? ORDER BY last_seen_at DESC').all(userId).map(toRecord);
   }
 
   /**
@@ -52,13 +58,13 @@ export class ClientStore {
     const now = new Date().toISOString();
     const existing = input.id ? this.get(input.id) : null;
     if (existing && existing.userId === input.userId) {
-      db()
+      this.#db
         .query('UPDATE client SET name = ?, platform = ?, transports = ?, last_seen_at = ? WHERE id = ?')
         .run(input.name, input.platform, JSON.stringify(input.transports), now, existing.id);
       return { ...existing, name: input.name, platform: input.platform, transports: input.transports, lastSeenAt: now };
     }
     const record: ClientRecord = {
-      id: clientId(`k-${randomBytes(6).toString('hex')}`),
+      id: clientId(`k-${randomHex(6)}`),
       userId: input.userId,
       name: input.name,
       platform: input.platform,
@@ -66,7 +72,7 @@ export class ClientStore {
       createdAt: now,
       lastSeenAt: now,
     };
-    db()
+    this.#db
       .query('INSERT INTO client (id, user_id, name, platform, transports, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(record.id, record.userId, record.name, record.platform, JSON.stringify(record.transports), now, now);
     return record;
@@ -74,6 +80,6 @@ export class ClientStore {
 
   /** Forgets a client, and every connection it held. */
   remove(id: string): void {
-    db().query('DELETE FROM client WHERE id = ?').run(id);
+    this.#db.query('DELETE FROM client WHERE id = ?').run(id);
   }
 }

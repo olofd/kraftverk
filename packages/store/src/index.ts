@@ -1,0 +1,27 @@
+/**
+ * kraftverk's data model in SQLite (README.md, docs/DATA-MODEL.md): one
+ * schema, and every store — each made from the database it keeps to, with
+ * nothing at module level, so two homes can be open in one process.
+ *
+ * Pure: the database is a port (`SqlDatabase`), and so is how secrets are
+ * kept at rest (`SecretsAtRest`). The server opens a file through
+ * bun:sqlite; the app expo-sqlite on a phone, sql.js in a browser.
+ */
+
+export * from './database.ts';
+export * from './schema.ts';
+export * from './secrets.ts';
+export * from './ids.ts';
+export * from './app-state.ts';
+export * from './audit.ts';
+export * from './policy.ts';
+export * from './catalog.ts';
+export * from './connections.ts';
+export * from './links.ts';
+export * from './events.ts';
+export * from './clients.ts';
+export * from './device-store.ts';
+export * from './transport-store.ts';
+export * from './ledger.ts';
+export * from './automations.ts';
+export * from './sql-js.ts';

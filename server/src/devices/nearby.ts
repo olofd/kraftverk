@@ -3,7 +3,7 @@ import type { Sighting, SightingFilter } from '@kraftverk/device-sdk';
 
 import type { ProtocolRegistry } from '../runtime/protocols.ts';
 import type { TransportHost } from '../runtime/transports.ts';
-import type { ConnectionStore } from './connections.ts';
+import type { ConnectionStore } from '@kraftverk/store';
 import type { DeviceTypeRegistry } from './types.ts';
 
 /**

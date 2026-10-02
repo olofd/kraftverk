@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { Hono } from 'hono';
 
-import { closeDb, db, resetDatabase } from '../history/db.ts';
+import { closeDb, db, resetDatabase } from '../platform/database.ts';
 import { hostAllowed, hostGuard, hostName } from './host.ts';
 import { LoginLimiter, limiterKeys, MAX_ENTRIES } from './limiter.ts';
 import { CLIENT_HEADER, createAuth, SESSION_COOKIE } from './routes.ts';

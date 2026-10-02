@@ -10,8 +10,7 @@ import { actorOf } from '../auth/routes.ts';
 import { RunRefusal } from '@kraftverk/automation-engine';
 import { plans, REHEARSAL_MAX_HOURS } from '../automations/plans.ts';
 import { AGENT_RULES, vocabularyOf, worldOf, worldText } from '../assistant/world.ts';
-import { recentAudit } from '../history/db.ts';
-import { policyValues } from '../history/policy.ts';
+import { recentAudit, policyValues } from '../platform/database.ts';
 import { auditAbout, type AppDeps } from './shared.ts';
 
 /**

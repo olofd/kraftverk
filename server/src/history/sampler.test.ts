@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import type { AttributeSpec, DeviceDescription, Reading } from '@kraftverk/device-sdk';
 
-import { closeDb, db } from './db.ts';
+import { closeDb, db } from '../platform/database.ts';
 import { resolutionOf, rollUp, Sampler, series } from './sampler.ts';
 import type { DeviceRegistry } from '../devices/registry.ts';
 

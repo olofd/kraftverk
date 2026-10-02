@@ -1,6 +1,6 @@
 import { partOf, type AttributeSpec, type Reading, type SavedDeviceId } from '@kraftverk/device-sdk';
 
-import { db } from '../history/db.ts';
+import { db } from '../platform/database.ts';
 import { rollUp, sampleOf } from '../history/sampler.ts';
 
 /**

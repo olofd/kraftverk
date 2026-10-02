@@ -8,9 +8,9 @@ import { MAIN_PART, savedDeviceId, zonedInstant, type AuditRecord, type DeviceDe
 import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
 
-import { closeDb, db } from '../history/db.ts';
+import { closeDb, db } from '../platform/database.ts';
 import { AutomationEngine, type AutomationRecord, type EngineDevice, AutomationLibrary } from '@kraftverk/automation-engine';
-import { AutomationStore } from './store.ts';
+import { AutomationStore } from '@kraftverk/store';
 
 /*
   The engine runs rules — whoever wrote them — and the gateway acts: these
@@ -188,7 +188,7 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
     [`${STATION}:outlet.ac`]: { name: 'Garage P280 — AC outlets', removed: false, hasPart: true, part: 'outlet.ac', description: STATION_DESCRIPTION, device: null, offline: 'n/a', capabilities: ['switch'] },
     [`${STATION}:input.ac`]: { name: 'Garage P280 — Mains', removed: false, hasPart: true, part: 'input.ac', description: STATION_DESCRIPTION, device: null, offline: 'n/a', capabilities: ['acInput'] },
   } satisfies Record<string, Omit<EngineDevice, 'reachable' | 'wantFresh' | 'deviceName' | 'typeId'>>).map(([key, device]) => [key, asEngineDevice(device)]));
-  const store = new AutomationStore();
+  const store = new AutomationStore(db());
   const bus = new LiveBus();
   const engine = new AutomationEngine({
     store,

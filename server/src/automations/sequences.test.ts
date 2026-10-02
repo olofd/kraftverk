@@ -8,9 +8,9 @@ import { MAIN_PART, savedDeviceId, type AuditRecord, type AutomationId, type Dev
 import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent, type WriteResult } from '@kraftverk/gateway';
 import { LiveBus, type LiveMessage } from '@kraftverk/holder';
 
-import { closeDb, db } from '../history/db.ts';
+import { closeDb, db } from '../platform/database.ts';
 import { AutomationEngine, RunRefusal, type Asker, type EngineDevice, AutomationLibrary, runLogCsv } from '@kraftverk/automation-engine';
-import { AutomationStore } from './store.ts';
+import { AutomationStore } from '@kraftverk/store';
 
 /*
   Sequences (docs/SEQUENCES.md), run by the engine through a scripted
@@ -162,7 +162,7 @@ function setup(world: Partial<World> = {}) {
       () => reachable() || state.plugLooksConnected
     ),
   };
-  const store = new AutomationStore();
+  const store = new AutomationStore(db());
   const bus = new LiveBus();
   bus.subscribe((message) => void heard.push(message));
   const engine = new AutomationEngine({

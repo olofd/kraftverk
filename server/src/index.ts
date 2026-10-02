@@ -10,30 +10,23 @@ import { serverDevices } from './automations/devices.ts';
 import { plans } from './automations/plans.ts';
 import { restoreFrom } from './config/restore.ts';
 import { ConfigSnapshot } from './config/snapshot.ts';
-import { AutomationStore } from './automations/store.ts';
+import { AutomationStore, DeviceCatalog, EventStore, ClientStore, ConnectionStore, LinkStore } from '@kraftverk/store';
 import { ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
-import { DeviceCatalog } from './devices/catalog.ts';
-import { EventStore } from './devices/events.ts';
-import { ClientStore } from './devices/clients.ts';
-import { ConnectionStore } from './devices/connections.ts';
-import { LinkStore } from './devices/links.ts';
 import { Nearby } from './devices/nearby.ts';
 import { DeviceRegistry } from './devices/registry.ts';
 import { RemoteReadings } from './devices/remote.ts';
 import { DeviceSessionManager } from './devices/sessions.ts';
 import { SetupService } from './devices/setup/index.ts';
 import { DeviceTypeRegistry } from './devices/types.ts';
-import { databaseLedger } from './devices/ledger.ts';
-import { audit, closeDb, startedFresh } from './history/db.ts';
-import { policyValues } from './history/policy.ts';
+import { databaseLedger, audit, closeDb, startedFresh, policyValues, transportStore, db } from './platform/database.ts';
 import { ChangeLog } from './history/changes.ts';
-import { transportStore } from './history/transport-store.ts';
 import { Sampler } from './history/sampler.ts';
 import { keepConsole } from './log.ts';
 import { scopedHttp } from './runtime/http.ts';
 import { ProtocolRegistry } from './runtime/protocols.ts';
 import { TransportHost } from './runtime/transports.ts';
+import { serverSecrets } from './platform/secrets.ts';
 
 /*
   The server process: everything that starts something.
@@ -127,14 +120,14 @@ console.log(
 );
 
 /** What you have, how each is reached, and how they fit the house. */
-const catalog = new DeviceCatalog();
-const connections = new ConnectionStore();
-const links = new LinkStore();
-const clients = new ClientStore();
+const catalog = new DeviceCatalog(db());
+const connections = new ConnectionStore(db(), serverSecrets);
+const links = new LinkStore(db());
+const clients = new ClientStore(db());
 
 /** What devices say as they say it: readings, events, a changed description. */
 const bus = new LiveBus();
-const events = new EventStore();
+const events = new EventStore(db());
 
 const sessions = new DeviceSessionManager({
   types,
@@ -225,7 +218,7 @@ changeLog.start();
 /** Automations: decided here, acted on only through the gateway. */
 /** What the installed packages bring to automations: their recipes and functions. None of the core's own. */
 const library = new AutomationLibrary(types.contributions());
-const automations = new AutomationStore();
+const automations = new AutomationStore(db());
 const engine = new AutomationEngine({
   store: automations,
   library,
