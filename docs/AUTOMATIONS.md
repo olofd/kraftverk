@@ -26,8 +26,8 @@ to become:
   stays below 20 % for 5 minutes, turn the heater plug on* — should become an
   automation.
 - **Written by an AI, in the app.** You say what you want; the app proposes an
-  automation; you see in one sentence what it will do, watch it observe, and
-  arm it.
+  automation; you see in one sentence what it will do, watch what it would
+  do, and let it act.
 
 A function can be filled in (roles, settings) but not composed, checked,
 explained or generated. So an automation is **data**, in one small typed
@@ -106,7 +106,7 @@ What that buys:
   dwell, freshness, confirmation, read-only mode or verification. Whatever
   writes a rule — a package, a person, a DSL, an AI — writes data, and the
   worst a wrong rule can do is what a person could do from a screen, after it
-  has been watched observing and armed on purpose. A value it reads is what
+  has been seen watching and let act on purpose. A value it reads is what
   the part reports *now*: one older than its attribute says a value stays
   current (`currentFor`) is unknown, as it is to history and the gateway.
 
@@ -207,8 +207,8 @@ The server's engine runs every automation the same way:
   continues from where it was: nothing fires twice, a hold resumes with the
   time it had left, and a condition that turned true while the server was
   down fires when it is back. A trigger with nothing kept — an automation
-  just made, or changed, or armed — takes a condition already true as its
-  edge: a charge window armed at 8 % starts charging, rather than waiting
+  just made, or changed, or let act — takes a condition already true as its
+  edge: a charge window let act at 8 % starts charging, rather than waiting
   for the battery to rise and fall again, which nothing would make it do.
   Only the automations bound to a device are looked at when it reports.
 
@@ -228,7 +228,7 @@ last acted is left — the last edge wins, and the two do not undo each other
 at every look; what a person or an assistant changed is switched back. A
 setting it changes is kept so as a command is. Time-of-day and event
 triggers have nothing to keep. The gateway's dwell still applies to every run, and turning
-it on for an armed automation is confirmed as arming is.
+it on for an automation that acts is confirmed as letting it act is.
 
 A run evaluates `if`, then each action: an automation set to **watch** says
 what it would have done; one set to **act** sends it through the gateway as
@@ -299,7 +299,7 @@ docs/SEQUENCES.md).
   explaining and running are done.
 - **AI in the app.** The minimum is built: `GET /world`, `GET /vocabulary`
   and an MCP endpoint whose `propose` makes an automation from a recipe,
-  observing, rehearsed ([API.md](API.md)). Next, a model asked for a rule or
+  watching, rehearsed ([API.md](API.md)). Next, a model asked for a rule or
   DSL text of its own, with `checkRule` and `checkBinding` its critic and the
   sentence what you approve — inside the same rails as everything else.
 - **More in the language, as needs arrive:** notifications, sunrise and

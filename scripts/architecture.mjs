@@ -27,7 +27,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, posix, resolve } from 'node:path';
@@ -481,11 +481,14 @@ function measure() {
  * silently — a field added on one side only — so it fails outright, with no
  * baseline: there were never any to keep.
  */
-const CONTRACT = 'packages/api-contract/src/index.ts';
+const CONTRACT = 'packages/api-contract/src';
 const CONTRACT_USERS = /^(server\/src|client\/src|client\/app|packages\/api-client\/src)\//;
 
 function contractCopies() {
-  const declared = new Set([...readFileSync(resolve(ROOT, CONTRACT), 'utf8').matchAll(/^export (?:type|interface) (\w+)\b/gm)].map((match) => match[1]));
+  // Every file of the contract: a shape is declared in the file of its area, and re-exported from the index.
+  const files = readdirSync(resolve(ROOT, CONTRACT)).filter((name) => SOURCE.test(name) && !TEST.test(name));
+  const declared = new Set(files.flatMap((name) => [...readFileSync(resolve(ROOT, CONTRACT, name), 'utf8').matchAll(/^export (?:type|interface|class) (\w+)\b/gm)].map((match) => match[1])));
+  if (declared.size < 50) throw new Error(`The contract declares only ${declared.size} shapes in ${CONTRACT}: has it moved?`);
   const copies = [];
   for (const file of sourceFiles()) {
     if (!CONTRACT_USERS.test(file) || TEST.test(file)) continue;
@@ -500,6 +503,59 @@ function contractCopies() {
     }
   }
   return copies;
+}
+
+/**
+ * A document that says how things are names only what is there. Which
+ * documents say how things are is docs/README.md's to say: its "Current"
+ * section. Every document in docs/ is listed there, one way or the other,
+ * so a new one is placed when it is written; and in a current one — beside
+ * every package's README, AGENTS.md and the root's — each repository path
+ * in backticks, and each link to a file, must exist. A plan or a record
+ * keeps the paths of its day — and so does a record inside a current
+ * document, between `<!-- kept as written -->` and `<!-- /kept as written -->`.
+ */
+const DOCS_INDEX = 'docs/README.md';
+const REPO_PATH = /^(packages|server|client|docs|scripts|e2e|web|ci)\/[\w./[\]@-]*$/;
+
+function currentDocuments() {
+  const index = readFileSync(resolve(ROOT, DOCS_INDEX), 'utf8').replace(/\r\n/g, '\n');
+  const sections = index.split(/^## /m);
+  const listed = (section) => [...section.matchAll(/\]\(([\w.-]+\.md)\)/g)].map((match) => match[1]);
+  const current = sections.filter((section) => section.startsWith('Current')).flatMap(listed);
+  const all = new Set(sections.flatMap(listed));
+  const unplaced = readdirSync(resolve(ROOT, 'docs'))
+    .filter((name) => name.endsWith('.md') && name !== 'README.md' && !all.has(name))
+    .map((name) => `docs/${name}: not in ${DOCS_INDEX} — say whether it is current, or a plan or a record kept as written`);
+  const readmes = execFileSync('git', ['ls-files', '*README.md', 'AGENTS.md', 'CONTRIBUTING.md'], { cwd: ROOT, encoding: 'utf8' })
+    .split('\n')
+    .filter((file) => file && file !== DOCS_INDEX);
+  return { documents: [DOCS_INDEX, ...current.map((name) => `docs/${name}`), ...readmes], unplaced };
+}
+
+function stalePaths() {
+  const { documents, unplaced } = currentDocuments();
+  const found = [...unplaced];
+  for (const document of documents) {
+    const text = readFileSync(resolve(ROOT, document), 'utf8').replace(/<!-- kept as written -->[\s\S]*?<!-- \/kept as written -->/g, '');
+    const named = new Set();
+    for (const [, token] of text.matchAll(/`([^`\s]+)`/g)) {
+      const path = token.replace(/:\d+(-\d+)?$/, '').replace(/[.,;:]$/, '');
+      if (REPO_PATH.test(path) && !path.startsWith('server/data/')) named.add(path);
+    }
+    for (const [, target] of text.matchAll(/\]\(([^)\s#]+)(#[^)]*)?\)/g)) {
+      if (/^[a-z]+:/i.test(target)) continue;
+      named.add(posix.join(posix.dirname(document), target));
+    }
+    for (const path of named) {
+      try {
+        readFileSync(resolve(ROOT, path));
+      } catch (error) {
+        if (error.code !== 'EISDIR') found.push(`${document}: names ${path}, which is not there`);
+      }
+    }
+  }
+  return found;
 }
 
 // --- comparing with the baseline ------------------------------------------
@@ -586,6 +642,12 @@ const undocumented = undocumentedPackages();
 if (undocumented.length) {
   console.error('A package that does not say what it is:\n');
   for (const line of undocumented) console.error(`  ✗ ${line}`);
+  process.exit(1);
+}
+const stale = stalePaths();
+if (stale.length) {
+  console.error('A document that names what is not there:\n');
+  for (const line of stale) console.error(`  ✗ ${line}`);
   process.exit(1);
 }
 

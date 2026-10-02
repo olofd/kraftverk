@@ -3,7 +3,8 @@
 Read this first; it is short on purpose. The design is in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (the authority), the data model in
 [docs/DATA-MODEL.md](docs/DATA-MODEL.md), and where things stand in
-[docs/HANDOFF.md](docs/HANDOFF.md).
+[docs/HANDOFF.md](docs/HANDOFF.md). Which documents are current and which
+are plans kept as written: [docs/README.md](docs/README.md).
 
 ## The phase we are in: research and development — strict version 1
 

@@ -7,7 +7,7 @@ data model in [`DATA-MODEL.md`](DATA-MODEL.md). This document holds only what
 those cannot: where things stand right now, and what has been learned the hard
 way. Where it describes code that the plan replaces, the plan is the target.
 
-Last updated 2026-09-30.
+Last updated 2026-10-02.
 
 > **Phase: research and development — strict version 1.** Nobody runs
 > kraftverk in production but its owner, so nothing here is kept backward
@@ -98,7 +98,7 @@ empty: the core names no product, and every device is found, not listed.
   reading that is missing or stale counts as holding. How much is a load is
   the home's (`loadWatts`, App settings → Safety, `/api/policy`), and a
   confirmation is a single-use token bound to the intent and the person,
-  for commands, settings and arming alike.
+  for commands, settings and letting an automation act alike.
 - **The app on the model** (step 28): pages drawn from the description —
   energy flow, part pages, events and a Problems page, About, tools from their
   declarations — with slots (`DeviceUi`) a package fills where it draws
@@ -107,25 +107,26 @@ empty: the core names no product, and every device is found, not listed.
 - **The assistant, minimum**: `GET /api/world`, `GET /api/vocabulary`, and
   MCP at `POST /api/mcp` (see [API.md](API.md)) acting as `actor: 'agent'`,
   which is refused whatever needs a person's yes; `propose` makes an
-  automation observing and rehearses it on history.
+  automation that watches, and rehearses it on history.
 - **Live** (step 27): `GET /api/live`, a WebSocket, carries readings that
   moved, health and events; the app polls only while it is down.
 - **The app holds connections too.** "Bluetooth, from this browser" runs the
-  station's own session in the app, sends readings to the server and follows the
-  gateway's rules there (`client/src/runtime`). Web Bluetooth is verified in the
+  station's own session in the app, as a node following the server
+  (`createFollower` in `packages/hub`), sends readings to the server and
+  follows the gateway's rules there. Web Bluetooth is verified in the
   browser's add flow up to its chooser; native Bluetooth
-  (`transport-ble/src/native.ts`) has not run on a phone.
+  (`packages/transports/ble/src/native.ts`) has not run on a phone.
 - **Automations** (steps 14, 29): one typed rule language
   ([AUTOMATIONS.md](AUTOMATIONS.md)) — roles filled by parts, triggers by
-  clock, event and threshold, commands through the gateway — observing until
-  armed, audited. The shared recipes (`standard.*` in the SDK: a battery
+  clock, event and threshold, commands through the gateway — watching until
+  let act, audited. The shared recipes (`standard.*` in the SDK: a battery
   running low, charging between two levels, mains lost) and the packages'
   own (the forecast switch) are what automations are made from.
 
-**Local mode.** The app does not need a server. A server is a client-side record
-— address, name — kept in `localStorage` by `client/src/lib/servers.ts`, one
-selected at a time; selecting none *is* local mode, in which the app keeps a
-home of its own — the hub, in its own SQLite: in the app's process on a
+**Without a server.** The app does not need one. A server is a client-side
+record — address, name — kept in `localStorage` by
+`client/src/platform/servers.ts`, one selected at a time; with none selected
+the app keeps a home of its own — the hub, in its own SQLite: in the app's process on a
 phone, in a worker in a browser (`client/src/platform/home/`) — and holds
 every connection. Every screen asks one interface either way
 (`client/src/state/HomeProvider.tsx`). On
@@ -169,7 +170,7 @@ plug are added again. The set-aside file is kept beside the new one.
 | 3 The engine, in part | The live stream (step 27); confirmation as a single-use token bound to the intent and the person (J17); a write dwell per setting (J18) | `4b2be75`, `32a218b` |
 | 4 Automations | Rules as data; recipes from packages and the SDK (`standard.*`); time, event and threshold triggers; trigger state kept across restarts | `df58ec0`, `bda8c67` |
 | 5 The app on the model | Slots (`DeviceUi`) and a kit in `packages/ui`; energy flow, part pages, events and a Problems page, About, tools drawn from their declarations; the P280's screens from its readings, with no status tool; keyboard-operable toggles | `b558fe3`, `4b7ed6d`, `29b102b` |
-| Assistant, minimum | `GET /world`, `GET /vocabulary`; MCP at `POST /mcp`, acting as `actor: 'agent'`, refused whatever needs a person's yes; `propose` (made observing) and rehearsal on history, also in the app | `1389c53` |
+| Assistant, minimum | `GET /world`, `GET /vocabulary`; MCP at `POST /mcp`, acting as `actor: 'agent'`, refused whatever needs a person's yes; `propose` (made watching) and rehearsal on history, also in the app | `1389c53` |
 
 From the Phase 1 review:
 

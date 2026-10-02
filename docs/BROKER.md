@@ -135,7 +135,7 @@ password, so there is nothing to recognise a station by but the client id it
 chooses. What a connection may *publish* is another matter.
 
 - **Only the server may command a station.** Publishing to any topic with
-  `client/request` in it — `<MAC>/client/request/...`, and every variation on
+  "client/request" in it — `<MAC>/client/request/...`, and every variation on
   it — is refused to everyone else, and aedes closes the connection of whoever
   tried. Last wills are checked too — otherwise a client could connect with a
   will aimed at the command topic and drop its socket.

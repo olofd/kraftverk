@@ -48,7 +48,7 @@ A person can do this with a phone in their hand. An automation today cannot:
 ## What it must be
 
 - **First-class.** A sequence is an automation: built from blocks or copied
-  from a recipe, bound to devices by roles, watched before it acts, armed on purpose, on the timeline,
+  from a recipe, bound to devices by roles, watched before it acts, let act on purpose, on the timeline,
   explained. The same language, checked by the same checker, read back in
   sentences, run by the same engine, through the same gateway.
 - **No device in the platform.** The core names no plug, charger or station.
@@ -233,7 +233,7 @@ too, and `home_setting` keeps only what the home sets as a whole, by names the s
   and the whole log to download, as a table or raw.
 - **`otherwise`** runs when a step does not succeed or someone stops the run:
   each of its steps tried whatever the others do, and not itself stopped.
-- **Observing.** An automation that only watches cannot walk a sequence on
+- **Watching.** An automation that only watches cannot walk a sequence on
   its own: its steps wait for what its own commands would have caused. Asked
   what it would do now, it says — every step, in order — and keeps nothing.
 - **Starting and stopping.** `POST /automations/:id/start` and `/stop` — by a
@@ -382,14 +382,15 @@ tried on the owner's real station, plug and charger, with the owner watching.
 
 1. **Language** — six kinds of step, `asked` (removed since), `reachable`, the limits;
    `checkRule`, `describeSteps`, `ruleUses`, `ruleCommands` —
-   `packages/automation/src/rule.ts`; tests in `sequences.test.ts`. *Built.*
+   `packages/automation/src/` (`rule.ts`, `check.ts`, `describe.ts`, `reads.ts`);
+   tests in `sequences.test.ts`. *Built.*
 2. **Data model and contract** — `automation_run`, `automation_role`,
    `automation_trigger`, `looked_at`, `device_switch`/`device_write`,
    `device.picture`; `AutomationRun.steps` and its outcomes; `AutomationView`,
    `RecipeView`, `LiveUpdate` — `packages/store` (`schema.ts`, `automations.ts`,
    `ledger.ts`), `api-contract`. *Built.*
 3. **Engine** — the walker, waits, `otherwise`, stop, interrupted on start —
-   `packages/automation-engine/src/engine.ts`; `sequences.test.ts`. *Built.*
+   `packages/automation-engine/src/runs.ts`; `sequences.test.ts`. *Built.*
 4. **Gateway** — a run's allowance; its memory as a ledger —
    `packages/gateway`. *Built.*
 5. **Devices** — `wantFresh`; the Tuya socket polling while wanted, and not

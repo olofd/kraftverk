@@ -98,7 +98,7 @@ A tap, an automation, a bridge: all go through the same gate. Read-only until yo
 <td valign="top">
 
 ### 🔁 Automations that watch before they act
-Recipes with roles you fill with your devices, written as data a person can read in one sentence and a checker can type. A new one observes and says what it would have done. Arming it is a deliberate act.
+Recipes with roles you fill with your devices, written as data a person can read in one sentence and a checker can type. A new one watches and says what it would have done. Letting it act is a deliberate act.
 
 </td>
 <td valign="top">
@@ -198,7 +198,7 @@ An automation is a recipe with roles you fill with parts of your devices, writte
 | **When mains power is lost** | The moment a station says its mains went away, shed a load. |
 | **Switch by the forecast** | Once a day, if tomorrow looks sunny by your forecast, switch something. |
 
-Every automation reads back as one sentence, checks itself against your devices before it can be saved, observes until you arm it, and leaves a run on the timeline with its reasons. Packages bring the recipes their devices make possible. [AUTOMATIONS.md](docs/AUTOMATIONS.md) is the design, and why the language stays small.
+Every automation reads back as one sentence, checks itself against your devices before it can be saved, watches until you let it act, and leaves a run on the timeline with its reasons. Packages bring the recipes their devices make possible. [AUTOMATIONS.md](docs/AUTOMATIONS.md) is the design, and why the language stays small.
 
 ## How it fits together
 
@@ -230,7 +230,7 @@ kraftverk sits beside Home Assistant rather than replacing it, and is better at 
 | **The unit** | Entities, and dashboards you build | A device made of parts, with pages drawn from what it is |
 | **Supporting a product** | A Python integration and a review queue | A TypeScript package with a simulator and a contract test on day one |
 | **A risky write** | A service call | Validated, confirmed, read back, on a timeline |
-| **Automations** | Anything, in YAML or a builder | Recipes that observe before they act, checked before they run |
+| **Automations** | Anything, in YAML or a builder | Recipes that watch before they act, checked before they run |
 | **Your phone** | A remote control | Can hold a Bluetooth device itself |
 | **Where the code runs** | A Python process on the hub | The same TypeScript in the server, your browser and your phone |
 

@@ -177,7 +177,7 @@ The rule, checked in CI by `npm run check:architecture` (§7):
   exception. CI checks they are current.
 - **A transport** imports the SDK only. It is the one place for platform code
   — sockets, radios, the broker — with a separate entry for each place it runs
-  (`server`, `web`, `native`), so the app never bundles server code.
+  (`system`, `web`, `native`), so the app never bundles server code.
 - **A protocol** imports the SDK and other protocols. It is pure: bytes and
   messages in, bytes and messages out, with no I/O and no Node or Bun
   built-ins. It has no idea what a P280 is.
@@ -723,6 +723,8 @@ exceptions, and no product word outside its package (counted for every
 installed package since 2026-09-29, the P280's alone before). The table is
 kept as the record of why the layout is what it is.
 
+<!-- kept as written -->
+
 | | Finding | Step |
 |---|---|---|
 | F1 | The P280 is special-cased throughout the core: `core.station`, `StationStatus`, `/p280/*` routes, `isStation` in the app | 3–10 |
@@ -784,6 +786,8 @@ What it found is in the data model.
 
 ---
 
+<!-- /kept as written -->
+
 ## 7. Guardrails in CI
 
 `npm run check:architecture` (`scripts/architecture.mjs`) fails the build when:
@@ -820,13 +824,19 @@ What it found is in the data model.
   (`tsconfig.shared.json`, `packages/device-sdk/everywhere.d.ts`), so a
   built-in, `process` or `Buffer` fails where it is written;
 - **logic is written in the server or the app**: a file in `server/src`
-  outside its routes, accounts, admin, platform and process, or a `.ts` in
-  `client/src` with no screen in it outside `platform/`. Today's are listed
-  in the baseline — the work [PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md)
-  moves out — and the list may only shrink.
+  outside its routes, accounts (`auth/`), platform and process (`app.ts`,
+  `index.ts`, `log.ts`, `config.ts`), or a `.ts` in `client/src` with no
+  screen in it outside `platform/`. There are none since
+  [PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md) moved them out, and a new one
+  fails the check;
+- **a document names what is not there**: a path, or a link, in a document
+  [docs/README.md](README.md) lists as current, a package's README or
+  AGENTS.md; and every document in `docs/` is listed there, as current or
+  as a plan or record kept as written.
 
-All but the outright ones are held by a baseline, `scripts/architecture-baseline.json`, listing
-today's exceptions file by file. It may only shrink: a file whose count falls
+The import rule, the product words and the placement of logic are held by a
+baseline, `scripts/architecture-baseline.json`, which is empty — there are
+no exceptions left — and the rest fail outright. A baseline may only shrink: a file whose count falls
 fails the check too, until `npm run check:architecture -- --update` records the
 lower number, so the baseline always says exactly where the leaks are. Moving a
 file moves its leaks, which per file looks like a new one; `-- --rebaseline`
@@ -891,6 +901,11 @@ holders and identity were added to the model (DATA-MODEL.md).
 | 33 | The first standard floor: BTHome, then Shelly and ESPHome | M | |
 | 34 | A Matter spike | M | |
 | 35 | The model, part 3: time, structure, consequence, parts and links, tools as data | L | done |
+
+Each step below is kept as it was written when it was planned or done: the
+paths in it are those of its day.
+
+<!-- kept as written -->
 
 ### Step 0 — Words and one authority
 This document; banners on the ones it replaces. **Done when** there is one
@@ -1426,6 +1441,8 @@ Bluetooth manufacturer ids, mDNS, DHCP and USB; a method declares its
 gets a store and secrets of its own. **Done when** the ATORCH is a refinement
 and the add screen states reach from declarations.
 
+<!-- /kept as written -->
+
 ### Step 31 — The Home Assistant bridge
 MQTT discovery, written entirely from the projections of step 23; commands
 from Home Assistant go through the gateway as actor `home-assistant`;
@@ -1442,6 +1459,27 @@ device table; a recording tool turns a session's bytes into a fixture and a
 replaying simulator; a diagnostics bundle per device, secrets redacted; an
 `AGENTS.md` for device packages. **Done when** a package outside the
 repository builds into an image and passes the checks.
+
+Before the first package from outside — found in a review on 2026-10-02,
+decided then, not built until this step:
+- **The closed lists.** Which of the SDK's fixed lists are a reviewed
+  taxonomy, grown here, and which become data a package contributes:
+  `CATEGORIES` (5), `Quantity` (15), `LINK_KINDS` (1), `POLICY_VALUES` (2),
+  `EventLevel` (3), `SupportLevel` (3). A quantity becomes a declared record —
+  its unit, formatting and chart — so adding one is a row, not a union threaded
+  through the app; categories grow toward Home Assistant's breadth. A
+  support level becomes a checklist a package is measured against.
+- **The contract's version.** A package's `kraftverk` section says which
+  contract it was written for, and the server says "written for 2, this is 3"
+  rather than refusing it with a validation error. Strict version 1 has one
+  exception for this, as it has one for the configuration file — the day the
+  SDK leaves the repository.
+- **Namespaces.** A type's id, and every meaning it declares, carries its
+  namespace (meanings are only checked for a dot today); a namespace is
+  claimed by the first package to publish it, and the manifest list pins it.
+- **Trust.** What a package may reach — the purity check gives most of it —
+  and the dependencies it may bring, as an allowlist the bundle check holds,
+  written down before the first upload. Sandboxing is a later decision.
 
 ### Step 33 — The first standard floor
 BTHome (passive Bluetooth, self-describing), then Shelly and ESPHome, each a

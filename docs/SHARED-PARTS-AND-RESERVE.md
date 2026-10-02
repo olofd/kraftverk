@@ -101,7 +101,7 @@ battery behind it.
 1. The ledger's `switched_by` and `written_by`; automations' commands
    and writes as `automation:<id>`.
 2. Holds in the engine, the refused run, the chain; keeping things so
-   yielding. Tests in `server/src/automations/sequences.test.ts`.
+   yielding. Tests in `packages/hub/test/sequences.test.ts`.
 3. `sharedWith` on each automation, and the card's line.
 4. `reserveSoc` and `drains`, in the SDK and the gateway, with the
    gateway's tests; App settings → Safety shows it.

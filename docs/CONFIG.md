@@ -241,7 +241,7 @@ change to the document's shape adds a migration from n to n + 1
 newer kraftverk reads every older file. A file from a newer kraftverk is
 refused, saying so.
 
-The fixtures are `packages/home-file/fixtures/vN.yaml`, never changed once
+The fixtures are in `packages/home-file/fixtures/` (`v1.yaml`, and one for each version after), never changed once
 kept; `migrate.test.ts` fails while a version lacks its fixture, a version
 below this one lacks its migration, or any fixture does not read — with
 nothing wrong — and write back the same.

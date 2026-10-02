@@ -152,9 +152,12 @@ The station is a **MODBUS RTU slave at address `0x11`**, reachable two ways:
 | react-native-ble-plx | The phone, directly | An iOS/Android development build ([docs/RUNNING.md](../../../docs/RUNNING.md#connecting-from-this-phone-or-browser)) |
 
 Every one of them carries byte-identical frames, so a single codec, a single
-register map and a single write whitelist serve all four. They live in
-`packages/protocol`, which the server and the app both import — the app is not
-a thin client that trusts the server's decoding, it contains the same decoder.
+register map and a single write whitelist serve all four. The framing, and the
+guard on register 68 that holds for the whole family, are the Sydpower
+protocol's (`packages/protocols/sydpower`); the register map and this model's
+write whitelist are this package's (`src/model/registers.ts`). The server and the
+app both import them — the app is not a thin client that trusts the server's
+decoding, it contains the same decoder.
 
 ### The detail that will cost you a day
 

@@ -6,7 +6,7 @@ plan. It builds on docs/AUTOMATIONS.md and docs/SEQUENCES.md: the language
 they describe stays; who writes a rule changes.
 
 **Status:** built, 2026-09-30, as written here: the editor at
-`client/app/automation/[id].tsx` and `client/src/features/automations/editor`,
+`client/app/automation/[id]/` and `client/src/features/automations/editor`,
 the rule kept and checked by the home (`plans` in `@kraftverk/hub`),
 and e2e in `e2e/sequences.e2e.ts` and `e2e/charge-window.e2e.ts`.
 
@@ -42,8 +42,8 @@ foresaw and move its sliders:
      own: its triggers.
    - Off means no one can run it: not a person, not another automation.
    - Played while only watching, the app asks first, once per press.
-   - An assistant may play only an automation that is let act: a person's
-     arming is its yes.
+   - An assistant may play only an automation that is let act: a person
+     letting it act is its yes.
    - So the trigger "when you start it" (`asked`) goes. Every automation
      can be played, and one with no trigger is only ever played or
      started.
@@ -66,7 +66,7 @@ foresaw and move its sliders:
      problems and on the saved sentence. (Amended 2026-10-01: this decision
      first said only the server describes.)
 
-## The language, as it changes (`packages/automation/src/rule.ts`)
+## The language, as it changes (`packages/automation/src/`: `rule.ts`, checked in `check.ts`)
 
 ```ts
 type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
@@ -188,7 +188,7 @@ started_by_run TEXT REFERENCES automation_run (id) ON DELETE SET NULL
 The home server's database is set aside once, when this ships: its four
 devices and two automations are added again.
 
-## The engine (`packages/automation-engine/src/engine.ts`)
+## The engine (`packages/automation-engine/src/`: `triggers.ts`, `runs.ts`)
 
 - **Reads the rule** from the automation, not from the library. The
   library is only where starting points come from.
