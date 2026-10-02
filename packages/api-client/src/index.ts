@@ -13,6 +13,9 @@ export * from './types';
 export * from './live';
 export * from './updates';
 export * from './views';
+export * from './timeline';
+export * from './confirm';
+export * from './actions';
 export * from './setup';
 export * from './config';
 

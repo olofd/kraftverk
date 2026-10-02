@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Button, Text, XStack } from 'tamagui';
 
-import { describeError } from '@kraftverk/api-client';
+import { describeError, PASSWORD_MIN } from '@kraftverk/api-client';
 import { Card, haptic } from '@kraftverk/ui';
 
 import { useServer } from '../../state/ServersProvider';
-import { Field, PASSWORD_MIN, passwordProblem } from './fields';
+import { Field, passwordProblem } from './fields';
 
 export function ChangeOwnPassword() {
   const server = useServer();

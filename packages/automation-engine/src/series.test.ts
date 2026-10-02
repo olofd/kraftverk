@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { RunLog, RunLogKey, RunStep } from '@kraftverk/api-contract';
+import type { RunLog, RunLogKey, RunLogReach, RunStep } from '@kraftverk/api-contract';
 
-import { atOf, changed, heldPath, marksOf, said, seriesOf, sinceStart, spansOf, valueAt, windowOf, xOf } from './series.ts';
+import { atOf, awayOf, changed, heldPath, marksOf, said, seriesOf, sinceStart, spansOf, valueAt, windowOf, xOf } from './series.ts';
 
 /*
   A run's log, as its page draws it: each value held from one reading to the
@@ -98,6 +98,23 @@ describe('a run’s log, drawn', () => {
     const [watts] = seriesOf(LOG, window);
     expect(valueAt(watts!, T0 + 10_000)?.value).toBe(297);
     expect(valueAt(watts!, T0 + 22_000)?.value).toBeNull();
+  });
+
+  test('a device away: from each time it could not be reached to the next it could, or to the end', () => {
+    const window = { from: T0, to: T0 + 60_000 };
+    const at = (seconds: number) => new Date(T0 + seconds * 1000).toISOString();
+    const reach: RunLogReach[] = [
+      { device: 'd-plug', at: at(-5), reachable: false, detail: '' },
+      { device: 'd-plug', at: at(10), reachable: true, detail: '' },
+      { device: 'd-other', at: at(20), reachable: false, detail: '' },
+      { device: 'd-plug', at: at(40), reachable: false, detail: '' },
+    ];
+    // Away before the run began counts from its start; away at its end, to its end.
+    expect(awayOf(reach, 'd-plug', window)).toEqual([
+      { from: T0, to: T0 + 10_000 },
+      { from: T0 + 40_000, to: T0 + 60_000 },
+    ]);
+    expect(awayOf(reach, 'd-none', window)).toEqual([]);
   });
 
   test('time into the run, and each value in its own words', () => {

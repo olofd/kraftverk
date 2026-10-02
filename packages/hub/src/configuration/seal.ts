@@ -1,6 +1,7 @@
 import { gcm } from '@noble/ciphers/aes.js';
 import { scryptAsync } from '@noble/hashes/scrypt.js';
 
+import { isSealed, PASSPHRASE_MIN } from '@kraftverk/home-file';
 import type { SecretsAtRest } from '@kraftverk/store';
 
 /*
@@ -8,9 +9,6 @@ import type { SecretsAtRest } from '@kraftverk/store';
   writes them: sealed with a passphrase for an export that travels, or kept
   as the home keeps its own for the snapshot beside its database.
 */
-
-/** A passphrase shorter than this is refused: an export travels, and is guessed at offline. */
-export const PASSPHRASE_MIN = 12;
 
 /**
  * Sealing a secret with a passphrase, and opening it. Asynchronous, as a
@@ -22,9 +20,6 @@ export interface PassphraseSealing {
   seal(passphrase: string, value: string): Promise<string>;
   open(passphrase: string, sealed: string): Promise<string>;
 }
-
-/** Whether a secret in a file is sealed with a passphrase (`sealed:v1:…`), whichever version. */
-export const isSealed = (value: string): boolean => /^sealed:v\d+:/.test(value);
 
 /** A secret as the home's own snapshot keeps it: sealed as the database seals it. */
 const KEPT = 'sealed:server:';

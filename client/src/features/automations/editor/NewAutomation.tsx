@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { router } from 'expo-router';
 import { Spinner, Text } from 'tamagui';
 
+import { ruleFits } from '@kraftverk/automation';
 import { Card } from '@kraftverk/ui';
 
 import { Screen } from '../../../components/Screen';
 import { useDevices } from '../../../state/DevicesProvider';
-import { AutomationForm, recipeFits } from './AutomationForm';
+import { AutomationForm } from './AutomationForm';
 import { EMPTY, fromRecipe, type Draft } from './context';
 import { StartFrom } from './StartFrom';
 import { useEditorKit } from './useEditorKit';
@@ -54,7 +55,7 @@ export function NewAutomation({ from }: { from: string | null }) {
       ) : (
         <StartFrom
           recipes={kit.recipes}
-          fits={(recipe) => (device ? recipeFits(recipe, device) : false)}
+          fits={(recipe) => (device ? ruleFits(recipe.rule, device) : false)}
           onChoose={(recipe) => setStart({ draft: recipe ? fromRecipe(recipe) : EMPTY, madeFrom: recipe?.id ?? null, view: 'form' })}
           onYaml={() => setStart({ draft: EMPTY, madeFrom: null, view: 'yaml' })}
         />

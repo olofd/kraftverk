@@ -1,6 +1,6 @@
 import { Text, useTheme, XStack } from 'tamagui';
 
-import type { DeviceView } from '@kraftverk/api-client';
+import { holderOf, type DeviceView } from '@kraftverk/api-client';
 import { Icon } from '@kraftverk/ui';
 
 import { HERE, HERE_PLATFORM } from '../../platform/here';
@@ -13,7 +13,7 @@ import { useHome } from '../../state/HomeProvider';
  * bricks the machine, that is worth one line.
  */
 export function WhereWritesGo({ device }: { device: DeviceView }) {
-  const { screenProps, holderOf } = useDevices();
+  const { screenProps } = useDevices();
   const { role } = useHome();
   const { readOnly } = screenProps(device);
   // Which holder is this screen's business, not a device package's: the app says where writes go.

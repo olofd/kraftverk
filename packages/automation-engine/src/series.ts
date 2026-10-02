@@ -1,4 +1,4 @@
-import type { AutomationRun, RunLog, RunLogKey, RunLogReading, RunStep } from '@kraftverk/api-contract';
+import type { AutomationRun, RunLog, RunLogKey, RunLogReach, RunLogReading, RunStep } from '@kraftverk/api-contract';
 
 /*
   A run's log, made into what its page draws (docs/SEQUENCES.md): each value
@@ -7,6 +7,22 @@ import type { AutomationRun, RunLog, RunLogKey, RunLogReading, RunStep } from '@
   window; and the steps that changed something, numbered, to mark on every
   chart at once. Pure: the page draws from it, and its tests read it.
 */
+
+/** The spans a device could not be reached for: from each "not" to the next "could", or to the run's end. */
+export function awayOf(reach: readonly RunLogReach[], device: string, window: Window): { from: number; to: number }[] {
+  const spans: { from: number; to: number }[] = [];
+  let since: number | null = null;
+  for (const each of reach.filter((entry) => entry.device === device)) {
+    const at = Math.max(window.from, Date.parse(each.at));
+    if (!each.reachable && since === null) since = at;
+    if (each.reachable && since !== null) {
+      spans.push({ from: since, to: at });
+      since = null;
+    }
+  }
+  if (since !== null) spans.push({ from: since, to: window.to });
+  return spans;
+}
 
 /** The span a run's log is drawn across, in epoch milliseconds: from its start to its end — or to now, while it runs. */
 export type Window = { from: number; to: number };

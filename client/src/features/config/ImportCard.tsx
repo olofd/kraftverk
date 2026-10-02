@@ -2,15 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
-import { applyPlan, describeError, type ElsewhereView, type HomeElsewhere, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-client';
-import { checkDocument, configJsonSchema, CURRENT_VERSION, readConfig, type Vocabulary } from '@kraftverk/home-file';
+import { applyPlan, changesOf, describeError, planReadiness, rebindAnswerKey, secretAnswerKey, withConfirmation, type ElsewhereView, type HomeElsewhere, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-client';
+import { checkDocument, configJsonSchema, CURRENT_VERSION, holdsSealed, readConfig, type Vocabulary } from '@kraftverk/home-file';
 import { Card, haptic, Icon, RowSeparator, SectionLabel, SegmentedControl, Toggle } from '@kraftverk/ui';
 
 import { Picker } from '../../components/Picker';
 import { ProblemList } from '../../components/ProblemList';
 import { useTone, type Tone } from '../../components/tone';
 import { YamlEditor } from '../../components/YamlEditor';
-import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../platform/confirm';
+import { ask } from '../../platform/confirm';
 import { useHome } from '../../state/HomeProvider';
 import { useServers } from '../../state/ServersProvider';
 
@@ -74,7 +74,7 @@ export function ImportCard({
   }, [text, vocabulary]);
   const schema = useMemo(() => (vocabulary ? configJsonSchema(vocabulary) : null), [vocabulary]);
   const localProblems = checked?.text === text ? checked.problems : [];
-  const sealed = /sealed:v1:/.test(text) || plan?.needs.passphrase != null;
+  const sealed = holdsSealed(text) || plan?.needs.passphrase != null;
 
   const read = async (source: Source) => {
     haptic();
@@ -204,19 +204,15 @@ export function ImportCard({
 function PlanView({ plan, onAgain, onApplied }: { plan: ImportPlan; onAgain: () => void; onApplied: (applied: ImportApplied) => void }) {
   const { api } = useHome();
   const tone = useTone();
-  const doing = (items: ImportItem[]) => items.filter((item) => item.action !== 'same');
-  const [devices, setDevices] = useState<ReadonlySet<string>>(new Set(doing(plan.devices).map((item) => item.key)));
-  const [automations, setAutomations] = useState<ReadonlySet<string>>(new Set(doing(plan.automations).map((item) => item.key)));
+  const [devices, setDevices] = useState<ReadonlySet<string>>(() => new Set(changesOf(plan).devices));
+  const [automations, setAutomations] = useState<ReadonlySet<string>>(() => new Set(changesOf(plan).automations));
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [rebind, setRebind] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<{ said: string; problems: string[] } | null>(null);
 
   const links = plan.links.filter((link) => link.action !== 'same');
-  const nothing = !doing(plan.devices).length && !doing(plan.automations).length && !links.length && !plan.policy.length;
-  const secretsMissing = plan.needs.secrets.filter((need) => devices.has(need.device) && !secrets[`${need.device}.${need.field}`]);
-  const rebindMissing = plan.needs.rebind.filter((need) => automations.has(need.automation) && !rebind[`${need.automation}.${need.role}`]);
-  const ready = plan.id !== null && !plan.needs.passphrase && !secretsMissing.length && !rebindMissing.length && !nothing;
+  const { nothing, secretsMissing, rebindMissing, ready, everything } = planReadiness(plan, { devices, automations }, { secrets, rebind });
 
   const apply = async () => {
     if (!ready || busy || !plan.id) return;
@@ -224,7 +220,6 @@ function PlanView({ plan, onAgain, onApplied }: { plan: ImportPlan; onAgain: () 
     setBusy(true);
     setRefusal(null);
     try {
-      const everything = devices.size === doing(plan.devices).length && automations.size === doing(plan.automations).length;
       const { answer, declined } = await withConfirmation(
         (confirmation) =>
           applyPlan(api, {
@@ -234,8 +229,8 @@ function PlanView({ plan, onAgain, onApplied }: { plan: ImportPlan; onAgain: () 
             rebind,
             ...(confirmation ? { confirmation } : {}),
           }),
-        (result) => ('needsConfirmation' in result ? { token: result.needsConfirmation, reason: result.reason } : null),
-        (reason, again) => confirmAction('Import it?', `${again ? `${ASKED_AGAIN}\n\n` : ''}${reason}.`, 'Import', 'dangerous')
+        (reason) => ({ title: 'Import it?', message: `${reason}.`, yes: 'Import', tone: 'dangerous' }),
+        ask
       );
       if (declined) return;
       if ('applied' in answer) onApplied(answer.applied);
@@ -306,20 +301,20 @@ function PlanView({ plan, onAgain, onApplied }: { plan: ImportPlan; onAgain: () 
           </Text>
           {plan.needs.secrets.map((need) =>
             devices.has(need.device) ? (
-              <YStack key={`${need.device}.${need.field}`} gap="$1.5">
+              <YStack key={secretAnswerKey(need)} gap="$1.5">
                 <Text fontSize={13} fontWeight="600" color="$muted">
                   {need.deviceName}: its {need.title}
                 </Text>
                 <Input
                   size="$4"
-                  value={secrets[`${need.device}.${need.field}`] ?? ''}
-                  onChangeText={(value) => setSecrets((before) => ({ ...before, [`${need.device}.${need.field}`]: value }))}
+                  value={secrets[secretAnswerKey(need)] ?? ''}
+                  onChangeText={(value) => setSecrets((before) => ({ ...before, [secretAnswerKey(need)]: value }))}
                   secureTextEntry
                   autoCapitalize="none"
                   autoCorrect={false}
                   aria-label={`${need.deviceName}: its ${need.title}`}
                   backgroundColor="$background"
-                  borderColor={secrets[`${need.device}.${need.field}`] ? '$borderColor' : '$warning'}
+                  borderColor={secrets[secretAnswerKey(need)] ? '$borderColor' : '$warning'}
                 />
               </YStack>
             ) : null
@@ -336,7 +331,7 @@ function PlanView({ plan, onAgain, onApplied }: { plan: ImportPlan; onAgain: () 
             Each names a device that is not here: choose one of yours that can do the same.
           </Text>
           {plan.needs.rebind.map((need) => {
-            const key = `${need.automation}.${need.role}`;
+            const key = rebindAnswerKey(need);
             if (!automations.has(need.automation)) return null;
             const chosen = need.candidates.find((candidate) => candidate.use === rebind[key]);
             return (

@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { ScrollView } from 'react-native';
 import { Button, Text, YStack } from 'tamagui';
 
-import { describeError } from '@kraftverk/api-client';
+import { describeError, PASSWORD_MIN } from '@kraftverk/api-client';
 import { Card, haptic, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { Pressable } from '../../components/Pressable';
 import { useAuth } from '../../state/AuthProvider';
 import { useServers } from '../../state/ServersProvider';
-import { Field, PASSWORD_MIN, passwordProblem } from './fields';
+import { Field, passwordProblem } from './fields';
 
 export function SignIn() {
   const { state } = useAuth();

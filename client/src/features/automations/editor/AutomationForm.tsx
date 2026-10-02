@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Spinner, Text, XStack, YStack } from 'tamagui';
 
-import { changeAutomation, describeError, type AutomationDraftView, type AutomationSettings, type AutomationView, type RecipeView, type RoleBinding } from '@kraftverk/api-client';
+import { changeAutomation, describeError, withConfirmation, type AutomationDraftView, type AutomationSettings, type AutomationView, type RoleBinding } from '@kraftverk/api-client';
 import { isAutomationRole, OTHERWISE, pruned, rolesOf, sameParts, THEN } from '@kraftverk/automation';
-import { capabilitiesOf, meetsNeed, partsOf } from '@kraftverk/device-sdk';
+import { capabilitiesOf, meetsNeed } from '@kraftverk/device-sdk';
 import { Card, haptic, Icon, SegmentedControl } from '@kraftverk/ui';
 
 import { Picker } from '../../../components/Picker';
 import { Screen } from '../../../components/Screen';
 import { useTone } from '../../../components/tone';
 import { YamlEditor } from '../../../components/YamlEditor';
-import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../../platform/confirm';
+import { ask, confirmAction } from '../../../platform/confirm';
 import { useDevices } from '../../../state/DevicesProvider';
 import { useHome } from '../../../state/HomeProvider';
 import { useAutomationYaml } from '../../config/useAutomationYaml';
@@ -202,20 +202,22 @@ function Editing({
       // What its YAML changed beyond what the form edits.
       const changes = { ...Object.fromEntries(settingsChanged.map((name) => [name, settings[name]])), ...(key && key !== existing?.key ? { key } : {}) };
       const letAct = settings.mode === 'act' && before.mode !== 'act';
-      const ask = (name: string) => (reason: string, again: boolean) =>
-        confirmAction(letAct ? `Let “${name}” act on its own?` : `Change “${name}” while it acts?`, `${again ? `${ASKED_AGAIN}\n\n` : ''}${reason}\n\n${check?.sentence ?? ''}`, letAct ? 'Let it act' : 'Change it');
-      const wants = (result: Awaited<ReturnType<typeof changeAutomation>>) => ('needsConfirmation' in result ? { token: result.needsConfirmation, reason: result.reason } : null);
+      const question = (name: string) => (reason: string) => ({
+        title: letAct ? `Let “${name}” act on its own?` : `Change “${name}” while it acts?`,
+        message: `${reason}\n\n${check?.sentence ?? ''}`,
+        yes: letAct ? 'Let it act' : 'Change it',
+      });
       if (!existing) {
         const made = await api.automations.create({ ...body, ...(key ? { key } : {}), madeFrom: recipe, timeZone: settings.timeZone, recheckMinutes: settings.recheckMinutes });
         // A new one only watches, off the home page: what its YAML says beyond that, set as it would be on its page.
         const { mode, homePlace } = changes as Partial<AutomationSettings>;
         if (mode === undefined && homePlace === undefined) return onSaved(made);
-        const { answer } = await withConfirmation((confirmation) => changeAutomation(api, made.id, { ...(mode !== undefined ? { mode } : {}), ...(homePlace !== undefined ? { homePlace } : {}), confirmation }), wants, ask(made.name));
+        const { answer } = await withConfirmation((confirmation) => changeAutomation(api, made.id, { ...(mode !== undefined ? { mode } : {}), ...(homePlace !== undefined ? { homePlace } : {}), confirmation }), question(made.name), ask);
         onSaved('automation' in answer ? answer.automation : made);
         return;
       }
       // One that acts on its own asks first: what it does changes.
-      const { answer, declined } = await withConfirmation((confirmation) => changeAutomation(api, existing.id, { ...body, ...changes, confirmation }), wants, ask(existing.name));
+      const { answer, declined } = await withConfirmation((confirmation) => changeAutomation(api, existing.id, { ...body, ...changes, confirmation }), question(existing.name), ask);
       if (!declined && 'automation' in answer) onSaved(answer.automation);
     } catch (err) {
       setProblem(describeError(err) || 'It could not be saved');
@@ -444,5 +446,3 @@ function Uses({ problems }: { problems: readonly string[] }) {
 }
 
 /** Whether a device can fill any part a recipe needs. */
-export const recipeFits = (recipe: RecipeView, device: { description: Parameters<typeof partsOf>[0]; name: string }): boolean =>
-  Object.values(recipe.rule.roles).some((spec) => !isAutomationRole(spec) && partsOf(device.description, device.name).some((part) => meetsNeed(spec, capabilitiesOf(device.description, part.id))));

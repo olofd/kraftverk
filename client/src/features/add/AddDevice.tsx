@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Input, Spinner, Text } from 'tamagui';
 
-import { CATEGORIES, describeError, SetupFlow, type CheckOutcome, type DeviceTypeListing } from '@kraftverk/api-client';
+import { describeError, SetupFlow, typeMatches, type CheckOutcome, type DeviceTypeListing } from '@kraftverk/api-client';
 import { Card, haptic } from '@kraftverk/ui';
 
 import { Screen } from '../../components/Screen';
@@ -132,10 +132,7 @@ export function AddDevice() {
   /** Forward. Finding the device on the network is skipped when an earlier step already found it. */
   const next = useCallback(() => {
     if (!flow) return;
-    setStepIndex((index) => {
-      const to = Math.min(index + 1, flow.plan.length - 1);
-      return skipsChoose(flow, to) ? to + 1 : to;
-    });
+    setStepIndex((index) => flow.after(index));
   }, [flow]);
 
   /** Back one step, keeping everything entered; from the first, back to choosing how to connect. */
@@ -150,9 +147,7 @@ export function AddDevice() {
       return;
     }
     setOutcome(null);
-    // Past a step it passed over going forward, as the progress bar does.
-    const to = stepIndex - 1;
-    setStepIndex(skipsChoose(flow, to) && to > 0 ? to - 1 : to);
+    setStepIndex(flow.before(stepIndex));
   }, [flow, stepIndex]);
 
   /** Straight to an earlier step, from the progress bar. */
@@ -188,7 +183,7 @@ export function AddDevice() {
           />
           {query.trim() ? (
             <Types
-              types={types.filter((candidate) => matches(candidate, query))}
+              types={types.filter((candidate) => typeMatches(candidate, query))}
               onPick={(id) => {
                 setTypeId(id);
                 setStage('method');
@@ -220,7 +215,7 @@ export function AddDevice() {
         <Progress
           steps={[
             ...flow.plan
-              .map((step, index) => ({ title: step.title, index, skipped: skipsChoose(flow, index) && index !== stepIndex }))
+              .map((step, index) => ({ title: step.title, index, skipped: flow.skips(index) && index !== stepIndex }))
               .filter((step) => !step.skipped),
             { title: attachTo ? 'Add it' : 'Name it', index: flow.plan.length },
           ]}
@@ -294,20 +289,3 @@ export function AddDevice() {
 
 // --- 1 · what are you adding ------------------------------------------------------
 
-/** Finding the device on the network, when an earlier step already found it: passed over both ways. The last step is never passed over. */
-function skipsChoose(flow: SetupFlow, index: number): boolean {
-  return flow.plan[index]?.kind === 'choose' && flow.address !== null && index < flow.plan.length - 1;
-}
-
-/** Whether a type answers to what was typed: every word somewhere in its name, brand, models or description. */
-function matches(type: DeviceTypeListing, query: string): boolean {
-  const text = [type.meta.name, type.meta.brand, ...(type.meta.models ?? []), type.meta.description, (CATEGORIES as Record<string, { label: string }>)[type.meta.category]?.label]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-  return query
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean)
-    .every((word) => text.includes(word));
-}

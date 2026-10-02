@@ -1,23 +1,25 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
 import type { AutomationView, DeviceView, FunctionView, RecipeView, RoleBinding } from '@kraftverk/api-client';
-import { capabilitiesOf, meetsNeed, partName, partsOf, type CapabilityNeed, type DeviceDescription } from '@kraftverk/device-sdk';
 import {
   describeExpr,
   describeSteps,
   describeTriggers,
   draftOfRecipe,
   EMPTY_DRAFT,
-  isAutomationRole,
+  partOptions,
   partRole,
+  roleSaid,
   writtenAttribute,
   type AutomationDraft,
   type AutomationFunction,
   type Expr,
+  type PartOption,
   type RuleVocabulary,
   type Step,
   type Trigger,
 } from '@kraftverk/automation';
+import { capabilitiesOf, meetsNeed, type CapabilityNeed, type DeviceDescription, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 /** An automation as it is being built (`@kraftverk/automation`'s draft), and its name. */
 export type Draft = AutomationDraft & { name: string };
@@ -51,9 +53,6 @@ export function EditorProvider({ kit, children }: { kit: EditorKit; children: Re
   return <EditorContext.Provider value={kit}>{children}</EditorContext.Provider>;
 }
 
-/** A part a block can use: one the draft already names, or one of your devices'. */
-export type PartOption = { key: string; title: string; subtitle?: string; role: string | null; binding: RoleBinding; description: DeviceDescription; name: string };
-
 /** The editor's kit, and what it knows how to say and pick. */
 export function useEditor() {
   const kit = useContext(EditorContext);
@@ -62,21 +61,8 @@ export function useEditor() {
 
   return useMemo(() => {
     const deviceOf = (binding: RoleBinding | undefined) => (binding ? devices.find((device) => device.id === binding.device) : undefined);
-    /** A role's name, as its steps say it: its part, its automation in quotes — or its label, not filled yet. */
-    const name = (role: string): string => {
-      const spec = draft.rule.roles[role];
-      if (!spec) return 'a part not chosen yet';
-      // Not filled yet: its label, as words within a sentence — "turn what powers the charger on".
-      const unfilled = spec.label.charAt(0).toLowerCase() + spec.label.slice(1);
-      if (isAutomationRole(spec)) {
-        const started = automations.find((automation) => automation.id === draft.starts[role]);
-        return started ? `“${started.name}”` : unfilled;
-      }
-      const binding = draft.roles[role];
-      const device = deviceOf(binding);
-      if (!device || !binding) return unfilled;
-      return partName(device.name, binding.part, partsOf(device.description, device.name).find((part) => part.id === binding.part)?.label);
-    };
+    /** A role's name, as its steps say it. */
+    const name = (role: string): string => roleSaid(draft, role, devices, automations);
     /** The part filling a role: its device's description, and which part. */
     const partOf = (role: string): { description: DeviceDescription; part: string; device: DeviceView } | null => {
       const binding = draft.roles[role];
@@ -96,30 +82,8 @@ export function useEditor() {
     const saidExpr = (expr: Expr): string => describeExpr(draft.rule, expr, {}, name, vocabulary);
     /** What starts it, one trigger, in words: "At 07:00 on weekdays". */
     const saidTrigger = (trigger: Trigger): string => describeTriggers({ ...draft.rule, when: [trigger] }, {}, name, vocabulary)[0] ?? '';
-    /**
-     * Every part a block may use: the draft's own first, by the names its
-     * steps use, then each part of each of your devices that fits.
-     */
-    const parts = (fits: (description: DeviceDescription, part: string) => boolean): PartOption[] => {
-      const used = Object.entries(draft.roles).flatMap(([role, binding]): PartOption[] => {
-        const device = deviceOf(binding);
-        return device && fits(device.description, binding.part) ? [{ key: `role:${role}`, title: name(role), subtitle: 'Already in this automation', role, binding, description: device.description, name: name(role) }] : [];
-      });
-      const taken = new Set(used.map((option) => `${option.binding.device}:${option.binding.part}`));
-      const others = devices
-        .filter((device) => !device.removedAt)
-        // The device it was started from, first: what its owner came to automate.
-        .sort((a, b) => Number(b.id === prefer) - Number(a.id === prefer))
-        .flatMap((device) =>
-          partsOf(device.description, device.name)
-            .filter((part) => fits(device.description, part.id) && !taken.has(`${device.id}:${part.id}`))
-            .map((part): PartOption => {
-              const title = partName(device.name, part.id, part.label);
-              return { key: `${device.id}:${part.id}`, title, subtitle: device.meta.name, role: null, binding: { device: device.id, part: part.id }, description: device.description, name: title };
-            })
-        );
-      return [...used, ...others];
-    };
+    /** Every part a block may use: the draft's own first, then each part of each of your devices that fits. */
+    const parts = (fits: (description: DeviceDescription, part: string) => boolean): PartOption[] => partOptions(draft, devices, automations, fits, (prefer ?? null) as SavedDeviceId | null);
     /** Parts that offer what a need asks. */
     const offering = (need: CapabilityNeed) => (description: DeviceDescription, part: string) => meetsNeed(need, capabilitiesOf(description, part));
     return { ...kit, name, partOf, vocabulary, said, saidExpr, saidTrigger, parts, offering };

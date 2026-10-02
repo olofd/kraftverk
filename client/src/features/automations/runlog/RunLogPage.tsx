@@ -3,7 +3,7 @@ import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
 import { describeError, type AutomationView, type RunLog } from '@kraftverk/api-client';
 import type { AutomationId } from '@kraftverk/api-contract';
-import { changed, marksOf, runLogCsv, said, seriesOf, sinceStart, windowOf, type Mark } from '@kraftverk/automation-engine';
+import { awayOf, changed, marksOf, runLogCsv, said, seriesOf, sinceStart, windowOf, type Mark } from '@kraftverk/automation-engine';
 import { fileNameOf } from '@kraftverk/device-sdk';
 import { Card, Chips, Icon, ToggleRow } from '@kraftverk/ui';
 
@@ -16,7 +16,7 @@ import { dayOf, lasted, OUTCOME } from '../looks';
 import { Empty, Group } from '../page/Group';
 import { Mark as OutcomeMark } from '../page/History';
 import { useReadAgain } from '../useReadAgain';
-import { awayOf, Ruler, RunChart } from './RunChart';
+import { Ruler, RunChart } from './RunChart';
 
 /*
   A run's log, a page of its own (docs/SEQUENCES.md): how it came out; every

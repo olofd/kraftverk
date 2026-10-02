@@ -1,14 +1,6 @@
 import { ApiError, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-contract';
-import {
-  checkDocument,
-  readConfig,
-  type AutomationEntry,
-  type ConfigDocument,
-  type DeviceEntry,
-  type SecretValue,
-  type WriteContext,
-} from '@kraftverk/home-file';
-import { MAIN, useOf, useText } from '@kraftverk/automation';
+import { checkBinding, checkRule, isAutomationRole, keepsSo, MAIN, useOf, useText, type BoundPart, type PartRole } from '@kraftverk/automation';
+import type { AutomationEngine, AutomationLibrary, AutomationRecord } from '@kraftverk/automation-engine';
 import {
   attributeMeaning,
   capabilitiesOf,
@@ -25,17 +17,24 @@ import {
   type PolicyValueName,
   type SavedDeviceId,
 } from '@kraftverk/device-sdk';
-import { checkBinding, checkRule, isAutomationRole, takesSteps, type BoundPart, type PartRole } from '@kraftverk/automation';
-
-import type { AutomationEngine, AutomationRecord, AutomationLibrary } from '@kraftverk/automation-engine';
 import type { SessionManager } from '@kraftverk/holder';
+import {
+  checkDocument,
+  readConfig,
+  type AutomationEntry,
+  type ConfigDocument,
+  type DeviceEntry,
+  type SecretValue,
+  type WriteContext,
+} from '@kraftverk/home-file';
+import { isSealed } from '@kraftverk/home-file';
 import { randomHex, type DeviceRecord, type SqlDatabase } from '@kraftverk/store';
 
-import { hasConditions, type Checked } from '../automations/plans.ts';
+import type { Checked } from '../automations/plans.ts';
 import type { TransportHost } from '../installed/transports.ts';
 import { unref } from '../timers.ts';
 import { homeVocabulary, type ConfigDeps } from './export.ts';
-import { isKept, isSealed, openKept } from './seal.ts';
+import { isKept, openKept } from './seal.ts';
 
 /*
   Importing a configuration (docs/CONFIG.md), in two steps. The plan reads a
@@ -128,6 +127,7 @@ export class PendingPlans {
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
 const secretKey = (device: string, index: number, field: string) => `${device}.${index}.${field}`;
 
 /**
@@ -241,7 +241,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
   for (const [key, entry] of Object.entries(document.automations)) {
     const path = ['automations', key];
     for (const said of checkRule(entry.rule, deps.library)) problem(said, path);
-    if (entry.recheckMinutes !== null && !(hasConditions(entry.rule) && !takesSteps(entry.rule))) problem('Only an automation that waits for a condition, and does what it does at once, can keep things so ("recheck")', [...path, 'recheck']);
+    if (entry.recheckMinutes !== null && !keepsSo(entry.rule)) problem('Only an automation that waits for a condition, and does what it does at once, can keep things so ("recheck")', [...path, 'recheck']);
     // A role nothing fills — a rule written while it was being built — cannot run: said where it is.
     for (const [role, spec] of Object.entries(entry.rule.roles)) if (!entry.uses[role]) problem(`${spec.label}: nothing fills it — name ${isAutomationRole(spec) ? 'an automation' : 'a device'} for it`, [...path, 'uses', role]);
     for (const [role, use] of Object.entries(entry.uses)) {

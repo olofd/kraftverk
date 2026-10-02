@@ -4,6 +4,7 @@ import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
 import { describeError, type AutomationView, type ConfigExported, type DeviceView } from '@kraftverk/api-client';
 import { fileNameOf } from '@kraftverk/device-sdk';
+import { PASSPHRASE_MIN } from '@kraftverk/home-file';
 import { Card, haptic, Icon, RowSeparator, SectionLabel, SegmentedControl, ToggleRow } from '@kraftverk/ui';
 
 import { useTone } from '../../components/tone';
@@ -13,7 +14,6 @@ import { saveText } from '../../platform/download';
 import { useHome } from '../../state/HomeProvider';
 
 /** Passphrases shorter than this are refused by the server: an export travels. */
-const PASSPHRASE_MIN = 12;
 
 type Secrets = 'none' | 'sealed' | 'plain';
 

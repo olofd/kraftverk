@@ -1,4 +1,4 @@
-import { capabilitiesOf, capabilityIn, type AutomationId, type CapabilityName, type DeviceDescription, type SavedDeviceId, type Value } from '@kraftverk/device-sdk';
+import { capabilitiesOf, capabilityIn, meetsNeed, partName, partsOf, type AutomationId, type CapabilityName, type DeviceDescription, type SavedDeviceId, type Value } from '@kraftverk/device-sdk';
 
 import { usedRoles } from './edit.ts';
 import { inlineParams, isAutomationRole, NO_SETTINGS, type Expr, type Rule, type Step, type StepKind } from './rule.ts';
@@ -161,3 +161,64 @@ export function blankStep(kind: StepKind, role: string | null): Step {
 
 /** A number of seconds an expression says outright; null when it says something else. */
 export const secondsOf = (expr: Expr | undefined): number | null => (expr && 'value' in expr && typeof expr.value === 'number' ? expr.value : null);
+
+/** Whether a rule has a part for a device: one of its roles a part of it can fill. What a device's page offers to start from. */
+export const ruleFits = (rule: Rule, device: { description: DeviceDescription; name: string }): boolean =>
+  Object.values(rule.roles).some((spec) => !isAutomationRole(spec) && partsOf(device.description, device.name).some((part) => meetsNeed(spec, capabilitiesOf(device.description, part.id))));
+
+/** A device as a draft names its parts: its id, its name, what it is. */
+export type DraftDevice = { id: SavedDeviceId; name: string; description: DeviceDescription; removedAt?: string | null; meta: { name: string } };
+
+/**
+ * A role's name, as its steps say it: the part that fills it, another
+ * automation in quotes — or, not filled yet, its label as words within a
+ * sentence: "turn what powers the charger on".
+ */
+export function roleSaid(draft: AutomationDraft, role: string, devices: readonly DraftDevice[], automations: readonly { id: AutomationId; name: string }[]): string {
+  const spec = draft.rule.roles[role];
+  if (!spec) return 'a part not chosen yet';
+  const unfilled = spec.label.charAt(0).toLowerCase() + spec.label.slice(1);
+  if (isAutomationRole(spec)) {
+    const started = automations.find((automation) => automation.id === draft.starts[role]);
+    return started ? `“${started.name}”` : unfilled;
+  }
+  const binding = draft.roles[role];
+  const device = binding ? devices.find((each) => each.id === binding.device) : undefined;
+  if (!device || !binding) return unfilled;
+  return partName(device.name, binding.part, partsOf(device.description, device.name).find((part) => part.id === binding.part)?.label);
+}
+
+/** A part a block may use: the role it fills already — or none, a part of a device not in the draft yet. */
+export type PartOption = { key: string; title: string; subtitle?: string; role: string | null; binding: RoleBinding; description: DeviceDescription; name: string };
+
+/**
+ * Every part a block may use, that `fits`: the draft's own first, by the
+ * names its steps use, then each part of each device not removed — the one
+ * it was started from first, what its owner came to automate.
+ */
+export function partOptions(
+  draft: AutomationDraft,
+  devices: readonly DraftDevice[],
+  automations: readonly { id: AutomationId; name: string }[],
+  fits: (description: DeviceDescription, part: string) => boolean,
+  prefer: SavedDeviceId | null = null
+): PartOption[] {
+  const name = (role: string) => roleSaid(draft, role, devices, automations);
+  const used = Object.entries(draft.roles).flatMap(([role, binding]): PartOption[] => {
+    const device = devices.find((each) => each.id === binding.device);
+    return device && fits(device.description, binding.part) ? [{ key: `role:${role}`, title: name(role), subtitle: 'Already in this automation', role, binding, description: device.description, name: name(role) }] : [];
+  });
+  const taken = new Set(used.map((option) => `${option.binding.device}:${option.binding.part}`));
+  const others = devices
+    .filter((device) => !device.removedAt)
+    .sort((a, b) => Number(b.id === prefer) - Number(a.id === prefer))
+    .flatMap((device) =>
+      partsOf(device.description, device.name)
+        .filter((part) => fits(device.description, part.id) && !taken.has(`${device.id}:${part.id}`))
+        .map((part): PartOption => {
+          const title = partName(device.name, part.id, part.label);
+          return { key: `${device.id}:${part.id}`, title, subtitle: device.meta.name, role: null, binding: { device: device.id, part: part.id }, description: device.description, name: title };
+        })
+    );
+  return [...used, ...others];
+}

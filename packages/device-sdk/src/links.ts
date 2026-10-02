@@ -111,3 +111,19 @@ export const linkCandidates = (
   target: DeviceDescription
 ): { sourcePart: Part; targetPart: Part }[] =>
   linkableParts(kind, source, 'source').flatMap((sourcePart) => linkableParts(kind, target, 'target').map((targetPart) => ({ sourcePart, targetPart })));
+
+/** One way a device could be linked: by which kind, which end it is, its part, and which part of which other device. */
+export type LinkOffer<D> = { kind: LinkKind; role: 'source' | 'target'; part: Part; other: D; otherPart: Part };
+
+/**
+ * Every link the SDK's rule would accept between a device's parts and the
+ * parts of others, whichever end it is: what the app offers, so only what
+ * the home would accept is offered.
+ */
+export const linkOffers = <D extends { description: DeviceDescription }>(description: DeviceDescription, others: readonly D[]): LinkOffer<D>[] =>
+  LINK_KIND_IDS.flatMap((kind) =>
+    others.flatMap((other) => [
+      ...linkCandidates(kind, description, other.description).map(({ sourcePart, targetPart }) => ({ kind, role: 'source' as const, part: sourcePart, other, otherPart: targetPart })),
+      ...linkCandidates(kind, other.description, description).map(({ sourcePart, targetPart }) => ({ kind, role: 'target' as const, part: targetPart, other, otherPart: sourcePart })),
+    ])
+  );

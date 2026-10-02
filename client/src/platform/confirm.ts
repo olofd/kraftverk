@@ -1,13 +1,6 @@
 import { Alert, Platform } from 'react-native';
 
-/**
- * How much a yes can cost, and so how its button looks: `careful` — it does
- * something real, worth a second look (let an automation act, switch off what
- * draws) — or `dangerous` — it cannot be undone, or can harm the hardware
- * (delete, erase, a setting declared dangerous, a tool that says what it
- * cannot undo). Only a dangerous yes is drawn in the danger colour.
- */
-export type ConfirmTone = 'careful' | 'dangerous';
+import type { Ask, ConfirmTone } from '@kraftverk/api-client';
 
 /** One question for a person, and where their answer goes. */
 export type ConfirmRequest = { title: string; message: string; confirmLabel: string; tone: ConfirmTone; resolve: (yes: boolean) => void };
@@ -44,29 +37,5 @@ export function confirmAction(title: string, message: string, confirmLabel = 'Co
   );
 }
 
-/**
- * Said when a yes no longer counted and the question is asked again. Usually
- * it came after its minute; it may also be that the server restarted.
- */
-export const ASKED_AGAIN = 'That yes no longer counted: a yes lasts a minute. Here is the question again, with how things are now.';
-
-/**
- * Sends what the server may want a person's yes for, and asks them for as long
- * as it does. The yes the server hands out lasts a minute; a person who took
- * longer gets its fresh question — asked again, since what it is about may
- * have changed — rather than a failure. `answer` is the last one; `declined`,
- * that the person said no to it.
- */
-export async function withConfirmation<R>(
-  send: (confirmation?: string) => Promise<R>,
-  wants: (answer: R) => { token: string; reason: string } | null,
-  ask: (reason: string, again: boolean) => Promise<boolean>
-): Promise<{ answer: R; declined: boolean }> {
-  let answer = await send();
-  for (let again = false; ; again = true) {
-    const wanted = wants(answer);
-    if (!wanted) return { answer, declined: false };
-    if (!(await ask(wanted.reason, again))) return { answer, declined: true };
-    answer = await send(wanted.token);
-  }
-}
+/** A question asked in the platform's own dialog, as the home's yes-wanting answers are asked (`withConfirmation`). Only a dangerous yes is drawn in the danger colour. */
+export const ask: Ask = (question) => confirmAction(question.title, question.message, question.yes, question.tone);

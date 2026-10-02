@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
 
-import { isSealed, passphraseSealing } from '@kraftverk/hub';
+import { isSealed } from '@kraftverk/home-file';
+import { passphraseSealing } from '@kraftverk/hub';
 
 import { serverSecrets } from './secrets.ts';
 

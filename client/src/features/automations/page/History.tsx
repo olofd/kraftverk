@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { useRouter } from 'expo-router';
 import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
-import type { AuditEntry, AutomationMode, AutomationRun, AutomationView, ConditionState, Rehearsal } from '@kraftverk/api-client';
+import { automationChangeOf, summaryOn, type AuditEntry, type AutomationRun, type AutomationView, type ConditionState, type Rehearsal } from '@kraftverk/api-client';
 import { Icon, IconLabel } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
@@ -159,30 +159,21 @@ export function RunLogLink({ automationId, run }: { automationId: string; run: A
   );
 }
 
-/** A timeline entry that stands for a run: its full story is the run itself, read from its runs. */
-export const isRunEntry = (entry: AuditEntry) => entry.kind.replace(/^automation\./, '') in OUTCOME;
-
 /** Its history: every run it kept, and every change made to it. */
 export type History = { runs: AutomationRun[]; changes: AuditEntry[] };
 
-type Changed = { mode?: AutomationMode; recheckMinutes?: number | null; rule?: unknown; roles?: unknown; starts?: unknown; homePlace?: number | null };
-
-/** What a change changed, in words: "Only watching → Acting", "Its steps changed". */
+/** What a change changed, in words: "Only watching → Acting", "What it does changed". */
 function changesOf(entry: AuditEntry): string[] {
-  const detail = entry.detail as { before?: Changed; after?: Changed } | null;
-  const before = detail?.before;
-  const after = detail?.after;
-  if (!before || !after) return [];
-  const said: string[] = [];
-  if (before.mode !== after.mode && after.mode) said.push(`${BADGE[before.mode ?? 'watch'].label} → ${BADGE[after.mode].label}`);
-  if ((before.recheckMinutes ?? null) !== (after.recheckMinutes ?? null)) {
-    const keep = (minutes: number | null | undefined) => (minutes ? `every ${every(minutes)}` : 'off');
-    said.push(`Keep it so: ${keep(before.recheckMinutes)} → ${keep(after.recheckMinutes)}`);
-  }
-  if (JSON.stringify(before.rule ?? null) !== JSON.stringify(after.rule ?? null)) said.push('What it does changed');
-  if (JSON.stringify(before.roles ?? {}) !== JSON.stringify(after.roles ?? {}) || JSON.stringify(before.starts ?? {}) !== JSON.stringify(after.starts ?? {})) said.push('What it uses changed');
-  if ((before.homePlace ?? null) !== (after.homePlace ?? null)) said.push(after.homePlace === null || after.homePlace === undefined ? 'Taken off the home page' : 'Put on the home page');
-  return said;
+  const change = automationChangeOf(entry);
+  if (!change) return [];
+  const keep = (minutes: number | null) => (minutes ? `every ${every(minutes)}` : 'off');
+  return [
+    change.mode ? `${BADGE[change.mode.from].label} → ${BADGE[change.mode.to].label}` : null,
+    change.recheckMinutes ? `Keep it so: ${keep(change.recheckMinutes.from)} → ${keep(change.recheckMinutes.to)}` : null,
+    change.rule ? 'What it does changed' : null,
+    change.uses ? 'What it uses changed' : null,
+    change.homePlace === 'taken' ? 'Taken off the home page' : change.homePlace === 'put' ? 'Put on the home page' : null,
+  ].filter((said): said is string => said !== null);
 }
 
 type Entry = { at: string; key: string } & ({ run: AutomationRun } | { change: AuditEntry });
@@ -206,11 +197,7 @@ export function Timeline({ history, automation }: { history: History | null; aut
       </Text>
     );
   }
-  // The timeline says whose each entry is — "Charge window: …" — which this card already does.
-  const own = (summary: string) =>
-    (summary.startsWith(`${automation.name}: `) ? summary.slice(automation.name.length + 2) : summary)
-      .replace(`: "${automation.name}"`, '')
-      .replace(` "${automation.name}"`, '');
+  const own = (summary: string) => summaryOn(summary, automation.name);
   const days = entries.reduce<{ day: string; entries: Entry[] }[]>((grouped, entry) => {
     const day = dayOf(entry.at);
     const last = grouped.at(-1);

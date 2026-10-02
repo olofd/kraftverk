@@ -57,7 +57,7 @@ import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 import type { Vocabulary } from '@kraftverk/home-file';
 
 export { ApiError, API_ERROR_STATUS, type ApiErrorKind } from './error.ts';
-export { CLIENT_HEADER, CONFIG_SCHEMA_PATH, SIGNED_OUT } from './wire.ts';
+export { CLIENT_HEADER, CONFIG_SCHEMA_PATH, PASSWORD_MIN, SIGNED_OUT } from './wire.ts';
 
 export type {
   AuditSubject,

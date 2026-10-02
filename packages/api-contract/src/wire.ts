@@ -13,5 +13,8 @@ export const CLIENT_HEADER = 'x-kraftverk-client';
 /** The live socket's close code when the session it was opened with has ended. */
 export const SIGNED_OUT = 4401;
 
+/** An account's password is at least this long: this login may be all that stands between the internet and the devices. */
+export const PASSWORD_MIN = 12;
+
 /** Where, under the API, the configuration's JSON Schema is — open, as an editor cannot log in. */
 export const CONFIG_SCHEMA_PATH = '/config/schema.json';

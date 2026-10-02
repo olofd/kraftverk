@@ -2,15 +2,12 @@ import { useState } from 'react';
 import { Button, Text, useTheme, YStack } from 'tamagui';
 
 import { describeError, type DeviceView, type LinkView } from '@kraftverk/api-client';
-import { LINK_KIND_IDS, linkCandidates, linkKindSpec, MAIN_PART, partsOf, type LinkKind, type Part } from '@kraftverk/device-sdk';
+import { linkKindSpec, linkOffers, MAIN_PART, partsOf, type LinkKind, type LinkOffer } from '@kraftverk/device-sdk';
 import { Card, haptic, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { Pressable } from '../../components/Pressable';
 import { useDevices } from '../../state/DevicesProvider';
 import { capitalise } from './Manage';
-
-/** One way this device could be linked: which of its parts, by which kind, to which part of which other device. */
-type LinkCandidate = { kind: LinkKind; role: 'source' | 'target'; part: Part; other: DeviceView; otherPart: Part };
 
 /**
  * Facts about the house (docs/ARCHITECTURE.md §4.4), between parts: this
@@ -23,16 +20,12 @@ export function Links({ device }: { device: DeviceView }) {
   const [busy, setBusy] = useState(false);
   const theme = useTheme();
 
-  // Decided by the SDK's own rule, the one the server applies: only what it would accept is offered.
-  const candidates: LinkCandidate[] = LINK_KIND_IDS.flatMap((kind) =>
-    devices
-      .filter((other) => other.id !== device.id)
-      .flatMap((other) => [
-        ...linkCandidates(kind, device.description, other.description).map(({ sourcePart, targetPart }) => ({ kind, role: 'source' as const, part: sourcePart, other, otherPart: targetPart })),
-        ...linkCandidates(kind, other.description, device.description).map(({ sourcePart, targetPart }) => ({ kind, role: 'target' as const, part: targetPart, other, otherPart: sourcePart })),
-      ])
+  // Decided by the SDK's own rule, the one the home applies: only what it would accept is offered.
+  const candidates = linkOffers(
+    device.description,
+    devices.filter((other) => other.id !== device.id)
   );
-  const linked = (candidate: LinkCandidate) =>
+  const linked = (candidate: LinkOffer<DeviceView>) =>
     device.links.some(
       (link) => link.kind === candidate.kind && link.role === candidate.role && link.part === candidate.part.id && link.other.id === candidate.other.id && link.other.part === candidate.otherPart.id
     );

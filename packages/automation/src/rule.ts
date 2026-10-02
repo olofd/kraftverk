@@ -817,6 +817,16 @@ export const changedRoles = (rule: Rule): string[] => [...new Set([...ruleComman
  */
 export const takesSteps = (rule: Rule): boolean => rule.then.some((step) => !('command' in step) && !('write' in step)) || Boolean(rule.otherwise?.length);
 
+/** Whether a rule waits for a condition to come true. */
+export const hasConditions = (rule: Rule): boolean => rule.when.some((trigger) => 'becomes' in trigger);
+
+/**
+ * Whether an automation can keep things so (`recheckMinutes`): it waits for
+ * a condition, and does what it does at once — so looking again and putting
+ * back what was switched against it is the same as running it.
+ */
+export const keepsSo = (rule: Rule): boolean => hasConditions(rule) && !takesSteps(rule);
+
 /** The part filling a role, as a binding check sees it. */
 export type BoundPart = {
   name: string;

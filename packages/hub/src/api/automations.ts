@@ -1,10 +1,9 @@
 import { ApiError, type AutomationDraft, type Caller, type KraftverkApi, type RecipeView } from '@kraftverk/api-contract';
-import { describeSteps, takesSteps, type Rule } from '@kraftverk/automation';
+import { describeSteps, hasConditions, keepsSo, takesSteps } from '@kraftverk/automation';
 import { RunRefusal, type AutomationRecord } from '@kraftverk/automation-engine';
 import { isTimeZone, KEY, type AutomationId, type Value } from '@kraftverk/device-sdk';
 import { subjectOf } from '@kraftverk/gateway';
 
-import { hasConditions } from '../automations/plans.ts';
 import type { Hub } from '../hub.ts';
 import { actorOf, intentOf } from './caller.ts';
 
@@ -21,8 +20,8 @@ import { actorOf, intentOf } from './caller.ts';
 */
 
 /** Keeping things so is looking again at a condition that still holds, to do at once what it did: for such a rule alone. */
-const keepsSo = (rule: Rule): boolean => hasConditions(rule) && !takesSteps(rule);
 const KEEPS_SO_ONLY = 'Only an automation that waits for a condition, and does what it does at once, can keep things so: a sequence is started, not kept';
+
 const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 
 /** A run refused — off, already running, a chain too deep — is a conflict, in the engine's words. */

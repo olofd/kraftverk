@@ -1,12 +1,13 @@
 import { Button, Text, XStack, YStack } from 'tamagui';
 
 import type { CompareOp, Expr } from '@kraftverk/automation';
+import type { PartOption } from '@kraftverk/automation';
 import { capabilitiesOf, MAIN_PART, meetsNeed, type Value, type ValueType } from '@kraftverk/device-sdk';
 import { Chips, Icon, IconLabel } from '@kraftverk/ui';
 
 import { Picker } from '../../../components/Picker';
 import { useTone } from '../../../components/tone';
-import { pickPart, useEditor, type PartOption } from './context';
+import { pickPart, useEditor } from './context';
 import { Label, TimeField, ValueField } from './fields';
 
 /*

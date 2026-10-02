@@ -7,7 +7,7 @@ import { configJsonSchema, readConfig, writeConfig, type Vocabulary } from '@kra
 import { exportConfig, homeVocabulary } from './export.ts';
 import { applyImport, keptPlan, PendingPlans, planImport, type ImportDeps, type ImportMode } from './import.ts';
 import { restoreFrom, type Restored } from './restore.ts';
-import { PASSPHRASE_MIN } from './seal.ts';
+import { PASSPHRASE_MIN } from '@kraftverk/home-file';
 
 /*
   A home's configuration (docs/CONFIG.md), as everything that uses a home

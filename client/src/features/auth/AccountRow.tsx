@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Button, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { describeError, type AccountDetail } from '@kraftverk/api-client';
+import { describeError, PASSWORD_MIN, type AccountDetail } from '@kraftverk/api-client';
 import { haptic, Icon, Row } from '@kraftverk/ui';
 
 import { useAuth } from '../../state/AuthProvider';
 import { useServer } from '../../state/ServersProvider';
 import { ConfirmWithYours } from './ConfirmWithYours';
-import { Field, PASSWORD_MIN, passwordProblem, suggestPassword } from './fields';
+import { Field, passwordProblem, suggestPassword } from './fields';
 
 export function AccountRow({
   account,

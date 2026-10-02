@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
+import { PASSWORD_MIN } from '@kraftverk/api-contract';
 import type { SqlDatabase } from '@kraftverk/store';
 
 /**
@@ -29,11 +30,12 @@ type Session = {
 
 /** How long a session lasts without use. Using it pushes the end back. */
 export const SESSION_LIFETIME_MS = 30 * 86_400_000;
+
 /** Renewed at most this often, so a busy dashboard is not a database write per poll. */
 const RENEW_AFTER_MS = 3_600_000;
 
 const USERNAME = /^[A-Za-z0-9._@-]{1,64}$/;
-export const PASSWORD_MIN = 12;
+
 const PASSWORD_MAX = 256;
 
 type UserRow = {
@@ -64,7 +66,9 @@ const hashToken = (token: string) => createHash('sha256').update(token).digest('
  * flood gets slower, and the server stays up.
  */
 const HASH_SLOTS = 2;
+
 let hashesRunning = 0;
+
 const hashQueue: (() => void)[] = [];
 
 async function slot<T>(work: () => Promise<T>): Promise<T> {
@@ -79,6 +83,7 @@ async function slot<T>(work: () => Promise<T>): Promise<T> {
 }
 
 const hashPassword = (password: string) => slot(() => Bun.password.hash(password, { algorithm: 'argon2id' }));
+
 const checkPassword = (password: string, hash: string) =>
   slot(() => Bun.password.verify(password, hash)).catch(() => false);
 

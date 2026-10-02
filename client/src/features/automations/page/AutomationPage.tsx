@@ -5,19 +5,21 @@ import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 import {
   changeAutomation,
   describeError,
+  isRunEntry,
+  withConfirmation,
   type AutomationChanges,
   type AutomationRun,
   type AutomationView,
   type Rehearsal,
 } from '@kraftverk/api-client';
 import type { AutomationId } from '@kraftverk/api-contract';
-import { describeExpr } from '@kraftverk/automation';
+import { describeExpr, keepsSo } from '@kraftverk/automation';
 import { Card, haptic, Icon, RowSeparator, SegmentedControl, ToggleRow, type IconName } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
 import { Screen } from '../../../components/Screen';
 import { useTone } from '../../../components/tone';
-import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../../platform/confirm';
+import { ask, confirmAction } from '../../../platform/confirm';
 import { useHome } from '../../../state/HomeProvider';
 import { useShowing } from '../../../state/useShowing';
 import { startsBy } from '../AutomationCard';
@@ -27,8 +29,8 @@ import { RunSteps, StepPlan } from '../Steps';
 import { useReadAgain } from '../useReadAgain';
 import { useRun } from '../useRun';
 import { Empty, Group } from './Group';
-import { isRunEntry, Rehearsed, RightNow, RunDetail, Timeline, type History } from './History';
-import { every, MODES, modeSays, RECHECK, recheckSays, wantsYes } from './modes';
+import { Rehearsed, RightNow, RunDetail, Timeline, type History } from './History';
+import { every, MODES, modeSays, RECHECK, recheckSays } from './modes';
 
 /**
  * An automation's own page (docs/AUTOMATIONS-UX.md): how it stands and a
@@ -307,7 +309,7 @@ function OnItsOwn({ automation, onChanged }: { automation: AutomationView; onCha
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const onItsOwn = automation.when.length > 0;
-  const canKeep = !automation.takesSteps && automation.rule.when.some((trigger) => 'becomes' in trigger);
+  const canKeep = keepsSo(automation.rule);
 
   const act = async (work: () => Promise<void>, failure: string) => {
     setBusy(true);
@@ -325,8 +327,8 @@ function OnItsOwn({ automation, onChanged }: { automation: AutomationView; onCha
     act(async () => {
       const { answer } = await withConfirmation(
         (confirmation) => changeAutomation(api, automation.id, { ...changes, confirmation }),
-        wantsYes,
-        (reason, again) => confirmAction(title, `${again ? `${ASKED_AGAIN}\n\n` : ''}${reason}\n\n${automation.sentence}`, yes)
+        (reason) => ({ title, message: `${reason}\n\n${automation.sentence}`, yes }),
+        ask
       );
       if ('automation' in answer) onChanged(answer.automation);
     }, 'That did not work');

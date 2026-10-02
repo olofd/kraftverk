@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { Button, Text, useTheme, XStack } from 'tamagui';
 
-import { describeError } from '@kraftverk/api-client';
+import { describeError, PASSWORD_MIN } from '@kraftverk/api-client';
 import { Card, haptic, Icon } from '@kraftverk/ui';
 
 import { useServer } from '../../state/ServersProvider';
 import { ConfirmWithYours } from './ConfirmWithYours';
-import { Field, PASSWORD_MIN, passwordProblem, suggestPassword } from './fields';
+import { Field, passwordProblem, suggestPassword } from './fields';
 
 export function AddAccount({ onAdded }: { onAdded: () => Promise<void> }) {
   const server = useServer();

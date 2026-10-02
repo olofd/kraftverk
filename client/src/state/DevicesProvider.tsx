@@ -2,17 +2,17 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { AppState } from 'react-native';
 import { useSegments } from 'expo-router';
 
-import { ApiError } from '@kraftverk/api-contract';
 import {
   applyLive,
   createViews,
   describeError,
+  deviceActions,
+  holderOf,
   type ConnectionView,
   type DeviceActions,
   type DeviceScreenProps,
   type DeviceView,
   type PictureRef,
-  type GatewayResult,
   type LinkView,
   type LiveState,
   type LiveStream,
@@ -21,9 +21,10 @@ import {
   type VersionInfo,
   type Views,
 } from '@kraftverk/api-client';
+import { ApiError } from '@kraftverk/api-contract';
 import { savedDeviceId, type ConnectionId, type LinkId } from '@kraftverk/device-sdk';
 
-import { ASKED_AGAIN, confirmAction, withConfirmation, type ConfirmTone } from '../platform/confirm';
+import { ask } from '../platform/confirm';
 import { HERE } from '../platform/here';
 import { useAuth } from './AuthProvider';
 import { useHome } from './HomeProvider';
@@ -45,21 +46,11 @@ import { useServers } from './ServersProvider';
  * is up, rarely, in case anything was missed.
  */
 const POLL_MS = 5000;
+
 const POLL_WHILE_LIVE_MS = 60_000;
+
 /** Updates from the stream are applied together, this often at most: one redraw for a burst. */
 const APPLY_MS = 100;
-/** The longest a write is held for its dwell: a person's is two seconds. */
-const MAX_SETTLE_MS = 10_000;
-
-/**
- * A write, answered once the setting may be written again: the gateway
- * refuses a second write to it within its dwell, so the control that wrote it
- * stays busy that long rather than let the next nudge be refused.
- */
-async function settled<R extends { settlingMs?: number }>(result: R): Promise<R> {
-  if (result.settlingMs) await new Promise((resolve) => setTimeout(resolve, Math.min(result.settlingMs!, MAX_SETTLE_MS)));
-  return result;
-}
 
 /** How reachable the thing holding the list is. */
 export type Connection = 'connecting' | 'online' | 'offline' | 'idle';
@@ -76,8 +67,6 @@ type DevicesContextValue = {
   /** The server, when there is one. */
   version: VersionInfo | null;
   refresh: () => Promise<void>;
-  /** Who holds the connection in use: the app's own business, never a device screen's. */
-  holderOf: (device: DeviceView) => InUseBy;
   /** What a device's screens can do, through whoever holds it. */
   actionsFor: (device: DeviceView) => DeviceActions;
   /** Everything a device's own screens are handed. */
@@ -106,9 +95,6 @@ type DevicesContextValue = {
   /** What the screen shows, told to the home (`useShowing`, `views.ts`). */
   views: Views;
 };
-
-/** Who holds a device's connection in use: the home, this app for a server, another app, or nobody right now. */
-export type InUseBy = 'master' | 'this-node' | 'other-node' | 'none';
 
 const DevicesContext = createContext<DevicesContextValue | null>(null);
 
@@ -289,94 +275,9 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, load, reading]);
 
-  // --- one list: the home says, of a device this app holds, what this app hears ------
-
-
   // --- what a device's screens can do -------------------------------------------
 
-  const holderOf = useCallback(
-    (device: DeviceView): InUseBy => {
-      const inUse = device.connections.find((connection) => connection.inUse);
-      if (inUse?.heldBy.kind === 'this-node') return 'this-node';
-      if (inUse?.heldBy.kind === 'node') return 'other-node';
-      if (device.connections.some((connection) => connection.heldBy.kind === 'master')) return 'master';
-      return 'none';
-    },
-    []
-  );
-
-  /**
-   * Sends a command or a settings write, and when the gateway only wants a
-   * person to confirm, asks them — as dangerous when what it touches is
-   * declared so, as careful otherwise.
-   */
-  const confirmed = useCallback(
-    async <R extends { outcome: GatewayResult['outcome']; detail: string; needsConfirmation?: string; reason?: string }>(send: (confirmation?: string) => Promise<R>, tone: ConfirmTone = 'careful'): Promise<R> => {
-      // The token a refusal hands out: good for this intent, from this person, once, for a minute.
-      const { answer, declined } = await withConfirmation(
-        send,
-        (result) => (result.needsConfirmation ? { token: result.needsConfirmation, reason: result.reason ?? result.detail } : null),
-        (reason, again) => confirmAction('Confirm', again ? `${ASKED_AGAIN}\n\n${reason}` : reason, 'Do it', tone)
-      );
-      return declined ? { ...answer, detail: 'Not confirmed', needsConfirmation: undefined } : answer;
-    },
-    []
-  );
-
-  const actionsFor = useCallback(
-    (device: DeviceView): DeviceActions => {
-      const holder = holderOf(device);
-      /** A write is dangerous when it touches a setting its device declares so: one that can harm the hardware. */
-      const toneOf = (patch: Record<string, unknown>): ConfirmTone =>
-        device.description.attributes.some((attribute) => attribute.dangerous && attribute.key in patch) ? 'dangerous' : 'careful';
-      // The home sends each to whoever holds the device: the server, or this app's own gateway and session.
-      if (holder === 'master' || holder === 'this-node') {
-        const inUse = device.connections.find((connection) => connection.inUse) ?? device.connections.find((connection) => connection.heldBy.kind === 'master');
-        return {
-          // The home asks, for a tool that cannot be undone: its question, with a token for the yes.
-          tool: async <T,>(name: string, input?: Record<string, unknown>) => {
-            const spec = device.tools.find((tool) => tool.name === name);
-            const label = spec?.label ?? name;
-            const run = async (confirmation?: string): Promise<{ answer: T } | { needsConfirmation: string; reason: string }> => {
-              try {
-                return { answer: (await api.devices.tool(device.id, name, { input: input as never, reading: !spec?.writes, ...(confirmation ? { confirmation } : {}) })) as T };
-              } catch (error) {
-                if (error instanceof ApiError && error.kind === 'needs-yes' && error.needsConfirmation) return { needsConfirmation: error.needsConfirmation, reason: error.message };
-                throw error;
-              }
-            };
-            const { answer, declined } = await withConfirmation(
-              run,
-              (result) => ('needsConfirmation' in result ? { token: result.needsConfirmation, reason: result.reason } : null),
-              (reason, again) => confirmAction(`${label}?`, again ? `${ASKED_AGAIN}\n\n${reason}` : reason, label, 'dangerous')
-            );
-            if (declined || !('answer' in answer)) throw new Error('Not confirmed');
-            return answer.answer;
-          },
-          write: (patch) => confirmed((confirmation) => api.devices.write(device.id, { patch: patch as never, ...(confirmation ? { confirmation } : {}) }), toneOf(patch)).then(settled),
-          command: (input) =>
-            confirmed((confirmation) =>
-              api.devices.command(device.id, input.part, input.capability, input.command, { args: input.args, ...(input.reason ? { reason: input.reason } : {}), ...(confirmation ? { confirmation } : {}) })
-            ),
-          // A transport's diagnostics are the home's: this app's own have none to show.
-          diagnostic: inUse && holder === 'master'
-            ? <T,>(name: string, query?: Record<string, string | number>) =>
-                api.transports.diagnostic(inUse.transport, name, Object.fromEntries(Object.entries(query ?? {}).map(([key, value]) => [key, String(value)]))) as Promise<T>
-            : null,
-        };
-      }
-      const why = async (): Promise<never> => {
-        throw new Error(device.health.detail);
-      };
-      return {
-        tool: why,
-        write: async () => ({ outcome: 'refused', detail: device.health.detail }),
-        command: async () => ({ outcome: 'refused', detail: device.health.detail }),
-        diagnostic: null,
-      };
-    },
-    [api, confirmed, holderOf]
-  );
+  const actionsFor = useCallback((device: DeviceView): DeviceActions => deviceActions(api, device, ask), [api]);
 
   const screenProps = useCallback(
     (device: DeviceView): DeviceScreenProps => {
@@ -398,7 +299,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         version: holder === 'master' && role === 'follower' ? version : null,
       };
     },
-    [actionsFor, holderOf, role, version]
+    [actionsFor, role, version]
   );
 
   // --- changing the list ----------------------------------------------------------
@@ -426,7 +327,6 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       error,
       version,
       refresh: load,
-      holderOf,
       actionsFor,
       screenProps,
       rename: (id, name) => mutate(() => api.devices.update(savedDeviceId(id), { name })),
@@ -443,7 +343,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       onAutomation,
       views,
     }),
-    [actionsFor, api, away, devices, error, heard, holderOf, live, load, loading, mutate, onAutomation, removed, screenProps, unreachable, version, views]
+    [actionsFor, api, away, devices, error, heard, live, load, loading, mutate, onAutomation, removed, screenProps, unreachable, version, views]
   );
 
   return <DevicesContext.Provider value={value}>{children}</DevicesContext.Provider>;

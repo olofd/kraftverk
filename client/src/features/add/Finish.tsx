@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
 import { describeError, SetupFlow, type CheckOutcome, type DeviceView, type SaveInput } from '@kraftverk/api-client';
-import { LINK_KIND_IDS, linkableParts, linkKindSpec, MAIN_PART, partName, type DeviceDescription } from '@kraftverk/device-sdk';
+import { LINK_KIND_IDS, linkableParts, linkKindSpec, linkOffers, MAIN_PART, partName, type DeviceDescription } from '@kraftverk/device-sdk';
 import { Card, haptic, Row, RowSeparator, SectionLabel, ToggleRow } from '@kraftverk/ui';
 
 import { Pressable } from '../../components/Pressable';
@@ -43,25 +43,20 @@ export function Finish({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Questions a link kind asks, one per part of this device that fits one end, with the parts of devices you have that fit the other.
-  const questions = LINK_KIND_IDS.flatMap((kind) => {
-    const spec = linkKindSpec(kind);
-    const ask = (role: 'source' | 'target') =>
+  // Questions a link kind asks, one per part of this device that fits one end, with the parts of devices you have that fit the other: the SDK's offers, grouped.
+  const offers = linkOffers(description, devices);
+  const questions = LINK_KIND_IDS.flatMap((kind) =>
+    (['source', 'target'] as const).flatMap((role) =>
       linkableParts(kind, description, role).flatMap((part) => {
-        const options = devices.flatMap((other) =>
-          linkableParts(kind, other.description, role === 'source' ? 'target' : 'source').map((otherPart) => ({
-            value: `${other.id}|${otherPart.id}`,
-            title: partName(other.name, otherPart.id, otherPart.label),
-            subtitle: other.meta.name,
-          }))
-        );
+        const options = offers
+          .filter((offer) => offer.kind === kind && offer.role === role && offer.part.id === part.id)
+          .map(({ other, otherPart }) => ({ value: `${other.id}|${otherPart.id}`, title: partName(other.name, otherPart.id, otherPart.label), subtitle: other.meta.name }));
+        const spec = linkKindSpec(kind);
         const question = role === 'source' ? spec.question.fromSide : spec.question.toSide;
-        return options.length
-          ? [{ key: `${kind}:${role}:${part.id}`, kind, role, part: part.id, question: part.id === MAIN_PART ? question : `${part.label}: ${question}`, options }]
-          : [];
-      });
-    return [...ask('source'), ...ask('target')];
-  });
+        return options.length ? [{ key: `${kind}:${role}:${part.id}`, kind, role, part: part.id, question: part.id === MAIN_PART ? question : `${part.label}: ${question}`, options }] : [];
+      })
+    )
+  );
 
   const save = async () => {
     haptic();

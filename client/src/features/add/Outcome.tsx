@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { Button, Text, XStack } from 'tamagui';
 
-import type { CheckOutcome, DeviceView } from '@kraftverk/api-client';
+import { mayContinue, type CheckOutcome, type DeviceView } from '@kraftverk/api-client';
 import { Card } from '@kraftverk/ui';
 
 export function Outcome({
@@ -34,11 +34,7 @@ export function Outcome({
             ? (['$warning', 'That is a different product'] as const)
             : (['$warning', 'It did not answer'] as const);
 
-  const canContinue =
-    outcome.outcome === 'new' ||
-    outcome.outcome === 'removed' ||
-    (outcome.outcome === 'yours' && attachTo !== null && outcome.device.id === attachTo.id) ||
-    (outcome.outcome === 'no-answer' && Boolean(outcome.saveAnyway));
+  const canContinue = mayContinue(outcome, attachTo?.id ?? null);
 
   return (
     <Card gap="$3" borderColor={tone}>

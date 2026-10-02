@@ -1,12 +1,10 @@
 import { useState, type ReactNode } from 'react';
 import { View } from 'react-native';
-import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 import { Text, useTheme, XStack, YStack } from 'tamagui';
-
-import type { RunLogReach } from '@kraftverk/api-client';
-import { chartScale, chartY } from '@kraftverk/ui';
+import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
 import { atOf, heldPath, said, spansOf, valueAt, xOf, type Mark, type Series, type Window } from '@kraftverk/automation-engine';
+import { chartScale, chartY } from '@kraftverk/ui';
 
 /*
   One value of a run's log, drawn across the run (docs/SEQUENCES.md): a
@@ -17,6 +15,7 @@ import { atOf, heldPath, said, spansOf, valueAt, xOf, type Mark, type Series, ty
 */
 
 const NUMBER_HEIGHT = 56;
+
 const BAND_HEIGHT = 22;
 
 type Props = {
@@ -28,22 +27,6 @@ type Props = {
   cursor: number | null;
   onCursor: (at: number) => void;
 };
-
-/** The spans a device could not be reached for: from each "not" to the next "could", or to the run's end. */
-export function awayOf(reach: readonly RunLogReach[], device: string, window: Window): { from: number; to: number }[] {
-  const spans: { from: number; to: number }[] = [];
-  let since: number | null = null;
-  for (const each of reach.filter((entry) => entry.device === device)) {
-    const at = Math.max(window.from, Date.parse(each.at));
-    if (!each.reachable && since === null) since = at;
-    if (each.reachable && since !== null) {
-      spans.push({ from: since, to: at });
-      since = null;
-    }
-  }
-  if (since !== null) spans.push({ from: since, to: window.to });
-  return spans;
-}
 
 export function RunChart({ series, window, marks, away, cursor, onCursor }: Props) {
   const theme = useTheme();

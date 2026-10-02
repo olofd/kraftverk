@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import type { ImportPlan } from '@kraftverk/api-contract';
 import { readConfig } from '@kraftverk/home-file';
-import { changesConfiguration, createHub, DeviceTypeRegistry, installedFrom, openKept, passphraseSealing, ProtocolRegistry, type Hub } from '@kraftverk/hub';
+import { changesConfiguration, createHub, installedFrom, openKept, passphraseSealing, type Hub } from '@kraftverk/hub';
 import { LAMP, lampProtocol, lampType, MACHINE_NODE } from '@kraftverk/hub/testing';
 import { AuditLog, type SecretsAtRest } from '@kraftverk/store';
 
@@ -31,10 +31,6 @@ const file = join(dir, 'config', 'kraftverk.yaml');
 beforeAll(() => {
   const { database } = openDatabase(join(dir, 'test.db'));
   audit = new AuditLog(database);
-  const types = new DeviceTypeRegistry();
-  types.install(lampType);
-  const protocols = new ProtocolRegistry();
-  protocols.install(lampProtocol);
   // A home as the server makes one — not started: writing the file asks only what it has.
   hub = createHub({
     database,
@@ -103,9 +99,9 @@ describe('the configuration kept beside the database', () => {
           heard.push(text);
           return { at: new Date().toISOString(), from, applied: null, problems: [] };
         },
-        plan: async (text) => {
+        plan: async (text): Promise<ImportPlan> => {
           planned.push(text);
-          return {} as ImportPlan;
+          return { id: null, from: 1, problems: [], devices: [], links: [], automations: [], policy: [], needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
         },
       },
       kept
@@ -119,12 +115,5 @@ describe('the configuration kept beside the database', () => {
     const copies = readdirSync(folder).filter((name) => name.startsWith('kraftverk.before-')).sort();
     expect(copies.length).toBe(5);
     expect(copies[0]).toBe('kraftverk.before-2026-01-04T00-00-00Z.yaml');
-  });
-
-  test('a run or a reading on the timeline is no change to it; a device or an automation changed is', () => {
-    expect(changesConfiguration('automation.started')).toBe(false);
-    expect(changesConfiguration('device.control')).toBe(false);
-    expect(changesConfiguration('device.added')).toBe(true);
-    expect(changesConfiguration('automation.armed')).toBe(true);
   });
 });

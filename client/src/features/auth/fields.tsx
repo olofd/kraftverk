@@ -1,5 +1,7 @@
 import { Input, Text, YStack } from 'tamagui';
 
+import { PASSWORD_MIN } from '@kraftverk/api-client';
+
 /**
  * One labelled field. The autocomplete hints are not decoration: they are what
  * lets a password manager fill the login and save a new password correctly,
@@ -54,9 +56,6 @@ export function Field({
     </YStack>
   );
 }
-
-/** Must match the server's rule; the server is the one that enforces it. */
-export const PASSWORD_MIN = 12;
 
 /**
  * A password nobody will guess and a password manager will happily keep.

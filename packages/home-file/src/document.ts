@@ -27,6 +27,15 @@ export type Scalar = string | number | boolean;
  */
 export type SecretValue = { secret: string } | { sealed: string } | { plain: string };
 
+/** A passphrase shorter than this is refused: an export travels, and is guessed at offline. */
+export const PASSPHRASE_MIN = 12;
+
+/** Whether a secret in a file is sealed with a passphrase (`sealed:v1:…`), whichever version. */
+export const isSealed = (value: string): boolean => /^sealed:v\d+:/.test(value);
+
+/** Whether a file's text holds any secret sealed with a passphrase: what opening it will ask for. */
+export const holdsSealed = (text: string): boolean => /sealed:v\d+:/.test(text);
+
 /**
  * One way a device is reached: a method of its type, the address there, its
  * settings, its secrets — and whether its owner lets those secrets leave in

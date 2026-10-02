@@ -270,5 +270,3 @@ export function plans({ history, events, catalog, sessions, library, engine, aut
   return { view, checked, draftView, rehearsed, roleName, copied };
 }
 
-/** Whether a rule waits for a condition to come true: only then can it keep things so (`recheckMinutes`). */
-export const hasConditions = (rule: Rule): boolean => rule.when.some((trigger) => 'becomes' in trigger);

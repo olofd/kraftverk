@@ -5,8 +5,9 @@ import { join } from 'node:path';
 
 import { Database } from 'bun:sqlite';
 
+import { ACCOUNTS_SCHEMA } from '../auth/schema.ts';
 import { openSchema, SERVER_SCHEMA } from './database.ts';
-import { schemaFingerprint, type SqlDatabase } from '@kraftverk/store';
+import { SCHEMA, schemaFingerprint, type SqlDatabase } from '@kraftverk/store';
 
 /*
   One schema, strict version 1 (docs/ARCHITECTURE.md §9, decision 21): a new
@@ -76,19 +77,13 @@ describe('the schema', () => {
     expect(existsSync(path)).toBe(true);
   });
 
-  test('rewording a comment is not a new schema; changing a column is', () => {
-    expect(schemaFingerprint(SERVER_SCHEMA.replace('/* People who may use this server — from anywhere, the home network included. */', '/* Who may come in. */'))).toBe(schemaFingerprint(SERVER_SCHEMA));
-    expect(schemaFingerprint(SERVER_SCHEMA.replace('summary       TEXT NOT NULL,', 'summary       TEXT,'))).not.toBe(schemaFingerprint(SERVER_SCHEMA));
-  });
-
-  test('a sample holds a number or text, never both and never neither', () => {
+  test('the server’s is the home’s with the accounts beside it, and its fingerprint covers both', () => {
+    expect(SERVER_SCHEMA).toBe(SCHEMA + ACCOUNTS_SCHEMA);
     const handle = openSchema(scratch());
-    handle.query("INSERT INTO device (id, key, type_id, name, description, added_at) VALUES ('d-1', 'd-1', 'test.lamp', 'Lamp', '{\"attributes\":[]}', '2026-09-29T00:00:00Z')").run();
-    const insert = handle.query("INSERT INTO sample (device_id, part, key, at, value, text) VALUES (?, 'main', ?, ?, ?, ?)");
-    insert.run('d-1', 'soc', '2026-09-29T00:00:00Z', 80, null);
-    insert.run('d-1', 'state', '2026-09-29T00:00:00Z', null, 'charging');
-    expect(() => insert.run('d-1', 'both', '2026-09-29T00:00:00Z', 1, 'one')).toThrow();
-    expect(() => insert.run('d-1', 'neither', '2026-09-29T00:00:00Z', null, null)).toThrow();
+    expect(tables(handle)).toEqual(expect.arrayContaining(['device', 'sample', 'users', 'login_session']));
     handle.close();
+    // A column of an account changed is a new schema for the server, as a column of the home's is.
+    expect(schemaFingerprint(SERVER_SCHEMA.replace('last_login_at       TEXT', 'last_login_at       TEXT NOT NULL'))).not.toBe(schemaFingerprint(SERVER_SCHEMA));
+    expect(schemaFingerprint(SERVER_SCHEMA)).not.toBe(schemaFingerprint(SCHEMA));
   });
 });

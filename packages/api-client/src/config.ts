@@ -14,7 +14,7 @@ import {
   type Vocabulary,
 } from '@kraftverk/home-file';
 
-import type { AutomationView, DeviceView, RoleBinding } from './types';
+import type { AutomationView, DeviceView, ImportItem, ImportPlan, RoleBinding } from './types';
 
 /*
   An automation's and a device's own YAML, as their pages show it and the
@@ -93,4 +93,46 @@ export function deviceYaml(device: DeviceView, vocabulary: Vocabulary | null): {
     }))
   );
   return { text: writeDeviceYaml(entry), secrets: entry.connect.reduce((count, way) => count + Object.keys(way.secrets).length, 0), heldElsewhere: ways.length - masters.length };
+}
+
+// --- an import's plan, as it is answered ---------------------------------------------------------
+
+/** What an import will do to one thing, or nothing when it is the same already. */
+const doing = (items: readonly ImportItem[]) => items.filter((item) => item.action !== 'same');
+
+/** The key an answer for one secret is given under: the device's key, and the field. */
+export const secretAnswerKey = (need: { device: string; field: string }): string => `${need.device}.${need.field}`;
+
+/** The key an answer for one role is given under: the automation's key, and the role. */
+export const rebindAnswerKey = (need: { automation: string; role: string }): string => `${need.automation}.${need.role}`;
+
+/** What an import would change: the devices and automations it would add or change, each chosen until a person leaves it out. */
+export const changesOf = (plan: ImportPlan): { devices: string[]; automations: string[] } => ({
+  devices: doing(plan.devices).map((item) => item.key),
+  automations: doing(plan.automations).map((item) => item.key),
+});
+
+/**
+ * What an import's plan still needs before it can be applied, given what is
+ * chosen and what is answered: nothing to do at all; the passphrase; each
+ * secret of a chosen device, and each role of a chosen automation, not yet
+ * given — and whether it is ready. Whether everything is chosen, too: then
+ * the plan is applied as it is.
+ */
+export function planReadiness(
+  plan: ImportPlan,
+  chosen: { devices: ReadonlySet<string>; automations: ReadonlySet<string> },
+  answers: { secrets: Readonly<Record<string, string>>; rebind: Readonly<Record<string, string>> }
+): { nothing: boolean; secretsMissing: ImportPlan['needs']['secrets']; rebindMissing: ImportPlan['needs']['rebind']; ready: boolean; everything: boolean } {
+  const changes = changesOf(plan);
+  const nothing = !changes.devices.length && !changes.automations.length && !plan.links.some((link) => link.action !== 'same') && !plan.policy.length;
+  const secretsMissing = plan.needs.secrets.filter((need) => chosen.devices.has(need.device) && !answers.secrets[secretAnswerKey(need)]);
+  const rebindMissing = plan.needs.rebind.filter((need) => chosen.automations.has(need.automation) && !answers.rebind[rebindAnswerKey(need)]);
+  return {
+    nothing,
+    secretsMissing,
+    rebindMissing,
+    ready: plan.id !== null && !plan.needs.passphrase && !secretsMissing.length && !rebindMissing.length && !nothing,
+    everything: chosen.devices.size === changes.devices.length && chosen.automations.size === changes.automations.length,
+  };
 }

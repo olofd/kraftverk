@@ -1,4 +1,5 @@
-import type { CheckOutcome, ConfigValues, DraftView, Holder, KraftverkApi, SaveInput, SetupActionResult, SightingView } from '@kraftverk/api-contract';
+import type { CheckOutcome, ConfigValues, DeviceTypeListing, DraftView, Holder, KraftverkApi, SaveInput, SetupActionResult, SightingView } from '@kraftverk/api-contract';
+import { CATEGORIES } from '@kraftverk/device-sdk';
 
 /**
  * One way being set up (docs/DATA-MODEL.md §1, steps 4–7), as the add
@@ -37,6 +38,24 @@ export class SetupFlow {
   /** Secret fields held so far, by name — never their values. */
   get secrets() {
     return this.#draft.secrets;
+  }
+
+  /**
+   * Whether a step is passed over: finding the device on the network, when
+   * an earlier step already found it — both ways. The last step never is.
+   */
+  skips(index: number): boolean {
+    return this.plan[index]?.kind === 'choose' && this.address !== null && index < this.plan.length - 1;
+  }
+  /** The step after this one: the next not passed over. */
+  after(index: number): number {
+    const to = Math.min(index + 1, this.plan.length - 1);
+    return this.skips(to) ? to + 1 : to;
+  }
+  /** The step before this one: past one passed over going forward, as the progress bar shows them. */
+  before(index: number): number {
+    const to = index - 1;
+    return this.skips(to) && to > 0 ? to - 1 : to;
   }
 
   /** What the transport can see, for a `list` choose step. */
@@ -79,4 +98,31 @@ export class SetupFlow {
   discard(): void {
     void this.api.setup.discard(this.#draft.id).catch(() => undefined);
   }
+}
+
+/**
+ * Whether what the check found lets the add flow go on to saving: a new
+ * device, a removed one to bring back, the very device a way is being added
+ * to, or one that did not answer when saving anyway is offered.
+ */
+export function mayContinue(outcome: CheckOutcome, attachingTo: string | null): boolean {
+  return (
+    outcome.outcome === 'new' ||
+    outcome.outcome === 'removed' ||
+    (outcome.outcome === 'yours' && attachingTo !== null && outcome.device.id === attachingTo) ||
+    (outcome.outcome === 'no-answer' && Boolean(outcome.saveAnyway))
+  );
+}
+
+/** Whether a type answers to what was typed: every word somewhere in its name, brand, models, description or category. */
+export function typeMatches(type: DeviceTypeListing, query: string): boolean {
+  const text = [type.meta.name, type.meta.brand, ...(type.meta.models ?? []), type.meta.description, (CATEGORIES as Record<string, { label: string }>)[type.meta.category]?.label]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((word) => text.includes(word));
 }

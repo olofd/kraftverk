@@ -1,4 +1,4 @@
-import type { AutomationMode, changeAutomation } from '@kraftverk/api-client';
+import type { AutomationMode } from '@kraftverk/api-client';
 import type { IconName } from '@kraftverk/ui';
 
 import type { Look } from '../looks';
@@ -61,7 +61,3 @@ export const CHANGE: Record<string, Look> = {
   'automation.started': { icon: 'play', tone: '$accent' },
   'automation.stopping': { icon: 'square', tone: '$muted' },
 };
-
-/** The home's question, when a change to an automation wants a person's yes. */
-export const wantsYes = (answer: Awaited<ReturnType<typeof changeAutomation>>) =>
-  'needsConfirmation' in answer ? { token: answer.needsConfirmation, reason: answer.reason } : null;
