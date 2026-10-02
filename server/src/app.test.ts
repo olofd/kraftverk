@@ -234,7 +234,7 @@ describe('a refusal over HTTP', () => {
     expect(automation.status).toBe(200);
     const asked = await as(`/automations/${automation.body.id}`, { method: 'PATCH', body: { mode: 'act' } });
     expect(asked.status).toBe(409);
-    expect(asked.body).toEqual({ error: expect.any(String), needsConfirmation: expect.any(String) });
+    expect(asked.body).toEqual({ error: expect.any(String), kind: 'needs-yes', needsConfirmation: expect.any(String) });
     const acting = await as(`/automations/${automation.body.id}`, { method: 'PATCH', body: { mode: 'act', confirmation: asked.body.needsConfirmation } });
     expect([acting.status, acting.body.mode]).toEqual([200, 'act']);
   });
@@ -258,7 +258,7 @@ describe('a refusal over HTTP', () => {
     // What a device is is its type, which no route changes.
     const typed = await as(path, { method: 'PATCH', body: { typeId: 'test.other' } });
     expect(typed.status).toBe(400);
-    expect(typed.body).toEqual({ error: expect.any(String), problems: [expect.any(String)] });
+    expect(typed.body).toEqual({ error: expect.any(String), kind: 'invalid', problems: [expect.any(String)] });
     expect((await as(`${path}/picture`, { method: 'PUT', body: { picture: 2 } })).status).toBe(400);
     const automation = await as('/automations', { method: 'POST', body: { name: 'Lamp on', rule: lampOnRule, roles: { lamp: { device: lamp.id, part: 'main' } }, starts: {}, timeZone: 'Europe/Stockholm' } });
     expect((await as(`/automations/${automation.body.id}`, { method: 'PATCH', body: { recheckMinutes: 0 } })).status).toBe(400);

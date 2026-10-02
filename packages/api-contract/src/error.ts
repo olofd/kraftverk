@@ -3,9 +3,10 @@
  * runs (docs/PLAN-SHARED-CORE.md, "Refusals in words, not in HTTP").
  *
  * The hub throws it; the server's routes answer it with the status its kind
- * maps to, and `@kraftverk/api-client` turns that status back into the same
- * error — so a screen handles one refusal whether its home is in the process
- * or on a server.
+ * maps to and the refusal itself in the body (`toWire`), and
+ * `@kraftverk/api-client` reads it back as the same error (`fromWire`) — so a
+ * screen handles one refusal whether its home is in the process, in a
+ * worker across a message port, or on a server.
  */
 
 /**
@@ -41,6 +42,18 @@ export const API_ERROR_STATUS: Readonly<Record<ApiErrorKind, number>> = {
   unavailable: 503,
 };
 
+const KINDS = new Set<string>(Object.keys(API_ERROR_STATUS));
+
+/** Whether a value is a kind of refusal: what crossed the wire is checked, not trusted. */
+export const isApiErrorKind = (value: unknown): value is ApiErrorKind => typeof value === 'string' && KINDS.has(value);
+
+/**
+ * A refusal as it travels — in an HTTP answer's body, in a message across a
+ * port — and is read back on the other side as the same `ApiError`: its
+ * words, its kind, each problem and the token a yes is sent back with.
+ */
+export type ApiErrorWire = { error: string; kind: ApiErrorKind; problems?: readonly string[]; needsConfirmation?: string };
+
 export class ApiError extends Error {
   readonly kind: ApiErrorKind;
   /** Each thing wrong, when there are several: a file's problems, what an import still needs. */
@@ -54,5 +67,21 @@ export class ApiError extends Error {
     this.kind = kind;
     this.problems = more.problems ?? [];
     this.needsConfirmation = more.needsConfirmation ?? null;
+  }
+
+  /** This refusal as it travels. */
+  toWire(): ApiErrorWire {
+    return { error: this.message, kind: this.kind, ...(this.problems.length ? { problems: this.problems } : {}), ...(this.needsConfirmation ? { needsConfirmation: this.needsConfirmation } : {}) };
+  }
+
+  /** A refusal that travelled, as the error it was; null when what came is not one. */
+  static fromWire(wire: unknown): ApiError | null {
+    if (!wire || typeof wire !== 'object') return null;
+    const { error, kind, problems, needsConfirmation } = wire as Record<string, unknown>;
+    if (typeof error !== 'string' || !isApiErrorKind(kind)) return null;
+    return new ApiError(kind, error, {
+      problems: Array.isArray(problems) ? problems.map(String) : [],
+      ...(typeof needsConfirmation === 'string' ? { needsConfirmation } : {}),
+    });
   }
 }

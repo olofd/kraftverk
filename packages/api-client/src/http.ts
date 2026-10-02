@@ -48,7 +48,7 @@ export type HttpApiOptions = {
   socket?: (url: string) => WebSocket;
 };
 
-/** What each status says, as the kind of refusal it is: the hub's map, read back. */
+/** What a status says, when an answer carries no refusal of the home's: the hub's map, read back. */
 const KIND_OF = new Map<number, ApiErrorKind>(
   (Object.entries(API_ERROR_STATUS) as [ApiErrorKind, number][]).filter(([kind]) => kind !== 'needs-yes').map(([kind, status]) => [status, kind])
 );
@@ -62,9 +62,11 @@ function requests(options: HttpApiOptions) {
   const base = options.baseUrl.replace(/\/$/, '');
   const send = options.fetch ?? ((url: string, init: RequestInit) => fetch(url, init));
 
-  /** A refusal, as the hub said it. */
+  /** A refusal, as the hub said it — or, from what is not the hub's (signing in, a proxy), as its status says. */
   const refusal = (status: number, body: Body | null): ApiError => {
     if (status === 401 && body?.loginRequired) options.onLoginRequired?.({ setupRequired: Boolean(body.setupRequired) });
+    const said = ApiError.fromWire(body);
+    if (said) return said;
     const kind: ApiErrorKind = body?.needsConfirmation ? 'needs-yes' : status === 401 ? 'forbidden' : (KIND_OF.get(status) ?? (status >= 500 ? 'failed' : 'invalid'));
     const problems = body?.problems ?? [];
     return new ApiError(kind, body?.error ?? `The server answered ${status}`, { problems, ...(body?.needsConfirmation ? { needsConfirmation: body.needsConfirmation } : {}) });

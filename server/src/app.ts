@@ -160,18 +160,16 @@ export function createApp(deps: AppDeps) {
 
 /**
  * What a route that threw answers: JSON, like every other answer here — the
- * app reads `{ error }`, and `problems` and `needsConfirmation` beside it.
- * The home's refusal (`ApiError`) answers with the status its kind maps to;
+ * app reads `{ error }`. The home's refusal (`ApiError`) answers with the
+ * status its kind maps to, and itself in the body (`toWire`): its kind,
+ * `problems` and `needsConfirmation` beside its words;
  * a request that does not hold is refused the same way; anything else is a
  * bug, said in the log and not to the caller.
  */
 export function answerError(err: Error, c: Context): Response {
   if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
   const refusal = err instanceof ZodError ? invalid(err) : err;
-  if (refusal instanceof ApiError) {
-    const said = { error: refusal.message, ...(refusal.problems.length ? { problems: refusal.problems } : {}), ...(refusal.needsConfirmation ? { needsConfirmation: refusal.needsConfirmation } : {}) };
-    return c.json(said, API_ERROR_STATUS[refusal.kind] as ContentfulStatusCode);
-  }
+  if (refusal instanceof ApiError) return c.json(refusal.toWire(), API_ERROR_STATUS[refusal.kind] as ContentfulStatusCode);
   console.error('[server]', err);
   return c.json({ error: 'Internal server error' }, 500);
 }

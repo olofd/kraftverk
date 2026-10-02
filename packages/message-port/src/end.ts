@@ -1,3 +1,5 @@
+import { ApiError } from '@kraftverk/api-contract';
+
 /**
  * One end of a message port: what a `MessagePort`, a `Worker` and a worker's
  * own global scope all are, as far as kraftverk carries anything over one.
@@ -46,6 +48,10 @@ export type Failure = {
 };
 
 export const failureOf = (error: unknown): Failure => {
+  if (error instanceof ApiError) {
+    const wire = error.toWire();
+    return { name: error.name, message: wire.error, kind: wire.kind, ...(wire.problems ? { problems: wire.problems } : {}), ...(wire.needsConfirmation ? { needsConfirmation: wire.needsConfirmation } : {}) };
+  }
   if (!(error instanceof Error)) return { name: 'Error', message: String(error) };
   const own = error as Error & { kind?: unknown; problems?: unknown; needsConfirmation?: unknown };
   return {

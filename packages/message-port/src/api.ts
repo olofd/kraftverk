@@ -1,4 +1,4 @@
-import { ApiError, type ApiErrorKind, type KraftverkApi, type LiveState, type LiveStream, type LiveUpdate, type ViewReport } from '@kraftverk/api-contract';
+import { ApiError, type KraftverkApi, type LiveState, type LiveStream, type LiveUpdate, type ViewReport } from '@kraftverk/api-contract';
 
 import { counter, failureOf, hear, type Failure, type MessageEnd } from './end.ts';
 
@@ -107,9 +107,8 @@ export function serveApi(api: KraftverkApi, end: MessageEnd, via = 'api'): () =>
 
 /** A failure that crossed, thrown again as what it was: a refusal in words, or an error. */
 export function thrownAgain(failure: Failure): Error {
-  if (failure.name === 'ApiError' && failure.kind) {
-    return new ApiError(failure.kind as ApiErrorKind, failure.message, { problems: failure.problems ?? [], ...(failure.needsConfirmation ? { needsConfirmation: failure.needsConfirmation } : {}) });
-  }
+  const refusal = failure.name === 'ApiError' ? ApiError.fromWire({ ...failure, error: failure.message }) : null;
+  if (refusal) return refusal;
   const error = new Error(failure.message);
   error.name = failure.name;
   return error;
