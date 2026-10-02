@@ -1,5 +1,5 @@
-import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { router } from 'expo-router';
 import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
 import {
@@ -10,25 +10,25 @@ import {
   type AutomationView,
   type Rehearsal,
 } from '@kraftverk/api-client';
+import type { AutomationId } from '@kraftverk/api-contract';
 import { describeExpr } from '@kraftverk/automation';
-import { Card, Icon, RowSeparator, SegmentedControl, ToggleRow, haptic, type IconName } from '@kraftverk/ui';
+import { Card, haptic, Icon, RowSeparator, SegmentedControl, ToggleRow, type IconName } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
 import { Screen } from '../../../components/Screen';
+import { useTone } from '../../../components/tone';
 import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../../platform/confirm';
-import type { AutomationId } from '@kraftverk/api-contract';
-
 import { useHome } from '../../../state/HomeProvider';
 import { useShowing } from '../../../state/useShowing';
 import { startsBy } from '../AutomationCard';
 import { AutomationForm } from '../editor/AutomationForm';
-import { clock, useTone } from '../looks';
+import { clock } from '../looks';
 import { RunSteps, StepPlan } from '../Steps';
 import { useReadAgain } from '../useReadAgain';
 import { useRun } from '../useRun';
 import { Empty, Group } from './Group';
-import { isRunEntry, Rehearsed, RightNow, RunDetail, Timeline, type History } from './history';
-import { MODES, modeSays, RECHECK, recheckSays, wantsYes, every } from './modes';
+import { isRunEntry, Rehearsed, RightNow, RunDetail, Timeline, type History } from './History';
+import { every, MODES, modeSays, RECHECK, recheckSays, wantsYes } from './modes';
 
 /**
  * An automation's own page (docs/AUTOMATIONS-UX.md): how it stands and a

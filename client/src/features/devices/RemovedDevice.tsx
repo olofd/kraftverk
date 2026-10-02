@@ -3,10 +3,10 @@ import { router } from 'expo-router';
 import { Button, Input, Text, YStack } from 'tamagui';
 
 import { describeError, type DeviceView } from '@kraftverk/api-client';
-import { Card, SectionLabel, haptic } from '@kraftverk/ui';
+import { Card, haptic, SectionLabel } from '@kraftverk/ui';
 
 import { useDevices } from '../../state/DevicesProvider';
-import { History } from './panels';
+import { History } from './History';
 
 /**
  * A device you removed, kept with its history (docs/DATA-MODEL.md §4).

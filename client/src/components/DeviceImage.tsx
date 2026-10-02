@@ -2,7 +2,7 @@ import { Image } from 'react-native';
 
 import type { PictureRef } from '@kraftverk/api-client';
 
-import { pictureFor } from '../devices/ui';
+import { pictureFor } from '../features/devices/registry';
 
 /**
  * A device type's picture, from its package (`kraftverk.assets.images`), at a

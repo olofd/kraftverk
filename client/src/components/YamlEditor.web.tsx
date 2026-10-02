@@ -11,7 +11,7 @@ import { stateExtensions, updateSchema } from 'codemirror-json-schema';
 import { yamlCompletion, yamlSchemaHover } from 'codemirror-json-schema/yaml';
 import { useTheme, YStack } from 'tamagui';
 
-import { ProblemList, type TextProblem, type YamlEditorProps } from './shared';
+import { ProblemList, type TextProblem, type YamlEditorProps } from './ProblemList';
 
 /**
  * A configuration's YAML, read or written, in the browser (docs/CONFIG.md):

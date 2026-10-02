@@ -1,13 +1,15 @@
-import { router } from 'expo-router';
 import { useState } from 'react';
+import { router } from 'expo-router';
 import { Spinner, Text } from 'tamagui';
 
 import { Card } from '@kraftverk/ui';
 
 import { Screen } from '../../../components/Screen';
 import { useDevices } from '../../../state/DevicesProvider';
-import { AutomationForm, recipeFits, StartFrom, useEditorKit } from './AutomationForm';
+import { AutomationForm, recipeFits } from './AutomationForm';
 import { EMPTY, fromRecipe, type Draft } from './context';
+import { StartFrom } from './StartFrom';
+import { useEditorKit } from './useEditorKit';
 
 /**
  * A new automation (docs/AUTOMATIONS-UX.md): where it starts — from nothing,

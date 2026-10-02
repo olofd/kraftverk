@@ -2,7 +2,7 @@ import { Text, XStack, YStack } from 'tamagui';
 
 import { Icon } from '@kraftverk/ui';
 
-import { useTone } from '../automations/looks';
+import { useTone } from './tone';
 
 /** A problem in a configuration's text: what, and where — its line and column, when it has them. */
 export type TextProblem = { message: string; line: number | null; column: number | null };

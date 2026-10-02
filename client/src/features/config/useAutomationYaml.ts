@@ -6,7 +6,7 @@ import type { PrintContext } from '@kraftverk/automation';
 import type { AutomationId } from '@kraftverk/device-sdk';
 import type { Rule } from '@kraftverk/automation';
 
-import type { TextProblem } from './shared';
+import type { TextProblem } from '../../components/ProblemList';
 import { useHome } from '../../state/HomeProvider';
 
 /** What the form edits: its name, rule, and what fills each role. */

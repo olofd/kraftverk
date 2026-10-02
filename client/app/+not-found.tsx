@@ -17,7 +17,7 @@ export default function NotFoundScreen() {
           This screen doesn&apos;t exist
         </Text>
         <Link href="/" asChild>
-          <Button size="$4">Back to dashboard</Button>
+          <Button size="$4">Back to your devices</Button>
         </Link>
       </YStack>
     </>

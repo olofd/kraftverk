@@ -5,7 +5,7 @@
   The screens and pictures device types ship.
 */
 
-import type { DeviceAssets, DeviceUi } from '../devices/ui';
+import type { DeviceAssets, DeviceUi } from '../features/devices/registry';
 
 import deviceAferiyP280Ui from '@kraftverk/device-aferiy-p280/ui';
 import deviceAtorchS1wUi from '@kraftverk/device-atorch-s1w/ui';

@@ -7,7 +7,7 @@ import type { ConnectionStatus, DeviceView } from '@kraftverk/api-client';
 
 import { DevicePicture } from './DevicePicture';
 import { Screen } from '../../components/Screen';
-import { pictureFor } from '../../devices/ui';
+import { pictureFor } from './registry';
 import { useDevice, useDevices, type Connection } from '../../state/DevicesProvider';
 import { useShowing } from '../../state/useShowing';
 

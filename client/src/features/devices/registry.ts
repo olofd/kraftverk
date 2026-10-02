@@ -4,7 +4,7 @@ import type { ImageSourcePropType } from 'react-native';
 import type { DeviceUi, DeviceView, PartSlotProps, PictureRef } from '@kraftverk/api-client';
 import type { Part } from '@kraftverk/device-sdk';
 
-import { DEVICE_ASSETS, DEVICE_UI } from '../generated/registry';
+import { DEVICE_ASSETS, DEVICE_UI } from '../../generated/registry';
 
 export type { DeviceUi };
 

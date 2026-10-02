@@ -4,15 +4,15 @@ import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
 import { applyPlan, describeError, type ElsewhereView, type HomeElsewhere, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-client';
 import { checkDocument, configJsonSchema, CURRENT_VERSION, readConfig, type Vocabulary } from '@kraftverk/home-file';
-import { Card, RowSeparator, SectionLabel, SegmentedControl, Toggle, haptic, Icon } from '@kraftverk/ui';
+import { Card, haptic, Icon, RowSeparator, SectionLabel, SegmentedControl, Toggle } from '@kraftverk/ui';
 
+import { Picker } from '../../components/Picker';
+import { ProblemList } from '../../components/ProblemList';
+import { useTone, type Tone } from '../../components/tone';
+import { YamlEditor } from '../../components/YamlEditor';
 import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../platform/confirm';
 import { useHome } from '../../state/HomeProvider';
 import { useServers } from '../../state/ServersProvider';
-import { useTone, type Tone } from '../automations/looks';
-import { Picker } from '../automations/editor/fields';
-import { ProblemList } from './shared';
-import { YamlEditor } from './YamlEditor';
 
 type Mode = 'merge' | 'replace';
 

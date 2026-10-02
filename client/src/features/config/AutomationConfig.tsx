@@ -4,12 +4,12 @@ import { Button, Text, XStack, YStack } from 'tamagui';
 import { automationYaml, changeAutomation, describeError, type AutomationView } from '@kraftverk/api-client';
 import { haptic, Icon, RowSeparator } from '@kraftverk/ui';
 
-import { useTone } from '../automations/looks';
+import { useTone } from '../../components/tone';
+import { YamlEditor } from '../../components/YamlEditor';
+import { useHome } from '../../state/HomeProvider';
 import { Group } from '../automations/page/Group';
 import { ExportOne } from './ExportOne';
 import { KeyField } from './KeyField';
-import { YamlEditor } from './YamlEditor';
-import { useHome } from '../../state/HomeProvider';
 
 /**
  * An automation as configuration (docs/CONFIG.md), on its page: the key a

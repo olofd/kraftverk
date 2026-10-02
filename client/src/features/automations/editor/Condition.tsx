@@ -1,12 +1,13 @@
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { MAIN_PART, meetsNeed, capabilitiesOf, type ValueType, type Value } from '@kraftverk/device-sdk';
 import type { CompareOp, Expr } from '@kraftverk/automation';
+import { capabilitiesOf, MAIN_PART, meetsNeed, type Value, type ValueType } from '@kraftverk/device-sdk';
 import { Chips, Icon, IconLabel } from '@kraftverk/ui';
 
-import { useTone } from '../looks';
+import { Picker } from '../../../components/Picker';
+import { useTone } from '../../../components/tone';
 import { pickPart, useEditor, type PartOption } from './context';
-import { Label, Picker, TimeField, ValueField } from './fields';
+import { Label, TimeField, ValueField } from './fields';
 
 /*
   A condition, built without showing an expression (docs/AUTOMATION-EDITOR.md):
@@ -36,6 +37,7 @@ const NUMBER_OPS: { value: CompareOp; label: string }[] = [
   { value: 'eq', label: 'is' },
   { value: 'ne', label: 'is not' },
 ];
+
 const EQUAL_OPS: { value: CompareOp; label: string }[] = [
   { value: 'eq', label: 'is' },
   { value: 'ne', label: 'is not' },

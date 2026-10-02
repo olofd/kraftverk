@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
 import { setConfirmHost, type ConfirmRequest } from '../platform/confirm';
-import { useDialogFocus } from '../lib/useDialogFocus';
+import { useDialogFocus } from './useDialogFocus';
 
 /**
  * Where the app asks a person to confirm something, on the web: drawn by the

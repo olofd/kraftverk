@@ -191,7 +191,7 @@ installed.body = [
 ];
 
 screens.body = [
-  "import type { DeviceAssets, DeviceUi } from '../devices/ui';",
+  "import type { DeviceAssets, DeviceUi } from '../features/devices/registry';",
   '',
   ...screens.imports,
   '',

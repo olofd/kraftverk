@@ -4,8 +4,8 @@ import { Button, Text, XStack, YStack } from 'tamagui';
 import type { AutomationView } from '@kraftverk/api-client';
 import { haptic, Icon } from '@kraftverk/ui';
 
+import { useTone } from '../../components/tone';
 import { AutomationCard } from './AutomationCard';
-import { useTone } from './looks';
 
 /**
  * A list of automations, the same wherever it is (docs/AUTOMATIONS-UX.md): a

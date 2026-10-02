@@ -5,7 +5,7 @@ import { Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 import { describeError } from '@kraftverk/api-client';
 import type { SavedDeviceId } from '@kraftverk/device-sdk';
 
-import { useHome } from '../state/HomeProvider';
+import { useHome } from '../../state/HomeProvider';
 import type { AttributeSpec, SeriesPoint } from '@kraftverk/api-client';
 import { quantityOf } from '@kraftverk/device-sdk';
 import {

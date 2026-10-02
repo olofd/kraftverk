@@ -5,11 +5,12 @@ import { EVERY_MINUTES, type Expr, type Trigger } from '@kraftverk/automation';
 import { MAIN_PART } from '@kraftverk/device-sdk';
 import { Chips, haptic, Icon, IconLabel } from '@kraftverk/ui';
 
+import { Picker } from '../../../components/Picker';
 import { Pressable } from '../../../components/Pressable';
-import { useTone } from '../looks';
+import { useTone } from '../../../components/tone';
 import { blankCondition, ConditionField } from './Condition';
 import { pickPart, useEditor } from './context';
-import { DaysField, Label, NumberField, Picker, TimeField } from './fields';
+import { DaysField, Label, NumberField, TimeField } from './fields';
 
 /*
   When an automation runs on its own (docs/AUTOMATION-EDITOR.md): at a time

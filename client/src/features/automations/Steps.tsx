@@ -4,7 +4,8 @@ import { Spinner, Text, XStack, YStack } from 'tamagui';
 import type { AutomationRun, RunStep, StepLine } from '@kraftverk/api-client';
 import { Icon, IconLabel } from '@kraftverk/ui';
 
-import { KIND, STEP, stopwatch, took, useNow, useTone } from './looks';
+import { useTone } from '../../components/tone';
+import { KIND, STEP, stopwatch, took, useNow } from './looks';
 
 /**
  * A sequence, the two ways it is shown (docs/SEQUENCES.md): what it will do —

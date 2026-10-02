@@ -1,0 +1,114 @@
+import { useCallback, useEffect, useState } from 'react';
+import { Button, Text, useTheme, YStack } from 'tamagui';
+
+import { describeError, type AccountDetail } from '@kraftverk/api-client';
+import { Card, haptic, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
+
+import { Screen } from '../../components/Screen';
+import { useAuth } from '../../state/AuthProvider';
+import { useServer } from '../../state/ServersProvider';
+import { AccountRow } from './AccountRow';
+import { AddAccount } from './AddAccount';
+import { ChangeOwnPassword } from './ChangeOwnPassword';
+
+/**
+ * Who may use this server.
+ *
+ * Reached only signed in: the sign-in gate stands in front of the whole app,
+ * so the cases below the first two are the signed-in one. Every account is an
+ * administrator for now.
+ */
+export function Accounts() {
+  const { applies, state } = useAuth();
+
+  return (
+    <Screen back="App settings" backTo="/app-settings" title="Accounts" subtitle="Who may use this server">
+      {!applies ? (
+        <Card>
+          <Text fontSize={13} color="$muted" lineHeight={19}>
+            Accounts belong to a server. With none, this app keeps your home itself, and there is nobody to
+            log in to.
+          </Text>
+        </Card>
+      ) : !state?.user ? (
+        <Card>
+          <Text fontSize={13} color="$muted" lineHeight={19}>
+            This server does not have accounts. It may be older than them — update it to use sign-in.
+          </Text>
+        </Card>
+      ) : (
+        <SignedIn />
+      )}
+    </Screen>
+  );
+}
+
+function SignedIn() {
+  const server = useServer();
+  const { state, logOut } = useAuth();
+  const theme = useTheme();
+  const [accounts, setAccounts] = useState<AccountDetail[]>([]);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setAccounts(await server.accounts.list());
+      setProblem(null);
+    } catch (error) {
+      setProblem(describeError(error));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (!state?.user) return null;
+  const me = state.user;
+
+  return (
+    <>
+      <YStack gap="$2">
+        <SectionLabel>You</SectionLabel>
+        <Card inset>
+          <Row
+            title={me.username}
+            subtitle="Signed in on this device"
+            accessory={
+              <Button
+                size="$2"
+                icon={<Icon name="log-out" size={12} color={theme.color?.val} />}
+                onPress={() => {
+                  haptic();
+                  void logOut();
+                }}
+              >
+                Sign out
+              </Button>
+            }
+          />
+        </Card>
+        <ChangeOwnPassword />
+      </YStack>
+
+
+      <YStack gap="$2">
+        <SectionLabel>Accounts</SectionLabel>
+        <Card inset>
+          {accounts.map((account, index) => (
+            <YStack key={account.id}>
+              {index > 0 ? <RowSeparator /> : null}
+              <AccountRow account={account} isMe={account.id === me.id} onlyOne={accounts.length === 1} onChanged={load} />
+            </YStack>
+          ))}
+        </Card>
+        {problem ? (
+          <Text fontSize={13} color="$danger" lineHeight={18} paddingHorizontal="$1" role="alert">
+            {problem}
+          </Text>
+        ) : null}
+        <AddAccount onAdded={load} />
+      </YStack>
+    </>
+  );
+}

@@ -1,11 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Button, Spinner, Text, YStack } from 'tamagui';
 
-import type { KraftverkApi } from '@kraftverk/api-contract';
 import { httpApi } from '@kraftverk/api-client/http';
-import { Card, Row, haptic } from '@kraftverk/ui';
+import type { KraftverkApi } from '@kraftverk/api-contract';
 
-import { Pressable } from '../components/Pressable';
+import { NotOpen, Waiting } from '../components/HomeOpening';
 import { HomeOpenElsewhere, type OpenHome, type OpenOptions } from '../platform/home/home';
 import { openHome } from '../platform/home/open';
 import { keepNodeId, thisNode } from '../platform/node';
@@ -48,7 +46,7 @@ type HomeValue = {
 
 const HomeContext = createContext<HomeValue | null>(null);
 
-type Opening =
+export type Opening =
   | { status: 'opening' }
   | { status: 'open'; home: OpenHome }
   | { status: 'elsewhere' }
@@ -168,61 +166,6 @@ function OwnHome({ children }: { children: ReactNode }) {
 
   if (!value) return <NotOpen state={state} onTakeOver={() => open(true)} onRetry={() => open(false)} />;
   return <HomeContext.Provider value={value}>{children}</HomeContext.Provider>;
-}
-
-function Waiting() {
-  return (
-    <YStack flex={1} alignItems="center" justifyContent="center" backgroundColor="$background">
-      <Spinner color="$accent" />
-    </YStack>
-  );
-}
-
-/** What stands in for the app while its own home is not open here: opening, held by another tab, or why it cannot be. */
-function NotOpen({ state, onTakeOver, onRetry }: { state: Opening; onTakeOver: () => void; onRetry: () => void }) {
-  const servers = useServers();
-  if (state.status === 'opening' || state.status === 'open') return <Waiting />;
-  const [title, detail, action] =
-    state.status === 'elsewhere'
-      ? (['Open in another tab', 'This browser keeps its home in one tab at a time, and another tab has it open now.', 'Use it here'] as const)
-      : state.status === 'handed-over'
-        ? (['Open in another tab now', 'Another tab of this browser asked for this home, and has it now.', 'Use it here again'] as const)
-        : (['This home could not open', state.message, 'Try again'] as const);
-  return (
-    <YStack flex={1} backgroundColor="$background" alignItems="center" justifyContent="center" padding="$4">
-      <YStack width="100%" maxWidth={420} gap="$4">
-        <Card gap="$3">
-          <Text role="heading" fontSize={18} fontWeight="700" color="$color">
-            {title}
-          </Text>
-          <Text fontSize={13} color="$muted" lineHeight={19}>
-            {detail}
-          </Text>
-          <Button
-            size="$3"
-            backgroundColor="$accent"
-            color="$background"
-            onPress={() => {
-              haptic();
-              if (state.status === 'failed') onRetry();
-              else onTakeOver();
-            }}
-          >
-            {action}
-          </Button>
-        </Card>
-        {servers.all.length ? (
-          <Card inset>
-            {servers.all.map((server) => (
-              <Pressable key={server.id} onPress={() => servers.use(server.id)}>
-                <Row title={`Use ${server.name}`} subtitle={server.url} />
-              </Pressable>
-            ))}
-          </Card>
-        ) : null}
-      </YStack>
-    </YStack>
-  );
 }
 
 /** The home the app shows, and what goes with it. */

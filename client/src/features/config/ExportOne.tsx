@@ -3,15 +3,15 @@ import { Platform } from 'react-native';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
 import { describeError, type ConfigExported } from '@kraftverk/api-client';
-import { SegmentedControl, haptic, Icon } from '@kraftverk/ui';
 import { fileNameOf } from '@kraftverk/device-sdk';
+import { haptic, Icon, SegmentedControl } from '@kraftverk/ui';
 
+import { secretWords } from '../../components/ProblemList';
+import { useTone } from '../../components/tone';
+import { YamlEditor } from '../../components/YamlEditor';
 import { confirmAction } from '../../platform/confirm';
-import { useHome } from '../../state/HomeProvider';
 import { saveText } from '../../platform/download';
-import { useTone } from '../automations/looks';
-import { YamlEditor } from './YamlEditor';
-import { secretWords } from './shared';
+import { useHome } from '../../state/HomeProvider';
 
 /** Passphrases shorter than this are refused by the server: an export travels. */
 const PASSPHRASE_MIN = 12;

@@ -3,19 +3,20 @@ import { Platform } from 'react-native';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
 import { describeError, type AutomationView, type ConfigExported, type DeviceView } from '@kraftverk/api-client';
-import { Card, RowSeparator, SectionLabel, SegmentedControl, ToggleRow, haptic, Icon } from '@kraftverk/ui';
 import { fileNameOf } from '@kraftverk/device-sdk';
+import { Card, haptic, Icon, RowSeparator, SectionLabel, SegmentedControl, ToggleRow } from '@kraftverk/ui';
 
+import { useTone } from '../../components/tone';
+import { YamlEditor } from '../../components/YamlEditor';
 import { confirmAction } from '../../platform/confirm';
-import { useHome } from '../../state/HomeProvider';
 import { saveText } from '../../platform/download';
-import { useTone } from '../automations/looks';
-import { YamlEditor } from './YamlEditor';
+import { useHome } from '../../state/HomeProvider';
 
 /** Passphrases shorter than this are refused by the server: an export travels. */
 const PASSPHRASE_MIN = 12;
 
 type Secrets = 'none' | 'sealed' | 'plain';
+
 const SECRETS: readonly { value: Secrets; label: string }[] = [
   { value: 'none', label: 'Leave out' },
   { value: 'sealed', label: 'Sealed' },

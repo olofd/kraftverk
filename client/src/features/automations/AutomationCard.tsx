@@ -5,7 +5,7 @@ import type { AutomationView } from '@kraftverk/api-client';
 import { Card, Icon, type IconName } from '@kraftverk/ui';
 
 import { Pressable } from '../../components/Pressable';
-import { useTone } from './looks';
+import { useTone } from '../../components/tone';
 import { useRun } from './useRun';
 
 /**

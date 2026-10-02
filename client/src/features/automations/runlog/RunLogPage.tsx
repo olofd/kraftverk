@@ -3,20 +3,20 @@ import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
 import { describeError, type AutomationView, type RunLog } from '@kraftverk/api-client';
 import type { AutomationId } from '@kraftverk/api-contract';
+import { changed, marksOf, runLogCsv, said, seriesOf, sinceStart, windowOf, type Mark } from '@kraftverk/automation-engine';
+import { fileNameOf } from '@kraftverk/device-sdk';
 import { Card, Chips, Icon, ToggleRow } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
 import { Screen } from '../../../components/Screen';
+import { useTone } from '../../../components/tone';
 import { saveText } from '../../../platform/download';
-import { dayOf, lasted, OUTCOME, useTone } from '../looks';
-import { Empty, Group } from '../page/Group';
-import { Mark as OutcomeMark } from '../page/history';
-import { useReadAgain } from '../useReadAgain';
-import { awayOf, RunChart, Ruler } from './RunChart';
-import { changed, marksOf, runLogCsv, said, seriesOf, sinceStart, windowOf, type Mark } from '@kraftverk/automation-engine';
-import { fileNameOf } from '@kraftverk/device-sdk';
-
 import { useHome } from '../../../state/HomeProvider';
+import { dayOf, lasted, OUTCOME } from '../looks';
+import { Empty, Group } from '../page/Group';
+import { Mark as OutcomeMark } from '../page/History';
+import { useReadAgain } from '../useReadAgain';
+import { awayOf, Ruler, RunChart } from './RunChart';
 
 /*
   A run's log, a page of its own (docs/SEQUENCES.md): how it came out; every
@@ -28,8 +28,10 @@ import { useHome } from '../../../state/HomeProvider';
 
 /** How many readings are listed before "Show all". */
 const LISTED = 200;
+
 /** A reading heard this much after it was taken is said to have come late. */
 const LATE_MS = 2_000;
+
 /** While it runs, its log is read again this often. */
 const RUNNING_EVERY_MS = 2_000;
 

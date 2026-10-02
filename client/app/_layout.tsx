@@ -3,16 +3,16 @@ import { useColorScheme } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TamaguiProvider, Theme } from 'tamagui';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import config, { BACKGROUNDS } from '../tamagui.config';
 import { ConfirmHost } from '../src/components/ConfirmHost';
-import { AuthGate } from '../src/features/auth/SignIn';
+import { AuthGate } from '../src/features/auth/AuthGate';
 import { AuthProvider } from '../src/state/AuthProvider';
 import { DevicesProvider } from '../src/state/DevicesProvider';
 import { HomeProvider } from '../src/state/HomeProvider';
 import { ServersProvider } from '../src/state/ServersProvider';
+import config, { BACKGROUNDS } from '../tamagui.config';
 
 export default function RootLayout() {
   // useColorScheme can report values outside light/dark; anything else gets dark.

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { capabilitiesOf, capabilityIn, isScalarType, MAIN_PART, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
 import {
   automationRole,
   blankStep,
@@ -25,14 +24,17 @@ import {
   type StepKind,
   type Write,
 } from '@kraftverk/automation';
+import { capabilitiesOf, capabilityIn, isScalarType, MAIN_PART, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
 import { Chips, haptic, Icon, IconLabel } from '@kraftverk/ui';
 
+import { Picker } from '../../../components/Picker';
 import { Pressable } from '../../../components/Pressable';
+import { useTone } from '../../../components/tone';
 import { confirmAction } from '../../../platform/confirm';
-import { KIND as KIND_ICON, useTone } from '../looks';
+import { KIND as KIND_ICON } from '../looks';
 import { ConditionField } from './Condition';
 import { pickPart, useEditor } from './context';
-import { DurationField, Label, NumberField, Picker, ValueField } from './fields';
+import { DurationField, Label, NumberField, ValueField } from './fields';
 
 /** What each kind of step is called, and what it does: the editor's words for them. */
 const KINDS: Record<StepKind, { label: string; says: string }> = {

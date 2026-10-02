@@ -1,61 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Spinner, Text, XStack, YStack } from 'tamagui';
 
-import {
-  changeAutomation,
-  describeError,
-  type AutomationDraftView,
-  type AutomationKit,
-  type AutomationSettings,
-  type AutomationView,
-  type RecipeView,
-  type RoleBinding,
-} from '@kraftverk/api-client';
-import { capabilitiesOf, meetsNeed, partsOf } from '@kraftverk/device-sdk';
+import { changeAutomation, describeError, type AutomationDraftView, type AutomationSettings, type AutomationView, type RecipeView, type RoleBinding } from '@kraftverk/api-client';
 import { isAutomationRole, OTHERWISE, pruned, rolesOf, sameParts, THEN } from '@kraftverk/automation';
-import { Card, haptic, Icon, Row, RowSeparator, SegmentedControl } from '@kraftverk/ui';
+import { capabilitiesOf, meetsNeed, partsOf } from '@kraftverk/device-sdk';
+import { Card, haptic, Icon, SegmentedControl } from '@kraftverk/ui';
 
-import { Pressable } from '../../../components/Pressable';
+import { Picker } from '../../../components/Picker';
 import { Screen } from '../../../components/Screen';
+import { useTone } from '../../../components/tone';
+import { YamlEditor } from '../../../components/YamlEditor';
 import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../../platform/confirm';
 import { useDevices } from '../../../state/DevicesProvider';
 import { useHome } from '../../../state/HomeProvider';
 import { useAutomationYaml } from '../../config/useAutomationYaml';
-import { YamlEditor } from '../../config/YamlEditor';
-import { useTone } from '../looks';
-import { Empty, Group } from '../page/Group';
+import { Group } from '../page/Group';
 import { BlockList } from './Blocks';
 import { EditorProvider, useEditor, type Draft } from './context';
-import { Picker } from './fields';
 import { OnlyIf, Triggers } from './Triggers';
-
-/*
-  An automation being changed, or made (docs/AUTOMATIONS-UX.md): the same
-  groups as its page — what it uses, when, only if, what it does, what it does
-  if a step fails — each editable in its box, with what is wrong said in the
-  group it is about, and Cancel and Save kept below the page.
-*/
-
-/** What the editor needs from the server: the recipes and functions it offers, and the automations a step may start. */
-export function useEditorKit() {
-  const { api } = useHome();
-  const [kit, setKit] = useState<AutomationKit | null>(null);
-  const [automations, setAutomations] = useState<AutomationView[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    Promise.all([api.automations.kit(), api.automations.list()])
-      .then(([nextKit, all]) => live && (setKit(nextKit), setAutomations(all)))
-      .catch((err: unknown) => live && setError(describeError(err) || 'It could not be read'));
-    return () => {
-      live = false;
-    };
-  }, [api]);
-  return { kit, automations, error };
-}
+import { useEditorKit } from './useEditorKit';
 
 /** How it is written: block by block, or as its configuration's YAML. */
 type View = 'form' | 'yaml';
+
 const VIEWS: readonly { value: View; label: string }[] = [
   { value: 'form', label: 'Form' },
   { value: 'yaml', label: 'YAML' },
@@ -63,6 +30,7 @@ const VIEWS: readonly { value: View; label: string }[] = [
 
 /** Where on the page a problem belongs, by the place the server gives it: "Trigger 1: …", "Step 2: …". */
 type Place = 'uses' | 'when' | 'onlyIf' | 'does' | 'fails' | 'other';
+
 const placeOf = (problem: string, labels: ReadonlySet<string>): Place =>
   /^Trigger \d+: /.test(problem)
     ? 'when'
@@ -471,38 +439,6 @@ function Uses({ problems }: { problems: readonly string[] }) {
           />
         </YStack>
       ))}
-    </Group>
-  );
-}
-
-/**
- * Where a new one starts: from nothing, or a recipe copied — its steps then
- * the owner's to change. Started from a device, the recipes it can take part
- * in come first.
- */
-export function StartFrom({ recipes, fits, onChoose, onYaml }: { recipes: readonly RecipeView[]; fits: (recipe: RecipeView) => boolean; onChoose: (recipe: RecipeView | null) => void; onYaml: () => void }) {
-  const tone = useTone();
-  const ordered = [...recipes].sort((a, b) => Number(fits(b)) - Number(fits(a)));
-  return (
-    <Group icon="plus-circle" title="Start from">
-      <Card inset backgroundColor="$background">
-        <Pressable onPress={() => (haptic(), onChoose(null))} label="Start from nothing">
-          <Row title="Nothing" subtitle="Build it block by block: what starts it, and each step it takes." accessory={<Icon name="plus" size={18} color={tone('$accent')} />} />
-        </Pressable>
-        <RowSeparator />
-        <Pressable onPress={() => (haptic(), onYaml())} label="Write it as YAML">
-          <Row title="As YAML" subtitle="Write it in a configuration’s words — or paste one exported from here or another server." accessory={<Icon name="code" size={18} color={tone('$accent')} />} />
-        </Pressable>
-        {ordered.map((recipe) => (
-          <YStack key={recipe.id}>
-            <RowSeparator />
-            <Pressable onPress={() => (haptic(), onChoose(recipe))} label={`Start from ${recipe.label}`}>
-              <Row title={recipe.label} subtitle={recipe.from ? `${recipe.description} From ${recipe.from.name}.` : recipe.description} />
-            </Pressable>
-          </YStack>
-        ))}
-      </Card>
-      <Empty>A recipe is a starting point: once copied, every step of it is yours to change.</Empty>
     </Group>
   );
 }

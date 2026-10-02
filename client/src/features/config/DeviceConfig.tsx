@@ -4,12 +4,12 @@ import { Button, Text, XStack, YStack } from 'tamagui';
 import { describeError, deviceYaml, type DeviceView } from '@kraftverk/api-client';
 import { Card, haptic, Icon, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
+import { useTone } from '../../components/tone';
+import { YamlEditor } from '../../components/YamlEditor';
 import { useDevices } from '../../state/DevicesProvider';
 import { useHome } from '../../state/HomeProvider';
-import { useTone } from '../automations/looks';
 import { ExportOne } from './ExportOne';
 import { KeyField } from './KeyField';
-import { YamlEditor } from './YamlEditor';
 
 /**
  * A device as configuration (docs/CONFIG.md), under its settings: the key a

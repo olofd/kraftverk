@@ -1,6 +1,6 @@
 import { TextArea, YStack } from 'tamagui';
 
-import { ProblemList, type YamlEditorProps } from './shared';
+import { ProblemList, type YamlEditorProps } from './ProblemList';
 
 /**
  * A configuration's YAML, read or written (docs/CONFIG.md) — on a phone's

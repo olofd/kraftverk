@@ -6,8 +6,8 @@ import type { DeviceView, PictureRef } from '@kraftverk/api-client';
 import { Icon, haptic } from '@kraftverk/ui';
 
 import { DeviceImage } from '../../components/DeviceImage';
-import { useDialogFocus } from '../../lib/useDialogFocus';
-import { picturesOf } from '../../devices/ui';
+import { useDialogFocus } from '../../components/useDialogFocus';
+import { picturesOf } from './registry';
 import { useDevices } from '../../state/DevicesProvider';
 
 const SIZE = 104;

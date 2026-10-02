@@ -6,7 +6,8 @@ import type { AuditEntry, AutomationMode, AutomationRun, AutomationView, Conditi
 import { Icon, IconLabel } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
-import { clock, dayOf, lasted, OUTCOME, useTone, type Look } from '../looks';
+import { useTone } from '../../../components/tone';
+import { clock, dayOf, lasted, OUTCOME, type Look } from '../looks';
 import { RunSteps } from '../Steps';
 import { BADGE, CHANGE, every } from './modes';
 
