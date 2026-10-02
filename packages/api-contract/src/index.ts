@@ -186,6 +186,13 @@ export type DeviceView = {
   tools: ToolView[];
   readings: Reading[];
   health: ConnectionHealth;
+  /**
+   * Whether the node holding it refuses every write to hardware now — its
+   * own switch, off until someone says — and so whether a screen draws its
+   * controls as read only. Never for a simulated one, which reaches no
+   * hardware.
+   */
+  readOnly: boolean;
   /** Which picture it shows: its owner's pick, else its type's first (`type:0`). */
   picture: PictureRef;
 };

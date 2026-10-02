@@ -347,6 +347,7 @@ test('this app holds its way only while nothing above it reaches the device, and
       tools: [],
       readings: [],
     health: { status: 'connected', detail: 'Connected', lastReadingAt: null, node: MACHINE_NODE.id, transport: 'bus' },
+    readOnly: false,
     picture: 'type:0',
   });
 

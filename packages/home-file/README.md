@@ -18,7 +18,7 @@ read and edit (docs/CONFIG.md).
   writes it (`automationEntryFrom`, `deviceEntryFrom`) — the same functions
   the master's export and the app's YAML of one use.
 - **Does not:** touch a database or a device, or seal a secret with a
-  passphrase — the place's cipher, asked for by the hub as a port. Planning
+  passphrase — the hub's (`passphraseSealing`), asked for as a port. Planning
   what a document would change, applying it, and keeping a snapshot of a
   home are the hub's (`Configuration`), the snapshot's file the server's; the rule language it writes automations in is
   `@kraftverk/automation`'s.

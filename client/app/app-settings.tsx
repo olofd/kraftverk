@@ -22,8 +22,8 @@ import { useServer, useServers } from '../src/state/ServersProvider';
  * canvas.
  */
 export default function AppSettingsScreen() {
-  const { mode, version, removed } = useDevices();
-  const { writesAllowed, allowWrites } = useHome();
+  const { version, removed } = useDevices();
+  const { writesAllowed, allowWrites, role } = useHome();
   const { active } = useServers();
   const auth = useAuth();
   const theme = useTheme();
@@ -34,7 +34,7 @@ export default function AppSettingsScreen() {
       <YStack gap="$2">
         <SectionLabel>Infrastructure</SectionLabel>
         <Card inset>
-          {mode === 'server' ? (
+          {active ? (
             <>
               <Pressable onPress={() => router.push('/accounts')}>
                 <Row
@@ -49,7 +49,7 @@ export default function AppSettingsScreen() {
           <Pressable onPress={() => router.push('/connectivity')}>
             <Row
               title="Connectivity"
-              subtitle={mode === 'server' ? 'Your kraftverk nodes — your server and this app — what each reaches devices over, and their diagnostics' : 'This kraftverk node, and what it reaches devices over'}
+              subtitle={role === 'follower' ? 'Your kraftverk nodes — your server and this app — what each reaches devices over, and their diagnostics' : 'This kraftverk node, and what it reaches devices over'}
               accessory={chevron}
             />
           </Pressable>
@@ -59,9 +59,9 @@ export default function AppSettingsScreen() {
           </Pressable>
           <RowSeparator />
           <Pressable onPress={() => router.push('/configuration')}>
-            <Row title="Configuration" subtitle={mode === 'server' ? 'Your home as one file: export it, import one, and the copy kept beside the server' : 'Your home as one file: export it, and import one'} accessory={chevron} />
+            <Row title="Configuration" subtitle={active ? 'Your home as one file: export it, import one, and the copy kept beside the server' : 'Your home as one file: export it, and import one'} accessory={chevron} />
           </Pressable>
-          {mode === 'server' ? (
+          {active ? (
             <>
               <RowSeparator />
               <Pressable onPress={() => router.push('/server-log')}>
@@ -99,15 +99,15 @@ export default function AppSettingsScreen() {
         <SectionLabel>This install</SectionLabel>
         <Card inset>
           <Row
-            title="Mode"
-            subtitle={mode === 'server' ? 'A server keeps your devices, their history and their automations' : 'Local — this app keeps its own devices, their history and their automations, while it is open'}
+            title="Where your home is kept"
+            subtitle={role === 'follower' ? 'On your server: always on, it keeps your devices, their history and their automations, and this app follows it' : 'In this app: it keeps your devices, their history and their automations — while it is open'}
             accessory={
               <Text fontSize={13} color="$muted">
-                {mode === 'server' ? 'Server' : 'Local'}
+                {role === 'follower' ? 'Your server' : 'This app'}
               </Text>
             }
           />
-          {mode === 'server' ? (
+          {active ? (
             <>
               <RowSeparator />
               <Row
@@ -124,7 +124,7 @@ export default function AppSettingsScreen() {
         </Card>
       </YStack>
 
-      {mode === 'server' ? <ResetEverything /> : null}
+      {active ? <ResetEverything /> : null}
     </Screen>
   );
 }
@@ -223,14 +223,14 @@ function HomePolicy() {
 }
 
 /**
- * The kraftverk servers this app knows about.
+ * The kraftverk servers this app knows about, and the one it follows.
  *
- * The app works with no server: in local mode it keeps its own devices.
- * A server is what adds the things only an always-on process can do — history,
- * background sampling, and eventually automations — so it is something you add
- * by address and can forget again, rather than a fact compiled into the build.
+ * The app works with no server: its own node keeps its home. A server is
+ * what adds what only an always-on node can do — history and automations
+ * while the app is closed — so it is something you add by address and can
+ * forget again, rather than a fact compiled into the build.
  *
- * "Local only" is a first-class choice here, not the failure state it looked
+ * "No server" is a first-class choice here, not the failure state it looked
  * like when the app assumed a server and shouted when one was missing.
  */
 function Servers() {
@@ -279,8 +279,8 @@ function Servers() {
           }}
         >
           <Row
-            title="Local only"
-            subtitle="This app keeps its own devices, their history and their automations, and holds every connection. Nothing runs while the app is closed."
+            title="No server"
+            subtitle="This app keeps your home: its devices, their history and their automations, and every connection. Nothing runs while the app is closed."
             accessory={
               servers.active ? null : <Icon name="check" size={16} color={theme.accent?.val} />
             }

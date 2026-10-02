@@ -53,7 +53,7 @@ beforeAll(() => {
     allowRawFrames: false,
     nodeName: (id) => nodes.get(id)?.name ?? null,
   });
-  registry = new DeviceRegistry({ catalog, types, sessions, connections, links, nodes, transports, remote: new RemoteReadings(db), self: MACHINE_NODE.id, master: () => MACHINE_NODE.id });
+  registry = new DeviceRegistry({ catalog, types, sessions, connections, links, nodes, transports, remote: new RemoteReadings(db), self: MACHINE_NODE.id, master: () => MACHINE_NODE.id, readOnly: () => false });
 });
 
 afterAll(async () => {

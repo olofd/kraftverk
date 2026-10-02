@@ -39,8 +39,8 @@ const productList = (installed: readonly { meta: { name: string } }[]) => {
  * home can see that you have not added yet.
  */
 export default function DevicesScreen() {
-  const { devices, removed, mode, loading, error, heard } = useDevices();
-  const { api } = useHome();
+  const { devices, removed, loading, error, heard } = useDevices();
+  const { api, role } = useHome();
   const theme = useTheme();
   // What the home can add: the installed types, as it lists them.
   const [installed, setInstalled] = useState<readonly DeviceTypeListing[]>([]);
@@ -108,7 +108,7 @@ export default function DevicesScreen() {
               You have not added anything yet
             </Text>
             <Text fontSize={13} color="$muted" lineHeight={19}>
-              {mode === 'local'
+              {role === 'master'
                 ? `This app keeps its own devices, their history and their automations, and reaches them itself — while it is open. Add a server in App settings for what runs while the app is closed. It can add ${productList(installed)}.`
                 : `Add your first device to watch it, set it up and let automations use it. This install can add ${productList(installed)}.`}
             </Text>
@@ -178,7 +178,7 @@ export default function DevicesScreen() {
           <Pressable onPress={() => router.push('/app-settings')}>
             <Row
               title="App settings"
-              subtitle={mode === 'local' ? 'Servers, and what this app may do' : 'Accounts, connectivity, servers and this install'}
+              subtitle={role === 'master' ? 'Servers, and what this app may do' : 'Accounts, connectivity, servers and this install'}
               accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />}
             />
           </Pressable>

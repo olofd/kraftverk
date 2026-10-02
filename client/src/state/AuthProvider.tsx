@@ -8,7 +8,7 @@ import { useServers } from './ServersProvider';
 /**
  * Who this app is to the server it is pointed at.
  *
- * Only meaningful with a server: local mode holds its own Bluetooth links and
+ * Only meaningful with a server: with none, this app keeps its own home and
  * has nobody to log in to. The session itself is an httpOnly cookie the server
  * sets — the app never touches it, only asks the server what it thinks.
  */
@@ -44,7 +44,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const servers = useServers();
-  const applies = servers.mode === 'server' && Boolean(servers.active);
+  const applies = Boolean(servers.active);
   const serverUrl = servers.active?.url ?? null;
   const { server, onLoginRequired } = servers;
 

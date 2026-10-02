@@ -417,6 +417,8 @@ export class Follower {
       readings: session?.readings() ?? device.readings,
       health,
       tools: session ? toolsOf(this.installed.types.get(device.typeId)?.tools, session).map(({ name, spec }) => ({ name, ...spec })) : device.tools,
+      // Held here: whether writes are refused is this node's own switch.
+      readOnly: this.readOnly() && !this.sessions.simulated(device.id),
       // What this node holds, it knows first: whether its own way reaches the device.
       connections: withInUse(
         connections.map((connection) => (connection.id === inUse?.id ? { ...connection, reachable: health.status === 'connected' } : connection)),

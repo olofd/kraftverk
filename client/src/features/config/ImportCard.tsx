@@ -203,8 +203,6 @@ export function ImportCard({
  */
 function PlanView({ plan, onAgain, onApplied }: { plan: ImportPlan; onAgain: () => void; onApplied: (applied: ImportApplied) => void }) {
   const { api } = useHome();
-  // The copy a restore was made from is a server's: only offered with one.
-  const { server } = useServers();
   const tone = useTone();
   const doing = (items: ImportItem[]) => items.filter((item) => item.action !== 'same');
   const [devices, setDevices] = useState<ReadonlySet<string>>(new Set(doing(plan.devices).map((item) => item.key)));

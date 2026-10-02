@@ -244,7 +244,7 @@ export class Hub {
     this.plans = plans({ db, catalog, sessions, library: this.library, engine: this.engine, automations });
 
     this.remote = new RemoteReadings(db);
-    this.registry = new DeviceRegistry({ catalog, types, sessions, connections, links, nodes, transports, remote: this.remote, self: self.id, master: () => this.home.get()!.masterId });
+    this.registry = new DeviceRegistry({ catalog, types, sessions, connections, links, nodes, transports, remote: this.remote, self: self.id, master: () => this.home.get()!.masterId, readOnly: options.readOnly });
     this.setup = new SetupService({ db, record, types, protocols, transports, catalog, connections, links, sessions, http: options.http, self: self.id, traits: (id) => nodes.get(id) });
     this.nearby = new Nearby({ types, protocols, transports, connections });
     this.sampler = new Sampler(db, this.registry);

@@ -70,12 +70,12 @@ export function RunLogPage({ id, runId }: { id: string; runId: string }) {
   }
   return (
     <Screen back={back} backTo={`/automation/${id}`} title="Run log" subtitle={`${dayOf(log.run.at)} ${new Date(log.run.at).toLocaleTimeString()}`}>
-      <Log log={log} name={automation?.name ?? 'run'} automationId={id} />
+      <Log log={log} name={automation?.name ?? 'run'} />
     </Screen>
   );
 }
 
-function Log({ log, name, automationId }: { log: RunLog; name: string; automationId: string }) {
+function Log({ log, name }: { log: RunLog; name: string }) {
   const window = windowOf(log);
   const marks = useMemo(() => marksOf(log.run), [log.run]);
   const all = useMemo(() => seriesOf(log, window), [log, window.from, window.to]);
@@ -87,7 +87,7 @@ function Log({ log, name, automationId }: { log: RunLog; name: string; automatio
   const devices = log.devices.filter((each) => device === 'all' || each.id === device);
   return (
     <YStack gap="$4">
-      <Outcome log={log} name={name} automationId={automationId} />
+      <Outcome log={log} name={name} />
       <Steps log={log} marks={marks} window={window} onCursor={setCursor} />
 
       <Group icon="activity" title="Values" summary={`${log.keys.length}`}>
@@ -127,7 +127,7 @@ function Log({ log, name, automationId }: { log: RunLog; name: string; automatio
 }
 
 /** How it came out, when, and the whole log to take away. */
-function Outcome({ log, name, automationId }: { log: RunLog; name: string; automationId: string }) {
+function Outcome({ log, name }: { log: RunLog; name: string }) {
   const [saving, setSaving] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const look = OUTCOME[log.run.outcome];

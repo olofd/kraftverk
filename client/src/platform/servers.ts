@@ -163,9 +163,9 @@ export function readActiveServer(): SavedServer | null {
 /**
  * Whether the app has ever been told what to do about servers.
  *
- * Distinguishes "this user has chosen local mode" from "this is the first run",
- * which is the difference between leaving someone in local mode and adopting
- * the server that is obviously running beside them.
+ * Distinguishes "this user has chosen no server" from "this is the first run",
+ * which is the difference between leaving the app keeping its own home and
+ * following the server that is obviously running beside it.
  */
 export function serversConfigured(): boolean {
   return readPreference(LIST_KEY) !== null;

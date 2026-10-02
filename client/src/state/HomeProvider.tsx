@@ -89,8 +89,10 @@ function useOpened(server: OpenOptions['server'], copyOf: string | null = null):
 export function HomeProvider({ children }: { children: ReactNode }) {
   const servers = useServers();
   const { generation } = useAuth();
+  // Not yet known whether a server stands beside this app: nothing is opened until it is.
+  if (servers.deciding) return <Waiting />;
   // What this app holds is held for one server, as one person: switching either lets go of it.
-  return servers.mode === 'server' && servers.active ? (
+  return servers.active ? (
     <ServerHome key={`${servers.active.id} ${generation}`} serverKey={servers.active.id} url={servers.active.url}>
       {children}
     </ServerHome>

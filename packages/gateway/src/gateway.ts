@@ -117,6 +117,8 @@ export type GatewayResult = {
    * person, once, for a minute. The detail says why it matters.
    */
   needsConfirmation?: string;
+  /** With `needsConfirmation`: why it matters, as the question a person is asked — the detail without its preamble. */
+  reason?: string;
   /**
    * Refused only because the run switched this part a moment ago: the same
    * intent is taken once this many milliseconds have passed. A run waits it
@@ -220,6 +222,8 @@ export type WriteResult = {
   values?: Readonly<Record<string, Value>>;
   /** Refused only because a person has to confirm it: the token to send back with the retry. */
   needsConfirmation?: string;
+  /** With `needsConfirmation`: why it matters, as the question a person is asked. */
+  reason?: string;
   /**
    * Once written, how much of its dwell is left: the same settings, written
    * again by the same kind of actor sooner, are refused. A screen keeps the
@@ -510,7 +514,7 @@ export class ActionGateway {
     const asks = consequential || firstThroughLink || reserve !== null;
     if (intent.actor === 'user' && asks && !this.#confirmations.accept(intent.confirmation, subject)) {
       const said = [consequential || firstThroughLink ? why : null, reserve].filter((reason) => reason !== null).join('. ');
-      return { ...refuse(`This action needs explicit confirmation. ${said}.`), needsConfirmation: this.#confirmations.ask(subject) };
+      return { ...refuse(`This action needs explicit confirmation. ${said}.`), needsConfirmation: this.#confirmations.ask(subject), reason: `${said}.` };
     }
 
     const agrees = () => settings.every((setting) => readingOf(readingsNow(), setting.attribute.key)?.value === setting.value);
@@ -673,7 +677,8 @@ export class ActionGateway {
     const subject = subjectOf({ device: intent.deviceId, patch: changed, by: intent.by });
     if (risky.length && !this.#confirmations.accept(intent.confirmation, subject)) {
       const labels = risky.map((key) => writable.get(key)!.label).join(', ');
-      return refuse(`This needs explicit confirmation. ${labels} can damage the hardware if set wrongly.`, { needsConfirmation: this.#confirmations.ask(subject) });
+      const reason = `${labels} can damage the hardware if set wrongly.`;
+      return refuse(`This needs explicit confirmation. ${reason}`, { needsConfirmation: this.#confirmations.ask(subject), reason });
     }
 
     const note = (kind: string, summary: string, detail?: unknown) =>

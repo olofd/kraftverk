@@ -51,6 +51,8 @@ export class DeviceRegistry {
       self: NodeId;
       /** The home's master: what a way it holds is said as. */
       master: () => NodeId;
+      /** Every write to hardware refused, now. */
+      readOnly: () => boolean;
     }
   ) {}
 
@@ -178,6 +180,8 @@ export class DeviceRegistry {
               lastReadingAt: remote.at,
             }
           : this.deps.sessions.health(record),
+      // Said by this node only for what it holds itself; one another node holds, that node says.
+      readOnly: !record.removedAt && !remote && this.deps.readOnly() && !this.deps.sessions.simulated(record.id),
       picture: pictureOf(record.picture),
     };
   }

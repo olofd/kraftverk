@@ -24,8 +24,8 @@ export default function AccountsScreen() {
       {!applies ? (
         <Card>
           <Text fontSize={13} color="$muted" lineHeight={19}>
-            Accounts belong to a server. In local mode this device holds its own links, and there is nobody
-            to log in to.
+            Accounts belong to a server. With none, this app keeps your home itself, and there is nobody to
+            log in to.
           </Text>
         </Card>
       ) : !state?.user ? (

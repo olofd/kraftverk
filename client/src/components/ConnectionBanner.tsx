@@ -16,7 +16,7 @@ export function ConnectionBanner() {
   const servers = useServers();
   const theme = useTheme();
 
-  if (connection !== 'offline' || servers.mode !== 'server' || !servers.active) return null;
+  if (connection !== 'offline' || !servers.active) return null;
 
   return (
     <XStack

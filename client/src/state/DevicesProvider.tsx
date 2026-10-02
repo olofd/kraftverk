@@ -7,7 +7,6 @@ import {
   applyLive,
   createViews,
   describeError,
-  type CommandInput,
   type ConnectionView,
   type DeviceActions,
   type DeviceScreenProps,
@@ -19,17 +18,16 @@ import {
   type LiveStream,
   type LiveUpdate,
   type NewLink,
-  type SavedDeviceId,
   type VersionInfo,
   type Views,
 } from '@kraftverk/api-client';
-import { CATEGORIES, savedDeviceId, SIMULATED_METHOD_ID, type ConnectionId, type LinkId } from '@kraftverk/device-sdk';
+import { savedDeviceId, type ConnectionId, type LinkId } from '@kraftverk/device-sdk';
 
 import { ASKED_AGAIN, confirmAction, withConfirmation, type ConfirmTone } from '../platform/confirm';
 import { HERE } from '../platform/here';
 import { useAuth } from './AuthProvider';
 import { useHome } from './HomeProvider';
-import { useServers, type Mode } from './ServersProvider';
+import { useServers } from './ServersProvider';
 
 /**
  * The things you have, whoever holds them.
@@ -67,8 +65,6 @@ async function settled<R extends { settlingMs?: number }>(result: R): Promise<R>
 export type Connection = 'connecting' | 'online' | 'offline' | 'idle';
 
 type DevicesContextValue = {
-  /** Where the home is: a server, or this app (`local`). */
-  mode: Mode;
   connection: Connection;
   /** Whether the home's live stream is up: when it is not, the list is polled. */
   live: LiveState;
@@ -97,7 +93,6 @@ type DevicesContextValue = {
   deleteHistory: (id: string, name: string) => Promise<void>;
   prefer: (device: DeviceView, connection: ConnectionView) => Promise<void>;
   removeConnection: (device: DeviceView, connection: ConnectionView) => Promise<void>;
-  setSecrets: (device: DeviceView, connection: ConnectionView, secrets: Record<string, string>) => Promise<void>;
   addLink: (link: NewLink) => Promise<void>;
   removeLink: (link: LinkView) => Promise<void>;
   /** The last event the live stream carried, counted, so a list of events knows to read again. */
@@ -120,12 +115,11 @@ const DevicesContext = createContext<DevicesContextValue | null>(null);
 export function DevicesProvider({ children }: { children: ReactNode }) {
   const servers = useServers();
   const { allowed } = useAuth();
-  const { api, role, writesAllowed, away } = useHome();
-  const mode = servers.mode;
+  const { api, role, away } = useHome();
   // A server's list is read once signed in; the app's own, always.
   const reading = role === 'master' || allowed;
 
-  const [served, setServed] = useState<DeviceView[]>([]);
+  const [devices, setDevices] = useState<DeviceView[]>([]);
   const [removed, setRemoved] = useState<DeviceView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -170,14 +164,14 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
 
   const load = useCallback(async () => {
     if (!reading) {
-      setServed([]);
+      setDevices([]);
       setRemoved([]);
       setLoading(false);
       return;
     }
     try {
       const [next, gone] = await Promise.all([api.devices.list(), api.devices.removed().catch(() => [])]);
-      setServed(next);
+      setDevices(next);
       setRemoved(gone);
       setUnreachable(false);
       setError(null);
@@ -212,7 +206,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       applying = null;
       const batch = pending;
       pending = [];
-      setServed((devices) => applyLive(devices, batch));
+      setDevices((devices) => applyLive(devices, batch));
     };
     // Read the list again, once for a burst of "changed".
     const readAgain = () => {
@@ -281,7 +275,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       timer = undefined;
     };
     if (live === 'down' && AppState.currentState !== 'background') {
-      setLoading((was) => was || served.length === 0);
+      setLoading((was) => was || devices.length === 0);
       void load().then(start);
     } else start();
     // Back in front, the stream opens again and its hello reads the list; this only picks up its clock again.
@@ -291,13 +285,12 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       stop();
       subscription.remove();
     };
-    // `served`: only whether there is anything yet, for the first spinner.
+    // `devices`: only whether there is anything yet, for the first spinner.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, load, reading]);
 
   // --- one list: the home says, of a device this app holds, what this app hears ------
 
-  const devices = served;
 
   // --- what a device's screens can do -------------------------------------------
 
@@ -318,11 +311,11 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
    * declared so, as careful otherwise.
    */
   const confirmed = useCallback(
-    async <R extends { outcome: GatewayResult['outcome']; detail: string; needsConfirmation?: string }>(send: (confirmation?: string) => Promise<R>, tone: ConfirmTone = 'careful'): Promise<R> => {
+    async <R extends { outcome: GatewayResult['outcome']; detail: string; needsConfirmation?: string; reason?: string }>(send: (confirmation?: string) => Promise<R>, tone: ConfirmTone = 'careful'): Promise<R> => {
       // The token a refusal hands out: good for this intent, from this person, once, for a minute.
       const { answer, declined } = await withConfirmation(
         send,
-        (result) => (result.needsConfirmation ? { token: result.needsConfirmation, reason: result.detail.replace(/^This (action )?needs explicit confirmation\. /, '') } : null),
+        (result) => (result.needsConfirmation ? { token: result.needsConfirmation, reason: result.reason ?? result.detail } : null),
         (reason, again) => confirmAction('Confirm', again ? `${ASKED_AGAIN}\n\n${reason}` : reason, 'Do it', tone)
       );
       return declined ? { ...answer, detail: 'Not confirmed', needsConfirmation: undefined } : answer;
@@ -400,17 +393,12 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
           waiting: holder === 'this-node' ? 'Connecting from this app…' : holder === 'master' ? (role === 'follower' ? 'Waiting for the server…' : `Connecting from ${HERE}…`) : device.health.detail,
           via,
         },
-        // A simulated device has no hardware to protect, and the gateway writes to it whatever the mode.
-        readOnly:
-          inUse?.method === SIMULATED_METHOD_ID
-            ? false
-            : holder === 'this-node' || role === 'master'
-              ? !writesAllowed
-              : (version?.readOnly ?? false),
+        // Said by the node holding it: its own switch, never for a simulated one.
+        readOnly: device.readOnly,
         version: holder === 'master' && role === 'follower' ? version : null,
       };
     },
-    [actionsFor, holderOf, role, version, writesAllowed]
+    [actionsFor, holderOf, role, version]
   );
 
   // --- changing the list ----------------------------------------------------------
@@ -429,7 +417,6 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<DevicesContextValue>(
     () => ({
-      mode,
       // A server that did not answer is offline, whether the list failed or is shown as it last said it.
       connection: unreachable || away ? 'offline' : loading ? 'connecting' : 'online',
       live,
@@ -450,18 +437,13 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       deleteHistory: (id, name) => mutate(() => api.devices.deleteHistory(savedDeviceId(id), name)),
       prefer: (device, connection) => mutate(() => api.connections.prefer(device.id, connection.id as ConnectionId)),
       removeConnection: (device, connection) => mutate(() => api.connections.remove(device.id, connection.id as ConnectionId)),
-      setSecrets: async (device, connection, secrets) => {
-        // A way another app holds keeps its secrets in that app (§4.3); this app's own, the home keeps here.
-        if (connection.heldBy.kind === 'node') throw new Error(`Its secrets are kept by ${connection.heldBy.name}: change them there`);
-        await mutate(() => api.connections.setSecrets(device.id, connection.id as ConnectionId, secrets));
-      },
       addLink: (link) => mutate(() => api.links.add(link)),
       removeLink: (link) => mutate(() => api.links.remove(link.id as LinkId)),
       heard,
       onAutomation,
       views,
     }),
-    [actionsFor, api, away, devices, error, heard, holderOf, live, load, loading, mode, mutate, onAutomation, removed, screenProps, unreachable, version, views]
+    [actionsFor, api, away, devices, error, heard, holderOf, live, load, loading, mutate, onAutomation, removed, screenProps, unreachable, version, views]
   );
 
   return <DevicesContext.Provider value={value}>{children}</DevicesContext.Provider>;
@@ -479,5 +461,3 @@ export function useDevice(id: string | undefined): DeviceView | null {
   return useMemo(() => (id ? (devices.find((device) => device.id === id) ?? removed.find((device) => device.id === id) ?? null) : null), [devices, id, removed]);
 }
 
-/** The categories a device can be listed under. */
-export const categoryOf = (id: string) => (CATEGORIES as Record<string, (typeof CATEGORIES)[keyof typeof CATEGORIES]>)[id] ?? null;

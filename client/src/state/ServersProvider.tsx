@@ -18,20 +18,15 @@ import {
 } from '../platform/servers';
 
 /**
- * Which kraftverk server this app uses — or none, which is local mode
- * (docs/DATA-MODEL.md §6).
+ * The kraftverk servers this app knows — the addresses of masters it can
+ * follow — and the one it follows now, or none: then this app's own node
+ * keeps its home (docs/ARCHITECTURE.md, decisions 15 and 24).
  *
- * Server configuration belongs to the app rather than to any server. A server
- * is something you add, so having one selected is what puts the app in server
- * mode; forgetting the active one returns it to local mode, where the app keeps
- * its own devices and holds every connection itself.
+ * The list belongs to the app rather than to any server. A server is
+ * something you add; choosing one makes this app follow it, and forgetting
+ * it brings the app's own home back.
  */
-
-/** `server`: a server holds the devices. `local`: this app does. */
-export type Mode = 'server' | 'local';
-
 export type Servers = {
-  mode: Mode;
   all: SavedServer[];
   active: SavedServer | null;
   /** True while the first-run probe is deciding; the UI waits rather than lies. */
@@ -39,10 +34,10 @@ export type Servers = {
   add: (input: { name?: string; url: string }) => Promise<SavedServer>;
   update: (id: string, changes: { name?: string; url?: string }) => void;
   remove: (id: string) => void;
-  /** `null` means local mode. */
+  /** Follow this server; `null`: none — this app keeps its own home. */
   use: (id: string | null) => void;
   test: (url: string) => Promise<boolean>;
-  /** The active server's own calls — signing in, accounts, its log — or null in local mode. */
+  /** The followed server's own calls — signing in, accounts, its log — or null with none. */
   server: ServerApi | null;
   /** Hears when the active server asks to sign in: a session that ended while the app was open. Returns how to stop. */
   onLoginRequired: (listener: () => void) => () => void;
@@ -75,8 +70,8 @@ export function ServersProvider({ children }: { children: ReactNode }) {
 
   /*
     The first run looks for a server beside the app — the web container serves
-    both — rather than assuming one. Found: it is added and used. Not found:
-    local mode, and a server is something to add later.
+    both — rather than assuming one. Found: it is added and followed. Not
+    found: the app keeps its own home, and a server is something to add later.
   */
   useEffect(() => {
     if (!deciding) return;
@@ -100,7 +95,6 @@ export function ServersProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<Servers>(
     () => ({
-      mode: active ? 'server' : 'local',
       all,
       active,
       deciding,

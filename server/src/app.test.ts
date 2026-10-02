@@ -669,7 +669,10 @@ describe('a device you have', () => {
       expect((await as(`/devices/${enc(real.id)}/tools/blink`, { method: 'POST', body: {}, server: readOnly })).status).toBe(423);
       expect((await as(`/devices/${enc(real.id)}/parts/main/commands/switch/set`, { method: 'POST', body: { args: { on: false } }, server: readOnly })).status).toBe(409);
 
+      // The node holding it says so, for a screen to draw: never of a simulated one.
+      expect((await as(`/devices/${enc(real.id)}`, { server: readOnly })).body.readOnly).toBe(true);
       const pretend = await added('Pretend lamp', { server: readOnly, methodId: 'simulated' });
+      expect((await as(`/devices/${enc(pretend.id)}`, { server: readOnly })).body.readOnly).toBe(false);
       expect((await as(`/devices/${enc(pretend.id)}/tools/blink`, { method: 'POST', body: {}, server: readOnly })).status).toBe(200);
       expect((await as(`/devices/${enc(pretend.id)}/parts/main/commands/switch/set`, { method: 'POST', body: { args: { on: false } }, server: readOnly })).status).toBe(200);
     } finally {

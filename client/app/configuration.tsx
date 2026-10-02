@@ -24,7 +24,7 @@ import { useServers } from '../src/state/ServersProvider';
 export default function ConfigurationScreen() {
   const params = useLocalSearchParams<{ devices?: string; automations?: string; import?: string; from?: string }>();
   const { devices, refresh } = useDevices();
-  const { api, role } = useHome();
+  const { api } = useHome();
   const { server } = useServers();
   const [automations, setAutomations] = useState<AutomationView[] | null>(null);
   const [vocabulary, setVocabulary] = useState<Vocabulary | null>(null);
@@ -42,7 +42,7 @@ export default function ConfigurationScreen() {
       .elsewhere()
       .then(setElsewhere)
       .catch(() => setElsewhere(null));
-  }, [api, role, server]);
+  }, [api, server]);
   useEffect(load, [load]);
 
   const split = (value: string | undefined) => (value ? value.split(',').filter(Boolean) : []);
@@ -63,7 +63,7 @@ export default function ConfigurationScreen() {
           </Text>
         </Card>
       ) : null}
-      {params.import || role !== 'follower' ? null : <Kept snapshot={snapshot} />}
+      {params.import || !server ? null : <Kept snapshot={snapshot} />}
       {params.import ? null : automations ? <ExportCard key={`${params.devices}|${params.automations}`} devices={active} automations={automations} chosen={chosen} /> : null}
       <ImportCard
         vocabulary={vocabulary}
@@ -72,8 +72,8 @@ export default function ConfigurationScreen() {
         start={params.from === 'this-node' || params.from === 'copy' ? params.from : null}
         onApplied={() => (void refresh(), load())}
       />
-      {params.import && role === 'follower' ? <Kept snapshot={snapshot} /> : null}
-      {role === 'follower' ? <InAnEditor /> : null}
+      {params.import && server ? <Kept snapshot={snapshot} /> : null}
+      {server ? <InAnEditor /> : null}
     </Screen>
   );
 }
