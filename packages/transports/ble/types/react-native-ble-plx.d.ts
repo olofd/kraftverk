@@ -4,7 +4,7 @@
  * Direct Bluetooth from a phone needs that library, but it is a native module:
  * it cannot run in Expo Go, and the app has to build and run for everyone who
  * has not installed it. Metro resolves it to an empty module when it is missing
- * (see `client/metro.config.js`) and `src/link/nativeBle.ts` checks at runtime,
+ * (see `client/metro.config.js`) and `src/native.ts` checks at runtime,
  * so the only thing left to satisfy is the type checker.
  *
  * Declared here rather than depended on. It covers exactly what we call; if you

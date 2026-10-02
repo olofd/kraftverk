@@ -34,7 +34,6 @@ function useNumberText(value: number | null, shown: (value: number) => string = 
   useEffect(() => {
     if (Number(text.replace(',', '.')) !== value) setText(value === null ? '' : shown(value));
     // Only a value changed from outside is shown: what is being typed stays as typed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
   const parse = (next: string): number | null => {
     const number = Number(next.replace(',', '.'));

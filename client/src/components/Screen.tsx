@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react';
 import { RefreshControl } from 'react-native';
-import { Icon } from '@kraftverk/ui';
 import { router } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScrollView, Text, useTheme, XStack, YStack } from 'tamagui';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ConnectionBanner } from './ConnectionBanner';
+import { Icon } from '@kraftverk/ui';
+
 import { useDevices } from '../state/DevicesProvider';
-import type { Connection } from '../state/DevicesProvider';
+import { ConnectionBanner } from './ConnectionBanner';
 
 type Props = {
   title: string;
@@ -41,7 +41,7 @@ type Props = {
 export function Screen({ title, subtitle, back, backTo, status, aside, children, footer }: Props) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
-  const { connection, refresh, views } = useDevices();
+  const { homeReach, refresh, views } = useDevices();
   /*
     A screen's own status — a device's health, in its own words, which can be
     a whole error — goes under the title, where it has the width to wrap. On
@@ -64,7 +64,7 @@ export function Screen({ title, subtitle, back, backTo, status, aside, children,
       }}
       refreshControl={
         <RefreshControl
-          refreshing={connection === 'connecting'}
+          refreshing={homeReach === 'connecting'}
           onRefresh={() => void refresh()}
           tintColor={theme.muted?.val}
         />
@@ -141,17 +141,20 @@ export function Screen({ title, subtitle, back, backTo, status, aside, children,
 /**
  * What is being reported, and by whom.
  *
- * By default this is the app's own reachability: can it get to the server, or
- * to the station it holds itself. On a screen that is *about one device* that
+ * By default this is the home's reach: whether the server it follows
+ * answers — or, keeping its own home, that home. On a screen that is *about one device* that
  * is the wrong subject — a reachable server happily reports "Online" beside a
  * station that has never connected — so those screens pass the device's state
  * instead.
  */
-export type ScreenStatus = { connection: Connection; label?: string };
+/** What a status dot shows: being reached, reached, not reached, or — a device not set to be — not trying. */
+export type StatusTone = 'connecting' | 'online' | 'offline' | 'idle';
+
+export type ScreenStatus = { tone: StatusTone; label?: string };
 
 function StatusDot({ status }: { status?: ScreenStatus }) {
-  const { connection: appConnection } = useDevices();
-  const connection = status?.connection ?? appConnection;
+  const { homeReach } = useDevices();
+  const connection: StatusTone = status?.tone ?? homeReach;
 
   const color =
     connection === 'online'

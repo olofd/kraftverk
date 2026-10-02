@@ -1,21 +1,22 @@
 import type { ReactNode } from 'react';
 import { router } from 'expo-router';
-import { Card, haptic } from '@kraftverk/ui';
 import { Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import type { ConnectionStatus, DeviceView } from '@kraftverk/api-client';
+import { Card, haptic } from '@kraftverk/ui';
 
-import { DevicePicture } from './DevicePicture';
 import { Screen } from '../../components/Screen';
-import { pictureFor } from './registry';
-import { useDevice, useDevices, type Connection } from '../../state/DevicesProvider';
+import type { StatusTone } from '../../components/Screen';
+import { useDevice, useDevices } from '../../state/DevicesProvider';
 import { useShowing } from '../../state/useShowing';
+import { DevicePicture } from './DevicePicture';
+import { pictureFor } from './registry';
 
 /**
  * A device's health, as the header's one dot. Five states collapse into four
  * colours, and the label beside the dot is always the health's own sentence.
  */
-const DOT: Record<ConnectionStatus, Connection> = {
+const DOT: Record<ConnectionStatus, StatusTone> = {
   connected: 'online',
   connecting: 'connecting',
   offline: 'idle',
@@ -25,7 +26,7 @@ const DOT: Record<ConnectionStatus, Connection> = {
 
 /** The header status for any screen about one device: that device's health, not the server's. */
 export const deviceStatus = (device: DeviceView) => ({
-  connection: DOT[device.health.status],
+  tone: DOT[device.health.status],
   label: device.health.detail,
 });
 

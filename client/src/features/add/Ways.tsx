@@ -4,8 +4,8 @@ import type { Holder } from '@kraftverk/api-client';
 import { Card, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { Pressable } from '../../components/Pressable';
-import { HERE_PLATFORM } from '../../platform/here';
 import { useHome } from '../../state/HomeProvider';
+import { useReach } from '../../state/useReach';
 
 /** One way to connect, and who would hold it. */
 export type Way = { methodId: string; label: string; description?: string; holder: Holder; available: boolean; reason: string | null; recommended: boolean };
@@ -15,6 +15,7 @@ export type Way = { methodId: string; label: string; description?: string; holde
 export function Ways({ ways, busy, onPick, onBack }: { ways: Way[]; busy: boolean; onPick: (way: Way) => void; onBack?: () => void }) {
   const theme = useTheme();
   const { role } = useHome();
+  const reach = useReach();
   return (
     <YStack gap="$2">
       <SectionLabel>How do you want to connect?</SectionLabel>
@@ -30,7 +31,7 @@ export function Ways({ ways, busy, onPick, onBack }: { ways: Way[]; busy: boolea
                 title={`${way.label}${way.recommended ? ' · recommended' : ''}`}
                 subtitle={way.available ? way.description : (way.reason ?? 'Not available here')}
                 disabled={!way.available}
-                accessory={<Icon name={way.holder === 'master' && role === 'follower' ? 'server' : HERE_PLATFORM === 'web' ? 'monitor' : 'smartphone'} size={16} color={theme.muted?.val} />}
+                accessory={<Icon name={reach.holder(way.holder).icon} size={16} color={theme.muted?.val} />}
               />
             </Pressable>
           </YStack>

@@ -22,7 +22,7 @@ export { Icon, IconLabel, type IconName } from './Icon';
 export { InfoCard, PartCard, ReadingRow } from './PartCard';
 export { ToolPanel } from './ToolPanel';
 export { PendingMark } from './PendingMark';
-export { Row, RowSeparator, ToggleRow } from './Row';
+export { Row, RowSeparator, toggled, ToggleRow } from './Row';
 export { Toggle, type ToggleProps } from './Toggle';
 export { SchemaForm, isComplete } from './SchemaForm';
 export { Chips } from './Chips';
@@ -56,6 +56,7 @@ export {
   type SeriesPoint,
 } from './series';
 export {
+  capitalise,
   formatAgo,
   formatDuration,
   formatFresh,

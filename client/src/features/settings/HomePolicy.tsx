@@ -30,7 +30,6 @@ export function HomePolicy() {
       .list()
       .then(took)
       .catch(() => undefined);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
   // Enter and the blur after it both save, before either has settled: what is
   // on its way is sent once.

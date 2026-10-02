@@ -25,10 +25,10 @@ import { ApiError } from '@kraftverk/api-contract';
 import { savedDeviceId, type ConnectionId, type LinkId } from '@kraftverk/device-sdk';
 
 import { ask } from '../platform/confirm';
-import { HERE } from '../platform/here';
 import { useAuth } from './AuthProvider';
 import { useHome } from './HomeProvider';
 import { useServers } from './ServersProvider';
+import { useReach } from './useReach';
 
 /**
  * The things you have, whoever holds them.
@@ -52,11 +52,11 @@ const POLL_WHILE_LIVE_MS = 60_000;
 /** Updates from the stream are applied together, this often at most: one redraw for a burst. */
 const APPLY_MS = 100;
 
-/** How reachable the thing holding the list is. */
-export type Connection = 'connecting' | 'online' | 'offline' | 'idle';
+/** Whether the home answers: being reached, answering, or out of reach. */
+export type HomeReach = 'connecting' | 'online' | 'offline';
 
 type DevicesContextValue = {
-  connection: Connection;
+  homeReach: HomeReach;
   /** Whether the home's live stream is up: when it is not, the list is polled. */
   live: LiveState;
   devices: DeviceView[];
@@ -102,6 +102,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   const servers = useServers();
   const { allowed } = useAuth();
   const { api, role, away } = useHome();
+  const reach = useReach();
   // A server's list is read once signed in; the app's own, always.
   const reading = role === 'master' || allowed;
 
@@ -178,7 +179,6 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   */
   useEffect(() => {
     if (role === 'follower' && reading) void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [away]);
 
   // The live stream: while it is up, what changed arrives as it changes, and the list is not polled.
@@ -272,7 +272,6 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       subscription.remove();
     };
     // `devices`: only whether there is anything yet, for the first spinner.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, load, reading]);
 
   // --- what a device's screens can do -------------------------------------------
@@ -283,15 +282,14 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     (device: DeviceView): DeviceScreenProps => {
       const holder = holderOf(device);
       const inUse = device.connections.find((connection) => connection.inUse) ?? null;
-      const byHome = role === 'follower' ? 'through the server' : `from ${HERE}`;
-      const via = inUse ? `${inUse.methodLabel}, ${inUse.heldBy.kind === 'master' ? byHome : holder === 'this-node' ? 'from this app' : `from ${inUse.heldBy.name}`}` : null;
+      const via = inUse ? `${inUse.methodLabel}, ${reach.of(inUse.heldBy)}` : null;
       return {
         device,
         actions: actionsFor(device),
         // Whether it can be reached, and what to say while it cannot — never by whom.
         reach: {
           now: holder === 'master' || holder === 'this-node',
-          waiting: holder === 'this-node' ? 'Connecting from this app…' : holder === 'master' ? (role === 'follower' ? 'Waiting for the server…' : `Connecting from ${HERE}…`) : device.health.detail,
+          waiting: holder === 'master' || holder === 'this-node' ? reach.waiting(holder) : device.health.detail,
           via,
         },
         // Said by the node holding it: its own switch, never for a simulated one.
@@ -299,7 +297,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         version: holder === 'master' && role === 'follower' ? version : null,
       };
     },
-    [actionsFor, role, version]
+    [actionsFor, reach, role, version]
   );
 
   // --- changing the list ----------------------------------------------------------
@@ -319,7 +317,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   const value = useMemo<DevicesContextValue>(
     () => ({
       // A server that did not answer is offline, whether the list failed or is shown as it last said it.
-      connection: unreachable || away ? 'offline' : loading ? 'connecting' : 'online',
+      homeReach: unreachable || away ? 'offline' : loading ? 'connecting' : 'online',
       live,
       devices,
       removed,

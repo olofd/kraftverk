@@ -24,7 +24,7 @@ export function NewAutomation({ from }: { from: string | null }) {
   const { kit, error } = useEditorKit();
   const [start, setStart] = useState<{ draft: Draft; madeFrom: string | null; view: 'form' | 'yaml' } | null>(null);
   const device = from ? (devices.find((candidate) => candidate.id === from) ?? null) : null;
-  const back = device ? { label: device.name, to: `/device/${device.id}` } : { label: 'Automations', to: '/automations' };
+  const back = device ? { label: device.name, to: `/device/${encodeURIComponent(device.id)}` } : { label: 'Automations', to: '/automations' };
 
   if (start) {
     return (
@@ -35,7 +35,7 @@ export function NewAutomation({ from }: { from: string | null }) {
         prefer={device?.id ?? null}
         back={back}
         view={start.view}
-        onSaved={(made) => router.replace(`/automation/${made.id}`)}
+        onSaved={(made) => router.replace(`/automation/${encodeURIComponent(made.id)}`)}
         onCancel={() => router.replace(back.to)}
       />
     );

@@ -34,7 +34,7 @@ export function Accounts() {
       ) : !state?.user ? (
         <Card>
           <Text fontSize={13} color="$muted" lineHeight={19}>
-            This server does not have accounts. It may be older than them — update it to use sign-in.
+            Who may use this server is shown once it can be reached.
           </Text>
         </Card>
       ) : (
@@ -58,7 +58,7 @@ function SignedIn() {
     } catch (error) {
       setProblem(describeError(error));
     }
-  }, []);
+  }, [server]);
 
   useEffect(() => {
     void load();

@@ -67,3 +67,6 @@ export function formatTemperature(celsius: number, unit: 'C' | 'F') {
     ? `${Math.round(celsius * 1.8 + 32)}°F`
     : `${celsius.toFixed(1)}°C`;
 }
+
+/** A phrase begun as a sentence: "this phone" → "This phone". */
+export const capitalise = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);

@@ -3,9 +3,9 @@ import { Text, useTheme, XStack } from 'tamagui';
 import { holderOf, type DeviceView } from '@kraftverk/api-client';
 import { Icon } from '@kraftverk/ui';
 
-import { HERE, HERE_PLATFORM } from '../../platform/here';
 import { useDevices } from '../../state/DevicesProvider';
 import { useHome } from '../../state/HomeProvider';
+import { useReach } from '../../state/useReach';
 
 /**
  * Where the values on this screen go: the hardware, through whom — or nowhere,
@@ -19,14 +19,13 @@ export function WhereWritesGo({ device }: { device: DeviceView }) {
   // Which holder is this screen's business, not a device package's: the app says where writes go.
   const holder = holderOf(device);
   const theme = useTheme();
+  const reach = useReach();
   const [tone, icon, message] = readOnly
     ? (['$warning', 'lock', holder === 'this-node' || role === 'master' ? 'Read-only: writes from this app are off (App settings).' : 'Read-only: the server refuses every write.'] as const)
     : holder === 'this-node'
-      ? (['$muted', 'smartphone', `Written to ${device.name} from this app.`] as const)
+      ? (['$muted', reach.here.icon, `Written to ${device.name} ${reach.here.words}.`] as const)
       : holder === 'master'
-        ? role === 'follower'
-          ? (['$muted', 'server', `Written to ${device.name} through your server.`] as const)
-          : (['$muted', HERE_PLATFORM === 'web' ? 'monitor' : 'smartphone', `Written to ${device.name} from ${HERE}.`] as const)
+        ? (['$muted', reach.master.icon, `Written to ${device.name} ${reach.master.words}.`] as const)
         : (['$muted', 'link-2', device.health.detail] as const);
 
   return (

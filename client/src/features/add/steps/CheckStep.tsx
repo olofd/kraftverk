@@ -19,7 +19,6 @@ export function CheckStep({ flow, onChecked, onBack }: { flow: SetupFlow; onChec
   useEffect(() => {
     void check();
     // Once, when the step opens; "Try again" runs it after that.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

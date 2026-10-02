@@ -216,6 +216,17 @@ function importsOf(source) {
   return [...found];
 }
 
+/**
+ * The modules a file uses when it runs: its imports, less those of types
+ * only. A type names a screen's shape; it draws nothing.
+ */
+function valueImportsOf(source) {
+  const values = source
+    .replace(/^\s*(?:import|export)\s+type\s[^;]*;/gm, '')
+    .replace(/^\s*import\s*\{\s*(?:type\s+\w+(?:\s+as\s+\w+)?\s*,?\s*)+\}\s*from\s*['"][^'"]+['"];?/gm, '');
+  return importsOf(values);
+}
+
 /** Why an import breaks the rule, or null. */
 function violation(file, area, specifier) {
   const relative = specifier.startsWith('.');
@@ -288,8 +299,12 @@ function violation(file, area, specifier) {
  * it has moved (docs/PLAN-SHARED-CORE.md).
  */
 const SERVER_PLACES = /^server\/src\/((routes|auth|platform)\/|(app|index|log|config)\.ts$)/;
-/** What makes a file of the app a screen, or React's binding to one. */
-const SCREEN = /^(react|tamagui|@tamagui\/|@kraftverk\/ui)(\/|$)/;
+/**
+ * What makes a file of the app a screen, or React's binding to one: React and
+ * React Native, the kit and its icons — or the installed packages' own
+ * screens, as the generated registry binds them in. Types alone do not count.
+ */
+const SCREEN = /^(react|react-native|tamagui|@tamagui\/|@expo\/vector-icons|@kraftverk\/ui)(\/|$)|(^|\/)generated\/registry$/;
 
 /** Why a file is in the wrong place, or null. */
 function misplaced(file, source) {
@@ -297,7 +312,7 @@ function misplaced(file, source) {
   if (file.startsWith('server/src/')) return SERVER_PLACES.test(file) ? null : "logic that is not the server's: it belongs in a package";
   // The app's .tsx are screens; a .ts with no screen in it, outside the platform's own, is logic.
   if (file.startsWith('client/src/') && file.endsWith('.ts') && !/^client\/src\/(platform|generated)\//.test(file)) {
-    return importsOf(source).some((specifier) => SCREEN.test(specifier)) ? null : 'no screen in it: it belongs in a package';
+    return valueImportsOf(source).some((specifier) => SCREEN.test(specifier)) ? null : 'no screen in it: it belongs in a package';
   }
   return null;
 }

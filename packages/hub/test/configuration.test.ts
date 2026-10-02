@@ -136,6 +136,6 @@ describe('configuration', () => {
     expect(changesConfiguration('automation.started')).toBe(false);
     expect(changesConfiguration('device.control')).toBe(false);
     expect(changesConfiguration('device.added')).toBe(true);
-    expect(changesConfiguration('automation.armed')).toBe(true);
+    expect(changesConfiguration('automation.let-act')).toBe(true);
   });
 });

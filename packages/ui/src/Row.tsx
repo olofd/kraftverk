@@ -49,6 +49,14 @@ type ToggleRowProps = Omit<RowProps, 'accessory'> & {
   pending?: boolean;
 };
 
+/** The keys a list of toggle rows has chosen, with one turned on or off. */
+export const toggled = (chosen: ReadonlySet<string>, key: string, on: boolean): ReadonlySet<string> => {
+  const next = new Set(chosen);
+  if (on) next.add(key);
+  else next.delete(key);
+  return next;
+};
+
 export function ToggleRow({ checked, onCheckedChange, disabled, pending, subtitle, ...rest }: ToggleRowProps) {
   return (
     <Row

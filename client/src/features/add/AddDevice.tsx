@@ -12,6 +12,7 @@ import { useAttempt } from '../../components/useAttempt';
 import { HERE } from '../../platform/here';
 import { useDevices } from '../../state/DevicesProvider';
 import { useHome } from '../../state/HomeProvider';
+import { useReach } from '../../state/useReach';
 import { Categories } from './Categories';
 import { Finish } from './Finish';
 import { Outcome } from './Outcome';
@@ -37,6 +38,7 @@ export function AddDevice() {
   const params = useLocalSearchParams<{ type?: string; method?: string; address?: string; attach?: string }>();
   const { devices, refresh } = useDevices();
   const { api, role } = useHome();
+  const reach = useReach();
   const attachTo = params.attach ? (devices.find((device) => device.id === params.attach) ?? null) : null;
 
   // What can be added: the home's installed types, and whether it can hold each way.
@@ -71,7 +73,7 @@ export function AddDevice() {
         .filter((way) => way.method === method.id)
         .map((way) => ({
           methodId: method.id,
-          label: `${method.label}, ${way.holder === 'master' && role === 'follower' ? 'through your server' : `from ${HERE}`}`,
+          label: `${method.label}, ${reach.holder(way.holder).words}`,
           description: way.holder === 'this-node' ? `While ${HERE} has it: kept by your server, which hears what it says when it can.` : method.description,
           holder: way.holder,
           available: way.availability.ok,

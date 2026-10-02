@@ -31,7 +31,7 @@ export function DiscoverStep({ flow, step, onNext, onBack }: StepProps & { step:
           result={result}
           picking={null}
           onPick={(choice) => {
-            void flow.update(step.target === 'device' ? { device: choice.config } : { connection: choice.config }).then(onNext);
+            flow.update(step.target === 'device' ? { device: choice.config } : { connection: choice.config }).then(onNext, (err: unknown) => setResult({ ok: false, detail: describeError(err) || 'That could not be used' }));
           }}
         />
       ) : null}

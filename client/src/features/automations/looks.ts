@@ -76,7 +76,12 @@ export function dayOf(at: string): string {
   return new Date(at).toLocaleDateString([], { day: 'numeric', month: 'short' });
 }
 
-/** "Just now", "12 min ago", "Today 14:02", "12 Sep 07:00". */
+/**
+ * When a run was, as its card says it — "Just now", "12 min ago", "Today
+ * 14:02", "12 Sep 07:00": after the first hour by the clock, as a run is
+ * looked up by when it ran (where `formatAgo` says how long ago a thing was
+ * last seen).
+ */
 export function ago(at: string): string {
   const seconds = (Date.now() - Date.parse(at)) / 1000;
   if (seconds < 45) return 'Just now';
@@ -104,3 +109,6 @@ export function took(from: string, to: string | number): string {
 /** " · took 1 min 12 s" for a run that took a second or more; nothing for one that was over at once. */
 export const lasted = (run: Pick<AutomationRun, 'at' | 'endedAt'>): string =>
   run.endedAt && Date.parse(run.endedAt) - Date.parse(run.at) >= 1000 ? ` · took ${took(run.at, run.endedAt)}` : '';
+
+/** A span of minutes as a choice says it: "5 min", "hour". */
+export const every = (minutes: number) => (minutes === 60 ? 'hour' : `${minutes} min`);

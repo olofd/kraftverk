@@ -153,7 +153,6 @@ function Editing({
   };
   useEffect(() => {
     if (opensOn === 'yaml') switchTo('yaml');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const yamlProblems = view === 'yaml' ? yaml.problems.length : 0;
   const yamlUnread = view === 'yaml' && (yaml.reading || !yaml.ready);

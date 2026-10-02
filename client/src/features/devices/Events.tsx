@@ -11,13 +11,16 @@ import { useHome } from '../../state/HomeProvider';
  * again when the live stream carries one of its events. A device that
  * declares no events has nothing to show.
  */
+/** How many of what it said happened are shown, newest first. */
+const EVENTS_SHOWN = 50;
+
 export function Events({ device, part }: { device: DeviceView; part?: string }) {
   const { heard } = useDevices();
   const { api } = useHome();
   const count = heard?.deviceId === device.id ? heard.count : 0;
   const declares = (device.description.events?.length ?? 0) > 0;
 
-  const { value: list } = useAnswer(() => api.devices.events(device.id, 50), [api, count, device.id], { when: declares });
+  const { value: list } = useAnswer(() => api.devices.events(device.id, EVENTS_SHOWN), [api, count, device.id], { when: declares });
 
   if (!declares || !list) return null;
   const shown = part === undefined ? list : list.filter((event) => event.part === part);

@@ -2,14 +2,30 @@ import { useState, type ReactNode } from 'react';
 import { useRouter } from 'expo-router';
 import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
-import { automationChangeOf, summaryOn, type AuditEntry, type AutomationRun, type AutomationView, type ConditionState, type Rehearsal } from '@kraftverk/api-client';
-import { Icon, IconLabel } from '@kraftverk/ui';
+import { automationChangeOf, summaryOn, type AuditEntry, type AutomationMode, type AutomationRun, type AutomationView, type ConditionState, type Rehearsal } from '@kraftverk/api-client';
+import { Icon, IconLabel, type IconName } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
 import { useTone } from '../../../components/tone';
-import { clock, dayOf, lasted, OUTCOME, type Look } from '../looks';
+import { clock, dayOf, every, lasted, OUTCOME, type Look } from '../looks';
 import { RunSteps } from '../Steps';
-import { BADGE, CHANGE, every } from './modes';
+
+/** Each mode its own shape as well as its colour: acting is filled, and cannot be mistaken for watching. */
+export const BADGE: Record<AutomationMode, { label: string; icon: IconName; filled: boolean }> = {
+  off: { label: 'Off', icon: 'pause', filled: false },
+  watch: { label: 'Only watching', icon: 'eye', filled: false },
+  act: { label: 'Acting', icon: 'zap', filled: true },
+};
+
+/** A change made to an automation, as its history shows it. */
+export const CHANGE: Record<string, Look> = {
+  'automation.created': { icon: 'plus', tone: '$color' },
+  'automation.proposed': { icon: 'message-circle', tone: '$color' },
+  'automation.let-act': { icon: 'zap', tone: '$success' },
+  'automation.changed': { icon: 'edit-3', tone: '$color' },
+  'automation.started': { icon: 'play', tone: '$accent' },
+  'automation.stopping': { icon: 'square', tone: '$muted' },
+};
 
 /*
   An automation's runs and its history (docs/AUTOMATIONS-UX.md): a run told
@@ -144,7 +160,8 @@ export function RunDetail({ run, showConditions, automationId }: { run: Automati
 /** The way to a run's log: every value its devices gave while it ran, on a page of its own. */
 export function RunLogLink({ automationId, run }: { automationId: string; run: AutomationRun }) {
   const router = useRouter();
-  if (!run.id) return null;
+  const runId = run.id;
+  if (!runId) return null;
   return (
     <Button
       size="$3"
@@ -152,7 +169,7 @@ export function RunLogLink({ automationId, run }: { automationId: string; run: A
       alignSelf="flex-start"
       icon={<Icon name="activity" size={16} />}
       aria-label={`Run log: ${run.summary}`}
-      onPress={() => router.push(`/automation/${automationId}/run/${run.id}`)}
+      onPress={() => router.push(`/automation/${encodeURIComponent(automationId)}/run/${encodeURIComponent(runId)}`)}
     >
       Run log
     </Button>

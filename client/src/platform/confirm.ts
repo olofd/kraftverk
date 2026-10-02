@@ -26,7 +26,6 @@ export function confirmAction(title: string, message: string, confirmLabel = 'Co
       return new Promise((resolve) => ask({ title, message, confirmLabel, tone, resolve }));
     }
     // Before the app has mounted its own: the browser's, the only one there is.
-    // eslint-disable-next-line no-alert
     return Promise.resolve(typeof confirm === 'function' ? confirm(`${title}\n\n${message}`) : false);
   }
   return new Promise((resolve) =>

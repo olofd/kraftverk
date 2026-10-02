@@ -4,7 +4,7 @@ import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
 import { applyPlan, changesOf, describeError, planReadiness, rebindAnswerKey, secretAnswerKey, withConfirmation, type ElsewhereView, type HomeElsewhere, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-client';
 import { checkDocument, configJsonSchema, CURRENT_VERSION, holdsSealed, readConfig, type Vocabulary } from '@kraftverk/home-file';
-import { Card, haptic, Icon, RowSeparator, SectionLabel, SegmentedControl, Toggle } from '@kraftverk/ui';
+import { Card, haptic, Icon, RowSeparator, SectionLabel, SegmentedControl, Toggle, toggled } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { Picker } from '../../components/Picker';
@@ -108,7 +108,6 @@ export function ImportCard({
     if (!start || started) return;
     setStarted(true);
     void read({ from: start });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [start, started]);
 
   const openFile = () => {
@@ -243,13 +242,6 @@ function PlanView({ plan, onAgain, onApplied }: { plan: ImportPlan; onAgain: () 
     }
   };
 
-  const toggle = (set: ReadonlySet<string>, key: string, on: boolean) => {
-    const next = new Set(set);
-    if (on) next.add(key);
-    else next.delete(key);
-    return next;
-  };
-
   return (
     <YStack gap="$3">
       <SectionLabel>What it would do</SectionLabel>
@@ -267,8 +259,8 @@ function PlanView({ plan, onAgain, onApplied }: { plan: ImportPlan; onAgain: () 
         </Card>
       ) : null}
 
-      {plan.devices.length ? <Items title="Devices" items={plan.devices} chosen={devices} onChoose={(key, on) => setDevices((set) => toggle(set, key, on))} /> : null}
-      {plan.automations.length ? <Items title="Automations" items={plan.automations} chosen={automations} onChoose={(key, on) => setAutomations((set) => toggle(set, key, on))} /> : null}
+      {plan.devices.length ? <Items title="Devices" items={plan.devices} chosen={devices} onChoose={(key, on) => setDevices((set) => toggled(set, key, on))} /> : null}
+      {plan.automations.length ? <Items title="Automations" items={plan.automations} chosen={automations} onChoose={(key, on) => setAutomations((set) => toggled(set, key, on))} /> : null}
       {links.length ? (
         <Card gap="$1.5">
           <Text fontSize={15} fontWeight="600" color="$color">

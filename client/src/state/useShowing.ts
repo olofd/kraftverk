@@ -15,7 +15,6 @@ export function useShowing(things: readonly ShownThing[]): void {
   const { views } = useDevices();
   // The same things in a new array are the same: said again only when they change.
   const key = things.map((thing) => `${thing.kind}:${thing.id}`).join(',');
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const stable = useMemo(() => things, [key]);
   useFocusEffect(useCallback(() => views.show(stable), [stable, views]));
 }

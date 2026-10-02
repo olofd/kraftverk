@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { Button, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import type { ConnectionView, DeviceView } from '@kraftverk/api-client';
+import type { DeviceView } from '@kraftverk/api-client';
 import { Card, haptic, Icon, Row, RowSeparator, SectionLabel, Toggle as Switch } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
@@ -9,19 +9,8 @@ import { Pressable } from '../../components/Pressable';
 import { secretWords } from '../../components/ProblemList';
 import { useAttempt } from '../../components/useAttempt';
 import { confirmAction } from '../../platform/confirm';
-import { HERE } from '../../platform/here';
 import { useDevices } from '../../state/DevicesProvider';
-import { useHome } from '../../state/HomeProvider';
-
-/** Who holds it, in words: the home — your server, or this app keeping its own — this app for a server, or another. */
-const heldByLabel = (connection: ConnectionView, role: 'follower' | 'master') =>
-  connection.heldBy.kind === 'master'
-    ? role === 'follower'
-      ? 'through your server'
-      : `from ${HERE}`
-    : connection.heldBy.kind === 'this-node'
-      ? `from ${HERE}`
-      : `from ${connection.heldBy.name}`;
+import { useReach } from '../../state/useReach';
 
 /**
  * How this device is reached (docs/DATA-MODEL.md §4): one connection in use,
@@ -30,7 +19,7 @@ const heldByLabel = (connection: ConnectionView, role: 'follower' | 'master') =>
  */
 export function Connections({ device }: { device: DeviceView }) {
   const { prefer, removeConnection, setExportable } = useDevices();
-  const { role } = useHome();
+  const reach = useReach();
   const { busy, error, attempt } = useAttempt();
   const theme = useTheme();
 
@@ -57,7 +46,7 @@ export function Connections({ device }: { device: DeviceView }) {
                 <XStack alignItems="center" justifyContent="space-between" gap="$2">
                   <YStack flex={1} gap={2}>
                     <Text fontSize={15} fontWeight="600" color="$color">
-                      {connection.methodLabel}, {heldByLabel(connection, role)}
+                      {connection.methodLabel}, {reach.of(connection.heldBy)}
                     </Text>
                     <Text fontSize={12} color="$muted">
                       {connection.inUse
@@ -117,7 +106,7 @@ export function Connections({ device }: { device: DeviceView }) {
                       disabled={busy}
                       onPress={() =>
                         void act(async () => {
-                          if (await confirmAction('Remove this connection?', `${device.name} will no longer be reached ${connection.methodLabel.toLowerCase()}, ${heldByLabel(connection, role)}.`, 'Remove')) {
+                          if (await confirmAction('Remove this connection?', `${device.name} will no longer be reached ${connection.methodLabel.toLowerCase()}, ${reach.of(connection.heldBy)}.`, 'Remove')) {
                             await removeConnection(device, connection);
                           }
                         })

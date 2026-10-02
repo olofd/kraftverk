@@ -1,25 +1,15 @@
 import { useState } from 'react';
-import { Platform } from 'react-native';
-import { Button, Input, Text, XStack, YStack } from 'tamagui';
+import { Button, Text, XStack, YStack } from 'tamagui';
 
-import type { AutomationView, ConfigExported, DeviceView } from '@kraftverk/api-client';
-import { fileNameOf } from '@kraftverk/device-sdk';
-import { PASSPHRASE_MIN } from '@kraftverk/home-file';
-import { Card, haptic, Icon, RowSeparator, SectionLabel, SegmentedControl, ToggleRow } from '@kraftverk/ui';
+import type { AutomationView, DeviceView } from '@kraftverk/api-client';
+import { Card, Icon, RowSeparator, SectionLabel, SegmentedControl, toggled, ToggleRow } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { useTone } from '../../components/tone';
-import { useAttempt } from '../../components/useAttempt';
 import { YamlEditor } from '../../components/YamlEditor';
-import { confirmAction } from '../../platform/confirm';
-import { saveText } from '../../platform/download';
-import { useHome } from '../../state/HomeProvider';
+import { PassphraseField, SaveOrShow, useExportFile, type SecretsMode } from './ExportFile';
 
-/** Passphrases shorter than this are refused by the server: an export travels. */
-
-type Secrets = 'none' | 'sealed' | 'plain';
-
-const SECRETS: readonly { value: Secrets; label: string }[] = [
+const SECRETS: readonly { value: SecretsMode; label: string }[] = [
   { value: 'none', label: 'Leave out' },
   { value: 'sealed', label: 'Sealed' },
   { value: 'plain', label: 'Plain text' },
@@ -32,44 +22,24 @@ const SECRETS: readonly { value: Secrets; label: string }[] = [
  * or shown.
  */
 export function ExportCard({ devices, automations, chosen }: { devices: readonly DeviceView[]; automations: readonly AutomationView[]; chosen: { devices: string[]; automations: string[] } | null }) {
-  const { api } = useHome();
   const tone = useTone();
+  const file = useExportFile();
   const [everything, setEverything] = useState(chosen === null);
   const [pickedDevices, setPickedDevices] = useState<ReadonlySet<string>>(new Set(chosen?.devices ?? []));
   const [pickedAutomations, setPickedAutomations] = useState<ReadonlySet<string>>(new Set(chosen?.automations ?? []));
-  const [secrets, setSecrets] = useState<Secrets>('none');
-  const [passphrase, setPassphrase] = useState('');
-  const { busy, error: problem, attempt } = useAttempt();
-  const [exported, setExported] = useState<(ConfigExported & { at: string }) | null>(null);
-  const [shown, setShown] = useState(false);
 
   const plainAllowed = devices.flatMap((device) =>
     device.connections.filter((connection) => connection.heldBy.kind === 'master' && connection.secretsExportable && connection.secrets.length).map((connection) => `${device.name} (${connection.methodLabel})`)
   );
   const nothingChosen = !everything && pickedDevices.size === 0 && pickedAutomations.size === 0;
-  const passphraseShort = secrets === 'sealed' && passphrase.length < PASSPHRASE_MIN;
-  const ready = !busy && !nothingChosen && !passphraseShort;
+  const ready = !file.busy && !nothingChosen && !file.short;
 
-  const toggle = (set: ReadonlySet<string>, key: string, on: boolean) => {
-    const next = new Set(set);
-    if (on) next.add(key);
-    else next.delete(key);
-    return next;
-  };
-
-  const run = async () => {
+  const run = () => {
     if (!ready) return;
-    haptic();
-    if (secrets === 'plain' && !(await confirmAction('Export secrets in plain text?', `The file will carry, as they are: ${plainAllowed.join(', ') || 'nothing — no connection lets its secrets leave in plain text'}. Anyone who has the file can reach those devices as you do.`, 'Export', 'dangerous'))) return;
-    await attempt(async () => {
-      const answer = await api.configuration.export({
-        ...(everything ? {} : { devices: [...pickedDevices], automations: [...pickedAutomations] }),
-        secrets,
-        ...(secrets === 'sealed' ? { passphrase } : {}),
-      });
-      setExported({ ...answer, at: new Date().toISOString() });
-      setShown(false);
-    }, 'It could not be exported');
+    void file.make(everything ? {} : { devices: [...pickedDevices], automations: [...pickedAutomations] }, {
+      title: 'Export secrets in plain text?',
+      message: `The file will carry, as they are: ${plainAllowed.join(', ') || 'nothing — no connection lets its secrets leave in plain text'}. Anyone who has the file can reach those devices as you do.`,
+    });
   };
 
   const about = everything ? 'kraftverk' : [...pickedDevices, ...pickedAutomations].length === 1 ? [...pickedDevices, ...pickedAutomations][0]! : 'kraftverk part';
@@ -93,13 +63,13 @@ export function ExportCard({ devices, automations, chosen }: { devices: readonly
             {devices.map((device) => (
               <YStack key={device.id}>
                 <RowSeparator />
-                <ToggleRow title={device.name} subtitle={device.key} checked={pickedDevices.has(device.key)} onCheckedChange={(on) => setPickedDevices((set) => toggle(set, device.key, on))} />
+                <ToggleRow title={device.name} subtitle={device.key} checked={pickedDevices.has(device.key)} onCheckedChange={(on) => setPickedDevices((set) => toggled(set, device.key, on))} />
               </YStack>
             ))}
             {automations.map((automation) => (
               <YStack key={automation.id}>
                 <RowSeparator />
-                <ToggleRow title={automation.name} subtitle={`${automation.key} · automation`} checked={pickedAutomations.has(automation.key)} onCheckedChange={(on) => setPickedAutomations((set) => toggle(set, automation.key, on))} />
+                <ToggleRow title={automation.name} subtitle={`${automation.key} · automation`} checked={pickedAutomations.has(automation.key)} onCheckedChange={(on) => setPickedAutomations((set) => toggled(set, automation.key, on))} />
               </YStack>
             ))}
           </>
@@ -108,33 +78,21 @@ export function ExportCard({ devices, automations, chosen }: { devices: readonly
         <SegmentedControl
           title="Secrets"
           subtitle={
-            secrets === 'none'
+            file.mode === 'none'
               ? 'Left out: a local key, a password. Given again after importing.'
-              : secrets === 'sealed'
+              : file.mode === 'sealed'
                 ? 'Sealed with a passphrase you choose: opened only by kraftverk, given the passphrase.'
                 : plainAllowed.length
                   ? `As they are, for the connections that allow it: ${plainAllowed.join(', ')}. The others are left out.`
                   : 'No connection lets its secrets leave in plain text: they are all left out.'
           }
-          value={secrets}
+          value={file.mode}
           options={SECRETS}
-          onChange={setSecrets}
+          onChange={file.setMode}
         />
-        {secrets === 'sealed' ? (
+        {file.mode === 'sealed' ? (
           <YStack paddingHorizontal="$4" paddingBottom="$3" gap="$1.5">
-            <Input
-              size="$4"
-              value={passphrase}
-              onChangeText={setPassphrase}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholder={`A passphrase, ${PASSPHRASE_MIN} characters at least`}
-              aria-label="Passphrase"
-              backgroundColor="$background"
-              borderColor={passphrase && passphraseShort ? '$warning' : '$borderColor'}
-              onSubmitEditing={() => void run()}
-            />
+            <PassphraseField file={file} onSubmit={run} />
             <Text fontSize={12} color="$muted" lineHeight={17}>
               Kept nowhere: without it, the secrets in the file cannot be opened.
             </Text>
@@ -142,8 +100,8 @@ export function ExportCard({ devices, automations, chosen }: { devices: readonly
         ) : null}
       </Card>
       <XStack gap="$2" alignItems="center">
-        <Button size="$4" backgroundColor="$accent" color="$background" disabled={!ready} opacity={ready ? 1 : 0.5} icon={<Icon name="download" size={16} color={tone('$background')} />} onPress={() => void run()}>
-          {busy ? 'Exporting…' : 'Export'}
+        <Button size="$4" backgroundColor="$accent" color="$background" disabled={!ready} opacity={ready ? 1 : 0.5} icon={<Icon name="download" size={16} color={tone('$background')} />} onPress={run}>
+          {file.busy ? 'Exporting…' : 'Export'}
         </Button>
         {nothingChosen ? (
           <Text flex={1} fontSize={13} color="$muted">
@@ -151,37 +109,26 @@ export function ExportCard({ devices, automations, chosen }: { devices: readonly
           </Text>
         ) : null}
       </XStack>
-      {problem ? (
-        <ErrorText>
-          {problem}
-        </ErrorText>
-      ) : null}
-      {exported ? (
+      <ErrorText>{file.error}</ErrorText>
+      {file.exported ? (
         <Card gap="$3">
           <XStack gap="$2" alignItems="center">
             <Icon name="check-circle" size={16} color={tone('$success')} />
             <Text flex={1} fontSize={15} fontWeight="600" color="$color">
-              Ready: {exported.text.split('\n').length} lines
+              Ready: {file.exported.text.split('\n').length} lines
             </Text>
           </XStack>
-          {exported.notes.length ? (
+          {file.exported.notes.length ? (
             <YStack gap="$1">
-              {exported.notes.map((note) => (
+              {file.exported.notes.map((note) => (
                 <Text key={note} fontSize={13} color="$muted" lineHeight={19}>
                   {note}
                 </Text>
               ))}
             </YStack>
           ) : null}
-          <XStack gap="$2" flexWrap="wrap">
-            <Button size="$3" minHeight={44} backgroundColor="$accent" color="$background" onPress={() => void saveText(fileNameOf(about, exported.at, 'yaml'), exported.text, 'application/yaml')}>
-              {Platform.OS === 'web' ? 'Download' : 'Share'}
-            </Button>
-            <Button size="$3" minHeight={44} onPress={() => setShown((was) => !was)}>
-              {shown ? 'Hide it' : 'Show it'}
-            </Button>
-          </XStack>
-          {shown ? <YamlEditor value={exported.text} label="The exported configuration" /> : null}
+          <SaveOrShow file={file} about={about} primary />
+          {file.shown ? <YamlEditor value={file.exported.text} label="The exported configuration" /> : null}
         </Card>
       ) : null}
     </YStack>

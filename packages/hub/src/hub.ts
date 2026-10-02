@@ -145,7 +145,7 @@ export class Hub {
    * not ask itself: a tool that cannot be undone, an automation let act.
    * Each good once, for a minute, bound to what was asked and who.
    */
-  readonly yes = { tools: new Confirmations(), arming: new Confirmations() };
+  readonly yes = { tools: new Confirmations(), lettingAct: new Confirmations() };
   /** A server's home this app kept a copy of, to keep as its own: none on a server, or when there is none. */
   readonly keeping: KeepingCopy | null;
 

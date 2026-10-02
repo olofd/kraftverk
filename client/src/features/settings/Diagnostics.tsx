@@ -6,6 +6,10 @@ import { describeError } from '@kraftverk/api-client';
 import { useHome } from '../../state/HomeProvider';
 
 /** A transport's read-only diagnostics, one at a time, as the transport reports them. */
+/** How many lines a diagnostic is asked for, and how much of its answer is shown: a page, not a log file. */
+const DIAGNOSTIC_LINES = 50;
+const SHOWN_AT_MOST = 20_000;
+
 export function Diagnostics({ transport, names }: { transport: string; names: string[] }) {
   const { api } = useHome();
   const [shown, setShown] = useState<{ name: string; body: string } | null>(null);
@@ -19,7 +23,7 @@ export function Diagnostics({ transport, names }: { transport: string; names: st
       }
       setBusy(true);
       try {
-        const data = await api.transports.diagnostic(transport, name, { limit: '50' });
+        const data = await api.transports.diagnostic(transport, name, { limit: String(DIAGNOSTIC_LINES) });
         setShown({ name, body: JSON.stringify(data, null, 2) });
       } catch (err) {
         setShown({ name, body: describeError(err) || 'It did not answer' });
@@ -41,11 +45,10 @@ export function Diagnostics({ transport, names }: { transport: string; names: st
       </XStack>
       {shown ? (
         <Text fontSize={11} fontFamily="$mono" color="$color" lineHeight={16} userSelect="text">
-          {shown.body.length > 20_000 ? `${shown.body.slice(0, 20_000)}\n…` : shown.body}
+          {shown.body.length > SHOWN_AT_MOST ? `${shown.body.slice(0, SHOWN_AT_MOST)}\n…` : shown.body}
         </Text>
       ) : null}
     </YStack>
   );
 }
 
-export const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);

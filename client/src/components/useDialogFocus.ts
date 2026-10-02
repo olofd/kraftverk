@@ -56,6 +56,5 @@ export function useDialogFocus(
       before?.focus?.();
     };
     // `box` and `start` are refs: read when a key is pressed, not when this runs.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, key]);
 }

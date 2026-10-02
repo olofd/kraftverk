@@ -1,7 +1,7 @@
 import { useLocalSearchParams } from 'expo-router';
 import { Text } from 'tamagui';
 
-import { attributesOf, partsOf } from '@kraftverk/device-sdk';
+import { partsOf } from '@kraftverk/device-sdk';
 import { Card, PartCard } from '@kraftverk/ui';
 
 import { Screen } from '../../components/Screen';
@@ -10,6 +10,7 @@ import { Controls } from './Controls';
 import { deviceStatus } from './DeviceShell';
 import { Events } from './Events';
 import { History } from './History';
+import { reportedBy } from './Readings';
 import { partSlotFor } from './registry';
 
 /**
@@ -43,7 +44,7 @@ export function DevicePart() {
       {Slot ? (
         <Slot {...screenProps(device)} part={part} />
       ) : (
-        <PartCard title="Readings" attributes={attributesOf(device.description, part.id).filter((attribute) => attribute.access !== 'write')} readings={device.readings} />
+        <PartCard title="Readings" attributes={reportedBy(device, part.id)} readings={device.readings} />
       )}
       <Controls device={device} part={part.id} />
       <History device={device} part={part.id} />

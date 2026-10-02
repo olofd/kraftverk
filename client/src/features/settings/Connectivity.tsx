@@ -1,13 +1,13 @@
 import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { Card, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
+import { capitalise, Card, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { Screen } from '../../components/Screen';
 import { useAnswer } from '../../components/useAnswer';
 import { HERE } from '../../platform/here';
 import { useHome } from '../../state/HomeProvider';
-import { capitalise, Diagnostics } from './Diagnostics';
+import { Diagnostics } from './Diagnostics';
 import { Nodes } from './Nodes';
 
 /**

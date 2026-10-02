@@ -574,7 +574,7 @@ from its kind's — and applies, per part:
   after the gateway's least gap (`runGapMs`), as often as its rule allows and
   never more than the gateway's ceiling (`runSwitchCeiling`). The gateway
   forgets a run's counts when it ends. An agent may start a sequence a person
-  has let act: that person's arming is the yes. Its run switches as an agent's,
+  has let act: that person's letting it act is the yes. Its run switches as an agent's,
   and what needs a person's confirmation is still refused to it;
 - fresh data: acting needs readings that are current for their attribute and
   no older than the policy allows, and an unknown value is never read as a

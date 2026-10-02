@@ -1,3 +1,5 @@
+/// <reference path="../types/react-native-ble-plx.d.ts" />
+
 import { BleManager, type Device, type Subscription } from 'react-native-ble-plx';
 
 import type { Availability, ByteChannel, OpenOptions, Sighting, SightingFilter, Transport, TransportContext, TransportFactory } from '@kraftverk/device-sdk';

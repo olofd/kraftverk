@@ -60,13 +60,13 @@ export function RunLogPage({ id, runId }: { id: string; runId: string }) {
   const back = automation?.name ?? 'Automation';
   if (!log) {
     return (
-      <Screen back={back} backTo={`/automation/${id}`} title="Run log">
+      <Screen back={back} backTo={`/automation/${encodeURIComponent(id)}`} title="Run log">
         <Loading error={error} />
       </Screen>
     );
   }
   return (
-    <Screen back={back} backTo={`/automation/${id}`} title="Run log" subtitle={`${dayOf(log.run.at)} ${new Date(log.run.at).toLocaleTimeString()}`}>
+    <Screen back={back} backTo={`/automation/${encodeURIComponent(id)}`} title="Run log" subtitle={`${dayOf(log.run.at)} ${new Date(log.run.at).toLocaleTimeString()}`}>
       <Log log={log} name={automation?.name ?? 'run'} />
     </Screen>
   );

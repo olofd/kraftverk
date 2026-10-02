@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { httpApi } from '@kraftverk/api-client/http';
 import type { KraftverkApi } from '@kraftverk/api-contract';
@@ -56,24 +56,27 @@ export type Opening =
 /** Opens the home where the app runs, and keeps what became of it: open, held by another tab, handed over, or why it failed. */
 function useOpened(server: OpenOptions['server'], copyOf: string | null = null): { state: Opening; open: (takeOver: boolean) => () => void } {
   const [state, setState] = useState<Opening>({ status: 'opening' });
+  // Only the latest opening counts: one asked again — "use it here" — or let go of, outruns any before it.
+  const latest = useRef(0);
   const open = useCallback(
     (takeOver: boolean) => {
-      let live = true;
+      const mine = ++latest.current;
+      const live = () => latest.current === mine;
       setState({ status: 'opening' });
       openHome({ takeOver, server, node: thisNode(), copyOf }).then(
         (home) => {
-          if (!live) return void home.close();
+          if (!live()) return void home.close();
           keepNodeId(home.nodeId);
           setState({ status: 'open', home });
-          void home.ended.then(() => live && setState({ status: 'handed-over' }));
+          void home.ended.then(() => live() && setState({ status: 'handed-over' }));
         },
         (error: unknown) => {
-          if (!live) return;
+          if (!live()) return;
           setState(error instanceof HomeOpenElsewhere ? { status: 'elsewhere' } : { status: 'failed', message: (error as Error).message });
         }
       );
       return () => {
-        live = false;
+        if (live()) latest.current += 1;
       };
     },
     [copyOf, server]

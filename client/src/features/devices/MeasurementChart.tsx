@@ -134,7 +134,7 @@ export function MeasurementChart({
         ) : segments.length === 0 ? (
           <Text fontSize={12} color="$muted" textAlign="center" lineHeight={18}>
             {error ??
-              'Nothing recorded for this window yet. The server samples once a minute, so a new device takes a few minutes to have anything to show.'}
+              'Nothing recorded for this window yet. It is sampled once a minute, so a new device takes a few minutes to have anything to show.'}
           </Text>
         ) : width > 0 ? (
           <Svg width={width} height={HEIGHT}>

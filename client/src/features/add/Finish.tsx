@@ -115,7 +115,7 @@ export function Finish({
         <YStack gap="$2">
           <SectionLabel>Name it</SectionLabel>
           <Card gap="$2">
-            <Input size="$3" value={name} maxLength={60} onChangeText={setName} onSubmitEditing={() => (!busy && (attachTo || name.trim()) ? void save() : undefined)} backgroundColor="$background" borderColor="$borderColor" aria-label="Its name" />
+            <Input size="$3" value={name} maxLength={60} onChangeText={setName} onSubmitEditing={() => (!busy && name.trim() ? void save() : undefined)} backgroundColor="$background" borderColor="$borderColor" aria-label="Its name" />
             <Text fontSize={12} color="$muted">
               {flow.holder === 'master' && nodeRole === 'follower' ? 'Held by your server.' : `Held by ${HERE}.`}
             </Text>
@@ -153,7 +153,7 @@ export function Finish({
               subtitle={
                 exportable
                   ? 'An export that asks for plain text carries it as it is: anyone with the file can reach the device as you do.'
-                  : 'Off: an export leaves it out, or seals it with a passphrase you choose. Kept safely on your server either way.'
+                  : 'Off: an export leaves it out, or seals it with a passphrase you choose. Kept safely by your home either way.'
               }
               checked={exportable}
               onCheckedChange={(on) =>

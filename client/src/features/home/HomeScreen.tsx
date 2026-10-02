@@ -14,6 +14,7 @@ import { useHome } from '../../state/HomeProvider';
 import { useShowing } from '../../state/useShowing';
 import { Shortcuts } from '../automations/Shortcuts';
 import { DeviceIcon } from '../devices/DeviceIcon';
+import { PROBLEMS_SHOWN } from '../devices/ProblemsScreen';
 import { pictureFor } from '../devices/registry';
 import { Elsewhere } from './Elsewhere';
 import { FoundNearYou } from './FoundNearYou';
@@ -47,7 +48,7 @@ export function HomeScreen() {
   const installed: readonly DeviceTypeListing[] = useAnswer(() => api.deviceTypes(), [api]).value?.types ?? [];
 
   // How many warnings and errors there are to look at, read again when the stream carries an event.
-  const problemCount = useAnswer(() => api.problems(100), [api, heard?.count]).value?.length ?? null;
+  const problemCount = useAnswer(() => api.problems(PROBLEMS_SHOWN), [api, heard?.count]).value?.length ?? null;
   const hardware = devices.filter((device) => device.kind === 'hardware');
   const services = devices.filter((device) => device.kind === 'service');
   // Every device here shows its readings: while this page is in front, the home reads them more often.

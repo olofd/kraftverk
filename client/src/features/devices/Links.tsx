@@ -3,12 +3,11 @@ import { Button, useTheme, YStack } from 'tamagui';
 
 import { describeError, type DeviceView, type LinkView } from '@kraftverk/api-client';
 import { linkKindSpec, linkOffers, MAIN_PART, partsOf, type LinkKind, type LinkOffer } from '@kraftverk/device-sdk';
-import { Card, haptic, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
+import { capitalise, Card, haptic, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { Pressable } from '../../components/Pressable';
 import { useDevices } from '../../state/DevicesProvider';
-import { capitalise } from './Manage';
 
 /**
  * Facts about the house (docs/ARCHITECTURE.md §4.4), between parts: this

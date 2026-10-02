@@ -88,7 +88,6 @@ export function YamlEditor({ value, onChange, problems = [], schema = null, labe
       created.destroy();
       view.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // A value given from outside — a file opened, the form's draft written again — replaces what is there.

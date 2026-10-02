@@ -66,7 +66,7 @@ export function DeviceConfig({ device }: { device: DeviceView }) {
               {shown.secrets || shown.heldElsewhere ? (
                 <Text fontSize={12} color="$muted" lineHeight={17}>
                   {[
-                    shown.secrets ? 'Its secrets by name only: their values stay on the server, and an export leaves them out, seals them, or carries them in plain text where allowed.' : null,
+                    shown.secrets ? 'Its secrets by name only: their values stay with your home, and an export leaves them out, seals them, or carries them in plain text where allowed.' : null,
                     shown.heldElsewhere ? `${shown.heldElsewhere === 1 ? 'A way an app holds is' : `${shown.heldElsewhere} ways apps hold are`} not in it: its keys live on the phone.` : null,
                   ]
                     .filter(Boolean)

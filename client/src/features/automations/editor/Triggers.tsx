@@ -3,7 +3,7 @@ import { Button, Text, XStack, YStack } from 'tamagui';
 
 import { EVERY_MINUTES, type Expr, type Trigger } from '@kraftverk/automation';
 import { MAIN_PART } from '@kraftverk/device-sdk';
-import { Chips, haptic, Icon, IconLabel } from '@kraftverk/ui';
+import { capitalise, Chips, haptic, Icon, IconLabel } from '@kraftverk/ui';
 
 import { Picker } from '../../../components/Picker';
 import { Pressable } from '../../../components/Pressable';
@@ -235,7 +235,7 @@ export function OnlyIf() {
           <Pressable onPress={() => setOpen((was) => !was)} label={`${open ? 'Close' : 'Change'} the condition: ${said}`}>
             <XStack alignItems="flex-start" gap="$2.5" paddingVertical={11}>
               <Text flex={1} fontSize={15} color="$color" lineHeight={22}>
-                {said.charAt(0).toUpperCase() + said.slice(1)}
+                {capitalise(said)}
               </Text>
               <YStack height={22} justifyContent="center">
                 <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} color={tone('$muted')} />

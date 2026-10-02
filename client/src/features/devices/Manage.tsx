@@ -9,7 +9,6 @@ import { ErrorText } from '../../components/ErrorText';
 import { confirmAction } from '../../platform/confirm';
 import { useDevices } from '../../state/DevicesProvider';
 
-export const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 // --- manage -----------------------------------------------------------------------
 

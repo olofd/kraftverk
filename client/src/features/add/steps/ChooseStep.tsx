@@ -8,6 +8,9 @@ import { Pressable } from '../../../components/Pressable';
 import { useAttempt } from '../../../components/useAttempt';
 import { ErrorLine, PRIMARY, StepFrame, type StepProps } from './StepFrame';
 
+/** How often what can be seen is read again, while a device is being chosen. */
+const SEEN_AGAIN_MS = 2000;
+
 export function ChooseStep({ flow, step, onNext, onBack, presetAddress }: StepProps & { step: Extract<SetupStepView, { kind: 'choose' }>; presetAddress?: string }) {
   const [sightings, setSightings] = useState<SightingView[]>([]);
   const [manual, setManual] = useState('');
@@ -34,7 +37,7 @@ export function ChooseStep({ flow, step, onNext, onBack, presetAddress }: StepPr
         .then((next) => live && setSightings(next))
         .catch((err: unknown) => live && setError(describeError(err)));
     void load();
-    const timer = setInterval(() => void load(), 2000);
+    const timer = setInterval(() => void load(), SEEN_AGAIN_MS);
     return () => {
       live = false;
       clearInterval(timer);

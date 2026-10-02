@@ -19,12 +19,13 @@ type AuthContextValue = {
   /** The first answer has not arrived yet. */
   loading: boolean;
   /**
-   * The server predates accounts, or could not be asked. Either way this is
-   * not the place to say so: the connection banner already does, and an old
-   * server has no login to show.
+   * The server could not be asked who you are: out of reach, or not answering
+   * as a kraftverk server does. This is not the place to say so — the
+   * connection banner does — and meanwhile the app shows what the server
+   * last said.
    */
-  unknown: boolean;
-  /** This device may use the app: signed in — or talking to a server from before accounts. */
+  unreachable: boolean;
+  /** This device may use the app: signed in — or its server out of reach, showing what it last said. */
   allowed: boolean;
   /** A sign-in the server accepted and the browser then dropped, explained. */
   notice: string | null;
@@ -50,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const [state, setState] = useState<AuthState | null>(null);
   const [loading, setLoading] = useState(applies);
-  const [unknown, setUnknown] = useState(false);
+  const [unreachable, setUnreachable] = useState(false);
   // Which server an answer is about: switching servers mid-request must not
   // leave one server's answer describing another.
   const asked = useRef<string | null>(null);
@@ -76,14 +77,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const next = await server.auth.state();
       if (asked.current !== serverUrl) return null;
       setState(next);
-      setUnknown(false);
+      setUnreachable(false);
       return next;
     } catch (error) {
       if (asked.current !== serverUrl) return null;
-      // 404: a server from before accounts existed. Anything else: unreachable.
-      // Neither is a login problem, and neither should lock the app.
+      // Not a login problem, and not one to lock the app over.
       setState(null);
-      setUnknown(true);
+      setUnreachable(true);
       if (!(error instanceof ApiError)) throw error;
       return null;
     } finally {
@@ -146,8 +146,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       applies,
       state,
       loading,
-      unknown,
-      allowed: !applies || unknown || Boolean(state?.user),
+      unreachable,
+      allowed: !applies || unreachable || Boolean(state?.user),
       notice,
       generation,
       refresh,
@@ -155,7 +155,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setup,
       logOut,
     }),
-    [applies, state, loading, unknown, notice, generation, refresh, logIn, setup, logOut]
+    [applies, state, loading, unreachable, notice, generation, refresh, logIn, setup, logOut]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

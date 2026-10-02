@@ -142,7 +142,7 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
         const needsConfirming = armedAfter && (current.mode !== 'act' || changedRule !== null || recheckChanged);
         const { confirmation, ...changes } = input;
         const subject = subjectOf({ automation: current.id, changes, by: actor });
-        if (needsConfirming && !hub.yes.arming.accept(confirmation, subject)) {
+        if (needsConfirming && !hub.yes.lettingAct.accept(confirmation, subject)) {
           // What the yes is to, in words: letting it act, keeping things so while it does, or changing what it does.
           const said =
             current.mode !== 'act'
@@ -152,7 +152,7 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
                   ? `It acts on its own: every ${input.recheckMinutes} min it will switch back what was switched by hand against it.`
                   : 'It acts on its own: from now on, what is switched by hand stays until a condition comes true again.'
                 : 'It acts on its own: what it does will change.';
-          throw new ApiError('needs-yes', said, { needsConfirmation: hub.yes.arming.ask(subject) });
+          throw new ApiError('needs-yes', said, { needsConfirmation: hub.yes.lettingAct.ask(subject) });
         }
         if (armedAfter) {
           const problems = engine.roleProblems({ ...current, ...(changedRule ?? {}) });
@@ -182,7 +182,7 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
                   ? 'Taken off the home page'
                   : 'Put on the home page'
                 : 'Changed';
-        record(input.mode === 'act' && current.mode !== 'act' ? 'automation.armed' : 'automation.changed', updated.id, `${said}: "${updated.name}"`, {
+        record(input.mode === 'act' && current.mode !== 'act' ? 'automation.let-act' : 'automation.changed', updated.id, `${said}: "${updated.name}"`, {
           before: { key: current.key, mode: current.mode, rule: current.rule, roles: current.roles, starts: current.starts, recheckMinutes: current.recheckMinutes, homePlace: current.homePlace },
           after: { key: updated.key, mode: updated.mode, rule: updated.rule, roles: updated.roles, starts: updated.starts, recheckMinutes: updated.recheckMinutes, homePlace: updated.homePlace },
         });

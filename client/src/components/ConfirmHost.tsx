@@ -11,7 +11,7 @@ import { useDialogFocus } from './useDialogFocus';
  * `window.confirm` was the honest equivalent of a phone's alert until it was
  * not: an embedded browser, or one where someone ticked "prevent this page
  * from creating additional dialogs", answers no at once and shows nothing. So
- * arming an automation, cutting a loaded plug or resetting a counter did
+ * letting an automation act, cutting a loaded plug or resetting a counter did
  * nothing at all, and said nothing.
  *
  * Mounted once, inside the app's theme — a React Native `Modal` is drawn

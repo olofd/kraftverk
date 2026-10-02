@@ -115,7 +115,7 @@ describe('automations', () => {
 
     // A new name is not a new start: what it did stands, and it does not run again for it.
     const runs = async () =>
-      (await t.home.timeline()).filter((entry) => entry.resource === window.id && !['automation.changed', 'automation.armed', 'automation.created'].includes(entry.kind)).length;
+      (await t.home.timeline()).filter((entry) => entry.resource === window.id && !['automation.changed', 'automation.let-act', 'automation.created'].includes(entry.kind)).length;
     await settle();
     const before = await runs();
     await t.home.automations.update(window.id, { name: 'Charge window, renamed' });
@@ -185,7 +185,7 @@ describe('automations', () => {
     expect((await refusal(t.home.automations.update(created.id, other))).kind).toBe('needs-yes');
     expect((await refusal(t.home.automations.update(created.id, { rule: other.rule }))).kind).toBe('invalid');
 
-    expect((await t.home.timeline()).find((entry) => entry.kind === 'automation.armed')).toMatchObject({ actor: 'olof' });
+    expect((await t.home.timeline()).find((entry) => entry.kind === 'automation.let-act')).toMatchObject({ actor: 'olof' });
   });
 
   test('played, it runs now — for real, though it only watches on its own — takes its steps as it goes, and its runs are listed', async () => {

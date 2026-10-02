@@ -38,7 +38,6 @@ export function useSlide<T>(value: T, token: (v: T) => string, commit: (next: T,
     sliding.current = false;
     setAdjusting(false);
     if (token(latest.current) !== token(device.current)) commitRef.current(latest.current, device.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Follow the device while untouched, but never yank the thumb mid-change.

@@ -1,24 +1,13 @@
-import { useState } from 'react';
 import { Platform } from 'react-native';
-import { Button, Input, Text, XStack, YStack } from 'tamagui';
+import { Button, Text, XStack, YStack } from 'tamagui';
 
-import type { ConfigExported } from '@kraftverk/api-client';
-import { fileNameOf } from '@kraftverk/device-sdk';
-import { PASSPHRASE_MIN } from '@kraftverk/home-file';
-import { haptic, Icon, SegmentedControl } from '@kraftverk/ui';
+import { Icon, SegmentedControl } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { secretWords } from '../../components/ProblemList';
 import { useTone } from '../../components/tone';
-import { useAttempt } from '../../components/useAttempt';
 import { YamlEditor } from '../../components/YamlEditor';
-import { confirmAction } from '../../platform/confirm';
-import { saveText } from '../../platform/download';
-import { useHome } from '../../state/HomeProvider';
-
-/** Passphrases shorter than this are refused by the server: an export travels. */
-
-type Secrets = 'none' | 'sealed' | 'plain';
+import { PassphraseField, SaveOrShow, useExportFile, type SecretsMode } from './ExportFile';
 
 /**
  * One device or one automation exported where it is (docs/CONFIG.md): a
@@ -27,30 +16,19 @@ type Secrets = 'none' | 'sealed' | 'plain';
  * its owner allowed it; then downloaded, or shown.
  */
 export function ExportOne({ what, name, secrets = [], plainAllowed = false }: { what: { devices?: string[]; automations?: string[] }; name: string; secrets?: readonly string[]; plainAllowed?: boolean }) {
-  const { api } = useHome();
   const tone = useTone();
-  const [mode, setMode] = useState<Secrets>('none');
-  const [passphrase, setPassphrase] = useState('');
-  const { busy, error: problem, attempt } = useAttempt();
-  const [exported, setExported] = useState<(ConfigExported & { at: string }) | null>(null);
-  const [shown, setShown] = useState(false);
-  const short = mode === 'sealed' && passphrase.length < PASSPHRASE_MIN;
-  const options: { value: Secrets; label: string }[] = [
+  const file = useExportFile();
+  const options: { value: SecretsMode; label: string }[] = [
     { value: 'none', label: 'Leave out' },
     { value: 'sealed', label: 'Sealed' },
     ...(plainAllowed ? [{ value: 'plain' as const, label: 'Plain text' }] : []),
   ];
-
-  const run = async () => {
-    if (busy || short) return;
-    haptic();
-    if (mode === 'plain' && !(await confirmAction('Export in plain text?', `The file will carry its ${secretWords(secrets)} as it is: anyone who has it can reach the device as you do.`, 'Export', 'dangerous'))) return;
-    await attempt(async () => {
-      const answer = await api.configuration.export({ devices: what.devices ?? [], automations: what.automations ?? [], secrets: mode, ...(mode === 'sealed' ? { passphrase } : {}) });
-      setExported({ ...answer, at: new Date().toISOString() });
-      setShown(Platform.OS !== 'web');
-    }, 'It could not be exported');
-  };
+  const run = () =>
+    void file.make(
+      { devices: what.devices ?? [], automations: what.automations ?? [] },
+      { title: 'Export in plain text?', message: `The file will carry its ${secretWords(secrets)} as it is: anyone who has it can reach the device as you do.` },
+      Platform.OS !== 'web'
+    );
 
   return (
     <YStack gap="$3" borderTopWidth={1} borderColor="$borderColor" paddingTop="$3">
@@ -58,54 +36,27 @@ export function ExportOne({ what, name, secrets = [], plainAllowed = false }: { 
         <YStack marginHorizontal="$-4">
           <SegmentedControl
             title="Its secrets"
-            subtitle={mode === 'none' ? `Its ${secretWords(secrets)} left out: given again after importing.` : mode === 'sealed' ? 'Sealed with a passphrase you choose: opened only by kraftverk, given it.' : 'As it is, as you allowed: anyone with the file has it.'}
-            value={mode}
+            subtitle={file.mode === 'none' ? `Its ${secretWords(secrets)} left out: given again after importing.` : file.mode === 'sealed' ? 'Sealed with a passphrase you choose: opened only by kraftverk, given it.' : 'As it is, as you allowed: anyone with the file has it.'}
+            value={file.mode}
             options={options}
-            onChange={setMode}
+            onChange={file.setMode}
           />
         </YStack>
       ) : null}
-      {mode === 'sealed' ? (
-        <Input
-          size="$4"
-          value={passphrase}
-          onChangeText={setPassphrase}
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          placeholder={`A passphrase, ${PASSPHRASE_MIN} characters at least`}
-          aria-label="Passphrase"
-          backgroundColor="$background"
-          borderColor={passphrase && short ? '$warning' : '$borderColor'}
-          onSubmitEditing={() => void run()}
-        />
-      ) : null}
+      {file.mode === 'sealed' ? <PassphraseField file={file} onSubmit={run} /> : null}
       <XStack gap="$2" flexWrap="wrap" alignItems="center">
-        <Button size="$3" minHeight={44} disabled={busy || short} opacity={busy || short ? 0.5 : 1} icon={<Icon name="file-text" size={16} color={tone('$color')} />} onPress={() => void run()}>
-          {busy ? 'Exporting…' : exported ? 'Export again' : 'Make the file'}
+        <Button size="$3" minHeight={44} disabled={file.busy || file.short} opacity={file.busy || file.short ? 0.5 : 1} icon={<Icon name="file-text" size={16} color={tone('$color')} />} onPress={run}>
+          {file.busy ? 'Exporting…' : file.exported ? 'Export again' : 'Make the file'}
         </Button>
-        {exported ? (
-          <>
-            <Button size="$3" minHeight={44} icon={<Icon name="download" size={16} color={tone('$color')} />} onPress={() => void saveText(fileNameOf(name, exported.at, 'yaml'), exported.text, 'application/yaml')}>
-              {Platform.OS === 'web' ? 'Download' : 'Share'}
-            </Button>
-            <Button size="$3" minHeight={44} onPress={() => setShown((was) => !was)}>
-              {shown ? 'Hide it' : 'Show it'}
-            </Button>
-          </>
-        ) : null}
+        <SaveOrShow file={file} about={name} />
       </XStack>
-      {problem ? (
-        <ErrorText>
-          {problem}
-        </ErrorText>
-      ) : null}
-      {exported?.notes.map((note) => (
+      <ErrorText>{file.error}</ErrorText>
+      {file.exported?.notes.map((note) => (
         <Text key={note} fontSize={12} color="$muted" lineHeight={17}>
           {note}
         </Text>
       ))}
-      {exported && shown ? <YamlEditor value={exported.text} label={`${name}, exported`} minLines={4} /> : null}
+      {file.exported && file.shown ? <YamlEditor value={file.exported.text} label={`${name}, exported`} minLines={4} /> : null}
       <Text fontSize={12} color="$muted" lineHeight={17}>
         {what.automations?.length
           ? 'A file of just it: import it under App settings → Configuration, or paste it into a new automation written as YAML — here, or on another server that has the devices it names.'

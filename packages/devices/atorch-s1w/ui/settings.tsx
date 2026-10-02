@@ -356,7 +356,6 @@ function Bill({ plug }: { plug: Plug }) {
   useEffect(() => {
     if (!plug.pending('price')) setDraft(price === null ? '' : price.toFixed(2));
     // What was typed is left alone while its write is on its way.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [price]);
   const typed = Number(draft.replace(',', '.'));
   const valid = draft.trim() !== '' && Number.isFinite(typed) && typed >= 0 && typed <= 999.99;

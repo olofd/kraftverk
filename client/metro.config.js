@@ -5,8 +5,8 @@ const { getDefaultConfig } = require('expo/metro-config');
 /**
  * Metro, taught about the monorepo.
  *
- * The app imports `@kraftverk/protocol` straight from source — it is a
- * workspace package with no build step — so Metro has to watch outside
+ * The app imports the shared packages (`@kraftverk/*`) straight from source —
+ * workspace packages with no build step — so Metro has to watch outside
  * `client/` and look for modules in the root `node_modules` as well as its own.
  * Without this the bundler resolves the symlink and then refuses to leave the
  * project root.
@@ -32,7 +32,8 @@ config.resolver.nodeModulesPaths = [
  * Bluetooth API instead and would otherwise pull a native library into the
  * browser bundle.
  *
- * `client/src/link/nativeBle.ts` checks at runtime and explains what to install.
+ * The Bluetooth transport (`packages/transports/ble/src/native.ts`) checks at
+ * runtime and explains what to install.
  */
 const OPTIONAL_NATIVE_MODULES = new Set(['react-native-ble-plx']);
 

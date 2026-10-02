@@ -235,8 +235,8 @@ describe('a refusal over HTTP', () => {
     const asked = await as(`/automations/${automation.body.id}`, { method: 'PATCH', body: { mode: 'act' } });
     expect(asked.status).toBe(409);
     expect(asked.body).toEqual({ error: expect.any(String), needsConfirmation: expect.any(String) });
-    const armed = await as(`/automations/${automation.body.id}`, { method: 'PATCH', body: { mode: 'act', confirmation: asked.body.needsConfirmation } });
-    expect([armed.status, armed.body.mode]).toEqual([200, 'act']);
+    const acting = await as(`/automations/${automation.body.id}`, { method: 'PATCH', body: { mode: 'act', confirmation: asked.body.needsConfirmation } });
+    expect([acting.status, acting.body.mode]).toEqual([200, 'act']);
   });
 
   test('a command or a setting the gateway refuses is its verdict, with 409', async () => {

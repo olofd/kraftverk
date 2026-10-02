@@ -1,13 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Spinner, Text } from 'tamagui';
 
-import { describeError, type AutomationView } from '@kraftverk/api-client';
-import { Card } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
+import { Loading } from '../../components/Loading';
 import { Screen } from '../../components/Screen';
 import { AutomationList } from './AutomationList';
-import { useReadAgain } from './useReadAgain';
-import { useHome } from '../../state/HomeProvider';
+import { useAutomations } from './useAutomations';
 
 /**
  * Automations (docs/AUTOMATIONS.md, docs/AUTOMATIONS-UX.md): each one a small
@@ -20,33 +17,12 @@ import { useHome } from '../../state/HomeProvider';
  * tap on a switch.
  */
 export function AutomationsScreen() {
-  const { api } = useHome();
-  const [automations, setAutomations] = useState<AutomationView[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    api.automations
-      .list()
-      .then((all) => (setAutomations(all), setError(null)))
-      .catch((err: unknown) => setError(describeError(err) || 'The automations could not be read'));
-  }, [api]);
-  useEffect(() => load(), [load]);
   // How each stands, kept current while this is open: read again when a run moves, or a reading each stands on.
-  useReadAgain(load, { followReadings: true });
-
-  const replace = (next: AutomationView) => setAutomations((all) => all?.map((candidate) => (candidate.id === next.id ? next : candidate)) ?? null);
+  const { automations, error, replace } = useAutomations({ followReadings: true });
 
   return (
     <Screen back="Your devices" title="Automations">
-      {error ? (
-        <Card borderColor="$danger">
-          <Text fontSize={14} color="$danger">
-            {error}
-          </Text>
-        </Card>
-      ) : null}
-      {!automations && !error ? <Spinner color="$accent" /> : null}
-
+      {!automations ? <Loading error={error} /> : <ErrorText>{error}</ErrorText>}
       {automations ? (
         <AutomationList
           automations={automations}

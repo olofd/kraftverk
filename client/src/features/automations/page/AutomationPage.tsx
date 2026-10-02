@@ -2,26 +2,17 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import {
-  changeAutomation,
-  describeError,
-  isRunEntry,
-  withConfirmation,
-  type AutomationChanges,
-  type AutomationRun,
-  type AutomationView,
-  type Rehearsal,
-} from '@kraftverk/api-client';
+import { describeError, isRunEntry, type AutomationRun, type AutomationView, type Rehearsal } from '@kraftverk/api-client';
 import type { AutomationId } from '@kraftverk/api-contract';
-import { describeExpr, keepsSo } from '@kraftverk/automation';
-import { Card, haptic, Icon, RowSeparator, SegmentedControl, ToggleRow, type IconName } from '@kraftverk/ui';
+import { describeExpr } from '@kraftverk/automation';
+import { capitalise, Card, haptic, Icon, RowSeparator, type IconName } from '@kraftverk/ui';
 
 import { ErrorText } from '../../../components/ErrorText';
 import { Loading } from '../../../components/Loading';
 import { Pressable } from '../../../components/Pressable';
 import { Screen } from '../../../components/Screen';
 import { useTone } from '../../../components/tone';
-import { ask, confirmAction } from '../../../platform/confirm';
+import { confirmAction } from '../../../platform/confirm';
 import { useHome } from '../../../state/HomeProvider';
 import { useShowing } from '../../../state/useShowing';
 import { startsBy } from '../AutomationCard';
@@ -32,7 +23,7 @@ import { useReadAgain } from '../useReadAgain';
 import { useRun } from '../useRun';
 import { Empty, Group } from './Group';
 import { Rehearsed, RightNow, RunDetail, Timeline, type History } from './History';
-import { every, MODES, modeSays, RECHECK, recheckSays } from './modes';
+import { OnItsOwn } from './OnItsOwn';
 
 /**
  * An automation's own page (docs/AUTOMATIONS-UX.md): how it stands and a
@@ -131,7 +122,7 @@ function Page({ automation, onChanged, onEdit }: { automation: AutomationView; o
       <Group icon="filter" title="Only if" summary={condition ? undefined : 'Always'}>
         {condition ? (
           <Text fontSize={15} color="$color" lineHeight={22}>
-            {condition.charAt(0).toUpperCase() + condition.slice(1)}
+            {capitalise(condition)}
           </Text>
         ) : (
           <Empty>None: every time it runs, it takes its steps.</Empty>
@@ -294,87 +285,6 @@ function Header({
         </ErrorText>
       ) : null}
     </YStack>
-  );
-}
-
-/** What it does on its own: off, only watching, or acting — keeping things so, and a place on the home page. */
-function OnItsOwn({ automation, onChanged }: { automation: AutomationView; onChanged: (next: AutomationView) => void }) {
-  const { api } = useHome();
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const onItsOwn = automation.when.length > 0;
-  const canKeep = keepsSo(automation.rule);
-
-  const act = async (work: () => Promise<void>, failure: string) => {
-    setBusy(true);
-    setProblem(null);
-    try {
-      await work();
-    } catch (err) {
-      setProblem(describeError(err) || failure);
-    } finally {
-      setBusy(false);
-    }
-  };
-  /** A change the server may want a yes for: asked in its words, again if the yes came too late. */
-  const change = (changes: AutomationChanges, title: string, yes: string) =>
-    act(async () => {
-      const { answer } = await withConfirmation(
-        (confirmation) => changeAutomation(api, automation.id, { ...changes, confirmation }),
-        (reason) => ({ title, message: `${reason}\n\n${automation.sentence}`, yes }),
-        ask
-      );
-      if ('automation' in answer) onChanged(answer.automation);
-    }, 'That did not work');
-
-  return (
-    <Group icon="zap" title={onItsOwn ? 'On its own' : 'When others start it'} inset>
-      <SegmentedControl
-        title="Mode"
-        subtitle={modeSays(automation.mode, onItsOwn)}
-        value={automation.mode}
-        options={MODES}
-        disabled={busy}
-        onChange={(mode) => void change({ mode }, onItsOwn ? `Let “${automation.name}” act on its own?` : `Let “${automation.name}” act when others start it?`, 'Let it act')}
-      />
-      {canKeep ? (
-        <>
-          <RowSeparator />
-          <SegmentedControl
-            title="Keep it so"
-            subtitle={recheckSays(automation.recheckMinutes)}
-            value={automation.recheckMinutes ?? 0}
-            options={RECHECK}
-            disabled={busy}
-            onChange={(minutes) =>
-              void change(
-                { recheckMinutes: minutes || null },
-                minutes ? `Check “${automation.name}” every ${every(minutes)}?` : `Stop checking “${automation.name}” again?`,
-                minutes ? `Every ${every(minutes)}` : 'Stop'
-              )
-            }
-          />
-        </>
-      ) : null}
-      <RowSeparator />
-      <ToggleRow
-        title="On the home page"
-        subtitle={automation.homePlace === null ? 'A shortcut to run it, on your home page.' : 'Its card is on your home page.'}
-        checked={automation.homePlace !== null}
-        disabled={busy}
-        onCheckedChange={(on) =>
-          void act(async () => {
-            const answer = await changeAutomation(api, automation.id, { homePlace: on ? 1000 : null });
-            if ('automation' in answer) onChanged(answer.automation);
-          }, 'That did not work')
-        }
-      />
-      {problem ? (
-        <ErrorText paddingHorizontal="$4" paddingBottom="$3">
-          {problem}
-        </ErrorText>
-      ) : null}
-    </Group>
   );
 }
 

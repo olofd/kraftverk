@@ -1,5 +1,6 @@
-import { Icon } from '@kraftverk/ui';
 import { Button, Text, useTheme, XStack, YStack } from 'tamagui';
+
+import { Icon } from '@kraftverk/ui';
 
 import { useDevices } from '../state/DevicesProvider';
 import { useServers } from '../state/ServersProvider';
@@ -12,7 +13,7 @@ import { useServers } from '../state/ServersProvider';
  * are this app's own, and each says on its card whether it can be reached.
  */
 export function ConnectionBanner() {
-  const { connection, error, refresh, devices } = useDevices();
+  const { homeReach: connection, error, refresh, devices } = useDevices();
   const servers = useServers();
   const theme = useTheme();
 
