@@ -168,11 +168,7 @@ export class MovingToMaster {
         const saved = await follower.home.setup.save(draft.id, { mode: 'attach', deviceId: device.id, name: device.name });
         const way = saved.connections.find((each) => each.method === stay.method && each.heldBy.id === me);
         if (way && stay.connection) {
-          const secrets = Object.fromEntries(own.connections.secretFields(stay.connection).flatMap((field) => {
-            const value = own.connections.secret(stay.connection!, field);
-            return value === null ? [] : [[field, value] as const];
-          }));
-          kept.push({ way: way.id, secrets });
+          kept.push({ way: way.id, secrets: own.connections.secrets(stay.connection) });
         }
       } catch (error) {
         applied.notes.push(`${stay.name}: its ${stay.label} could not stay with this app: ${(error as Error).message}`);

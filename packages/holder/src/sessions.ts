@@ -43,6 +43,7 @@ import { Failover, identityVerdict } from './watch.ts';
  * too long gives way to the next.
  */
 
+/** How often every open session is looked at: verified, described again, and given way to its next connection when down too long. */
 const WATCH_MS = 15_000;
 /**
  * How often what devices say is checked for what changed, for whoever listens
@@ -278,7 +279,8 @@ export class SessionManager {
     // Each isolated: one device that will not open must not keep the others shut.
     await Promise.all([...wanted.values()].filter(({ record }) => !this.#open.has(record.id)).map(({ record, connection }) => this.#openDevice(record, connection)));
 
-    this.#watch ??= setInterval(() => void this.check(), WATCH_MS);
+    // Nobody waits on a check: what goes wrong is said, never left unhandled.
+    this.#watch ??= setInterval(() => void this.check().catch((error: unknown) => this.deps.log?.(`checking the sessions failed: ${(error as Error).message}`)), WATCH_MS);
     (this.#watch as { unref?: () => void }).unref?.();
     this.#pulse ??= setInterval(() => this.pulse(), PULSE_MS);
     (this.#pulse as { unref?: () => void }).unref?.();
@@ -296,7 +298,14 @@ export class SessionManager {
    * test runs it directly.
    */
   pulse(): void {
-    for (const id of this.#records.keys()) this.#publish(id);
+    for (const id of this.#records.keys()) {
+      try {
+        this.#publish(id);
+      } catch (error) {
+        // A device's own code that fails to say how it is costs that device its pulse, never the others' — nor the process, from a timer.
+        this.deps.log?.(`${this.#records.get(id)?.name ?? id} could not say how it is: ${(error as Error).message}`);
+      }
+    }
   }
 
   #publish(deviceId: SavedDeviceId): void {

@@ -143,13 +143,12 @@ async function ask(channel: ByteChannel, what: string, timeoutMs = 500): Promise
 
 type LampConfig = { room?: string };
 
-/** Every context the type was opened with, and whether each session was closed. */
-export const opened: { ctx: DeviceContext<LampConfig>; closed: boolean }[] = [];
-export const lampControl = { failOpen: false };
+/** What a test sees of the lamps it opens: every context a session was opened with, and whether it was closed; and whether opening one fails. */
+export type LampWatch = { opened: { ctx: DeviceContext<LampConfig>; closed: boolean }[]; failOpen: boolean };
 
-const lampSession = (ctx: DeviceContext<LampConfig>, channel: ByteChannel | null): DeviceSession => {
+const lampSession = (ctx: DeviceContext<LampConfig>, channel: ByteChannel | null, watch: LampWatch): DeviceSession => {
   const entry = { ctx, closed: false };
-  opened.push(entry);
+  watch.opened.push(entry);
   let state: { serial: string; on: boolean; at: string } | null = channel ? null : { serial: 'SIM', on: true, at: new Date().toISOString() };
   const poll = async () => {
     if (!channel) return;
@@ -196,39 +195,50 @@ export const LAMP: DeviceDescription = {
   events: [{ id: 'bulb.failed', label: 'Bulb failed', level: 'error', description: 'The bulb has gone.' }],
 };
 
-export const lampType = defineDeviceType<LampConfig>({
-  id: 'test.lamp',
-  kind: 'hardware',
-  meta: { name: 'Test lamp', category: 'smart-plug', support: 'experimental', icon: 'sun', models: ['L1'] },
-  describe: () => LAMP,
-  config: { fields: { room: { type: 'string', title: 'Room' } } },
-  tools: {
-    ping: { label: 'Ping', description: 'Asks the lamp whether it is there.', writes: false, answer: { type: 'object', fields: { pong: { type: 'boolean' }, room: { type: 'string' } }, required: ['pong'] } },
-    blink: {
-      label: 'Blink',
-      description: 'Blinks the lamp.',
-      writes: true,
-      input: { fields: { times: { type: 'number', title: 'Times', integer: true, min: 1, max: 99, default: 1 } } },
-      answer: { type: 'object', fields: { blinked: { type: 'number', integer: true } }, required: ['blinked'] },
+/**
+ * A lamp type, and what a test sees of the sessions it opens: its own, so
+ * nothing is shared between tests through the module. `lampType` is one
+ * made for tests that do not look.
+ */
+export function makeLampType(): { type: ReturnType<typeof defineDeviceType<LampConfig>>; watch: LampWatch } {
+  const watch: LampWatch = { opened: [], failOpen: false };
+  const type = defineDeviceType<LampConfig>({
+    id: 'test.lamp',
+    kind: 'hardware',
+    meta: { name: 'Test lamp', category: 'smart-plug', support: 'experimental', icon: 'sun', models: ['L1'] },
+    describe: () => LAMP,
+    config: { fields: { room: { type: 'string', title: 'Room' } } },
+    tools: {
+      ping: { label: 'Ping', description: 'Asks the lamp whether it is there.', writes: false, answer: { type: 'object', fields: { pong: { type: 'boolean' }, room: { type: 'string' } }, required: ['pong'] } },
+      blink: {
+        label: 'Blink',
+        description: 'Blinks the lamp.',
+        writes: true,
+        input: { fields: { times: { type: 'number', title: 'Times', integer: true, min: 1, max: 99, default: 1 } } },
+        answer: { type: 'object', fields: { blinked: { type: 'number', integer: true } }, required: ['blinked'] },
+      },
     },
-  },
-  connections: [
-    { id: 'bus', label: 'Test bus', protocol: 'lampish', transport: 'bus', reach: 'local', recommended: true },
-    { id: 'backup', label: 'Test bus, second port', protocol: 'lampish', transport: 'bus', reach: 'local' },
-  ],
-  setup: { saveAnyway: 'A lamp that is switched off at the wall cannot answer.' },
-  async identify(connection, ctx) {
-    const said = await ask(connection.channel as ByteChannel, 'who', 300);
-    return { identity: `lampish:${said.serial}`, model: said.model, summary: `It is ${said.on ? 'on' : 'off'}.`, config: ctx.config.room ? {} : { room: 'Hall' } };
-  },
-  async createSession(ctx) {
-    if (lampControl.failOpen) throw new Error('The lamp refused the connection');
-    return lampSession(ctx, ctx.connection!.channel as ByteChannel);
-  },
-  async createSimulator(ctx) {
-    return lampSession(ctx, null);
-  },
-});
+    connections: [
+      { id: 'bus', label: 'Test bus', protocol: 'lampish', transport: 'bus', reach: 'local', recommended: true },
+      { id: 'backup', label: 'Test bus, second port', protocol: 'lampish', transport: 'bus', reach: 'local' },
+    ],
+    setup: { saveAnyway: 'A lamp that is switched off at the wall cannot answer.' },
+    async identify(connection, ctx) {
+      const said = await ask(connection.channel as ByteChannel, 'who', 300);
+      return { identity: `lampish:${said.serial}`, model: said.model, summary: `It is ${said.on ? 'on' : 'off'}.`, config: ctx.config.room ? {} : { room: 'Hall' } };
+    },
+    async createSession(ctx) {
+      if (watch.failOpen) throw new Error('The lamp refused the connection');
+      return lampSession(ctx, ctx.connection!.channel as ByteChannel, watch);
+    },
+    async createSimulator(ctx) {
+      return lampSession(ctx, null, watch);
+    },
+  });
+  return { type, watch };
+}
+
+export const lampType = makeLampType().type;
 
 /** A node that is always on, reachable and trusted, as a machine on the network is: what a test's home runs as. */
 export const MACHINE_NODE = { id: nodeId('n-00000000000000a1'), name: 'Test machine', alwaysOn: true, reachable: true, trusted: true };

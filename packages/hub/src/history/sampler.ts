@@ -4,6 +4,7 @@ import { isCurrent, keepsHistory, partOf, type AttributeSpec, type DeviceDescrip
 import type { AuditLog, EventStore, HistoryStore, Sample } from '@kraftverk/store';
 
 import type { DeviceViews } from '../devices/views.ts';
+import { unref } from '../timers.ts';
 import { daysBefore, HOURLY_DAYS, SAMPLE_DAYS, TIMELINE_DAYS } from './retention.ts';
 
 /**
@@ -41,6 +42,19 @@ export const keptAttributes = (description: DeviceDescription): Map<string, Attr
   new Map(description.attributes.filter((attribute) => keepsHistory(attribute)).map((attribute) => [attribute.key, attribute]));
 
 const INTERVAL_MS = 60_000;
+
+/** A timer for one of the sampler's jobs: what goes wrong is said, never thrown where nothing catches it; it keeps no process alive. */
+const every = (ms: number, what: string, job: () => void): ReturnType<typeof setInterval> => {
+  const timer = setInterval(() => {
+    try {
+      job();
+    } catch (error) {
+      console.error(`[history] ${what} failed:`, error);
+    }
+  }, ms);
+  unref(timer);
+  return timer;
+};
 /** How far back each roll-up looks: late readings from a node that was away land in hours already rolled up. */
 const ROLLUP_WINDOW_MS = 48 * 3_600_000;
 /** Spans longer than this are drawn from the hourly roll-ups. */
@@ -57,9 +71,9 @@ export class Sampler {
   ) {}
 
   start(): void {
-    this.#timer ??= setInterval(() => this.sample(), INTERVAL_MS);
-    this.#pruneTimer ??= setInterval(() => this.prune(), 6 * 60 * 60_000);
-    this.#rollupTimer ??= setInterval(() => this.rollUp(), 10 * 60_000);
+    this.#timer ??= every(INTERVAL_MS, 'sampling', () => this.sample());
+    this.#pruneTimer ??= every(6 * 60 * 60_000, 'pruning', () => this.prune());
+    this.#rollupTimer ??= every(10 * 60_000, 'rolling up', () => this.rollUp());
     this.sample();
     this.rollUp();
   }

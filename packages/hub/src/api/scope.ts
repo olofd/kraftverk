@@ -1,9 +1,19 @@
 import { ApiError, type Caller } from '@kraftverk/api-contract';
-import { savedDeviceId, type ResourceKind, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { KEY, savedDeviceId, type ResourceKind, type SavedDeviceId } from '@kraftverk/device-sdk';
 import type { DeviceRecord } from '@kraftverk/store';
 
 import type { Hub } from '../node/hub.ts';
 import { actorOf } from './caller.ts';
+
+/**
+ * Refuses a name in configuration that is not one, or is another's: what a
+ * device and an automation are renamed to is checked by one rule, saying it
+ * with an example of their own ("garage-station", "start-charging").
+ */
+export function checkKey(key: string, taken: boolean, what: 'device' | 'automation', example: string): void {
+  if (!KEY.test(key)) throw new ApiError('invalid', `A key is lowercase letters, digits and dashes: "${example}"`);
+  if (taken) throw new ApiError('conflict', `Another ${what} is known by "${key}"`);
+}
 
 /**
  * What the device parts of the API ask of the home for one caller: who acts,

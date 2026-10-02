@@ -7,10 +7,12 @@ import { ConnectionStore, DeviceCatalog, deviceStore, HomeSettings, HomeStore, L
 import type { PassphraseSealing } from '../configuration/seal.ts';
 import { MovingToMaster } from '../handover/move.ts';
 import { startTransports, type Installed } from '../installed/from.ts';
+import { FIRST_PICTURE } from '../devices/views.ts';
 import { nodeParts } from '../node/parts.ts';
 import { SetupService } from '../setup/service.ts';
 import { unref } from '../timers.ts';
 import { followerApi } from './api.ts';
+import { HEARD } from './heard.ts';
 
 /**
  * A node following the home's master (docs/PLAN-SHARED-CORE.md, phase 6):
@@ -218,7 +220,7 @@ export class Follower {
       await this.sessions.sync(this.catalog.list());
     }
     // The home's values, kept as the master says them: what this node's gateway weighs what it holds by.
-    await this.kept('policy', () => this.home.policy.list()).catch(() => undefined);
+    await this.kept(HEARD.policy, () => this.home.policy.list()).catch(() => undefined);
     const send = setInterval(() => void this.send(), this.#sendEveryMs);
     const refresh = setInterval(() => void this.refresh(), REFRESH_MS);
     unref(send);
@@ -254,16 +256,18 @@ export class Follower {
       // Not heard at the start — the master away, or nobody signed in yet: said again now.
       if (!this.#joined) await this.join().catch(() => undefined);
       const list = await this.home.devices.list();
-      this.heard.keep('devices', list);
+      this.heard.keep(HEARD.devices, list);
       await this.keepHome().catch((error: unknown) => this.#log('warn', `[follower] the home and its nodes could not be kept: ${(error as Error).message}`));
       await this.hold(list);
       // The home as one file, as the master last said it: what this node keeps if the master is gone (`handover/keep.ts`).
       await this.home.configuration
         .export({ secrets: 'none' })
-        .then((exported) => this.heard.keep('configuration', exported.text))
+        .then((exported) => this.heard.keep(HEARD.configuration, exported.text))
         .catch(() => undefined);
       return list;
-    } catch {
+    } catch (error) {
+      // Away is the master out of reach, or saying it cannot answer now; anything else is a fault, said as one — and held as away all the same, so what this node holds goes on.
+      if (!(error instanceof ApiError && error.kind === 'unavailable')) this.#log('error', `[follower] asking the master what it has failed: ${(error as Error).stack ?? error}`);
       return null;
     }
   }
@@ -451,7 +455,7 @@ export class Follower {
   /** How much is a load, and the other values the home decides: the master's, kept for when it cannot be asked. */
   policyValues(): PolicyValues {
     try {
-      const values = this.heard.get<PolicyValueView[]>('policy')?.body ?? [];
+      const values = this.heard.get<PolicyValueView[]>(HEARD.policy)?.body ?? [];
       return Object.fromEntries(values.filter((value) => isPolicyValueName(value.name) && Number.isFinite(value.value)).map((value) => [value.name, value.value]));
     } catch {
       return {};
@@ -621,7 +625,7 @@ function recordOf(device: DeviceView): DeviceRecord {
     description: device.description,
     descriptionSource: device.descriptionSource,
     info: device.info,
-    picture: device.picture === 'type:0' ? null : device.picture,
+    picture: device.picture === FIRST_PICTURE ? null : device.picture,
   };
 }
 

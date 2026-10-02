@@ -5,7 +5,11 @@ import { LiveBus, type LiveMessage, SessionManager } from '@kraftverk/holder';
 import { AuditLog, ConnectionStore, DeviceCatalog, deviceStore, holding, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
 
 import { DeviceTypeRegistry, ProtocolRegistry, TransportHost } from '../src/index.ts';
-import { busDefinition, FakeBus, LAMP, lampControl, lampProtocol, lampType, MACHINE_NODE, opened } from '../src/testing.ts';
+import { busDefinition, FakeBus, LAMP, lampProtocol, makeLampType, MACHINE_NODE } from '../src/testing.ts';
+
+/** The lamp these tests open, and what they see of its sessions. */
+const { type: lampType, watch } = makeLampType();
+const { opened } = watch;
 import { testDatabase } from './home.ts';
 
 /**
@@ -68,7 +72,7 @@ beforeEach(async () => {
   await sessions?.closeAll();
   db.exec('DELETE FROM device');
   opened.length = 0;
-  lampControl.failOpen = false;
+  watch.failOpen = false;
   identified = [];
   bus = new FakeBus();
   sessions = build();
@@ -170,13 +174,13 @@ describe('a device that cannot open is still a device, saying why', () => {
   });
 
   test('a session that fails to open is an error, with the reason', async () => {
-    lampControl.failOpen = true;
+    watch.failOpen = true;
     const { record } = addLamp('Hall', 'lamp-1');
     await sessions.sync(catalog.list());
     expect(sessions.health(record)).toMatchObject({ status: 'error', detail: 'The lamp refused the connection; trying again in under a minute' });
 
     // It may refuse because of something that has since passed: tried again when due.
-    lampControl.failOpen = false;
+    watch.failOpen = false;
     await sessions.check(Date.now() + 31_000);
     expect(sessions.get(record.id)).not.toBeNull();
   });

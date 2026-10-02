@@ -25,7 +25,7 @@ export function setupApi(hub: Hub, caller: Caller): SetupApi {
     setup: {
       start: async ({ holder, ...input }) => {
         // A way a node holds for the master is set up by that node, holding it: the master holds every way it adds itself.
-        if (holder === 'this-node') throw new ApiError('invalid', 'This node holds every way it adds itself: only a node that follows a home sets one up for itself');
+        if (holder === 'this-node') throw new ApiError('conflict', 'This node holds every way it adds itself: only a node that follows a home sets one up for itself');
         return setup.start({ ...input, by: actor });
       },
       /** One a node that follows the home will hold: it speaks for itself only, and must be the caller's account's. */

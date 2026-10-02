@@ -3,6 +3,7 @@ import { readConfig } from '@kraftverk/home-file';
 import { ConnectionStore, DeviceCatalog, HomeSettings, LastHeard, type HomeSettingKey, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import type { Hub } from '../node/hub.ts';
+import { HEARD } from '../follower/heard.ts';
 import { nothingToDo } from './nothing.ts';
 
 /*
@@ -41,7 +42,7 @@ export class KeepingCopy {
   /** The master's configuration, as this node last heard it; null when it never heard one, or it has been brought in. */
   #text(): string | null {
     if (this.#settings.get(KEPT)) return null;
-    return this.#heard.get<string>('configuration')?.body ?? null;
+    return this.#heard.get<string>(HEARD.configuration)?.body ?? null;
   }
 
   /** What bringing the copy in would bring; null when there is nothing to. */
@@ -89,10 +90,7 @@ export class KeepingCopy {
         if (connections.forDevice(device.id).some((had) => had.method === way.method && had.heldBy === this.#hub.self.id)) continue;
         try {
           const added = connections.add({ deviceId: device.id, method: way.method, transport: way.transport, heldBy: this.#hub.self.id, address: way.address, config: way.config });
-          const secrets = Object.fromEntries(this.#connections.secretFields(way.id).flatMap((field) => {
-            const value = this.#connections.secret(way.id, field);
-            return value === null ? [] : [[field, value] as const];
-          }));
+          const secrets = this.#connections.secrets(way.id);
           if (Object.keys(secrets).length) connections.setSecrets(added.id, secrets);
         } catch (error) {
           applied.notes.push(`${device.name}: the way this app held could not come with it: ${(error as Error).message}`);

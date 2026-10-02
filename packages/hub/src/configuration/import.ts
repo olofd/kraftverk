@@ -4,7 +4,6 @@ import type { AutomationEngine, AutomationLibrary, AutomationRecord } from '@kra
 import {
   attributeMeaning,
   capabilitiesOf,
-  isSecretField,
   isSimulated,
   meetsNeed,
   methodsOf,
@@ -32,6 +31,7 @@ import {
 import { isConstraintError, type DeviceRecord, type SqlDatabase } from '@kraftverk/store';
 
 import type { Checked } from '../automations/drafts.ts';
+import { secretFieldsOf } from '../installed/connection-schema.ts';
 import type { TransportHost } from '../installed/transports.ts';
 import { unref } from '../timers.ts';
 import { homeVocabulary, type ConfigDeps } from './export.ts';
@@ -220,10 +220,8 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
       const exclusive = !isSimulated(method) && deps.transports.definition(method.transport)?.exclusive !== false;
       const claim = exclusive ? deps.connections.claimant(method.transport, address) : null;
       if (claim && claim.deviceId !== existing?.id) problem(`Another device you have is already reached at ${address}`, ['devices', key, 'connect', index, 'address']);
-      const credentials = deps.protocols.get(method.protocol)?.credentials?.schema.fields ?? {};
       const had = existing ? deps.connections.forDevice(existing.id).find((connection) => connection.heldBy === deps.self && connection.method === way.via) : undefined;
-      for (const [field, spec] of Object.entries(credentials)) {
-        if (!isSecretField(spec)) continue;
+      for (const [field, spec] of secretFieldsOf(method, deps.protocols.get(method.protocol) ?? null)) {
         const given = way.secrets[field];
         const value = given ? valueOf(given) : null;
         if (value !== null) secrets.set(secretKey(key, index, field), value);
@@ -625,9 +623,7 @@ function writeDevice(deps: ImportDeps, key: string, entry: DeviceEntry, opened: 
       ? deps.connections.update(had.id, { address, config: way.settings, priority: index, secretsExportable: way.exportable })!
       : deps.connections.add({ deviceId: device!.id, method: way.via, transport: method.transport, heldBy: deps.self, address, config: way.settings, priority: index, secretsExportable: way.exportable });
     const secrets: Record<string, string> = {};
-    const credentials = deps.protocols.get(method.protocol)?.credentials?.schema.fields ?? {};
-    for (const [field, spec] of Object.entries(credentials)) {
-      if (!isSecretField(spec)) continue;
+    for (const [field] of secretFieldsOf(method, deps.protocols.get(method.protocol) ?? null)) {
       const value = opened.get(secretKey(key, index, field)) ?? given[`${key}.${field}`];
       if (value) secrets[field] = value;
     }

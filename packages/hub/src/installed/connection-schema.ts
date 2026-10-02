@@ -1,9 +1,14 @@
 import { ApiError } from '@kraftverk/api-contract';
-import { isSecretField, type ConfigSchema, type ConnectionMethod, type Protocol } from '@kraftverk/device-sdk';
+import { isSecretField, type ConfigField, type ConfigSchema, type ConnectionMethod, type Protocol } from '@kraftverk/device-sdk';
 
 /** The schema of everything a connection stores for a method: its own config and its protocol's credentials. */
 export function connectionSchema(method: ConnectionMethod | null, protocol: Protocol | null): ConfigSchema {
   return { fields: { ...(protocol?.credentials?.schema.fields ?? {}), ...(method?.config?.fields ?? {}) } };
+}
+
+/** The fields of a connection that are secrets, each with its spec, as its method and protocol declare them: what setup asks for, an export seals and an import carries. */
+export function secretFieldsOf(method: ConnectionMethod | null, protocol: Protocol | null): [string, ConfigField][] {
+  return Object.entries(connectionSchema(method, protocol).fields).filter(([, spec]) => isSecretField(spec));
 }
 
 /**

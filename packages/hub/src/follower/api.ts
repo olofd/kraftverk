@@ -3,10 +3,11 @@ import { capabilityIn, connectionId as asConnectionId, methodOf, type SavedDevic
 import { deviceReader } from '@kraftverk/holder';
 
 import { runAskedTool } from '../devices/tools.ts';
-import { Outbox } from '../live/outbox.ts';
+import { coalesced } from '../live/stream.ts';
 import { checkSecretFields } from '../installed/connection-schema.ts';
 import { holdableHere } from '../installed/holdable.ts';
 import type { Follower } from './follower.ts';
+import { HEARD } from './heard.ts';
 
 /*
   The master's `KraftverkApi`, with what this node holds wrapped in
@@ -22,15 +23,13 @@ import type { Follower } from './follower.ts';
   master's, asked as it is.
 */
 
-/** What the live stream from what this node holds coalesces over, as a home's does. */
-const FLUSH_MS = 250;
 
 export function followerApi(h: Follower): KraftverkApi {
   const { home } = h;
   /** The master's list — or, with it away, what it last said — held from, and with this node's own wrapped in. */
-  const listed = async (what: 'devices' | 'removed', ask: () => Promise<DeviceView[]>): Promise<DeviceView[]> => {
+  const listed = async (what: typeof HEARD.devices | typeof HEARD.removed, ask: () => Promise<DeviceView[]>): Promise<DeviceView[]> => {
     const { answer, heardAt } = await h.kept(what, ask);
-    if (what === 'devices' && !heardAt) await h.hold(answer);
+    if (what === HEARD.devices && !heardAt) await h.hold(answer);
     return answer.map((view) => h.view(heardAt ? h.lastHeard(view) : view));
   };
   /** One device as the master says it — or, with it away, as it last said it — with this node's own wrapped in. */
@@ -40,7 +39,7 @@ export function followerApi(h: Follower): KraftverkApi {
       return h.view(await home.devices.get(id));
     } catch (error) {
       if (!(error instanceof ApiError && error.kind === 'unavailable')) throw error;
-      const last = [...(h.heard.get<DeviceView[]>('devices')?.body ?? []), ...(h.heard.get<DeviceView[]>('removed')?.body ?? [])].find((device) => device.id === id);
+      const last = [...(h.heard.get<DeviceView[]>(HEARD.devices)?.body ?? []), ...(h.heard.get<DeviceView[]>(HEARD.removed)?.body ?? [])].find((device) => device.id === id);
       if (!last) throw error;
       return h.view(h.lastHeard(last));
     }
@@ -68,7 +67,7 @@ export function followerApi(h: Follower): KraftverkApi {
   return {
     /** The master's types, with the ways this node can hold for it: a type this node has installed too, over a way it can hold where it runs. */
     async deviceTypes() {
-      const { answer: list } = await h.kept('device-types', () => home.deviceTypes());
+      const { answer: list } = await h.kept(HEARD.deviceTypes, () => home.deviceTypes());
       // Read, not started: the transports this node uses started with it (`Follower.start`).
       const { transports } = h.installed;
       return {
@@ -84,8 +83,8 @@ export function followerApi(h: Follower): KraftverkApi {
     },
 
     devices: {
-      list: () => listed('devices', () => home.devices.list()),
-      removed: () => listed('removed', () => home.devices.removed()),
+      list: () => listed(HEARD.devices, () => home.devices.list()),
+      removed: () => listed(HEARD.removed, () => home.devices.removed()),
       get: oneOf,
       update: (id, changes) => viewed(home.devices.update(id, changes)),
       setPicture: (id, picture) => viewed(home.devices.setPicture(id, picture)),
@@ -131,7 +130,7 @@ export function followerApi(h: Follower): KraftverkApi {
       },
     },
 
-    problems: async (limit) => (await h.kept(`problems:${limit ?? ''}`, () => home.problems(limit))).answer,
+    problems: async (limit) => (await h.kept(HEARD.problems(limit), () => home.problems(limit))).answer,
 
     setup: {
       /** A way this node holds is set up here, over its own radio; any other, by the master. */
@@ -209,7 +208,7 @@ export function followerApi(h: Follower): KraftverkApi {
     transports: {
       /** The master's, and this node's own: what it holds the master's ways over, here. */
       async list() {
-        const { answer: list } = await h.kept('transports', () => home.transports.list());
+        const { answer: list } = await h.kept(HEARD.transports, () => home.transports.list());
         const { transports } = h.installed;
         const mine = h.installed.transports.here().map((id): TransportView => {
           const transport = transports.get(id);
@@ -256,12 +255,12 @@ export function followerApi(h: Follower): KraftverkApi {
     automations: {
       kit: () => home.automations.kit(),
       draft: (draft, self) => home.automations.draft(draft, self),
-      list: async (filter) => (await h.kept(`automations:${filter?.device ?? ''}`, () => home.automations.list(filter))).answer,
+      list: async (filter) => (await h.kept(HEARD.automations(filter?.device), () => home.automations.list(filter))).answer,
       async get(id) {
         try {
           return await home.automations.get(id);
         } catch (error) {
-          const last = error instanceof ApiError && error.kind === 'unavailable' ? h.heard.get<AutomationView[]>('automations:')?.body.find((automation) => automation.id === id) : null;
+          const last = error instanceof ApiError && error.kind === 'unavailable' ? h.heard.get<AutomationView[]>(HEARD.automations())?.body.find((automation) => automation.id === id) : null;
           if (!last) throw error;
           return last;
         }
@@ -294,19 +293,19 @@ export function followerApi(h: Follower): KraftverkApi {
 
     policy: {
       list: async () => {
-        const { answer } = await h.kept('policy', () => home.policy.list());
+        const { answer } = await h.kept(HEARD.policy, () => home.policy.list());
         return answer;
       },
       /** Set on the master, and kept here: this node's gateway weighs what it holds by the same values. */
       set: async (name, value) => {
         const values = await home.policy.set(name, value);
         // What the master answers is how they are now: what this node weighs by, and shows while it is away.
-        h.heard.keep('policy', values);
+        h.heard.keep(HEARD.policy, values);
         return values;
       },
     },
 
-    home: async () => (await h.kept('home', () => home.home())).answer,
+    home: async () => (await h.kept(HEARD.home, () => home.home())).answer,
     timeline: (query) => home.timeline(query),
     world: () => home.world(),
     vocabulary: () => home.vocabulary(),
@@ -314,7 +313,7 @@ export function followerApi(h: Follower): KraftverkApi {
     nodes: {
       join: (node) => home.nodes.join(node),
       // With the master away, as this node kept them: who the master is, and who follows it.
-      list: async () => (await h.kept('nodes', () => home.nodes.list())).answer,
+      list: async () => (await h.kept(HEARD.nodes, () => home.nodes.list())).answer,
       forget: (id) => home.nodes.forget(id),
     },
     held: {
@@ -332,20 +331,7 @@ export function followerApi(h: Follower): KraftverkApi {
      * again, which holds from it again.
      */
     live(listener, options = {}) {
-      const outbox = new Outbox();
-      let pending: ReturnType<typeof setTimeout> | null = null;
-      const flush = () => {
-        pending = null;
-        if (options.draining && !options.draining()) return schedule();
-        for (const update of outbox.take()) listener(update);
-      };
-      const schedule = () => {
-        pending ??= setTimeout(flush, FLUSH_MS);
-      };
-      const unsubscribe = h.bus.subscribe((message) => {
-        outbox.add(message);
-        schedule();
-      });
+      const stop = coalesced(h.bus, listener, options.draining);
       const stream = home.live((update: LiveUpdate) => {
         if ((update.type === 'readings' || update.type === 'health') && h.holds(update.deviceId)) return;
         listener(update);
@@ -354,9 +340,7 @@ export function followerApi(h: Follower): KraftverkApi {
         say: (view) => stream.say(view),
         close: () => {
           stream.close();
-          unsubscribe();
-          if (pending) clearTimeout(pending);
-          pending = null;
+          stop();
         },
       };
     },

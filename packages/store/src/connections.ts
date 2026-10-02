@@ -212,6 +212,16 @@ export class ConnectionStore {
       .map((row) => row.field);
   }
 
+  /** Every secret a connection has, opened, by field: what a way carries to the home it moves to. One that cannot be opened is left out. */
+  secrets(connectionId: string): Record<string, string> {
+    return Object.fromEntries(
+      this.secretFields(connectionId).flatMap((field) => {
+        const value = this.secret(connectionId, field);
+        return value === null ? [] : [[field, value] as const];
+      })
+    );
+  }
+
   /** The names of every connection's secrets, by connection: one query for a whole list. */
   secretFieldsByConnection(): Map<string, string[]> {
     const grouped = new Map<string, string[]>();

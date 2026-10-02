@@ -1,9 +1,9 @@
 import { ApiError, type Caller, type ChangesQuery, type DeviceTypeListing, type HistoryQuery, type KraftverkApi } from '@kraftverk/api-contract';
-import { capabilityIn, CATEGORIES, describeDeviceType, isSimulated, KEY, methodsOf, platformsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
+import { capabilityIn, CATEGORIES, describeDeviceType, isSimulated, methodsOf, platformsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
 import { deviceReader } from '@kraftverk/holder';
 
 import { runAskedTool } from '../devices/tools.ts';
-import { PICTURE_REF } from '../devices/views.ts';
+import { FIRST_PICTURE, PICTURE_REF } from '../devices/views.ts';
 import { changesOf } from '../history/changes.ts';
 import { MAX_SPAN_MS } from '../history/retention.ts';
 import { resolutionOf, series } from '../history/sampler.ts';
@@ -11,7 +11,7 @@ import { unfitFor } from '../installed/needs.ts';
 import { platformWords } from '../installed/transports.ts';
 import type { Hub } from '../node/hub.ts';
 import { intentOf } from './caller.ts';
-import { scopeOf } from './scope.ts';
+import { checkKey, scopeOf } from './scope.ts';
 
 /*
   The devices you have, how each is reached and how they fit the house, as
@@ -61,7 +61,7 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
   const toolOf = (id: string, name: string) => {
     const device = deviceOf(id);
     const session = sessions.get(device.id);
-    if (!session) throw new ApiError('conflict', sessions.health(device).detail);
+    if (!session) throw new ApiError('unavailable', `${device.name} is not answering: ${sessions.health(device).detail}`);
     const spec = sessions.typeOf(device)?.tools?.[name];
     if (!spec || typeof session.tools?.[name] !== 'function') throw new ApiError('not-found', `${device.name} has no tool called "${name}"`);
     return { device, session, spec };
@@ -108,10 +108,7 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
        */
       async update(id, changes) {
         const before = deviceOf(id);
-        if (changes.key !== undefined && changes.key !== before.key) {
-          if (!KEY.test(changes.key)) throw new ApiError('invalid', 'A key is lowercase letters, digits and dashes: "garage-station"');
-          if (catalog.keyTaken(changes.key, before.id)) throw new ApiError('conflict', `Another device is known by "${changes.key}"`);
-        }
+        if (changes.key !== undefined && changes.key !== before.key) checkKey(changes.key, catalog.keyTaken(changes.key, before.id), 'device', 'garage-station');
         const updated = catalog.update(before.id, changes);
         if (!updated) throw new ApiError('not-found', 'No such device');
         if (updated.name !== before.name) record('device.renamed', 'device', before.id, `Renamed "${before.name}" to "${updated.name}"`);
@@ -130,7 +127,7 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
         if (!PICTURE_REF.test(picture)) throw new ApiError('invalid', 'type:0, type:1… (or, one day, own:<id>)');
         if (picture.startsWith('own:')) throw new ApiError('invalid', 'A picture of its own cannot be added yet');
         // Its type's first is what it shows with no pick: kept as none.
-        catalog.setPicture(device.id, picture === 'type:0' ? null : picture);
+        catalog.setPicture(device.id, picture === FIRST_PICTURE ? null : picture);
         record('device.picture', 'device', device.id, `Showed picture ${Number(picture.slice(5)) + 1} of "${device.name}"`, { picture });
         changed();
         return viewOf(device.id);

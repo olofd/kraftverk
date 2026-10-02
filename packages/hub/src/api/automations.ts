@@ -1,11 +1,12 @@
 import { ApiError, type AutomationDraft, type Caller, type KraftverkApi, type RecipeView } from '@kraftverk/api-contract';
 import { describeSteps, hasConditions, keepsSo, takesSteps } from '@kraftverk/automation';
 import { RunRefusal, type AutomationRecord } from '@kraftverk/automation-engine';
-import { isTimeZone, KEY, type AutomationId, type Value } from '@kraftverk/device-sdk';
+import { isTimeZone, type AutomationId, type Value } from '@kraftverk/device-sdk';
 import { subjectOf } from '@kraftverk/gateway';
 
 import type { Hub } from '../node/hub.ts';
 import { actorOf, intentOf } from './caller.ts';
+import { checkKey } from './scope.ts';
 
 /*
   Automations (docs/AUTOMATIONS.md, docs/AUTOMATION-EDITOR.md), as
@@ -89,8 +90,7 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
       async create(input) {
         zoned(input.timeZone);
         if (input.madeFrom && !library.recipe(input.madeFrom)) throw new ApiError('invalid', `There is no recipe called "${input.madeFrom}"`);
-        if (input.key !== undefined && !KEY.test(input.key)) throw new ApiError('invalid', 'A key is lowercase letters, digits and dashes: "start-charging"');
-        if (input.key !== undefined && automations.keyTaken(input.key)) throw new ApiError('conflict', `Another automation is known by "${input.key}"`);
+        if (input.key !== undefined) checkKey(input.key, automations.keyTaken(input.key), 'automation', 'start-charging');
         const result = checked(input, null);
         refuseProblems(result.problems);
         if (input.recheckMinutes && !keepsSo(input.rule)) throw new ApiError('invalid', KEEPS_SO_ONLY);
@@ -121,10 +121,7 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
       async update(id, input) {
         const current = automationOf(id);
         if (input.timeZone) zoned(input.timeZone);
-        if (input.key !== undefined && input.key !== current.key) {
-          if (!KEY.test(input.key)) throw new ApiError('invalid', 'A key is lowercase letters, digits and dashes: "start-charging"');
-          if (automations.keyTaken(input.key, current.id)) throw new ApiError('conflict', `Another automation is known by "${input.key}"`);
-        }
+        if (input.key !== undefined && input.key !== current.key) checkKey(input.key, automations.keyTaken(input.key, current.id), 'automation', 'start-charging');
         // A new rule comes with what fills its roles: the three together, or none.
         const rebuilt = input.rule !== undefined || input.roles !== undefined || input.starts !== undefined;
         if (rebuilt && (!input.rule || !input.roles || !input.starts)) throw new ApiError('invalid', 'A new rule comes with what fills its roles: rule, roles and starts together');

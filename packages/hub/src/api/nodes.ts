@@ -3,6 +3,7 @@ import { nodeId as asNodeId, savedDeviceId, validateDescription, type AuditSubje
 import { deviceStore, type NodeRecord } from '@kraftverk/store';
 
 import { loggedAttributes, recordChanges } from '../history/changes.ts';
+import { SKEW_MS } from '../history/retention.ts';
 import { keptAttributes } from '../history/sampler.ts';
 import type { Hub } from '../node/hub.ts';
 import { actorOf } from './caller.ts';
@@ -133,7 +134,7 @@ export function nodesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'nodes' |
         for (const event of input.events ?? []) {
           const declared = (description.events ?? []).find((spec) => spec.id === event.id);
           const at = Date.parse(event.at);
-          if (!declared || !Number.isFinite(at) || at > Date.now() + 60_000) continue;
+          if (!declared || !Number.isFinite(at) || at > Date.now() + SKEW_MS) continue;
           const kept = { id: event.id, level: declared.level, part: event.part ?? declared.part ?? null, data: event.data, at: new Date(at).toISOString() };
           events.record(device.id, kept);
           hub.bus.publish({ kind: 'event', deviceId: device.id, event: kept });

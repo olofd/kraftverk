@@ -203,4 +203,7 @@ export class DeviceViews {
 /** What a picture reference may be: one of its type's, or (not built yet) its owner's own. */
 export const PICTURE_REF = /^(type:(0|[1-9]\d?)|own:[a-z0-9-]{1,40})$/;
 
-const pictureOf = (kept: string | null): PictureRef => (kept && PICTURE_REF.test(kept) ? (kept as PictureRef) : 'type:0');
+/** Its type's first picture: what a device shows with no pick, kept as none. */
+export const FIRST_PICTURE = 'type:0' satisfies PictureRef;
+
+const pictureOf = (kept: string | null): PictureRef => (kept && PICTURE_REF.test(kept) ? (kept as PictureRef) : FIRST_PICTURE);

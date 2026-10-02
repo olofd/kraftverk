@@ -1,5 +1,6 @@
 import type { SavedDeviceId } from '@kraftverk/device-sdk';
 
+import { unref } from '../timers.ts';
 import type { Attention } from './attention.ts';
 
 /*
@@ -26,6 +27,7 @@ export function keepWatchedFresh(attention: Attention, want: (device: SavedDevic
   // At once when someone opens a device — the page fills while it is looked at — and on a clock after.
   const stopListening = attention.onChange(renew);
   const timer = setInterval(renew, RENEW_EVERY_MS);
+  unref(timer);
   return () => {
     stopListening();
     clearInterval(timer);

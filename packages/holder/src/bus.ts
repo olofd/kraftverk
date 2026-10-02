@@ -80,8 +80,9 @@ export class LiveBus {
     for (const listener of [...this.#listeners]) {
       try {
         listener(message);
-      } catch {
-        // One listener failing must not silence the rest.
+      } catch (error) {
+        // One listener failing must not silence the rest — and is said, not lost.
+        console.error('[live] a listener failed:', error);
       }
     }
   }
