@@ -28,8 +28,19 @@ GitLab deploys to the owner's NAS (GitHub runs CI only; see [CI.md](CI.md)). The
 manual `broker` job, which drops the station for about a minute. The architecture baseline is
 empty: the core names no product, and every device is found, not listed.
 
+- **The shared core** ([PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md)): the
+  home is one hub (`@kraftverk/hub`) behind one interface (`KraftverkApi`),
+  run by the server and by the app alike — in a browser's worker or a
+  phone's process — with its own SQLite. Phases 0–6h and 6j are done:
+  every place kraftverk runs is a **kraftverk node** (a `node` record, by
+  its own id, declaring always on, reachable, trusted); one is the home's
+  **master**, the others **follow** it (`createFollower`) and hold for it
+  the ways they reach; a connection method says what it `needs` of the
+  node holding it. Next: 6i (the last files of logic in the server and the
+  app move to packages), then the structure pass. Places in the model wait
+  on the owner's decision about what groups things (a home, or places).
 - **The layers are packages**: `packages/transports` (mqtt with the broker,
-  ble with server, web and native entries, lan, https), `packages/protocols`
+  ble with system, web and native entries, lan, https), `packages/protocols`
   (sydpower, tuya-local, open-meteo, elprisetjustnu, niu-cloud), `packages/devices`
   (aferiy-p280, tuya-plug, atorch-s1w, tuya-zigbee-plug, niu-scooter,
   niu-uqi-gt), `packages/services` (open-meteo, elprisetjustnu) and

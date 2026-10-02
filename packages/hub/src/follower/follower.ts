@@ -1,19 +1,20 @@
 import { ApiError, type ConnectionView, type DeviceView, type KraftverkApi, type PolicyValueView } from '@kraftverk/api-contract';
-import { isSimulated, placesOf, type AuditRecord, type NodeId, type Platform, type DeviceSession, type DeviceStore, type PolicyValues, type Reading, type SavedDeviceId, type ScopedHttp } from '@kraftverk/device-sdk';
+import { isSimulated, platformsOf, type AuditRecord, type NodeId, type Platform, type DeviceSession, type DeviceStore, type PolicyValues, type Reading, type SavedDeviceId, type ScopedHttp } from '@kraftverk/device-sdk';
 import { ActionGateway, Confirmations } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, toHold, toolsOf, withInUse, type DeviceEventMessage } from '@kraftverk/holder';
 import { AppState, ConnectionStore, databaseLedger, DeviceCatalog, deviceStore, HomeStore, LastHeard, LinkStore, NodeStore, SendQueue, type DeviceRecord, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import type { PassphraseSealing } from '../configuration/seal.ts';
-import { MovingToServer } from '../handover/move.ts';
+import { MovingToMaster } from '../handover/move.ts';
 import type { Installed } from '../hub.ts';
+import { unfitFor } from '../installed/needs.ts';
 import { SetupService } from '../setup/index.ts';
 import { unref } from '../timers.ts';
 import { followerApi } from './api.ts';
 
 /**
  * A node following the home's master (docs/PLAN-SHARED-CORE.md, phase 6):
- * the node the app is, with a server's home — the master its people use,
+ * this node, in a home whose master is another — the one its people use,
  * always on and reached by others. The master keeps the devices, their
  * history and their automations; this node keeps a copy of what it says —
  * the home and its nodes among it — and holds for it the ways in to its
@@ -21,39 +22,39 @@ import { followerApi } from './api.ts';
  * master's, with the same session manager and the same gateway the home
  * runs, sending what they say to the master, queued while it is away.
  *
- * Its `api` is the server's `KraftverkApi` with what this app holds wrapped
- * in: a view carries this app's own readings for a device it holds, a
- * command to one goes through this app's gateway, a way it holds is set up
+ * Its `api` is the master's `KraftverkApi` with what this node holds wrapped
+ * in: a view carries this node's own readings for a device it holds, a
+ * command to one goes through this node's gateway, a way it holds is set up
  * here, its secrets kept here. The screens ask it as they ask any home.
  *
- * What it keeps is kept in the app's own database: the devices it holds a
- * way to, as the server has them; that way's secrets, sealed; what each
+ * What it keeps is kept in this node's own database: the devices it holds a
+ * way to, as the master has them; that way's secrets, sealed; what each
  * device's session keeps; the gateway's memory; what is owed to the
- * server; and what the server last said (`heard`). A restart loses none of
- * it, and with the server away the app still reaches what it holds, and
- * shows the rest as the server last said it — read only, and saying so.
+ * master; and what the master last said (`heard`). A restart loses none of
+ * it, and with the master away this node still reaches what it holds, and
+ * shows the rest as the master last said it — read only, and saying so.
  */
 
-/** How often what is owed is sent, and how often the server is asked what this app holds. */
+/** How often what is owed is sent, and how often the master is asked what this node holds. */
 const SEND_MS = 20_000;
 const REFRESH_MS = 5 * 60_000;
-/** At most this many of each kind are kept owed, the newest: a server away for weeks does not fill a phone. */
+/** At most this many of each kind are kept owed, the newest: a master away for weeks does not fill a phone that follows it. */
 const KEEP_OWED = { readings: 10_000, event: 1000, audit: 1000, store: 1000 } as const;
 /** At most this many readings go up in one call. */
 const READINGS_PER_CALL = 2000;
-/** What the server refuses for good — no such device, not this app's, too large — is not sent again. */
+/** What the master refuses for good — no such device, not this node's, too large — is not sent again. */
 const REFUSED_FOR_GOOD = new Set(['not-found', 'forbidden', 'conflict', 'invalid', 'too-large', 'not-allowed']);
 
 const POLICY = 'follower.policy';
 
 export type FollowerOptions = {
-  /** The server's home, as the person signed in on this app asks it. */
+  /** The home's master, as the person signed in asks it. */
   home: KraftverkApi;
-  /** This app's own database for it, its schema prepared: where what the follower keeps is kept. */
+  /** This node's own database for it, its schema prepared: where what the follower keeps is kept. */
   database: SqlDatabase;
-  /** How the secrets of the ways it holds are sealed at rest: this app's key. */
+  /** How the secrets of the ways it holds are sealed at rest: this node's key. */
   secrets: SecretsAtRest;
-  /** What this app has installed, and its transports where it runs. */
+  /** What this node has installed, and its transports where it runs. */
   installed: Installed;
   /**
    * The node this is: its id — the place's to keep, the same in every home
@@ -61,7 +62,7 @@ export type FollowerOptions = {
    * this node's; it joins the home by this id.
    */
   node: Omit<NodeDeclaration, 'platform' | 'transports'>;
-  /** Every write to hardware refused: until someone allows writes from this app. A simulated device reaches no hardware. */
+  /** Every write to hardware refused: until someone allows writes from this node. A simulated device reaches no hardware. */
   readOnly: () => boolean;
   /** For a setup helper that calls a vendor's API once — fetching a key. */
   http: ScopedHttp;
@@ -69,8 +70,8 @@ export type FollowerOptions = {
   /** How often what is owed is sent: a test's own. */
   sendEveryMs?: number;
   /**
-   * The home this app kept itself before it had this server, if it did:
-   * offered to the server to take over (`configuration.plan({ from:
+   * The home this node kept itself before it followed this master, if it
+   * did: offered to the master to take over (`configuration.plan({ from:
    * 'this-node' })`), with the cipher its secrets travel sealed with.
    */
   own?: { database: SqlDatabase; sealing: PassphraseSealing };
@@ -95,7 +96,7 @@ export class Follower {
   readonly catalog: DeviceCatalog;
   readonly connections: ConnectionStore;
   readonly queue: SendQueue;
-  /** What the server last said, by what was asked: shown while it cannot be reached. */
+  /** What the master last said, by what was asked: shown while it cannot be reached. */
   readonly heard: LastHeard;
   readonly bus = new LiveBus();
   readonly sessions: SessionManager;
@@ -103,14 +104,14 @@ export class Follower {
   readonly setup: SetupService;
   /** The tokens a person's yes to a tool that cannot be undone is sent back with. */
   readonly yes = new Confirmations();
-  /** Everything the server answers, with what this app holds wrapped in. */
+  /** Everything the master answers, with what this node holds wrapped in. */
   readonly api: KraftverkApi;
-  /** The home this app kept itself, moving to the server: none when it kept none. */
-  readonly moving: MovingToServer | null;
+  /** The home this node kept itself, moving to the master: none when it kept none. */
+  readonly moving: MovingToMaster | null;
 
-  /** The server's last word on each device: what the gateway checks against for one this app does not hold. */
+  /** The master's last word on each device: what the gateway checks against for one this node does not hold. */
   #seen = new Map<SavedDeviceId, DeviceView>();
-  /** The devices whose way this app should hold now: its own, while nothing above it reaches them. */
+  /** The devices whose way this node should hold now: its own, while nothing above it reaches them. */
   #holdNow = new Set<SavedDeviceId>();
   /** Per device and reading, the minute last owed: history keeps one a minute. */
   #owedMinute = new Map<string, number>();
@@ -150,18 +151,19 @@ export class Follower {
       types,
       protocols,
       transports,
-      // Every way kept here is this app's own; it is held while nothing above it reaches the device.
+      // Every way kept here is this node's own; it is held while nothing above it reaches the device.
       connections: (deviceId) => (this.#holdNow.has(deviceId) ? connections.forDevice(deviceId) : []),
       holds: () => true,
+      unfit: (method) => unfitFor(method, self),
       secret: (connectionId, field) => connections.secret(connectionId, field),
       secretFields: (connectionId) => connections.secretFields(connectionId),
       onConnected: (connectionId) => connections.touch(connectionId),
       store: (deviceId) => this.#storeOf(deviceId),
       readOnly: options.readOnly,
-      // Frames nobody has described are for a server started to bring up a unit, never for an app.
+      // Frames nobody has described are for a server started to bring up a unit, never for a node that follows.
       allowRawFrames: false,
       record,
-      // Kept by the server, as its own devices' are: sent with the readings.
+      // Kept by the master, as its own devices' are: sent with the readings.
       onEvent: (deviceId, event) => {
         const connection = this.sessions.inUse(deviceId);
         if (connection) this.owe('event', deviceId, { connectionId: connection.id, event } satisfies EventOwed);
@@ -171,7 +173,7 @@ export class Follower {
     });
     const { sessions } = this;
 
-    /** The same gateway the home runs, over what this app holds — and the server's word on what it does not, to verify a switch against. */
+    /** The same gateway the home runs, over what this node holds — and the master's word on what it does not, to verify a switch against. */
     this.gateway = new ActionGateway({
       device: (id) => {
         const seen = this.#seen.get(id);
@@ -188,9 +190,9 @@ export class Follower {
       policyValues: () => this.policyValues(),
     });
 
-    // A way this app holds is set up here, over its own radio: the server judges what it finds, and keeps the device.
+    // A way this node holds is set up here, over its own radio: the master judges what it finds, and keeps the device.
     this.setup = new SetupService({ db, record, types, protocols, transports, catalog, connections, links: new LinkStore(db), sessions, http: options.http, self: self.id, traits: (id) => this.nodes.get(id) });
-    this.moving = options.own ? new MovingToServer(this, options.own.database, { secrets: options.secrets, sealing: options.own.sealing }) : null;
+    this.moving = options.own ? new MovingToMaster(this, options.own.database, { secrets: options.secrets, sealing: options.own.sealing }) : null;
     this.api = followerApi(this);
   }
 
@@ -215,16 +217,16 @@ export class Follower {
   }
 
   /**
-   * Starts following: the transports this app runs, who it is to the server,
-   * what it holds there — or, with the server away, what it held when it
+   * Starts following: the transports this node runs, who it is to the master,
+   * what it holds there — or, with the master away, what it held when it
    * last heard — and sending what is owed.
    */
   async start(): Promise<void> {
     await this.installed.transports.startAll(this.transportsHere());
-    await this.join().catch((error: unknown) => this.#log('warn', `[follower] the server did not hear who this node is: ${(error as Error).message}`));
+    await this.join().catch((error: unknown) => this.#log('warn', `[follower] the master did not hear who this node is: ${(error as Error).message}`));
     const list = await this.refresh();
     if (!list) {
-      // Away: what this app held when it last heard, it holds still.
+      // Away: what this node held when it last heard, it holds still.
       this.#holdNow = new Set(this.catalog.list().map((device) => device.id));
       await this.sessions.sync(this.catalog.list());
     }
@@ -246,7 +248,7 @@ export class Follower {
     await Promise.allSettled([this.sessions.closeAll(), this.installed.transports.stopAll()]);
   }
 
-  /** The transports this app can hold a way over where it runs. */
+  /** The transports this node can hold a way over where it runs. */
   transportsHere(): string[] {
     const { transports } = this.installed;
     return transports.definitions().filter((definition) => definition.platforms.includes(transports.platform)).map((definition) => definition.id);
@@ -260,21 +262,21 @@ export class Follower {
     return self.id;
   }
 
-  /** This node, once the home has heard it this run: joined now if it had not, as the server was away at the start. */
+  /** This node, once the home has heard it this run: joined now if it had not, as the master was away at the start. */
   async joined(): Promise<NodeId> {
     return this.#joined ? this.nodeId : this.join();
   }
 
-  /** Asks the server what it has, keeps what it said, and holds what is this app's to hold. Null when it cannot be asked. */
+  /** Asks the master what it has, keeps what it said, and holds what is this node's to hold. Null when it cannot be asked. */
   async refresh(): Promise<DeviceView[] | null> {
     try {
-      // Not heard at the start — the server away, or nobody signed in yet: said again now.
+      // Not heard at the start — the master away, or nobody signed in yet: said again now.
       if (!this.#joined) await this.join().catch(() => undefined);
       const list = await this.home.devices.list();
       this.heard.keep('devices', list);
       await this.keepHome().catch((error: unknown) => this.#log('warn', `[follower] the home and its nodes could not be kept: ${(error as Error).message}`));
       await this.hold(list);
-      // The home as one file, as the server last said it: what this app keeps if the server is gone (`handover/keep.ts`).
+      // The home as one file, as the master last said it: what this node keeps if the master is gone (`handover/keep.ts`).
       await this.home.configuration
         .export({ secrets: 'none' })
         .then((exported) => this.heard.keep('configuration', exported.text))
@@ -286,9 +288,9 @@ export class Follower {
   }
 
   /**
-   * Asks the server, and keeps what it answers; with the server out of
+   * Asks the master, and keeps what it answers; with the master out of
    * reach, what it last answered, and when — or, never heard, the refusal.
-   * Anything else the server says no to is said as it is.
+   * Anything else the master says no to is said as it is.
    */
   async kept<T>(what: string, ask: () => Promise<T>): Promise<{ answer: T; heardAt: string | null }> {
     try {
@@ -303,8 +305,8 @@ export class Follower {
   }
 
   /**
-   * A device as the server last said it, while it cannot be reached: what it
-   * read then, and its health saying so — unless this app holds it, and
+   * A device as the master last said it, while it cannot be reached: what it
+   * read then, and its health saying so — unless this node holds it, and
    * says how it is now.
    */
   lastHeard(device: DeviceView): DeviceView {
@@ -315,18 +317,31 @@ export class Follower {
   /**
    * The home and its nodes as the master has them, kept here: which node is
    * its master, what each declares it is, and who holds what. A node the
-   * master no longer has is let go; this one is its own, and stays.
+   * master no longer has is let go; this one is its own, and stays — and,
+   * forgotten there, joins again.
+   *
+   * In one go, in the order the home's master needs: every node as the
+   * master has it first, then the home naming its master — a new one, when
+   * the machine behind the address is another now — and only then the nodes
+   * it no longer has, the old master among them.
    */
   async keepHome(): Promise<void> {
     const [home, nodes] = await Promise.all([this.home.home(), this.home.nodes.list()]);
-    for (const node of nodes) {
-      const { master: _master, place: _place, ...record } = node;
-      // Where it stands is the master's to say; a place this node does not keep is not pointed at.
-      this.nodes.mirror({ ...record, placeId: null });
+    this.db.transaction(() => {
+      for (const node of nodes) {
+        const { master: _master, place: _place, ...record } = node;
+        // Where it stands is the master's to say; a place this node does not keep is not pointed at.
+        this.nodes.mirror({ ...record, placeId: null });
+      }
+      this.homeKept.mirror({ id: home.id, name: home.name, masterId: home.master, createdAt: home.createdAt });
+      const listed = new Set(nodes.map((node) => node.id));
+      for (const kept of this.nodes.all()) if (!kept.self && !listed.has(kept.id)) this.nodes.remove(kept.id);
+    })();
+    // Forgotten there while it ran: it says who it is again, now.
+    if (!nodes.some((node) => node.id === this.nodeId)) {
+      this.#joined = false;
+      await this.join().catch((error: unknown) => this.#log('warn', `[follower] the master did not hear who this node is: ${(error as Error).message}`));
     }
-    const listed = new Set(nodes.map((node) => node.id));
-    for (const kept of this.nodes.all()) if (!kept.self && !listed.has(kept.id)) this.nodes.remove(kept.id);
-    this.homeKept.mirror({ id: home.id, name: home.name, masterId: home.master, createdAt: home.createdAt });
   }
 
   /** The master this node follows, as it declared itself when last heard; null before it was. */
@@ -336,13 +351,18 @@ export class Follower {
   }
 
   /**
-   * Holds, of what the server listed, what is this app's: a device with a
-   * way this app holds is kept here as the server has it, and that way is
+   * Holds, of what the master listed, what is this node's: a device with a
+   * way this node holds is kept here as the master has it, and that way is
    * held while nothing above it reaches the device (`toHold`). A device it
    * no longer has a way to is let go, with what was kept for it.
    */
   async hold(list: readonly DeviceView[]): Promise<void> {
     const me = this.nodeId;
+    // Never two writers: a node does not follow itself, whatever it was told.
+    if (this.master()?.id === me) {
+      this.#log('error', '[follower] the master named is this node itself: it holds nothing for it');
+      list = [];
+    }
     this.#seen = new Map(list.map((device) => [device.id, device]));
     const mine = list.filter((device) => device.connections.some((connection) => this.#mine(connection, me)));
     const keep = new Set(mine.map((device) => device.id));
@@ -361,26 +381,26 @@ export class Follower {
     await this.sessions.sync(this.catalog.list());
   }
 
-  /** Whether a way is this app's own. */
+  /** Whether a way is this node's own. */
   #mine(connection: ConnectionView, me: NodeId): boolean {
     return connection.heldBy.id === me;
   }
 
-  /** Whether this app holds a device now: a session of its own is open for it, or about to be. */
+  /** Whether this node holds a device now: a session of its own is open for it, or about to be. */
   holds(deviceId: SavedDeviceId): boolean {
     return this.#holdNow.has(deviceId) && this.catalog.active(deviceId) !== null;
   }
 
-  /** Whether a way is one this app holds. */
+  /** Whether a way is one this node holds. */
   owns(connectionId: string): boolean {
     return this.connections.get(connectionId) !== null;
   }
 
   /**
-   * A device as the server says it, with what this app knows first: a way
-   * this app holds is said to be its own, with the secrets it keeps; and
+   * A device as the master says it, with what this node knows first: a way
+   * this node holds is said to be its own, with the secrets it keeps; and
    * while it holds the device, its readings, health and tools are this
-   * app's, read just now.
+   * node's, read just now.
    */
   view(device: DeviceView): DeviceView {
     const me = this.nodeId;
@@ -397,7 +417,7 @@ export class Follower {
       readings: session?.readings() ?? device.readings,
       health,
       tools: session ? toolsOf(this.installed.types.get(device.typeId)?.tools, session).map(({ name, spec }) => ({ name, ...spec })) : device.tools,
-      // What this app holds, it knows first: whether its own way reaches the device.
+      // What this node holds, it knows first: whether its own way reaches the device.
       connections: withInUse(
         connections.map((connection) => (connection.id === inUse?.id ? { ...connection, reachable: health.status === 'connected' } : connection)),
         inUse?.id ?? null
@@ -415,7 +435,7 @@ export class Follower {
     await this.sessions.sync(this.catalog.list());
   }
 
-  /** Lets go of a device the server no longer has, or no longer has a way of this app's to. */
+  /** Lets go of a device the master no longer has, or no longer has a way of this node's to. */
   async forget(deviceId: SavedDeviceId): Promise<void> {
     await this.sessions.close(deviceId);
     if (this.catalog.get(deviceId)) this.catalog.deleteForever(deviceId);
@@ -428,7 +448,7 @@ export class Follower {
     await this.sessions.sync(this.catalog.list());
   }
 
-  /** How much is a load, and the other values the home decides: the server's, kept for when it cannot be asked. */
+  /** How much is a load, and the other values the home decides: the master's, kept for when it cannot be asked. */
   policyValues(): PolicyValues {
     try {
       return JSON.parse(this.state.get(POLICY) ?? '{}') as PolicyValues;
@@ -441,17 +461,17 @@ export class Follower {
     this.state.set(POLICY, JSON.stringify(Object.fromEntries(values.map((value) => [value.name, value.value]))));
   }
 
-  // --- what is owed to the server -------------------------------------------------
+  // --- what is owed to the master -------------------------------------------------
 
-  /** Owed to the server, kept until it has it. */
+  /** Owed to the master, kept until it has it. */
   owe(kind: 'readings' | 'event' | 'audit' | 'store', deviceId: string | null, body: unknown): void {
-    // The server adds who sent it: what it is about goes as it is.
+    // The master adds who sent it: what it is about goes as it is.
     const owed = kind === 'audit' ? (({ actor: _actor, ...entry }: AuditRecord) => entry)(body as AuditRecord) : body;
     this.queue.add(kind, deviceId, owed);
     this.queue.trim(kind, KEEP_OWED[kind]);
   }
 
-  /** What a device's session keeps: here, and owed to the server, which keeps it with the device. */
+  /** What a device's session keeps: here, and owed to the master, which keeps it with the device. */
   #storeOf(deviceId: SavedDeviceId): DeviceStore {
     const here = deviceStore(this.db, deviceId);
     const owe = (key: string, value: unknown) => {
@@ -471,7 +491,7 @@ export class Follower {
     };
   }
 
-  /** What each device this app holds has read since it was last owed: one a minute per reading, as history keeps it. */
+  /** What each device this node holds has read since it was last owed: one a minute per reading, as history keeps it. */
   #collect(): void {
     for (const deviceId of this.sessions.opened()) {
       const session = this.sessions.get(deviceId);
@@ -486,7 +506,7 @@ export class Follower {
         this.#owedMinute.set(key, minute);
         return true;
       });
-      // Only a device's own description goes: its type's the server has from when it was added.
+      // Only a device's own description goes: its type's the master has from when it was added.
       const own = this.sessions.describedBy(record) === 'device' ? this.sessions.description(record) : null;
       const said = own ? JSON.stringify(own) : null;
       const describe = said !== null && said !== this.#describedOwed.get(deviceId);
@@ -503,7 +523,7 @@ export class Follower {
 
   /**
    * Sends what is owed, in order: the timeline, each device's readings and
-   * events together, what sessions kept. What the server cannot take now
+   * events together, what sessions kept. What the master cannot take now
    * waits for the next time; what it refuses for good is let go. One send at
    * a time; one asked for while another runs waits for it.
    */
@@ -518,7 +538,7 @@ export class Follower {
     this.#collect();
     const me = this.nodeId;
     const owed = this.queue.next(1000);
-    /** Sent, or refused for good: true; the server away: false, and the rest waits. */
+    /** Sent, or refused for good: true; the master away: false, and the rest waits. */
     const attempt = async (ids: number[], work: () => Promise<unknown>): Promise<boolean> => {
       try {
         await work();
@@ -526,7 +546,7 @@ export class Follower {
         return true;
       } catch (error) {
         if (error instanceof ApiError && REFUSED_FOR_GOOD.has(error.kind)) {
-          this.#log('warn', `[follower] the server refused what this app sent: ${error.message}`);
+          this.#log('warn', `[follower] the master refused what this node sent: ${error.message}`);
           this.queue.done(ids);
           return true;
         }
@@ -576,8 +596,8 @@ export class Follower {
 }
 
 /**
- * A device this app does not hold, as the gateway sees it: what the server
- * says it reads. Enough to verify a switch against a station the server
+ * A device this node does not hold, as the gateway sees it: what the master
+ * says it reads. Enough to verify a switch against a station the master
  * holds — its mains presence is a standard meaning, whoever reads it. It
  * takes no commands from here.
  */
@@ -590,7 +610,7 @@ function viewSession(device: DeviceView): DeviceSession {
   };
 }
 
-/** A device as the server has it, as it is kept here. */
+/** A device as the master has it, as it is kept here. */
 function recordOf(device: DeviceView): DeviceRecord {
   return {
     id: device.id,
@@ -610,5 +630,5 @@ function recordOf(device: DeviceView): DeviceRecord {
   };
 }
 
-/** What an app holds for a server's home, made from what the place gives it: `start()` it, ask its `api`, `stop()` it. */
+/** What a node holds for the home's master, made from what the place gives it: `start()` it, ask its `api`, `stop()` it. */
 export const createFollower = (options: FollowerOptions): Follower => new Follower(options);

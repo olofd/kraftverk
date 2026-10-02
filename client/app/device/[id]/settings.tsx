@@ -47,17 +47,17 @@ function DeviceSettings({ device }: { device: DeviceView }) {
  */
 function WhereWritesGo({ device }: { device: DeviceView }) {
   const { screenProps, holderOf } = useDevices();
-  const { kind } = useHome();
+  const { role } = useHome();
   const { readOnly } = screenProps(device);
   // Which holder is this screen's business, not a device package's: the app says where writes go.
   const holder = holderOf(device);
   const theme = useTheme();
   const [tone, icon, message] = readOnly
-    ? (['$warning', 'lock', holder === 'this-node' || kind === 'own' ? 'Read-only: writes from this app are off (App settings).' : 'Read-only: the server refuses every write.'] as const)
+    ? (['$warning', 'lock', holder === 'this-node' || role === 'master' ? 'Read-only: writes from this app are off (App settings).' : 'Read-only: the server refuses every write.'] as const)
     : holder === 'this-node'
       ? (['$muted', 'smartphone', `Written to ${device.name} from this app.`] as const)
       : holder === 'master'
-        ? kind === 'server'
+        ? role === 'follower'
           ? (['$muted', 'server', `Written to ${device.name} through your server.`] as const)
           : (['$muted', HERE_PLATFORM === 'web' ? 'monitor' : 'smartphone', `Written to ${device.name} from ${HERE}.`] as const)
         : (['$muted', 'link-2', device.health.detail] as const);

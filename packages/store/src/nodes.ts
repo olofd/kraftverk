@@ -20,7 +20,7 @@ export type NodeDeclaration = NodeTraits & {
   platform: Platform;
   /** What it reaches devices over, where it runs. */
   transports: readonly string[];
-  /** Where it stands; null: it moves with someone, or has not said. */
+  /** Where it stands; null: it moves with someone, or has not said; left out: as it was. */
   placeId?: string | null;
 };
 
@@ -92,11 +92,6 @@ export class NodeStore {
     return row ? toRecord(row) : null;
   }
 
-  /** The nodes a person joined to the home, from their account. */
-  forAccount(accountId: string): NodeRecord[] {
-    return this.#db.query<Row, [string]>('SELECT * FROM node WHERE account_id = ? ORDER BY last_seen_at DESC').all(accountId).map(toRecord);
-  }
-
   /**
    * The node this database belongs to, as it declares itself at every start:
    * made the first time, brought up to date after. A database is one node's,
@@ -127,15 +122,22 @@ export class NodeStore {
     this.#write(record, { accountId: null, self: false, at: { created: record.createdAt, seen: record.lastSeenAt } });
   }
 
-  /** Forgets a node, and every connection it held. Never this database's own. */
+  /** A node of the home was heard from — readings, its timeline, its store — now. */
+  seen(id: string): void {
+    this.#db.query('UPDATE node SET last_seen_at = ? WHERE id = ?').run(new Date().toISOString(), id);
+  }
+
+  /** Forgets a node, and every connection it held. Never this database's own, nor the home's master. */
   remove(id: string): void {
-    this.#db.query('DELETE FROM node WHERE id = ? AND self = 0').run(id);
+    this.#db.query('DELETE FROM node WHERE id = ? AND self = 0 AND id NOT IN (SELECT master_id FROM home)').run(id);
   }
 
   #write(node: NodeDeclaration | Omit<NodeRecord, 'self' | 'accountId'>, how: { accountId: string | null; self: boolean; at?: { created: string; seen: string } }): NodeRecord {
     const now = new Date().toISOString();
     const created = how.at?.created ?? now;
     const seen = how.at?.seen ?? now;
+    // A node that says nothing of where it stands keeps the place it had.
+    const place = node.placeId !== undefined ? node.placeId : (this.get(node.id)?.placeId ?? null);
     this.#db
       .query(
         `INSERT INTO node (id, name, platform, always_on, reachable, trusted, transports, place_id, account_id, self, created_at, last_seen_at)
@@ -152,7 +154,7 @@ export class NodeStore {
         bit(node.reachable),
         bit(node.trusted),
         JSON.stringify(node.transports),
-        node.placeId ?? null,
+        place,
         how.accountId,
         bit(how.self),
         created,

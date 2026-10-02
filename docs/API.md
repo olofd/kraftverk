@@ -40,7 +40,7 @@ answers — and listed on the device as `tools`.
 | `GET` | `/setup/:id/sightings` | What the transport sees that this type's protocol recognises, marked when already yours |
 | `POST` | `/setup/:id/choose` · `/steps/:step/actions/:action` · `/steps/:step/discover` | Choose the device — `{ address }` it sees, `{ manual }` typed, or `{ chooser }`, the platform's own picker, which a server has none of and says so; run a step's helper ("fetch the key") on the server |
 | `POST` | `/setup/:id/check` · `/setup/:id/save` | Read it once — new, yours, yours before, another model — then save it all in one go |
-| `POST` | `/setup/app` | A connection this app will hold: what it learnt reading the device itself, never a secret |
+| `POST` | `/setup/held` | A connection a node following this one will hold: what it learnt reading the device itself, never a secret (`{ nodeId, typeId, methodId, address, identified }`) |
 | `GET` | `/devices` · `/devices/removed` | The devices you have, each with its description (parts, attributes, events), information, live readings, health, connections and links; removed ones, with their history |
 | `GET` `PATCH` `DELETE` | `/devices/:id` | Read; rename, or give it another key (`{ name?, key? }`: the name a configuration knows it by, lowercase letters, digits and dashes, no other device's — 409 when taken; on the timeline as `device.keyed`); or remove — keeping its history |
 | `PUT` | `/devices/:id/picture` | Which picture it shows, `{ picture }`, a reference: `type:N` is its type's Nth (its package's, shipped with the app), counting from 0; the device's `picture` says the one shown. `own:<id>` is reserved for a photo of its own — not built yet, refused — which will be uploaded with `POST /devices/:id/pictures`, served from `GET /devices/:id/pictures/<id>`, and chosen here the same way. Audited |
@@ -55,9 +55,9 @@ answers — and listed on the device as `tools`.
 | `PUT` | `/devices/:id/connections/:connection/secrets` | Replace a server-held connection's secrets, such as a plug's new local key |
 | `POST` `DELETE` | `/links` · `/links/:id` | Facts about the house, between parts: `{kind, source: {device, part}, target: {device, part}}` — this plug's relay feeds that station's mains input |
 | `GET` | `/home` | The home: its name, and which node is its master |
-| `GET` `POST` `DELETE` | `/nodes` · `/nodes/:id` | The kraftverk nodes of the home: its master, and every node that joins it — by its own id, at every start, saying what it is (`alwaysOn`, `reachable`, `trusted`, its `place`) and what it reaches devices over. Forgotten only by the account it joined from; never the master |
+| `GET` `POST` `DELETE` | `/nodes` · `/nodes/:id` | The kraftverk nodes of the home: its master, and every node that joins it — by its own id, at every start, saying what it is (`alwaysOn`, `reachable`, `trusted`, its `place`) and what it reaches devices over. Each says whether it is the master and whether it is `yours` — joined from the asking account, and so theirs to forget. Forgotten only by that account; never the master |
 | `POST` | `/devices/:id/readings` · `/nodes/:id/audit` | What a node sends the master for a connection it holds |
-| `GET` `PUT` | `/devices/:id/store` · `/devices/:id/store/:key` | A device's own store, for a session an app runs |
+| `GET` `PUT` | `/devices/:id/store` · `/devices/:id/store/:key` | A device's own store, for a session a node following this one runs |
 | `GET` | `/transports` · `/transports/:id/diagnostics/:name` | What this server reaches devices over, and each transport's diagnostics — the broker, its journal, its traffic |
 | `GET` | `/found` | What the transports see that nothing you have is reached by |
 | `GET` | `/diagnostics/log` | The server's own recent log (`?level=warn`, `?limit=`), and where its daily files are |

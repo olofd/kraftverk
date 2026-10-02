@@ -493,7 +493,7 @@ export const isSimulated = (connection: { readonly transport: string }): boolean
  * The runtimes a method can be held on at all: those its transport has an
  * entry for. A simulated one reaches nothing, and is held anywhere.
  */
-export function placesOf(method: ConnectionMethod, transport: Pick<TransportDefinition, 'platforms'> | null): Platform[] {
+export function platformsOf(method: ConnectionMethod, transport: Pick<TransportDefinition, 'platforms'> | null): Platform[] {
   if (isSimulated(method)) return [...PLATFORMS];
   return [...(transport?.platforms ?? [])];
 }

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import { LINK_KIND_IDS, type LinkKind } from '@kraftverk/device-sdk';
+import { LINK_KIND_IDS, NODE_ID, type LinkKind } from '@kraftverk/device-sdk';
 
 import { body, homeFor, type AppDeps } from './shared.ts';
 
@@ -31,7 +31,7 @@ export function setupRoutes(deps: AppDeps): Hono {
       c,
       z
         .object({
-          nodeId: z.string().min(1).max(40),
+          nodeId: z.string().regex(NODE_ID),
           typeId: z.string().min(1).max(80),
           methodId: z.string().min(1).max(40),
           address: z.string().min(1).max(200),

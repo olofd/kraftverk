@@ -21,7 +21,7 @@ export class SetupError extends ApiError {
 export type Draft = {
   id: string;
   by: string;
-  /** Who will hold the connection: null for this home's own holder, or the app that ran the steps itself. */
+  /** The node that will hold the connection: this one, or the node that ran the steps itself, following this one. */
   heldBy: NodeId;
   type: DeviceType<any>;
   method: ConnectionMethod | null;

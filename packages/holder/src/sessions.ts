@@ -3,6 +3,7 @@ import {
   methodOf,
   type Availability,
   type AuditRecord,
+  type ConnectionMethod,
   type ConnectionHealth,
   type DescriptionSource,
   type DeviceDescription,
@@ -91,8 +92,14 @@ export type SessionManagerDeps = {
   transports: TransportSource & { start?(id: string): Promise<unknown>; available?(id: string): Availability };
   /** A device's ways in, preferred first. */
   connections(deviceId: SavedDeviceId): readonly HolderConnection[];
-  /** Whether a connection is this holder's: the server's are those no app holds; an app's, its own. */
+  /** Whether a connection is this node's: the ways it holds (`held_by`). */
   holds(connection: HolderConnection): boolean;
+  /**
+   * Why this node cannot hold a way, from what the way needs of the node
+   * holding it (`needs`): a way brought in by a file, or by a home handed
+   * over, is held only by a node that is what it needs. Null when it can.
+   */
+  unfit?: (method: ConnectionMethod) => string | null;
   secret(connectionId: string, field: string): string | null;
   /** The secret fields a connection has, so setting one reopens it. */
   secretFields?(connectionId: string): readonly string[];
@@ -329,6 +336,11 @@ export class SessionManager {
         reasons.push(`${record.typeId} no longer has a way called "${connection.method}"`);
         continue;
       }
+      const unfit = this.deps.unfit?.(method) ?? null;
+      if (unfit) {
+        reasons.push(unfit);
+        continue;
+      }
       if (isSimulated(connection)) return { connection };
       await this.deps.transports.start?.(connection.transport);
       const available = this.deps.transports.available?.(connection.transport) ?? { ok: true };
@@ -436,7 +448,7 @@ export class SessionManager {
       // The address now leads somewhere else: nothing it says is this device's.
       await this.close(deviceId);
       this.#refusals.set(deviceId, { status: 'error', detail: `That connection reaches a different device (${said}), not the one you added` });
-      this.deps.record?.({ at: new Date().toISOString(), kind: 'device.mismatch', actor: `node:${this.deps.node.id}`, resourceKind: 'device', resource: deviceId, summary: `${record.name}'s connection reaches ${said} instead`, detail: { expected: record.identity } });
+      this.deps.record?.({ at: new Date().toISOString(), kind: 'device.mismatch', actor: this.deps.node.name, resourceKind: 'device', resource: deviceId, summary: `${record.name}'s connection reaches ${said} instead`, detail: { expected: record.identity } });
       this.deps.onChange?.();
       return false;
     }

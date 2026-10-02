@@ -326,8 +326,8 @@ export class SetupService {
   }
 
   /**
-   * Reads the device once and judges nothing: what an app holding a way for
-   * a server learns itself, for the server to judge against what you have
+   * Reads the device once and judges nothing: what a node following the
+   * master learns itself, for the master to judge against what you have
    * (`startHeld`). With the secrets entered, which stay with whoever holds it.
    */
   async read(id: string): Promise<{ draft: DraftView; read: { identified: Identified } | { outcome: CheckOutcome }; secrets: Record<string, string> }> {
@@ -346,6 +346,8 @@ export class SetupService {
   async save(id: string, input: SaveRequest): Promise<DeviceRecord> {
     const draft = this.#draft(id);
     const method = draft.method!;
+    // The node that will hold it was forgotten while it was being set up.
+    if (!this.deps.traits(draft.heldBy)) throw new SetupError('The node that was to hold it is no longer part of this home', 404);
     const config = saveable(draft, input, this.deps.self);
     const { record, kind } = this.deps.db.transaction(() => writeSaved(this.deps, draft, input, config))();
 

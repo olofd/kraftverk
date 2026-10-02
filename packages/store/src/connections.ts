@@ -7,13 +7,13 @@ import type { SecretsAtRest } from './secrets.ts';
 
 /**
  * How each device is reached (docs/DATA-MODEL.md §3): one row per way, from
- * one place. The station over Wi-Fi from the server and over Bluetooth from
- * your phone is one device with two connections.
+ * one place. The station over Wi-Fi from the master and over Bluetooth from
+ * a node that follows it — your phone — is one device with two connections.
  *
- * A connection names its device type's method, the transport it rides, who
- * holds it — the server, or one phone or browser — and the address that
+ * A connection names its device type's method, the transport it rides, which
+ * node holds it — the master, or one that follows it — and the address that
  * transport knows the device by. Its secrets live beside it, sealed; the ones
- * of a connection an app holds never reach the server at all.
+ * of a connection held by a node that follows never reach the master at all.
  */
 
 export type ConnectionRecord = {
@@ -158,8 +158,10 @@ export class ConnectionStore {
   /**
    * Keeps a connection as the master's database has it, by its id: a node
    * that follows the home, holding a way to one of its devices
-   * (docs/PLAN-SHARED-CORE.md, phase 6). Added, or brought up to what it is
-   * there; its secrets, which only the node holding it has, stay.
+   * (docs/PLAN-SHARED-CORE.md, phase 6). Added, or its address, priority
+   * and settings brought up to what they are there — what it is, and who
+   * holds it, never change; its secrets, which only the node holding it has,
+   * stay.
    */
   mirror(record: Pick<ConnectionRecord, 'id' | 'deviceId' | 'method' | 'transport' | 'heldBy' | 'address' | 'priority' | 'config' | 'secretsExportable' | 'createdAt'>): void {
     this.#db
@@ -194,7 +196,7 @@ export class ConnectionStore {
 
   // --- secrets -------------------------------------------------------------------
 
-  /** One secret, opened: null when there is none, or it cannot be opened with the key this server has. */
+  /** One secret, opened: null when there is none, or it cannot be opened with the key this node has. */
   secret(connectionId: string, field: string): string | null {
     const row = this.#db
       .query<{ value: string; encrypted: number }, [string, string]>('SELECT value, encrypted FROM connection_secret WHERE connection_id = ? AND field = ?')

@@ -798,10 +798,26 @@ then). `Holding` is `Follower` (`createFollower`, `follower/`), and keeps
 the home and its nodes as the master has them: its copy knows which node
 it follows, and what that node is.
 
-Next in 6j: places up
-through the API, `DeviceContext` and the weather; the configuration
-document's places (a new `kraftverk:` version, with its migration); the
-screens in nodes; the docs' vocabulary and decisions.
+**6j, part 4 — in words, and done** (2026-10-02): the screens keep
+people's words ("through your server", "from this browser"), and
+Connectivity lists the home's *kraftverk nodes* — the master, this node,
+the others that follow it, what each declares it is — where one joined from
+another browser or phone can be forgotten. The app knows its role
+(`role: 'master' | 'follower'`), not a kind of machine; the hand-over to
+the master is `MovingToMaster`. "Server" is left only for a node's HTTP
+entrance (its address, accounts and `ServerApi`), and the app's list of
+servers is the addresses of masters it can follow. ARCHITECTURE.md's
+vocabulary (node, master, follower, server) and decisions 2, 8, 10, 15, 23
+and 24 say it in nodes. **6j is done.**
+
+**Parked: places upward.** Where nodes and devices stand is in the model
+(`place`, `device.place_id`, `node.place_id`), and nothing reads it yet.
+Building it upward — the weather forecasting for its place, places in the
+configuration document (a new `kraftverk:` version), a first step saying
+where you are — waits on a decision that is the owner's (2026-10-02): what
+groups things — a home, or places alone — and whether a person has one
+kraftverk or several. It is taken with sharing, or the first location
+feature.
 
 **A structure pass** (the owner, 2026-10-02), once the hub is done and the
 packages are as they should be: the server and the app looked at again,

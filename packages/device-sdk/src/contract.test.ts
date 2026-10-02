@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isSimulated, methodOf, methodsOf, placesOf, SIMULATED_METHOD, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, type Platform, type NodeNeeds, type Protocol, type TransportDefinition, unmetNeed } from './connection.ts';
+import { isSimulated, methodOf, methodsOf, platformsOf, SIMULATED_METHOD, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, type Platform, type NodeNeeds, type Protocol, type TransportDefinition, unmetNeed } from './connection.ts';
 import { MAIN_PART, type DeviceDescription } from './description.ts';
 import type { DeviceContext, DeviceSession, DeviceType } from './device-type.ts';
 import { defineDeviceType, describeDeviceType } from './device-type.ts';
@@ -152,10 +152,10 @@ describe('validating a declaration', () => {
   test('where a way can be held follows from its transport’s runtimes, and what it needs of the node holding it', () => {
     const radio = { platforms: ['system', 'web', 'native'] as Platform[] };
     const own = plug().connections[0]!;
-    expect(placesOf(SIMULATED_METHOD, null)).toEqual(['system', 'web', 'native']);
-    expect(placesOf({ ...own, transport: 'radio' }, radio)).toEqual(['system', 'web', 'native']);
+    expect(platformsOf(SIMULATED_METHOD, null)).toEqual(['system', 'web', 'native']);
+    expect(platformsOf({ ...own, transport: 'radio' }, radio)).toEqual(['system', 'web', 'native']);
     // A transport nothing installed provides runs nowhere.
-    expect(placesOf({ ...own, transport: 'gone' }, null)).toEqual([]);
+    expect(platformsOf({ ...own, transport: 'gone' }, null)).toEqual([]);
 
     const kept = { ...own, needs: { trusted: 'its account stays at home' } };
     const phone = { alwaysOn: false, reachable: false, trusted: false };

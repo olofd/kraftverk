@@ -54,15 +54,4 @@ export class HomeStore {
         .run(record.id, record.name, record.masterId, record.createdAt);
     })();
   }
-
-  rename(name: string): HomeRecord {
-    this.#db.query('UPDATE home SET name = ?').run(name);
-    return this.get()!;
-  }
-
-  /** Another node is the master now: the home has moved to it, or come back. */
-  setMaster(id: NodeId): HomeRecord {
-    this.#db.query('UPDATE home SET master_id = ?').run(id);
-    return this.get()!;
-  }
 }

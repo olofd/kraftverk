@@ -6,14 +6,15 @@ import type { Hub } from '../hub.ts';
 import { nothingToDo } from './nothing.ts';
 
 /*
-  A server's home, kept by this app (docs/PLAN-SHARED-CORE.md, phase 6h):
-  the app stopped using its server — let go of it, or lost it — and the
-  copy it kept of the server's home becomes its own. What the server's
-  configuration said, as this app last heard it, is restored into the app's
-  own home as a restore is: what it cannot carry — a secret only the server
-  had — is left out and said, and a way only a server can hold comes too,
-  waiting for one. The ways this app held for the server come with their
-  secrets, which never left it. Its history is the server's, and stays there.
+  A master's home, kept by this node (docs/PLAN-SHARED-CORE.md, phase 6h):
+  this node stopped following its master — let go of it, or lost it — and
+  the copy it kept of the master's home becomes its own. What the master's
+  configuration said, as this node last heard it, is restored into this
+  node's own home as a restore is: what it cannot carry — a secret only the
+  master had — is left out and said, and a way this node cannot hold comes
+  too, waiting for a node that can. The ways this node held for the master
+  come with their secrets, which never left it. Its history is the
+  master's, and stays there.
 */
 
 /** Kept in the copy, once it has been brought in: not offered again. */
@@ -28,7 +29,7 @@ export class KeepingCopy {
   /** The plans made from the copy, by id: what their apply brings beside the file. */
   readonly #plans = new Set<string>();
 
-  /** `copy`: the database this app kept for the server it used last; `secrets`: this app's key, which sealed its ways' secrets there. */
+  /** `copy`: the database this node kept for the master it followed last; `secrets`: this node's key, which sealed its ways' secrets there. */
   constructor(hub: Hub, copy: SqlDatabase, secrets: SecretsAtRest) {
     this.#hub = hub;
     this.#state = new AppState(copy);
@@ -37,7 +38,7 @@ export class KeepingCopy {
     this.#connections = new ConnectionStore(copy, secrets);
   }
 
-  /** The server's configuration, as this app last heard it; null when it never heard one, or it has been brought in. */
+  /** The master's configuration, as this node last heard it; null when it never heard one, or it has been brought in. */
   #text(): string | null {
     if (this.#state.get(KEPT)) return null;
     return this.#heard.get<string>('configuration')?.body ?? null;
@@ -62,7 +63,7 @@ export class KeepingCopy {
     if (!text) throw new ApiError('not-found', 'This app keeps no copy of a server’s home to bring in');
     const plan = await this.#hub.configuration.plan(text, { mode, lenient: true }, by);
     if (plan.id) this.#plans.add(plan.id);
-    // All of it is here already, as the server had it: there is nothing to bring, and it is not offered again.
+    // All of it is here already, as the master had it: there is nothing to bring, and it is not offered again.
     const held = this.#catalog.list().some((kept) => this.#connections.forDevice(kept.id).length > 0);
     if (nothingToDo(plan) && !held) this.#state.set(KEPT, new Date().toISOString());
     const ways = this.#catalog.list().flatMap((device) => this.#connections.forDevice(device.id).map(() => device.name));
@@ -76,7 +77,7 @@ export class KeepingCopy {
     };
   }
 
-  /** Brings it in, and the ways this app held with their secrets; what could not come is said. */
+  /** Brings it in, and the ways this node held with their secrets; what could not come is said. */
   async apply(answers: ImportAnswers, by: string): Promise<ImportApplied> {
     const applied = await this.#hub.configuration.apply(answers, by);
     this.#plans.delete(answers.plan);

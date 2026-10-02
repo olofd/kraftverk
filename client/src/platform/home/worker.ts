@@ -166,7 +166,7 @@ async function start(open: Extract<ToWorker, { kind: 'open' }>) {
   await hub.start();
   const stopServing = serveApi(hub.as(OWNER), scope, 'api');
   return {
-    nodeId: open.node.id,
+    nodeId: hub.self.id,
     allowWrites: async (allowed: boolean) => {
       writes = allowed;
       await hub.sessions.sync(hub.catalog.list());

@@ -8,11 +8,14 @@ history recorded, its configuration read and written — and the one
 interface everything that uses a home speaks, `KraftverkApi`, answered in
 the process.
 
-`createHub(...)` is handed what only the place it runs can give — a SQLite
-database, how secrets are sealed at rest, what is installed, the platform's
-transports — and gives back a home. The server runs one behind its HTTP
-API; the app runs one on a phone or in a browser when it has no server; a
-test runs one in memory.
+Every place kraftverk runs is a **kraftverk node**, and a hub is one:
+`createHub(...)` is handed what only the place it runs can give — the node
+it is, a SQLite database, how secrets are sealed at rest, what is
+installed, the platform's transports — and gives back a home, whose master
+it is. The server runs one behind its HTTP API; the app runs one on a
+phone or in a browser when it has no server; a test runs one in memory.
+A node following another's home is `createFollower(...)`: the same parts,
+holding for the master the ways it reaches itself.
 
 ## What it does — and does not
 
@@ -26,7 +29,7 @@ test runs one in memory.
     and links — wherever it is held;
   - adding a device: setup drafts, sightings, the check, the save;
   - what is near: what the transports see that nothing you have claims;
-  - history: sampling, roll-ups, the change log, readings an app sends in;
+  - history: sampling, roll-ups, the change log, readings a node following it sends in;
   - attention: what people are looking at, and the devices kept fresh for
     them;
   - the assistant's world and vocabulary;
@@ -136,7 +139,7 @@ changed through it until it answers.
 Both ways as an import, planned and seen before anything moves
 (`configuration.plan({ from })`; `configuration.elsewhere()` says what
 there is). A follower given the home the app kept itself (`own`) moves it
-to the server (`MovingToServer`): every way but one over a `nearby`
+to the server (`MovingToMaster`): every way but one over a `nearby`
 transport moves with it, and that one this app holds for the server, its
 key kept here. A hub given the copy the app kept of the server it used
 last (`copy`) keeps it as its own (`KeepingCopy`): the server's
@@ -150,14 +153,14 @@ const hub = createHub({
   database,      // SqlDatabase: bun:sqlite, expo-sqlite or SQLite's WebAssembly build, its schema prepared
   secrets,       // SecretsAtRest: the server's key, a phone's secure storage
   installed,     // Installed: device types, protocols, transports — found by the place
-  platform,      // 'server' | 'web' | 'native': which transports' entries run here
+  node,          // { id, name, alwaysOn, reachable, trusted }: the node it is, by its own id
   readOnly,      // () => boolean: every hardware write refused
   http,          // ScopedHttp: a setup helper's one call to a vendor
   log,           // where it says what happened
   now,           // the clock; a test's own
 });
 await hub.start();         // transports, sessions, the engine, sampling
-const api = hub.as(caller); // KraftverkApi, for one person, agent or app
+const api = hub.as(caller); // KraftverkApi, for one person, agent or automation
 await hub.stop();
 ```
 

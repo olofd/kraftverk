@@ -72,11 +72,13 @@ One word for each thing, in code, in docs and on screen.
 | **Transport** | A package that moves bytes or messages and finds devices, with one implementation for each place it can run. Knows nothing of what it carries. | `@kraftverk/transport-mqtt`, `-ble`, `-lan`, `-https` |
 | **Protocol** | A package that knows a wire format and how it rides each transport it supports. Pure code, no I/O and no product meaning. | `@kraftverk/protocol-sydpower`, `-tuya-local` |
 | **Connection method** | One protocol over one transport, declared by a device type, with the setup steps the layers supply. It says nothing about where it runs. | the P280's `wifi` (sydpower over mqtt) and `bluetooth` (sydpower over ble) |
-| **Holder** | Where a connection is held: the server, or one client. It offers a method wherever it has the transport. | "your server", "Olof's iPhone" |
-| **Client** | One phone or browser running the app, known to the server. | "Chrome on the laptop" |
+| **Node** | A kraftverk node: the hub running somewhere — a machine on the network, a phone, a browser — holding the connections it reaches there. It declares what it is (`NodeTraits`): **always on**, **reachable** by others, **trusted** with what must stay put. It offers a method wherever it has the transport and is what the method `needs`. Known by its own id in every database that knows it. The node holding a connection is its *holder*. | "Garage NAS", "Chrome on the laptop" |
+| **Master** | The node whose database is the home's, and the only one that writes it (`home.master_id`): the one fittest for it — always on, then reached by others. | your server; the app alone, with none |
+| **Follower** | Any other node of the home: it keeps a copy of what the master says, and holds for it the ways it reaches itself (`createFollower`). | the app with a server; a Raspberry Pi beside a station |
+| **Server** | The HTTP entrance of a reachable node — its address, its accounts — not a kind of node. On screen, "your server" is the always-on node most people have. | `http://nas.local:3000` |
 | **Device** | One thing the user added: an instance of a device type, with its own name, config and identity. | "Garage P280", "Heater plug" |
 | **Identity** | A device's own permanent id, read from the device. What makes one station found two ways a single device. | `sydpower:AABBCC001122` |
-| **Connection** | One way a device is reached: a method, a holder and an address, with its own secrets. A device may have several; one is in use at a time. | Garage P280 over Wi-Fi, held by the server |
+| **Connection** | One way a device is reached: a method, the node that holds it and an address, with its own secrets, kept on that node. A device may have several; one is in use at a time. | Garage P280 over Wi-Fi, held by the NAS |
 | **Sighting** | Something a transport can see that no connection claims. Live state, never stored. | "A power station is connected to this server" |
 | **Service** | A device type with `kind: 'service'`: no hardware. Added and shown the same way, in its own section. | "Weather (Open-Meteo)" |
 | **Description** | What a device is, as data: its parts, their attributes, and its events. Declared by its type, or reported by the device. | — |
@@ -89,7 +91,7 @@ One word for each thing, in code, in docs and on screen.
 | **Setup** | The steps from choosing a category to a saved device (DATA-MODEL.md §1). Each method's steps are assembled from its transport, protocol and type. | Scan the LAN, fetch the key, read once |
 | **Link** | A physical fact connecting two devices, recorded by the user. | "This plug feeds that station's AC input" |
 | **Automation** | A recipe whose roles are filled by parts of devices, acting through the gateway. | "Sunny tomorrow → switch on the heater plug" |
-| **Session** | A running connection to one device, in whichever holder has it in use. | — (internal) |
+| **Session** | A running connection to one device, on whichever node has it in use. | — (internal) |
 
 Retired: **extension**, **adapter**, **driver** and **provider** as names for
 anything, **plugin** on screen, and the **grid relay** as a thing: it was a
@@ -97,7 +99,7 @@ role, and is now a smart plug with a `feeds` link. "Plugin" survives only in
 prose, for "an installable package". The app never says extension, plugin,
 driver, adapter, bind, transport or protocol. It names methods the way people
 do: "Wi-Fi, through your server", "Bluetooth, from this phone"; the screen
-about them is *Connectivity*. Hardware keeps its own names — a DC charger, a
+about them is *Connectivity*, which lists the home's *kraftverk nodes*. Hardware keeps its own names — a DC charger, a
 Bluetooth radio — and so do the ones people know, such as MQTT.
 
 ---
@@ -439,14 +441,16 @@ declares pairs and writes `identify`:
 | Credentials | the protocol (`credentials`), with actions such as *Fetch with my Tuya account* |
 | Check it | the type's `identify`, then one read; the identity decides new, already yours, or yours before |
 
-Each step **runs in the holder**: steps for a server-held connection run on the
-server against a **draft**, and steps for an app-held one run in the app. The
-save is always the server's, in one transaction. A type may offer **save
+Each step **runs on the node that will hold it**, against a **draft** there:
+the master's for a way it holds, a follower's — the app's — for one it holds
+for the master, which judges what the follower read. The save is always the
+master's, in one transaction. A type may offer **save
 anyway** after a failed check when failure is expected, as it is for a station
 that is asleep. The first successful connection then fills in the identity.
-Secrets a server step finds stay on the server; the app sees a short-lived
-placeholder (see [SECURITY.md](SECURITY.md)). Secrets of an app-held connection
-never leave that client.
+Secrets a step on the master finds stay on the master; the app sees a
+short-lived placeholder (see [SECURITY.md](SECURITY.md)). A connection's
+secrets stay on the node that holds it: those of a way a follower holds never
+reach the master.
 
 ### 4.4 Links between parts
 
@@ -485,12 +489,16 @@ the reason for every table, is [DATA-MODEL.md](DATA-MODEL.md). In short:
 
 ```sql
 device            (id PK, type_id, identity, name, config JSON, description JSON, info JSON,
-                   added_at, removed_at)
+                   place_id → place, added_at, removed_at)
 device_attribute  (device_id → device ON DELETE CASCADE, key, part, spec JSON, first_seen, last_seen)
-device_connection (id PK, device_id → device, method, transport, held_by → client | NULL = server,
-                   address, priority, config JSON, created_at, last_connected_at)
+device_connection (id PK, device_id → device, method, transport, held_by → node, address,
+                   priority, config JSON, created_at, last_connected_at)
 connection_secret (connection_id → device_connection ON DELETE CASCADE, field, value, encrypted)
-client            (id PK, user_id → users, name, platform, transports JSON, created_at, last_seen_at)
+                                                      -- only the ways this database's node holds
+node              (id PK, name, platform, always_on, reachable, trusted, transports JSON,
+                   place_id → place, account_id → users, self, created_at, last_seen_at)
+home              (id PK, name, master_id → node, created_at)       -- one: which node is the master
+place             (id PK, key, name, latitude, longitude, time_zone, created_at)
 device_kv         (device_id → device ON DELETE CASCADE, key, value)
 device_link       (id PK, kind, source_id → device, target_id → device, created_at)
 sample            (device_id → device ON DELETE CASCADE, key, at, value | text)     -- 14 days
@@ -611,14 +619,14 @@ through the gateway; the next exception has to argue against this paragraph.
    │  transport-mqtt, -ble    │  transport-lan           │  transport-https         │
    └────────────┬─────────────┴────────────┬─────────────┴────────────┬─────────────┘
                 ▼                          ▼                          ▼
-server:  DeviceTypeRegistry ──► SessionManager (holder): for every device, the connection in use,
+master:  DeviceTypeRegistry ──► SessionManager (holder): for every device, the connection in use,
          TransportHost (starts what      │ readings, description,│ commands, writes
          installed types need)           │ events → LiveBus      ▼
                                    Sampler / history       ActionGateway ◄── device links
                                    catalog, event store          ▲
                                          └──► AutomationEngine ──┘
-app:     the same registry, SessionManager and gateway rules for connections it holds; readings and audit
-         go up to the server · /api/device-types → the add flow · generic device view + optional panels
+follower: the same registry, SessionManager and gateway rules for the ways it holds; readings and audit
+         go up to the master · device types → the add flow · generic device view + optional panels
 ```
 
 The MQTT broker stays a separate process, because stations must stay connected
@@ -1502,7 +1510,8 @@ is continuous, and the architecture check stays at zero.
    gateway, the energy-flow view and automations all read — not part of
    either device, and not inside one automation.
 2. **In-app Bluetooth** is not a special path. It is a connection held by the
-   app (step 12), and the old path is gone.
+   app's node, following the master (step 12; decision 24), and the old path
+   is gone.
 3. **Unverified station models** are removed. One comes back as its own type,
    reusing the P280's code, when someone with the hardware writes it.
 4. **Services** live in `packages/services/*`, found by the same discovery.
@@ -1514,13 +1523,14 @@ is continuous, and the architecture check stays at zero.
 8. **A device type declares connection methods, not transports and protocols
    separately.** Each method is one protocol over one transport, because not
    every protocol rides every transport. Where a method can run is never
-   declared: it follows from which holders have its transport.
+   declared: it follows from which nodes have its transport, and what the
+   method needs of the node that holds it (`needs`, decision 24).
 9. **The code doesn't know where it runs.** Protocols and device types are
    pure, and all platform code lives in transports, one implementation for
    each place. The server and the app run the same session code.
 10. **Setup belongs to the method and is assembled from its layers.** Each
-    step runs in the holder: the server's broker list for a server-held
-    method, the browser's Bluetooth chooser for a browser-held one.
+    step runs on the node that will hold it: the broker's list on the node
+    that has the broker, the browser's Bluetooth chooser on a browser's node.
 11. **A device is its identity, read from the device.** It is never its
     address, because browsers and phones hide or scramble addresses. The same
     station found two ways is one device with two connections.
@@ -1533,10 +1543,11 @@ is continuous, and the architecture check stays at zero.
     you can add: every type has one, for tests and "try without hardware".
     Since 2026-09-29 it is reached as a way to add that type — the simulated
     method every type has — rather than by starting the server in a mode.
-15. **Local mode stays: the app works with no server.** In the model it is
-    simply a client that is the only holder: it offers the methods whose
-    transports it has, and keeps the same records — devices, connections, their
-    secrets, links — in its own storage instead of on a server. What it cannot
+15. **Local mode stays: the app works with no server.** In the model its
+    node is the home's only node, and so its master: it offers the methods
+    whose transports it has and whose needs it meets, and keeps the same
+    records — devices, connections, their secrets, links — in its own
+    database. What it cannot
     do is what only an always-running machine can: history while the app is
     closed, and automations while it is closed. While it runs, it does both
     (decision 22). Adding a server hands the home over to it (decision 23).
@@ -1588,7 +1599,10 @@ is continuous, and the architecture check stays at zero.
     server and from a phone with one history. A server lost, the app's
     copy is the master again. Never two writers: nothing is merged. Where
     things run follows from the ways a device is reached and what an
-    automation needs, never from a choice put to a person. The steps:
+    automation needs, never from a choice put to a person. In nodes
+    (decision 24): the app's node is the master while it is alone; a node
+    fitter for it — always on, reached by others — takes the role by a
+    hand-over the person sees, and the app's node follows it. The steps:
     [PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md), "Phase 6, from 6f".
 24. **Every place is a kraftverk node** (2026-10-02, the owner: where the
     overhaul ends). There is no server and no client as a kind of thing:
@@ -1598,8 +1612,16 @@ is continuous, and the architecture check stays at zero.
     reaching out, trusted with what must stay put — and the home's master
     is chosen by those: the node that is always on and the others reach.
     The others follow it, lend it what they reach, and can take its role
-    over (decision 23). "Server" and "client" left in the code are names
-    to retire (step 6j); on screen, people's own words stay. The steps:
+    over (decision 23). Built in step 6j: every node is a `node` record,
+    by its own id; every connection is held by one; the home names its
+    master (`home.master_id`); a connection method says what it `needs`
+    of the node holding it (`trusted`, for a vendor account's password);
+    the master is the node fittest for it (`shouldLead`), and the others
+    are followers (`createFollower`). "Server" is left only for a node's
+    HTTP entrance; on screen, people's own words stay, and Connectivity
+    lists the home's nodes. Where nodes and devices stand (`place`) is in
+    the model; what groups them — a home, or places alone — is decided
+    with sharing and the first location feature. The steps:
     [PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md), "Phase 6, the goal".
 
 ---

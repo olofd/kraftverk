@@ -8,7 +8,7 @@ import { Card, Row, haptic } from '@kraftverk/ui';
 import { Pressable } from '../components/Pressable';
 import { HomeOpenElsewhere, type OpenHome, type OpenOptions } from '../platform/home/home';
 import { openHome } from '../platform/home/open';
-import { thisNode } from '../platform/node';
+import { keepNodeId, thisNode } from '../platform/node';
 import { readLastServerId } from '../platform/servers';
 import { useAuth } from './AuthProvider';
 import { useServers } from './ServersProvider';
@@ -25,13 +25,13 @@ import { useServers } from './ServersProvider';
 type HomeValue = {
   /** Everything the home answers. */
   api: KraftverkApi;
-  /** A server's, or the app's own: for words — "through your server" — never for what a screen does. */
-  kind: 'server' | 'own';
+  /** This node's role in the home it shows: its master — the app's own home — or following one, a server's. For words — "through your server" — never for what a screen does. */
+  role: 'master' | 'follower';
   /** Whether writes to hardware are allowed from this app: refused every launch, until someone says. */
   writesAllowed: boolean;
   allowWrites: (allowed: boolean) => Promise<void>;
-  /** This app, as a node of the home: its own id, in its own home and a server’s alike — null while its own ways have not opened here. */
-  nodeId: string | null;
+  /** This app, as a node of the home: its own id, in its own home and a server’s alike — known even while its own ways have not opened here, so nothing offers to forget it. */
+  nodeId: string;
   /**
    * With a server, when this app cannot hold its own ways now — another tab
    * of this browser holds them, or they could not open here — why, and how
@@ -65,6 +65,7 @@ function useOpened(server: OpenOptions['server'], copyOf: string | null = null):
       openHome({ takeOver, server, node: thisNode(), copyOf }).then(
         (home) => {
           if (!live) return void home.close();
+          keepNodeId(home.nodeId);
           setState({ status: 'open', home });
           void home.ended.then(() => live && setState({ status: 'handed-over' }));
         },
@@ -122,13 +123,13 @@ function ServerHome({ serverKey, url, children }: { serverKey: string; url: stri
           : { problem: 'Another tab of this browser holds this app’s own ways, such as its Bluetooth', takeOver: () => open(true) };
     return {
       api: home?.api ?? server.api,
-      kind: 'server',
+      role: 'follower',
       writesAllowed,
       allowWrites: async (allowed) => {
         await home?.allowWrites(allowed);
         setWritesAllowed(allowed);
       },
-      nodeId: home?.nodeId ?? null,
+      nodeId: home?.nodeId ?? thisNode().id,
       holding,
       away,
     };
@@ -149,7 +150,7 @@ function OwnHome({ children }: { children: ReactNode }) {
       home
         ? {
             api: home.api,
-            kind: 'own',
+            role: 'master',
             writesAllowed,
             allowWrites: async (allowed) => {
               await home.allowWrites(allowed);

@@ -483,7 +483,7 @@ export const SCHEMA = `
 
   /*
     The timeline: who did what, and what came of it. What an entry is about is
-    a kind and an id — a device, an app, an automation, an account, what a
+    a kind and an id — a device, a node, an automation, an account, what a
     transport saw — so the timeline can be asked for one thing's.
   */
   CREATE TABLE audit (
@@ -501,12 +501,12 @@ export const SCHEMA = `
   CREATE INDEX audit_resource ON audit (resource_kind, resource, at);
 
   /*
-    What an app holding connections for a server's home owes it, in the
+    What a node holding connections for the home's master owes it, in the
     order it was owed (docs/PLAN-SHARED-CORE.md, phase 6): what its devices
     read and said happened, what its gateway wrote on the timeline, what a
-    session kept — sent when the server can be reached, and gone once it
+    session kept — sent when the master can be reached, and gone once it
     has them. Empty in a home that holds only for itself. No reference to a
-    device: what is owed for one this app no longer holds is still sent, and
+    device: what is owed for one this node no longer holds is still sent, and
     refused there.
   */
   CREATE TABLE send_queue (
@@ -518,11 +518,11 @@ export const SCHEMA = `
   );
 
   /*
-    In an app with a server: what the server last said, by what was asked —
+    In a node that follows: what its master last said, by what was asked —
     its devices, its automations, the home's values — each as it was
     answered, and when (docs/PLAN-SHARED-CORE.md, phase 6). What the app
-    shows, read only and saying so, while the server cannot be reached.
-    Empty on a server, and in a home the app keeps itself.
+    shows, read only and saying so, while the master cannot be reached.
+    Empty on a master — a server, or a home the app keeps itself.
   */
   CREATE TABLE last_heard (
     what     TEXT PRIMARY KEY,

@@ -23,8 +23,9 @@ and an app that holds connections of its own run the same code.
 
 The runtime layer (docs/PLAN-SHARED-CORE.md): above the contract, the
 language, the gateway and the API's shapes; under the engine, the store and
-the hub. The server builds a `SessionManager` with `holding(connections,
-null)` from the store; the app with the connections it holds.
+the hub. A hub builds a `SessionManager` with `holding(connections,
+self.id)` from the store — the ways its node holds — and a follower with
+the ways it holds for the master.
 
 ## Why a package of its own
 

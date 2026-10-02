@@ -1,10 +1,10 @@
 import type { SqlDatabase } from './database.ts';
 
 /*
-  What an app holding connections for a server's home owes it, kept in the
-  app's own database so a restart loses none of it (docs/PLAN-SHARED-CORE.md,
+  What a node holding connections for the home's master owes it, kept in
+  the node's own database so a restart loses none of it (docs/PLAN-SHARED-CORE.md,
   phase 6): readings, events, timeline entries and what a session kept,
-  each queued as it happens and taken in order when the server answers.
+  each queued as it happens and taken in order when the master answers.
 */
 
 export type SendKind = 'readings' | 'event' | 'audit' | 'store';
@@ -46,7 +46,7 @@ export class SendQueue {
     return this.#db.query<{ n: number }, []>('SELECT COUNT(*) AS n FROM send_queue').get()?.n ?? 0;
   }
 
-  /** Keeps at most `max` of a kind, the newest: a server away for weeks does not fill a phone. */
+  /** Keeps at most `max` of a kind, the newest: a master away for weeks does not fill a phone that follows it. */
   trim(kind: SendKind, max: number): void {
     this.#db.query('DELETE FROM send_queue WHERE kind = ? AND id NOT IN (SELECT id FROM send_queue WHERE kind = ? ORDER BY id DESC LIMIT ?)').run(kind, kind, max);
   }

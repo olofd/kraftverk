@@ -1,4 +1,4 @@
-import { newNodeId, nodeId, type NodeId } from '@kraftverk/device-sdk';
+import { isNodeId, newNodeId, type NodeId } from '@kraftverk/device-sdk';
 
 import { appName } from './here';
 import { readPreference, writePreference } from './preferences';
@@ -19,7 +19,16 @@ const KEY = 'kraftverk.node.id';
 
 export function thisNode(): ThisNode {
   const kept = readPreference(KEY);
-  const id = kept ? nodeId(kept) : newNodeId();
-  if (!kept) writePreference(KEY, id);
+  const id = kept && isNodeId(kept) ? kept : newNodeId();
+  if (id !== kept) writePreference(KEY, id);
   return { id, name: appName(), alwaysOn: false, reachable: false, trusted: false };
+}
+
+/**
+ * The id a home opened here says this node is: a database that already
+ * belongs to a node keeps that node's id — the preference lost, or made
+ * twice by two tabs at once — and the preference is brought to it.
+ */
+export function keepNodeId(id: NodeId): void {
+  if (readPreference(KEY) !== id) writePreference(KEY, id);
 }

@@ -20,8 +20,8 @@ import { actorOf } from './caller.ts';
 const STORE_VALUE_MAX = 256 * 1024;
 const STORE_KEY = /^[\w.:-]{1,80}$/;
 
-/** A node of the home, as everything that uses the home sees it. */
-export function nodeView(node: NodeRecord, masterId: string): NodeView {
+/** A node of the home, as everything that uses the home sees it: `account`, who asks — whether it is theirs to forget. */
+export function nodeView(node: NodeRecord, masterId: string, account: string | null | undefined): NodeView {
   return {
     id: node.id,
     name: node.name,
@@ -32,6 +32,7 @@ export function nodeView(node: NodeRecord, masterId: string): NodeView {
     trusted: node.trusted,
     place: node.placeId,
     master: node.id === masterId,
+    yours: account !== undefined && !node.self && node.id !== masterId && node.accountId === account,
     createdAt: node.createdAt,
     lastSeenAt: node.lastSeenAt,
   };
@@ -47,6 +48,8 @@ export function heldApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'home' | '
   const ownNode = (id: string): NodeRecord => {
     const node = nodes.get(id);
     if (account === undefined || !node || node.self || node.accountId !== account) throw new ApiError('not-found', 'No such node');
+    // Heard from — its readings, its timeline, its store: what "heard … ago" says.
+    nodes.seen(node.id);
     return node;
   };
   /** The device, the node and the connection a call is about — all three checked. */
@@ -68,7 +71,7 @@ export function heldApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'home' | '
     },
 
     nodes: {
-      list: async () => nodes.all().map((node) => nodeView(node, masterId())),
+      list: async () => nodes.all().map((node) => nodeView(node, masterId(), account)),
 
       /**
        * A node joins the home — to follow it, and hold for it the ways it
@@ -80,7 +83,7 @@ export function heldApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'home' | '
         if (account === undefined) throw new ApiError('forbidden', 'Sign in first');
         if (node.place !== null && !hub.places.get(node.place)) throw new ApiError('invalid', 'No such place in this home');
         try {
-          return nodeView(nodes.join({ ...node, id: asNodeId(node.id), placeId: node.place }, account), masterId());
+          return nodeView(nodes.join({ ...node, id: asNodeId(node.id), placeId: node.place }, account), masterId(), account);
         } catch (error) {
           throw new ApiError('conflict', (error as Error).message);
         }

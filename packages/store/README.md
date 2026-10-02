@@ -13,10 +13,10 @@ reads the same wherever it is kept.
 
 - **Does:** the schema and whether a database has it; every store that
   keeps only data — devices, connections and their sealed secrets, links,
-  events, apps, automations and their runs, what a device and a transport
-  keep, the gateway's memory, policy, decisions, the timeline — each made
-  from a database; and the ports the packages below declare, filled in
-  SQLite.
+  events, the home with its nodes and places, automations and their runs,
+  what a device and a transport keep, the gateway's memory, policy,
+  decisions, the timeline — each made from a database; and the ports the
+  packages below declare, filled in SQLite.
 - **Does not:** open a file, set an old one aside, or hold a key: those are
   the place's (the server's `platform/`, the app's). Nor does it decide
   anything about what it keeps: logic that mixes storage with judgement —
@@ -60,7 +60,7 @@ level — so two homes can be open in one process.
 | The gateway's memory | `databaseLedger` — the last switch of a part, the last write of a setting |
 | Automations | `AutomationStore`, the engine's `AutomationStorage` |
 | The home | `AppState` (decisions), `policyValues` and `setPolicyValue`, `AuditLog` (the timeline) |
-| What an app holds for a server | a server's device and the way this app holds kept by the server's ids (`mirror`), what is owed to it (`SendQueue`), and what it last said (`LastHeard`) |
+| What a node following the master keeps | the master's device and the way this node holds, kept by the master's ids (`mirror`), the home and its nodes as the master has them, what is owed to it (`SendQueue`), and what it last said (`LastHeard`) |
 | Ids | `randomHex` — from the random values every place has |
 
 Its tests run on bun:sqlite and on SQLite's WebAssembly build

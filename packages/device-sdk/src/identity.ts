@@ -45,6 +45,10 @@ export const connectionId = (raw: string): ConnectionId => raw as ConnectionId;
 /** A kraftverk node — the hub running somewhere, holding connections: a row of `node`, the same id in every home that knows it. */
 export type NodeId = Branded<'NodeId'>;
 export const nodeId = (raw: string): NodeId => raw as NodeId;
+/** What a node's id looks like: `n-` and twelve hex digits. */
+export const NODE_ID = /^n-[0-9a-f]{12}$/;
+/** Whether text is a node's id, as a node makes one: what is kept where it runs, or sent by one joining, is checked by this. */
+export const isNodeId = (raw: string): raw is NodeId => NODE_ID.test(raw);
 /** A new node's id, made once by the node itself and kept where it runs (`n-1b6f399a3ff1`). */
 export const newNodeId = (): NodeId => nodeId(`n-${Array.from(crypto.getRandomValues(new Uint8Array(6)), (byte) => byte.toString(16).padStart(2, '0')).join('')}`);
 
@@ -57,7 +61,7 @@ export type AutomationId = Branded<'AutomationId'>;
 export const automationId = (raw: string): AutomationId => raw as AutomationId;
 
 /**
- * What an entry on the timeline is about: a device, an app, an automation, an
+ * What an entry on the timeline is about: a device, a node, a place, an automation, an
  * account, or something a transport saw that is no device yet (an address).
  */
 export type ResourceKind = 'device' | 'node' | 'place' | 'automation' | 'account' | 'transport';

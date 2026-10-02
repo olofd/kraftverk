@@ -38,6 +38,7 @@ import { DeviceRegistry } from './devices/registry.ts';
 import { RemoteReadings } from './devices/remote.ts';
 import { ChangeLog } from './history/changes.ts';
 import { Sampler } from './history/sampler.ts';
+import { unfitFor } from './installed/needs.ts';
 import type { ProtocolRegistry } from './installed/protocols.ts';
 import type { TransportHost } from './installed/transports.ts';
 import type { DeviceTypeRegistry } from './installed/types.ts';
@@ -184,7 +185,9 @@ export class Hub {
     // This node, as it declares itself at every start; the home, made the first time, its master.
     const here = transports.definitions().filter((definition) => definition.platforms.includes(transports.platform)).map((definition) => definition.id);
     const self = this.nodes.declareSelf({ ...options.node, platform: transports.platform, transports: here });
-    this.home.ensure({ name: 'Home', masterId: self.id });
+    // A hub is the master of what its database keeps: never a copy another node is the master of.
+    const home = this.home.ensure({ name: 'Home', masterId: self.id });
+    if (home.masterId !== self.id) throw new Error(`This database is kept for another master (${home.masterId}): it is not opened as a home of its own`);
     this.events = new EventStore(db);
     this.automations = new AutomationStore(db);
     this.policy = { values: () => policyValues(this.state), set: (name, value) => setPolicyValue(this.state, name, value) };
@@ -202,6 +205,8 @@ export class Hub {
       readOnly: options.readOnly,
       allowRawFrames: options.allowRawFrames ?? false,
       nodeName: (id) => nodes.get(id)?.name ?? null,
+      // A way this node is not what it needs of — brought in by a file, or a home handed over — waits for one that is.
+      unfit: (method) => unfitFor(method, self),
       record,
       // A device saved before it ever answered learns who it is the first time it does.
       onIdentified: (deviceId, identity) => {

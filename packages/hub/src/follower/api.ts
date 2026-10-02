@@ -9,33 +9,33 @@ import { holdableHere } from './holdable.ts';
 import type { Follower } from './follower.ts';
 
 /*
-  The server's `KraftverkApi`, with what this app holds wrapped in
+  The master's `KraftverkApi`, with what this node holds wrapped in
   (docs/PLAN-SHARED-CORE.md, phase 6): the one interface the screens ask,
-  as they would ask any home. What the screens read is kept as the server
-  answers it, and while the server cannot be reached, answered from what it
+  as they would ask any home. What the screens read is kept as the master
+  answers it, and while the master cannot be reached, answered from what it
   last said — devices it holds offline, saying so; anything that would
-  change something is refused by the server's absence. A device's view
-  carries this app's own readings while it holds the device; a command, a setting, a query or a
-  tool to one goes through this app's own gateway and session; a way this
-  app holds is set up here, its secrets kept here; the live stream carries
-  what this app hears beside what the server says. The rest is the
-  server's, asked as it is.
+  change something is refused by the master's absence. A device's view
+  carries this node's own readings while it holds the device; a command, a setting, a query or a
+  tool to one goes through this node's own gateway and session; a way this
+  node holds is set up here, its secrets kept here; the live stream carries
+  what this node hears beside what the master says. The rest is the
+  master's, asked as it is.
 */
 
-/** What the live stream from what this app holds coalesces over, as a home's does. */
+/** What the live stream from what this node holds coalesces over, as a home's does. */
 const FLUSH_MS = 250;
 /** Why a tool was refused, as the kind of refusal it is: the home's map. */
 const TOOL_REFUSAL: Record<ToolRefusal, ApiError['kind']> = { missing: 'not-found', input: 'invalid', 'read-only': 'locked', failed: 'conflict', answer: 'failed' };
 
 export function followerApi(h: Follower): KraftverkApi {
   const { home } = h;
-  /** The server's list — or, with it away, what it last said — held from, and with this app's own wrapped in. */
+  /** The master's list — or, with it away, what it last said — held from, and with this node's own wrapped in. */
   const listed = async (what: 'devices' | 'removed', ask: () => Promise<DeviceView[]>): Promise<DeviceView[]> => {
     const { answer, heardAt } = await h.kept(what, ask);
     if (what === 'devices' && !heardAt) await h.hold(answer);
     return answer.map((view) => h.view(heardAt ? h.lastHeard(view) : view));
   };
-  /** One device as the server says it — or, with it away, as it last said it — with this app's own wrapped in. */
+  /** One device as the master says it — or, with it away, as it last said it — with this node's own wrapped in. */
   const viewed = async (view: Promise<DeviceView>): Promise<DeviceView> => h.view(await view);
   const oneOf = async (id: SavedDeviceId): Promise<DeviceView> => {
     try {
@@ -47,28 +47,28 @@ export function followerApi(h: Follower): KraftverkApi {
       return h.view(h.lastHeard(last));
     }
   };
-  /** After the server changed a device's ways: what this app holds, again. */
+  /** After the master changed a device's ways: what this node holds, again. */
   const again = async (view: DeviceView): Promise<DeviceView> => {
     await h.refresh();
     return h.view(view);
   };
-  /** A device this app holds now: its record and session, or why it cannot be asked. */
+  /** A device this node holds now: its record and session, or why it cannot be asked. */
   const heldDevice = (id: SavedDeviceId) => {
     const device = h.catalog.active(id)!;
     const session = h.sessions.get(id);
     if (!session) throw new ApiError('unavailable', `${device.name} is not answering: ${h.sessions.health(device).detail}`);
     return { device, session };
   };
-  const intent = () => ({ actor: 'user' as const, by: `app:${h.nodeId ?? 'this app'}` });
+  const intent = () => ({ actor: 'user' as const, by: h.name });
 
-  // --- setting up a way this app holds ----------------------------------------------
-  /** Drafts set up here, and the server's draft each became once read. */
+  // --- setting up a way this node holds ---------------------------------------------
+  /** Drafts set up here, and the master's draft each became once read. */
   const drafts = new Map<string, string | null>();
   const local = (id: string) => drafts.has(id);
   const ownDraft = (view: DraftView): DraftView => ({ ...view, heldBy: h.nodeId });
 
   return {
-    /** The server's types, with the ways this app can hold for it: a type this app has installed too, over a way it can hold where it runs. */
+    /** The master's types, with the ways this node can hold for it: a type this node has installed too, over a way it can hold where it runs. */
     async deviceTypes() {
       const { answer: list } = await h.kept('device-types', () => home.deviceTypes());
       const { transports } = h.installed;
@@ -100,7 +100,7 @@ export function followerApi(h: Follower): KraftverkApi {
       changes: (id, query) => home.devices.changes(id, query),
       events: (id, limit) => home.devices.events(id, limit),
 
-      /** To a device this app holds: through this app's gateway, as the home's would — checked, confirmed, verified, on the timeline. */
+      /** To a device this node holds: through this node's gateway, as the home's would — checked, confirmed, verified, on the timeline. */
       async command(id, part, capability, command, body) {
         if (!h.holds(id)) return home.devices.command(id, part, capability, command, body);
         const { device } = heldDevice(id);
@@ -113,7 +113,7 @@ export function followerApi(h: Follower): KraftverkApi {
         const { device, session } = heldDevice(id);
         return deviceReader(session, () => h.sessions.description(device)).query({ part, capability, query, args });
       },
-      /** A tool this app's session runs, held to its declaration both ways; one that cannot be undone waits for a person's yes. */
+      /** A tool this node's session runs, held to its declaration both ways; one that cannot be undone waits for a person's yes. */
       async tool(id, name, body) {
         if (!h.holds(id)) return home.devices.tool(id, name, body);
         const { device, session } = heldDevice(id);
@@ -141,7 +141,7 @@ export function followerApi(h: Follower): KraftverkApi {
     problems: async (limit) => (await h.kept(`problems:${limit ?? ''}`, () => home.problems(limit))).answer,
 
     setup: {
-      /** A way this app holds is set up here, over its own radio; any other, by the server. */
+      /** A way this node holds is set up here, over its own radio; any other, by the master. */
       async start({ holder, ...input }) {
         if (holder !== 'this-node') return home.setup.start(input);
         const type = h.installed.types.get(input.typeId);
@@ -167,7 +167,7 @@ export function followerApi(h: Follower): KraftverkApi {
       discover: (id, step, signal) => (local(id) ? h.setup.discover(id, step, signal) : home.setup.discover(id, step, signal)),
 
       /**
-       * Read here, over this app's own radio, and judged by the server
+       * Read here, over this node's own radio, and judged by the master
        * against what you have — new, yours, yours before, another model —
        * from what was read, never a secret.
        */
@@ -194,7 +194,7 @@ export function followerApi(h: Follower): KraftverkApi {
         return judged.checked!;
       },
 
-      /** Saved by the server — the device, this app's way, its links — and the way's secrets kept here, never sent. */
+      /** Saved by the master — the device, this node's way, its links — and the way's secrets kept here, never sent. */
       async save(id, input) {
         if (!local(id)) return home.setup.save(id, input);
         const judged = drafts.get(id);
@@ -214,7 +214,7 @@ export function followerApi(h: Follower): KraftverkApi {
     nearby: () => home.nearby(),
 
     transports: {
-      /** The server's, and this app's own: what it holds the server's ways over, here. */
+      /** The master's, and this node's own: what it holds the master's ways over, here. */
       async list() {
         const { answer: list } = await h.kept('transports', () => home.transports.list());
         const { transports } = h.installed;
@@ -240,7 +240,7 @@ export function followerApi(h: Follower): KraftverkApi {
         const view = await home.connections.remove(device, connection);
         return again(view);
       },
-      /** A way this app holds keeps its secrets here, and they are never sent; any other way's are the server's. */
+      /** A way this node holds keeps its secrets here, and they are never sent; any other way's are the master's. */
       async setSecrets(device, connection, secrets) {
         if (!h.owns(connection)) return home.connections.setSecrets(device, connection, secrets);
         const record = h.catalog.active(device);
@@ -291,7 +291,7 @@ export function followerApi(h: Follower): KraftverkApi {
       vocabulary: () => home.configuration.vocabulary(),
       schema: () => home.configuration.schema(),
       export: (request, options) => home.configuration.export(request, options),
-      /** A file, planned by the server; or the home this app kept itself, moving to it. */
+      /** A file, planned by the master; or the home this node kept itself, moving to it. */
       async plan(request) {
         if (!('from' in request)) return home.configuration.plan(request);
         if (request.from !== 'this-node' || !h.moving) throw new ApiError('not-found', request.from === 'copy' ? 'A server’s home is not kept from a copy of itself' : 'This app keeps no home of its own to move');
@@ -307,38 +307,39 @@ export function followerApi(h: Follower): KraftverkApi {
         h.keepPolicy(answer);
         return answer;
       },
-      /** Set on the server, and kept here: this app's gateway weighs what it holds by the same values. */
+      /** Set on the master, and kept here: this node's gateway weighs what it holds by the same values. */
       set: async (name, value) => {
         const values = await home.policy.set(name, value);
         h.keepPolicy(values);
-        // What the server answers is how they are now: what is shown while it is away, too.
+        // What the master answers is how they are now: what is shown while it is away, too.
         h.heard.keep('policy', values);
         return values;
       },
     },
 
-    home: () => home.home(),
+    home: async () => (await h.kept('home', () => home.home())).answer,
     timeline: (query) => home.timeline(query),
     world: () => home.world(),
     vocabulary: () => home.vocabulary(),
 
     nodes: {
       join: (node) => home.nodes.join(node),
-      list: () => home.nodes.list(),
+      // With the master away, as this node kept them: who the master is, and who follows it.
+      list: async () => (await h.kept('nodes', () => home.nodes.list())).answer,
       forget: (id) => home.nodes.forget(id),
     },
     held: {
       readings: (device, upload) => home.held.readings(device, upload),
       store: (device) => home.held.store(device),
       keep: (device, key, entry) => home.held.keep(device, key, entry),
-      audit: (app, entries) => home.held.audit(app, entries),
+      audit: (node, entries) => home.held.audit(node, entries),
     },
 
     /**
-     * The server's stream, and what this app hears from what it holds: a
-     * device this app holds is said by this app — its readings and health
-     * first-hand — and the server's word on it, which comes later and second
-     * hand, is left out. A change to what this app holds reads the list
+     * The master's stream, and what this node hears from what it holds: a
+     * device this node holds is said by this node — its readings and health
+     * first-hand — and the master's word on it, which comes later and second
+     * hand, is left out. A change to what this node holds reads the list
      * again, which holds from it again.
      */
     live(listener, options = {}) {

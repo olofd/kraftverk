@@ -23,7 +23,7 @@ import { useServer, useServers } from '../src/state/ServersProvider';
  */
 export default function AppSettingsScreen() {
   const { mode, version, removed } = useDevices();
-  const { writesAllowed, allowWrites, holding, nodeId, kind } = useHome();
+  const { writesAllowed, allowWrites } = useHome();
   const { active } = useServers();
   const auth = useAuth();
   const theme = useTheme();
@@ -49,7 +49,7 @@ export default function AppSettingsScreen() {
           <Pressable onPress={() => router.push('/connectivity')}>
             <Row
               title="Connectivity"
-              subtitle={mode === 'server' ? 'What your server and this app reach devices over, and their diagnostics' : 'What this app can reach devices over'}
+              subtitle={mode === 'server' ? 'Your kraftverk nodes — your server and this app — what each reaches devices over, and their diagnostics' : 'This kraftverk node, and what it reaches devices over'}
               accessory={chevron}
             />
           </Pressable>
@@ -87,11 +87,6 @@ export default function AppSettingsScreen() {
               haptic();
               void allowWrites(next);
             }}
-          />
-          <RowSeparator />
-          <Row
-            title={kind === 'server' ? 'A kraftverk node of your server’s home' : 'The kraftverk node your home is kept on'}
-            subtitle={nodeId ? `Node ${nodeId}` : (holding?.problem ?? 'Opening…')}
           />
         </Card>
       </YStack>

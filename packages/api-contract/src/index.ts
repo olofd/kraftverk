@@ -12,8 +12,8 @@
  * its setup steps — is declared in `@kraftverk/device-sdk` and re-exported
  * from here. What is
  * declared here is only the envelope the server wraps around it: a saved
- * device with its connections and links, a setup draft, a transport as this
- * server runs it. No device type is named.
+ * device with its connections and links, a setup draft, a transport as a
+ * node runs it. No device type is named.
  */
 
 import type {
@@ -213,15 +213,15 @@ export type PictureChoice = { picture: PictureRef };
 export type Holder = 'master' | 'this-node';
 
 /**
- * A home this app keeps beside the one it shows, to bring into it
+ * A home this node keeps beside the one it shows, to bring into it
  * (docs/PLAN-SHARED-CORE.md, phase 6h): `this-node`, the home it kept
- * itself before it had a server, moving to the server; `copy`, the copy it
- * kept of the server it used last, staying with this app. Only an app
- * keeps either: a server's home has neither, and says so.
+ * itself before it followed a master, moving to the master; `copy`, the
+ * copy it kept of the master it followed last, staying with this node. Only
+ * an app keeps either: a server's home has neither, and says so.
  */
 export type HomeElsewhere = 'this-node' | 'copy';
 
-/** What a home this app keeps beside the one it shows has: what bringing it in would bring. Null when there is none, or it has been brought. */
+/** What a home this node keeps beside the one it shows has: what bringing it in would bring. Null when there is none, or it has been brought. */
 export type ElsewhereView = { from: HomeElsewhere; devices: number; automations: number } | null;
 
 /**
@@ -237,7 +237,7 @@ export type WayView = { method: string; holder: Holder; fits: boolean; availabil
  * a type with no real way that fits this node needs another.
  */
 export type DeviceTypeListing = DeviceTypeView & {
-  /** Each way it can be added here, in its type's order: the master's, then this node's for a server. */
+  /** Each way it can be added here, in its type's order: the master's, then this node's for the master. */
   ways: WayView[];
   warnings: readonly string[];
 };
@@ -337,7 +337,7 @@ export type WorldDevice = {
  */
 export type WorldView = {
   at: string;
-  /** Every write is refused: the server is read-only. */
+  /** Every write is refused: the master is read-only. */
   readOnly: boolean;
   /** What an assistant may do, in a sentence per rule: what the gateway will hold it to. */
   rules: string[];
@@ -482,7 +482,7 @@ export type SaveInput = {
   secretsExportable?: boolean;
 };
 
-/** What an app learnt by reading a device itself, for a connection it will hold. */
+/** What a node that follows learnt by reading a device itself, for a connection it will hold. */
 export type HeldSetupInput = {
   nodeId: string;
   typeId: string;
@@ -507,10 +507,10 @@ export type FoundView = {
   types: { typeId: string; methodId: string; name: string; category: string }[];
 };
 
-// --- transports, apps, the server ---------------------------------------------
+// --- transports, nodes, the server --------------------------------------------
 
 export type TransportView = TransportDefinition & {
-  /** Whose it is: the home's, or this app's own, which it holds a server's connections over. */
+  /** Whose it is: the master's, or this node's own, which it holds the master's connections over. */
   holder: Holder;
   running: boolean;
   availability: Availability;
@@ -548,6 +548,8 @@ export type NodeView = {
   place: string | null;
   /** The home's master: the node whose database is the home's. */
   master: boolean;
+  /** Joined from the asker's own account, and not the master: theirs to forget. */
+  yours: boolean;
   createdAt: string;
   lastSeenAt: string;
 };
@@ -561,7 +563,7 @@ export type HomeView = { id: string; name: string; master: NodeId; createdAt: st
 /** One line of the server's own log. */
 export type ServerLogLine = { at: string; level: 'debug' | 'info' | 'warn' | 'error'; text: string };
 
-/** A line an app sends for the timeline: the server adds who sent it. */
+/** A line a node that follows sends for the timeline: the master adds who sent it. */
 export type AuditUpload = { at: string; kind: string; summary: string; detail?: unknown } & AuditSubject;
 
 /** One line of the timeline: who did what, to what, and what came of it. */
@@ -570,7 +572,7 @@ export type AuditEntry = {
   at: string;
   kind: string;
   actor: string;
-  /** What it is about — a device, an app, an automation, an account — or nothing. */
+  /** What it is about — a device, a node, an automation, an account — or nothing. */
   resourceKind: ResourceKind | null;
   resource: string | null;
   summary: string;
@@ -609,7 +611,7 @@ export type AuthState = {
 export type RoleBinding = { device: SavedDeviceId; part: string };
 
 /**
- * A recipe the server offers, as a starting point (docs/AUTOMATION-EDITOR.md):
+ * A recipe the master offers, as a starting point (docs/AUTOMATION-EDITOR.md):
  * a rule with roles to fill and settings, which the app copies — its
  * settings written into its blocks (`inlineParams`) — into an automation its
  * owner then edits. Recipes come with the installed packages; `from` says
@@ -719,7 +721,7 @@ export type AutomationRun = {
     | 'failed' // a command errored, or a step did not succeed: waited in vain, never made sure
     | 'running' // it is taking its steps now
     | 'stopped' // someone stopped it
-    | 'interrupted'; // the server restarted while it ran: it was ended, not resumed
+    | 'interrupted'; // the master restarted while it ran: it was ended, not resumed
   /** The run in one line, for a timeline or an assistant: "Turned Heater plug off". */
   summary: string;
   /**
@@ -957,7 +959,7 @@ export type Caller =
   /** An assistant acting for a person: it does what needs no one's yes, and is refused the rest. */
   | { kind: 'agent'; for: string };
 
-/** What an app sends for a connection it holds: what it read, who the device said it is, what it is, and what it said happened. */
+/** What a node that follows sends for a connection it holds: what it read, who the device said it is, what it is, and what it said happened. */
 export type HeldReadings = {
   nodeId: string;
   connectionId: string;
@@ -1040,9 +1042,9 @@ export interface KraftverkApi {
    * kept until the save.
    */
   setup: {
-    /** Begins one over a method of a type, held by whoever its way says (`ways`): the home, unless this app holds it for a server. */
+    /** Begins one over a method of a type, held by whoever its way says (`ways`): the master, unless this node holds it for the master. */
     start(input: { typeId: string; methodId?: string | null; holder?: Holder }): Promise<DraftView>;
-    /** One an app will hold, from what it learnt reading the device itself: never a secret. */
+    /** One a node that follows will hold, from what it learnt reading the device itself: never a secret. */
     startHeld(input: HeldSetupInput): Promise<DraftView>;
     get(id: string): Promise<DraftView>;
     discard(id: string): Promise<void>;
@@ -1130,7 +1132,7 @@ export interface KraftverkApi {
     plan(request: { text: string; mode?: 'merge' | 'replace'; passphrase?: string } | { from: HomeElsewhere; mode?: 'merge' | 'replace' }): Promise<ImportPlan>;
     /** A plan applied, with its answers, in one transaction; what it sets acting or removes wants a person's yes. */
     apply(answers: ImportAnswers): Promise<ImportApplied>;
-    /** What a home this app keeps beside the one it shows has, to bring in (`plan({ from })`); null when there is none — always, for a server's own home. */
+    /** What a home this node keeps beside the one it shows has, to bring in (`plan({ from })`); null when there is none — always, for a server's own home. */
     elsewhere(): Promise<ElsewhereView>;
   };
   /** What the home sets as a whole that declarations name: how much is a load, the reserve. */
@@ -1158,7 +1160,7 @@ export interface KraftverkApi {
   /** What a node sends the master for a connection it holds (docs/DATA-MODEL.md §4): it speaks for its own connections and nobody else's. */
   held: {
     readings(device: SavedDeviceId, upload: HeldReadings): Promise<HeldReadingsTaken>;
-    /** What the device keeps for its session, which the app keeps a copy of for when it is offline. */
+    /** What the device keeps for its session, which the node holding it keeps a copy of for when it is offline. */
     store(device: SavedDeviceId): Promise<Record<string, unknown>>;
     keep(device: SavedDeviceId, key: string, entry: { nodeId: string; connectionId: string; value: unknown }): Promise<void>;
     /** What its gateway and sessions wrote on their timeline, queued while offline: the actor is always whoever is signed in. */

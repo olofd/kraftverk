@@ -12,7 +12,7 @@ import {
   methodsOf,
   partName,
   partsOf,
-  placesOf,
+  platformsOf,
   savedDeviceId,
   type Availability,
   type ConnectionMethod,
@@ -143,7 +143,7 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
           home's: this app's own, for a server's home, are its follower's.
         */
         ways: methodsOf(type)
-          .filter((method) => placesOf(method, transports.definition(method.transport)).includes(transports.platform))
+          .filter((method) => platformsOf(method, transports.definition(method.transport)).includes(transports.platform))
           .map((method) => ({ method: method.id, holder: 'master' as const, fits: unfitFor(method, hub.self) === null, availability: holds(method) })),
         warnings: types.warnings(type.id),
       }));

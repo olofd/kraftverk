@@ -110,8 +110,9 @@ console.log(
   attention and its configuration — all of it the hub's (@kraftverk/hub),
   handed what only the server can give it.
 */
+const database = db();
 const hub = createHub({
-  database: db(),
+  database,
   audit: auditLog(),
   secrets: serverSecrets,
   sealing: serverSealing,
@@ -119,7 +120,7 @@ const hub = createHub({
   readOnly: () => config.readOnly,
   allowRawFrames: config.allowRawFrames,
   http: scopedHttp,
-  node: thisNode(),
+  node: thisNode(database),
 });
 
 /*

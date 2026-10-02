@@ -93,7 +93,7 @@ export async function openHome(options: OpenOptions): Promise<OpenHome> {
   await hub.start();
   return {
     api: hub.as(OWNER),
-    nodeId: options.node.id,
+    nodeId: hub.self.id,
     allowWrites: async (allowed) => {
       writes = allowed;
       // Its sessions open again under the new rule.

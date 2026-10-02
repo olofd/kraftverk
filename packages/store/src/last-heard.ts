@@ -1,11 +1,11 @@
 import type { SqlDatabase } from './database.ts';
 
 /*
-  What a server last said, as an app holding for it heard it
+  What a master last said, as a node holding for it heard it
   (docs/PLAN-SHARED-CORE.md, phase 6): each answer the screens read — the
   devices, the automations, the home's values — kept by what was asked, as
-  it was answered, so the app can show the server's home while the server
-  cannot be reached. Kept in the app's own database; replaced by each
+  it was answered, so the node can show the master's home while the master
+  cannot be reached. Kept in the node's own database; replaced by each
   answer after.
 */
 

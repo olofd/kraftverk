@@ -65,8 +65,8 @@ export function metaOf(db: SqlDatabase): Record<string, string> {
  * Empties every table, keeping the schema.
  *
  * `users`, `sessions`, `node` and `home` are kept: erasing the house is not
- * erasing who may enter it, or what the home is and which nodes it has — a
- * node left with no accounts is one waiting to be claimed. `meta` is kept: it is what the database is, not what is in it.
+ * erasing who may enter it, or what the home is and which nodes are part of
+ * it. `meta` is kept: it is what the database is, not what is in it.
  * Everything else goes — devices, samples, connections, secrets, links and the
  * audit timeline — which is the point: "back to a blank canvas".
  *

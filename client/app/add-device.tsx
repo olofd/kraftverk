@@ -45,7 +45,7 @@ type Way = { methodId: string; label: string; description?: string; holder: Hold
 export default function AddDeviceScreen() {
   const params = useLocalSearchParams<{ type?: string; method?: string; address?: string; attach?: string }>();
   const { devices, refresh } = useDevices();
-  const { api, kind } = useHome();
+  const { api, role } = useHome();
   const attachTo = params.attach ? (devices.find((device) => device.id === params.attach) ?? null) : null;
 
   const [types, setTypes] = useState<DeviceTypeListing[] | null>(null);
@@ -93,7 +93,7 @@ export default function AddDeviceScreen() {
         .filter((way) => way.method === method.id)
         .map((way) => ({
           methodId: method.id,
-          label: `${method.label}, ${way.holder === 'master' && kind === 'server' ? 'through your server' : `from ${HERE}`}`,
+          label: `${method.label}, ${way.holder === 'master' && role === 'follower' ? 'through your server' : `from ${HERE}`}`,
           description: way.holder === 'this-node' ? `While ${HERE} has it: kept by your server, which hears what it says when it can.` : method.description,
           holder: way.holder,
           available: way.availability.ok,
@@ -101,7 +101,7 @@ export default function AddDeviceScreen() {
           recommended: way.holder === 'master' && Boolean(method.recommended),
         }))
     );
-  }, [kind, type]);
+  }, [role, type]);
 
   const begin = useCallback(
     async (way: Way) => {
@@ -400,19 +400,19 @@ const SUPPORT: Record<string, string> = {
  * needs a server and only its simulator runs here. From its ways: each a
  * node can hold at all, simulated apart.
  */
-function whereItRuns(type: Pick<DeviceTypeListing, 'ways'>, home: 'server' | 'own'): string {
+function whereItRuns(type: Pick<DeviceTypeListing, 'ways'>, role: 'follower' | 'master'): string {
   const real = type.ways.filter((way) => way.fits && way.method !== SIMULATED_METHOD_ID);
   // Without a server, the master is this app's own node.
-  const here = real.some((way) => way.holder === (home === 'own' ? 'master' : 'this-node'));
-  const server = home === 'server' && real.some((way) => way.holder === 'master');
-  if (home === 'own') return here ? `Works from ${HERE}` : 'Needs a server: here, only its simulator';
+  const here = real.some((way) => way.holder === (role === 'master' ? 'master' : 'this-node'));
+  const server = role === 'follower' && real.some((way) => way.holder === 'master');
+  if (role === 'master') return here ? `Works from ${HERE}` : 'Needs a server: here, only its simulator';
   if (here && server) return `Through your server, or from ${HERE}`;
   return server ? 'Through your server' : `From ${HERE} only`;
 }
 
 function Types({ types, onPick, onBack }: { types: DeviceTypeListing[]; onPick: (id: string) => void; onBack: () => void }) {
   const theme = useTheme();
-  const { kind } = useHome();
+  const { role } = useHome();
   return (
     <YStack gap="$2">
       <SectionLabel>Which one?</SectionLabel>
@@ -425,7 +425,7 @@ function Types({ types, onPick, onBack }: { types: DeviceTypeListing[]; onPick: 
               <Row
                 leading={<DeviceImage typeId={type.id} size={40} />}
                 title={type.meta.name}
-                subtitle={[whereItRuns(type, kind), type.meta.description, SUPPORT[type.meta.support], type.meta.models?.length ? `Models: ${type.meta.models.join(', ')}` : null].filter(Boolean).join(' · ')}
+                subtitle={[whereItRuns(type, role), type.meta.description, SUPPORT[type.meta.support], type.meta.models?.length ? `Models: ${type.meta.models.join(', ')}` : null].filter(Boolean).join(' · ')}
                 accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />}
               />
             </Pressable>
@@ -446,13 +446,13 @@ function Types({ types, onPick, onBack }: { types: DeviceTypeListing[]; onPick: 
 
 function Ways({ ways, busy, onPick, onBack }: { ways: Way[]; busy: boolean; onPick: (way: Way) => void; onBack?: () => void }) {
   const theme = useTheme();
-  const { kind } = useHome();
+  const { role } = useHome();
   return (
     <YStack gap="$2">
       <SectionLabel>How do you want to connect?</SectionLabel>
       <Card inset>
         {ways.length === 0 ? (
-          <Row title="No way to reach it from here" subtitle={kind === 'server' ? 'Neither your server nor this app has what it needs' : 'This app has nothing that reaches it'} />
+          <Row title="No way to reach it from here" subtitle={role === 'follower' ? 'Neither your server nor this app has what it needs' : 'This app has nothing that reaches it'} />
         ) : null}
         {ways.map((way, index) => (
           <YStack key={`${way.methodId}-${way.holder}`}>
@@ -462,7 +462,7 @@ function Ways({ ways, busy, onPick, onBack }: { ways: Way[]; busy: boolean; onPi
                 title={`${way.label}${way.recommended ? ' · recommended' : ''}`}
                 subtitle={way.available ? way.description : (way.reason ?? 'Not available here')}
                 disabled={!way.available}
-                accessory={<Icon name={way.holder === 'master' && kind === 'server' ? 'server' : HERE_PLATFORM === 'web' ? 'monitor' : 'smartphone'} size={16} color={theme.muted?.val} />}
+                accessory={<Icon name={way.holder === 'master' && role === 'follower' ? 'server' : HERE_PLATFORM === 'web' ? 'monitor' : 'smartphone'} size={16} color={theme.muted?.val} />}
               />
             </Pressable>
           </YStack>
@@ -628,7 +628,7 @@ function Finish({
   /** Whether the secrets just given may leave in an export as plain text: off unless chosen, and warned against (docs/CONFIG.md). */
   const [exportable, setExportable] = useState(false);
   const keepsSecrets = flow.holder === 'master' && flow.secrets.length > 0;
-  const { kind } = useHome();
+  const { role: nodeRole } = useHome();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -710,7 +710,7 @@ function Finish({
           <Card gap="$2">
             <Input size="$3" value={name} maxLength={60} onChangeText={setName} onSubmitEditing={() => (!busy && (attachTo || name.trim()) ? void save() : undefined)} backgroundColor="$background" borderColor="$borderColor" aria-label="Its name" />
             <Text fontSize={12} color="$muted">
-              {flow.holder === 'master' && kind === 'server' ? 'Held by your server.' : `Held by ${HERE}.`}
+              {flow.holder === 'master' && nodeRole === 'follower' ? 'Held by your server.' : `Held by ${HERE}.`}
             </Text>
           </Card>
         </YStack>

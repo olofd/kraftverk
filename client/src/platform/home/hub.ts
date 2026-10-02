@@ -1,7 +1,7 @@
 import type { TransportDefinition, TransportFactory } from '@kraftverk/device-sdk';
 import type { KraftverkApi } from '@kraftverk/api-contract';
 import { createFollower, createHub, installedFrom, type Follower, type Hub, type Installed } from '@kraftverk/hub';
-import { AuditLog, createSchema, prepareDatabase, schemaStateOf, transportStore, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { AuditLog, createSchema, NodeStore, prepareDatabase, schemaStateOf, transportStore, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import { DEVICE_TYPES, PROTOCOLS, TRANSPORTS } from '../../generated/installed';
 import { appSealing } from '../cipher';
@@ -54,6 +54,15 @@ function appInstalled(place: AppPlace, record: (entry: Parameters<AuditLog['reco
   );
 }
 
+/**
+ * The node a database is kept by: the one it already says it is, when it
+ * says — a database is one node's, for good — or this app's, the first time.
+ */
+function nodeFor(place: AppPlace): ThisNode {
+  const own = new NodeStore(place.database).self();
+  return own ? { ...place.node, id: own.id } : place.node;
+}
+
 /** The app's home in this place: not started; `start()` it. `copy`: the copy it kept of the server it used last, to keep as its own. */
 export function appHub(place: AppPlace & { copy?: SqlDatabase }): Hub {
   // Its timeline, made here so what a transport records goes on it too.
@@ -69,7 +78,7 @@ export function appHub(place: AppPlace & { copy?: SqlDatabase }): Hub {
     // Frames nobody has described are for a server started to bring up a unit, never for an app.
     allowRawFrames: false,
     http: appHttp,
-    node: place.node,
+    node: nodeFor(place),
     log,
     ...(place.copy ? { copy: place.copy } : {}),
   });
@@ -89,7 +98,7 @@ export function appFollower(place: AppPlace & { home: KraftverkApi; own?: SqlDat
     database: place.database,
     secrets: place.secrets,
     installed,
-    node: place.node,
+    node: nodeFor(place),
     readOnly: place.readOnly,
     http: appHttp,
     log,

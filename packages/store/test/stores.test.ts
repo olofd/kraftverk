@@ -121,10 +121,19 @@ for (const driver of DRIVERS) {
 
       const phone = nodes.join({ id: nodeId('n-0000000000b2'), name: 'This phone', platform: 'native', transports: ['ble'], alwaysOn: false, reachable: false, trusted: false }, 'u-one');
       expect(nodes.get(phone.id)).toMatchObject({ name: 'This phone', transports: ['ble'], self: false, accountId: 'u-one' });
-      expect(nodes.forAccount('u-one').map((node) => node.id)).toEqual([phone.id]);
       expect(() => nodes.join({ ...phone, name: 'Not mine' }, null)).toThrow();
       expect(() => nodes.join({ ...machine }, 'u-one')).toThrow();
       expect(nodes.all().map((node) => node.id)).toEqual([machine.id, phone.id]);
+
+      // Heard from again, it says so; and where it stands is kept when it does not say.
+      const before = nodes.get(phone.id)!.lastSeenAt;
+      nodes.seen(phone.id);
+      expect(nodes.get(phone.id)!.lastSeenAt >= before).toBe(true);
+      const cabin = new PlaceStore(database).add({ name: 'Cabin', latitude: 0, longitude: 0, timeZone: 'UTC' });
+      nodes.join({ ...phone, placeId: cabin.id }, 'u-one');
+      expect(nodes.join({ ...phone, placeId: undefined }, 'u-one').placeId).toBe(cabin.id);
+      expect(nodes.join({ ...phone, placeId: null }, 'u-one').placeId).toBeNull();
+      new PlaceStore(database).remove(cabin.id);
 
       nodes.remove(phone.id);
       nodes.remove(machine.id);
@@ -132,18 +141,22 @@ for (const driver of DRIVERS) {
       expect(nodes.self()?.id).toBe(machine.id);
     });
 
-    test('the home: made once, its master a node of it, renamed and handed over', () => {
+    test('the home: made once, its master a node of it — never forgotten — and kept by a follower as the master has it', () => {
       const homes = new HomeStore(database);
       const nodes = new NodeStore(database);
       const master = nodes.self()!;
       const made = homes.ensure({ name: 'Home', masterId: master.id });
       expect(made).toMatchObject({ name: 'Home', masterId: master.id });
       expect(homes.ensure({ name: 'Another', masterId: master.id }).id).toBe(made.id);
-      expect(homes.rename('Stugan').name).toBe('Stugan');
 
+      // As a follower keeps it: another node the master, and that one not forgotten while it is.
       const other = nodes.join({ id: nodeId('n-0000000000c3'), name: 'Second machine', platform: 'system', transports: [], alwaysOn: true, reachable: true, trusted: true }, null);
-      expect(homes.setMaster(other.id).masterId).toBe(other.id);
-      homes.setMaster(master.id);
+      homes.mirror({ ...made, masterId: other.id });
+      nodes.remove(other.id);
+      expect(nodes.get(other.id)?.id).toBe(other.id);
+      homes.mirror(made);
+      nodes.remove(other.id);
+      expect(nodes.get(other.id)).toBeNull();
     });
 
     test('places: where nodes and devices stand, each by a key made from its name', () => {

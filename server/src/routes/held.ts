@@ -1,16 +1,16 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import { nodeId, RESOURCE_KINDS, savedDeviceId, type AuditSubject, type DeviceDescription, type DeviceInfo, type ResourceKind, type Value } from '@kraftverk/device-sdk';
+import { NODE_ID, nodeId, RESOURCE_KINDS, savedDeviceId, type AuditSubject, type DeviceDescription, type DeviceInfo, type ResourceKind, type Value } from '@kraftverk/device-sdk';
 
 import { body, homeFor, type AppDeps } from './shared.ts';
 
 /**
- * What an app sends for a connection it holds (docs/DATA-MODEL.md §4), over
+ * What a node sends the master for a connection it holds (docs/DATA-MODEL.md §4), over
  * HTTP: checked, and handed to the home (`KraftverkApi.held`), which keeps
  * the device's history, its store and its timeline. Each call names the
- * app, which must be the signed-in account's, and the connection, which must
- * be one that app holds.
+ * node, which must be the signed-in account's, and the connection, which must
+ * be one that node holds.
  */
 
 const reading = z
@@ -30,7 +30,7 @@ export function heldRoutes(deps: AppDeps): Hono {
       c,
       z
         .object({
-          nodeId: z.string().min(1).max(40),
+          nodeId: z.string().regex(NODE_ID),
           connectionId: z.string().min(1).max(40),
           // Who the device said it is, read by the app's session.
           identity: z.string().min(1).max(120).nullable().optional(),
@@ -69,12 +69,12 @@ export function heldRoutes(deps: AppDeps): Hono {
   api.get('/devices/:id/store', async (c) => c.json({ values: await homeFor(deps, c).held.store(savedDeviceId(c.req.param('id'))) }));
 
   api.put('/devices/:id/store/:key', async (c) => {
-    const input = await body(c, z.object({ nodeId: z.string().min(1).max(40), connectionId: z.string().min(1).max(40), value: z.unknown() }).strict());
+    const input = await body(c, z.object({ nodeId: z.string().regex(NODE_ID), connectionId: z.string().min(1).max(40), value: z.unknown() }).strict());
     await homeFor(deps, c).held.keep(savedDeviceId(c.req.param('id')), c.req.param('key'), input);
     return c.json({ ok: true });
   });
 
-  /** The audit entries an app's gateway and session wrote while it held a connection — queued while offline, sent when it can. */
+  /** The audit entries a node's gateway and session wrote while it held a connection — queued while offline, sent when it can. */
   api.post('/nodes/:id/audit', async (c) => {
     const { entries } = await body(
       c,

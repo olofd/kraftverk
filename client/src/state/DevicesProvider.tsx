@@ -119,10 +119,10 @@ const DevicesContext = createContext<DevicesContextValue | null>(null);
 export function DevicesProvider({ children }: { children: ReactNode }) {
   const servers = useServers();
   const { allowed } = useAuth();
-  const { api, kind, writesAllowed, away } = useHome();
+  const { api, role, writesAllowed, away } = useHome();
   const mode = servers.mode;
   // A server's list is read once signed in; the app's own, always.
-  const reading = kind === 'own' || allowed;
+  const reading = role === 'master' || allowed;
 
   const [served, setServed] = useState<DeviceView[]>([]);
   const [removed, setRemoved] = useState<DeviceView[]>([]);
@@ -196,7 +196,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     as it is — rather than when the live stream next gives up trying.
   */
   useEffect(() => {
-    if (kind === 'server' && reading) void load();
+    if (role === 'follower' && reading) void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [away]);
 
@@ -388,7 +388,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     (device: DeviceView): DeviceScreenProps => {
       const holder = holderOf(device);
       const inUse = device.connections.find((connection) => connection.inUse) ?? null;
-      const byHome = kind === 'server' ? 'through the server' : `from ${HERE}`;
+      const byHome = role === 'follower' ? 'through the server' : `from ${HERE}`;
       const via = inUse ? `${inUse.methodLabel}, ${inUse.heldBy.kind === 'master' ? byHome : holder === 'this-node' ? 'from this app' : `from ${inUse.heldBy.name}`}` : null;
       return {
         device,
@@ -396,20 +396,20 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         // Whether it can be reached, and what to say while it cannot — never by whom.
         reach: {
           now: holder === 'master' || holder === 'this-node',
-          waiting: holder === 'this-node' ? 'Connecting from this app…' : holder === 'master' ? (kind === 'server' ? 'Waiting for the server…' : `Connecting from ${HERE}…`) : device.health.detail,
+          waiting: holder === 'this-node' ? 'Connecting from this app…' : holder === 'master' ? (role === 'follower' ? 'Waiting for the server…' : `Connecting from ${HERE}…`) : device.health.detail,
           via,
         },
         // A simulated device has no hardware to protect, and the gateway writes to it whatever the mode.
         readOnly:
           inUse?.method === SIMULATED_METHOD_ID
             ? false
-            : holder === 'this-node' || kind === 'own'
+            : holder === 'this-node' || role === 'master'
               ? !writesAllowed
               : (version?.readOnly ?? false),
-        version: holder === 'master' && kind === 'server' ? version : null,
+        version: holder === 'master' && role === 'follower' ? version : null,
       };
     },
-    [actionsFor, holderOf, kind, version, writesAllowed]
+    [actionsFor, holderOf, role, version, writesAllowed]
   );
 
   // --- changing the list ----------------------------------------------------------

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import { nodeId, connectionId, linkId, savedDeviceId, type LinkKind } from '@kraftverk/device-sdk';
+import { connectionId, linkId, NODE_ID, nodeId, savedDeviceId, type LinkKind } from '@kraftverk/device-sdk';
 
 import { body, homeFor, type AppDeps } from './shared.ts';
 
@@ -62,7 +62,7 @@ export function connectionRoutes(deps: AppDeps): Hono {
       c,
       z
         .object({
-          id: z.string().regex(/^n-[0-9a-f]{12}$/),
+          id: z.string().regex(NODE_ID),
           name: z.string().trim().min(1).max(60),
           platform: z.enum(['system', 'web', 'native']),
           transports: z.array(z.string().min(1).max(20)).max(10),

@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'bun:test';
 
 import { ApiError, type Caller, type ConnectionView, type DeviceView, type KraftverkApi } from '@kraftverk/api-contract';
-import { connectionId, savedDeviceId } from '@kraftverk/device-sdk';
+import { connectionId, nodeId, savedDeviceId } from '@kraftverk/device-sdk';
 import { plainSecrets, type SqlDatabase } from '@kraftverk/store';
 
 import { createFollower, createHub, installedFrom, masterFitness, shouldLead, type Follower, type Hub } from '../src/index.ts';
@@ -113,6 +113,62 @@ test('the ways this app can hold are offered beside the server’s, for a type i
   expect(follower.homeKept.get()?.masterId).toBe(MACHINE_NODE.id);
   expect(follower.master()).toMatchObject({ id: MACHINE_NODE.id, name: 'Test machine', alwaysOn: true, reachable: true, self: false });
   expect(follower.nodes.self()?.id).toBe(follower.nodeId);
+});
+
+test('the machine behind the address another now: the follower keeps the new master, and lets the old one go', async () => {
+  const { home } = await server();
+  const { follower } = await app(home);
+  // As this node last kept it: another machine was the master then.
+  const old = { id: nodeId('n-0000000000dd'), name: 'Old machine', platform: 'system' as const, transports: [], alwaysOn: true, reachable: true, trusted: true, placeId: null, createdAt: '2026-10-01T00:00:00.000Z', lastSeenAt: '2026-10-01T00:00:00.000Z' };
+  follower.nodes.mirror(old);
+  follower.homeKept.mirror({ id: 'h-000000000old', name: 'Home', masterId: old.id, createdAt: old.createdAt });
+
+  await follower.keepHome();
+  expect(follower.master()?.id).toBe(MACHINE_NODE.id);
+  expect(follower.nodes.get(old.id)).toBeNull();
+});
+
+test('forgotten by the master while it runs, a follower joins again', async () => {
+  const { home } = await server();
+  const { follower } = await app(home);
+  await home.nodes.forget(follower.nodeId);
+  await follower.refresh();
+  expect((await home.nodes.list()).map((node) => node.id)).toContain(follower.nodeId);
+});
+
+test('a way that needs a trusted node: held by the master that is one, never set up or opened by one that is not', async () => {
+  const kept = { ...lampType, id: 'test.kept-lamp', connections: lampType.connections.map((method) => ({ ...method, needs: { trusted: 'its key stays at home' } })) };
+  const installed = (platform: 'system' | 'web') =>
+    installedFrom(
+      { types: [{ type: kept }], protocols: [lampProtocol], transports: [{ definition: { ...busDefinition, platforms: ['system', 'web'], discovery: { system: 'list', web: 'list' } }, create: () => new FakeBus() }] },
+      { platform, context: { env: {}, log: () => {}, audit: () => {} } }
+    );
+  // An app alone: its own home's master, and not trusted with it.
+  const own = createHub({ database: testDatabase(), secrets: plainSecrets, sealing, installed: installed('web'), node: APP_NODE, readOnly: () => false, http: NO_NETWORK });
+  await own.start();
+  running.push(own);
+  const listing = (await own.as(PERSON).deviceTypes()).types.find((type) => type.id === 'test.kept-lamp')!;
+  expect(listing.ways.find((way) => way.method === 'bus')).toEqual({
+    method: 'bus',
+    holder: 'master',
+    fits: false,
+    availability: { ok: false, reason: 'It needs a node trusted with it, such as your server: its key stays at home' },
+  });
+  expect(await own.as(PERSON).setup.start({ typeId: 'test.kept-lamp', methodId: 'bus' }).catch((error: ApiError) => error.message)).toBe(
+    'Test bus: It needs a node trusted with it, such as your server: its key stays at home'
+  );
+  // Brought in all the same — by a file, or a home handed over — it waits: its session does not open, and says why.
+  const lamp = own.catalog.add({ typeId: 'test.kept-lamp', name: 'Kept lamp', description: { parts: [], attributes: [] } });
+  own.connections.add({ deviceId: lamp.id, method: 'bus', transport: 'bus', heldBy: APP_NODE.id, address: 'lamp-1' });
+  await own.sessions.sync(own.catalog.list());
+  expect(own.sessions.get(lamp.id)).toBeNull();
+  expect(own.sessions.health(lamp).detail).toContain('It needs a node trusted with it');
+
+  // A machine trusted with it holds it.
+  const machine = createHub({ database: testDatabase(), secrets: plainSecrets, sealing, installed: installed('system'), node: MACHINE_NODE, readOnly: () => false, http: NO_NETWORK });
+  await machine.start();
+  running.push(machine);
+  expect((await machine.as(PERSON).deviceTypes()).types.find((type) => type.id === 'test.kept-lamp')!.ways.find((way) => way.method === 'bus')).toMatchObject({ fits: true, availability: { ok: true } });
 });
 
 test('the master is the node fittest for it: always on first, then reached by others — and the role moves only to a fitter one', () => {

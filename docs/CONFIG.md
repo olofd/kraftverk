@@ -320,7 +320,7 @@ written.
 - `POST /config/plan` — `{ text, mode: merge | replace, passphrase? }` → the
   plan (`ImportPlan`): `id` (null when its problems stop it), `problems` with
   lines, `devices`, `links`, `automations`, `policy`, `needs`, `notes`. In
-  the app, `{ from: this-app | copy }` plans a home it keeps beside the one
+  the app, `{ from: this-node | copy }` plans a home it keeps beside the one
   it shows — its own, moving to its server; or the copy of its server's,
   kept — and `GET /config/elsewhere` says what such a home has; a server's
   home keeps neither, and says none (docs/PLAN-SHARED-CORE.md, 6h).
