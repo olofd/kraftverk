@@ -1,40 +1,30 @@
-import { Hono, type Context } from 'hono';
+import { Hono } from 'hono';
 import { z } from 'zod';
 
-import { actorOf } from '../auth/routes.ts';
 import { LINK_KIND_IDS, type LinkKind } from '@kraftverk/device-sdk';
 
-import { auditAbout, body, ownClient, type AppDeps } from './shared.ts';
+import { body, homeFor, ownClient, type AppDeps } from './shared.ts';
 
 const values = z.record(z.string().max(64), z.union([z.string().max(4096), z.number(), z.boolean()]));
 
 /**
- * Adding a device the server will hold (docs/DATA-MODEL.md §1).
- *
- * The app walks the steps; each one that touches the device runs here, in a
- * draft only the account that started it can see. Nothing is stored until
- * the save, which writes the device, its connection, the connection's secrets
- * and its links in one go.
+ * Adding a device (docs/DATA-MODEL.md §1), over HTTP. The app walks the
+ * steps; each one that touches a device the server will hold runs in the
+ * home (`KraftverkApi.setup`), in a draft only the account that started it
+ * sees. Nothing is stored until the save.
  */
-export function setupRoutes({ setup, registry, clients }: AppDeps): Hono {
+export function setupRoutes(deps: AppDeps): Hono {
   const api = new Hono();
-
-  /** The draft a request names, if it is this account's. */
-  const draft = (c: Context): string => {
-    const id = c.req.param('id') ?? '';
-    setup.assertOwner(id, actorOf(c));
-    return id;
-  };
 
   api.post('/', async (c) => {
     const input = await body(c, z.object({ typeId: z.string().min(1).max(80), methodId: z.string().min(1).max(40).nullable().optional() }).strict());
-    return c.json(await setup.start({ ...input, by: actorOf(c) }));
+    return c.json(await homeFor(deps, c).setup.start(input));
   });
 
   /**
    * A connection this app will hold. It ran the steps itself and read the
    * device with its own radio; this is what it learnt, never a secret. The
-   * answer is the draft with its check, ready to save through `/:id/save`.
+   * app speaks for itself only: it must be one of this account's.
    */
   api.post('/app', async (c) => {
     const input = await body(
@@ -61,42 +51,39 @@ export function setupRoutes({ setup, registry, clients }: AppDeps): Hono {
         })
         .strict()
     );
-    const client = ownClient(clients, c, input.clientId);
-    return c.json(setup.startHeld({ ...input, clientId: client.id, by: actorOf(c) }));
+    const client = ownClient(deps.clients, c, input.clientId);
+    return c.json(await homeFor(deps, c).setup.startHeld({ ...input, clientId: client.id }));
   });
 
-  api.get('/:id', (c) => c.json(setup.view(draft(c))));
+  api.get('/:id', async (c) => c.json(await homeFor(deps, c).setup.get(c.req.param('id'))));
 
-  api.delete('/:id', (c) => {
-    setup.discard(draft(c));
+  api.delete('/:id', async (c) => {
+    await homeFor(deps, c).setup.discard(c.req.param('id'));
     return c.json({ ok: true });
   });
 
-  /** What the transport can see that this type's protocol recognises. Polled while the step is open. */
-  api.get('/:id/sightings', (c) => c.json({ sightings: setup.sightings(draft(c)) }));
+  api.get('/:id/sightings', async (c) => c.json({ sightings: await homeFor(deps, c).setup.sightings(c.req.param('id')) }));
 
   api.post('/:id/choose', async (c) => {
     const input = await body(c, z.union([z.object({ address: z.string().min(1).max(200) }).strict(), z.object({ manual: z.string().min(1).max(200) }).strict()]));
-    return c.json(setup.choose(draft(c), input));
+    return c.json(await homeFor(deps, c).setup.choose(c.req.param('id'), input));
   });
 
   api.patch('/:id', async (c) => {
     const input = await body(c, z.object({ device: values.optional(), connection: values.optional() }).strict());
-    return c.json(setup.update(draft(c), input));
+    return c.json(await homeFor(deps, c).setup.update(c.req.param('id'), input));
   });
 
   api.post('/:id/steps/:step/actions/:action', async (c) => {
-    const id = draft(c);
     const { input } = await body(c, z.object({ input: values.default({}) }).strict());
-    return c.json(await setup.action(id, c.req.param('step'), c.req.param('action'), input, c.req.raw.signal));
+    return c.json(await homeFor(deps, c).setup.action(c.req.param('id'), c.req.param('step'), c.req.param('action'), input, c.req.raw.signal));
   });
 
-  api.post('/:id/steps/:step/discover', async (c) => c.json(await setup.discover(draft(c), c.req.param('step'), c.req.raw.signal)));
+  api.post('/:id/steps/:step/discover', async (c) => c.json(await homeFor(deps, c).setup.discover(c.req.param('id'), c.req.param('step'), c.req.raw.signal)));
 
-  api.post('/:id/check', async (c) => c.json(await setup.check(draft(c))));
+  api.post('/:id/check', async (c) => c.json(await homeFor(deps, c).setup.check(c.req.param('id'))));
 
   api.post('/:id/save', async (c) => {
-    const id = draft(c);
     const input = await body(
       c,
       z
@@ -122,10 +109,7 @@ export function setupRoutes({ setup, registry, clients }: AppDeps): Hono {
         })
         .strict()
     );
-    const record = await setup.save(id, input);
-    if (input.anyway) auditAbout(c, 'device.saved-unchecked', 'device', record.id, `"${record.name}" was saved without answering the check`);
-    if (input.secretsExportable) auditAbout(c, 'device.exportable', 'device', record.id, `"${record.name}": its secrets may leave in an export as plain text`);
-    return c.json(registry.find(record.id));
+    return c.json(await homeFor(deps, c).setup.save(c.req.param('id'), input));
   });
 
   return api;

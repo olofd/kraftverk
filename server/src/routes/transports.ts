@@ -1,45 +1,22 @@
 import { Hono } from 'hono';
-import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import type { AppDeps } from './shared.ts';
+import { homeFor, type AppDeps } from './shared.ts';
 
 /**
- * What this server can reach devices over: each transport, whether it is
- * running, what it can see, and its own read-only diagnostics — the broker's
- * journal, the Bluetooth GATT layout — by name, so none is a route of its own.
+ * What this server can reach devices over (the home's: `KraftverkApi`), what
+ * can be seen near it, and — the server's own — what it has said lately.
  */
-export function transportRoutes({ config, transports, serverLog, nearby }: AppDeps): Hono {
+export function transportRoutes(deps: AppDeps): Hono {
+  const { serverLog } = deps;
   const api = new Hono();
 
-  api.get('/transports', (c) =>
-    c.json({
-      readOnly: config.readOnly,
-      transports: transports.definitions().map((definition) => {
-        const transport = transports.get(definition.id);
-        return {
-          ...definition,
-          running: transport !== null,
-          availability: transports.available(definition.id),
-          values: transport?.values?.() ?? {},
-          diagnostics: Object.keys(transport?.diagnostics ?? {}),
-        };
-      }),
-      refused: transports.refused,
-    })
-  );
+  api.get('/transports', async (c) => c.json(await homeFor(deps, c).transports.list()));
 
   /** "Found near you": what can be seen that nothing you have is reached by. */
-  api.get('/found', (c) => c.json({ found: nearby.list() }));
+  api.get('/found', async (c) => c.json({ found: await homeFor(deps, c).nearby() }));
 
-  api.get('/transports/:id/diagnostics/:name', async (c) => {
-    const transport = transports.get(c.req.param('id'));
-    const diagnostic = transport?.diagnostics?.[c.req.param('name')];
-    if (!diagnostic) throw new HTTPException(404, { message: 'No such diagnostic, or it is not running' });
-    const result = await diagnostic(c.req.query());
-    if (result === null || result === undefined) throw new HTTPException(503, { message: 'It is not answering' });
-    return c.json(result);
-  });
+  api.get('/transports/:id/diagnostics/:name', async (c) => c.json(await homeFor(deps, c).transports.diagnostic(c.req.param('id'), c.req.param('name'), c.req.query())));
 
   /**
    * What the server has said lately — the same lines as its console, which in

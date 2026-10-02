@@ -44,6 +44,7 @@ import type {
   Quantity,
   ResourceKind,
   SavedDeviceId,
+  SetupActionResult,
   SetupStepView,
   ToolSpec,
   TransportDefinition,
@@ -945,6 +946,38 @@ export interface KraftverkApi {
   };
   /** Warnings and errors across the devices you have, newest first. */
   problems(limit?: number): Promise<ProblemView[]>;
+  /**
+   * Adding a device (docs/DATA-MODEL.md §1): a draft only its starter sees,
+   * each step that touches the device run where it will be held, nothing
+   * kept until the save.
+   */
+  setup: {
+    /** Begins one this home will hold, over a method of a type. */
+    start(input: { typeId: string; methodId?: string | null }): Promise<DraftView>;
+    /** One an app will hold, from what it learnt reading the device itself: never a secret. */
+    startHeld(input: HeldSetupInput): Promise<DraftView>;
+    get(id: string): Promise<DraftView>;
+    discard(id: string): Promise<void>;
+    /** What the transport sees that the type's protocol recognises. */
+    sightings(id: string): Promise<SightingView[]>;
+    choose(id: string, choice: { address: string } | { manual: string }): Promise<DraftView>;
+    update(id: string, values: { device?: ConfigValues; connection?: ConfigValues }): Promise<DraftView>;
+    /** A step's helper — fetching a key — run where it is held; a secret it finds is kept there, and a placeholder answered. */
+    action(id: string, step: string, action: string, input: ConfigValues, signal?: AbortSignal): Promise<SetupActionResult>;
+    discover(id: string, step: string, signal?: AbortSignal): Promise<SetupActionResult>;
+    /** Reads it once: new, yours, yours before, another model, or no answer. */
+    check(id: string): Promise<CheckOutcome>;
+    /** The device, its connection, its secrets and its links, in one go. */
+    save(id: string, input: SaveInput): Promise<DeviceView>;
+  };
+  /** What the transports see that nothing you have is reached by: "found near you". */
+  nearby(): Promise<FoundView[]>;
+  transports: {
+    /** What this home reaches devices over, each running or not, and why not. */
+    list(): Promise<TransportList>;
+    /** One of a transport's read-only diagnostics, by name. */
+    diagnostic(transport: string, name: string, query: Record<string, string>): Promise<unknown>;
+  };
   connections: {
     /** This way first, whenever it can be reached. */
     prefer(device: SavedDeviceId, connection: ConnectionId): Promise<DeviceView>;

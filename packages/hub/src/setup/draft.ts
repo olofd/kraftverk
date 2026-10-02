@@ -1,4 +1,4 @@
-import type { CheckOutcome, DraftView, SaveInput } from '@kraftverk/api-contract';
+import { ApiError, type CheckOutcome, type DraftView, type SaveInput } from '@kraftverk/api-contract';
 import type { ClientId, ConfigSchema, ConnectionMethod, DeviceType, Identified, Protocol, SetupStepView, Sighting } from '@kraftverk/device-sdk';
 
 import type { Reach } from './reach.ts';
@@ -11,12 +11,10 @@ import type { Reach } from './reach.ts';
 
 export const DRAFT_TTL_MS = 15 * 60_000;
 
-export class SetupError extends Error {
-  constructor(
-    message: string,
-    readonly status: 400 | 404 | 409 = 400
-  ) {
-    super(message);
+/** Adding a device went wrong in a way the person can act on: in words, as every refusal of the home is. */
+export class SetupError extends ApiError {
+  constructor(message: string, status: 400 | 404 | 409 = 400) {
+    super(status === 404 ? 'not-found' : status === 409 ? 'conflict' : 'invalid', message);
   }
 }
 

@@ -2,6 +2,7 @@ import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
 
 import type { Hub } from '../hub.ts';
 import { devicesApi } from './devices.ts';
+import { setupApi } from './setup.ts';
 
 /**
  * `KraftverkApi`, answered in the process for one caller: what the server's
@@ -12,6 +13,7 @@ import { devicesApi } from './devices.ts';
 export function homeApi(hub: Hub, caller: Caller): KraftverkApi {
   return {
     ...devicesApi(hub, caller),
+    ...setupApi(hub, caller),
   };
 }
 

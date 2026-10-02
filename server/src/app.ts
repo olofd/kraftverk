@@ -13,7 +13,6 @@ import { hostGuard } from './auth/host.ts';
 import { CLIENT_HEADER, createAuth } from './auth/routes.ts';
 import { isPrivate, normaliseIp } from './auth/trust.ts';
 import type { ServerConfig } from './config.ts';
-import { SetupError } from '@kraftverk/hub';
 import { adminRoutes } from './routes/admin.ts';
 import { deviceRoutes } from './routes/devices.ts';
 import { connectionRoutes } from './routes/connections.ts';
@@ -191,8 +190,6 @@ export function createApp(deps: AppDeps) {
       const said = { error: err.message, ...(err.problems.length ? { problems: err.problems } : {}), ...(err.needsConfirmation ? { needsConfirmation: err.needsConfirmation } : {}) };
       return c.json(said, API_ERROR_STATUS[err.kind] as ContentfulStatusCode);
     }
-    // Adding a device went wrong in a way the person can act on: in words.
-    if (err instanceof SetupError) return c.json({ error: err.message }, err.status);
     if (err instanceof ZodError) {
       return c.json({ error: 'Validation failed', issues: err.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) }, 400);
     }
