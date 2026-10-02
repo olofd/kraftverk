@@ -245,3 +245,49 @@ test('a home over HTTP says after each request whether the server answered at al
   expect((await refused(home.devices.list())).kind).toBe('unavailable');
   expect(said).toEqual([true, true, false]);
 });
+
+/** Every call an interface has, by its name — `devices.command` — however deep: what `KraftverkApi` makes a client implement, each one. */
+function callsOf(api: object, prefix = ''): [string, (...args: unknown[]) => unknown][] {
+  return Object.entries(api).flatMap(([name, value]): [string, (...args: unknown[]) => unknown][] =>
+    typeof value === 'function' ? [[`${prefix}${name}`, value as (...args: unknown[]) => unknown]] : value && typeof value === 'object' ? callsOf(value, `${prefix}${name}.`) : []
+  );
+}
+
+test('every call the HTTP client makes reaches a route: the client and the routes are one mapping of the interface, kept in step', async () => {
+  // A path no route has is answered without the home's refusal in it — a refusal of the home's says its kind.
+  const unrouted: string[] = [];
+  let requests = 0;
+  const home = httpApi({
+    baseUrl: `http://${HOST}/api`,
+    headers: { cookie: `${SESSION_COOKIE}=${cookie}` },
+    fetch: async (url, init) => {
+      requests += 1;
+      const response = await app.fetch(new Request(url, { ...init, headers: { host: HOST, ...(init.headers as Record<string, string>) } }), { requestIP: () => ({ address: '192.168.1.58' }) });
+      if (response.status === 404 || response.status === 405) {
+        const body = (await response.clone().json().catch(() => null)) as { kind?: string } | null;
+        if (!body?.kind) unrouted.push(`${init.method} ${new URL(url).pathname}`);
+      }
+      return response;
+    },
+  });
+  // The live stream is a socket, not a route: the route tests open one (app.test.ts).
+  const calls = callsOf(home).filter(([name]) => name !== 'live');
+  // Every call there is, asked with what it takes as far as a route goes — ids and a part, or a body first — refused, mostly, which is an answer.
+  const asked = [
+    ['d-000000000000', 'main', 'switch', 'set', {}],
+    [{}, 'main', 'switch', 'set', {}],
+  ];
+  const silent: string[] = [];
+  for (const [name, call] of calls) {
+    const before = requests;
+    for (const args of asked) {
+      await (async () => call(...args))().catch(() => undefined);
+      if (requests > before) break;
+    }
+    if (requests === before) silent.push(name);
+  }
+  expect(calls.length).toBeGreaterThan(60);
+  // Each one asked the server something — and the server had a route for it.
+  expect(silent).toEqual([]);
+  expect(unrouted).toEqual([]);
+});
