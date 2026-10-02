@@ -22,9 +22,7 @@ import {
 import type { DeviceCatalog } from '../devices/catalog.ts';
 import type { DeviceSessionManager } from '../devices/sessions.ts';
 import { db } from '../history/db.ts';
-import { CHAIN_LIMIT, quoted, type AutomationEngine, type AutomationRecord } from './engine.ts';
-import type { AutomationLibrary } from './library.ts';
-import { rehearse } from './rehearse.ts';
+import { CHAIN_LIMIT, quoted, type AutomationEngine, type AutomationRecord, type AutomationLibrary, rehearse } from '@kraftverk/automation-engine';
 import type { AutomationStore } from './store.ts';
 
 /**

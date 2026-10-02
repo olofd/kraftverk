@@ -188,7 +188,7 @@ started_by_run TEXT REFERENCES automation_run (id) ON DELETE SET NULL
 The home server's database is set aside once, when this ships: its four
 devices and two automations are added again.
 
-## The engine (`server/src/automations/engine.ts`)
+## The engine (`packages/automation-engine/src/engine.ts`)
 
 - **Reads the rule** from the automation, not from the library. The
   library is only where starting points come from.

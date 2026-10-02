@@ -389,7 +389,7 @@ tried on the owner's real station, plug and charger, with the owner watching.
    `RecipeView`, `LiveUpdate` — `history/schema.ts`, `automations/store.ts`,
    `devices/ledger.ts`, `api-contract`. *Built.*
 3. **Engine** — the walker, waits, `otherwise`, stop, interrupted on start —
-   `server/src/automations/engine.ts`; `sequences.test.ts`. *Built.*
+   `packages/automation-engine/src/engine.ts`; `sequences.test.ts`. *Built.*
 4. **Gateway** — a run's allowance; its memory as a ledger —
    `packages/gateway`. *Built.*
 5. **Devices** — `wantFresh`; the Tuya socket polling while wanted, and not

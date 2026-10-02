@@ -1,7 +1,7 @@
 import { checkContribution, type AutomationContribution } from '@kraftverk/automation';
 import { connectionProblems, validateDeviceType, type DeviceType, type Protocol, type TransportDefinition } from '@kraftverk/device-sdk';
 
-import type { Contributed } from '../automations/library.ts';
+import type { Contributed } from '@kraftverk/automation-engine';
 
 import { findPackages, load, ROOTS } from '../runtime/packages.ts';
 import type { Refused } from '../runtime/protocols.ts';

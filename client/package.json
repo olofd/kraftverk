@@ -23,6 +23,7 @@
     "@expo/vector-icons": "^15.1.1",
     "@kraftverk/api-client": "*",
     "@kraftverk/automation": "*",
+    "@kraftverk/automation-engine": "*",
     "@kraftverk/config": "*",
     "@kraftverk/device-sdk": "*",
     "@kraftverk/gateway": "*",

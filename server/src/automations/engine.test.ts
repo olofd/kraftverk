@@ -9,8 +9,7 @@ import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent 
 import { LiveBus } from '@kraftverk/holder';
 
 import { closeDb, db } from '../history/db.ts';
-import { AutomationEngine, type AutomationRecord, type EngineDevice } from './engine.ts';
-import { AutomationLibrary } from './library.ts';
+import { AutomationEngine, type AutomationRecord, type EngineDevice, AutomationLibrary } from '@kraftverk/automation-engine';
 import { AutomationStore } from './store.ts';
 
 /*

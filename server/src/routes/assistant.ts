@@ -7,7 +7,7 @@ import { isTimeZone, savedDeviceId, type CapabilitySpec, type Value } from '@kra
 import { deviceReader } from '@kraftverk/holder';
 
 import { actorOf } from '../auth/routes.ts';
-import { RunRefusal } from '../automations/engine.ts';
+import { RunRefusal } from '@kraftverk/automation-engine';
 import { plans, REHEARSAL_MAX_HOURS } from '../automations/plans.ts';
 import { AGENT_RULES, vocabularyOf, worldOf, worldText } from '../assistant/world.ts';
 import { recentAudit } from '../history/db.ts';

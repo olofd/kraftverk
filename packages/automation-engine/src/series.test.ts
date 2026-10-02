@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { RunLog, RunLogKey, RunStep } from '@kraftverk/api-client';
+import type { RunLog, RunLogKey, RunStep } from '@kraftverk/api-contract';
 
-import { atOf, changed, heldPath, marksOf, said, seriesOf, sinceStart, spansOf, valueAt, windowOf, xOf } from './series';
+import { atOf, changed, heldPath, marksOf, said, seriesOf, sinceStart, spansOf, valueAt, windowOf, xOf } from './series.ts';
 
 /*
   A run's log, as its page draws it: each value held from one reading to the

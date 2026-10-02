@@ -1,4 +1,4 @@
-import type { AutomationRun, RunLog, RunLogKey, RunLogReading, RunStep } from '@kraftverk/api-client';
+import type { AutomationRun, RunLog, RunLogKey, RunLogReading, RunStep } from '@kraftverk/api-contract';
 
 /*
   A run's log, made into what its page draws (docs/SEQUENCES.md): each value

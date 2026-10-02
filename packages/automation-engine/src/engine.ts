@@ -70,12 +70,10 @@ import {
   type Write,
 } from '@kraftverk/automation';
 import type { ActionGateway, GatewayResult, WriteResult } from '@kraftverk/gateway';
-import { deviceReader, type LiveBus, type LiveMessage } from '@kraftverk/holder';
+import type { LiveBus, LiveMessage } from '@kraftverk/holder';
 
-import type { DeviceCatalog } from '../devices/catalog.ts';
-import type { DeviceSessionManager } from '../devices/sessions.ts';
 import type { AutomationLibrary } from './library.ts';
-import type { AutomationStore, TriggerState } from './store.ts';
+import type { AutomationStorage, TriggerState } from './storage.ts';
 
 /** One run's result, as the API shows it. */
 export type RunResult = AutomationRun;
@@ -139,7 +137,7 @@ type PlannedWrite = { binding: RoleBinding; key: string; value: Value };
 type Planned = { command: PlannedAction } | { write: PlannedWrite };
 
 export type AutomationEngineDeps = {
-  store: AutomationStore;
+  store: AutomationStorage;
   library: Pick<AutomationLibrary, 'fn'>;
   device: (binding: RoleBinding) => EngineDevice | null;
   gateway: Pick<ActionGateway, 'execute' | 'write' | 'runEnded' | 'lastSwitch' | 'lastWrite'>;
@@ -1404,7 +1402,7 @@ export class AutomationEngine {
       if (!devices.has(binding.device)) devices.set(binding.device, device);
       roles.push({ role, label: live.rule.roles[role]?.label ?? role, device: binding.device, part: binding.part });
     }
-    const keep = (log: Parameters<AutomationStore['recordLog']>[1]) => {
+    const keep = (log: Parameters<AutomationStorage['recordLog']>[1]) => {
       try {
         this.deps.store.recordLog(live.id, log);
       } catch (error) {
@@ -1621,39 +1619,3 @@ export const quoted = (name: string | null): string => (name === null ? 'an auto
 /** A step as done: "Turned Heater plug off", "Set Scooter plug’s Live readings to on", "Started “Charge the scooter”"; anything else, "Sent …". */
 const pastOf = (what: string) =>
   /^turn /i.test(what) ? `Turned ${what.slice(5)}` : /^set /i.test(what) ? `Set ${what.slice(4)}` : /^start /i.test(what) ? `Started ${what.slice(6).replace(/ and wait until it ends.*$/, '')}` : `Sent ${lowerFirst(what)}`;
-
-/**
- * Parts of devices as the server holds them, for the engine: a removed device
- * is still found, so an automation can say it was removed rather than that it
- * never existed; one only an app holds has no session here, and says whose it
- * is. A part is named with its device: "Garage station — AC outlets".
- */
-export const serverDevices =
-  (catalog: Pick<DeviceCatalog, 'get'>, sessions: Pick<DeviceSessionManager, 'get' | 'health' | 'description'>) =>
-  (binding: RoleBinding): EngineDevice | null => {
-    const record = catalog.get(binding.device);
-    if (!record) return null;
-    const removed = record.removedAt !== null;
-    const description = removed ? record.description : sessions.description(record);
-    const part = partsOf(description, record.name).find((candidate) => candidate.id === binding.part) ?? null;
-    const session = removed ? null : sessions.get(record.id);
-    return {
-      name: partName(record.name, binding.part, part?.label),
-      deviceName: record.name,
-      typeId: record.typeId,
-      removed,
-      hasPart: part !== null,
-      part: binding.part,
-      description,
-      // What a function may see: readings, health and checked queries — never the session itself.
-      device: session ? deviceReader(session, () => sessions.description(record)) : null,
-      offline: removed ? 'It has been removed' : sessions.health(record).detail,
-      capabilities: part ? capabilitiesOf(description, part.id) : [],
-      reachable: () => {
-        if (removed) return { reachable: false, detail: 'It has been removed' };
-        const health = sessions.health(record);
-        return { reachable: health.status === 'connected', detail: health.detail };
-      },
-      wantFresh: (until) => sessions.get(record.id)?.wantFresh?.(until),
-    };
-  };

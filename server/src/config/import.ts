@@ -31,9 +31,8 @@ import {
 } from '@kraftverk/device-sdk';
 import { checkBinding, checkRule, isAutomationRole, takesSteps, type BoundPart, type PartRole } from '@kraftverk/automation';
 
-import type { AutomationEngine, AutomationRecord } from '../automations/engine.ts';
+import type { AutomationEngine, AutomationRecord, AutomationLibrary } from '@kraftverk/automation-engine';
 import { hasConditions, type Checked } from '../automations/plans.ts';
-import type { AutomationLibrary } from '../automations/library.ts';
 import type { DeviceRecord } from '../devices/catalog.ts';
 import type { DeviceSessionManager } from '../devices/sessions.ts';
 import { db } from '../history/db.ts';

@@ -1,0 +1,27 @@
+{
+  "name": "@kraftverk/automation-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Runs kraftverk's automations: triggers, steps, runs and their logs, rehearsal, and the library of recipes and functions the installed packages bring. Pure — where automations are kept is a port it declares, the store's to fill — so the server and the app run it alike.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node ../../scripts/run-bun.mjs test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kraftverk/api-contract": "*",
+    "@kraftverk/automation": "*",
+    "@kraftverk/device-sdk": "*",
+    "@kraftverk/gateway": "*",
+    "@kraftverk/holder": "*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^7.0.2"
+  }
+}

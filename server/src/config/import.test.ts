@@ -7,7 +7,7 @@ import { writeConfig } from '@kraftverk/config';
 import { defineDeviceType, MAIN_PART } from '@kraftverk/device-sdk';
 import type { Rule } from '@kraftverk/automation';
 
-import { AutomationLibrary } from '../automations/library.ts';
+import { AutomationLibrary } from '@kraftverk/automation-engine';
 import { plans } from '../automations/plans.ts';
 import { AutomationStore } from '../automations/store.ts';
 import { DeviceCatalog } from '../devices/catalog.ts';

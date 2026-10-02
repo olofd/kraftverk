@@ -8,8 +8,7 @@ import { describeSteps, takesSteps, type Rule } from '@kraftverk/automation';
 import { Confirmations, subjectOf } from '@kraftverk/gateway';
 
 import { actorOf } from '../auth/routes.ts';
-import { RunRefusal } from '../automations/engine.ts';
-import { runLogCsv } from '../automations/runlog.ts';
+import { RunRefusal, runLogCsv } from '@kraftverk/automation-engine';
 import { hasConditions, plans, REHEARSAL_MAX_HOURS } from '../automations/plans.ts';
 import { auditAbout, body, type AppDeps } from './shared.ts';
 

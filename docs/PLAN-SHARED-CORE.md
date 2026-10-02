@@ -116,7 +116,7 @@ server's:
 | Today | What ties it to the server | Goes to |
 |---|---|---|
 | `automations/engine.ts`, `rehearse.ts`, `runlog.ts`, `library.ts` | its store only; `serverDevices` | `automation-engine`; the adapter to `hub` |
-| `automations/plans.ts` | `hono/http-exception` for errors | `automation-engine`, with errors of its own; the routes map them to HTTP |
+| `automations/plans.ts` | `hono/http-exception` for errors; the catalog, the session manager, the database | `hub`, with errors of its own; the routes map them to HTTP |
 | `automations/store.ts` | `db()`, `node:crypto` | `store`, implementing the engine's port |
 | `devices/catalog`, `connections`, `links`, `events`, `clients`, `store`, `ledger`, `remote`; `history/schema`, `changes`, `policy`, `transport-store` | `db()`, `node:crypto` | `store` |
 | `audit()`, `onAudit()`, `appState()`, `startedFresh()` in `history/db.ts` | module-level state over `db()` | `store`, as objects |
@@ -225,7 +225,15 @@ recorded in the server and the app; phase 1 (2026-10-02), the language —
 `@kraftverk/automation`, with what a package contributes as its own entry
 (`kraftverk.automation`), so the device contract knows nothing of
 automations. What the editor's draft still holds — the draft itself, its
-role filling, recipes copied into it — waits for phase 6.
+role filling, recipes copied into it — waits for phase 6. Phase 2
+(2026-10-02), the engine — `@kraftverk/automation-engine`: the engine,
+rehearsal, run logs with the app's series, the library; its store a port
+(`AutomationStorage`) the server's SQLite store implements. The server's
+adapter to it (`serverDevices`) waits in `server/src/automations/devices.ts`
+for the hub. The planner (`plans.ts`) is built on the catalog, the session
+manager and the database, not the engine alone: it moves with them, in
+phase 5. The engine's own tests run against the SQLite store, and move
+with it in phase 3.
 
 Each phase green and pushed. Files move first as they are (with git's
 history), then change. The server behaves as before throughout — the one
@@ -245,10 +253,9 @@ server is checked after each phase.
    step and expression, what each means and when it judges; AUTOMATIONS.md
    and CONFIG.md point to it. The test that the reference is whole comes
    with it.
-2. **The engine: `automation-engine`.** The engine, plans (with errors of
-   its own), rehearsal, the library, run logs with the app's series. It
-   declares its storage port; the server's store implements it until
-   phase 3.
+2. **The engine: `automation-engine`.** The engine, rehearsal, the
+   library, run logs with the app's series. It declares its storage port;
+   the server's store implements it until phase 3.
 3. **The store: `store`.** The SQL port; the schema, its fingerprint and
    set-aside; every store, made from a database, with nothing at module
    level; audit and app state as objects; ids from Web Crypto; secrets at

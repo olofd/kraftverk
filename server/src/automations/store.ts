@@ -6,7 +6,7 @@ import { automationId, savedDeviceId, type AutomationId, type Quantity, type Val
 import type { Rule } from '@kraftverk/automation';
 
 import { db } from '../history/db.ts';
-import type { AutomationMode, AutomationRecord, RunResult } from './engine.ts';
+import type { AutomationMode, AutomationRecord, AutomationStorage, RunResult, TriggerState } from '@kraftverk/automation-engine';
 
 /**
  * The automations you made — each with its own rule — what fills their
@@ -53,9 +53,6 @@ const RUN_SELECT = `SELECT r.*, p.automation_id AS parent_automation, pa.name AS
   LEFT JOIN automation_run p ON p.id = r.started_by_run
   LEFT JOIN automation pa ON pa.id = p.automation_id`;
 
-/** A `becomes` trigger's state, as kept: whether its condition held, since when, and whether this hold has run it. */
-export type TriggerState = { last: boolean; heldSince: string | null; fired: boolean };
-
 /** What an automation is made of, as it is kept: its rule, and what fills its roles. */
 export type AutomationInput = Pick<AutomationRecord, 'name' | 'rule' | 'madeFrom' | 'roles' | 'starts' | 'timeZone' | 'recheckMinutes'>;
 
@@ -95,7 +92,7 @@ const detailOf = (run: RunResult): string => JSON.stringify({ saw: run.saw, cond
 /** A rule with nothing in it: what a row whose JSON could not be read is shown as, and refuses to run. */
 const EMPTY_RULE: Rule = { roles: {}, params: { fields: {} }, when: [], then: [] };
 
-export class AutomationStore {
+export class AutomationStore implements AutomationStorage {
   #revision = 0;
 
   /** Moves whenever an automation is made, changed or deleted — not when one runs: what the engine indexes by. */

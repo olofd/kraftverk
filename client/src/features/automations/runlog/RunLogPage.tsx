@@ -12,7 +12,7 @@ import { Empty, Group } from '../page/Group';
 import { Mark as OutcomeMark } from '../page/history';
 import { useReadAgain } from '../useReadAgain';
 import { awayOf, RunChart, Ruler } from './RunChart';
-import { changed, marksOf, said, seriesOf, sinceStart, windowOf, type Mark } from './series';
+import { changed, marksOf, said, seriesOf, sinceStart, windowOf, type Mark } from '@kraftverk/automation-engine';
 
 /*
   A run's log, a page of its own (docs/SEQUENCES.md): how it came out; every

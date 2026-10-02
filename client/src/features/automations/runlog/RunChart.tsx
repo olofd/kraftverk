@@ -6,7 +6,7 @@ import { Text, useTheme, XStack, YStack } from 'tamagui';
 import type { RunLogReach } from '@kraftverk/api-client';
 import { chartScale, chartY } from '@kraftverk/ui';
 
-import { atOf, heldPath, said, spansOf, valueAt, xOf, type Mark, type Series, type Window } from './series';
+import { atOf, heldPath, said, spansOf, valueAt, xOf, type Mark, type Series, type Window } from '@kraftverk/automation-engine';
 
 /*
   One value of a run's log, drawn across the run (docs/SEQUENCES.md): a

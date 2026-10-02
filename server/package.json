@@ -18,6 +18,7 @@
   "dependencies": {
     "@kraftverk/api-contract": "*",
     "@kraftverk/automation": "*",
+    "@kraftverk/automation-engine": "*",
     "@kraftverk/config": "*",
     "@kraftverk/device-sdk": "*",
     "@kraftverk/gateway": "*",

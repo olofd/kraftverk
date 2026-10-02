@@ -13,7 +13,7 @@ import {
 } from '@kraftverk/device-sdk';
 import { isAutomationRole } from '@kraftverk/automation';
 
-import type { AutomationLibrary } from '../automations/library.ts';
+import type { AutomationLibrary } from '@kraftverk/automation-engine';
 
 /**
  * The house as a model reads it (PROPOSITION.md §5.1): not entities, but

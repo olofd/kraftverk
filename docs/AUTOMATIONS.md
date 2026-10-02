@@ -272,7 +272,7 @@ The app asks for every yes in a dialog of its own, not the browser's
 of everything it reads, the events it waits for, its times of day — with the
 engine's own trigger rules, including a hold that runs its time with no new
 sample, and says at each run what it would have decided and done
-(`server/src/automations/rehearse.ts`). Nothing is sent. It says what it
+(`packages/automation-engine/src/rehearse.ts`). Nothing is sent. It says what it
 cannot see: history is what happened *without* it (a charger it would have
 switched on would have raised the charge), and a function that asks for
 something history does not keep — a forecast — is unknown, as it would be

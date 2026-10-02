@@ -135,6 +135,8 @@ packages/
   automation/            @kraftverk/automation           the automation language: rules, checking, describing, evaluating, editing, its
                                                          text form, the standard recipes, what a package contributes; pure (its README)
   config/                @kraftverk/config               the home as a document: YAML, its JSON Schema, migrations; pure
+  automation-engine/     @kraftverk/automation-engine    runs automations: triggers, steps, runs and their logs, rehearsal, the library;
+                                                         where they are kept is a port it declares; pure
   gateway/               @kraftverk/gateway              the action gateway's rules: pure, run by whichever holder has the connection
   api-contract/          @kraftverk/api-contract         the HTTP API's shapes, types only: declared once, imported by the server and the app
   holder/                @kraftverk/holder               what every holder does with a device: open, watch, fail over, judge a check; pure
