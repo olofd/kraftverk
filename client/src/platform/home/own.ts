@@ -7,7 +7,8 @@ import { fromExpoSqlite, schemaFingerprint } from '@kraftverk/store';
 
 import { TRANSPORT_ENTRIES } from '../../generated/transports';
 import { sealedWithKey } from '../cipher';
-import { appHub, OWNER, readyDatabase, type OwnHome } from './hub';
+import { appHub, readyDatabase } from './hub';
+import { OWNER, type OpenOptions, type OwnHome } from './home';
 
 /*
   A phone's own home (docs/PLAN-SHARED-CORE.md, phase 6c): the hub in the
@@ -38,7 +39,7 @@ async function secretsKey(): Promise<Uint8Array> {
 }
 
 /** Opens the phone's own home, and starts it. */
-export async function openOwnHome(): Promise<OwnHome> {
+export async function openOwnHome(_options: OpenOptions = {}): Promise<OwnHome> {
   // A new schema is a new file: the one before is left as it was (strict version 1).
   const database = readyDatabase(fromExpoSqlite(openDatabaseSync(`kraftverk-${schemaFingerprint()}.db`)), Constants.expoConfig?.version ?? 'app');
   let writes = false;
@@ -61,5 +62,7 @@ export async function openOwnHome(): Promise<OwnHome> {
       await hub.stop();
       database.close();
     },
+    // One app, one home: nothing on a phone asks for it.
+    ended: new Promise(() => {}),
   };
 }

@@ -985,7 +985,12 @@ export interface KraftverkApi {
     discard(id: string): Promise<void>;
     /** What the transport sees that the type's protocol recognises. */
     sightings(id: string): Promise<SightingView[]>;
-    choose(id: string, choice: { address: string } | { manual: string }): Promise<DraftView>;
+    /**
+     * The device: one it sees, an address typed, or one picked in the
+     * platform's own chooser (a browser's Bluetooth picker) — asked
+     * straight from a person's tap; dismissed, nothing is chosen.
+     */
+    choose(id: string, choice: { address: string } | { manual: string } | { chooser: { showAll?: boolean } }): Promise<DraftView>;
     update(id: string, values: { device?: ConfigValues; connection?: ConfigValues }): Promise<DraftView>;
     /** A step's helper — fetching a key — run where it is held; a secret it finds is kept there, and a placeholder answered. */
     action(id: string, step: string, action: string, input: ConfigValues, signal?: AbortSignal): Promise<SetupActionResult>;

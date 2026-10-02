@@ -64,7 +64,15 @@ export function setupRoutes(deps: AppDeps): Hono {
   api.get('/:id/sightings', async (c) => c.json({ sightings: await homeFor(deps, c).setup.sightings(c.req.param('id')) }));
 
   api.post('/:id/choose', async (c) => {
-    const input = await body(c, z.union([z.object({ address: z.string().min(1).max(200) }).strict(), z.object({ manual: z.string().min(1).max(200) }).strict()]));
+    const input = await body(
+      c,
+      z.union([
+        z.object({ address: z.string().min(1).max(200) }).strict(),
+        z.object({ manual: z.string().min(1).max(200) }).strict(),
+        // A server's transports list what they see: it has no chooser, and says so.
+        z.object({ chooser: z.object({ showAll: z.boolean().optional() }).strict() }).strict(),
+      ])
+    );
     return c.json(await homeFor(deps, c).setup.choose(c.req.param('id'), input));
   });
 

@@ -57,6 +57,37 @@ test('a home from lists, on the WebAssembly build: a lamp added through setup, s
   expect((await home.timeline({ limit: 5 })).map((entry) => entry.actor)).toContain('you');
 });
 
+test("a device picked in the platform's chooser: chosen, checked and saved — and a dismissed chooser chooses nothing", async () => {
+  const database = (await import('./home.ts')).testDatabase();
+  const bus = new FakeBus();
+  bus.lamps.set('lamp-7', { serial: 'LAMP-7', model: 'L1', on: false, answers: true });
+  let shown: unknown = null;
+  let picks: string | null = 'lamp-7';
+  // A browser's picker: it shows what it is asked to, and hands back the one a person picks.
+  const chooser = Object.assign(bus, {
+    choose: async (filter: unknown) => {
+      shown = filter;
+      return picks ? bus.sightings().find((sighting) => sighting.address === picks)! : null;
+    },
+  });
+  const installed = installedFrom(
+    { types: [{ type: lampType }], protocols: [lampProtocol], transports: [{ definition: { ...busDefinition, platforms: ['web'], discovery: { web: 'chooser' } }, create: () => chooser }] },
+    { platform: 'web', context: { env: {}, log: () => {}, audit: () => {} } }
+  );
+  hub = createHub({ database, secrets: plainSecrets, sealing: { seal: async () => '', open: async () => '' }, installed, readOnly: () => false, http: () => Promise.reject(new Error('no network here')) });
+  await hub.start();
+  const home = hub.as({ kind: 'person', name: 'you' });
+
+  const draft = await home.setup.start({ typeId: 'test.lamp', methodId: 'bus' });
+  picks = null;
+  expect((await home.setup.choose(draft.id, { chooser: {} })).address).toBeNull();
+  picks = 'lamp-7';
+  expect((await home.setup.choose(draft.id, { chooser: { showAll: true } })).address).toBe('lamp-7');
+  expect(shown).toEqual({});
+  expect((await home.setup.check(draft.id)).outcome).toBe('new');
+  expect((await home.setup.save(draft.id, { name: 'Picked lamp' })).name).toBe('Picked lamp');
+});
+
 test('a package that breaks the rules is refused with why, and the rest installed', () => {
   const installed = installedFrom(
     { types: [{ type: lampType }, { type: { ...lampType, id: 'Not An Id' } }], protocols: [lampProtocol], transports: [{ definition: busDefinition, create: null }] },

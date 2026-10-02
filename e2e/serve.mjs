@@ -15,7 +15,7 @@ const ROOT = resolve(import.meta.dirname, '../client/dist');
 const PORT = Number(process.env.E2E_WEB_PORT ?? 4398);
 const API = Number(process.env.E2E_API_PORT ?? 3398);
 
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.ico': 'image/x-icon', '.webp': 'image/webp' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.ico': 'image/x-icon', '.webp': 'image/webp', '.wasm': 'application/wasm', '.map': 'application/json' };
 
 if (!existsSync(join(ROOT, 'index.html'))) {
   console.error(`No web build in ${ROOT}: run the app's build first (npm run test:e2e does).`);

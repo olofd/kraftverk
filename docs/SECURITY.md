@@ -142,8 +142,17 @@ no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and
 **Script injection.** The app is served with a Content-Security-Policy that
 allows scripts from its own origin only — the build has no inline script — and
 connections to its own server only, so injected markup can neither run code
-nor send anything elsewhere. The internet entrance adds
+nor send anything elsewhere. The one addition is `'wasm-unsafe-eval'`, so a
+browser that keeps a home of its own can run SQLite's WebAssembly build — from
+its own origin, like every script. The internet entrance adds
 `Strict-Transport-Security`. See `web/Caddyfile`.
+
+**A browser's own home.** With no server, a browser keeps its home in its
+origin's private file system, in a worker, on a secure page only. A
+connection's secrets are sealed there with AES-256-GCM, under a key itself
+sealed by a key the browser generated as non-extractable and keeps in
+IndexedDB: the files hold only what is sealed. A phone keeps the same key in
+its secure storage (`client/src/platform/`).
 
 ## The station itself
 

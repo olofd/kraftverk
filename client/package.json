@@ -5,12 +5,14 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
-    "web": "expo start --web",
+    "//web": "The app in a browser, and a browser's own home (the hub in its worker) built beside it, again on every change.",
+    "web": "concurrently -k -n worker,expo -c gray,cyan \"node scripts/build-home-worker.mjs --watch\" \"expo start --web\"",
     "ios": "expo start --ios",
     "android": "expo start --android",
     "typecheck": "tsc --noEmit",
-    "web:prod": "expo start --web --no-dev --minify",
-    "build:web": "expo export --platform web --output-dir dist"
+    "web:prod": "node scripts/build-home-worker.mjs && expo start --web --no-dev --minify",
+    "build:home-worker": "node scripts/build-home-worker.mjs",
+    "build:web": "node scripts/build-home-worker.mjs && expo export --platform web --output-dir dist"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
@@ -65,6 +67,7 @@
     "@tamagui/babel-plugin": "^2.7.4",
     "@types/react": "~19.2.4",
     "@types/react-dom": "^19.2.4",
+    "esbuild": "^0.27.7",
     "typescript": "~6.0.3"
   }
 }

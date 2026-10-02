@@ -19,6 +19,8 @@ server/data/
 **/reset-secret
 
 # Expo / Metro
+# A browser's own home, built beside the app (client/scripts/build-home-worker.mjs)
+client/public/home/
 .expo/
 .expo-shared/
 **/.expo/

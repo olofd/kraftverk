@@ -507,12 +507,26 @@ The steps, each green and pushed:
     by a server opens in the app (tested against one). The app's hub runs
     in a test with every installed package: a simulated plug added,
     switched, an automation run, all on its owner's timeline.
-6d. **A browser's own home.** The worker bundle; `opfs-sahpool` opened
-    only under the tab's Web Lock, handed over to another tab on asking —
-    never stolen, so a pool is never opened twice; the transports served
-    from the page; a chooser as a setup step the hub runs
-    (`setup.choose(id, { chooser })`), the person's tap carried with it;
-    `'wasm-unsafe-eval'` in the site's policy.
+6d. **A browser's own home** — done, 2026-10-02. `worker.ts`, bundled
+    apart by esbuild (`client/scripts/build-home-worker.mjs`, in
+    `build:web` and, watching, in `web`) beside `sqlite3.wasm` in
+    `public/home/` — no React, no screens, no transport entry in it.
+    `opfs-sahpool` is opened only under the tab's Web Lock, and only once
+    every file of its pool is found free: it deletes a pool it fails to
+    open, so it is never asked to while another may hold one. Another tab
+    asks the holder to let go (a BroadcastChannel); the holder stops
+    serving, stops its hub, closes the database and releases the pool's
+    files before it lets go of the lock — never stolen. The page serves
+    every transport it runs to the worker (`own.web.ts`); the key sealing
+    secrets is kept sealed by a key the browser will not let out, in
+    IndexedDB. The hub runs a chooser as a setup step
+    (`setup.choose(id, { chooser })`), so a person's tap reaches the page's
+    picker across the worker. `'wasm-unsafe-eval'` in the site's policy.
+    Run in a browser: every installed type offered, a simulated plug added
+    and switched through the gateway, a second worker refused while the
+    first holds the home and handed it on asking, the plug still there
+    after the hand-over and after a reload. It needs a secure page — HTTPS,
+    or the computer itself — as OPFS does; on plain HTTP the app says so.
 6e. **The screens on the interface.** A `HomeProvider` gives a
     `KraftverkApi` — a server's, or the app's own — and every screen asks
     it: the devices, adding one, automations, history, the timeline, the

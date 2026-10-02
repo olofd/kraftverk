@@ -193,13 +193,29 @@ export class SetupService {
     });
   }
 
-  /** The physical device: one the transport saw, or an address typed by hand. */
-  choose(id: string, input: { address?: string; manual?: string }): DraftView {
+  /**
+   * The physical device: one the transport saw, an address typed by hand,
+   * or one picked in the platform's own chooser — a browser's Bluetooth
+   * picker, which shows only after a person's tap, so it is asked straight
+   * from one. Dismissed, nothing is chosen.
+   */
+  async choose(id: string, input: { address?: string; manual?: string; chooser?: { showAll?: boolean } }): Promise<DraftView> {
     const draft = this.#draft(id);
     const binding = draft.reach.protocol?.bindings[draft.method!.transport];
     if (!binding) throw new SetupError('This method has nothing to choose');
 
-    if (input.manual !== undefined) {
+    if (input.chooser) {
+      const transport = await this.deps.transports.start(draft.method!.transport);
+      if (!transport?.choose) throw new SetupError(`${placeOf(this.deps.transports.platform).this} has no chooser for ${draft.method!.label}: choose from the list`);
+      // Shown everything, it may be a device its protocol does not know by its advertising alone: the check reads it.
+      const sighting = await transport.choose(input.chooser.showAll ? {} : (binding.filter ?? {}));
+      if (!sighting) return viewOf(draft);
+      draft.sightings = [...draft.sightings.filter((seen) => seen.address !== sighting.address), sighting];
+      const recognised = binding.recognise(sighting);
+      draft.address = sighting.address;
+      draft.identityHint = recognised?.identity ?? null;
+      draft.connection = { ...draft.connection, ...(recognised?.config ?? {}) };
+    } else if (input.manual !== undefined) {
       const address = binding.parseAddress?.(input.manual) ?? null;
       if (!address) throw new SetupError(binding.parseAddress ? `That is not a ${binding.addressLabel ?? 'valid address'}` : 'An address cannot be typed for this');
       draft.address = address;

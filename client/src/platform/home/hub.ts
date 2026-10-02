@@ -1,4 +1,3 @@
-import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
 import type { TransportDefinition, TransportFactory } from '@kraftverk/device-sdk';
 import { createHub, installedFrom, type Hub } from '@kraftverk/hub';
 import { AuditLog, createSchema, prepareDatabase, schemaStateOf, transportStore, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
@@ -7,6 +6,8 @@ import { DEVICE_TYPES, PROTOCOLS, TRANSPORTS } from '../../generated/installed';
 import { appSealing } from '../cipher';
 import { appHttp } from '../http';
 
+export { OWNER } from './home';
+
 /*
   The app's own home (docs/PLAN-SHARED-CORE.md, phase 6): the hub the
   server runs, made from what the app installed (its generated registry)
@@ -14,19 +15,6 @@ import { appHttp } from '../http';
   own process, or a browser's in its worker. This is the part both places
   share; each puts its own pieces in (`own.ts`, `own.web.ts`).
 */
-
-/** A home the app keeps itself, open where the app runs: a phone's (`own.ts`), a browser's (`own.web.ts`). */
-export type OwnHome = {
-  /** Everything it answers, for its owner: the interface a server's home answers too. */
-  readonly api: KraftverkApi;
-  /** Whether writes to hardware are allowed from here: refused every launch, until its owner says. */
-  allowWrites(allowed: boolean): Promise<void>;
-  /** Stops it, and lets go of its database. */
-  close(): Promise<void>;
-};
-
-/** Who asks a home the app keeps itself: its owner, the only one there is. */
-export const OWNER: Caller = { kind: 'person', name: 'you' };
 
 /** A database ready to keep a home in: one with this schema, or a new one given it. Another schema is never written over. */
 export function readyDatabase(database: SqlDatabase, madeBy: string): SqlDatabase {

@@ -62,8 +62,8 @@ type ToHub =
 type Opened = { channel: number; kind: ChannelKind; connected: boolean; describe: Record<string, unknown> | null; resets: boolean };
 
 /** An HTTP request and its answer, as they cross: a body is text or bytes, never a stream. */
-type HttpAsked = { path: string; method?: string; headers: [string, string][]; body: string | Uint8Array | null; timeoutMs?: number; redirect?: RequestInit['redirect'] };
-type HttpAnswered = { status: number; statusText: string; headers: [string, string][]; body: Uint8Array | null };
+type HttpAsked = { path: string; method?: string; headers: [string, string][]; body: string | Uint8Array<ArrayBuffer> | null; timeoutMs?: number; redirect?: RequestInit['redirect'] };
+type HttpAnswered = { status: number; statusText: string; headers: [string, string][]; body: Uint8Array<ArrayBuffer> | null };
 
 const STATE_EVERY_MS = 2000;
 /** Statuses whose answer has no body: a `Response` refuses one. */
@@ -80,7 +80,7 @@ const headerPairs = (headers: RequestInit['headers'] | Headers | undefined): [st
   return Object.entries(headers as Record<string, string>);
 };
 
-const bodyOf = (body: RequestInit['body']): string | Uint8Array | null => {
+const bodyOf = (body: RequestInit['body']): string | Uint8Array<ArrayBuffer> | null => {
   if (body === null || body === undefined) return null;
   if (typeof body === 'string') return body;
   if (body instanceof ArrayBuffer) return new Uint8Array(body);
