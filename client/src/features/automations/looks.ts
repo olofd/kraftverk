@@ -5,6 +5,12 @@ import type { IconName } from '@kraftverk/ui';
 
 import type { Tone } from '../../components/tone';
 
+/**
+ * How automations and their runs look (docs/SEQUENCES.md): each outcome its
+ * own icon and colour, each kind of step its own icon, and time said the way a
+ * person reads it. One place, so a card, a device's page and a timeline agree.
+ */
+
 export type Look = { icon: IconName; tone: Tone };
 
 /** A run, by what it came to. */

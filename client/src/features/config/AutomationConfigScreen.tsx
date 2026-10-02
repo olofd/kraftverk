@@ -1,11 +1,10 @@
-import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Spinner, Text } from 'tamagui';
+import { router, useLocalSearchParams } from 'expo-router';
 
 import { describeError, type AutomationView } from '@kraftverk/api-client';
 import type { AutomationId } from '@kraftverk/api-contract';
-import { Card } from '@kraftverk/ui';
 
+import { Loading } from '../../components/Loading';
 import { Screen } from '../../components/Screen';
 import { useHome } from '../../state/HomeProvider';
 import { AutomationConfig } from './AutomationConfig';
@@ -31,15 +30,9 @@ export function AutomationConfigScreen() {
 
   return (
     <Screen back={back.label} backTo={back.to} title="As configuration" subtitle={automation?.name}>
-      {error ? (
-        <Card borderColor="$danger">
-          <Text fontSize={14} color="$danger">
-            {error}
-          </Text>
-        </Card>
-      ) : !automation ? (
-        <Spinner color="$accent" />
-      ) : (
+      {error || !automation ? (
+<Loading error={error} />
+) : (
         <AutomationConfig automation={automation} onChanged={setAutomation} onEditYaml={() => router.replace(`/automation/${encodeURIComponent(id)}?edit=yaml`)} />
       )}
     </Screen>

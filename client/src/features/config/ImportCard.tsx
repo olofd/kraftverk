@@ -6,6 +6,7 @@ import { applyPlan, changesOf, describeError, planReadiness, rebindAnswerKey, se
 import { checkDocument, configJsonSchema, CURRENT_VERSION, holdsSealed, readConfig, type Vocabulary } from '@kraftverk/home-file';
 import { Card, haptic, Icon, RowSeparator, SectionLabel, SegmentedControl, Toggle } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { Picker } from '../../components/Picker';
 import { ProblemList } from '../../components/ProblemList';
 import { useTone, type Tone } from '../../components/tone';
@@ -178,9 +179,9 @@ export function ImportCard({
         ) : null}
       </XStack>
       {problem ? (
-        <Text fontSize={13} color="$danger" lineHeight={19} role="alert">
+        <ErrorText>
           {problem}
-        </Text>
+        </ErrorText>
       ) : null}
       {plan ? (
         <PlanView

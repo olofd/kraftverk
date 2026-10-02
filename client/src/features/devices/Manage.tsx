@@ -5,6 +5,7 @@ import { Button, Input, Text, useTheme, XStack, YStack } from 'tamagui';
 import { describeError, type DeviceView } from '@kraftverk/api-client';
 import { Card, haptic, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { confirmAction } from '../../platform/confirm';
 import { useDevices } from '../../state/DevicesProvider';
 
@@ -83,9 +84,9 @@ export function Manage({ device }: { device: DeviceView }) {
         />
       </Card>
       {error ? (
-        <Text fontSize={12} color="$danger" lineHeight={18} paddingHorizontal="$1">
+        <ErrorText fontSize={12} paddingHorizontal="$1">
           {error}
-        </Text>
+        </ErrorText>
       ) : null}
     </YStack>
   );

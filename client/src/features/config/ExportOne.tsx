@@ -2,13 +2,15 @@ import { useState } from 'react';
 import { Platform } from 'react-native';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
-import { describeError, type ConfigExported } from '@kraftverk/api-client';
+import type { ConfigExported } from '@kraftverk/api-client';
 import { fileNameOf } from '@kraftverk/device-sdk';
 import { PASSPHRASE_MIN } from '@kraftverk/home-file';
 import { haptic, Icon, SegmentedControl } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { secretWords } from '../../components/ProblemList';
 import { useTone } from '../../components/tone';
+import { useAttempt } from '../../components/useAttempt';
 import { YamlEditor } from '../../components/YamlEditor';
 import { confirmAction } from '../../platform/confirm';
 import { saveText } from '../../platform/download';
@@ -29,8 +31,7 @@ export function ExportOne({ what, name, secrets = [], plainAllowed = false }: { 
   const tone = useTone();
   const [mode, setMode] = useState<Secrets>('none');
   const [passphrase, setPassphrase] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
+  const { busy, error: problem, attempt } = useAttempt();
   const [exported, setExported] = useState<(ConfigExported & { at: string }) | null>(null);
   const [shown, setShown] = useState(false);
   const short = mode === 'sealed' && passphrase.length < PASSPHRASE_MIN;
@@ -44,17 +45,11 @@ export function ExportOne({ what, name, secrets = [], plainAllowed = false }: { 
     if (busy || short) return;
     haptic();
     if (mode === 'plain' && !(await confirmAction('Export in plain text?', `The file will carry its ${secretWords(secrets)} as it is: anyone who has it can reach the device as you do.`, 'Export', 'dangerous'))) return;
-    setBusy(true);
-    setProblem(null);
-    try {
+    await attempt(async () => {
       const answer = await api.configuration.export({ devices: what.devices ?? [], automations: what.automations ?? [], secrets: mode, ...(mode === 'sealed' ? { passphrase } : {}) });
       setExported({ ...answer, at: new Date().toISOString() });
       setShown(Platform.OS !== 'web');
-    } catch (err) {
-      setProblem(describeError(err) || 'It could not be exported');
-    } finally {
-      setBusy(false);
-    }
+    }, 'It could not be exported');
   };
 
   return (
@@ -101,9 +96,9 @@ export function ExportOne({ what, name, secrets = [], plainAllowed = false }: { 
         ) : null}
       </XStack>
       {problem ? (
-        <Text fontSize={13} color="$danger" lineHeight={19} role="alert">
+        <ErrorText>
           {problem}
-        </Text>
+        </ErrorText>
       ) : null}
       {exported?.notes.map((note) => (
         <Text key={note} fontSize={12} color="$muted" lineHeight={17}>

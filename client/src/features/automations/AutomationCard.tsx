@@ -4,6 +4,7 @@ import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 import type { AutomationView } from '@kraftverk/api-client';
 import { Card, Icon, type IconName } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { Pressable } from '../../components/Pressable';
 import { useTone } from '../../components/tone';
 import { useRun } from './useRun';
@@ -54,9 +55,9 @@ export function AutomationCard({ automation, onChanged }: { automation: Automati
         <PlayButton name={automation.name} running={running} busy={run.busy} blocked={run.blocked} onStart={() => void run.start()} onStop={() => void run.stop()} />
       </XStack>
       {run.problem ? (
-        <Text paddingHorizontal="$3" paddingBottom="$3" fontSize={13} color="$danger" lineHeight={18} role="alert">
+        <ErrorText paddingHorizontal="$3" paddingBottom="$3">
           {run.problem}
-        </Text>
+        </ErrorText>
       ) : null}
     </Card>
   );

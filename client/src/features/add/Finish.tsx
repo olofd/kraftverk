@@ -5,6 +5,7 @@ import { describeError, SetupFlow, type CheckOutcome, type DeviceView, type Save
 import { LINK_KIND_IDS, linkableParts, linkKindSpec, linkOffers, MAIN_PART, partName, type DeviceDescription } from '@kraftverk/device-sdk';
 import { Card, haptic, Row, RowSeparator, SectionLabel, ToggleRow } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { Pressable } from '../../components/Pressable';
 import { secretWords } from '../../components/ProblemList';
 import { confirmAction } from '../../platform/confirm';
@@ -184,9 +185,9 @@ export function Finish({
         </Button>
       </XStack>
       {error ? (
-        <Text fontSize={12} color="$danger" lineHeight={18}>
+        <ErrorText fontSize={12}>
           {error}
-        </Text>
+        </ErrorText>
       ) : null}
     </YStack>
   );

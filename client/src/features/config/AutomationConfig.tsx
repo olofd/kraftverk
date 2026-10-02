@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Button, Text, XStack, YStack } from 'tamagui';
+import { Button, XStack, YStack } from 'tamagui';
 
 import { automationYaml, changeAutomation, describeError, type AutomationView } from '@kraftverk/api-client';
 import { haptic, Icon, RowSeparator } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { useTone } from '../../components/tone';
 import { YamlEditor } from '../../components/YamlEditor';
 import { useHome } from '../../state/HomeProvider';
@@ -70,9 +71,9 @@ export function AutomationConfig({ automation, onChanged, onEditYaml }: { automa
         </XStack>
         {exporting ? <ExportOne what={{ automations: [automation.key] }} name={automation.name} /> : null}
         {problem ? (
-          <Text fontSize={13} color="$danger" lineHeight={19} role="alert">
+          <ErrorText>
             {problem}
-          </Text>
+          </ErrorText>
         ) : null}
         {shown !== null ? <YamlEditor value={shown} label={`${automation.name}, as configuration`} /> : null}
       </YStack>

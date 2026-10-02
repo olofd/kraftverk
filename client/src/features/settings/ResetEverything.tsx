@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
-import { describeError } from '@kraftverk/api-client';
 import { Card, haptic, SectionLabel } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
+import { useAttempt } from '../../components/useAttempt';
 import { confirmAction } from '../../platform/confirm';
 import { useDevices } from '../../state/DevicesProvider';
 import { useServer } from '../../state/ServersProvider';
@@ -30,8 +31,7 @@ export function ResetEverything() {
     null
   );
   const [secret, setSecret] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, attempt } = useAttempt();
   const [done, setDone] = useState<string | null>(null);
 
   useEffect(() => {
@@ -46,18 +46,12 @@ export function ResetEverything() {
   }, [server]);
 
   const wipe = async () => {
-    setBusy(true);
-    setError(null);
-    try {
+    await attempt(async () => {
       const result = await server.reset.run(secret.trim());
       setSecret('');
       setDone(`Removed ${result.rows} rows across ${result.tables.length} tables.`);
       await refresh();
-    } catch (err) {
-      setError(describeError(err) || 'That did not work');
-    } finally {
-      setBusy(false);
-    }
+    }, 'That did not work');
   };
 
   const ask = async () => {
@@ -113,9 +107,9 @@ export function ResetEverything() {
           </XStack>
 
           {error ? (
-            <Text fontSize={12} color="$danger" lineHeight={18}>
+            <ErrorText fontSize={12}>
               {error}
-            </Text>
+            </ErrorText>
           ) : null}
           {done ? (
             <Text fontSize={12} color="$muted" lineHeight={18}>

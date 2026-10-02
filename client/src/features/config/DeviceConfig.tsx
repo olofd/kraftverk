@@ -4,6 +4,7 @@ import { Button, Text, XStack, YStack } from 'tamagui';
 import { describeError, deviceYaml, type DeviceView } from '@kraftverk/api-client';
 import { Card, haptic, Icon, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { useTone } from '../../components/tone';
 import { YamlEditor } from '../../components/YamlEditor';
 import { useDevices } from '../../state/DevicesProvider';
@@ -55,9 +56,9 @@ export function DeviceConfig({ device }: { device: DeviceView }) {
           </XStack>
           {exporting ? <ExportOne what={{ devices: [device.key] }} name={device.name} secrets={secrets} plainAllowed={ways.some((connection) => connection.secretsExportable && connection.secrets.length > 0)} /> : null}
           {problem ? (
-            <Text fontSize={13} color="$danger" lineHeight={19} role="alert">
+            <ErrorText>
               {problem}
-            </Text>
+            </ErrorText>
           ) : null}
           {shown ? (
             <>

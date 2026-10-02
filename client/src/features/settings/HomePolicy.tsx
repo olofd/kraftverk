@@ -5,6 +5,7 @@ import { describeError } from '@kraftverk/api-client';
 import { POLICY_VALUES, type PolicyValueName, type PolicyValues } from '@kraftverk/device-sdk';
 import { Card, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { useHome } from '../../state/HomeProvider';
 
 /**
@@ -92,9 +93,9 @@ export function HomePolicy() {
         })}
       </Card>
       {problem ? (
-        <Text fontSize={12} color="$danger">
+        <ErrorText fontSize={12}>
           {problem}
-        </Text>
+        </ErrorText>
       ) : null}
     </YStack>
   );

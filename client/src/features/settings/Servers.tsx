@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { Button, Input, Text, useTheme, XStack, YStack } from 'tamagui';
 
+import { completeUrl } from '@kraftverk/api-client';
 import { Card, haptic, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { Pressable } from '../../components/Pressable';
-import { completeUrl } from '../../platform/servers';
+import { API_PORT } from '../../platform/server-address';
 import { useServers } from '../../state/ServersProvider';
 
 /**
@@ -28,7 +29,7 @@ export function Servers() {
   const [problem, setProblem] = useState<string | null>(null);
 
   const save = async () => {
-    const url = completeUrl(draft);
+    const url = completeUrl(draft, API_PORT);
     if (!url) return;
 
     setBusy(true);

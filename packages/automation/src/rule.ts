@@ -698,6 +698,20 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
   }
 }
 
+/** Which part of an automation a problem is in, as an editor groups them: what it uses, what starts it, its condition, its steps, its fallback — or the whole. */
+export type ProblemArea = 'uses' | 'when' | 'onlyIf' | 'does' | 'fails' | 'other';
+
+/** Which part of a rule a problem `checkRule` found is in, from its path: "when[0].days" a trigger, "then[2]…" a step. */
+export function problemArea(problem: string): ProblemArea {
+  const path = problem.slice(0, Math.max(0, problem.indexOf(': ')));
+  if (/^roles\./.test(path)) return 'uses';
+  if (/^when\b/.test(path)) return 'when';
+  if (/^if\b/.test(path)) return 'onlyIf';
+  if (/^then\b/.test(path)) return 'does';
+  if (/^otherwise\b/.test(path)) return 'fails';
+  return 'other';
+}
+
 /**
  * A problem `checkRule` found, said where a person finds it: "then[3].ensure.retry[1].wait.seconds: …"
  * becomes "Step 4, each time, step 2: …"; "when[0].days: …" "Trigger 1: …"; "if: …" "Only if: …"; a role by

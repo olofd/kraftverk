@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
 
-import type { DeviceEventView, DeviceView } from '@kraftverk/api-client';
+import type { DeviceView } from '@kraftverk/api-client';
 import { EventList } from '@kraftverk/ui';
 
+import { useAnswer } from '../../components/useAnswer';
 import { useDevices } from '../../state/DevicesProvider';
 import { useHome } from '../../state/HomeProvider';
 
@@ -14,21 +14,10 @@ import { useHome } from '../../state/HomeProvider';
 export function Events({ device, part }: { device: DeviceView; part?: string }) {
   const { heard } = useDevices();
   const { api } = useHome();
-  const [list, setList] = useState<DeviceEventView[] | null>(null);
   const count = heard?.deviceId === device.id ? heard.count : 0;
   const declares = (device.description.events?.length ?? 0) > 0;
 
-  useEffect(() => {
-    if (!declares) return;
-    let live = true;
-    void api.devices
-      .events(device.id, 50)
-      .then((events) => live && setList(events))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [api, count, declares, device.id]);
+  const { value: list } = useAnswer(() => api.devices.events(device.id, 50), [api, count, device.id], { when: declares });
 
   if (!declares || !list) return null;
   const shown = part === undefined ? list : list.filter((event) => event.part === part);

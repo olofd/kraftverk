@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { Spinner, YStack } from 'tamagui';
+
+import type { DeviceView } from '@kraftverk/api-client';
 import { Card, EventList } from '@kraftverk/ui';
-import { Spinner, Text, YStack } from 'tamagui';
 
-import { describeError, type DeviceView, type ProblemView } from '@kraftverk/api-client';
-
+import { ErrorText } from '../../components/ErrorText';
 import { Screen } from '../../components/Screen';
+import { useAnswer } from '../../components/useAnswer';
 import { useDevices } from '../../state/DevicesProvider';
 import { useHome } from '../../state/HomeProvider';
 
@@ -16,23 +17,8 @@ import { useHome } from '../../state/HomeProvider';
 export function ProblemsScreen() {
   const { devices, heard } = useDevices();
   const { api } = useHome();
-  const [list, setList] = useState<ProblemView[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let live = true;
-    void api
-      .problems(100)
-      .then((found) => {
-        if (!live) return;
-        setList(found);
-        setError(null);
-      })
-      .catch((err: unknown) => live && setError(describeError(err) || 'They could not be read'));
-    return () => {
-      live = false;
-    };
-  }, [api, heard?.count]);
+  const { value: list, error } = useAnswer(() => api.problems(100), [api, heard?.count], { failure: 'They could not be read' });
 
   const described = new Map<string, DeviceView['description']>(devices.map((device) => [device.id, device.description]));
 
@@ -40,9 +26,9 @@ export function ProblemsScreen() {
     <Screen back="Your devices" title="Problems" subtitle="Warnings and errors your devices reported">
       {error ? (
         <Card borderColor="$danger">
-          <Text fontSize={13} color="$danger">
+          <ErrorText>
             {error}
-          </Text>
+          </ErrorText>
         </Card>
       ) : !list ? (
         <YStack padding="$5" alignItems="center">

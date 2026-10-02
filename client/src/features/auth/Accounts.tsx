@@ -4,6 +4,7 @@ import { Button, Text, useTheme, YStack } from 'tamagui';
 import { describeError, type AccountDetail } from '@kraftverk/api-client';
 import { Card, haptic, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { Screen } from '../../components/Screen';
 import { useAuth } from '../../state/AuthProvider';
 import { useServer } from '../../state/ServersProvider';
@@ -103,9 +104,9 @@ function SignedIn() {
           ))}
         </Card>
         {problem ? (
-          <Text fontSize={13} color="$danger" lineHeight={18} paddingHorizontal="$1" role="alert">
+          <ErrorText paddingHorizontal="$1">
             {problem}
-          </Text>
+          </ErrorText>
         ) : null}
         <AddAccount onAdded={load} />
       </YStack>

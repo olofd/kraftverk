@@ -16,6 +16,7 @@ export * from './views';
 export * from './timeline';
 export * from './confirm';
 export * from './actions';
+export * from './address';
 export * from './setup';
 export * from './config';
 

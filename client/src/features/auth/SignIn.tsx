@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { ScrollView } from 'react-native';
 import { Button, Text, YStack } from 'tamagui';
 
-import { describeError, PASSWORD_MIN } from '@kraftverk/api-client';
+import { PASSWORD_MIN } from '@kraftverk/api-client';
 import { Card, haptic, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { Pressable } from '../../components/Pressable';
+import { useAttempt } from '../../components/useAttempt';
 import { useAuth } from '../../state/AuthProvider';
 import { useServers } from '../../state/ServersProvider';
 import { Field, passwordProblem } from './fields';
@@ -44,22 +46,15 @@ export function LoginForm({ submitLabel = 'Log in' }: { submitLabel?: string }) 
   const { logIn, notice } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
+  const { busy, error: problem, attempt } = useAttempt();
   const shown = problem ?? notice;
 
   const submit = async () => {
     if (!username.trim() || !password || busy) return;
-    setBusy(true);
-    setProblem(null);
-    try {
+    await attempt(async () => {
       await logIn(username.trim(), password);
       setPassword('');
-    } catch (error) {
-      setProblem(describeError(error) || 'Could not log in');
-    } finally {
-      setBusy(false);
-    }
+    }, 'Could not log in');
   };
 
   return (
@@ -67,9 +62,9 @@ export function LoginForm({ submitLabel = 'Log in' }: { submitLabel?: string }) 
       <Field label="Username" kind="username" value={username} onChange={setUsername} autoFocus />
       <Field label="Password" kind="current-password" value={password} onChange={setPassword} onSubmit={() => void submit()} />
       {shown ? (
-        <Text fontSize={13} color="$danger" lineHeight={18} role="alert">
+        <ErrorText>
           {shown}
-        </Text>
+        </ErrorText>
       ) : null}
       <Button
         size="$3"
@@ -93,22 +88,15 @@ export function SetupForm() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
+  const { busy, error: problem, attempt } = useAttempt();
 
   const invalid = !username.trim() || passwordProblem(password, confirm) !== null;
 
   const submit = async () => {
     if (invalid || busy) return;
-    setBusy(true);
-    setProblem(null);
-    try {
+    await attempt(async () => {
       await setup(username.trim(), password);
-    } catch (error) {
-      setProblem(describeError(error) || 'Could not create the account');
-    } finally {
-      setBusy(false);
-    }
+    }, 'Could not create the account');
   };
 
   return (
@@ -134,9 +122,9 @@ export function SetupForm() {
           </Text>
         ) : null}
         {problem ? (
-          <Text fontSize={13} color="$danger" lineHeight={18} role="alert">
+          <ErrorText>
             {problem}
-          </Text>
+          </ErrorText>
         ) : null}
         <Button
           size="$3"

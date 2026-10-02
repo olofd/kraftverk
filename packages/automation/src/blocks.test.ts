@@ -8,6 +8,7 @@ import {
   describeSteps,
   describeTriggers,
   inlineParams,
+  problemArea,
   problemPlace,
   ruleUses,
   takesSteps,
@@ -146,6 +147,16 @@ describe('its problems, where a person finds them', () => {
     expect(problemPlace('then: it does nothing', { roles })).toBe('What it does: it does nothing');
     // Already words: kept as they are.
     expect(problemPlace('Plug: Scooter plug has no setting "x"', { roles })).toBe('Plug: Scooter plug has no setting "x"');
+  });
+
+  test('and which part of the automation it is in, from the same path — never from its words', () => {
+    expect(problemArea('roles.plug: it has no label')).toBe('uses');
+    expect(problemArea('when[0].days: on no day, it never runs')).toBe('when');
+    expect(problemArea('if: expected a condition, got a number')).toBe('onlyIf');
+    expect(problemArea('then[3].ensure.retry[1].wait.seconds: a pause of between 1 and 3600')).toBe('does');
+    expect(problemArea('then: it does nothing')).toBe('does');
+    expect(problemArea('otherwise[1].start: nothing here may wait')).toBe('fails');
+    expect(problemArea('It would start a chain 4 automations deep')).toBe('other');
   });
 });
 

@@ -1,16 +1,14 @@
 import { useState } from 'react';
 import { router } from 'expo-router';
-import { Spinner, Text } from 'tamagui';
 
 import { ruleFits } from '@kraftverk/automation';
-import { Card } from '@kraftverk/ui';
 
+import { Loading } from '../../../components/Loading';
 import { Screen } from '../../../components/Screen';
 import { useDevices } from '../../../state/DevicesProvider';
 import { AutomationForm } from './AutomationForm';
-import { EMPTY, fromRecipe, type Draft } from './context';
+import { EMPTY, fromRecipe, useEditorKit, type Draft } from './context';
 import { StartFrom } from './StartFrom';
-import { useEditorKit } from './useEditorKit';
 
 /**
  * A new automation (docs/AUTOMATIONS-UX.md): where it starts — from nothing,
@@ -44,15 +42,9 @@ export function NewAutomation({ from }: { from: string | null }) {
   }
   return (
     <Screen back={back.label} backTo={back.to} title="New automation">
-      {error ? (
-        <Card borderColor="$danger">
-          <Text fontSize={14} color="$danger">
-            {error}
-          </Text>
-        </Card>
-      ) : !kit ? (
-        <Spinner color="$accent" />
-      ) : (
+      {error || !kit ? (
+<Loading error={error} />
+) : (
         <StartFrom
           recipes={kit.recipes}
           fits={(recipe) => (device ? ruleFits(recipe.rule, device) : false)}

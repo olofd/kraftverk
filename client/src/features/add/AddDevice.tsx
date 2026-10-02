@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Input, Spinner, Text } from 'tamagui';
+import { Input, Spinner } from 'tamagui';
 
-import { describeError, SetupFlow, typeMatches, type CheckOutcome, type DeviceTypeListing } from '@kraftverk/api-client';
+import { SetupFlow, typeMatches, type CheckOutcome } from '@kraftverk/api-client';
 import { Card, haptic } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { Screen } from '../../components/Screen';
+import { useAnswer } from '../../components/useAnswer';
+import { useAttempt } from '../../components/useAttempt';
 import { HERE } from '../../platform/here';
 import { useDevices } from '../../state/DevicesProvider';
 import { useHome } from '../../state/HomeProvider';
@@ -36,8 +39,8 @@ export function AddDevice() {
   const { api, role } = useHome();
   const attachTo = params.attach ? (devices.find((device) => device.id === params.attach) ?? null) : null;
 
-  const [types, setTypes] = useState<DeviceTypeListing[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  // What can be added: the home's installed types, and whether it can hold each way.
+  const { value: types, error: loadError } = useAnswer(() => api.deviceTypes().then((list) => list.types), [api], { failure: 'What can be added could not be read' });
   const [stage, setStage] = useState<Stage>(params.type ? 'method' : 'category');
   const [category, setCategory] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -47,21 +50,8 @@ export function AddDevice() {
   const [outcome, setOutcome] = useState<CheckOutcome | null>(null);
   /** What a helper learnt the device is called — its name in its maker's app — offered when it is named. */
   const [suggestedName, setSuggestedName] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, attempt } = useAttempt();
   const flowRef = useRef<SetupFlow | null>(null);
-
-  // What can be added: the home's installed types, and whether it can hold each way.
-  useEffect(() => {
-    let live = true;
-    api
-      .deviceTypes()
-      .then((list) => live && setTypes(list.types))
-      .catch((err: unknown) => live && setLoadError(describeError(err) || 'What can be added could not be read'));
-    return () => {
-      live = false;
-    };
-  }, [api]);
 
   // A draft left behind is discarded, so a secret it holds does not outlive the screen.
   useEffect(() => () => flowRef.current?.discard(), []);
@@ -95,9 +85,7 @@ export function AddDevice() {
     async (way: Way) => {
       if (!type) return;
       haptic();
-      setBusy(true);
-      setError(null);
-      try {
+      await attempt(async () => {
         flowRef.current?.discard();
         const next: SetupFlow = await SetupFlow.start(api, type.id, way.methodId, way.holder);
         flowRef.current = next;
@@ -106,11 +94,7 @@ export function AddDevice() {
         setOutcome(null);
         setSuggestedName(null);
         setStage('steps');
-      } catch (err) {
-        setError(describeError(err) || 'That way cannot be used right now');
-      } finally {
-        setBusy(false);
-      }
+      }, 'That way cannot be used right now');
     },
     [api, type]
   );
@@ -162,9 +146,9 @@ export function AddDevice() {
     <Screen back={attachTo ? attachTo.name : 'Your devices'} backTo={attachTo ? `/device/${encodeURIComponent(attachTo.id)}/settings` : '/'} title={title} subtitle={type?.meta.name}>
       {loadError ? (
         <Card borderColor="$danger">
-          <Text fontSize={13} color="$danger">
+          <ErrorText>
             {loadError}
-          </Text>
+          </ErrorText>
         </Card>
       ) : null}
       {!types && !loadError ? <Spinner color="$accent" /> : null}
@@ -279,9 +263,9 @@ export function AddDevice() {
       ) : null}
 
       {error ? (
-        <Text fontSize={12} color="$danger" lineHeight={18} paddingHorizontal="$1">
+        <ErrorText fontSize={12} paddingHorizontal="$1">
           {error}
-        </Text>
+        </ErrorText>
       ) : null}
     </Screen>
   );

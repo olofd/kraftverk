@@ -1,12 +1,13 @@
-import { useState } from 'react';
 import { router } from 'expo-router';
 import { Button, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { describeError, type ConnectionView, type DeviceView } from '@kraftverk/api-client';
+import type { ConnectionView, DeviceView } from '@kraftverk/api-client';
 import { Card, haptic, Icon, Row, RowSeparator, SectionLabel, Toggle as Switch } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { Pressable } from '../../components/Pressable';
 import { secretWords } from '../../components/ProblemList';
+import { useAttempt } from '../../components/useAttempt';
 import { confirmAction } from '../../platform/confirm';
 import { HERE } from '../../platform/here';
 import { useDevices } from '../../state/DevicesProvider';
@@ -30,21 +31,14 @@ const heldByLabel = (connection: ConnectionView, role: 'follower' | 'master') =>
 export function Connections({ device }: { device: DeviceView }) {
   const { prefer, removeConnection, setExportable } = useDevices();
   const { role } = useHome();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, attempt } = useAttempt();
   const theme = useTheme();
 
   const act = async (work: () => Promise<void>) => {
     haptic();
-    setBusy(true);
-    setError(null);
-    try {
+    await attempt(async () => {
       await work();
-    } catch (err) {
-      setError(describeError(err) || 'That did not work');
-    } finally {
-      setBusy(false);
-    }
+    }, 'That did not work');
   };
 
   const ordered = [...device.connections].sort((a, b) => a.priority - b.priority);
@@ -143,9 +137,9 @@ export function Connections({ device }: { device: DeviceView }) {
         </Pressable>
       </Card>
       {error ? (
-        <Text fontSize={12} color="$danger" lineHeight={18} paddingHorizontal="$1">
+        <ErrorText fontSize={12} paddingHorizontal="$1">
           {error}
-        </Text>
+        </ErrorText>
       ) : null}
     </YStack>
   );

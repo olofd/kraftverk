@@ -1,25 +1,19 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Spinner, Text, XStack } from 'tamagui';
 
-import { describeError, type CheckOutcome, type SetupFlow } from '@kraftverk/api-client';
+import type { CheckOutcome, SetupFlow } from '@kraftverk/api-client';
 import { Card } from '@kraftverk/ui';
 
+import { useAttempt } from '../../../components/useAttempt';
 import { StepFrame } from './StepFrame';
 
 export function CheckStep({ flow, onChecked, onBack }: { flow: SetupFlow; onChecked: (outcome: CheckOutcome) => void; onBack: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, attempt } = useAttempt();
 
   const check = useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    try {
+    await attempt(async () => {
       onChecked(await flow.check());
-    } catch (err) {
-      setError(describeError(err) || 'The check did not run');
-    } finally {
-      setBusy(false);
-    }
+    }, 'The check did not run');
   }, [flow, onChecked]);
 
   useEffect(() => {

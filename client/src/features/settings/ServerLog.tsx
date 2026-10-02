@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Text, XStack, YStack } from 'tamagui';
 
-import { Card, Row, RowSeparator, SectionLabel, SegmentedControl } from '@kraftverk/ui';
 import { describeError } from '@kraftverk/api-client';
 import type { ServerLogLine } from '@kraftverk/api-client';
+import { Card, Row, RowSeparator, SectionLabel, SegmentedControl } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { Screen } from '../../components/Screen';
 import { useAuth } from '../../state/AuthProvider';
 import { useServers } from '../../state/ServersProvider';
@@ -70,9 +71,9 @@ export function ServerLog() {
       </Card>
 
       {error ? (
-        <Text fontSize={13} color="$danger" paddingHorizontal="$1">
+        <ErrorText paddingHorizontal="$1">
           {error}
-        </Text>
+        </ErrorText>
       ) : null}
 
       <YStack gap="$2">

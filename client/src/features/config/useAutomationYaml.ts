@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { automationYaml, describeError, draftOfEntry, readAutomationText, type AutomationSettings, type AutomationView, type DeviceView, type RoleBinding } from '@kraftverk/api-client';
-import { entryJsonSchema, type Vocabulary } from '@kraftverk/home-file';
+import { automationYaml, draftOfEntry, readAutomationText, type AutomationSettings, type AutomationView, type DeviceView, type RoleBinding } from '@kraftverk/api-client';
 import type { PrintContext } from '@kraftverk/automation';
-import type { AutomationId } from '@kraftverk/device-sdk';
 import type { Rule } from '@kraftverk/automation';
+import type { AutomationId } from '@kraftverk/device-sdk';
+import { entryJsonSchema } from '@kraftverk/home-file';
 
 import type { TextProblem } from '../../components/ProblemList';
+import { useAnswer } from '../../components/useAnswer';
 import { useHome } from '../../state/HomeProvider';
 
 /** What the form edits: its name, rule, and what fills each role. */
@@ -38,8 +39,8 @@ export function useAutomationYaml({
   onRead: (read: { draft: Draft; settings: AutomationSettings; key: string | null; madeFrom: string | null }) => void;
 }) {
   const { api } = useHome();
-  const [vocabulary, setVocabulary] = useState<Vocabulary | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // What a file may name here — the installed types, the keys of what you have — read once.
+  const { value: vocabulary, error } = useAnswer(() => api.configuration.vocabulary(), [api], { failure: 'What a configuration may name could not be read' });
   const [text, setText] = useState('');
   const [context, setContext] = useState<PrintContext>({});
   const [problems, setProblems] = useState<TextProblem[]>([]);
@@ -47,18 +48,6 @@ export function useAutomationYaml({
   const [reading, setReading] = useState(false);
   const read = useRef(onRead);
   read.current = onRead;
-
-  // What a file may name here — the installed types, the keys of what you have — read once.
-  useEffect(() => {
-    let live = true;
-    api.configuration
-      .vocabulary()
-      .then((words) => live && setVocabulary(words))
-      .catch((err: unknown) => live && setError(describeError(err) || 'What a configuration may name could not be read'));
-    return () => {
-      live = false;
-    };
-  }, [api]);
 
   /** The draft and its settings, written out: what the editor opens with. */
   const open = useCallback(

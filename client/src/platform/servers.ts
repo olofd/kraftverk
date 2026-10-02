@@ -1,6 +1,7 @@
-import { API_PORT } from './server-address';
+import { completeUrl, normaliseUrl, suggestName } from '@kraftverk/api-client';
 
-import { readPreference, writePreference, clearPreference } from './preferences';
+import { clearPreference, readPreference, writePreference } from './preferences';
+import { API_PORT } from './server-address';
 
 /**
  * The kraftverk servers this app knows about.
@@ -20,7 +21,9 @@ import { readPreference, writePreference, clearPreference } from './preferences'
  */
 
 const LIST_KEY = 'kraftverk.servers';
+
 const ACTIVE_KEY = 'kraftverk.servers.active';
+
 const LAST_KEY = 'kraftverk.servers.last';
 
 export type SavedServer = {
@@ -34,43 +37,6 @@ export type SavedServer = {
 
 /** Enough entropy for a local list; these never leave the browser. */
 const newId = (): string => `srv_${Math.random().toString(36).slice(2, 10)}`;
-
-export const normaliseUrl = (url: string): string => url.trim().replace(/\/+$/, '');
-
-/**
- * Turns what someone typed into an address that can actually be called.
- *
- * People type `192.168.1.5`, or `http://pi.local:3333`, and mean the API on it.
- * Requiring the scheme and the `/api` suffix would be a quiz rather than a
- * setup step, so both are filled in when they are missing.
- */
-export function completeUrl(input: string): string {
-  let url = input.trim();
-  if (!url) return '';
-  if (!/^https?:\/\//i.test(url)) url = `http://${url}`;
-
-  url = normaliseUrl(url);
-  if (!/\/api$/i.test(url)) {
-    // A bare host means the default port too, since that is where a kraftverk
-    // server listens unless its owner moved it.
-    // The API's own port, not this page's: an app served from the web
-    // container is on 443 or 8080, and a bare address typed here means a
-    // kraftverk server, which listens on 3333.
-    const hasPort = /^https?:\/\/[^/]+:\d+/i.test(url);
-    if (!hasPort) url = `${url}:${API_PORT}`;
-    url = `${url}/api`;
-  }
-  return url;
-}
-
-/** A readable default name: the host, which is what tells two servers apart. */
-export function suggestName(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return 'Kraftverk server';
-  }
-}
 
 export function readServers(): SavedServer[] {
   const raw = readPreference(LIST_KEY);
@@ -100,7 +66,7 @@ function writeServers(servers: SavedServer[]): void {
 }
 
 export function addServer(input: { name?: string; url: string }): SavedServer {
-  const url = completeUrl(input.url);
+  const url = completeUrl(input.url, API_PORT);
   const existing = readServers().find((server) => server.url === url);
   if (existing) return existing;
 
@@ -125,7 +91,7 @@ export function updateServer(
   const next: SavedServer = {
     ...found,
     name: changes.name?.trim() || found.name,
-    url: changes.url ? completeUrl(changes.url) : found.url,
+    url: changes.url ? completeUrl(changes.url, API_PORT) : found.url,
   };
   writeServers(servers.map((server) => (server.id === id ? next : server)));
   return next;

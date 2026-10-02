@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { Platform } from 'react-native';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
-import { describeError, type AutomationView, type ConfigExported, type DeviceView } from '@kraftverk/api-client';
+import type { AutomationView, ConfigExported, DeviceView } from '@kraftverk/api-client';
 import { fileNameOf } from '@kraftverk/device-sdk';
 import { PASSPHRASE_MIN } from '@kraftverk/home-file';
 import { Card, haptic, Icon, RowSeparator, SectionLabel, SegmentedControl, ToggleRow } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { useTone } from '../../components/tone';
+import { useAttempt } from '../../components/useAttempt';
 import { YamlEditor } from '../../components/YamlEditor';
 import { confirmAction } from '../../platform/confirm';
 import { saveText } from '../../platform/download';
@@ -37,8 +39,7 @@ export function ExportCard({ devices, automations, chosen }: { devices: readonly
   const [pickedAutomations, setPickedAutomations] = useState<ReadonlySet<string>>(new Set(chosen?.automations ?? []));
   const [secrets, setSecrets] = useState<Secrets>('none');
   const [passphrase, setPassphrase] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
+  const { busy, error: problem, attempt } = useAttempt();
   const [exported, setExported] = useState<(ConfigExported & { at: string }) | null>(null);
   const [shown, setShown] = useState(false);
 
@@ -60,9 +61,7 @@ export function ExportCard({ devices, automations, chosen }: { devices: readonly
     if (!ready) return;
     haptic();
     if (secrets === 'plain' && !(await confirmAction('Export secrets in plain text?', `The file will carry, as they are: ${plainAllowed.join(', ') || 'nothing — no connection lets its secrets leave in plain text'}. Anyone who has the file can reach those devices as you do.`, 'Export', 'dangerous'))) return;
-    setBusy(true);
-    setProblem(null);
-    try {
+    await attempt(async () => {
       const answer = await api.configuration.export({
         ...(everything ? {} : { devices: [...pickedDevices], automations: [...pickedAutomations] }),
         secrets,
@@ -70,11 +69,7 @@ export function ExportCard({ devices, automations, chosen }: { devices: readonly
       });
       setExported({ ...answer, at: new Date().toISOString() });
       setShown(false);
-    } catch (err) {
-      setProblem(describeError(err) || 'It could not be exported');
-    } finally {
-      setBusy(false);
-    }
+    }, 'It could not be exported');
   };
 
   const about = everything ? 'kraftverk' : [...pickedDevices, ...pickedAutomations].length === 1 ? [...pickedDevices, ...pickedAutomations][0]! : 'kraftverk part';
@@ -157,9 +152,9 @@ export function ExportCard({ devices, automations, chosen }: { devices: readonly
         ) : null}
       </XStack>
       {problem ? (
-        <Text fontSize={13} color="$danger" lineHeight={19} role="alert">
+        <ErrorText>
           {problem}
-        </Text>
+        </ErrorText>
       ) : null}
       {exported ? (
         <Card gap="$3">

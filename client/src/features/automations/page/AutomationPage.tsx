@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { router } from 'expo-router';
-import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
+import { Button, Text, XStack, YStack } from 'tamagui';
 
 import {
   changeAutomation,
@@ -16,6 +16,8 @@ import type { AutomationId } from '@kraftverk/api-contract';
 import { describeExpr, keepsSo } from '@kraftverk/automation';
 import { Card, haptic, Icon, RowSeparator, SegmentedControl, ToggleRow, type IconName } from '@kraftverk/ui';
 
+import { ErrorText } from '../../../components/ErrorText';
+import { Loading } from '../../../components/Loading';
 import { Pressable } from '../../../components/Pressable';
 import { Screen } from '../../../components/Screen';
 import { useTone } from '../../../components/tone';
@@ -68,15 +70,7 @@ export function AutomationPage({ id, edit = null }: { id: string; edit?: 'form' 
   if (!automation) {
     return (
       <Screen back="Automations" backTo="/automations" title="Automation">
-        {error ? (
-          <Card borderColor="$danger">
-            <Text fontSize={14} color="$danger">
-              {error}
-            </Text>
-          </Card>
-        ) : (
-          <Spinner color="$accent" />
-        )}
+        <Loading error={error} />
       </Screen>
     );
   }
@@ -295,9 +289,9 @@ function Header({
         </YStack>
       ) : null}
       {run.problem || problem ? (
-        <Text fontSize={13} color="$danger" lineHeight={19} role="alert">
+        <ErrorText>
           {run.problem ?? problem}
-        </Text>
+        </ErrorText>
       ) : null}
     </YStack>
   );
@@ -376,9 +370,9 @@ function OnItsOwn({ automation, onChanged }: { automation: AutomationView; onCha
         }
       />
       {problem ? (
-        <Text paddingHorizontal="$4" paddingBottom="$3" fontSize={13} color="$danger" lineHeight={19} role="alert">
+        <ErrorText paddingHorizontal="$4" paddingBottom="$3">
           {problem}
-        </Text>
+        </ErrorText>
       ) : null}
     </Group>
   );

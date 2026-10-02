@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
 import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { describeError, type TransportList } from '@kraftverk/api-client';
 import { Card, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { Screen } from '../../components/Screen';
+import { useAnswer } from '../../components/useAnswer';
 import { HERE } from '../../platform/here';
 import { useHome } from '../../state/HomeProvider';
 import { capitalise, Diagnostics } from './Diagnostics';
@@ -22,23 +22,11 @@ import { Nodes } from './Nodes';
  */
 export function Connectivity() {
   const { api, role, holding } = useHome();
-  const [list, setList] = useState<TransportList | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const theme = useTheme();
+  const { value: list, error } = useAnswer(() => api.transports.list(), [api], { failure: 'It did not say what it can reach' });
   // The home's own, and — with a server — this app's, which it holds the server's ways over.
   const theirs = list?.transports.filter((transport) => transport.holder === 'master') ?? [];
   const mine = list?.transports.filter((transport) => transport.holder === 'this-node') ?? [];
-
-  useEffect(() => {
-    let live = true;
-    api.transports
-      .list()
-      .then((found) => live && setList(found))
-      .catch((err: unknown) => live && setError(describeError(err) || 'It did not say what it can reach'));
-    return () => {
-      live = false;
-    };
-  }, [api]);
 
   return (
     <Screen back="App settings" backTo="/app-settings" title="Connectivity" subtitle="How devices are reached">
@@ -48,9 +36,9 @@ export function Connectivity() {
         <SectionLabel>{role === 'follower' ? 'Your server' : capitalise(HERE)}</SectionLabel>
         {error ? (
           <Card borderColor="$danger">
-            <Text fontSize={13} color="$danger">
+            <ErrorText>
               {error}
-            </Text>
+            </ErrorText>
           </Card>
         ) : null}
         {!list && !error ? <Spinner color="$accent" /> : null}

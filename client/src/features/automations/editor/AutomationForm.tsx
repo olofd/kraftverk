@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Spinner, Text, XStack, YStack } from 'tamagui';
 
 import { changeAutomation, describeError, withConfirmation, type AutomationDraftView, type AutomationSettings, type AutomationView, type RoleBinding } from '@kraftverk/api-client';
-import { isAutomationRole, OTHERWISE, pruned, rolesOf, sameParts, THEN } from '@kraftverk/automation';
+import { isAutomationRole, OTHERWISE, pruned, rolesOf, sameParts, THEN, type ProblemArea } from '@kraftverk/automation';
 import { capabilitiesOf, meetsNeed } from '@kraftverk/device-sdk';
 import { Card, haptic, Icon, SegmentedControl } from '@kraftverk/ui';
 
+import { ErrorText } from '../../../components/ErrorText';
+import { Loading } from '../../../components/Loading';
 import { Picker } from '../../../components/Picker';
 import { Screen } from '../../../components/Screen';
 import { useTone } from '../../../components/tone';
@@ -16,9 +18,15 @@ import { useHome } from '../../../state/HomeProvider';
 import { useAutomationYaml } from '../../config/useAutomationYaml';
 import { Group } from '../page/Group';
 import { BlockList } from './Blocks';
-import { EditorProvider, useEditor, type Draft } from './context';
+import { EditorProvider, useEditor, useEditorKit, type Draft } from './context';
 import { OnlyIf, Triggers } from './Triggers';
-import { useEditorKit } from './useEditorKit';
+
+/*
+  An automation being changed, or made (docs/AUTOMATIONS-UX.md): the same
+  groups as its page — what it uses, when, only if, what it does, what it does
+  if a step fails — each editable in its box, with what is wrong said in the
+  group it is about, and Cancel and Save kept below the page.
+*/
 
 /** How it is written: block by block, or as its configuration's YAML. */
 type View = 'form' | 'yaml';
@@ -27,22 +35,6 @@ const VIEWS: readonly { value: View; label: string }[] = [
   { value: 'form', label: 'Form' },
   { value: 'yaml', label: 'YAML' },
 ];
-
-/** Where on the page a problem belongs, by the place the server gives it: "Trigger 1: …", "Step 2: …". */
-type Place = 'uses' | 'when' | 'onlyIf' | 'does' | 'fails' | 'other';
-
-const placeOf = (problem: string, labels: ReadonlySet<string>): Place =>
-  /^Trigger \d+: /.test(problem)
-    ? 'when'
-    : /^Only if: /.test(problem)
-      ? 'onlyIf'
-      : /^(Step \d+|What it does)[,:]/.test(problem)
-        ? 'does'
-        : /^If a step does not succeed/.test(problem)
-          ? 'fails'
-          : labels.has(problem.slice(0, problem.indexOf(': ')))
-            ? 'uses'
-            : 'other';
 
 /**
  * The form, as its own screen: a new one (`existing` null) or one being
@@ -78,15 +70,7 @@ export function AutomationForm({
   if (!kit || !automations || loading) {
     return (
       <Screen back={back.label} backTo={back.to} title={title}>
-        {error ? (
-          <Card borderColor="$danger">
-            <Text fontSize={14} color="$danger">
-              {error}
-            </Text>
-          </Card>
-        ) : (
-          <Spinner color="$accent" />
-        )}
+        <Loading error={error} />
       </Screen>
     );
   }
@@ -187,8 +171,7 @@ function Editing({
     return () => clearTimeout(timer);
   }, [api, kept, existing?.id]);
 
-  const labels = new Set(Object.values(draft.rule.roles).map((spec) => spec.label));
-  const problems = (place: Place) => (check?.problems ?? []).filter((one) => placeOf(one, labels) === place);
+  const problems = (area: ProblemArea) => check?.areas[area] ?? [];
   const named = draft.name.trim().length > 0;
   const ready = check !== null && check.problems.length === 0 && named && yamlProblems === 0 && !yamlUnread;
   const toFix = (check?.problems.length ?? 0) + (named ? 0 : 1) + yamlProblems;
@@ -233,9 +216,9 @@ function Editing({
   const footer = (
     <YStack gap="$2">
       {problem ? (
-        <Text fontSize={13} color="$danger" lineHeight={19} role="alert">
+        <ErrorText>
           {problem}
-        </Text>
+        </ErrorText>
       ) : null}
       <XStack alignItems="center" gap="$2">
         <XStack flex={1} alignItems="center" gap="$2">
@@ -273,9 +256,9 @@ function Editing({
       {view === 'yaml' ? (
         <Group icon="code" title="As configuration">
           {yaml.error ? (
-            <Text fontSize={13} color="$danger" lineHeight={19} role="alert">
+            <ErrorText>
               {yaml.error}
-            </Text>
+            </ErrorText>
           ) : null}
           <YamlEditor value={yaml.text} onChange={yaml.change} problems={yaml.problems} schema={yaml.schema} label={`${title}, as configuration`} minLines={14} />
           <Text fontSize={13} color="$muted" lineHeight={19}>

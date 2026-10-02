@@ -4,6 +4,7 @@ import { Button, Text, useTheme, XStack, YStack } from 'tamagui';
 import { describeError, PASSWORD_MIN, type AccountDetail } from '@kraftverk/api-client';
 import { haptic, Icon, Row } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { useAuth } from '../../state/AuthProvider';
 import { useServer } from '../../state/ServersProvider';
 import { ConfirmWithYours } from './ConfirmWithYours';
@@ -145,9 +146,9 @@ export function AccountRow({
         </YStack>
       ) : null}
       {problem ? (
-        <Text fontSize={13} color="$danger" paddingHorizontal="$4" paddingBottom="$3" role="alert">
+        <ErrorText paddingHorizontal="$4" paddingBottom="$3">
           {problem}
-        </Text>
+        </ErrorText>
       ) : null}
     </YStack>
   );

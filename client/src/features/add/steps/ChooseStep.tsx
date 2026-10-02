@@ -5,27 +5,21 @@ import { describeError, type SetupStepView, type SightingView } from '@kraftverk
 import { Card, haptic, Icon, Row, RowSeparator } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
+import { useAttempt } from '../../../components/useAttempt';
 import { ErrorLine, PRIMARY, StepFrame, type StepProps } from './StepFrame';
 
 export function ChooseStep({ flow, step, onNext, onBack, presetAddress }: StepProps & { step: Extract<SetupStepView, { kind: 'choose' }>; presetAddress?: string }) {
   const [sightings, setSightings] = useState<SightingView[]>([]);
   const [manual, setManual] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, setError: setError, attempt } = useAttempt();
   const theme = useTheme();
 
   const pick = useCallback(
     async (choice: { address: string } | { manual: string }) => {
-      setBusy(true);
-      setError(null);
-      try {
+      await attempt(async () => {
         await flow.choose(choice);
         onNext();
-      } catch (err) {
-        setError(describeError(err) || 'That did not work');
-      } finally {
-        setBusy(false);
-      }
+      }, 'That did not work');
     },
     [flow, onNext]
   );

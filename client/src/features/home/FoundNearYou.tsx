@@ -1,39 +1,30 @@
-import { useEffect, useState } from 'react';
 import { router, useIsFocused } from 'expo-router';
 import { useTheme, YStack } from 'tamagui';
 
-import type { FoundView } from '@kraftverk/api-client';
 import { Card, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { DeviceImage } from '../../components/DeviceImage';
 import { Pressable } from '../../components/Pressable';
+import { useAnswer } from '../../components/useAnswer';
 import { useAuth } from '../../state/AuthProvider';
 import { useHome } from '../../state/HomeProvider';
 import { pictureFor } from '../devices/registry';
 
+/** How often what is near is looked at again, while the home page is seen. */
+const LOOK_AGAIN_MS = 10_000;
+
+/**
+ * What the home's transports can see that nothing you have is reached by:
+ * a station that connected to its broker, a plug broadcasting on the network.
+ * Choosing one skips straight to checking it.
+ */
 export function FoundNearYou() {
   const { api } = useHome();
-  const [found, setFound] = useState<FoundView[]>([]);
   const theme = useTheme();
   const { allowed } = useAuth();
   // The home page stays under every page opened from it: it looks for what is near only while it is seen.
   const seen = useIsFocused();
-
-  useEffect(() => {
-    if (!allowed || !seen) return;
-    let live = true;
-    const load = () =>
-      api
-        .nearby()
-        .then((next) => live && setFound(next))
-        .catch(() => undefined);
-    void load();
-    const timer = setInterval(() => void load(), 10_000);
-    return () => {
-      live = false;
-      clearInterval(timer);
-    };
-  }, [allowed, api, seen]);
+  const found = useAnswer(() => api.nearby(), [api], { every: LOOK_AGAIN_MS, when: allowed && seen }).value ?? [];
 
   if (found.length === 0) return null;
 

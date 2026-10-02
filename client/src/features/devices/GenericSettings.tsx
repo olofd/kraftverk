@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
-import { describeError, isOnline, type DeviceView, type Value } from '@kraftverk/api-client';
+import { isOnline, type DeviceView, type Value } from '@kraftverk/api-client';
 import { settingsForms, type ConfigValues } from '@kraftverk/device-sdk';
 import { Card, haptic, readingFor, SchemaForm, SectionLabel } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
+import { useAttempt } from '../../components/useAttempt';
 import { useDevices } from '../../state/DevicesProvider';
 
 /**
@@ -16,8 +18,7 @@ import { useDevices } from '../../state/DevicesProvider';
 export function GenericSettings({ device }: { device: DeviceView }) {
   const { actionsFor } = useDevices();
   const [draft, setDraft] = useState<Record<string, Value>>({});
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, setError: setError, attempt } = useAttempt();
   const forms = useMemo(() => settingsForms(device.description), [device]);
   const dangerous = device.description.attributes.filter((attribute) => attribute.access === 'write' && attribute.dangerous);
 
@@ -27,19 +28,13 @@ export function GenericSettings({ device }: { device: DeviceView }) {
   const pending = Object.keys(draft).length > 0;
 
   const save = async () => {
-    setBusy(true);
-    setError(null);
-    try {
+    await attempt(async () => {
       // The reply is a readback: one setting can move another.
       const result = await actionsFor(device).write(draft);
       if (result.outcome === 'refused' || result.outcome === 'failed') throw new Error(result.detail);
       if (result.outcome === 'unverified') setError(result.detail);
       setDraft({});
-    } catch (err) {
-      setError(describeError(err) || 'That write was refused');
-    } finally {
-      setBusy(false);
-    }
+    }, 'That write was refused');
   };
 
   return (
@@ -71,9 +66,9 @@ export function GenericSettings({ device }: { device: DeviceView }) {
         </YStack>
       ))}
       {error ? (
-        <Text fontSize={12} color="$danger" lineHeight={18} paddingHorizontal="$1">
+        <ErrorText fontSize={12} paddingHorizontal="$1">
           {error}
-        </Text>
+        </ErrorText>
       ) : null}
       {pending ? (
         <XStack gap="$2">

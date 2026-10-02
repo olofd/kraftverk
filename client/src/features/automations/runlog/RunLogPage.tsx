@@ -7,6 +7,8 @@ import { awayOf, changed, marksOf, runLogCsv, said, seriesOf, sinceStart, window
 import { fileNameOf } from '@kraftverk/device-sdk';
 import { Card, Chips, Icon, ToggleRow } from '@kraftverk/ui';
 
+import { ErrorText } from '../../../components/ErrorText';
+import { Loading } from '../../../components/Loading';
 import { Pressable } from '../../../components/Pressable';
 import { Screen } from '../../../components/Screen';
 import { useTone } from '../../../components/tone';
@@ -59,15 +61,7 @@ export function RunLogPage({ id, runId }: { id: string; runId: string }) {
   if (!log) {
     return (
       <Screen back={back} backTo={`/automation/${id}`} title="Run log">
-        {error ? (
-          <Card borderColor="$danger">
-            <Text fontSize={14} color="$danger">
-              {error}
-            </Text>
-          </Card>
-        ) : (
-          <Spinner color="$accent" />
-        )}
+        <Loading error={error} />
       </Screen>
     );
   }
@@ -176,9 +170,9 @@ function Outcome({ log, name }: { log: RunLog; name: string }) {
         </Button>
       </XStack>
       {problem ? (
-        <Text fontSize={13} color="$danger">
+        <ErrorText>
           {problem}
-        </Text>
+        </ErrorText>
       ) : null}
     </Card>
   );

@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { router } from 'expo-router';
 import { Button, Input, Text, YStack } from 'tamagui';
 
-import { describeError, type DeviceView } from '@kraftverk/api-client';
+import type { DeviceView } from '@kraftverk/api-client';
 import { Card, haptic, SectionLabel } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
+import { useAttempt } from '../../components/useAttempt';
 import { useDevices } from '../../state/DevicesProvider';
 import { History } from './History';
 
@@ -19,21 +21,14 @@ import { History } from './History';
 export function RemovedDevice({ device }: { device: DeviceView }) {
   const { deleteHistory } = useDevices();
   const [typed, setTyped] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, attempt } = useAttempt();
 
   const remove = async () => {
     haptic();
-    setBusy(true);
-    setError(null);
-    try {
+    await attempt(async () => {
       await deleteHistory(device.id, typed);
       router.replace('/removed');
-    } catch (err) {
-      setError(describeError(err) || 'Its history could not be deleted');
-    } finally {
-      setBusy(false);
-    }
+    }, 'Its history could not be deleted');
   };
 
   return (
@@ -72,9 +67,9 @@ export function RemovedDevice({ device }: { device: DeviceView }) {
             Delete for good
           </Button>
           {error ? (
-            <Text fontSize={12} color="$danger">
+            <ErrorText fontSize={12}>
               {error}
-            </Text>
+            </ErrorText>
           ) : null}
         </Card>
       </YStack>

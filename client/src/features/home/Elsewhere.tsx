@@ -1,17 +1,12 @@
-import { useEffect, useState } from 'react';
 import { router, useIsFocused } from 'expo-router';
 import { Button, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import type { ElsewhereView } from '@kraftverk/api-client';
 import { Card, haptic, Icon } from '@kraftverk/ui';
 
+import { useAnswer } from '../../components/useAnswer';
 import { useHome } from '../../state/HomeProvider';
 
-/**
- * What the home's transports can see that nothing you have is reached by:
- * a station that connected to its broker, a plug broadcasting on the network.
- * Choosing one skips straight to checking it.
- */
 /**
  * A home this app keeps beside this one, offered to bring in
  * (docs/PLAN-SHARED-CORE.md, phase 6h): with a server, the home the app
@@ -22,19 +17,8 @@ import { useHome } from '../../state/HomeProvider';
 export function Elsewhere() {
   const { api } = useHome();
   const theme = useTheme();
-  const [elsewhere, setElsewhere] = useState<ElsewhereView>(null);
   const focused = useIsFocused();
-  useEffect(() => {
-    if (!focused) return;
-    let live = true;
-    void api.configuration
-      .elsewhere()
-      .then((found) => live && setElsewhere(found))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [api, focused]);
+  const elsewhere: ElsewhereView = useAnswer(() => api.configuration.elsewhere(), [api], { when: focused }).value;
   if (!elsewhere) return null;
   const what = [elsewhere.devices && `${elsewhere.devices} ${elsewhere.devices === 1 ? 'device' : 'devices'}`, elsewhere.automations && `${elsewhere.automations} ${elsewhere.automations === 1 ? 'automation' : 'automations'}`].filter(Boolean).join(' and ');
   const [title, detail, action] =

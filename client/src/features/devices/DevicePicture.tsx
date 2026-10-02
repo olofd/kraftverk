@@ -3,12 +3,13 @@ import { Image, Modal, Platform } from 'react-native';
 import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import type { DeviceView, PictureRef } from '@kraftverk/api-client';
-import { Icon, haptic } from '@kraftverk/ui';
+import { haptic, Icon } from '@kraftverk/ui';
 
 import { DeviceImage } from '../../components/DeviceImage';
+import { ErrorText } from '../../components/ErrorText';
 import { useDialogFocus } from '../../components/useDialogFocus';
-import { picturesOf } from './registry';
 import { useDevices } from '../../state/DevicesProvider';
+import { picturesOf } from './registry';
 
 const SIZE = 104;
 
@@ -122,9 +123,9 @@ function PicturePicker({ device, count, onClose }: { device: DeviceView; count: 
         </XStack>
 
         {problem ? (
-          <Text fontSize={13} color="$danger" role="alert">
+          <ErrorText>
             {problem}
-          </Text>
+          </ErrorText>
         ) : null}
       </YStack>
     </YStack>

@@ -9,6 +9,16 @@ import { DiscoverStep } from './DiscoverStep';
 import { FormStep } from './FormStep';
 import { StepFrame, type StepProps } from './StepFrame';
 
+/*
+  One setup step, drawn from its view (docs/DATA-MODEL.md §1). Nothing here
+  knows a product: a station's "point it at this server", a plug's "sign in
+  with the maker's app", the check — all arrive as data from the layers that
+  supply them.
+
+  Every step can go back. What was entered stays in the draft, so going back
+  and forward again changes only what is changed.
+*/
+
 export function StepView({
   flow,
   step,

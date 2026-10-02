@@ -52,7 +52,7 @@ import type {
   Value,
   ValueType,
 } from '@kraftverk/device-sdk';
-import type { AutomationDraft, AutomationMode, RoleFills, Rule, StepKind, StepLine } from '@kraftverk/automation';
+import type { AutomationDraft, AutomationMode, ProblemArea, RoleFills, Rule, StepKind, StepLine } from '@kraftverk/automation';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 import type { Vocabulary } from '@kraftverk/home-file';
 
@@ -660,6 +660,8 @@ export type AutomationKit = { recipes: RecipeView[]; functions: FunctionView[] }
 /** `POST /automations/draft`: what is wrong with a draft — empty, nothing — and how it reads. Nothing is kept. */
 export type AutomationDraftView = {
   problems: string[];
+  /** The same problems, by the part of the automation each is in: what the editor shows beside it. */
+  areas: Record<ProblemArea, string[]>;
   sentence: string;
   when: string[];
   steps: StepLine[];

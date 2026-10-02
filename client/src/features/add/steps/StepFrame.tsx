@@ -4,15 +4,8 @@ import { Button, Text, useTheme, XStack, YStack } from 'tamagui';
 import type { SetupFlow } from '@kraftverk/api-client';
 import { Icon } from '@kraftverk/ui';
 
-/**
- * One setup step, drawn from its view (docs/DATA-MODEL.md §1). Nothing here
- * knows a product: a station's "point it at this server", a plug's "sign in
- * with the maker's app", the check — all arrive as data from the layers that
- * supply them.
- *
- * Every step can go back. What was entered stays in the draft, so going back
- * and forward again changes only what is changed.
- */
+import { ErrorText } from '../../../components/ErrorText';
+
 
 export const PRIMARY = { backgroundColor: '$accent', color: '$background' } as const;
 
@@ -70,8 +63,8 @@ export function StepFrame({
 
 export function ErrorLine({ message }: { message: string | null }) {
   return message ? (
-    <Text fontSize={13} color="$danger" lineHeight={19} paddingHorizontal="$1">
+    <ErrorText paddingHorizontal="$1">
       {message}
-    </Text>
+    </ErrorText>
   ) : null;
 }

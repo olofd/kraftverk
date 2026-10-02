@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Spinner, Text, YStack } from 'tamagui';
+import { Button, Spinner, YStack } from 'tamagui';
 
 import { describeError, type NodeView } from '@kraftverk/api-client';
 import { Card, formatAgo, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { confirmAction } from '../../platform/confirm';
 import { useHome } from '../../state/HomeProvider';
 
@@ -51,9 +52,9 @@ export function Nodes({ labels }: { labels: Record<string, string> }) {
       <SectionLabel>Kraftverk nodes</SectionLabel>
       {error ? (
         <Card borderColor="$danger">
-          <Text fontSize={13} color="$danger">
+          <ErrorText>
             {error}
-          </Text>
+          </ErrorText>
         </Card>
       ) : null}
       {!nodes && !error ? <Spinner color="$accent" /> : null}

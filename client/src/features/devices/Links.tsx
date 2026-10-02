@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Button, Text, useTheme, YStack } from 'tamagui';
+import { Button, useTheme, YStack } from 'tamagui';
 
 import { describeError, type DeviceView, type LinkView } from '@kraftverk/api-client';
 import { linkKindSpec, linkOffers, MAIN_PART, partsOf, type LinkKind, type LinkOffer } from '@kraftverk/device-sdk';
 import { Card, haptic, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { Pressable } from '../../components/Pressable';
 import { useDevices } from '../../state/DevicesProvider';
 import { capitalise } from './Manage';
@@ -97,9 +98,9 @@ export function Links({ device }: { device: DeviceView }) {
           ))}
       </Card>
       {error ? (
-        <Text fontSize={12} color="$danger" lineHeight={18} paddingHorizontal="$1">
+        <ErrorText fontSize={12} paddingHorizontal="$1">
           {error}
-        </Text>
+        </ErrorText>
       ) : null}
     </YStack>
   );

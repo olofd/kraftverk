@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
-import { describeError } from '@kraftverk/api-client';
 import { KEY } from '@kraftverk/device-sdk';
 import { haptic } from '@kraftverk/ui';
+
+import { useAttempt } from '../../components/useAttempt';
 
 /**
  * A key — the name a configuration file knows a device or an automation by
@@ -12,8 +13,7 @@ import { haptic } from '@kraftverk/ui';
  */
 export function KeyField({ value, label, help, onSave }: { value: string; label: string; help: string; onSave: (key: string) => Promise<void> }) {
   const [key, setKey] = useState(value);
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
+  const { busy, error: problem, setError: setProblem, attempt } = useAttempt();
   useEffect(() => setKey(value), [value]);
   const typed = key.trim();
   const valid = KEY.test(typed);
@@ -22,15 +22,9 @@ export function KeyField({ value, label, help, onSave }: { value: string; label:
   const save = async () => {
     if (!dirty || !valid || busy) return;
     haptic();
-    setBusy(true);
-    setProblem(null);
-    try {
+    await attempt(async () => {
       await onSave(typed);
-    } catch (err) {
-      setProblem(describeError(err) || 'That key could not be saved');
-    } finally {
-      setBusy(false);
-    }
+    }, 'That key could not be saved');
   };
 
   return (

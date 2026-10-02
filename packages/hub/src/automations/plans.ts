@@ -9,7 +9,9 @@ import {
   describeTriggers,
   inlineParams,
   isAutomationRole,
+  problemArea,
   problemPlace,
+  type ProblemArea,
   takesSteps,
   writtenAttribute,
   type BoundPart,
@@ -44,7 +46,20 @@ export type PlanDeps = {
 };
 
 /** A draft checked: what is wrong with it, and what fills its roles as far as it could be read. */
-export type Checked = { problems: string[]; roles: Record<string, RoleBinding>; starts: Record<string, AutomationId> };
+export type Checked = {
+  problems: string[];
+  /** The same problems, by the part of the automation each is in. */
+  areas: Record<ProblemArea, string[]>;
+  roles: Record<string, RoleBinding>;
+  starts: Record<string, AutomationId>;
+};
+
+/** Problems by where they are: a list each, as an editor groups them. */
+const byArea = (placed: readonly { text: string; area: ProblemArea }[]): Record<ProblemArea, string[]> => {
+  const areas: Record<ProblemArea, string[]> = { uses: [], when: [], onlyIf: [], does: [], fails: [], other: [] };
+  for (const { text, area } of placed) if (!areas[area].includes(text)) areas[area].push(text);
+  return areas;
+};
 
 /** Whether something could be a rule at all: the checker reads further only into one that is. */
 const looksLikeRule = (rule: unknown): rule is Rule => {
@@ -174,15 +189,21 @@ export function plans({ history, events, catalog, sessions, library, engine, aut
     const roles: Record<string, RoleBinding> = {};
     const starts: Record<string, AutomationId> = {};
     const rule: unknown = draft.rule;
-    if (!looksLikeRule(rule)) return { problems: [NOT_A_RULE], roles, starts };
-    let language: string[];
+    const notARule = (): Checked => ({ problems: [NOT_A_RULE], areas: byArea([{ text: NOT_A_RULE, area: 'other' }]), roles, starts });
+    if (!looksLikeRule(rule)) return notARule();
+    let language: { text: string; area: ProblemArea }[];
     try {
-      // Each said where its owner finds it: "Step 5: which setting?", not the language's own path.
-      language = checkRule(rule, library).map((problem) => problemPlace(problem, rule));
+      // Each said where its owner finds it: "Step 5: which setting?", not the language's own path — and kept where it is.
+      language = checkRule(rule, library).map((problem) => ({ text: problemPlace(problem, rule), area: problemArea(problem) }));
     } catch {
-      return { problems: [NOT_A_RULE], roles, starts };
+      return notARule();
     }
-    const problems = [...language];
+    const placed = [...language];
+    /** A problem with what fills its roles, or with the whole. */
+    const problems = {
+      push: (...texts: string[]) => placed.push(...texts.map((text) => ({ text, area: 'other' as const }))),
+      uses: (text: string) => placed.push({ text, area: 'uses' }),
+    };
     if (Object.keys(rule.params.fields).length) problems.push('An automation has no settings of its own: its values are in its blocks');
 
     const bound = new Map<string, BoundPart>();
@@ -190,20 +211,20 @@ export function plans({ history, events, catalog, sessions, library, engine, aut
       if (isAutomationRole(spec)) {
         const target = draft.starts?.[role];
         const automation = target ? automations.get(target) : null;
-        if (!automation) problems.push(`${spec.label}: choose an automation to start`);
-        else if (automation.id === self) problems.push(`${spec.label}: an automation does not start itself`);
+        if (!automation) problems.uses(`${spec.label}: choose an automation to start`);
+        else if (automation.id === self) problems.uses(`${spec.label}: an automation does not start itself`);
         else starts[role] = automation.id;
         continue;
       }
       const binding = draft.roles?.[role];
       const device = binding ? catalog.active(savedDeviceId(binding.device)) : null;
       if (!binding || !device) {
-        problems.push(`${spec.label}: choose one of your devices`);
+        problems.uses(`${spec.label}: choose one of your devices`);
         continue;
       }
       const description = sessions.description(device);
-      if (!partsOf(description).some((part) => part.id === binding.part)) problems.push(`${spec.label}: ${device.name} has no part "${binding.part}"`);
-      else if (!meetsNeed(spec, capabilitiesOf(description, binding.part))) problems.push(`${spec.label}: that part of ${device.name} cannot do that`);
+      if (!partsOf(description).some((part) => part.id === binding.part)) problems.uses(`${spec.label}: ${device.name} has no part "${binding.part}"`);
+      else if (!meetsNeed(spec, capabilitiesOf(description, binding.part))) problems.uses(`${spec.label}: that part of ${device.name} cannot do that`);
       else {
         roles[role] = { device: device.id, part: binding.part };
         bound.set(role, { name: roleName(roles[role]), description, part: binding.part, capabilities: capabilitiesOf(description, binding.part) });
@@ -215,22 +236,24 @@ export function plans({ history, events, catalog, sessions, library, engine, aut
     // What the filled parts must report, raise and let be written: said once the rule itself holds.
     if (!language.length) {
       const filled = Object.fromEntries(Object.entries(rule.roles).filter(([role, spec]) => !isAutomationRole(spec) && bound.has(role)));
-      problems.push(...checkBinding({ ...rule, roles: filled }, (role) => bound.get(role) ?? null));
+      // What a part cannot do is said by its role: what it uses.
+      for (const text of checkBinding({ ...rule, roles: filled }, (role) => bound.get(role) ?? null)) problems.uses(text);
     }
     problems.push(...chainProblems(self, Object.values(starts)));
-    return { problems: [...new Set(problems)], roles, starts };
+    return { problems: [...new Set(placed.map((each) => each.text))], areas: byArea(placed), roles, starts };
   };
 
   /** A draft, checked and said — nothing kept: what the editor shows as its owner builds. */
   const draftView = (draft: AutomationDraft, self: AutomationId | null): AutomationDraftView => {
     const result = checked(draft, self);
     const unsaid = { sentence: '', when: [], steps: [], otherwise: [], takesSteps: false, names: {} };
-    if (result.problems[0] === NOT_A_RULE) return { problems: result.problems, ...unsaid };
+    const found = { problems: result.problems, areas: result.areas };
+    if (result.problems[0] === NOT_A_RULE) return { ...found, ...unsaid };
     try {
-      return { problems: result.problems, ...said(draft.rule, result.roles, result.starts) };
+      return { ...found, ...said(draft.rule, result.roles, result.starts) };
     } catch {
       // A rule the checker has problems with may not read: its problems are what to show.
-      return { problems: result.problems, ...unsaid };
+      return { ...found, ...unsaid };
     }
   };
 

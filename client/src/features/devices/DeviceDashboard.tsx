@@ -12,6 +12,16 @@ import { Energy, Overview, Parts, Readings } from './Readings';
 import { screensFor } from './registry';
 import { RemovedDevice } from './RemovedDevice';
 
+/*
+  What every device gets for free: its panels (Readings, Controls, Events,
+  History, GenericSettings, Connections, Links, Manage), written against its
+  description — a section for each of its parts, the controls from the
+  commands its parts take, the rows from what they report, the settings form
+  from the attributes it can be told, and its connections and links from the
+  data model. Nothing here knows what a power station is: a plug added next
+  year lands on these panels with no code written for it.
+*/
+
 /**
  * What this device is doing.
  *

@@ -4,6 +4,7 @@ import { Button, Text, useTheme, XStack } from 'tamagui';
 import { describeError, PASSWORD_MIN } from '@kraftverk/api-client';
 import { Card, haptic, Icon } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { useServer } from '../../state/ServersProvider';
 import { ConfirmWithYours } from './ConfirmWithYours';
 import { Field, passwordProblem, suggestPassword } from './fields';
@@ -58,9 +59,9 @@ export function AddAccount({ onAdded }: { onAdded: () => Promise<void> }) {
       />
       <ConfirmWithYours value={yours} onChange={setYours} />
       {problem ? (
-        <Text fontSize={13} color="$danger" lineHeight={18} role="alert">
+        <ErrorText>
           {problem}
-        </Text>
+        </ErrorText>
       ) : null}
       <XStack gap="$2" flexWrap="wrap">
         <Button size="$3" onPress={() => setPassword(suggestPassword())}>

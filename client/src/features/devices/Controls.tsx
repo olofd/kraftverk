@@ -1,10 +1,11 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Text, YStack } from 'tamagui';
+import { YStack } from 'tamagui';
 
 import { describeError, isOnline, type DeviceView } from '@kraftverk/api-client';
 import { MAIN_PART, partName, switchConsequence, togglesOf, type Part, type Toggle } from '@kraftverk/device-sdk';
 import { Card, haptic, readingFor, RowSeparator, SectionLabel, ToggleRow, useWriteGate } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { useDevices } from '../../state/DevicesProvider';
 
 /** What a part is called on a screen: the device's name for its main part, its own label otherwise. */
@@ -80,9 +81,9 @@ export function Controls({ device, part }: { device: DeviceView; part?: string }
         })}
       </Card>
       {error ? (
-        <Text fontSize={12} color="$danger" lineHeight={18} paddingHorizontal="$1">
+        <ErrorText fontSize={12} paddingHorizontal="$1">
           {error}
-        </Text>
+        </ErrorText>
       ) : null}
     </YStack>
   );

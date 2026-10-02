@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { router } from 'expo-router';
 import { Button, Spinner, Text, useTheme, YStack } from 'tamagui';
 
@@ -6,8 +5,10 @@ import type { DeviceTypeListing, DeviceView } from '@kraftverk/api-client';
 import { attributesOf, CATEGORIES, MAIN_PART } from '@kraftverk/device-sdk';
 import { Card, DeviceCard, haptic, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
+import { ErrorText } from '../../components/ErrorText';
 import { Pressable } from '../../components/Pressable';
 import { Screen } from '../../components/Screen';
+import { useAnswer } from '../../components/useAnswer';
 import { useDevices } from '../../state/DevicesProvider';
 import { useHome } from '../../state/HomeProvider';
 import { useShowing } from '../../state/useShowing';
@@ -43,30 +44,10 @@ export function HomeScreen() {
   const { api, role } = useHome();
   const theme = useTheme();
   // What the home can add: the installed types, as it lists them.
-  const [installed, setInstalled] = useState<readonly DeviceTypeListing[]>([]);
-  useEffect(() => {
-    let live = true;
-    void api
-      .deviceTypes()
-      .then((listing) => live && setInstalled(listing.types))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [api]);
-  const [problemCount, setProblemCount] = useState<number | null>(null);
+  const installed: readonly DeviceTypeListing[] = useAnswer(() => api.deviceTypes(), [api]).value?.types ?? [];
 
   // How many warnings and errors there are to look at, read again when the stream carries an event.
-  useEffect(() => {
-    let live = true;
-    void api
-      .problems(100)
-      .then((found) => live && setProblemCount(found.length))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [api, heard?.count]);
+  const problemCount = useAnswer(() => api.problems(100), [api, heard?.count]).value?.length ?? null;
   const hardware = devices.filter((device) => device.kind === 'hardware');
   const services = devices.filter((device) => device.kind === 'service');
   // Every device here shows its readings: while this page is in front, the home reads them more often.
@@ -83,9 +64,9 @@ export function HomeScreen() {
     <Screen title="Your devices" subtitle={subtitle}>
       {error ? (
         <Card borderColor="$danger">
-          <Text fontSize={13} color="$danger" lineHeight={19}>
+          <ErrorText>
             {error}
-          </Text>
+          </ErrorText>
         </Card>
       ) : null}
 
