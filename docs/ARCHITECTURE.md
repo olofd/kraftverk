@@ -139,6 +139,14 @@ packages/
 server/  client/         the core; know no transport, protocol or device type by name
 ```
 
+**The core runs anywhere** (decision 22). Whatever is kraftverk's logic
+rather than the server's — sessions, the gateway, automations and their
+language, the configuration, history — is a shared package with no platform
+built-in, so the app can run it as the server does. The server keeps only
+what needs an always-running machine: the HTTP API, accounts, the broker,
+the disk. Where the server still holds such logic, and the order it moves
+in: [PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md).
+
 The rule, checked in CI by `npm run check:architecture` (§7):
 
 - **The core** — `server/src`, `client/src`, `client/app`,
@@ -1492,10 +1500,10 @@ is continuous, and the architecture check stays at zero.
 15. **Local mode stays: the app works with no server.** In the model it is
     simply a client that is the only holder: it offers the methods whose
     transports it has, and keeps the same records — devices, connections, their
-    secrets, links — in its own storage instead of on a server
-    (`client/src/runtime/local.ts`). What it cannot do is what only an
-    always-running server can: history while the app is closed, and
-    automations.
+    secrets, links — in its own storage instead of on a server. What it cannot
+    do is what only an always-running machine can: history while the app is
+    closed, and automations while it is closed. While it runs, it does both
+    (decision 22).
 16. **A device is made of parts** (2026-09-29), as a Matter node is of
     endpoints: capabilities, metrics, controls and settings belong to a part.
     Nothing is modelled as a name pattern again.
@@ -1519,6 +1527,18 @@ is continuous, and the architecture check stays at zero.
     once and the architecture stays green. When kraftverk has users whose data
     must survive an upgrade, this decision is replaced by compatibility rules.
     [AGENTS.md](../AGENTS.md) says the same, for agents.
+22. **Whatever can run in the app is a package the app can load**
+    (2026-10-02, the owner). kraftverk's logic — devices and their sessions,
+    the gateway, automations and their language, the configuration
+    document, history, attention — is the framework, not the server: it
+    lives in shared packages that run in the server, a browser and a phone
+    alike, with no platform built-in, behind small ports for what differs (a
+    SQLite database, what is installed, secrets at rest). The server is only
+    what an always-running machine must be: the HTTP API, accounts, the
+    broker, the disk. The aim: the app on its own keeps its devices,
+    history and automations in its own SQLite and runs them. Code that is
+    not the server's is not written in `server/`; what is there moves out
+    ([PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md)).
 
 ---
 

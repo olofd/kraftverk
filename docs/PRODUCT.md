@@ -48,7 +48,9 @@ than that, and better than its README said:
   confirmed by a person when dangerous (never by an automation), read back to
   verify, and written to a timeline.
 - **The same code runs in the server and in the app.** A browser or phone can
-  hold a Bluetooth device itself, with no server at all.
+  hold a Bluetooth device itself, with no server at all — and, as the core
+  moves into shared packages, keep its own history and run its own
+  automations in its own SQLite (docs/PLAN-SHARED-CORE.md).
 - **It is built for bringing up hardware nobody documented**: simulators for
   every type, register dumps, snapshot/diff, frame logs, raw frames behind the
   protocol's guard.
