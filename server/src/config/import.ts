@@ -36,7 +36,7 @@ import { hasConditions, type Checked } from '../automations/plans.ts';
 import type { DeviceRecord } from '@kraftverk/store';
 import type { SessionManager } from '@kraftverk/holder';
 import { db, policyValues, setPolicyValue } from '../platform/database.ts';
-import type { TransportHost } from '../runtime/transports.ts';
+import type { TransportHost } from '@kraftverk/hub';
 import { serverVocabulary, type ConfigDeps } from './export.ts';
 import { isSealed, openKept, openWith } from './seal.ts';
 

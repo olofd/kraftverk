@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test';
 
 import { checkDeviceTypeContract } from '@kraftverk/device-sdk/testing';
 
-import { DeviceTypeRegistry } from '../devices/types.ts';
-import { ProtocolRegistry } from './protocols.ts';
-import { TransportHost } from './transports.ts';
+import { DeviceTypeRegistry, ProtocolRegistry, TransportHost } from '@kraftverk/hub';
+
+import { discoverDeviceTypes, discoverProtocols, discoverTransports } from './packages.ts';
 
 /*
   Every installed package keeps its contract (docs/ARCHITECTURE.md, step 15).
@@ -17,9 +17,9 @@ import { TransportHost } from './transports.ts';
 */
 
 const protocols = new ProtocolRegistry();
-const transports = new TransportHost({ context: { env: {}, log: () => {}, audit: () => {} } });
+const transports = new TransportHost({ platform: 'server', context: { env: {}, log: () => {}, audit: () => {} } });
 const types = new DeviceTypeRegistry();
-await Promise.all([protocols.discover(), transports.discover(), types.discover()]);
+await Promise.all([discoverProtocols(protocols), discoverTransports(transports), discoverDeviceTypes(types)]);
 types.checkConnections({ protocol: (id) => protocols.get(id), transport: (id) => transports.definition(id) });
 
 describe('installed packages', () => {

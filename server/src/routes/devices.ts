@@ -8,9 +8,8 @@ import { Confirmations, subjectOf } from '@kraftverk/gateway';
 import { runTool, ToolRefused, type ToolRefusal } from '@kraftverk/holder';
 
 import { actorOf } from '../auth/routes.ts';
-import { changesOf } from '../history/changes.ts';
-import { PICTURE_REF } from '../devices/registry.ts';
-import { resolutionOf, series } from '../history/sampler.ts';
+import { PICTURE_REF, changesOf, resolutionOf, series } from '@kraftverk/hub';
+import { db } from '../platform/database.ts';
 import { auditAbout, body, deviceOr404, type AppDeps } from './shared.ts';
 
 /** The longest span history or changes are asked for: as long as they are kept. */
@@ -204,7 +203,7 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
       .strict()
       .parse(c.req.query());
     const { from, to } = spanOf(span);
-    const history: DeviceHistory = { deviceId: record.id, key, from, to, resolution: resolutionOf(from, to), points: series(record.id, key, from, to, points) };
+    const history: DeviceHistory = { deviceId: record.id, key, from, to, resolution: resolutionOf(from, to), points: series(db(), record.id, key, from, to, points) };
     return c.json(history);
   });
 
@@ -225,7 +224,7 @@ export function deviceRoutes({ config, catalog, types, protocols, transports, se
       .strict()
       .parse(c.req.query());
     const { from, to } = spanOf(span);
-    const changes: DeviceChanges = { deviceId: record.id, from, to, changes: changesOf(record.id, sessions.description(record), { from, to, key }) };
+    const changes: DeviceChanges = { deviceId: record.id, from, to, changes: changesOf(db(), record.id, sessions.description(record), { from, to, key }) };
     return c.json(changes);
   });
 

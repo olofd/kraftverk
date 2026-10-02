@@ -139,6 +139,9 @@ packages/
                                                          where they are kept is a port it declares; pure
   store/                 @kraftverk/store                the data model in SQLite: one schema and every store, over a SQL port the
                                                          server (bun:sqlite) and the app (expo-sqlite, sql.js) fill; pure
+  hub/                   @kraftverk/hub                  a home, running: what is installed, devices' views, setup, history,
+                                                         attention, automations, the configuration — wired over the ports
+                                                         the place it runs gives it; the server's and the app's alike; pure
   gateway/               @kraftverk/gateway              the action gateway's rules: pure, run by whichever holder has the connection
   api-contract/          @kraftverk/api-contract         the HTTP API's shapes, types only: declared once, imported by the server and the app
   holder/                @kraftverk/holder               what every holder does with a device: open, watch, fail over, judge a check; pure
@@ -1601,7 +1604,7 @@ is said beside it.
       opens the channel.
 - [x] Every device type has its methods, a simulator and a passing contract
       test, and one test checks every installed package
-      (`server/src/runtime/packages.test.ts`).
+      (`server/src/platform/packages.test.ts`).
 - [x] Weather is a service offering `weather.forecast`.
 - [x] An automation connecting a forecast to a switch runs end to end, audited
       (step 14). *Against simulated devices; the ATORCH waits on its local key.*

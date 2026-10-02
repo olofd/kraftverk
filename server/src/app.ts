@@ -12,7 +12,7 @@ import { hostGuard } from './auth/host.ts';
 import { CLIENT_HEADER, createAuth } from './auth/routes.ts';
 import { isPrivate, normaliseIp } from './auth/trust.ts';
 import type { ServerConfig } from './config.ts';
-import { SetupError } from './devices/setup/index.ts';
+import { SetupError } from '@kraftverk/hub';
 import { adminRoutes } from './routes/admin.ts';
 import { deviceRoutes } from './routes/devices.ts';
 import { connectionRoutes } from './routes/connections.ts';

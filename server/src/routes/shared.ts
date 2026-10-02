@@ -6,25 +6,17 @@ import { savedDeviceId, type ResourceKind } from '@kraftverk/device-sdk';
 
 import type { ActionGateway } from '@kraftverk/gateway';
 import type { LiveBus } from '@kraftverk/holder';
-import type { Attention } from '../attention/attention.ts';
+import type { Attention, DeviceRegistry, DeviceTypeRegistry, Nearby, ProtocolRegistry, RemoteReadings, Sampler, SetupService, TransportHost } from '@kraftverk/hub';
 import type { AutomationEngine, AutomationLibrary } from '@kraftverk/automation-engine';
 import type { AutomationStore, DeviceCatalog, DeviceRecord, ClientStore, ConnectionStore, LinkStore, EventStore } from '@kraftverk/store';
 import { actorOf, userOf } from '../auth/routes.ts';
 import type { LoginLimiter } from '../auth/limiter.ts';
 import type { ProxyDirectory } from '../auth/trust.ts';
 import type { ServerConfig } from '../config.ts';
-import type { Nearby } from '../devices/nearby.ts';
-import type { DeviceRegistry } from '../devices/registry.ts';
-import type { RemoteReadings } from '../devices/remote.ts';
 import type { SessionManager } from '@kraftverk/holder';
 import type { ConfigSnapshot } from '../config/snapshot.ts';
-import type { SetupService } from '../devices/setup/index.ts';
-import type { DeviceTypeRegistry } from '../devices/types.ts';
 import { audit } from '../platform/database.ts';
-import type { Sampler } from '../history/sampler.ts';
 import type { ServerLog } from '../log.ts';
-import type { ProtocolRegistry } from '../runtime/protocols.ts';
-import type { TransportHost } from '../runtime/transports.ts';
 
 /**
  * Everything the routes need, handed in rather than reached for.

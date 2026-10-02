@@ -79,11 +79,11 @@ client/                  Expo app (iOS + web)
   app/device/[id]/       one device: dashboard, settings, advanced
   src/runtime/           this app as a holder: sessions, gateway, uploads, local mode
   src/generated/         the installed packages, bound in by npm run gen:devices
+packages/hub/            a home, running: what is installed, devices' views, setup, history, attention
 server/
-  src/runtime/           finding packages; the transports this server runs
-  src/devices/           catalog, connections, links, sessions, setup, registry
+  src/platform/          the file the home is kept in, its secret key, finding packages on disk
   src/routes/            the HTTP API
-  src/history/           sqlite: the one schema, samples, roll-ups, the audit timeline
+  src/auth/              accounts, sign-in, and the gate in front of every route
 docs/HANDOFF.md          state of play, and the traps worth knowing — start here
 docs/ARCHITECTURE.md     the architecture, its words and the plan: the authority
 docs/DATA-MODEL.md       adding a device screen by screen, and everything stored

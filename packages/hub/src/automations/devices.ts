@@ -7,12 +7,12 @@ import type { DeviceCatalog } from '@kraftverk/store';
 import type { SessionManager } from '@kraftverk/holder';
 
 /**
- * Parts of devices as the server holds them, for the engine: a removed device
+ * Parts of devices as a home holds them, for the engine: a removed device
  * is still found, so an automation can say it was removed rather than that it
  * never existed; one only an app holds has no session here, and says whose it
  * is. A part is named with its device: "Garage station — AC outlets".
  */
-export const serverDevices =
+export const homeDevices =
   (catalog: Pick<DeviceCatalog, 'get'>, sessions: Pick<SessionManager, 'get' | 'health' | 'description'>) =>
   (binding: RoleBinding): EngineDevice | null => {
     const record = catalog.get(binding.device);

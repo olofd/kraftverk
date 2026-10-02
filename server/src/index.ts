@@ -3,28 +3,18 @@ import { existsSync } from 'node:fs';
 import { ActionGateway } from '@kraftverk/gateway';
 import { LiveBus, SessionManager } from '@kraftverk/holder';
 import { createApp } from './app.ts';
-import { Attention } from './attention/attention.ts';
-import { keepWatchedFresh } from './attention/freshness.ts';
+import { Attention, ChangeLog, DeviceRegistry, DeviceTypeRegistry, Nearby, ProtocolRegistry, RemoteReadings, Sampler, SetupService, TransportHost, homeDevices, keepWatchedFresh } from '@kraftverk/hub';
 import { AutomationEngine, AutomationLibrary } from '@kraftverk/automation-engine';
-import { serverDevices } from './automations/devices.ts';
 import { plans } from './automations/plans.ts';
 import { restoreFrom } from './config/restore.ts';
 import { ConfigSnapshot } from './config/snapshot.ts';
 import { AutomationStore, DeviceCatalog, EventStore, ClientStore, ConnectionStore, LinkStore, holding } from '@kraftverk/store';
 import { ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
-import { Nearby } from './devices/nearby.ts';
-import { DeviceRegistry } from './devices/registry.ts';
-import { RemoteReadings } from './devices/remote.ts';
-import { SetupService } from './devices/setup/index.ts';
-import { DeviceTypeRegistry } from './devices/types.ts';
 import { databaseLedger, audit, closeDb, startedFresh, policyValues, transportStore, db, deviceStore } from './platform/database.ts';
-import { ChangeLog } from './history/changes.ts';
-import { Sampler } from './history/sampler.ts';
 import { keepConsole } from './log.ts';
-import { scopedHttp } from './runtime/http.ts';
-import { ProtocolRegistry } from './runtime/protocols.ts';
-import { TransportHost } from './runtime/transports.ts';
+import { scopedHttp } from './platform/http.ts';
+import { discoverDeviceTypes, discoverProtocols, discoverTransports } from './platform/packages.ts';
 import { serverSecrets } from './platform/secrets.ts';
 
 /*
@@ -96,9 +86,10 @@ const startedAt = new Date();
  * its folder under `packages/` rather than listed here (docs/ARCHITECTURE.md §3).
  */
 const protocols = new ProtocolRegistry();
-await protocols.discover();
+await discoverProtocols(protocols);
 
 const transports = new TransportHost({
+  platform: 'server',
   context: {
     env: config.env,
     log: (level, message) => console[level === 'info' ? 'log' : level](message),
@@ -106,10 +97,10 @@ const transports = new TransportHost({
   },
   store: transportStore,
 });
-await transports.discover();
+await discoverTransports(transports);
 
 const types = new DeviceTypeRegistry();
-await types.discover();
+await discoverDeviceTypes(types);
 types.checkConnections({ protocol: (id) => protocols.get(id), transport: (id) => transports.definition(id) });
 
 console.log(
@@ -185,10 +176,10 @@ if (config.readOnly) {
 // Sessions for the devices already in the catalog, and nothing else.
 await sessions.sync(catalog.list());
 
-const remote = new RemoteReadings();
+const remote = new RemoteReadings(db());
 const registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports, remote });
 
-const setup = new SetupService({ types, protocols, transports, catalog, connections, links, sessions, http: scopedHttp });
+const setup = new SetupService({ db: db(), record: audit, types, protocols, transports, catalog, connections, links, sessions, http: scopedHttp });
 
 const nearby = new Nearby({ types, protocols, transports, connections });
 
@@ -208,11 +199,11 @@ const gateway = new ActionGateway({
   policyValues,
 });
 
-const sampler = new Sampler(registry);
+const sampler = new Sampler(db(), registry);
 sampler.start();
 
 /** Every change of an on/off or an enum, as the server's sessions report it. */
-const changeLog = new ChangeLog(bus, (id) => {
+const changeLog = new ChangeLog(db(), bus, (id) => {
   const record = catalog.active(id);
   return record ? sessions.description(record) : null;
 });
@@ -225,7 +216,7 @@ const automations = new AutomationStore(db());
 const engine = new AutomationEngine({
   store: automations,
   library,
-  device: serverDevices(catalog, sessions),
+  device: homeDevices(catalog, sessions),
   gateway,
   record: audit,
   bus,

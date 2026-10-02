@@ -2,7 +2,7 @@ import type { CheckOutcome } from '@kraftverk/api-contract';
 import { openChannel, type Channel, type ConfigValues, type Identified, type OpenConnection, type Protocol, type TransportDefinition } from '@kraftverk/device-sdk';
 import { withTimeout } from '@kraftverk/holder';
 
-import type { TransportHost } from '../../runtime/transports.ts';
+import type { TransportHost } from '../installed/transports.ts';
 import type { Draft } from './draft.ts';
 
 /**
@@ -34,7 +34,7 @@ export const SIMULATED_REACH: Reach = {
   identify: async () => ({ outcome: { outcome: 'new', summary: 'Simulated: no hardware was read, and none will be.', identity: null } }),
 };
 
-/** A device, over its protocol and one of this server's transports. */
+/** A device, over its protocol and one of this home's transports. */
 export function overHardware(protocol: Protocol | null, transport: TransportDefinition | null, transports: TransportHost): Reach {
   return {
     protocol,
@@ -55,7 +55,7 @@ export function overHardware(protocol: Protocol | null, transport: TransportDefi
           channel,
           config: draft.connection as ConfigValues,
           secrets: { get: (field) => draft.secrets.get(field) ?? null },
-          platform: 'server',
+          platform: transports.platform,
         };
         const quiet = { info: () => {}, warn: (m: string) => console.warn(`[setup] ${m}`), error: (m: string) => console.error(`[setup] ${m}`) };
         const identified = await withTimeout(

@@ -10,26 +10,18 @@ import { savedDeviceId, type Value } from '@kraftverk/device-sdk';
 import { ActionGateway } from '@kraftverk/gateway';
 import { LiveBus, type LiveMessage, SessionManager } from '@kraftverk/holder';
 import { CORS_METHODS, corsOrigin, createApp } from './app.ts';
-import { Attention } from './attention/attention.ts';
+import { Attention, DeviceRegistry, DeviceTypeRegistry, Nearby, ProtocolRegistry, RemoteReadings, Sampler, SetupService, TransportHost, homeDevices } from '@kraftverk/hub';
 import { AutomationEngine, AutomationLibrary } from '@kraftverk/automation-engine';
-import { serverDevices } from './automations/devices.ts';
 import { AutomationStore, DeviceCatalog, ClientStore, ConnectionStore, LinkStore, EventStore, holding } from '@kraftverk/store';
 import { CLIENT_HEADER, SESSION_COOKIE } from './auth/routes.ts';
 import { createFirstUser, createUser } from './auth/store.ts';
 import { CLIENT_IP_HEADER, EXPOSURE_HEADER, ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
-import { Nearby } from './devices/nearby.ts';
-import { DeviceRegistry } from './devices/registry.ts';
-import { RemoteReadings } from './devices/remote.ts';
-import { SetupService } from './devices/setup/index.ts';
-import { busDefinition, FakeBus, lampProtocol, lampType } from './devices/testing.ts';
-import { DeviceTypeRegistry } from './devices/types.ts';
+import { busDefinition, FakeBus, lampProtocol, lampType } from '@kraftverk/hub/testing';
 import { audit, closeDb, db, policyValues, deviceStore } from './platform/database.ts';
+import { discoverDeviceTypes, discoverProtocols, discoverTransports } from './platform/packages.ts';
 import { openSecret } from './platform/secrets.ts';
-import { Sampler } from './history/sampler.ts';
 import { originAllowed } from './routes/live.ts';
-import { ProtocolRegistry } from './runtime/protocols.ts';
-import { TransportHost } from './runtime/transports.ts';
 import { serverSecrets } from './platform/secrets.ts';
 
 /**
@@ -62,12 +54,12 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
   const config = loadConfig({ NODE_ENV: 'test', READ_ONLY: options.readOnly ? '1' : '0' }, []);
   const bus = new FakeBus();
   const protocols = new ProtocolRegistry();
-  const transports = new TransportHost({ context: { env: {}, log: () => {}, audit: () => {} } });
+  const transports = new TransportHost({ platform: 'server', context: { env: {}, log: () => {}, audit: () => {} } });
   const types = new DeviceTypeRegistry();
   if (options.installed) {
-    await protocols.discover();
-    await transports.discover();
-    await types.discover();
+    await discoverProtocols(protocols);
+    await discoverTransports(transports);
+    await discoverDeviceTypes(types);
   }
   protocols.install(lampProtocol);
   transports.install(busDefinition, { create: () => bus });
@@ -98,9 +90,11 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
     onEvent: (deviceId, event) => events.record(deviceId, event),
     bus: live,
   });
-  const remote = new RemoteReadings();
+  const remote = new RemoteReadings(db());
   const registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports, remote });
   const setup = new SetupService({
+    db: db(),
+    record: audit,
     types,
     protocols,
     transports,
@@ -126,7 +120,7 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
   await proxies.refresh();
   const automations = new AutomationStore(db());
   const library = new AutomationLibrary(types.contributions(), () => {});
-  const engine = new AutomationEngine({ store: automations, library, device: serverDevices(catalog, sessions), gateway, record: audit, bus: live });
+  const engine = new AutomationEngine({ store: automations, library, device: homeDevices(catalog, sessions), gateway, record: audit, bus: live });
 
   const attention = new Attention();
   const { app, websocket } = createApp({
@@ -150,7 +144,7 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
     automations,
     engine,
     library,
-    sampler: new Sampler(registry),
+    sampler: new Sampler(db(), registry),
     proxies,
     serverLog: { dir: null, recent: () => [] },
     startedAt: new Date(),

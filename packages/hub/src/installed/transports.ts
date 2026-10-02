@@ -2,6 +2,7 @@ import {
   memoryTransportStore,
   validateTransportDefinition,
   type Availability,
+  type Platform,
   type Transport,
   type TransportContext,
   type TransportDefinition,
@@ -9,18 +10,18 @@ import {
   type TransportStore,
 } from '@kraftverk/device-sdk';
 
-import { findPackages, load, ROOTS } from './packages.ts';
 import type { Refused } from './protocols.ts';
 
 /**
- * The transports this server can reach devices over, found rather than listed,
- * and started only when wanted.
+ * The transports a home can reach devices over where it runs — the server, a
+ * browser, a phone — installed by whoever found them, and started only when
+ * wanted.
  *
- * There is one of each per process — one radio, one connection to the broker —
+ * There is one of each per home — one radio, one connection to the broker —
  * shared by every connection over it. Every installed transport is available:
- * none is switched on or off by configuration. One that cannot run where the
- * server runs — Bluetooth in a container with no radio — says so, and that
- * reason is what a connection over it shows.
+ * none is switched on or off by configuration. One that cannot run here —
+ * Bluetooth in a container with no radio, the broker in a browser — says so,
+ * and that reason is what a connection over it shows.
  */
 
 type Entry = {
@@ -32,6 +33,8 @@ type Entry = {
 };
 
 export type TransportHostOptions = {
+  /** Where it runs: which of a transport's entries is this place's. */
+  platform: Platform;
   /** What every transport is handed: the environment, the log, the timeline. */
   context: Omit<TransportContext, 'store'>;
   /** Each transport's own store, by its id: the database's `transport_kv`. In memory when absent. */
@@ -44,45 +47,36 @@ export class TransportHost {
 
   constructor(private options: TransportHostOptions) {}
 
+  /** Where it runs: which of a transport's entries is this place's. */
+  get platform(): Platform {
+    return this.options.platform;
+  }
+
   /** What one transport is handed: the shared context, and its own store. */
   #contextFor(id: string): TransportContext {
     return { ...this.options.context, store: this.options.store?.(id) ?? memoryTransportStore() };
   }
 
-  async discover(roots: readonly string[] = ROOTS.transports): Promise<void> {
-    const { found, problems } = await findPackages(roots, 'transport');
-    this.#refused.push(...problems);
-    for (const pkg of found) {
-      const entries = pkg.kraftverk.transport as { definition?: string; server?: string } | undefined;
-      try {
-        if (!entries?.definition) throw new Error('its transport entry names no definition');
-        const definition = await load<TransportDefinition>(pkg, entries.definition);
-        this.install(definition, entries.server ? { load: () => load<TransportFactory>(pkg, entries.server!) } : null, pkg.name);
-      } catch (error) {
-        this.#refuse(pkg.folder, [(error as Error).message]);
-      }
-    }
-  }
-
   /**
-   * Accepts one transport: its definition, and how to make it on the server —
-   * a module to load, or (in a test) a factory to call. Null when it has no
-   * server implementation, like a browser-only one.
+   * Accepts one transport: its definition, and how to make it here — a
+   * module to load, or (in a test, or from the app's registry) a factory to
+   * call. Null when it has no implementation for this platform, as the broker
+   * has none in a browser.
    */
   install(
     definition: TransportDefinition,
-    server: { load: () => Promise<TransportFactory> } | { create: TransportFactory } | null,
+    here: { load: () => Promise<TransportFactory> } | { create: TransportFactory } | null,
     source = definition.id
   ): string[] {
     const problems = validateTransportDefinition(definition);
     if (!problems.length && this.#entries.has(definition.id)) problems.push(`another package already provides ${definition.id}`);
     if (problems.length) {
-      this.#refuse(source, problems);
+      this.refuse(source, problems);
       return problems;
     }
     this.#entries.set(definition.id, {
       definition,
-      factory: server === null ? null : 'load' in server ? server.load : async () => server.create,
+      factory: here === null ? null : 'load' in here ? here.load : async () => here.create,
       transport: null,
       starting: null,
       error: null,
@@ -108,14 +102,15 @@ export class TransportHost {
   }
 
   /**
-   * Whether a connection over this transport can be held by this server now,
-   * and if not, why — in words a person can act on.
+   * Whether a connection over this transport can be held here now, and if
+   * not, why — in words a person can act on.
    */
   available(id: string): Availability {
     const entry = this.#entries.get(id);
-    if (!entry) return { ok: false, reason: 'This server cannot reach devices this way: it needs updating' };
-    if (!entry.definition.platforms.includes('server') || !entry.factory) {
-      return { ok: false, reason: `A server cannot use ${entry.definition.label}` };
+    const place = placeOf(this.options.platform);
+    if (!entry) return { ok: false, reason: `${place.this} cannot reach devices this way: it needs updating` };
+    if (!entry.definition.platforms.includes(this.options.platform) || !entry.factory) {
+      return { ok: false, reason: `${place.a} cannot use ${entry.definition.label}` };
     }
     if (entry.error) return { ok: false, reason: entry.error };
     if (!entry.transport) return { ok: false, reason: `${capitalise(entry.definition.label)} is starting` };
@@ -125,7 +120,7 @@ export class TransportHost {
   /** Starts a transport, once. Null when it cannot run here; never throws. */
   async start(id: string): Promise<Transport | null> {
     const entry = this.#entries.get(id);
-    if (!entry?.factory || !entry.definition.platforms.includes('server')) return null;
+    if (!entry?.factory || !entry.definition.platforms.includes(this.options.platform)) return null;
     if (entry.transport) return entry.transport;
     entry.starting ??= (async () => {
       try {
@@ -137,7 +132,7 @@ export class TransportHost {
         return transport;
       } catch (error) {
         // Recorded, not thrown: one transport that cannot start must not keep
-        // the server — or the devices on every other transport — down.
+        // the home — or the devices on every other transport — down.
         entry.error = (error as Error).message;
         this.options.context.log('warn', `[transports] ${id} could not start: ${entry.error}`);
         return null;
@@ -163,10 +158,20 @@ export class TransportHost {
     );
   }
 
-  #refuse(source: string, problems: string[]): void {
+  /** Keeps a package that was found and turned away, and why: one that would not load, say. */
+  refuse(source: string, problems: string[]): void {
     this.#refused.push({ source, problems });
     console.warn(`[transports] ${source} is not a usable transport:\n  - ${problems.join('\n  - ')}`);
   }
 }
 
 const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** What a place is called, in a reason a person reads: "This server cannot…", "A browser cannot…". */
+export const placeOf = (platform: Platform): { this: string; a: string } => PLACES[platform];
+
+const PLACES: Record<Platform, { this: string; a: string }> = {
+  server: { this: 'This server', a: 'A server' },
+  web: { this: 'This browser', a: 'A browser' },
+  native: { this: 'This phone', a: 'A phone' },
+};

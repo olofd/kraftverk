@@ -19,10 +19,11 @@
     "@kraftverk/api-contract": "*",
     "@kraftverk/automation": "*",
     "@kraftverk/automation-engine": "*",
-    "@kraftverk/home-file": "*",
     "@kraftverk/device-sdk": "*",
     "@kraftverk/gateway": "*",
     "@kraftverk/holder": "*",
+    "@kraftverk/home-file": "*",
+    "@kraftverk/hub": "*",
     "@kraftverk/store": "*",
     "hono": "^4.13.1",
     "zod": "^4.4.3"

@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 
 import { automationId, savedDeviceId } from '@kraftverk/device-sdk';
 
-import { Attention, UNATTENDED_AFTER_MS } from './attention.ts';
-import { FRESH_PAST_LOOK_MS, keepWatchedFresh } from './freshness.ts';
+import { Attention, UNATTENDED_AFTER_MS } from '../src/attention/attention.ts';
+import { FRESH_PAST_LOOK_MS, keepWatchedFresh } from '../src/attention/freshness.ts';
 
 const PLUG = savedDeviceId('d-plug');
 const STATION = savedDeviceId('d-station');

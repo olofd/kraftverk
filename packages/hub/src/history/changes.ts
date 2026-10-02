@@ -2,7 +2,8 @@ import type { DeviceChange } from '@kraftverk/api-contract';
 import { partOf, type AttributeSpec, type DeviceDescription, type Reading, type SavedDeviceId, type Value } from '@kraftverk/device-sdk';
 import type { LiveBus } from '@kraftverk/holder';
 
-import { db } from '../platform/database.ts';
+import type { SqlDatabase } from '@kraftverk/store';
+
 import { sampleOf } from './sampler.ts';
 
 /**
@@ -33,16 +34,16 @@ type Row = { at: string; value: number | null; text: string | null };
 const same = (row: Row | null | undefined, sample: { value: number | null; text: string | null }) => row != null && row.value === sample.value && row.text === sample.text;
 
 /** Records what changed among these readings. Returns how many changes were written. */
-export function recordChanges(deviceId: SavedDeviceId, logged: ReadonlyMap<string, AttributeSpec>, readings: readonly Reading[]): number {
+export function recordChanges(db: SqlDatabase, deviceId: SavedDeviceId, logged: ReadonlyMap<string, AttributeSpec>, readings: readonly Reading[]): number {
   if (!logged.size) return 0;
-  const before = db().query<Row, [string, string, string]>('SELECT at, value, text FROM sample_change WHERE device_id = ? AND key = ? AND at <= ? ORDER BY at DESC LIMIT 1');
-  const after = db().query<Row, [string, string, string]>('SELECT at, value, text FROM sample_change WHERE device_id = ? AND key = ? AND at > ? ORDER BY at ASC LIMIT 1');
-  const insert = db().query('INSERT OR REPLACE INTO sample_change (device_id, part, key, at, value, text) VALUES (?, ?, ?, ?, ?, ?)');
-  const drop = db().query('DELETE FROM sample_change WHERE device_id = ? AND key = ? AND at = ?');
-  const exists = db().query('SELECT 1 FROM device WHERE id = ?');
+  const before = db.query<Row, [string, string, string]>('SELECT at, value, text FROM sample_change WHERE device_id = ? AND key = ? AND at <= ? ORDER BY at DESC LIMIT 1');
+  const after = db.query<Row, [string, string, string]>('SELECT at, value, text FROM sample_change WHERE device_id = ? AND key = ? AND at > ? ORDER BY at ASC LIMIT 1');
+  const insert = db.query('INSERT OR REPLACE INTO sample_change (device_id, part, key, at, value, text) VALUES (?, ?, ?, ?, ?, ?)');
+  const drop = db.query('DELETE FROM sample_change WHERE device_id = ? AND key = ? AND at = ?');
+  const exists = db.query('SELECT 1 FROM device WHERE id = ?');
   let written = 0;
 
-  db().transaction(() => {
+  db.transaction(() => {
     if (!exists.get(deviceId)) return;
     for (const reading of readings) {
       const attribute = logged.get(reading.key);
@@ -69,11 +70,11 @@ const valueOf = (row: Row, attribute: AttributeSpec | undefined): Value =>
  * The changes between two times, oldest first — with, for each key, the one
  * before `from`, so the span starts knowing what each was.
  */
-export function changesOf(deviceId: SavedDeviceId, description: DeviceDescription, options: { from: string; to: string; key?: string }): DeviceChange[] {
+export function changesOf(db: SqlDatabase, deviceId: SavedDeviceId, description: DeviceDescription, options: { from: string; to: string; key?: string }): DeviceChange[] {
   const attributes = new Map(description.attributes.map((attribute) => [attribute.key, attribute]));
   const keyed = options.key ? ' AND key = ?' : '';
   const keyArgs = options.key ? [options.key] : [];
-  const rows = db()
+  const rows = db
     .query<Row & { key: string; part: string }, string[]>(
       `SELECT key, part, at, value, text FROM sample_change WHERE device_id = ?${keyed} AND at > ? AND at <= ?
        UNION ALL
@@ -85,9 +86,9 @@ export function changesOf(deviceId: SavedDeviceId, description: DeviceDescriptio
 }
 
 /** Changes older than two years go, except each key's latest: what it has been since. */
-export function pruneChanges(now = Date.now()): void {
+export function pruneChanges(db: SqlDatabase, now = Date.now()): void {
   const before = new Date(now - RETAIN_DAYS * 86_400_000).toISOString();
-  db()
+  db
     .query(
       `DELETE FROM sample_change WHERE at < ? AND at < (
          SELECT MAX(latest.at) FROM sample_change latest WHERE latest.device_id = sample_change.device_id AND latest.key = sample_change.key
@@ -97,14 +98,15 @@ export function pruneChanges(now = Date.now()): void {
 }
 
 /**
- * Records what the server's own sessions report, as the live bus carries it:
+ * Records what the home's own sessions report, as the live bus carries it:
  * only readings whose value moved, the moment a pushing device says so. What
- * an app holds arrives by its uplink instead (routes/held.ts).
+ * an app holds for it arrives by its uplink instead (`HeldReadings`).
  */
 export class ChangeLog {
   #unsubscribe: (() => void) | null = null;
 
   constructor(
+    private readonly db: SqlDatabase,
     private readonly bus: LiveBus,
     private readonly describe: (deviceId: SavedDeviceId) => DeviceDescription | null
   ) {}
@@ -113,7 +115,7 @@ export class ChangeLog {
     this.#unsubscribe ??= this.bus.subscribe((message) => {
       if (message.kind !== 'readings') return;
       const description = this.describe(message.deviceId);
-      if (description) recordChanges(message.deviceId, loggedAttributes(description), message.readings);
+      if (description) recordChanges(this.db, message.deviceId, loggedAttributes(description), message.readings);
     });
   }
 

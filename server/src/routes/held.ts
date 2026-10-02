@@ -5,9 +5,8 @@ import { z } from 'zod';
 import { RESOURCE_KINDS, validateDescription, type AuditSubject, type DeviceDescription, type DeviceInfo, type ResourceKind } from '@kraftverk/device-sdk';
 
 import { actorOf } from '../auth/routes.ts';
-import { deviceStore, audit } from '../platform/database.ts';
-import { loggedAttributes, recordChanges } from '../history/changes.ts';
-import { keptAttributes } from '../history/sampler.ts';
+import { deviceStore, audit, db } from '../platform/database.ts';
+import { keptAttributes, loggedAttributes, recordChanges } from '@kraftverk/hub';
 import { body, deviceOr404, ownClient, type AppDeps } from './shared.ts';
 
 /**
@@ -107,7 +106,7 @@ export function heldRoutes({ catalog, connections, clients, remote, sessions, ev
     if (counts.live && latest) bus.publish({ kind: 'readings', deviceId: record.id, readings: latest.readings });
     if (listChanged && latest) bus.publish({ kind: 'changed', deviceId: record.id });
     // Its on/offs and modes, when each changed: queued ones land in their place in time.
-    recordChanges(record.id, loggedAttributes(description), input.readings);
+    recordChanges(db(), record.id, loggedAttributes(description), input.readings);
     // Its events, kept as the server's own are: only what its description declares, at the level it declares.
     for (const event of input.events ?? []) {
       const declared = (description.events ?? []).find((spec) => spec.id === event.id);

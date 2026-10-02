@@ -1,5 +1,3 @@
-import { randomBytes } from 'node:crypto';
-
 import type { CheckOutcome, DraftView, HeldSetupInput, SightingView } from '@kraftverk/api-contract';
 import {
   clientId,
@@ -8,6 +6,7 @@ import {
   isSimulated,
   methodOf,
   setupPlan,
+  type AuditRecord,
   type ConfigValues,
   type Identified,
   type ScopedHttp,
@@ -16,12 +15,12 @@ import {
 } from '@kraftverk/device-sdk';
 import { judgeCheck, withTimeout } from '@kraftverk/holder';
 
-import { audit, db } from '../../platform/database.ts';
-import type { ProtocolRegistry } from '../../runtime/protocols.ts';
-import type { TransportHost } from '../../runtime/transports.ts';
-import type { DeviceCatalog, DeviceRecord, ConnectionStore, LinkStore } from '@kraftverk/store';
+import type { ProtocolRegistry } from '../installed/protocols.ts';
+import { placeOf, type TransportHost } from '../installed/transports.ts';
+import { unref } from '../timers.ts';
+import { randomHex, type DeviceCatalog, type DeviceRecord, type ConnectionStore, type LinkStore, type SqlDatabase } from '@kraftverk/store';
 import type { SessionManager } from '@kraftverk/holder';
-import type { DeviceTypeRegistry } from '../types.ts';
+import type { DeviceTypeRegistry } from '../installed/types.ts';
 import { connectionSchema, DRAFT_TTL_MS, SetupError, viewOf, type Draft, type SaveRequest } from './draft.ts';
 import { overHardware, SIMULATED_REACH } from './reach.ts';
 import { saveable, writeSaved } from './save.ts';
@@ -29,10 +28,10 @@ import { saveable, writeSaved } from './save.ts';
 export { connectionSchema, SetupError, type SaveRequest } from './draft.ts';
 
 /**
- * Adding a device, on the server (docs/DATA-MODEL.md §1).
+ * Adding a device to a home (docs/DATA-MODEL.md §1).
  *
- * A **draft** is one person part-way through setting up one device the server
- * will hold (`draft.ts`). Choosing a category and a type is the app's; from
+ * A **draft** is one person part-way through setting up one device the home
+ * will hold (`draft.ts`) — the server's, or an app's with no server. Choosing a category and a type is the app's; from
  * the connection method on, every step that touches the device runs here —
  * listing what the transport can see, fetching a key, reading the device once
  * — because this is where the connection will be held. How a draft reaches
@@ -47,6 +46,10 @@ const ACTION_TIMEOUT_MS = 90_000;
 const PLACEHOLDER = /^held:[0-9a-f]{16}$/;
 
 export type SetupServiceDeps = {
+  /** Where the home is kept: a save is one transaction. */
+  db: SqlDatabase;
+  /** Where the timeline goes. */
+  record: (entry: AuditRecord) => void;
   types: DeviceTypeRegistry;
   protocols: ProtocolRegistry;
   transports: TransportHost;
@@ -64,7 +67,7 @@ export class SetupService {
 
   constructor(private deps: SetupServiceDeps) {
     this.#sweeper = setInterval(() => this.#sweep(), 60_000);
-    this.#sweeper.unref?.();
+    unref(this.#sweeper);
   }
 
   stop(): void {
@@ -74,7 +77,7 @@ export class SetupService {
 
   /**
    * Begins setting up a device of `typeId`, over `methodId`, held by this
-   * server. Refused when the method's transport cannot be used here, saying why.
+   * home. Refused when the method's transport cannot be used here, saying why.
    */
   async start(input: { typeId: string; methodId?: string | null; by: string }): Promise<DraftView> {
     const type = this.deps.types.get(input.typeId);
@@ -88,7 +91,7 @@ export class SetupService {
     let transport = null;
     if (!isSimulated(method)) {
       const protocol = this.deps.protocols.get(method.protocol);
-      if (!protocol?.bindings[method.transport]) throw new SetupError(`This server cannot reach a ${type.meta.name} by ${method.label}: it needs updating`, 409);
+      if (!protocol?.bindings[method.transport]) throw new SetupError(`${placeOf(this.deps.transports.platform).this} cannot reach a ${type.meta.name} by ${method.label}: it needs updating`, 409);
       transport = await this.deps.transports.start(method.transport);
       const available = this.deps.transports.available(method.transport);
       if (!transport || !available.ok) throw new SetupError(available.ok ? `${method.label} cannot be used here` : available.reason, 409);
@@ -101,13 +104,13 @@ export class SetupService {
       type,
       method,
       reach,
-      plan: setupPlan({ type, method, protocol: reach.protocol, transport: reach.transport, platform: 'server', values: transport?.values?.() ?? {} }),
+      plan: setupPlan({ type, method, protocol: reach.protocol, transport: reach.transport, platform: this.deps.transports.platform, values: transport?.values?.() ?? {} }),
       address: method.address ?? null,
     });
 
     // What the transport can see, kept current for as long as the draft lives.
     const binding = reach.protocol?.bindings[method.transport];
-    if (binding && transport?.watch && !method.address && reach.transport?.discovery.server === 'list') {
+    if (binding && transport?.watch && !method.address && reach.transport?.discovery[this.deps.transports.platform] === 'list') {
       draft.stopWatching = transport.watch(binding.filter ?? {}, (sightings) => {
         draft.sightings = sightings;
       });
@@ -299,9 +302,9 @@ export class SetupService {
     const draft = this.#draft(id);
     const method = draft.method!;
     const config = saveable(draft, input);
-    const { record, kind } = db().transaction(() => writeSaved(this.deps, draft, input, config))();
+    const { record, kind } = this.deps.db.transaction(() => writeSaved(this.deps, draft, input, config))();
 
-    audit({
+    this.deps.record({
       at: new Date().toISOString(),
       kind,
       actor: draft.by,
@@ -325,7 +328,7 @@ export class SetupService {
 
   #newDraft(start: Pick<Draft, 'by' | 'heldBy' | 'type' | 'method' | 'reach' | 'plan' | 'address'>): Draft {
     const draft: Draft = {
-      id: `s-${randomBytes(8).toString('hex')}`,
+      id: `s-${randomHex(8)}`,
       ...start,
       identityHint: null,
       device: {},
@@ -388,7 +391,7 @@ export class SetupService {
       sightings: draft.sightings,
       log: { info: () => {}, warn: (m: string) => console.warn(`[setup] ${m}`), error: (m: string) => console.error(`[setup] ${m}`) },
       signal: signal ?? AbortSignal.timeout(ACTION_TIMEOUT_MS),
-      platform: 'server' as const,
+      platform: this.deps.transports.platform,
     };
   }
 
@@ -403,7 +406,7 @@ export class SetupService {
       Object.fromEntries(
         Object.entries(config).map(([field, value]) => {
           if (!secret(field) || typeof value !== 'string') return [field, value];
-          const placeholder = `held:${randomBytes(8).toString('hex')}`;
+          const placeholder = `held:${randomHex(8)}`;
           draft.placeholders.set(placeholder, value);
           return [field, placeholder];
         })

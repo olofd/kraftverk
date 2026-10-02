@@ -1,8 +1,9 @@
 import type { SeriesPoint } from '@kraftverk/api-contract';
 import { isCurrent, keepsHistory, partOf, type AttributeSpec, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
 
+import type { SqlDatabase } from '@kraftverk/store';
+
 import { pruneChanges } from './changes.ts';
-import { db } from '../platform/database.ts';
 import type { DeviceRegistry } from '../devices/registry.ts';
 
 /**
@@ -66,14 +67,17 @@ export class Sampler {
    */
   #sampling = false;
 
-  constructor(private registry: DeviceRegistry) {}
+  constructor(
+    private db: SqlDatabase,
+    private registry: DeviceRegistry
+  ) {}
 
   start(): void {
     this.#timer ??= setInterval(() => void this.sample(), INTERVAL_MS);
     this.#pruneTimer ??= setInterval(() => this.prune(), 6 * 60 * 60_000);
-    this.#rollupTimer ??= setInterval(() => rollUp(), 10 * 60_000);
+    this.#rollupTimer ??= setInterval(() => rollUp(this.db), 10 * 60_000);
     void this.sample();
-    rollUp();
+    rollUp(this.db);
   }
 
   stop(): void {
@@ -100,12 +104,12 @@ export class Sampler {
 
     const now = Date.now();
     const at = new Date(now).toISOString();
-    const insert = db().query('INSERT OR REPLACE INTO sample (device_id, part, key, at, value, text) VALUES (?, ?, ?, ?, ?, ?)');
+    const insert = this.db.query('INSERT OR REPLACE INTO sample (device_id, part, key, at, value, text) VALUES (?, ?, ?, ?, ?, ?)');
 
     // A device deleted since it was read has no history to add to: skipped, not a failed tick.
-    const exists = db().query('SELECT 1 FROM device WHERE id = ?');
+    const exists = this.db.query('SELECT 1 FROM device WHERE id = ?');
 
-    const write = db().transaction(() => {
+    const write = this.db.transaction(() => {
       for (const device of devices) {
         if (!exists.get(device.id)) continue;
         const kept = keptAttributes(device.description);
@@ -124,13 +128,13 @@ export class Sampler {
   /** Minute samples go after two weeks — rolled up first — hourly ones and changes after two years, the audit and device events after one. */
   prune(now = Date.now()): void {
     const before = (days: number) => new Date(now - days * 86_400_000).toISOString();
-    rollUp(before(RETAIN_DAYS + 2), before(RETAIN_DAYS - 1));
-    db().query('DELETE FROM sample WHERE at < ?').run(before(RETAIN_DAYS));
-    db().query('DELETE FROM sample_hour WHERE hour < ?').run(before(RETAIN_HOURLY_DAYS));
-    pruneChanges(now);
-    db().query('DELETE FROM audit WHERE at < ?').run(before(RETAIN_AUDIT_DAYS));
+    rollUp(this.db, before(RETAIN_DAYS + 2), before(RETAIN_DAYS - 1));
+    this.db.query('DELETE FROM sample WHERE at < ?').run(before(RETAIN_DAYS));
+    this.db.query('DELETE FROM sample_hour WHERE hour < ?').run(before(RETAIN_HOURLY_DAYS));
+    pruneChanges(this.db, now);
+    this.db.query('DELETE FROM audit WHERE at < ?').run(before(RETAIN_AUDIT_DAYS));
     // What a device said happened is kept as long as what was done to it.
-    db().query('DELETE FROM device_event WHERE at < ?').run(before(RETAIN_AUDIT_DAYS));
+    this.db.query('DELETE FROM device_event WHERE at < ?').run(before(RETAIN_AUDIT_DAYS));
   }
 }
 
@@ -142,8 +146,8 @@ const hourOf = (iso: string) => `${iso.slice(0, 13)}:00:00.000Z`;
  * two days. Idempotent: an hour is recomputed from its samples, so rolling it
  * up again after late readings arrived corrects it rather than counting twice.
  */
-export function rollUp(fromIso = new Date(Date.now() - ROLLUP_WINDOW_MS).toISOString(), toIso = new Date().toISOString()): void {
-  db()
+export function rollUp(db: SqlDatabase, fromIso = new Date(Date.now() - ROLLUP_WINDOW_MS).toISOString(), toIso = new Date().toISOString()): void {
+  db
     .query(
       `INSERT OR REPLACE INTO sample_hour (device_id, part, key, hour, min, avg, max, n)
          SELECT device_id, part, key, substr(at, 1, 13) || ':00:00.000Z', min(value), avg(value), max(value), count(*)
@@ -168,6 +172,7 @@ export function resolutionOf(fromIso: string, toIso: string): 'minute' | 'hour' 
  * make the phone do arithmetic it cannot show.
  */
 export function series(
+  db: SqlDatabase,
   deviceId: string,
   key: string,
   fromIso: string,
@@ -175,12 +180,12 @@ export function series(
   points = 240
 ): SeriesPoint[] {
   const rows = resolutionOf(fromIso, toIso) === 'hour'
-    ? db()
+    ? db
         .query<{ at: string; value: number }, [string, string, string, string]>(
           'SELECT hour AS at, avg AS value FROM sample_hour WHERE device_id = ? AND key = ? AND hour >= ? AND hour <= ? ORDER BY hour'
         )
         .all(deviceId, key, hourOf(fromIso), toIso)
-    : db()
+    : db
         .query<{ at: string; value: number }, [string, string, string, string]>(
           'SELECT at, value FROM sample WHERE device_id = ? AND key = ? AND at >= ? AND at <= ? ORDER BY at'
         )

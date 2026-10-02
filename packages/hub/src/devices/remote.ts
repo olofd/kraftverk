@@ -1,6 +1,7 @@
 import { partOf, type AttributeSpec, type Reading, type SavedDeviceId } from '@kraftverk/device-sdk';
 
-import { db } from '../platform/database.ts';
+import type { SqlDatabase } from '@kraftverk/store';
+
 import { rollUp, sampleOf } from '../history/sampler.ts';
 
 /**
@@ -24,6 +25,8 @@ type Held = { clientId: string; connectionId: string; readings: Map<string, Read
 export class RemoteReadings {
   #held = new Map<SavedDeviceId, Held>();
 
+  constructor(private readonly db: SqlDatabase) {}
+
   /**
    * Takes what an app read. Returns how many went straight into history
    * because they were queued, and how many were refused as out of range.
@@ -42,11 +45,11 @@ export class RemoteReadings {
     let live = 0;
     let history = 0;
     let refused = 0;
-    const insert = db().query('INSERT OR REPLACE INTO sample (device_id, part, key, at, value, text) VALUES (?, ?, ?, ?, ?, ?)');
+    const insert = this.db.query('INSERT OR REPLACE INTO sample (device_id, part, key, at, value, text) VALUES (?, ?, ?, ?, ?, ?)');
     let earliest = Number.POSITIVE_INFINITY;
     let latest = 0;
 
-    db().transaction(() => {
+    this.db.transaction(() => {
       for (const reading of readings) {
         const taken = reading.at ? Date.parse(reading.at) : now;
         if (!Number.isFinite(taken) || taken > now + 60_000 || now - taken > MAX_AGE_MS) {
@@ -72,7 +75,7 @@ export class RemoteReadings {
       }
     })();
     // The hours they landed in may be rolled up already: again, with them in.
-    if (history) rollUp(new Date(earliest).toISOString(), new Date(latest + 3_600_000).toISOString());
+    if (history) rollUp(this.db, new Date(earliest).toISOString(), new Date(latest + 3_600_000).toISOString());
     this.#held.set(deviceId, held);
     return { live, history, refused };
   }

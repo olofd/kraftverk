@@ -8,7 +8,7 @@ import type { ConnectionHealth, LiveUpdate, ShownThing, ViewReport } from '@kraf
 import { automationId, savedDeviceId, type AutomationId, type Reading, type SavedDeviceId } from '@kraftverk/device-sdk';
 import type { LiveMessage } from '@kraftverk/holder';
 
-import type { ViewerHandle } from '../attention/attention.ts';
+import type { ViewerHandle } from '@kraftverk/hub';
 import { hostName } from '../auth/host.ts';
 import { SESSION_COOKIE, userOf } from '../auth/routes.ts';
 import { sessionAlive } from '../auth/store.ts';

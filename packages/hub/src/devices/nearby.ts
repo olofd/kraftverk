@@ -1,17 +1,18 @@
 import type { FoundView } from '@kraftverk/api-contract';
 import type { Sighting, SightingFilter } from '@kraftverk/device-sdk';
 
-import type { ProtocolRegistry } from '../runtime/protocols.ts';
-import type { TransportHost } from '../runtime/transports.ts';
+import type { ProtocolRegistry } from '../installed/protocols.ts';
+import type { TransportHost } from '../installed/transports.ts';
+import { unref } from '../timers.ts';
 import type { ConnectionStore } from '@kraftverk/store';
-import type { DeviceTypeRegistry } from './types.ts';
+import type { DeviceTypeRegistry } from '../installed/types.ts';
 
 /**
- * "Found near you": what this server's transports can see that no device you
+ * "Found near you": what this home's transports can see that no device you
  * have is reached by (docs/DATA-MODEL.md §1, step 1).
  *
  * Live state, never stored. Watching starts when someone asks and stops a
- * minute after they stop asking, so an idle server is not scanning the radio
+ * minute after they stop asking, so an idle home is not scanning the radio
  * for nobody.
  */
 
@@ -69,7 +70,7 @@ export class Nearby {
 
   #keepWatching(): void {
     for (const definition of this.deps.transports.definitions()) {
-      if (this.#watching.has(definition.id) || definition.discovery.server !== 'list') continue;
+      if (this.#watching.has(definition.id) || definition.discovery[this.deps.transports.platform] !== 'list') continue;
       const transport = this.deps.transports.get(definition.id);
       if (!transport?.watch) continue;
       const watching: Watching = { stop: () => {}, sightings: [] };
@@ -80,7 +81,7 @@ export class Nearby {
     }
     if (this.#idle) clearTimeout(this.#idle);
     this.#idle = setTimeout(() => this.stop(), IDLE_MS);
-    this.#idle.unref?.();
+    unref(this.#idle);
   }
 
   /** Everything any installed protocol looks for on this transport. */

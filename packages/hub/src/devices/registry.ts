@@ -2,11 +2,11 @@ import type { ConnectionView, DeviceView, LinkView, PictureRef } from '@kraftver
 import { deviceCapabilities, MAIN_PART, methodOf, partsOf, type DeviceDescription, type SavedDeviceId } from '@kraftverk/device-sdk';
 import { activeConnection, toolsOf } from '@kraftverk/holder';
 
-import type { TransportHost } from '../runtime/transports.ts';
+import type { TransportHost } from '../installed/transports.ts';
 import type { DeviceCatalog, DeviceRecord, ClientRecord, ClientStore, ConnectionRecord, ConnectionStore, LinkRecord, LinkStore } from '@kraftverk/store';
 import type { RemoteReadings } from './remote.ts';
 import type { SessionManager } from '@kraftverk/holder';
-import type { DeviceTypeRegistry } from './types.ts';
+import type { DeviceTypeRegistry } from '../installed/types.ts';
 
 /**
  * Joins the devices you added to what they are, how they are reached, and

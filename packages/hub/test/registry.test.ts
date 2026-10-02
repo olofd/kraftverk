@@ -1,18 +1,15 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
-import { closeDb, db, deviceStore, audit } from '../platform/database.ts';
-import { ProtocolRegistry } from '../runtime/protocols.ts';
-import { TransportHost } from '../runtime/transports.ts';
-import { DeviceCatalog, ClientStore, ConnectionStore, LinkStore, holding } from '@kraftverk/store';
-import { DeviceRegistry } from './registry.ts';
-import { RemoteReadings } from './remote.ts';
 import { SessionManager } from '@kraftverk/holder';
-import { busDefinition, FakeBus, LAMP, lampProtocol, lampType } from './testing.ts';
-import { DeviceTypeRegistry } from './types.ts';
-import { serverSecrets } from '../platform/secrets.ts';
+import { ClientStore, ConnectionStore, DeviceCatalog, deviceStore, holding, LinkStore, plainSecrets } from '@kraftverk/store';
+
+import { DeviceRegistry } from '../src/devices/registry.ts';
+import { RemoteReadings } from '../src/devices/remote.ts';
+import { ProtocolRegistry } from '../src/installed/protocols.ts';
+import { TransportHost } from '../src/installed/transports.ts';
+import { DeviceTypeRegistry } from '../src/installed/types.ts';
+import { busDefinition, FakeBus, LAMP, lampProtocol, lampType } from '../src/testing.ts';
+import { testDatabase } from './home.ts';
 
 /**
  * Every device described the same way: what it is, how it is reached, how it
@@ -21,7 +18,7 @@ import { serverSecrets } from '../platform/secrets.ts';
  * it must never say, a secret — is pinned down here.
  */
 
-const dir = mkdtempSync(join(tmpdir(), 'kraftverk-registry-'));
+const db = testDatabase();
 let catalog: DeviceCatalog;
 let connections: ConnectionStore;
 let links: LinkStore;
@@ -31,15 +28,13 @@ let registry: DeviceRegistry;
 const bus = new FakeBus();
 
 beforeAll(() => {
-  process.env.KRAFTVERK_DB = join(dir, 'test.db');
-  closeDb();
-  catalog = new DeviceCatalog(db());
-  connections = new ConnectionStore(db(), serverSecrets);
-  links = new LinkStore(db());
-  clients = new ClientStore(db());
+  catalog = new DeviceCatalog(db);
+  connections = new ConnectionStore(db, plainSecrets);
+  links = new LinkStore(db);
+  clients = new ClientStore(db);
   const protocols = new ProtocolRegistry();
   protocols.install(lampProtocol);
-  const transports = new TransportHost({ context: { env: {}, log: () => {}, audit: () => {} } });
+  const transports = new TransportHost({ platform: 'server', context: { env: {}, log: () => {}, audit: () => {} } });
   transports.install(busDefinition, { create: () => bus });
   const types = new DeviceTypeRegistry();
   types.install(lampType);
@@ -50,18 +45,16 @@ beforeAll(() => {
     protocols,
     transports,
     ...holding(connections, null),
-    store: deviceStore,
+    store: (id) => deviceStore(db, id),
     readOnly: () => false,
     allowRawFrames: false,
     heldByName: (id) => clients.get(id)?.name ?? null,
   });
-  registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports, remote: new RemoteReadings() });
+  registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports, remote: new RemoteReadings(db) });
 });
 
 afterAll(async () => {
   await sessions.closeAll();
-  closeDb();
-  rmSync(dir, { recursive: true, force: true });
 });
 
 describe('a device, described', () => {
@@ -115,7 +108,7 @@ describe('a device, described', () => {
   });
 
   test('a connection held by a phone names the phone', () => {
-    db().exec("INSERT INTO users (id, username, password_hash, created_at, password_changed_at) VALUES ('u-reg', 'registry', 'x', '2026-01-01', '2026-01-01')");
+    db.exec("INSERT INTO users (id, username, password_hash, created_at, password_changed_at) VALUES ('u-reg', 'registry', 'x', '2026-01-01', '2026-01-01')");
     const phone = clients.register({ userId: 'u-reg', name: 'Olof’s iPhone', platform: 'native', transports: ['ble'] });
     const pocket = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Pocket' });
     connections.add({ deviceId: pocket.id, method: 'bus', transport: 'bus', heldBy: phone.id, address: 'lamp-7' });

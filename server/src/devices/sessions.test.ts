@@ -7,11 +7,9 @@ import { SIMULATED_ADDRESS, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT } from '@kr
 import { LiveBus, type LiveMessage, SessionManager } from '@kraftverk/holder';
 
 import { closeDb, db, deviceStore, audit } from '../platform/database.ts';
-import { ProtocolRegistry } from '../runtime/protocols.ts';
-import { TransportHost } from '../runtime/transports.ts';
+import { DeviceTypeRegistry, ProtocolRegistry, TransportHost } from '@kraftverk/hub';
+import { busDefinition, FakeBus, LAMP, lampControl, lampProtocol, lampType, opened } from '@kraftverk/hub/testing';
 import { DeviceCatalog, ClientStore, ConnectionStore, holding } from '@kraftverk/store';
-import { busDefinition, FakeBus, LAMP, lampControl, lampProtocol, lampType, opened } from './testing.ts';
-import { DeviceTypeRegistry } from './types.ts';
 import { serverSecrets } from '../platform/secrets.ts';
 
 /**
@@ -37,7 +35,7 @@ let identified: [string, string][];
 const build = (options: { readOnly?: boolean; bus?: LiveBus } = {}) => {
   const protocols = new ProtocolRegistry();
   expect(protocols.install(lampProtocol)).toEqual([]);
-  const transports = new TransportHost({ context: { env: {}, log: () => {}, audit: () => {} } });
+  const transports = new TransportHost({ platform: 'server', context: { env: {}, log: () => {}, audit: () => {} } });
   expect(transports.install(busDefinition, { create: () => bus })).toEqual([]);
   const types = new DeviceTypeRegistry();
   expect(types.install(lampType)).toEqual([]);

@@ -229,7 +229,7 @@ role filling, recipes copied into it — waits for phase 6. Phase 2
 (2026-10-02), the engine — `@kraftverk/automation-engine`: the engine,
 rehearsal, run logs with the app's series, the library; its store a port
 (`AutomationStorage`) the server's SQLite store implements. The server's
-adapter to it (`serverDevices`) waits in `server/src/automations/devices.ts`
+adapter to it (`serverDevices`, now the hub's `homeDevices`) waited in `server/src/automations/devices.ts`
 for the hub. The planner (`plans.ts`) is built on the catalog, the session
 manager and the database, not the engine alone: it moves with them, in
 phase 5. The engine's own tests run against the SQLite store, and move
@@ -256,6 +256,93 @@ Also (2026-10-02, the owner): the configuration package is
 `@kraftverk/home-file`, and every package has a README that says what it
 is, what it does and does not, where it fits, and why it is a package of
 its own — four headings the architecture check asks for.
+Phase 5a (2026-10-02), the hub begun — `@kraftverk/hub`, its README the
+design below: what is installed (the registries, any platform's
+transports; the server finds packages on its disk and installs them),
+devices' views, what is near, readings an app sends in, setup, history,
+attention, the assistant's world and the engine's devices — each handed
+its database and its timeline. Its tests run on SQLite in memory.
+23 files of logic left.
+
+### Phase 5, in detail
+
+Researched 2026-10-02 from every route, every server file and every place
+the app branches on where its home is. The hub's README holds the design;
+this is the order it is built in, each step green and pushed.
+
+**What the hub is made from.** `createHub({ database, secrets, installed,
+platform, readOnly, http, log, now })`: a prepared `SqlDatabase`, how
+secrets are sealed at rest, what is installed (registries the place fills
+— the server from its disk, the app from its generated registry), the
+platform whose transport entries run here, read-only as a function, a
+scoped HTTP client for a setup helper, and a clock. Nothing else reaches
+in: no environment, no file, no `process`.
+
+**Who is asking.** Every call carries a caller — `{ kind: 'person', name }`,
+`{ kind: 'agent', for }`, `{ kind: 'app', id, person }` — because the
+gateway binds a confirmation to a person and refuses an agent what needs
+one, setup drafts and import plans belong to whoever started them, and the
+timeline names who. `hub.as(caller)` is a `KraftverkApi` for one caller;
+the server makes one per request from its session, an app with no server
+one for its owner. Accounts, sign-in and the reset stay the server's: the
+hub never sees a password.
+
+**Refusals in words, not in HTTP.** The hub throws `ApiError` — declared
+with `KraftverkApi` in `api-contract`, the one thing there that runs —
+with a kind (`invalid`, `not-found`, `conflict`, `locked`, `needs-yes`,
+`unavailable`), the sentence, and where it applies the confirmation token
+or the problems. The server's adapter maps each kind to its status;
+`api-client` maps a status back to the same error, so a screen handles one
+refusal whichever way its home is reached. `SetupError`, `ImportError`,
+`RunRefusal`, `ToolRefused` and the planner's `HTTPException` become it.
+
+**Where each connection is held.** A connection the hub holds has
+`held_by` null — the server's on a server, the phone's in local mode; one
+an app holds for a server's home names that app. An app with a server is
+not a second hub (decision 6): it holds its own connections through the
+holder, as `createHolding` in the hub — its sessions, its gateway, its
+uplink — and wraps the server's `KraftverkApi` so a command to a device it
+holds goes to its own gateway and a view carries its own readings. The app
+then has one interface in both modes, and never branches on which.
+
+5a. **The hub begun** — done, above.
+5b. **Planning and the home file.** The planner (`plans.ts`) with errors of
+    its own; export, import and restore, each handed the hub's stores —
+    an import's pending plans kept by the hub, not in a module, and swept
+    by its timer. Passphrase sealing in `home-file` on Web Crypto
+    (`sealed:v2`, PBKDF2 and AES-GCM); the server still opens `v1` with
+    scrypt (decision 3). A device's entry (`deviceYaml`) moves to
+    `home-file`, one function the export and the app's editor use. The
+    snapshot's file stays the server's: the hub hands it the text, and says
+    when it changed.
+5c. **`createHub`.** One object wiring the stores, the session manager, the
+    gateway, the engine, the sampler and the change log, setup, nearby,
+    attention and its freshness, with `start()` and `stop()`; restoring
+    from a configuration is a call the place makes, since only it knows
+    the database was just made. The server's `index.ts` becomes finding
+    packages, opening the file, `createHub`, the broker's transport and
+    HTTP; the routes' `AppDeps` becomes the hub and the accounts. The
+    routes' test kit builds a hub too.
+5d. **`KraftverkApi`.** In `api-contract`, grouped as the routes are:
+    `deviceTypes`, `devices` (views, renaming and keys, pictures, removing,
+    history, changes, events, problems, commands, settings, tools,
+    connections and their secrets), `links`, `setup`, `nearby`,
+    `transports`, `automations` (kit, drafts, runs, logs, rehearsal,
+    start and stop), `configuration` (vocabulary, export, plan, apply,
+    snapshot), `policy`, `timeline`, `world`, `held` (what an app sends
+    for a connection it holds, and its apps), and `live` (what changed, as
+    it changes — the outbox moves into the hub — and what a screen shows).
+    The hub implements it for a caller; each route becomes: validate,
+    `hub.as(caller)`, answer — the logic left in the routes moves into the
+    hub with it. MCP's tools call the same interface as an agent.
+5e. **Over HTTP.** `api-client` implements `KraftverkApi` over HTTP and
+    the socket, handed the server's address (finding it moves to the app's
+    platform). The API's tests run against both, and agree.
+
+Phase 6 then puts the app on the interface: `createHub` on expo-sqlite or
+sql.js with no server, `createHolding` beside `api-client` with one; the
+~105 places the app branches on its mode go, with `local.ts`,
+`describeLocal`, `AppFlow` and the app's runtime.
 
 Each phase green and pushed. Files move first as they are (with git's
 history), then change. The server behaves as before throughout — the one

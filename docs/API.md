@@ -141,7 +141,7 @@ ignored:
   `device/[id]`, `automation/[id]`). **`showing`** is what is on it:
   `{ kind: 'device' | 'automation', id }`, each once.
 - **A fact, not a request.** The server keeps it while the socket is open
-  (`server/src/attention`), and what follows is its own judgement: today, a
+  (`Attention` in `@kraftverk/hub`), and what follows is its own judgement: today, a
   device shown is read more often — the same wish an automation waiting on it
   makes (`wantFresh`), renewed every 10 s while it is shown and lapsing 30 s
   after.

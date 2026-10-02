@@ -6,10 +6,9 @@ import { join } from 'node:path';
 import { readConfig } from '@kraftverk/home-file';
 
 import { AutomationStore, DeviceCatalog, ConnectionStore, LinkStore } from '@kraftverk/store';
-import { LAMP, lampProtocol, lampType } from '../devices/testing.ts';
-import { DeviceTypeRegistry } from '../devices/types.ts';
+import { LAMP, lampProtocol, lampType } from '@kraftverk/hub/testing';
+import { DeviceTypeRegistry, ProtocolRegistry } from '@kraftverk/hub';
 import { audit, closeDb, db } from '../platform/database.ts';
-import { ProtocolRegistry } from '../runtime/protocols.ts';
 import { openKept } from './seal.ts';
 import { ConfigSnapshot } from './snapshot.ts';
 import { serverSecrets } from '../platform/secrets.ts';

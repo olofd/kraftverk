@@ -15,9 +15,8 @@ import type { PrintContext } from '@kraftverk/automation';
 import { methodsOf, partsOf, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, LinkStore } from '@kraftverk/store';
-import type { DeviceTypeRegistry } from '../devices/types.ts';
+import type { DeviceTypeRegistry, ProtocolRegistry } from '@kraftverk/hub';
 import { policyValues } from '../platform/database.ts';
-import type { ProtocolRegistry } from '../runtime/protocols.ts';
 import { keep, openKept, sealWith } from './seal.ts';
 
 /*

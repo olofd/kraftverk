@@ -3,8 +3,7 @@ import { connectionProblems, validateDeviceType, type DeviceType, type Protocol,
 
 import type { Contributed } from '@kraftverk/automation-engine';
 
-import { findPackages, load, ROOTS } from '../runtime/packages.ts';
-import type { Refused } from '../runtime/protocols.ts';
+import type { Refused } from './protocols.ts';
 
 /**
  * The device types installed on this server, found rather than listed.
@@ -33,30 +32,15 @@ export class DeviceTypeRegistry {
   #warnings = new Map<string, string[]>();
   #contributed: Contributed[] = [];
 
-  /** Loads every device-type package under the roots. Never throws. */
-  async discover(roots: readonly string[] = ROOTS.deviceTypes): Promise<void> {
-    const { found, problems } = await findPackages(roots, 'deviceType');
-    this.#refused.push(...problems);
-    for (const pkg of found) {
-      try {
-        const type = await load<DeviceType<any>>(pkg, String(pkg.kraftverk.deviceType));
-        if (this.install(type, pkg.name).length) continue;
-        if (pkg.kraftverk.automation) this.contribute(type, await load<AutomationContribution>(pkg, String(pkg.kraftverk.automation)), pkg.name);
-      } catch (error) {
-        this.#refuse(pkg.folder, [(error as Error).message]);
-      }
-    }
-  }
-
   /**
-   * Accepts one type, if it keeps the contract. What discovery does for each
-   * package, and how a test brings a type of its own.
+   * Accepts one type, if it keeps the contract. What finding a package does,
+   * and how a test brings a type of its own.
    */
   install(type: DeviceType<any>, source = type.id): string[] {
     const problems = validateDeviceType(type);
     if (!problems.length && this.#types.has(type.id)) problems.push(`another package already provides ${type.id}`);
     if (problems.length) {
-      this.#refuse(source, problems);
+      this.refuse(source, problems);
       return problems;
     }
     this.#types.set(type.id, type);
@@ -67,7 +51,7 @@ export class DeviceTypeRegistry {
   contribute(type: DeviceType<any>, contribution: AutomationContribution, source = type.id): string[] {
     const problems = checkContribution(contribution, type.id);
     if (problems.length) {
-      this.#refuse(`${source} (what it brings to automations)`, problems);
+      this.refuse(`${source} (what it brings to automations)`, problems);
       return problems;
     }
     this.#contributed.push({ contribution, from: { typeId: type.id, name: type.meta.name } });
@@ -112,7 +96,8 @@ export class DeviceTypeRegistry {
     return this.#warnings.get(id) ?? [];
   }
 
-  #refuse(source: string, problems: string[]): void {
+  /** Keeps a package that was found and turned away, and why: one that would not load, say. */
+  refuse(source: string, problems: string[]): void {
     this.#refused.push({ source, problems });
     console.warn(`[devices] ${source} is not a usable device type:\n  - ${problems.join('\n  - ')}`);
   }

@@ -23,7 +23,7 @@ export class SetupError extends Error {
 export type Draft = {
   id: string;
   by: string;
-  /** Who will hold the connection: null for this server, or the app that ran the steps itself. */
+  /** Who will hold the connection: null for this home's own holder, or the app that ran the steps itself. */
   heldBy: ClientId | null;
   type: DeviceType<any>;
   method: ConnectionMethod | null;
