@@ -13,7 +13,9 @@ and its live socket; and the generic screens' slots.
   `fetch` — a browser's, a phone's, Bun's, a test's — at the address it is
   handed (`@kraftverk/api-client/http`, which needs no React Native); a
   refusal back as the `ApiError` the hub threw; the live stream, said what
-  the screen shows, and opened again with a growing wait.
+  the screen shows, opened again with a growing wait, and whether it is up.
+  For a screen, over any home: a refusal that only wants a person's yes as
+  an answer to ask with (`askingYes`, `changeAutomation`, `applyPlan`).
 - **Does not:** decide anything, or find the server: it carries what the
   home says, where it is told the home is. The older calls beside it
   (`api.ts`), which find the address through React Native, go when the app

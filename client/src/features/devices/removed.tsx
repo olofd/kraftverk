@@ -57,8 +57,8 @@ export function RemovedDevice({ device }: { device: DeviceView }) {
         <SectionLabel>Delete its history</SectionLabel>
         <Card gap="$3">
           <Text fontSize={13} color="$muted" lineHeight={19}>
-            Deletes {device.name} and everything it recorded. This cannot be undone here: only a backup of the
-            server brings it back. Type its name to confirm.
+            Deletes {device.name} and everything it recorded. This cannot be undone here: only a backup brings it
+            back. Type its name to confirm.
           </Text>
           <Input size="$3" value={typed} onChangeText={setTyped} onSubmitEditing={() => (!busy && typed.trim() === device.name ? void remove() : undefined)} placeholder={device.name} aria-label="Its name, typed to confirm" backgroundColor="$background" borderColor="$borderColor" />
           <Button

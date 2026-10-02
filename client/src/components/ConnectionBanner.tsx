@@ -6,7 +6,7 @@ import { useServers } from '../state/ServersProvider';
 
 /**
  * Only renders when something is actually wrong: a server you added is not
- * answering. Local mode has no server to lose — its devices are this app's
+ * answering. A home the app keeps itself has no server to lose — its devices are this app's
  * own, and each says on its card whether it can be reached.
  */
 export function ConnectionBanner() {

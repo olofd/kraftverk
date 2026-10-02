@@ -120,7 +120,7 @@ export class DeviceRegistry {
         method: connection.method,
         methodLabel: method?.label ?? connection.method,
         transport: connection.transport,
-        heldBy: connection.heldBy ? { kind: 'client', id: connection.heldBy, name: client?.name ?? 'Another app' } : { kind: 'server' },
+        heldBy: connection.heldBy ? { kind: 'client', id: connection.heldBy, name: client?.name ?? 'Another app' } : { kind: 'home' },
         address: connection.address,
         priority: connection.priority,
         reachable: reachable(connection),

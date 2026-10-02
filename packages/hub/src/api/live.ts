@@ -34,6 +34,8 @@ export function liveApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'live'> {
         outbox.add(message);
         schedule();
       });
+      // In the process, it is up at once.
+      options.onState?.('live');
       listener({ type: 'hello', at: new Date().toISOString() });
       return {
         say: (view) => viewer.report(view),

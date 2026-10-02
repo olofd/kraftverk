@@ -77,7 +77,9 @@ client/                  Expo app (iOS + web)
   app/index.tsx          "Your devices" — the root, always
   app/add-device.tsx     categories → type → how to connect → steps → check → save
   app/device/[id]/       one device: dashboard, settings, advanced
-  src/runtime/           this app as a holder: sessions, gateway, uploads, local mode
+  src/platform/home/     a home the app keeps itself: the hub in its process on a phone, in a worker in a browser
+  src/state/             the home the screens ask (HomeProvider), its devices, the servers
+  src/runtime/           this app as a holder for a server: sessions, gateway, uploads (until 6f)
   src/generated/         the installed packages, bound in by npm run gen:devices
 packages/hub/            a home, running: what is installed, devices' views, setup, history, attention
 server/

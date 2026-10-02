@@ -27,7 +27,9 @@ import { secretWords } from '../config/shared';
 import { partSlotFor } from '../../devices/ui';
 import { fedBy, feedsTo, settingsForms, togglesOf, type Toggle } from './model';
 import { featherName } from '../../lib/icons';
+import { HERE } from '../../platform/here';
 import { useDevices } from '../../state/DevicesProvider';
+import { useHome } from '../../state/HomeProvider';
 
 /**
  * What every device gets for free.
@@ -186,24 +188,28 @@ export function Energy({ device }: { device: DeviceView }) {
 /**
  * What it said happened, newest first — one part's, or all of them — read
  * again when the live stream carries one of its events. A device that
- * declares no events has nothing to show; local mode keeps none.
+ * declares no events has nothing to show.
  */
 export function Events({ device, part }: { device: DeviceView; part?: string }) {
-  const { events, heard } = useDevices();
+  const { heard } = useDevices();
+  const { api } = useHome();
   const [list, setList] = useState<DeviceEventView[] | null>(null);
   const count = heard?.deviceId === device.id ? heard.count : 0;
   const declares = (device.description.events?.length ?? 0) > 0;
 
   useEffect(() => {
-    if (!events || !declares) return;
-    const controller = new AbortController();
-    void events(device.id, 50, controller.signal)
-      .then(setList)
+    if (!declares) return;
+    let live = true;
+    void api.devices
+      .events(device.id, 50)
+      .then((events) => live && setList(events))
       .catch(() => undefined);
-    return () => controller.abort();
-  }, [count, declares, device.id, events]);
+    return () => {
+      live = false;
+    };
+  }, [api, count, declares, device.id]);
 
-  if (!events || !declares || !list) return null;
+  if (!declares || !list) return null;
   const shown = part === undefined ? list : list.filter((event) => event.part === part);
   return (
     <EventList
@@ -218,19 +224,18 @@ export function Events({ device, part }: { device: DeviceView; part?: string }) 
 // --- history ------------------------------------------------------------------
 
 /**
- * One chart, and a way to point it at any number the device keeps. The server
+ * One chart, and a way to point it at any number the device keeps. The home
  * records every attribute its description says to keep — whoever holds it — so
- * the picker is simply that list. Local mode keeps no history, and says nothing.
+ * the picker is simply that list.
  */
 export function History({ device, part }: { device: DeviceView; part?: string }) {
-  const { history } = useDevices();
   const chartable = device.description.attributes.filter(
     (attribute) => attribute.value.type === 'number' && keepsHistory(attribute) && (part === undefined || (attribute.part ?? MAIN_PART) === part)
   );
   const [key, setKey] = useState<string | null>(null);
   const selected: AttributeSpec | undefined =
     chartable.find((spec) => spec.key === key) ?? chartable.find((spec) => spec.category === 'primary') ?? chartable[0];
-  if (!history || !selected) return null;
+  if (!selected) return null;
   const parts = new Map(partsOf(device.description, device.name).map((part) => [part.id, part]));
   const label = (spec: AttributeSpec) => (spec.part && spec.part !== MAIN_PART && !spec.label.startsWith(parts.get(spec.part)?.label ?? '') ? `${parts.get(spec.part)?.label}: ${spec.label}` : spec.label);
 
@@ -341,10 +346,13 @@ export function GenericSettings({ device }: { device: DeviceView }) {
 
 // --- connections ------------------------------------------------------------------
 
-const heldByLabel = (connection: ConnectionView, clientId: string | null) =>
-  connection.heldBy.kind === 'server'
-    ? 'through your server'
-    : connection.heldBy.id === clientId || connection.heldBy.id === 'this-app'
+/** Who holds it, in words: the home — your server, or this app keeping its own — this app for a server, or another. */
+const heldByLabel = (connection: ConnectionView, clientId: string | null, home: 'server' | 'own') =>
+  connection.heldBy.kind === 'home'
+    ? home === 'server'
+      ? 'through your server'
+      : `from ${HERE}`
+    : connection.heldBy.id === clientId
       ? 'from this app'
       : `from ${connection.heldBy.name}`;
 
@@ -354,7 +362,8 @@ const heldByLabel = (connection: ConnectionView, clientId: string | null) =>
  * same steps as the device itself, and must reach this device.
  */
 export function Connections({ device }: { device: DeviceView }) {
-  const { prefer, removeConnection, runtime, mode, setExportable } = useDevices();
+  const { prefer, removeConnection, setExportable } = useDevices();
+  const { holding, kind } = useHome();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const theme = useTheme();
@@ -388,7 +397,7 @@ export function Connections({ device }: { device: DeviceView }) {
                 <XStack alignItems="center" justifyContent="space-between" gap="$2">
                   <YStack flex={1} gap={2}>
                     <Text fontSize={15} fontWeight="600" color="$color">
-                      {connection.methodLabel}, {heldByLabel(connection, runtime.clientId)}
+                      {connection.methodLabel}, {heldByLabel(connection, holding?.clientId ?? null, kind)}
                     </Text>
                     <Text fontSize={12} color="$muted">
                       {connection.inUse
@@ -402,7 +411,7 @@ export function Connections({ device }: { device: DeviceView }) {
                   </YStack>
                   {connection.inUse ? <Icon name="check-circle" size={16} color={theme.success?.val} /> : null}
                 </XStack>
-                {mode === 'server' && connection.heldBy.kind === 'server' && connection.secrets.length ? (
+                {connection.heldBy.kind === 'home' && connection.secrets.length ? (
                   <XStack alignItems="center" gap="$3">
                     <YStack flex={1} gap={2}>
                       <Text fontSize={14} fontWeight="600" color="$color">
@@ -448,7 +457,7 @@ export function Connections({ device }: { device: DeviceView }) {
                       disabled={busy}
                       onPress={() =>
                         void act(async () => {
-                          if (await confirmAction('Remove this connection?', `${device.name} will no longer be reached ${connection.methodLabel.toLowerCase()}, ${heldByLabel(connection, runtime.clientId)}.`, 'Remove')) {
+                          if (await confirmAction('Remove this connection?', `${device.name} will no longer be reached ${connection.methodLabel.toLowerCase()}, ${heldByLabel(connection, holding?.clientId ?? null, kind)}.`, 'Remove')) {
                             await removeConnection(device, connection);
                           }
                         })
@@ -586,12 +595,12 @@ const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1
 // --- manage -----------------------------------------------------------------------
 
 /**
- * Its name, and removing it. Removing keeps its history on the server, so
- * adding the same device again can bring it back; in local mode there is no
- * history, and it is simply gone.
+ * Its name, and removing it. Removing keeps its history in the home — a
+ * server's, or the app's own — so adding the same device again can bring it
+ * back.
  */
 export function Manage({ device }: { device: DeviceView }) {
-  const { rename, remove, mode } = useDevices();
+  const { rename, remove } = useDevices();
   const [name, setName] = useState(device.name);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -600,10 +609,7 @@ export function Manage({ device }: { device: DeviceView }) {
 
   const removeIt = async () => {
     haptic();
-    const message =
-      mode === 'server'
-        ? `${device.name} leaves your list, and its connections go. Its history is kept: add the same device again to bring it back.`
-        : `${device.name} and how it is reached are deleted from this app.`;
+    const message = `${device.name} leaves your list, and its connections go. Its history is kept: add the same device again to bring it back.`;
     if (!(await confirmAction('Remove this device?', message, 'Remove', 'dangerous'))) return;
     setBusy(true);
     setError(null);
@@ -650,7 +656,7 @@ export function Manage({ device }: { device: DeviceView }) {
         <RowSeparator />
         <Row
           title="Remove this device"
-          subtitle={mode === 'server' ? 'Its history is kept, to bring back or delete later' : 'Deleted from this app'}
+          subtitle="Its history is kept, to bring back or delete later"
           accessory={
             <Button size="$3" minHeight={44} disabled={busy} borderColor="$danger" icon={<Icon name="trash-2" size={13} color={theme.danger?.val} />} onPress={() => void removeIt()}>
               Remove

@@ -19,7 +19,7 @@ export const READINGS_EVERY_MS = 15_000;
  * the screen's own.
  */
 export function useReadAgain(read: () => void, { followReadings }: { followReadings: boolean }): void {
-  const { mode, live, devices, onAutomation } = useDevices();
+  const { live, devices, onAutomation } = useDevices();
   const due = useRef<{ at: number; timer: ReturnType<typeof setTimeout> } | null>(null);
   const reading = useRef(read);
   reading.current = read;
@@ -46,13 +46,10 @@ export function useReadAgain(read: () => void, { followReadings }: { followReadi
     []
   );
 
-  useEffect(() => {
-    if (mode !== 'server') return;
-    return onAutomation(() => readWithin(RUN_MOVED_MS));
-  }, [mode, onAutomation, readWithin]);
+  useEffect(() => onAutomation(() => readWithin(RUN_MOVED_MS)), [onAutomation, readWithin]);
 
   // Readings arrive on the stream as the device list changes; the list changing is the signal.
-  const following = mode === 'server' && live === 'live' && followReadings;
+  const following = live === 'live' && followReadings;
   const seen = useRef(devices);
   useEffect(() => {
     if (seen.current === devices) return;
@@ -61,8 +58,8 @@ export function useReadAgain(read: () => void, { followReadings }: { followReadi
   }, [devices, following, readWithin]);
 
   useEffect(() => {
-    if (mode !== 'server' || live === 'live') return;
+    if (live === 'live') return;
     const timer = setInterval(() => reading.current(), READINGS_EVERY_MS);
     return () => clearInterval(timer);
-  }, [live, mode]);
+  }, [live]);
 }

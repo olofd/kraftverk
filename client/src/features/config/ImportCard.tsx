@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
-import { applyImport, describeError, planImport, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-client';
+import { applyPlan, describeError, planImport, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-client';
 import { checkDocument, configJsonSchema, CURRENT_VERSION, readConfig, type Vocabulary } from '@kraftverk/home-file';
 import { Card, RowSeparator, SectionLabel, SegmentedControl, Toggle, haptic, Icon } from '@kraftverk/ui';
 
 import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../lib/confirm';
+import { useHome } from '../../state/HomeProvider';
 import { useTone, type Tone } from '../automations/looks';
 import { Picker } from '../automations/editor/fields';
 import { ProblemList } from './shared';
@@ -31,6 +32,7 @@ const ACTION: Record<ImportItem['action'], { label: string; tone: Tone }> = {
  * it would set acting or take away.
  */
 export function ImportCard({ vocabulary, restored, onApplied }: { vocabulary: Vocabulary | null; restored: boolean; onApplied: () => void }) {
+  const { api } = useHome();
   const tone = useTone();
   const [text, setText] = useState('');
   const [mode, setMode] = useState<Mode>('merge');
@@ -57,7 +59,8 @@ export function ImportCard({ vocabulary, restored, onApplied }: { vocabulary: Vo
     setProblem(null);
     setApplied(null);
     try {
-      const next = await planImport('restored' in source ? { restored: true, mode } : { text: source.text, mode, ...(passphrase ? { passphrase } : {}) });
+      // The copy a server's last restore was made from is the server's own to plan again; anything typed, any home's.
+      const next = 'restored' in source ? await planImport({ restored: true, mode }) : await api.configuration.plan({ text: source.text, mode, ...(passphrase ? { passphrase } : {}) });
       setPlan({ ...next, fromRestored: 'restored' in source });
     } catch (err) {
       setProblem(describeError(err) || 'It could not be read');
@@ -153,6 +156,7 @@ export function ImportCard({ vocabulary, restored, onApplied }: { vocabulary: Vo
  * for; and Apply.
  */
 function PlanView({ plan, onAgain, onApplied }: { plan: ImportPlan; onAgain: () => void; onApplied: (applied: ImportApplied) => void }) {
+  const { api } = useHome();
   const tone = useTone();
   const doing = (items: ImportItem[]) => items.filter((item) => item.action !== 'same');
   const [devices, setDevices] = useState<ReadonlySet<string>>(new Set(doing(plan.devices).map((item) => item.key)));
@@ -177,7 +181,7 @@ function PlanView({ plan, onAgain, onApplied }: { plan: ImportPlan; onAgain: () 
       const everything = devices.size === doing(plan.devices).length && automations.size === doing(plan.automations).length;
       const { answer, declined } = await withConfirmation(
         (confirmation) =>
-          applyImport({
+          applyPlan(api, {
             plan: plan.id!,
             ...(everything ? {} : { include: { devices: [...devices], automations: [...automations] } }),
             secrets,

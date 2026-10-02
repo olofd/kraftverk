@@ -1,4 +1,4 @@
-import { ApiError, type ApiErrorKind, type KraftverkApi, type LiveStream, type LiveUpdate, type ViewReport } from '@kraftverk/api-contract';
+import { ApiError, type ApiErrorKind, type KraftverkApi, type LiveState, type LiveStream, type LiveUpdate, type ViewReport } from '@kraftverk/api-contract';
 
 import { counter, failureOf, hear, type Failure, type MessageEnd } from './end.ts';
 
@@ -165,9 +165,16 @@ export function apiOver(end: MessageEnd, via = 'api'): KraftverkApi {
       send({ via, kind: 'call', id, path, args: crossing });
     });
 
-  const live = (listener: (update: LiveUpdate) => void): LiveStream => {
+  const live = (listener: (update: LiveUpdate) => void, options: { onState?: (state: LiveState) => void } = {}): LiveStream => {
     const stream = nextStream();
-    streams.set(stream, listener);
+    // Up from its first word: the home there says hello before anything else.
+    options.onState?.('connecting');
+    let heard = false;
+    streams.set(stream, (update) => {
+      if (!heard) options.onState?.('live');
+      heard = true;
+      listener(update);
+    });
     send({ via, kind: 'live', stream });
     return {
       say: (view) => send({ via, kind: 'say', stream, view }),

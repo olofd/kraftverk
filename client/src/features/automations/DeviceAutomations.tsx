@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { fetchAutomationsFor, type AutomationView } from '@kraftverk/api-client';
+import type { AutomationView } from '@kraftverk/api-client';
+import { savedDeviceId } from '@kraftverk/device-sdk';
 
-import { useDevices } from '../../state/DevicesProvider';
+import { useHome } from '../../state/HomeProvider';
 import { AutomationList } from './AutomationList';
 import { useReadAgain } from './useReadAgain';
 
@@ -10,25 +11,24 @@ import { useReadAgain } from './useReadAgain';
  * The automations a device takes part in, at the bottom of its page — the
  * same list, and the same cards, as the automations screen, kept to this
  * device: run or stopped from here, opened to their own page, and a new one
- * made from here (docs/AUTOMATIONS-UX.md). Nothing when no server runs them.
+ * made from here (docs/AUTOMATIONS-UX.md).
  */
 export function DeviceAutomations({ device }: { device: { id: string; name: string } }) {
-  const { mode } = useDevices();
+  const { api } = useHome();
   const [automations, setAutomations] = useState<AutomationView[] | null>(null);
 
   const load = useCallback(() => {
-    fetchAutomationsFor(device.id)
+    api.automations
+      .list({ device: savedDeviceId(device.id) })
       .then(setAutomations)
       .catch(() => undefined);
-  }, [device.id]);
+  }, [api, device.id]);
 
-  useEffect(() => {
-    if (mode === 'server') load();
-  }, [load, mode]);
+  useEffect(() => load(), [load]);
   // Its runs move on the live stream: read again when one does, or now and then while the stream is down.
   useReadAgain(load, { followReadings: false });
 
-  if (mode !== 'server' || !automations) return null;
+  if (!automations) return null;
   const replace = (next: AutomationView) => setAutomations((all) => all?.map((candidate) => (candidate.id === next.id ? next : candidate)) ?? null);
   return <AutomationList automations={automations} onChanged={replace} title="Automations" device={device} empty={`No automation uses ${device.name} yet.`} />;
 }

@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { describeError, fetchConfigVocabulary, type DeviceView } from '@kraftverk/api-client';
+import { describeError, type DeviceView } from '@kraftverk/api-client';
 import { Card, haptic, Icon, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { useDevices } from '../../state/DevicesProvider';
+import { useHome } from '../../state/HomeProvider';
 import { useTone } from '../automations/looks';
 import { deviceYaml } from './entries';
 import { ExportOne } from './ExportOne';
@@ -13,19 +14,18 @@ import { YamlEditor } from './YamlEditor';
 
 /**
  * A device as configuration (docs/CONFIG.md), under its settings: the key a
- * file knows it by, changed in place; what it is and how the server reaches
+ * file knows it by, changed in place; what it is and how the home reaches
  * it, as the YAML a file says it in — its secrets by name, never their
- * values — and an export of it alone. Server mode only: a configuration is
- * the server's.
+ * values — and an export of it alone.
  */
 export function DeviceConfig({ device }: { device: DeviceView }) {
   const tone = useTone();
-  const { mode, setKey } = useDevices();
+  const { setKey } = useDevices();
+  const { api } = useHome();
   const [shown, setShown] = useState<ReturnType<typeof deviceYaml> | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  if (mode !== 'server') return null;
-  const ways = device.connections.filter((connection) => connection.heldBy.kind === 'server');
+  const ways = device.connections.filter((connection) => connection.heldBy.kind === 'home');
   const secrets = [...new Set(ways.flatMap((connection) => connection.secrets))];
 
   const show = async () => {
@@ -33,7 +33,7 @@ export function DeviceConfig({ device }: { device: DeviceView }) {
     if (shown) return setShown(null);
     setProblem(null);
     try {
-      setShown(deviceYaml(device, await fetchConfigVocabulary()));
+      setShown(deviceYaml(device, await api.configuration.vocabulary()));
     } catch (err) {
       setProblem(describeError(err) || 'It could not be read');
     }

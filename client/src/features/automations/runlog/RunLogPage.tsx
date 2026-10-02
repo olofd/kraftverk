@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
-import { describeError, fetchAutomation, fetchRunLog, fetchRunLogCsv, type AutomationView, type RunLog } from '@kraftverk/api-client';
+import { describeError, type AutomationView, type RunLog } from '@kraftverk/api-client';
+import type { AutomationId } from '@kraftverk/api-contract';
 import { Card, Chips, Icon, ToggleRow } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
@@ -12,7 +13,9 @@ import { Empty, Group } from '../page/Group';
 import { Mark as OutcomeMark } from '../page/history';
 import { useReadAgain } from '../useReadAgain';
 import { awayOf, RunChart, Ruler } from './RunChart';
-import { changed, marksOf, said, seriesOf, sinceStart, windowOf, type Mark } from '@kraftverk/automation-engine';
+import { changed, marksOf, runLogCsv, said, seriesOf, sinceStart, windowOf, type Mark } from '@kraftverk/automation-engine';
+
+import { useHome } from '../../../state/HomeProvider';
 
 /*
   A run's log, a page of its own (docs/SEQUENCES.md): how it came out; every
@@ -30,14 +33,15 @@ const LATE_MS = 2_000;
 const RUNNING_EVERY_MS = 2_000;
 
 export function RunLogPage({ id, runId }: { id: string; runId: string }) {
+  const { api } = useHome();
   const [log, setLog] = useState<RunLog | null>(null);
   const [automation, setAutomation] = useState<AutomationView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(() => {
-    Promise.all([fetchRunLog(id, runId), fetchAutomation(id)])
+    Promise.all([api.automations.runLog(id as AutomationId, runId), api.automations.get(id as AutomationId)])
       .then(([kept, owner]) => (setLog(kept), setAutomation(owner), setError(null)))
       .catch((caught: unknown) => setError(describeError(caught)));
-  }, [id, runId]);
+  }, [api, id, runId]);
   useEffect(load, [load]);
   useReadAgain(load, { followReadings: false });
   // While it runs, its devices keep talking: read again every couple of seconds until it ends.
@@ -132,7 +136,8 @@ function Outcome({ log, name, automationId }: { log: RunLog; name: string; autom
     setProblem(null);
     try {
       const fileName = fileNameOf(name, log.run.at, as);
-      if (as === 'csv') await saveText(fileName, await fetchRunLogCsv(automationId, log.run.id!), 'text/csv');
+      // The table is made here, from the log already read: the same as the home would answer.
+      if (as === 'csv') await saveText(fileName, runLogCsv(log), 'text/csv');
       else await saveText(fileName, JSON.stringify(log, null, 2), 'application/json');
     } catch (caught) {
       setProblem(describeError(caught));

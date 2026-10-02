@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Svg, { Line, Path } from 'react-native-svg';
 import { Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { describeError, fetchDeviceHistory } from '@kraftverk/api-client';
+import { describeError } from '@kraftverk/api-client';
+import type { SavedDeviceId } from '@kraftverk/device-sdk';
+
+import { useHome } from '../state/HomeProvider';
 import type { AttributeSpec, SeriesPoint } from '@kraftverk/api-client';
 import { quantityOf } from '@kraftverk/device-sdk';
 import {
@@ -55,21 +58,22 @@ export function MeasurementChart({
   const [error, setError] = useState<string | null>(null);
   const [width, setWidth] = useState(0);
   const theme = useTheme();
+  const { api } = useHome();
 
   const load = useCallback(
-    async (signal?: AbortSignal) => {
+    async (signal: AbortSignal) => {
       try {
-        const history = await fetchDeviceHistory(deviceId, measurement.key, { hours }, signal);
+        const history = await api.devices.history(deviceId as SavedDeviceId, { key: measurement.key, hours, points: 240 });
+        if (signal.aborted) return;
         setPoints(history.points);
         setError(null);
       } catch (err) {
-        const message = describeError(err);
-        if (!message) return; // aborted
+        if (signal.aborted) return;
         setPoints([]);
-        setError(message);
+        setError(describeError(err));
       }
     },
-    [deviceId, hours, measurement.key]
+    [api, deviceId, hours, measurement.key]
   );
 
   useEffect(() => {

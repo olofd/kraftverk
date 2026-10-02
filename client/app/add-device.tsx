@@ -5,25 +5,25 @@ import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui'
 import {
   CATEGORIES,
   describeError,
-  fetchDeviceTypes,
   type CheckOutcome,
   type DeviceTypeListing,
   type DeviceView,
   type SaveInput,
 } from '@kraftverk/api-client';
-import { describeDeviceType, isSimulated, LINK_KIND_IDS, linkableParts, linkKindSpec, MAIN_PART, methodOf, partName, type DeviceDescription } from '@kraftverk/device-sdk';
+import { isSimulated, LINK_KIND_IDS, linkableParts, linkKindSpec, MAIN_PART, methodOf, partName, type DeviceDescription } from '@kraftverk/device-sdk';
 import { Card, Row, RowSeparator, SectionLabel, ToggleRow, haptic, Icon } from '@kraftverk/ui';
 
 import { DeviceImage } from '../src/components/DeviceImage';
 import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
-import { AppFlow, ServerFlow, type SetupFlow } from '../src/features/add/flows';
+import { AppFlow, HomeFlow, type SetupFlow } from '../src/features/add/flows';
 import { StepView } from '../src/features/add/steps';
 import { secretWords } from '../src/features/config/shared';
 import { confirmAction } from '../src/lib/confirm';
 import { featherName } from '../src/lib/icons';
-import { PLATFORM } from '../src/runtime/registry';
+import { HERE, HERE_PLATFORM } from '../src/platform/here';
 import { useDevices } from '../src/state/DevicesProvider';
+import { useHome } from '../src/state/HomeProvider';
 
 /**
  * Adding a device (docs/DATA-MODEL.md §1).
@@ -31,20 +31,20 @@ import { useDevices } from '../src/state/DevicesProvider';
  * What are you adding → which one → how do you want to connect → the steps
  * that connection's layers supply → the check → a name and how it fits the
  * house → saved. Every step that touches the device runs where the connection
- * will be held: the server, or this app. `?attach=<id>` adds another way to
+ * will be held: the home — a server, or the app's own — or this app, for a
+ * server. `?attach=<id>` adds another way to
  * reach a device you have; `?type=&method=&address=` comes from "Found near you".
  */
 
 type Stage = 'category' | 'type' | 'method' | 'steps' | 'finish';
 
 /** One way to connect, and who would hold it. */
-type Way = { methodId: string; label: string; description?: string; holder: 'server' | 'this-app'; available: boolean; reason: string | null; recommended: boolean };
-
-const HERE = PLATFORM === 'web' ? 'this browser' : 'this phone';
+type Way = { methodId: string; label: string; description?: string; holder: 'home' | 'this-app'; available: boolean; reason: string | null; recommended: boolean };
 
 export default function AddDeviceScreen() {
   const params = useLocalSearchParams<{ type?: string; method?: string; address?: string; attach?: string }>();
-  const { mode, runtime, devices, refresh } = useDevices();
+  const { devices, refresh } = useDevices();
+  const { api, kind, holding } = useHome();
   const attachTo = params.attach ? (devices.find((device) => device.id === params.attach) ?? null) : null;
 
   const [types, setTypes] = useState<DeviceTypeListing[] | null>(null);
@@ -62,22 +62,17 @@ export default function AddDeviceScreen() {
   const [error, setError] = useState<string | null>(null);
   const flowRef = useRef<SetupFlow | null>(null);
 
-  // What can be added: the server's installed types, or — in local mode — this app's.
+  // What can be added: the home's installed types, and whether it can hold each way.
   useEffect(() => {
-    if (mode === 'local') {
-      setTypes(
-        [...runtime.registry.types.values()].map((type) => ({
-          ...describeDeviceType(type),
-          availability: Object.fromEntries(type.connections.map((method) => [method.id, { server: { ok: false as const, reason: 'Local mode: there is no server' } }])),
-          warnings: [],
-        }))
-      );
-      return;
-    }
-    fetchDeviceTypes()
-      .then((list) => setTypes(list.types))
-      .catch((err: unknown) => setLoadError(describeError(err) || 'What can be added could not be read'));
-  }, [mode, runtime]);
+    let live = true;
+    api
+      .deviceTypes()
+      .then((list) => live && setTypes(list.types))
+      .catch((err: unknown) => live && setLoadError(describeError(err) || 'What can be added could not be read'));
+    return () => {
+      live = false;
+    };
+  }, [api]);
 
   // A draft left behind is discarded, so a secret it holds does not outlive the screen.
   useEffect(() => () => flowRef.current?.discard(), []);
@@ -87,46 +82,37 @@ export default function AddDeviceScreen() {
   const ways = useMemo((): Way[] => {
     if (!type) return [];
     return type.connections.flatMap((method): Way[] => {
-      const rows: Way[] = [];
-      if (mode === 'server') {
-        const server = type.availability[method.id]?.server;
-        rows.push({
+      // The home's own way: through your server, or from where the app keeps its own — the home says whether it can, and why not.
+      const home = type.availability[method.id];
+      const rows: Way[] = [
+        {
           methodId: method.id,
-          label: `${method.label}, through your server`,
+          label: `${method.label}, ${kind === 'server' ? 'through your server' : `from ${HERE}`}`,
           description: method.description,
-          holder: 'server',
-          available: server?.ok ?? false,
-          reason: server && !server.ok ? server.reason : null,
+          holder: 'home',
+          available: home?.ok ?? false,
+          reason: home && !home.ok ? home.reason : null,
           recommended: Boolean(method.recommended),
-        });
-      }
-      // Simulated reaches nothing, so whatever runs the app can hold it: the server when there is one, this app when there is not.
-      if (isSimulated(method)) {
-        if (mode === 'local') rows.push({ methodId: method.id, label: `${method.label}, from ${HERE}`, description: method.description, holder: 'this-app', available: true, reason: null, recommended: false });
-        return rows;
-      }
-      // A way only a server holds is not offered here: a vendor account's password stays on the server.
-      // With no server, it is shown, and why it cannot be used.
-      if (method.serverOnly) {
-        if (mode === 'local') rows.push({ methodId: method.id, label: method.label, description: method.description, holder: 'server', available: false, reason: `It needs a server: ${method.serverOnly}`, recommended: false });
-        return rows;
-      }
-      const definition = runtime.registry.definition(method.transport);
-      if (definition?.platforms.includes(PLATFORM) && runtime.registry.protocols.get(method.protocol)?.bindings[method.transport]) {
-        const here = runtime.registry.available(method.transport);
+        },
+      ];
+      // With a server, this app may hold a way itself too, over its own radio: never a simulated one, nor one the server keeps to itself.
+      if (!holding || isSimulated(method) || method.serverOnly) return rows;
+      const definition = holding.registry.definition(method.transport);
+      if (definition?.platforms.includes(HERE_PLATFORM) && holding.registry.protocols.get(method.protocol)?.bindings[method.transport]) {
+        const here = holding.registry.available(method.transport);
         rows.push({
           methodId: method.id,
           label: `${method.label}, from ${HERE}`,
-          description: mode === 'server' ? `While ${HERE} has it: readings go to your server when it can reach it.` : method.description,
+          description: `While ${HERE} has it: readings go to your server when it can reach it.`,
           holder: 'this-app',
           available: here.ok,
           reason: here.ok ? null : here.reason,
-          recommended: mode === 'local' && Boolean(method.recommended),
+          recommended: false,
         });
       }
       return rows;
     });
-  }, [mode, runtime, type]);
+  }, [holding, kind, type]);
 
   const begin = useCallback(
     async (way: Way) => {
@@ -137,14 +123,14 @@ export default function AddDeviceScreen() {
       try {
         flowRef.current?.discard();
         let next: SetupFlow;
-        if (way.holder === 'server') {
-          next = await ServerFlow.start(type.id, way.methodId);
+        if (way.holder === 'home' || !holding) {
+          next = await HomeFlow.start(api, type.id, way.methodId);
         } else {
-          const local = runtime.registry.types.get(type.id);
+          const local = holding.registry.types.get(type.id);
           const method = local ? methodOf(local, way.methodId) : null;
-          const protocol = method && !isSimulated(method) ? (runtime.registry.protocols.get(method.protocol) ?? null) : null;
+          const protocol = method && !isSimulated(method) ? (holding.registry.protocols.get(method.protocol) ?? null) : null;
           if (!local || !method || (!protocol && !isSimulated(method))) throw new Error('This app cannot set that up: update it');
-          next = new AppFlow(runtime, local, method, protocol);
+          next = new AppFlow(api, holding, local, method, protocol);
         }
         flowRef.current = next;
         setFlow(next);
@@ -158,14 +144,14 @@ export default function AddDeviceScreen() {
         setBusy(false);
       }
     },
-    [runtime, type]
+    [api, holding, type]
   );
 
   // "Found near you" names the method too: start it straight away.
   const autostarted = useRef(false);
   useEffect(() => {
     if (autostarted.current || !params.method || !type) return;
-    const way = ways.find((candidate) => candidate.methodId === params.method && candidate.holder === 'server' && candidate.available);
+    const way = ways.find((candidate) => candidate.methodId === params.method && candidate.holder === 'home' && candidate.available);
     if (!way) return;
     autostarted.current = true;
     void begin(way);
@@ -364,7 +350,6 @@ const SECTION_LABELS: Record<Section, string> = { devices: 'Devices', services: 
 
 function Categories({ types, onPick }: { types: DeviceTypeListing[]; onPick: (id: string) => void }) {
   const theme = useTheme();
-  const { mode } = useDevices();
   /*
     Where a shelf goes is what is installed on it says: services when all of
     it is, devices otherwise. A shelf with nothing on it has nothing to say
@@ -404,21 +389,19 @@ function Categories({ types, onPick }: { types: DeviceTypeListing[]; onPick: (id
           </Card>
         </YStack>
       ))}
-      {mode === 'server' ? (
-        <YStack gap="$2">
-          <SectionLabel>Already described</SectionLabel>
-          <Card inset>
-            <Pressable onPress={() => router.push('/configuration?import=1')}>
-              <XStack alignItems="center" gap="$3" paddingLeft="$4">
-                <Icon name="file-text" size={18} color={theme.accent?.val} />
-                <YStack flex={1}>
-                  <Row title="From a configuration" subtitle="A device exported from here or another server, or written by hand: pasted, or opened as a file" />
-                </YStack>
-              </XStack>
-            </Pressable>
-          </Card>
-        </YStack>
-      ) : null}
+      <YStack gap="$2">
+        <SectionLabel>Already described</SectionLabel>
+        <Card inset>
+          <Pressable onPress={() => router.push('/configuration?import=1')}>
+            <XStack alignItems="center" gap="$3" paddingLeft="$4">
+              <Icon name="file-text" size={18} color={theme.accent?.val} />
+              <YStack flex={1}>
+                <Row title="From a configuration" subtitle="A device exported from here or another kraftverk, or written by hand: pasted, or opened as a file" />
+              </YStack>
+            </XStack>
+          </Pressable>
+        </Card>
+      </YStack>
     </>
   );
 }
@@ -466,13 +449,13 @@ function Types({ types, onPick, onBack }: { types: DeviceTypeListing[]; onPick: 
 
 function Ways({ ways, busy, onPick, onBack }: { ways: Way[]; busy: boolean; onPick: (way: Way) => void; onBack?: () => void }) {
   const theme = useTheme();
-  const { mode } = useDevices();
+  const { kind } = useHome();
   return (
     <YStack gap="$2">
       <SectionLabel>How do you want to connect?</SectionLabel>
       <Card inset>
         {ways.length === 0 ? (
-          <Row title="No way to reach it from here" subtitle={mode === 'server' ? 'Neither your server nor this app has what it needs' : 'This app has nothing that reaches it'} />
+          <Row title="No way to reach it from here" subtitle={kind === 'server' ? 'Neither your server nor this app has what it needs' : 'This app has nothing that reaches it'} />
         ) : null}
         {ways.map((way, index) => (
           <YStack key={`${way.methodId}-${way.holder}`}>
@@ -482,7 +465,7 @@ function Ways({ ways, busy, onPick, onBack }: { ways: Way[]; busy: boolean; onPi
                 title={`${way.label}${way.recommended ? ' · recommended' : ''}`}
                 subtitle={way.available ? way.description : (way.reason ?? 'Not available here')}
                 disabled={!way.available}
-                accessory={<Icon name={way.holder === 'server' ? 'server' : PLATFORM === 'web' ? 'monitor' : 'smartphone'} size={16} color={theme.muted?.val} />}
+                accessory={<Icon name={way.holder === 'home' && kind === 'server' ? 'server' : HERE_PLATFORM === 'web' ? 'monitor' : 'smartphone'} size={16} color={theme.muted?.val} />}
               />
             </Pressable>
           </YStack>
@@ -647,7 +630,8 @@ function Finish({
   const [links, setLinks] = useState<Record<string, string>>({});
   /** Whether the secrets just given may leave in an export as plain text: off unless chosen, and warned against (docs/CONFIG.md). */
   const [exportable, setExportable] = useState(false);
-  const keepsSecrets = flow.holder === 'server' && flow.secrets.length > 0;
+  const keepsSecrets = flow.holder === 'home' && flow.secrets.length > 0;
+  const { kind } = useHome();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -729,7 +713,7 @@ function Finish({
           <Card gap="$2">
             <Input size="$3" value={name} maxLength={60} onChangeText={setName} onSubmitEditing={() => (!busy && (attachTo || name.trim()) ? void save() : undefined)} backgroundColor="$background" borderColor="$borderColor" aria-label="Its name" />
             <Text fontSize={12} color="$muted">
-              {flow.holder === 'server' ? 'Held by your server.' : `Held by ${HERE}.`}
+              {flow.holder === 'home' && kind === 'server' ? 'Held by your server.' : `Held by ${HERE}.`}
             </Text>
           </Card>
         </YStack>

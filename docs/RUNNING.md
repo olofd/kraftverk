@@ -144,10 +144,13 @@ device's **Settings → Connections** says who holds what; a station reached bot
 ways uses the connection highest in that list that is reachable, so the server's
 Wi-Fi takes over again when the phone leaves.
 
-With **no server at all** — local mode — the app keeps its own devices and
-reaches them itself. Nothing is recorded, and nothing runs while it is closed.
-It is where the app starts when there is no server beside it; adding one in
-**App settings** switches to it.
+With **no server at all** — local mode — the app keeps a home of its own: its
+devices, their history and their automations, in its own SQLite, reached
+by itself. They run while the app is open, and nothing runs while it is
+closed. In a browser that needs a secure page — HTTPS, or `localhost` — and
+one tab holds the home at a time; another asks for it. It is where the app
+starts when there is no server beside it; adding one in **App settings**
+switches to it.
 
 - **In a browser**: Chrome or Edge, on `localhost` or over HTTPS. The browser
   shows its own device chooser; a page is not allowed to scan. Safari and

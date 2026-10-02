@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { describeError, fetchConfigVocabulary, type AutomationView, type DeviceView, type RoleBinding } from '@kraftverk/api-client';
+import { describeError, type AutomationView, type DeviceView, type RoleBinding } from '@kraftverk/api-client';
 import { entryJsonSchema, type Vocabulary } from '@kraftverk/home-file';
 import type { PrintContext } from '@kraftverk/automation';
 import type { AutomationId } from '@kraftverk/device-sdk';
@@ -8,6 +8,7 @@ import type { Rule } from '@kraftverk/automation';
 
 import { automationYaml, draftOfEntry, readAutomationText, type AutomationSettings } from './entries';
 import type { TextProblem } from './shared';
+import { useHome } from '../../state/HomeProvider';
 
 /** What the form edits: its name, rule, and what fills each role. */
 type Draft = { name: string; rule: Rule; roles: Record<string, RoleBinding>; starts: Record<string, AutomationId> };
@@ -37,6 +38,7 @@ export function useAutomationYaml({
   /** What it read: the draft and settings — and the key a whole file pasted in gives it, when it differs. */
   onRead: (read: { draft: Draft; settings: AutomationSettings; key: string | null; madeFrom: string | null }) => void;
 }) {
+  const { api } = useHome();
   const [vocabulary, setVocabulary] = useState<Vocabulary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState('');
@@ -50,13 +52,14 @@ export function useAutomationYaml({
   // What a file may name here — the installed types, the keys of what you have — read once.
   useEffect(() => {
     let live = true;
-    fetchConfigVocabulary()
+    api.configuration
+      .vocabulary()
       .then((words) => live && setVocabulary(words))
-      .catch((err) => live && setError(describeError(err) || 'What a configuration may name could not be read'));
+      .catch((err: unknown) => live && setError(describeError(err) || 'What a configuration may name could not be read'));
     return () => {
       live = false;
     };
-  }, []);
+  }, [api]);
 
   /** The draft and its settings, written out: what the editor opens with. */
   const open = useCallback(

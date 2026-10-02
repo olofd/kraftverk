@@ -527,13 +527,24 @@ The steps, each green and pushed:
     first holds the home and handed it on asking, the plug still there
     after the hand-over and after a reload. It needs a secure page — HTTPS,
     or the computer itself — as OPFS does; on plain HTTP the app says so.
-6e. **The screens on the interface.** A `HomeProvider` gives a
-    `KraftverkApi` — a server's, or the app's own — and every screen asks
-    it: the devices, adding one, automations, history, the timeline, the
-    configuration. `local.ts`, `describeLocal`, `AppFlow`'s own half and
-    the mode branches go; a home of the app's own gains history,
-    automations and its configuration. An e2e test runs an automation with
-    no server.
+6e. **The screens on the interface** — done, 2026-10-02.
+    `HomeProvider` gives a `KraftverkApi` — a server's (`httpApi`), or the
+    app's own (`openOwnHome`), shown once it is open, or why not: another
+    tab holds it, with "Use it here" — and every screen asks it: the
+    devices, adding one (`HomeFlow`, every step in the home), automations,
+    history, problems, what is near, connectivity, the configuration.
+    `local.ts`, `describeLocal`, `AppFlow`'s own half and the mode branches
+    go; a home of the app's own has history, automations, removed devices
+    and its configuration, as a server's does. The contract follows: a
+    method's availability is the home's (`availability[method]`), a
+    connection the home holds is `heldBy: { kind: 'home' }`, a way kept to
+    a server (`serverOnly`) is refused by a home in an app, and a live
+    stream says whether it is up (`onState`). A refusal that only wants a
+    yes is an answer to a screen (`askingYes`, `changeAutomation`,
+    `applyPlan` in api-client). `e2e/local.e2e.ts`: with no server, a plug
+    added and switched, an automation written as YAML and run — once the
+    gateway's dwell allows — and all of it there again after a reload. 16
+    files of logic left in the app.
 6f. **With a server: what the app holds.** `createHolding` in the hub;
     the app's runtime, its uplink and api-client's older calls go; finding
     the server's address moves to the app's platform.

@@ -34,11 +34,11 @@ answers — and listed on the device as `tools`.
 | `POST` | `/auth/password` | Your own password; needs the current one |
 | `GET` `POST` `DELETE` | `/users` · `/users/:id` · `/users/:id/password` | Accounts |
 | `GET` | `/version` | Name, version, runtime, uptime; simulator or not, transports, read-only |
-| `GET` | `/device-types` | What can be added: categories, installed types, and whether this server can hold each method |
+| `GET` | `/device-types` | What can be added: categories, installed types, and whether this server can hold each method (`availability[method]`: yes, or why not) |
 | `POST` | `/setup` | Start adding a device over a method this server will hold; the steps follow |
 | `GET` `PATCH` `DELETE` | `/setup/:id` | The draft; values from a form step (secrets stay here); discard it |
 | `GET` | `/setup/:id/sightings` | What the transport sees that this type's protocol recognises, marked when already yours |
-| `POST` | `/setup/:id/choose` · `/steps/:step/actions/:action` · `/steps/:step/discover` | Choose the device; run a step's helper ("fetch the key") on the server |
+| `POST` | `/setup/:id/choose` · `/steps/:step/actions/:action` · `/steps/:step/discover` | Choose the device — `{ address }` it sees, `{ manual }` typed, or `{ chooser }`, the platform's own picker, which a server has none of and says so; run a step's helper ("fetch the key") on the server |
 | `POST` | `/setup/:id/check` · `/setup/:id/save` | Read it once — new, yours, yours before, another model — then save it all in one go |
 | `POST` | `/setup/app` | A connection this app will hold: what it learnt reading the device itself, never a secret |
 | `GET` | `/devices` · `/devices/removed` | The devices you have, each with its description (parts, attributes, events), information, live readings, health, connections and links; removed ones, with their history |

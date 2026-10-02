@@ -1,14 +1,5 @@
+import type { KraftverkApi } from '@kraftverk/api-contract';
 import {
-  checkSetup,
-  chooseInSetup,
-  discardSetup,
-  fetchSightings,
-  runSetupAction,
-  runSetupDiscover,
-  saveSetup,
-  startHeldSetup,
-  startSetup,
-  updateSetup,
   type CheckOutcome,
   type ConfigValues,
   type DraftView,
@@ -22,7 +13,6 @@ import {
   isSecretField,
   isSimulated,
   openChannel,
-  savedDeviceId,
   setupPlan,
   type Channel,
   type ConnectionMethod,
@@ -32,7 +22,6 @@ import {
   type Protocol,
   type Sighting,
 } from '@kraftverk/device-sdk';
-import { judgeCheck } from '@kraftverk/holder';
 
 import { PLATFORM } from '../../runtime/registry';
 import type { AppRuntime } from '../../runtime/runtime';
@@ -41,11 +30,12 @@ import type { AppRuntime } from '../../runtime/runtime';
  * One setup, part-way through (docs/DATA-MODEL.md §1, steps 4–7).
  *
  * Every step that touches the device runs where the connection will be held:
- * on the server for a connection it will hold, in this app for one this app
- * will. The screens do not care which: they walk the same plan, and ask this.
+ * in the home — a server, or the app's own — for a connection it will hold,
+ * and in this app for one it holds for a server. The screens do not care
+ * which: they walk the same plan, and ask this.
  */
 export interface SetupFlow {
-  readonly holder: 'server' | 'this-app';
+  readonly holder: 'home' | 'this-app';
   readonly plan: SetupStepView[];
   readonly address: string | null;
   readonly device: Record<string, unknown>;
@@ -66,17 +56,23 @@ export interface SetupFlow {
   discard(): void;
 }
 
-/** A connection the server will hold: every step runs there, in a draft only this account sees. */
-export class ServerFlow implements SetupFlow {
-  readonly holder = 'server' as const;
+/**
+ * A connection the home will hold — a server's, or the app's own: every step
+ * runs there, in a draft only its starter sees, through the one interface.
+ */
+export class HomeFlow implements SetupFlow {
+  readonly holder = 'home' as const;
   #draft: DraftView;
 
-  private constructor(draft: DraftView) {
+  private constructor(
+    private api: KraftverkApi,
+    draft: DraftView
+  ) {
     this.#draft = draft;
   }
 
-  static async start(typeId: string, methodId: string): Promise<ServerFlow> {
-    return new ServerFlow(await startSetup(typeId, methodId));
+  static async start(api: KraftverkApi, typeId: string, methodId: string): Promise<HomeFlow> {
+    return new HomeFlow(api, await api.setup.start({ typeId, methodId }));
   }
 
   get plan() {
@@ -96,47 +92,54 @@ export class ServerFlow implements SetupFlow {
   }
 
   sightings() {
-    return fetchSightings(this.#draft.id);
+    return this.api.setup.sightings(this.#draft.id);
   }
-  async chooser(): Promise<SightingView | null> {
-    throw new Error('The server finds devices itself: choose one from the list');
+  /** The platform's chooser, run by the home — for a browser's own, on this page: called straight from a tap. */
+  async chooser(showAll = false): Promise<SightingView | null> {
+    this.#draft = await this.api.setup.choose(this.#draft.id, { chooser: { showAll } });
+    const address = this.#draft.address;
+    if (!address) return null;
+    const seen = (await this.api.setup.sightings(this.#draft.id)).find((sighting) => sighting.address === address);
+    return seen ?? { address, name: 'The device you chose', detail: null, identity: null, seenAt: new Date().toISOString(), rssi: null, claimedBy: null };
   }
   async choose(choice: { address: string } | { manual: string }) {
-    this.#draft = await chooseInSetup(this.#draft.id, choice);
+    this.#draft = await this.api.setup.choose(this.#draft.id, choice);
   }
   async update(values: { device?: ConfigValues; connection?: ConfigValues }) {
-    this.#draft = await updateSetup(this.#draft.id, values);
+    this.#draft = await this.api.setup.update(this.#draft.id, values);
   }
   async action(stepId: string, actionId: string, input: ConfigValues = {}) {
-    const result = await runSetupAction(this.#draft.id, stepId, actionId, input);
-    this.#draft = await updateSetup(this.#draft.id, {});
+    const result = await this.api.setup.action(this.#draft.id, stepId, actionId, input);
+    this.#draft = await this.api.setup.get(this.#draft.id);
     return result;
   }
   async discover(stepId: string) {
-    const result = await runSetupDiscover(this.#draft.id, stepId);
-    this.#draft = await updateSetup(this.#draft.id, {});
+    const result = await this.api.setup.discover(this.#draft.id, stepId);
+    this.#draft = await this.api.setup.get(this.#draft.id);
     return result;
   }
   async check() {
-    const outcome = await checkSetup(this.#draft.id);
+    const outcome = await this.api.setup.check(this.#draft.id);
     this.#draft = { ...this.#draft, checked: outcome };
     return outcome;
   }
   async save(input: SaveInput) {
-    return (await saveSetup(this.#draft.id, input)).id;
+    return (await this.api.setup.save(this.#draft.id, input)).id;
   }
   discard() {
-    void discardSetup(this.#draft.id);
+    void this.api.setup.discard(this.#draft.id).catch(() => undefined);
   }
 }
 
 const CHECK_TIMEOUT_MS = 20_000;
 
 /**
- * A connection this app will hold: every step runs here, over this app's own
- * radio, with the same device-type and protocol code. What it learns — never a
- * secret — goes to the server to be judged against your devices, or, in local
- * mode, is judged here against this app's own.
+ * A connection this app will hold for a server: every step runs here, over
+ * this app's own radio, with the same device-type and protocol code. What it
+ * learns — never a secret — goes to the server to be judged against your
+ * devices. A home of the app's own holds its connections itself: `HomeFlow`.
+ * This goes with the app's runtime, when the hub's `createHolding` holds
+ * them (docs/PLAN-SHARED-CORE.md, 6f).
  */
 export class AppFlow implements SetupFlow {
   readonly holder = 'this-app' as const;
@@ -147,8 +150,6 @@ export class AppFlow implements SetupFlow {
   #secrets = new Map<string, string>();
   #sighting: Sighting | null = null;
   #draftId: string | null = null;
-  /** What the check learnt, in local mode, where this app saves it. */
-  #identity: string | null = null;
   #stopWatching: (() => void) | null = null;
   #seen: readonly Sighting[] = [];
 
@@ -156,6 +157,7 @@ export class AppFlow implements SetupFlow {
   readonly #simulated: boolean;
 
   constructor(
+    private api: KraftverkApi,
     private runtime: AppRuntime,
     private type: DeviceType<any>,
     private method: ConnectionMethod,
@@ -306,77 +308,32 @@ export class AppFlow implements SetupFlow {
 
   async check(): Promise<CheckOutcome> {
     if (!this.address) throw new Error('Choose the device first');
-    if (this.#simulated) {
-      if (this.runtime.mode === 'server') throw new Error('With a server, the server holds a simulated device: add it through your server');
-      return { outcome: 'new', summary: 'Simulated: no hardware was read, and none will be.', identity: null };
-    }
+    if (this.#simulated) throw new Error('With a server, the server holds a simulated device: add it through your server');
     const { identified, failure } = await this.#identify();
-
-    if (this.runtime.mode === 'server') {
-      if (!this.runtime.clientId) await this.runtime.register();
-      const draft = await startHeldSetup({
-        clientId: this.runtime.clientId!,
-        typeId: this.type.id,
-        methodId: this.method.id,
-        address: this.address,
-        identified: identified ? { identity: identified.identity, model: identified.model, name: identified.name, summary: identified.summary, config: identified.config } : null,
-        failure,
-        device: this.device as ConfigValues,
-        connection: this.connection as ConfigValues,
-      });
-      this.#draftId = draft.id;
-      return draft.checked!;
-    }
-
-    // Local mode: judged against this app's own devices.
-    this.#identity = identified?.identity ?? null;
-    if (!identified) return { outcome: 'no-answer', summary: failure ?? 'It did not answer.', saveAnyway: this.type.setup?.saveAnyway ?? null };
-    // The server's judgement, against this app's own devices. Removing one here forgets it, so none is "yours before".
-    return judgeCheck(identified, {
-      type: this.type,
-      types: this.runtime.registry.types.values(),
-      known: {
-        byIdentity: (identity) => {
-          const known = this.runtime.local.byIdentity(identity);
-          return { active: known ? { id: savedDeviceId(known.id), name: known.name } : null, removed: [] };
-        },
-      },
+    if (!this.runtime.clientId) await this.runtime.register();
+    const draft = await this.api.setup.startHeld({
+      clientId: this.runtime.clientId!,
+      typeId: this.type.id,
+      methodId: this.method.id,
+      address: this.address,
+      identified: identified ? { identity: identified.identity, model: identified.model, name: identified.name, summary: identified.summary, config: identified.config } : null,
+      failure,
+      device: this.device as ConfigValues,
+      connection: this.connection as ConfigValues,
     });
+    this.#draftId = draft.id;
+    return draft.checked!;
   }
 
   async save(input: SaveInput): Promise<string> {
-    if (this.runtime.mode === 'server') {
-      if (!this.#draftId) throw new Error('Check that it answers first');
-      const saved = await saveSetup(this.#draftId, input);
-      // The connection's secrets stay in this app, with the connection it holds.
-      const held = saved.connections.find(
-        (connection) => connection.heldBy.kind === 'client' && connection.heldBy.id === this.runtime.clientId && connection.method === this.method.id
-      );
-      if (held && this.#secrets.size) this.runtime.setHeldSecrets(held.id, Object.fromEntries(this.#secrets));
-      return saved.id;
-    }
-    const identity = this.#identity;
-    if (input.mode === 'attach' && input.deviceId && identity && !this.runtime.local.device(input.deviceId)?.identity) {
-      this.runtime.local.setIdentity(input.deviceId, identity);
-    }
-    const device = this.runtime.local.save({
-      device: {
-        id: input.mode === 'attach' ? input.deviceId : undefined,
-        typeId: this.type.id,
-        name: input.name?.trim() || this.type.meta.name,
-        identity,
-        config: this.device as ConfigValues,
-      },
-      connection: {
-        method: this.method.id,
-        transport: this.method.transport,
-        address: this.address!,
-        config: this.connection as ConfigValues,
-        secrets: Object.fromEntries(this.#secrets),
-      },
-      links: input.links,
-    });
-    return device.id;
+    if (!this.#draftId) throw new Error('Check that it answers first');
+    const saved = await this.api.setup.save(this.#draftId, input);
+    // The connection's secrets stay in this app, with the connection it holds.
+    const held = saved.connections.find(
+      (connection) => connection.heldBy.kind === 'client' && connection.heldBy.id === this.runtime.clientId && connection.method === this.method.id
+    );
+    if (held && this.#secrets.size) this.runtime.setHeldSecrets(held.id, Object.fromEntries(this.#secrets));
+    return saved.id;
   }
 
   discard() {

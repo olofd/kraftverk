@@ -10,7 +10,9 @@ import { DeviceShell } from '../../../src/features/devices/DeviceShell';
 import { Connections, GenericSettings, Links, Manage } from '../../../src/features/devices/panels';
 import { RemovedDevice } from '../../../src/features/devices/removed';
 import { screensFor } from '../../../src/devices/ui';
+import { HERE, HERE_PLATFORM } from '../../../src/platform/here';
 import { useDevices } from '../../../src/state/DevicesProvider';
+import { useHome } from '../../../src/state/HomeProvider';
 
 /**
  * What this device remembers, how it is reached, how it fits the house, what
@@ -45,16 +47,19 @@ function DeviceSettings({ device }: { device: DeviceView }) {
  */
 function WhereWritesGo({ device }: { device: DeviceView }) {
   const { screenProps, holderOf } = useDevices();
+  const { kind } = useHome();
   const { readOnly } = screenProps(device);
   // Which holder is this screen's business, not a device package's: the app says where writes go.
   const holder = holderOf(device);
   const theme = useTheme();
   const [tone, icon, message] = readOnly
-    ? (['$warning', 'lock', holder === 'this-app' ? 'Read-only: writes from this app are off (App settings).' : 'Read-only: the server refuses every write.'] as const)
+    ? (['$warning', 'lock', holder === 'this-app' || kind === 'own' ? 'Read-only: writes from this app are off (App settings).' : 'Read-only: the server refuses every write.'] as const)
     : holder === 'this-app'
       ? (['$muted', 'smartphone', `Written to ${device.name} from this app.`] as const)
-      : holder === 'server'
-        ? (['$muted', 'server', `Written to ${device.name} through your server.`] as const)
+      : holder === 'home'
+        ? kind === 'server'
+          ? (['$muted', 'server', `Written to ${device.name} through your server.`] as const)
+          : (['$muted', HERE_PLATFORM === 'web' ? 'monitor' : 'smartphone', `Written to ${device.name} from ${HERE}.`] as const)
         : (['$muted', 'link-2', device.health.detail] as const);
 
   return (

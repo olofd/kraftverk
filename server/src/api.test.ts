@@ -137,7 +137,7 @@ for (const way of WAYS) {
     test('says what can be added', async () => {
       const listing = await way.api().deviceTypes();
       const lamp = listing.types.find((type) => type.id === 'test.lamp')!;
-      expect(lamp.availability.bus!.server).toEqual({ ok: true });
+      expect(lamp.availability.bus).toEqual({ ok: true });
     });
 
     test('adds a device through setup, lists it, renames it, gives it a key — and refuses a key another has', async () => {

@@ -1,103 +1,109 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { describeError, fetchTransportDiagnostic, fetchTransports, type TransportList } from '@kraftverk/api-client';
+import { describeError, type TransportList } from '@kraftverk/api-client';
 import { Card, Row, RowSeparator, SectionLabel, Icon } from '@kraftverk/ui';
 
 import { Screen } from '../src/components/Screen';
-import { PLATFORM } from '../src/runtime/registry';
-import { useDevices } from '../src/state/DevicesProvider';
+import { HERE } from '../src/platform/here';
+import { useHome } from '../src/state/HomeProvider';
 
 /**
  * What devices are reached over, by whom (docs/ARCHITECTURE.md §4.7).
  *
- * The server's transports — the MQTT broker stations connect to, its
- * Bluetooth radio, the home network — each with whether it runs and why not,
- * and its own read-only diagnostics. Then this app's: what it can hold a
- * connection over, where it runs. Nothing here names a device, and on screen
- * this is "connectivity": the app never says transport (§2).
+ * The home's transports — a server's MQTT broker, its Bluetooth radio, the
+ * home network; or, with no server, this browser's or phone's own — each with
+ * whether it runs and why not, and its own read-only diagnostics. Then, with
+ * a server, what this app can hold a connection over itself. Nothing here
+ * names a device, and on screen this is "connectivity": the app never says
+ * transport (§2).
  */
 export default function ConnectivityScreen() {
-  const { mode, runtime } = useDevices();
+  const { api, kind, holding } = useHome();
   const [list, setList] = useState<TransportList | null>(null);
   const [error, setError] = useState<string | null>(null);
   const theme = useTheme();
 
   useEffect(() => {
-    if (mode !== 'server') return;
-    fetchTransports()
-      .then(setList)
-      .catch((err: unknown) => setError(describeError(err) || 'The server did not say what it can reach'));
-  }, [mode]);
+    let live = true;
+    api.transports
+      .list()
+      .then((found) => live && setList(found))
+      .catch((err: unknown) => live && setError(describeError(err) || 'It did not say what it can reach'));
+    return () => {
+      live = false;
+    };
+  }, [api]);
 
-  const here = runtime.registry.held();
+  const here = holding?.registry.held() ?? [];
 
   return (
     <Screen back="App settings" backTo="/app-settings" title="Connectivity" subtitle="How devices are reached">
-      {mode === 'server' ? (
+      <YStack gap="$2">
+        <SectionLabel>{kind === 'server' ? 'Your server' : capitalise(HERE)}</SectionLabel>
+        {error ? (
+          <Card borderColor="$danger">
+            <Text fontSize={13} color="$danger">
+              {error}
+            </Text>
+          </Card>
+        ) : null}
+        {!list && !error ? <Spinner color="$accent" /> : null}
+        {list?.transports.map((transport) => (
+          <Card key={transport.id} gap="$2">
+            <XStack alignItems="center" gap="$2">
+              <Icon
+                name={transport.availability.ok ? 'check-circle' : 'alert-circle'}
+                size={16}
+                color={transport.availability.ok ? theme.success?.val : theme.warning?.val}
+              />
+              <Text flex={1} fontSize={15} fontWeight="700" color="$color">
+                {capitalise(transport.label)}
+              </Text>
+            </XStack>
+            <Text fontSize={12} color="$muted" lineHeight={18}>
+              {transport.availability.ok ? 'Running.' : transport.availability.reason}
+              {Object.keys(transport.values).length ? ` ${Object.entries(transport.values).map(([key, value]) => `${key}: ${value}`).join(' · ')}` : ''}
+            </Text>
+            {transport.diagnostics.length ? <Diagnostics transport={transport.id} names={transport.diagnostics} /> : null}
+          </Card>
+        ))}
+        {list?.refused.length ? (
+          <Card borderColor="$warning" gap="$1">
+            {list.refused.map((refusal) => (
+              <Text key={refusal.source} fontSize={12} color="$warning">
+                {refusal.source}: {refusal.problems.join('; ')}
+              </Text>
+            ))}
+          </Card>
+        ) : null}
+      </YStack>
+
+      {holding ? (
         <YStack gap="$2">
-          <SectionLabel>Your server</SectionLabel>
-          {error ? (
-            <Card borderColor="$danger">
-              <Text fontSize={13} color="$danger">
-                {error}
-              </Text>
-            </Card>
-          ) : null}
-          {!list && !error ? <Spinner color="$accent" /> : null}
-          {list?.transports.map((transport) => (
-            <Card key={transport.id} gap="$2">
-              <XStack alignItems="center" gap="$2">
-                <Icon
-                  name={transport.availability.ok ? 'check-circle' : 'alert-circle'}
-                  size={16}
-                  color={transport.availability.ok ? theme.success?.val : theme.warning?.val}
-                />
-                <Text flex={1} fontSize={15} fontWeight="700" color="$color">
-                  {capitalise(transport.label)}
-                </Text>
-              </XStack>
-              <Text fontSize={12} color="$muted" lineHeight={18}>
-                {transport.availability.ok ? 'Running.' : transport.availability.reason}
-                {Object.keys(transport.values).length ? ` ${Object.entries(transport.values).map(([key, value]) => `${key}: ${value}`).join(' · ')}` : ''}
-              </Text>
-              {transport.diagnostics.length ? <Diagnostics transport={transport.id} names={transport.diagnostics} /> : null}
-            </Card>
-          ))}
-          {list?.refused.length ? (
-            <Card borderColor="$warning" gap="$1">
-              {list.refused.map((refusal) => (
-                <Text key={refusal.source} fontSize={12} color="$warning">
-                  {refusal.source}: {refusal.problems.join('; ')}
-                </Text>
-              ))}
-            </Card>
-          ) : null}
+          <SectionLabel>This app, for your server</SectionLabel>
+          <Card inset>
+            {here.length === 0 ? <Row title={`Nothing in ${HERE}`} subtitle="This app cannot hold a connection itself here" /> : null}
+            {here.map((id, index) => {
+              const available = holding.registry.available(id);
+              const definition = holding.registry.definition(id)!;
+              return (
+                <YStack key={id}>
+                  {index > 0 ? <RowSeparator /> : null}
+                  <Row title={capitalise(definition.label)} subtitle={available.ok ? 'Available here' : available.reason} />
+                </YStack>
+              );
+            })}
+          </Card>
         </YStack>
       ) : null}
-
-      <YStack gap="$2">
-        <SectionLabel>This app</SectionLabel>
-        <Card inset>
-          {here.length === 0 ? <Row title={`Nothing ${PLATFORM === 'web' ? 'in this browser' : 'in this app'}`} subtitle="This app cannot hold a connection itself here" /> : null}
-          {here.map((id, index) => {
-            const available = runtime.registry.available(id);
-            const definition = runtime.registry.definition(id)!;
-            return (
-              <YStack key={id}>
-                {index > 0 ? <RowSeparator /> : null}
-                <Row title={capitalise(definition.label)} subtitle={available.ok ? 'Available here' : available.reason} />
-              </YStack>
-            );
-          })}
-        </Card>
-      </YStack>
     </Screen>
   );
 }
 
 /** A transport's read-only diagnostics, one at a time, as the transport reports them. */
 function Diagnostics({ transport, names }: { transport: string; names: string[] }) {
+  const { api } = useHome();
   const [shown, setShown] = useState<{ name: string; body: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -109,7 +115,7 @@ function Diagnostics({ transport, names }: { transport: string; names: string[] 
       }
       setBusy(true);
       try {
-        const data = await fetchTransportDiagnostic(transport, name, { limit: 50 });
+        const data = await api.transports.diagnostic(transport, name, { limit: '50' });
         setShown({ name, body: JSON.stringify(data, null, 2) });
       } catch (err) {
         setShown({ name, body: describeError(err) || 'It did not answer' });
@@ -117,7 +123,7 @@ function Diagnostics({ transport, names }: { transport: string; names: string[] 
         setBusy(false);
       }
     },
-    [shown, transport]
+    [api, shown, transport]
   );
 
   return (

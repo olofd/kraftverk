@@ -1,4 +1,6 @@
-import type { LiveStream, LiveUpdate, ViewReport } from '@kraftverk/api-contract';
+import type { LiveState, LiveStream, LiveUpdate, ViewReport } from '@kraftverk/api-contract';
+
+export type { LiveState };
 
 /**
  * The server's live stream (`GET /api/live`): what changed, as it changes.
@@ -16,7 +18,6 @@ import type { LiveStream, LiveUpdate, ViewReport } from '@kraftverk/api-contract
  * keeps it only while the socket is open.
  */
 
-export type LiveState = 'connecting' | 'live' | 'down';
 
 /** Waits before opening again, by how many times in a row it failed; then the last, for ever. */
 const RETRY_MS = [1000, 2000, 5000, 10_000, 30_000];

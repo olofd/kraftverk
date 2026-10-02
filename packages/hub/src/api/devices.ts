@@ -100,6 +100,8 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
    */
   const holds = (method: ConnectionMethod): Availability => {
     if (isSimulated(method)) return { ok: true };
+    // What a package keeps on a server only — a vendor account's password — a home in an app does not hold.
+    if (method.serverOnly && transports.platform !== 'server') return { ok: false, reason: `It needs a server: ${method.serverOnly}` };
     const protocol = protocols.get(method.protocol);
     if (!protocol?.bindings[method.transport]) return { ok: false, reason: `${placeOf(transports.platform).this} cannot reach devices this way: it needs updating` };
     return transports.available(method.transport);
@@ -131,7 +133,7 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
     async deviceTypes() {
       const listing: DeviceTypeListing[] = types.all().map((type) => ({
         ...describeDeviceType(type),
-        availability: Object.fromEntries(methodsOf(type).map((method) => [method.id, { server: holds(method) }])),
+        availability: Object.fromEntries(methodsOf(type).map((method) => [method.id, holds(method)])),
         warnings: types.warnings(type.id),
       }));
       return {

@@ -11,6 +11,7 @@ import { ConfirmHost } from '../src/components/ConfirmHost';
 import { AuthGate } from '../src/features/auth/SignIn';
 import { AuthProvider } from '../src/state/AuthProvider';
 import { DevicesProvider } from '../src/state/DevicesProvider';
+import { HomeProvider } from '../src/state/HomeProvider';
 import { ServersProvider } from '../src/state/ServersProvider';
 
 export default function RootLayout() {
@@ -36,16 +37,19 @@ export default function RootLayout() {
             */}
             <AuthProvider>
               <AuthGate>
-                <DevicesProvider>
-                  {/*
-                    No tab bar. Root is the device canvas, and everything else is
-                    pushed on top of it — a device's own screens, the add flow, and
-                    the app-level infrastructure pages.
-                  */}
-                  <Stack screenOptions={{ headerShown: false }}>
-                    <Stack.Screen name="index" />
-                  </Stack>
-                </DevicesProvider>
+                {/* The home the app shows: a server's, or its own — one interface either way. */}
+                <HomeProvider>
+                  <DevicesProvider>
+                    {/*
+                      No tab bar. Root is the device canvas, and everything else is
+                      pushed on top of it — a device's own screens, the add flow, and
+                      the app-level infrastructure pages.
+                    */}
+                    <Stack screenOptions={{ headerShown: false }}>
+                      <Stack.Screen name="index" />
+                    </Stack>
+                  </DevicesProvider>
+                </HomeProvider>
               </AuthGate>
             </AuthProvider>
             {/* Where the app asks for a yes, on the web: above every screen, signed in or not. */}

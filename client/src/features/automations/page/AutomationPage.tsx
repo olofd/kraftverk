@@ -3,14 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
 import {
-  checkAutomation,
-  deleteAutomation,
+  changeAutomation,
   describeError,
-  fetchAudit,
-  fetchAutomation,
-  fetchAutomationRuns,
-  rehearseAutomation,
-  updateAutomation,
   type AutomationChanges,
   type AutomationRun,
   type AutomationView,
@@ -22,6 +16,9 @@ import { Card, Icon, RowSeparator, SegmentedControl, ToggleRow, haptic, type Ico
 import { Pressable } from '../../../components/Pressable';
 import { Screen } from '../../../components/Screen';
 import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../../lib/confirm';
+import type { AutomationId } from '@kraftverk/api-contract';
+
+import { useHome } from '../../../state/HomeProvider';
 import { useShowing } from '../../../state/useShowing';
 import { startsBy } from '../AutomationCard';
 import { AutomationForm } from '../editor/AutomationForm';
@@ -42,6 +39,7 @@ import { MODES, modeSays, RECHECK, recheckSays, wantsYes, every } from './modes'
  * the same groups, editable — with Cancel and Save below it.
  */
 export function AutomationPage({ id, edit = null }: { id: string; edit?: 'form' | 'yaml' | null }) {
+  const { api } = useHome();
   const [automation, setAutomation] = useState<AutomationView | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Being changed: through the form, or as its YAML. */
@@ -54,10 +52,11 @@ export function AutomationPage({ id, edit = null }: { id: string; edit?: 'form' 
   };
 
   const load = useCallback(() => {
-    fetchAutomation(id)
+    api.automations
+      .get(id as AutomationId)
       .then((next) => (setAutomation(next), setError(null)))
-      .catch((err) => setError(describeError(err) || 'It could not be read'));
-  }, [id]);
+      .catch((err: unknown) => setError(describeError(err) || 'It could not be read'));
+  }, [api, id]);
   useEffect(load, [load]);
   // A run moving, or a reading it stands on: read again, so the page follows it.
   useReadAgain(load, { followReadings: true });
@@ -195,6 +194,7 @@ function Header({
   onChecked: (run: AutomationRun) => void;
   onRehearsed: (rehearsal: Rehearsal) => void;
 }) {
+  const { api } = useHome();
   const tone = useTone();
   const run = useRun(automation, onChanged);
   const [menu, setMenu] = useState(false);
@@ -225,13 +225,13 @@ function Header({
   const remove = () =>
     act(async () => {
       if (!(await confirmAction(`Delete “${automation.name}”?`, `${automation.running ? 'Its run is stopped first. ' : ''}It stops, and is gone — its runs and their logs with it. What it did stays on the timeline, said in words.`, 'Delete', 'dangerous'))) return;
-      await deleteAutomation(automation.id);
+      await api.automations.delete(automation.id);
       router.replace('/automations');
     }, 'It could not be deleted');
 
   const items: { icon: IconName; label: string; danger?: boolean; onPress: () => void }[] = [
-    { icon: 'help-circle', label: 'What would it do now?', onPress: () => void act(async () => onChecked(await checkAutomation(automation.id)), 'It could not be checked') },
-    ...(automation.when.length ? [{ icon: 'rewind' as const, label: 'Rehearse on last week', onPress: () => void act(async () => onRehearsed(await rehearseAutomation(automation.id)), 'It could not be rehearsed') }] : []),
+    { icon: 'help-circle', label: 'What would it do now?', onPress: () => void act(async () => onChecked(await api.automations.check(automation.id)), 'It could not be checked') },
+    ...(automation.when.length ? [{ icon: 'rewind' as const, label: 'Rehearse on last week', onPress: () => void act(async () => onRehearsed(await api.automations.rehearse({ automation: automation.id })), 'It could not be rehearsed') }] : []),
     { icon: 'code', label: 'As configuration', onPress: () => (setMenu(false), router.push(`/automation/${encodeURIComponent(automation.id)}/configuration`)) },
     { icon: 'trash-2', label: 'Delete', danger: true, onPress: () => void remove() },
   ];
@@ -303,6 +303,7 @@ function Header({
 
 /** What it does on its own: off, only watching, or acting — keeping things so, and a place on the home page. */
 function OnItsOwn({ automation, onChanged }: { automation: AutomationView; onChanged: (next: AutomationView) => void }) {
+  const { api } = useHome();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const onItsOwn = automation.when.length > 0;
@@ -323,7 +324,7 @@ function OnItsOwn({ automation, onChanged }: { automation: AutomationView; onCha
   const change = (changes: AutomationChanges, title: string, yes: string) =>
     act(async () => {
       const { answer } = await withConfirmation(
-        (confirmation) => updateAutomation(automation.id, { ...changes, confirmation }),
+        (confirmation) => changeAutomation(api, automation.id, { ...changes, confirmation }),
         wantsYes,
         (reason, again) => confirmAction(title, `${again ? `${ASKED_AGAIN}\n\n` : ''}${reason}\n\n${automation.sentence}`, yes)
       );
@@ -367,7 +368,7 @@ function OnItsOwn({ automation, onChanged }: { automation: AutomationView; onCha
         disabled={busy}
         onCheckedChange={(on) =>
           void act(async () => {
-            const answer = await updateAutomation(automation.id, { homePlace: on ? 1000 : null });
+            const answer = await changeAutomation(api, automation.id, { homePlace: on ? 1000 : null });
             if ('automation' in answer) onChanged(answer.automation);
           }, 'That did not work')
         }
@@ -383,14 +384,15 @@ function OnItsOwn({ automation, onChanged }: { automation: AutomationView; onCha
 
 /** What it is doing, what it did last, and — opened — everything it has done and every change made to it. */
 function Activity({ automation }: { automation: AutomationView }) {
+  const { api } = useHome();
   const tone = useTone();
   const [history, setHistory] = useState<History | null>(null);
   const [open, setOpen] = useState(false);
   const loadHistory = useCallback(() => {
-    Promise.all([fetchAutomationRuns(automation.id, 100), fetchAudit({ resourceKind: 'automation', resource: automation.id, limit: 100 })])
+    Promise.all([api.automations.runs(automation.id, 100), api.timeline({ resourceKind: 'automation', resource: automation.id, limit: 100 })])
       .then(([runs, entries]) => setHistory({ runs, changes: entries.filter((entry) => !isRunEntry(entry)) }))
       .catch(() => setHistory({ runs: [], changes: [] }));
-  }, [automation.id]);
+  }, [api, automation.id]);
   useEffect(() => {
     if (open) loadHistory();
   }, [loadHistory, open, automation.updatedAt, automation.lastRun?.id, automation.running === null]);

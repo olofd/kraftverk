@@ -164,7 +164,7 @@ describe('watching a device', () => {
   });
 });
 
-const connection = (id: string, priority: number, reachable: boolean | null, heldBy: ConnectionView['heldBy'] = { kind: 'server' }): ConnectionView => ({
+const connection = (id: string, priority: number, reachable: boolean | null, heldBy: ConnectionView['heldBy'] = { kind: 'home' }): ConnectionView => ({
   id: connectionId(id),
   method: id,
   methodLabel: id,

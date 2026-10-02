@@ -260,7 +260,7 @@ function WayOut() {
           </YStack>
         ))}
         <Pressable onPress={() => servers.use(null)}>
-          <Row title="Use without a server" subtitle="Local mode: this device holds its own Bluetooth links" />
+          <Row title="Use without a server" subtitle="This app keeps its own devices, their history and their automations, while it is open" />
         </Pressable>
       </Card>
     </YStack>

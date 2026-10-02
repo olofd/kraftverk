@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { Text, YStack } from 'tamagui';
 
-import { describeError, fetchAutomations, fetchConfigSnapshot, fetchConfigVocabulary, getApiBaseUrl, type AutomationView, type ConfigSnapshotView } from '@kraftverk/api-client';
+import { describeError, fetchConfigSnapshot, getApiBaseUrl, type AutomationView, type ConfigSnapshotView } from '@kraftverk/api-client';
 import { schemaLine, type Vocabulary } from '@kraftverk/home-file';
 import { Card, Row, SectionLabel } from '@kraftverk/ui';
 
@@ -10,45 +10,36 @@ import { Screen } from '../src/components/Screen';
 import { ExportCard } from '../src/features/config/ExportCard';
 import { ImportCard } from '../src/features/config/ImportCard';
 import { useDevices } from '../src/state/DevicesProvider';
+import { useHome } from '../src/state/HomeProvider';
 
 /**
- * Your home as one configuration file (docs/CONFIG.md): the copy the server
- * keeps beside its database — what carries the home across a reset — an
- * export of all of it or of what you choose, an import planned before it is
- * applied, and how to write one in an editor of your own. Opened from a
+ * Your home as one configuration file (docs/CONFIG.md): an export of all of
+ * it or of what you choose, an import planned before it is applied — on a
+ * server, and in a home the app keeps itself alike — and, with a server, the
+ * copy it keeps beside its database (what carries the home across a reset)
+ * and how to write one in an editor of your own. Opened from a
  * device's or an automation's page, its export starts with that one chosen.
  */
 export default function ConfigurationScreen() {
   const params = useLocalSearchParams<{ devices?: string; automations?: string; import?: string }>();
-  const { devices, mode, refresh } = useDevices();
+  const { devices, refresh } = useDevices();
+  const { api, kind } = useHome();
   const [automations, setAutomations] = useState<AutomationView[] | null>(null);
   const [vocabulary, setVocabulary] = useState<Vocabulary | null>(null);
   const [snapshot, setSnapshot] = useState<ConfigSnapshotView | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    if (mode !== 'server') return;
-    Promise.all([fetchAutomations(), fetchConfigVocabulary(), fetchConfigSnapshot()])
+    // The copy kept beside a database is a server's: a home the app keeps itself has none.
+    Promise.all([api.automations.list(), api.configuration.vocabulary(), kind === 'server' ? fetchConfigSnapshot() : Promise.resolve(null)])
       .then(([all, words, kept]) => (setAutomations(all), setVocabulary(words), setSnapshot(kept), setError(null)))
-      .catch((err) => setError(describeError(err) || 'It could not be read'));
-  }, [mode]);
+      .catch((err: unknown) => setError(describeError(err) || 'It could not be read'));
+  }, [api, kind]);
   useEffect(load, [load]);
 
   const split = (value: string | undefined) => (value ? value.split(',').filter(Boolean) : []);
   const chosen = params.devices || params.automations ? { devices: split(params.devices), automations: split(params.automations) } : null;
   const active = devices.filter((device) => !device.removedAt);
-
-  if (mode !== 'server') {
-    return (
-      <Screen back="App settings" backTo="/app-settings" title="Configuration">
-        <Card>
-          <Text fontSize={14} color="$muted" lineHeight={20}>
-            A configuration is your server’s: this app is in local mode, keeping its own devices.
-          </Text>
-        </Card>
-      </Screen>
-    );
-  }
 
   return (
     <Screen
@@ -64,11 +55,11 @@ export default function ConfigurationScreen() {
           </Text>
         </Card>
       ) : null}
-      {params.import ? null : <Kept snapshot={snapshot} />}
+      {params.import || kind !== 'server' ? null : <Kept snapshot={snapshot} />}
       {params.import ? null : automations ? <ExportCard key={`${params.devices}|${params.automations}`} devices={active} automations={automations} chosen={chosen} /> : null}
       <ImportCard vocabulary={vocabulary} restored={!params.import && Boolean(snapshot?.restored)} onApplied={() => (void refresh(), load())} />
-      {params.import ? <Kept snapshot={snapshot} /> : null}
-      <InAnEditor />
+      {params.import && kind === 'server' ? <Kept snapshot={snapshot} /> : null}
+      {kind === 'server' ? <InAnEditor /> : null}
     </Screen>
   );
 }

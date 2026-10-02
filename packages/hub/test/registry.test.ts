@@ -84,7 +84,7 @@ describe('a device, described', () => {
       ['blink', true, 'object'],
     ]);
     expect(view.connections).toEqual([
-      expect.objectContaining({ method: 'bus', methodLabel: 'Test bus', transport: 'bus', heldBy: { kind: 'server' }, address: 'lamp-1', inUse: true, secrets: ['pin'] }),
+      expect.objectContaining({ method: 'bus', methodLabel: 'Test bus', transport: 'bus', heldBy: { kind: 'home' }, address: 'lamp-1', inUse: true, secrets: ['pin'] }),
     ]);
     // Which secrets, never their values.
     expect(JSON.stringify(view)).not.toContain('1234');

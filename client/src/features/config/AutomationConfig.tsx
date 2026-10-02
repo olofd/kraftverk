@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { describeError, fetchAutomations, fetchDeviceList, updateAutomation, type AutomationView } from '@kraftverk/api-client';
+import { changeAutomation, describeError, type AutomationView } from '@kraftverk/api-client';
 import { haptic, Icon, RowSeparator } from '@kraftverk/ui';
 
 import { useTone } from '../automations/looks';
@@ -10,6 +10,7 @@ import { automationYaml } from './entries';
 import { ExportOne } from './ExportOne';
 import { KeyField } from './KeyField';
 import { YamlEditor } from './YamlEditor';
+import { useHome } from '../../state/HomeProvider';
 
 /**
  * An automation as configuration (docs/CONFIG.md), on its page: the key a
@@ -18,6 +19,7 @@ import { YamlEditor } from './YamlEditor';
  * write it so instead of through the form; and an export of it alone.
  */
 export function AutomationConfig({ automation, onChanged, onEditYaml }: { automation: AutomationView; onChanged: (next: AutomationView) => void; onEditYaml: () => void }) {
+  const { api } = useHome();
   const tone = useTone();
   const [shown, setShown] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -29,7 +31,7 @@ export function AutomationConfig({ automation, onChanged, onEditYaml }: { automa
     setProblem(null);
     try {
       // The devices that fill its roles and the automations it starts, by their keys: read now, so none is missed while the app's own list is still coming.
-      const [devices, others] = await Promise.all([fetchDeviceList(), Object.keys(automation.starts).length ? fetchAutomations() : Promise.resolve([])]);
+      const [devices, others] = await Promise.all([api.devices.list(), Object.keys(automation.starts).length ? api.automations.list() : Promise.resolve([])]);
       setShown(automationYaml({ ...automation, madeFrom: automation.madeFrom?.id ?? null }, devices, others).text);
     } catch (err) {
       setProblem(describeError(err) || 'It could not be read');
@@ -43,7 +45,7 @@ export function AutomationConfig({ automation, onChanged, onEditYaml }: { automa
         label="Name in configuration"
         help="What a configuration file calls it, and what an import matches it by."
         onSave={async (key) => {
-          const answer = await updateAutomation(automation.id, { key });
+          const answer = await changeAutomation(api, automation.id, { key });
           if ('automation' in answer) onChanged(answer.automation);
         }}
       />

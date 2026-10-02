@@ -334,7 +334,7 @@ describe('what can be added', () => {
     expect(p280.meta.category).toBe('power-station');
     // Its own ways, and simulated — which every type has, and a server can always hold.
     expect(p280.connections.map((method: { id: string }) => method.id)).toEqual(['wifi', 'bluetooth', 'simulated']);
-    expect(p280.availability.simulated.server).toEqual({ ok: true });
+    expect(p280.availability.simulated).toEqual({ ok: true });
     for (const id of ['tuya.plug', 'atorch.s1w', 'open-meteo.weather']) expect(body.types.map((type: { id: string }) => type.id)).toContain(id);
     // Declarations only: every function stays on the server.
     expect(JSON.stringify(body)).not.toContain('=>');
@@ -344,7 +344,7 @@ describe('what can be added', () => {
   test('a method whose transport this server cannot use says why', async () => {
     const { body } = await onBusAs('/device-types');
     const lamp = body.types.find((type: { id: string }) => type.id === 'test.lamp');
-    expect(lamp.availability.bus.server).toEqual({ ok: true });
+    expect(lamp.availability.bus).toEqual({ ok: true });
   });
 });
 
@@ -385,7 +385,7 @@ describe('adding a device', () => {
     expect(lamp.identity).toBe('lampish:LAMP-1');
     const view = (await onBusAs(`/devices/${enc(lamp.id)}`)).body;
     expect(view.config).toEqual({ room: 'Hall' });
-    expect(view.connections[0]).toMatchObject({ method: 'bus', address: 'lamp-1', heldBy: { kind: 'server' } });
+    expect(view.connections[0]).toMatchObject({ method: 'bus', address: 'lamp-1', heldBy: { kind: 'home' } });
   });
 
   test('the same lamp again is yours: its address is marked, and it is not added twice', async () => {
@@ -863,7 +863,7 @@ describe('a connection a browser holds', () => {
     expect(started.body.checked).toMatchObject({ outcome: 'new', identity: null });
     const attached = await onBusAs(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: '', mode: 'attach', deviceId: lamp.id } });
     expect(attached.status).toBe(200);
-    expect(attached.body.connections.map((connection: { heldBy: { kind: string } }) => connection.heldBy.kind)).toEqual(['server', 'client']);
+    expect(attached.body.connections.map((connection: { heldBy: { kind: string } }) => connection.heldBy.kind)).toEqual(['home', 'client']);
   });
 
   test('the reachable connection highest in the list is in use: the app takes over while the server cannot reach it, and gives it back', async () => {

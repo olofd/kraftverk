@@ -122,8 +122,8 @@ export type ConnectionView = {
   /** "Wi-Fi", from the type. */
   methodLabel: string;
   transport: string;
-  /** Who holds it: the server, or one phone or browser. */
-  heldBy: { kind: 'server' } | { kind: 'client'; id: ClientId; name: string };
+  /** Who holds it: the home itself — a server, or the app that keeps its own — or one phone or browser holding it for a server. */
+  heldBy: { kind: 'home' } | { kind: 'client'; id: ClientId; name: string };
   address: string;
   priority: number;
   /** Whether it reaches the device right now; null when nobody is trying it. */
@@ -200,9 +200,9 @@ export type PictureRef = `type:${number}` | `own:${string}`;
 /** `PUT /devices/:id/picture`: which picture to show. */
 export type PictureChoice = { picture: PictureRef };
 
-/** An installed type, and whether this server can hold a connection over each of its methods. */
+/** An installed type, and whether the home — a server, or the app's own — can hold a connection over each of its methods, and if not, why. */
 export type DeviceTypeListing = DeviceTypeView & {
-  availability: Record<string, { server: Availability }>;
+  availability: Record<string, Availability>;
   warnings: readonly string[];
 };
 
@@ -913,6 +913,9 @@ export type HeldReadings = {
 export type HeldReadingsTaken = { live: number; history: number; refused: number };
 
 /** A listener of the live stream: what it says its screen shows, and letting go. */
+/** Whether a live stream is up: opening, open (it said hello), or down — and opened again by whoever carries it. */
+export type LiveState = 'connecting' | 'live' | 'down';
+
 export type LiveStream = {
   /** What its screen shows now: a fact, not a request. */
   say(view: ViewReport): void;
@@ -1102,7 +1105,9 @@ export interface KraftverkApi {
    * What changed, as it changes: `hello` first, then what moved, coalesced —
    * read the list on `hello` and on `changed`, and apply the rest on top.
    * `draining`: whoever carries it says whether it can take more now; while
-   * it cannot, the latest waits rather than a backlog.
+   * it cannot, the latest waits rather than a backlog. `onState`: told
+   * whether it is up, as whoever carries it knows — a socket opening,
+   * dropping and opening again; a home in the process is up at once.
    */
-  live(listener: (update: LiveUpdate) => void, options?: { draining?: () => boolean }): LiveStream;
+  live(listener: (update: LiveUpdate) => void, options?: { draining?: () => boolean; onState?: (state: LiveState) => void }): LiveStream;
 }

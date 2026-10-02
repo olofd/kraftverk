@@ -89,6 +89,7 @@ export class SetupService {
     // Simulated: nothing to reach, so no protocol and no transport — only the type's own steps, then its simulator.
     let reach = SIMULATED_REACH;
     let transport = null;
+    if (method.serverOnly && this.deps.transports.platform !== 'server') throw new SetupError(`${method.label} needs a server: ${method.serverOnly}`, 409);
     if (!isSimulated(method)) {
       const protocol = this.deps.protocols.get(method.protocol);
       if (!protocol?.bindings[method.transport]) throw new SetupError(`${placeOf(this.deps.transports.platform).this} cannot reach a ${type.meta.name} by ${method.label}: it needs updating`, 409);

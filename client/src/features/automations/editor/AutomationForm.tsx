@@ -2,12 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Spinner, Text, XStack, YStack } from 'tamagui';
 
 import {
-  checkDraft,
-  createAutomation,
+  changeAutomation,
   describeError,
-  fetchAutomationKit,
-  fetchAutomations,
-  updateAutomation,
   type AutomationDraftView,
   type AutomationKit,
   type AutomationView,
@@ -22,6 +18,7 @@ import { Pressable } from '../../../components/Pressable';
 import { Screen } from '../../../components/Screen';
 import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../../lib/confirm';
 import { useDevices } from '../../../state/DevicesProvider';
+import { useHome } from '../../../state/HomeProvider';
 import type { AutomationSettings } from '../../config/entries';
 import { useAutomationYaml } from '../../config/useAutomationYaml';
 import { YamlEditor } from '../../config/YamlEditor';
@@ -43,18 +40,19 @@ import { OnlyIf, Triggers } from './Triggers';
 
 /** What the editor needs from the server: the recipes and functions it offers, and the automations a step may start. */
 export function useEditorKit() {
+  const { api } = useHome();
   const [kit, setKit] = useState<AutomationKit | null>(null);
   const [automations, setAutomations] = useState<AutomationView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
-    Promise.all([fetchAutomationKit(), fetchAutomations()])
+    Promise.all([api.automations.kit(), api.automations.list()])
       .then(([nextKit, all]) => live && (setKit(nextKit), setAutomations(all)))
-      .catch((err) => live && setError(describeError(err) || 'It could not be read'));
+      .catch((err: unknown) => live && setError(describeError(err) || 'It could not be read'));
     return () => {
       live = false;
     };
-  }, []);
+  }, [api]);
   return { kit, automations, error };
 }
 
@@ -161,6 +159,7 @@ function Editing({
   onSaved: (automation: AutomationView) => void;
   onCancel: () => void;
 }) {
+  const { api } = useHome();
   const tone = useTone();
   const editor = useEditor();
   const { draft } = editor;
@@ -209,17 +208,18 @@ function Editing({
   const yamlProblems = view === 'yaml' ? yaml.problems.length : 0;
   const yamlUnread = view === 'yaml' && (yaml.reading || !yaml.ready);
 
-  // The server's word on the draft, as it is built: every problem, and how it reads — a moment after each change.
+  // The home's word on the draft, as it is built: every problem, and how it reads — a moment after each change.
   const asked = useRef(0);
   useEffect(() => {
     const turn = ++asked.current;
     const timer = setTimeout(() => {
-      checkDraft({ rule: kept.rule, roles: kept.roles, starts: kept.starts }, existing?.id ?? null)
+      api.automations
+        .draft({ rule: kept.rule, roles: kept.roles, starts: kept.starts }, existing?.id ?? null)
         .then((answer) => turn === asked.current && setCheck(answer))
         .catch(() => undefined);
     }, 300);
     return () => clearTimeout(timer);
-  }, [kept, existing?.id]);
+  }, [api, kept, existing?.id]);
 
   const labels = new Set(Object.values(draft.rule.roles).map((spec) => spec.label));
   const problems = (place: Place) => (check?.problems ?? []).filter((one) => placeOf(one, labels) === place);
@@ -238,18 +238,18 @@ function Editing({
       const letAct = settings.mode === 'armed' && before.mode !== 'armed';
       const ask = (name: string) => (reason: string, again: boolean) =>
         confirmAction(letAct ? `Let “${name}” act on its own?` : `Change “${name}” while it acts?`, `${again ? `${ASKED_AGAIN}\n\n` : ''}${reason}\n\n${check?.sentence ?? ''}`, letAct ? 'Let it act' : 'Change it');
-      const wants = (result: Awaited<ReturnType<typeof updateAutomation>>) => ('needsConfirmation' in result ? { token: result.needsConfirmation, reason: result.reason } : null);
+      const wants = (result: Awaited<ReturnType<typeof changeAutomation>>) => ('needsConfirmation' in result ? { token: result.needsConfirmation, reason: result.reason } : null);
       if (!existing) {
-        const made = await createAutomation({ ...body, ...(key ? { key } : {}), madeFrom: recipe, timeZone: settings.timeZone, recheckMinutes: settings.recheckMinutes });
+        const made = await api.automations.create({ ...body, ...(key ? { key } : {}), madeFrom: recipe, timeZone: settings.timeZone, recheckMinutes: settings.recheckMinutes });
         // A new one only watches, off the home page: what its YAML says beyond that, set as it would be on its page.
         const { mode, homePlace } = changes as Partial<AutomationSettings>;
         if (mode === undefined && homePlace === undefined) return onSaved(made);
-        const { answer } = await withConfirmation((confirmation) => updateAutomation(made.id, { ...(mode !== undefined ? { mode } : {}), ...(homePlace !== undefined ? { homePlace } : {}), confirmation }), wants, ask(made.name));
+        const { answer } = await withConfirmation((confirmation) => changeAutomation(api, made.id, { ...(mode !== undefined ? { mode } : {}), ...(homePlace !== undefined ? { homePlace } : {}), confirmation }), wants, ask(made.name));
         onSaved('automation' in answer ? answer.automation : made);
         return;
       }
       // One that acts on its own asks first: what it does changes.
-      const { answer, declined } = await withConfirmation((confirmation) => updateAutomation(existing.id, { ...body, ...changes, confirmation }), wants, ask(existing.name));
+      const { answer, declined } = await withConfirmation((confirmation) => changeAutomation(api, existing.id, { ...body, ...changes, confirmation }), wants, ask(existing.name));
       if (!declined && 'automation' in answer) onSaved(answer.automation);
     } catch (err) {
       setProblem(describeError(err) || 'It could not be saved');

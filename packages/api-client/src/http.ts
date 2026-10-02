@@ -68,14 +68,21 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
   const call = async <T>(method: string, path: string, body?: unknown, how: { query?: Record<string, unknown>; verdict?: boolean; text?: boolean; signal?: AbortSignal } = {}): Promise<T> => {
     const query = how.query ? Object.entries(how.query).filter(([, value]) => value !== undefined && value !== null) : [];
     const url = `${base}${path}${query.length ? `?${new URLSearchParams(query.map(([key, value]): [string, string] => [key, String(value)]))}` : ''}`;
-    const response = await send(url, {
-      method,
-      headers: { Accept: 'application/json', 'X-Kraftverk-Client': 'app', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...options.headers },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      ...(how.signal ? { signal: how.signal } : {}),
-      // The session is a cookie; it only travels if asked to.
-      credentials: 'include',
-    } as RequestInit);
+    let response: Response;
+    try {
+      response = await send(url, {
+        method,
+        headers: { Accept: 'application/json', 'X-Kraftverk-Client': 'app', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...options.headers },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        ...(how.signal ? { signal: how.signal } : {}),
+        // The session is a cookie; it only travels if asked to.
+        credentials: 'include',
+      } as RequestInit);
+    } catch (error) {
+      if (how.signal?.aborted) throw error;
+      // Nothing answered: not a refusal, but the home out of reach — said as one, in words.
+      throw new ApiError('unavailable', `Can't reach ${base}`);
+    }
     const text = await response.text();
     const parsed = text ? (() => { try { return JSON.parse(text) as unknown; } catch { return null; } })() : null;
     if (response.ok) return (how.text ? text : parsed) as T;
@@ -190,9 +197,9 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
     },
 
     /** The live socket, opened again when it drops; what the screen shows is said again each time it opens. */
-    live(listener: (update: LiveUpdate) => void) {
+    live(listener: (update: LiveUpdate) => void, live = {}) {
       let shown: ViewReport | null = null;
-      const stream = openLive({ url: liveUrl(base), onUpdate: listener, view: () => shown, ...(options.socket ? { socket: options.socket } : {}) });
+      const stream = openLive({ url: liveUrl(base), onUpdate: listener, view: () => shown, ...(live.onState ? { onState: live.onState } : {}), ...(options.socket ? { socket: options.socket } : {}) });
       return {
         say: (view) => {
           shown = view;

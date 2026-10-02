@@ -3,7 +3,7 @@ import { router, useIsFocused } from 'expo-router';
 import { Button, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { Card, DeviceCard, Row, RowSeparator, SectionLabel, haptic, Icon } from '@kraftverk/ui';
-import { fetchFound, type DeviceView, type FoundView } from '@kraftverk/api-client';
+import type { DeviceTypeListing, DeviceView, FoundView } from '@kraftverk/api-client';
 import { attributesOf, CATEGORIES, MAIN_PART } from '@kraftverk/device-sdk';
 
 import { DeviceImage } from '../src/components/DeviceImage';
@@ -14,6 +14,7 @@ import { Shortcuts } from '../src/features/automations/Shortcuts';
 import { DeviceIcon } from '../src/features/devices/panels';
 import { useAuth } from '../src/state/AuthProvider';
 import { useDevices } from '../src/state/DevicesProvider';
+import { useHome } from '../src/state/HomeProvider';
 import { useShowing } from '../src/state/useShowing';
 
 /** What can be added, from the categories something installed is in: "Power stations, smart plugs, weather". */
@@ -35,32 +36,44 @@ const productList = (installed: readonly { meta: { name: string } }[]) => {
  * Nothing here is station-shaped or plug-shaped: a device is a name, an icon,
  * some measurements and some readings, and the card renders those. Services —
  * a weather forecast — sit in a section of their own. Above them, what the
- * server can see that you have not added yet.
+ * home can see that you have not added yet.
  */
 export default function DevicesScreen() {
-  const { devices, removed, mode, loading, error, runtime, problems, heard } = useDevices();
+  const { devices, removed, mode, loading, error, heard } = useDevices();
+  const { api } = useHome();
   const theme = useTheme();
-  const installed = [...runtime.registry.types.values()];
+  // What the home can add: the installed types, as it lists them.
+  const [installed, setInstalled] = useState<readonly DeviceTypeListing[]>([]);
+  useEffect(() => {
+    let live = true;
+    void api
+      .deviceTypes()
+      .then((listing) => live && setInstalled(listing.types))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [api]);
   const [problemCount, setProblemCount] = useState<number | null>(null);
 
   // How many warnings and errors there are to look at, read again when the stream carries an event.
   useEffect(() => {
-    if (!problems) return setProblemCount(null);
-    const controller = new AbortController();
-    void problems(100, controller.signal)
-      .then((found) => setProblemCount(found.length))
+    let live = true;
+    void api
+      .problems(100)
+      .then((found) => live && setProblemCount(found.length))
       .catch(() => undefined);
-    return () => controller.abort();
-  }, [heard?.count, problems]);
+    return () => {
+      live = false;
+    };
+  }, [api, heard?.count]);
   const hardware = devices.filter((device) => device.kind === 'hardware');
   const services = devices.filter((device) => device.kind === 'service');
-  // Every device here shows its readings: while this page is in front, the server reads them more often.
+  // Every device here shows its readings: while this page is in front, the home reads them more often.
   useShowing(devices.map((device) => ({ kind: 'device', id: device.id })));
 
   const subtitle =
-    mode === 'local'
-      ? 'Local mode: this app holds every connection'
-      : devices.length === 0
+    devices.length === 0
         ? undefined
         : devices.length === 1
           ? '1 device'
@@ -76,8 +89,8 @@ export default function DevicesScreen() {
         </Card>
       ) : null}
 
-      {mode === 'server' ? <Shortcuts /> : null}
-      {mode === 'server' ? <FoundNearYou /> : null}
+      <Shortcuts />
+      <FoundNearYou />
 
       {loading && devices.length === 0 ? (
         <Card>
@@ -95,7 +108,7 @@ export default function DevicesScreen() {
             </Text>
             <Text fontSize={13} color="$muted" lineHeight={19}>
               {mode === 'local'
-                ? 'This app keeps its own devices and reaches them itself, over its own Bluetooth. Add a server in App settings for history and anything that runs while the app is closed.'
+                ? `This app keeps its own devices, their history and their automations, and reaches them itself — while it is open. Add a server in App settings for what runs while the app is closed. It can add ${productList(installed)}.`
                 : `Add your first device to watch it, set it up and let automations use it. This install can add ${productList(installed)}.`}
             </Text>
           </YStack>
@@ -132,30 +145,22 @@ export default function DevicesScreen() {
               accessory={<Icon name="plus" size={16} color={theme.muted?.val} />}
             />
           </Pressable>
-          {mode === 'server' ? (
-            <>
-              <RowSeparator />
-              <Pressable onPress={() => router.push('/automations')}>
-                <Row
-                  title="Automations"
-                  subtitle="What runs on its own, and what you start: “if tomorrow is sunny, turn the plug on”, “start charging”"
-                  accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />}
-                />
-              </Pressable>
-            </>
-          ) : null}
-          {problems ? (
-            <>
-              <RowSeparator />
-              <Pressable onPress={() => router.push('/problems')}>
-                <Row
-                  title="Problems"
-                  subtitle={problemCount ? `${problemCount} warning${problemCount === 1 ? '' : 's'} or error${problemCount === 1 ? '' : 's'} your devices reported` : 'None reported'}
-                  accessory={<Icon name={problemCount ? 'alert-triangle' : 'chevron-right'} size={16} color={problemCount ? theme.warning?.val : theme.muted?.val} />}
-                />
-              </Pressable>
-            </>
-          ) : null}
+          <RowSeparator />
+          <Pressable onPress={() => router.push('/automations')}>
+            <Row
+              title="Automations"
+              subtitle="What runs on its own, and what you start: “if tomorrow is sunny, turn the plug on”, “start charging”"
+              accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />}
+            />
+          </Pressable>
+          <RowSeparator />
+          <Pressable onPress={() => router.push('/problems')}>
+            <Row
+              title="Problems"
+              subtitle={problemCount ? `${problemCount} warning${problemCount === 1 ? '' : 's'} or error${problemCount === 1 ? '' : 's'} your devices reported` : 'None reported'}
+              accessory={<Icon name={problemCount ? 'alert-triangle' : 'chevron-right'} size={16} color={problemCount ? theme.warning?.val : theme.muted?.val} />}
+            />
+          </Pressable>
           {removed.length > 0 ? (
             <>
               <RowSeparator />
@@ -199,11 +204,12 @@ function DeviceList({ devices }: { devices: DeviceView[] }) {
 }
 
 /**
- * What the server's transports can see that nothing you have is reached by:
+ * What the home's transports can see that nothing you have is reached by:
  * a station that connected to its broker, a plug broadcasting on the network.
  * Choosing one skips straight to checking it.
  */
 function FoundNearYou() {
+  const { api } = useHome();
   const [found, setFound] = useState<FoundView[]>([]);
   const theme = useTheme();
   const { allowed } = useAuth();
@@ -214,7 +220,8 @@ function FoundNearYou() {
     if (!allowed || !seen) return;
     let live = true;
     const load = () =>
-      fetchFound()
+      api
+        .nearby()
         .then((next) => live && setFound(next))
         .catch(() => undefined);
     void load();
@@ -223,7 +230,7 @@ function FoundNearYou() {
       live = false;
       clearInterval(timer);
     };
-  }, [allowed, seen]);
+  }, [allowed, api, seen]);
 
   if (found.length === 0) return null;
 

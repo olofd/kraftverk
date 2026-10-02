@@ -1,6 +1,9 @@
 import { useState } from 'react';
 
-import { describeError, startAutomation, stopAutomation, type AutomationView } from '@kraftverk/api-client';
+import { describeError, type AutomationView } from '@kraftverk/api-client';
+import type { AutomationId } from '@kraftverk/api-contract';
+
+import { useHome } from '../../state/HomeProvider';
 import { haptic } from '@kraftverk/ui';
 
 import { confirmAction } from '../../lib/confirm';
@@ -19,6 +22,7 @@ import { nextSaid } from './said';
  * stopped. Off, it cannot be started, and says so.
  */
 export function useRun(automation: AutomationView, onChanged: (next: AutomationView) => void) {
+  const { api } = useHome();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const running = automation.running;
@@ -45,9 +49,9 @@ export function useRun(automation: AutomationView, onChanged: (next: AutomationV
         const yes = await confirmAction(`Start “${automation.name}” now?`, `It only watches on its own, but started by you it acts, for real:\n\n${automation.sentence}`, 'Start it');
         if (!yes) return;
       }
-      onChanged(await startAutomation(automation.id));
+      onChanged(await api.automations.start(automation.id as AutomationId));
     });
-  const stop = () => act(async () => onChanged(await stopAutomation(automation.id)));
+  const stop = () => act(async () => onChanged(await api.automations.stop(automation.id as AutomationId)));
 
   /** Why it cannot be started now, when it cannot: off, or something it needs is gone. */
   const blocked = automation.mode === 'off' ? 'It is off' : automation.problems.length ? `It cannot run as it is: ${automation.problems[0]}` : null;

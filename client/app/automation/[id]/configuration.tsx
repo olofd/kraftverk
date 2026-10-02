@@ -2,10 +2,12 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Spinner, Text } from 'tamagui';
 
-import { describeError, fetchAutomation, type AutomationView } from '@kraftverk/api-client';
+import { describeError, type AutomationView } from '@kraftverk/api-client';
+import type { AutomationId } from '@kraftverk/api-contract';
 import { Card } from '@kraftverk/ui';
 
 import { Screen } from '../../../src/components/Screen';
+import { useHome } from '../../../src/state/HomeProvider';
 import { AutomationConfig } from '../../../src/features/config/AutomationConfig';
 
 /**
@@ -15,13 +17,15 @@ import { AutomationConfig } from '../../../src/features/config/AutomationConfig'
  */
 export default function AutomationConfigurationScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { api } = useHome();
   const [automation, setAutomation] = useState<AutomationView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(() => {
-    fetchAutomation(id)
+    api.automations
+      .get(id as AutomationId)
       .then((next) => (setAutomation(next), setError(null)))
-      .catch((err) => setError(describeError(err) || 'It could not be read'));
-  }, [id]);
+      .catch((err: unknown) => setError(describeError(err) || 'It could not be read'));
+  }, [api, id]);
   useEffect(load, [load]);
   const back = { label: automation?.name ?? 'Automation', to: `/automation/${encodeURIComponent(id)}` };
 

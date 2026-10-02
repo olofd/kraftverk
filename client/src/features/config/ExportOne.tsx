@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { Platform } from 'react-native';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
-import { describeError, exportConfig, type ConfigExported } from '@kraftverk/api-client';
+import { describeError, type ConfigExported } from '@kraftverk/api-client';
 import { SegmentedControl, haptic, Icon } from '@kraftverk/ui';
 
 import { confirmAction } from '../../lib/confirm';
+import { useHome } from '../../state/HomeProvider';
 import { fileNameOf, saveText } from '../../lib/download';
 import { useTone } from '../automations/looks';
 import { YamlEditor } from './YamlEditor';
@@ -23,6 +24,7 @@ type Secrets = 'none' | 'sealed' | 'plain';
  * its owner allowed it; then downloaded, or shown.
  */
 export function ExportOne({ what, name, secrets = [], plainAllowed = false }: { what: { devices?: string[]; automations?: string[] }; name: string; secrets?: readonly string[]; plainAllowed?: boolean }) {
+  const { api } = useHome();
   const tone = useTone();
   const [mode, setMode] = useState<Secrets>('none');
   const [passphrase, setPassphrase] = useState('');
@@ -44,7 +46,7 @@ export function ExportOne({ what, name, secrets = [], plainAllowed = false }: { 
     setBusy(true);
     setProblem(null);
     try {
-      const answer = await exportConfig({ devices: what.devices ?? [], automations: what.automations ?? [], secrets: mode, ...(mode === 'sealed' ? { passphrase } : {}) });
+      const answer = await api.configuration.export({ devices: what.devices ?? [], automations: what.automations ?? [], secrets: mode, ...(mode === 'sealed' ? { passphrase } : {}) });
       setExported({ ...answer, at: new Date().toISOString() });
       setShown(Platform.OS !== 'web');
     } catch (err) {

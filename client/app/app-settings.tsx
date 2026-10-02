@@ -3,8 +3,8 @@ import { router } from 'expo-router';
 import { Button, Input, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { Card, Row, RowSeparator, SectionLabel, ToggleRow, haptic, Icon } from '@kraftverk/ui';
-import { describeError, fetchResetAvailability, getApiBaseUrl, resetDatabase, setPolicyValue } from '@kraftverk/api-client';
-import { POLICY_VALUES, type PolicyValueName } from '@kraftverk/device-sdk';
+import { describeError, fetchResetAvailability, getApiBaseUrl, resetDatabase } from '@kraftverk/api-client';
+import { POLICY_VALUES, type PolicyValueName, type PolicyValues } from '@kraftverk/device-sdk';
 
 import { confirmAction } from '../src/lib/confirm';
 import { completeUrl } from '../src/lib/servers';
@@ -12,6 +12,7 @@ import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
 import { useAuth } from '../src/state/AuthProvider';
 import { useDevices } from '../src/state/DevicesProvider';
+import { useHome } from '../src/state/HomeProvider';
 import { useServers } from '../src/state/ServersProvider';
 
 /**
@@ -21,13 +22,11 @@ import { useServers } from '../src/state/ServersProvider';
  * canvas.
  */
 export default function AppSettingsScreen() {
-  const { mode, version, runtime, removed } = useDevices();
+  const { mode, version, removed } = useDevices();
+  const { writesAllowed, allowWrites, holding } = useHome();
   const auth = useAuth();
   const theme = useTheme();
-  const [allowWrites, setAllowWrites] = useState(runtime.allowWrites);
   const chevron = <Icon name="chevron-right" size={16} color={theme.muted?.val} />;
-
-  useEffect(() => runtime.subscribe(() => setAllowWrites(runtime.allowWrites)), [runtime]);
 
   return (
     <Screen back="Your devices" title="App settings" subtitle="Servers, connectivity and this app">
@@ -53,16 +52,16 @@ export default function AppSettingsScreen() {
               accessory={chevron}
             />
           </Pressable>
+          <RowSeparator />
+          <Pressable onPress={() => router.push('/removed')}>
+            <Row title="Removed devices" subtitle={removed.length ? `${removed.length} kept with their history` : 'None'} accessory={chevron} />
+          </Pressable>
+          <RowSeparator />
+          <Pressable onPress={() => router.push('/configuration')}>
+            <Row title="Configuration" subtitle={mode === 'server' ? 'Your home as one file: export it, import one, and the copy kept beside the server' : 'Your home as one file: export it, and import one'} accessory={chevron} />
+          </Pressable>
           {mode === 'server' ? (
             <>
-              <RowSeparator />
-              <Pressable onPress={() => router.push('/removed')}>
-                <Row title="Removed devices" subtitle={removed.length ? `${removed.length} kept with their history` : 'None'} accessory={chevron} />
-              </Pressable>
-              <RowSeparator />
-              <Pressable onPress={() => router.push('/configuration')}>
-                <Row title="Configuration" subtitle="Your home as one file: export it, import one, and the copy kept beside the server" accessory={chevron} />
-              </Pressable>
               <RowSeparator />
               <Pressable onPress={() => router.push('/server-log')}>
                 <Row title="Server log" subtitle="What the server has said lately — where to look when something is wrong" accessory={chevron} />
@@ -82,16 +81,16 @@ export default function AppSettingsScreen() {
           <ToggleRow
             title="Allow writes from this app"
             subtitle="For devices this app holds itself. Off every time the app starts: until then, it only reads."
-            checked={allowWrites}
+            checked={writesAllowed}
             onCheckedChange={(next) => {
               haptic();
-              runtime.setAllowWrites(next);
+              void allowWrites(next);
             }}
           />
-          {mode === 'server' ? (
+          {holding ? (
             <>
               <RowSeparator />
-              <Row title="Known to the server as" subtitle={runtime.clientId ? `App ${runtime.clientId}` : 'Not registered yet'} />
+              <Row title="Known to the server as" subtitle={holding.clientId ? `App ${holding.clientId}` : 'Not registered yet'} />
             </>
           ) : null}
         </Card>
@@ -106,7 +105,7 @@ export default function AppSettingsScreen() {
         <Card inset>
           <Row
             title="Mode"
-            subtitle={mode === 'server' ? 'A server keeps your devices, their history and their links' : 'Local — this app keeps its own devices and holds every connection; nothing is recorded'}
+            subtitle={mode === 'server' ? 'A server keeps your devices, their history and their automations' : 'Local — this app keeps its own devices, their history and their automations, while it is open'}
             accessory={
               <Text fontSize={13} color="$muted">
                 {mode === 'server' ? 'Server' : 'Local'}
@@ -138,15 +137,28 @@ export default function AppSettingsScreen() {
 /**
  * The numbers this home decides that the capabilities name: a switch says
  * turning off what carries a load is confirmed first, and here is how much a
- * load is. The server's, for everything it and its apps hold; this app's own
- * in local mode.
+ * load is. The home's, for everything it holds — and, with a server, for what
+ * this app holds for it.
  */
 function HomePolicy() {
-  const { mode, runtime } = useDevices();
+  const { api, holding } = useHome();
+  const [kept, setKept] = useState<PolicyValues>({});
   const [values, setValues] = useState<Record<string, string>>({});
   const [problem, setProblem] = useState<string | null>(null);
   const names = Object.keys(POLICY_VALUES) as PolicyValueName[];
-  const inForce = (name: PolicyValueName) => runtime.policyValues[name] ?? POLICY_VALUES[name].default;
+  const inForce = (name: PolicyValueName) => kept[name] ?? POLICY_VALUES[name].default;
+  const took = (now: { name: PolicyValueName; value: number | null }[]) => {
+    const next = Object.fromEntries(now.filter((item) => item.value !== null).map((item) => [item.name, item.value])) as PolicyValues;
+    setKept(next);
+    holding?.setPolicyValues(next);
+  };
+  useEffect(() => {
+    void api.policy
+      .list()
+      .then(took)
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api]);
   // Enter and the blur after it both save, before either has settled: what is
   // on its way is sent once.
   const saving = useRef(new Map<PolicyValueName, string>());
@@ -164,13 +176,7 @@ function HomePolicy() {
     const typedNoMore = () => setValues(({ [name]: _typed, ...rest }) => rest);
     saving.current.set(name, typed);
     try {
-      if (mode === 'server') {
-        const now = await setPolicyValue(name, value);
-        runtime.setPolicyValues(Object.fromEntries(now.map((item) => [item.name, item.value])));
-      } else {
-        const { [name]: _dropped, ...rest } = runtime.policyValues;
-        runtime.setPolicyValues(value === null ? rest : { ...rest, [name]: value });
-      }
+      took(await api.policy.set(name, value));
       typedNoMore();
     } catch (err) {
       setProblem(describeError(err) || 'That did not work');

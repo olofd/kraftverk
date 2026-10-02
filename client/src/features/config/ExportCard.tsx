@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { Platform } from 'react-native';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
-import { describeError, exportConfig, type AutomationView, type ConfigExported, type DeviceView } from '@kraftverk/api-client';
+import { describeError, type AutomationView, type ConfigExported, type DeviceView } from '@kraftverk/api-client';
 import { Card, RowSeparator, SectionLabel, SegmentedControl, ToggleRow, haptic, Icon } from '@kraftverk/ui';
 
 import { confirmAction } from '../../lib/confirm';
+import { useHome } from '../../state/HomeProvider';
 import { fileNameOf, saveText } from '../../lib/download';
 import { useTone } from '../automations/looks';
 import { YamlEditor } from './YamlEditor';
@@ -27,6 +28,7 @@ const SECRETS: readonly { value: Secrets; label: string }[] = [
  * or shown.
  */
 export function ExportCard({ devices, automations, chosen }: { devices: readonly DeviceView[]; automations: readonly AutomationView[]; chosen: { devices: string[]; automations: string[] } | null }) {
+  const { api } = useHome();
   const tone = useTone();
   const [everything, setEverything] = useState(chosen === null);
   const [pickedDevices, setPickedDevices] = useState<ReadonlySet<string>>(new Set(chosen?.devices ?? []));
@@ -39,7 +41,7 @@ export function ExportCard({ devices, automations, chosen }: { devices: readonly
   const [shown, setShown] = useState(false);
 
   const plainAllowed = devices.flatMap((device) =>
-    device.connections.filter((connection) => connection.heldBy.kind === 'server' && connection.secretsExportable && connection.secrets.length).map((connection) => `${device.name} (${connection.methodLabel})`)
+    device.connections.filter((connection) => connection.heldBy.kind === 'home' && connection.secretsExportable && connection.secrets.length).map((connection) => `${device.name} (${connection.methodLabel})`)
   );
   const nothingChosen = !everything && pickedDevices.size === 0 && pickedAutomations.size === 0;
   const passphraseShort = secrets === 'sealed' && passphrase.length < PASSPHRASE_MIN;
@@ -59,7 +61,7 @@ export function ExportCard({ devices, automations, chosen }: { devices: readonly
     setBusy(true);
     setProblem(null);
     try {
-      const answer = await exportConfig({
+      const answer = await api.configuration.export({
         ...(everything ? {} : { devices: [...pickedDevices], automations: [...pickedAutomations] }),
         secrets,
         ...(secrets === 'sealed' ? { passphrase } : {}),

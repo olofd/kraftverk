@@ -707,12 +707,13 @@ protect, this section becomes the rules for changing a schema that holds it.
 
 ## 6. Local mode: no server
 
-The app can run with no server at all, holding its own Bluetooth connections
-(ARCHITECTURE.md, decision 15). It keeps the same records — `device`,
-`device_connection` with `held_by` this client, and secrets in its own secure
-storage — in the app's own storage, and there is no `client` row because there
-is no server to know it. History is what the app records while it is open.
-Adding a server later offers to move those devices onto it.
+The app can run with no server at all (ARCHITECTURE.md, decisions 15 and
+22): it keeps a home of its own — the same hub, the same schema, every record
+above — in its own SQLite: expo-sqlite on a phone, SQLite's WebAssembly build
+in a browser's worker (docs/PLAN-SHARED-CORE.md, phase 6). Its connections
+are the home's own (`held_by` null), its secrets sealed with a key the
+platform keeps; there is no `client` row, as there is no server to hold for.
+It keeps history and runs automations while it is open.
 
 ---
 
