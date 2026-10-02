@@ -37,6 +37,12 @@ type HomeValue = {
    * to try again. The server's home is shown either way.
    */
   holding: { problem: string; takeOver: (() => void) | null } | null;
+  /**
+   * With a server: it did not answer the last time it was asked. What is
+   * shown is what it last said — read only — and what this app reaches
+   * itself goes on.
+   */
+  away: boolean;
 };
 
 const HomeContext = createContext<HomeValue | null>(null);
@@ -94,7 +100,12 @@ export function HomeProvider({ children }: { children: ReactNode }) {
 /** A server's home, over HTTP — with what this app holds for it wrapped in, once that is open here. */
 function ServerHome({ serverKey, url, children }: { serverKey: string; url: string; children: ReactNode }) {
   const { refresh } = useAuth();
-  const server = useMemo(() => ({ key: serverKey, api: httpApi({ baseUrl: url, onLoginRequired: () => void refresh() }) }), [refresh, serverKey, url]);
+  // Whether the server answered the last time it was asked: said by every request, whoever made it.
+  const [away, setAway] = useState(false);
+  const server = useMemo(
+    () => ({ key: serverKey, api: httpApi({ baseUrl: url, onLoginRequired: () => void refresh(), onReach: (reached) => setAway(!reached) }) }),
+    [refresh, serverKey, url]
+  );
   const { state, open } = useOpened(server);
   const [writesAllowed, setWritesAllowed] = useState(false);
   const home = state.status === 'open' ? state.home : null;
@@ -118,8 +129,9 @@ function ServerHome({ serverKey, url, children }: { serverKey: string; url: stri
       },
       appId: home?.appId ?? null,
       holding,
+      away,
     };
-  }, [home, open, server, state, writesAllowed]);
+  }, [away, home, open, server, state, writesAllowed]);
 
   if (!value) return <Waiting />;
   return <HomeContext.Provider value={value}>{children}</HomeContext.Provider>;
@@ -144,6 +156,7 @@ function OwnHome({ children }: { children: ReactNode }) {
             },
             appId: null,
             holding: null,
+            away: false,
           }
         : null,
     [home, writesAllowed]

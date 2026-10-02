@@ -119,7 +119,7 @@ const DevicesContext = createContext<DevicesContextValue | null>(null);
 export function DevicesProvider({ children }: { children: ReactNode }) {
   const servers = useServers();
   const { allowed } = useAuth();
-  const { api, kind, writesAllowed } = useHome();
+  const { api, kind, writesAllowed, away } = useHome();
   const mode = servers.mode;
   // A server's list is read once signed in; the app's own, always.
   const reading = kind === 'own' || allowed;
@@ -189,6 +189,16 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     }
   }, [api, reading]);
+
+  /*
+    The server stopped answering, or answers again: the list is read again
+    now — with it away, as it last said it, its own devices offline; back,
+    as it is — rather than when the live stream next gives up trying.
+  */
+  useEffect(() => {
+    if (kind === 'server' && reading) void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [away]);
 
   // The live stream: while it is up, what changed arrives as it changes, and the list is not polled.
   useEffect(() => {
@@ -419,7 +429,8 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   const value = useMemo<DevicesContextValue>(
     () => ({
       mode,
-      connection: unreachable ? 'offline' : loading ? 'connecting' : 'online',
+      // A server that did not answer is offline, whether the list failed or is shown as it last said it.
+      connection: unreachable || away ? 'offline' : loading ? 'connecting' : 'online',
       live,
       devices,
       removed,
@@ -449,7 +460,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       onAutomation,
       views,
     }),
-    [actionsFor, api, devices, error, heard, holderOf, live, load, loading, mode, mutate, onAutomation, removed, screenProps, unreachable, version, views]
+    [actionsFor, api, away, devices, error, heard, holderOf, live, load, loading, mode, mutate, onAutomation, removed, screenProps, unreachable, version, views]
   );
 
   return <DevicesContext.Provider value={value}>{children}</DevicesContext.Provider>;

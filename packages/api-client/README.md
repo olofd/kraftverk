@@ -17,7 +17,8 @@ slots.
   app's, on `fetch` — a browser's, a phone's, Bun's, a test's — at the
   address it is handed (`@kraftverk/api-client/http`); a refusal back as
   the `ApiError` the hub threw, and a server out of reach as one too
-  (`unavailable`); the live stream, said what the screen shows, opened
+  (`unavailable`), and after each request whether the server answered at
+  all (`onReach`); the live stream, said what the screen shows, opened
   again with a growing wait, and whether it is up. For a screen, over any
   home: a failure in words (`describeError`), and a refusal that only wants
   a person's yes as an answer to ask with (`askingYes`,

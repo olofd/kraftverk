@@ -1,4 +1,4 @@
-import { ApiError, type DeviceView, type DraftView, type KraftverkApi, type LiveUpdate, type TransportView, type WayView } from '@kraftverk/api-contract';
+import { ApiError, type AutomationView, type DeviceView, type DraftView, type KraftverkApi, type LiveUpdate, type TransportView, type WayView } from '@kraftverk/api-contract';
 import { capabilityIn, connectionId as asConnectionId, isSecretField, methodOf, type SavedDeviceId } from '@kraftverk/device-sdk';
 import { subjectOf } from '@kraftverk/gateway';
 import { deviceReader, runTool, ToolRefused, type ToolRefusal } from '@kraftverk/holder';
@@ -10,8 +10,11 @@ import { holdableHere, type Holding } from './holding.ts';
 /*
   The server's `KraftverkApi`, with what this app holds wrapped in
   (docs/PLAN-SHARED-CORE.md, phase 6): the one interface the screens ask,
-  as they would ask any home. A device's view carries this app's own
-  readings while it holds the device; a command, a setting, a query or a
+  as they would ask any home. What the screens read is kept as the server
+  answers it, and while the server cannot be reached, answered from what it
+  last said — devices it holds offline, saying so; anything that would
+  change something is refused by the server's absence. A device's view
+  carries this app's own readings while it holds the device; a command, a setting, a query or a
   tool to one goes through this app's own gateway and session; a way this
   app holds is set up here, its secrets kept here; the live stream carries
   what this app hears beside what the server says. The rest is the
@@ -25,13 +28,24 @@ const TOOL_REFUSAL: Record<ToolRefusal, ApiError['kind']> = { missing: 'not-foun
 
 export function holdingApi(h: Holding): KraftverkApi {
   const { home } = h;
-  /** The server's list, held from and with this app's own wrapped in. */
-  const listed = async (views: DeviceView[]): Promise<DeviceView[]> => {
-    await h.hold(views);
-    return views.map((view) => h.view(view));
+  /** The server's list — or, with it away, what it last said — held from, and with this app's own wrapped in. */
+  const listed = async (what: 'devices' | 'removed', ask: () => Promise<DeviceView[]>): Promise<DeviceView[]> => {
+    const { answer, heardAt } = await h.kept(what, ask);
+    if (what === 'devices' && !heardAt) await h.hold(answer);
+    return answer.map((view) => h.view(heardAt ? h.lastHeard(view) : view));
   };
-  /** One device as the server says it, with this app's own wrapped in. */
+  /** One device as the server says it — or, with it away, as it last said it — with this app's own wrapped in. */
   const viewed = async (view: Promise<DeviceView>): Promise<DeviceView> => h.view(await view);
+  const oneOf = async (id: SavedDeviceId): Promise<DeviceView> => {
+    try {
+      return h.view(await home.devices.get(id));
+    } catch (error) {
+      if (!(error instanceof ApiError && error.kind === 'unavailable')) throw error;
+      const last = [...(h.heard.get<DeviceView[]>('devices')?.body ?? []), ...(h.heard.get<DeviceView[]>('removed')?.body ?? [])].find((device) => device.id === id);
+      if (!last) throw error;
+      return h.view(h.lastHeard(last));
+    }
+  };
   /** After the server changed a device's ways: what this app holds, again. */
   const again = async (view: DeviceView): Promise<DeviceView> => {
     await h.refresh();
@@ -55,7 +69,7 @@ export function holdingApi(h: Holding): KraftverkApi {
   return {
     /** The server's types, with the ways this app can hold for it: a type this app has installed too, over a way it can hold where it runs. */
     async deviceTypes() {
-      const list = await home.deviceTypes();
+      const { answer: list } = await h.kept('device-types', () => home.deviceTypes());
       const { transports } = h.installed;
       await transports.startAll(h.transportsHere());
       return {
@@ -71,9 +85,9 @@ export function holdingApi(h: Holding): KraftverkApi {
     },
 
     devices: {
-      list: async () => listed(await home.devices.list()),
-      removed: () => home.devices.removed(),
-      get: (id) => viewed(home.devices.get(id)),
+      list: () => listed('devices', () => home.devices.list()),
+      removed: () => listed('removed', () => home.devices.removed()),
+      get: oneOf,
       update: (id, changes) => viewed(home.devices.update(id, changes)),
       setPicture: (id, picture) => viewed(home.devices.setPicture(id, picture)),
       async remove(id) {
@@ -123,7 +137,7 @@ export function holdingApi(h: Holding): KraftverkApi {
       },
     },
 
-    problems: (limit) => home.problems(limit),
+    problems: async (limit) => (await h.kept(`problems:${limit ?? ''}`, () => home.problems(limit))).answer,
 
     setup: {
       /** A way this app holds is set up here, over its own radio; any other, by the server. */
@@ -201,7 +215,7 @@ export function holdingApi(h: Holding): KraftverkApi {
     transports: {
       /** The server's, and this app's own: what it holds the server's ways over, here. */
       async list() {
-        const list = await home.transports.list();
+        const { answer: list } = await h.kept('transports', () => home.transports.list());
         const { transports } = h.installed;
         const mine = h.transportsHere().map((id): TransportView => {
           const transport = transports.get(id);
@@ -250,8 +264,16 @@ export function holdingApi(h: Holding): KraftverkApi {
     automations: {
       kit: () => home.automations.kit(),
       draft: (draft, self) => home.automations.draft(draft, self),
-      list: (filter) => home.automations.list(filter),
-      get: (id) => home.automations.get(id),
+      list: async (filter) => (await h.kept(`automations:${filter?.device ?? ''}`, () => home.automations.list(filter))).answer,
+      async get(id) {
+        try {
+          return await home.automations.get(id);
+        } catch (error) {
+          const last = error instanceof ApiError && error.kind === 'unavailable' ? h.heard.get<AutomationView[]>('automations:')?.body.find((automation) => automation.id === id) : null;
+          if (!last) throw error;
+          return last;
+        }
+      },
       create: (automation) => home.automations.create(automation),
       update: (id, changes) => home.automations.update(id, changes),
       delete: (id) => home.automations.delete(id),
@@ -274,14 +296,16 @@ export function holdingApi(h: Holding): KraftverkApi {
 
     policy: {
       list: async () => {
-        const values = await home.policy.list();
-        h.keepPolicy(values);
-        return values;
+        const { answer } = await h.kept('policy', () => home.policy.list());
+        h.keepPolicy(answer);
+        return answer;
       },
       /** Set on the server, and kept here: this app's gateway weighs what it holds by the same values. */
       set: async (name, value) => {
         const values = await home.policy.set(name, value);
         h.keepPolicy(values);
+        // What the server answers is how they are now: what is shown while it is away, too.
+        h.heard.keep('policy', values);
         return values;
       },
     },

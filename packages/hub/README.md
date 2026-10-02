@@ -121,9 +121,12 @@ with this app's own readings while it holds the device; a command, a
 setting, a query or a tool to one through its own gateway and session;
 the live stream with what it hears. What it keeps is in the app's own
 database — the devices it holds a way to, as the server has them
-(`mirror`), their secrets, their stores, the gateway's memory, and what
-is owed to the server (`SendQueue`) — so a restart loses none of it, and
-with the server away the app still reaches what it holds.
+(`mirror`), their secrets, their stores, the gateway's memory, what is
+owed to the server (`SendQueue`), and what the server last said
+(`LastHeard`) — so a restart loses none of it, and with the server away
+the app still reaches what it holds, and shows the rest of the home as
+the server last said it: its devices offline, saying so, and nothing
+changed through it until it answers.
 
 ### Made from ports
 

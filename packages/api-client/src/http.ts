@@ -40,6 +40,8 @@ export type HttpApiOptions = {
   headers?: Record<string, string>;
   /** Told when the server asks to sign in: a session that expired while the app was open. */
   onLoginRequired?: (detail: { setupRequired: boolean }) => void;
+  /** Told after each request whether the server answered at all — any answer, a refusal too — or could not be reached. */
+  onReach?: (reached: boolean) => void;
   /** How the live socket is made: the platform's, or a test's. */
   socket?: (url: string) => WebSocket;
 };
@@ -93,10 +95,12 @@ function requests(options: HttpApiOptions) {
     } catch (error) {
       if (how.signal?.aborted) throw error;
       // Nothing answered: not a refusal, but the home out of reach — said as one, in words.
+      options.onReach?.(false);
       throw new ApiError('unavailable', `Can't reach ${base}`);
     } finally {
       if (timeout) clearTimeout(timeout);
     }
+    options.onReach?.(true);
     const text = await response.text();
     const parsed = text ? (() => { try { return JSON.parse(text) as unknown; } catch { return null; } })() : null;
     if (response.ok) return (how.text ? text : parsed) as T;

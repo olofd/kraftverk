@@ -6,11 +6,13 @@ import { useServers } from '../state/ServersProvider';
 
 /**
  * Only renders when something is actually wrong: a server you added is not
- * answering. A home the app keeps itself has no server to lose — its devices are this app's
- * own, and each says on its card whether it can be reached.
+ * answering. What is shown then is what it last said — read only — and
+ * what this app reaches itself goes on; or, with nothing heard from it yet,
+ * why not. A home the app keeps itself has no server to lose — its devices
+ * are this app's own, and each says on its card whether it can be reached.
  */
 export function ConnectionBanner() {
-  const { connection, error, refresh } = useDevices();
+  const { connection, error, refresh, devices } = useDevices();
   const servers = useServers();
   const theme = useTheme();
 
@@ -32,7 +34,7 @@ export function ConnectionBanner() {
           {`Can't reach ${servers.active.name}`}
         </Text>
         <Text fontSize={12} color="$muted">
-          {error ?? servers.active.url}
+          {error ?? (devices.length ? 'Shown as it last said: nothing changes through it until it answers. What this app reaches itself still works.' : servers.active.url)}
         </Text>
       </YStack>
       <Button size="$2" onPress={() => void refresh()}>

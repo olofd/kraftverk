@@ -151,6 +151,64 @@ test('with the server away, what this app holds it still reaches, and what it sa
   expect(again.holding.queue.count()).toBeGreaterThan(0);
 });
 
+/** A server that can be made to stop answering, as one does when the app leaves home: every call refused as out of reach. */
+function switchable(home: KraftverkApi): { api: KraftverkApi; away: (away: boolean) => void } {
+  let gone = false;
+  const wrap = <T extends object>(target: T): T =>
+    new Proxy(target, {
+      get(on, key) {
+        const value = Reflect.get(on, key) as unknown;
+        if (typeof value === 'function') return (...args: unknown[]) => (gone ? Promise.reject(new ApiError('unavailable', 'Can’t reach the server')) : (value as (...a: unknown[]) => unknown).apply(on, args));
+        return value && typeof value === 'object' ? wrap(value) : value;
+      },
+    });
+  return { api: wrap(home), away: (away) => (gone = away) };
+}
+
+test('with the server away, its home is shown as it last said it — offline, and nothing changed through it — and what this app holds goes on', async () => {
+  const { home } = await server();
+  const reach = switchable(home);
+  const { holding, bus } = await app(reach.api);
+  const api = holding.api;
+  const lamp = await addLamp(api, bus);
+  // One the server holds itself: its simulator.
+  const draft = await api.setup.start({ typeId: 'test.lamp', methodId: 'simulated' });
+  expect((await api.setup.check(draft.id)).outcome).toBe('new');
+  const theirs = await api.setup.save(draft.id, { name: 'Server lamp' });
+  await api.policy.set('loadWatts', 40);
+  await until(async () => (await api.devices.get(lamp.id)).readings.length > 0, 'this app reading its lamp');
+  expect((await api.devices.list()).map((device) => device.name).sort()).toEqual(['Desk lamp', 'Server lamp']);
+
+  reach.away(true);
+  const list = await api.devices.list();
+  expect(list.map((device) => device.name).sort()).toEqual(['Desk lamp', 'Server lamp']);
+  // The server's own, as it last said it — and saying it cannot be reached.
+  expect(list.find((device) => device.id === theirs.id)!.health).toMatchObject({ status: 'offline', detail: 'Your server cannot be reached: this is what it last said' });
+  expect((await api.devices.get(theirs.id)).health.status).toBe('offline');
+  // This app's own, as it is now.
+  expect(list.find((device) => device.id === lamp.id)!.health.status).toBe('connected');
+  expect((await api.policy.list()).find((value) => value.name === 'loadWatts')?.value).toBe(40);
+  // Nothing changes through a server that is not there…
+  expect((await refusedKind(api.devices.update(theirs.id, { name: 'Renamed' })))).toBe('unavailable');
+  expect((await refusedKind(api.devices.command(theirs.id, 'main', 'switch', 'set', { args: { on: false } })))).toBe('unavailable');
+  // …but what this app reaches itself, it still switches.
+  expect(await api.devices.command(lamp.id, 'main', 'switch', 'set', { args: { on: true } })).toMatchObject({ outcome: 'verified' });
+
+  // Back: what it says is what is shown again.
+  reach.away(false);
+  expect((await api.devices.get(theirs.id)).health.status).not.toBe('offline');
+});
+
+/** What a call was refused with: its kind. */
+async function refusedKind(work: Promise<unknown>): Promise<string> {
+  try {
+    await work;
+    return 'answered';
+  } catch (error) {
+    return error instanceof ApiError ? error.kind : 'thrown';
+  }
+}
+
 test('this app holds its way only while nothing above it reaches the device, and lets go when something does', async () => {
   const { home } = await server();
   const { holding } = await app(home);

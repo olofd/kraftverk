@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { connectionId, MAIN_PART, savedDeviceId, type DeviceDescription } from '@kraftverk/device-sdk';
 
-import { ConnectionStore, DeviceCatalog, LinkStore, SendQueue, type SecretsAtRest, type SqlDatabase } from '../src/index.ts';
+import { ConnectionStore, DeviceCatalog, LastHeard, LinkStore, SendQueue, type SecretsAtRest, type SqlDatabase } from '../src/index.ts';
 import { DRIVERS } from './drivers.ts';
 
 /** A device's description, as a lamp's. */
@@ -266,6 +266,16 @@ for (const driver of DRIVERS) {
         expect(catalog.get(theirs.id)?.name).toBe('Renamed there');
         expect(connections.get(way.id)).toMatchObject({ priority: 0, address: 'BB' });
         expect(connections.secret(way.id, 'key')).toBe('only-here');
+      });
+    });
+
+    describe('what a server last said', () => {
+      test('is kept by what was asked, each answer in place of the one before, with when it was heard', () => {
+        const heard = new LastHeard(database);
+        expect(heard.get('devices')).toBeNull();
+        heard.keep('devices', [{ id: 'd-1' }], '2026-10-02T10:00:00.000Z');
+        heard.keep('devices', [{ id: 'd-1' }, { id: 'd-2' }], '2026-10-02T10:05:00.000Z');
+        expect(heard.get('devices')).toEqual({ body: [{ id: 'd-1' }, { id: 'd-2' }], heardAt: '2026-10-02T10:05:00.000Z' });
       });
     });
 

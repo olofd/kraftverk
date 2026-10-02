@@ -2,7 +2,7 @@ import { ApiError, type ConnectionView, type DeviceView, type KraftverkApi, type
 import { clientId as asClientId, isSimulated, placesOf, type AuditRecord, type ClientId, type DeviceSession, type DeviceStore, type PolicyValues, type Reading, type SavedDeviceId, type ScopedHttp } from '@kraftverk/device-sdk';
 import { ActionGateway, Confirmations } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, toHold, toolsOf, withInUse, type DeviceEventMessage } from '@kraftverk/holder';
-import { AppState, ConnectionStore, databaseLedger, DeviceCatalog, deviceStore, LinkStore, SendQueue, type DeviceRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { AppState, ConnectionStore, databaseLedger, DeviceCatalog, deviceStore, LastHeard, LinkStore, SendQueue, type DeviceRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import type { Installed } from '../hub.ts';
 import { SetupService } from '../setup/index.ts';
@@ -25,9 +25,10 @@ import { holdingApi } from './api.ts';
  *
  * What it keeps is kept in the app's own database: the devices it holds a
  * way to, as the server has them; that way's secrets, sealed; what each
- * device's session keeps; the gateway's memory; and what is owed to the
- * server. A restart loses none of it, and with the server away the app
- * still reaches what it holds.
+ * device's session keeps; the gateway's memory; what is owed to the
+ * server; and what the server last said (`heard`). A restart loses none of
+ * it, and with the server away the app still reaches what it holds, and
+ * shows the rest as the server last said it — read only, and saying so.
  */
 
 /** How often what is owed is sent, and how often the server is asked what this app holds. */
@@ -79,6 +80,8 @@ export class Holding {
   readonly catalog: DeviceCatalog;
   readonly connections: ConnectionStore;
   readonly queue: SendQueue;
+  /** What the server last said, by what was asked: shown while it cannot be reached. */
+  readonly heard: LastHeard;
   readonly bus = new LiveBus();
   readonly sessions: SessionManager;
   readonly gateway: ActionGateway;
@@ -115,6 +118,7 @@ export class Holding {
     this.catalog = new DeviceCatalog(db);
     this.connections = new ConnectionStore(db, options.secrets);
     this.queue = new SendQueue(db);
+    this.heard = new LastHeard(db);
     const { catalog, connections, queue } = this;
 
     const record = (entry: AuditRecord) => this.owe('audit', null, entry);
@@ -187,9 +191,8 @@ export class Holding {
       this.#holdNow = new Set(this.catalog.list().map((device) => device.id));
       await this.sessions.sync(this.catalog.list());
     }
-    await this.home.policy
-      .list()
-      .then((values) => this.keepPolicy(values))
+    await this.kept('policy', () => this.home.policy.list())
+      .then(({ answer }) => this.keepPolicy(answer))
       .catch(() => undefined);
     const send = setInterval(() => void this.send(), this.#sendEveryMs);
     const refresh = setInterval(() => void this.refresh(), REFRESH_MS);
@@ -220,15 +223,43 @@ export class Holding {
     return app.id;
   }
 
-  /** Asks the server what it has, and holds what is this app's to hold. Null when it cannot be asked. */
+  /** Asks the server what it has, keeps what it said, and holds what is this app's to hold. Null when it cannot be asked. */
   async refresh(): Promise<DeviceView[] | null> {
     try {
       const list = await this.home.devices.list();
+      this.heard.keep('devices', list);
       await this.hold(list);
       return list;
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Asks the server, and keeps what it answers; with the server out of
+   * reach, what it last answered, and when — or, never heard, the refusal.
+   * Anything else the server says no to is said as it is.
+   */
+  async kept<T>(what: string, ask: () => Promise<T>): Promise<{ answer: T; heardAt: string | null }> {
+    try {
+      const answer = await ask();
+      this.heard.keep(what, answer);
+      return { answer, heardAt: null };
+    } catch (error) {
+      const last = error instanceof ApiError && error.kind === 'unavailable' ? this.heard.get<T>(what) : null;
+      if (!last) throw error;
+      return { answer: last.body, heardAt: last.heardAt };
+    }
+  }
+
+  /**
+   * A device as the server last said it, while it cannot be reached: what it
+   * read then, and its health saying so — unless this app holds it, and
+   * says how it is now.
+   */
+  lastHeard(device: DeviceView): DeviceView {
+    if (this.holds(device.id)) return device;
+    return { ...device, health: { ...device.health, status: 'offline', detail: 'Your server cannot be reached: this is what it last said' }, connections: device.connections.map((connection) => ({ ...connection, reachable: null })) };
   }
 
   /**

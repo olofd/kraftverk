@@ -470,6 +470,19 @@ export const SCHEMA = `
     body      TEXT NOT NULL,
     queued_at TEXT NOT NULL
   );
+
+  /*
+    In an app with a server: what the server last said, by what was asked —
+    its devices, its automations, the home's values — each as it was
+    answered, and when (docs/PLAN-SHARED-CORE.md, phase 6). What the app
+    shows, read only and saying so, while the server cannot be reached.
+    Empty on a server, and in a home the app keeps itself.
+  */
+  CREATE TABLE last_heard (
+    what     TEXT PRIMARY KEY,
+    body     TEXT NOT NULL,
+    heard_at TEXT NOT NULL
+  );
 `;
 
 /**

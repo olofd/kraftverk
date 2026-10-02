@@ -215,3 +215,22 @@ test("what is a server's own, over HTTP: whether it answers, who is signed in, i
   expect((await refused(signedOut.accounts.list())).kind).toBe('forbidden');
   expect(asked).toBe(true);
 });
+
+test('a home over HTTP says after each request whether the server answered at all: a refusal is an answer, nothing is not', async () => {
+  const said: boolean[] = [];
+  let down = false;
+  const home = httpApi({
+    baseUrl: `http://${HOST}/api`,
+    headers: { cookie: `${SESSION_COOKIE}=${cookie}` },
+    onReach: (reached) => said.push(reached),
+    fetch: async (url, init) => {
+      if (down) throw new TypeError('Failed to fetch');
+      return app.fetch(new Request(url, { ...init, headers: { host: HOST, ...(init.headers as Record<string, string>) } }), { requestIP: () => ({ address: '192.168.1.58' }) });
+    },
+  });
+  await home.devices.list();
+  expect((await refused(home.devices.get(savedDeviceId('d-000000000000')))).kind).toBe('not-found');
+  down = true;
+  expect((await refused(home.devices.list())).kind).toBe('unavailable');
+  expect(said).toEqual([true, true, false]);
+});

@@ -636,8 +636,23 @@ The steps, each green and pushed:
     be beside the app, and the servers it knows, are the app's platform's;
     a phone keeps its preferences, in expo-sqlite's key-value store. 10
     files of logic left in the app.
-6g. **The app's copy of the server's home**: kept as the server's
-    changes, and shown, read only and saying so, while the server is away.
+6g. **The app's copy of the server's home** — done, 2026-10-02. What the
+    screens read of the server — its devices, removed ones, automations,
+    the home's values, problems, what can be added, its transports — is
+    kept as it answers, in the app's own database (`last_heard`, by what
+    was asked, with when; a change the server answers with its new state
+    kept too), and refreshed every five minutes by the holding whether or
+    not a screen asks. While the server cannot be reached, the same
+    interface answers from it: the server's devices offline, "this is what
+    it last said", with what they said; what this app holds, live; a
+    change through the server refused by its absence. The screens learn
+    it from the server's own answers: `httpApi` says after each request
+    whether the server answered at all (`onReach`), the home says it is
+    `away`, the list is read again at once, and the banner says what is
+    shown. Seen in a browser: the server stopped, the app reloaded with it
+    gone, the home shown from the copy; the server back, live again.
+    What it does not keep yet: history, the timeline, a run's log — those
+    are the server's while it is away.
 6h. **The hand-over**: a server taking over the app's home, and the app's
     copy becoming the master again.
 6i. **The rest of the app's logic to packages**, as listed under "What
