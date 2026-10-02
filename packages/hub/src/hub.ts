@@ -1,6 +1,7 @@
 import { AutomationEngine, AutomationLibrary } from '@kraftverk/automation-engine';
 import type { AuditRecord, PolicyValueName, PolicyValues, ScopedHttp } from '@kraftverk/device-sdk';
-import { ActionGateway, type GatewayPolicy } from '@kraftverk/gateway';
+import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
+import { ActionGateway, Confirmations, type GatewayPolicy } from '@kraftverk/gateway';
 import { LiveBus, SessionManager } from '@kraftverk/holder';
 import {
   AppState,
@@ -20,6 +21,7 @@ import {
   type SqlDatabase,
 } from '@kraftverk/store';
 
+import { homeApi } from './api/index.ts';
 import { Attention } from './attention/attention.ts';
 import { keepWatchedFresh } from './attention/freshness.ts';
 import { homeDevices } from './automations/devices.ts';
@@ -126,6 +128,12 @@ export class Hub {
   /** What the people using it are looking at, said by their apps. */
   readonly attention = new Attention();
   readonly configuration: Configuration;
+  /**
+   * The tokens a person's yes is sent back with, for what the gateway does
+   * not ask itself: a tool that cannot be undone, an automation let act.
+   * Each good once, for a minute, bound to what was asked and who.
+   */
+  readonly yes = { tools: new Confirmations(), arming: new Confirmations() };
 
   #log: NonNullable<HubOptions['log']>;
   #stopFreshness: (() => void) | null = null;
@@ -253,6 +261,11 @@ export class Hub {
     this.changeLog.start();
     this.engine.start();
     this.#stopFreshness = keepWatchedFresh(this.attention, (device, until) => this.sessions.get(device)?.wantFresh?.(until));
+  }
+
+  /** Everything this home answers (`KraftverkApi`), for one caller: a person, or an assistant acting for one. */
+  as(caller: Caller): KraftverkApi {
+    return homeApi(this, caller);
   }
 
   /** Stops everything it started, together, and lets go of what it opened. The database is the place's to close. */

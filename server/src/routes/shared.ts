@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
+import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
 import { savedDeviceId, type ResourceKind } from '@kraftverk/device-sdk';
 
 import type { ActionGateway } from '@kraftverk/gateway';
@@ -26,6 +27,8 @@ import type { ServerLog } from '../log.ts';
  * cannot tell the difference, which is the point.
  */
 export type AppDeps = {
+  /** The home: what the routes adapt from HTTP to (`hub.as(caller)`). */
+  hub: Hub;
   config: ServerConfig;
   catalog: DeviceCatalog;
   connections: ConnectionStore;
@@ -70,6 +73,7 @@ export type AppDeps = {
 export type HomeDeps = Omit<AppDeps, 'config' | 'proxies' | 'serverLog' | 'startedAt' | 'limiter' | 'snapshot'>;
 
 export const homeOf = (hub: Hub): HomeDeps => ({
+  hub,
   catalog: hub.catalog,
   connections: hub.connections,
   links: hub.links,
@@ -92,6 +96,12 @@ export const homeOf = (hub: Hub): HomeDeps => ({
   sampler: hub.sampler,
   configuration: hub.configuration,
 });
+
+/** Who a request is, to the home: the person signed in on it. */
+export const callerOf = (c: Context): Caller => ({ kind: 'person', name: actorOf(c) });
+
+/** The home, as the person a request is from asks it. */
+export const homeFor = (deps: Pick<AppDeps, 'hub'>, c: Context): KraftverkApi => deps.hub.as(callerOf(c));
 
 /**
  * Parses and validates a JSON body.

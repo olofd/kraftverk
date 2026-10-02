@@ -26,3 +26,4 @@ export { applyImport, keptPlan, PendingPlans, planImport, type ImportChoices, ty
 export { restoreFrom, type Restored } from './configuration/restore.ts';
 export * from './configuration/seal.ts';
 export * from './hub.ts';
+export { actorOf, homeApi, intentOf } from './api/index.ts';

@@ -51,6 +51,7 @@ import type {
   ValueType,
 } from '@kraftverk/device-sdk';
 import type { Rule, StepKind, StepLine } from '@kraftverk/automation';
+import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
 export { ApiError, API_ERROR_STATUS, type ApiErrorKind } from './error.ts';
 
@@ -879,3 +880,84 @@ export type RunLog = {
   /** It gave more readings than a run keeps: those after the last kept are not here. */
   capped: boolean;
 };
+
+// --- the one interface ------------------------------------------------------------
+
+/**
+ * Who is asking a home: what the gateway binds a person's yes to, what it
+ * refuses an assistant, what setup drafts and import plans belong to, and
+ * who the timeline names. The server makes one from a request's session;
+ * an app with no server, one for its owner.
+ */
+export type Caller =
+  /** A person, by the name the timeline knows them by. */
+  | { kind: 'person'; name: string }
+  /** An assistant acting for a person: it does what needs no one's yes, and is refused the rest. */
+  | { kind: 'agent'; for: string };
+
+/** A span of history asked for: `from` and `to`, or the last `hours` up to now, or the last day. */
+export type HistoryQuery = { key: string; hours?: number; from?: string; to?: string; points?: number };
+/** A span of changes asked for, of one key or all. */
+export type ChangesQuery = { key?: string; hours?: number; from?: string; to?: string };
+
+/**
+ * Everything a home answers, whoever asks and wherever it is kept
+ * (docs/PLAN-SHARED-CORE.md, principle 4): `@kraftverk/hub` answers it in
+ * the process (`hub.as(caller)`), `@kraftverk/api-client` over HTTP, and
+ * the server's routes are an adapter from one to the other. A refusal is an
+ * `ApiError`; a command the gateway refuses is an answer, its verdict.
+ * Accounts, sign-in and the reset are the server's, and not here.
+ */
+export interface KraftverkApi {
+  /** What can be added: every installed type, with where each of its methods can be held here. */
+  deviceTypes(): Promise<DeviceTypeList>;
+  devices: {
+    /** The devices you have, each with what it is doing. */
+    list(): Promise<DeviceView[]>;
+    /** Removed ones, kept with their history. */
+    removed(): Promise<DeviceView[]>;
+    /** One, removed or not. */
+    get(id: SavedDeviceId): Promise<DeviceView>;
+    /** Its name, and the key a configuration knows it by. */
+    update(id: SavedDeviceId, changes: { name?: string; key?: string }): Promise<DeviceView>;
+    /** Which picture it shows. */
+    setPicture(id: SavedDeviceId, picture: PictureRef): Promise<DeviceView>;
+    /** Removes it, keeping its history: adding it again brings it back. */
+    remove(id: SavedDeviceId): Promise<void>;
+    /** A removed device and everything it recorded, gone: its name, typed back, confirms it. */
+    deleteHistory(id: SavedDeviceId, name: string): Promise<{ samples: number }>;
+    /** One measurement over a span, thinned for a chart. */
+    history(id: SavedDeviceId, query: HistoryQuery): Promise<DeviceHistory>;
+    /** Every change of an on/off or an enum in a span. */
+    changes(id: SavedDeviceId, query: ChangesQuery): Promise<DeviceChanges>;
+    /** What it said happened, newest first. */
+    events(id: SavedDeviceId, limit?: number): Promise<DeviceEventView[]>;
+    /** A command to one of its parts, through the gateway: its verdict, refused or not. */
+    command(id: SavedDeviceId, part: string, capability: string, command: string, body: CommandBody): Promise<GatewayResult>;
+    /** Settings it keeps, through the gateway: its verdict, refused or not. */
+    write(id: SavedDeviceId, write: AttributeWrite): Promise<WriteResult>;
+    /**
+     * One of its type's tools, with the answer it declares. `reading`: asked
+     * as a read, so one that writes is refused; one that declares what it
+     * cannot undo wants a person's yes, sent back as `confirmation`.
+     */
+    tool(id: SavedDeviceId, name: string, body: ToolBody & { reading?: boolean }): Promise<unknown>;
+  };
+  /** Warnings and errors across the devices you have, newest first. */
+  problems(limit?: number): Promise<ProblemView[]>;
+  connections: {
+    /** This way first, whenever it can be reached. */
+    prefer(device: SavedDeviceId, connection: ConnectionId): Promise<DeviceView>;
+    /** One way to reach it removed: not the last. */
+    remove(device: SavedDeviceId, connection: ConnectionId): Promise<DeviceView>;
+    /** A connection's secrets replaced: write-only, as every secret is. */
+    setSecrets(device: SavedDeviceId, connection: ConnectionId, secrets: Record<string, string>): Promise<DeviceView>;
+    /** Whether its secrets may leave in an export as plain text. */
+    setExportable(device: SavedDeviceId, connection: ConnectionId, exportable: boolean): Promise<DeviceView>;
+  };
+  links: {
+    /** A fact about the house, between two parts. */
+    add(link: NewLink): Promise<LinkRecord>;
+    remove(id: LinkId): Promise<void>;
+  };
+}

@@ -355,6 +355,14 @@ sql.js with no server, `createHolding` beside `api-client` with one; the
 ~105 places the app branches on its mode go, with `local.ts`,
 `describeLocal`, `AppFlow` and the app's runtime.
 
+**A structure pass** (the owner, 2026-10-02), once the hub is done and the
+packages are as they should be: the server and the app looked at again,
+critically, after so much has left them — their folders, modules and
+names, what each file is for now and whether a person new to them finds
+their way — and changed where the shape no longer fits what is left: an
+understandable, simple, but powerful layout, not the one the moves left
+behind.
+
 Each phase green and pushed. Files move first as they are (with git's
 history), then change. The server behaves as before throughout — the one
 visible change is a sealed export's new format (phase 5) — and the owner's

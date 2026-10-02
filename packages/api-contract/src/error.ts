@@ -16,17 +16,20 @@
  *   already running (409);
  * - `needs-yes` — a person must say yes: retried with `needsConfirmation` as
  *   its confirmation (409);
+ * - `not-allowed` — not asked that way: a tool that writes, asked as a read
+ *   (405);
  * - `locked` — every write to hardware is refused here: read-only (423);
  * - `failed` — the device answered, and not as it declares (502);
  * - `unavailable` — what it needs is not running here (503).
  */
-export type ApiErrorKind = 'invalid' | 'not-found' | 'conflict' | 'needs-yes' | 'locked' | 'failed' | 'unavailable';
+export type ApiErrorKind = 'invalid' | 'not-found' | 'conflict' | 'needs-yes' | 'not-allowed' | 'locked' | 'failed' | 'unavailable';
 
 export const API_ERROR_STATUS: Readonly<Record<ApiErrorKind, number>> = {
   invalid: 400,
   'not-found': 404,
   conflict: 409,
   'needs-yes': 409,
+  'not-allowed': 405,
   locked: 423,
   failed: 502,
   unavailable: 503,
