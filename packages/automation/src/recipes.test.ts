@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
-import { checkBinding, checkRule, describeRule, describeTriggers, evaluate, evaluateNow, type Command, type Expr, type RuleScope } from './automation.ts';
-import { capabilitiesOf, MAIN_PART, type DeviceDescription } from './description.ts';
+import { checkBinding, checkRule, describeRule, describeTriggers, evaluate, evaluateNow, type Command, type Expr, type RuleScope } from './rule.ts';
+import { capabilitiesOf, MAIN_PART, type DeviceDescription } from '@kraftverk/device-sdk';
 import { chargeBetween, lowBattery, mainsLost, STANDARD_RECIPES } from './recipes.ts';
-import type { Value } from './values.ts';
+import type { Value } from '@kraftverk/device-sdk';
 
 /*
   The shared vocabulary's recipes: written in library capabilities and

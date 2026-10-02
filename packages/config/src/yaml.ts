@@ -2,10 +2,19 @@ import { isNode, isScalar, LineCounter, parseDocument, Document, Scalar, type No
 
 import { keyFrom } from '@kraftverk/device-sdk';
 
-import { documentFromData, documentToData, emptyDocument, SecretRef, type AutomationEntry, type ConfigDocument, type DeviceEntry, type WriteContext } from './document.ts';
-import type { PrintContext } from './expr.ts';
+import {
+  documentFromData,
+  documentToData,
+  emptyDocument,
+  SecretRef,
+  type AutomationEntry,
+  type ConfigDocument,
+  type DeviceEntry,
+  type WriteContext,
+} from './document.ts';
+import type { PrintContext } from '@kraftverk/automation';
 import { CURRENT_VERSION, migrate } from './migrate.ts';
-import type { Issue } from './rules.ts';
+import type { Issue } from '@kraftverk/automation';
 
 /*
   A configuration as YAML text, both ways (docs/CONFIG.md): read with every

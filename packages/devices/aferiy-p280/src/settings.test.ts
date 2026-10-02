@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { checkValue, MAIN_PART, writtenAttribute } from '@kraftverk/device-sdk';
+import { checkValue, MAIN_PART } from '@kraftverk/device-sdk';
+import { writtenAttribute } from '@kraftverk/automation';
 
 import { describeStation, settingsToValues, valuesToSettings } from './index.ts';
 import { settingsWrites } from './model/station.ts';

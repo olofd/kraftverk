@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { checkBinding, describeRule, lowBattery, mainsLost, MAIN_PART, partsOf, capabilitiesOf, validateDescription } from '@kraftverk/device-sdk';
+import { checkBinding, describeRule, lowBattery, mainsLost } from '@kraftverk/automation';
+import { MAIN_PART, partsOf, capabilitiesOf, validateDescription } from '@kraftverk/device-sdk';
 
 import { mainsWatcher } from '../src/automation.ts';
 import { describeStation } from '../src/index.ts';

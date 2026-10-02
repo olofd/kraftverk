@@ -62,12 +62,13 @@ describe('what the people using kraftverk are looking at', () => {
     app.report({ type: 'view', screen: 'home', showing: [] });
     app.close();
     app.close();
-    console.error = error;
     expect(told).toBe(2);
-    expect(logged).toHaveLength(2);
     stop();
     attention.open(null).report({ type: 'view', screen: 'home', showing: [] });
     expect(told).toBe(2);
+    console.error = error;
+    // The broken one, each time: said, and nothing else stopped.
+    expect(logged).toHaveLength(3);
   });
 });
 

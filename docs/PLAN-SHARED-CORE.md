@@ -220,6 +220,13 @@ Each declared by the package that needs it; one implementation per place.
 
 ## The order
 
+**Done:** phase 0 (2026-10-02), the guardrails — with 60 files of logic
+recorded in the server and the app; phase 1 (2026-10-02), the language —
+`@kraftverk/automation`, with what a package contributes as its own entry
+(`kraftverk.automation`), so the device contract knows nothing of
+automations. What the editor's draft still holds — the draft itself, its
+role filling, recipes copied into it — waits for phase 6.
+
 Each phase green and pushed. Files move first as they are (with git's
 history), then change. The server behaves as before throughout — the one
 visible change is a sealed export's new format (phase 5) — and the owner's

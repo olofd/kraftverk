@@ -1,4 +1,5 @@
-import { ask, dayAfter, defineFunction, defineRecipe, zonedInstant } from '@kraftverk/device-sdk';
+import { ask, defineContribution, defineFunction, defineRecipe } from '@kraftverk/automation';
+import { dayAfter, zonedInstant } from '@kraftverk/device-sdk';
 
 /**
  * What the weather brings to automations (docs/AUTOMATIONS.md): a function
@@ -122,3 +123,6 @@ export const forecastSwitch = defineRecipe({
   },
   then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { compare: 'eq', left: { param: 'action' }, right: { value: 'on' } } } } }],
 });
+
+/** What the package brings to automations: its `kraftverk.automation` entry. */
+export default defineContribution({ functions: [skyLooks], recipes: [forecastSwitch] });

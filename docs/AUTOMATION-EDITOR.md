@@ -66,7 +66,7 @@ foresaw and move its sliders:
      problems and on the saved sentence. (Amended 2026-10-01: this decision
      first said only the server describes.)
 
-## The language, as it changes (`packages/device-sdk/src/automation.ts`)
+## The language, as it changes (`packages/automation/src/rule.ts`)
 
 ```ts
 type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';

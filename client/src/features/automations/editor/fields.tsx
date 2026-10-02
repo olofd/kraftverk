@@ -2,7 +2,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Platform } from 'react-native';
 import { Input, Text, XStack, YStack } from 'tamagui';
 
-import { secondsText, WEEKDAYS, type ValueType, type Value, type Weekday } from '@kraftverk/device-sdk';
+import { secondsText, WEEKDAYS, type Weekday } from '@kraftverk/automation';
+import type { ValueType, Value } from '@kraftverk/device-sdk';
 import { Chips, haptic, Icon, useRadioGroup, useToggleGroup } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';

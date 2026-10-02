@@ -1,8 +1,8 @@
 import { HTTPException } from 'hono/http-exception';
 
 import type { AutomationDraft, AutomationDraftView, AutomationView, Rehearsal, RoleBinding } from '@kraftverk/api-contract';
+import { capabilitiesOf, meetsNeed, partName, partsOf, savedDeviceId, validateConfig, type AutomationId, type Value } from '@kraftverk/device-sdk';
 import {
-  capabilitiesOf,
   changedRoles,
   checkBinding,
   checkRule,
@@ -11,20 +11,13 @@ import {
   describeTriggers,
   inlineParams,
   isAutomationRole,
-  meetsNeed,
-  partName,
-  partsOf,
   problemPlace,
-  savedDeviceId,
   takesSteps,
-  validateConfig,
   writtenAttribute,
-  type AutomationId,
   type BoundPart,
   type Rule,
   type RuleVocabulary,
-  type Value,
-} from '@kraftverk/device-sdk';
+} from '@kraftverk/automation';
 
 import type { DeviceCatalog } from '../devices/catalog.ts';
 import type { DeviceSessionManager } from '../devices/sessions.ts';

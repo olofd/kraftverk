@@ -1,7 +1,7 @@
 import { validateConfig, type ConfigSchema } from '@kraftverk/device-sdk';
 
 import type { ConfigDocument, DeviceEntry, SecretValue } from './document.ts';
-import { MAIN, type Issue } from './rules.ts';
+import { MAIN, type Issue } from '@kraftverk/automation';
 import type { Vocabulary } from './vocabulary.ts';
 
 /*

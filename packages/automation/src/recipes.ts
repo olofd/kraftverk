@@ -1,4 +1,6 @@
-import { defineRecipe, type Expr, type Recipe, type RoleSpec, type Step } from './automation.ts';
+import { STANDARD_NAMESPACE } from '@kraftverk/device-sdk';
+
+import { defineRecipe, type Expr, type Recipe, type RoleSpec, type Step } from './rule.ts';
 
 /**
  * Recipes in the shared vocabulary (docs/AUTOMATIONS.md): rules that name only
@@ -10,8 +12,6 @@ import { defineRecipe, type Expr, type Recipe, type RoleSpec, type Step } from '
  *
  * Namespaced `standard.`, which no device type may take.
  */
-
-export const STANDARD_NAMESPACE = 'standard';
 
 const ACTION = {
   type: 'enum',

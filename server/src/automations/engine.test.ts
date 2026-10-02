@@ -3,19 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import {
-  defineFunction,
-  defineRecipe,
-  MAIN_PART,
-  savedDeviceId,
-  inlineParams,
-  zonedInstant,
-  type AuditRecord,
-  type DeviceDescription,
-  type DeviceReader,
-  type DeviceType,
-  type Value,
-} from '@kraftverk/device-sdk';
+import { defineFunction, defineRecipe, inlineParams, type DeviceReader } from '@kraftverk/automation';
+import { MAIN_PART, savedDeviceId, zonedInstant, type AuditRecord, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
 import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
 
@@ -128,7 +117,7 @@ const kit = {
       }),
     ],
   },
-} as unknown as DeviceType<any>;
+};
 
 // --- devices, as the engine sees them ---------------------------------------------
 
@@ -139,6 +128,8 @@ const PLUG_DESCRIPTION: DeviceDescription = {
     { key: 'light', label: 'Indicator light', value: { type: 'boolean' }, access: 'write', category: 'config' },
   ],
 };
+/** The kit as installed: what it brings to automations, and whose it is. */
+const KIT = [{ contribution: kit.automation, from: { typeId: kit.id, name: kit.meta.name } }];
 const STATION_DESCRIPTION: DeviceDescription = {
   parts: [
     { id: MAIN_PART, label: 'Station', kind: 'device' },
@@ -202,7 +193,7 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
   const bus = new LiveBus();
   const engine = new AutomationEngine({
     store,
-    library: new AutomationLibrary([kit], () => {}),
+    library: new AutomationLibrary(KIT, () => {}),
     device: (binding) => devices[`${binding.device}:${binding.part}`] ?? null,
     gateway: {
       execute: async (intent: CommandIntent): Promise<GatewayResult> => {
@@ -226,7 +217,7 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
     bus,
     now: () => now,
   });
-  const library = new AutomationLibrary([kit], () => {});
+  const library = new AutomationLibrary(KIT, () => {});
   /** An automation copied from one of the kit's recipes, its settings written into its blocks — as the app makes one. */
   const make = (recipe: string, roles: AutomationRecord['roles'], params: Record<string, string | number> = {}, mode: AutomationRecord['mode'] = 'observe', recheckMinutes: number | null = null) => {
     const { id: _id, label: _label, description: _description, sentence: _sentence, ...rule } = library.recipe(recipe)!;

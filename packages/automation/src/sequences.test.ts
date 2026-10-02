@@ -1,6 +1,21 @@
 import { describe, expect, test } from 'bun:test';
 
-import { checkRule, describeRule, describeSteps, describeTriggers, evaluateNow, ruleCommands, ruleUses, SEQUENCE_LIMITS, settledChoice, takesSteps, type Rule, type RuleScope, type Step, whose } from './automation.ts';
+import {
+  checkRule,
+  describeRule,
+  describeSteps,
+  describeTriggers,
+  evaluateNow,
+  ruleCommands,
+  ruleUses,
+  SEQUENCE_LIMITS,
+  settledChoice,
+  takesSteps,
+  type Rule,
+  type RuleScope,
+  type Step,
+  whose,
+} from './rule.ts';
 import { chargeBetween, startCharging, stopCharging } from './recipes.ts';
 
 /**

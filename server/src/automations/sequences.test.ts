@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { inlineParams, MAIN_PART, savedDeviceId, startCharging, stopCharging, type AuditRecord, type AutomationId, type DeviceDescription, type DeviceReader, type Rule } from '@kraftverk/device-sdk';
+import { inlineParams, startCharging, stopCharging, type DeviceReader, type Rule } from '@kraftverk/automation';
+import { MAIN_PART, savedDeviceId, type AuditRecord, type AutomationId, type DeviceDescription } from '@kraftverk/device-sdk';
 import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent, type WriteResult } from '@kraftverk/gateway';
 import { LiveBus, type LiveMessage } from '@kraftverk/holder';
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { calculate, checkRule, describeSteps, evaluateNow, inlineParams, type Expr, type Rule, type RuleScope } from './automation.ts';
+import { calculate, checkRule, describeSteps, evaluateNow, inlineParams, type Expr, type Rule, type RuleScope } from './rule.ts';
 
 /*
   Arithmetic in a rule (docs/PLAN-RUN-AND-CHAIN.md, Phase 4): the sum or

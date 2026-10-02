@@ -3,11 +3,11 @@ import {
   checkValue,
   validateConfig,
   type DeviceDescription,
-  type DeviceReader,
   type DeviceSession,
   type ToolSpec,
   type Value,
 } from '@kraftverk/device-sdk';
+import type { DeviceReader } from '@kraftverk/automation';
 
 /**
  * Running what a device declares as data, the same in every holder: a tool,

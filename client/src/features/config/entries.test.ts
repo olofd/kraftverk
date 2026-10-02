@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 
 import type { DeviceView } from '@kraftverk/api-client';
 import type { Vocabulary } from '@kraftverk/config';
-import { automationId, MAIN_PART, savedDeviceId, type Rule } from '@kraftverk/device-sdk';
+import { automationId, MAIN_PART, savedDeviceId } from '@kraftverk/device-sdk';
+import type { Rule } from '@kraftverk/automation';
 
 import { automationYaml, deviceYaml, draftOfEntry, readAutomationText } from './entries';
 

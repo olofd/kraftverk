@@ -6,16 +6,19 @@
   "type": "module",
   "main": "src/type.ts",
   "kraftverk": {
-    "deviceType": "./src/type.ts"
+    "deviceType": "./src/type.ts",
+    "automation": "./src/automation.ts"
   },
   "exports": {
-    ".": "./src/type.ts"
+    ".": "./src/type.ts",
+    "./automation": "./src/automation.ts"
   },
   "scripts": {
     "test": "node ../../../scripts/run-bun.mjs test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@kraftverk/automation": "*",
     "@kraftverk/device-sdk": "*",
     "@kraftverk/protocol-open-meteo": "*"
   },

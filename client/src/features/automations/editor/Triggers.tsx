@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { EVERY_MINUTES, MAIN_PART, type Expr, type Trigger } from '@kraftverk/device-sdk';
+import { EVERY_MINUTES, type Expr, type Trigger } from '@kraftverk/automation';
+import { MAIN_PART } from '@kraftverk/device-sdk';
 import { Chips, haptic, Icon, IconLabel } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';

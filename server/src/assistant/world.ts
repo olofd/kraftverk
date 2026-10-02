@@ -1,7 +1,6 @@
 import type { DeviceView, VocabularyView, WorldDevice, WorldView } from '@kraftverk/api-contract';
 import {
   attributesOf,
-  isAutomationRole,
   capabilitiesOf,
   CAPABILITIES,
   isCurrent,
@@ -12,6 +11,7 @@ import {
   type CapabilitySpec,
   type PolicyValues,
 } from '@kraftverk/device-sdk';
+import { isAutomationRole } from '@kraftverk/automation';
 
 import type { AutomationLibrary } from '../automations/library.ts';
 

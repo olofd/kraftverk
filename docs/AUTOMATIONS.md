@@ -2,7 +2,7 @@
 
 **Status:** the design behind docs/ARCHITECTURE.md step 29, and *built*
 (2026-09-29) as far as "Where this goes": the rule and its checker, evaluator
-and sentences (`packages/device-sdk/src/automation.ts`), recipes and
+and sentences (`@kraftverk/automation`, `packages/automation`), recipes and
 functions from packages, events from the station, and one engine with all
 three triggers. The last section is the direction the contract is shaped for,
 not a promise of when. **Sequences** — steps that wait, make sure, choose and
@@ -157,10 +157,12 @@ A device type's package may bring, beside its description:
   to change.
 
 Package ids are namespaced by the type (`open-meteo.weather.forecast-switch`)
-and found the way device types are — installing a package is all it takes.
+and found the way device types are — installing a package is all it takes: a
+package's `kraftverk.automation` entry, beside its `deviceType`, exports
+`defineContribution({ recipes, functions })`.
 
 **The shared vocabulary's recipes** sit beside the capability library
-(`device-sdk/src/recipes.ts`), namespaced `standard.`: rules that name only
+(`packages/automation/src/recipes.ts`), namespaced `standard.`: rules that name only
 library capabilities, standard meanings and the events capabilities declare,
 so every device that offers them fills their roles and a home without any one
 product still gets them.

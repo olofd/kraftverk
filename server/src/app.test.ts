@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { LiveUpdate } from '@kraftverk/api-contract';
-import { inlineParams, savedDeviceId, startCharging, type Rule, type Value } from '@kraftverk/device-sdk';
+import { inlineParams, startCharging, type Rule } from '@kraftverk/automation';
+import { savedDeviceId, type Value } from '@kraftverk/device-sdk';
 
 import { ActionGateway } from '@kraftverk/gateway';
 import { LiveBus, type LiveMessage } from '@kraftverk/holder';
@@ -125,7 +126,7 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
   const proxies = new ProxyDirectory(PROXY);
   await proxies.refresh();
   const automations = new AutomationStore();
-  const library = new AutomationLibrary(types.all(), () => {});
+  const library = new AutomationLibrary(types.contributions(), () => {});
   const engine = new AutomationEngine({ store: automations, library, device: serverDevices(catalog, sessions), gateway, record: audit, bus: live });
 
   const attention = new Attention();

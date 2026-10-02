@@ -1,6 +1,18 @@
 import { describe, expect, test } from 'bun:test';
 
-import { checkRule, describeRule, describeTriggers, evaluateNow, inlineParams, inWindow, minutesOf, ruleUses, type Expr, type Rule, type RuleScope } from './automation.ts';
+import {
+  checkRule,
+  describeRule,
+  describeTriggers,
+  evaluateNow,
+  inlineParams,
+  inWindow,
+  minutesOf,
+  ruleUses,
+  type Expr,
+  type Rule,
+  type RuleScope,
+} from './rule.ts';
 
 /*
   Time of day in a condition (docs/PLAN-RUN-AND-CHAIN.md, Phase 4): between

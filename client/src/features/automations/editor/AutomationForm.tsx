@@ -14,7 +14,8 @@ import {
   type RecipeView,
   type RoleBinding,
 } from '@kraftverk/api-client';
-import { capabilitiesOf, isAutomationRole, meetsNeed, partsOf } from '@kraftverk/device-sdk';
+import { capabilitiesOf, meetsNeed, partsOf } from '@kraftverk/device-sdk';
+import { isAutomationRole } from '@kraftverk/automation';
 import { Card, haptic, Icon, Row, RowSeparator, SegmentedControl } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
@@ -28,7 +29,8 @@ import { useTone } from '../looks';
 import { Empty, Group } from '../page/Group';
 import { BlockList } from './Blocks';
 import { EditorProvider, useEditor } from './context';
-import { OTHERWISE, pruned, rolesOf, sameParts, THEN, type Draft } from './draft';
+import { OTHERWISE, THEN } from '@kraftverk/automation';
+import { pruned, rolesOf, sameParts, type Draft } from './draft';
 import { Picker } from './fields';
 import { OnlyIf, Triggers } from './Triggers';
 

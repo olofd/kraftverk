@@ -1,4 +1,5 @@
-import { CAPABILITIES, isAutomationRole, ruleUses, standardMeaning, type CapabilityName, type Expr, type Rule, type RoleSpec, type Step, type Trigger, type Weekday, WEEKDAYS } from '@kraftverk/device-sdk';
+import { CAPABILITIES, standardMeaning, type CapabilityName } from '@kraftverk/device-sdk';
+import { isAutomationRole, ruleUses, type Expr, type Rule, type RoleSpec, type Step, type Trigger, type Weekday, WEEKDAYS } from '../rule.ts';
 
 import { parseExpr, printExpr, type PrintContext, type WrittenUnit } from './expr.ts';
 

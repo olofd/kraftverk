@@ -224,7 +224,7 @@ changeLog.start();
 
 /** Automations: decided here, acted on only through the gateway. */
 /** What the installed packages bring to automations: their recipes and functions. None of the core's own. */
-const library = new AutomationLibrary(types.all());
+const library = new AutomationLibrary(types.contributions());
 const automations = new AutomationStore();
 const engine = new AutomationEngine({
   store: automations,

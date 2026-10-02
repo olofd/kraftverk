@@ -43,14 +43,12 @@ import type {
   ResourceKind,
   SavedDeviceId,
   SetupStepView,
-  Rule,
-  StepKind,
-  StepLine,
   ToolSpec,
   TransportDefinition,
   Value,
   ValueType,
 } from '@kraftverk/device-sdk';
+import type { Rule, StepKind, StepLine } from '@kraftverk/automation';
 
 export type {
   AuditSubject,
@@ -66,17 +64,7 @@ export type {
   LinkId,
   Reach,
   ResourceKind,
-  StepKind,
-  StepLine,
   ToolSpec,
-  Rule,
-  RoleSpec,
-  Step,
-  Expr,
-  Trigger,
-  Weekday,
-  CompareOp,
-  Command,
   CategoryId,
   CategorySpec,
   ConfigField,
@@ -104,6 +92,7 @@ export type {
   TransportDefinition,
   Value,
 } from '@kraftverk/device-sdk';
+export type { StepKind, StepLine, Rule, RoleSpec, Step, Expr, Trigger, Weekday, CompareOp, Command } from '@kraftverk/automation';
 export type { GatewayResult, GatewayOutcome, WriteResult } from '@kraftverk/gateway';
 
 /** `GET /api/version`. */

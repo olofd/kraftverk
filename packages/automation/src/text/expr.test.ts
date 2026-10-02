@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { Expr } from '@kraftverk/device-sdk';
+import type { Expr } from '../rule.ts';
 
 import { parseExpr, printExpr } from './expr.ts';
 

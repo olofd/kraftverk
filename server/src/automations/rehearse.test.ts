@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { chargeBetween, inlineParams, MAIN_PART, savedDeviceId, type DeviceDescription, type Recipe } from '@kraftverk/device-sdk';
+import { chargeBetween, inlineParams, type Recipe } from '@kraftverk/automation';
+import { MAIN_PART, savedDeviceId, type DeviceDescription } from '@kraftverk/device-sdk';
 
 import { rehearse, type RehearseSource } from './rehearse.ts';
 

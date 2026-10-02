@@ -2,7 +2,8 @@ import { randomBytes } from 'node:crypto';
 
 import type { RoleBinding, RunLog, RunLogDevice, RunLogKey, RunLogReach, RunLogReading, RunLogRole } from '@kraftverk/api-contract';
 import { KEY, keyFrom } from '@kraftverk/device-sdk';
-import { automationId, savedDeviceId, type AutomationId, type Quantity, type Rule, type Value } from '@kraftverk/device-sdk';
+import { automationId, savedDeviceId, type AutomationId, type Quantity, type Value } from '@kraftverk/device-sdk';
+import type { Rule } from '@kraftverk/automation';
 
 import { db } from '../history/db.ts';
 import type { AutomationMode, AutomationRecord, RunResult } from './engine.ts';

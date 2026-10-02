@@ -26,6 +26,4 @@ export * from './connection.ts';
 export * from './device-type.ts';
 export * from './setup.ts';
 export * from './validate.ts';
-export * from './automation.ts';
-export * from './recipes.ts';
 export * from './time.ts';

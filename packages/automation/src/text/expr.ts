@@ -1,4 +1,5 @@
-import type { CompareOp, Expr, MathOp, Value } from '@kraftverk/device-sdk';
+import type { CompareOp, Expr, MathOp } from '../rule.ts';
+import type { Value } from '@kraftverk/device-sdk';
 
 /*
   The rule language's expressions as text (docs/CONFIG.md): what a condition

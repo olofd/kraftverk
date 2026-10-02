@@ -16,8 +16,8 @@ import {
   type Rule,
   type Step,
   type WriteTarget,
-} from './automation.ts';
-import type { DeviceDescription } from './description.ts';
+} from './rule.ts';
+import type { DeviceDescription } from '@kraftverk/device-sdk';
 import { chargeBetween, mainsLost, startCharging } from './recipes.ts';
 
 /*

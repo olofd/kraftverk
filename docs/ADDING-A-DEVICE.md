@@ -144,19 +144,25 @@ only it does. It inherits the rest. The family's package claims no model.
 ### What it brings to automations
 
 A device's package decides what automations can do with it
-([AUTOMATIONS.md](AUTOMATIONS.md)). Three things, all optional:
+([AUTOMATIONS.md](AUTOMATIONS.md); the language is
+[`@kraftverk/automation`](../packages/automation/README.md)). Three things,
+all optional. Recipes and functions are the package's own entry beside its
+type — `"kraftverk": { "deviceType": "./src/type.ts", "automation":
+"./src/automation.ts" }` — whose default export is
+`defineContribution({ recipes, functions })` from `@kraftverk/automation`;
+the device contract itself knows nothing of automations.
 
 - **Events** in its description — `{ id: 'mains.lost', part: 'input.ac', level:
   'warn' }` — raised with `ctx.event(id, data, part)` when they happen, never
   on the first reading. A trigger can wait for them.
-- **Recipes**, under `automation.recipes`: rules with roles and settings left
+- **Recipes**, in its contribution: rules with roles and settings left
   open, as data (`defineRecipe`), for what only your devices make possible.
   A recipe that needs nothing but library capabilities and standard meanings
   — "when a battery runs low", "charge between two levels" — belongs in the
-  shared vocabulary (`device-sdk/src/recipes.ts`), where every device that
+  shared vocabulary (`packages/automation/src/recipes.ts`), where every device that
   offers them gets it. Give it a `sentence`; the check makes sure it names
   only roles and settings.
-- **Functions**, under `automation.functions` (`defineFunction`), for what a
+- **Functions**, in its contribution (`defineFunction`), for what a
   comparison cannot say: "does tomorrow look sunny". Typed arguments and
   result, the capability it needs, and an answer of `null` — with why — when
   it cannot tell. The only package code an automation runs; it answers, it
@@ -164,8 +170,9 @@ A device's package decides what automations can do with it
   and its queries answered in their declared types (`ask`) — and nothing
   that can command, write or run a tool.
 
-Ids are namespaced by your type: `acme.plug.overheating`. The contract check
-validates every recipe as a rule; the server checks it again against every
+Ids are namespaced by your type: `acme.plug.overheating`. Installing the
+package checks the contribution (`checkContribution`): every recipe as a rule,
+against the functions it brings; the server checks it again against every
 installed package's functions when it starts.
 
 ## Rules the check enforces

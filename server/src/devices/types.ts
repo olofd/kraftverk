@@ -1,4 +1,7 @@
+import { checkContribution, type AutomationContribution } from '@kraftverk/automation';
 import { connectionProblems, validateDeviceType, type DeviceType, type Protocol, type TransportDefinition } from '@kraftverk/device-sdk';
+
+import type { Contributed } from '../automations/library.ts';
 
 import { findPackages, load, ROOTS } from '../runtime/packages.ts';
 import type { Refused } from '../runtime/protocols.ts';
@@ -17,12 +20,18 @@ import type { Refused } from '../runtime/protocols.ts';
  * one broken package never stops the others loading. A method whose protocol
  * or transport is not installed is a warning, not a refusal: the type's other
  * methods still work.
+ *
+ * What a package brings to automations is its own entry beside its type —
+ * `"automation": "./src/automation.ts"` — namespaced by that type, and
+ * checked the same way: a contribution that breaks the rules is refused, and
+ * its type still installed.
  */
 
 export class DeviceTypeRegistry {
   #types = new Map<string, DeviceType<any>>();
   #refused: Refused[] = [];
   #warnings = new Map<string, string[]>();
+  #contributed: Contributed[] = [];
 
   /** Loads every device-type package under the roots. Never throws. */
   async discover(roots: readonly string[] = ROOTS.deviceTypes): Promise<void> {
@@ -30,7 +39,9 @@ export class DeviceTypeRegistry {
     this.#refused.push(...problems);
     for (const pkg of found) {
       try {
-        this.install(await load<DeviceType<any>>(pkg, String(pkg.kraftverk.deviceType)), pkg.name);
+        const type = await load<DeviceType<any>>(pkg, String(pkg.kraftverk.deviceType));
+        if (this.install(type, pkg.name).length) continue;
+        if (pkg.kraftverk.automation) this.contribute(type, await load<AutomationContribution>(pkg, String(pkg.kraftverk.automation)), pkg.name);
       } catch (error) {
         this.#refuse(pkg.folder, [(error as Error).message]);
       }
@@ -50,6 +61,22 @@ export class DeviceTypeRegistry {
     }
     this.#types.set(type.id, type);
     return [];
+  }
+
+  /** Accepts what an installed type's package brings to automations, if it keeps the rules. */
+  contribute(type: DeviceType<any>, contribution: AutomationContribution, source = type.id): string[] {
+    const problems = checkContribution(contribution, type.id);
+    if (problems.length) {
+      this.#refuse(`${source} (what it brings to automations)`, problems);
+      return problems;
+    }
+    this.#contributed.push({ contribution, from: { typeId: type.id, name: type.meta.name } });
+    return [];
+  }
+
+  /** What the installed packages bring to automations. */
+  contributions(): readonly Contributed[] {
+    return this.#contributed;
   }
 
   /** Checks every type's methods against what is installed, and keeps what does not fit. */

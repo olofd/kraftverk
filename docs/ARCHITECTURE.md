@@ -132,6 +132,9 @@ packages/
                                                          through the gateway (`ip#zigbee-address` on the lan transport)
   services/open-meteo/   @kraftverk/service-open-meteo   weather, a service
   services/elprisetjustnu/ @kraftverk/service-elprisetjustnu energy-price: Sweden's electricity prices, a service
+  automation/            @kraftverk/automation           the automation language: rules, checking, describing, evaluating, editing, its
+                                                         text form, the standard recipes, what a package contributes; pure (its README)
+  config/                @kraftverk/config               the home as a document: YAML, its JSON Schema, migrations; pure
   gateway/               @kraftverk/gateway              the action gateway's rules: pure, run by whichever holder has the connection
   api-contract/          @kraftverk/api-contract         the HTTP API's shapes, types only: declared once, imported by the server and the app
   holder/                @kraftverk/holder               what every holder does with a device: open, watch, fail over, judge a check; pure
@@ -164,7 +167,9 @@ The rule, checked in CI by `npm run check:architecture` (§7):
 - **A protocol** imports the SDK and other protocols. It is pure: bytes and
   messages in, bytes and messages out, with no I/O and no Node or Bun
   built-ins. It has no idea what a P280 is.
-- **A device type** imports the SDK and protocols, and — in its `ui/` folder
+- **A device type** imports the SDK, the automation language (to declare the
+  recipes and functions it contributes, an entry of its own beside its type)
+  and protocols, and — in its `ui/` folder
   only — `@kraftverk/ui`, `@kraftverk/api-client`, React and Tamagui (peer
   dependencies). Its `src/` never imports its own `ui/`: the server loads
   `src/`, and what both need lives there. Never a transport, the server or

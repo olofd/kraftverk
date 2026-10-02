@@ -11,12 +11,13 @@ import {
   type AutomationEntry,
   type DeviceEntry,
   type EngineMode,
-  type PrintContext,
   type Problem,
   type Scalar,
   type Vocabulary,
 } from '@kraftverk/config';
-import { savedDeviceId, type AutomationId, type Rule } from '@kraftverk/device-sdk';
+import type { PrintContext } from '@kraftverk/automation';
+import { savedDeviceId, type AutomationId } from '@kraftverk/device-sdk';
+import type { Rule } from '@kraftverk/automation';
 
 /*
   An automation's and a device's own YAML, as their pages show it and the

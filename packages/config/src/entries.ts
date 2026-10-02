@@ -1,8 +1,9 @@
-import { attributeMeaning, unitOf, type DeviceDescription, type Rule } from '@kraftverk/device-sdk';
+import { attributeMeaning, unitOf, type DeviceDescription } from '@kraftverk/device-sdk';
+import type { Rule } from '@kraftverk/automation';
 
 import type { AutomationEntry, Mode } from './document.ts';
-import type { PrintContext } from './expr.ts';
-import type { Use } from './rules.ts';
+import type { PrintContext } from '@kraftverk/automation';
+import type { Use } from '@kraftverk/automation';
 
 /*
   An automation as it lives — its rule, what fills each role by id, its mode

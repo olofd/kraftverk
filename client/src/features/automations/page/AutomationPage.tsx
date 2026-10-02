@@ -16,7 +16,7 @@ import {
   type AutomationView,
   type Rehearsal,
 } from '@kraftverk/api-client';
-import { describeExpr } from '@kraftverk/device-sdk';
+import { describeExpr } from '@kraftverk/automation';
 import { Card, Icon, RowSeparator, SegmentedControl, ToggleRow, haptic, type IconName } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';

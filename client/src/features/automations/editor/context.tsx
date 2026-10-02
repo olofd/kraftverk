@@ -1,24 +1,19 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
 import type { AutomationView, DeviceView, FunctionView, RoleBinding } from '@kraftverk/api-client';
+import { capabilitiesOf, meetsNeed, partName, partsOf, type CapabilityNeed, type DeviceDescription } from '@kraftverk/device-sdk';
 import {
-  capabilitiesOf,
   describeExpr,
   describeSteps,
   describeTriggers,
   isAutomationRole,
-  meetsNeed,
-  partName,
-  partsOf,
   writtenAttribute,
   type AutomationFunction,
-  type CapabilityNeed,
-  type DeviceDescription,
   type Expr,
   type RuleVocabulary,
   type Step,
   type Trigger,
-} from '@kraftverk/device-sdk';
+} from '@kraftverk/automation';
 
 import { partRole, type Draft } from './draft';
 

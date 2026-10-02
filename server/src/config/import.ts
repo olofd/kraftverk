@@ -1,29 +1,35 @@
 import { randomBytes } from 'node:crypto';
 
 import type { ImportApplied, ImportItem, ImportPlan } from '@kraftverk/api-contract';
-import { checkDocument, MAIN, MODE_IN_FILE, MODE_OF_FILE, readConfig, useOf, useText, type AutomationEntry, type ConfigDocument, type DeviceEntry, type SecretValue, type WriteContext } from '@kraftverk/config';
+import {
+  checkDocument,
+  MODE_IN_FILE,
+  MODE_OF_FILE,
+  readConfig,
+  type AutomationEntry,
+  type ConfigDocument,
+  type DeviceEntry,
+  type SecretValue,
+  type WriteContext,
+} from '@kraftverk/config';
+import { MAIN, useOf, useText } from '@kraftverk/automation';
 import {
   attributeMeaning,
   capabilitiesOf,
   isSecretField,
-  checkBinding,
-  checkRule,
-  isAutomationRole,
   isSimulated,
   meetsNeed,
   methodsOf,
   partsOf,
   POLICY_VALUES,
-  takesSteps,
   unitOf,
   validateConfig,
   type AutomationId,
-  type BoundPart,
   type ConfigValues,
-  type PartRole,
   type PolicyValueName,
   type SavedDeviceId,
 } from '@kraftverk/device-sdk';
+import { checkBinding, checkRule, isAutomationRole, takesSteps, type BoundPart, type PartRole } from '@kraftverk/automation';
 
 import type { AutomationEngine, AutomationRecord } from '../automations/engine.ts';
 import { hasConditions, type Checked } from '../automations/plans.ts';

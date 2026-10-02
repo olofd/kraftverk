@@ -1,18 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  checkBinding,
-  checkRule,
-  defineFunction,
-  describeRule,
-  evaluate,
-  evaluateNow,
-  type Expr,
-  type Recipe,
-  type RuleScope,
-} from './automation.ts';
-import { MAIN_PART, type DeviceDescription } from './description.ts';
-import type { Value } from './values.ts';
+import { checkBinding, checkRule, defineFunction, describeRule, evaluate, evaluateNow, type Expr, type Recipe, type RuleScope } from './rule.ts';
+import { MAIN_PART, type DeviceDescription } from '@kraftverk/device-sdk';
+import type { Value } from '@kraftverk/device-sdk';
 
 /*
   The rule: one language that recipes, a DSL and an AI all write. What these

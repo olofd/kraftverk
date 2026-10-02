@@ -1,10 +1,19 @@
-import { capabilitySpec, isCapability, meetsNeed, type CapabilityId, type CapabilityName, type CapabilityNeed, type QueryAnswer, type QueryName } from './capabilities.ts';
-import { attributeMeaning, MAIN_PART, partsOf, type AttributeSpec, type DeviceDescription, type Reading } from './description.ts';
-import type { QueryRequest } from './device-type.ts';
-import type { SessionHealth } from './identity.ts';
-import { standardMeaning } from './meanings.ts';
-import { valueTypeOf, type ConfigSchema } from './schema.ts';
-import { checkValue, enumLabel, isScalar, type ScalarValue, type Value, type ValueType } from './values.ts';
+import {
+  capabilitySpec,
+  isCapability,
+  meetsNeed,
+  type CapabilityId,
+  type CapabilityName,
+  type CapabilityNeed,
+  type QueryAnswer,
+  type QueryName,
+} from '@kraftverk/device-sdk';
+import { attributeMeaning, MAIN_PART, partsOf, type AttributeSpec, type DeviceDescription, type Reading } from '@kraftverk/device-sdk';
+import type { QueryRequest } from '@kraftverk/device-sdk';
+import type { SessionHealth } from '@kraftverk/device-sdk';
+import { standardMeaning } from '@kraftverk/device-sdk';
+import { valueTypeOf, type ConfigSchema } from '@kraftverk/device-sdk';
+import { checkValue, enumLabel, isScalar, type ScalarValue, type Value, type ValueType } from '@kraftverk/device-sdk';
 
 /**
  * Automations as data: the rule (docs/AUTOMATIONS.md).

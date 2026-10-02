@@ -8,7 +8,6 @@ import {
 } from '@kraftverk/device-sdk';
 import { fetchForecast, OPEN_METEO, type WeatherHour } from '@kraftverk/protocol-open-meteo';
 
-import { forecastSwitch, skyLooks } from './automation.ts';
 
 /**
  * Weather from Open-Meteo, as a service: a device with no hardware, added and
@@ -181,7 +180,6 @@ export default defineDeviceType<WeatherConfig>({
     docsUrl: 'https://open-meteo.com/en/docs',
   },
   describe: () => DESCRIPTION,
-  automation: { functions: [skyLooks], recipes: [forecastSwitch] },
   config: {
     fields: {
       place: { type: 'string', title: 'Place', description: 'What you call it: “Home”, “The cabin”.', placeholder: 'Home' },

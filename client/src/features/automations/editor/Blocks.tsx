@@ -1,22 +1,8 @@
 import { useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import {
-  capabilitiesOf,
-  capabilityIn,
-  isScalarType,
-  MAIN_PART,
-  SEQUENCE_LIMITS,
-  stepKind,
-  writtenAttribute,
-  type Command,
-  type DeviceDescription,
-  type Expr,
-  type Step,
-  type StepKind,
-  type Value,
-  type Write,
-} from '@kraftverk/device-sdk';
+import { capabilitiesOf, capabilityIn, isScalarType, MAIN_PART, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
+import { SEQUENCE_LIMITS, stepKind, writtenAttribute, type Command, type Expr, type Step, type StepKind, type Write } from '@kraftverk/automation';
 import { Chips, haptic, Icon, IconLabel } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
@@ -24,7 +10,8 @@ import { confirmAction } from '../../../lib/confirm';
 import { KIND as KIND_ICON, useTone } from '../looks';
 import { ConditionField } from './Condition';
 import { pickPart, useEditor } from './context';
-import { automationRole, blankStep, insertStep, KINDS, kindsFor, listAt, mayWait, moveStep, removeStep, secondsOf, within, withStep, type Branch, type ListPath } from './draft';
+import { automationRole, blankStep, KINDS, secondsOf } from './draft';
+import { insertStep, kindsFor, listAt, mayWait, moveStep, removeStep, within, withStep, type Branch, type ListPath } from '@kraftverk/automation';
 import { DurationField, Label, NumberField, Picker, ValueField } from './fields';
 
 /*

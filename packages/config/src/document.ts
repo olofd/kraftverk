@@ -1,8 +1,9 @@
-import { KEY, type Rule } from '@kraftverk/device-sdk';
+import { KEY } from '@kraftverk/device-sdk';
+import type { Rule } from '@kraftverk/automation';
 
 import { CURRENT_VERSION } from './migrate.ts';
-import { durationSeconds, durationText, ruleFromConfig, ruleToConfig, useOf, useText, type Issue, type Use } from './rules.ts';
-import type { PrintContext } from './expr.ts';
+import { durationSeconds, durationText, ruleFromConfig, ruleToConfig, useOf, useText, type Issue, type Use } from '@kraftverk/automation';
+import type { PrintContext } from '@kraftverk/automation';
 
 /*
   A kraftverk configuration as data (docs/CONFIG.md): the home's settings, its

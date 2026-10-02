@@ -3,22 +3,15 @@ import {
   attributeMeaning,
   clockTime,
   currentForOf,
-  evaluate,
-  evaluateNow,
-  EVERY_MINUTES,
   localTime,
-  minutesOf,
-  ruleUses,
-  runsOn,
   standardMeaning,
   zonedInstant,
   type AttributeSpec,
   type DeviceDescription,
-  type Rule,
-  type RuleScope,
   type ScalarValue,
   type Value,
 } from '@kraftverk/device-sdk';
+import { evaluate, evaluateNow, EVERY_MINUTES, minutesOf, ruleUses, runsOn, type Rule, type RuleScope } from '@kraftverk/automation';
 
 /**
  * A rule, rehearsed on what happened (PROPOSITION.md §5.3): walked through a

@@ -8,10 +8,10 @@ import {
   type DeviceEntry,
   type Scalar,
   type SecretValue,
-  type PrintContext,
   type Vocabulary,
   type WriteContext,
 } from '@kraftverk/config';
+import type { PrintContext } from '@kraftverk/automation';
 import { methodsOf, partsOf, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import type { AutomationStore } from '../automations/store.ts';

@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { AutomationId, RecipeView, RoleBinding } from '@kraftverk/api-client';
-import { checkRule, savedDeviceId, startCharging, stopCharging, type DeviceDescription, type Step } from '@kraftverk/device-sdk';
+import { checkRule, startCharging, stopCharging, type Step } from '@kraftverk/automation';
+import { savedDeviceId, type DeviceDescription } from '@kraftverk/device-sdk';
 
-import { automationRole, blankStep, EMPTY, fromRecipe, insertStep, kindsFor, listAt, mayWait, moveStep, OTHERWISE, partRole, pruned, roleName, removeStep, sameParts, THEN, withStep, within } from './draft';
+import { automationRole, blankStep, EMPTY, fromRecipe, partRole, pruned, roleName, sameParts } from './draft';
+import { insertStep, kindsFor, listAt, mayWait, moveStep, OTHERWISE, removeStep, THEN, withStep, within } from '@kraftverk/automation';
 
 /*
   The editor's draft, changed the way its screens change it: blocks added,

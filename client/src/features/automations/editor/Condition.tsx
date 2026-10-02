@@ -1,6 +1,7 @@
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { MAIN_PART, meetsNeed, capabilitiesOf, type CompareOp, type Expr, type ValueType, type Value } from '@kraftverk/device-sdk';
+import { MAIN_PART, meetsNeed, capabilitiesOf, type ValueType, type Value } from '@kraftverk/device-sdk';
+import type { CompareOp, Expr } from '@kraftverk/automation';
 import { Chips, Icon, IconLabel } from '@kraftverk/ui';
 
 import { useTone } from '../looks';

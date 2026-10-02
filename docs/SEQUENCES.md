@@ -343,7 +343,7 @@ In their packages, through two small additions to the device contract:
 
 ## The recipe
 
-In the shared vocabulary (`device-sdk/src/recipes.ts`), so it fills from any
+In the shared vocabulary (`packages/automation/src/recipes.ts`), so it fills from any
 devices that offer what it asks:
 
 - **`standard.start-charging`** — *Start charging through a switched supply.*
@@ -382,7 +382,7 @@ tried on the owner's real station, plug and charger, with the owner watching.
 
 1. **Language** — six kinds of step, `asked` (removed since), `reachable`, the limits;
    `checkRule`, `describeSteps`, `ruleUses`, `ruleCommands` —
-   `device-sdk/src/automation.ts`; tests in `sequences.test.ts`. *Built.*
+   `packages/automation/src/rule.ts`; tests in `sequences.test.ts`. *Built.*
 2. **Data model and contract** — `automation_run`, `automation_role`,
    `automation_trigger`, `looked_at`, `device_switch`/`device_write`,
    `device.picture`; `AutomationRun.steps` and its outcomes; `AutomationView`,

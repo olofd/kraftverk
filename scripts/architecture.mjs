@@ -60,7 +60,7 @@ const MAY_IMPORT = {
   gateway: ['device-sdk'],
   config: ['device-sdk', 'automation'],
   'api-contract': ['device-sdk', 'automation', 'gateway', 'config'],
-  holder: ['device-sdk', 'gateway', 'api-contract'],
+  holder: ['device-sdk', 'automation', 'gateway', 'api-contract'],
   'automation-engine': ['device-sdk', 'automation', 'gateway', 'api-contract', 'holder'],
   store: ['device-sdk', 'automation', 'gateway', 'api-contract', 'holder', 'automation-engine'],
   hub: ['device-sdk', 'automation', 'gateway', 'config', 'api-contract', 'holder', 'automation-engine', 'store'],

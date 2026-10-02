@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { describeError, fetchConfigVocabulary, type AutomationView, type DeviceView, type RoleBinding } from '@kraftverk/api-client';
-import { entryJsonSchema, type PrintContext, type Vocabulary } from '@kraftverk/config';
-import type { AutomationId, Rule } from '@kraftverk/device-sdk';
+import { entryJsonSchema, type Vocabulary } from '@kraftverk/config';
+import type { PrintContext } from '@kraftverk/automation';
+import type { AutomationId } from '@kraftverk/device-sdk';
+import type { Rule } from '@kraftverk/automation';
 
 import { automationYaml, draftOfEntry, readAutomationText, type AutomationSettings } from './entries';
 import type { TextProblem } from './shared';

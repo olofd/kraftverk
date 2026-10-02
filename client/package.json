@@ -22,6 +22,7 @@
     "@codemirror/view": "^6.43.13",
     "@expo/vector-icons": "^15.1.1",
     "@kraftverk/api-client": "*",
+    "@kraftverk/automation": "*",
     "@kraftverk/config": "*",
     "@kraftverk/device-sdk": "*",
     "@kraftverk/gateway": "*",

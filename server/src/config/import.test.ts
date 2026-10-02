@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { writeConfig } from '@kraftverk/config';
-import { defineDeviceType, MAIN_PART, type Rule } from '@kraftverk/device-sdk';
+import { defineDeviceType, MAIN_PART } from '@kraftverk/device-sdk';
+import type { Rule } from '@kraftverk/automation';
 
 import { AutomationLibrary } from '../automations/library.ts';
 import { plans } from '../automations/plans.ts';
@@ -44,7 +45,7 @@ beforeAll(() => {
   protocols.install(lampProtocol);
   const catalog = new DeviceCatalog();
   const automations = new AutomationStore();
-  const library = new AutomationLibrary([lampType], () => {});
+  const library = new AutomationLibrary([], () => {});
   const engine = { reset: () => {}, poke: () => {}, forget: () => {} };
   const sessions = { sync: async (records: unknown[]) => void sessionsSynced.push(records.length), description: (record: { description: unknown }) => record.description };
   const { checked } = plans({ catalog, sessions: sessions as never, library, engine: engine as never, automations });

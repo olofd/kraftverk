@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { checkRule, describeRule, describeTriggers, inlineParams, slotOf, type Rule, type Trigger } from './automation.ts';
+import { checkRule, describeRule, describeTriggers, inlineParams, slotOf, type Rule, type Trigger } from './rule.ts';
 
 /*
   Every so many minutes (docs/PLAN-RUN-AND-CHAIN.md, Phase 4): on the
