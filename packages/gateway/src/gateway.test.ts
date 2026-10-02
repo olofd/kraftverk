@@ -21,7 +21,7 @@ const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 const health = (connected = true): ConnectionHealth => ({
   status: connected ? 'connected' : 'offline',
   detail: connected ? 'Connected' : 'Not answering',
-  node: nodeId('n-0000000000a1'),
+  node: nodeId('n-00000000000000a1'),
   transport: 'test',
   lastReadingAt: now(),
 });

@@ -273,7 +273,7 @@ classDiagram
 | **Device type** | One product or product family: what its values *mean*. It **identifies** a device (its identity and model) over any of its connection methods. Models of one family are *profiles*, as data, not separate types. Pure code too, because it runs wherever its connection is held. | `packages/devices/*`, `packages/services/*` | `aferiy.p280`, `atorch.s1w`, `tuya.plug` (one profile per socket), `open-meteo.weather` |
 | **Connection method** | One (protocol, transport) pair a type supports, what it **reaches** beyond the home network (`local`, `cloud-at-setup` — the vendor's cloud once, to fetch a key — or `cloud`), an optional *recommended* flag and any extra setup steps of its own. It says nothing about *where* it runs. A type declares pairs, not two separate lists, because not every protocol rides every transport. | inside the device type | P280: `wifi` = sydpower over mqtt, local; `bluetooth` = sydpower over ble, local. ATORCH: `lan` = tuya-local over lan, cloud at setup. Open-Meteo: `api` = open-meteo over https, cloud. |
 | **Node** | A kraftverk node: the hub running somewhere — an always-on machine on the network, a phone, a browser — that holds connections. It reports the transports it has *now*, and why one is missing, and declares what it is: **always on** (runs while nobody looks), **reachable** (others connect to it), **trusted** (what must stay put — a vendor account's password — may be kept on it). One node is the home's **master** (`home.master_id`): the one always on and reachable, when there is one; the others follow it, an always-on one too — a Raspberry Pi beside a station, holding its Bluetooth for the master. One master per home; a master per place is a door left open. Setup offers a method wherever a node of the home has its transport. | runtime, and the `node` record | A NAS: `mqtt`, `ble`, `lan`, `https`; always on, reachable, trusted. Chrome on a laptop: `ble`, `https`. Firefox: `https` ("no Bluetooth in Firefox"). |
-| **Place** | Where something is, physically: a home has one or more, each with its position and clock. A device and a node stand at one — a phone at none, as it moves. Weather, sun times and an automation's clock are to be read from it; nothing reads it yet, and what groups things — a home, or places alone — is still the owner's to decide (PLAN-SHARED-CORE.md, 6j). | the `place` record | "Home", 59.33 N 18.07 E, Europe/Stockholm; "The cabin" |
+| **Place** | Where something is, physically, with its position and clock: what weather, sun times and an automation's clock would be read from. Not in the schema: what groups things — a home, or places alone — is still the owner's to decide (PLAN-SHARED-CORE.md, 6j), and a table nothing writes was taken out until it is. A weather service has its own position; an automation its own clock. | — | "Home", 59.33 N 18.07 E, Europe/Stockholm; "The cabin" |
 | **Value** | One type system for everything a device reports, is told, answers or asks for: number (unit, range, step, precision), boolean, enum, string, **timestamp**, and a **list** or an **object** of values for structure. `null` is "not known". A config field is a value type with a title and a **presentation** (`secret`, `host`, `multiline`, `slider`). | `device-sdk` (`values.ts`, `schema.ts`) | A forecast: a list of objects `{at: timestamp, temperature: °C, cloudCover: %, …}`; a local key: a string presented as a secret |
 | **Description** | What a device is: its **parts** (`main`, and whatever it has several of — each of a curated **kind** with an icon, or one of the type's own, namespaced, and an optional **energy role**), their **attributes** (what they report, and what they remember and can be told), its **events**, and any capabilities of its own. An attribute's key begins with its part (`pack.1.soc`); it says how long a value stays **current** (`currentFor`). A type declares it for a device's config; a session may report its own. | `device-sdk` (`description.ts`) | A P280: `main`, `input.ac` (`input.ac.present`), `input.solar`, `outlet.ac`/`dc`/`usb` (`outlet.ac.on`), and `pack.1` when a pack is plugged in |
 | **Capability** | What a part can do or report, declared like a Matter cluster: attributes bound to standard meanings (Matter's names), commands with typed arguments, what each sets and **what makes it consequential**, queries with the **type of their answer**, and events. The library is shared; a package may declare its own, namespaced by its type, in the same shape. | `device-sdk` | `switch` (off while drawing more than the home's `loadWatts` is consequential), `powerMeter`, `battery`, `acInput` (raises `mains.lost`), `weather.forecast` (answers a list of hours) |
@@ -325,12 +325,10 @@ erDiagram
   device ||--o{ device_connection : "is reached by"
   device_connection ||--o{ connection_secret : "needs"
   node ||--o{ device_connection : "holds"
-  place |o--o{ node : "stands at"
-  place |o--o{ device : "stands at"
-  home ||--o{ place : "has"
   node |o--|| home : "is the master of"
   device ||--o{ device_kv : "remembers"
   device ||--o{ sample : "recorded"
+  device ||--o{ sample_hour : "rolled up"
   device ||--o{ sample_change : "changed"
   device ||--o{ device_attribute : "has had"
   device ||--o{ device_event : "raised"
@@ -351,7 +349,7 @@ erDiagram
   automation_run_device ||--o{ automation_run_reach : "could be reached"
 
   device {
-    text id PK "d-3f9a2c61b0e4"
+    text id PK "d-3f9a2c61b0e43f9a"
     text key "garage-p280 · its name in configuration · one device you have to a key"
     text type_id "aferiy.p280 · a DeviceType id · never changes"
     text identity "sydpower:AABBCC001122 · read from the device · null until first read"
@@ -361,16 +359,15 @@ erDiagram
     text description_source "type · device · whose word the description is"
     json info "{manufacturer: AFERIY, model: P280, firmware: {...}} · null until it has said"
     text picture "type:1 · own:<id> one day · null: its type's first"
-    text place_id FK "p-3b81e2c94f0a · where it stands: weather and sun times will be read from it · null: not said"
     text added_at "2026-09-27T19:40:00Z"
     text removed_at "null · set by Remove · history kept"
   }
   device_connection {
-    text id PK "c-8e1d44a0f2b7"
-    text device_id FK "d-3f9a2c61b0e4"
+    text id PK "c-8e1d44a0f2b78e1d"
+    text device_id FK "d-3f9a2c61b0e43f9a"
     text method "wifi · a ConnectionMethod id of the device's type"
     text transport "mqtt · copied from the method, for the address rule"
-    text held_by FK "n-51d0e7a2c9f3 · the node that holds it: the master, or a node that follows it"
+    text held_by FK "n-51d0e7a2c9f351d0 · the node that holds it: the master, or a node that follows it"
     text address "AABBCC001122 · 192.0.2.41 · a browser's Bluetooth handle"
     int priority "0 = preferred · 1 = the fallback"
     json config "{} · the method's own choices · {protocolVersion: 3.4}"
@@ -379,65 +376,65 @@ erDiagram
     text last_connected_at "2026-09-27T21:02:10Z"
   }
   connection_secret {
-    text connection_id PK "c-2b7e05d9a1c4"
+    text connection_id PK "c-2b7e05d9a1c42b7e"
     text field PK "localKey"
     text value "encrypted with KRAFTVERK_SECRET_KEY"
     int encrypted "1"
   }
   home {
-    text id PK "h-7c2e90a14d3b · made once, with its database"
+    text id PK "h-7c2e90a14d3b7c2e · made once, with its database"
     text name "Our house · what the people in it call it"
-    text master_id FK "n-0e4a7c91b2d5 · the node whose database is the home's: the one writer"
-    text created_at "2026-10-02T08:00:00Z"
-  }
-  place {
-    text id PK "p-3b81e2c94f0a"
-    text key "home · cabin · its name in configuration"
-    text name "Home · The cabin"
-    real latitude "59.33"
-    real longitude "18.07"
-    text time_zone "Europe/Stockholm · its clock"
+    text master_id FK "n-0e4a7c91b2d50e4a · the node whose database is the home's: the one writer"
     text created_at "2026-10-02T08:00:00Z"
   }
   node {
-    text id PK "n-51d0e7a2c9f3 · made by the node itself, once: every home's database knows it by it"
+    text id PK "n-51d0e7a2c9f351d0 · made by the node itself, once: every home's database knows it by it"
     text name "Garage NAS · Chrome on Windows · This iPhone"
     text platform "system · web · native · what its transports' entries are for"
     int always_on "1 · runs while nobody looks"
     int reachable "1 · others connect to it"
     int trusted "1 · what must stay put may be kept on it"
     json transports "[mqtt, ble, lan, https] · what it reaches devices over, as it last said"
-    text place_id FK "p-3b81e2c94f0a · where it stands · null: it moves with someone, or has not said"
     text account_id "u-2a9c40e1b7d8 · the server account it joined for · null: this node, or no accounts"
     int self "1 · the node this database belongs to: one"
     text created_at "2026-09-27T19:30:00Z"
     text last_seen_at "2026-09-27T21:05:00Z"
   }
   device_kv {
-    text device_id PK "d-3f9a2c61b0e4"
+    text device_id PK "d-3f9a2c61b0e43f9a"
     text key PK "sim.settings"
     text value "{acChargingWatts: 800}"
   }
   device_link {
-    text id PK "l-0c7f3e19a2b8"
+    text id PK "l-0c7f3e19a2b80c7f"
     text kind "feeds · a LinkKind id"
-    text source_device FK "d-5b2e90c4a1d3 · Heater plug"
+    text source_device FK "d-5b2e90c4a1d35b2e · Heater plug"
     text source_part "main"
-    text target_device FK "d-3f9a2c61b0e4 · Garage P280"
+    text target_device FK "d-3f9a2c61b0e43f9a · Garage P280"
     text target_part "input.ac"
     int one_per_source "1 · as its kind declares: a plug feeds one thing"
     text created_at "2026-09-27T19:45:00Z"
   }
   sample {
-    text device_id PK "d-3f9a2c61b0e4"
+    text device_id PK "d-3f9a2c61b0e43f9a"
     text part "main · pack.1 · the part the key begins with"
     text key PK "soc · the type's own key · means battery.soc"
     text at PK "2026-09-27T19:41:00Z"
     real value "87 · a number, or on/off as 1/0"
     text text "charging · an enum or text instead of a value"
   }
+  sample_hour {
+    text device_id PK "d-3f9a2c61b0e43f9a"
+    text part "main"
+    text key PK "soc · a numeric attribute"
+    text hour PK "2026-09-27T19:00:00Z"
+    real min "81"
+    real avg "84.5"
+    real max "88"
+    int n "60 · the samples it was rolled up from"
+  }
   sample_change {
-    text device_id PK "d-3f9a2c61b0e4"
+    text device_id PK "d-3f9a2c61b0e43f9a"
     text part "outlet.ac"
     text key PK "outlet.ac.on · an on/off or an enum"
     text at PK "2026-09-27T14:02:13Z · when the device observed it"
@@ -445,7 +442,7 @@ erDiagram
     text text "eco · an enum instead"
   }
   device_attribute {
-    text device_id PK "d-3f9a2c61b0e4"
+    text device_id PK "d-3f9a2c61b0e43f9a"
     text key PK "pack.1.soc"
     text part "pack.1"
     json spec "{label: Pack 1 charge, value: {type: number, unit: %}, means: battery.soc}"
@@ -454,7 +451,7 @@ erDiagram
   }
   device_event {
     int id PK "88"
-    text device_id FK "d-3f9a2c61b0e4"
+    text device_id FK "d-3f9a2c61b0e43f9a"
     text part "main"
     text event "overload · declared in its description"
     text level "warn"
@@ -462,7 +459,7 @@ erDiagram
     text at "2026-09-28T18:12:40Z"
   }
   automation {
-    text id PK "a-71c2d0e5f9a3"
+    text id PK "a-71c2d0e5f9a371c2"
     text key "start-charging-the-scooter · its name in configuration · unique"
     text name "Sunny heater · Start charging the scooter"
     json rule "{roles, params: {fields: {}}, when, if, then, otherwise} · its own, checked before it is kept"
@@ -475,14 +472,14 @@ erDiagram
     text created_at "2026-10-15T08:00:00Z"
   }
   automation_role {
-    text automation_id PK "a-71c2d0e5f9a3"
+    text automation_id PK "a-71c2d0e5f9a371c2"
     text role PK "charger"
-    text device_id FK "d-3f9a2c61b0e4 · null: another automation fills it"
+    text device_id FK "d-3f9a2c61b0e43f9a · null: another automation fills it"
     text part "main · outlet.ac"
-    text starts FK "a-0c9d1e2f3a4b · the automation a step starts · null: a part fills it"
+    text starts FK "a-0c9d1e2f3a4b0c9d · the automation a step starts · null: a part fills it"
   }
   automation_trigger {
-    text automation_id PK "a-71c2d0e5f9a3"
+    text automation_id PK "a-71c2d0e5f9a371c2"
     int trigger PK "0 · its place in its rule's when"
     int holds "1"
     text held_since "2026-10-16T05:00:12Z"
@@ -490,7 +487,7 @@ erDiagram
   }
   automation_run {
     text id PK "r-5b2e90c4a1d3f7e2"
-    text automation_id FK "a-71c2d0e5f9a3"
+    text automation_id FK "a-71c2d0e5f9a371c2"
     text started_at "2026-10-16T17:02:00Z"
     text ended_at "2026-10-16T17:03:41Z · null: running now, one at a time"
     text outcome "acted · failed · stopped · interrupted · running · …"
@@ -502,7 +499,7 @@ erDiagram
   }
   automation_run_device {
     text run_id PK "r-5b2e90c4a1d3f7e2"
-    text device_id PK "d-5b2e90c4a1d3 · no reference to device: a log outlives its device"
+    text device_id PK "d-5b2e90c4a1d35b2e · no reference to device: a log outlives its device"
     text name "Garage station · as it was named then"
     text type_id "acme.station"
   }
@@ -510,12 +507,12 @@ erDiagram
     text run_id PK "r-5b2e90c4a1d3f7e2"
     text role PK "charger"
     text label "The charger’s plug"
-    text device_id FK "d-9a8b7c6d5e4f"
+    text device_id FK "d-9a8b7c6d5e4f9a8b"
     text part "main"
   }
   automation_run_key {
     text run_id PK "r-5b2e90c4a1d3f7e2"
-    text device_id PK "d-9a8b7c6d5e4f"
+    text device_id PK "d-9a8b7c6d5e4f9a8b"
     text key PK "watts · outlet.ac.watts"
     text part "main · outlet.ac"
     text label "Power · AC outlets draw"
@@ -526,7 +523,7 @@ erDiagram
   }
   automation_run_reading {
     text run_id FK "r-5b2e90c4a1d3f7e2"
-    text device_id FK "d-9a8b7c6d5e4f"
+    text device_id FK "d-9a8b7c6d5e4f9a8b"
     text key FK "watts"
     text at "2026-10-16T17:02:07.300Z · when the device took it"
     text heard_at "2026-10-16T17:02:07.302Z · when the run saw it"
@@ -534,35 +531,35 @@ erDiagram
   }
   automation_run_reach {
     text run_id FK "r-5b2e90c4a1d3f7e2"
-    text device_id FK "d-9a8b7c6d5e4f"
+    text device_id FK "d-9a8b7c6d5e4f9a8b"
     text at "2026-10-16T17:02:00.010Z"
     int reachable "0 · 1"
     text detail "Its gateway cannot reach it: is it plugged in?"
   }
   device_switch {
-    text device_id PK "d-5b2e90c4a1d3"
+    text device_id PK "d-5b2e90c4a1d35b2e"
     text part PK "main · outlet.ac"
     text switched_at "2026-10-16T17:02:10Z · what the dwell counts from"
-    text switched_by "olof · automation:a-71c2d0e5f9a3 · who, as the intent said it"
+    text switched_by "olof · automation:a-71c2d0e5f9a371c2 · who, as the intent said it"
   }
   device_write {
-    text device_id PK "d-5b2e90c4a1d3"
+    text device_id PK "d-5b2e90c4a1d35b2e"
     text attribute PK "afterPowerCut"
     text written_at "2026-10-16T17:05:00Z"
-    text written_by "automation:a-71c2d0e5f9a3"
+    text written_by "automation:a-71c2d0e5f9a371c2"
   }
   audit {
     int id PK "4812"
     text at "2026-09-27T19:51:12Z"
     text kind "device.control"
-    text actor "olofdahlbom · automation:a-71c2d0e5f9a3 · node:n-51d0e7a2c9f3"
-    text resource_kind "device · node · place · automation · account · transport · null with resource"
-    text resource "d-3f9a2c61b0e4 · not a foreign key: it outlives the device"
+    text actor "olofdahlbom · automation:a-71c2d0e5f9a371c2 · node:n-51d0e7a2c9f351d0"
+    text resource_kind "device · node · automation · account · transport · null with resource"
+    text resource "d-3f9a2c61b0e43f9a · not a foreign key: it outlives the device"
     text summary "Switched the AC outlets off"
     json detail "{part: outlet.ac, capability: switch, command: set, args: {on: false}}"
   }
-  app_state {
-    text key PK "policy.values · what the home sets as a whole, nothing about one device or automation"
+  home_setting {
+    text key PK "policy.values · home.moved · home.kept · only these: what this node has settled for the home, nothing about one device or automation"
     text value "{loadWatts: 10, reserveSoc: 20}"
     text updated_at "2026-09-01T10:00:00Z"
   }
@@ -619,17 +616,18 @@ joined; elsewhere it is plain text, null.
 | `device.removed_at` | So Remove doesn't destroy years of history. | Remove |
 | `device_connection` | A device can be reached more than one way, from more than one place. Your station over Wi-Fi from the server *and* over Bluetooth from your phone is one device with two connections. | step 10, or *Add another way to reach it* |
 | `connection_secret` | Credentials belong to a way of reaching the device (the Tuya local key is part of *tuya-local over lan*), not to the device. | step 6 |
-| `home` | The home this database keeps — one: what every place, node and device here is part of, and what its people call it. | when the database is made |
-| `place` | A home is somewhere — one place or several, each with its position and its clock: what weather, sun times and an automation's clock will be read from. A device and a node stand at one. | when someone says where; nothing makes one yet |
+| `home` | The home this database keeps — one: what every node and device here is part of, and what its people call it. | when the database is made |
 | `node` | Every kraftverk node of the home — the hub running somewhere: the one this database belongs to (`self`), the home's master, and the nodes that follow it, the always-on machine among them. Each declares what it is — always on, reachable, trusted — which is how the master is chosen, and what a connection's holder names: "Bluetooth, from Olof's iPhone". | when the database is made (its own); when another joins |
 | `device_link` | Facts about the house, between parts — which plug feeds which station's mains input, which station's outlet feeds another — that the gateway, the energy view and automations all read. | step 9, or later on the device's page |
 | `device_kv` | What a session keeps between runs: a simulator's settings, a plug's detected protocol version. | by the session |
 | `device.description`, `device_attribute` | What the device is — so a closed or removed device is still described — and every attribute it ever had, so history keeps its labels after a part is gone. | step 10, then whenever it changes |
 | `device.description_source` | Whether the description is the type's, for its config, or the device's own — a station that reports its packs. | step 10, then whenever it changes |
 | `sample` | History: every attribute the description says to keep, with its part, while its value is current. | continuously, by the holder |
+| `sample_hour` | Each numeric attribute's hours rolled up — lowest, mean, highest and how many — kept for two years, so a chart of a year reads hours, not minutes. | each hour, by the sampler |
 | `sample_change` | Every change of an on/off or an enum, when it happened: what a timeline draws ("AC outlets off 14:02–14:19"), where minute samples would blur a switch flicked between them. Two years, and each key's latest beyond. | as readings move, from the server's sessions and from apps' uplinks |
 | `last_heard` | In an app with a server: what the server last said, by what was asked — its devices, its automations, the home's values — with when. What the app shows, read only and saying so, while the server cannot be reached. Empty on a server. | as the server answers |
 | `send_queue` | In an app holding ways for a server: what it owes the server — readings, events, timeline entries, what a session kept — in order, kept across a restart and gone once the server has it. Empty on a server. | as the app's sessions and gateway work |
+| `home_setting` | What this node has settled for the home it keeps, by a name the schema lists: the policy values, and in an app whether its own home moved to a server or a server's copy was brought in. | when set |
 | `transport_kv` | What a transport keeps between runs — a Bluetooth bond, a Matter fabric — its own and no other's. | by the transport |
 | `meta` | What the database is: the schema it was made with, when, and by which version — what the set-aside message reports. | when the database is made |
 | `audit.resource_kind` | What an entry is about, as a kind and an id together, so the timeline can be asked for one device's, one automation's, one account's. | with every entry |
@@ -778,7 +776,6 @@ staying with the server (docs/PLAN-SHARED-CORE.md, phase 6h).
 
 [`ACCOUNTS.md`](ACCOUNTS.md) plans accounts as members of **homes**. The
 `home` row is there already: one per database, naming its master node. When a
-database keeps more than one home, `device`, `place` and `node` gain a
-`home_id`. Everything that hangs off a device — its connections and their
+database keeps more than one home, `device` and `node` gain a `home_id`. Everything that hangs off a device — its connections and their
 secrets, its store, its history, its links — belongs to that home through the
 device, so nothing else changes shape. A link never joins devices in two homes.

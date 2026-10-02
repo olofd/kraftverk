@@ -506,7 +506,7 @@ sample_hour       (device_id → device ON DELETE CASCADE, key, hour, min, avg, 
 device_event      (id PK, device_id → device ON DELETE CASCADE, part, event, level, data JSON, at)
 automation        (id PK, name, recipe, roles JSON {role: {device, part}}, params JSON, time_zone,
                    mode, created_at, updated_at, last_run_at, last_result JSON)
-audit, app_state, users, sessions
+audit, home_setting, login_session (the server's own: users)
 ```
 
 - **Ids are opaque and permanent.** New ids carry no meaning.
@@ -552,7 +552,7 @@ from its kind's — and applies, per part:
   its command consequential;
 - thresholds a declaration names rather than fixes: the capability says what is
   consequential, the home says how much (`POLICY_VALUES`, set in App settings,
-  kept by the server in `app_state` and served at `/api/policy`);
+  kept by the home in `home_setting` and served at `/api/policy`);
 - the home's **reserve**: a command declared to drain (`drains`) — turning a
   load part on — on a device with a `storage` part, changing something, while
   that store's `battery.soc` is below `reserveSoc` or not known: refused to

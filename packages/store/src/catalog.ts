@@ -3,7 +3,7 @@ import { KEY, keyFrom } from '@kraftverk/device-sdk';
 import { partOf, savedDeviceId, type AttributeSpec, type DescriptionSource, type DeviceDescription, type DeviceInfo, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import type { SqlDatabase } from './database.ts';
-import { randomHex } from './ids.ts';
+import { newId } from '@kraftverk/device-sdk';
 
 /**
  * The devices you have added (docs/DATA-MODEL.md §3).
@@ -41,8 +41,6 @@ export type DeviceRecord = {
   info: DeviceInfo | null;
   /** Which picture it shows, its owner's pick: `type:N`, one day `own:<id>`. Null: its type's first. */
   picture: string | null;
-  /** Where it stands: weather and sun times are read from it. Null: not said. */
-  placeId: string | null;
 };
 
 type Row = {
@@ -56,7 +54,6 @@ type Row = {
   description_source: DescriptionSource;
   info: string | null;
   picture: string | null;
-  place_id: string | null;
   added_at: string;
   removed_at: string | null;
 };
@@ -75,7 +72,6 @@ const toRecord = (row: Row): DeviceRecord => ({
   descriptionSource: row.description_source,
   info: row.info === null ? null : (JSON.parse(row.info) as DeviceInfo),
   picture: row.picture,
-  placeId: row.place_id,
 });
 
 export class DeviceCatalog {
@@ -124,7 +120,7 @@ export class DeviceCatalog {
     return this.#db.query<{ id: string }, [string]>('SELECT id FROM device WHERE key = ? AND removed_at IS NULL').all(key).some((row) => row.id !== except);
   }
 
-  add(input: { typeId: string; name: string; description: DeviceDescription; identity?: string | null; config?: Record<string, unknown>; key?: string; placeId?: string | null }): DeviceRecord {
+  add(input: { typeId: string; name: string; description: DeviceDescription; identity?: string | null; config?: Record<string, unknown>; key?: string }): DeviceRecord {
     if (input.key !== undefined && (!KEY.test(input.key) || this.keyTaken(input.key))) throw new Error(`"${input.key}" is not a free key: lowercase letters, digits and dashes, and not another device's`);
     const record: DeviceRecord = {
       /*
@@ -132,7 +128,7 @@ export class DeviceCatalog {
         and what it says can stop being true. Ids already saved keep their old
         form — history is keyed by them (docs/DATA-MODEL.md §3).
       */
-      id: savedDeviceId(`d-${randomHex(6)}`),
+      id: savedDeviceId(newId('d')),
       // Made from its name unless given: a file's key, kept as the file has it.
       key: input.key ?? keyFrom(input.name, (key) => this.keyTaken(key), 'device'),
       typeId: input.typeId,
@@ -146,12 +142,11 @@ export class DeviceCatalog {
       descriptionSource: 'type',
       info: null,
       picture: null,
-      placeId: input.placeId ?? null,
     };
     this.#db.transaction(() => {
       this.#db
-        .query('INSERT INTO device (id, key, type_id, identity, name, config, description, place_id, added_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(record.id, record.key, record.typeId, record.identity, record.name, JSON.stringify(record.config), JSON.stringify(record.description), record.placeId, record.addedAt);
+        .query('INSERT INTO device (id, key, type_id, identity, name, config, description, added_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(record.id, record.key, record.typeId, record.identity, record.name, JSON.stringify(record.config), JSON.stringify(record.description), record.addedAt);
       this.#recordAttributes(record.id, record.description, record.addedAt);
     })();
     return record;
@@ -194,11 +189,11 @@ export class DeviceCatalog {
     this.#db.transaction(() => {
       this.#db
         .query(
-          `INSERT INTO device (id, key, type_id, identity, name, config, description, description_source, info, picture, place_id, added_at, removed_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO device (id, key, type_id, identity, name, config, description, description_source, info, picture, added_at, removed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT (id) DO UPDATE SET key = excluded.key, identity = excluded.identity, name = excluded.name, config = excluded.config,
              description = excluded.description, description_source = excluded.description_source, info = excluded.info,
-             picture = excluded.picture, place_id = excluded.place_id, removed_at = excluded.removed_at`
+             picture = excluded.picture, removed_at = excluded.removed_at`
         )
         .run(
           record.id,
@@ -211,8 +206,6 @@ export class DeviceCatalog {
           record.descriptionSource,
           record.info === null ? null : JSON.stringify(record.info),
           record.picture,
-          // A place the master's database has, this one keeps only if it keeps that place too.
-          record.placeId && this.#db.query<{ id: string }, [string]>('SELECT id FROM place WHERE id = ?').get(record.placeId) ? record.placeId : null,
           record.addedAt,
           record.removedAt
         );
@@ -236,7 +229,7 @@ export class DeviceCatalog {
     for (const attribute of description.attributes) upsert.run(id, attribute.key, partOf(attribute), JSON.stringify(attribute), at, at);
   }
 
-  update(id: SavedDeviceId, changes: { name?: string; config?: Record<string, unknown>; identity?: string | null; key?: string; placeId?: string | null }): DeviceRecord | null {
+  update(id: SavedDeviceId, changes: { name?: string; config?: Record<string, unknown>; identity?: string | null; key?: string }): DeviceRecord | null {
     const existing = this.get(id);
     if (!existing) return null;
     if (changes.key !== undefined && changes.key !== existing.key && (!KEY.test(changes.key) || this.keyTaken(changes.key, id))) {
@@ -248,11 +241,10 @@ export class DeviceCatalog {
       name: changes.name?.trim() || existing.name,
       config: changes.config ?? existing.config,
       identity: changes.identity === undefined ? existing.identity : changes.identity,
-      placeId: changes.placeId === undefined ? existing.placeId : changes.placeId,
     };
     this.#db
-      .query('UPDATE device SET key = ?, name = ?, config = ?, identity = ?, place_id = ? WHERE id = ?')
-      .run(next.key, next.name, JSON.stringify(next.config), next.identity, next.placeId, id);
+      .query('UPDATE device SET key = ?, name = ?, config = ?, identity = ? WHERE id = ?')
+      .run(next.key, next.name, JSON.stringify(next.config), next.identity, id);
     return next;
   }
 

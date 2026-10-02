@@ -20,22 +20,6 @@ export const SCHEMA = `
   );
 
   /*
-    Where things are, physically: a home is somewhere — one place or several,
-    each with its position and its clock. A device and a node stand at one;
-    weather, sun times and an automation's clock are read from it.
-  */
-  CREATE TABLE place (
-    id         TEXT PRIMARY KEY,
-    /* Its name in configuration: what a file and an import know it by. */
-    key        TEXT NOT NULL UNIQUE CHECK (key GLOB '[a-z0-9]*' AND key NOT GLOB '*[^a-z0-9-]*' AND length(key) <= 63),
-    name       TEXT NOT NULL,
-    latitude   REAL NOT NULL CHECK (latitude BETWEEN -90 AND 90),
-    longitude  REAL NOT NULL CHECK (longitude BETWEEN -180 AND 180),
-    time_zone  TEXT NOT NULL,
-    created_at TEXT NOT NULL
-  );
-
-  /*
     Every kraftverk node of the home: the hub running somewhere — an
     always-on machine on the network, a phone, a browser — holding the
     connections it can reach. The one this database belongs to (self), and
@@ -54,8 +38,6 @@ export const SCHEMA = `
     reachable    INTEGER NOT NULL CHECK (reachable IN (0, 1)),
     trusted      INTEGER NOT NULL CHECK (trusted IN (0, 1)),
     transports   TEXT NOT NULL DEFAULT '[]',
-    /* Where it stands; null: it moves with someone, or has not said. */
-    place_id     TEXT REFERENCES place (id) ON DELETE SET NULL,
     /* The account it joined from, where the master keeps accounts — a server's (its accounts are its own: server/src/auth/schema.ts); null for this node, and where there are none. */
     account_id   TEXT,
     self         INTEGER NOT NULL CHECK (self IN (0, 1)),
@@ -65,8 +47,8 @@ export const SCHEMA = `
   CREATE UNIQUE INDEX node_self ON node (self) WHERE self = 1;
 
   /*
-    The home this database keeps: one. What every place, node and device here
-    is part of; and its master — the node whose database is the home's, the
+    The home this database keeps: one. What every node and device here is
+    part of; and its master — the node whose database is the home's, the
     one that writes it. Another node follows it, and can take its place.
   */
   CREATE TABLE home (
@@ -99,8 +81,6 @@ export const SCHEMA = `
       — not built yet — a photo of its own (own:<id>). NULL: its type's first.
     */
     picture     TEXT CHECK (picture IS NULL OR picture GLOB 'type:[0-9]*' OR picture GLOB 'own:?*'),
-    /* Where it stands: weather and sun times are read from it. Null: not said. */
-    place_id    TEXT REFERENCES place (id) ON DELETE SET NULL,
     added_at    TEXT NOT NULL,
     removed_at  TEXT
   );
@@ -451,11 +431,14 @@ export const SCHEMA = `
   );
 
   /*
-    What the home has set as a whole, by name: its policy values (how much is a
-    load). Nothing about one device or one automation: those are theirs.
+    What this node has settled for the home it keeps, by name, each one
+    named here: its policy values (how much is a load); and, in an app,
+    whether its own home has moved to a server (home.moved), or the copy it
+    kept of a server's has been brought in (home.kept). Nothing about one
+    device or one automation: those are theirs.
   */
-  CREATE TABLE app_state (
-    key        TEXT PRIMARY KEY,
+  CREATE TABLE home_setting (
+    key        TEXT PRIMARY KEY CHECK (key IN ('policy.values', 'home.moved', 'home.kept')),
     value      TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
@@ -470,7 +453,7 @@ export const SCHEMA = `
     at            TEXT NOT NULL,
     kind          TEXT NOT NULL,
     actor         TEXT NOT NULL,
-    resource_kind TEXT CHECK (resource_kind IN ('device', 'node', 'place', 'automation', 'account', 'transport')),
+    resource_kind TEXT CHECK (resource_kind IN ('device', 'node', 'automation', 'account', 'transport')),
     resource      TEXT,
     summary       TEXT NOT NULL,
     detail        TEXT,
@@ -495,6 +478,8 @@ export const SCHEMA = `
     body      TEXT NOT NULL,
     queued_at TEXT NOT NULL
   );
+  /* What is owed of a kind, newest first: what trimming each kind to its most finds. */
+  CREATE INDEX send_queue_kind ON send_queue (kind, id);
 
   /*
     In a node that follows: what its master last said, by what was asked —

@@ -10,6 +10,7 @@ import {
   methodsOf,
   partsOf,
   POLICY_VALUES,
+  randomHex,
   unitOf,
   validateConfig,
   type AutomationId,
@@ -28,7 +29,7 @@ import {
   type WriteContext,
   isSealed,
 } from '@kraftverk/home-file';
-import { isConstraintError, randomHex, type DeviceRecord, type SqlDatabase } from '@kraftverk/store';
+import { isConstraintError, type DeviceRecord, type SqlDatabase } from '@kraftverk/store';
 
 import type { Checked } from '../automations/drafts.ts';
 import type { TransportHost } from '../installed/transports.ts';

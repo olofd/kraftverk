@@ -2,7 +2,7 @@
 import { nodeId, connectionId, savedDeviceId, type NodeId, type ConnectionId, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import type { SqlDatabase } from './database.ts';
-import { randomHex } from './ids.ts';
+import { newId } from '@kraftverk/device-sdk';
 import type { SecretsAtRest } from './secrets.ts';
 
 /**
@@ -109,7 +109,7 @@ export class ConnectionStore {
   }): ConnectionRecord {
     const existing = this.forDevice(input.deviceId);
     const record: ConnectionRecord = {
-      id: connectionId(`c-${randomHex(6)}`),
+      id: connectionId(newId('c')),
       deviceId: input.deviceId,
       method: input.method,
       transport: input.transport,

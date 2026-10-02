@@ -3,7 +3,7 @@ import type { LinkRecord } from '@kraftverk/api-contract';
 import { linkId, linkKindSpec, savedDeviceId, type LinkEnd, type LinkKind, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import type { SqlDatabase } from './database.ts';
-import { randomHex } from './ids.ts';
+import { newId } from '@kraftverk/device-sdk';
 
 /**
  * Links: physical facts between parts of two devices, recorded once and read
@@ -63,7 +63,7 @@ export class LinkStore {
    */
   add(input: { kind: LinkKind; source: LinkEnd<SavedDeviceId>; target: LinkEnd<SavedDeviceId> }): LinkRecord {
     if (input.source.device === input.target.device) throw new Error('A device cannot be linked to itself');
-    const record: LinkRecord = { id: linkId(`l-${randomHex(6)}`), ...input, createdAt: new Date().toISOString() };
+    const record: LinkRecord = { id: linkId(newId('l')), ...input, createdAt: new Date().toISOString() };
     const onePerSource = linkKindSpec(input.kind).onePerSource === true;
     this.#db.transaction(() => {
       if (onePerSource) {

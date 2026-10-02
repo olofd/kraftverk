@@ -1,8 +1,8 @@
 import { ApiError, type ConnectionView, type DeviceView, type KraftverkApi, type PolicyValueView } from '@kraftverk/api-contract';
-import type { AuditRecord, DeviceSession, DeviceStore, NodeId, Platform, PolicyValues, Reading, SavedDeviceId, ScopedHttp } from '@kraftverk/device-sdk';
+import { isPolicyValueName, type AuditRecord, type DeviceSession, type DeviceStore, type NodeId, type Platform, type PolicyValues, type Reading, type SavedDeviceId, type ScopedHttp } from '@kraftverk/device-sdk';
 import { ActionGateway, Confirmations } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, toHold, toolsOf, withInUse, type DeviceEventMessage } from '@kraftverk/holder';
-import { AppState, ConnectionStore, DeviceCatalog, deviceStore, HomeStore, LastHeard, LinkStore, NodeStore, SendQueue, type DeviceRecord, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { ConnectionStore, DeviceCatalog, deviceStore, HomeSettings, HomeStore, LastHeard, LinkStore, NodeStore, SendQueue, type DeviceRecord, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import type { PassphraseSealing } from '../configuration/seal.ts';
 import { MovingToMaster } from '../handover/move.ts';
@@ -44,8 +44,6 @@ const KEEP_OWED = { readings: 10_000, event: 1000, audit: 1000, store: 1000 } as
 const READINGS_PER_CALL = 2000;
 /** What the master refuses for good — no such device, not this node's, too large — is not sent again. */
 const REFUSED_FOR_GOOD = new Set(['not-found', 'forbidden', 'conflict', 'invalid', 'too-large', 'not-allowed']);
-
-const POLICY = 'follower.policy';
 
 export type FollowerOptions = {
   /** The home's master, as the person signed in asks it. */
@@ -92,7 +90,7 @@ export class Follower {
   /** The home as the master has it: its name, and which node is its master. */
   readonly homeKept: HomeStore;
 
-  readonly state: AppState;
+  readonly settings: HomeSettings;
   readonly catalog: DeviceCatalog;
   readonly connections: ConnectionStore;
   readonly links: LinkStore;
@@ -180,7 +178,7 @@ export class Follower {
         }),
       }
     );
-    ({ state: this.state, catalog: this.catalog, connections: this.connections, links: this.links, nodes: this.nodes, bus: this.bus, sessions: this.sessions, gateway: this.gateway, setup: this.setup } = parts);
+    ({ settings: this.settings, catalog: this.catalog, connections: this.connections, links: this.links, nodes: this.nodes, bus: this.bus, sessions: this.sessions, gateway: this.gateway, setup: this.setup } = parts);
     this.moving = options.own ? new MovingToMaster(this, options.own.database, { secrets: options.secrets, sealing: options.own.sealing }) : null;
     this.api = followerApi(this);
   }
@@ -219,9 +217,8 @@ export class Follower {
       this.#holdNow = new Set(this.catalog.list().map((device) => device.id));
       await this.sessions.sync(this.catalog.list());
     }
-    await this.kept('policy', () => this.home.policy.list())
-      .then(({ answer }) => this.keepPolicy(answer))
-      .catch(() => undefined);
+    // The home's values, kept as the master says them: what this node's gateway weighs what it holds by.
+    await this.kept('policy', () => this.home.policy.list()).catch(() => undefined);
     const send = setInterval(() => void this.send(), this.#sendEveryMs);
     const refresh = setInterval(() => void this.refresh(), REFRESH_MS);
     unref(send);
@@ -241,7 +238,7 @@ export class Follower {
   /** Joins the home — says who this node is, what it is and what it reaches devices over — at every start, by its own id. */
   async join(): Promise<NodeId> {
     const self = this.nodes.self()!;
-    await this.home.nodes.join({ id: self.id, name: self.name, platform: self.platform, transports: this.installed.transports.here(), alwaysOn: self.alwaysOn, reachable: self.reachable, trusted: self.trusted, place: self.placeId });
+    await this.home.nodes.join({ id: self.id, name: self.name, platform: self.platform, transports: this.installed.transports.here(), alwaysOn: self.alwaysOn, reachable: self.reachable, trusted: self.trusted });
     this.#joined = true;
     return self.id;
   }
@@ -313,9 +310,8 @@ export class Follower {
     const [home, nodes] = await Promise.all([this.home.home(), this.home.nodes.list()]);
     this.db.transaction(() => {
       for (const node of nodes) {
-        const { master: _master, place: _place, ...record } = node;
-        // Where it stands is the master's to say; a place this node does not keep is not pointed at.
-        this.nodes.mirror({ ...record, placeId: null });
+        const { master: _master, yours: _yours, ...record } = node;
+        this.nodes.mirror(record);
       }
       this.homeKept.mirror({ id: home.id, name: home.name, masterId: home.master, createdAt: home.createdAt });
       const listed = new Set(nodes.map((node) => node.id));
@@ -455,14 +451,11 @@ export class Follower {
   /** How much is a load, and the other values the home decides: the master's, kept for when it cannot be asked. */
   policyValues(): PolicyValues {
     try {
-      return JSON.parse(this.state.get(POLICY) ?? '{}') as PolicyValues;
+      const values = this.heard.get<PolicyValueView[]>('policy')?.body ?? [];
+      return Object.fromEntries(values.filter((value) => isPolicyValueName(value.name) && Number.isFinite(value.value)).map((value) => [value.name, value.value]));
     } catch {
       return {};
     }
-  }
-
-  keepPolicy(values: readonly PolicyValueView[]): void {
-    this.state.set(POLICY, JSON.stringify(Object.fromEntries(values.map((value) => [value.name, value.value]))));
   }
 
   // --- what is owed to the master -------------------------------------------------
@@ -629,8 +622,6 @@ function recordOf(device: DeviceView): DeviceRecord {
     descriptionSource: device.descriptionSource,
     info: device.info,
     picture: device.picture === 'type:0' ? null : device.picture,
-    // A place is the master's: one this node keeps no copy of is not said here.
-    placeId: null,
   };
 }
 

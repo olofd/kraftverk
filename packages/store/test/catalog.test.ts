@@ -16,7 +16,7 @@ import { ConnectionStore, DeviceCatalog, LastHeard, LinkStore, NodeStore, SendQu
 import { DRIVERS } from './drivers.ts';
 
 /** The node this database belongs to: what holds every connection here. */
-const HERE = nodeId('n-0000000000a1');
+const HERE = nodeId('n-00000000000000a1');
 
 /** A device's description, as a lamp's. */
 const LAMP: DeviceDescription = {
@@ -64,7 +64,7 @@ for (const driver of DRIVERS) {
         const record = add('Living room');
 
         // Opaque: an id that said what a device is would invite code that reads it.
-        expect(record.id).toMatch(/^d-[0-9a-f]{12}$/);
+        expect(record.id).toMatch(/^d-[0-9a-f]{16}$/);
         expect(catalog.get(record.id)).toEqual(record);
         expect(catalog.list().map((entry) => entry.id)).toContain(record.id);
       });
@@ -248,7 +248,6 @@ for (const driver of DRIVERS) {
         typeId: 'test.lamp',
         identity: 'lamp:AA',
         name: 'Their lamp',
-        placeId: null,
         config: {},
         addedAt: '2026-10-01T00:00:00.000Z',
         removedAt: null,

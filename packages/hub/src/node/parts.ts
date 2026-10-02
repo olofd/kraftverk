@@ -1,7 +1,7 @@
 import type { AuditRecord, ScopedHttp } from '@kraftverk/device-sdk';
 import { ActionGateway, type GatewayDeps } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, type SessionManagerDeps } from '@kraftverk/holder';
-import { AppState, ConnectionStore, databaseLedger, DeviceCatalog, LinkStore, NodeStore, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { ConnectionStore, databaseLedger, DeviceCatalog, HomeSettings, LinkStore, NodeStore, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import type { Installed } from '../installed/from.ts';
 import { unfitFor } from '../installed/needs.ts';
@@ -51,7 +51,8 @@ export type NodeParts = {
   db: SqlDatabase;
   /** This node, as it declared itself to its own database just now. */
   self: NodeRecord;
-  state: AppState;
+  /** What this node has settled for the home it keeps, by name. */
+  settings: HomeSettings;
   catalog: DeviceCatalog;
   connections: ConnectionStore;
   links: LinkStore;
@@ -67,7 +68,7 @@ export type NodeParts = {
 export function nodeParts(options: NodeOptions, role: NodeRole): NodeParts {
   const db = options.database;
   const { types, protocols, transports } = options.installed;
-  const state = new AppState(db);
+  const settings = new HomeSettings(db);
   const catalog = new DeviceCatalog(db);
   const connections = new ConnectionStore(db, options.secrets);
   const links = new LinkStore(db);
@@ -116,5 +117,5 @@ export function nodeParts(options: NodeOptions, role: NodeRole): NodeParts {
     traits: (id) => nodes.get(id),
   });
 
-  return { db, self, state, catalog, connections, links, nodes, bus, sessions, gateway, setup };
+  return { db, self, settings, catalog, connections, links, nodes, bus, sessions, gateway, setup };
 }

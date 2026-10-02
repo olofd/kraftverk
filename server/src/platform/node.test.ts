@@ -43,10 +43,10 @@ describe('the node this server is', () => {
     writeFileSync(file, 'not an id\n');
     expect(thisNode(database, file).id).toMatch(NODE_ID);
 
-    new NodeStore(database).declareSelf({ id: nodeId('n-0000000000a1'), name: 'Garage machine', platform: 'system', transports: [], alwaysOn: true, reachable: true, trusted: true });
-    writeFileSync(file, 'n-0000000000ff\n');
-    expect(thisNode(database, file)).toMatchObject({ id: 'n-0000000000a1', name: 'Garage machine' });
-    expect(readFileSync(file, 'utf8').trim()).toBe('n-0000000000a1');
+    new NodeStore(database).declareSelf({ id: nodeId('n-00000000000000a1'), name: 'Garage machine', platform: 'system', transports: [], alwaysOn: true, reachable: true, trusted: true });
+    writeFileSync(file, 'n-00000000000000ff\n');
+    expect(thisNode(database, file)).toMatchObject({ id: 'n-00000000000000a1', name: 'Garage machine' });
+    expect(readFileSync(file, 'utf8').trim()).toBe('n-00000000000000a1');
     database.close();
   });
 });

@@ -35,7 +35,6 @@ export function homeRoutes(deps: AppDeps): Hono {
           alwaysOn: z.boolean(),
           reachable: z.boolean(),
           trusted: z.boolean(),
-          place: z.string().min(1).max(40).nullable(),
         })
         .strict()
     );

@@ -552,8 +552,6 @@ export type NodeView = {
   reachable: boolean;
   /** What must stay put may be kept on it. */
   trusted: boolean;
-  /** Where it stands, a place's id; null: it moves with someone, or has not said. */
-  place: string | null;
   /** The home's master: the node whose database is the home's. */
   master: boolean;
   /** Joined from the asker's own account, and not the master: theirs to forget. */
@@ -563,7 +561,7 @@ export type NodeView = {
 };
 
 /** A node joining a home, saying what it is: by its own id, the same in every home it is part of. */
-export type NodeJoin = Pick<NodeView, 'id' | 'name' | 'platform' | 'transports' | 'alwaysOn' | 'reachable' | 'trusted' | 'place'>;
+export type NodeJoin = Pick<NodeView, 'id' | 'name' | 'platform' | 'transports' | 'alwaysOn' | 'reachable' | 'trusted'>;
 
 /** The home: what its people call it, and which node is its master. */
 export type HomeView = { id: string; name: string; master: NodeId; createdAt: string };

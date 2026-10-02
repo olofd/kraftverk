@@ -80,7 +80,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  database.exec('DELETE FROM device; DELETE FROM sample; DELETE FROM node; DELETE FROM users; DELETE FROM login_session; DELETE FROM app_state; DELETE FROM audit; DELETE FROM automation;');
+  database.exec('DELETE FROM device; DELETE FROM sample; DELETE FROM node; DELETE FROM users; DELETE FROM login_session; DELETE FROM home_setting; DELETE FROM audit; DELETE FROM automation;');
   await hub.sessions.sync([]);
   bus.lamps.clear();
   account = (await accounts.createFirstUser('olof', PASSWORD)).id;
@@ -190,7 +190,7 @@ for (const way of WAYS) {
     test('knows its master and the nodes that join it, and forgets one only for its person', async () => {
       const home = way.api();
       expect(await home.home()).toMatchObject({ master: MACHINE_NODE.id });
-      const browser = await home.nodes.join({ id: nodeId('n-00000000bb01'), name: 'A test browser', platform: 'web', transports: [], alwaysOn: false, reachable: false, trusted: false, place: null });
+      const browser = await home.nodes.join({ id: nodeId('n-000000000000bb01'), name: 'A test browser', platform: 'web', transports: [], alwaysOn: false, reachable: false, trusted: false });
       expect((await home.nodes.list()).map((each) => [each.id, each.master])).toEqual([[MACHINE_NODE.id, true], [browser.id, false]]);
       await home.nodes.forget(browser.id);
       expect(await refused(home.nodes.forget(browser.id))).toEqual({ kind: 'not-found', message: 'No such node' });

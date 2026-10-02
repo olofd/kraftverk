@@ -5,6 +5,7 @@ import {
   isSecretField,
   isSimulated,
   methodOf,
+  randomHex,
   setupPlan,
   type AuditRecord,
   type ConfigValues,
@@ -15,15 +16,14 @@ import {
   type SetupActionResult,
   type SetupChoice,
 } from '@kraftverk/device-sdk';
-import { judgeCheck, withTimeout } from '@kraftverk/holder';
+import { judgeCheck, withTimeout, type SessionManager } from '@kraftverk/holder';
+import type { ConnectionStore, DeviceCatalog, DeviceRecord, LinkStore, SqlDatabase } from '@kraftverk/store';
 
 import type { ProtocolRegistry } from '../installed/protocols.ts';
 import { unfitFor } from '../installed/needs.ts';
 import { platformWords, type TransportHost } from '../installed/transports.ts';
-import { unref } from '../timers.ts';
-import { randomHex, type DeviceCatalog, type DeviceRecord, type ConnectionStore, type LinkStore, type SqlDatabase } from '@kraftverk/store';
-import type { SessionManager } from '@kraftverk/holder';
 import type { DeviceTypeRegistry } from '../installed/types.ts';
+import { unref } from '../timers.ts';
 import { connectionSchema } from '../installed/connection-schema.ts';
 import { DRAFT_TTL_MS, viewOf, type Draft, type SaveRequest } from './draft.ts';
 import { overHardware, SIMULATED_REACH } from './reach.ts';

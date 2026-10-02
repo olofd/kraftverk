@@ -3,12 +3,11 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { MAIN_PART, nodeId, type AuditRecord } from '@kraftverk/device-sdk';
 
 import {
-  AppState,
+  HomeSettings,
   AuditLog,
   AutomationStore,
   HomeStore,
   NodeStore,
-  PlaceStore,
   databaseLedger,
   DeviceCatalog,
   deviceStore,
@@ -24,7 +23,7 @@ import { DRIVERS } from './drivers.ts';
 /*
   Every other store, on each SQLite a home is kept in: what the server and the
   app both keep — the timeline, decisions, policy, what a device keeps for
-  itself, the gateway's memory, events, the home's nodes and places, and
+  itself, the gateway's memory, events, the home's nodes, and
   automations with their runs. The catalog's are in catalog.test.ts.
 */
 
@@ -67,12 +66,13 @@ for (const driver of DRIVERS) {
       expect(audit.recent({ limit: 1 })).toHaveLength(1);
     });
 
-    test('decisions are kept until changed; policy values only within their range', () => {
-      const state = new AppState(database);
-      expect(state.get('home.clock')).toBeNull();
-      state.set('home.clock', 'Europe/Stockholm');
-      state.set('home.clock', 'Europe/Oslo');
-      expect(state.get('home.clock')).toBe('Europe/Oslo');
+    test('settings are kept until changed, by the names the schema lists; policy values only within their range', () => {
+      const state = new HomeSettings(database);
+      expect(() => database.query("INSERT INTO home_setting (key, value, updated_at) VALUES ('home.clock', 'x', 'now')").run()).toThrow();
+      expect(state.get('home.moved')).toBeNull();
+      state.set('home.moved', '2026-10-01');
+      state.set('home.moved', '2026-10-02');
+      expect(state.get('home.moved')).toBe('2026-10-02');
       expect(setPolicyValue(state, 'reserveSoc', 20)).toMatchObject({ reserveSoc: 20 });
       expect(() => setPolicyValue(state, 'reserveSoc', 500)).toThrow(RangeError);
       expect(policyValues(state)).toMatchObject({ reserveSoc: 20 });
@@ -113,26 +113,21 @@ for (const driver of DRIVERS) {
 
     test('the nodes: this database\'s own, once and for good; others joined for a person, and forgotten', () => {
       const nodes = new NodeStore(database);
-      const machine = { id: nodeId('n-0000000000a1'), name: 'Test machine', platform: 'system' as const, transports: ['mqtt'], alwaysOn: true, reachable: true, trusted: true };
+      const machine = { id: nodeId('n-00000000000000a1'), name: 'Test machine', platform: 'system' as const, transports: ['mqtt'], alwaysOn: true, reachable: true, trusted: true };
       expect(nodes.declareSelf(machine)).toMatchObject({ self: true, accountId: null, alwaysOn: true });
       expect(nodes.declareSelf({ ...machine, transports: ['mqtt', 'lan'] }).transports).toEqual(['mqtt', 'lan']);
-      expect(() => nodes.declareSelf({ ...machine, id: nodeId('n-0000000000ff') })).toThrow();
+      expect(() => nodes.declareSelf({ ...machine, id: nodeId('n-00000000000000ff') })).toThrow();
 
-      const phone = nodes.join({ id: nodeId('n-0000000000b2'), name: 'This phone', platform: 'native', transports: ['ble'], alwaysOn: false, reachable: false, trusted: false }, 'u-one');
+      const phone = nodes.join({ id: nodeId('n-00000000000000b2'), name: 'This phone', platform: 'native', transports: ['ble'], alwaysOn: false, reachable: false, trusted: false }, 'u-one');
       expect(nodes.get(phone.id)).toMatchObject({ name: 'This phone', transports: ['ble'], self: false, accountId: 'u-one' });
       expect(() => nodes.join({ ...phone, name: 'Not mine' }, null)).toThrow();
       expect(() => nodes.join({ ...machine }, 'u-one')).toThrow();
       expect(nodes.all().map((node) => node.id)).toEqual([machine.id, phone.id]);
 
-      // Heard from again, it says so; and where it stands is kept when it does not say.
+      // Heard from again, it says so.
       const before = nodes.get(phone.id)!.lastSeenAt;
       nodes.seen(phone.id);
       expect(nodes.get(phone.id)!.lastSeenAt >= before).toBe(true);
-      const cabin = new PlaceStore(database).add({ name: 'Cabin', latitude: 0, longitude: 0, timeZone: 'UTC' });
-      nodes.join({ ...phone, placeId: cabin.id }, 'u-one');
-      expect(nodes.join({ ...phone, placeId: undefined }, 'u-one').placeId).toBe(cabin.id);
-      expect(nodes.join({ ...phone, placeId: null }, 'u-one').placeId).toBeNull();
-      new PlaceStore(database).remove(cabin.id);
 
       nodes.remove(phone.id);
       nodes.remove(machine.id);
@@ -149,30 +144,13 @@ for (const driver of DRIVERS) {
       expect(homes.ensure({ name: 'Another', masterId: master.id }).id).toBe(made.id);
 
       // As a follower keeps it: another node the master, and that one not forgotten while it is.
-      const other = nodes.join({ id: nodeId('n-0000000000c3'), name: 'Second machine', platform: 'system', transports: [], alwaysOn: true, reachable: true, trusted: true }, null);
+      const other = nodes.join({ id: nodeId('n-00000000000000c3'), name: 'Second machine', platform: 'system', transports: [], alwaysOn: true, reachable: true, trusted: true }, null);
       homes.mirror({ ...made, masterId: other.id });
       nodes.remove(other.id);
       expect(nodes.get(other.id)?.id).toBe(other.id);
       homes.mirror(made);
       nodes.remove(other.id);
       expect(nodes.get(other.id)).toBeNull();
-    });
-
-    test('places: where nodes and devices stand, each by a key made from its name', () => {
-      const places = new PlaceStore(database);
-      const cabin = places.add({ name: 'The cabin', latitude: 59.3, longitude: 18.1, timeZone: 'Europe/Stockholm' });
-      expect(cabin).toMatchObject({ key: 'the-cabin', name: 'The cabin', timeZone: 'Europe/Stockholm' });
-      expect(places.add({ name: 'The cabin', latitude: 0, longitude: 0, timeZone: 'UTC' }).key).toBe('the-cabin-2');
-      expect(places.byKey('the-cabin')?.id).toBe(cabin.id);
-      expect(places.update(cabin.id, { name: 'Cabin' })?.name).toBe('Cabin');
-
-      const catalog = new DeviceCatalog(database);
-      const placed = catalog.add({ description: { parts: [], attributes: [] }, typeId: 'test.lamp', name: 'Placed', placeId: cabin.id });
-      expect(catalog.get(placed.id)?.placeId).toBe(cabin.id);
-      // A place removed: what stood at it stands nowhere said.
-      places.remove(cabin.id);
-      expect(places.get(cabin.id)).toBeNull();
-      expect(catalog.get(placed.id)?.placeId).toBeNull();
     });
 
     test('automations: made, changed and deleted; what their triggers saw; their runs and logs', () => {

@@ -142,7 +142,7 @@ const sessions = new Map<Server, string>();
 const login = async (username: string, on = server) => (await call('/auth/login', { method: 'POST', body: { username, password: PASSWORD }, on })).token!;
 
 beforeEach(async () => {
-  server.database.exec('DELETE FROM device; DELETE FROM sample; DELETE FROM node WHERE self = 0; DELETE FROM users; DELETE FROM login_session; DELETE FROM app_state; DELETE FROM audit; DELETE FROM automation;');
+  server.database.exec('DELETE FROM device; DELETE FROM sample; DELETE FROM node WHERE self = 0; DELETE FROM users; DELETE FROM login_session; DELETE FROM home_setting; DELETE FROM audit; DELETE FROM automation;');
   await server.sessions.sync([]);
   await server.accounts.createFirstUser('olof', PASSWORD);
   session = await login('olof');
@@ -263,7 +263,7 @@ describe('a refusal over HTTP', () => {
     const automation = await as('/automations', { method: 'POST', body: { name: 'Lamp on', rule: lampOnRule, roles: { lamp: { device: lamp.id, part: 'main' } }, starts: {}, timeZone: 'Europe/Stockholm' } });
     expect((await as(`/automations/${automation.body.id}`, { method: 'PATCH', body: { recheckMinutes: 0 } })).status).toBe(400);
     // An entry about an id with no kind could not be filtered by, and is refused.
-    const node = await as('/nodes', { method: 'POST', body: { id: 'n-00000000aa01', name: 'Olof’s laptop', platform: 'web', transports: ['bus'], alwaysOn: false, reachable: false, trusted: false, place: null } });
+    const node = await as('/nodes', { method: 'POST', body: { id: 'n-000000000000aa01', name: 'Olof’s laptop', platform: 'web', transports: ['bus'], alwaysOn: false, reachable: false, trusted: false } });
     const half = await as(`/nodes/${node.body.id}/audit`, { method: 'POST', body: { entries: [{ at: new Date().toISOString(), kind: 'command.verified', resource: lamp.id, summary: 'Half an entry' }] } });
     expect(half.status).toBe(400);
     expect(half.body.problems).toEqual(['entries.0: What an entry is about is a kind and an id together, or nothing']);
@@ -274,7 +274,7 @@ describe('a refusal over HTTP', () => {
   test('an app speaking for a connection it does not hold is refused with 403', async () => {
     lampAt('lamp-1');
     const lamp = await added('Hall lamp');
-    const node = await as('/nodes', { method: 'POST', body: { id: 'n-00000000aa01', name: 'Olof’s laptop', platform: 'web', transports: ['bus'], alwaysOn: false, reachable: false, trusted: false, place: null } });
+    const node = await as('/nodes', { method: 'POST', body: { id: 'n-000000000000aa01', name: 'Olof’s laptop', platform: 'web', transports: ['bus'], alwaysOn: false, reachable: false, trusted: false } });
     const said = await as(`/devices/${enc(lamp.id)}/readings`, { method: 'POST', body: { nodeId: node.body.id, connectionId: lamp.connections[0]!.id, readings: [{ key: 'on', value: true, at: new Date().toISOString() }] } });
     expect(said).toMatchObject({ status: 403, body: { error: 'That node does not hold a connection to this device' } });
   });

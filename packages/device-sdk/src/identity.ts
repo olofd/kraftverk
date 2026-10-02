@@ -45,12 +45,25 @@ export const connectionId = (raw: string): ConnectionId => raw as ConnectionId;
 /** A kraftverk node — the hub running somewhere, holding connections: a row of `node`, the same id in every home that knows it. */
 export type NodeId = Branded<'NodeId'>;
 export const nodeId = (raw: string): NodeId => raw as NodeId;
-/** What a node's id looks like: `n-` and twelve hex digits. */
-export const NODE_ID = /^n-[0-9a-f]{12}$/;
+/** Random bytes as hex, from the random values every place has. */
+export function randomHex(bytes: number): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * A new id: what it is, and 64 random bits (`d-1b6f399a3ff1c2d0`). Opaque —
+ * an id that says what it names invites code that reads it. A node's is made
+ * by the node and shared by every home it joins, so wide enough that two
+ * never meet.
+ */
+export const newId = (prefix: string): string => `${prefix}-${randomHex(8)}`;
+
+/** What a node's id looks like: `n-` and sixteen hex digits. */
+export const NODE_ID = /^n-[0-9a-f]{16}$/;
 /** Whether text is a node's id, as a node makes one: what is kept where it runs, or sent by one joining, is checked by this. */
 export const isNodeId = (raw: string): raw is NodeId => NODE_ID.test(raw);
-/** A new node's id, made once by the node itself and kept where it runs (`n-1b6f399a3ff1`). */
-export const newNodeId = (): NodeId => nodeId(`n-${Array.from(crypto.getRandomValues(new Uint8Array(6)), (byte) => byte.toString(16).padStart(2, '0')).join('')}`);
+/** A new node's id, made once by the node itself and kept where it runs. */
+export const newNodeId = (): NodeId => nodeId(newId('n'));
 
 /** A fact about the house between two parts: a row of `device_link`. */
 export type LinkId = Branded<'LinkId'>;
@@ -61,12 +74,12 @@ export type AutomationId = Branded<'AutomationId'>;
 export const automationId = (raw: string): AutomationId => raw as AutomationId;
 
 /**
- * What an entry on the timeline is about: a device, a node, a place, an automation, an
+ * What an entry on the timeline is about: a device, a node, an automation, an
  * account, or something a transport saw that is no device yet (an address).
  */
-export type ResourceKind = 'device' | 'node' | 'place' | 'automation' | 'account' | 'transport';
+export type ResourceKind = 'device' | 'node' | 'automation' | 'account' | 'transport';
 
-export const RESOURCE_KINDS: readonly ResourceKind[] = ['device', 'node', 'place', 'automation', 'account', 'transport'];
+export const RESOURCE_KINDS: readonly ResourceKind[] = ['device', 'node', 'automation', 'account', 'transport'];
 
 /** What an entry is about: a kind and an id together, or nothing — an id with no kind could not be filtered by. */
 export type AuditSubject = { resourceKind?: undefined; resource?: undefined } | { resourceKind: ResourceKind; resource: string };

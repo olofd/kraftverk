@@ -39,7 +39,7 @@ afterAll(() => {
 });
 
 function emptyAccounts() {
-  database.exec('DELETE FROM users; DELETE FROM login_session; DELETE FROM app_state;');
+  database.exec('DELETE FROM users; DELETE FROM login_session; DELETE FROM home_setting;');
 }
 
 // --- deciding the home network -----------------------------------------------

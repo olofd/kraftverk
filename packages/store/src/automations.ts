@@ -5,7 +5,7 @@ import { automationId, savedDeviceId, type AutomationId, type Quantity, type Val
 import type { Rule } from '@kraftverk/automation';
 
 import type { SqlDatabase } from './database.ts';
-import { randomHex } from './ids.ts';
+import { newId, randomHex } from '@kraftverk/device-sdk';
 import type { AutomationMode, AutomationRecord, AutomationStorage, RunResult, TriggerState } from '@kraftverk/automation-engine';
 
 /**
@@ -199,7 +199,7 @@ export class AutomationStore implements AutomationStorage {
 
   create(input: AutomationInput & { key?: string }): AutomationRecord {
     if (input.key !== undefined && (!KEY.test(input.key) || this.keyTaken(input.key))) throw new Error(`"${input.key}" is not a free key: lowercase letters, digits and dashes, and not another automation's`);
-    const id = automationId(`a-${randomHex(6)}`);
+    const id = automationId(newId('a'));
     const key = input.key ?? keyFrom(input.name, (taken) => this.keyTaken(taken), 'automation');
     const now = new Date().toISOString();
     this.#db.transaction(() => {

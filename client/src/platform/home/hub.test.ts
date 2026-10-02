@@ -23,7 +23,7 @@ afterEach(async () => {
 async function open() {
   const sqlite3 = await sqlite3InitModule();
   const database = readyDatabase(fromSqliteWasm(new sqlite3.oo1.DB(':memory:') as unknown as SqliteWasmDatabase), 'test');
-  hub = appHub({ node: { id: nodeId('n-0000000000b2'), name: 'A test browser', alwaysOn: false, reachable: false, trusted: false }, database, secrets: sealedWithKey(crypto.getRandomValues(new Uint8Array(32))), platform: 'web', transport: () => null, readOnly: () => true });
+  hub = appHub({ node: { id: nodeId('n-00000000000000b2'), name: 'A test browser', alwaysOn: false, reachable: false, trusted: false }, database, secrets: sealedWithKey(crypto.getRandomValues(new Uint8Array(32))), platform: 'web', transport: () => null, readOnly: () => true });
   await hub.start();
   return hub.as(OWNER);
 }

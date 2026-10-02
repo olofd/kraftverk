@@ -31,7 +31,6 @@ function nodeView(node: NodeRecord, masterId: string, account: string | null | u
     alwaysOn: node.alwaysOn,
     reachable: node.reachable,
     trusted: node.trusted,
-    place: node.placeId,
     master: node.id === masterId,
     yours: account !== undefined && !node.self && node.id !== masterId && node.accountId === account,
     createdAt: node.createdAt,
@@ -76,9 +75,8 @@ export function nodesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'nodes' |
        */
       async join(node) {
         if (account === undefined) throw new ApiError('forbidden', 'Sign in first');
-        if (node.place !== null && !hub.places.get(node.place)) throw new ApiError('invalid', 'No such place in this home');
         try {
-          return nodeView(nodes.join({ ...node, id: asNodeId(node.id), placeId: node.place }, account), masterId(), account);
+          return nodeView(nodes.join({ ...node, id: asNodeId(node.id) }, account), masterId(), account);
         } catch (error) {
           throw new ApiError('conflict', (error as Error).message);
         }

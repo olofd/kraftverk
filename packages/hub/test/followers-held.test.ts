@@ -25,7 +25,7 @@ afterEach(async () => {
 
 /** A browser joins the home, from olof's account, reaching the bus itself. */
 const browser = (): Promise<NodeView> =>
-  t.home.nodes.join({ id: nodeId('n-00000000aa01'), name: 'Olof’s laptop', platform: 'web', transports: ['bus'], alwaysOn: false, reachable: false, trusted: false, place: null });
+  t.home.nodes.join({ id: nodeId('n-000000000000aa01'), name: 'Olof’s laptop', platform: 'web', transports: ['bus'], alwaysOn: false, reachable: false, trusted: false });
 
 /** A lamp the browser set up, as it read it. */
 const heldSetup = (node: string, identified: { identity: string | null; model: string | null; summary: string } | null, extra: { methodId?: string; connection?: Record<string, string> } = {}) =>

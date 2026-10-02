@@ -111,7 +111,7 @@ describe('a device, described', () => {
   });
 
   test('a connection another node holds names that node', () => {
-    const phone = nodes.join({ id: nodeId('n-00000000c0de'), name: 'Olof’s iPhone', platform: 'native', transports: ['ble'], alwaysOn: false, reachable: false, trusted: false }, 'u-reg');
+    const phone = nodes.join({ id: nodeId('n-000000000000c0de'), name: 'Olof’s iPhone', platform: 'native', transports: ['ble'], alwaysOn: false, reachable: false, trusted: false }, 'u-reg');
     const pocket = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Pocket' });
     connections.add({ deviceId: pocket.id, method: 'bus', transport: 'bus', heldBy: phone.id, address: 'lamp-7' });
 

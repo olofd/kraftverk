@@ -295,14 +295,12 @@ export function followerApi(h: Follower): KraftverkApi {
     policy: {
       list: async () => {
         const { answer } = await h.kept('policy', () => home.policy.list());
-        h.keepPolicy(answer);
         return answer;
       },
       /** Set on the master, and kept here: this node's gateway weighs what it holds by the same values. */
       set: async (name, value) => {
         const values = await home.policy.set(name, value);
-        h.keepPolicy(values);
-        // What the master answers is how they are now: what is shown while it is away, too.
+        // What the master answers is how they are now: what this node weighs by, and shows while it is away.
         h.heard.keep('policy', values);
         return values;
       },

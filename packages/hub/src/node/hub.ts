@@ -4,12 +4,11 @@ import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
 import { ActionGateway, Confirmations, type GatewayPolicy } from '@kraftverk/gateway';
 import { LiveBus, SessionManager } from '@kraftverk/holder';
 import {
-  AppState,
   AuditLog,
   AutomationStore,
   HistoryStore,
+  HomeSettings,
   HomeStore,
-  PlaceStore,
   NodeStore,
   ConnectionStore,
   resetDatabase,
@@ -101,11 +100,9 @@ export class Hub {
 
   // What it keeps.
   readonly audit: AuditLog;
-  readonly state: AppState;
+  readonly settings: HomeSettings;
   /** The home this database keeps, and its master. */
   readonly home: HomeStore;
-  /** Where the home's nodes and devices stand. */
-  readonly places: PlaceStore;
   /** This node: what its database is, and what holds the ways it holds. */
   get self(): NodeRecord {
     return this.nodes.self()!;
@@ -164,7 +161,6 @@ export class Hub {
     this.audit = options.audit ?? new AuditLog(db);
     const record = (entry: AuditRecord) => this.audit.record(entry);
     this.home = new HomeStore(db);
-    this.places = new PlaceStore(db);
     this.events = new EventStore(db);
     this.history = new HistoryStore(db);
     this.automations = new AutomationStore(db);
@@ -201,12 +197,12 @@ export class Hub {
         }),
       }
     );
-    ({ state: this.state, catalog: this.catalog, connections: this.connections, links: this.links, nodes: this.nodes, bus: this.bus, sessions: this.sessions, gateway: this.gateway, setup: this.setup } = parts);
+    ({ settings: this.settings, catalog: this.catalog, connections: this.connections, links: this.links, nodes: this.nodes, bus: this.bus, sessions: this.sessions, gateway: this.gateway, setup: this.setup } = parts);
     const { self } = parts;
     // The home, made the first time, its master this node. A hub is the master of what its database keeps: never a copy another node is the master of.
     const home = this.home.ensure({ name: 'Home', masterId: self.id });
     if (home.masterId !== self.id) throw new Error(`This database is kept for another master (${home.masterId}): it is not opened as a home of its own`);
-    this.policy = { values: () => policyValues(this.state), set: (name, value) => setPolicyValue(this.state, name, value) };
+    this.policy = { values: () => policyValues(this.settings), set: (name, value) => setPolicyValue(this.settings, name, value) };
     const { catalog, connections, links, nodes, sessions } = this;
 
     /** What the installed packages bring to automations: their recipes and functions. None of the core's own. */

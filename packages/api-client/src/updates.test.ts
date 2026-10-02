@@ -20,7 +20,7 @@ const device = (id: typeof lamp, readings: DeviceView['readings']): DeviceView =
     id,
     name: id,
     readings,
-    health: { status: 'connected', detail: 'Fine', node: nodeId('n-0000000000a1'), transport: 'lan', lastReadingAt: at },
+    health: { status: 'connected', detail: 'Fine', node: nodeId('n-00000000000000a1'), transport: 'lan', lastReadingAt: at },
   }) as unknown as DeviceView;
 
 describe('applying the live stream', () => {
@@ -39,7 +39,7 @@ describe('applying the live stream', () => {
   });
 
   test('health is replaced; a burst is applied in order', () => {
-    const offline = { status: 'offline' as const, detail: 'Gone', node: nodeId('n-0000000000a1'), transport: 'lan', lastReadingAt: at };
+    const offline = { status: 'offline' as const, detail: 'Gone', node: nodeId('n-00000000000000a1'), transport: 'lan', lastReadingAt: at };
     const updates: LiveUpdate[] = [
       { type: 'readings', deviceId: lamp, readings: [{ key: 'on', value: false, at }] },
       { type: 'readings', deviceId: lamp, readings: [{ key: 'on', value: true, at: later }] },

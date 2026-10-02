@@ -1,7 +1,7 @@
 import { nodeId, type NodeId } from '@kraftverk/device-sdk';
 
 import type { SqlDatabase } from './database.ts';
-import { randomHex } from './ids.ts';
+import { newId } from '@kraftverk/device-sdk';
 
 /**
  * The home this database keeps (docs/DATA-MODEL.md §3): one. What every
@@ -40,7 +40,7 @@ export class HomeStore {
   ensure(made: { name: string; masterId: NodeId }): HomeRecord {
     const had = this.get();
     if (had) return had;
-    const id = `h-${randomHex(6)}`;
+    const id = newId('h');
     this.#db.query('INSERT INTO home (id, name, master_id, created_at) VALUES (?, ?, ?, ?)').run(id, made.name, made.masterId, new Date().toISOString());
     return this.get()!;
   }

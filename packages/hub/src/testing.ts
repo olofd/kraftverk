@@ -231,7 +231,7 @@ export const lampType = defineDeviceType<LampConfig>({
 });
 
 /** A node that is always on, reachable and trusted, as a machine on the network is: what a test's home runs as. */
-export const MACHINE_NODE = { id: nodeId('n-0000000000a1'), name: 'Test machine', alwaysOn: true, reachable: true, trusted: true };
+export const MACHINE_NODE = { id: nodeId('n-00000000000000a1'), name: 'Test machine', alwaysOn: true, reachable: true, trusted: true };
 
 /** A node in someone's hand, as a browser or a phone is: on while open, reaching out, trusted with nothing that must stay put. */
-export const APP_NODE = { id: nodeId('n-0000000000b2'), name: 'Chrome on a test', alwaysOn: false, reachable: false, trusted: false };
+export const APP_NODE = { id: nodeId('n-00000000000000b2'), name: 'Chrome on a test', alwaysOn: false, reachable: false, trusted: false };

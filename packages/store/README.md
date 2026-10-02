@@ -58,11 +58,11 @@ level — so two homes can be open in one process.
 |---|---|
 | The schema | `SCHEMA`, `schemaFingerprint`; `prepareDatabase`, `schemaStateOf` (current, empty, or another — set aside by the place, strict version 1), `createSchema`, `metaOf`, `resetDatabase` |
 | Devices | `DeviceCatalog`, `ConnectionStore` (with sealed secrets), `LinkStore`, `EventStore` |
-| Nodes and places | `HomeStore` (the home and its master node), `NodeStore` (every kraftverk node of the home: this database's own, and the nodes that joined it), `PlaceStore` (where nodes and devices stand) |
+| Nodes | `HomeStore` (the home and its master node), `NodeStore` (every kraftverk node of the home: this database's own, and the nodes that joined it) |
 | What a device and a transport keep | `deviceStore`, `transportStore` |
 | The gateway's memory | `databaseLedger` — the last switch of a part, the last write of a setting |
 | Automations | `AutomationStore`, the engine's `AutomationStorage` |
-| The home | `AppState` (decisions), `policyValues` and `setPolicyValue`, `AuditLog` (the timeline) |
+| The home | `HomeSettings` (what this node has settled for it, by name), `policyValues` and `setPolicyValue`, `AuditLog` (the timeline) |
 | What a node following the master keeps | the master's device and the way this node holds, kept by the master's ids (`mirror`), the home and its nodes as the master has them, what is owed to it (`SendQueue`), and what it last said (`LastHeard`) |
 | Ids | `randomHex` — from the random values every place has |
 

@@ -20,8 +20,6 @@ export type NodeDeclaration = NodeTraits & {
   platform: Platform;
   /** What it reaches devices over, where it runs. */
   transports: readonly string[];
-  /** Where it stands; null: it moves with someone, or has not said; left out: as it was. */
-  placeId?: string | null;
 };
 
 export type NodeRecord = NodeTraits & {
@@ -29,7 +27,6 @@ export type NodeRecord = NodeTraits & {
   name: string;
   platform: Platform;
   transports: string[];
-  placeId: string | null;
   /** The person it joined for, from their account; null for the home's own. */
   accountId: string | null;
   /** The node this database belongs to. */
@@ -46,7 +43,6 @@ type Row = {
   reachable: number;
   trusted: number;
   transports: string;
-  place_id: string | null;
   account_id: string | null;
   self: number;
   created_at: string;
@@ -61,7 +57,6 @@ const toRecord = (row: Row): NodeRecord => ({
   reachable: row.reachable === 1,
   trusted: row.trusted === 1,
   transports: JSON.parse(row.transports) as string[],
-  placeId: row.place_id,
   accountId: row.account_id,
   self: row.self === 1,
   createdAt: row.created_at,
@@ -136,14 +131,12 @@ export class NodeStore {
     const now = new Date().toISOString();
     const created = how.at?.created ?? now;
     const seen = how.at?.seen ?? now;
-    // A node that says nothing of where it stands keeps the place it had.
-    const place = node.placeId !== undefined ? node.placeId : (this.get(node.id)?.placeId ?? null);
     this.#db
       .query(
-        `INSERT INTO node (id, name, platform, always_on, reachable, trusted, transports, place_id, account_id, self, created_at, last_seen_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO node (id, name, platform, always_on, reachable, trusted, transports, account_id, self, created_at, last_seen_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET name = excluded.name, platform = excluded.platform, always_on = excluded.always_on,
-           reachable = excluded.reachable, trusted = excluded.trusted, transports = excluded.transports, place_id = excluded.place_id,
+           reachable = excluded.reachable, trusted = excluded.trusted, transports = excluded.transports,
            account_id = excluded.account_id, last_seen_at = excluded.last_seen_at`
       )
       .run(
@@ -154,7 +147,6 @@ export class NodeStore {
         bit(node.reachable),
         bit(node.trusted),
         JSON.stringify(node.transports),
-        place,
         how.accountId,
         bit(how.self),
         created,

@@ -1,7 +1,7 @@
 import { ApiError, type ElsewhereView, type ImportAnswers, type ImportApplied, type ImportPlan } from '@kraftverk/api-contract';
-import { isSimulated, methodOf } from '@kraftverk/device-sdk';
+import { isSimulated, methodOf, randomHex } from '@kraftverk/device-sdk';
 import { writeConfig, type Scalar } from '@kraftverk/home-file';
-import { AppState, AutomationStore, ConnectionStore, DeviceCatalog, LinkStore, NodeStore, policyValues, randomHex, setPolicyValue, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { HomeSettings, AutomationStore, ConnectionStore, DeviceCatalog, LinkStore, NodeStore, policyValues, setPolicyValue, type HomeSettingKey, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import { exportConfig, type ConfigDeps } from '../configuration/export.ts';
 import type { PassphraseSealing } from '../configuration/seal.ts';
@@ -25,9 +25,9 @@ import type { Follower } from '../follower/follower.ts';
 */
 
 /** Kept in this node's own home, once it has moved: not offered again. */
-const MOVED = 'home.moved';
+const MOVED: HomeSettingKey = 'home.moved';
 /** This node's own home as moving reads it: the stores an export reads, and its own state. */
-type OwnHome = ConfigDeps & { state: AppState };
+type OwnHome = ConfigDeps & { settings: HomeSettings };
 /** A way that stays with this node: the device it reaches, and what this node needs to hold it for the master. */
 type Staying = { key: string; name: string; typeId: string; method: string; label: string; address: string | null; settings: Record<string, Scalar>; device: Record<string, Scalar>; connection: string | null };
 
@@ -56,10 +56,10 @@ export class MovingToMaster {
   #home(): OwnHome {
     if (this.#own) return this.#own;
     const db = this.#database;
-    const state = new AppState(db);
+    const settings = new HomeSettings(db);
     const { types, protocols } = this.#follower.installed;
     this.#own = {
-      state,
+      settings,
       catalog: new DeviceCatalog(db),
       connections: new ConnectionStore(db, this.#secrets),
       links: new LinkStore(db),
@@ -68,7 +68,7 @@ export class MovingToMaster {
       self: new NodeStore(db).self()?.id ?? this.#follower.nodeId,
       types,
       protocols,
-      policy: { values: () => policyValues(state), set: (name, value) => setPolicyValue(state, name, value) },
+      policy: { values: () => policyValues(settings), set: (name, value) => setPolicyValue(settings, name, value) },
       sealing: this.#sealing,
       kept: this.#secrets,
     };
@@ -78,7 +78,7 @@ export class MovingToMaster {
   /** What moving would bring; null when there is nothing to, it has moved, or the master is no fitter for it than this node. */
   what(): ElsewhereView {
     const own = this.#home();
-    if (own.state.get(MOVED)) return null;
+    if (own.settings.get(MOVED)) return null;
     const master = this.#follower.master();
     if (!master || !shouldLead(master, this.#follower.self)) return null;
     const devices = own.catalog.list().length;
@@ -97,7 +97,7 @@ export class MovingToMaster {
    */
   async plan(mode: 'merge' | 'replace'): Promise<ImportPlan> {
     const own = this.#home();
-    if (own.state.get(MOVED)) throw new ApiError('not-found', 'This app’s own home has moved to your server already');
+    if (own.settings.get(MOVED)) throw new ApiError('not-found', 'This app’s own home has moved to your server already');
     const { installed } = this.#follower;
     const passphrase = randomHex(16);
     const { document, context } = await exportConfig(own, { secrets: 'sealed', passphrase });
@@ -123,7 +123,7 @@ export class MovingToMaster {
     const plan = await this.#follower.home.configuration.plan({ text: writeConfig(document, context), mode, passphrase });
     if (plan.id) this.#plans.set(plan.id, staying);
     // All of it is on the master already, and nothing stays to be added: there is nothing to move, and it is not offered again.
-    if (nothingToDo(plan) && !staying.length) own.state.set(MOVED, new Date().toISOString());
+    if (nothingToDo(plan) && !staying.length) own.settings.set(MOVED, new Date().toISOString());
     return {
       ...plan,
       notes: [
@@ -181,7 +181,7 @@ export class MovingToMaster {
     // Held from now on, its keys here.
     await follower.refresh();
     for (const { way, secrets } of kept) if (Object.keys(secrets).length) await follower.setSecrets(way, secrets);
-    own.state.set(MOVED, new Date().toISOString());
+    own.settings.set(MOVED, new Date().toISOString());
     return applied;
   }
 }

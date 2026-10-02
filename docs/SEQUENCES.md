@@ -174,7 +174,7 @@ scan of JSON. The database is set aside and started afresh for it
 | `device_switch`, `device_write` | The gateway's memory of each part it switched and each setting it wrote: when, last, and by whom — what the dwell counts from. Rows of the device, gone with it. |
 
 Beside them, `device.picture` (which picture a device shows) became a column
-too, and `app_state` keeps only what the home sets as a whole.
+too, and `home_setting` keeps only what the home sets as a whole, by names the schema lists.
 
 - **A run records `steps`**: each with its kind, how deep it is and what it
   is within ("Try 2 of 3", "After a step did not succeed"), what it was, how

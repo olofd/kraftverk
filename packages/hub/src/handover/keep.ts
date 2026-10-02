@@ -1,6 +1,6 @@
 import { ApiError, type ElsewhereView, type ImportAnswers, type ImportApplied, type ImportPlan } from '@kraftverk/api-contract';
 import { readConfig } from '@kraftverk/home-file';
-import { AppState, ConnectionStore, DeviceCatalog, LastHeard, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { ConnectionStore, DeviceCatalog, HomeSettings, LastHeard, type HomeSettingKey, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import type { Hub } from '../node/hub.ts';
 import { nothingToDo } from './nothing.ts';
@@ -18,11 +18,11 @@ import { nothingToDo } from './nothing.ts';
 */
 
 /** Kept in the copy, once it has been brought in: not offered again. */
-const KEPT = 'home.kept';
+const KEPT: HomeSettingKey = 'home.kept';
 
 export class KeepingCopy {
   readonly #hub: Hub;
-  readonly #state: AppState;
+  readonly #settings: HomeSettings;
   readonly #heard: LastHeard;
   readonly #catalog: DeviceCatalog;
   readonly #connections: ConnectionStore;
@@ -32,7 +32,7 @@ export class KeepingCopy {
   /** `copy`: the database this node kept for the master it followed last; `secrets`: this node's key, which sealed its ways' secrets there. */
   constructor(hub: Hub, copy: SqlDatabase, secrets: SecretsAtRest) {
     this.#hub = hub;
-    this.#state = new AppState(copy);
+    this.#settings = new HomeSettings(copy);
     this.#heard = new LastHeard(copy);
     this.#catalog = new DeviceCatalog(copy);
     this.#connections = new ConnectionStore(copy, secrets);
@@ -40,7 +40,7 @@ export class KeepingCopy {
 
   /** The master's configuration, as this node last heard it; null when it never heard one, or it has been brought in. */
   #text(): string | null {
-    if (this.#state.get(KEPT)) return null;
+    if (this.#settings.get(KEPT)) return null;
     return this.#heard.get<string>('configuration')?.body ?? null;
   }
 
@@ -65,7 +65,7 @@ export class KeepingCopy {
     if (plan.id) this.#plans.add(plan.id);
     // All of it is here already, as the master had it: there is nothing to bring, and it is not offered again.
     const held = this.#catalog.list().some((kept) => this.#connections.forDevice(kept.id).length > 0);
-    if (nothingToDo(plan) && !held) this.#state.set(KEPT, new Date().toISOString());
+    if (nothingToDo(plan) && !held) this.#settings.set(KEPT, new Date().toISOString());
     const ways = this.#catalog.list().flatMap((device) => this.#connections.forDevice(device.id).map(() => device.name));
     return {
       ...plan,
@@ -101,7 +101,7 @@ export class KeepingCopy {
     }
     await this.#hub.sessions.sync(catalog.list());
     this.#hub.bus.publish({ kind: 'changed', deviceId: null });
-    this.#state.set(KEPT, new Date().toISOString());
+    this.#settings.set(KEPT, new Date().toISOString());
     return applied;
   }
 }
