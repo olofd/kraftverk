@@ -7,12 +7,11 @@ import { RESOURCE_KINDS, type ResourceKind } from '@kraftverk/device-sdk';
 import { RESET_SECRET_MIN, resetSecret, resetSecretPath, secretMatches } from '../admin/reset.ts';
 import { LoginLimiter, limiterKeys } from '../auth/limiter.ts';
 import type { createAuth } from '../auth/routes.ts';
-import { audit, resetDatabase } from '../platform/database.ts';
+import { audit } from '../platform/database.ts';
 import { body, homeFor, type AppDeps } from './shared.ts';
 
 /** Erasing everything — the server's — and, from the home, its values and its timeline. */
 export function adminRoutes(deps: AppDeps, accounts: ReturnType<typeof createAuth>): Hono {
-  const { catalog, sessions, sampler } = deps;
   const admin = new Hono();
 
   /** Wrong reset passphrases, counted apart from logins: a typo here should not lock anyone out. */
@@ -65,25 +64,9 @@ export function adminRoutes(deps: AppDeps, accounts: ReturnType<typeof createAut
     }
     resetGuesses.succeeded(keys);
 
-    /*
-      Order matters. Sessions are closed first so nothing is mid-poll against a
-      device that is about to stop existing, and the sampler is stopped so it
-      cannot write a row into the table being emptied.
-    */
-    sampler.stop();
-    await sessions.closeAll();
-
-    const { tables, rows } = resetDatabase();
-
-    // The first entry in the new timeline, written after the wipe on purpose.
-    audit({ at: new Date().toISOString(), kind: 'database.reset', actor: who, summary: `The database was reset: ${rows} rows across ${tables.length} tables`, detail: { tables } });
+    // What emptying the home stops and starts again is the home's.
+    const { tables, rows } = await deps.hub.reset(who);
     console.log(`[admin] database reset — ${rows} rows across ${tables.length} tables`);
-
-    // Back to the state a fresh install boots into: no devices, so no sessions.
-    await sessions.sync(catalog.list());
-    sampler.start();
-    // Every open app's list is empty now: it reads it again.
-    deps.bus.publish({ kind: 'changed', deviceId: null });
 
     return c.json({ ok: true, tables, rows });
   });

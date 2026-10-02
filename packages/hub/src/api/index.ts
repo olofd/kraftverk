@@ -3,6 +3,7 @@ import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
 import type { Hub } from '../hub.ts';
 import { devicesApi } from './devices.ts';
 import { heldApi } from './held.ts';
+import { liveApi } from './live.ts';
 import { homeWideApi } from './home.ts';
 import { automationsApi } from './automations.ts';
 import { setupApi } from './setup.ts';
@@ -20,6 +21,7 @@ export function homeApi(hub: Hub, caller: Caller): KraftverkApi {
     ...automationsApi(hub, caller),
     ...homeWideApi(hub, caller),
     ...heldApi(hub, caller),
+    ...liveApi(hub, caller),
   };
 }
 

@@ -76,7 +76,9 @@ always-running machine must be.
 
 **Being built** (docs/PLAN-SHARED-CORE.md, "Phase 5, in detail"): what is
 below is the design, and the plan says which part is in. In now:
-`createHub` (`Hub`), which the server runs, and all it wires — what is
+`createHub` (`Hub`), which the server runs; `hub.as(caller)`, the whole of
+`KraftverkApi` (`src/api/`), which every route of the server adapts to;
+the live stream's outbox (`src/live/`); and all it wires — what is
 installed (`DeviceTypeRegistry`, `ProtocolRegistry`, `TransportHost` for
 any platform), devices' views (`DeviceRegistry`), `Nearby`,
 `RemoteReadings`, `SetupService`, history (`Sampler`, `ChangeLog`, `series`,

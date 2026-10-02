@@ -912,6 +912,13 @@ export type HeldReadings = {
 /** What became of them: live ones the device's state now, queued ones history, the rest refused as out of range. */
 export type HeldReadingsTaken = { live: number; history: number; refused: number };
 
+/** A listener of the live stream: what it says its screen shows, and letting go. */
+export type LiveStream = {
+  /** What its screen shows now: a fact, not a request. */
+  say(view: ViewReport): void;
+  close(): void;
+};
+
 /** A span of history asked for: `from` and `to`, or the last `hours` up to now, or the last day. */
 export type HistoryQuery = { key: string; hours?: number; from?: string; to?: string; points?: number };
 /** A span of changes asked for, of one key or all. */
@@ -1086,4 +1093,11 @@ export interface KraftverkApi {
     /** What its gateway and sessions wrote on their timeline, queued while offline: the actor is always whoever is signed in. */
     audit(app: ClientId, entries: AuditUpload[]): Promise<{ recorded: number }>;
   };
+  /**
+   * What changed, as it changes: `hello` first, then what moved, coalesced —
+   * read the list on `hello` and on `changed`, and apply the rest on top.
+   * `draining`: whoever carries it says whether it can take more now; while
+   * it cannot, the latest waits rather than a backlog.
+   */
+  live(listener: (update: LiveUpdate) => void, options?: { draining?: () => boolean }): LiveStream;
 }

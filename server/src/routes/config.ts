@@ -23,7 +23,7 @@ export function configRoutes(deps: AppDeps): Hono {
   /** Open, as an editor cannot log in: it names nothing you have, so no one in particular asks for it. */
   api.get('/config/schema.json', (c) => {
     c.header('cache-control', 'no-cache');
-    return c.json(deps.configuration.schema());
+    return c.json(deps.hub.configuration.schema());
   });
 
   api.get('/config/vocabulary', async (c) => c.json(await homeFor(deps, c).configuration.vocabulary()));
@@ -56,7 +56,7 @@ export function configRoutes(deps: AppDeps): Hono {
       const text = deps.snapshot?.restoredCopy() ?? null;
       if (text === null) throw new HTTPException(404, { message: 'There is no restored copy to import again' });
       // Its secrets are this server's own, sealed with its key: opened as only the server's own copy may be, not through the API.
-      return c.json(await deps.configuration.plan(text, { mode: input.mode, kept: true }, actorOf(c)));
+      return c.json(await deps.hub.configuration.plan(text, { mode: input.mode, kept: true }, actorOf(c)));
     }
     return c.json(await homeFor(deps, c).configuration.plan({ text: input.text!, mode: input.mode, passphrase: input.passphrase }));
   });

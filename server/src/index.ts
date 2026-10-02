@@ -10,7 +10,6 @@ import { discoverDeviceTypes, discoverProtocols, discoverTransports } from './pl
 import { serverSealing } from './platform/sealing.ts';
 import { serverSecrets } from './platform/secrets.ts';
 import { ConfigSnapshot } from './platform/snapshot.ts';
-import { homeOf } from './routes/shared.ts';
 
 /*
   The server process: everything that starts something.
@@ -182,7 +181,7 @@ try {
   console.warn(`[config] The configuration could not be kept beside the database: ${(error as Error).message}`);
 }
 
-const { app, websocket } = createApp({ ...homeOf(hub), snapshot, config, proxies, serverLog, startedAt });
+const { app, websocket } = createApp({ hub, snapshot, config, proxies, serverLog, startedAt });
 
 // Everything is running: from here on, stopping also closes what was opened.
 onStop(stopSnapshot, () => snapshot.stop(), () => hub.stop());

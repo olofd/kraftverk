@@ -286,6 +286,21 @@ to the hub, on SQLite in memory — and found that a run could take a
 reading heard in the same millisecond as its own switch for one heard
 after it: what a run hears and does is now ordered by a count, not by the
 clock.
+Phase 5d (2026-10-02), `KraftverkApi` — in `api-contract`, with `Caller`
+(a person, with their account on a server, or an agent acting for one),
+`ApiError` and `LiveStream`: device types, devices (views, keys, pictures,
+removing, history, changes, events, commands, settings, tools, queries),
+problems, connections, links, setup, what is near, transports,
+automations, the configuration, the home's values, the timeline, the
+world and its words, apps and what they send for connections they hold,
+and the live stream. `hub.as(caller)` answers all of it: every check, the
+timeline, a yes's token (on the hub, as each caller's API is made per
+request), and what a screen's list shows changing — said by the hub as it
+changes it, so the server's middleware that guessed it from paths is
+gone. Every route is an adapter — validate, `hub.as(callerOf(c))`, answer
+— and `AppDeps` is the hub and what is the server's own. The assistant's
+MCP tools ask the home as an agent. Emptying the database is
+`hub.reset()`; who may is the server's.
 
 ### Phase 5, in detail
 
@@ -334,7 +349,7 @@ then has one interface in both modes, and never branches on which.
     app's editor and the export become one function.
 5c. **`createHub`** — done, above. The routes still take the hub's parts
     (`homeOf(hub)`); they take `hub.as(caller)` in 5d.
-5d. **`KraftverkApi`.** In `api-contract`, grouped as the routes are:
+5d. **`KraftverkApi`** — done, above. As planned: in `api-contract`, grouped as the routes are:
     `deviceTypes`, `devices` (views, renaming and keys, pictures, removing,
     history, changes, events, problems, commands, settings, tools,
     connections and their secrets), `links`, `setup`, `nearby`,

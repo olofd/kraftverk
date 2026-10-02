@@ -21,7 +21,6 @@ import { discoverDeviceTypes, discoverProtocols, discoverTransports } from './pl
 import { serverSealing } from './platform/sealing.ts';
 import { openSecret } from './platform/secrets.ts';
 import { originAllowed } from './routes/live.ts';
-import { homeOf } from './routes/shared.ts';
 import { serverSecrets } from './platform/secrets.ts';
 
 /**
@@ -81,7 +80,7 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
   });
   const proxies = new ProxyDirectory(PROXY);
   await proxies.refresh();
-  const { app, websocket } = createApp({ ...homeOf(hub), config, proxies, serverLog: { dir: null, recent: () => [] }, startedAt: new Date() });
+  const { app, websocket } = createApp({ hub, config, proxies, serverLog: { dir: null, recent: () => [] }, startedAt: new Date() });
   return {
     app,
     websocket,

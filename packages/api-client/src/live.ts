@@ -1,4 +1,4 @@
-import type { LiveUpdate, ViewReport } from '@kraftverk/api-contract';
+import type { LiveStream, LiveUpdate, ViewReport } from '@kraftverk/api-contract';
 
 import { getApiBaseUrl } from './api';
 
@@ -43,7 +43,6 @@ export type LiveOptions = {
 };
 
 /** An open stream: closed with `close()`; `say` tells the server what the screen shows, if the socket is up. */
-export type LiveStream = { close(): void; say(view: ViewReport): void };
 
 /** Opens the stream and keeps it open until `close()`. */
 export function openLive(options: LiveOptions): LiveStream {

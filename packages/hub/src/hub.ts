@@ -10,6 +10,7 @@ import {
   ClientStore,
   ConnectionStore,
   databaseLedger,
+  resetDatabase,
   DeviceCatalog,
   deviceStore,
   EventStore,
@@ -261,6 +262,26 @@ export class Hub {
     this.changeLog.start();
     this.engine.start();
     this.#stopFreshness = keepWatchedFresh(this.attention, (device, until) => this.sessions.get(device)?.wantFresh?.(until));
+  }
+
+  /**
+   * Empties the home: every table but accounts, apps and what the database
+   * is. Who may is the place's to decide — on a server, an account with the
+   * reset passphrase. Order matters: sessions close first, so nothing is
+   * mid-poll against a device about to stop existing, and sampling stops, so
+   * nothing writes into a table being emptied. The first entry of the new
+   * timeline says so; every open screen reads its list again.
+   */
+  async reset(by: string): Promise<{ tables: string[]; rows: number }> {
+    this.sampler.stop();
+    await this.sessions.closeAll();
+    const { tables, rows } = resetDatabase(this.db);
+    this.audit.record({ at: new Date().toISOString(), kind: 'database.reset', actor: by, summary: `The database was reset: ${rows} rows across ${tables.length} tables`, detail: { tables } });
+    // Back to the state a fresh home starts in: no devices, so no sessions.
+    await this.sessions.sync(this.catalog.list());
+    if (this.#started) this.sampler.start();
+    this.bus.publish({ kind: 'changed', deviceId: null });
+    return { tables, rows };
   }
 
   /** Everything this home answers (`KraftverkApi`), for one caller: a person, or an assistant acting for one. */
