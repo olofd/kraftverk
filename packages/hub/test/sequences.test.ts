@@ -1,16 +1,14 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { beforeEach, describe, expect, test } from 'bun:test';
 
 import { inlineParams, startCharging, stopCharging, type DeviceReader, type Rule } from '@kraftverk/automation';
 import { MAIN_PART, savedDeviceId, type AuditRecord, type AutomationId, type DeviceDescription } from '@kraftverk/device-sdk';
 import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent, type WriteResult } from '@kraftverk/gateway';
 import { LiveBus, type LiveMessage } from '@kraftverk/holder';
 
-import { closeDb, db } from '../platform/database.ts';
 import { AutomationEngine, RunRefusal, type Asker, type EngineDevice, AutomationLibrary, runLogCsv } from '@kraftverk/automation-engine';
-import { AutomationStore } from '@kraftverk/store';
+import { AutomationStore, type SqlDatabase } from '@kraftverk/store';
+
+import { testDatabase } from './home.ts';
 
 /*
   Sequences (docs/SEQUENCES.md), run by the engine through a scripted
@@ -20,19 +18,10 @@ import { AutomationStore } from '@kraftverk/store';
   few milliseconds here.
 */
 
-const dir = mkdtempSync(join(tmpdir(), 'kraftverk-sequences-'));
-beforeAll(() => {
-  process.env.KRAFTVERK_DB = join(dir, 'test.db');
-  closeDb();
-});
-afterAll(() => {
-  closeDb();
-  rmSync(dir, { recursive: true, force: true });
-});
+let db: SqlDatabase;
 beforeEach(() => {
-  db().exec('DELETE FROM automation');
-  db().exec('DELETE FROM device');
-  const insert = db().query("INSERT INTO device (id, key, type_id, name, description, added_at) VALUES (?1, ?1, 'test.device', ?2, '{\"parts\":[],\"attributes\":[]}', '2026-06-01T00:00:00Z')");
+  db = testDatabase();
+  const insert = db.query("INSERT INTO device (id, key, type_id, name, description, added_at) VALUES (?1, ?1, 'test.device', ?2, '{\"parts\":[],\"attributes\":[]}', '2026-06-01T00:00:00Z')");
   insert.run('d-station', 'Garage station');
   insert.run('d-scooter-plug', 'Scooter plug');
 });
@@ -162,7 +151,7 @@ function setup(world: Partial<World> = {}) {
       () => reachable() || state.plugLooksConnected
     ),
   };
-  const store = new AutomationStore(db());
+  const store = new AutomationStore(db);
   const bus = new LiveBus();
   bus.subscribe((message) => void heard.push(message));
   const engine = new AutomationEngine({

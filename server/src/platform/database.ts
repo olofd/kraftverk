@@ -166,7 +166,8 @@ export const databaseLedger = (): GatewayLedger => ledgerOf(db());
 let log: { db: SqlDatabase; audit: AuditLog } | null = null;
 const listeners = new Set<(entry: AuditRecord) => void>();
 
-const auditLog = (): AuditLog => {
+/** The timeline as one object: what the hub records to, so whoever listens here hears it too. */
+export const auditLog = (): AuditLog => {
   const current = db();
   if (log?.db !== current) {
     const audit = new AuditLog(current);

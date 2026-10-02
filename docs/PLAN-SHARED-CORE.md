@@ -276,6 +276,16 @@ hub choosing a cipher every place must have. The snapshot's file, its
 copies and the copy a restore is made from are the server's
 (`platform/snapshot.ts`). The server has no file of logic left outside
 its places: 17 left, all the app's.
+Phase 5c (2026-10-02), `createHub` — one `Hub` wires a home: its stores,
+the session manager, the gateway, the library and the engine, the
+planner, views, setup, what is near, history, attention and its
+configuration, with `start()` and `stop()`. The server's `index.ts` is
+finding packages, opening its file, `createHub`, the snapshot, HTTP; the
+routes' test kit builds a hub as the server does. The engine's tests moved
+to the hub, on SQLite in memory — and found that a run could take a
+reading heard in the same millisecond as its own switch for one heard
+after it: what a run hears and does is now ordered by a count, not by the
+clock.
 
 ### Phase 5, in detail
 
@@ -322,14 +332,8 @@ then has one interface in both modes, and never branches on which.
 5b. **Planning and the home file** — done, above. A device's entry
     (`deviceYaml`, the app's) moves to `home-file` with phase 6, when the
     app's editor and the export become one function.
-5c. **`createHub`.** One object wiring the stores, the session manager, the
-    gateway, the engine, the sampler and the change log, setup, nearby,
-    attention and its freshness, with `start()` and `stop()`; restoring
-    from a configuration is a call the place makes, since only it knows
-    the database was just made. The server's `index.ts` becomes finding
-    packages, opening the file, `createHub`, the broker's transport and
-    HTTP; the routes' `AppDeps` becomes the hub and the accounts. The
-    routes' test kit builds a hub too.
+5c. **`createHub`** — done, above. The routes still take the hub's parts
+    (`homeOf(hub)`); they take `hub.as(caller)` in 5d.
 5d. **`KraftverkApi`.** In `api-contract`, grouped as the routes are:
     `deviceTypes`, `devices` (views, renaming and keys, pictures, removing,
     history, changes, events, problems, commands, settings, tools,

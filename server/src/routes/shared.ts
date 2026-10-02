@@ -6,7 +6,7 @@ import { savedDeviceId, type ResourceKind } from '@kraftverk/device-sdk';
 
 import type { ActionGateway } from '@kraftverk/gateway';
 import type { LiveBus } from '@kraftverk/holder';
-import type { Attention, Configuration, DeviceRegistry, DeviceTypeRegistry, Nearby, ProtocolRegistry, RemoteReadings, Sampler, SetupService, TransportHost } from '@kraftverk/hub';
+import type { Attention, Configuration, DeviceRegistry, DeviceTypeRegistry, Hub, Nearby, ProtocolRegistry, RemoteReadings, Sampler, SetupService, TransportHost } from '@kraftverk/hub';
 import type { AutomationEngine, AutomationLibrary } from '@kraftverk/automation-engine';
 import type { AutomationStore, DeviceCatalog, DeviceRecord, ClientStore, ConnectionStore, LinkStore, EventStore } from '@kraftverk/store';
 import { actorOf, userOf } from '../auth/routes.ts';
@@ -65,6 +65,33 @@ export type AppDeps = {
   /** The configuration kept beside the database, as a file; none in a test that does not ask for one. */
   snapshot?: ConfigSnapshot;
 };
+
+/** What the routes need of a home, from the hub that runs it: everything in `AppDeps` but the server's own. */
+export type HomeDeps = Omit<AppDeps, 'config' | 'proxies' | 'serverLog' | 'startedAt' | 'limiter' | 'snapshot'>;
+
+export const homeOf = (hub: Hub): HomeDeps => ({
+  catalog: hub.catalog,
+  connections: hub.connections,
+  links: hub.links,
+  clients: hub.clients,
+  types: hub.installed.types,
+  protocols: hub.installed.protocols,
+  transports: hub.installed.transports,
+  sessions: hub.sessions,
+  registry: hub.registry,
+  setup: hub.setup,
+  nearby: hub.nearby,
+  remote: hub.remote,
+  gateway: hub.gateway,
+  events: hub.events,
+  bus: hub.bus,
+  attention: hub.attention,
+  automations: hub.automations,
+  engine: hub.engine,
+  library: hub.library,
+  sampler: hub.sampler,
+  configuration: hub.configuration,
+});
 
 /**
  * Parses and validates a JSON body.

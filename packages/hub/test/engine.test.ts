@@ -1,16 +1,14 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { beforeEach, describe, expect, test } from 'bun:test';
 
 import { defineFunction, defineRecipe, inlineParams, type DeviceReader } from '@kraftverk/automation';
 import { MAIN_PART, savedDeviceId, zonedInstant, type AuditRecord, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
 import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
 
-import { closeDb, db } from '../platform/database.ts';
 import { AutomationEngine, type AutomationRecord, type EngineDevice, AutomationLibrary } from '@kraftverk/automation-engine';
-import { AutomationStore } from '@kraftverk/store';
+import { AutomationStore, type SqlDatabase } from '@kraftverk/store';
+
+import { testDatabase } from './home.ts';
 
 /*
   The engine runs rules — whoever wrote them — and the gateway acts: these
@@ -19,20 +17,11 @@ import { AutomationStore } from '@kraftverk/store';
   tests' business, and the recipes the packages ship are theirs.
 */
 
-const dir = mkdtempSync(join(tmpdir(), 'kraftverk-automations-'));
-beforeAll(() => {
-  process.env.KRAFTVERK_DB = join(dir, 'test.db');
-  closeDb();
-});
-afterAll(() => {
-  closeDb();
-  rmSync(dir, { recursive: true, force: true });
-});
+let db: SqlDatabase;
 beforeEach(() => {
-  db().exec('DELETE FROM automation');
+  db = testDatabase();
   // The devices its roles name, as the catalog keeps them: a role names a device that exists.
-  db().exec('DELETE FROM device');
-  const insert = db().query("INSERT INTO device (id, key, type_id, name, description, added_at) VALUES (?1, ?1, 'test.device', ?2, '{\"parts\":[],\"attributes\":[]}', '2026-06-01T00:00:00Z')");
+  const insert = db.query("INSERT INTO device (id, key, type_id, name, description, added_at) VALUES (?1, ?1, 'test.device', ?2, '{\"parts\":[],\"attributes\":[]}', '2026-06-01T00:00:00Z')");
   for (const [id, name] of [
     ['d-forecast', 'Weather'],
     ['d-plug', 'Heater plug'],
@@ -188,7 +177,7 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
     [`${STATION}:outlet.ac`]: { name: 'Garage P280 — AC outlets', removed: false, hasPart: true, part: 'outlet.ac', description: STATION_DESCRIPTION, device: null, offline: 'n/a', capabilities: ['switch'] },
     [`${STATION}:input.ac`]: { name: 'Garage P280 — Mains', removed: false, hasPart: true, part: 'input.ac', description: STATION_DESCRIPTION, device: null, offline: 'n/a', capabilities: ['acInput'] },
   } satisfies Record<string, Omit<EngineDevice, 'reachable' | 'wantFresh' | 'deviceName' | 'typeId'>>).map(([key, device]) => [key, asEngineDevice(device)]));
-  const store = new AutomationStore(db());
+  const store = new AutomationStore(db);
   const bus = new LiveBus();
   const engine = new AutomationEngine({
     store,
@@ -245,7 +234,7 @@ describe('at a time of day', () => {
     await late.engine.tick();
     expect(late.sent).toEqual([]);
 
-    db().exec('DELETE FROM automation');
+    db.exec('DELETE FROM automation');
     const { engine, sunny, store, sent } = setup();
     const armed = sunny({}, 'armed');
     const off = sunny({}, 'off');

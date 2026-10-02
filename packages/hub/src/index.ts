@@ -25,3 +25,4 @@ export { exportConfig, homeVocabulary, type ConfigDeps, type ExportOptions, type
 export { applyImport, keptPlan, PendingPlans, planImport, type ImportChoices, type ImportDeps, type ImportMode } from './configuration/import.ts';
 export { restoreFrom, type Restored } from './configuration/restore.ts';
 export * from './configuration/seal.ts';
+export * from './hub.ts';

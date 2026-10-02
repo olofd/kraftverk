@@ -7,22 +7,21 @@ import type { LiveUpdate } from '@kraftverk/api-contract';
 import { inlineParams, startCharging, type Rule } from '@kraftverk/automation';
 import { savedDeviceId, type Value } from '@kraftverk/device-sdk';
 
-import { ActionGateway } from '@kraftverk/gateway';
-import { LiveBus, type LiveMessage, SessionManager } from '@kraftverk/holder';
+import type { LiveBus, LiveMessage, SessionManager } from '@kraftverk/holder';
+import { createHub, DeviceTypeRegistry, ProtocolRegistry, TransportHost, type Attention, type SetupService } from '@kraftverk/hub';
+
 import { CORS_METHODS, corsOrigin, createApp } from './app.ts';
-import { Attention, Configuration, DeviceRegistry, DeviceTypeRegistry, Nearby, plans, ProtocolRegistry, RemoteReadings, Sampler, SetupService, TransportHost, homeDevices } from '@kraftverk/hub';
-import { AutomationEngine, AutomationLibrary } from '@kraftverk/automation-engine';
-import { AutomationStore, DeviceCatalog, ClientStore, ConnectionStore, LinkStore, EventStore, holding } from '@kraftverk/store';
 import { CLIENT_HEADER, SESSION_COOKIE } from './auth/routes.ts';
 import { createFirstUser, createUser } from './auth/store.ts';
 import { CLIENT_IP_HEADER, EXPOSURE_HEADER, ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
 import { busDefinition, FakeBus, lampProtocol, lampType } from '@kraftverk/hub/testing';
-import { audit, closeDb, db, policyValues, setPolicyValue, deviceStore } from './platform/database.ts';
+import { auditLog, closeDb, db } from './platform/database.ts';
 import { discoverDeviceTypes, discoverProtocols, discoverTransports } from './platform/packages.ts';
 import { serverSealing } from './platform/sealing.ts';
 import { openSecret } from './platform/secrets.ts';
 import { originAllowed } from './routes/live.ts';
+import { homeOf } from './routes/shared.ts';
 import { serverSecrets } from './platform/secrets.ts';
 
 /**
@@ -68,122 +67,30 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
   // Only the bus: the installed transports would reach real radios and the network.
   await transports.startAll(['bus']);
 
-  const catalog = new DeviceCatalog(db());
-  const connections = new ConnectionStore(db(), serverSecrets);
-  const links = new LinkStore(db());
-  const clients = new ClientStore(db());
-  const events = new EventStore(db());
-  const live = new LiveBus();
-  const sessions = new SessionManager({
-    platform: 'server',
-    owner: 'server',
-    types,
-    protocols,
-    transports,
-    ...holding(connections, null),
-    store: deviceStore,
+  // As index.ts builds a home — but not started: only the bus runs, and nothing reaches a radio or the network.
+  const hub = createHub({
+    database: db(),
+    audit: auditLog(),
+    secrets: serverSecrets,
+    sealing: serverSealing,
+    installed: { types, protocols, transports },
     readOnly: () => config.readOnly,
-    allowRawFrames: false,
-    heldByName: (id) => clients.get(id)?.name ?? null,
-    record: audit,
-    // As the server wires it: what a device is and raises is kept.
-    onDescribed: (deviceId, description, info, source) => catalog.describe(deviceId, description, info, source),
-    onEvent: (deviceId, event) => events.record(deviceId, event),
-    bus: live,
-  });
-  const remote = new RemoteReadings(db());
-  const registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports, remote });
-  const setup = new SetupService({
-    db: db(),
-    record: audit,
-    types,
-    protocols,
-    transports,
-    catalog,
-    connections,
-    links,
-    sessions,
     http: () => Promise.reject(new Error('no network in these tests')),
-  });
-  const nearby = new Nearby({ types, protocols, transports, connections });
-  const gateway = new ActionGateway({
-    device: (id) => {
-      const record = catalog.active(id);
-      return record ? { name: record.name, session: sessions.get(id), description: sessions.description(record), offline: sessions.health(record).detail } : null;
-    },
-    linksFrom: (id, part) => links.from(id, part).map((link) => ({ kind: link.kind, target: link.target })),
-    isReadOnly: (id) => config.readOnly && !sessions.simulated(id),
-    record: audit,
-    policy: { verifyTimeoutMs: 300 },
-    policyValues,
+    owner: 'server',
+    gateway: { verifyTimeoutMs: 300 },
   });
   const proxies = new ProxyDirectory(PROXY);
   await proxies.refresh();
-  const automations = new AutomationStore(db());
-  const library = new AutomationLibrary(types.contributions(), () => {});
-  const engine = new AutomationEngine({ store: automations, library, device: homeDevices(catalog, sessions), gateway, record: audit, bus: live });
-
-  const attention = new Attention();
-  const configuration = new Configuration({
-    db: db(),
-    catalog,
-    connections,
-    links,
-    automations,
-    types,
-    protocols,
-    transports,
-    sessions,
-    library,
-    engine,
-    checked: plans({ db: db(), catalog, sessions, library, engine, automations }).checked,
-    policy: { values: policyValues, set: setPolicyValue },
-    sealing: serverSealing,
-    kept: serverSecrets,
-    record: audit,
-    bus: live,
-  });
-  const { app, websocket } = createApp({
-    attention,
-    configuration,
-    config,
-    catalog,
-    connections,
-    links,
-    clients,
-    types,
-    protocols,
-    transports,
-    sessions,
-    registry,
-    setup,
-    nearby,
-    remote,
-    gateway,
-    events,
-    bus: live,
-    automations,
-    engine,
-    library,
-    sampler: new Sampler(db(), registry),
-    proxies,
-    serverLog: { dir: null, recent: () => [] },
-    startedAt: new Date(),
-  });
+  const { app, websocket } = createApp({ ...homeOf(hub), config, proxies, serverLog: { dir: null, recent: () => [] }, startedAt: new Date() });
   return {
     app,
     websocket,
-    attention,
-    live,
-    sessions,
-    setup,
+    attention: hub.attention,
+    live: hub.bus,
+    sessions: hub.sessions,
+    setup: hub.setup,
     bus,
-    close: async () => {
-      setup.stop();
-      nearby.stop();
-      await sessions.closeAll();
-      await transports.stopAll();
-    },
+    close: () => hub.stop(),
   };
 }
 

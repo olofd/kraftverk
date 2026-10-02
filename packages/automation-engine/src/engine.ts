@@ -206,9 +206,12 @@ type LiveRun = {
   allowance: Record<string, number>;
   /** When it last changed something — switched a part, changed a setting: what is judged after is read after. 0, not yet. By this server's clock. */
   changedAt: number;
+  /** Where its last change falls in what the engine heard and did, in order: what a reading heard after it is after, in the same millisecond too. */
+  changedOrder: number;
   /**
-   * When this server heard each reading it uses take its value now, by "device key": by its own clock, the one
-   * `changedAt` is on — not the reading's `at`, which a device with a clock of its own may stamp.
+   * Where this server heard each reading it uses take its value now, by "device key", in the order the engine
+   * hears and does things — not by a clock, whose milliseconds two events can share, and not by the reading's
+   * `at`, which a device with a clock of its own may stamp.
    */
   heard: Map<string, number>;
   /** Its log, for a run that takes steps: `look` keeps what its devices say now; `stop` ends it, after one last look. Null for a run that takes none. */
@@ -266,6 +269,8 @@ export class AutomationEngine {
   #becoming = new Map<string, { state: TriggerState; hold: ReturnType<typeof setTimeout> | null }>();
   /** Which automations each device's messages concern, by store revision: not every automation for every reading. */
   #index: { revision: number; byDevice: Map<string, AutomationRecord[]> } | null = null;
+  /** What the engine heard and did, counted in the order it happened: a run's readings and changes, told apart in the same millisecond. */
+  #order = 0;
 
   constructor(private deps: AutomationEngineDeps) {}
 
@@ -907,6 +912,7 @@ export class AutomationEngine {
       wake: new Set(),
       allowance: this.#allowance(rule, scope),
       changedAt: 0,
+      changedOrder: 0,
       heard: new Map(),
       log: null,
     };
@@ -1173,7 +1179,7 @@ export class AutomationEngine {
       outcome = await send();
     }
     const already = outcome.outcome === 'verified' && outcome.detail.startsWith('Already');
-    if (!already && (outcome.outcome === 'verified' || outcome.outcome === 'unverified')) live.changedAt = Date.now();
+    if (!already && (outcome.outcome === 'verified' || outcome.outcome === 'unverified')) this.#changed(live);
     // What the switch left — the device's own readback — is in the log as it was then.
     live.log?.look();
     this.#end(live, entry, already ? 'already' : outcome.outcome === 'verified' ? 'done' : outcome.outcome, outcome.detail);
@@ -1216,7 +1222,7 @@ export class AutomationEngine {
     } catch (error) {
       result = { outcome: 'failed', detail: (error as Error).message };
     }
-    if (result.outcome === 'verified' || result.outcome === 'unverified') live.changedAt = Date.now();
+    if (result.outcome === 'verified' || result.outcome === 'unverified') this.#changed(live);
     this.#end(live, entry, result.outcome === 'verified' ? 'done' : result.outcome, result.detail);
     return result.outcome === 'refused' || result.outcome === 'failed' ? 'failed' : 'ok';
   }
@@ -1432,8 +1438,8 @@ export class AutomationEngine {
         const which = `${id} ${reading.key}`;
         if (last.get(which) === mark) continue;
         last.set(which, mark);
-        // Heard now, by this server's clock: what a wait judges by, whatever the device stamped.
-        live.heard.set(which, Date.now());
+        // Heard now, in the order of what happens here: what a wait judges by, whatever the device stamped.
+        live.heard.set(which, ++this.#order);
         if (kept >= READINGS_PER_RUN) continue;
         if (!described.has(which)) {
           described.add(which);
@@ -1473,6 +1479,12 @@ export class AutomationEngine {
     return log ? { ...log, capped: log.readings.length >= READINGS_PER_RUN } : null;
   }
 
+  /** A run changed something — switched a part, changed a setting: what it judges after is judged on what it hears after. */
+  #changed(live: LiveRun): void {
+    live.changedAt = Date.now();
+    live.changedOrder = ++this.#order;
+  }
+
   /**
    * Whether every reading a condition reads was taken since the run last
    * changed something — and every device it asks can be reached has been
@@ -1498,7 +1510,7 @@ export class AutomationEngine {
       const binding = live.automation.roles[role];
       const heard = binding ? heardFrom(binding.device) : null;
       // One that says nothing at all is judged by its connection, as it is.
-      return heard === null || heard >= live.changedAt;
+      return heard === null || heard > live.changedOrder;
     });
     if (!reachedSince) return false;
     return reads.every(({ role, means }) => {
@@ -1508,9 +1520,9 @@ export class AutomationEngine {
       const reading = device?.device && attribute ? readingOf(device.device.readings(), attribute.key) : null;
       // Nothing to wait for: what cannot be read is judged as it is.
       if (!reading) return true;
-      // When this server heard it take its value, by the clock changedAt is on; the reading's own time only when the run has not heard it.
-      const heard = live.heard.get(`${binding!.device} ${reading.key}`) ?? Date.parse(reading.at);
-      return heard >= live.changedAt;
+      // Heard after the change, by the order of what happens here; the reading's own time only when the run has not heard it.
+      const heard = live.heard.get(`${binding!.device} ${reading.key}`);
+      return heard !== undefined ? heard > live.changedOrder : Date.parse(reading.at) >= live.changedAt;
     });
   }
 

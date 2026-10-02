@@ -1,18 +1,16 @@
-import { ActionGateway } from '@kraftverk/gateway';
-import { LiveBus, SessionManager } from '@kraftverk/holder';
+import { changesConfiguration, createHub, DeviceTypeRegistry, ProtocolRegistry, TransportHost } from '@kraftverk/hub';
+
 import { createApp } from './app.ts';
-import { Attention, ChangeLog, changesConfiguration, Configuration, DeviceRegistry, DeviceTypeRegistry, Nearby, plans, ProtocolRegistry, RemoteReadings, Sampler, SetupService, TransportHost, homeDevices, keepWatchedFresh } from '@kraftverk/hub';
-import { AutomationEngine, AutomationLibrary } from '@kraftverk/automation-engine';
-import { AutomationStore, DeviceCatalog, EventStore, ClientStore, ConnectionStore, LinkStore, holding } from '@kraftverk/store';
 import { ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
-import { databaseLedger, audit, closeDb, onAudit, startedFresh, policyValues, setPolicyValue, transportStore, db, deviceStore } from './platform/database.ts';
 import { keepConsole } from './log.ts';
+import { audit, auditLog, closeDb, db, onAudit, startedFresh, transportStore } from './platform/database.ts';
 import { scopedHttp } from './platform/http.ts';
 import { discoverDeviceTypes, discoverProtocols, discoverTransports } from './platform/packages.ts';
 import { serverSealing } from './platform/sealing.ts';
 import { serverSecrets } from './platform/secrets.ts';
 import { ConfigSnapshot } from './platform/snapshot.ts';
+import { homeOf } from './routes/shared.ts';
 
 /*
   The server process: everything that starts something.
@@ -106,55 +104,23 @@ console.log(
     `transports ${transports.definitions().map((definition) => definition.id).join(', ') || 'none'}`
 );
 
-/** What you have, how each is reached, and how they fit the house. */
-const catalog = new DeviceCatalog(db());
-const connections = new ConnectionStore(db(), serverSecrets);
-const links = new LinkStore(db());
-const clients = new ClientStore(db());
-
-/** What devices say as they say it: readings, events, a changed description. */
-const bus = new LiveBus();
-const events = new EventStore(db());
-
-const sessions = new SessionManager({
-  platform: 'server',
-  owner: 'server',
-  types,
-  protocols,
-  transports,
-  ...holding(connections, null),
-  store: deviceStore,
+/*
+  The home: its stores over the server's database, a session for every
+  device it holds, the gateway, the engine, history, setup, what is near,
+  attention and its configuration — all of it the hub's (@kraftverk/hub),
+  handed what only the server can give it.
+*/
+const hub = createHub({
+  database: db(),
+  audit: auditLog(),
+  secrets: serverSecrets,
+  sealing: serverSealing,
+  installed: { types, protocols, transports },
   readOnly: () => config.readOnly,
   allowRawFrames: config.allowRawFrames,
-  heldByName: (id) => clients.get(id)?.name ?? null,
-  record: audit,
-  // A device saved before it ever answered learns who it is the first time it does.
-  onIdentified: (deviceId, identity) => {
-    if (catalog.byIdentity(identity).active) return;
-    catalog.update(deviceId, { identity });
-  },
-  onDescribed: (deviceId, description, info, source) => catalog.describe(deviceId, description, info, source),
-  onEvent: (deviceId, event) => events.record(deviceId, event),
-  bus,
-  log: (message) => console.log(`[devices] ${message}`),
+  http: scopedHttp,
+  owner: 'server',
 });
-
-/*
-  Every installed transport an installed device type uses starts now, before
-  any session: finding a device has to work before there is one to open. None
-  is chosen by configuration — what reaches a device is how it was added. MQTT
-  attaches to the broker that is already running — its devices have been
-  connected to it all along — or starts one. One that cannot run here,
-  Bluetooth in a container, is reported and left out; connections over it say
-  why they are not reached.
-*/
-const needed = new Set(types.all().flatMap((type) => type.connections.map((method) => method.transport)));
-const starting = transports.definitions().map((definition) => definition.id).filter((id) => needed.has(id));
-await transports.startAll(starting);
-for (const id of starting) {
-  const available = transports.available(id);
-  if (!available.ok) console.warn(`[transports] ${id} is unavailable here: ${available.reason}`);
-}
 
 /*
   Both modes announce themselves. Read-only saying so and write mode saying
@@ -170,56 +136,17 @@ if (config.readOnly) {
   );
 }
 
-// Sessions for the devices already in the catalog, and nothing else.
-await sessions.sync(catalog.list());
-
-const remote = new RemoteReadings(db());
-const registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports, remote });
-
-const setup = new SetupService({ db: db(), record: audit, types, protocols, transports, catalog, connections, links, sessions, http: scopedHttp });
-
-const nearby = new Nearby({ types, protocols, transports, connections });
-
-/**
- * The only path a command to hardware takes. What a part is linked to comes
- * from the links, so a command on it is verified against what it reaches.
- */
-const gateway = new ActionGateway({
-  device: (id) => {
-    const record = catalog.active(id);
-    return record ? { name: record.name, session: sessions.get(id), description: sessions.description(record), offline: sessions.health(record).detail } : null;
-  },
-  linksFrom: (id, part) => links.from(id, part).map((link) => ({ kind: link.kind, target: link.target })),
-  isReadOnly: (id) => config.readOnly && !sessions.simulated(id),
-  record: audit,
-  ledger: databaseLedger(),
-  policyValues,
-});
-
-const sampler = new Sampler(db(), registry);
-sampler.start();
-
-/** Every change of an on/off or an enum, as the server's sessions report it. */
-const changeLog = new ChangeLog(db(), bus, (id) => {
-  const record = catalog.active(id);
-  return record ? sessions.description(record) : null;
-});
-changeLog.start();
-
-/** Automations: decided here, acted on only through the gateway. */
-/** What the installed packages bring to automations: their recipes and functions. None of the core's own. */
-const library = new AutomationLibrary(types.contributions());
-const automations = new AutomationStore(db());
-const engine = new AutomationEngine({
-  store: automations,
-  library,
-  device: homeDevices(catalog, sessions),
-  gateway,
-  record: audit,
-  bus,
-});
-// Its triggers' state and its runs are in the database: a restart continues them, and ends as interrupted a run it cut short.
-engine.start();
+/*
+  Every installed transport an installed device type uses starts now, before
+  any session: finding a device has to work before there is one to open. MQTT
+  attaches to the broker that is already running — its devices have been
+  connected to it all along — or starts one. One that cannot run here,
+  Bluetooth in a container, is reported and left out. Then a session for
+  every device, sampling, and the engine, whose triggers' state and runs are
+  in the database: a restart continues them, and ends as interrupted a run it
+  cut short.
+*/
+await hub.start();
 
 /** The web container, the one proxy whose "home-network entrance" stamp is believed. */
 const proxies = new ProxyDirectory(config.trustedProxies);
@@ -230,26 +157,7 @@ proxies.start();
   and again after every change to it, so a database set aside for a new
   schema leaves a home to restore.
 */
-const configuration = new Configuration({
-  db: db(),
-  catalog,
-  connections,
-  links,
-  automations,
-  types,
-  protocols,
-  transports,
-  sessions,
-  library,
-  engine,
-  checked: plans({ db: db(), catalog, sessions, library, engine, automations }).checked,
-  policy: { values: policyValues, set: setPolicyValue },
-  sealing: serverSealing,
-  kept: serverSecrets,
-  record: audit,
-  bus,
-});
-const snapshot = new ConfigSnapshot(configuration);
+const snapshot = new ConfigSnapshot(hub.configuration);
 /*
   A database started afresh this run — a new schema set the old one aside —
   is restored from the configuration kept beside it, before anything is
@@ -274,58 +182,12 @@ try {
   console.warn(`[config] The configuration could not be kept beside the database: ${(error as Error).message}`);
 }
 
-/*
-  What the people using kraftverk are looking at, said by their apps — and
-  what follows from it: a device someone looks at is read more often.
-*/
-const attention = new Attention();
-const stopFreshness = keepWatchedFresh(attention, (device, until) => sessions.get(device)?.wantFresh?.(until));
-
-const { app, websocket } = createApp({
-  attention,
-  configuration,
-  snapshot,
-  config,
-  catalog,
-  connections,
-  links,
-  clients,
-  types,
-  protocols,
-  transports,
-  sessions,
-  registry,
-  setup,
-  nearby,
-  remote,
-  gateway,
-  events,
-  bus,
-  automations,
-  engine,
-  library,
-  sampler,
-  proxies,
-  serverLog,
-  startedAt,
-});
+const { app, websocket } = createApp({ ...homeOf(hub), snapshot, config, proxies, serverLog, startedAt });
 
 // Everything is running: from here on, stopping also closes what was opened.
-onStop(
-  stopFreshness,
-  stopSnapshot,
-  () => snapshot.stop(),
-  () => configuration.stop(),
-  () => engine.stop(),
-  () => sampler.stop(),
-  () => changeLog.stop(),
-  () => setup.stop(),
-  () => nearby.stop(),
-  () => sessions.closeAll(),
-  () => transports.stopAll()
-);
+onStop(stopSnapshot, () => snapshot.stop(), () => hub.stop());
 
-const saved = catalog.list().length;
+const saved = hub.catalog.list().length;
 console.log(
   `kraftverk API listening on http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port} ` +
     `(${transports.definitions().filter((definition) => transports.get(definition.id)).map((definition) => definition.id).join(' + ') || 'no transports running'}, ` +
