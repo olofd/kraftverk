@@ -23,6 +23,9 @@ export default function ConnectivityScreen() {
   const [list, setList] = useState<TransportList | null>(null);
   const [error, setError] = useState<string | null>(null);
   const theme = useTheme();
+  // The home's own, and — with a server — this app's, which it holds the server's ways over.
+  const theirs = list?.transports.filter((transport) => transport.holder === 'home') ?? [];
+  const mine = list?.transports.filter((transport) => transport.holder === 'this-app') ?? [];
 
   useEffect(() => {
     let live = true;
@@ -34,8 +37,6 @@ export default function ConnectivityScreen() {
       live = false;
     };
   }, [api]);
-
-  const here = holding?.registry.held() ?? [];
 
   return (
     <Screen back="App settings" backTo="/app-settings" title="Connectivity" subtitle="How devices are reached">
@@ -49,7 +50,7 @@ export default function ConnectivityScreen() {
           </Card>
         ) : null}
         {!list && !error ? <Spinner color="$accent" /> : null}
-        {list?.transports.map((transport) => (
+        {theirs.map((transport) => (
           <Card key={transport.id} gap="$2">
             <XStack alignItems="center" gap="$2">
               <Icon
@@ -79,21 +80,33 @@ export default function ConnectivityScreen() {
         ) : null}
       </YStack>
 
-      {holding ? (
+      {kind === 'server' && list ? (
         <YStack gap="$2">
           <SectionLabel>This app, for your server</SectionLabel>
           <Card inset>
-            {here.length === 0 ? <Row title={`Nothing in ${HERE}`} subtitle="This app cannot hold a connection itself here" /> : null}
-            {here.map((id, index) => {
-              const available = holding.registry.available(id);
-              const definition = holding.registry.definition(id)!;
-              return (
-                <YStack key={id}>
-                  {index > 0 ? <RowSeparator /> : null}
-                  <Row title={capitalise(definition.label)} subtitle={available.ok ? 'Available here' : available.reason} />
-                </YStack>
-              );
-            })}
+            {holding ? (
+              <Row
+                title={`Not held in ${HERE} now`}
+                subtitle={holding.problem}
+                accessory={
+                  holding.takeOver ? (
+                    <Button size="$2" onPress={holding.takeOver}>
+                      Use it here
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : mine.length === 0 ? (
+              <Row title={`Nothing in ${HERE}`} subtitle="This app cannot hold a way itself here" />
+            ) : null}
+            {holding
+              ? null
+              : mine.map((transport, index) => (
+                  <YStack key={transport.id}>
+                    {index > 0 ? <RowSeparator /> : null}
+                    <Row title={capitalise(transport.label)} subtitle={transport.availability.ok ? 'Available here' : transport.availability.reason} />
+                  </YStack>
+                ))}
           </Card>
         </YStack>
       ) : null}

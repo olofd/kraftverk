@@ -347,13 +347,13 @@ export function GenericSettings({ device }: { device: DeviceView }) {
 // --- connections ------------------------------------------------------------------
 
 /** Who holds it, in words: the home — your server, or this app keeping its own — this app for a server, or another. */
-const heldByLabel = (connection: ConnectionView, clientId: string | null, home: 'server' | 'own') =>
+const heldByLabel = (connection: ConnectionView, home: 'server' | 'own') =>
   connection.heldBy.kind === 'home'
     ? home === 'server'
       ? 'through your server'
       : `from ${HERE}`
-    : connection.heldBy.id === clientId
-      ? 'from this app'
+    : connection.heldBy.kind === 'this-app'
+      ? `from ${HERE}`
       : `from ${connection.heldBy.name}`;
 
 /**
@@ -363,7 +363,7 @@ const heldByLabel = (connection: ConnectionView, clientId: string | null, home: 
  */
 export function Connections({ device }: { device: DeviceView }) {
   const { prefer, removeConnection, setExportable } = useDevices();
-  const { holding, kind } = useHome();
+  const { kind } = useHome();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const theme = useTheme();
@@ -397,7 +397,7 @@ export function Connections({ device }: { device: DeviceView }) {
                 <XStack alignItems="center" justifyContent="space-between" gap="$2">
                   <YStack flex={1} gap={2}>
                     <Text fontSize={15} fontWeight="600" color="$color">
-                      {connection.methodLabel}, {heldByLabel(connection, holding?.clientId ?? null, kind)}
+                      {connection.methodLabel}, {heldByLabel(connection, kind)}
                     </Text>
                     <Text fontSize={12} color="$muted">
                       {connection.inUse
@@ -457,7 +457,7 @@ export function Connections({ device }: { device: DeviceView }) {
                       disabled={busy}
                       onPress={() =>
                         void act(async () => {
-                          if (await confirmAction('Remove this connection?', `${device.name} will no longer be reached ${connection.methodLabel.toLowerCase()}, ${heldByLabel(connection, holding?.clientId ?? null, kind)}.`, 'Remove')) {
+                          if (await confirmAction('Remove this connection?', `${device.name} will no longer be reached ${connection.methodLabel.toLowerCase()}, ${heldByLabel(connection, kind)}.`, 'Remove')) {
                             await removeConnection(device, connection);
                           }
                         })

@@ -1,11 +1,9 @@
 /**
- * A tiny key/value store for choices that should survive a reload.
- *
- * Web gets `localStorage`; native falls back to memory, because the app has no
- * storage dependency. What is kept is deliberately small: which servers, this
- * app's own devices in local mode, and what it owes a server. Notably *not*
- * kept: whether writes from this app are allowed. That one starts refused on
- * every launch, on purpose.
+ * The app's own choices, kept across a reload: in a browser, its
+ * `localStorage` — or memory, where a private window refuses it. What is
+ * kept is small: the servers it knows, which it uses, what a transport
+ * keeps between runs. Not kept: whether writes from this app are allowed —
+ * refused on every launch, on purpose. A phone's is `preferences.ts`.
  */
 
 const memory = new Map<string, string>();

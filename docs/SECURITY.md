@@ -127,13 +127,12 @@ Tuya local key — gives the app a short-lived placeholder, not the value.
 Saving turns the placeholder back into the secret on the server, where it is
 stored encrypted with the connection it belongs to. No secret is ever sent to a
 browser, including the one it just asked for. The one exception is by design: a
-connection held by the app itself keeps its secrets in that app's own storage,
-and they never reach the server (DATA-MODEL.md §3). In a browser they are sealed
-with AES-GCM under a key the browser generated as non-extractable and keeps in
-IndexedDB, so storage holds only ciphertext (`client/src/runtime/vault.ts`);
-where there is no such key — an origin that is not secure, which cannot use Web
-Bluetooth either — they stay in memory and are never written down. A phone keeps
-none across a restart yet.
+connection held by the app itself keeps its secrets in that app's own database,
+and they never reach the server (DATA-MODEL.md §3, §4): sealed as a home of the
+app's own seals its secrets — below — in a browser's worker or a phone's
+process (`createHolding` in `@kraftverk/hub`). A browser page that is not
+secure can hold none: it has no private file system, and no Web Bluetooth
+either.
 
 **Clickjacking, caching, sniffing.** API responses are `Cache-Control:
 no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and
@@ -147,9 +146,10 @@ browser that keeps a home of its own can run SQLite's WebAssembly build — from
 its own origin, like every script. The internet entrance adds
 `Strict-Transport-Security`. See `web/Caddyfile`.
 
-**A browser's own home.** With no server, a browser keeps its home in its
-origin's private file system, in a worker, on a secure page only. A
-connection's secrets are sealed there with AES-256-GCM, under a key itself
+**A browser's own home, and what it holds for a server.** A browser keeps its
+home — or, with a server, what it holds for it — in its origin's private file
+system, in a worker, on a secure page only. A connection's secrets are sealed
+there with AES-256-GCM, under a key itself
 sealed by a key the browser generated as non-extractable and keeps in
 IndexedDB: the files hold only what is sealed. A phone keeps the same key in
 its secure storage (`client/src/platform/`).

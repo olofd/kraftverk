@@ -11,12 +11,7 @@
     "client/src/features/devices/model.ts": "no screen in it: it belongs in a package",
     "client/src/lib/confirm.ts": "no screen in it: it belongs in a package",
     "client/src/lib/download.ts": "no screen in it: it belongs in a package",
-    "client/src/lib/preferences.ts": "no screen in it: it belongs in a package",
     "client/src/lib/servers.ts": "no screen in it: it belongs in a package",
-    "client/src/runtime/registry.ts": "no screen in it: it belongs in a package",
-    "client/src/runtime/runtime.ts": "no screen in it: it belongs in a package",
-    "client/src/runtime/uplink.ts": "no screen in it: it belongs in a package",
-    "client/src/runtime/vault.ts": "no screen in it: it belongs in a package",
     "client/src/state/live.ts": "no screen in it: it belongs in a package",
     "client/src/state/views.ts": "no screen in it: it belongs in a package"
   }

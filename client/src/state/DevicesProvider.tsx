@@ -22,11 +22,9 @@ import {
   type VersionInfo,
 } from '@kraftverk/api-client';
 import { CATEGORIES, savedDeviceId, SIMULATED_METHOD_ID, type ConnectionId, type LinkId } from '@kraftverk/device-sdk';
-import { runTool, toHold, toolsOf, withInUse } from '@kraftverk/holder';
 
 import { ASKED_AGAIN, confirmAction, withConfirmation, type ConfirmTone } from '../lib/confirm';
 import { HERE } from '../platform/here';
-import type { HeldDevice } from '../runtime/runtime';
 import { useAuth } from './AuthProvider';
 import { useHome } from './HomeProvider';
 import { applyLive } from './live';
@@ -36,13 +34,11 @@ import { createViews, type Views } from './views';
 /**
  * The things you have, whoever holds them.
  *
- * The list is the home's (`useHome`): a server's, or the app's own — one
- * interface either way, so nothing here asks which. With a server, the
- * connections this app holds itself run here too (`holding`), and their
- * readings replace what the server last heard, because this app has them
- * first. A device is one `DeviceView`, and its screens get actions that
- * reach whoever holds its connection in use: the home, or this app's own
- * session. No screen asks which.
+ * The list is the home's (`useHome`): a server's, with what this app holds
+ * for it wrapped in, or the app's own — one interface either way, so
+ * nothing here asks which. A device is one `DeviceView`, and its screens
+ * get actions that the home sends to whoever holds its connection in use:
+ * the server, or this app's own gateway. No screen asks which.
  */
 
 /**
@@ -124,7 +120,7 @@ const DevicesContext = createContext<DevicesContextValue | null>(null);
 export function DevicesProvider({ children }: { children: ReactNode }) {
   const servers = useServers();
   const { allowed } = useAuth();
-  const { api, holding, kind, writesAllowed } = useHome();
+  const { api, kind, writesAllowed } = useHome();
   const mode = servers.mode;
   // A server's list is read once signed in; the app's own, always.
   const reading = kind === 'own' || allowed;
@@ -135,7 +131,6 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [unreachable, setUnreachable] = useState(false);
   const [version, setVersion] = useState<VersionInfo | null>(null);
-  const [tick, setTick] = useState(0);
   /** Who hears that an automation moved: the screens showing one, while they are open. */
   const automationListeners = useRef(new Set<(id: string) => void>());
   const onAutomation = useCallback((listener: (id: string) => void) => {
@@ -167,19 +162,11 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     };
   }, [views]);
 
-  // Any change in what this app holds for a server is something a card shows.
-  useEffect(() => holding?.subscribe(() => setTick((n) => n + 1)), [holding]);
-
-  // With a server: who this app is to it, what it is, and how much is a load — the gateway here uses its word for devices this app holds.
+  // With a server: what it is, and whether it refuses every write.
   useEffect(() => {
-    if (!holding || !allowed) return;
-    void holding.register().catch(() => undefined);
+    if (kind !== 'server' || !allowed) return;
     void fetchVersion().then(setVersion).catch(() => undefined);
-    void api.policy
-      .list()
-      .then((values) => holding.setPolicyValues(Object.fromEntries(values.map((value) => [value.name, value.value]))))
-      .catch(() => undefined);
-  }, [allowed, api, holding]);
+  }, [allowed, kind]);
 
   const load = useCallback(async () => {
     if (!reading) {
@@ -298,85 +285,21 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, load, reading]);
 
-  // --- what this app holds for a server -------------------------------------------
+  // --- one list: the home says, of a device this app holds, what this app hears ------
 
-  const heldList = useMemo((): HeldDevice[] => {
-    if (!holding) return [];
-    return served.flatMap((device): HeldDevice[] => {
-      const connection = toHold(device, holding.clientId);
-      if (!connection) return [];
-      return [
-        {
-          id: device.id,
-          name: device.name,
-          typeId: device.typeId,
-          identity: device.identity,
-          config: device.config,
-          removedAt: null,
-          description: device.description,
-          descriptionSource: device.descriptionSource,
-          info: device.info,
-          // Its secrets live here, never on the server: the holding reads them from its vault.
-          connections: [{ id: connection.id, method: connection.method, transport: connection.transport, address: connection.address, config: connection.config, heldBy: connection.heldBy.kind === 'client' ? connection.heldBy.id : null }],
-        },
-      ];
-    });
-    // `tick`: the client id changes underneath.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [holding, served, tick]);
-
-  const heldKey = JSON.stringify(heldList.map((held) => [held.id, held.config, held.connections.map((connection) => [connection.id, connection.config])]));
-  const heldRef = useRef(heldList);
-  heldRef.current = heldList;
-  useEffect(() => {
-    if (!holding) return;
-    void (async () => {
-      for (const held of heldRef.current) if (!holding.sessions.get(held.id)) await holding.refreshStore(held.id);
-      await holding.hold(heldRef.current);
-    })();
-  }, [heldKey, holding]);
-
-  // --- one list -----------------------------------------------------------------
-
-  const devices = useMemo((): DeviceView[] => {
-    if (!holding) return served;
-    // What this app holds, it knows first: its readings and health replace the server's.
-    return served.map((device) => {
-      const session = holding.sessions.get(device.id);
-      const health = holding.health(device.id);
-      const held = holding.held(device.id);
-      // Which secrets a connection this app holds has: the server never knows.
-      const mine = (connection: ConnectionView) => connection.heldBy.kind === 'client' && connection.heldBy.id === holding.clientId;
-      const connections = device.connections.map((connection) => (mine(connection) ? { ...connection, secrets: Object.keys(holding.heldSecrets(connection.id)) } : connection));
-      if (!session && !health) return { ...device, connections };
-      return {
-        ...device,
-        readings: session?.readings() ?? device.readings,
-        health: health ?? device.health,
-        tools: session ? toolsOf(holding.registry.types.get(device.typeId)?.tools, session).map(({ name, spec }) => ({ name, ...spec })) : device.tools,
-        connections: withInUse(
-          // What this app holds, it knows first: whether its own connection reaches the device.
-          connections.map((connection) => (held && connection.id === held.connection.id ? { ...connection, reachable: health?.status === 'connected' } : connection)),
-          held?.connection.id ?? null
-        ),
-      };
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [holding, served, tick]);
-
-  useEffect(() => holding?.setView(devices), [devices, holding]);
+  const devices = served;
 
   // --- what a device's screens can do -------------------------------------------
 
   const holderOf = useCallback(
     (device: DeviceView): InUseBy => {
-      if (holding?.sessions.get(device.id)) return 'this-app';
       const inUse = device.connections.find((connection) => connection.inUse);
-      if (inUse?.heldBy.kind === 'client') return inUse.heldBy.id === holding?.clientId ? 'this-app' : 'other-app';
+      if (inUse?.heldBy.kind === 'this-app') return 'this-app';
+      if (inUse?.heldBy.kind === 'client') return 'other-app';
       if (device.connections.some((connection) => connection.heldBy.kind === 'home')) return 'home';
       return 'none';
     },
-    [holding]
+    []
   );
 
   /**
@@ -397,71 +320,14 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     []
   );
 
-  /** A tool this app runs itself that says what it cannot undo is asked about first, as the home does for its own; no, and it does not run. */
-  const confirmedTool = useCallback(async (spec: { label: string; confirm?: string } | undefined) => {
-    if (!spec?.confirm) return;
-    // A tool asks only when it declares what it cannot undo.
-    if (!(await confirmAction(`${spec.label}?`, spec.confirm, spec.label, 'dangerous'))) throw new Error('Not confirmed');
-  }, []);
-
   const actionsFor = useCallback(
     (device: DeviceView): DeviceActions => {
       const holder = holderOf(device);
       /** A write is dangerous when it touches a setting its device declares so: one that can harm the hardware. */
       const toneOf = (patch: Record<string, unknown>): ConfirmTone =>
         device.description.attributes.some((attribute) => attribute.dangerous && attribute.key in patch) ? 'dangerous' : 'careful';
-      if (holder === 'this-app' && holding) {
-        const session = () => {
-          const open = holding.sessions.get(device.id);
-          if (!open) throw new Error(holding.health(device.id)?.detail ?? 'This app is not connected to it yet');
-          return open;
-        };
-        return {
-          // The holder's own check, as the home's: the input the tool asks for, the answer it declares.
-          tool: async <T,>(name: string, input: Record<string, unknown> = {}) => {
-            const spec = holding.registry.types.get(device.typeId)?.tools?.[name];
-            await confirmedTool(spec);
-            try {
-              const answer = await runTool({ deviceName: device.name, name, spec, session: session(), input, readOnly: !holding.allowWrites });
-              if (spec?.writes) holding.uplink.audit({ at: new Date().toISOString(), kind: 'device.tool', resourceKind: 'device', resource: device.id, summary: `Ran ${spec.label.toLowerCase()} on "${device.name}"`, detail: { tool: name, input } });
-              // Checked against its declaration above: T is that declaration's shape.
-              return answer as T;
-            } catch (error) {
-              if (spec?.writes) holding.uplink.audit({ at: new Date().toISOString(), kind: 'device.tool-refused', resourceKind: 'device', resource: device.id, summary: `${spec.label} on "${device.name}" was refused: ${(error as Error).message}`, detail: { tool: name, input } });
-              throw error;
-            }
-          },
-          // The gateway's write, here as in the home: types, confirmation, read-back, audit.
-          write: (patch) =>
-            confirmed(
-              (confirmation) =>
-                holding.gateway.write({
-                  deviceId: device.id as SavedDeviceId,
-                  patch,
-                  actor: 'user',
-                  by: holding.clientId ? `app:${holding.clientId}` : 'this app',
-                  confirmation,
-                }),
-              toneOf(patch)
-            ).then(settled),
-          command: (input: CommandInput) =>
-            confirmed((confirmation) =>
-              holding.gateway.execute({
-                deviceId: device.id as SavedDeviceId,
-                part: input.part,
-                capability: input.capability as never,
-                command: input.command,
-                args: input.args,
-                reason: input.reason ?? 'From this app',
-                actor: 'user',
-                by: holding.clientId ? `app:${holding.clientId}` : 'this app',
-                confirmation,
-              })
-            ),
-          diagnostic: null,
-        };
-      }
-      if (holder === 'home') {
+      // The home sends each to whoever holds the device: the server, or this app's own gateway and session.
+      if (holder === 'home' || holder === 'this-app') {
         const inUse = device.connections.find((connection) => connection.inUse) ?? device.connections.find((connection) => connection.heldBy.kind === 'home');
         return {
           // The home asks, for a tool that cannot be undone: its question, with a token for the yes.
@@ -489,7 +355,8 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
             confirmed((confirmation) =>
               api.devices.command(device.id, input.part, input.capability, input.command, { args: input.args, ...(input.reason ? { reason: input.reason } : {}), ...(confirmation ? { confirmation } : {}) })
             ),
-          diagnostic: inUse
+          // A transport's diagnostics are the home's: this app's own have none to show.
+          diagnostic: inUse && holder === 'home'
             ? <T,>(name: string, query?: Record<string, string | number>) =>
                 api.transports.diagnostic(inUse.transport, name, Object.fromEntries(Object.entries(query ?? {}).map(([key, value]) => [key, String(value)]))) as Promise<T>
             : null,
@@ -505,7 +372,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         diagnostic: null,
       };
     },
-    [api, confirmed, confirmedTool, holderOf, holding]
+    [api, confirmed, holderOf]
   );
 
   const screenProps = useCallback(
@@ -527,15 +394,13 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
         readOnly:
           inUse?.method === SIMULATED_METHOD_ID
             ? false
-            : holder === 'this-app'
-              ? !holding?.allowWrites
-              : kind === 'own'
-                ? !writesAllowed
-                : (version?.readOnly ?? false),
+            : holder === 'this-app' || kind === 'own'
+              ? !writesAllowed
+              : (version?.readOnly ?? false),
         version: holder === 'home' && kind === 'server' ? version : null,
       };
     },
-    [actionsFor, holderOf, holding, kind, version, writesAllowed]
+    [actionsFor, holderOf, kind, version, writesAllowed]
   );
 
   // --- changing the list ----------------------------------------------------------
@@ -570,19 +435,12 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       setKey: (id, key) => mutate(() => api.devices.update(savedDeviceId(id), { key })),
       setExportable: (device, connection, exportable) => mutate(() => api.connections.setExportable(device.id, connection.id as ConnectionId, exportable)),
       setPicture: (id, picture) => mutate(() => api.devices.setPicture(savedDeviceId(id), picture)),
-      remove: async (id) => {
-        await holding?.sessions.close(savedDeviceId(id));
-        await mutate(() => api.devices.remove(savedDeviceId(id)));
-      },
+      remove: (id) => mutate(() => api.devices.remove(savedDeviceId(id))),
       deleteHistory: (id, name) => mutate(() => api.devices.deleteHistory(savedDeviceId(id), name)),
       prefer: (device, connection) => mutate(() => api.connections.prefer(device.id, connection.id as ConnectionId)),
       removeConnection: (device, connection) => mutate(() => api.connections.remove(device.id, connection.id as ConnectionId)),
       setSecrets: async (device, connection, secrets) => {
-        // A connection an app holds for a server keeps its secrets in that app: they are never sent (§4.3).
-        if (holding && connection.heldBy.kind === 'client' && connection.heldBy.id === holding.clientId) {
-          holding.setHeldSecrets(connection.id, secrets);
-          return;
-        }
+        // A way another app holds keeps its secrets in that app (§4.3); this app's own, the home keeps here.
         if (connection.heldBy.kind === 'client') throw new Error(`Its secrets are kept by ${connection.heldBy.name}: change them there`);
         await mutate(() => api.connections.setSecrets(device.id, connection.id as ConnectionId, secrets));
       },
@@ -592,7 +450,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       onAutomation,
       views,
     }),
-    [actionsFor, api, devices, error, heard, holderOf, holding, live, load, loading, mode, mutate, onAutomation, removed, screenProps, unreachable, version, views]
+    [actionsFor, api, devices, error, heard, holderOf, live, load, loading, mode, mutate, onAutomation, removed, screenProps, unreachable, version, views]
   );
 
   return <DevicesContext.Provider value={value}>{children}</DevicesContext.Provider>;

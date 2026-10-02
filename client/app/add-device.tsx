@@ -8,15 +8,16 @@ import {
   type CheckOutcome,
   type DeviceTypeListing,
   type DeviceView,
+  type Holder,
   type SaveInput,
 } from '@kraftverk/api-client';
-import { isSimulated, LINK_KIND_IDS, linkableParts, linkKindSpec, MAIN_PART, methodOf, partName, type DeviceDescription } from '@kraftverk/device-sdk';
+import { LINK_KIND_IDS, linkableParts, linkKindSpec, MAIN_PART, partName, type DeviceDescription } from '@kraftverk/device-sdk';
 import { Card, Row, RowSeparator, SectionLabel, ToggleRow, haptic, Icon } from '@kraftverk/ui';
 
 import { DeviceImage } from '../src/components/DeviceImage';
 import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
-import { AppFlow, HomeFlow, type SetupFlow } from '../src/features/add/flows';
+import { HomeFlow, type SetupFlow } from '../src/features/add/flows';
 import { StepView } from '../src/features/add/steps';
 import { secretWords } from '../src/features/config/shared';
 import { confirmAction } from '../src/lib/confirm';
@@ -39,12 +40,12 @@ import { useHome } from '../src/state/HomeProvider';
 type Stage = 'category' | 'type' | 'method' | 'steps' | 'finish';
 
 /** One way to connect, and who would hold it. */
-type Way = { methodId: string; label: string; description?: string; holder: 'home' | 'this-app'; available: boolean; reason: string | null; recommended: boolean };
+type Way = { methodId: string; label: string; description?: string; holder: Holder; available: boolean; reason: string | null; recommended: boolean };
 
 export default function AddDeviceScreen() {
   const params = useLocalSearchParams<{ type?: string; method?: string; address?: string; attach?: string }>();
   const { devices, refresh } = useDevices();
-  const { api, kind, holding } = useHome();
+  const { api, kind } = useHome();
   const attachTo = params.attach ? (devices.find((device) => device.id === params.attach) ?? null) : null;
 
   const [types, setTypes] = useState<DeviceTypeListing[] | null>(null);
@@ -81,37 +82,26 @@ export default function AddDeviceScreen() {
 
   const ways = useMemo((): Way[] => {
     if (!type) return [];
-    return type.connections.flatMap((method): Way[] => {
-      // The home's own way, when it can hold it at all: through your server, or from where the app keeps its own — the home says whether it can now, and why not.
-      const rows: Way[] = type.ways
-        .filter((way) => way.method === method.id && way.holder === 'home')
+    /*
+      Every way the home offers, in its type's order: the home's own —
+      through your server, or from where the app keeps its own — and, with a
+      server, this app's own radio for it. Each says whether it can be used
+      now, and why not.
+    */
+    return type.connections.flatMap((method): Way[] =>
+      type.ways
+        .filter((way) => way.method === method.id)
         .map((way) => ({
           methodId: method.id,
-          label: `${method.label}, ${kind === 'server' ? 'through your server' : `from ${HERE}`}`,
-          description: method.description,
-          holder: 'home',
+          label: `${method.label}, ${way.holder === 'home' && kind === 'server' ? 'through your server' : `from ${HERE}`}`,
+          description: way.holder === 'this-app' ? `While ${HERE} has it: kept by your server, which hears what it says when it can.` : method.description,
+          holder: way.holder,
           available: way.availability.ok,
           reason: way.availability.ok ? null : way.availability.reason,
-          recommended: Boolean(method.recommended),
-        }));
-      // With a server, this app may hold a way itself too, over its own radio: never a simulated one, nor one the server keeps to itself.
-      if (!holding || isSimulated(method) || method.serverOnly) return rows;
-      const definition = holding.registry.definition(method.transport);
-      if (definition?.platforms.includes(HERE_PLATFORM) && holding.registry.protocols.get(method.protocol)?.bindings[method.transport]) {
-        const here = holding.registry.available(method.transport);
-        rows.push({
-          methodId: method.id,
-          label: `${method.label}, from ${HERE}`,
-          description: `While ${HERE} has it: readings go to your server when it can reach it.`,
-          holder: 'this-app',
-          available: here.ok,
-          reason: here.ok ? null : here.reason,
-          recommended: false,
-        });
-      }
-      return rows;
-    });
-  }, [holding, kind, type]);
+          recommended: way.holder === 'home' && Boolean(method.recommended),
+        }))
+    );
+  }, [kind, type]);
 
   const begin = useCallback(
     async (way: Way) => {
@@ -121,16 +111,7 @@ export default function AddDeviceScreen() {
       setError(null);
       try {
         flowRef.current?.discard();
-        let next: SetupFlow;
-        if (way.holder === 'home' || !holding) {
-          next = await HomeFlow.start(api, type.id, way.methodId);
-        } else {
-          const local = holding.registry.types.get(type.id);
-          const method = local ? methodOf(local, way.methodId) : null;
-          const protocol = method && !isSimulated(method) ? (holding.registry.protocols.get(method.protocol) ?? null) : null;
-          if (!local || !method || (!protocol && !isSimulated(method))) throw new Error('This app cannot set that up: update it');
-          next = new AppFlow(api, holding, local, method, protocol);
-        }
+        const next: SetupFlow = await HomeFlow.start(api, type.id, way.methodId, way.holder);
         flowRef.current = next;
         setFlow(next);
         setStepIndex(0);
@@ -143,7 +124,7 @@ export default function AddDeviceScreen() {
         setBusy(false);
       }
     },
-    [api, holding, type]
+    [api, type]
   );
 
   // "Found near you" names the method too: start it straight away.

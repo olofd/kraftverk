@@ -23,7 +23,7 @@ import { useServers } from '../src/state/ServersProvider';
  */
 export default function AppSettingsScreen() {
   const { mode, version, removed } = useDevices();
-  const { writesAllowed, allowWrites, holding } = useHome();
+  const { writesAllowed, allowWrites, holding, appId, kind } = useHome();
   const auth = useAuth();
   const theme = useTheme();
   const chevron = <Icon name="chevron-right" size={16} color={theme.muted?.val} />;
@@ -87,10 +87,10 @@ export default function AppSettingsScreen() {
               void allowWrites(next);
             }}
           />
-          {holding ? (
+          {kind === 'server' ? (
             <>
               <RowSeparator />
-              <Row title="Known to the server as" subtitle={holding.clientId ? `App ${holding.clientId}` : 'Not registered yet'} />
+              <Row title="Known to the server as" subtitle={appId ? `App ${appId}` : (holding?.problem ?? 'Not registered yet')} />
             </>
           ) : null}
         </Card>
@@ -141,7 +141,7 @@ export default function AppSettingsScreen() {
  * this app holds for it.
  */
 function HomePolicy() {
-  const { api, holding } = useHome();
+  const { api } = useHome();
   const [kept, setKept] = useState<PolicyValues>({});
   const [values, setValues] = useState<Record<string, string>>({});
   const [problem, setProblem] = useState<string | null>(null);
@@ -150,7 +150,6 @@ function HomePolicy() {
   const took = (now: { name: PolicyValueName; value: number | null }[]) => {
     const next = Object.fromEntries(now.filter((item) => item.value !== null).map((item) => [item.name, item.value])) as PolicyValues;
     setKept(next);
-    holding?.setPolicyValues(next);
   };
   useEffect(() => {
     void api.policy
@@ -286,7 +285,7 @@ function Servers() {
         >
           <Row
             title="Local only"
-            subtitle="This app keeps its own devices and holds every connection. No history, and nothing runs while the app is closed."
+            subtitle="This app keeps its own devices, their history and their automations, and holds every connection. Nothing runs while the app is closed."
             accessory={
               servers.active ? null : <Icon name="check" size={16} color={theme.accent?.val} />
             }

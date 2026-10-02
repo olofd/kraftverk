@@ -1,6 +1,6 @@
 import { API_PORT } from '@kraftverk/api-client';
 
-import { readPreference, writePreference, clearPreference } from './preferences';
+import { readPreference, writePreference, clearPreference } from '../platform/preferences';
 
 /**
  * The kraftverk servers this app knows about.

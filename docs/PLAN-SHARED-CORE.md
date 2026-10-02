@@ -457,7 +457,7 @@ arrangement of those ports; how the screens reach it is always
 - **A phone pays for nothing a browser needs.** No worker, no messages,
   no WebAssembly: the hub is a plain object in the app's process, as on
   the server. Each place is a file of its own under `client/src/platform/`,
-  chosen by Metro's platform extension (`own.ts` a phone's, `own.web.ts`
+  chosen by Metro's platform extension (`open.ts` a phone's, `open.web.ts`
   beside it a browser's, as the app's other web-only files are), so one's
   code is never in the other's bundle.
 - **A browser pays only for what it must.** The worker exists because a

@@ -1,19 +1,22 @@
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 
-import { hear, serveApi, transportOver, type MessageEnd } from '@kraftverk/message-port';
+import { apiOver, hear, serveApi, transportOver, type MessageEnd } from '@kraftverk/message-port';
 import { fromSqliteWasm, schemaFingerprint, type SqliteWasmDatabase } from '@kraftverk/store';
 
 import { sealedWithKey } from '../cipher';
-import { appHub, readyDatabase } from './hub';
-import { OWNER } from './home';
+import { appHolding, appHub, readyDatabase } from './hub';
+import { databaseFile, OWNER } from './home';
 import type { ToPage, ToWorker } from './worker-messages';
 
 /*
-  A browser's own home, in its worker (docs/PLAN-SHARED-CORE.md, "SQLite in
-  the app" and phase 6d): the hub on SQLite's own WebAssembly build, its
-  file in the origin's private file system, served to the page over
-  `@kraftverk/message-port` — the screens ask it as `KraftverkApi`, and it
-  reaches the transports the page runs as if they were its own.
+  A browser's home, in its worker (docs/PLAN-SHARED-CORE.md, "SQLite in the
+  app" and phase 6): without a server, the hub on SQLite's own WebAssembly
+  build; with one, what this browser holds for it — the server's interface
+  served by the page, this browser's own ways wrapped in. Its file is in
+  the origin's private file system; it is served to the page over
+  `@kraftverk/message-port` — the screens ask it as `KraftverkApi` — and it
+  reaches the transports the page runs as if they were its own. One worker
+  for both, so this browser's radio has one owner.
 
   Bundled on its own, beside `sqlite3.wasm` (scripts/build-home-worker.mjs):
   nothing here is the page's, and nothing of the page is here.
@@ -109,33 +112,52 @@ async function start(open: Extract<ToWorker, { kind: 'open' }>) {
   const pool = await sqlite3.installOpfsSAHPoolVfs(POOL);
   // Room for this schema's file and its journal, beside any an older schema left.
   if (Number(pool.getCapacity()) - pool.getFileCount() < 4) await pool.addCapacity(4);
-  // A new schema is a new file: the one before is left as it was (strict version 1).
-  const database = readyDatabase(fromSqliteWasm(new pool.OpfsSAHPoolDb(`/kraftverk-${schemaFingerprint()}.db`) as unknown as SqliteWasmDatabase), 'web');
+  // A new schema is a new file: the one before is left as it was (strict version 1). With a server, one of its own.
+  const database = readyDatabase(fromSqliteWasm(new pool.OpfsSAHPoolDb(`/${databaseFile(schemaFingerprint(), open.server?.key)}`) as unknown as SqliteWasmDatabase), 'web');
 
   let writes = open.writes;
   const served = new Set(open.serves);
-  const hub = appHub({
+  const place = {
     database,
     secrets: sealedWithKey(await secretsKey()),
-    platform: 'web',
+    platform: 'web' as const,
     // Every transport runs on the page, where the browser's own are; here, each is reached over the port.
-    transport: (definition) => (served.has(definition.id) ? transportOver(definition, scope, `transport:${definition.id}`) : null),
+    transport: (definition: Parameters<typeof transportOver>[0]) => (served.has(definition.id) ? transportOver(definition, scope, `transport:${definition.id}`) : null),
     readOnly: () => !writes,
-  });
+  };
+  /** Everything let go, in order: nothing served, the home stopped, the database closed, the pool's files released. */
+  const letGo = async (stopServing: () => void, stopHome: () => Promise<void>) => {
+    stopServing();
+    await stopHome();
+    database.close();
+    pool.pauseVfs();
+  };
+
+  if (open.server) {
+    // The server's interface, as the page asks it: the page signs in, and its address is the page's to know.
+    const holding = appHolding({ ...place, home: apiOver(scope, 'server'), name: open.server.name });
+    await holding.start();
+    const stopServing = serveApi(holding.api, scope, 'api');
+    return {
+      appId: holding.appId,
+      allowWrites: async (allowed: boolean) => {
+        writes = allowed;
+        await holding.reopen();
+      },
+      stop: () => letGo(stopServing, () => holding.stop()),
+    };
+  }
+
+  const hub = appHub(place);
   await hub.start();
   const stopServing = serveApi(hub.as(OWNER), scope, 'api');
   return {
+    appId: null,
     allowWrites: async (allowed: boolean) => {
       writes = allowed;
       await hub.sessions.sync(hub.catalog.list());
     },
-    /** Everything let go, in order: nothing served, the hub stopped, the database closed, the pool's files released. */
-    stop: async () => {
-      stopServing();
-      await hub.stop();
-      database.close();
-      pool.pauseVfs();
-    },
+    stop: () => letGo(stopServing, () => hub.stop()),
   };
 }
 
@@ -163,7 +185,7 @@ async function open(message: Extract<ToWorker, { kind: 'open' }>) {
       say({ via: 'home', kind: 'failed', message: (error as Error).message });
       return;
     }
-    say({ via: 'home', kind: 'ready' });
+    say({ via: 'home', kind: 'ready', appId: home.appId });
     const why = await released;
     await home.stop();
     home = null;

@@ -1,5 +1,6 @@
 import type { TransportDefinition, TransportFactory } from '@kraftverk/device-sdk';
-import { createHub, installedFrom, type Hub } from '@kraftverk/hub';
+import type { KraftverkApi } from '@kraftverk/api-contract';
+import { createHolding, createHub, installedFrom, type Holding, type Hub, type Installed } from '@kraftverk/hub';
 import { AuditLog, createSchema, prepareDatabase, schemaStateOf, transportStore, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import { DEVICE_TYPES, PROTOCOLS, TRANSPORTS } from '../../generated/installed';
@@ -9,11 +10,12 @@ import { appHttp } from '../http';
 export { OWNER } from './home';
 
 /*
-  The app's own home (docs/PLAN-SHARED-CORE.md, phase 6): the hub the
-  server runs, made from what the app installed (its generated registry)
-  and from what the place it runs gives it — a phone's SQLite in the app's
-  own process, or a browser's in its worker. This is the part both places
-  share; each puts its own pieces in (`own.ts`, `own.web.ts`).
+  The app's home (docs/PLAN-SHARED-CORE.md, phase 6): the hub the server
+  runs — or, with a server, what this app holds for it — made from what
+  the app installed (its generated registry) and from what the place it
+  runs gives it: a phone's SQLite in the app's own process, or a browser's
+  in its worker. This is the part both places share; each puts its own
+  pieces in (`open.ts`, `open.web.ts`).
 */
 
 /** A database ready to keep a home in: one with this schema, or a new one given it. Another schema is never written over. */
@@ -35,19 +37,25 @@ export type AppPlace = {
   readOnly: () => boolean;
 };
 
-/** The app's home in this place: not started; `start()` it. */
-export function appHub(place: AppPlace): Hub {
-  const log = (level: 'info' | 'warn' | 'error', message: string) => console[level === 'info' ? 'log' : level](message);
-  // Its timeline, made here so what a transport records goes on it too.
-  const audit = new AuditLog(place.database);
-  const installed = installedFrom(
+const log = (level: 'info' | 'warn' | 'error', message: string) => console[level === 'info' ? 'log' : level](message);
+
+/** What the app installed (its generated registry), with each transport made as this place makes it; what a transport records goes to `record`. */
+function appInstalled(place: AppPlace, record: (entry: Parameters<AuditLog['record']>[0]) => void): Installed {
+  return installedFrom(
     { types: DEVICE_TYPES, protocols: PROTOCOLS, transports: TRANSPORTS.map((definition) => ({ definition, create: place.transport(definition) })) },
     {
       platform: place.platform,
-      context: { env: {}, log, audit: (entry) => audit.record({ at: new Date().toISOString(), ...entry }) },
+      context: { env: {}, log, audit: (entry) => record({ at: new Date().toISOString(), ...entry }) },
       store: (id) => transportStore(place.database, id),
     }
   );
+}
+
+/** The app's home in this place: not started; `start()` it. */
+export function appHub(place: AppPlace): Hub {
+  // Its timeline, made here so what a transport records goes on it too.
+  const audit = new AuditLog(place.database);
+  const installed = appInstalled(place, (entry) => audit.record(entry));
   return createHub({
     database: place.database,
     audit,
@@ -61,4 +69,26 @@ export function appHub(place: AppPlace): Hub {
     owner: 'client',
     log,
   });
+}
+
+/**
+ * What this app holds for a server's home, in this place: the server's
+ * `KraftverkApi` with this app's own ways wrapped in, kept in this app's
+ * own database. Not started; `start()` it.
+ */
+export function appHolding(place: AppPlace & { home: KraftverkApi; name: string }): Holding {
+  // What a transport records is owed to the server's timeline, as the holding's own entries are.
+  let holding: Holding | null = null;
+  const installed = appInstalled(place, (entry) => holding?.owe('audit', null, entry));
+  holding = createHolding({
+    home: place.home,
+    database: place.database,
+    secrets: place.secrets,
+    installed,
+    app: { name: place.name, platform: place.platform },
+    readOnly: place.readOnly,
+    http: appHttp,
+    log,
+  });
+  return holding;
 }
