@@ -16,6 +16,11 @@ import { testDatabase } from './home.ts';
   that — like the owner's — sometimes stays idle when its power comes on, and
   wakes when its plug is switched off and on again. A second of a step is a
   few milliseconds here.
+
+  Here, not in the engine's package: they run the engine over the real
+  store — its foreign keys, its transactions, a run kept at every step —
+  which only a package above both can, and the hub is the one that puts
+  them together. A store of the tests' own would test a store nobody runs.
 */
 
 let db: SqlDatabase;

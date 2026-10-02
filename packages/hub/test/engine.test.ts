@@ -13,8 +13,13 @@ import { testDatabase } from './home.ts';
 /*
   The engine runs rules — whoever wrote them — and the gateway acts: these
   check the deciding, each kind of trigger, and that nothing reaches the
-  gateway unless the automation is armed. The gateway's own rules are its own
-  tests' business, and the recipes the packages ship are theirs.
+  gateway unless the automation is let act. The gateway's own rules are its
+  own tests' business, and the recipes the packages ship are theirs.
+
+  Here, not in the engine's package: they run the engine over the real
+  store — its foreign keys, its transactions, a run kept at every step —
+  which only a package above both can, and the hub is the one that puts
+  them together. A store of the tests' own would test a store nobody runs.
 */
 
 let db: SqlDatabase;
