@@ -1,7 +1,5 @@
 import type { LiveStream, LiveUpdate, ViewReport } from '@kraftverk/api-contract';
 
-import { getApiBaseUrl } from './api';
-
 /**
  * The server's live stream (`GET /api/live`): what changed, as it changes.
  *
@@ -24,8 +22,9 @@ export type LiveState = 'connecting' | 'live' | 'down';
 const RETRY_MS = [1000, 2000, 5000, 10_000, 30_000];
 
 /** `http://host:3333/api` → `ws://host:3333/api/live`; a path alone is this page's server. */
-export function liveUrl(base: string = getApiBaseUrl()): string {
-  const origin = typeof window !== 'undefined' && window.location?.href ? window.location.href : 'http://localhost/';
+export function liveUrl(base: string): string {
+  const page = (globalThis as { location?: { href?: string } }).location?.href;
+  const origin = page ?? 'http://localhost/';
   const url = new URL(`${base.replace(/\/$/, '')}/live`, origin);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   return url.toString();
@@ -36,8 +35,8 @@ export type LiveOptions = {
   onState?: (state: LiveState) => void;
   /** What the screen shows now: said each time the socket opens. */
   view?: () => ViewReport | null;
-  /** Where it is; the server the app points at, when not given. */
-  url?: string;
+  /** Where it is: `liveUrl` of the server's address. */
+  url: string;
   /** For tests: how a socket is made. */
   socket?: (url: string) => WebSocket;
 };
@@ -67,7 +66,7 @@ export function openLive(options: LiveOptions): LiveStream {
     state('connecting');
     let opened = false;
     try {
-      const url = options.url ?? liveUrl();
+      const url = options.url;
       socket = options.socket ? options.socket(url) : new WebSocket(url);
     } catch {
       retry();

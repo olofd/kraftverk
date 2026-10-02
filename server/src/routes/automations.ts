@@ -43,6 +43,12 @@ export function automationRoutes(deps: AppDeps): Hono {
 
   api.get('/automations/recipes', async (c) => c.json(await homeFor(deps, c).automations.kit()));
 
+  /** A recipe copied into a rule of its own, its settings written into its blocks: what a new automation starts from. */
+  api.post('/automations/recipes/:id/copy', async (c) => {
+    const { params } = await body(c, z.object({ params: z.record(z.string().min(1).max(40), z.union([z.string().max(200), z.number(), z.boolean(), z.null()])).default({}) }).strict());
+    return c.json(await homeFor(deps, c).automations.fromRecipe(c.req.param('id'), params));
+  });
+
   api.post('/automations/draft', async (c) => {
     const input = await body(c, draft.extend({ self: z.string().min(1).max(80).nullable().optional() }).strict());
     return c.json(await homeFor(deps, c).automations.draft(asDraft(input), input.self ? automationId(input.self) : null));

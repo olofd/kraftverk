@@ -301,6 +301,14 @@ gone. Every route is an adapter — validate, `hub.as(callerOf(c))`, answer
 — and `AppDeps` is the hub and what is the server's own. The assistant's
 MCP tools ask the home as an agent. Emptying the database is
 `hub.reset()`; who may is the server's.
+Phase 5e (2026-10-02), over HTTP — `httpApi({ baseUrl, fetch })` in
+`@kraftverk/api-client/http` is `KraftverkApi` through the routes and the
+live socket, on `fetch`, handed its address, a refusal read back into the
+hub's `ApiError`. One suite asks the same questions of the home in the
+process and over HTTP, and both answer alike (`server/src/api.test.ts`).
+The app's older calls stay until phase 6 moves it onto the interface.
+**Phase 5 is done**: the server is the HTTP adapter, accounts, the
+broker's start and the disk; the home is the hub's.
 
 ### Phase 5, in detail
 
@@ -361,9 +369,8 @@ then has one interface in both modes, and never branches on which.
     The hub implements it for a caller; each route becomes: validate,
     `hub.as(caller)`, answer — the logic left in the routes moves into the
     hub with it. MCP's tools call the same interface as an agent.
-5e. **Over HTTP.** `api-client` implements `KraftverkApi` over HTTP and
-    the socket, handed the server's address (finding it moves to the app's
-    platform). The API's tests run against both, and agree.
+5e. **Over HTTP** — done, above. Finding the server's address moves to the
+    app's platform with phase 6.
 
 Phase 6 then puts the app on the interface: `createHub` on expo-sqlite or
 sql.js with no server, `createHolding` beside `api-client` with one; the

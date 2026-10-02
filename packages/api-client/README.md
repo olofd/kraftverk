@@ -2,18 +2,22 @@
 
 ## What it is
 
-The app's client of a kraftverk server: every endpoint as a typed call,
-the live stream, and the generic screens' requests.
+A kraftverk home over HTTP: `httpApi({ baseUrl })` is `KraftverkApi` — the
+one interface the hub answers in the process — through a server's routes
+and its live socket; and the generic screens' slots.
 
 ## What it does — and does not
 
-- **Does:** calls the server's routes with the session cookie and the
-  header that marks a request as the app's; opens the live stream, says
-  what the screen shows back on it, and reopens it with a growing wait.
-- **Does not:** decide anything. It carries what the server says.
-  Today it finds the server's address through React Native; that moves to
-  the app's platform, so a CLI or a test can use it too, and it implements
-  `KraftverkApi` over HTTP (docs/PLAN-SHARED-CORE.md, phase 5).
+- **Does:** every call of `KraftverkApi` as the route it is, with the
+  session cookie and the header that marks a request as the app's, on
+  `fetch` — a browser's, a phone's, Bun's, a test's — at the address it is
+  handed (`@kraftverk/api-client/http`, which needs no React Native); a
+  refusal back as the `ApiError` the hub threw; the live stream, said what
+  the screen shows, and opened again with a growing wait.
+- **Does not:** decide anything, or find the server: it carries what the
+  home says, where it is told the home is. The older calls beside it
+  (`api.ts`), which find the address through React Native, go when the app
+  asks `KraftverkApi` alone (docs/PLAN-SHARED-CORE.md, phase 6).
 
 ## Where it fits
 

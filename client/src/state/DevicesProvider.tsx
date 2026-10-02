@@ -15,6 +15,8 @@ import {
   fetchPolicy,
   fetchProblems,
   fetchVersion,
+  getApiBaseUrl,
+  liveUrl,
   openLive,
   preferConnection,
   removeConnection as apiRemoveConnection,
@@ -350,7 +352,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     };
     const start = () => {
       // Each time it opens, it says what the screen shows: the server keeps that only while it is open.
-      stream.current ??= openLive({ onUpdate, onState: setLive, view: () => views.current() });
+      stream.current ??= openLive({ url: liveUrl(getApiBaseUrl()), onUpdate, onState: setLive, view: () => views.current() });
     };
     const stop = () => {
       stream.current?.close();

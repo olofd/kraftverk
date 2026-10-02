@@ -87,6 +87,13 @@ export function deviceRoutes(deps: AppDeps): Hono {
     return c.json(result, result.outcome === 'refused' ? 409 : 200);
   });
 
+  /** A query a part's capability declares — a forecast's hours — answered in the type it declares. */
+  api.post('/devices/:id/parts/:part/queries/:capability/:query', async (c) => {
+    const { args } = await body(c, z.object({ args: z.record(z.string().max(64), VALUE).default({}) }).strict());
+    const answer: unknown = await homeFor(deps, c).devices.query(id(c.req.param('id')), c.req.param('part'), c.req.param('capability'), c.req.param('query'), args);
+    return c.json(answer);
+  });
+
   /** A tool that only reads is a GET, its input in the query; one that writes is a POST. */
   api.get('/devices/:id/tools/:name', async (c) => c.json(await homeFor(deps, c).devices.tool(id(c.req.param('id')), c.req.param('name'), { input: c.req.query(), reading: true })));
 
