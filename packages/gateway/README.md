@@ -22,8 +22,9 @@ it, and it decides, sends, and checks what the device then says.
 ## Where it fits
 
 A rule of the layers just above the contract (docs/PLAN-SHARED-CORE.md):
-it imports only `@kraftverk/device-sdk`. The server and the app each run it
-over the devices they hold; the engine and the hub hand it every action.
+it imports only `@kraftverk/device-sdk`. Every node's hub runs one over the
+devices that node holds — on a server, in a browser, on a phone — and the
+engine and the hub hand it every action.
 
 ## Why a package of its own
 

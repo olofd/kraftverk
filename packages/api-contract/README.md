@@ -9,13 +9,14 @@ thrown by the hub and carried over HTTP as the same error.
 
 ## What it does — and does not
 
-- **Does:** declare each shape once, for the server that sends it and the
-  app that reads it; re-export the contract's and the language's types the
-  API speaks in. It will hold `KraftverkApi`, the one interface a home is
-  reached through, whether in the process or over HTTP
-  (docs/PLAN-SHARED-CORE.md, phase 5).
-- **Does not:** implement anything — not the routes (the server's), not the
-  calls (`@kraftverk/api-client`'s). The architecture check refuses a shape
+- **Does:** declare each shape once, for the hub that answers in it and
+  the app that reads it; re-export the contract's and the language's types
+  the API speaks in; and hold `KraftverkApi`, the one interface a home is
+  reached through — the hub's in the same process, or the server's over
+  HTTP.
+- **Does not:** implement anything — not the answers (the hub's), not the
+  routes that carry them (the server's), not the calls
+  (`@kraftverk/api-client`'s). The architecture check refuses a shape
   declared again beside it.
 
 ## Where it fits

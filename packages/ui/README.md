@@ -8,9 +8,14 @@ React, React Native and Tamagui.
 
 ## What it does — and does not
 
-- **Does:** draw; and draw a form from a config schema, so a device's
-  settings need no screen of their own.
-- **Does not:** fetch, decide or keep anything, or know any device type.
+- **Does:** draw; draw a form from a config schema, so a device's
+  settings need no screen of their own; work out what drawing needs — how a
+  value and its unit read, a chart's axis and gaps, the flow of energy
+  through a device from its description; and hold what a control shows
+  between a person's touch and the device's answer (the write gate, a
+  slider's value while it moves).
+- **Does not:** fetch, keep anything past the screen, decide what a device
+  does (the gateway's), or know any device type.
 
 ## Where it fits
 

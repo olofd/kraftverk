@@ -4,10 +4,11 @@
 
 kraftverk's data model (docs/DATA-MODEL.md) as one SQLite schema and the
 stores that keep to it. The server keeps a home in a file through
-bun:sqlite; the app will keep one on a phone through expo-sqlite, and in a
+bun:sqlite; the app keeps one on a phone through expo-sqlite, and in a
 browser through SQLite's own WebAssembly build, in a worker — the same
-schema and the same stores, so a home
-reads the same wherever it is kept.
+schema and the same stores, so a home reads the same wherever it is kept.
+What a place keeps beside the home in the same file — a server's accounts
+— is the place's, not the store's.
 
 ## What it does — and does not
 
@@ -40,8 +41,8 @@ Pure. Two ports, filled by the place that keeps the home:
 
 - **`SqlDatabase`** — `query(sql)` with `get`, `all` and `run`, `exec`,
   `transaction` (nesting as savepoints) and `close`; synchronous, as
-  bun:sqlite and expo-sqlite are. bun:sqlite's `Database` is the port as it
-  stands; `fromSqliteWasm` makes one of SQLite's WebAssembly build
+  bun:sqlite and expo-sqlite are. The server fills it from bun:sqlite's
+  `Database`, keeping its own statements; `fromSqliteWasm` makes one of SQLite's WebAssembly build
   (`@sqlite.org/sqlite-wasm`, a browser's) one — described, not imported,
   so the store depends on no build of it.
 - **`SecretsAtRest`** — how a connection's secrets are sealed:

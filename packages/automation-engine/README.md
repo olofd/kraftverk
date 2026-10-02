@@ -33,7 +33,7 @@ language, not this.
 
 ## In detail
 
-Pure, so the server and the app run it alike. It names no database and no
+Pure, so every node runs it alike. It names no database and no
 device:
 
 - **Where automations are kept** is a port it declares,

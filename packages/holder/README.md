@@ -2,8 +2,9 @@
 
 ## What it is
 
-What every holder of a device's connection does, written once: the server
-and an app that holds connections of its own run the same code.
+What every holder of a device's connection does, written once: every
+kraftverk node that holds a device — the master's hub, or a follower
+holding ways for it — runs the same code.
 
 ## What it does — and does not
 
@@ -29,7 +30,7 @@ the ways it holds for the master.
 
 ## Why a package of its own
 
-Because a device is held in two places — on the server, and in an app that
-reaches it over its own Bluetooth — and two copies of opening, failover
-and the wrong-device check drift apart (they did, until phase 4). One
+Because a device is held wherever a node can reach it — a server on the
+network, a phone over its own Bluetooth — and two copies of opening,
+failover and the wrong-device check drift apart (they did, once). One
 package is one behaviour, tested once.
