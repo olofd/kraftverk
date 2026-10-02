@@ -138,7 +138,8 @@ packages/
   automation-engine/     @kraftverk/automation-engine    runs automations: triggers, steps, runs and their logs, rehearsal, the library;
                                                          where they are kept is a port it declares; pure
   store/                 @kraftverk/store                the data model in SQLite: one schema and every store, over a SQL port the
-                                                         server (bun:sqlite) and the app (expo-sqlite, sql.js) fill; pure
+                                                         server (bun:sqlite) and the app (expo-sqlite; SQLite's WebAssembly
+                                                         build in a browser) fill; pure
   hub/                   @kraftverk/hub                  a home, running: what is installed, devices' views, setup, history,
                                                          attention, automations, the configuration — wired over the ports
                                                          the place it runs gives it; the server's and the app's alike; pure
@@ -165,9 +166,11 @@ The rule, checked in CI by `npm run check:architecture` (§7):
   runtime and loads them by path, and starts only the transports its installed
   device types need. The app cannot — Metro bundles what is imported, and a
   store build must not download code — so `npm run gen:devices` writes
-  `client/src/generated/registry.ts` from the installed packages (device types,
-  protocols, the transports' web and native implementations, and screens), and
-  that one file is the app's exception. CI checks it is current.
+  `client/src/generated/` from the installed packages: what a hub installs
+  (device types and what they bring to automations, protocols, transport
+  definitions — no React), each transport's entry for a phone and for a
+  browser's page, and the screens and pictures. Those files are the app's
+  exception. CI checks they are current.
 - **A transport** imports the SDK only. It is the one place for platform code
   — sockets, radios, the broker — with a separate entry for each place it runs
   (`server`, `web`, `native`), so the app never bundles server code.

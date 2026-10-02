@@ -5,7 +5,8 @@
 kraftverk's data model (docs/DATA-MODEL.md) as one SQLite schema and the
 stores that keep to it. The server keeps a home in a file through
 bun:sqlite; the app will keep one on a phone through expo-sqlite, and in a
-browser through sql.js — the same schema and the same stores, so a home
+browser through SQLite's own WebAssembly build, in a worker — the same
+schema and the same stores, so a home
 reads the same wherever it is kept.
 
 ## What it does — and does not
@@ -40,7 +41,9 @@ Pure. Two ports, filled by the place that keeps the home:
 - **`SqlDatabase`** — `query(sql)` with `get`, `all` and `run`, `exec`,
   `transaction` (nesting as savepoints) and `close`; synchronous, as
   bun:sqlite and expo-sqlite are. bun:sqlite's `Database` is the port as it
-  stands; `fromSqlJs` makes a sql.js database one.
+  stands; `fromSqliteWasm` makes one of SQLite's WebAssembly build
+  (`@sqlite.org/sqlite-wasm`, a browser's) one — described, not imported,
+  so the store depends on no build of it.
 - **`SecretsAtRest`** — how a connection's secrets are sealed: the server's
   key from its environment, a phone's from its secure storage;
   `plainSecrets` keeps them as given.
@@ -58,4 +61,5 @@ level — so two homes can be open in one process.
 | The home | `AppState` (decisions), `policyValues` and `setPolicyValue`, `AuditLog` (the timeline) |
 | Ids | `randomHex` — from the random values every place has |
 
-Its tests run on bun:sqlite and on sql.js (`test/drivers.ts`).
+Its tests run on bun:sqlite and on SQLite's WebAssembly build
+(`test/drivers.ts`).

@@ -9,6 +9,7 @@
 export * from './installed/types.ts';
 export * from './installed/protocols.ts';
 export * from './installed/transports.ts';
+export * from './installed/from.ts';
 export * from './devices/registry.ts';
 export * from './devices/nearby.ts';
 export * from './devices/remote.ts';

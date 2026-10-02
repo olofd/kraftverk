@@ -1,14 +1,15 @@
 import { Database } from 'bun:sqlite';
-import initSqlJs from 'sql.js';
+import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 
-import { createSchema, fromSqlJs, prepareDatabase, type SqlDatabase } from '../src/index.ts';
+import { createSchema, fromSqliteWasm, prepareDatabase, type SqlDatabase, type SqliteWasmDatabase } from '../src/index.ts';
 
 /**
  * The SQLite each place keeps a home in, as the store's tests open it: the
- * server's bun:sqlite, and sql.js — a browser's. Every store test runs on
- * each, so the port is proven where the app will use it
- * (docs/PLAN-SHARED-CORE.md, phase 3). A phone's expo-sqlite is the same
- * SQLite, reached as bun:sqlite is.
+ * server's bun:sqlite, and SQLite's own WebAssembly build — a browser's, in
+ * memory here where a browser's worker keeps it on its private file system
+ * (docs/PLAN-SHARED-CORE.md, "SQLite in the app"). Every store test runs on
+ * each, so the port is proven where the app will use it. A phone's
+ * expo-sqlite is the same SQLite again, through its own adapter.
  */
 export const DRIVERS: readonly { name: string; open(): Promise<SqlDatabase> }[] = [
   {
@@ -16,10 +17,12 @@ export const DRIVERS: readonly { name: string; open(): Promise<SqlDatabase> }[] 
     open: async () => fresh(new Database(':memory:') as unknown as SqlDatabase),
   },
   {
-    name: 'sql.js',
+    name: 'sqlite-wasm',
     open: async () => {
-      const SQL = await initSqlJs();
-      return fresh(fromSqlJs(new SQL.Database()));
+      // Quiet: a refusal the tests provoke on purpose is the thrown error, not a line on the console.
+      const sqlite3 = await sqlite3InitModule();
+      sqlite3.config.warn = () => {};
+      return fresh(fromSqliteWasm(new sqlite3.oo1.DB(':memory:') as unknown as SqliteWasmDatabase));
     },
   },
 ];

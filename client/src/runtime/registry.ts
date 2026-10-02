@@ -10,7 +10,8 @@ import type {
   TransportFactory,
 } from '@kraftverk/device-sdk';
 
-import { DEVICE_TYPES, PROTOCOLS, TRANSPORTS } from '../generated/registry';
+import { DEVICE_TYPES, PROTOCOLS, TRANSPORTS } from '../generated/installed';
+import { TRANSPORT_ENTRIES } from '../generated/transports';
 import { clearPreference, readPreference, writePreference } from '../lib/preferences';
 
 /**
@@ -30,10 +31,10 @@ export const PLATFORM: AppPlatform = Platform.OS === 'web' ? 'web' : 'native';
 type Entry = { definition: TransportDefinition; factory: TransportFactory | null; transport: Transport | null; starting: Promise<Transport | null> | null; error: string | null };
 
 export class AppRegistry {
-  readonly types = new Map<string, DeviceType<any>>(DEVICE_TYPES.map((type) => [type.id, type]));
+  readonly types = new Map<string, DeviceType<any>>(DEVICE_TYPES.map(({ type }) => [type.id, type]));
   readonly protocols = new Map<string, Protocol>(PROTOCOLS.map((protocol) => [protocol.id, protocol]));
   #transports = new Map<string, Entry>(
-    TRANSPORTS.map((entry) => [entry.definition.id, { definition: entry.definition, factory: entry[PLATFORM], transport: null, starting: null, error: null }])
+    TRANSPORTS.map((definition) => [definition.id, { definition, factory: TRANSPORT_ENTRIES[definition.id] ?? null, transport: null, starting: null, error: null }])
   );
 
   constructor(private context: Omit<TransportContext, 'store'>) {}

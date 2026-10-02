@@ -3,7 +3,8 @@ import { SCHEMA, schemaFingerprint } from './schema.ts';
 /**
  * A SQLite database, as the stores use it: what each place that keeps a home
  * provides (docs/PLAN-SHARED-CORE.md). The server's is a file through
- * bun:sqlite; a phone's expo-sqlite; a browser's sql.js. Synchronous, as
+ * bun:sqlite; a phone's expo-sqlite; a browser's SQLite's own WebAssembly
+ * build, in a worker. Synchronous, as
  * bun:sqlite and expo-sqlite are, so a store reads like a plain function.
  *
  * Positional parameters only (`?`), as every query here writes them.

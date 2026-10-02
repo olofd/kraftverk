@@ -5,7 +5,8 @@
  *
  * Pure: the database is a port (`SqlDatabase`), and so is how secrets are
  * kept at rest (`SecretsAtRest`). The server opens a file through
- * bun:sqlite; the app expo-sqlite on a phone, sql.js in a browser.
+ * bun:sqlite; the app expo-sqlite on a phone, SQLite's WebAssembly build in
+ * a browser's worker.
  */
 
 export * from './database.ts';
@@ -24,5 +25,5 @@ export * from './device-store.ts';
 export * from './transport-store.ts';
 export * from './ledger.ts';
 export * from './automations.ts';
-export * from './sql-js.ts';
+export * from './sqlite-wasm.ts';
 export * from './holding.ts';

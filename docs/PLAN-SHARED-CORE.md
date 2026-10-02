@@ -468,15 +468,20 @@ arrangement of those ports; how the screens reach it is always
 
 The steps, each green and pushed:
 
-6a. **The parts a place puts together.** The generated registry in two:
-    `installed.ts` (device types with their contributions, protocols,
-    transport definitions — no React) and `registry.ts` (screens,
-    pictures, each transport's web and native entries). `installedFrom`
-    in the hub: the three registries from lists, for the server's
-    discovery and the app's registry alike. `SqlDatabase` over SQLite's
+6a. **The parts a place puts together** — done, 2026-10-02. The
+    generated registry in parts: `installed.ts` (device types with their
+    contributions, protocols, transport definitions — no React),
+    `transports.ts` and `transports.web.ts` (each transport's entry for a
+    phone and for a page, so neither bundles the other's), and
+    `registry.ts` (screens, pictures). `installedFrom`
+    in the hub: the three registries from lists, as a place with no disk
+    to search — the app — installs them. `SqlDatabase` over SQLite's
     WebAssembly build and over expo-sqlite in the store, described rather
     than imported, as sql.js was — which goes: nothing runs it now. The
-    store's tests run on bun:sqlite and on the WebAssembly build.
+    store's tests run on bun:sqlite and on the WebAssembly build, and a
+    home made from lists on it adds and switches a lamp (the hub's
+    `installed.test.ts`). The expo-sqlite adapter comes with 6c, against
+    the package's own types.
 6b. **Over a message port.** `@kraftverk/message-port`: `serveApi` and
     `apiOver`, `serveTransport` and `transportOver` — calls, refusals as
     `ApiError`, the live stream, a step's abort, a transport's channels and

@@ -51,7 +51,8 @@ imports it but the edges:
 ```
 server/   HTTP → hub.as(caller)          client/   screens → KraftverkApi
             │                                        │
-            ▼                                        ├── no server: createHub (expo-sqlite, sql.js)
+            ▼                                        ├── no server: createHub (expo-sqlite; SQLite's
+                                                     │   WebAssembly build, in a worker)
           createHub (bun:sqlite)                     └── a server: api-client, and the
                                                          connections this app holds
 ```
@@ -80,7 +81,8 @@ below is the design, and the plan says which part is in. In now:
 `KraftverkApi` (`src/api/`), which every route of the server adapts to;
 the live stream's outbox (`src/live/`); and all it wires — what is
 installed (`DeviceTypeRegistry`, `ProtocolRegistry`, `TransportHost` for
-any platform), devices' views (`DeviceRegistry`), `Nearby`,
+any platform; `installedFrom` makes all three from lists, as the app
+installs them), devices' views (`DeviceRegistry`), `Nearby`,
 `RemoteReadings`, `SetupService`, history (`Sampler`, `ChangeLog`, `series`,
 `changesOf`), `Attention` and `keepWatchedFresh`, the assistant's world,
 `homeDevices` for the engine, the planner (`plans`), and the home's
@@ -94,7 +96,7 @@ port (`PassphraseSealing`): the place's cipher, not the hub's.
 
 ```ts
 const hub = createHub({
-  database,      // SqlDatabase: bun:sqlite, expo-sqlite or sql.js, its schema prepared
+  database,      // SqlDatabase: bun:sqlite, expo-sqlite or SQLite's WebAssembly build, its schema prepared
   secrets,       // SecretsAtRest: the server's key, a phone's secure storage
   installed,     // Installed: device types, protocols, transports — found by the place
   platform,      // 'server' | 'web' | 'native': which transports' entries run here
