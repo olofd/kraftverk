@@ -252,6 +252,10 @@ home's connections as one holder holds them). The app gains the server's
 retry, failover over every connection it holds and identity learning; the
 server gains the app's check of a device's identity at its first answer,
 and reopening when a secret or read-only changes. 42 files of logic left.
+Also (2026-10-02, the owner): the configuration package is
+`@kraftverk/home-file`, and every package has a README that says what it
+is, what it does and does not, where it fits, and why it is a package of
+its own — four headings the architecture check asks for.
 
 Each phase green and pushed. Files move first as they are (with git's
 history), then change. The server behaves as before throughout — the one

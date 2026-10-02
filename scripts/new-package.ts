@@ -262,6 +262,44 @@ test('${title} is a valid transport', () => {
 
 files['tsconfig.json'] = TSCONFIG;
 
+/** What every package's README says, under the headings the architecture check asks for: to be written as the package is. */
+const SAYS = {
+  device: {
+    is: `${title} as a device type: what it measures, what it can do, its settings, and how it is reached.`,
+    fits: 'A device type (docs/ARCHITECTURE.md §3): it imports the SDK and its protocols; the server finds it by its package.json, the app through the generated registry.',
+    why: 'Because device-specific code stays in its package and the core names no product (AGENTS.md).',
+  },
+  protocol: {
+    is: `The ${title} protocol: what goes over a channel, and how to read what comes back.`,
+    fits: 'A protocol (docs/ARCHITECTURE.md §3): pure, importing only the SDK. Device types use it; transports carry its bytes.',
+    why: 'Because a protocol is shared by every device that speaks it, and tested on its frames alone.',
+  },
+  transport: {
+    is: `${title}: a way kraftverk reaches devices, with an entry for each place it runs.`,
+    fits: 'A transport (docs/ARCHITECTURE.md §3): the platform layer, importing only the SDK. Holders open its channels; protocols speak over them.',
+    why: 'Because platform code lives in transports, and nothing else touches a platform API.',
+  },
+}[kind]!;
+files['README.md'] = `# @kraftverk/${kind === 'device' ? 'device' : kind}-${name}
+
+## What it is
+
+${SAYS.is}
+
+## What it does — and does not
+
+- **Does:** (say what it does, as it is written.)
+- **Does not:** (say what it leaves to other packages.)
+
+## Where it fits
+
+${SAYS.fits}
+
+## Why a package of its own
+
+${SAYS.why}
+`;
+
 for (const [path, content] of Object.entries(files)) {
   const target = resolve(dir, path);
   mkdirSync(dirname(target), { recursive: true });

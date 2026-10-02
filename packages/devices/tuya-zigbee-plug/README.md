@@ -1,5 +1,7 @@
 # Tuya Zigbee plug
 
+## What it is
+
 A 16 A Zigbee plug that measures power, paired with a **Tuya Zigbee gateway**
 in the Smart Life app — reached through that gateway on the home network,
 with no cloud. Built on the Tuya socket type ([`tuya-plug`](../tuya-plug)),
@@ -11,6 +13,23 @@ TS011F), listed in Smart Life as "Smart plug". Its gateway: an **RSH
 GW018-DM** (Tuya's WBRG1 Wi-Fi/Bluetooth module and ZS3L Zigbee module
 inside), Tuya LAN protocol **3.4**. `support: 'experimental'` until it has run
 for a while.
+
+## What it does — and does not
+
+- **Does:** the Zigbee plug's data layout on the Tuya socket type, reached
+  through its Tuya gateway on the home network — and what was found mapping
+  it, below.
+- **Does not:** speak Tuya (`@kraftverk/protocol-tuya-local`) or hold the
+  socket's session (`@kraftverk/device-tuya-plug`).
+
+## Where it fits
+
+A family on the generic Tuya socket, as the ATORCH is.
+
+## Why a package of its own
+
+Because a model behind a gateway is a profile and an address, not new
+code in the socket every Tuya plug shares.
 
 ## How it is reached
 

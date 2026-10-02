@@ -1,5 +1,7 @@
 # NIU UQi GT
 
+## What it is
+
 The NIU UQi GT — sold as the **UQi GT Sport** in some markets — as a model of
 its own. Built on the common [NIU scooter](../niu-scooter/README.md), which
 says how it is reached (NIU's cloud, with the owner's NIU account) and what
@@ -10,6 +12,22 @@ mapped.
 Being mapped on a **2019 UQi GT Sport**: 48 V, one removable battery
 (31 Ah, about 1.5 kWh; 42 Ah on the extended range), about 250 W from its
 charger (5.2 A), 45 km/h. No Bluetooth: NIU's cloud is the only way in.
+
+## What it does — and does not
+
+- **Does:** the UQi GT as a model: its names, the model names NIU gives
+  it, its pictures, and what only it does as that is mapped.
+- **Does not:** say how it is reached or what a NIU scooter reports — the
+  common NIU scooter does.
+
+## Where it fits
+
+A model package on `@kraftverk/device-niu-scooter`, by its name.
+
+## Why a package of its own
+
+Because a model's pictures and specifics belong to it, without copying the
+scooter it is.
 
 ## Pictures
 

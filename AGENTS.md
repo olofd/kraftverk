@@ -49,5 +49,9 @@ section is replaced by the compatibility rules, and ARCHITECTURE.md §9 says so.
   only the HTTP API, accounts, the broker and the disk; `client/` only
   screens and the platform. Before adding logic to either, ask whether a
   package should hold it ([docs/PLAN-SHARED-CORE.md](docs/PLAN-SHARED-CORE.md)).
+- **Every package says what it is**: its README opens with `## What it is`,
+  `## What it does — and does not`, `## Where it fits` and
+  `## Why a package of its own` — read them before changing a package, and
+  keep them true when you do. The architecture check asks for all four.
 - **Others may be editing this checkout.** Stage only the files you changed;
   never `git add -A`.

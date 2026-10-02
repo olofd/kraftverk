@@ -1,5 +1,7 @@
 # NIU scooter
 
+## What it is
+
 A NIU electric scooter, read from **NIU's cloud** with the owner's NIU account:
 its charge, whether it is charging, its range, odometer and state. The first
 use: a smart plug in front of its charger stops it at a limit, with the shared
@@ -7,6 +9,25 @@ use: a smart plug in front of its charger stops it at a limit, with the shared
 
 The common NIU scooter: a model with a package of its own builds on it
 (below). Support is `experimental` until a model has been mapped.
+
+## What it does — and does not
+
+- **Does:** reads a NIU scooter from NIU's cloud with its owner's account —
+  charge, charging, range, odometer, state — as a vehicle; the base a model
+  builds on.
+- **Does not:** control the scooter (it is read only), speak NIU's API
+  (`@kraftverk/protocol-niu-cloud`), or charge it — a plug in front of its
+  charger and an automation do.
+
+## Where it fits
+
+A device type over the internet (the HTTPS transport, NIU's hosts only),
+and the base of model packages such as `@kraftverk/device-niu-uqi-gt`.
+
+## Why a package of its own
+
+Because what NIU's scooters report, and how, is NIU's: it stays out of the
+core, and each model adds only what is its own.
 
 ## How it is reached
 

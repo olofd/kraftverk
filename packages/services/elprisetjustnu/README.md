@@ -1,9 +1,28 @@
 # Elpriset just nu — Sweden's electricity prices
 
+## What it is
+
 A service, not hardware: the day-ahead electricity price for a Swedish price
 area, from [elprisetjustnu.se](https://www.elprisetjustnu.se/elpris-api) —
 free, with no account and no key. Only the price area is sent, to ask for
 its prices.
+
+## What it does — and does not
+
+- **Does:** a price area as a service: the price now and the hour's rank
+  among the day's, which automations can use.
+- **Does not:** speak the price API (`@kraftverk/protocol-elprisetjustnu`),
+  or decide when to charge — automations do.
+
+## Where it fits
+
+A service: a device type of kind `service`, found the way device types
+are, over the HTTPS transport.
+
+## Why a package of its own
+
+Because a data source is a package like a device: a home that does not
+want Swedish prices does not carry them.
 
 ## What it reports
 

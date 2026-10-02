@@ -1,5 +1,7 @@
 # ATORCH S1W / S1WP / S1BW — the energy socket with a display
 
+## What it is
+
 The device type for ATORCH's Tuya energy sockets: a relay, a meter, an LCD, and
 the protection and timer logic the plug runs itself. Spoken to directly on the
 home network with the Tuya local protocol (`@kraftverk/protocol-tuya-local`),
@@ -16,6 +18,24 @@ only [make-all/tuya-local's map](https://github.com/make-all/tuya-local/blob/mai
 says so.
 
 ---
+
+## What it does — and does not
+
+- **Does:** the plug's data layout on the Tuya socket type — its relay,
+  meter, display, protections and timers — its settings in plain words, and
+  its own screens.
+- **Does not:** speak Tuya (`@kraftverk/protocol-tuya-local`) or hold the
+  socket's session (`@kraftverk/device-tuya-plug`, which it builds on).
+
+## Where it fits
+
+A family on the generic Tuya socket (docs/ARCHITECTURE.md §3): a profile
+and screens over `@kraftverk/device-tuya-plug`, by its name.
+
+## Why a package of its own
+
+Because adding a plug model should be a profile and its screens, not code
+in the core or in the generic socket.
 
 ## 1. The unit
 

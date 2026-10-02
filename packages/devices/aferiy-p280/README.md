@@ -1,5 +1,7 @@
 # AFERIY P280 — and the Sydpower family
 
+## What it is
+
 The device type for Sydpower-stack power stations, developed and verified
 against an **AFERIY P280**: local control over Wi-Fi (through kraftverk's own
 MQTT broker) or Bluetooth LE, **without the vendor cloud**.
@@ -7,6 +9,29 @@ MQTT broker) or Bluetooth LE, **without the vendor cloud**.
 > **Unofficial.** Not affiliated with, endorsed by, or supported by AFERIY,
 > Sydpower, Fossibot or any related company. Those names appear only to identify
 > the hardware this software talks to.
+
+## What it does — and does not
+
+- **Does:** the station as a device type — its parts (battery, inputs,
+  outlets, expansion packs), its settings with their safe ranges, its methods
+  over kraftverk's MQTT broker and over Bluetooth, its simulator, and its own
+  screens (dashboard, energy flow, registers).
+- **Does not:** speak its protocol (`@kraftverk/protocol-sydpower`), open a
+  connection (the holder and the transports), or decide when to switch (the
+  gateway and automations).
+
+## Where it fits
+
+A device type (docs/ARCHITECTURE.md §3): it imports the SDK and its
+protocol; its `ui/` the kit and the API client. The server finds it by its
+package.json (`deviceType`, `ui`); the app through the generated registry.
+
+## Why a package of its own
+
+Because device-specific code stays in its package and the core names no
+product (AGENTS.md). Everything known about this station — its registers,
+its quirks, and the rule that register 68 is never written 0 — lives here
+and in its protocol, where the next Sydpower model can build on it.
 
 ## What it does
 

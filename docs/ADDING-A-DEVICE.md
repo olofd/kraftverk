@@ -185,7 +185,15 @@ installed package's functions when it starts.
   both run in the app too;
 - a transport importing anything from kraftverk but the SDK, or its web or
   native entry reaching its server one;
-- the core naming a product.
+- the core naming a product;
+- a device type importing more of the core than the SDK and the automation
+  language;
+- a package without a README that says, under these headings, what it is,
+  what it does and does not, where it fits, and why it is a package of its
+  own: `## What it is`, `## What it does — and does not`,
+  `## Where it fits`, `## Why a package of its own`. `npm run new:device`
+  writes them for you to fill in; what you find mapping the device goes
+  below them.
 
 A family may build on another device type by its package name — the ATORCH
 S1W is the Tuya socket with a profile.

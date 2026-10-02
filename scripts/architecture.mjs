@@ -313,6 +313,38 @@ function unplacedPackages() {
     .map((name) => `packages/${name}: a core package with no place in the layers — add it to MAY_IMPORT in scripts/architecture.mjs`);
 }
 
+// --- every package says what it is ---------------------------------------------
+
+/**
+ * What every package's README says, under these headings, so any agent
+ * picking one up finds the same four things in the same place: what it is,
+ * what it does and does not, where it fits in the layers, and why it is a
+ * package of its own (the owner, 2026-10-02).
+ */
+const README_SECTIONS = ['## What it is', '## What it does — and does not', '## Where it fits', '## Why a package of its own'];
+
+function undocumentedPackages() {
+  const manifests = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', 'packages/*/package.json', 'packages/*/*/package.json'], { cwd: ROOT, encoding: 'utf8' })
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.includes('node_modules/'));
+  const found = [];
+  for (const manifest of manifests) {
+    const root = manifest.slice(0, -'package.json'.length);
+    let readme;
+    try {
+      readme = readFileSync(resolve(ROOT, root, 'README.md'), 'utf8').replace(/\r\n/g, '\n');
+    } catch {
+      found.push(`${root}: no README.md — say what it is, what it does and does not, where it fits, and why it is a package of its own`);
+      continue;
+    }
+    const lines = new Set(readme.split('\n').map((line) => line.trim()));
+    const missing = README_SECTIONS.filter((heading) => !lines.has(heading));
+    if (missing.length) found.push(`${root}README.md: missing ${missing.map((heading) => `"${heading}"`).join(', ')}`);
+  }
+  return found;
+}
+
 // --- shared code bundles for a browser ---------------------------------------------
 
 /** Node's own modules, bare (`fs`) and prefixed (`node:fs`), and Bun's. */
@@ -531,6 +563,12 @@ const platform = platformInBundles();
 if (unplaced.length || platform.length) {
   console.error('Shared code that would not run everywhere:\n');
   for (const line of [...unplaced, ...platform]) console.error(`  ✗ ${line}`);
+  process.exit(1);
+}
+const undocumented = undocumentedPackages();
+if (undocumented.length) {
+  console.error('A package that does not say what it is:\n');
+  for (const line of undocumented) console.error(`  ✗ ${line}`);
   process.exit(1);
 }
 

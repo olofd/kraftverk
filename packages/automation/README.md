@@ -1,5 +1,7 @@
 # @kraftverk/automation — the automation language
 
+## What it is
+
 One small, typed language for what a kraftverk home does on its own. A
 package's recipe, a person's editor, a configuration file and an assistant
 all write it; one checker checks it, one describer says it in words, and one
@@ -11,12 +13,32 @@ command or a setting — nothing else. Its words are the device model's
 contribute. It adds none of its own, so whatever wrote a rule, it can do no
 more than a person could from a screen.
 
-This package is pure — no platform, no runtime — so the server, the app and
-every package run it alike. It depends on `@kraftverk/device-sdk` only.
+## What it does — and does not
 
-This README is the language's reference: every trigger, step and expression
-is here, in both forms, and a test fails when one is missing
-(`src/reference.test.ts`).
+- **Does:** the rule as data (triggers, steps, expressions, roles); checking
+  a rule and what fills its roles; describing it in words; evaluating a
+  condition; editing a rule step by step; its text form, as a home's file
+  writes it; the standard recipes; and what a package contributes
+  (`defineContribution`, checked by `checkContribution`).
+- **Does not:** run anything — no timers, no runs, no devices. That is
+  `@kraftverk/automation-engine`'s. Nor does it keep automations: the
+  store's.
+
+## Where it fits
+
+With the rules, just above the contract (docs/PLAN-SHARED-CORE.md): it
+depends on `@kraftverk/device-sdk` alone. A device package may import it
+to declare recipes and functions; the engine runs it; a home's file writes
+it; the app's editor edits it.
+
+## Why a package of its own
+
+Because the same rules are written by packages, people, files and an
+assistant, and must mean one thing everywhere. A device package declares
+recipes in it without pulling in the engine, and the language is
+documented, tested and kept whole in one place — this README is its
+reference, and a test fails when a trigger, step or expression is missing
+from it (`src/reference.test.ts`).
 
 ## Two forms of one rule
 
