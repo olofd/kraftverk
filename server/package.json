@@ -19,7 +19,7 @@
     "@kraftverk/api-contract": "*",
     "@kraftverk/automation": "*",
     "@kraftverk/automation-engine": "*",
-    "@kraftverk/config": "*",
+    "@kraftverk/home-file": "*",
     "@kraftverk/device-sdk": "*",
     "@kraftverk/gateway": "*",
     "@kraftverk/holder": "*",

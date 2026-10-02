@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@kraftverk/api-contract": "*",
-    "@kraftverk/config": "*",
+    "@kraftverk/home-file": "*",
     "@kraftverk/device-sdk": "*",
     "@kraftverk/gateway": "*"
   },

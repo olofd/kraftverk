@@ -134,7 +134,7 @@ packages/
   services/elprisetjustnu/ @kraftverk/service-elprisetjustnu energy-price: Sweden's electricity prices, a service
   automation/            @kraftverk/automation           the automation language: rules, checking, describing, evaluating, editing, its
                                                          text form, the standard recipes, what a package contributes; pure (its README)
-  config/                @kraftverk/config               the home as a document: YAML, its JSON Schema, migrations; pure
+  home-file/             @kraftverk/home-file            a home, in one file: YAML, its JSON Schema, migrations; pure
   automation-engine/     @kraftverk/automation-engine    runs automations: triggers, steps, runs and their logs, rehearsal, the library;
                                                          where they are kept is a port it declares; pure
   store/                 @kraftverk/store                the data model in SQLite: one schema and every store, over a SQL port the

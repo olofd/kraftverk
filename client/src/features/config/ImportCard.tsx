@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
 import { applyImport, describeError, planImport, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-client';
-import { checkDocument, configJsonSchema, CURRENT_VERSION, readConfig, type Vocabulary } from '@kraftverk/config';
+import { checkDocument, configJsonSchema, CURRENT_VERSION, readConfig, type Vocabulary } from '@kraftverk/home-file';
 import { Card, RowSeparator, SectionLabel, SegmentedControl, Toggle, haptic, Icon } from '@kraftverk/ui';
 
 import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../lib/confirm';

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { DeviceView } from '@kraftverk/api-client';
-import type { Vocabulary } from '@kraftverk/config';
+import type { Vocabulary } from '@kraftverk/home-file';
 import { automationId, MAIN_PART, savedDeviceId } from '@kraftverk/device-sdk';
 import type { Rule } from '@kraftverk/automation';
 

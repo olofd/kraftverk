@@ -58,14 +58,14 @@ const MAY_IMPORT = {
   'device-sdk': [],
   automation: ['device-sdk'],
   gateway: ['device-sdk'],
-  config: ['device-sdk', 'automation'],
-  'api-contract': ['device-sdk', 'automation', 'gateway', 'config'],
+  'home-file': ['device-sdk', 'automation'],
+  'api-contract': ['device-sdk', 'automation', 'gateway', 'home-file'],
   holder: ['device-sdk', 'automation', 'gateway', 'api-contract'],
   'automation-engine': ['device-sdk', 'automation', 'gateway', 'api-contract', 'holder'],
   store: ['device-sdk', 'automation', 'gateway', 'api-contract', 'holder', 'automation-engine'],
-  hub: ['device-sdk', 'automation', 'gateway', 'config', 'api-contract', 'holder', 'automation-engine', 'store'],
+  hub: ['device-sdk', 'automation', 'gateway', 'home-file', 'api-contract', 'holder', 'automation-engine', 'store'],
   // The edges: the API over HTTP, and the React kit.
-  'api-client': ['device-sdk', 'automation', 'gateway', 'config', 'api-contract'],
+  'api-client': ['device-sdk', 'automation', 'gateway', 'home-file', 'api-contract'],
   ui: ['device-sdk'],
 };
 /** The edges among the core packages: the rest is shared. */

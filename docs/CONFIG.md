@@ -12,7 +12,7 @@ up, move, write by hand, and what carries the home across a database reset
 (the database is evergreen: a new schema sets it aside, and the server
 restores from the configuration it keeps beside it).
 
-The language lives in `packages/config`: pure, so the server and the app read
+The language lives in `packages/home-file`: pure, so the server and the app read
 and check a file with the same code.
 
 ## A file
@@ -228,7 +228,7 @@ The editor in a browser is CodeMirror with its YAML language: the JSON Schema
 devices' keys and parts, and explains them on hover
 (`codemirror-json-schema`; its tooltips without the code highlighter it
 would load, `client/metro.config.js`). Every problem — the YAML's own, the
-document's, what it means — is found by `packages/config`, the same code
+document's, what it means — is found by `packages/home-file`, the same code
 the server checks with, marked where it is and listed under it. A phone's
 own app writes it in a text field, its problems listed the same.
 
@@ -237,11 +237,11 @@ own app writes it in a text field, its problems listed the same.
 The configuration is the one thing in kraftverk versioned on purpose
 (AGENTS.md). `kraftverk: n` at the top says which version wrote it; each
 change to the document's shape adds a migration from n to n + 1
-(`packages/config/src/migrate.ts`) with a kept fixture of version n, so every
+(`packages/home-file/src/migrate.ts`) with a kept fixture of version n, so every
 newer kraftverk reads every older file. A file from a newer kraftverk is
 refused, saying so.
 
-The fixtures are `packages/config/fixtures/vN.yaml`, never changed once
+The fixtures are `packages/home-file/fixtures/vN.yaml`, never changed once
 kept; `migrate.test.ts` fails while a version lacks its fixture, a version
 below this one lacks its migration, or any fixture does not read — with
 nothing wrong — and write back the same.

@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import axios from 'axios';
 
 import type { ConfigValues, DeviceDescription, DeviceInfo, Reading, ResourceKind, SetupActionResult } from '@kraftverk/device-sdk';
-import type { Vocabulary } from '@kraftverk/config';
+import type { Vocabulary } from '@kraftverk/home-file';
 import type { GatewayResult } from '@kraftverk/gateway';
 
 import type {

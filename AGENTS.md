@@ -16,7 +16,7 @@ everything is **strict version 1**:
   what it replaces.
 - **No versioning.** No API versions, no type versions, no migration hooks.
   The one exception, on purpose: the **configuration document**
-  (`packages/config`, docs/CONFIG.md) carries `kraftverk: n`, and each
+  (`packages/home-file`, docs/CONFIG.md) carries `kraftverk: n`, and each
   change to its shape adds a migration from n with a kept fixture. It is
   what carries a home across a database reset, so it must be read by every
   newer kraftverk.

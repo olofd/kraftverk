@@ -5,7 +5,7 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
 import type { ConfigExported, ConfigSnapshotView } from '@kraftverk/api-contract';
-import { configJsonSchema, writeConfig } from '@kraftverk/config';
+import { configJsonSchema, writeConfig } from '@kraftverk/home-file';
 import { Confirmations, subjectOf } from '@kraftverk/gateway';
 
 import { actorOf } from '../auth/routes.ts';

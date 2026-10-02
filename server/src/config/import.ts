@@ -11,7 +11,7 @@ import {
   type DeviceEntry,
   type SecretValue,
   type WriteContext,
-} from '@kraftverk/config';
+} from '@kraftverk/home-file';
 import { MAIN, useOf, useText } from '@kraftverk/automation';
 import {
   attributeMeaning,

@@ -10,7 +10,7 @@ import {
   type SecretValue,
   type Vocabulary,
   type WriteContext,
-} from '@kraftverk/config';
+} from '@kraftverk/home-file';
 import type { PrintContext } from '@kraftverk/automation';
 import { methodsOf, partsOf, type SavedDeviceId } from '@kraftverk/device-sdk';
 

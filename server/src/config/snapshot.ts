@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { readConfig, writeConfig } from '@kraftverk/config';
+import { readConfig, writeConfig } from '@kraftverk/home-file';
 import type { AuditRecord } from '@kraftverk/device-sdk';
 
 import { databaseFile, onAudit } from '../platform/database.ts';

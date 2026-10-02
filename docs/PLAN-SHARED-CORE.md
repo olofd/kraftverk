@@ -89,7 +89,7 @@ the API      api-contract    the API's shapes and KraftverkApi — types only; i
 rules        automation      the language: rules, triggers, steps, expressions; checking,
                              describing, evaluating, editing; the text form; the standard
                              recipes. Its README is the language's reference
-             config          the home as a document: YAML, its JSON Schema, migrations,
+             home-file       a home, in one file: YAML, its JSON Schema, migrations,
                              passphrase sealing; speaks the language through automation
              gateway         every physical action: rules, confirmation, verification
 ──────────────────────────────────────────────────────────────────────────────────────
@@ -125,7 +125,7 @@ server's:
 | `devices/registry.ts`, `setup/*`, `nearby.ts`, `types.ts`; `history/sampler.ts`; `attention/*`; `assistant/world.ts` | the stores, the sessions | `hub` |
 | `runtime/protocols.ts`, `transports.ts` | handed what `packages.ts` finds | `hub`, handed `installed` |
 | `config/export.ts`, `import.ts`, `restore.ts` | the stores; `node:crypto` | `hub` |
-| `config/seal.ts` | scrypt from `node:crypto` | `config`, on Web Crypto (decision 3) |
+| `config/seal.ts` | scrypt from `node:crypto` | `home-file`, on Web Crypto (decision 3) |
 | `routes/live.ts`'s outbox (coalescing what goes out) | nothing | `hub`: the live updates a client is sent, in the process or over the socket |
 | `runtime/packages.ts`, `config/snapshot.ts`'s file, `auth/*`, `admin/*`, `routes/*`, `app.ts`, `index.ts`, `log.ts`, `config.ts` | the disk, HTTP, accounts, the process | stay |
 
@@ -149,7 +149,7 @@ About 14 500 lines, tests aside. Most is screens, which stay. What is not:
 | `features/automations/editor/draft.ts`: `listAt`, `withList`, `withStep` | edits to a rule, as data | `automation` (the draft's name and role fills stay the editor's) |
 | `features/automations/runlog/series.ts` | a run log made into series and marks | `automation-engine`, beside the run log's CSV |
 | `features/devices/model.ts`: `togglesOf`, `settingsForms` | what follows from a description alone | `device-sdk` |
-| `features/config/entries.ts`: `deviceYaml` | a device as a configuration entry — the server's export again | `config`, one function both use (as `automationEntryFrom` already is) |
+| `features/config/entries.ts`: `deviceYaml` | a device as a configuration entry — the server's export again | `home-file`, one function both use (as `automationEntryFrom` already is) |
 | `state/live.ts`, `state/views.ts` | applying live updates; saying what the screen shows | `api-client`, beside the stream they belong to |
 | `api-client`'s `react-native` and `expo-constants` | finding the server's address | `client/src/platform/`; `api-client` is handed it |
 
@@ -264,7 +264,7 @@ server is checked after each phase.
    today's exceptions recorded in the baseline so it can only shrink. Each
    new package comes under them as it is made.
 1. **The language: `automation`.** From `device-sdk` (`automation.ts`,
-   `recipes.ts`), `config` (`expr.ts`, `rules.ts`) and the editor's rule
+   `recipes.ts`), the configuration package (`expr.ts`, `rules.ts`) and the editor's rule
    edits. Every import changes at once (strict v1), and the dependency rule
    lets a device type import `automation` beside the SDK. Its README becomes the
    reference — the JSON form and the text form side by side, every trigger,

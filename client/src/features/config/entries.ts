@@ -14,7 +14,7 @@ import {
   type Problem,
   type Scalar,
   type Vocabulary,
-} from '@kraftverk/config';
+} from '@kraftverk/home-file';
 import type { PrintContext } from '@kraftverk/automation';
 import { savedDeviceId, type AutomationId } from '@kraftverk/device-sdk';
 import type { Rule } from '@kraftverk/automation';

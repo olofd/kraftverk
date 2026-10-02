@@ -3,7 +3,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { Text, YStack } from 'tamagui';
 
 import { describeError, fetchAutomations, fetchConfigSnapshot, fetchConfigVocabulary, getApiBaseUrl, type AutomationView, type ConfigSnapshotView } from '@kraftverk/api-client';
-import { schemaLine, type Vocabulary } from '@kraftverk/config';
+import { schemaLine, type Vocabulary } from '@kraftverk/home-file';
 import { Card, Row, SectionLabel } from '@kraftverk/ui';
 
 import { Screen } from '../src/components/Screen';

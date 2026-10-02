@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { writeConfig } from '@kraftverk/config';
+import { writeConfig } from '@kraftverk/home-file';
 import { defineDeviceType, MAIN_PART } from '@kraftverk/device-sdk';
 import type { Rule } from '@kraftverk/automation';
 

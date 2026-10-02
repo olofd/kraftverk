@@ -12,7 +12,7 @@
 */
 import { readFileSync } from 'node:fs';
 
-import { checkDocument, configJsonSchema, readConfig, vocabularyOf } from '@kraftverk/config';
+import { checkDocument, configJsonSchema, readConfig, vocabularyOf } from '@kraftverk/home-file';
 
 import { DeviceTypeRegistry } from '../server/src/devices/types.ts';
 import { ProtocolRegistry } from '../server/src/runtime/protocols.ts';

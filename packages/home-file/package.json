@@ -1,8 +1,8 @@
 {
-  "name": "@kraftverk/config",
+  "name": "@kraftverk/home-file",
   "version": "0.1.0",
   "private": true,
-  "description": "Configuration as a language: devices, links and automations in a versioned YAML document — read with every problem's line, written back the same, its rules in a readable DSL whose parse tree is the rule. Pure, so the server and the app both run it.",
+  "description": "A home, in one file: its devices, how each is reached, the links between them, its settings and its automations as one versioned YAML document — read with every problem's line, written back the same, checked by a JSON Schema and by what is installed, carried across versions by migrations. Pure, so the server and the app both run it.",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",

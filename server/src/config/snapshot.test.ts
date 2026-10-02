@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { readConfig } from '@kraftverk/config';
+import { readConfig } from '@kraftverk/home-file';
 
 import { AutomationStore, DeviceCatalog, ConnectionStore, LinkStore } from '@kraftverk/store';
 import { LAMP, lampProtocol, lampType } from '../devices/testing.ts';
