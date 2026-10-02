@@ -24,8 +24,8 @@ export default function ConnectivityScreen() {
   const [error, setError] = useState<string | null>(null);
   const theme = useTheme();
   // The home's own, and — with a server — this app's, which it holds the server's ways over.
-  const theirs = list?.transports.filter((transport) => transport.holder === 'home') ?? [];
-  const mine = list?.transports.filter((transport) => transport.holder === 'this-app') ?? [];
+  const theirs = list?.transports.filter((transport) => transport.holder === 'master') ?? [];
+  const mine = list?.transports.filter((transport) => transport.holder === 'this-node') ?? [];
 
   useEffect(() => {
     let live = true;

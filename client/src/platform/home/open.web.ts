@@ -41,13 +41,13 @@ export async function openHome(options: OpenOptions): Promise<OpenHome> {
   };
 
   let ended: (why: 'handed-over') => void = () => {};
-  let appId: string | null = null;
+  let nodeId = options.node.id;
   let closed: () => void = () => {};
   const opened = new Promise<void>((resolve, reject) => {
     hear<ToPage>(end, 'home', (message) => {
       switch (message.kind) {
         case 'ready':
-          appId = message.appId;
+          nodeId = message.nodeId;
           return resolve();
         case 'busy':
           finish();
@@ -72,14 +72,15 @@ export async function openHome(options: OpenOptions): Promise<OpenHome> {
     serves: Object.keys(TRANSPORT_ENTRIES),
     takeOver: Boolean(options.takeOver),
     writes: false,
-    server: options.server ? { key: options.server.key, name: options.name } : null,
+    node: options.node,
+    server: options.server ? { key: options.server.key } : null,
     copyOf: options.server ? null : (options.copyOf ?? null),
   });
   await opened;
 
   return {
     api: apiOver(end, 'api'),
-    appId,
+    nodeId,
     allowWrites: async (allowed) => send({ via: 'home', kind: 'writes', allowed }),
     close: () =>
       new Promise<void>((resolve) => {

@@ -5,7 +5,7 @@ import { createServer, type Socket } from 'node:net';
 import { memoryTransportStore } from '@kraftverk/device-sdk';
 
 import { hostOf, isLocalAddress } from './index.ts';
-import createLanTransport from './server.ts';
+import createLanTransport from './system.ts';
 
 /**
  * The home network, for real: a TCP server standing in for a device, and a

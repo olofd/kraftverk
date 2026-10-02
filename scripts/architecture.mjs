@@ -267,9 +267,9 @@ function violation(file, area, specifier) {
       if (specifier.startsWith('@kraftverk/') && !/^@kraftverk\/device-sdk(\/|$)/.test(specifier)) {
         return 'a transport imports something from kraftverk other than the SDK';
       }
-      // The app bundles a transport's web and native entries: they must never pull in its server one.
+      // The app bundles a transport's web and native entries: they must never pull in its system one.
       const appEntry = /\/src\/(web|native)(\.tsx?|\/)/.test(file);
-      if (appEntry && target && /\/src\/server(\.tsx?|\/|$)/.test(target)) return "a transport's app entry reaches its server entry";
+      if (appEntry && target && /\/src\/system(\.tsx?|\/|$)/.test(target)) return "a transport's app entry reaches its system entry";
       return null;
     }
 

@@ -7,7 +7,7 @@ import type { Rule } from '@kraftverk/automation';
 import { ApiError } from '@kraftverk/api-contract';
 import { AutomationLibrary } from '@kraftverk/automation-engine';
 import type { AuditRecord } from '@kraftverk/device-sdk';
-import { AppState, AutomationStore, ConnectionStore, DeviceCatalog, LinkStore, plainSecrets, policyValues, setPolicyValue, type SqlDatabase } from '@kraftverk/store';
+import { AppState, AutomationStore, ConnectionStore, DeviceCatalog, LinkStore, NodeStore, plainSecrets, policyValues, setPolicyValue, type SqlDatabase } from '@kraftverk/store';
 
 import { plans } from '../src/automations/plans.ts';
 import { exportConfig } from '../src/configuration/export.ts';
@@ -16,7 +16,7 @@ import { restoreFrom } from '../src/configuration/restore.ts';
 import type { PassphraseSealing } from '../src/configuration/seal.ts';
 import { ProtocolRegistry } from '../src/installed/protocols.ts';
 import { DeviceTypeRegistry } from '../src/installed/types.ts';
-import { LAMP, lampProtocol, lampType } from '../src/testing.ts';
+import { LAMP, lampProtocol, lampType, MACHINE_NODE } from '../src/testing.ts';
 import { testDatabase } from './home.ts';
 
 /*
@@ -57,11 +57,14 @@ beforeEach(() => {
   const sessions = { sync: async (records: readonly unknown[]) => void sessionsSynced.push(records.length), description: (record: { description: unknown }) => record.description };
   const { checked } = plans({ db, catalog, sessions: sessions as never, library, engine: engine as never, automations });
   const state = new AppState(db);
+  // This node, the home's own: what holds the ways a file says.
+  new NodeStore(db).declareSelf({ ...MACHINE_NODE, platform: 'system', transports: ['bus'] });
   deps = {
     db,
     catalog,
     connections: new ConnectionStore(db, plainSecrets),
     links: new LinkStore(db),
+    self: MACHINE_NODE.id,
     automations,
     types,
     protocols,
@@ -88,10 +91,10 @@ const lampRule: Rule = {
 /** A home: two lamps — one with its PIN — and an automation that acts, on the home page. */
 function aHome() {
   const hall = deps.catalog.add({ typeId: 'test.lamp', name: 'Hall lamp', identity: 'lampish:HALL', config: { room: 'Hall' }, description: LAMP });
-  const way = deps.connections.add({ deviceId: hall.id, method: 'bus', transport: 'bus', heldBy: null, address: 'lamp-hall' });
+  const way = deps.connections.add({ deviceId: hall.id, method: 'bus', transport: 'bus', heldBy: MACHINE_NODE.id, address: 'lamp-hall' });
   deps.connections.setSecrets(way.id, { pin: 'pin-of-a-test' });
   const porch = deps.catalog.add({ typeId: 'test.lamp', name: 'Porch lamp', description: LAMP });
-  deps.connections.add({ deviceId: porch.id, method: 'bus', transport: 'bus', heldBy: null, address: 'lamp-porch' });
+  deps.connections.add({ deviceId: porch.id, method: 'bus', transport: 'bus', heldBy: MACHINE_NODE.id, address: 'lamp-porch' });
   const morning = deps.automations.create({ name: 'Morning', rule: lampRule, madeFrom: null, roles: { lamp: { device: hall.id, part: 'main' } }, starts: {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
   deps.automations.update(morning.id, { mode: 'armed' });
   deps.automations.placeOnHome(morning.id, 0);
@@ -280,7 +283,7 @@ automations:
   });
 
   test('simulated devices share their address: no claim on it, as setup makes none', async () => {
-    deps.connections.add({ deviceId: deps.catalog.add({ typeId: 'test.lamp', name: 'Sim lamp', description: LAMP }).id, method: 'simulated', transport: 'simulated', heldBy: null, address: 'simulated' });
+    deps.connections.add({ deviceId: deps.catalog.add({ typeId: 'test.lamp', name: 'Sim lamp', description: LAMP }).id, method: 'simulated', transport: 'simulated', heldBy: MACHINE_NODE.id, address: 'simulated' });
     const text = 'kraftverk: 1\ndevices:\n  other-sim:\n    type: test.lamp\n    name: Other sim\n    connect:\n      - via: simulated\n';
     expect((await planImport(deps, text, { mode: 'merge', by: 'olof' })).problems).toEqual([]);
   });

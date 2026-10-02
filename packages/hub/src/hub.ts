@@ -7,7 +7,9 @@ import {
   AppState,
   AuditLog,
   AutomationStore,
-  ClientStore,
+  HomeStore,
+  PlaceStore,
+  NodeStore,
   ConnectionStore,
   databaseLedger,
   resetDatabase,
@@ -18,6 +20,8 @@ import {
   LinkStore,
   policyValues,
   setPolicyValue,
+  type NodeDeclaration,
+  type NodeRecord,
   type SecretsAtRest,
   type SqlDatabase,
 } from '@kraftverk/store';
@@ -73,8 +77,12 @@ export type HubOptions = {
    * not given.
    */
   audit?: AuditLog;
-  /** Who holds what this home holds, in a device's health. */
-  owner?: 'server' | 'client';
+  /**
+   * The node this hub is: its id — the place's to keep, the same in every
+   * home it is part of — its name, and what it declares it is. Its database
+   * is this node's; the home, made the first time, has it as its master.
+   */
+  node: Omit<NodeDeclaration, 'platform' | 'transports'>;
   /**
    * The copy an app kept of the server it used last, if this is that app's
    * own home: offered to keep (`configuration.plan({ from: 'copy' })`).
@@ -107,10 +115,18 @@ export class Hub {
   // What it keeps.
   readonly audit: AuditLog;
   readonly state: AppState;
+  /** The home this database keeps, and its master. */
+  readonly home: HomeStore;
+  /** Where the home's nodes and devices stand. */
+  readonly places: PlaceStore;
+  /** This node: what its database is, and what holds the ways it holds. */
+  get self(): NodeRecord {
+    return this.nodes.self()!;
+  }
   readonly catalog: DeviceCatalog;
   readonly connections: ConnectionStore;
   readonly links: LinkStore;
-  readonly clients: ClientStore;
+  readonly nodes: NodeStore;
   readonly events: EventStore;
   readonly automations: AutomationStore;
   readonly policy: { values(): PolicyValues; set(name: PolicyValueName, value: number | null): PolicyValues };
@@ -162,24 +178,30 @@ export class Hub {
     this.catalog = new DeviceCatalog(db);
     this.connections = new ConnectionStore(db, options.secrets);
     this.links = new LinkStore(db);
-    this.clients = new ClientStore(db);
+    this.nodes = new NodeStore(db);
+    this.home = new HomeStore(db);
+    this.places = new PlaceStore(db);
+    // This node, as it declares itself at every start; the home, made the first time, its master.
+    const here = transports.definitions().filter((definition) => definition.platforms.includes(transports.platform)).map((definition) => definition.id);
+    const self = this.nodes.declareSelf({ ...options.node, platform: transports.platform, transports: here });
+    this.home.ensure({ name: 'Home', masterId: self.id });
     this.events = new EventStore(db);
     this.automations = new AutomationStore(db);
     this.policy = { values: () => policyValues(this.state), set: (name, value) => setPolicyValue(this.state, name, value) };
 
-    const { catalog, connections, links, clients, events, automations } = this;
+    const { catalog, connections, links, nodes, events, automations } = this;
     this.sessions = new SessionManager({
       platform: transports.platform,
-      owner: options.owner ?? (transports.platform === 'server' ? 'server' : 'client'),
+      node: { id: self.id, name: self.name },
       types,
       protocols,
       transports,
-      // What this home holds is what no app holds for it.
-      ...holding(connections, null),
+      // What this node holds of the home: the ways held by its id.
+      ...holding(connections, self.id),
       store: (deviceId) => deviceStore(db, deviceId),
       readOnly: options.readOnly,
       allowRawFrames: options.allowRawFrames ?? false,
-      heldByName: (id) => clients.get(id)?.name ?? null,
+      nodeName: (id) => nodes.get(id)?.name ?? null,
       record,
       // A device saved before it ever answered learns who it is the first time it does.
       onIdentified: (deviceId, identity) => {
@@ -217,8 +239,8 @@ export class Hub {
     this.plans = plans({ db, catalog, sessions, library: this.library, engine: this.engine, automations });
 
     this.remote = new RemoteReadings(db);
-    this.registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports, remote: this.remote });
-    this.setup = new SetupService({ db, record, types, protocols, transports, catalog, connections, links, sessions, http: options.http });
+    this.registry = new DeviceRegistry({ catalog, types, sessions, connections, links, nodes, transports, remote: this.remote, self: self.id, master: () => this.home.get()!.masterId });
+    this.setup = new SetupService({ db, record, types, protocols, transports, catalog, connections, links, sessions, http: options.http, self: self.id });
     this.nearby = new Nearby({ types, protocols, transports, connections });
     this.sampler = new Sampler(db, this.registry);
     this.changeLog = new ChangeLog(db, this.bus, (id) => {
@@ -241,6 +263,7 @@ export class Hub {
       policy: this.policy,
       sealing: options.sealing,
       kept: options.secrets,
+      self: self.id,
       record,
       bus: this.bus,
     });

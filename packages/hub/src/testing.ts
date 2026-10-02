@@ -1,6 +1,7 @@
 import { fakeByteChannel } from '@kraftverk/device-sdk/testing';
 import {
   defineDeviceType,
+  nodeId,
   MAIN_PART,
   type DeviceDescription,
   type ByteChannel,
@@ -32,8 +33,8 @@ export const busDefinition: TransportDefinition = {
   exclusive: true,
   // A radio of sorts: the lamp is reached by whoever is near it.
   nearby: true,
-  platforms: ['server'],
-  discovery: { server: 'list' },
+  platforms: ['system'],
+  discovery: { system: 'list' },
 };
 
 /** The bus, with the lamps on it. Add and remove lamps to change what is seen. */
@@ -228,3 +229,9 @@ export const lampType = defineDeviceType<LampConfig>({
     return lampSession(ctx, null);
   },
 });
+
+/** A node that is always on, reachable and trusted, as a machine on the network is: what a test's home runs as. */
+export const MACHINE_NODE = { id: nodeId('n-0000000000a1'), name: 'Test machine', alwaysOn: true, reachable: true, trusted: true };
+
+/** A node in someone's hand, as a browser or a phone is: on while open, reaching out, trusted with nothing that must stay put. */
+export const APP_NODE = { id: nodeId('n-0000000000b2'), name: 'Chrome on a test', alwaysOn: false, reachable: false, trusted: false };

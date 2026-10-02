@@ -36,7 +36,7 @@ const ACTION: Record<ImportItem['action'], { label: string; tone: Tone }> = {
 type Source = { restored: true } | { text: string } | { from: HomeElsewhere };
 
 /** What bringing in a home kept elsewhere is called, by where it is. */
-const BRING: Record<HomeElsewhere, string> = { 'this-app': 'Move this app’s own home here', copy: 'Keep your server’s home in this app' };
+const BRING: Record<HomeElsewhere, string> = { 'this-node': 'Move this app’s own home here', copy: 'Keep your server’s home in this app' };
 
 export function ImportCard({
   vocabulary,

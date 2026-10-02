@@ -51,9 +51,10 @@ export class MovingToServer {
       secrets: this.#secrets,
       sealing: this.#sealing,
       installed: this.#holding.installed,
+      // The same node: its own home was kept by it, before it followed one.
+      node: (({ id, name, alwaysOn, reachable, trusted }) => ({ id, name, alwaysOn, reachable, trusted }))(this.#holding.nodes.self()!),
       readOnly: () => true,
       http: () => Promise.reject(new Error('A home moving reaches nothing')),
-      owner: 'client',
       log: () => {},
     });
     return this.#own;
@@ -65,7 +66,7 @@ export class MovingToServer {
     if (own.state.get(MOVED)) return null;
     const devices = own.catalog.list().length;
     const automations = own.automations.list().length;
-    return devices || automations ? { from: 'this-app', devices, automations } : null;
+    return devices || automations ? { from: 'this-node', devices, automations } : null;
   }
 
   owns(plan: string): boolean {
@@ -87,7 +88,7 @@ export class MovingToServer {
     const staying: Staying[] = [];
     for (const [key, entry] of Object.entries(document.devices)) {
       const type = installed.types.get(entry.type);
-      const theirs = new Set(offered.find((listing) => listing.id === entry.type)?.ways.filter((way) => way.holder === 'home').map((way) => way.method) ?? []);
+      const theirs = new Set(offered.find((listing) => listing.id === entry.type)?.ways.filter((way) => way.holder === 'master').map((way) => way.method) ?? []);
       const had = own.catalog.byKey(key);
       entry.connect = entry.connect.filter((way) => {
         const method = type ? methodOf(type, way.via) : null;
@@ -95,7 +96,7 @@ export class MovingToServer {
         const nearby = installed.transports.definition(method.transport)?.nearby === true;
         // Near the device, or a way the server cannot hold: this app holds it for the server, if it can.
         if (!(nearby || !theirs.has(method.id)) || !holdableHere(installed, method)) return true;
-        const connection = had ? (own.connections.forDevice(had.id).find((each) => each.method === method.id && each.heldBy === null) ?? null) : null;
+        const connection = had ? (own.connections.forDevice(had.id).find((each) => each.method === method.id && each.heldBy === own.self.id) ?? null) : null;
         staying.push({ key, name: entry.name, typeId: entry.type, method: method.id, label: method.label, address: connection?.address ?? way.address, settings: way.settings, device: entry.settings, connection: connection?.id ?? null });
         // Its secrets stay with this app: out of the file, and out of what the file names.
         for (const secret of Object.values(way.secrets)) if ('secret' in secret) delete document.secrets[secret.secret];
@@ -110,7 +111,7 @@ export class MovingToServer {
       ...plan,
       notes: [
         ...plan.notes,
-        ...staying.map((stay) => `${stay.name}: ${stay.label} stays with ${this.#holding.app.name}, near it — your server keeps the device`),
+        ...staying.map((stay) => `${stay.name}: ${stay.label} stays with ${this.#holding.name}, near it — your server keeps the device`),
         'What this app recorded stays with it: its history does not move.',
       ],
     };
@@ -128,27 +129,27 @@ export class MovingToServer {
     const applied = await holding.home.configuration.apply(answers);
     this.#plans.delete(answers.plan);
     const own = this.#home();
-    const me = holding.appId ?? (await holding.register());
+    const me = await holding.joined();
     const list = await holding.home.devices.list();
     const kept: { way: string; secrets: Record<string, string> }[] = [];
     for (const stay of staying) {
       const device = list.find((each) => each.key === stay.key && !each.removedAt);
       if (!device || !stay.address) {
-        applied.notes.push(`${stay.name}: its ${stay.label} could not stay with this app: add it again from ${holding.app.name}`);
+        applied.notes.push(`${stay.name}: its ${stay.label} could not stay with this app: add it again from ${holding.name}`);
         continue;
       }
       try {
         const draft = await holding.home.setup.startHeld({
-          clientId: me,
+          nodeId: me,
           typeId: stay.typeId,
           methodId: stay.method,
           address: stay.address,
-          identified: { identity: device.identity, model: null, summary: `Moved from ${holding.app.name}` },
+          identified: { identity: device.identity, model: null, summary: `Moved from ${holding.name}` },
           device: stay.device,
           connection: stay.settings,
         });
         const saved = await holding.home.setup.save(draft.id, { mode: 'attach', deviceId: device.id, name: device.name });
-        const way = saved.connections.find((each) => each.method === stay.method && each.heldBy.kind !== 'home' && each.heldBy.id === me);
+        const way = saved.connections.find((each) => each.method === stay.method && each.heldBy.id === me);
         if (way && stay.connection) {
           const secrets = Object.fromEntries(own.connections.secretFields(stay.connection).flatMap((field) => {
             const value = own.connections.secret(stay.connection!, field);

@@ -81,7 +81,7 @@ export function simulatorContext<Config extends ConfigValues = ConfigValues>(
     log: { info: quiet, warn: quiet, error: quiet },
     readOnly: false,
     allowRawFrames: false,
-    platform: 'server',
+    platform: 'system',
     schedule: (everyMs, task) => {
       let running = false;
       timers.push(
@@ -457,6 +457,6 @@ export function fakeConnection(input: {
     channel: input.channel,
     config: input.config ?? {},
     secrets: { get: (field) => input.secrets?.[field] ?? null },
-    platform: 'server',
+    platform: 'system',
   };
 }

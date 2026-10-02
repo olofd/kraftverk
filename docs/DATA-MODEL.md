@@ -95,9 +95,9 @@ tap.
 | | |
 |---|---|
 | **You see** | One row per way this type can be reached, *from where you are*. For a P280, in the phone app, with a server that has a Bluetooth radio:<br/>• **Wi-Fi, through your server** (*Recommended*). "Always on: history and automations keep running. The station needs to be set to use your server."<br/>• **Bluetooth, from your server**. "The station must be within about 10 m of the server."<br/>• **Bluetooth, from this phone**. "Only while this phone is near the station. History records while it is connected; automations can reach it only then."<br/>A row that can't be used here stays visible, greyed, with the reason: "Your server has no Bluetooth radio", or "Firefox can't use Bluetooth: use Chrome or Edge, or the phone app". |
-| **You choose** | A **connection method** and **who holds it**: your server, or this phone or browser. |
-| **Comes from** | The type's **connection methods**. Each is one protocol over one transport, and says nothing about where it runs. **Who can hold it** is worked out: the server and this app each report the transports they have right now, and a method is offered wherever its transport is. |
-| **Leaves behind** | The draft's method and holder. They become `device_connection.method` and `.held_by`. |
+| **You choose** | A **connection method** and **which node holds it**: your server, or this app's own node — this phone or browser. |
+| **Comes from** | The type's **connection methods**. Each is one protocol over one transport, and says nothing about where it runs. **Which node can hold it** is worked out: each node reports the transports it has right now, and a method is offered wherever its transport is. |
+| **Leaves behind** | The draft's method and the node that holds it. They become `device_connection.method` and `.held_by`. |
 
 If only one row exists, the screen is skipped and the next one says how it will
 connect.
@@ -130,7 +130,7 @@ a radio. The P280's code is the same either way.
 |---|---|
 | **You see** | Only for protocols that need them. For Tuya local: "Your plug's local key", with *Fetch it with my Tuya account* (the account details are used once and never stored) or *Enter it*. |
 | **Comes from** | The **protocol**. |
-| **Leaves behind** | For a connection held by the server, the secret. It stays on the server, in `connection_secret`. For a connection held by the app, the secret stays on that phone or browser, in its secure storage, and the server never sees it. |
+| **Leaves behind** | The secret, on the node that holds the connection: for one your server holds, in the server's `connection_secret`; for one this app's node holds for it, in the app's own database, sealed with a key the platform keeps — and the server never sees it. |
 
 ### 7 · Check it
 
@@ -234,9 +234,11 @@ classDiagram
     discover() or choose()
     open(address)
   }
-  class Holder {
-    server or a client
+  class Node {
+    the hub, running somewhere
     transports available now
+    always on · reachable · trusted
+    where it stands
   }
   class Capability {
     id
@@ -258,7 +260,7 @@ classDiagram
   ConnectionMethod "*" --> "1" Protocol : speaks
   ConnectionMethod "*" --> "1" Transport : over
   Protocol "*" --> "1..*" Transport : has a binding for
-  Holder "*" --> "*" Transport : has
+  Node "*" --> "*" Transport : has
   DeviceType "*" --> "*" Capability : its parts offer
   LinkKind "*" --> "2" Capability : joins parts offering
 ```
@@ -270,7 +272,8 @@ classDiagram
 | **Protocol** | The language spoken over a transport: framing, encryption, message shapes. It has one **binding** for each transport it rides: the MQTT topic names, the Bluetooth service and how frames are split. It **recognises** its own devices among sightings, and says what instructions and credentials setup needs. Pure code: no I/O, no Node or Bun built-ins, no product knowledge. | `packages/protocols/*` | `sydpower`: MODBUS-style frames, bindings for `mqtt` and `ble`, and the rule that register 68 is never written 0. `tuya-local`: encrypted frames, a binding for `lan`, the local-key credential. |
 | **Device type** | One product or product family: what its values *mean*. It **identifies** a device (its identity and model) over any of its connection methods. Models of one family are *profiles*, as data, not separate types. Pure code too, because it runs wherever its connection is held. | `packages/devices/*`, `packages/services/*` | `aferiy.p280`, `atorch.s1w`, `tuya.plug` (one profile per socket), `open-meteo.weather` |
 | **Connection method** | One (protocol, transport) pair a type supports, what it **reaches** beyond the home network (`local`, `cloud-at-setup` — the vendor's cloud once, to fetch a key — or `cloud`), an optional *recommended* flag and any extra setup steps of its own. It says nothing about *where* it runs. A type declares pairs, not two separate lists, because not every protocol rides every transport. | inside the device type | P280: `wifi` = sydpower over mqtt, local; `bluetooth` = sydpower over ble, local. ATORCH: `lan` = tuya-local over lan, cloud at setup. Open-Meteo: `api` = open-meteo over https, cloud. |
-| **Holder** | Somewhere a connection can be held: the server, or one client (a phone or browser running the app). It reports the transports it has *now*, and why one is missing. Setup offers a method wherever its transport is available. | runtime | The server: `mqtt`, `ble`, `lan`, `https`. Chrome on a laptop: `ble`, `https`. Firefox: `https` ("no Bluetooth in Firefox"). |
+| **Node** | A kraftverk node: the hub running somewhere — an always-on machine on the network, a phone, a browser — that holds connections. It reports the transports it has *now*, and why one is missing, and declares what it is: **always on** (runs while nobody looks), **reachable** (others connect to it), **trusted** (what must stay put — a vendor account's password — may be kept on it). One node is the home's **master** (`home.master_id`): the one always on and reachable, when there is one; the others follow it, an always-on one too — a Raspberry Pi beside a station, holding its Bluetooth for the master. One master per home; a master per place is a door left open. Setup offers a method wherever a node of the home has its transport. | runtime, and the `node` record | A NAS: `mqtt`, `ble`, `lan`, `https`; always on, reachable, trusted. Chrome on a laptop: `ble`, `https`. Firefox: `https` ("no Bluetooth in Firefox"). |
+| **Place** | Where something is, physically: a home has one or more, each with its position and clock. A device and a node stand at one — a phone at none, as it moves. Weather, sun times and an automation's clock are read from it. | the `place` record | "Home", 59.33 N 18.07 E, Europe/Stockholm; "The cabin" |
 | **Value** | One type system for everything a device reports, is told, answers or asks for: number (unit, range, step, precision), boolean, enum, string, **timestamp**, and a **list** or an **object** of values for structure. `null` is "not known". A config field is a value type with a title and a **presentation** (`secret`, `host`, `multiline`, `slider`). | `device-sdk` (`values.ts`, `schema.ts`) | A forecast: a list of objects `{at: timestamp, temperature: °C, cloudCover: %, …}`; a local key: a string presented as a secret |
 | **Description** | What a device is: its **parts** (`main`, and whatever it has several of — each of a curated **kind** with an icon, or one of the type's own, namespaced, and an optional **energy role**), their **attributes** (what they report, and what they remember and can be told), its **events**, and any capabilities of its own. An attribute's key begins with its part (`pack.1.soc`); it says how long a value stays **current** (`currentFor`). A type declares it for a device's config; a session may report its own. | `device-sdk` (`description.ts`) | A P280: `main`, `input.ac` (`input.ac.present`), `input.solar`, `outlet.ac`/`dc`/`usb` (`outlet.ac.on`), and `pack.1` when a pack is plugged in |
 | **Capability** | What a part can do or report, declared like a Matter cluster: attributes bound to standard meanings (Matter's names), commands with typed arguments, what each sets and **what makes it consequential**, queries with the **type of their answer**, and events. The library is shared; a package may declare its own, namespaced by its type, in the same shape. | `device-sdk` | `switch` (off while drawing more than the home's `loadWatts` is consequential), `powerMeter`, `battery`, `acInput` (raises `mains.lost`), `weather.forecast` (answers a list of hours) |
@@ -321,7 +324,11 @@ need.
 erDiagram
   device ||--o{ device_connection : "is reached by"
   device_connection ||--o{ connection_secret : "needs"
-  client |o--o{ device_connection : "holds (none: the server does)"
+  node ||--o{ device_connection : "holds"
+  place |o--o{ node : "stands at"
+  place |o--o{ device : "stands at"
+  home ||--o{ place : "has"
+  node |o--|| home : "is the master of"
   device ||--o{ device_kv : "remembers"
   device ||--o{ sample : "recorded"
   device ||--o{ sample_change : "changed"
@@ -329,9 +336,8 @@ erDiagram
   device ||--o{ device_event : "raised"
   device ||--o{ device_link : "is the source of"
   device ||--o{ device_link : "is the target of"
-  users ||--o{ client : "signed in on"
+  users |o--o{ node : "joined from"
   users ||--o{ sessions : "has"
-  client |o--o{ sessions : "belongs to"
   device ||--o{ device_switch : "was switched"
   device ||--o{ device_write : "was written"
   automation ||--o{ automation_role : "is filled by"
@@ -357,6 +363,7 @@ erDiagram
     text description_source "type · device · whose word the description is"
     json info "{manufacturer: AFERIY, model: P280, firmware: {...}} · null until it has said"
     text picture "type:1 · own:<id> one day · null: its type's first"
+    text place_id FK "p-3b81e2c94f0a · where it stands: weather and sun times are read from it · null: not said"
     text added_at "2026-09-27T19:40:00Z"
     text removed_at "null · set by Remove · history kept"
   }
@@ -365,7 +372,7 @@ erDiagram
     text device_id FK "d-3f9a2c61b0e4"
     text method "wifi · a ConnectionMethod id of the device's type"
     text transport "mqtt · copied from the method, for the address rule"
-    text held_by FK "null = the server · or a client id: k-51d0e7a2c9f3"
+    text held_by FK "n-51d0e7a2c9f3 · the node that holds it: the master, or a node that follows it"
     text address "AABBCC001122 · 192.0.2.41 · a browser's Bluetooth handle"
     int priority "0 = preferred · 1 = the fallback"
     json config "{} · the method's own choices · {protocolVersion: 3.4}"
@@ -379,12 +386,32 @@ erDiagram
     text value "encrypted with KRAFTVERK_SECRET_KEY"
     int encrypted "1"
   }
-  client {
-    text id PK "k-51d0e7a2c9f3"
-    text user_id FK "u-2a9c40e1b7d8"
-    text name "Olof's iPhone · Chrome on the laptop · editable"
-    text platform "ios · android · web"
-    json transports "[ble, https] · reported at each sign-in"
+  home {
+    text id PK "h-7c2e90a14d3b · made once, with its database"
+    text name "Our house · what the people in it call it"
+    text master_id FK "n-0e4a7c91b2d5 · the node whose database is the home's: the one writer"
+    text created_at "2026-10-02T08:00:00Z"
+  }
+  place {
+    text id PK "p-3b81e2c94f0a"
+    text key "home · cabin · its name in configuration"
+    text name "Home · The cabin"
+    real latitude "59.33"
+    real longitude "18.07"
+    text time_zone "Europe/Stockholm · its clock"
+    text created_at "2026-10-02T08:00:00Z"
+  }
+  node {
+    text id PK "n-51d0e7a2c9f3 · made by the node itself, once: every home's database knows it by it"
+    text name "Garage NAS · Chrome on Windows · This iPhone"
+    text platform "system · web · native · what its transports' entries are for"
+    int always_on "1 · runs while nobody looks"
+    int reachable "1 · others connect to it"
+    int trusted "1 · what must stay put may be kept on it"
+    json transports "[mqtt, ble, lan, https] · what it reaches devices over, as it last said"
+    text place_id FK "p-3b81e2c94f0a · where it stands · null: it moves with someone, or has not said"
+    text account_id FK "u-2a9c40e1b7d8 · the person it joined for · null: the home's own"
+    int self "1 · the node this database belongs to: one"
     text created_at "2026-09-27T19:30:00Z"
     text last_seen_at "2026-09-27T21:05:00Z"
   }
@@ -530,8 +557,8 @@ erDiagram
     int id PK "4812"
     text at "2026-09-27T19:51:12Z"
     text kind "device.control"
-    text actor "olofdahlbom · automation:a-71c2d0e5f9a3 · client:k-51d0e7a2c9f3"
-    text resource_kind "device · client · automation · account · transport · null with resource"
+    text actor "olofdahlbom · automation:a-71c2d0e5f9a3 · node:n-51d0e7a2c9f3"
+    text resource_kind "device · node · place · automation · account · transport · null with resource"
     text resource "d-3f9a2c61b0e4 · not a foreign key: it outlives the device"
     text summary "Switched the AC outlets off"
     json detail "{part: outlet.ac, capability: switch, command: set, args: {on: false}}"
@@ -562,7 +589,6 @@ erDiagram
   sessions {
     text token_hash PK "sha-256 of the cookie · the token is never stored"
     text user_id FK "u-2a9c40e1b7d8"
-    text client_id FK "k-51d0e7a2c9f3 · which phone or browser"
     text created_at "2026-09-27T19:30:00Z"
     text last_seen_at "2026-09-27T21:05:00Z"
     text expires_at "2026-10-27T19:30:00Z"
@@ -580,7 +606,9 @@ erDiagram
 | `device.removed_at` | So Remove doesn't destroy years of history. | Remove |
 | `device_connection` | A device can be reached more than one way, from more than one place. Your station over Wi-Fi from the server *and* over Bluetooth from your phone is one device with two connections. | step 10, or *Add another way to reach it* |
 | `connection_secret` | Credentials belong to a way of reaching the device (the Tuya local key is part of *tuya-local over lan*), not to the device. | step 6 |
-| `client` | "Held by this phone" needs a phone to point at, with a name the app can show: "Held by Olof's iPhone". | the first sign-in on a phone or browser |
+| `home` | The home this database keeps — one: what every place, node and device here is part of, and what its people call it. | when the database is made |
+| `place` | A home is somewhere — one place or several, each with its position and its clock: what weather, sun times and an automation's clock are read from. A device and a node stand at one. | when the home is made, and later |
+| `node` | Every kraftverk node of the home — the hub running somewhere: the one this database belongs to (`self`), the home's master, and the nodes that follow it, the always-on machine among them. Each declares what it is — always on, reachable, trusted — which is how the master is chosen, and what a connection's holder names: "Bluetooth, from Olof's iPhone". | when the database is made (its own); when another joins |
 | `device_link` | Facts about the house, between parts — which plug feeds which station's mains input, which station's outlet feeds another — that the gateway, the energy view and automations all read. | step 9, or later on the device's page |
 | `device_kv` | What a session keeps between runs: a simulator's settings, a plug's detected protocol version. | by the session |
 | `device.description`, `device_attribute` | What the device is — so a closed or removed device is still described — and every attribute it ever had, so history keeps its labels after a part is gone. | step 10, then whenever it changes |
@@ -606,11 +634,11 @@ erDiagram
 - **One device per identity.** There is a unique index on `device (identity)`
   where `removed_at IS NULL`. A removed device keeps its identity, so re-adding
   that device finds it (step 7, *Yours before*).
-- **One connection per device, method and holder.** There is a unique index on
-  `(device_id, method, IFNULL(held_by, 'server'))`.
+- **One connection per device, method and node.** There is a unique index on
+  `(device_id, method, held_by)`.
 - **An exclusive address belongs to one device.** For transports that declare
-  themselves exclusive (`mqtt`, `ble`, `lan`), two server-held connections of
-  different devices may not share a `(transport, address)`. Step 5 greys such a
+  themselves exclusive (`mqtt`, `ble`, `lan`), two connections of different
+  devices may not share a `(transport, address)`. Step 5 greys such a
   sighting out, and the save refuses it. `https` is not exclusive: two weather
   services can use the same API.
 - **`type_id` never changes.** Changing what a device *is* means adding a new
@@ -619,9 +647,9 @@ erDiagram
   the installed definitions. Each `config` is validated against the schema
   its definition declares: the type's for `device.config`, the method's for
   `device_connection.config`. Neither ever holds a secret.
-- **Secrets of an app-held connection never reach the server.** They live in
-  that client's secure storage. `connection_secret` holds only secrets of
-  server-held connections, encrypted.
+- **A connection's secrets stay on the node that holds it.** In each
+  database, `connection_secret` holds only the secrets of connections its own
+  node holds, sealed; a connection another node holds has none there.
 - **Links join parts, and a kind may allow one target per source part.**
   `feeds` does — a plug feeds one thing — so a second replaces the first.
   The row says so (`one_per_source`, from its kind), and a partial unique
@@ -666,23 +694,23 @@ Each device's page has a **Connections** section, and it is where
   refused ("That's a different station").
 - **The last connection can't be removed.** You remove the device instead.
 
-### When a phone or browser holds the connection
+### When another node holds the connection
 
-- The session runs **in the app**, with the same device-type and protocol code
-  the server would run.
-- **Readings are sent to the server** while the app has it, so history
+- The session runs **on that node** — this app's, for a server — with the
+  same device-type and protocol code the master would run.
+- **Readings are sent to the master** while that node has it, so history
   records. Anything not yet sent is queued and uploaded later.
 - **The same safety rules apply.** The protocol's guards (register 68) and the
   gateway's rules (confirmation, dwell time, verification) are shared code that
-  runs in the holder. The audit entry is sent to the server, and queued if
+  runs in the holder. The audit entry is sent to the master, and queued if
   offline.
-- **Automations can reach the device only while that phone or browser has it.**
+- **Automations can reach the device only while that node has it.**
   The device's page says so, and an automation that can't reach it records why.
-- The session's store (`device_kv`) stays on the server. The app reaches it
-  through the API and keeps a copy for when it is offline.
+- The session's store (`device_kv`) stays with the master. The node reaches
+  it through the API and keeps a copy for when it is offline.
 - **What the app keeps, it keeps in its own database** (docs/PLAN-SHARED-CORE.md,
   phase 6): the device as the server has it, by the server's ids, with the
-  way it holds (`held_by` null there: its own); that way's secrets, sealed
+  way it holds (`held_by` its own node, `self` there); that way's secrets, sealed
   with the app's key; the session's store; the gateway's memory; and what
   it owes the server (`send_queue`). With the server away it still reaches
   the device, and sends what it owes when the server is back.
@@ -694,9 +722,9 @@ Each device's page has a **Connections** section, and it is where
 | **Remove** | Sets `removed_at`, closes the session, deletes its connections and their secrets (which frees their addresses) and its links. Its history, store and identity stay. | Add the same device again: step 7 offers to bring it back. |
 | **Delete history** (on a removed device) | Deletes the row. Its samples and store go with it by `ON DELETE CASCADE`, after typing the device's name to confirm. | The copy the server makes before each migration, and backups. |
 
-### Forgetting a phone or browser
+### Forgetting a node
 
-Signing a client out for good deletes its `client` row and its connections.
+Forgetting a node deletes its `node` row and the connections it held.
 A device left with no connection shows "Nothing can reach this device" on its
 page, with *Add a way to reach it*.
 
@@ -719,14 +747,14 @@ The app can run with no server at all (ARCHITECTURE.md, decisions 15 and
 22): it keeps a home of its own — the same hub, the same schema, every record
 above — in its own SQLite: expo-sqlite on a phone, SQLite's WebAssembly build
 in a browser's worker (docs/PLAN-SHARED-CORE.md, phase 6). Its connections
-are the home's own (`held_by` null), its secrets sealed with a key the
-platform keeps; there is no `client` row, as there is no server to hold for.
+are held by its own node — the only node of the home, its master — its
+secrets sealed with a key the platform keeps.
 It keeps history and runs automations while it is open.
 
 Adding a server offers to move this home to it, as an import the person
 sees first: the server takes the devices, links, automations and values,
 and holds every way but one over a radio (`nearby`: Bluetooth), which this
-app holds for it (`held_by` this app), its key staying here. History the app
+app's node holds for it (`held_by` that node), its key staying there. History the app
 recorded stays with the app. Leaving a server offers the reverse: the copy
 the app kept of the server's home becomes its own, the server's history
 staying with the server (docs/PLAN-SHARED-CORE.md, phase 6h).
@@ -735,9 +763,9 @@ staying with the server (docs/PLAN-SHARED-CORE.md, phase 6h).
 
 ## 7. Later: homes
 
-[`ACCOUNTS.md`](ACCOUNTS.md) plans **homes**: equipment belongs to a home, and
-accounts are members of homes. When that is built, `device` and `client` gain a
+[`ACCOUNTS.md`](ACCOUNTS.md) plans accounts as members of **homes**. The
+`home` row is there already: one per database, naming its master node. When a
+database keeps more than one home, `device`, `place` and `node` gain a
 `home_id`. Everything that hangs off a device — its connections and their
 secrets, its store, its history, its links — belongs to that home through the
 device, so nothing else changes shape. A link never joins devices in two homes.
-Until then there is one implicit home: the server's.

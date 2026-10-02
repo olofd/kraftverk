@@ -13,8 +13,8 @@ const definition: TransportDefinition = {
   // A device's address on the broker is the id its topics name it by: one device.
   exclusive: true,
   nearby: false,
-  platforms: ['server'],
-  discovery: { server: 'list' },
+  platforms: ['system'],
+  discovery: { system: 'list' },
 };
 
 export default definition;

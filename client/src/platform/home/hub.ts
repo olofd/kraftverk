@@ -6,6 +6,7 @@ import { AuditLog, createSchema, prepareDatabase, schemaStateOf, transportStore,
 import { DEVICE_TYPES, PROTOCOLS, TRANSPORTS } from '../../generated/installed';
 import { appSealing } from '../cipher';
 import { appHttp } from '../http';
+import type { ThisNode } from '../node';
 
 export { OWNER } from './home';
 
@@ -28,6 +29,8 @@ export function readyDatabase(database: SqlDatabase, madeBy: string): SqlDatabas
 }
 
 export type AppPlace = {
+  /** The node this app is: the same id in its own home and in a server's. */
+  node: ThisNode;
   database: SqlDatabase;
   secrets: SecretsAtRest;
   platform: 'web' | 'native';
@@ -66,7 +69,7 @@ export function appHub(place: AppPlace & { copy?: SqlDatabase }): Hub {
     // Frames nobody has described are for a server started to bring up a unit, never for an app.
     allowRawFrames: false,
     http: appHttp,
-    owner: 'client',
+    node: place.node,
     log,
     ...(place.copy ? { copy: place.copy } : {}),
   });
@@ -77,7 +80,7 @@ export function appHub(place: AppPlace & { copy?: SqlDatabase }): Hub {
  * `KraftverkApi` with this app's own ways wrapped in, kept in this app's
  * own database. Not started; `start()` it.
  */
-export function appHolding(place: AppPlace & { home: KraftverkApi; name: string; own?: SqlDatabase }): Holding {
+export function appHolding(place: AppPlace & { home: KraftverkApi; own?: SqlDatabase }): Holding {
   // What a transport records is owed to the server's timeline, as the holding's own entries are.
   let holding: Holding | null = null;
   const installed = appInstalled(place, (entry) => holding?.owe('audit', null, entry));
@@ -86,7 +89,7 @@ export function appHolding(place: AppPlace & { home: KraftverkApi; name: string;
     database: place.database,
     secrets: place.secrets,
     installed,
-    app: { name: place.name, platform: place.platform },
+    node: place.node,
     readOnly: place.readOnly,
     http: appHttp,
     log,

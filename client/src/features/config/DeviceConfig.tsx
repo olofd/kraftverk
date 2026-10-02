@@ -25,7 +25,7 @@ export function DeviceConfig({ device }: { device: DeviceView }) {
   const [shown, setShown] = useState<ReturnType<typeof deviceYaml> | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const ways = device.connections.filter((connection) => connection.heldBy.kind === 'home');
+  const ways = device.connections.filter((connection) => connection.heldBy.kind === 'master');
   const secrets = [...new Set(ways.flatMap((connection) => connection.secrets))];
 
   const show = async () => {

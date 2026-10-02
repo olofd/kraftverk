@@ -7,6 +7,7 @@ import {
   validateConfig,
   type ConfigSchema,
   type ConfigValues,
+  type NodeId,
   type SavedDeviceId,
 } from '@kraftverk/device-sdk';
 
@@ -19,10 +20,10 @@ import { connectionSchema, SetupError, type Draft, type SaveRequest } from './dr
  * its links, all or nothing.
  */
 
-export type SaveDeps = { catalog: DeviceCatalog; connections: ConnectionStore; links: LinkStore };
+export type SaveDeps = { catalog: DeviceCatalog; connections: ConnectionStore; links: LinkStore; self: NodeId };
 
 /** Whether the check lets it be saved, and its device's and connection's config as they will be kept. Throws why not. */
-export function saveable(draft: Draft, input: SaveRequest): { device: ConfigValues; connection: ConfigValues } {
+export function saveable(draft: Draft, input: SaveRequest, self: NodeId): { device: ConfigValues; connection: ConfigValues } {
   const { checked, type } = draft;
   if (!draft.address) throw new SetupError('Choose the device first');
   if (!checked) throw new SetupError('Check that it answers first');
@@ -43,8 +44,8 @@ export function saveable(draft: Draft, input: SaveRequest): { device: ConfigValu
   };
   const connection = validateConfig(nonSecret, Object.fromEntries(Object.entries(draft.connection).filter(([field]) => field in nonSecret.fields)));
   if (!connection.ok) throw new SetupError(connection.issues.map((issue) => issue.message).join('; '));
-  // A key the server will need, when the server will hold it. An app keeps its own.
-  if (draft.reach.strict && draft.heldBy === null) {
+  // A key this node will need, when it will hold it. A node that follows the home keeps its own.
+  if (draft.reach.strict && draft.heldBy === self) {
     for (const [field, spec] of Object.entries(schema.fields)) {
       if (isSecretField(spec) && spec.required && !draft.secrets.get(field)) throw new SetupError(`${spec.title} is required`);
     }
@@ -101,12 +102,12 @@ export function writeSaved(deps: SaveDeps, draft: Draft, input: SaveRequest, con
   const { record, kind } = deviceFor(deps, draft, input, config.device);
 
   // An exclusive address belongs to one device.
-  if (draft.reach.exclusive && draft.heldBy === null) {
+  if (draft.reach.exclusive && draft.heldBy === deps.self) {
     const claim = deps.connections.claimant(method.transport, address);
     if (claim && claim.deviceId !== record.id) throw new SetupError('Another device you have is already reached at that address', 409);
   }
 
-  const saved = deps.connections.add({ deviceId: record.id, method: method.id, transport: method.transport, heldBy: draft.heldBy, address, config: config.connection, secretsExportable: draft.heldBy === null && input.secretsExportable === true });
+  const saved = deps.connections.add({ deviceId: record.id, method: method.id, transport: method.transport, heldBy: draft.heldBy, address, config: config.connection, secretsExportable: draft.heldBy === deps.self && input.secretsExportable === true });
   if (draft.secrets.size) deps.connections.setSecrets(saved.id, Object.fromEntries(draft.secrets));
 
   for (const link of input.links ?? []) {

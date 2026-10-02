@@ -91,7 +91,7 @@ export function deviceYaml(device: DeviceView, vocabulary: Vocabulary | null): {
     picture: device.picture === 'type:0' ? null : device.picture,
     settings: scalars(device.config),
     connect: ways
-      .filter((way) => way.heldBy.kind === 'home')
+      .filter((way) => way.heldBy.kind === 'master')
       .map((way) => ({
         via: way.method,
         address: type?.methods.find((method) => method.id === way.method)?.fixedAddress ? null : way.address,

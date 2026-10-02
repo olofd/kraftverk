@@ -30,21 +30,65 @@ export const SCHEMA = `
     last_login_at       TEXT
   );
 
-  /* The phones and browsers that hold connections, each belonging to a person. */
-  CREATE TABLE client (
+  /*
+    Where things are, physically: a home is somewhere — one place or several,
+    each with its position and its clock. A device and a node stand at one;
+    weather, sun times and an automation's clock are read from it.
+  */
+  CREATE TABLE place (
+    id         TEXT PRIMARY KEY,
+    /* Its name in configuration: what a file and an import know it by. */
+    key        TEXT NOT NULL UNIQUE CHECK (key GLOB '[a-z0-9]*' AND key NOT GLOB '*[^a-z0-9-]*' AND length(key) <= 63),
+    name       TEXT NOT NULL,
+    latitude   REAL NOT NULL CHECK (latitude BETWEEN -90 AND 90),
+    longitude  REAL NOT NULL CHECK (longitude BETWEEN -180 AND 180),
+    time_zone  TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  /*
+    Every kraftverk node of the home: the hub running somewhere — an
+    always-on machine on the network, a phone, a browser — holding the
+    connections it can reach. The one this database belongs to (self), and
+    the others it shares the home with, each known by the same id in every
+    database that knows it: made by the node itself, once. What a node is,
+    it declares: always on, reachable by others, trusted with what must stay
+    put. A node joined from a person's account acts for them; the home's own
+    act for nobody.
+  */
+  CREATE TABLE node (
     id           TEXT PRIMARY KEY,
-    user_id      TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     name         TEXT NOT NULL,
-    platform     TEXT NOT NULL,
+    /* What its transports' entries are for: a system process, a browser's page, a phone. */
+    platform     TEXT NOT NULL CHECK (platform IN ('system', 'web', 'native')),
+    always_on    INTEGER NOT NULL CHECK (always_on IN (0, 1)),
+    reachable    INTEGER NOT NULL CHECK (reachable IN (0, 1)),
+    trusted      INTEGER NOT NULL CHECK (trusted IN (0, 1)),
     transports   TEXT NOT NULL DEFAULT '[]',
+    /* Where it stands; null: it moves with someone, or has not said. */
+    place_id     TEXT REFERENCES place (id) ON DELETE SET NULL,
+    account_id   TEXT REFERENCES users (id) ON DELETE CASCADE,
+    self         INTEGER NOT NULL CHECK (self IN (0, 1)),
     created_at   TEXT NOT NULL,
     last_seen_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX node_self ON node (self) WHERE self = 1;
+
+  /*
+    The home this database keeps: one. What every place, node and device here
+    is part of; and its master — the node whose database is the home's, the
+    one that writes it. Another node follows it, and can take its place.
+  */
+  CREATE TABLE home (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    master_id  TEXT NOT NULL REFERENCES node (id),
+    created_at TEXT NOT NULL
   );
 
   CREATE TABLE sessions (
     token_hash   TEXT PRIMARY KEY,
     user_id      TEXT NOT NULL,
-    client_id    TEXT REFERENCES client (id) ON DELETE SET NULL,
     created_at   TEXT NOT NULL,
     last_seen_at TEXT NOT NULL,
     expires_at   TEXT NOT NULL,
@@ -76,6 +120,8 @@ export const SCHEMA = `
       — not built yet — a photo of its own (own:<id>). NULL: its type's first.
     */
     picture     TEXT CHECK (picture IS NULL OR picture GLOB 'type:[0-9]*' OR picture GLOB 'own:?*'),
+    /* Where it stands: weather and sun times are read from it. Null: not said. */
+    place_id    TEXT REFERENCES place (id) ON DELETE SET NULL,
     added_at    TEXT NOT NULL,
     removed_at  TEXT
   );
@@ -126,13 +172,13 @@ export const SCHEMA = `
     PRIMARY KEY (device_id, key)
   );
 
-  /* How a device is reached: one row per way, held by the server or by one app. */
+  /* How a device is reached: one row per way, each held by a node of the home. */
   CREATE TABLE device_connection (
     id                TEXT PRIMARY KEY,
     device_id         TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
     method            TEXT NOT NULL,
     transport         TEXT NOT NULL,
-    held_by           TEXT REFERENCES client (id) ON DELETE CASCADE,
+    held_by           TEXT NOT NULL REFERENCES node (id) ON DELETE CASCADE,
     address           TEXT NOT NULL,
     priority          INTEGER NOT NULL DEFAULT 0,
     config            TEXT NOT NULL DEFAULT '{}',
@@ -142,9 +188,9 @@ export const SCHEMA = `
     last_connected_at TEXT
   );
   CREATE INDEX device_connection_address ON device_connection (transport, address);
-  CREATE UNIQUE INDEX device_connection_once ON device_connection (device_id, method, IFNULL(held_by, 'server'));
+  CREATE UNIQUE INDEX device_connection_once ON device_connection (device_id, method, held_by);
 
-  /* A server-held connection's secrets, sealed when a key is given. */
+  /* The secrets of the connections this database's node holds, sealed when a key is given. A connection another node holds has none here. */
   CREATE TABLE connection_secret (
     connection_id TEXT NOT NULL REFERENCES device_connection (id) ON DELETE CASCADE,
     field         TEXT NOT NULL,
@@ -445,7 +491,7 @@ export const SCHEMA = `
     at            TEXT NOT NULL,
     kind          TEXT NOT NULL,
     actor         TEXT NOT NULL,
-    resource_kind TEXT CHECK (resource_kind IN ('device', 'client', 'automation', 'account', 'transport')),
+    resource_kind TEXT CHECK (resource_kind IN ('device', 'node', 'place', 'automation', 'account', 'transport')),
     resource      TEXT,
     summary       TEXT NOT NULL,
     detail        TEXT,

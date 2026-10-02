@@ -69,7 +69,7 @@ export default function ConfigurationScreen() {
         vocabulary={vocabulary}
         restored={!params.import && Boolean(snapshot?.restored)}
         elsewhere={elsewhere}
-        start={params.from === 'this-app' || params.from === 'copy' ? params.from : null}
+        start={params.from === 'this-node' || params.from === 'copy' ? params.from : null}
         onApplied={() => (void refresh(), load())}
       />
       {params.import && kind === 'server' ? <Kept snapshot={snapshot} /> : null}

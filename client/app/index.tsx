@@ -235,7 +235,7 @@ function Elsewhere() {
   if (!elsewhere) return null;
   const what = [elsewhere.devices && `${elsewhere.devices} ${elsewhere.devices === 1 ? 'device' : 'devices'}`, elsewhere.automations && `${elsewhere.automations} ${elsewhere.automations === 1 ? 'automation' : 'automations'}`].filter(Boolean).join(' and ');
   const [title, detail, action] =
-    elsewhere.from === 'this-app'
+    elsewhere.from === 'this-node'
       ? ([`This app kept a home of its own: ${what}`, `Your server can take it over, and run it while the app is closed. What this app reaches over its own radio stays with it, near the device.`, 'See what moves'] as const)
       : ([`This app kept your server’s home: ${what}`, 'As your server last said it. Keep it here, and it runs while the app is open; what only a server can reach waits for one.', 'See what is kept'] as const);
   return (

@@ -193,7 +193,7 @@ describe('the Smart Life login and listing', () => {
       sightings: [{ transport: 'lan', address: '192.0.2.196', seenAt: new Date().toISOString(), facts: { payload: toHex(announcement) } }],
       log: { info: () => {}, warn: () => {}, error: () => {} },
       signal: AbortSignal.timeout(10_000),
-      platform: 'server' as const,
+      platform: 'system' as const,
     };
 
     const first = await signIn.run(ctx, { userCode: 'user-code' });
@@ -241,7 +241,7 @@ describe('the Smart Life login and listing', () => {
       sightings: [{ transport: 'lan', address: '192.0.2.74', seenAt: new Date().toISOString(), facts: { payload: toHex(announcement) } }],
       log: { info: () => {}, warn: () => {}, error: () => {} },
       signal: AbortSignal.timeout(10_000),
-      platform: 'server' as const,
+      platform: 'system' as const,
     };
     const done = await signIn.run(ctx, { userCode: 'user-code', token: 'QRTOKEN' });
     expect(done.choices).toEqual([

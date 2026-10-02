@@ -42,9 +42,11 @@ export const savedDeviceId = (raw: string): SavedDeviceId => raw as SavedDeviceI
 export type ConnectionId = Branded<'ConnectionId'>;
 export const connectionId = (raw: string): ConnectionId => raw as ConnectionId;
 
-/** A phone or browser running the app, which may hold connections. */
-export type ClientId = Branded<'ClientId'>;
-export const clientId = (raw: string): ClientId => raw as ClientId;
+/** A kraftverk node — the hub running somewhere, holding connections: a row of `node`, the same id in every home that knows it. */
+export type NodeId = Branded<'NodeId'>;
+export const nodeId = (raw: string): NodeId => raw as NodeId;
+/** A new node's id, made once by the node itself and kept where it runs (`n-1b6f399a3ff1`). */
+export const newNodeId = (): NodeId => nodeId(`n-${Array.from(crypto.getRandomValues(new Uint8Array(6)), (byte) => byte.toString(16).padStart(2, '0')).join('')}`);
 
 /** A fact about the house between two parts: a row of `device_link`. */
 export type LinkId = Branded<'LinkId'>;
@@ -58,9 +60,9 @@ export const automationId = (raw: string): AutomationId => raw as AutomationId;
  * What an entry on the timeline is about: a device, an app, an automation, an
  * account, or something a transport saw that is no device yet (an address).
  */
-export type ResourceKind = 'device' | 'client' | 'automation' | 'account' | 'transport';
+export type ResourceKind = 'device' | 'node' | 'place' | 'automation' | 'account' | 'transport';
 
-export const RESOURCE_KINDS: readonly ResourceKind[] = ['device', 'client', 'automation', 'account', 'transport'];
+export const RESOURCE_KINDS: readonly ResourceKind[] = ['device', 'node', 'place', 'automation', 'account', 'transport'];
 
 /** What an entry is about: a kind and an id together, or nothing — an id with no kind could not be filtered by. */
 export type AuditSubject = { resourceKind?: undefined; resource?: undefined } | { resourceKind: ResourceKind; resource: string };
@@ -107,10 +109,10 @@ export type SessionHealth = {
   lastReadingAt: string | null;
 };
 
-/** How a device is doing, as its holder reports it: its session's word, and who holds it over what. */
+/** How a device is doing, as the node holding it reports it: its session's word, and which node holds it over what. */
 export type ConnectionHealth = SessionHealth & {
-  /** Who holds the link: the server, or the app in the user's hand. */
-  owner: 'server' | 'client' | null;
+  /** The node that holds the connection in use; null when none does. */
+  node: NodeId | null;
   /** The transport of the connection in use — `ble`, `mqtt`, `lan` — or `sim`. Null when none is. */
   transport: string | null;
 };

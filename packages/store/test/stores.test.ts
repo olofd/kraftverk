@@ -1,12 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-import { MAIN_PART, type AuditRecord } from '@kraftverk/device-sdk';
+import { MAIN_PART, nodeId, type AuditRecord } from '@kraftverk/device-sdk';
 
 import {
   AppState,
   AuditLog,
   AutomationStore,
-  ClientStore,
+  HomeStore,
+  NodeStore,
+  PlaceStore,
   databaseLedger,
   DeviceCatalog,
   deviceStore,
@@ -22,7 +24,7 @@ import { DRIVERS } from './drivers.ts';
 /*
   Every other store, on each SQLite a home is kept in: what the server and the
   app both keep — the timeline, decisions, policy, what a device keeps for
-  itself, the gateway's memory, events, the apps that hold connections, and
+  itself, the gateway's memory, events, the home's nodes and places, and
   automations with their runs. The catalog's are in catalog.test.ts.
 */
 
@@ -109,14 +111,56 @@ for (const driver of DRIVERS) {
       expect(events.problems().map((event) => [event.event, event.deviceName])).toEqual([['tripped', 'Eventful']]);
     });
 
-    test('an app that holds connections, registered once and found again', () => {
+    test('the nodes: this database\'s own, once and for good; others joined for a person, and forgotten', () => {
       database.query('INSERT INTO users (id, username, password_hash, created_at, password_changed_at) VALUES (?, ?, ?, ?, ?)').run('u-one', 'owner', 'x', at(0), at(0));
-      const clients = new ClientStore(database);
-      const phone = clients.register({ userId: 'u-one', name: 'This phone', platform: 'native', transports: ['ble'] });
-      expect(clients.get(phone.id)).toMatchObject({ name: 'This phone', transports: ['ble'] });
-      expect(clients.forUser('u-one').map((client) => client.id)).toEqual([phone.id]);
-      clients.remove(phone.id);
-      expect(clients.get(phone.id)).toBeNull();
+      const nodes = new NodeStore(database);
+      const machine = { id: nodeId('n-0000000000a1'), name: 'Test machine', platform: 'system' as const, transports: ['mqtt'], alwaysOn: true, reachable: true, trusted: true };
+      expect(nodes.declareSelf(machine)).toMatchObject({ self: true, accountId: null, alwaysOn: true });
+      expect(nodes.declareSelf({ ...machine, transports: ['mqtt', 'lan'] }).transports).toEqual(['mqtt', 'lan']);
+      expect(() => nodes.declareSelf({ ...machine, id: nodeId('n-0000000000ff') })).toThrow();
+
+      const phone = nodes.join({ id: nodeId('n-0000000000b2'), name: 'This phone', platform: 'native', transports: ['ble'], alwaysOn: false, reachable: false, trusted: false }, 'u-one');
+      expect(nodes.get(phone.id)).toMatchObject({ name: 'This phone', transports: ['ble'], self: false, accountId: 'u-one' });
+      expect(nodes.forAccount('u-one').map((node) => node.id)).toEqual([phone.id]);
+      expect(() => nodes.join({ ...phone, name: 'Not mine' }, null)).toThrow();
+      expect(() => nodes.join({ ...machine }, 'u-one')).toThrow();
+      expect(nodes.all().map((node) => node.id)).toEqual([machine.id, phone.id]);
+
+      nodes.remove(phone.id);
+      nodes.remove(machine.id);
+      expect(nodes.get(phone.id)).toBeNull();
+      expect(nodes.self()?.id).toBe(machine.id);
+    });
+
+    test('the home: made once, its master a node of it, renamed and handed over', () => {
+      const homes = new HomeStore(database);
+      const nodes = new NodeStore(database);
+      const master = nodes.self()!;
+      const made = homes.ensure({ name: 'Home', masterId: master.id });
+      expect(made).toMatchObject({ name: 'Home', masterId: master.id });
+      expect(homes.ensure({ name: 'Another', masterId: master.id }).id).toBe(made.id);
+      expect(homes.rename('Stugan').name).toBe('Stugan');
+
+      const other = nodes.join({ id: nodeId('n-0000000000c3'), name: 'Second machine', platform: 'system', transports: [], alwaysOn: true, reachable: true, trusted: true }, null);
+      expect(homes.setMaster(other.id).masterId).toBe(other.id);
+      homes.setMaster(master.id);
+    });
+
+    test('places: where nodes and devices stand, each by a key made from its name', () => {
+      const places = new PlaceStore(database);
+      const cabin = places.add({ name: 'The cabin', latitude: 59.3, longitude: 18.1, timeZone: 'Europe/Stockholm' });
+      expect(cabin).toMatchObject({ key: 'the-cabin', name: 'The cabin', timeZone: 'Europe/Stockholm' });
+      expect(places.add({ name: 'The cabin', latitude: 0, longitude: 0, timeZone: 'UTC' }).key).toBe('the-cabin-2');
+      expect(places.byKey('the-cabin')?.id).toBe(cabin.id);
+      expect(places.update(cabin.id, { name: 'Cabin' })?.name).toBe('Cabin');
+
+      const catalog = new DeviceCatalog(database);
+      const placed = catalog.add({ description: { parts: [], attributes: [] }, typeId: 'test.lamp', name: 'Placed', placeId: cabin.id });
+      expect(catalog.get(placed.id)?.placeId).toBe(cabin.id);
+      // A place removed: what stood at it stands nowhere said.
+      places.remove(cabin.id);
+      expect(places.get(cabin.id)).toBeNull();
+      expect(catalog.get(placed.id)?.placeId).toBeNull();
     });
 
     test('automations: made, changed and deleted; what their triggers saw; their runs and logs', () => {

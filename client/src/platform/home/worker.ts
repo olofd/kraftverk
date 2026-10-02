@@ -130,6 +130,7 @@ async function start(open: Extract<ToWorker, { kind: 'open' }>) {
   let writes = open.writes;
   const served = new Set(open.serves);
   const place = {
+    node: open.node,
     database,
     secrets: sealedWithKey(await secretsKey()),
     platform: 'web' as const,
@@ -148,11 +149,11 @@ async function start(open: Extract<ToWorker, { kind: 'open' }>) {
 
   if (open.server) {
     // The server's interface, as the page asks it: the page signs in, and its address is the page's to know.
-    const holding = appHolding({ ...place, home: apiOver(scope, 'server'), name: open.server.name, ...(other ? { own: other } : {}) });
+    const holding = appHolding({ ...place, home: apiOver(scope, 'server'), ...(other ? { own: other } : {}) });
     await holding.start();
     const stopServing = serveApi(holding.api, scope, 'api');
     return {
-      appId: holding.appId,
+      nodeId: holding.nodeId,
       allowWrites: async (allowed: boolean) => {
         writes = allowed;
         await holding.reopen();
@@ -165,7 +166,7 @@ async function start(open: Extract<ToWorker, { kind: 'open' }>) {
   await hub.start();
   const stopServing = serveApi(hub.as(OWNER), scope, 'api');
   return {
-    appId: null,
+    nodeId: open.node.id,
     allowWrites: async (allowed: boolean) => {
       writes = allowed;
       await hub.sessions.sync(hub.catalog.list());
@@ -198,7 +199,7 @@ async function open(message: Extract<ToWorker, { kind: 'open' }>) {
       say({ via: 'home', kind: 'failed', message: (error as Error).message });
       return;
     }
-    say({ via: 'home', kind: 'ready', appId: home.appId });
+    say({ via: 'home', kind: 'ready', nodeId: home.nodeId });
     const why = await released;
     await home.stop();
     home = null;

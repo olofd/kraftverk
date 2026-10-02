@@ -90,11 +90,11 @@ export async function discoverTransports(transports: TransportHost, roots: reado
   const { found, problems } = await findPackages(roots, 'transport');
   for (const problem of problems) transports.refuse(problem.source, problem.problems);
   for (const pkg of found) {
-    const entries = pkg.kraftverk.transport as { definition?: string; server?: string } | undefined;
+    const entries = pkg.kraftverk.transport as { definition?: string; system?: string } | undefined;
     try {
       if (!entries?.definition) throw new Error('its transport entry names no definition');
       const definition = await load<TransportDefinition>(pkg, entries.definition);
-      transports.install(definition, entries.server ? { load: () => load<TransportFactory>(pkg, entries.server!) } : null, pkg.name);
+      transports.install(definition, entries.system ? { load: () => load<TransportFactory>(pkg, entries.system!) } : null, pkg.name);
     } catch (error) {
       transports.refuse(pkg.folder, [(error as Error).message]);
     }

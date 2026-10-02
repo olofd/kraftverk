@@ -1,5 +1,5 @@
 
-import { clientId, connectionId, savedDeviceId, type ClientId, type ConnectionId, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { nodeId, connectionId, savedDeviceId, type NodeId, type ConnectionId, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import type { SqlDatabase } from './database.ts';
 import { randomHex } from './ids.ts';
@@ -23,8 +23,8 @@ export type ConnectionRecord = {
   method: string;
   /** The method's transport, copied here for the address rule: `mqtt`. */
   transport: string;
-  /** The client that holds it, or null for the server. */
-  heldBy: ClientId | null;
+  /** The node that holds it: the master, or a node that follows it. */
+  heldBy: NodeId;
   /** What the transport knows the device by: a MAC, an IP, a browser's handle. */
   address: string;
   /** 0 is preferred; higher numbers are fallbacks. */
@@ -42,7 +42,7 @@ type Row = {
   device_id: string;
   method: string;
   transport: string;
-  held_by: string | null;
+  held_by: string;
   address: string;
   priority: number;
   config: string;
@@ -56,7 +56,7 @@ const toRecord = (row: Row): ConnectionRecord => ({
   deviceId: savedDeviceId(row.device_id),
   method: row.method,
   transport: row.transport,
-  heldBy: row.held_by === null ? null : clientId(row.held_by),
+  heldBy: nodeId(row.held_by),
   address: row.address,
   priority: row.priority,
   config: JSON.parse(row.config) as Record<string, unknown>,
@@ -101,7 +101,7 @@ export class ConnectionStore {
     deviceId: SavedDeviceId;
     method: string;
     transport: string;
-    heldBy: ClientId | null;
+    heldBy: NodeId;
     address: string;
     config?: Record<string, unknown>;
     priority?: number;
@@ -156,19 +156,19 @@ export class ConnectionStore {
   }
 
   /**
-   * Keeps a connection another home has, held here, by that home's id: an
-   * app holding a way to a server's device (docs/PLAN-SHARED-CORE.md, phase
-   * 6). Added, or brought up to what it is there; its secrets, which only
-   * this holder has, stay.
+   * Keeps a connection as the master's database has it, by its id: a node
+   * that follows the home, holding a way to one of its devices
+   * (docs/PLAN-SHARED-CORE.md, phase 6). Added, or brought up to what it is
+   * there; its secrets, which only the node holding it has, stay.
    */
-  mirror(record: Pick<ConnectionRecord, 'id' | 'deviceId' | 'method' | 'transport' | 'address' | 'priority' | 'config' | 'secretsExportable' | 'createdAt'>): void {
+  mirror(record: Pick<ConnectionRecord, 'id' | 'deviceId' | 'method' | 'transport' | 'heldBy' | 'address' | 'priority' | 'config' | 'secretsExportable' | 'createdAt'>): void {
     this.#db
       .query(
         `INSERT INTO device_connection (id, device_id, method, transport, held_by, address, priority, config, secrets_exportable, created_at)
-         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET address = excluded.address, priority = excluded.priority, config = excluded.config, secrets_exportable = excluded.secrets_exportable`
       )
-      .run(record.id, record.deviceId, record.method, record.transport, record.address, record.priority, JSON.stringify(record.config), record.secretsExportable ? 1 : 0, record.createdAt);
+      .run(record.id, record.deviceId, record.method, record.transport, record.heldBy, record.address, record.priority, JSON.stringify(record.config), record.secretsExportable ? 1 : 0, record.createdAt);
   }
 
   /** The device answered through this connection. */
@@ -177,15 +177,16 @@ export class ConnectionStore {
   }
 
   /**
-   * Which device already holds this address on this transport through the
-   * server, if any. An exclusive transport's address is one physical thing, so
+   * Which device this home's own node already reaches at this address on
+   * this transport, if any. An exclusive transport's address is one physical thing, so
    * two devices may not both claim it (docs/DATA-MODEL.md §3).
    */
   claimant(transport: string, address: string): { deviceId: SavedDeviceId; connectionId: string } | null {
     const row = this.#db
       .query<{ id: string; device_id: string }, [string, string]>(
         `SELECT c.id, c.device_id FROM device_connection c JOIN device d ON d.id = c.device_id
-         WHERE c.transport = ? AND UPPER(c.address) = UPPER(?) AND c.held_by IS NULL AND d.removed_at IS NULL`
+         JOIN node n ON n.id = c.held_by AND n.self = 1
+         WHERE c.transport = ? AND UPPER(c.address) = UPPER(?) AND d.removed_at IS NULL`
       )
       .get(transport, address);
     return row ? { deviceId: row.device_id as SavedDeviceId, connectionId: row.id } : null;

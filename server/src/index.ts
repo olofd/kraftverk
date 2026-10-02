@@ -7,6 +7,7 @@ import { keepConsole } from './log.ts';
 import { audit, auditLog, closeDb, db, onAudit, startedFresh, transportStore } from './platform/database.ts';
 import { scopedHttp } from './platform/http.ts';
 import { discoverDeviceTypes, discoverProtocols, discoverTransports } from './platform/packages.ts';
+import { thisNode } from './platform/node.ts';
 import { serverSealing } from './platform/sealing.ts';
 import { serverSecrets } from './platform/secrets.ts';
 import { ConfigSnapshot } from './platform/snapshot.ts';
@@ -83,7 +84,7 @@ const protocols = new ProtocolRegistry();
 await discoverProtocols(protocols);
 
 const transports = new TransportHost({
-  platform: 'server',
+  platform: 'system',
   context: {
     env: config.env,
     log: (level, message) => console[level === 'info' ? 'log' : level](message),
@@ -118,7 +119,7 @@ const hub = createHub({
   readOnly: () => config.readOnly,
   allowRawFrames: config.allowRawFrames,
   http: scopedHttp,
-  owner: 'server',
+  node: thisNode(),
 });
 
 /*

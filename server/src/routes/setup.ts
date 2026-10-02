@@ -17,7 +17,7 @@ export function setupRoutes(deps: AppDeps): Hono {
   const api = new Hono();
 
   api.post('/', async (c) => {
-    const input = await body(c, z.object({ typeId: z.string().min(1).max(80), methodId: z.string().min(1).max(40).nullable().optional(), holder: z.enum(['home', 'this-app']).optional() }).strict());
+    const input = await body(c, z.object({ typeId: z.string().min(1).max(80), methodId: z.string().min(1).max(40).nullable().optional(), holder: z.enum(['master', 'this-node']).optional() }).strict());
     return c.json(await homeFor(deps, c).setup.start(input));
   });
 
@@ -26,12 +26,12 @@ export function setupRoutes(deps: AppDeps): Hono {
    * device with its own radio; this is what it learnt, never a secret. The
    * app speaks for itself only: the home checks it is this account's.
    */
-  api.post('/app', async (c) => {
+  api.post('/held', async (c) => {
     const input = await body(
       c,
       z
         .object({
-          clientId: z.string().min(1).max(40),
+          nodeId: z.string().min(1).max(40),
           typeId: z.string().min(1).max(80),
           methodId: z.string().min(1).max(40),
           address: z.string().min(1).max(200),

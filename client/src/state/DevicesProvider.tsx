@@ -112,7 +112,7 @@ type DevicesContextValue = {
 };
 
 /** Who holds a device's connection in use: the home, this app for a server, another app, or nobody right now. */
-export type InUseBy = 'home' | 'this-app' | 'other-app' | 'none';
+export type InUseBy = 'master' | 'this-node' | 'other-node' | 'none';
 
 const DevicesContext = createContext<DevicesContextValue | null>(null);
 
@@ -303,9 +303,9 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   const holderOf = useCallback(
     (device: DeviceView): InUseBy => {
       const inUse = device.connections.find((connection) => connection.inUse);
-      if (inUse?.heldBy.kind === 'this-app') return 'this-app';
-      if (inUse?.heldBy.kind === 'client') return 'other-app';
-      if (device.connections.some((connection) => connection.heldBy.kind === 'home')) return 'home';
+      if (inUse?.heldBy.kind === 'this-node') return 'this-node';
+      if (inUse?.heldBy.kind === 'node') return 'other-node';
+      if (device.connections.some((connection) => connection.heldBy.kind === 'master')) return 'master';
       return 'none';
     },
     []
@@ -336,8 +336,8 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       const toneOf = (patch: Record<string, unknown>): ConfirmTone =>
         device.description.attributes.some((attribute) => attribute.dangerous && attribute.key in patch) ? 'dangerous' : 'careful';
       // The home sends each to whoever holds the device: the server, or this app's own gateway and session.
-      if (holder === 'home' || holder === 'this-app') {
-        const inUse = device.connections.find((connection) => connection.inUse) ?? device.connections.find((connection) => connection.heldBy.kind === 'home');
+      if (holder === 'master' || holder === 'this-node') {
+        const inUse = device.connections.find((connection) => connection.inUse) ?? device.connections.find((connection) => connection.heldBy.kind === 'master');
         return {
           // The home asks, for a tool that cannot be undone: its question, with a token for the yes.
           tool: async <T,>(name: string, input?: Record<string, unknown>) => {
@@ -365,7 +365,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
               api.devices.command(device.id, input.part, input.capability, input.command, { args: input.args, ...(input.reason ? { reason: input.reason } : {}), ...(confirmation ? { confirmation } : {}) })
             ),
           // A transport's diagnostics are the home's: this app's own have none to show.
-          diagnostic: inUse && holder === 'home'
+          diagnostic: inUse && holder === 'master'
             ? <T,>(name: string, query?: Record<string, string | number>) =>
                 api.transports.diagnostic(inUse.transport, name, Object.fromEntries(Object.entries(query ?? {}).map(([key, value]) => [key, String(value)]))) as Promise<T>
             : null,
@@ -389,24 +389,24 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       const holder = holderOf(device);
       const inUse = device.connections.find((connection) => connection.inUse) ?? null;
       const byHome = kind === 'server' ? 'through the server' : `from ${HERE}`;
-      const via = inUse ? `${inUse.methodLabel}, ${inUse.heldBy.kind === 'home' ? byHome : holder === 'this-app' ? 'from this app' : `from ${inUse.heldBy.name}`}` : null;
+      const via = inUse ? `${inUse.methodLabel}, ${inUse.heldBy.kind === 'master' ? byHome : holder === 'this-node' ? 'from this app' : `from ${inUse.heldBy.name}`}` : null;
       return {
         device,
         actions: actionsFor(device),
         // Whether it can be reached, and what to say while it cannot — never by whom.
         reach: {
-          now: holder === 'home' || holder === 'this-app',
-          waiting: holder === 'this-app' ? 'Connecting from this app…' : holder === 'home' ? (kind === 'server' ? 'Waiting for the server…' : `Connecting from ${HERE}…`) : device.health.detail,
+          now: holder === 'master' || holder === 'this-node',
+          waiting: holder === 'this-node' ? 'Connecting from this app…' : holder === 'master' ? (kind === 'server' ? 'Waiting for the server…' : `Connecting from ${HERE}…`) : device.health.detail,
           via,
         },
         // A simulated device has no hardware to protect, and the gateway writes to it whatever the mode.
         readOnly:
           inUse?.method === SIMULATED_METHOD_ID
             ? false
-            : holder === 'this-app' || kind === 'own'
+            : holder === 'this-node' || kind === 'own'
               ? !writesAllowed
               : (version?.readOnly ?? false),
-        version: holder === 'home' && kind === 'server' ? version : null,
+        version: holder === 'master' && kind === 'server' ? version : null,
       };
     },
     [actionsFor, holderOf, kind, version, writesAllowed]
@@ -451,7 +451,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       removeConnection: (device, connection) => mutate(() => api.connections.remove(device.id, connection.id as ConnectionId)),
       setSecrets: async (device, connection, secrets) => {
         // A way another app holds keeps its secrets in that app (§4.3); this app's own, the home keeps here.
-        if (connection.heldBy.kind === 'client') throw new Error(`Its secrets are kept by ${connection.heldBy.name}: change them there`);
+        if (connection.heldBy.kind === 'node') throw new Error(`Its secrets are kept by ${connection.heldBy.name}: change them there`);
         await mutate(() => api.connections.setSecrets(device.id, connection.id as ConnectionId, secrets));
       },
       addLink: (link) => mutate(() => api.links.add(link)),

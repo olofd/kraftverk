@@ -15,7 +15,7 @@ import { CLIENT_HEADER, SESSION_COOKIE } from './auth/routes.ts';
 import { createFirstUser, createUser } from './auth/store.ts';
 import { CLIENT_IP_HEADER, EXPOSURE_HEADER, ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
-import { busDefinition, FakeBus, lampProtocol, lampType } from '@kraftverk/hub/testing';
+import { busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE } from '@kraftverk/hub/testing';
 import { auditLog, closeDb, db } from './platform/database.ts';
 import { discoverDeviceTypes, discoverProtocols, discoverTransports } from './platform/packages.ts';
 import { serverSealing } from './platform/sealing.ts';
@@ -53,7 +53,7 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
   const config = loadConfig({ NODE_ENV: 'test', READ_ONLY: options.readOnly ? '1' : '0' }, []);
   const bus = new FakeBus();
   const protocols = new ProtocolRegistry();
-  const transports = new TransportHost({ platform: 'server', context: { env: {}, log: () => {}, audit: () => {} } });
+  const transports = new TransportHost({ platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } });
   const types = new DeviceTypeRegistry();
   if (options.installed) {
     await discoverProtocols(protocols);
@@ -75,7 +75,7 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
     installed: { types, protocols, transports },
     readOnly: () => config.readOnly,
     http: () => Promise.reject(new Error('no network in these tests')),
-    owner: 'server',
+    node: MACHINE_NODE,
     gateway: { verifyTimeoutMs: 300 },
   });
   const proxies = new ProxyDirectory(PROXY);
@@ -148,7 +148,7 @@ const login = async (username: string, server = simulated) =>
   (await call('/auth/login', { method: 'POST', body: { username, password: PASSWORD }, server })).token!;
 
 beforeEach(async () => {
-  db().exec('DELETE FROM device; DELETE FROM sample; DELETE FROM client; DELETE FROM users; DELETE FROM sessions; DELETE FROM app_state; DELETE FROM audit; DELETE FROM automation;');
+  db().exec('DELETE FROM device; DELETE FROM sample; DELETE FROM node; DELETE FROM users; DELETE FROM sessions; DELETE FROM app_state; DELETE FROM audit; DELETE FROM automation;');
   await simulated.sessions.sync([]);
   await onBus.sessions.sync([]);
   onBus.bus.lamps.clear();
@@ -319,7 +319,7 @@ describe('configuration', () => {
 
 describe('everything needs a session', () => {
   test('every route answers 401 without one', async () => {
-    for (const path of ['/devices', '/devices/removed', '/device-types', '/transports', '/found', '/audit', '/version', '/diagnostics/log', '/clients']) {
+    for (const path of ['/devices', '/devices/removed', '/device-types', '/transports', '/found', '/audit', '/version', '/diagnostics/log', '/nodes']) {
       expect((await call(path)).status).toBe(401);
     }
     expect((await call('/setup', { method: 'POST', body: { typeId: 'test.lamp' } })).status).toBe(401);
@@ -334,9 +334,9 @@ describe('what can be added', () => {
     expect(p280.meta.category).toBe('power-station');
     // Its own ways, and simulated — which every type has, and a server can always hold.
     expect(p280.connections.map((method: { id: string }) => method.id)).toEqual(['wifi', 'bluetooth', 'simulated']);
-    expect(p280.ways).toContainEqual({ method: 'simulated', holder: 'home', availability: { ok: true } });
+    expect(p280.ways).toContainEqual({ method: 'simulated', holder: 'master', availability: { ok: true } });
     // Over Wi-Fi only a server reaches it; over Bluetooth a phone and a browser can too.
-    expect(p280.runsOn).toEqual(['native', 'web', 'server']);
+    expect(p280.runsOn).toEqual(['native', 'web', 'system']);
     for (const id of ['tuya.plug', 'atorch.s1w', 'open-meteo.weather']) expect(body.types.map((type: { id: string }) => type.id)).toContain(id);
     // Declarations only: every function stays on the server.
     expect(JSON.stringify(body)).not.toContain('=>');
@@ -346,8 +346,8 @@ describe('what can be added', () => {
   test('a method whose transport this server cannot use says why', async () => {
     const { body } = await onBusAs('/device-types');
     const lamp = body.types.find((type: { id: string }) => type.id === 'test.lamp');
-    expect(lamp.ways).toContainEqual({ method: 'bus', holder: 'home', availability: { ok: true } });
-    expect(lamp.runsOn).toEqual(['server']);
+    expect(lamp.ways).toContainEqual({ method: 'bus', holder: 'master', availability: { ok: true } });
+    expect(lamp.runsOn).toEqual(['system']);
   });
 });
 
@@ -388,7 +388,7 @@ describe('adding a device', () => {
     expect(lamp.identity).toBe('lampish:LAMP-1');
     const view = (await onBusAs(`/devices/${enc(lamp.id)}`)).body;
     expect(view.config).toEqual({ room: 'Hall' });
-    expect(view.connections[0]).toMatchObject({ method: 'bus', address: 'lamp-1', heldBy: { kind: 'home' } });
+    expect(view.connections[0]).toMatchObject({ method: 'bus', address: 'lamp-1', heldBy: { kind: 'master', id: MACHINE_NODE.id, name: MACHINE_NODE.name } });
   });
 
   test('the same lamp again is yours: its address is marked, and it is not added twice', async () => {
@@ -724,12 +724,12 @@ describe('connections and links', () => {
 
 describe('a connection a browser holds', () => {
   const browser = async () =>
-    (await onBusAs('/clients', { method: 'POST', body: { name: 'Olof’s laptop', platform: 'web', transports: ['bus'] } })).body as { id: string };
+    (await onBusAs('/nodes', { method: 'POST', body: { id: 'n-00000000aa01', name: 'Olof’s laptop', platform: 'web', transports: ['bus'], alwaysOn: false, reachable: false, trusted: false, place: null } })).body as { id: string };
 
-  const heldSetup = async (clientId: string, identified: unknown, extra: Record<string, unknown> = {}) =>
-    onBusAs('/setup/app', {
+  const heldSetup = async (nodeId: string, identified: unknown, extra: Record<string, unknown> = {}) =>
+    onBusAs('/setup/held', {
       method: 'POST',
-      body: { clientId, typeId: 'test.lamp', methodId: 'bus', address: 'browser-handle-1', identified, device: { room: 'Desk' }, ...extra },
+      body: { nodeId, typeId: 'test.lamp', methodId: 'bus', address: 'browser-handle-1', identified, device: { room: 'Desk' }, ...extra },
     });
 
   test('is saved from what the app learnt, held by it, with no secret on the server', async () => {
@@ -740,17 +740,17 @@ describe('a connection a browser holds', () => {
 
     const saved = await onBusAs(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: 'Desk lamp' } });
     expect(saved.status).toBe(200);
-    expect(saved.body.connections).toEqual([expect.objectContaining({ heldBy: { kind: 'client', id: client.id, name: 'Olof’s laptop' }, secrets: [] })]);
+    expect(saved.body.connections).toEqual([expect.objectContaining({ heldBy: { kind: 'node', id: client.id, name: 'Olof’s laptop' }, secrets: [] })]);
     expect(saved.text).not.toContain('never-here');
     // The server does not hold it, and says who does.
-    expect(saved.body.health.detail).toBe('Held by Olof’s laptop, not by this server');
+    expect(saved.body.health.detail).toBe('Held by Olof’s laptop, not by Test machine');
   });
 
   test('a way only a server holds is refused to an app: a vendor account’s password stays on the server', async () => {
-    const client = (await as('/clients', { method: 'POST', body: { name: 'Olof’s laptop', platform: 'web', transports: ['https'] }, server: simulated })).body as { id: string };
-    const refused = await as('/setup/app', {
+    const client = (await as('/nodes', { method: 'POST', body: { id: 'n-00000000aa01', name: 'Olof’s laptop', platform: 'web', transports: ['https'], alwaysOn: false, reachable: false, trusted: false, place: null }, server: simulated })).body as { id: string };
+    const refused = await as('/setup/held', {
       method: 'POST',
-      body: { clientId: client.id, typeId: 'niu.scooter', methodId: 'cloud', address: 'https://app-api-fk.niu.com', identified: { identity: 'niu-cloud:X', model: null, summary: 'x' } },
+      body: { nodeId: client.id, typeId: 'niu.scooter', methodId: 'cloud', address: 'https://app-api-fk.niu.com', identified: { identity: 'niu-cloud:X', model: null, summary: 'x' } },
       server: simulated,
     });
     expect(refused.status).toBe(400);
@@ -768,7 +768,7 @@ describe('a connection a browser holds', () => {
     const past = new Date(Date.now() - 3_600_000).toISOString();
     const sent = await onBusAs(`/devices/${enc(device.id)}/readings`, {
       method: 'POST',
-      body: { clientId: client.id, connectionId, readings: [{ key: 'on', value: true, at: new Date().toISOString() }, { key: 'on', value: false, at: past }] },
+      body: { nodeId: client.id, connectionId, readings: [{ key: 'on', value: true, at: new Date().toISOString() }, { key: 'on', value: false, at: past }] },
     });
     expect(sent.body).toEqual({ live: 1, history: 1, refused: 0 });
     // Said on the live stream as a device the server holds says it; back after being away, every list reads it again.
@@ -776,13 +776,13 @@ describe('a connection a browser holds', () => {
     expect(heard[0]).toMatchObject({ deviceId: device.id, readings: [{ key: 'on', value: true }] });
     // Its readings after that are readings, and nothing else: no app reads its whole list for them.
     heard.length = 0;
-    await onBusAs(`/devices/${enc(device.id)}/readings`, { method: 'POST', body: { clientId: client.id, connectionId, readings: [{ key: 'on', value: true, at: new Date().toISOString() }] } });
+    await onBusAs(`/devices/${enc(device.id)}/readings`, { method: 'POST', body: { nodeId: client.id, connectionId, readings: [{ key: 'on', value: true, at: new Date().toISOString() }] } });
     expect(heard.map((message) => message.kind)).toEqual(['readings']);
     stop();
 
     const view = (await onBusAs(`/devices/${enc(device.id)}`)).body;
     expect(view.readings).toEqual([expect.objectContaining({ key: 'on', value: true })]);
-    expect(view.health).toMatchObject({ status: 'connected', detail: 'Connected through Olof’s laptop', owner: 'client' });
+    expect(view.health).toMatchObject({ status: 'connected', detail: 'Connected through Olof’s laptop', node: client.id });
     expect(view.connections[0].inUse).toBe(true);
     expect(db().query<{ n: number }, [string]>('SELECT COUNT(*) n FROM sample WHERE device_id = ?').get(device.id)!.n).toBe(1);
   });
@@ -797,7 +797,7 @@ describe('a connection a browser holds', () => {
     const sent = await onBusAs(`/devices/${enc(device.id)}/readings`, {
       method: 'POST',
       body: {
-        clientId: client.id,
+        nodeId: client.id,
         connectionId,
         readings: [],
         events: [
@@ -824,7 +824,7 @@ describe('a connection a browser holds', () => {
     const send = (said: string) =>
       onBusAs(`/devices/${enc(device.id)}/readings`, {
         method: 'POST',
-        body: { clientId: client.id, connectionId, identity: said, readings: [{ key: 'on', value: true, at: new Date().toISOString() }] },
+        body: { nodeId: client.id, connectionId, identity: said, readings: [{ key: 'on', value: true, at: new Date().toISOString() }] },
       });
     expect(identity()).toBeNull();
 
@@ -844,15 +844,15 @@ describe('a connection a browser holds', () => {
     const reading = { key: 'on', value: true, at: new Date().toISOString() };
 
     // A connection this server holds is not the app's to report on.
-    expect((await onBusAs(`/devices/${enc(serverHeld.id)}/readings`, { method: 'POST', body: { clientId: client.id, connectionId, readings: [reading] } })).status).toBe(403);
+    expect((await onBusAs(`/devices/${enc(serverHeld.id)}/readings`, { method: 'POST', body: { nodeId: client.id, connectionId, readings: [reading] } })).status).toBe(403);
 
     await createUser('guest', PASSWORD, 'olof');
     const guest = await login('guest', onBus);
-    const other = await call('/setup/app', {
+    const other = await call('/setup/held', {
       method: 'POST',
       cookie: guest,
       server: onBus,
-      body: { clientId: client.id, typeId: 'test.lamp', methodId: 'bus', address: 'x', identified: null },
+      body: { nodeId: client.id, typeId: 'test.lamp', methodId: 'bus', address: 'x', identified: null },
     });
     expect(other.status).toBe(404);
   });
@@ -866,7 +866,7 @@ describe('a connection a browser holds', () => {
     expect(started.body.checked).toMatchObject({ outcome: 'new', identity: null });
     const attached = await onBusAs(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: '', mode: 'attach', deviceId: lamp.id } });
     expect(attached.status).toBe(200);
-    expect(attached.body.connections.map((connection: { heldBy: { kind: string } }) => connection.heldBy.kind)).toEqual(['home', 'client']);
+    expect(attached.body.connections.map((connection: { heldBy: { kind: string } }) => connection.heldBy.kind)).toEqual(['master', 'node']);
   });
 
   test('the reachable connection highest in the list is in use: the app takes over while the server cannot reach it, and gives it back', async () => {
@@ -881,7 +881,7 @@ describe('a connection a browser holds', () => {
     const fromApp = () =>
       onBusAs(`/devices/${enc(lamp.id)}/readings`, {
         method: 'POST',
-        body: { clientId: client.id, connectionId: appSide!.id, readings: [{ key: 'on', value: false, at: new Date().toISOString() }] },
+        body: { nodeId: client.id, connectionId: appSide!.id, readings: [{ key: 'on', value: false, at: new Date().toISOString() }] },
       });
     const inUse = async () => (await view()).connections.find((connection) => connection.inUse)?.id;
 
@@ -908,10 +908,10 @@ describe('a connection a browser holds', () => {
     const device = (await onBusAs(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: 'Desk lamp' } })).body;
     const connectionId = device.connections[0].id;
 
-    await onBusAs(`/devices/${enc(device.id)}/store/brightness`, { method: 'PUT', body: { clientId: client.id, connectionId, value: 80 } });
+    await onBusAs(`/devices/${enc(device.id)}/store/brightness`, { method: 'PUT', body: { nodeId: client.id, connectionId, value: 80 } });
     expect((await onBusAs(`/devices/${enc(device.id)}/store`)).body.values).toEqual({ brightness: 80 });
 
-    const recorded = await onBusAs(`/clients/${client.id}/audit`, {
+    const recorded = await onBusAs(`/nodes/${client.id}/audit`, {
       method: 'POST',
       body: { entries: [{ at: new Date().toISOString(), kind: 'command.verified', resourceKind: 'device', resource: device.id, summary: 'Desk lamp: switched off' }] },
     });
@@ -926,27 +926,39 @@ describe('a connection a browser holds', () => {
     expect((await onBusAs('/audit?resourceKind=automation')).body).toEqual([]);
 
     // An id with no kind could not be filtered by, and is refused.
-    const half = await onBusAs(`/clients/${client.id}/audit`, { method: 'POST', body: { entries: [{ at: new Date().toISOString(), kind: 'command.verified', resource: device.id, summary: 'Half an entry' }] } });
+    const half = await onBusAs(`/nodes/${client.id}/audit`, { method: 'POST', body: { entries: [{ at: new Date().toISOString(), kind: 'command.verified', resource: device.id, summary: 'Half an entry' }] } });
     expect(half.status).toBe(400);
   });
 });
 
-describe('phones and browsers', () => {
-  test('register, are listed for their own account only, and can be forgotten', async () => {
-    const registered = await as('/clients', { method: 'POST', body: { name: 'Olof’s iPhone', platform: 'native', transports: ['ble'] } });
-    expect(registered.status).toBe(200);
-    expect((await as('/clients')).body.clients.map((client: { name: string }) => client.name)).toEqual(['Olof’s iPhone']);
+describe('the home and its nodes', () => {
+  test('the home names its master: this server, a node of its own', async () => {
+    const home = (await as('/home')).body;
+    expect(home).toMatchObject({ name: 'Home', master: MACHINE_NODE.id });
+  });
+
+  test('a node joins by its own id, for the account it joins from; the home lists every node; only its person forgets it', async () => {
+    const phone = { id: 'n-00000000aa02', name: 'Olof’s iPhone', platform: 'native', transports: ['ble'], alwaysOn: false, reachable: false, trusted: false, place: null };
+    const joined = await as('/nodes', { method: 'POST', body: phone });
+    expect(joined.status).toBe(200);
+    expect(joined.body).toMatchObject({ id: phone.id, master: false });
+    const names = (body: { nodes: { name: string; master: boolean }[] }) => body.nodes.map((node) => [node.name, node.master]);
+    expect(names((await as('/nodes')).body)).toEqual([[MACHINE_NODE.name, true], ['Olof’s iPhone', false]]);
+    // Said again at the next start, it is the same node.
+    expect((await as('/nodes', { method: 'POST', body: { ...phone, transports: ['ble', 'https'] } })).body.transports).toEqual(['ble', 'https']);
+    // A place it says it stands at is one the home has.
+    expect((await as('/nodes', { method: 'POST', body: { ...phone, place: 'p-000000000000' } })).status).toBe(400);
 
     await createUser('guest', PASSWORD, 'olof');
     const guest = await login('guest');
-    expect((await call('/clients', { cookie: guest })).body.clients).toEqual([]);
-    // Nor can another account claim this phone's id.
-    const claimed = await call('/clients', { method: 'POST', cookie: guest, body: { id: registered.body.id, name: 'Mine now', platform: 'web', transports: [] } });
-    expect(claimed.body.id).not.toBe(registered.body.id);
-    expect((await call(`/clients/${registered.body.id}`, { method: 'DELETE', cookie: guest })).status).toBe(404);
+    // Another account can neither take this phone's id nor forget it.
+    expect((await call('/nodes', { method: 'POST', cookie: guest, body: { ...phone, name: 'Mine now' } })).status).toBe(409);
+    expect((await call(`/nodes/${phone.id}`, { method: 'DELETE', cookie: guest })).status).toBe(404);
+    // Nor is the master forgotten.
+    expect((await as(`/nodes/${MACHINE_NODE.id}`, { method: 'DELETE' })).status).toBe(404);
 
-    expect((await as(`/clients/${registered.body.id}`, { method: 'DELETE' })).status).toBe(200);
-    expect((await as('/clients')).body.clients).toEqual([]);
+    expect((await as(`/nodes/${phone.id}`, { method: 'DELETE' })).status).toBe(200);
+    expect(names((await as('/nodes')).body)).toEqual([[MACHINE_NODE.name, true]]);
   });
 });
 
@@ -1546,7 +1558,7 @@ describe('the server', () => {
     lampAt('lamp-1');
     lampAt('lamp-2');
     const transports = (await onBusAs('/transports')).body;
-    expect(transports.transports).toEqual([expect.objectContaining({ id: 'bus', holder: 'home', running: true, availability: { ok: true } })]);
+    expect(transports.transports).toEqual([expect.objectContaining({ id: 'bus', holder: 'master', running: true, availability: { ok: true } })]);
 
     await onBusAs('/found'); // starts watching
     const found = (await onBusAs('/found')).body.found;

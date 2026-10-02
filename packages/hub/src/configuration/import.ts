@@ -214,7 +214,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
       const claim = exclusive ? deps.connections.claimant(method.transport, address) : null;
       if (claim && claim.deviceId !== existing?.id) problem(`Another device you have is already reached at ${address}`, ['devices', key, 'connect', index, 'address']);
       const credentials = deps.protocols.get(method.protocol)?.credentials?.schema.fields ?? {};
-      const had = existing ? deps.connections.forDevice(existing.id).find((connection) => connection.heldBy === null && connection.method === way.via) : undefined;
+      const had = existing ? deps.connections.forDevice(existing.id).find((connection) => connection.heldBy === deps.self && connection.method === way.via) : undefined;
       for (const [field, spec] of Object.entries(credentials)) {
         if (!isSecretField(spec)) continue;
         const given = way.secrets[field];
@@ -405,7 +405,7 @@ function deviceChanges(deps: ImportDeps, existing: DeviceRecord, entry: DeviceEn
   if (entry.picture !== existing.picture && entry.picture !== null) changes.push('its picture');
   const settings = [...new Set([...Object.keys(existing.config), ...Object.keys(entry.settings)])].filter((name) => existing.config[name] !== entry.settings[name] && entry.settings[name] !== undefined);
   if (settings.length) changes.push(`settings: ${settings.join(', ')}`);
-  const ways = deps.connections.forDevice(existing.id).filter((connection) => connection.heldBy === null);
+  const ways = deps.connections.forDevice(existing.id).filter((connection) => connection.heldBy === deps.self);
   entry.connect.forEach((way, index) => {
     const had = ways.find((connection) => connection.method === way.via);
     if (!had) changes.push(`reached ${way.via} as well`);
@@ -596,14 +596,14 @@ function writeDevice(deps: ImportDeps, key: string, entry: DeviceEntry, opened: 
   else device = deps.catalog.update(device.id, { name: entry.name, config, ...(entry.identity !== null ? { identity: entry.identity } : {}) })!;
   if (entry.picture !== null && entry.picture !== device.picture) deps.catalog.setPicture(device.id, entry.picture);
 
-  const ways = deps.connections.forDevice(device.id).filter((connection) => connection.heldBy === null);
+  const ways = deps.connections.forDevice(device.id).filter((connection) => connection.heldBy === deps.self);
   entry.connect.forEach((way, index) => {
     const method = methodsOf(type).find((each) => each.id === way.via)!;
     const address = way.address ?? method.address ?? '';
     const had = ways.find((connection) => connection.method === way.via);
     const connection = had
       ? deps.connections.update(had.id, { address, config: way.settings, priority: index, secretsExportable: way.exportable })!
-      : deps.connections.add({ deviceId: device!.id, method: way.via, transport: method.transport, heldBy: null, address, config: way.settings, priority: index, secretsExportable: way.exportable });
+      : deps.connections.add({ deviceId: device!.id, method: way.via, transport: method.transport, heldBy: deps.self, address, config: way.settings, priority: index, secretsExportable: way.exportable });
     const secrets: Record<string, string> = {};
     const credentials = deps.protocols.get(method.protocol)?.credentials?.schema.fields ?? {};
     for (const [field, spec] of Object.entries(credentials)) {

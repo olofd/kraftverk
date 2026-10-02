@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { MAIN_PART, savedDeviceId, type CommandResult, type ConnectionHealth, type DeviceDescription, type DeviceSession, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { MAIN_PART, nodeId, savedDeviceId, type CommandResult, type ConnectionHealth, type DeviceDescription, type DeviceSession, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import { ActionGateway, memoryLedger, type CommandIntent, type GatewayDevice, type GatewayLedger, type GatewayPolicy, type OutgoingLink } from './gateway.ts';
 
@@ -21,7 +21,7 @@ const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 const health = (connected = true): ConnectionHealth => ({
   status: connected ? 'connected' : 'offline',
   detail: connected ? 'Connected' : 'Not answering',
-  owner: 'server',
+  node: nodeId('n-0000000000a1'),
   transport: 'test',
   lastReadingAt: now(),
 });

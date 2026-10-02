@@ -1,13 +1,14 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import { clientId, connectionId, linkId, savedDeviceId, type LinkKind } from '@kraftverk/device-sdk';
+import { nodeId, connectionId, linkId, savedDeviceId, type LinkKind } from '@kraftverk/device-sdk';
 
 import { body, homeFor, type AppDeps } from './shared.ts';
 
 /**
- * How each device is reached, how devices fit the house, and the phones and
- * browsers that can hold a connection (docs/DATA-MODEL.md §4), over HTTP.
+ * How each device is reached, how devices fit the house, and the home with
+ * its kraftverk nodes, each holding the connections it reaches
+ * (docs/DATA-MODEL.md §3, §4), over HTTP.
  * What each does with a device is the home's (`KraftverkApi`).
  *
  * A connection is added by the setup flow, never here: adding one has to
@@ -46,33 +47,40 @@ export function connectionRoutes(deps: AppDeps): Hono {
     return c.json({ ok: true });
   });
 
-  // --- clients ----------------------------------------------------------------
+  // --- the home and its nodes -----------------------------------------------
+
+  /** The home: what its people call it, and which node is its master. */
+  api.get('/home', async (c) => c.json(await homeFor(deps, c).home()));
 
   /**
-   * A phone or browser says who it is and what it can reach devices over. It
-   * does so at every start, so "held by Olof's iPhone" has something to name
-   * and the add flow knows what this app can hold.
+   * A node joins the home, saying who it is — by its own id — and what it can
+   * reach devices over. It does so at every start, so "held by Olof's iPhone"
+   * has something to name and the add flow knows what that node can hold.
    */
-  api.post('/clients', async (c) => {
+  api.post('/nodes', async (c) => {
     const input = await body(
       c,
       z
         .object({
-          id: z.string().min(1).max(40).optional(),
+          id: z.string().regex(/^n-[0-9a-f]{12}$/),
           name: z.string().trim().min(1).max(60),
-          platform: z.enum(['web', 'native']),
+          platform: z.enum(['system', 'web', 'native']),
           transports: z.array(z.string().min(1).max(20)).max(10),
+          alwaysOn: z.boolean(),
+          reachable: z.boolean(),
+          trusted: z.boolean(),
+          place: z.string().min(1).max(40).nullable(),
         })
         .strict()
     );
-    return c.json(await homeFor(deps, c).apps.register(input));
+    return c.json(await homeFor(deps, c).nodes.join({ ...input, id: nodeId(input.id) }));
   });
 
-  api.get('/clients', async (c) => c.json({ clients: await homeFor(deps, c).apps.list() }));
+  api.get('/nodes', async (c) => c.json({ nodes: await homeFor(deps, c).nodes.list() }));
 
-  /** Forgets a phone or browser, and every connection it held. */
-  api.delete('/clients/:id', async (c) => {
-    await homeFor(deps, c).apps.forget(clientId(c.req.param('id')));
+  /** Forgets a node, and every connection it held. */
+  api.delete('/nodes/:id', async (c) => {
+    await homeFor(deps, c).nodes.forget(nodeId(c.req.param('id')));
     return c.json({ ok: true });
   });
 

@@ -39,9 +39,9 @@ import type { SetupAction, SetupStep } from './setup.ts';
  * these have an implementation of its transport, and whether that one is
  * available right now.
  */
-export type Platform = 'server' | 'web' | 'native';
+export type Platform = 'system' | 'web' | 'native';
 
-export const PLATFORMS: readonly Platform[] = ['server', 'web', 'native'];
+export const PLATFORMS: readonly Platform[] = ['system', 'web', 'native'];
 
 /** Whether something can be used here and now, and if not, a sentence saying why. */
 export type Availability = { ok: true } | { ok: false; reason: string };
@@ -475,15 +475,15 @@ export const isSimulated = (connection: { readonly transport: string }): boolean
  * A simulated one reaches nothing, and is held anywhere.
  */
 export function placesOf(method: ConnectionMethod, transport: Pick<TransportDefinition, 'platforms'> | null): Platform[] {
-  if (isSimulated(method)) return ['server', 'web', 'native'];
+  if (isSimulated(method)) return ['system', 'web', 'native'];
   const platforms = transport?.platforms ?? [];
-  return method.serverOnly ? platforms.filter((platform) => platform === 'server') : [...platforms];
+  return method.serverOnly ? platforms.filter((platform) => platform === 'system') : [...platforms];
 }
 
 /** Where a type can run at all, a simulated way apart: every place one of its own ways can be held. */
 export function runsOn(type: { readonly connections: readonly ConnectionMethod[] }, transport: (id: string) => Pick<TransportDefinition, 'platforms'> | null): Platform[] {
   const places = new Set(type.connections.flatMap((method) => placesOf(method, transport(method.transport))));
-  return (['native', 'web', 'server'] as const).filter((platform) => places.has(platform));
+  return (['native', 'web', 'system'] as const).filter((platform) => places.has(platform));
 }
 
 /**

@@ -210,15 +210,15 @@ if (kind === 'transport') {
   files['package.json'] = manifest(
     `@kraftverk/transport-${name}`,
     `${title}: moves bytes or messages to a device, and finds devices. Knows no protocol.`,
-    { transport: { definition: './src/index.ts', server: './src/server.ts' } },
-    { '.': './src/index.ts', './server': './src/server.ts' }
+    { transport: { definition: './src/index.ts', system: './src/system.ts' } },
+    { '.': './src/index.ts', './system': './src/system.ts' }
   );
   files['src/index.ts'] = `import type { TransportDefinition } from '@kraftverk/device-sdk';
 
 /**
  * ${title}, the same on every platform. See docs/ADDING-A-DEVICE.md.
  * Where it has an implementation is \`platforms\`, and each one is an entry of
- * its own (\`server\`, \`web\`, \`native\`), so the app never bundles server code.
+ * its own (\`system\`, \`web\`, \`native\`), so the app never bundles a system process's code.
  */
 const definition: TransportDefinition = {
   id: '${name}',
@@ -227,17 +227,17 @@ const definition: TransportDefinition = {
   exclusive: true,
   // Reached only within a radio's range of whoever holds it, as Bluetooth is: then true.
   nearby: false,
-  platforms: ['server'],
-  discovery: { server: 'none' },
+  platforms: ['system'],
+  discovery: { system: 'none' },
 };
 
 export default definition;
 `;
-  files['src/server.ts'] = `import type { Transport, TransportFactory } from '@kraftverk/device-sdk';
+  files['src/system.ts'] = `import type { Transport, TransportFactory } from '@kraftverk/device-sdk';
 
 import definition from './index.ts';
 
-/** ${title} on the server. Started once, shared by every connection over it. */
+/** ${title} in a system process: a node on a machine. Started once, shared by every connection over it. */
 const create${words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join('')}: TransportFactory = (): Transport => ({
   definition,
   available: () => ({ ok: false, reason: '${title} is not written yet' }),

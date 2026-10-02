@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import { AutomationLibrary } from '@kraftverk/automation-engine';
 import { readConfig } from '@kraftverk/home-file';
 import { changesConfiguration, Configuration, DeviceTypeRegistry, openKept, ProtocolRegistry, type ConfigurationDeps } from '@kraftverk/hub';
-import { LAMP, lampProtocol, lampType } from '@kraftverk/hub/testing';
-import { AutomationStore, ConnectionStore, DeviceCatalog, LinkStore } from '@kraftverk/store';
+import { LAMP, lampProtocol, lampType, MACHINE_NODE } from '@kraftverk/hub/testing';
+import { AutomationStore, ConnectionStore, DeviceCatalog, LinkStore, NodeStore } from '@kraftverk/store';
 
 import { audit, closeDb, db, onAudit, policyValues, setPolicyValue } from './database.ts';
 import { serverSealing } from './sealing.ts';
@@ -34,6 +34,7 @@ beforeAll(() => {
   types.install(lampType);
   const protocols = new ProtocolRegistry();
   protocols.install(lampProtocol);
+  new NodeStore(db()).declareSelf({ ...MACHINE_NODE, platform: 'system', transports: ['bus'] });
   catalog = new DeviceCatalog(db());
   connections = new ConnectionStore(db(), serverSecrets);
   const automations = new AutomationStore(db());
@@ -44,6 +45,7 @@ beforeAll(() => {
     catalog,
     connections,
     links: new LinkStore(db()),
+    self: MACHINE_NODE.id,
     automations,
     types,
     protocols,
@@ -67,7 +69,7 @@ afterAll(async () => {
 describe('the configuration kept beside the database', () => {
   test('written whole: each device, how it is reached, its secret kept — and not again when nothing changed', async () => {
     const lamp = catalog.add({ typeId: 'test.lamp', name: 'Hall lamp', description: LAMP });
-    const way = connections.add({ deviceId: lamp.id, method: 'bus', transport: 'bus', heldBy: null, address: 'lamp-1' });
+    const way = connections.add({ deviceId: lamp.id, method: 'bus', transport: 'bus', heldBy: MACHINE_NODE.id, address: 'lamp-1' });
     connections.setSecrets(way.id, { pin: 'pin-from-a-test' });
     expect(await snapshot.write()).toBe(true);
     const text = readFileSync(file, 'utf8');

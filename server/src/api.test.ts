@@ -5,10 +5,10 @@ import { join } from 'node:path';
 
 import { ApiError, type KraftverkApi, type LiveUpdate } from '@kraftverk/api-contract';
 import { httpApi, serverApi } from '@kraftverk/api-client/http';
-import { savedDeviceId } from '@kraftverk/device-sdk';
+import { nodeId, savedDeviceId } from '@kraftverk/device-sdk';
 import { createHub, DeviceTypeRegistry, ProtocolRegistry, TransportHost, type Hub } from '@kraftverk/hub';
 import { apiOver, serveApi } from '@kraftverk/message-port';
-import { busDefinition, FakeBus, lampProtocol, lampType } from '@kraftverk/hub/testing';
+import { busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE } from '@kraftverk/hub/testing';
 
 import { createApp } from './app.ts';
 import { SESSION_COOKIE } from './auth/routes.ts';
@@ -47,7 +47,7 @@ beforeAll(async () => {
   closeDb();
   const protocols = new ProtocolRegistry();
   protocols.install(lampProtocol);
-  const transports = new TransportHost({ platform: 'server', context: { env: {}, log: () => {}, audit: () => {} } });
+  const transports = new TransportHost({ platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } });
   transports.install(busDefinition, { create: () => bus });
   const types = new DeviceTypeRegistry();
   types.install(lampType);
@@ -58,6 +58,7 @@ beforeAll(async () => {
     secrets: serverSecrets,
     sealing: serverSealing,
     installed: { types, protocols, transports },
+    node: MACHINE_NODE,
     readOnly: () => false,
     http: () => Promise.reject(new Error('no network in these tests')),
     gateway: { verifyTimeoutMs: 300 },
@@ -77,7 +78,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  db().exec('DELETE FROM device; DELETE FROM sample; DELETE FROM client; DELETE FROM users; DELETE FROM sessions; DELETE FROM app_state; DELETE FROM audit; DELETE FROM automation;');
+  db().exec('DELETE FROM device; DELETE FROM sample; DELETE FROM node; DELETE FROM users; DELETE FROM sessions; DELETE FROM app_state; DELETE FROM audit; DELETE FROM automation;');
   await hub.sessions.sync([]);
   bus.lamps.clear();
   account = (await createFirstUser('olof', PASSWORD)).id;
@@ -137,13 +138,13 @@ for (const way of WAYS) {
     test('says what can be added', async () => {
       const listing = await way.api().deviceTypes();
       const lamp = listing.types.find((type) => type.id === 'test.lamp')!;
-      expect(lamp.ways).toContainEqual({ method: 'bus', holder: 'home', availability: { ok: true } });
+      expect(lamp.ways).toContainEqual({ method: 'bus', holder: 'master', availability: { ok: true } });
     });
 
     test('keeps no other home beside it to bring in: a server’s is its own', async () => {
       const home = way.api();
       expect(await home.configuration.elsewhere()).toBeNull();
-      expect((await refused(home.configuration.plan({ from: 'this-app' }))).kind).toBe('not-found');
+      expect((await refused(home.configuration.plan({ from: 'this-node' }))).kind).toBe('not-found');
       expect((await refused(home.configuration.plan({ from: 'copy' }))).kind).toBe('not-found');
     });
 
@@ -184,12 +185,13 @@ for (const way of WAYS) {
       expect(exported.text).toContain('hall:');
     });
 
-    test('knows the apps of the account asking, and no other', async () => {
+    test('knows its master and the nodes that join it, and forgets one only for its person', async () => {
       const home = way.api();
-      const app = await home.apps.register({ name: 'A test browser', platform: 'web', transports: [] });
-      expect((await home.apps.list()).map((each) => each.id)).toEqual([app.id]);
-      await home.apps.forget(app.id);
-      expect(await refused(home.apps.forget(app.id))).toEqual({ kind: 'not-found', message: 'No such app' });
+      expect(await home.home()).toMatchObject({ master: MACHINE_NODE.id });
+      const browser = await home.nodes.join({ id: nodeId('n-00000000bb01'), name: 'A test browser', platform: 'web', transports: [], alwaysOn: false, reachable: false, trusted: false, place: null });
+      expect((await home.nodes.list()).map((each) => [each.id, each.master])).toEqual([[MACHINE_NODE.id, true], [browser.id, false]]);
+      await home.nodes.forget(browser.id);
+      expect(await refused(home.nodes.forget(browser.id))).toEqual({ kind: 'not-found', message: 'No such node' });
     });
   });
 }

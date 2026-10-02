@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { ConnectionView } from '@kraftverk/api-contract';
-import { clientId, connectionId, savedDeviceId, type DeviceSession, type DeviceType, type Protocol, type Transport } from '@kraftverk/device-sdk';
+import { nodeId, connectionId, savedDeviceId, type DeviceSession, type DeviceType, type Protocol, type Transport } from '@kraftverk/device-sdk';
 import { fakeByteChannel } from '@kraftverk/device-sdk/testing';
 
 import { activeConnection, Failover, identityVerdict, judgeCheck, openDevice, OpenRefused, toHold, withInUse } from '../src/index.ts';
@@ -49,7 +49,8 @@ const baseInput = (type: DeviceType<any>, channel = fakeByteChannel(() => null))
   protocols: { get: (id: string) => (id === 'lampish' ? protocol : null) },
   transports: { start: async () => ({ open: async () => channel }) as unknown as Transport, available: () => ({ ok: true as const }) },
   store: { get: () => null, set: () => {}, delete: () => {} },
-  platform: 'server' as const,
+  platform: 'system' as const,
+  node: nodeId('n-hall'),
   readOnly: false,
   allowRawFrames: false,
   log: quiet,
@@ -164,7 +165,7 @@ describe('watching a device', () => {
   });
 });
 
-const connection = (id: string, priority: number, reachable: boolean | null, heldBy: ConnectionView['heldBy'] = { kind: 'home' }): ConnectionView => ({
+const connection = (id: string, priority: number, reachable: boolean | null, heldBy: ConnectionView['heldBy'] = { kind: 'master', id: nodeId('n-machine'), name: 'Machine' }): ConnectionView => ({
   id: connectionId(id),
   method: id,
   methodLabel: id,
@@ -181,7 +182,7 @@ const connection = (id: string, priority: number, reachable: boolean | null, hel
 });
 
 describe('which connection is in use', () => {
-  const phone = { kind: 'client' as const, id: clientId('k-phone'), name: 'Phone' };
+  const phone = { kind: 'node' as const, id: nodeId('n-phone'), name: 'Phone' };
 
   test('the reachable one highest in the list; with none reachable, the one being tried', () => {
     expect(activeConnection([connection('wifi', 0, false), connection('ble', 1, true)], 'wifi')).toBe('ble');
@@ -190,12 +191,12 @@ describe('which connection is in use', () => {
     expect(withInUse([connection('wifi', 0, null), connection('ble', 1, true)], null).map((c) => c.inUse)).toEqual([false, true]);
   });
 
-  test('an app holds its own connection only while nothing above it reaches the device', () => {
+  test('a node holds its own connection only while nothing above it reaches the device', () => {
     const device = (serverReachable: boolean | null) => ({ connections: [connection('wifi', 0, serverReachable), connection('ble', 1, null, phone)] });
-    expect(toHold(device(true), 'k-phone')).toBeNull();
-    expect(toHold(device(false), 'k-phone')?.id).toBe(connectionId('ble'));
-    expect(toHold(device(null), 'k-phone')?.id).toBe(connectionId('ble'));
-    expect(toHold(device(false), 'k-other')).toBeNull();
+    expect(toHold(device(true), phone.id)).toBeNull();
+    expect(toHold(device(false), phone.id)?.id).toBe(connectionId('ble'));
+    expect(toHold(device(null), phone.id)?.id).toBe(connectionId('ble'));
+    expect(toHold(device(false), nodeId('n-other'))).toBeNull();
   });
 });
 

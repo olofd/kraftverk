@@ -8,7 +8,7 @@ import { memoryTransportStore, type MessageBrokerPolicy } from '@kraftverk/devic
 
 import { BrokerBus, type BusMessage } from '../bus.ts';
 import { MqttClient } from '../client.ts';
-import createMqttTransport from '../server.ts';
+import createMqttTransport from '../system.ts';
 import { matches, MessageBroker } from './broker.ts';
 import { Journal } from './journal.ts';
 import { loadPolicies, refusalFor } from './policy.ts';

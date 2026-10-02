@@ -26,16 +26,16 @@ export function setupApi(hub: Hub, caller: Caller): SetupApi {
   return {
     setup: {
       start: async ({ holder, ...input }) => {
-        // A way an app holds for a server is set up by that app, holding it: a home holds every way it adds itself.
-        if (holder === 'this-app') throw new ApiError('invalid', 'This home holds every way it adds itself: only an app holding ways for a server sets one up for itself');
+        // A way a node holds for the master is set up by that node, holding it: the master holds every way it adds itself.
+        if (holder === 'this-node') throw new ApiError('invalid', 'This node holds every way it adds itself: only a node that follows a home sets one up for itself');
         return setup.start({ ...input, by: actor });
       },
-      /** One an app will hold: the app speaks for itself only, and must be the caller's account's. */
+      /** One a node that follows the home will hold: it speaks for itself only, and must be the caller's account's. */
       async startHeld(input) {
-        const app = hub.clients.get(input.clientId);
-        const account = caller.kind === 'person' ? caller.account : undefined;
-        if (!app || !account || app.userId !== account) throw new ApiError('not-found', 'No such app');
-        return setup.startHeld({ ...input, clientId: app.id, by: actor });
+        const node = hub.nodes.get(input.nodeId);
+        const account = caller.kind === 'person' ? (caller.account ?? null) : undefined;
+        if (!node || node.self || account === undefined || node.accountId !== account) throw new ApiError('not-found', 'No such node');
+        return setup.startHeld({ ...input, nodeId: node.id, by: actor });
       },
       get: async (id) => setup.view(own(id)),
       discard: async (id) => setup.discard(own(id)),
@@ -70,7 +70,7 @@ export function setupApi(hub: Hub, caller: Caller): SetupApi {
             const transport = transports.get(definition.id);
             return {
               ...definition,
-              holder: 'home',
+              holder: 'master',
               running: transport !== null,
               availability: transports.available(definition.id),
               values: transport?.values?.() ?? {},

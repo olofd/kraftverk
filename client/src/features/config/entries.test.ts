@@ -28,8 +28,8 @@ const plug = {
     attributes: [{ key: 'power', label: 'Power', value: { type: 'number', unit: 'W' }, means: 'power.draw' }],
   },
   connections: [
-    { id: 'c-1', method: 'lan', methodLabel: 'Home network', heldBy: { kind: 'home' }, address: '192.0.2.10#a4c1380000000001', priority: 0, secrets: ['localKey'], secretsExportable: false, config: { deviceId: 'made-up-id' } },
-    { id: 'c-2', method: 'bluetooth', methodLabel: 'Bluetooth', heldBy: { kind: 'client', id: 'k-1', name: 'A phone' }, address: 'AA:BB', priority: 1, secrets: [], secretsExportable: false, config: {} },
+    { id: 'c-1', method: 'lan', methodLabel: 'Home network', heldBy: { kind: 'master', id: 'n-0000000000a1', name: 'Test machine' }, address: '192.0.2.10#a4c1380000000001', priority: 0, secrets: ['localKey'], secretsExportable: false, config: { deviceId: 'made-up-id' } },
+    { id: 'c-2', method: 'bluetooth', methodLabel: 'Bluetooth', heldBy: { kind: 'node', id: 'n-0000000000b2', name: 'A phone' }, address: 'AA:BB', priority: 1, secrets: [], secretsExportable: false, config: {} },
   ],
 } as unknown as DeviceView;
 

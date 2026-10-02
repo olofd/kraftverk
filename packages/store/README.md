@@ -54,7 +54,8 @@ level — so two homes can be open in one process.
 | | |
 |---|---|
 | The schema | `SCHEMA`, `schemaFingerprint`; `prepareDatabase`, `schemaStateOf` (current, empty, or another — set aside by the place, strict version 1), `createSchema`, `metaOf`, `resetDatabase` |
-| Devices | `DeviceCatalog`, `ConnectionStore` (with sealed secrets), `LinkStore`, `EventStore`, `ClientStore` (apps that hold connections) |
+| Devices | `DeviceCatalog`, `ConnectionStore` (with sealed secrets), `LinkStore`, `EventStore` |
+| Nodes and places | `HomeStore` (the home and its master node), `NodeStore` (every kraftverk node of the home: this database's own, and the nodes that joined it), `PlaceStore` (where nodes and devices stand) |
 | What a device and a transport keep | `deviceStore`, `transportStore` |
 | The gateway's memory | `databaseLedger` — the last switch of a part, the last write of a setting |
 | Automations | `AutomationStore`, the engine's `AutomationStorage` |

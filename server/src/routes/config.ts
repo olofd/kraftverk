@@ -51,7 +51,7 @@ export function configRoutes(deps: AppDeps): Hono {
         .object({
           text: z.string().min(1).max(2_000_000).optional(),
           restored: z.literal(true).optional(),
-          from: z.enum(['this-app', 'copy']).optional(),
+          from: z.enum(['this-node', 'copy']).optional(),
           mode: z.enum(['merge', 'replace']).default('merge'),
           passphrase: z.string().max(200).optional(),
         })

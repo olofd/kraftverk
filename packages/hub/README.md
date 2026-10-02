@@ -114,7 +114,7 @@ way (docs/PLAN-SHARED-CORE.md, phase 6). The same session manager and
 gateway as a home, over what this app holds; its way is held only while
 nothing above it reaches the device (`toHold`), so the server's Wi-Fi
 takes over again when it is back. Its `api` is the one interface the
-screens ask: a device type's ways this app can hold (`holder: this-app`),
+screens ask: a device type's ways this app can hold (`holder: this-node`),
 set up here through `setup` — read over this app's own radio, judged and
 kept by the server, the way's secrets kept here and never sent; a view
 with this app's own readings while it holds the device; a command, a
@@ -160,11 +160,14 @@ await hub.stop();
 
 - **Nothing at module level.** Every store, registry and timer belongs to
   one hub; stopping it stops all of them.
-- **A connection the hub holds** is one no app holds (`held_by` null): the
-  server's on a server, the phone's in local mode. An app holding
-  connections for a server's home is not a second hub: it is a holding
-  (`createHolding`, below), and the server stays the home's master
-  (decision 6).
+- **Every hub is a kraftverk node** (`node`, handed in: its id is the
+  node's own, kept where it runs). A connection the hub holds is one its
+  own node holds (`held_by` its id): the server's on a server, the
+  phone's in local mode. The home names its master (`home.master_id`):
+  the node whose database is the home's. An app holding connections for a
+  server's home is not a second hub: it is a holding (`createHolding`,
+  below), a node that follows the master and joins it by its own id
+  (decision 24).
 - **Who is asking** is part of every call: the gateway binds a
   confirmation to a person, refuses an agent what needs one, and the
   timeline names the account, the automation, the app.

@@ -10,10 +10,13 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
  * On each SQLite a home is kept in (`drivers.ts`), each a database of its own.
  */
 
-import { connectionId, MAIN_PART, savedDeviceId, type DeviceDescription } from '@kraftverk/device-sdk';
+import { connectionId, MAIN_PART, nodeId, savedDeviceId, type DeviceDescription } from '@kraftverk/device-sdk';
 
-import { ConnectionStore, DeviceCatalog, LastHeard, LinkStore, SendQueue, type SecretsAtRest, type SqlDatabase } from '../src/index.ts';
+import { ConnectionStore, DeviceCatalog, LastHeard, LinkStore, NodeStore, SendQueue, type SecretsAtRest, type SqlDatabase } from '../src/index.ts';
 import { DRIVERS } from './drivers.ts';
+
+/** The node this database belongs to: what holds every connection here. */
+const HERE = nodeId('n-0000000000a1');
 
 /** A device's description, as a lamp's. */
 const LAMP: DeviceDescription = {
@@ -37,6 +40,7 @@ for (const driver of DRIVERS) {
 
     beforeAll(async () => {
       database = await driver.open();
+      new NodeStore(database).declareSelf({ id: HERE, name: 'Test machine', platform: 'system', transports: ['mqtt', 'ble', 'lan'], alwaysOn: true, reachable: true, trusted: true });
       catalog = new DeviceCatalog(database);
       connections = new ConnectionStore(database, SEALED);
       links = new LinkStore(database);
@@ -122,7 +126,7 @@ for (const driver of DRIVERS) {
       test('keeps its history, and drops its connections, their secrets and its links', () => {
         const station = add('Doomed', 'sydpower:AABBCC000003');
         const plug = catalog.add({ description: LAMP, typeId: 'test.plug', name: 'Plug' });
-        const connection = connections.add({ deviceId: station.id, method: 'wifi', transport: 'mqtt', heldBy: null, address: 'AABBCC000003' });
+        const connection = connections.add({ deviceId: station.id, method: 'wifi', transport: 'mqtt', heldBy: HERE, address: 'AABBCC000003' });
         connections.setSecrets(connection.id, { localKey: 'k' });
         links.add({ kind: 'feeds', source: { device: plug.id, part: 'main' }, target: { device: station.id, part: 'input.ac' } });
         sample(station.id);
@@ -175,8 +179,8 @@ for (const driver of DRIVERS) {
     describe('connections', () => {
       test('a new one comes after the ones a device already has, and can be preferred', () => {
         const record = add('Two ways');
-        const wifi = connections.add({ deviceId: record.id, method: 'wifi', transport: 'mqtt', heldBy: null, address: 'AABBCC000010' });
-        const ble = connections.add({ deviceId: record.id, method: 'bluetooth', transport: 'ble', heldBy: null, address: 'AA:BB:CC:00:00:10' });
+        const wifi = connections.add({ deviceId: record.id, method: 'wifi', transport: 'mqtt', heldBy: HERE, address: 'AABBCC000010' });
+        const ble = connections.add({ deviceId: record.id, method: 'bluetooth', transport: 'ble', heldBy: HERE, address: 'AA:BB:CC:00:00:10' });
         expect([wifi.priority, ble.priority]).toEqual([0, 1]);
 
         connections.prefer(ble.id);
@@ -185,14 +189,14 @@ for (const driver of DRIVERS) {
 
       test('an exclusive address is claimed whatever its case', () => {
         const record = add('Claimed');
-        connections.add({ deviceId: record.id, method: 'wifi', transport: 'mqtt', heldBy: null, address: 'AABBCC000011' });
+        connections.add({ deviceId: record.id, method: 'wifi', transport: 'mqtt', heldBy: HERE, address: 'AABBCC000011' });
         expect(connections.claimant('mqtt', 'aabbcc000011')?.deviceId).toBe(record.id);
         expect(connections.claimant('ble', 'AABBCC000011')).toBeNull();
       });
 
       test('secrets are sealed at rest, listed by field, and opened only on request', () => {
         const record = add('Keyed');
-        const connection = connections.add({ deviceId: record.id, method: 'lan', transport: 'lan', heldBy: null, address: '192.0.2.10' });
+        const connection = connections.add({ deviceId: record.id, method: 'lan', transport: 'lan', heldBy: HERE, address: '192.0.2.10' });
         connections.setSecrets(connection.id, { localKey: 'abcdefghijklmnop' });
 
         expect(connections.secretFields(connection.id)).toEqual(['localKey']);
@@ -244,6 +248,7 @@ for (const driver of DRIVERS) {
         typeId: 'test.lamp',
         identity: 'lamp:AA',
         name: 'Their lamp',
+        placeId: null,
         config: {},
         addedAt: '2026-10-01T00:00:00.000Z',
         removedAt: null,
@@ -252,14 +257,14 @@ for (const driver of DRIVERS) {
         info: null,
         picture: null,
       };
-      const way = { id: connectionId('c-0000000000aa'), deviceId: theirs.id, method: 'bluetooth', transport: 'ble', address: 'AA', priority: 1, config: {}, secretsExportable: false, createdAt: theirs.addedAt };
+      const way = { id: connectionId('c-0000000000aa'), deviceId: theirs.id, method: 'bluetooth', transport: 'ble', heldBy: HERE, address: 'AA', priority: 1, config: {}, secretsExportable: false, createdAt: theirs.addedAt };
 
       test('is kept by its own id, held here, and brought up to date without losing what only this holder has', () => {
         catalog.mirror(theirs);
         connections.mirror(way);
         connections.setSecrets(way.id, { key: 'only-here' });
         expect(catalog.get(theirs.id)).toMatchObject({ key: 'their-lamp', name: 'Their lamp', identity: 'lamp:AA' });
-        expect(connections.forDevice(theirs.id)).toEqual([expect.objectContaining({ id: way.id, heldBy: null, priority: 1 })]);
+        expect(connections.forDevice(theirs.id)).toEqual([expect.objectContaining({ id: way.id, heldBy: HERE, priority: 1 })]);
 
         catalog.mirror({ ...theirs, name: 'Renamed there' });
         connections.mirror({ ...way, priority: 0, address: 'BB' });

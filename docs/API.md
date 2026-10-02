@@ -35,7 +35,7 @@ answers — and listed on the device as `tools`.
 | `GET` `POST` `DELETE` | `/users` · `/users/:id` · `/users/:id/password` | Accounts |
 | `GET` | `/version` | Name, version, runtime, uptime; simulator or not, transports, read-only |
 | `GET` | `/device-types` | What can be added: categories, installed types, each with its `ways` — a method this server can hold at all, who holds it (`holder: home`), and whether it can now, or why not — and `runsOn`, every place one of its ways can be held (a phone, a browser, a server) |
-| `POST` | `/setup` | Start adding a device over a method this server will hold (`{ typeId, methodId, holder? }`: `this-app` is refused — an app sets up what it holds itself); the steps follow |
+| `POST` | `/setup` | Start adding a device over a method this server will hold (`{ typeId, methodId, holder? }`: `this-node` is refused — a node sets up what it holds itself); the steps follow |
 | `GET` `PATCH` `DELETE` | `/setup/:id` | The draft; values from a form step (secrets stay here); discard it |
 | `GET` | `/setup/:id/sightings` | What the transport sees that this type's protocol recognises, marked when already yours |
 | `POST` | `/setup/:id/choose` · `/steps/:step/actions/:action` · `/steps/:step/discover` | Choose the device — `{ address }` it sees, `{ manual }` typed, or `{ chooser }`, the platform's own picker, which a server has none of and says so; run a step's helper ("fetch the key") on the server |
@@ -54,13 +54,14 @@ answers — and listed on the device as `tools`.
 | `POST` `PATCH` `DELETE` | `/devices/:id/connections/:connection` (`/prefer`) | Prefer one way to reach it; let its secrets leave in an export as plain text or not (`PATCH { secretsExportable }`, a server-held one only, on the timeline as `device.exportable`); or remove one — not the last |
 | `PUT` | `/devices/:id/connections/:connection/secrets` | Replace a server-held connection's secrets, such as a plug's new local key |
 | `POST` `DELETE` | `/links` · `/links/:id` | Facts about the house, between parts: `{kind, source: {device, part}, target: {device, part}}` — this plug's relay feeds that station's mains input |
-| `GET` `POST` `DELETE` | `/clients` · `/clients/:id` | The phones and browsers that hold connections |
-| `POST` | `/devices/:id/readings` · `/clients/:id/audit` | What an app sends for a connection it holds |
+| `GET` | `/home` | The home: its name, and which node is its master |
+| `GET` `POST` `DELETE` | `/nodes` · `/nodes/:id` | The kraftverk nodes of the home: its master, and every node that joins it — by its own id, at every start, saying what it is (`alwaysOn`, `reachable`, `trusted`, its `place`) and what it reaches devices over. Forgotten only by the account it joined from; never the master |
+| `POST` | `/devices/:id/readings` · `/nodes/:id/audit` | What a node sends the master for a connection it holds |
 | `GET` `PUT` | `/devices/:id/store` · `/devices/:id/store/:key` | A device's own store, for a session an app runs |
 | `GET` | `/transports` · `/transports/:id/diagnostics/:name` | What this server reaches devices over, and each transport's diagnostics — the broker, its journal, its traffic |
 | `GET` | `/found` | What the transports see that nothing you have is reached by |
 | `GET` | `/diagnostics/log` | The server's own recent log (`?level=warn`, `?limit=`), and where its daily files are |
-| `GET` | `/audit` | The timeline: intents, commands, verification outcomes — all of it, or one `resourceKind`'s (`device`, `client`, `automation`, `account`, `transport`), or one `resource`'s; `before` an entry's id pages back |
+| `GET` | `/audit` | The timeline: intents, commands, verification outcomes — all of it, or one `resourceKind`'s (`device`, `node`, `place`, `automation`, `account`, `transport`), or one `resource`'s; `before` an entry's id pages back |
 | `GET` `PUT` | `/policy` · `/policy/:name` | What the home decides that declarations name: `loadWatts`, how much a load is before turning it off is confirmed; `reserveSoc`, the charge below which switching on what drains a battery is refused to automations and assistants and confirmed by a person (0, none). `{ value }` sets it, `null` puts back the default; audited |
 | `GET` (WebSocket) | `/live` | What changed, as it changes — see below |
 | `GET` | `/problems` | Warnings and errors across the devices you have, newest first |

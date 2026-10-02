@@ -3,13 +3,13 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { SIMULATED_ADDRESS, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT } from '@kraftverk/device-sdk';
+import { nodeId, SIMULATED_ADDRESS, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT } from '@kraftverk/device-sdk';
 import { LiveBus, type LiveMessage, SessionManager } from '@kraftverk/holder';
 
 import { closeDb, db, deviceStore, audit } from '../platform/database.ts';
 import { DeviceTypeRegistry, ProtocolRegistry, TransportHost } from '@kraftverk/hub';
-import { busDefinition, FakeBus, LAMP, lampControl, lampProtocol, lampType, opened } from '@kraftverk/hub/testing';
-import { DeviceCatalog, ClientStore, ConnectionStore, holding } from '@kraftverk/store';
+import { busDefinition, FakeBus, LAMP, lampControl, lampProtocol, lampType, MACHINE_NODE, opened } from '@kraftverk/hub/testing';
+import { DeviceCatalog, NodeStore, ConnectionStore, holding } from '@kraftverk/store';
 import { serverSecrets } from '../platform/secrets.ts';
 
 /**
@@ -18,8 +18,7 @@ import { serverSecrets } from '../platform/secrets.ts';
  *
  * The manager knows no product, protocol or transport, so these use a lamp on
  * a pretend bus. What is pinned down: each device gets its own config, store
- * and lifecycle; the connection in use is the preferred one this server can
- * reach; a device that cannot open says why; and a connection that turns out
+ * and lifecycle; the connection in use is the preferred one this node holds; a device that cannot open says why; and a connection that turns out
  * to reach a different device is refused.
  */
 
@@ -27,7 +26,7 @@ const dir = mkdtempSync(join(tmpdir(), 'kraftverk-sessions-'));
 
 let catalog: DeviceCatalog;
 let connections: ConnectionStore;
-let clients: ClientStore;
+let nodes: NodeStore;
 let sessions: SessionManager;
 let bus: FakeBus;
 let identified: [string, string][];
@@ -35,21 +34,21 @@ let identified: [string, string][];
 const build = (options: { readOnly?: boolean; bus?: LiveBus } = {}) => {
   const protocols = new ProtocolRegistry();
   expect(protocols.install(lampProtocol)).toEqual([]);
-  const transports = new TransportHost({ platform: 'server', context: { env: {}, log: () => {}, audit: () => {} } });
+  const transports = new TransportHost({ platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } });
   expect(transports.install(busDefinition, { create: () => bus })).toEqual([]);
   const types = new DeviceTypeRegistry();
   expect(types.install(lampType)).toEqual([]);
   return new SessionManager({
-    platform: 'server',
-    owner: 'server',
+    platform: 'system',
+    node: { id: MACHINE_NODE.id, name: MACHINE_NODE.name },
     types,
     protocols,
     transports,
-    ...holding(connections, null),
+    ...holding(connections, MACHINE_NODE.id),
     store: deviceStore,
     readOnly: () => options.readOnly ?? false,
     allowRawFrames: false,
-    heldByName: (id) => clients.get(id)?.name ?? null,
+    nodeName: (id) => nodes.get(id)?.name ?? null,
     record: audit,
     onIdentified: (deviceId, identity) => identified.push([deviceId, identity]),
     bus: options.bus,
@@ -61,7 +60,9 @@ beforeAll(() => {
   closeDb();
   catalog = new DeviceCatalog(db());
   connections = new ConnectionStore(db(), serverSecrets);
-  clients = new ClientStore(db());
+  nodes = new NodeStore(db());
+  // This server, the node every connection here is held by unless another is said.
+  nodes.declareSelf({ ...MACHINE_NODE, platform: 'system', transports: ['bus'] });
 });
 
 afterAll(async () => {
@@ -84,7 +85,7 @@ beforeEach(async () => {
 const addLamp = (name: string, address: string, config: Record<string, unknown> = { room: name }, identity: string | null = null) => {
   bus.lamps.set(address, { serial: address.toUpperCase(), model: 'L1', on: true, answers: true });
   const record = catalog.add({ description: LAMP, typeId: 'test.lamp', name, config, identity });
-  const connection = connections.add({ deviceId: record.id, method: 'bus', transport: 'bus', heldBy: null, address });
+  const connection = connections.add({ deviceId: record.id, method: 'bus', transport: 'bus', heldBy: MACHINE_NODE.id, address });
   return { record, connection };
 };
 
@@ -140,7 +141,7 @@ describe('one session per device', () => {
   test('preferring another connection reopens the device over it', async () => {
     const { record } = addLamp('Hall', 'lamp-1');
     bus.lamps.set('lamp-9', { serial: 'LAMP-1', model: 'L1', on: true, answers: true });
-    const second = connections.add({ deviceId: record.id, method: 'backup', transport: 'bus', heldBy: null, address: 'lamp-9' });
+    const second = connections.add({ deviceId: record.id, method: 'backup', transport: 'bus', heldBy: MACHINE_NODE.id, address: 'lamp-9' });
     await sessions.sync(catalog.list());
     expect(sessions.inUse(record.id)?.address).toBe('lamp-1');
 
@@ -153,7 +154,7 @@ describe('one session per device', () => {
     const readOnly = build({ readOnly: true });
     const real = addLamp('Hall', 'lamp-1').record;
     const pretend = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Pretend lamp', config: { room: 'Attic' } });
-    connections.add({ deviceId: pretend.id, method: SIMULATED_METHOD_ID, transport: SIMULATED_TRANSPORT, heldBy: null, address: SIMULATED_ADDRESS });
+    connections.add({ deviceId: pretend.id, method: SIMULATED_METHOD_ID, transport: SIMULATED_TRANSPORT, heldBy: MACHINE_NODE.id, address: SIMULATED_ADDRESS });
     await readOnly.sync(catalog.list());
 
     expect(readOnly.get(real.id)).not.toBeNull();
@@ -235,13 +236,13 @@ describe('a device that cannot open is still a device, saying why', () => {
   test('a device held only by a phone has no session here, and says who holds it', async () => {
     const user = db().query<{ id: string }, []>('SELECT id FROM users LIMIT 1').get();
     const userId = user?.id ?? (db().exec("INSERT INTO users (id, username, password_hash, created_at, password_changed_at) VALUES ('u-test', 'tester', 'x', '2026-01-01', '2026-01-01')"), 'u-test');
-    const phone = clients.register({ userId, name: 'Olof’s iPhone', platform: 'native', transports: ['ble'] });
+    const phone = nodes.join({ id: nodeId('n-00000000aa02'), name: 'Olof’s iPhone', platform: 'native', transports: ['ble'], alwaysOn: false, reachable: false, trusted: false }, userId);
     const record = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Pocket lamp' });
     connections.add({ deviceId: record.id, method: 'bus', transport: 'bus', heldBy: phone.id, address: 'lamp-7' });
     await sessions.sync(catalog.list());
 
     expect(sessions.get(record.id)).toBeNull();
-    expect(sessions.health(record).detail).toBe('Held by Olof’s iPhone, not by this server');
+    expect(sessions.health(record).detail).toBe('Held by Olof’s iPhone, not by Test machine');
   });
 });
 
@@ -262,7 +263,7 @@ describe('what devices say, as it changes', () => {
     manager.pulse();
     expect(heard.map((message) => message.kind)).toEqual(['readings', 'health']);
     expect(heard[0]).toMatchObject({ kind: 'readings', deviceId: record.id, readings: [expect.objectContaining({ key: 'on', value: true })] });
-    expect(heard[1]).toMatchObject({ kind: 'health', health: { status: 'connected', owner: 'server', transport: 'bus' } });
+    expect(heard[1]).toMatchObject({ kind: 'health', health: { status: 'connected', node: MACHINE_NODE.id, transport: 'bus' } });
 
     // Nothing moved: nothing said.
     heard.length = 0;

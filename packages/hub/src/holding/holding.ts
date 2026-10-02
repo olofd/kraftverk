@@ -1,8 +1,8 @@
 import { ApiError, type ConnectionView, type DeviceView, type KraftverkApi, type PolicyValueView } from '@kraftverk/api-contract';
-import { clientId as asClientId, isSimulated, placesOf, type AuditRecord, type ClientId, type DeviceSession, type DeviceStore, type PolicyValues, type Reading, type SavedDeviceId, type ScopedHttp } from '@kraftverk/device-sdk';
+import { isSimulated, placesOf, type AuditRecord, type NodeId, type Platform, type DeviceSession, type DeviceStore, type PolicyValues, type Reading, type SavedDeviceId, type ScopedHttp } from '@kraftverk/device-sdk';
 import { ActionGateway, Confirmations } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, toHold, toolsOf, withInUse, type DeviceEventMessage } from '@kraftverk/holder';
-import { AppState, ConnectionStore, databaseLedger, DeviceCatalog, deviceStore, LastHeard, LinkStore, SendQueue, type DeviceRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { AppState, ConnectionStore, databaseLedger, DeviceCatalog, deviceStore, LastHeard, LinkStore, NodeStore, SendQueue, type DeviceRecord, type NodeDeclaration, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import type { PassphraseSealing } from '../configuration/seal.ts';
 import { MovingToServer } from '../handover/move.ts';
@@ -43,7 +43,6 @@ const READINGS_PER_CALL = 2000;
 /** What the server refuses for good — no such device, not this app's, too large — is not sent again. */
 const REFUSED_FOR_GOOD = new Set(['not-found', 'forbidden', 'conflict', 'invalid', 'too-large', 'not-allowed']);
 
-const APP_ID = 'holding.app';
 const POLICY = 'holding.policy';
 
 export type HoldingOptions = {
@@ -55,8 +54,12 @@ export type HoldingOptions = {
   secrets: SecretsAtRest;
   /** What this app has installed, and its transports where it runs. */
   installed: Installed;
-  /** What this app is called in "held by …", and where it runs. */
-  app: { name: string; platform: 'web' | 'native' };
+  /**
+   * The node this is: its id — the place's to keep, the same in every home
+   * it is part of — its name, and what it declares it is. Its database is
+   * this node's; it joins the home by this id.
+   */
+  node: Omit<NodeDeclaration, 'platform' | 'transports'>;
   /** Every write to hardware refused: until someone allows writes from this app. A simulated device reaches no hardware. */
   readOnly: () => boolean;
   /** For a setup helper that calls a vendor's API once — fetching a key. */
@@ -67,7 +70,7 @@ export type HoldingOptions = {
   /**
    * The home this app kept itself before it had this server, if it did:
    * offered to the server to take over (`configuration.plan({ from:
-   * 'this-app' })`), with the cipher its secrets travel sealed with.
+   * 'this-node' })`), with the cipher its secrets travel sealed with.
    */
   own?: { database: SqlDatabase; sealing: PassphraseSealing };
 };
@@ -82,7 +85,8 @@ export class Holding {
   readonly db: SqlDatabase;
   readonly installed: Installed;
   readonly readOnly: () => boolean;
-  readonly app: HoldingOptions['app'];
+  /** This node, as its own database knows it. */
+  readonly nodes: NodeStore;
 
   readonly state: AppState;
   readonly catalog: DeviceCatalog;
@@ -110,6 +114,8 @@ export class Holding {
   #describedOwed = new Map<string, string>();
   #log: NonNullable<HoldingOptions['log']>;
   #timers: ReturnType<typeof setInterval>[] = [];
+  /** Whether the home has heard who this node is, this run. */
+  #joined = false;
   #sending: Promise<void> | null = null;
   #sendEveryMs: number;
 
@@ -119,7 +125,6 @@ export class Holding {
     this.db = db;
     this.installed = options.installed;
     this.readOnly = options.readOnly;
-    this.app = options.app;
     this.#sendEveryMs = options.sendEveryMs ?? SEND_MS;
     this.#log = options.log ?? ((level, message) => console[level === 'info' ? 'log' : level](message));
     const { types, protocols, transports } = options.installed;
@@ -128,13 +133,16 @@ export class Holding {
     this.catalog = new DeviceCatalog(db);
     this.connections = new ConnectionStore(db, options.secrets);
     this.queue = new SendQueue(db);
+    // This node, as it declares itself in its own database at every start.
+    this.nodes = new NodeStore(db);
+    const self = this.nodes.declareSelf({ ...options.node, platform: transports.platform, transports: transports.definitions().filter((definition) => definition.platforms.includes(transports.platform)).map((definition) => definition.id) });
     this.heard = new LastHeard(db);
     const { catalog, connections, queue } = this;
 
     const record = (entry: AuditRecord) => this.owe('audit', null, entry);
     this.sessions = new SessionManager({
       platform: transports.platform,
-      owner: 'client',
+      node: { id: self.id, name: self.name },
       types,
       protocols,
       transports,
@@ -177,15 +185,24 @@ export class Holding {
     });
 
     // A way this app holds is set up here, over its own radio: the server judges what it finds, and keeps the device.
-    this.setup = new SetupService({ db, record, types, protocols, transports, catalog, connections, links: new LinkStore(db), sessions, http: options.http });
+    this.setup = new SetupService({ db, record, types, protocols, transports, catalog, connections, links: new LinkStore(db), sessions, http: options.http, self: self.id });
     this.moving = options.own ? new MovingToServer(this, options.own.database, { secrets: options.secrets, sealing: options.own.sealing }) : null;
     this.api = holdingApi(this);
   }
 
-  /** This app, as the server knows it; null until it has said who it is. */
-  get appId(): ClientId | null {
-    const kept = this.state.get(APP_ID);
-    return kept ? asClientId(kept) : null;
+  /** This node: the id it joins the home by, and holds its ways under. */
+  get nodeId(): NodeId {
+    return this.nodes.self()!.id;
+  }
+
+  /** What this node is called, in "held by …". */
+  get name(): string {
+    return this.nodes.self()!.name;
+  }
+
+  /** Where this node runs: what its transports' entries are for. */
+  get platform(): Platform {
+    return this.installed.transports.platform;
   }
 
   /**
@@ -195,7 +212,7 @@ export class Holding {
    */
   async start(): Promise<void> {
     await this.installed.transports.startAll(this.transportsHere());
-    await this.register().catch((error: unknown) => this.#log('warn', `[holding] the server did not hear who this app is: ${(error as Error).message}`));
+    await this.join().catch((error: unknown) => this.#log('warn', `[holding] the server did not hear who this node is: ${(error as Error).message}`));
     const list = await this.refresh();
     if (!list) {
       // Away: what this app held when it last heard, it holds still.
@@ -226,17 +243,24 @@ export class Holding {
     return transports.definitions().filter((definition) => definition.platforms.includes(transports.platform)).map((definition) => definition.id);
   }
 
-  /** Says who this app is to the server, and what it reaches devices over. Every start, under the id it was given before. */
-  async register(): Promise<ClientId> {
-    const known = this.appId;
-    const app = await this.home.apps.register({ ...(known ? { id: known } : {}), name: this.app.name, platform: this.app.platform, transports: this.transportsHere() });
-    this.state.set(APP_ID, app.id);
-    return app.id;
+  /** Joins the home — says who this node is, what it is and what it reaches devices over — at every start, by its own id. */
+  async join(): Promise<NodeId> {
+    const self = this.nodes.self()!;
+    await this.home.nodes.join({ id: self.id, name: self.name, platform: self.platform, transports: this.transportsHere(), alwaysOn: self.alwaysOn, reachable: self.reachable, trusted: self.trusted, place: self.placeId });
+    this.#joined = true;
+    return self.id;
+  }
+
+  /** This node, once the home has heard it this run: joined now if it had not, as the server was away at the start. */
+  async joined(): Promise<NodeId> {
+    return this.#joined ? this.nodeId : this.join();
   }
 
   /** Asks the server what it has, keeps what it said, and holds what is this app's to hold. Null when it cannot be asked. */
   async refresh(): Promise<DeviceView[] | null> {
     try {
+      // Not heard at the start — the server away, or nobody signed in yet: said again now.
+      if (!this.#joined) await this.join().catch(() => undefined);
       const list = await this.home.devices.list();
       this.heard.keep('devices', list);
       await this.hold(list);
@@ -285,7 +309,7 @@ export class Holding {
    * no longer has a way to is let go, with what was kept for it.
    */
   async hold(list: readonly DeviceView[]): Promise<void> {
-    const me = this.appId;
+    const me = this.nodeId;
     this.#seen = new Map(list.map((device) => [device.id, device]));
     const mine = list.filter((device) => device.connections.some((connection) => this.#mine(connection, me)));
     const keep = new Set(mine.map((device) => device.id));
@@ -298,15 +322,15 @@ export class Holding {
       this.catalog.mirror(recordOf(device));
       const ways = device.connections.filter((connection) => this.#mine(connection, me));
       for (const gone of this.connections.forDevice(device.id)) if (!ways.some((way) => way.id === gone.id)) this.connections.remove(gone.id);
-      for (const way of ways) this.connections.mirror({ ...way, deviceId: device.id, createdAt: device.addedAt });
+      for (const way of ways) this.connections.mirror({ ...way, heldBy: way.heldBy.id, deviceId: device.id, createdAt: device.addedAt });
     }
     this.#holdNow = new Set(mine.filter((device) => toHold(device, me)).map((device) => device.id));
     await this.sessions.sync(this.catalog.list());
   }
 
   /** Whether a way is this app's own. */
-  #mine(connection: ConnectionView, me: ClientId | null): boolean {
-    return (connection.heldBy.kind === 'client' || connection.heldBy.kind === 'this-app') && connection.heldBy.id === me;
+  #mine(connection: ConnectionView, me: NodeId): boolean {
+    return connection.heldBy.id === me;
   }
 
   /** Whether this app holds a device now: a session of its own is open for it, or about to be. */
@@ -326,9 +350,9 @@ export class Holding {
    * app's, read just now.
    */
   view(device: DeviceView): DeviceView {
-    const me = this.appId;
+    const me = this.nodeId;
     const connections = device.connections.map((connection) =>
-      this.#mine(connection, me) ? { ...connection, heldBy: { kind: 'this-app' as const, id: me!, name: connection.heldBy.kind === 'home' ? this.app.name : connection.heldBy.name }, secrets: this.connections.secretFields(connection.id) } : connection
+      this.#mine(connection, me) ? { ...connection, heldBy: { kind: 'this-node' as const, id: me, name: this.name }, secrets: this.connections.secretFields(connection.id) } : connection
     );
     const held = this.catalog.active(device.id);
     if (!held || !this.#holdNow.has(device.id)) return { ...device, connections };
@@ -459,8 +483,7 @@ export class Holding {
 
   async #send(): Promise<void> {
     this.#collect();
-    const me = this.appId ?? (await this.register().catch(() => null));
-    if (!me) return;
+    const me = this.nodeId;
     const owed = this.queue.next(1000);
     /** Sent, or refused for good: true; the server away: false, and the rest waits. */
     const attempt = async (ids: number[], work: () => Promise<unknown>): Promise<boolean> => {
@@ -501,7 +524,7 @@ export class Holding {
         sending.map((row) => row.id),
         () =>
           this.home.held.readings(deviceId as SavedDeviceId, {
-            clientId: me,
+            nodeId: me,
             connectionId,
             identity: [...readings].reverse().find((each) => each.identity)?.identity ?? null,
             readings: readings.flatMap((each) => each.readings),
@@ -514,7 +537,7 @@ export class Holding {
 
     for (const row of owed.filter((each) => each.kind === 'store' && each.deviceId)) {
       const { connectionId, key, value } = row.body as StoreOwed;
-      if (!(await attempt([row.id], () => this.home.held.keep(row.deviceId as SavedDeviceId, key, { clientId: me, connectionId, value })))) return;
+      if (!(await attempt([row.id], () => this.home.held.keep(row.deviceId as SavedDeviceId, key, { nodeId: me, connectionId, value })))) return;
     }
   }
 }
@@ -549,6 +572,8 @@ function recordOf(device: DeviceView): DeviceRecord {
     descriptionSource: device.descriptionSource,
     info: device.info,
     picture: device.picture === 'type:0' ? null : device.picture,
+    // A place is the master's: one this node keeps no copy of is not said here.
+    placeId: null,
   };
 }
 

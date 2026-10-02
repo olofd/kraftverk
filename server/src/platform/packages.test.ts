@@ -17,7 +17,7 @@ import { discoverDeviceTypes, discoverProtocols, discoverTransports } from './pa
 */
 
 const protocols = new ProtocolRegistry();
-const transports = new TransportHost({ platform: 'server', context: { env: {}, log: () => {}, audit: () => {} } });
+const transports = new TransportHost({ platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } });
 const types = new DeviceTypeRegistry();
 await Promise.all([discoverProtocols(protocols), discoverTransports(transports), discoverDeviceTypes(types)]);
 types.checkConnections({ protocol: (id) => protocols.get(id), transport: (id) => transports.definition(id) });

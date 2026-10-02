@@ -1,4 +1,5 @@
 import type { ConnectionView, DeviceView } from '@kraftverk/api-contract';
+import type { NodeId } from '@kraftverk/device-sdk';
 
 /**
  * The active-connection rule (docs/DATA-MODEL.md §4, decision 12), written
@@ -22,16 +23,16 @@ export function withInUse(connections: readonly ConnectionView[], trying: string
 }
 
 /**
- * Which connection this app should hold for a device, if any: its own
+ * Which connection this node should hold for a device, if any: its own
  * connection highest in the list, and only while nothing above it reaches the
  * device. A connection lower down takes over while those above are
  * unreachable, and lets go when one comes back: a station takes one Bluetooth
  * connection at a time, and two holders writing to one device would race.
  */
-export function toHold(device: Pick<DeviceView, 'connections'>, clientId: string | null): ConnectionView | null {
+export function toHold(device: Pick<DeviceView, 'connections'>, node: NodeId): ConnectionView | null {
   const ordered = [...device.connections].sort((a, b) => a.priority - b.priority);
   for (const connection of ordered) {
-    if (connection.heldBy.kind === 'client' && connection.heldBy.id === clientId) return connection;
+    if (connection.heldBy.id === node) return connection;
     if (connection.reachable) return null;
   }
   return null;

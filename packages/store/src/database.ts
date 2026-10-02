@@ -64,9 +64,9 @@ export function metaOf(db: SqlDatabase): Record<string, string> {
 /**
  * Empties every table, keeping the schema.
  *
- * `users`, `sessions` and `client` are kept: erasing the house is not erasing
- * who may enter it, and a server left with no accounts is one waiting to be
- * claimed. `meta` is kept: it is what the database is, not what is in it.
+ * `users`, `sessions`, `node` and `home` are kept: erasing the house is not
+ * erasing who may enter it, or what the home is and which nodes it has — a
+ * node left with no accounts is one waiting to be claimed. `meta` is kept: it is what the database is, not what is in it.
  * Everything else goes — devices, samples, connections, secrets, links and the
  * audit timeline — which is the point: "back to a blank canvas".
  *
@@ -75,7 +75,7 @@ export function metaOf(db: SqlDatabase): Record<string, string> {
  */
 export function resetDatabase(db: SqlDatabase): { tables: string[]; rows: number } {
   const tables = db
-    .query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('users', 'sessions', 'client', 'meta') ORDER BY name")
+    .query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('users', 'sessions', 'node', 'home', 'meta') ORDER BY name")
     .all()
     .map((row) => row.name);
 

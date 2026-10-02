@@ -1,14 +1,15 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
+import { nodeId } from '@kraftverk/device-sdk';
 import { SessionManager } from '@kraftverk/holder';
-import { ClientStore, ConnectionStore, DeviceCatalog, deviceStore, holding, LinkStore, plainSecrets } from '@kraftverk/store';
+import { NodeStore, ConnectionStore, DeviceCatalog, deviceStore, holding, LinkStore, plainSecrets } from '@kraftverk/store';
 
 import { DeviceRegistry } from '../src/devices/registry.ts';
 import { RemoteReadings } from '../src/devices/remote.ts';
 import { ProtocolRegistry } from '../src/installed/protocols.ts';
 import { TransportHost } from '../src/installed/transports.ts';
 import { DeviceTypeRegistry } from '../src/installed/types.ts';
-import { busDefinition, FakeBus, LAMP, lampProtocol, lampType } from '../src/testing.ts';
+import { busDefinition, FakeBus, LAMP, lampProtocol, lampType, MACHINE_NODE } from '../src/testing.ts';
 import { testDatabase } from './home.ts';
 
 /**
@@ -22,7 +23,7 @@ const db = testDatabase();
 let catalog: DeviceCatalog;
 let connections: ConnectionStore;
 let links: LinkStore;
-let clients: ClientStore;
+let nodes: NodeStore;
 let sessions: SessionManager;
 let registry: DeviceRegistry;
 const bus = new FakeBus();
@@ -31,26 +32,28 @@ beforeAll(() => {
   catalog = new DeviceCatalog(db);
   connections = new ConnectionStore(db, plainSecrets);
   links = new LinkStore(db);
-  clients = new ClientStore(db);
+  nodes = new NodeStore(db);
+  // This node, the home's master.
+  nodes.declareSelf({ ...MACHINE_NODE, platform: 'system', transports: ['bus'] });
   const protocols = new ProtocolRegistry();
   protocols.install(lampProtocol);
-  const transports = new TransportHost({ platform: 'server', context: { env: {}, log: () => {}, audit: () => {} } });
+  const transports = new TransportHost({ platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } });
   transports.install(busDefinition, { create: () => bus });
   const types = new DeviceTypeRegistry();
   types.install(lampType);
   sessions = new SessionManager({
-    platform: 'server',
-    owner: 'server',
+    platform: 'system',
+    node: { id: MACHINE_NODE.id, name: MACHINE_NODE.name },
     types,
     protocols,
     transports,
-    ...holding(connections, null),
+    ...holding(connections, MACHINE_NODE.id),
     store: (id) => deviceStore(db, id),
     readOnly: () => false,
     allowRawFrames: false,
-    heldByName: (id) => clients.get(id)?.name ?? null,
+    nodeName: (id) => nodes.get(id)?.name ?? null,
   });
-  registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports, remote: new RemoteReadings(db) });
+  registry = new DeviceRegistry({ catalog, types, sessions, connections, links, nodes, transports, remote: new RemoteReadings(db), self: MACHINE_NODE.id, master: () => MACHINE_NODE.id });
 });
 
 afterAll(async () => {
@@ -62,7 +65,7 @@ describe('a device, described', () => {
     bus.lamps.set('lamp-1', { serial: 'LAMP-1', model: 'L1', on: true, answers: true });
     const hall = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Hall', config: { room: 'Hall' } });
     const porch = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Porch', config: { room: 'Porch' } });
-    const connection = connections.add({ deviceId: hall.id, method: 'bus', transport: 'bus', heldBy: null, address: 'lamp-1' });
+    const connection = connections.add({ deviceId: hall.id, method: 'bus', transport: 'bus', heldBy: MACHINE_NODE.id, address: 'lamp-1' });
     connections.setSecrets(connection.id, { pin: '1234' });
     links.add({ kind: 'feeds', source: { device: hall.id, part: 'main' }, target: { device: porch.id, part: 'main' } });
     await sessions.sync(catalog.list());
@@ -84,7 +87,7 @@ describe('a device, described', () => {
       ['blink', true, 'object'],
     ]);
     expect(view.connections).toEqual([
-      expect.objectContaining({ method: 'bus', methodLabel: 'Test bus', transport: 'bus', heldBy: { kind: 'home' }, address: 'lamp-1', inUse: true, secrets: ['pin'] }),
+      expect.objectContaining({ method: 'bus', methodLabel: 'Test bus', transport: 'bus', heldBy: { kind: 'master', id: MACHINE_NODE.id, name: 'Test machine' }, address: 'lamp-1', inUse: true, secrets: ['pin'] }),
     ]);
     // Which secrets, never their values.
     expect(JSON.stringify(view)).not.toContain('1234');
@@ -107,12 +110,12 @@ describe('a device, described', () => {
     expect(removed.health.detail).toContain('history is kept');
   });
 
-  test('a connection held by a phone names the phone', () => {
+  test('a connection another node holds names that node', () => {
     db.exec("INSERT INTO users (id, username, password_hash, created_at, password_changed_at) VALUES ('u-reg', 'registry', 'x', '2026-01-01', '2026-01-01')");
-    const phone = clients.register({ userId: 'u-reg', name: 'Olof’s iPhone', platform: 'native', transports: ['ble'] });
+    const phone = nodes.join({ id: nodeId('n-00000000c0de'), name: 'Olof’s iPhone', platform: 'native', transports: ['ble'], alwaysOn: false, reachable: false, trusted: false }, 'u-reg');
     const pocket = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Pocket' });
     connections.add({ deviceId: pocket.id, method: 'bus', transport: 'bus', heldBy: phone.id, address: 'lamp-7' });
 
-    expect(registry.find(pocket.id)!.connections[0]!.heldBy).toEqual({ kind: 'client', id: phone.id, name: 'Olof’s iPhone' });
+    expect(registry.find(pocket.id)!.connections[0]!.heldBy).toEqual({ kind: 'node', id: phone.id, name: 'Olof’s iPhone' });
   });
 });

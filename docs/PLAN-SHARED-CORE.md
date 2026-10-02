@@ -758,6 +758,35 @@ Done when no code, type, table or route names a server or a client as a
 kind of thing, and every difference between nodes that matters is a
 property a node declares.
 
+**6j, part 1 — the data model, and up from it** (done, 2026-10-02; started
+before 6i, the owner asking for it, from the data model up):
+
+- The store: `node` (every node of the home: this database's own, `self`,
+  and the nodes that joined it, each with its traits — `always_on`,
+  `reachable`, `trusted` — its transports and its place), `home` (one per
+  database, `master_id` naming its master node: a column, not a flag, so
+  more than one machine node is a door left open), and `place` (where
+  nodes and devices stand, with a time zone; `device.place_id`).
+  `device_connection.held_by` is a node, never null: the master's own ways
+  say so. `sessions` lost its app id.
+- The node's id is its own: `newNodeId()`, kept where it runs — beside the
+  server's database (`node-id`), in the app's preferences — the same in
+  every database that knows it, and kept when a database is set aside.
+- The contract: `NodeView`, `NodeJoin`, `HomeView`; `home()`, `nodes.join`
+  by the node's own id; a way's holder `master` or `this-node`; who holds
+  a connection `{ kind: 'master' | 'this-node' | 'node', id, name }`; a
+  device's health names the node holding it. `Platform` names the runtime:
+  `system`, `web`, `native` (transports' `system.ts`).
+- The hub: `createHub` and `createHolding` are each handed the node they
+  are (`node`), and declare it to their database; the holding joins the
+  master by it. The server: `GET /home`, `/nodes`, `/nodes/:id/audit`.
+
+Next in 6j: `serverOnly` as what a method needs of a node (`trusted`); the
+master chosen by the traits, and `Holding` named as a follower; places up
+through the API, `DeviceContext` and the weather; the configuration
+document's places (a new `kraftverk:` version, with its migration); the
+screens in nodes; the docs' vocabulary and decisions.
+
 **A structure pass** (the owner, 2026-10-02), once the hub is done and the
 packages are as they should be: the server and the app looked at again,
 critically, after so much has left them — their folders, modules and

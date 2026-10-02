@@ -1,4 +1,7 @@
 import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
+import type { NodeId } from '@kraftverk/device-sdk';
+
+import type { ThisNode } from '../node';
 
 /*
   What the app opens where it runs, to the screens and to the place that
@@ -13,8 +16,8 @@ import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
 export type OpenHome = {
   /** Everything it answers: the app's own home, or the server's with what this app holds wrapped in. */
   readonly api: KraftverkApi;
-  /** With a server: this app, as the server knows it — null until it has said who it is. */
-  readonly appId: string | null;
+  /** This app, as a node of the home: the id it is known by in its own home and in every server’s. */
+  readonly nodeId: NodeId;
   /** Whether writes to hardware are allowed from here: refused every launch, until someone says. */
   allowWrites(allowed: boolean): Promise<void>;
   /** Stops it, and lets go of its database. */
@@ -32,8 +35,8 @@ export type OpenOptions = {
    * that server (`key`). Without one, the app keeps a home of its own.
    */
   server?: { key: string; api: KraftverkApi };
-  /** What this app is called in "held by …": "Chrome on Windows". */
-  name: string;
+  /** The node this app is: its own id, and what it is called in "held by …" — "Chrome on Windows". */
+  node: ThisNode;
   /**
    * Without a server: the server it used last (`key`), whose home it kept a
    * copy of — offered to keep as its own. With one, the home the app kept

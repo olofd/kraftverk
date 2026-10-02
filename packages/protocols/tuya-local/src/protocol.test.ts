@@ -482,7 +482,7 @@ describe('a device behind a gateway', () => {
       channel: gateway,
       config: { deviceId: 'bfplug', protocolVersion: '3.4' },
       secrets: { get: (field) => (field === 'localKey' ? GATEWAY_KEY : null) },
-      platform: 'server',
+      platform: 'system',
     });
     expect(await link.status()).toEqual({ '1': true });
     await link.close();
@@ -581,7 +581,7 @@ describe('a conversation with a plug', () => {
       channel: plug,
       config: { deviceId: 'bf6', protocolVersion: '3.3' },
       secrets: { get: (field) => (field === 'localKey' ? PLUG_KEY : null) },
-      platform: 'server',
+      platform: 'system',
     });
     expect(await link.status()).toEqual({ '1': true });
     await link.close();

@@ -14,8 +14,8 @@ const definition: TransportDefinition = {
   channel: 'http',
   exclusive: false,
   nearby: false,
-  platforms: ['server', 'web', 'native'],
-  discovery: { server: 'none', web: 'none', native: 'none' },
+  platforms: ['system', 'web', 'native'],
+  discovery: { system: 'none', web: 'none', native: 'none' },
 };
 
 export default definition;

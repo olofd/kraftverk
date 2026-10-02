@@ -45,6 +45,7 @@ export async function openHome(options: OpenOptions): Promise<OpenHome> {
   const database = readyDatabase(fromExpoSqlite(openDatabaseSync(databaseFile(schemaFingerprint(), options.server?.key))), Constants.expoConfig?.version ?? 'app');
   let writes = false;
   const place = {
+    node: options.node,
     database,
     secrets: sealedWithKey(await secretsKey()),
     platform: 'native' as const,
@@ -68,11 +69,11 @@ export async function openHome(options: OpenOptions): Promise<OpenHome> {
   if (options.server) {
     // The home this app kept itself before it had a server: offered to it.
     const own = beside(databaseFile(schemaFingerprint()));
-    const holding = appHolding({ ...place, home: options.server.api, name: options.name, ...(own ? { own } : {}) });
+    const holding = appHolding({ ...place, home: options.server.api, ...(own ? { own } : {}) });
     await holding.start();
     return {
       api: holding.api,
-      appId: holding.appId,
+      nodeId: holding.nodeId,
       allowWrites: async (allowed) => {
         writes = allowed;
         await holding.reopen();
@@ -92,7 +93,7 @@ export async function openHome(options: OpenOptions): Promise<OpenHome> {
   await hub.start();
   return {
     api: hub.as(OWNER),
-    appId: null,
+    nodeId: options.node.id,
     allowWrites: async (allowed) => {
       writes = allowed;
       // Its sessions open again under the new rule.

@@ -59,13 +59,13 @@ export function holdingApi(h: Holding): KraftverkApi {
     if (!session) throw new ApiError('unavailable', `${device.name} is not answering: ${h.sessions.health(device).detail}`);
     return { device, session };
   };
-  const intent = () => ({ actor: 'user' as const, by: `app:${h.appId ?? 'this app'}` });
+  const intent = () => ({ actor: 'user' as const, by: `app:${h.nodeId ?? 'this app'}` });
 
   // --- setting up a way this app holds ----------------------------------------------
   /** Drafts set up here, and the server's draft each became once read. */
   const drafts = new Map<string, string | null>();
   const local = (id: string) => drafts.has(id);
-  const ownDraft = (view: DraftView): DraftView => ({ ...view, heldBy: h.appId });
+  const ownDraft = (view: DraftView): DraftView => ({ ...view, heldBy: h.nodeId });
 
   return {
     /** The server's types, with the ways this app can hold for it: a type this app has installed too, over a way it can hold where it runs. */
@@ -78,7 +78,7 @@ export function holdingApi(h: Holding): KraftverkApi {
         types: list.types.map((listing) => {
           const type = h.installed.types.get(listing.id);
           const mine: WayView[] = type
-            ? type.connections.filter((method) => holdableHere(h.installed, method)).map((method) => ({ method: method.id, holder: 'this-app', availability: transports.available(method.transport) }))
+            ? type.connections.filter((method) => holdableHere(h.installed, method)).map((method) => ({ method: method.id, holder: 'this-node', availability: transports.available(method.transport) }))
             : [];
           return { ...listing, ways: [...listing.ways, ...mine] };
         }),
@@ -143,7 +143,7 @@ export function holdingApi(h: Holding): KraftverkApi {
     setup: {
       /** A way this app holds is set up here, over its own radio; any other, by the server. */
       async start({ holder, ...input }) {
-        if (holder !== 'this-app') return home.setup.start(input);
+        if (holder !== 'this-node') return home.setup.start(input);
         const type = h.installed.types.get(input.typeId);
         const method = type && input.methodId ? methodOf(type, input.methodId) : null;
         if (!type || !method || !holdableHere(h.installed, method)) throw new ApiError('conflict', 'This app cannot hold that way itself: it needs updating, or it is your server’s');
@@ -174,9 +174,9 @@ export function holdingApi(h: Holding): KraftverkApi {
       async check(id) {
         if (!local(id)) return home.setup.check(id);
         const { draft, read } = await h.setup.read(id);
-        const me = h.appId ?? (await h.register());
+        const me = await h.joined();
         const judged = await home.setup.startHeld({
-          clientId: me,
+          nodeId: me,
           typeId: draft.typeId,
           methodId: draft.methodId!,
           address: draft.address!,
@@ -201,8 +201,8 @@ export function holdingApi(h: Holding): KraftverkApi {
         if (!judged) throw new ApiError('conflict', 'Check that it answers first');
         const { draft, secrets } = await h.setup.read(id).catch(() => ({ draft: h.setup.view(id), secrets: {} as Record<string, string> }));
         const saved = await home.setup.save(judged, input);
-        const me = h.appId;
-        const way = saved.connections.find((connection) => connection.heldBy.kind !== 'home' && connection.heldBy.id === me && connection.method === draft.methodId);
+        const me = h.nodeId;
+        const way = saved.connections.find((connection) => connection.heldBy.id === me && connection.method === draft.methodId);
         await h.hold(await home.devices.list());
         if (way && Object.keys(secrets).length) await h.setSecrets(way.id, secrets);
         h.setup.discard(id);
@@ -222,7 +222,7 @@ export function holdingApi(h: Holding): KraftverkApi {
           const transport = transports.get(id);
           return {
             ...transports.definition(id)!,
-            holder: 'this-app',
+            holder: 'this-node',
             running: transport !== null,
             availability: transports.available(id),
             values: transport?.values?.() ?? {},
@@ -251,7 +251,7 @@ export function holdingApi(h: Holding): KraftverkApi {
         const refused = Object.keys(secrets).filter((field) => !schema.fields[field] || !isSecretField(schema.fields[field]!));
         if (refused.length) throw new ApiError('invalid', `Not a secret of this connection: ${refused.join(', ')}`);
         await h.setSecrets(connection, secrets);
-        h.owe('audit', null, { at: new Date().toISOString(), kind: 'device.secrets-changed', actor: intent().by, resourceKind: 'device', resource: device, summary: `Changed ${Object.keys(secrets).join(', ')} for "${record?.name ?? device}", kept by ${h.app.name}` });
+        h.owe('audit', null, { at: new Date().toISOString(), kind: 'device.secrets-changed', actor: intent().by, resourceKind: 'device', resource: device, summary: `Changed ${Object.keys(secrets).join(', ')} for "${record?.name ?? device}", kept by ${h.name}` });
         return h.view(await home.devices.get(device));
       },
       setExportable: (device, connection, exportable) => home.connections.setExportable(device, connection, exportable),
@@ -294,7 +294,7 @@ export function holdingApi(h: Holding): KraftverkApi {
       /** A file, planned by the server; or the home this app kept itself, moving to it. */
       async plan(request) {
         if (!('from' in request)) return home.configuration.plan(request);
-        if (request.from !== 'this-app' || !h.moving) throw new ApiError('not-found', request.from === 'copy' ? 'A server’s home is not kept from a copy of itself' : 'This app keeps no home of its own to move');
+        if (request.from !== 'this-node' || !h.moving) throw new ApiError('not-found', request.from === 'copy' ? 'A server’s home is not kept from a copy of itself' : 'This app keeps no home of its own to move');
         return h.moving.plan(request.mode ?? 'merge');
       },
       apply: (answers) => (h.moving?.owns(answers.plan) ? h.moving.apply(answers) : home.configuration.apply(answers)),
@@ -317,14 +317,15 @@ export function holdingApi(h: Holding): KraftverkApi {
       },
     },
 
+    home: () => home.home(),
     timeline: (query) => home.timeline(query),
     world: () => home.world(),
     vocabulary: () => home.vocabulary(),
 
-    apps: {
-      register: (app) => home.apps.register(app),
-      list: () => home.apps.list(),
-      forget: (id) => home.apps.forget(id),
+    nodes: {
+      join: (node) => home.nodes.join(node),
+      list: () => home.nodes.list(),
+      forget: (id) => home.nodes.forget(id),
     },
     held: {
       readings: (device, upload) => home.held.readings(device, upload),

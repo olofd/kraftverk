@@ -85,9 +85,9 @@ export class KeepingCopy {
       const device = catalog.byKey(kept.key);
       if (!device) continue;
       for (const way of this.#connections.forDevice(kept.id)) {
-        if (connections.forDevice(device.id).some((had) => had.method === way.method && had.heldBy === null)) continue;
+        if (connections.forDevice(device.id).some((had) => had.method === way.method && had.heldBy === this.#hub.self.id)) continue;
         try {
-          const added = connections.add({ deviceId: device.id, method: way.method, transport: way.transport, heldBy: null, address: way.address, config: way.config });
+          const added = connections.add({ deviceId: device.id, method: way.method, transport: way.transport, heldBy: this.#hub.self.id, address: way.address, config: way.config });
           const secrets = Object.fromEntries(this.#connections.secretFields(way.id).flatMap((field) => {
             const value = this.#connections.secret(way.id, field);
             return value === null ? [] : [[field, value] as const];

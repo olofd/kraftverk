@@ -12,7 +12,7 @@ import {
   type WriteContext,
 } from '@kraftverk/home-file';
 import type { PrintContext } from '@kraftverk/automation';
-import { methodsOf, partsOf, type PolicyValueName, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { methodsOf, partsOf, type NodeId, type PolicyValueName, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
 import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, LinkStore, SecretsAtRest } from '@kraftverk/store';
 
 import type { ProtocolRegistry } from '../installed/protocols.ts';
@@ -31,6 +31,8 @@ export type ConfigDeps = {
   catalog: DeviceCatalog;
   connections: ConnectionStore;
   links: LinkStore;
+  /** This node: the ways it holds are the home's own, what a file says; those another node holds stay with it. */
+  self: NodeId;
   automations: AutomationStore;
   types: DeviceTypeRegistry;
   protocols: ProtocolRegistry;
@@ -130,7 +132,7 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
     const type = deps.types.get(device.typeId);
     const connect: ConnectEntry[] = [];
     for (const connection of deps.connections.forDevice(device.id)) {
-      if (connection.heldBy !== null) {
+      if (connection.heldBy !== deps.self) {
         notes.push(`${device.name} is also reached by an app, which keeps that way and its keys itself: left out`);
         continue;
       }

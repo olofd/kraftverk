@@ -15,8 +15,8 @@ const definition: TransportDefinition = {
   // An address on the home network is one device.
   exclusive: true,
   nearby: false,
-  platforms: ['server', 'native'],
-  discovery: { server: 'list', native: 'list' },
+  platforms: ['system', 'native'],
+  discovery: { system: 'list', native: 'list' },
 };
 
 export default definition;

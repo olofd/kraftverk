@@ -23,7 +23,7 @@ import type {
   CapabilityId,
   CapabilityName,
   CategorySpec,
-  ClientId,
+  NodeId,
   ConfigSchema,
   ConfigValues,
   ConnectionHealth,
@@ -66,7 +66,7 @@ export type {
   Availability,
   CapabilityId,
   CapabilityName,
-  ClientId,
+  NodeId,
   ConnectionId,
   LinkEnd,
   LinkId,
@@ -124,11 +124,11 @@ export type ConnectionView = {
   methodLabel: string;
   transport: string;
   /**
-   * Who holds it: the home itself — a server, or the app that keeps its
-   * own; the app asking, holding it for a server's home (`this-app`); or
-   * another phone or browser holding it for one.
+   * Which node holds it, as the node asking sees it: the home's `master`;
+   * `this-node`, the one asking, holding it for the master; or another
+   * `node` of the home — a phone, a browser, another machine.
    */
-  heldBy: { kind: 'home' } | { kind: 'this-app'; id: ClientId; name: string } | { kind: 'client'; id: ClientId; name: string };
+  heldBy: { kind: 'master' | 'this-node' | 'node'; id: NodeId; name: string };
   address: string;
   priority: number;
   /** Whether it reaches the device right now; null when nobody is trying it. */
@@ -206,21 +206,20 @@ export type PictureRef = `type:${number}` | `own:${string}`;
 export type PictureChoice = { picture: PictureRef };
 
 /**
- * Who would hold a way in to a device, as the app asking sees it: the home
- * itself — a server, or the app that keeps its own — or this app, holding
- * it for a server's home with its own radio (docs/PLAN-SHARED-CORE.md,
- * phase 6).
+ * Which node would hold a way in to a device, as the node asking sees it:
+ * the home's master, or this node, holding it for the master with what it
+ * reaches itself — its own radio (docs/PLAN-SHARED-CORE.md, phase 6).
  */
-export type Holder = 'home' | 'this-app';
+export type Holder = 'master' | 'this-node';
 
 /**
  * A home this app keeps beside the one it shows, to bring into it
- * (docs/PLAN-SHARED-CORE.md, phase 6h): `this-app`, the home it kept
+ * (docs/PLAN-SHARED-CORE.md, phase 6h): `this-node`, the home it kept
  * itself before it had a server, moving to the server; `copy`, the copy it
  * kept of the server it used last, staying with this app. Only an app
  * keeps either: a server's home has neither, and says so.
  */
-export type HomeElsewhere = 'this-app' | 'copy';
+export type HomeElsewhere = 'this-node' | 'copy';
 
 /** What a home this app keeps beside the one it shows has: what bringing it in would bring. Null when there is none, or it has been brought. */
 export type ElsewhereView = { from: HomeElsewhere; devices: number; automations: number } | null;
@@ -450,11 +449,11 @@ export type SightingView = {
   claimedBy: { id: SavedDeviceId; name: string } | null;
 };
 
-/** One setup, part-way through, on the server. */
+/** One setup, part-way through, in the home. */
 export type DraftView = {
   id: string;
-  /** Null when the server will hold the connection; otherwise the app that will. */
-  heldBy: string | null;
+  /** The node that will hold the connection: the master, or one that follows it. */
+  heldBy: NodeId;
   typeId: string;
   methodId: string | null;
   plan: SetupStepView[];
@@ -483,7 +482,7 @@ export type SaveInput = {
 
 /** What an app learnt by reading a device itself, for a connection it will hold. */
 export type HeldSetupInput = {
-  clientId: string;
+  nodeId: string;
   typeId: string;
   methodId: string;
   address: string;
@@ -524,16 +523,37 @@ export type TransportList = {
   refused: Refused[];
 };
 
-/** A phone or browser running the app, as the server knows it. */
-export type ClientRecord = {
-  id: ClientId;
-  userId: string;
+/**
+ * A kraftverk node of the home (docs/DATA-MODEL.md §3): the hub running
+ * somewhere, holding connections — an always-on machine on the network, a
+ * phone, a browser — with what it declares it is.
+ */
+export type NodeView = {
+  id: NodeId;
+  /** "Garage NAS", "Chrome on Windows". */
   name: string;
-  platform: 'web' | 'native';
+  /** What its transports' entries are for: a system process, a browser's page, a phone. */
+  platform: Platform;
+  /** What it reaches devices over, as it last said. */
   transports: string[];
-  createdAt: string;
+  /** It runs while nobody looks. */
+  alwaysOn: boolean;
+  /** Others connect to it. */
+  reachable: boolean;
+  /** What must stay put may be kept on it. */
+  trusted: boolean;
+  /** Where it stands, a place's id; null: it moves with someone, or has not said. */
+  place: string | null;
+  /** The home's master: the node whose database is the home's. */
+  master: boolean;
   lastSeenAt: string;
 };
+
+/** A node joining a home, saying what it is: by its own id, the same in every home it is part of. */
+export type NodeJoin = Pick<NodeView, 'id' | 'name' | 'platform' | 'transports' | 'alwaysOn' | 'reachable' | 'trusted' | 'place'>;
+
+/** The home: what its people call it, and which node is its master. */
+export type HomeView = { id: string; name: string; master: NodeId };
 
 /** One line of the server's own log. */
 export type ServerLogLine = { at: string; level: 'debug' | 'info' | 'warn' | 'error'; text: string };
@@ -936,7 +956,7 @@ export type Caller =
 
 /** What an app sends for a connection it holds: what it read, who the device said it is, what it is, and what it said happened. */
 export type HeldReadings = {
-  clientId: string;
+  nodeId: string;
   connectionId: string;
   identity?: string | null;
   readings: Reading[];
@@ -1122,23 +1142,24 @@ export interface KraftverkApi {
   world(): Promise<WorldView>;
   /** The words the world is said in: capabilities, meanings, link kinds, recipes, the home's values. */
   vocabulary(): Promise<VocabularyView>;
-  /** The phones and browsers that hold connections for this home: each its account's. */
-  apps: {
-    /** An app says who it is and what it can reach devices over, at every start. */
-    register(app: { id?: string; name: string; platform: 'web' | 'native'; transports: string[] }): Promise<ClientRecord>;
-    /** This account's. */
-    list(): Promise<ClientRecord[]>;
-    /** Forgotten, with every connection it held. */
-    forget(id: ClientId): Promise<void>;
+  /** The home: what its people call it, and which node is its master. */
+  home(): Promise<HomeView>;
+  /** The nodes of the home: its master, and every node that follows it. */
+  nodes: {
+    list(): Promise<NodeView[]>;
+    /** A node joins the home — to follow it, and hold for it the ways it reaches — saying what it is, at every start. */
+    join(node: NodeJoin): Promise<NodeView>;
+    /** Forgotten, with every connection it held. Never the master. */
+    forget(id: NodeId): Promise<void>;
   };
-  /** What an app sends for a connection it holds (docs/DATA-MODEL.md §4): it speaks for its own connections and nobody else's. */
+  /** What a node sends the master for a connection it holds (docs/DATA-MODEL.md §4): it speaks for its own connections and nobody else's. */
   held: {
     readings(device: SavedDeviceId, upload: HeldReadings): Promise<HeldReadingsTaken>;
     /** What the device keeps for its session, which the app keeps a copy of for when it is offline. */
     store(device: SavedDeviceId): Promise<Record<string, unknown>>;
-    keep(device: SavedDeviceId, key: string, entry: { clientId: string; connectionId: string; value: unknown }): Promise<void>;
+    keep(device: SavedDeviceId, key: string, entry: { nodeId: string; connectionId: string; value: unknown }): Promise<void>;
     /** What its gateway and sessions wrote on their timeline, queued while offline: the actor is always whoever is signed in. */
-    audit(app: ClientId, entries: AuditUpload[]): Promise<{ recorded: number }>;
+    audit(node: NodeId, entries: AuditUpload[]): Promise<{ recorded: number }>;
   };
   /**
    * What changed, as it changes: `hello` first, then what moved, coalesced —

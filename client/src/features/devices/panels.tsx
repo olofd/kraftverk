@@ -348,11 +348,11 @@ export function GenericSettings({ device }: { device: DeviceView }) {
 
 /** Who holds it, in words: the home — your server, or this app keeping its own — this app for a server, or another. */
 const heldByLabel = (connection: ConnectionView, home: 'server' | 'own') =>
-  connection.heldBy.kind === 'home'
+  connection.heldBy.kind === 'master'
     ? home === 'server'
       ? 'through your server'
       : `from ${HERE}`
-    : connection.heldBy.kind === 'this-app'
+    : connection.heldBy.kind === 'this-node'
       ? `from ${HERE}`
       : `from ${connection.heldBy.name}`;
 
@@ -411,7 +411,7 @@ export function Connections({ device }: { device: DeviceView }) {
                   </YStack>
                   {connection.inUse ? <Icon name="check-circle" size={16} color={theme.success?.val} /> : null}
                 </XStack>
-                {connection.heldBy.kind === 'home' && connection.secrets.length ? (
+                {connection.heldBy.kind === 'master' && connection.secrets.length ? (
                   <XStack alignItems="center" gap="$3">
                     <YStack flex={1} gap={2}>
                       <Text fontSize={14} fontWeight="600" color="$color">

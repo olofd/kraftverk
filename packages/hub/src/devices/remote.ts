@@ -1,4 +1,4 @@
-import { partOf, type AttributeSpec, type Reading, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { partOf, type AttributeSpec, type NodeId, type Reading, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import type { SqlDatabase } from '@kraftverk/store';
 
@@ -20,7 +20,7 @@ const LIVE_MS = 90_000;
 /** How far back queued readings are accepted: as long as history is kept. */
 const MAX_AGE_MS = 14 * 86_400_000;
 
-type Held = { clientId: string; connectionId: string; readings: Map<string, Reading>; at: number };
+type Held = { nodeId: NodeId; connectionId: string; readings: Map<string, Reading>; at: number };
 
 export class RemoteReadings {
   #held = new Map<SavedDeviceId, Held>();
@@ -33,14 +33,14 @@ export class RemoteReadings {
    */
   accept(
     deviceId: SavedDeviceId,
-    from: { clientId: string; connectionId: string },
+    from: { nodeId: NodeId; connectionId: string },
     readings: readonly Reading[],
     /** Which attributes history keeps, by key: the device description's. */
     kept: ReadonlyMap<string, AttributeSpec>
   ): { live: number; history: number; refused: number } {
     const now = Date.now();
     const held = this.#held.get(deviceId) ?? { ...from, readings: new Map(), at: 0 };
-    held.clientId = from.clientId;
+    held.nodeId = from.nodeId;
     held.connectionId = from.connectionId;
     let live = 0;
     let history = 0;
@@ -81,10 +81,10 @@ export class RemoteReadings {
   }
 
   /** What an app last read, while it is recent enough to be the device's state. */
-  latest(deviceId: SavedDeviceId): { clientId: string; connectionId: string; readings: Reading[]; at: string } | null {
+  latest(deviceId: SavedDeviceId): { nodeId: NodeId; connectionId: string; readings: Reading[]; at: string } | null {
     const held = this.#held.get(deviceId);
     if (!held || Date.now() - held.at > LIVE_MS) return null;
-    return { clientId: held.clientId, connectionId: held.connectionId, readings: [...held.readings.values()], at: new Date(held.at).toISOString() };
+    return { nodeId: held.nodeId, connectionId: held.connectionId, readings: [...held.readings.values()], at: new Date(held.at).toISOString() };
   }
 
   forget(deviceId: SavedDeviceId): void {

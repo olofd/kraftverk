@@ -110,8 +110,8 @@ const lan: TransportDefinition = {
   channel: 'bytes',
   exclusive: true,
   nearby: false,
-  platforms: ['server', 'native'],
-  discovery: { server: 'list', native: 'list' },
+  platforms: ['system', 'native'],
+  discovery: { system: 'list', native: 'list' },
 };
 
 describe('the contract suite', () => {
@@ -150,15 +150,15 @@ describe('validating a declaration', () => {
   });
 
   test('where a type can run follows from its ways’ transports, and a way kept to a server', () => {
-    const lan = { platforms: ['server'] as Platform[] };
-    const radio = { platforms: ['server', 'web', 'native'] as Platform[] };
+    const lan = { platforms: ['system'] as Platform[] };
+    const radio = { platforms: ['system', 'web', 'native'] as Platform[] };
     const own = plug().connections[0]!;
     const transport = (id: string) => (id === 'radio' ? radio : id === 'lan' ? lan : null);
-    expect(placesOf(SIMULATED_METHOD, null)).toEqual(['server', 'web', 'native']);
-    expect(placesOf({ ...own, transport: 'radio' }, radio)).toEqual(['server', 'web', 'native']);
-    expect(placesOf({ ...own, transport: 'radio', serverOnly: 'its account stays on your server' }, radio)).toEqual(['server']);
-    expect(runsOn({ connections: [{ ...own, transport: 'lan' }] }, transport)).toEqual(['server']);
-    expect(runsOn({ connections: [{ ...own, transport: 'lan' }, { ...own, id: 'b', transport: 'radio' }] }, transport)).toEqual(['native', 'web', 'server']);
+    expect(placesOf(SIMULATED_METHOD, null)).toEqual(['system', 'web', 'native']);
+    expect(placesOf({ ...own, transport: 'radio' }, radio)).toEqual(['system', 'web', 'native']);
+    expect(placesOf({ ...own, transport: 'radio', serverOnly: 'its account stays on your server' }, radio)).toEqual(['system']);
+    expect(runsOn({ connections: [{ ...own, transport: 'lan' }] }, transport)).toEqual(['system']);
+    expect(runsOn({ connections: [{ ...own, transport: 'lan' }, { ...own, id: 'b', transport: 'radio' }] }, transport)).toEqual(['native', 'web', 'system']);
     // A transport nothing installed provides runs nowhere.
     expect(runsOn({ connections: [{ ...own, transport: 'gone' }] }, transport)).toEqual([]);
   });
@@ -177,7 +177,7 @@ describe('validating a declaration', () => {
     expect(broken((candidate) => ({ ...candidate, connections: [{ ...own, transport: SIMULATED_TRANSPORT }] }))).toContain(
       `connection method "${own.id}" goes over "sim", which only the simulated method may`
     );
-    expect(validateTransportDefinition({ id: 'sim', label: 'pretend', channel: 'bytes', platforms: ['server'], discovery: {} } as never)).toContain(
+    expect(validateTransportDefinition({ id: 'sim', label: 'pretend', channel: 'bytes', platforms: ['system'], discovery: {} } as never)).toContain(
       'transport id "sim" is taken: it means simulated'
     );
   });
@@ -288,7 +288,7 @@ test('a method\'s setup is assembled from its layers, and sent without functions
     method: type.connections[0]!,
     protocol: exampleProtocol,
     transport: lan,
-    platform: 'server',
+    platform: 'system',
     values: { host: '192.0.2.5' },
   });
   expect(steps.map((step) => `${step.id}:${step.kind}`)).toEqual([

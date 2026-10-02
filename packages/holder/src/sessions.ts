@@ -10,6 +10,7 @@ import {
   type DeviceSession,
   type DeviceStore,
   type DeviceType,
+  type NodeId,
   type Platform,
   type Protocol,
   type SavedDeviceId,
@@ -75,15 +76,15 @@ export type HolderConnection = {
   transport: string;
   address: string;
   config: Record<string, unknown>;
-  /** Who holds it: null for the server, else the app's id. */
-  heldBy: string | null;
+  /** The node that holds it. */
+  heldBy: string;
 };
 
 export type SessionManagerDeps = {
   /** Where it runs: what a method's transport opens here. */
   platform: Platform;
-  /** Who this holder is, in a device's health. */
-  owner: NonNullable<ConnectionHealth['owner']>;
+  /** The node this is: what a device's health names as holding it, and the timeline as acting. */
+  node: { id: NodeId; name: string };
   types: { get(typeId: string): DeviceType<any> | null | undefined };
   protocols: { get(id: string): Protocol | null | undefined };
   /** The transports here; one that is started on demand, and can say whether it is available, says so. */
@@ -101,8 +102,8 @@ export type SessionManagerDeps = {
   readOnly: () => boolean;
   /** Frames nobody has described may be sent, by a type's raw-frame tool. */
   allowRawFrames: boolean;
-  /** Who holds a connection that is not this holder's: "Olof's iPhone". */
-  heldByName?: (holder: string) => string | null;
+  /** What another node of the home is called, in "held by …": "Olof's iPhone". */
+  nodeName?: (node: string) => string | null;
   /** A connection of its own answered. */
   onConnected?: (connectionId: string) => void;
   /** A device said who it is, and its record did not know yet. */
@@ -222,7 +223,7 @@ export class SessionManager {
     return {
       status: refusal?.status ?? 'offline',
       detail: refusal ? `${refusal.detail}${again}` : 'Not open yet',
-      owner: this.deps.owner,
+      node: null,
       transport: null,
       lastReadingAt: null,
     };
@@ -301,7 +302,7 @@ export class SessionManager {
       if (changed.length) bus.publish({ kind: 'readings', deviceId, readings: changed });
     }
     const health = this.health(record);
-    const key = `${health.status}|${health.detail}|${health.owner}|${health.transport}`;
+    const key = `${health.status}|${health.detail}|${health.node}|${health.transport}`;
     const last = this.#published.get(deviceId);
     const now = Date.now();
     const stale = health.lastReadingAt !== null && last !== undefined && now - last.at >= HEALTH_REFRESH_MS;
@@ -340,8 +341,8 @@ export class SessionManager {
 
     const other = all.find((connection) => !this.deps.holds(connection));
     if (!mine.length && other) {
-      const who = (other.heldBy === null ? 'the server' : this.deps.heldByName?.(other.heldBy)) ?? 'another app';
-      return { refusal: { status: 'offline', detail: `Held by ${who}, not by this ${this.deps.owner === 'server' ? 'server' : 'app'}` } };
+      const who = this.deps.nodeName?.(other.heldBy) ?? 'another node';
+      return { refusal: { status: 'offline', detail: `Held by ${who}, not by ${this.deps.node.name}` } };
     }
     return { refusal: { status: 'error', detail: reasons[0] ?? 'None of its connections can be used here' } };
   }
@@ -363,6 +364,7 @@ export class SessionManager {
         transports: this.deps.transports,
         store: this.deps.store(record.id),
         platform: this.deps.platform,
+        node: this.deps.node.id,
         // Read-only is about hardware: a simulated device has none, and takes writes either way.
         readOnly: this.deps.readOnly() && !simulated,
         allowRawFrames: this.deps.allowRawFrames,
@@ -434,7 +436,7 @@ export class SessionManager {
       // The address now leads somewhere else: nothing it says is this device's.
       await this.close(deviceId);
       this.#refusals.set(deviceId, { status: 'error', detail: `That connection reaches a different device (${said}), not the one you added` });
-      this.deps.record?.({ at: new Date().toISOString(), kind: 'device.mismatch', actor: this.deps.owner, resourceKind: 'device', resource: deviceId, summary: `${record.name}'s connection reaches ${said} instead`, detail: { expected: record.identity } });
+      this.deps.record?.({ at: new Date().toISOString(), kind: 'device.mismatch', actor: `node:${this.deps.node.id}`, resourceKind: 'device', resource: deviceId, summary: `${record.name}'s connection reaches ${said} instead`, detail: { expected: record.identity } });
       this.deps.onChange?.();
       return false;
     }

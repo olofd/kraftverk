@@ -15,6 +15,7 @@ import {
   type DeviceStore,
   type DeviceType,
   type OpenConnection,
+  type NodeId,
   type Platform,
   type Protocol,
   type SavedDeviceId,
@@ -55,6 +56,8 @@ export type OpenInput = {
   transports: TransportSource;
   store: DeviceStore;
   platform: Platform;
+  /** The node opening it: what its health names as holding it. */
+  node: NodeId;
   readOnly: boolean;
   allowRawFrames: boolean;
   log: DeviceLogger;
@@ -203,7 +206,7 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
       info: () => opened.info?.() ?? null,
       health: () => ({
         ...opened.health(),
-        owner: input.platform === 'server' ? 'server' : 'client',
+        node: input.node,
         transport: input.connection?.transport ?? SIMULATED_TRANSPORT,
       }),
       channel: openChannelRef,

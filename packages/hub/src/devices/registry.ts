@@ -1,9 +1,9 @@
 import type { ConnectionView, DeviceView, LinkView, PictureRef } from '@kraftverk/api-contract';
-import { deviceCapabilities, MAIN_PART, methodOf, partsOf, type DeviceDescription, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { deviceCapabilities, MAIN_PART, methodOf, partsOf, type DeviceDescription, type NodeId, type SavedDeviceId } from '@kraftverk/device-sdk';
 import { activeConnection, toolsOf } from '@kraftverk/holder';
 
 import type { TransportHost } from '../installed/transports.ts';
-import type { DeviceCatalog, DeviceRecord, ClientRecord, ClientStore, ConnectionRecord, ConnectionStore, LinkRecord, LinkStore } from '@kraftverk/store';
+import type { DeviceCatalog, DeviceRecord, NodeRecord, NodeStore, ConnectionRecord, ConnectionStore, LinkRecord, LinkStore } from '@kraftverk/store';
 import type { RemoteReadings } from './remote.ts';
 import type { SessionManager } from '@kraftverk/holder';
 import type { DeviceTypeRegistry } from '../installed/types.ts';
@@ -20,7 +20,7 @@ import type { DeviceTypeRegistry } from '../installed/types.ts';
  * API contract's (`@kraftverk/api-contract`), shared with the app.
  *
  * A list is built from one read of each table — connections, their secrets'
- * names, links, clients — whatever the number of devices, since the app asks
+ * names, links, nodes — whatever the number of devices, since the app asks
  * for it every few seconds.
  */
 
@@ -32,7 +32,7 @@ type Joined = {
   connections: Map<SavedDeviceId, ConnectionRecord[]>;
   secrets: Map<string, string[]>;
   links: Map<SavedDeviceId, LinkRecord[]>;
-  clients: Map<string, ClientRecord>;
+  nodes: Map<string, NodeRecord>;
 };
 
 export class DeviceRegistry {
@@ -43,10 +43,14 @@ export class DeviceRegistry {
       sessions: SessionManager;
       connections: ConnectionStore;
       links: LinkStore;
-      clients: ClientStore;
+      nodes: NodeStore;
       transports: TransportHost;
-      /** Readings from connections an app holds. */
+      /** Readings from connections another node holds. */
       remote: RemoteReadings;
+      /** This node: the ways it holds are its own sessions'. */
+      self: NodeId;
+      /** The home's master: what a way it holds is said as. */
+      master: () => NodeId;
     }
   ) {}
 
@@ -80,7 +84,7 @@ export class DeviceRegistry {
       connections: this.deps.connections.byDevice(),
       secrets: this.deps.connections.secretFieldsByConnection(),
       links,
-      clients: new Map(this.deps.clients.all().map((client) => [client.id, client])),
+      nodes: new Map(this.deps.nodes.all().map((node) => [node.id, node])),
     };
   }
 
@@ -94,13 +98,13 @@ export class DeviceRegistry {
 
     /*
       The active-connection rule (docs/DATA-MODEL.md §4, decision 12): of the
-      connections that reach the device now — the server's open one, or an
-      app's that is sending fresh readings — the one highest in the list is in
+      connections that reach the device now — this node's open one, or
+      another node's that is sending fresh readings — the one highest in the list is in
       use, and its readings are the device's. With none reachable, the one the
       server is trying.
     */
     const reachable = (connection: ConnectionRecord): boolean | null => {
-      if (connection.heldBy) return latest?.connectionId === connection.id ? true : null;
+      if (connection.heldBy !== this.deps.self) return latest?.connectionId === connection.id ? true : null;
       return opened?.id === connection.id ? this.deps.sessions.reachable(record.id) : null;
     };
     const ordered = joined.connections.get(record.id) ?? [];
@@ -109,18 +113,18 @@ export class DeviceRegistry {
       opened?.id ?? null
     );
     const active = ordered.find((connection) => connection.id === activeId) ?? null;
-    // An app's readings count only while its connection is the one in use; a simulator is always its session's.
+    // Another node's readings count only while its connection is the one in use; a simulator is always its session's.
     const remote = latest && active?.id === latest.connectionId && (opened !== null || !session) ? latest : null;
 
     const connections = ordered.map((connection): ConnectionView => {
       const method = type ? methodOf(type, connection.method) : null;
-      const client = connection.heldBy ? joined.clients.get(connection.heldBy) : null;
+      const holder = joined.nodes.get(connection.heldBy);
       return {
         id: connection.id,
         method: connection.method,
         methodLabel: method?.label ?? connection.method,
         transport: connection.transport,
-        heldBy: connection.heldBy ? { kind: 'client', id: connection.heldBy, name: client?.name ?? 'Another app' } : { kind: 'home' },
+        heldBy: { kind: connection.heldBy === this.deps.master() ? 'master' : 'node', id: connection.heldBy, name: holder?.name ?? 'Another node' },
         address: connection.address,
         priority: connection.priority,
         reachable: reachable(connection),
@@ -160,16 +164,16 @@ export class DeviceRegistry {
       config: record.config,
       connections,
       links,
-      // What its session can run here; an app holding it runs its own.
+      // What its session can run here; another node holding it runs its own.
       tools: remote ? [] : toolsOf(type?.tools, session).map(({ name, spec }) => ({ name, ...spec })),
       readings: remote?.readings ?? session?.readings() ?? [],
       health: record.removedAt
-        ? { status: 'offline', detail: `Removed ${new Date(record.removedAt).toLocaleDateString()}; its history is kept`, owner: null, transport: null, lastReadingAt: null }
+        ? { status: 'offline', detail: `Removed ${new Date(record.removedAt).toLocaleDateString()}; its history is kept`, node: null, transport: null, lastReadingAt: null }
         : remote
           ? {
               status: 'connected',
-              detail: `Connected through ${joined.clients.get(remote.clientId)?.name ?? 'another app'}`,
-              owner: 'client',
+              detail: `Connected through ${joined.nodes.get(remote.nodeId)?.name ?? 'another node'}`,
+              node: remote.nodeId,
               transport: connections.find((connection) => connection.id === remote.connectionId)?.transport ?? null,
               lastReadingAt: remote.at,
             }

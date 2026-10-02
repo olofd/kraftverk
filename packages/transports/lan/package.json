@@ -8,12 +8,12 @@
   "kraftverk": {
     "transport": {
       "definition": "./src/index.ts",
-      "server": "./src/server.ts"
+      "system": "./src/system.ts"
     }
   },
   "exports": {
     ".": "./src/index.ts",
-    "./server": "./src/server.ts"
+    "./system": "./src/system.ts"
   },
   "scripts": {
     "test": "node ../../../scripts/run-bun.mjs test",

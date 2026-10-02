@@ -28,7 +28,7 @@ import { PICTURE_REF } from '../devices/registry.ts';
 import { changesOf } from '../history/changes.ts';
 import { resolutionOf, series } from '../history/sampler.ts';
 import type { Hub } from '../hub.ts';
-import { placeOf } from '../installed/transports.ts';
+import { platformWords } from '../installed/transports.ts';
 import { connectionSchema } from '../setup/index.ts';
 import { actorOf, intentOf } from './caller.ts';
 
@@ -103,9 +103,9 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
   const holds = (method: ConnectionMethod): Availability => {
     if (isSimulated(method)) return { ok: true };
     // What a package keeps on a server only — a vendor account's password — a home in an app does not hold.
-    if (method.serverOnly && transports.platform !== 'server') return { ok: false, reason: `It needs a server: ${method.serverOnly}` };
+    if (method.serverOnly && transports.platform !== 'system') return { ok: false, reason: `It needs a server: ${method.serverOnly}` };
     const protocol = protocols.get(method.protocol);
-    if (!protocol?.bindings[method.transport]) return { ok: false, reason: `${placeOf(transports.platform).this} cannot reach devices this way: it needs updating` };
+    if (!protocol?.bindings[method.transport]) return { ok: false, reason: `${platformWords(transports.platform).this} cannot reach devices this way: it needs updating` };
     return transports.available(method.transport);
   };
 
@@ -143,7 +143,7 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
         */
         ways: methodsOf(type)
           .filter((method) => placesOf(method, transports.definition(method.transport)).includes(transports.platform))
-          .map((method) => ({ method: method.id, holder: 'home' as const, availability: holds(method) })),
+          .map((method) => ({ method: method.id, holder: 'master' as const, availability: holds(method) })),
         runsOn: runsOn(type, (id) => transports.definition(id)),
         warnings: types.warnings(type.id),
       }));
@@ -332,7 +332,7 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
       /** Replaces a connection's secrets, held by this home: a plug's local key can change every time it is paired again. Write-only, like every secret. */
       async setSecrets(deviceId, connectionId, given) {
         const { device, connection } = connectionOf(deviceId, connectionId);
-        if (connection.heldBy) throw new ApiError('conflict', 'That connection’s secrets are kept by the app that holds it');
+        if (connection.heldBy !== hub.self.id) throw new ApiError('conflict', 'That connection’s secrets are kept by the node that holds it');
         const method = sessions.typeOf(device)?.connections.find((candidate) => candidate.id === connection.method) ?? null;
         const schema = connectionSchema(method, method ? protocols.get(method.protocol) : null);
         const refused = Object.keys(given).filter((field) => !schema.fields[field] || !isSecretField(schema.fields[field]!));
@@ -350,7 +350,7 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
       /** Whether a connection's secrets may leave in an export as plain text: its owner's choice, off unless chosen. */
       async setExportable(deviceId, connectionId, exportable) {
         const { device, connection } = connectionOf(deviceId, connectionId);
-        if (connection.heldBy) throw new ApiError('conflict', 'That connection’s secrets are kept by the app that holds it, and never exported');
+        if (connection.heldBy !== hub.self.id) throw new ApiError('conflict', 'That connection’s secrets are kept by the node that holds it, and never exported');
         if (exportable !== connection.secretsExportable) {
           connections.update(connection.id, { secretsExportable: exportable });
           record(

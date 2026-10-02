@@ -6,7 +6,7 @@ import {
   type AutomationView,
   type Account,
   type AccountDetail,
-  type ClientRecord,
+  type NodeView,
   type DeviceEventView,
   type DeviceView,
   type FoundView,
@@ -152,7 +152,7 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
 
     setup: {
       start: (input) => call('POST', '/setup', input),
-      startHeld: (input) => call('POST', '/setup/app', input),
+      startHeld: (input) => call('POST', '/setup/held', input),
       get: (id) => get(`/setup/${enc(id)}`),
       discard: async (id) => void (await call('DELETE', `/setup/${enc(id)}`)),
       sightings: async (id) => (await get<{ sightings: SightingView[] }>(`/setup/${enc(id)}/sightings`)).sightings,
@@ -207,18 +207,19 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
     timeline: (query = {}) => get('/audit', query),
     world: () => get('/world'),
     vocabulary: () => get('/vocabulary'),
+    home: () => get('/home'),
 
-    apps: {
-      register: (app) => call('POST', '/clients', app),
-      list: async () => (await get<{ clients: ClientRecord[] }>('/clients')).clients,
-      forget: async (id) => void (await call('DELETE', `/clients/${enc(id)}`)),
+    nodes: {
+      join: (node) => call('POST', '/nodes', node),
+      list: async () => (await get<{ nodes: NodeView[] }>('/nodes')).nodes,
+      forget: async (id) => void (await call('DELETE', `/nodes/${enc(id)}`)),
     },
 
     held: {
       readings: (device, upload) => call('POST', `/devices/${enc(device)}/readings`, upload),
       store: async (device) => (await get<{ values: Record<string, unknown> }>(`/devices/${enc(device)}/store`)).values,
       keep: async (device, key, entry) => void (await call('PUT', `/devices/${enc(device)}/store/${enc(key)}`, entry)),
-      audit: (app, entries) => call('POST', `/clients/${enc(app)}/audit`, { entries }),
+      audit: (node, entries) => call('POST', `/nodes/${enc(node)}/audit`, { entries }),
     },
 
     /** The live socket, opened again when it drops; what the screen shows is said again each time it opens. */

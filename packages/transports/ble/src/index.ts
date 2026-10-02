@@ -16,8 +16,8 @@ const definition: TransportDefinition = {
   // A peripheral is one physical thing.
   exclusive: true,
   nearby: true,
-  platforms: ['server', 'web', 'native'],
-  discovery: { server: 'list', web: 'chooser', native: 'list' },
+  platforms: ['system', 'web', 'native'],
+  discovery: { system: 'list', web: 'chooser', native: 'list' },
 };
 
 export default definition;

@@ -23,7 +23,7 @@ import { useServer, useServers } from '../src/state/ServersProvider';
  */
 export default function AppSettingsScreen() {
   const { mode, version, removed } = useDevices();
-  const { writesAllowed, allowWrites, holding, appId, kind } = useHome();
+  const { writesAllowed, allowWrites, holding, nodeId, kind } = useHome();
   const { active } = useServers();
   const auth = useAuth();
   const theme = useTheme();
@@ -88,12 +88,11 @@ export default function AppSettingsScreen() {
               void allowWrites(next);
             }}
           />
-          {kind === 'server' ? (
-            <>
-              <RowSeparator />
-              <Row title="Known to the server as" subtitle={appId ? `App ${appId}` : (holding?.problem ?? 'Not registered yet')} />
-            </>
-          ) : null}
+          <RowSeparator />
+          <Row
+            title={kind === 'server' ? 'A kraftverk node of your server’s home' : 'The kraftverk node your home is kept on'}
+            subtitle={nodeId ? `Node ${nodeId}` : (holding?.problem ?? 'Opening…')}
+          />
         </Card>
       </YStack>
 

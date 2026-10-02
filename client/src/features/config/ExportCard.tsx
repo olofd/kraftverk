@@ -41,7 +41,7 @@ export function ExportCard({ devices, automations, chosen }: { devices: readonly
   const [shown, setShown] = useState(false);
 
   const plainAllowed = devices.flatMap((device) =>
-    device.connections.filter((connection) => connection.heldBy.kind === 'home' && connection.secretsExportable && connection.secrets.length).map((connection) => `${device.name} (${connection.methodLabel})`)
+    device.connections.filter((connection) => connection.heldBy.kind === 'master' && connection.secretsExportable && connection.secrets.length).map((connection) => `${device.name} (${connection.methodLabel})`)
   );
   const nothingChosen = !everything && pickedDevices.size === 0 && pickedAutomations.size === 0;
   const passphraseShort = secrets === 'sealed' && passphrase.length < PASSPHRASE_MIN;

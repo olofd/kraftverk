@@ -53,10 +53,10 @@ function WhereWritesGo({ device }: { device: DeviceView }) {
   const holder = holderOf(device);
   const theme = useTheme();
   const [tone, icon, message] = readOnly
-    ? (['$warning', 'lock', holder === 'this-app' || kind === 'own' ? 'Read-only: writes from this app are off (App settings).' : 'Read-only: the server refuses every write.'] as const)
-    : holder === 'this-app'
+    ? (['$warning', 'lock', holder === 'this-node' || kind === 'own' ? 'Read-only: writes from this app are off (App settings).' : 'Read-only: the server refuses every write.'] as const)
+    : holder === 'this-node'
       ? (['$muted', 'smartphone', `Written to ${device.name} from this app.`] as const)
-      : holder === 'home'
+      : holder === 'master'
         ? kind === 'server'
           ? (['$muted', 'server', `Written to ${device.name} through your server.`] as const)
           : (['$muted', HERE_PLATFORM === 'web' ? 'monitor' : 'smartphone', `Written to ${device.name} from ${HERE}.`] as const)

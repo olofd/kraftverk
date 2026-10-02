@@ -4,7 +4,7 @@ import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import { createSchema, fromSqliteWasm, plainSecrets, prepareDatabase, type SqliteWasmDatabase } from '@kraftverk/store';
 
 import { createHub, installedFrom, type Hub } from '../src/index.ts';
-import { busDefinition, FakeBus, lampProtocol, lampType } from '../src/testing.ts';
+import { APP_NODE, busDefinition, FakeBus, lampProtocol, lampType } from '../src/testing.ts';
 
 /*
   A home made the way the app makes its own: what is installed from lists
@@ -35,6 +35,7 @@ test('a home from lists, on the WebAssembly build: a lamp added through setup, s
     secrets: plainSecrets,
     sealing: { seal: async () => '', open: async () => '' },
     installed,
+    node: APP_NODE,
     readOnly: () => false,
     http: () => Promise.reject(new Error('no network here')),
     gateway: { verifyTimeoutMs: 300 },
@@ -74,7 +75,7 @@ test("a device picked in the platform's chooser: chosen, checked and saved — a
     { types: [{ type: lampType }], protocols: [lampProtocol], transports: [{ definition: { ...busDefinition, platforms: ['web'], discovery: { web: 'chooser' } }, create: () => chooser }] },
     { platform: 'web', context: { env: {}, log: () => {}, audit: () => {} } }
   );
-  hub = createHub({ database, secrets: plainSecrets, sealing: { seal: async () => '', open: async () => '' }, installed, readOnly: () => false, http: () => Promise.reject(new Error('no network here')) });
+  hub = createHub({ database, secrets: plainSecrets, sealing: { seal: async () => '', open: async () => '' }, installed, node: APP_NODE, readOnly: () => false, http: () => Promise.reject(new Error('no network here')) });
   await hub.start();
   const home = hub.as({ kind: 'person', name: 'you' });
 

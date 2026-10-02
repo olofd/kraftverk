@@ -107,7 +107,7 @@ export class TransportHost {
    */
   available(id: string): Availability {
     const entry = this.#entries.get(id);
-    const place = placeOf(this.options.platform);
+    const place = platformWords(this.options.platform);
     if (!entry) return { ok: false, reason: `${place.this} cannot reach devices this way: it needs updating` };
     if (!entry.definition.platforms.includes(this.options.platform) || !entry.factory) {
       return { ok: false, reason: `${place.a} cannot use ${entry.definition.label}` };
@@ -167,11 +167,11 @@ export class TransportHost {
 
 const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
-/** What a place is called, in a reason a person reads: "This server cannot…", "A browser cannot…". */
-export const placeOf = (platform: Platform): { this: string; a: string } => PLACES[platform];
+/** What a node is called by where it runs, in a reason a person reads: "This node cannot…", "A browser cannot…". */
+export const platformWords = (platform: Platform): { this: string; a: string } => PLACES[platform];
 
 const PLACES: Record<Platform, { this: string; a: string }> = {
-  server: { this: 'This server', a: 'A server' },
+  system: { this: 'This node', a: 'A node on a machine' },
   web: { this: 'This browser', a: 'A browser' },
   native: { this: 'This phone', a: 'A phone' },
 };

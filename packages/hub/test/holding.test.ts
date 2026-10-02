@@ -5,7 +5,7 @@ import { connectionId, savedDeviceId } from '@kraftverk/device-sdk';
 import { plainSecrets, type SqlDatabase } from '@kraftverk/store';
 
 import { createHolding, createHub, installedFrom, type Holding, type Hub } from '../src/index.ts';
-import { busDefinition, FakeBus, lampProtocol, lampType } from '../src/testing.ts';
+import { APP_NODE, busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE } from '../src/testing.ts';
 import { testDatabase } from './home.ts';
 
 /*
@@ -46,9 +46,9 @@ async function server(): Promise<{ hub: Hub; home: KraftverkApi }> {
   database.exec("INSERT INTO users (id, username, password_hash, created_at, password_changed_at) VALUES ('u-1', 'olof', 'x', '2026-10-01', '2026-10-01')");
   const installed = installedFrom(
     { types: [{ type: lampType }], protocols: [lampProtocol], transports: [{ definition: { ...busDefinition, platforms: ['web'], discovery: { web: 'list' } }, create: null }] },
-    { platform: 'server', context: { env: {}, log: () => {}, audit: () => {} } }
+    { platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } }
   );
-  const hub = createHub({ database, secrets: plainSecrets, sealing, installed, readOnly: () => false, http: NO_NETWORK });
+  const hub = createHub({ database, secrets: plainSecrets, sealing, installed, node: MACHINE_NODE, readOnly: () => false, http: NO_NETWORK });
   await hub.start();
   running.push(hub);
   return { hub, home: hub.as(PERSON) };
@@ -62,7 +62,7 @@ async function app(home: KraftverkApi, database: SqlDatabase = testDatabase(), b
     database,
     secrets: plainSecrets,
     installed: appInstalled(bus),
-    app: { name: 'Chrome on a test', platform: 'web' },
+    node: APP_NODE,
     readOnly: () => false,
     http: NO_NETWORK,
     sendEveryMs: 60_000,
@@ -86,7 +86,7 @@ async function until(check: () => Promise<boolean> | boolean, what: string): Pro
 /** A lamp added with the app's own way, through the holding's interface, as the add flow does it. */
 async function addLamp(api: KraftverkApi, bus: FakeBus): Promise<DeviceView> {
   bus.announce();
-  const draft = await api.setup.start({ typeId: 'test.lamp', methodId: 'bus', holder: 'this-app' });
+  const draft = await api.setup.start({ typeId: 'test.lamp', methodId: 'bus', holder: 'this-node' });
   await api.setup.choose(draft.id, { address: 'lamp-1' });
   await api.setup.update(draft.id, { connection: { pin: '4321' } });
   expect((await api.setup.check(draft.id)).outcome).toBe('new');
@@ -98,13 +98,17 @@ test('the ways this app can hold are offered beside the server’s, for a type i
   const { holding } = await app(home);
   const lamp = (await holding.api.deviceTypes()).types.find((type) => type.id === 'test.lamp')!;
   // The server cannot reach the bus at all, so it offers only the simulator; this app offers the bus itself.
-  expect(lamp.ways.filter((way) => way.holder === 'home')).toEqual([{ method: 'simulated', holder: 'home', availability: { ok: true } }]);
-  expect(lamp.ways).toContainEqual({ method: 'bus', holder: 'this-app', availability: { ok: true } });
+  expect(lamp.ways.filter((way) => way.holder === 'master')).toEqual([{ method: 'simulated', holder: 'master', availability: { ok: true } }]);
+  expect(lamp.ways).toContainEqual({ method: 'bus', holder: 'this-node', availability: { ok: true } });
   // A simulator reaches nothing for this app to hold: with a server, the server holds it.
-  expect(lamp.ways.some((way) => way.holder === 'this-app' && way.method === 'simulated')).toBe(false);
-  expect((await holding.api.transports.list()).transports).toContainEqual(expect.objectContaining({ id: 'bus', holder: 'this-app', running: true }));
+  expect(lamp.ways.some((way) => way.holder === 'this-node' && way.method === 'simulated')).toBe(false);
+  expect((await holding.api.transports.list()).transports).toContainEqual(expect.objectContaining({ id: 'bus', holder: 'this-node', running: true }));
   // Who this app is, the server knows: it said so as it started.
-  expect((await home.apps.list()).map((each) => [each.id, each.name, each.transports])).toEqual([[holding.appId!, 'Chrome on a test', ['bus']]]);
+  // The home's nodes: the machine, its master; this app, following it.
+  expect((await home.nodes.list()).map((each) => [each.id, each.name, each.transports, each.master])).toEqual([
+    [MACHINE_NODE.id, 'Test machine', [], true],
+    [holding.nodeId, 'Chrome on a test', ['bus'], false],
+  ]);
 });
 
 test('a way this app holds: set up here, judged and kept by the server, held here — its secret never sent — and what it says sent up', async () => {
@@ -114,11 +118,11 @@ test('a way this app holds: set up here, judged and kept by the server, held her
 
   const saved = await addLamp(api, bus);
   const way = saved.connections[0]!;
-  expect(way.heldBy).toEqual({ kind: 'this-app', id: holding.appId!, name: 'Chrome on a test' });
+  expect(way.heldBy).toEqual({ kind: 'this-node', id: holding.nodeId, name: 'Chrome on a test' });
   expect(way.secrets).toEqual(['pin']);
   // The server keeps the device and knows which app holds its way — and never had the PIN.
   const there = await home.devices.get(saved.id);
-  expect(there.connections[0]!.heldBy).toEqual({ kind: 'client', id: holding.appId!, name: 'Chrome on a test' });
+  expect(there.connections[0]!.heldBy).toEqual({ kind: 'node', id: holding.nodeId, name: 'Chrome on a test' });
   expect(there.connections[0]!.secrets).toEqual([]);
   expect(hub.connections.secretFields(way.id)).toEqual([]);
 
@@ -142,7 +146,7 @@ test('a way this app holds: set up here, judged and kept by the server, held her
   expect(holding.queue.count()).toBe(0);
   await until(async () => (await home.devices.get(saved.id)).readings.some((reading) => reading.key === 'on' && reading.value === true), 'the server hearing the lamp is on');
   const timeline = await home.timeline({ limit: 20 });
-  expect(timeline.find((entry) => entry.kind === 'command.intent')).toMatchObject({ actor: 'olof', resource: saved.id, detail: { from: { client: holding.appId, name: 'Chrome on a test' } } });
+  expect(timeline.find((entry) => entry.kind === 'command.intent')).toMatchObject({ actor: 'olof', resource: saved.id, detail: { from: { node: holding.nodeId, name: 'Chrome on a test' } } });
 
   // Its secret changes here, and stays here.
   const changed = await api.connections.setSecrets(saved.id, way.id, { pin: '9999' });
@@ -234,14 +238,14 @@ async function refusedKind(work: Promise<unknown>): Promise<string> {
 test('this app holds its way only while nothing above it reaches the device, and lets go when something does', async () => {
   const { home } = await server();
   const { holding } = await app(home);
-  const me = await holding.register();
+  const me = await holding.join();
   const id = savedDeviceId('d-00000000ab01');
   const way = (overrides: Partial<ConnectionView>): ConnectionView => ({
     id: connectionId('c-00000000ab01'),
     method: 'bus',
     methodLabel: 'Bus',
     transport: 'bus',
-    heldBy: { kind: 'client', id: me, name: 'Chrome on a test' },
+    heldBy: { kind: 'node', id: me, name: 'Chrome on a test' },
     address: 'lamp-1',
     priority: 1,
     reachable: null,
@@ -268,11 +272,11 @@ test('this app holds its way only while nothing above it reaches the device, and
       capabilities: [],
       info: null,
       config: {},
-      connections: [way({ id: connectionId('c-00000000ab00'), heldBy: { kind: 'home' }, priority: 0, reachable: serverWayReachable }), way({})],
+      connections: [way({ id: connectionId('c-00000000ab00'), heldBy: { kind: 'master', id: MACHINE_NODE.id, name: 'Test machine' }, priority: 0, reachable: serverWayReachable }), way({})],
       links: [],
       tools: [],
       readings: [],
-    health: { status: 'connected', detail: 'Connected', lastReadingAt: null, owner: 'server', transport: 'bus' },
+    health: { status: 'connected', detail: 'Connected', lastReadingAt: null, node: MACHINE_NODE.id, transport: 'bus' },
     picture: 'type:0',
   });
 
@@ -292,7 +296,7 @@ test('this app holds its way only while nothing above it reaches the device, and
 /** A home the app keeps itself, on its own database: the lamp on its bus with a PIN, a simulated one, a value set. */
 async function ownHome(bus: FakeBus, copy?: SqlDatabase): Promise<{ hub: Hub; database: SqlDatabase }> {
   const database = testDatabase();
-  const hub = createHub({ database, secrets: plainSecrets, sealing, installed: appInstalled(bus), readOnly: () => false, http: NO_NETWORK, owner: 'client', ...(copy ? { copy } : {}) });
+  const hub = createHub({ database, secrets: plainSecrets, sealing, installed: appInstalled(bus), node: APP_NODE, readOnly: () => false, http: NO_NETWORK, ...(copy ? { copy } : {}) });
   await hub.start();
   running.push(hub);
   return { hub, database };
@@ -322,8 +326,8 @@ test('a home this app kept itself moves to its server: the server keeps all of i
   // A server added: what this app holds for it, with its own home beside it, offered.
   const { holding } = await app(home, testDatabase(), bus, own.database);
   const api = holding.api;
-  expect(await api.configuration.elsewhere()).toEqual({ from: 'this-app', devices: 2, automations: 0 });
-  const plan = await api.configuration.plan({ from: 'this-app' });
+  expect(await api.configuration.elsewhere()).toEqual({ from: 'this-node', devices: 2, automations: 0 });
+  const plan = await api.configuration.plan({ from: 'this-node' });
   expect(plan.problems).toEqual([]);
   expect(plan.devices.map((device) => [device.name, device.action]).sort()).toEqual([
     ['Desk lamp', 'add'],
@@ -335,9 +339,9 @@ test('a home this app kept itself moves to its server: the server keeps all of i
   // The server keeps both, and the home's values; the simulated one it holds, the lamp this app holds for it — its PIN never there.
   const kept = await home.devices.list();
   const desk = kept.find((device) => device.name === 'Desk lamp')!;
-  expect(desk.connections).toEqual([expect.objectContaining({ method: 'bus', heldBy: { kind: 'client', id: holding.appId!, name: 'Chrome on a test' } })]);
+  expect(desk.connections).toEqual([expect.objectContaining({ method: 'bus', heldBy: { kind: 'node', id: holding.nodeId, name: 'Chrome on a test' } })]);
   expect(there.connections.secretFields(desk.connections[0]!.id)).toEqual([]);
-  expect(kept.find((device) => device.name === 'Sim lamp')!.connections).toEqual([expect.objectContaining({ method: 'simulated', heldBy: { kind: 'home' } })]);
+  expect(kept.find((device) => device.name === 'Sim lamp')!.connections).toEqual([expect.objectContaining({ method: 'simulated', heldBy: { kind: 'master', id: MACHINE_NODE.id, name: 'Test machine' } })]);
   expect((await home.policy.list()).find((value) => value.name === 'loadWatts')?.value).toBe(30);
   // Held here, its key with it, and reached.
   expect(holding.connections.secret(desk.connections[0]!.id, 'pin')).toBe('4321');
@@ -361,8 +365,8 @@ test('a home this app kept that the server has already, as it is: nothing to mov
   running = running.filter((each) => each !== own.hub);
 
   const { holding } = await app(home, testDatabase(), new FakeBus(), own.database);
-  expect(await holding.api.configuration.elsewhere()).toEqual({ from: 'this-app', devices: 1, automations: 0 });
-  const plan = await holding.api.configuration.plan({ from: 'this-app' });
+  expect(await holding.api.configuration.elsewhere()).toEqual({ from: 'this-node', devices: 1, automations: 0 });
+  const plan = await holding.api.configuration.plan({ from: 'this-node' });
   expect(plan.devices.map((device) => device.action)).toEqual(['same']);
   expect(await holding.api.configuration.elsewhere()).toBeNull();
 });
@@ -391,7 +395,8 @@ test('a server let go of: the copy this app kept of its home becomes the app’s
   const now = await api.devices.list();
   const desk = now.find((device) => device.name === 'Desk lamp')!;
   expect(desk.key).toBe(lamp.key);
-  expect(desk.connections).toEqual([expect.objectContaining({ method: 'bus', heldBy: { kind: 'home' } })]);
+  // Held by this node, the app's own home's master now.
+  expect(desk.connections).toEqual([expect.objectContaining({ method: 'bus', heldBy: { kind: 'master', id: APP_NODE.id, name: 'Chrome on a test' } })]);
   expect(own.hub.connections.secret(desk.connections[0]!.id, 'pin')).toBe('4321');
   expect(now.find((device) => device.name === 'Server lamp')!.connections).toEqual([expect.objectContaining({ method: 'simulated' })]);
   await until(async () => (await api.devices.get(desk.id)).readings.length > 0, 'the kept lamp reached by the app itself');

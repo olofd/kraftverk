@@ -6,9 +6,9 @@ import { httpApi } from '@kraftverk/api-client/http';
 import { Card, Row, haptic } from '@kraftverk/ui';
 
 import { Pressable } from '../components/Pressable';
-import { appName } from '../platform/here';
 import { HomeOpenElsewhere, type OpenHome, type OpenOptions } from '../platform/home/home';
 import { openHome } from '../platform/home/open';
+import { thisNode } from '../platform/node';
 import { readLastServerId } from '../platform/servers';
 import { useAuth } from './AuthProvider';
 import { useServers } from './ServersProvider';
@@ -30,8 +30,8 @@ type HomeValue = {
   /** Whether writes to hardware are allowed from this app: refused every launch, until someone says. */
   writesAllowed: boolean;
   allowWrites: (allowed: boolean) => Promise<void>;
-  /** With a server: this app as the server knows it, or null until it has said who it is. */
-  appId: string | null;
+  /** This app, as a node of the home: its own id, in its own home and a server’s alike — null while its own ways have not opened here. */
+  nodeId: string | null;
   /**
    * With a server, when this app cannot hold its own ways now — another tab
    * of this browser holds them, or they could not open here — why, and how
@@ -62,7 +62,7 @@ function useOpened(server: OpenOptions['server'], copyOf: string | null = null):
     (takeOver: boolean) => {
       let live = true;
       setState({ status: 'opening' });
-      openHome({ takeOver, server, name: appName(), copyOf }).then(
+      openHome({ takeOver, server, node: thisNode(), copyOf }).then(
         (home) => {
           if (!live) return void home.close();
           setState({ status: 'open', home });
@@ -128,7 +128,7 @@ function ServerHome({ serverKey, url, children }: { serverKey: string; url: stri
         await home?.allowWrites(allowed);
         setWritesAllowed(allowed);
       },
-      appId: home?.appId ?? null,
+      nodeId: home?.nodeId ?? null,
       holding,
       away,
     };
@@ -155,7 +155,7 @@ function OwnHome({ children }: { children: ReactNode }) {
               await home.allowWrites(allowed);
               setWritesAllowed(allowed);
             },
-            appId: null,
+            nodeId: home.nodeId,
             holding: null,
             away: false,
           }

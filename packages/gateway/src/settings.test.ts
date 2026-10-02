@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { savedDeviceId, type AuditRecord, type DeviceDescription, type DeviceSession, type Value } from '@kraftverk/device-sdk';
+import { nodeId, savedDeviceId, type AuditRecord, type DeviceDescription, type DeviceSession, type Value } from '@kraftverk/device-sdk';
 
 import { ActionGateway, type WriteIntent } from './gateway.ts';
 
@@ -31,7 +31,7 @@ function station(stubborn = false) {
   const writes: Record<string, Value>[] = [];
   const at = new Date().toISOString();
   const session: DeviceSession = {
-    health: () => ({ status: 'connected', detail: 'Fine', owner: 'server', transport: 'test', lastReadingAt: null }),
+    health: () => ({ status: 'connected', detail: 'Fine', node: nodeId('n-0000000000a1'), transport: 'test', lastReadingAt: null }),
     readings: () => [{ key: 'soc', value: 80, at }, ...Object.entries(values).map(([key, value]) => ({ key, value, at }))],
     command: async () => ({ accepted: false, error: 'No commands' }),
     write: async (patch) => {

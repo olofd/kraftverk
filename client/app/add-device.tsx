@@ -93,12 +93,12 @@ export default function AddDeviceScreen() {
         .filter((way) => way.method === method.id)
         .map((way) => ({
           methodId: method.id,
-          label: `${method.label}, ${way.holder === 'home' && kind === 'server' ? 'through your server' : `from ${HERE}`}`,
-          description: way.holder === 'this-app' ? `While ${HERE} has it: kept by your server, which hears what it says when it can.` : method.description,
+          label: `${method.label}, ${way.holder === 'master' && kind === 'server' ? 'through your server' : `from ${HERE}`}`,
+          description: way.holder === 'this-node' ? `While ${HERE} has it: kept by your server, which hears what it says when it can.` : method.description,
           holder: way.holder,
           available: way.availability.ok,
           reason: way.availability.ok ? null : way.availability.reason,
-          recommended: way.holder === 'home' && Boolean(method.recommended),
+          recommended: way.holder === 'master' && Boolean(method.recommended),
         }))
     );
   }, [kind, type]);
@@ -131,7 +131,7 @@ export default function AddDeviceScreen() {
   const autostarted = useRef(false);
   useEffect(() => {
     if (autostarted.current || !params.method || !type) return;
-    const way = ways.find((candidate) => candidate.methodId === params.method && candidate.holder === 'home' && candidate.available);
+    const way = ways.find((candidate) => candidate.methodId === params.method && candidate.holder === 'master' && candidate.available);
     if (!way) return;
     autostarted.current = true;
     void begin(way);
@@ -401,7 +401,7 @@ const SUPPORT: Record<string, string> = {
  */
 function whereItRuns(type: Pick<DeviceTypeListing, 'runsOn'>, home: 'server' | 'own'): string {
   const here = type.runsOn.includes(HERE_PLATFORM);
-  const server = type.runsOn.includes('server');
+  const server = type.runsOn.includes('system');
   if (home === 'own') return here ? `Works from ${HERE}` : 'Needs a server: here, only its simulator';
   if (here && server) return `Through your server, or from ${HERE}`;
   return server ? 'Through your server' : `From ${HERE} only`;
@@ -459,7 +459,7 @@ function Ways({ ways, busy, onPick, onBack }: { ways: Way[]; busy: boolean; onPi
                 title={`${way.label}${way.recommended ? ' · recommended' : ''}`}
                 subtitle={way.available ? way.description : (way.reason ?? 'Not available here')}
                 disabled={!way.available}
-                accessory={<Icon name={way.holder === 'home' && kind === 'server' ? 'server' : HERE_PLATFORM === 'web' ? 'monitor' : 'smartphone'} size={16} color={theme.muted?.val} />}
+                accessory={<Icon name={way.holder === 'master' && kind === 'server' ? 'server' : HERE_PLATFORM === 'web' ? 'monitor' : 'smartphone'} size={16} color={theme.muted?.val} />}
               />
             </Pressable>
           </YStack>
@@ -624,7 +624,7 @@ function Finish({
   const [links, setLinks] = useState<Record<string, string>>({});
   /** Whether the secrets just given may leave in an export as plain text: off unless chosen, and warned against (docs/CONFIG.md). */
   const [exportable, setExportable] = useState(false);
-  const keepsSecrets = flow.holder === 'home' && flow.secrets.length > 0;
+  const keepsSecrets = flow.holder === 'master' && flow.secrets.length > 0;
   const { kind } = useHome();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -707,7 +707,7 @@ function Finish({
           <Card gap="$2">
             <Input size="$3" value={name} maxLength={60} onChangeText={setName} onSubmitEditing={() => (!busy && (attachTo || name.trim()) ? void save() : undefined)} backgroundColor="$background" borderColor="$borderColor" aria-label="Its name" />
             <Text fontSize={12} color="$muted">
-              {flow.holder === 'home' && kind === 'server' ? 'Held by your server.' : `Held by ${HERE}.`}
+              {flow.holder === 'master' && kind === 'server' ? 'Held by your server.' : `Held by ${HERE}.`}
             </Text>
           </Card>
         </YStack>

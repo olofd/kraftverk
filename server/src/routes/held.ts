@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import { clientId, RESOURCE_KINDS, savedDeviceId, type AuditSubject, type DeviceDescription, type DeviceInfo, type ResourceKind, type Value } from '@kraftverk/device-sdk';
+import { nodeId, RESOURCE_KINDS, savedDeviceId, type AuditSubject, type DeviceDescription, type DeviceInfo, type ResourceKind, type Value } from '@kraftverk/device-sdk';
 
 import { body, homeFor, type AppDeps } from './shared.ts';
 
@@ -30,7 +30,7 @@ export function heldRoutes(deps: AppDeps): Hono {
       c,
       z
         .object({
-          clientId: z.string().min(1).max(40),
+          nodeId: z.string().min(1).max(40),
           connectionId: z.string().min(1).max(40),
           // Who the device said it is, read by the app's session.
           identity: z.string().min(1).max(120).nullable().optional(),
@@ -69,13 +69,13 @@ export function heldRoutes(deps: AppDeps): Hono {
   api.get('/devices/:id/store', async (c) => c.json({ values: await homeFor(deps, c).held.store(savedDeviceId(c.req.param('id'))) }));
 
   api.put('/devices/:id/store/:key', async (c) => {
-    const input = await body(c, z.object({ clientId: z.string().min(1).max(40), connectionId: z.string().min(1).max(40), value: z.unknown() }).strict());
+    const input = await body(c, z.object({ nodeId: z.string().min(1).max(40), connectionId: z.string().min(1).max(40), value: z.unknown() }).strict());
     await homeFor(deps, c).held.keep(savedDeviceId(c.req.param('id')), c.req.param('key'), input);
     return c.json({ ok: true });
   });
 
   /** The audit entries an app's gateway and session wrote while it held a connection — queued while offline, sent when it can. */
-  api.post('/clients/:id/audit', async (c) => {
+  api.post('/nodes/:id/audit', async (c) => {
     const { entries } = await body(
       c,
       z
@@ -98,7 +98,7 @@ export function heldRoutes(deps: AppDeps): Hono {
         })
         .strict()
     );
-    return c.json(await homeFor(deps, c).held.audit(clientId(c.req.param('id')), entries.map((entry) => entry as typeof entry & AuditSubject)));
+    return c.json(await homeFor(deps, c).held.audit(nodeId(c.req.param('id')), entries.map((entry) => entry as typeof entry & AuditSubject)));
   });
 
   return api;

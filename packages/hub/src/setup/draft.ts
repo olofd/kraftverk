@@ -1,5 +1,5 @@
 import { ApiError, type CheckOutcome, type DraftView, type SaveInput } from '@kraftverk/api-contract';
-import type { ClientId, ConfigSchema, ConnectionMethod, DeviceType, Identified, Protocol, SetupStepView, Sighting } from '@kraftverk/device-sdk';
+import type { NodeId, ConfigSchema, ConnectionMethod, DeviceType, Identified, Protocol, SetupStepView, Sighting } from '@kraftverk/device-sdk';
 
 import type { Reach } from './reach.ts';
 
@@ -22,7 +22,7 @@ export type Draft = {
   id: string;
   by: string;
   /** Who will hold the connection: null for this home's own holder, or the app that ran the steps itself. */
-  heldBy: ClientId | null;
+  heldBy: NodeId;
   type: DeviceType<any>;
   method: ConnectionMethod | null;
   /** How it reaches what it sets up: hardware over a protocol and a transport, or nothing — its simulator. */

@@ -39,7 +39,7 @@ type Manifest = {
     /** Pictures of the device as it looks, in order: the first is shown unless its owner picks another. */
     assets?: { images?: string[] };
     protocol?: string;
-    transport?: { definition?: string; server?: string; web?: string; native?: string };
+    transport?: { definition?: string; system?: string; web?: string; native?: string };
   };
 };
 

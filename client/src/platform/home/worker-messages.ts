@@ -1,3 +1,7 @@
+import type { NodeId } from '@kraftverk/device-sdk';
+
+import type { ThisNode } from '../node';
+
 /*
   What the page and a browser's home in its worker say to each other about
   the home itself (`open.web.ts`, `worker.ts`); the home's interface, a
@@ -14,12 +18,13 @@ export type ToWorker =
       /** Ask the tab that holds this browser's database to let go of it, and wait for it. */
       takeOver: boolean;
       writes: boolean;
+      /** The node this app is: its id, and what it is called in "held by …". */
+      node: ThisNode;
       /**
        * With a server: whose home this is — the page serves its interface as
-       * `server` — and what this app is called in "held by …". Without one,
-       * the browser keeps a home of its own.
+       * `server`. Without one, the browser keeps a home of its own.
        */
-      server: { key: string; name: string } | null;
+      server: { key: string } | null;
       /** Without a server: the server it used last, whose home it kept a copy of — offered to keep. */
       copyOf: string | null;
     }
@@ -27,8 +32,8 @@ export type ToWorker =
   | { via: 'home'; kind: 'close' };
 
 export type ToPage =
-  /** Open: with a server, this app as the server knows it. */
-  | { via: 'home'; kind: 'ready'; appId: string | null }
+  /** Open, as the node this app is. */
+  | { via: 'home'; kind: 'ready'; nodeId: NodeId }
   /** Another tab holds this browser's database. */
   | { via: 'home'; kind: 'busy' }
   | { via: 'home'; kind: 'failed'; message: string }

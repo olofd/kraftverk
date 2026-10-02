@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import { nodeId } from '@kraftverk/device-sdk';
+
 import { infoOf, readings } from './index.ts';
 import type { StationSettings, StationStatus } from './model/types.ts';
 import { stationView } from './view.ts';
@@ -61,7 +63,7 @@ const SETTINGS: StationSettings = {
   temperatureUnit: 'C',
 };
 
-const health = { status: 'connected' as const, detail: 'Connected', lastReadingAt: AT, owner: 'server' as const, transport: 'mqtt' };
+const health = { status: 'connected' as const, detail: 'Connected', lastReadingAt: AT, node: nodeId('n-0000000000a1'), transport: 'mqtt' };
 
 describe('the station, from its readings', () => {
   test('is what it reported: every figure, every output, every pack and every setting', () => {

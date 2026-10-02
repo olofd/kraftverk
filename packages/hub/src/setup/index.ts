@@ -1,6 +1,6 @@
 import type { CheckOutcome, DraftView, HeldSetupInput, SightingView } from '@kraftverk/api-contract';
 import {
-  clientId,
+  nodeId,
   findStep,
   isSecretField,
   isSimulated,
@@ -9,6 +9,7 @@ import {
   type AuditRecord,
   type ConfigValues,
   type Identified,
+  type NodeId,
   type ScopedHttp,
   type SetupActionResult,
   type SetupChoice,
@@ -16,7 +17,7 @@ import {
 import { judgeCheck, withTimeout } from '@kraftverk/holder';
 
 import type { ProtocolRegistry } from '../installed/protocols.ts';
-import { placeOf, type TransportHost } from '../installed/transports.ts';
+import { platformWords, type TransportHost } from '../installed/transports.ts';
 import { unref } from '../timers.ts';
 import { randomHex, type DeviceCatalog, type DeviceRecord, type ConnectionStore, type LinkStore, type SqlDatabase } from '@kraftverk/store';
 import type { SessionManager } from '@kraftverk/holder';
@@ -59,6 +60,8 @@ export type SetupServiceDeps = {
   sessions: SessionManager;
   /** For helpers that call a vendor's API once — fetching a key. */
   http: ScopedHttp;
+  /** This node: what holds a way the home sets up for itself. */
+  self: NodeId;
 };
 
 export class SetupService {
@@ -89,10 +92,10 @@ export class SetupService {
     // Simulated: nothing to reach, so no protocol and no transport — only the type's own steps, then its simulator.
     let reach = SIMULATED_REACH;
     let transport = null;
-    if (method.serverOnly && this.deps.transports.platform !== 'server') throw new SetupError(`${method.label} needs a server: ${method.serverOnly}`, 409);
+    if (method.serverOnly && this.deps.transports.platform !== 'system') throw new SetupError(`${method.label} needs a server: ${method.serverOnly}`, 409);
     if (!isSimulated(method)) {
       const protocol = this.deps.protocols.get(method.protocol);
-      if (!protocol?.bindings[method.transport]) throw new SetupError(`${placeOf(this.deps.transports.platform).this} cannot reach a ${type.meta.name} by ${method.label}: it needs updating`, 409);
+      if (!protocol?.bindings[method.transport]) throw new SetupError(`${platformWords(this.deps.transports.platform).this} cannot reach a ${type.meta.name} by ${method.label}: it needs updating`, 409);
       transport = await this.deps.transports.start(method.transport);
       const available = this.deps.transports.available(method.transport);
       if (!transport || !available.ok) throw new SetupError(available.ok ? `${method.label} cannot be used here` : available.reason, 409);
@@ -101,7 +104,7 @@ export class SetupService {
 
     const draft = this.#newDraft({
       by: input.by,
-      heldBy: null,
+      heldBy: this.deps.self,
       type,
       method,
       reach,
@@ -141,7 +144,7 @@ export class SetupService {
     );
     const draft = this.#newDraft({
       by: input.by,
-      heldBy: clientId(input.clientId),
+      heldBy: nodeId(input.nodeId),
       type,
       method,
       reach: overHardware(protocol, this.deps.transports.definition(method.transport), this.deps.transports),
@@ -207,7 +210,7 @@ export class SetupService {
 
     if (input.chooser) {
       const transport = await this.deps.transports.start(draft.method!.transport);
-      if (!transport?.choose) throw new SetupError(`${placeOf(this.deps.transports.platform).this} has no chooser for ${draft.method!.label}: choose from the list`);
+      if (!transport?.choose) throw new SetupError(`${platformWords(this.deps.transports.platform).this} has no chooser for ${draft.method!.label}: choose from the list`);
       // Shown everything, it may be a device its protocol does not know by its advertising alone: the check reads it.
       const sighting = await transport.choose(input.chooser.showAll ? {} : (binding.filter ?? {}));
       if (!sighting) return viewOf(draft);
@@ -332,7 +335,7 @@ export class SetupService {
   async save(id: string, input: SaveRequest): Promise<DeviceRecord> {
     const draft = this.#draft(id);
     const method = draft.method!;
-    const config = saveable(draft, input);
+    const config = saveable(draft, input, this.deps.self);
     const { record, kind } = this.deps.db.transaction(() => writeSaved(this.deps, draft, input, config))();
 
     this.deps.record({
