@@ -1,25 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  checkBinding,
-  checkRule,
-  daysText,
-  describeRule,
-  describeSteps,
-  describeTriggers,
-  inlineParams,
-  problemArea,
-  problemPlace,
-  ruleUses,
-  takesSteps,
-  writtenAttribute,
-  type BoundPart,
-  type Rule,
-  type Step,
-  type WriteTarget,
-} from './rule.ts';
 import type { DeviceDescription } from '@kraftverk/device-sdk';
+
+import { checkBinding, checkRule, problemArea, problemPlace, writtenAttribute, type BoundPart } from './check.ts';
+import { daysText, describeRule, describeSteps, describeTriggers } from './describe.ts';
+import { inlineParams } from './evaluate.ts';
+import { ruleUses, takesSteps } from './reads.ts';
 import { chargeBetween, mainsLost, startCharging } from './recipes.ts';
+import type { Rule, Step, WriteTarget } from './rule.ts';
 
 /*
   The blocks a person builds an automation from (docs/AUTOMATION-EDITOR.md):
@@ -41,6 +29,7 @@ const PLUG: DeviceDescription = {
     { key: 'firmwareMode', label: 'Firmware mode', value: { type: 'boolean' }, access: 'write', dangerous: true },
   ],
 };
+
 /** A station with settings every station has, by their standard meanings: its own keys are its package's. */
 const STATION: DeviceDescription = {
   parts: [{ id: 'main', label: 'Station', kind: 'device', energy: { role: 'storage' } }],
@@ -50,13 +39,16 @@ const STATION: DeviceDescription = {
     { key: 'acWatts', label: 'AC charging power', value: { type: 'number', unit: 'W', min: 600, max: 1800, step: 300 }, means: 'power.in.ac.max', access: 'write' },
   ],
 };
+
 const bound = (role: string): BoundPart | null =>
   role === 'plug'
     ? { name: 'Scooter plug', description: PLUG, part: 'main', capabilities: ['switch', 'powerMeter'] }
     : role === 'station'
       ? { name: 'Garage station', description: STATION, part: 'main', capabilities: ['battery'] }
       : null;
+
 const vocabulary = { ...NO_FUNCTIONS, attribute: (role: string, target: WriteTarget) => { const part = bound(role); return part ? writtenAttribute(part.description, part.part, target) : null; } };
+
 const names = (role: string) => (role === 'plug' ? 'Scooter plug' : role === 'station' ? 'Garage station' : role === 'charging' ? '“Charge the scooter”' : role);
 
 const rule = (then: Step[], extra: Partial<Rule> = {}): Rule => ({
@@ -70,6 +62,7 @@ const rule = (then: Step[], extra: Partial<Rule> = {}): Rule => ({
   then,
   ...extra,
 });
+
 const live = (value: unknown): Step => ({ write: { role: 'plug', key: 'live', value: { value: value as never } } });
 
 describe('change a setting', () => {

@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
-import { calculate, checkRule, describeSteps, evaluateNow, inlineParams, type Expr, type Rule, type RuleScope } from './rule.ts';
+import { checkRule } from './check.ts';
+import { describeSteps } from './describe.ts';
+import { evaluateNow, inlineParams, type RuleScope } from './evaluate.ts';
+import { calculate, type Expr, type Rule } from './rule.ts';
 
 /*
   Arithmetic in a rule (docs/PLAN-RUN-AND-CHAIN.md, Phase 4): the sum or
@@ -9,8 +12,11 @@ import { calculate, checkRule, describeSteps, evaluateNow, inlineParams, type Ex
 */
 
 const NO_FUNCTIONS = { fn: () => null };
+
 const soc: Expr = { read: { role: 'battery', means: 'battery.soc' } };
+
 const draw: Expr = { read: { role: 'plug', means: 'power.draw' } };
+
 const rule = (on: Expr, extra: Partial<Rule> = {}): Rule => ({
   roles: {
     battery: { label: 'Battery', description: 'A battery', capabilities: ['battery'] },
@@ -21,6 +27,7 @@ const rule = (on: Expr, extra: Partial<Rule> = {}): Rule => ({
   then: [{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on } } }],
   ...extra,
 });
+
 const scope = (charge: number | null): RuleScope => ({
   param: () => null,
   read: (_role, means) => (means === 'battery.soc' && charge !== null ? { value: charge, label: 'Charge', unit: '%' } : null),

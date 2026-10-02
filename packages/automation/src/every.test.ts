@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
-import { checkRule, describeRule, describeTriggers, inlineParams, slotOf, type Rule, type Trigger } from './rule.ts';
+import { checkRule } from './check.ts';
+import { slotOf } from './clock.ts';
+import { describeRule, describeTriggers } from './describe.ts';
+import { inlineParams } from './evaluate.ts';
+import type { Rule, Trigger } from './rule.ts';
 
 /*
   Every so many minutes (docs/PLAN-RUN-AND-CHAIN.md, Phase 4): on the
@@ -8,6 +12,7 @@ import { checkRule, describeRule, describeTriggers, inlineParams, slotOf, type R
 */
 
 const NO_FUNCTIONS = { fn: () => null };
+
 const rule = (when: Trigger[], extra: Partial<Rule> = {}): Rule => ({
   roles: { plug: { label: 'Plug', description: 'A plug', capabilities: ['switch'] } },
   params: { fields: {} },

@@ -1,8 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
-import { checkBinding, checkRule, defineFunction, describeRule, evaluate, evaluateNow, type Expr, type Recipe, type RuleScope } from './rule.ts';
 import { MAIN_PART, type DeviceDescription } from '@kraftverk/device-sdk';
 import type { Value } from '@kraftverk/device-sdk';
+
+import { checkBinding, checkRule } from './check.ts';
+import { describeRule } from './describe.ts';
+import { evaluate, evaluateNow, type RuleScope } from './evaluate.ts';
+import { defineFunction } from './functions.ts';
+import type { Expr, Recipe } from './rule.ts';
 
 /*
   The rule: one language that recipes, a DSL and an AI all write. What these
@@ -20,6 +25,7 @@ const sky = defineFunction({
   returns: { type: 'enum', options: [{ value: 'sunny', label: 'Sunny' }, { value: 'cloudy', label: 'Cloudy' }] },
   evaluate: async ({ args }) => ({ value: Number(args.cloudMax) > 50 ? 'sunny' : 'cloudy', detail: `Cloud at most ${String(args.cloudMax)} %` }),
 });
+
 const vocabulary = { fn: (id: string) => (id === sky.id ? sky : null) };
 
 const turn: Expr = { compare: 'eq', left: { param: 'action' }, right: { value: 'on' } };

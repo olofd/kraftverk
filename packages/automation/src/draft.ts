@@ -1,7 +1,8 @@
 import { capabilitiesOf, capabilityIn, meetsNeed, partName, partsOf, type AutomationId, type CapabilityName, type DeviceDescription, type SavedDeviceId, type Value } from '@kraftverk/device-sdk';
 
 import { usedRoles } from './edit.ts';
-import { inlineParams, isAutomationRole, NO_SETTINGS, type Expr, type Rule, type Step, type StepKind } from './rule.ts';
+import { inlineParams, NO_SETTINGS } from './evaluate.ts';
+import { isAutomationRole, type Expr, type Rule, type Step, type StepKind } from './rule.ts';
 
 /*
   An automation as it is being built, as data (docs/AUTOMATION-EDITOR.md): a

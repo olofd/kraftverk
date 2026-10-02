@@ -1,22 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  checkRule,
-  describeRule,
-  describeSteps,
-  describeTriggers,
-  evaluateNow,
-  ruleCommands,
-  ruleUses,
-  SEQUENCE_LIMITS,
-  settledChoice,
-  takesSteps,
-  type Rule,
-  type RuleScope,
-  type Step,
-  whose,
-} from './rule.ts';
+import { checkRule } from './check.ts';
+import { describeRule, describeSteps, describeTriggers, whose } from './describe.ts';
+import { evaluateNow, settledChoice, type RuleScope } from './evaluate.ts';
+import { ruleCommands, ruleUses, takesSteps } from './reads.ts';
 import { chargeBetween, startCharging, stopCharging } from './recipes.ts';
+import { SEQUENCE_LIMITS, type Rule, type Step } from './rule.ts';
 
 /**
  * Sequences in the rule language (docs/SEQUENCES.md): steps that wait, make
@@ -25,7 +14,9 @@ import { chargeBetween, startCharging, stopCharging } from './recipes.ts';
  */
 
 const NO_FUNCTIONS = { fn: () => null };
+
 const names = (role: string) => (role === 'supply' ? 'Garage station’s AC outlets' : role === 'charger' ? 'Scooter plug' : role);
+
 const defaults = (rule: Rule) => Object.fromEntries(Object.entries(rule.params.fields).map(([key, field]) => [key, 'default' in field ? (field.default as never) : null]));
 
 /** A rule of one switch, with the steps given. */
@@ -36,7 +27,9 @@ const rule = (then: Step[], extra: Partial<Rule> = {}): Rule => ({
   then,
   ...extra,
 });
+
 const on: Step = { command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { value: true } } } };
+
 const drawing: Rule['if'] = { compare: 'gt', left: { read: { role: 'plug', means: 'power.draw' } }, right: { value: 50 } };
 
 describe('the language', () => {

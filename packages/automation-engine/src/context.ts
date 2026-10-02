@@ -1,0 +1,227 @@
+import type { ConditionState, RoleBinding } from '@kraftverk/api-contract';
+import { checkBinding, describeExpr, describeSteps, evaluate, evaluateNow, isAutomationRole, partRoles, writtenAttribute, type BoundPart, type Command, type Expr, type Rule, type RuleScope, type RuleVocabulary, type StepLine, type Write } from '@kraftverk/automation';
+import { attributeMeaning, capabilityIn, clockTime, isCurrent, isScalar, readingOf, standardMeaning, unitOf, type CapabilityName, type Value } from '@kraftverk/device-sdk';
+
+import type { AutomationEngineDeps, AutomationRecord, EngineDevice } from './model.ts';
+import { capitalise, quoted } from './words.ts';
+
+/*
+  An automation's rule seen against the parts filling its roles, as every
+  part of the engine reads it: what it is evaluated against, its words with
+  their names, how each condition stands, why it cannot run as it is bound,
+  and what a rule of commands and settings alone would change.
+*/
+
+/** One action a run would take: the command, its arguments evaluated, and how it reads. */
+export type PlannedAction = { binding: RoleBinding; role: string; name: string; capability: CapabilityName; command: string; args: Record<string, Value>; what: string };
+
+/** A setting a run would change, its value evaluated. */
+export type PlannedWrite = { binding: RoleBinding; key: string; value: Value };
+
+/** What a rule of commands and settings alone would change: a command, or a setting. */
+export type Planned = { command: PlannedAction } | { write: PlannedWrite };
+
+/** What the context reads: the automations, the installed functions, the parts, and the clock. */
+export type ContextDeps = Pick<AutomationEngineDeps, 'store' | 'library' | 'device' | 'now'>;
+
+export class RuleContext {
+  constructor(private deps: ContextDeps) {}
+
+  /** What a rule is evaluated against: its settings, and the parts filling its roles as they are now. */
+  scope(automation: AutomationRecord, rule: Rule, now = this.now()): RuleScope {
+    const part = (role: string): EngineDevice | null => {
+      const binding = automation.roles[role];
+      const device = binding ? this.deps.device(binding) : null;
+      return device && !device.removed ? device : null;
+    };
+    return {
+      clock: () => clockTime(now, automation.timeZone),
+      // An automation's own rule has no settings: its values are in its blocks. A recipe's are its defaults.
+      param: (name) => {
+        const field = rule.params.fields[name];
+        return ((field && 'default' in field ? field.default : undefined) ?? null) as Value;
+      },
+      read: (role, means) => {
+        const device = part(role);
+        const attribute = device ? attributeMeaning(device.description, device.part, means) : null;
+        const reading = device?.device && attribute ? readingOf(device.device.readings(), attribute.key) : null;
+        // What it reports now: a reading past how long it stays current is not known, and neither is structure.
+        if (!attribute || !reading || !isCurrent(attribute, reading, now.getTime()) || !isScalar(reading.value)) return null;
+        return { value: reading.value, label: standardMeaning(means)?.label ?? attribute.label, unit: unitOf(attribute) };
+      },
+      reachable: (role) => {
+        const device = part(role);
+        return device ? device.reachable() : { reachable: false, detail: `${rule.roles[role]?.label ?? role}: no device` };
+      },
+      call: async (id, role, args) => {
+        const fn = this.deps.library.fn(id);
+        const device = part(role);
+        if (!fn) return { value: null, detail: `No installed package offers ${id}` };
+        if (!device) return { value: null, detail: `${rule.roles[role]?.label ?? role}: no device` };
+        return fn.evaluate({ part: device, args, now, timeZone: automation.timeZone });
+      },
+      name: (role) => {
+        const started = automation.starts[role];
+        if (started) return quoted(this.deps.store.get(started)?.name ?? null);
+        return part(role)?.name ?? 'a device you no longer have';
+      },
+    };
+  }
+
+  /**
+   * What its words need: the installed functions, and — its roles filled —
+   * each setting a step changes as its device names it ("Live readings").
+   */
+  vocabulary(automation: AutomationRecord): RuleVocabulary {
+    return {
+      fn: (id) => this.deps.library.fn(id),
+      attribute: (role, target) => {
+        const binding = automation.roles[role];
+        const device = binding ? this.deps.device(binding) : null;
+        return device ? writtenAttribute(device.description, binding!.part, target) : null;
+      },
+    };
+  }
+
+  /** Its settings as a sentence reads them: each one's value, or its default. */
+  settled(automation: AutomationRecord, rule: Rule): Record<string, Value> {
+    const scope = this.scope(automation, rule);
+    return Object.fromEntries(Object.keys(rule.params.fields).map((key) => [key, scope.param(key)]));
+  }
+
+  /** A condition in words, its settings filled in: "Garage station's charge is at least 50 %". */
+  said(automation: AutomationRecord, rule: Rule, expr: Expr): string {
+    const scope = this.scope(automation, rule);
+    return describeExpr(rule, expr, this.settled(automation, rule), (role) => scope.name(role), this.vocabulary(automation));
+  }
+
+  /** Its steps in words, numbered and nested, as its card shows them. */
+  steps(automation: AutomationRecord): { steps: StepLine[]; otherwise: StepLine[] } {
+    const rule = automation.rule;
+    const scope = this.scope(automation, rule);
+    return describeSteps(rule, this.settled(automation, rule), (role) => scope.name(role), this.vocabulary(automation));
+  }
+
+  /**
+   * Each condition an automation waits for, as it stands at `at`, and what it
+   * read to say so: how a run explains itself, and what its card shows now.
+   */
+  judge(automation: AutomationRecord, at = this.now()): { conditions: ConditionState[]; saw: string[] } {
+    const rule = automation.rule;
+    const scope = this.scope(automation, rule, at);
+    const saw: string[] = [];
+    const conditions = rule.when.flatMap((trigger): ConditionState[] => {
+      if (!('becomes' in trigger)) return [];
+      const holds = evaluateNow(trigger.becomes, scope, saw);
+      const minutes = trigger.heldForMinutes ? Number(evaluateNow(trigger.heldForMinutes, scope)) : 0;
+      const text = `${capitalise(this.said(automation, rule, trigger.becomes))}${minutes > 0 ? ` for ${minutes} min` : ''}`;
+      return [{ text, holds: typeof holds === 'boolean' ? holds : null }];
+    });
+    return { conditions, saw: [...new Set(saw)] };
+  }
+
+  /** When it next looks again to keep things so: null when it does not, or is off. */
+  nextLookAt(automation: AutomationRecord): string | null {
+    if (!automation.recheckMinutes || automation.mode === 'off') return null;
+    const since = Math.max(...[automation.lookedAt, automation.lastRun?.at].map((at) => Date.parse(at ?? '')).filter(Number.isFinite));
+    const next = Number.isFinite(since) ? since + automation.recheckMinutes * 60_000 : this.now().getTime();
+    return new Date(Math.max(next, this.now().getTime())).toISOString();
+  }
+
+  /**
+   * Why an automation cannot run as its roles are filled: a removed device, a
+   * part that no longer fits, a meaning it does not report, a setting it
+   * cannot change — or an automation to start that is gone.
+   */
+  roleProblems(automation: Pick<AutomationRecord, 'rule' | 'roles' | 'starts'>): string[] {
+    const rule = automation.rule;
+    const removed = partRoles(rule).flatMap(([role, spec]) => {
+      const binding = automation.roles[role];
+      const device = binding ? this.deps.device(binding) : null;
+      return device?.removed ? [`${spec.label}: ${device.name} has been removed`] : [];
+    });
+    if (removed.length) return removed;
+    const nothingToStart = Object.entries(rule.roles)
+      .filter(([role, spec]) => isAutomationRole(spec) && !(automation.starts[role] && this.deps.store.get(automation.starts[role]!)))
+      .map(([, spec]) => `${spec.label}: nothing to start — the automation it started is gone`);
+    return [
+      ...nothingToStart,
+      ...checkBinding(rule, (role): BoundPart | null => {
+        const binding = automation.roles[role];
+        const device = binding ? this.deps.device(binding) : null;
+        return device ? { name: device.name, description: device.description, part: device.part, capabilities: device.hasPart ? device.capabilities : [] } : null;
+      }),
+    ];
+  }
+
+  /**
+   * Whether an action would change nothing: every attribute its command sets,
+   * as the capability declares, already reads what it would be set to, and
+   * currently. Anything not known is not so: it is sent, and the gateway says.
+   */
+  alreadySo(action: PlannedAction): boolean {
+    const device = this.deps.device(action.binding);
+    if (!device?.device || device.removed) return false;
+    const capability = capabilityIn(device.description, action.capability);
+    const sets = Object.entries(capability?.commands[action.command]?.sets ?? {});
+    if (!capability || !sets.length) return false;
+    const readings = device.device.readings();
+    const at = this.now().getTime();
+    return sets.every(([arg, name]) => {
+      const means = capability.attributes[name]?.means;
+      const attribute = means ? attributeMeaning(device.description, action.binding.part, means) : null;
+      const reading = attribute ? readingOf(readings, attribute.key) : null;
+      return attribute !== null && reading !== null && isCurrent(attribute, reading, at) && String(reading.value) === String(action.args[arg]);
+    });
+  }
+
+  /** The key of the setting a write names — by its key, or by its meaning — on the part filling its role; null when it has none. */
+  settingKey(binding: RoleBinding, write: Write): string | null {
+    const device = this.deps.device(binding);
+    return device ? (writtenAttribute(device.description, binding.part, write)?.key ?? null) : null;
+  }
+
+  /** Whether a setting already reads what it would be set to — as the write step itself decides. */
+  settingSo(write: PlannedWrite): boolean {
+    const device = this.deps.device(write.binding);
+    if (!device?.device || device.removed) return false;
+    const reading = readingOf(device.device.readings(), write.key);
+    return reading !== null && String(reading.value) === String(write.value);
+  }
+
+  /** One command as it would be sent, its arguments evaluated: an unknown one is not guessed. */
+  async planCommand(automation: AutomationRecord, command: Command, scope: RuleScope): Promise<PlannedAction | { unknown: string }> {
+    const args: Record<string, Value> = {};
+    for (const [name, expr] of Object.entries(command.args)) args[name] = await evaluate(expr, scope, []);
+    if (Object.values(args).some((value) => value === null)) return { unknown: scope.name(command.role) };
+    const binding = automation.roles[command.role]!;
+    const name = scope.name(command.role);
+    const setting = Object.values(args).map((value) => (value === true ? 'on' : value === false ? 'off' : String(value))).join(', ');
+    const what = command.capability === 'switch' && command.command === 'set' ? `turn ${name} ${setting}` : `${command.capability}.${command.command} ${name} (${setting})`;
+    return { binding, role: command.role, name, capability: command.capability, command: command.command, args, what };
+  }
+
+  /** What a rule of commands and settings alone would change, each evaluated: an unknown one is not guessed. */
+  async plan(automation: AutomationRecord, rule: Rule, scope: RuleScope): Promise<Planned[] | { unknown: string }> {
+    const planned: Planned[] = [];
+    for (const step of rule.then) {
+      if ('command' in step) {
+        const action = await this.planCommand(automation, step.command, scope);
+        if ('unknown' in action) return action;
+        planned.push({ command: action });
+      } else if ('write' in step) {
+        const binding = automation.roles[step.write.role];
+        const value = await evaluate(step.write.value, scope, []).catch(() => null);
+        const key = binding ? this.settingKey(binding, step.write) : null;
+        if (!binding || value === null || !key) return { unknown: scope.name(step.write.role) };
+        planned.push({ write: { binding, key, value } });
+      }
+    }
+    return planned;
+  }
+
+  /** Now, by the engine's clock: a test's own. */
+  now(): Date {
+    return this.deps.now?.() ?? new Date();
+  }
+}

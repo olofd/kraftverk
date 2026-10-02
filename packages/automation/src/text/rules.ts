@@ -1,6 +1,8 @@
 import { CAPABILITIES, standardMeaning, type CapabilityName } from '@kraftverk/device-sdk';
-import { isAutomationRole, ruleUses, type Expr, type Rule, type RoleSpec, type Step, type Trigger, type Weekday, WEEKDAYS } from '../rule.ts';
 
+import { WEEKDAYS, type Weekday } from '../clock.ts';
+import { ruleUses } from '../reads.ts';
+import { isAutomationRole, type Expr, type RoleSpec, type Rule, type Step, type Trigger } from '../rule.ts';
 import { parseExpr, printExpr, type PrintContext, type WrittenUnit } from './expr.ts';
 
 /*
@@ -22,11 +24,13 @@ export type Use = { device: string; part: string } | { automation: string };
 export const MAIN = 'main';
 
 type Data = unknown;
+
 type Path = readonly (string | number)[];
 
 // --- durations ----------------------------------------------------------------------------
 
 const DURATION = /^(-?\d+(?:\.\d+)?)\s*(s|min|h)$/;
+
 const SECONDS = { s: 1, min: 60, h: 3600 } as const;
 
 /** "5 s", "2 min", "1 h": the largest unit that says it whole. */

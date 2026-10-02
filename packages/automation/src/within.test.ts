@@ -1,18 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  checkRule,
-  describeRule,
-  describeTriggers,
-  evaluateNow,
-  inlineParams,
-  inWindow,
-  minutesOf,
-  ruleUses,
-  type Expr,
-  type Rule,
-  type RuleScope,
-} from './rule.ts';
+import { checkRule } from './check.ts';
+import { inWindow, minutesOf } from './clock.ts';
+import { describeRule, describeTriggers } from './describe.ts';
+import { evaluateNow, inlineParams, type RuleScope } from './evaluate.ts';
+import { ruleUses } from './reads.ts';
+import type { Expr, Rule } from './rule.ts';
 
 /*
   Time of day in a condition (docs/PLAN-RUN-AND-CHAIN.md, Phase 4): between
@@ -21,7 +14,9 @@ import {
 */
 
 const NO_FUNCTIONS = { fn: () => null };
+
 const night: Expr = { within: { from: { value: '22:00' }, to: { value: '06:00' } } };
+
 const rule = (condition: Expr, extra: Partial<Rule> = {}): Rule => ({
   roles: { plug: { label: 'Plug', description: 'A plug', capabilities: ['switch'] } },
   params: { fields: {} },
@@ -29,6 +24,7 @@ const rule = (condition: Expr, extra: Partial<Rule> = {}): Rule => ({
   then: [{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
   ...extra,
 });
+
 const at = (clock: string | null): RuleScope => ({ param: () => null, read: () => null, reachable: () => ({ reachable: null, detail: '' }), name: (role) => role, clock: () => clock });
 
 describe('between two times of day', () => {

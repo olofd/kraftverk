@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { triggerAsNext } from './rule.ts';
+import { triggerAsNext } from './describe.ts';
 
 /* An automation that has not run yet says what comes next — never what starts it as if it had happened. */
 

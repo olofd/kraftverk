@@ -69,10 +69,23 @@ export class DeviceViews {
     return this.deps.catalog.removed().map((record) => this.#view(record, joined));
   }
 
+  /** One device, joined with only what its view names: its connections and their holders, and the devices its links reach. */
   find(id: SavedDeviceId): DeviceView | null {
     const record = this.deps.catalog.get(id);
     if (!record) return null;
-    return this.#view(record, this.#join(this.deps.catalog.list()));
+    const links = this.deps.links.forDevice(record.id);
+    const others = [...new Set(links.flatMap((link) => [link.source.device, link.target.device]))]
+      .filter((other) => other !== record.id)
+      .flatMap((other) => this.deps.catalog.active(other) ?? []);
+    const connections = this.deps.connections.forDevice(record.id);
+    return this.#view(record, {
+      names: new Map([record, ...others].map((each) => [each.id, each.name])),
+      descriptions: new Map([record, ...others].map((each) => [each.id, this.deps.sessions.description(each)])),
+      connections: new Map([[record.id, connections]]),
+      secrets: new Map(connections.map((connection) => [connection.id, this.deps.connections.secretFields(connection.id)])),
+      links: new Map([[record.id, links]]),
+      nodes: new Map(this.deps.nodes.all().map((node) => [node.id, node])),
+    });
   }
 
   #join(active: DeviceRecord[]): Joined {

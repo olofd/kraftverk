@@ -1,5 +1,6 @@
-import type { AutomationFunction, Recipe } from './rule.ts';
-import { checkRule } from './rule.ts';
+import { checkRule } from './check.ts';
+import type { AutomationFunction } from './functions.ts';
+import type { Recipe } from './rule.ts';
 
 /**
  * What a package brings to automations (docs/AUTOMATIONS.md): recipes — rules

@@ -2,10 +2,11 @@ import { describe, expect, test } from 'bun:test';
 
 import { savedDeviceId, type AutomationId, type DeviceDescription } from '@kraftverk/device-sdk';
 
+import { checkRule } from './check.ts';
 import { automationRole, blankStep, draftOfRecipe, EMPTY_DRAFT, partRole, pruned, roleName, sameParts, type RoleBinding } from './draft.ts';
-import { insertStep, kindsFor, listAt, mayWait, moveStep, OTHERWISE, removeStep, THEN, withStep, within } from './edit.ts';
+import { insertStep, kindsFor, listAt, mayWait, moveStep, OTHERWISE, removeStep, THEN, within, withStep } from './edit.ts';
 import { startCharging, stopCharging } from './recipes.ts';
-import { checkRule, type Step } from './rule.ts';
+import type { Step } from './rule.ts';
 
 /*
   An automation as it is being built, changed the way an editor changes it:
@@ -21,7 +22,9 @@ const PLUG: DeviceDescription = {
     { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, means: 'power.draw' },
   ],
 };
+
 const plug: RoleBinding = { device: savedDeviceId('d-plug'), part: 'main' };
+
 const pause = (seconds: number): Step => ({ wait: { seconds: { value: seconds } } });
 
 describe('blocks', () => {

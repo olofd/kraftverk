@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
-import { checkRule, inlineParams, isAutomationRole, type Recipe, type Rule, type Weekday } from '../rule.ts';
-import { STANDARD_RECIPES } from '../recipes.ts';
 import type { CapabilityName, Value } from '@kraftverk/device-sdk';
 
+import { checkRule } from '../check.ts';
+import type { Weekday } from '../clock.ts';
+import { inlineParams } from '../evaluate.ts';
+import { STANDARD_RECIPES } from '../recipes.ts';
+import { isAutomationRole, type Recipe, type Rule } from '../rule.ts';
 import { durationSeconds, durationText, ruleFromConfig, ruleToConfig, type Use } from './rules.ts';
 
 /*

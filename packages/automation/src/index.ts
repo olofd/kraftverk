@@ -9,6 +9,12 @@
  */
 
 export * from './rule.ts';
+export * from './clock.ts';
+export * from './functions.ts';
+export * from './check.ts';
+export * from './reads.ts';
+export * from './evaluate.ts';
+export * from './describe.ts';
 export * from './recipes.ts';
 export * from './contribution.ts';
 export * from './edit.ts';

@@ -1,4 +1,5 @@
-import { ruleCommands, ruleUses, type Rule, type Step, type StepKind } from './rule.ts';
+import { ruleCommands, ruleUses } from './reads.ts';
+import type { Rule, Step, StepKind } from './rule.ts';
 
 /*
   Edits to a rule, as data (docs/AUTOMATION-EDITOR.md): where a list of steps
@@ -14,6 +15,7 @@ export type ListPath = { root: 'then' | 'otherwise'; trail: readonly { index: nu
 export type Branch = 'retry' | 'then' | 'else';
 
 export const THEN: ListPath = { root: 'then', trail: [] };
+
 export const OTHERWISE: ListPath = { root: 'otherwise', trail: [] };
 
 /** The list a step holds, by its branch. */

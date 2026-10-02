@@ -1,0 +1,271 @@
+import type { AutomationDraft, Rule } from '@kraftverk/automation';
+import type { AutomationId, ConfigValues, ConnectionId, LinkId, NodeId, PolicyValueName, ResourceKind, SavedDeviceId, SetupActionResult, Value } from '@kraftverk/device-sdk';
+import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
+import type { Vocabulary } from '@kraftverk/home-file';
+
+import type { Account, AccountDetail, AuthState } from './accounts.ts';
+import type { Rehearsal, VocabularyView, WorldView } from './assistant.ts';
+import type { AutomationChanges, AutomationDraftView, AutomationKit, AutomationRun, AutomationView, NewAutomation, RunLog } from './automations.ts';
+import type { ConfigExported, ConfigExportRequest, ConfigSnapshotView, ImportAnswers, ImportApplied, ImportPlan } from './configuration.ts';
+import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, Holder, HomeElsewhere, LinkRecord, NewLink, PictureRef, ToolBody } from './devices.ts';
+import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, ProblemView } from './live.ts';
+import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, HomeView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
+import type { CheckOutcome, DraftView, FoundView, HeldSetupInput, SaveInput, SightingView } from './setup.ts';
+
+/*
+  The one interface (docs/ARCHITECTURE.md, decision 24): everything a home
+  answers, `KraftverkApi`, whoever asks and however it is reached — a
+  server over HTTP, a home in the app's own worker, a node following a
+  master — and what a server answers besides (`ServerApi`).
+*/
+
+/** `GET /api/version`. */
+export type VersionInfo = {
+  name: string;
+  version: string;
+  runtime: string;
+  startedAt: string;
+  uptimeSeconds: number;
+  /** Every write to hardware is refused. */
+  readOnly: boolean;
+};
+
+/**
+ * Who is asking a home: what the gateway binds a person's yes to, what it
+ * refuses an assistant, what setup drafts and import plans belong to, and
+ * who the timeline names. The server makes one from a request's session;
+ * an app with no server, one for its owner.
+ */
+export type Caller =
+  /** A person, by the name the timeline knows them by — and, on a server, their account: what the apps they sign in on belong to. */
+  | { kind: 'person'; name: string; account?: string }
+  /** An assistant acting for a person: it does what needs no one's yes, and is refused the rest. */
+  | { kind: 'agent'; for: string };
+
+/**
+ * Everything a home answers, whoever asks and wherever it is kept
+ * (docs/PLAN-SHARED-CORE.md, principle 4): `@kraftverk/hub` answers it in
+ * the process (`hub.as(caller)`), `@kraftverk/api-client` over HTTP, and
+ * the server's routes are an adapter from one to the other. A refusal is an
+ * `ApiError`; a command the gateway refuses is an answer, its verdict.
+ * Accounts, sign-in and the reset are the server's, and not here.
+ */
+export interface KraftverkApi {
+  /** What can be added: every installed type, with where each of its methods can be held here. */
+  deviceTypes(): Promise<DeviceTypeList>;
+  devices: {
+    /** The devices you have, each with what it is doing. */
+    list(): Promise<DeviceView[]>;
+    /** Removed ones, kept with their history. */
+    removed(): Promise<DeviceView[]>;
+    /** One, removed or not. */
+    get(id: SavedDeviceId): Promise<DeviceView>;
+    /** Its name, and the key a configuration knows it by. */
+    update(id: SavedDeviceId, changes: { name?: string; key?: string }): Promise<DeviceView>;
+    /** Which picture it shows. */
+    setPicture(id: SavedDeviceId, picture: PictureRef): Promise<DeviceView>;
+    /** Removes it, keeping its history: adding it again brings it back. */
+    remove(id: SavedDeviceId): Promise<void>;
+    /** A removed device and everything it recorded, gone: its name, typed back, confirms it. */
+    deleteHistory(id: SavedDeviceId, name: string): Promise<{ samples: number }>;
+    /** One measurement over a span, thinned for a chart. */
+    history(id: SavedDeviceId, query: HistoryQuery): Promise<DeviceHistory>;
+    /** Every change of an on/off or an enum in a span. */
+    changes(id: SavedDeviceId, query: ChangesQuery): Promise<DeviceChanges>;
+    /** What it said happened, newest first. */
+    events(id: SavedDeviceId, limit?: number): Promise<DeviceEventView[]>;
+    /** A command to one of its parts, through the gateway: its verdict, refused or not. */
+    command(id: SavedDeviceId, part: string, capability: string, command: string, body: CommandBody): Promise<GatewayResult>;
+    /** Settings it keeps, through the gateway: its verdict, refused or not. */
+    write(id: SavedDeviceId, write: AttributeWrite): Promise<WriteResult>;
+    /** A query its capability declares — a forecast's hours — answered in the type the capability declares. */
+    query(id: SavedDeviceId, part: string, capability: string, query: string, args: Record<string, Value>): Promise<Value>;
+    /**
+     * One of its type's tools, with the answer it declares. `reading`: asked
+     * as a read, so one that writes is refused; one that declares what it
+     * cannot undo wants a person's yes, sent back as `confirmation`.
+     */
+    tool(id: SavedDeviceId, name: string, body: ToolBody & { reading?: boolean }): Promise<unknown>;
+  };
+  /** Warnings and errors across the devices you have, newest first. */
+  problems(limit?: number): Promise<ProblemView[]>;
+  /**
+   * Adding a device (docs/DATA-MODEL.md §1): a draft only its starter sees,
+   * each step that touches the device run where it will be held, nothing
+   * kept until the save.
+   */
+  setup: {
+    /** Begins one over a method of a type, held by whoever its way says (`ways`): the master, unless this node holds it for the master. */
+    start(input: { typeId: string; methodId?: string | null; holder?: Holder }): Promise<DraftView>;
+    /** One a node that follows will hold, from what it learnt reading the device itself: never a secret. */
+    startHeld(input: HeldSetupInput): Promise<DraftView>;
+    get(id: string): Promise<DraftView>;
+    discard(id: string): Promise<void>;
+    /** What the transport sees that the type's protocol recognises. */
+    sightings(id: string): Promise<SightingView[]>;
+    /**
+     * The device: one it sees, an address typed, or one picked in the
+     * platform's own chooser (a browser's Bluetooth picker) — asked
+     * straight from a person's tap; dismissed, nothing is chosen.
+     */
+    choose(id: string, choice: { address: string } | { manual: string } | { chooser: { showAll?: boolean } }): Promise<DraftView>;
+    update(id: string, values: { device?: ConfigValues; connection?: ConfigValues }): Promise<DraftView>;
+    /** A step's helper — fetching a key — run where it is held; a secret it finds is kept there, and a placeholder answered. */
+    action(id: string, step: string, action: string, input: ConfigValues, signal?: AbortSignal): Promise<SetupActionResult>;
+    discover(id: string, step: string, signal?: AbortSignal): Promise<SetupActionResult>;
+    /** Reads it once: new, yours, yours before, another model, or no answer. */
+    check(id: string): Promise<CheckOutcome>;
+    /** The device, its connection, its secrets and its links, in one go. */
+    save(id: string, input: SaveInput): Promise<DeviceView>;
+  };
+  /** What the transports see that nothing you have is reached by: "found near you". */
+  nearby(): Promise<FoundView[]>;
+  transports: {
+    /** What this home reaches devices over, each running or not, and why not. */
+    list(): Promise<TransportList>;
+    /** One of a transport's read-only diagnostics, by name. */
+    diagnostic(transport: string, name: string, query: Record<string, string>): Promise<unknown>;
+  };
+  connections: {
+    /** This way first, whenever it can be reached. */
+    prefer(device: SavedDeviceId, connection: ConnectionId): Promise<DeviceView>;
+    /** One way to reach it removed: not the last. */
+    remove(device: SavedDeviceId, connection: ConnectionId): Promise<DeviceView>;
+    /** A connection's secrets replaced: write-only, as every secret is. */
+    setSecrets(device: SavedDeviceId, connection: ConnectionId, secrets: Record<string, string>): Promise<DeviceView>;
+    /** Whether its secrets may leave in an export as plain text. */
+    setExportable(device: SavedDeviceId, connection: ConnectionId, exportable: boolean): Promise<DeviceView>;
+  };
+  links: {
+    /** A fact about the house, between two parts. */
+    add(link: NewLink): Promise<LinkRecord>;
+    remove(id: LinkId): Promise<void>;
+  };
+  /**
+   * Automations (docs/AUTOMATIONS.md): what they start from, the ones their
+   * owners build, their runs. Letting one act, and changing one that acts,
+   * wants a person's yes, sent back as `confirmation`.
+   */
+  automations: {
+    /** The recipes to start from, and the functions a condition may ask. */
+    kit(): Promise<AutomationKit>;
+    /** A draft checked and said, nothing kept. `self`: the automation it is, so a chain back to it is seen. */
+    draft(draft: AutomationDraft, self?: AutomationId | null): Promise<AutomationDraftView>;
+    /** Every one — or those a device fills a role of. */
+    list(filter?: { device?: SavedDeviceId }): Promise<AutomationView[]>;
+    get(id: AutomationId): Promise<AutomationView>;
+    /** Made only watching on its own. */
+    create(automation: NewAutomation): Promise<AutomationView>;
+    update(id: AutomationId, changes: AutomationChanges): Promise<AutomationView>;
+    delete(id: AutomationId): Promise<void>;
+    /** Played: it runs now, for real, whatever its mode. */
+    start(id: AutomationId): Promise<AutomationView>;
+    /** Its run stopped: what it does if stopped runs. */
+    stop(id: AutomationId): Promise<AutomationView>;
+    /** What it would do now: decided, never acted on, never kept. */
+    check(id: AutomationId): Promise<AutomationRun>;
+    /** Its runs, the latest first. */
+    runs(id: AutomationId, limit?: number): Promise<AutomationRun[]>;
+    /** One of its runs with what its devices said while it ran. */
+    runLog(id: AutomationId, runId: string): Promise<RunLog>;
+    /** A rule rehearsed on the last hours of history — a draft, or one kept: nothing sent. */
+    rehearse(subject: { draft: AutomationDraft; timeZone: string } | { automation: AutomationId }, hours?: number): Promise<Rehearsal>;
+    /** A recipe copied into a rule of its own, its settings — held to their schema — written into its blocks. */
+    fromRecipe(recipe: string, params: Record<string, Value>): Promise<Rule>;
+  };
+  /** A home in one file (docs/CONFIG.md): what a file may name here, its schema, an export, an import in two steps. */
+  configuration: {
+    /** What a file may name here: the installed types, and the keys of what you have. */
+    vocabulary(): Promise<Vocabulary>;
+    /** The JSON Schema of a file: what is installed, nothing you have. */
+    schema(): Promise<unknown>;
+    /** What you have, as a file — its secrets left out, sealed, or plain where allowed. `schemaUrl`: for its first line. */
+    export(request: ConfigExportRequest, options?: { schemaUrl?: string }): Promise<ConfigExported>;
+    /** What importing a file would do, nothing written. */
+    plan(request: { text: string; mode?: 'merge' | 'replace'; passphrase?: string } | { from: HomeElsewhere; mode?: 'merge' | 'replace' }): Promise<ImportPlan>;
+    /** A plan applied, with its answers, in one transaction; what it sets acting or removes wants a person's yes. */
+    apply(answers: ImportAnswers): Promise<ImportApplied>;
+    /** What a home this node keeps beside the one it shows has, to bring in (`plan({ from })`); null when there is none — always, for a server's own home. */
+    elsewhere(): Promise<ElsewhereView>;
+  };
+  /** What the home sets as a whole that declarations name: how much is a load, the reserve. */
+  policy: {
+    list(): Promise<PolicyValueView[]>;
+    /** One set within its bounds, or back to its default with null. */
+    set(name: PolicyValueName, value: number | null): Promise<PolicyValueView[]>;
+  };
+  /** The timeline, newest first: all of it, one kind of thing's, or one thing's; `before` an entry's id pages back. */
+  timeline(query?: { limit?: number; resourceKind?: ResourceKind; resource?: string; before?: number }): Promise<AuditEntry[]>;
+  /** The house as a model reads it: every device, its parts, what each offers and reports, how fresh, and the links. */
+  world(): Promise<WorldView>;
+  /** The words the world is said in: capabilities, meanings, link kinds, recipes, the home's values. */
+  vocabulary(): Promise<VocabularyView>;
+  /** The home: what its people call it, and which node is its master. */
+  home(): Promise<HomeView>;
+  /** The nodes of the home: its master, and every node that follows it. */
+  nodes: {
+    list(): Promise<NodeView[]>;
+    /** A node joins the home — to follow it, and hold for it the ways it reaches — saying what it is, at every start. */
+    join(node: NodeJoin): Promise<NodeView>;
+    /** Forgotten, with every connection it held. Never the master. */
+    forget(id: NodeId): Promise<void>;
+  };
+  /** What a node sends the master for a connection it holds (docs/DATA-MODEL.md §4): it speaks for its own connections and nobody else's. */
+  held: {
+    readings(device: SavedDeviceId, upload: HeldReadings): Promise<HeldReadingsTaken>;
+    /** What the device keeps for its session, which the node holding it keeps a copy of for when it is offline. */
+    store(device: SavedDeviceId): Promise<Record<string, unknown>>;
+    keep(device: SavedDeviceId, key: string, entry: { nodeId: string; connectionId: string; value: unknown }): Promise<void>;
+    /** What its gateway and sessions wrote on their timeline, queued while offline: the actor is always whoever is signed in. */
+    audit(node: NodeId, entries: AuditUpload[]): Promise<{ recorded: number }>;
+  };
+  /**
+   * What changed, as it changes: `hello` first, then what moved, coalesced —
+   * read the list on `hello` and on `changed`, and apply the rest on top.
+   * `draining`: whoever carries it says whether it can take more now; while
+   * it cannot, the latest waits rather than a backlog. `onState`: told
+   * whether it is up, as whoever carries it knows — a socket opening,
+   * dropping and opening again; a home in the process is up at once.
+   */
+  live(listener: (update: LiveUpdate) => void, options?: { draining?: () => boolean; onState?: (state: LiveState) => void }): LiveStream;
+}
+
+/**
+ * What is a server's own, not a home's (docs/PLAN-SHARED-CORE.md, principle
+ * 4): whether one answers at an address, signing in, accounts, its version,
+ * its log, its reset, and the copy of its configuration kept beside its
+ * database. Over HTTP only: a home in an app has none of it.
+ */
+export interface ServerApi {
+  /** Whether a kraftverk server answers here at all: what an address typed in is tried with. */
+  probe(): Promise<boolean>;
+  auth: {
+    /** Who is signed in, whether this network is trusted, and whether the first account is still to be made. */
+    state(): Promise<AuthState>;
+    /** The first account, from the home network only. */
+    setup(username: string, password: string): Promise<Account>;
+    logIn(username: string, password: string): Promise<Account>;
+    logOut(): Promise<void>;
+    /** Your own password: the current one too, and every other session ends. */
+    changePassword(current: string, next: string): Promise<void>;
+  };
+  /** Accounts: changing them takes your own password as well as your session. */
+  accounts: {
+    list(): Promise<AccountDetail[]>;
+    add(username: string, password: string, yourPassword: string): Promise<AccountDetail>;
+    remove(id: string, yourPassword: string): Promise<void>;
+    setPassword(id: string, password: string, yourPassword: string): Promise<void>;
+  };
+  version(): Promise<VersionInfo>;
+  /** What the server has said lately, and where its daily files are. */
+  log(options?: { limit?: number; level?: ServerLogLine['level'] }): Promise<{ dir: string | null; lines: ServerLogLine[] }>;
+  /** Emptying its database: whether it will — a passphrase in a file on it — and doing it. */
+  reset: {
+    available(): Promise<{ available: boolean; secretFile: string }>;
+    run(secret: string): Promise<{ ok: true; tables: string[]; rows: number }>;
+  };
+  /** The configuration kept beside its database: where, when last written, and what the last restore did. */
+  snapshot(): Promise<ConfigSnapshotView>;
+  /** What importing the copy the last restore was made from would do, nothing written. */
+  restoredPlan(mode: 'merge' | 'replace'): Promise<ImportPlan>;
+}
