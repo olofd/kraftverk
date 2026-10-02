@@ -22,7 +22,9 @@
     "@kraftverk/gateway": "*",
     "@kraftverk/holder": "*",
     "@kraftverk/home-file": "*",
-    "@kraftverk/store": "*"
+    "@kraftverk/store": "*",
+    "@noble/ciphers": "^2.4.0",
+    "@noble/hashes": "^2.4.0"
   },
   "devDependencies": {
     "@sqlite.org/sqlite-wasm": "^3.53.4-build1",

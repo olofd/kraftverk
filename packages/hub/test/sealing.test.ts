@@ -1,21 +1,23 @@
 import { expect, test } from 'bun:test';
 
-import { appSealing, sealedWithKey } from './cipher';
+import { sealedWithKey } from '@kraftverk/store';
 
-/** Sealed by a server's own cipher (server/src/platform/sealing.ts), kept: an export from a server opens in the app. */
+import { passphraseSealing } from '../src/index.ts';
+
+/** Sealed by a server with its runtime's own cipher, before every place shared one, and kept: what it sealed opens everywhere. */
 const FROM_A_SERVER = 'sealed:v1:rtQd3iN7fcdS9-hxAI9e7g:-v9yfHTCmnVRbIEp:2Hw0uuNgIzV9DkHP0tzz1Ed3CGGUMgZ88tK3sq4s2k6QUb8';
 const PASSPHRASE = 'correct horse battery staple';
 
 test("a server's sealed export opens with its passphrase, and with no other", async () => {
-  expect(await appSealing.open(PASSPHRASE, FROM_A_SERVER)).toBe('a made-up local key');
-  expect(appSealing.open('another passphrase entirely', FROM_A_SERVER)).rejects.toThrow('does not open it');
+  expect(await passphraseSealing.open(PASSPHRASE, FROM_A_SERVER)).toBe('a made-up local key');
+  expect(passphraseSealing.open('another passphrase entirely', FROM_A_SERVER)).rejects.toThrow('does not open it');
 });
 
-test('what the app seals is the same format, and opens again', async () => {
-  const sealed = await appSealing.seal(PASSPHRASE, 'another made-up key');
+test('what is sealed now is the same format, and opens again', async () => {
+  const sealed = await passphraseSealing.seal(PASSPHRASE, 'another made-up key');
   expect(sealed).toMatch(/^sealed:v1:[\w-]+:[\w-]+:[\w-]+$/);
-  expect(await appSealing.open(PASSPHRASE, sealed)).toBe('another made-up key');
-  expect(appSealing.seal('too short', 'x')).rejects.toThrow('at least 12');
+  expect(await passphraseSealing.open(PASSPHRASE, sealed)).toBe('another made-up key');
+  expect(passphraseSealing.seal('too short', 'x')).rejects.toThrow('at least 12');
 });
 
 test('secrets at rest: sealed with the key, opened with it, and with no other', () => {

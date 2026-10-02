@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { ApiError, type KraftverkApi, type LiveUpdate } from '@kraftverk/api-contract';
 import { httpApi, serverApi } from '@kraftverk/api-client/http';
 import { nodeId, savedDeviceId } from '@kraftverk/device-sdk';
-import { createHub, DeviceTypeRegistry, ProtocolRegistry, TransportHost, type Hub } from '@kraftverk/hub';
+import { createHub, DeviceTypeRegistry, passphraseSealing, ProtocolRegistry, TransportHost, type Hub } from '@kraftverk/hub';
 import { apiOver, serveApi } from '@kraftverk/message-port';
 import { busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE } from '@kraftverk/hub/testing';
 
@@ -16,7 +16,6 @@ import { Accounts } from './auth/accounts.ts';
 import { ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
 import { openDatabase } from './platform/database.ts';
-import { serverSealing } from './platform/sealing.ts';
 import { serverSecrets } from './platform/secrets.ts';
 import { AuditLog, type SqlDatabase } from '@kraftverk/store';
 
@@ -59,7 +58,7 @@ beforeAll(async () => {
     database,
     audit: new AuditLog(database),
     secrets: serverSecrets(null),
-    sealing: serverSealing,
+    sealing: passphraseSealing,
     installed: { types, protocols, transports },
     node: MACHINE_NODE,
     readOnly: () => false,

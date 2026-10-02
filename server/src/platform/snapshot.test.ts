@@ -4,12 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { readConfig } from '@kraftverk/home-file';
-import { changesConfiguration, createHub, DeviceTypeRegistry, installedFrom, openKept, ProtocolRegistry, type Hub } from '@kraftverk/hub';
+import { changesConfiguration, createHub, DeviceTypeRegistry, installedFrom, openKept, passphraseSealing, ProtocolRegistry, type Hub } from '@kraftverk/hub';
 import { LAMP, lampProtocol, lampType, MACHINE_NODE } from '@kraftverk/hub/testing';
 import { AuditLog, type SecretsAtRest } from '@kraftverk/store';
 
 import { openDatabase } from './database.ts';
-import { serverSealing } from './sealing.ts';
 import { serverSecrets } from './secrets.ts';
 import { ConfigSnapshot } from './snapshot.ts';
 
@@ -40,7 +39,7 @@ beforeAll(() => {
     database,
     audit,
     secrets,
-    sealing: serverSealing,
+    sealing: passphraseSealing,
     installed: installedFrom({ types: [{ type: lampType }], protocols: [lampProtocol], transports: [] }, { platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } }),
     node: MACHINE_NODE,
     readOnly: () => true,

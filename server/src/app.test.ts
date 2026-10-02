@@ -8,7 +8,7 @@ import { inlineParams, startCharging, type Rule } from '@kraftverk/automation';
 import { savedDeviceId, type Value } from '@kraftverk/device-sdk';
 
 import type { LiveBus, LiveMessage, SessionManager } from '@kraftverk/holder';
-import { createHub, DeviceTypeRegistry, ProtocolRegistry, TransportHost, type Attention, type SetupService } from '@kraftverk/hub';
+import { createHub, DeviceTypeRegistry, passphraseSealing, ProtocolRegistry, TransportHost, type Attention, type SetupService } from '@kraftverk/hub';
 
 import { CORS_METHODS, corsOrigin, createApp } from './app.ts';
 import { CLIENT_HEADER, SESSION_COOKIE } from './auth/routes.ts';
@@ -18,7 +18,6 @@ import { loadConfig } from './config.ts';
 import { busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE } from '@kraftverk/hub/testing';
 import { openDatabase } from './platform/database.ts';
 import { discoverDeviceTypes, discoverProtocols, discoverTransports } from './platform/packages.ts';
-import { serverSealing } from './platform/sealing.ts';
 import { originAllowed } from './routes/live.ts';
 import { serverSecrets } from './platform/secrets.ts';
 import { AuditLog, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
@@ -78,7 +77,7 @@ async function build(options: { installed: boolean; readOnly?: boolean; file: st
     database,
     audit: new AuditLog(database),
     secrets,
-    sealing: serverSealing,
+    sealing: passphraseSealing,
     installed: { types, protocols, transports },
     readOnly: () => config.readOnly,
     http: () => Promise.reject(new Error('no network in these tests')),

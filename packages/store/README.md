@@ -44,8 +44,10 @@ Pure. Two ports, filled by the place that keeps the home:
   stands; `fromSqliteWasm` makes one of SQLite's WebAssembly build
   (`@sqlite.org/sqlite-wasm`, a browser's) one — described, not imported,
   so the store depends on no build of it.
-- **`SecretsAtRest`** — how a connection's secrets are sealed: the server's
-  key from its environment, a phone's from its secure storage;
+- **`SecretsAtRest`** — how a connection's secrets are sealed:
+  `sealedWithKey(key)`, the one cipher every place seals with (AES-256-GCM
+  in plain JavaScript), with the key the place keeps — the server's made
+  from its passphrase (`secretKeyFrom`), a phone's in its secure storage;
   `plainSecrets` keeps them as given.
 
 Every store is made from the database it keeps to — nothing at module

@@ -1,9 +1,8 @@
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 
 import { apiOver, hear, serveApi, transportOver, type MessageEnd } from '@kraftverk/message-port';
-import { fromSqliteWasm, schemaFingerprint, type SqliteWasmDatabase } from '@kraftverk/store';
+import { fromSqliteWasm, schemaFingerprint, sealedWithKey, type SqliteWasmDatabase } from '@kraftverk/store';
 
-import { sealedWithKey } from '../cipher';
 import { appFollower, appHub, readyDatabase } from './hub';
 import { databaseFile, OWNER } from './home';
 import type { ToPage, ToWorker } from './worker-messages';

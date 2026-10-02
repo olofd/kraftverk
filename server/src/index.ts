@@ -1,4 +1,4 @@
-import { changesConfiguration, createHub, DeviceTypeRegistry, ProtocolRegistry, TransportHost } from '@kraftverk/hub';
+import { changesConfiguration, createHub, DeviceTypeRegistry, passphraseSealing, ProtocolRegistry, TransportHost } from '@kraftverk/hub';
 
 import { AuditLog, transportStore } from '@kraftverk/store';
 
@@ -11,7 +11,6 @@ import { openDatabase } from './platform/database.ts';
 import { scopedHttp } from './platform/http.ts';
 import { discoverDeviceTypes, discoverProtocols, discoverTransports } from './platform/packages.ts';
 import { thisNode } from './platform/node.ts';
-import { serverSealing } from './platform/sealing.ts';
 import { serverSecrets } from './platform/secrets.ts';
 import { ConfigSnapshot } from './platform/snapshot.ts';
 
@@ -125,7 +124,7 @@ const hub = createHub({
   database,
   audit,
   secrets: serverSecrets(config.secretKey),
-  sealing: serverSealing,
+  sealing: passphraseSealing,
   installed: { types, protocols, transports },
   readOnly: () => config.readOnly,
   allowRawFrames: config.allowRawFrames,

@@ -3,10 +3,9 @@ import { getRandomValues } from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import { openDatabaseSync } from 'expo-sqlite';
 
-import { fromExpoSqlite, schemaFingerprint } from '@kraftverk/store';
+import { fromExpoSqlite, schemaFingerprint, sealedWithKey } from '@kraftverk/store';
 
 import { TRANSPORT_ENTRIES } from '../../generated/transports';
-import { sealedWithKey } from '../cipher';
 import { appFollower, appHub, readyDatabase } from './hub';
 import { databaseFile, OWNER, type OpenHome, type OpenOptions } from './home';
 

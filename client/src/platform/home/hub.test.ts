@@ -3,9 +3,8 @@ import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 
 import { nodeId, SIMULATED_METHOD_ID } from '@kraftverk/device-sdk';
 import type { Hub } from '@kraftverk/hub';
-import { fromSqliteWasm, type SqliteWasmDatabase } from '@kraftverk/store';
+import { fromSqliteWasm, sealedWithKey, type SqliteWasmDatabase } from '@kraftverk/store';
 
-import { sealedWithKey } from '../cipher';
 import { appHub, OWNER, readyDatabase } from './hub';
 
 /*

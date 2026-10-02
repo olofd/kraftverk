@@ -92,7 +92,9 @@ installs them), devices' views (`DeviceRegistry`), `Nearby`,
 configuration (`Configuration`: vocabulary, schema, export, an import's
 plan and apply, the restore, the copy kept beside the database) — each
 handed its database and timeline. Sealing a secret with a passphrase is a
-port (`PassphraseSealing`): the place's cipher, not the hub's.
+port (`PassphraseSealing`), and every place hands in the same one
+(`passphraseSealing`, AES-256-GCM in plain JavaScript): a file sealed on one
+opens on any given the passphrase.
 `@kraftverk/hub/testing` is a lamp on a pretend bus, for tests.
 
 ### A node following the master: `createFollower`

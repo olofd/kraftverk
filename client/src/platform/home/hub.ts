@@ -1,10 +1,9 @@
 import type { TransportDefinition, TransportFactory } from '@kraftverk/device-sdk';
 import type { KraftverkApi } from '@kraftverk/api-contract';
-import { createFollower, createHub, installedFrom, type Follower, type Hub, type Installed } from '@kraftverk/hub';
+import { createFollower, createHub, installedFrom, passphraseSealing, type Follower, type Hub, type Installed } from '@kraftverk/hub';
 import { AuditLog, createSchema, NodeStore, prepareDatabase, schemaStateOf, transportStore, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import { DEVICE_TYPES, PROTOCOLS, TRANSPORTS } from '../../generated/installed';
-import { appSealing } from '../cipher';
 import { appHttp } from '../http';
 import type { ThisNode } from '../node';
 
@@ -72,7 +71,7 @@ export function appHub(place: AppPlace & { copy?: SqlDatabase }): Hub {
     database: place.database,
     audit,
     secrets: place.secrets,
-    sealing: appSealing,
+    sealing: passphraseSealing,
     installed,
     readOnly: place.readOnly,
     // Frames nobody has described are for a server started to bring up a unit, never for an app.
@@ -103,7 +102,7 @@ export function appFollower(place: AppPlace & { home: KraftverkApi; own?: SqlDat
     http: appHttp,
     log,
     // The home this app kept itself before, offered to the server.
-    ...(place.own ? { own: { database: place.own, sealing: appSealing } } : {}),
+    ...(place.own ? { own: { database: place.own, sealing: passphraseSealing } } : {}),
   });
   return follower;
 }
