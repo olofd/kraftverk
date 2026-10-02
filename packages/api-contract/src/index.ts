@@ -548,6 +548,7 @@ export type NodeView = {
   place: string | null;
   /** The home's master: the node whose database is the home's. */
   master: boolean;
+  createdAt: string;
   lastSeenAt: string;
 };
 
@@ -555,7 +556,7 @@ export type NodeView = {
 export type NodeJoin = Pick<NodeView, 'id' | 'name' | 'platform' | 'transports' | 'alwaysOn' | 'reachable' | 'trusted' | 'place'>;
 
 /** The home: what its people call it, and which node is its master. */
-export type HomeView = { id: string; name: string; master: NodeId };
+export type HomeView = { id: string; name: string; master: NodeId; createdAt: string };
 
 /** One line of the server's own log. */
 export type ServerLogLine = { at: string; level: 'debug' | 'info' | 'warn' | 'error'; text: string };

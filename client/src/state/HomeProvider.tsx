@@ -16,7 +16,7 @@ import { useServers } from './ServersProvider';
 /**
  * The home the app shows (docs/PLAN-SHARED-CORE.md, phase 6): the app's own,
  * running where the app runs — or a server's, with what this app holds for
- * it wrapped in (`createHolding`: its own Bluetooth, beside the server's
+ * it wrapped in (`createFollower`: its own Bluetooth, beside the server's
  * ways). Either way it is opened where the app runs (`platform/home/`: a
  * phone's in its process, a browser's in its worker), and either way it is
  * one interface, `KraftverkApi`, and no screen asks which.

@@ -2,23 +2,24 @@ import { ApiError, type ConnectionView, type DeviceView, type KraftverkApi, type
 import { isSimulated, placesOf, type AuditRecord, type NodeId, type Platform, type DeviceSession, type DeviceStore, type PolicyValues, type Reading, type SavedDeviceId, type ScopedHttp } from '@kraftverk/device-sdk';
 import { ActionGateway, Confirmations } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, toHold, toolsOf, withInUse, type DeviceEventMessage } from '@kraftverk/holder';
-import { AppState, ConnectionStore, databaseLedger, DeviceCatalog, deviceStore, LastHeard, LinkStore, NodeStore, SendQueue, type DeviceRecord, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { AppState, ConnectionStore, databaseLedger, DeviceCatalog, deviceStore, HomeStore, LastHeard, LinkStore, NodeStore, SendQueue, type DeviceRecord, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import type { PassphraseSealing } from '../configuration/seal.ts';
 import { MovingToServer } from '../handover/move.ts';
 import type { Installed } from '../hub.ts';
 import { SetupService } from '../setup/index.ts';
 import { unref } from '../timers.ts';
-import { holdingApi } from './api.ts';
+import { followerApi } from './api.ts';
 
 /**
- * What an app holds for a server's home (docs/PLAN-SHARED-CORE.md, phase 6):
- * the ways in to the server's devices that this app reaches itself — its
- * own Bluetooth — beside the server's. The server stays the home's master:
- * it keeps the devices, their history and their automations. This holds
- * the connections that are this app's, with the same session manager and
- * the same gateway the home runs, and sends what they say to the server,
- * queued while it is away.
+ * A node following the home's master (docs/PLAN-SHARED-CORE.md, phase 6):
+ * the node the app is, with a server's home — the master its people use,
+ * always on and reached by others. The master keeps the devices, their
+ * history and their automations; this node keeps a copy of what it says —
+ * the home and its nodes among it — and holds for it the ways in to its
+ * devices that this node reaches itself — its own Bluetooth — beside the
+ * master's, with the same session manager and the same gateway the home
+ * runs, sending what they say to the master, queued while it is away.
  *
  * Its `api` is the server's `KraftverkApi` with what this app holds wrapped
  * in: a view carries this app's own readings for a device it holds, a
@@ -43,12 +44,12 @@ const READINGS_PER_CALL = 2000;
 /** What the server refuses for good — no such device, not this app's, too large — is not sent again. */
 const REFUSED_FOR_GOOD = new Set(['not-found', 'forbidden', 'conflict', 'invalid', 'too-large', 'not-allowed']);
 
-const POLICY = 'holding.policy';
+const POLICY = 'follower.policy';
 
-export type HoldingOptions = {
+export type FollowerOptions = {
   /** The server's home, as the person signed in on this app asks it. */
   home: KraftverkApi;
-  /** This app's own database for it, its schema prepared: where what the holding keeps is kept. */
+  /** This app's own database for it, its schema prepared: where what the follower keeps is kept. */
   database: SqlDatabase;
   /** How the secrets of the ways it holds are sealed at rest: this app's key. */
   secrets: SecretsAtRest;
@@ -80,13 +81,15 @@ type ReadingsOwed = { connectionId: string; identity: string | null; readings: R
 type EventOwed = { connectionId: string; event: DeviceEventMessage };
 type StoreOwed = { connectionId: string; key: string; value: unknown };
 
-export class Holding {
+export class Follower {
   readonly home: KraftverkApi;
   readonly db: SqlDatabase;
   readonly installed: Installed;
   readonly readOnly: () => boolean;
   /** This node, as its own database knows it. */
   readonly nodes: NodeStore;
+  /** The home as the master has it: its name, and which node is its master. */
+  readonly homeKept: HomeStore;
 
   readonly state: AppState;
   readonly catalog: DeviceCatalog;
@@ -112,14 +115,14 @@ export class Holding {
   /** Per device and reading, the minute last owed: history keeps one a minute. */
   #owedMinute = new Map<string, number>();
   #describedOwed = new Map<string, string>();
-  #log: NonNullable<HoldingOptions['log']>;
+  #log: NonNullable<FollowerOptions['log']>;
   #timers: ReturnType<typeof setInterval>[] = [];
   /** Whether the home has heard who this node is, this run. */
   #joined = false;
   #sending: Promise<void> | null = null;
   #sendEveryMs: number;
 
-  constructor(options: HoldingOptions) {
+  constructor(options: FollowerOptions) {
     const db = options.database;
     this.home = options.home;
     this.db = db;
@@ -135,6 +138,7 @@ export class Holding {
     this.queue = new SendQueue(db);
     // This node, as it declares itself in its own database at every start.
     this.nodes = new NodeStore(db);
+    this.homeKept = new HomeStore(db);
     const self = this.nodes.declareSelf({ ...options.node, platform: transports.platform, transports: transports.definitions().filter((definition) => definition.platforms.includes(transports.platform)).map((definition) => definition.id) });
     this.heard = new LastHeard(db);
     const { catalog, connections, queue } = this;
@@ -163,7 +167,7 @@ export class Holding {
         if (connection) this.owe('event', deviceId, { connectionId: connection.id, event } satisfies EventOwed);
       },
       bus: this.bus,
-      log: (message) => this.#log('info', `[holding] ${message}`),
+      log: (message) => this.#log('info', `[follower] ${message}`),
     });
     const { sessions } = this;
 
@@ -187,7 +191,7 @@ export class Holding {
     // A way this app holds is set up here, over its own radio: the server judges what it finds, and keeps the device.
     this.setup = new SetupService({ db, record, types, protocols, transports, catalog, connections, links: new LinkStore(db), sessions, http: options.http, self: self.id, traits: (id) => this.nodes.get(id) });
     this.moving = options.own ? new MovingToServer(this, options.own.database, { secrets: options.secrets, sealing: options.own.sealing }) : null;
-    this.api = holdingApi(this);
+    this.api = followerApi(this);
   }
 
   /** This node, as it declared itself: its id, its name and what it is. */
@@ -211,13 +215,13 @@ export class Holding {
   }
 
   /**
-   * Starts holding: the transports this app runs, who it is to the server,
+   * Starts following: the transports this app runs, who it is to the server,
    * what it holds there — or, with the server away, what it held when it
    * last heard — and sending what is owed.
    */
   async start(): Promise<void> {
     await this.installed.transports.startAll(this.transportsHere());
-    await this.join().catch((error: unknown) => this.#log('warn', `[holding] the server did not hear who this node is: ${(error as Error).message}`));
+    await this.join().catch((error: unknown) => this.#log('warn', `[follower] the server did not hear who this node is: ${(error as Error).message}`));
     const list = await this.refresh();
     if (!list) {
       // Away: what this app held when it last heard, it holds still.
@@ -268,6 +272,7 @@ export class Holding {
       if (!this.#joined) await this.join().catch(() => undefined);
       const list = await this.home.devices.list();
       this.heard.keep('devices', list);
+      await this.keepHome().catch((error: unknown) => this.#log('warn', `[follower] the home and its nodes could not be kept: ${(error as Error).message}`));
       await this.hold(list);
       // The home as one file, as the server last said it: what this app keeps if the server is gone (`handover/keep.ts`).
       await this.home.configuration
@@ -305,6 +310,29 @@ export class Holding {
   lastHeard(device: DeviceView): DeviceView {
     if (this.holds(device.id)) return device;
     return { ...device, health: { ...device.health, status: 'offline', detail: 'Your server cannot be reached: this is what it last said' }, connections: device.connections.map((connection) => ({ ...connection, reachable: null })) };
+  }
+
+  /**
+   * The home and its nodes as the master has them, kept here: which node is
+   * its master, what each declares it is, and who holds what. A node the
+   * master no longer has is let go; this one is its own, and stays.
+   */
+  async keepHome(): Promise<void> {
+    const [home, nodes] = await Promise.all([this.home.home(), this.home.nodes.list()]);
+    for (const node of nodes) {
+      const { master: _master, place: _place, ...record } = node;
+      // Where it stands is the master's to say; a place this node does not keep is not pointed at.
+      this.nodes.mirror({ ...record, placeId: null });
+    }
+    const listed = new Set(nodes.map((node) => node.id));
+    for (const kept of this.nodes.all()) if (!kept.self && !listed.has(kept.id)) this.nodes.remove(kept.id);
+    this.homeKept.mirror({ id: home.id, name: home.name, masterId: home.master, createdAt: home.createdAt });
+  }
+
+  /** The master this node follows, as it declared itself when last heard; null before it was. */
+  master(): NodeRecord | null {
+    const home = this.homeKept.get();
+    return home ? this.nodes.get(home.masterId) : null;
   }
 
   /**
@@ -498,7 +526,7 @@ export class Holding {
         return true;
       } catch (error) {
         if (error instanceof ApiError && REFUSED_FOR_GOOD.has(error.kind)) {
-          this.#log('warn', `[holding] the server refused what this app sent: ${error.message}`);
+          this.#log('warn', `[follower] the server refused what this app sent: ${error.message}`);
           this.queue.done(ids);
           return true;
         }
@@ -583,4 +611,4 @@ function recordOf(device: DeviceView): DeviceRecord {
 }
 
 /** What an app holds for a server's home, made from what the place gives it: `start()` it, ask its `api`, `stop()` it. */
-export const createHolding = (options: HoldingOptions): Holding => new Holding(options);
+export const createFollower = (options: FollowerOptions): Follower => new Follower(options);

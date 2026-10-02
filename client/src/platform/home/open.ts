@@ -7,7 +7,7 @@ import { fromExpoSqlite, schemaFingerprint } from '@kraftverk/store';
 
 import { TRANSPORT_ENTRIES } from '../../generated/transports';
 import { sealedWithKey } from '../cipher';
-import { appHolding, appHub, readyDatabase } from './hub';
+import { appFollower, appHub, readyDatabase } from './hub';
 import { databaseFile, OWNER, type OpenHome, type OpenOptions } from './home';
 
 /*
@@ -69,17 +69,17 @@ export async function openHome(options: OpenOptions): Promise<OpenHome> {
   if (options.server) {
     // The home this app kept itself before it had a server: offered to it.
     const own = beside(databaseFile(schemaFingerprint()));
-    const holding = appHolding({ ...place, home: options.server.api, ...(own ? { own } : {}) });
-    await holding.start();
+    const follower = appFollower({ ...place, home: options.server.api, ...(own ? { own } : {}) });
+    await follower.start();
     return {
-      api: holding.api,
-      nodeId: holding.nodeId,
+      api: follower.api,
+      nodeId: follower.nodeId,
       allowWrites: async (allowed) => {
         writes = allowed;
-        await holding.reopen();
+        await follower.reopen();
       },
       close: async () => {
-        await holding.stop();
+        await follower.stop();
         database.close();
         own?.close();
       },

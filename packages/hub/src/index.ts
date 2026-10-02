@@ -28,4 +28,5 @@ export { restoreFrom, type Restored } from './configuration/restore.ts';
 export * from './configuration/seal.ts';
 export * from './hub.ts';
 export { actorOf, homeApi, intentOf } from './api/index.ts';
-export * from './holding/holding.ts';
+export * from './follower/follower.ts';
+export * from './handover/master.ts';

@@ -130,7 +130,7 @@ browser, including the one it just asked for. The one exception is by design: a
 connection held by the app itself keeps its secrets in that app's own database,
 and they never reach the server (DATA-MODEL.md §3, §4): sealed as a home of the
 app's own seals its secrets — below — in a browser's worker or a phone's
-process (`createHolding` in `@kraftverk/hub`). A browser page that is not
+process (`createFollower` in `@kraftverk/hub`). A browser page that is not
 secure can hold none: it has no private file system, and no Web Bluetooth
 either.
 

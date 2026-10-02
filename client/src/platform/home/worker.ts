@@ -4,7 +4,7 @@ import { apiOver, hear, serveApi, transportOver, type MessageEnd } from '@kraftv
 import { fromSqliteWasm, schemaFingerprint, type SqliteWasmDatabase } from '@kraftverk/store';
 
 import { sealedWithKey } from '../cipher';
-import { appHolding, appHub, readyDatabase } from './hub';
+import { appFollower, appHub, readyDatabase } from './hub';
 import { databaseFile, OWNER } from './home';
 import type { ToPage, ToWorker } from './worker-messages';
 
@@ -149,16 +149,16 @@ async function start(open: Extract<ToWorker, { kind: 'open' }>) {
 
   if (open.server) {
     // The server's interface, as the page asks it: the page signs in, and its address is the page's to know.
-    const holding = appHolding({ ...place, home: apiOver(scope, 'server'), ...(other ? { own: other } : {}) });
-    await holding.start();
-    const stopServing = serveApi(holding.api, scope, 'api');
+    const follower = appFollower({ ...place, home: apiOver(scope, 'server'), ...(other ? { own: other } : {}) });
+    await follower.start();
+    const stopServing = serveApi(follower.api, scope, 'api');
     return {
-      nodeId: holding.nodeId,
+      nodeId: follower.nodeId,
       allowWrites: async (allowed: boolean) => {
         writes = allowed;
-        await holding.reopen();
+        await follower.reopen();
       },
-      stop: () => letGo(stopServing, () => holding.stop()),
+      stop: () => letGo(stopServing, () => follower.stop()),
     };
   }
 

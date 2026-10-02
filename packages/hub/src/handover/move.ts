@@ -5,9 +5,10 @@ import { randomHex, type SecretsAtRest, type SqlDatabase } from '@kraftverk/stor
 
 import type { PassphraseSealing } from '../configuration/seal.ts';
 import { createHub, type Hub } from '../hub.ts';
+import { shouldLead } from './master.ts';
 import { nothingToDo } from './nothing.ts';
-import { holdableHere } from '../holding/holdable.ts';
-import type { Holding } from '../holding/holding.ts';
+import { holdableHere } from '../follower/holdable.ts';
+import type { Follower } from '../follower/follower.ts';
 
 /*
   This app's own home, moving to its server (docs/PLAN-SHARED-CORE.md,
@@ -28,7 +29,7 @@ const MOVED = 'home.moved';
 type Staying = { key: string; name: string; typeId: string; method: string; label: string; address: string | null; settings: Record<string, Scalar>; device: Record<string, Scalar>; connection: string | null };
 
 export class MovingToServer {
-  readonly #holding: Holding;
+  readonly #follower: Follower;
   readonly #database: SqlDatabase;
   readonly #secrets: SecretsAtRest;
   readonly #sealing: PassphraseSealing;
@@ -37,8 +38,8 @@ export class MovingToServer {
   readonly #plans = new Map<string, Staying[]>();
 
   /** `database`: the home this app kept itself, before it had a server; `secrets`: this app's key, which sealed its secrets there. */
-  constructor(holding: Holding, database: SqlDatabase, options: { secrets: SecretsAtRest; sealing: PassphraseSealing }) {
-    this.#holding = holding;
+  constructor(follower: Follower, database: SqlDatabase, options: { secrets: SecretsAtRest; sealing: PassphraseSealing }) {
+    this.#follower = follower;
     this.#database = database;
     this.#secrets = options.secrets;
     this.#sealing = options.sealing;
@@ -50,9 +51,9 @@ export class MovingToServer {
       database: this.#database,
       secrets: this.#secrets,
       sealing: this.#sealing,
-      installed: this.#holding.installed,
+      installed: this.#follower.installed,
       // The same node: its own home was kept by it, before it followed one.
-      node: (({ id, name, alwaysOn, reachable, trusted }) => ({ id, name, alwaysOn, reachable, trusted }))(this.#holding.nodes.self()!),
+      node: (({ id, name, alwaysOn, reachable, trusted }) => ({ id, name, alwaysOn, reachable, trusted }))(this.#follower.nodes.self()!),
       readOnly: () => true,
       http: () => Promise.reject(new Error('A home moving reaches nothing')),
       log: () => {},
@@ -60,10 +61,12 @@ export class MovingToServer {
     return this.#own;
   }
 
-  /** What moving would bring; null when there is nothing to, or it has moved. */
+  /** What moving would bring; null when there is nothing to, it has moved, or the master is no fitter for it than this node. */
   what(): ElsewhereView {
     const own = this.#home();
     if (own.state.get(MOVED)) return null;
+    const master = this.#follower.master();
+    if (!master || !shouldLead(master, this.#follower.self)) return null;
     const devices = own.catalog.list().length;
     const automations = own.automations.list().length;
     return devices || automations ? { from: 'this-node', devices, automations } : null;
@@ -81,10 +84,10 @@ export class MovingToServer {
   async plan(mode: 'merge' | 'replace'): Promise<ImportPlan> {
     const own = this.#home();
     if (own.state.get(MOVED)) throw new ApiError('not-found', 'This app’s own home has moved to your server already');
-    const { installed } = this.#holding;
+    const { installed } = this.#follower;
     const passphrase = randomHex(16);
     const { document, context } = await own.configuration.document({ secrets: 'sealed', passphrase });
-    const offered = (await this.#holding.home.deviceTypes()).types;
+    const offered = (await this.#follower.home.deviceTypes()).types;
     const staying: Staying[] = [];
     for (const [key, entry] of Object.entries(document.devices)) {
       const type = installed.types.get(entry.type);
@@ -95,7 +98,7 @@ export class MovingToServer {
         if (!method || isSimulated(method)) return true;
         const nearby = installed.transports.definition(method.transport)?.nearby === true;
         // Near the device, or a way the server cannot hold: this app holds it for the server, if it can.
-        if (!(nearby || !theirs.has(method.id)) || !holdableHere(installed, this.#holding.self, method)) return true;
+        if (!(nearby || !theirs.has(method.id)) || !holdableHere(installed, this.#follower.self, method)) return true;
         const connection = had ? (own.connections.forDevice(had.id).find((each) => each.method === method.id && each.heldBy === own.self.id) ?? null) : null;
         staying.push({ key, name: entry.name, typeId: entry.type, method: method.id, label: method.label, address: connection?.address ?? way.address, settings: way.settings, device: entry.settings, connection: connection?.id ?? null });
         // Its secrets stay with this app: out of the file, and out of what the file names.
@@ -103,7 +106,7 @@ export class MovingToServer {
         return false;
       });
     }
-    const plan = await this.#holding.home.configuration.plan({ text: writeConfig(document, context), mode, passphrase });
+    const plan = await this.#follower.home.configuration.plan({ text: writeConfig(document, context), mode, passphrase });
     if (plan.id) this.#plans.set(plan.id, staying);
     // All of it is on the server already, and nothing stays to be added: there is nothing to move, and it is not offered again.
     if (nothingToDo(plan) && !staying.length) own.state.set(MOVED, new Date().toISOString());
@@ -111,7 +114,7 @@ export class MovingToServer {
       ...plan,
       notes: [
         ...plan.notes,
-        ...staying.map((stay) => `${stay.name}: ${stay.label} stays with ${this.#holding.name}, near it — your server keeps the device`),
+        ...staying.map((stay) => `${stay.name}: ${stay.label} stays with ${this.#follower.name}, near it — your server keeps the device`),
         'What this app recorded stays with it: its history does not move.',
       ],
     };
@@ -125,30 +128,30 @@ export class MovingToServer {
    */
   async apply(answers: ImportAnswers): Promise<ImportApplied> {
     const staying = this.#plans.get(answers.plan) ?? [];
-    const holding = this.#holding;
-    const applied = await holding.home.configuration.apply(answers);
+    const follower = this.#follower;
+    const applied = await follower.home.configuration.apply(answers);
     this.#plans.delete(answers.plan);
     const own = this.#home();
-    const me = await holding.joined();
-    const list = await holding.home.devices.list();
+    const me = await follower.joined();
+    const list = await follower.home.devices.list();
     const kept: { way: string; secrets: Record<string, string> }[] = [];
     for (const stay of staying) {
       const device = list.find((each) => each.key === stay.key && !each.removedAt);
       if (!device || !stay.address) {
-        applied.notes.push(`${stay.name}: its ${stay.label} could not stay with this app: add it again from ${holding.name}`);
+        applied.notes.push(`${stay.name}: its ${stay.label} could not stay with this app: add it again from ${follower.name}`);
         continue;
       }
       try {
-        const draft = await holding.home.setup.startHeld({
+        const draft = await follower.home.setup.startHeld({
           nodeId: me,
           typeId: stay.typeId,
           methodId: stay.method,
           address: stay.address,
-          identified: { identity: device.identity, model: null, summary: `Moved from ${holding.name}` },
+          identified: { identity: device.identity, model: null, summary: `Moved from ${follower.name}` },
           device: stay.device,
           connection: stay.settings,
         });
-        const saved = await holding.home.setup.save(draft.id, { mode: 'attach', deviceId: device.id, name: device.name });
+        const saved = await follower.home.setup.save(draft.id, { mode: 'attach', deviceId: device.id, name: device.name });
         const way = saved.connections.find((each) => each.method === stay.method && each.heldBy.id === me);
         if (way && stay.connection) {
           const secrets = Object.fromEntries(own.connections.secretFields(stay.connection).flatMap((field) => {
@@ -162,8 +165,8 @@ export class MovingToServer {
       }
     }
     // Held from now on, its keys here.
-    await holding.refresh();
-    for (const { way, secrets } of kept) if (Object.keys(secrets).length) await holding.setSecrets(way, secrets);
+    await follower.refresh();
+    for (const { way, secrets } of kept) if (Object.keys(secrets).length) await follower.setSecrets(way, secrets);
     own.state.set(MOVED, new Date().toISOString());
     return applied;
   }

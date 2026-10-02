@@ -790,8 +790,15 @@ node's for one it sets up itself — and a type's listing says, per way,
 whether that node can hold it at all (`fits`); where a type runs is read
 from its ways, and `runsOn` is gone.
 
-Next in 6j: the
-master chosen by the traits, and `Holding` named as a follower; places up
+**6j, part 3 — the master and its followers** (done, 2026-10-02): the
+master is the node fittest for it by what each declares — always on, then
+reached by others — and the role moves only to a fitter one
+(`handover/master.ts`: moving the app's home to a server is offered only
+then). `Holding` is `Follower` (`createFollower`, `follower/`), and keeps
+the home and its nodes as the master has them: its copy knows which node
+it follows, and what that node is.
+
+Next in 6j: places up
 through the API, `DeviceContext` and the weather; the configuration
 document's places (a new `kraftverk:` version, with its migration); the
 screens in nodes; the docs' vocabulary and decisions.

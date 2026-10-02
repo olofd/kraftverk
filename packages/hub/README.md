@@ -92,23 +92,26 @@ handed its database and timeline. Sealing a secret with a passphrase is a
 port (`PassphraseSealing`): the place's cipher, not the hub's.
 `@kraftverk/hub/testing` is a lamp on a pretend bus, for tests.
 
-### What an app holds for a server: `createHolding`
+### A node following the master: `createFollower`
 
 ```ts
-const holding = createHolding({
-  home,          // the server's KraftverkApi, as the person signed in on this app asks it
-  database,      // this app's own SqlDatabase, its schema prepared: what the holding keeps
-  secrets,       // SecretsAtRest: this app's key
+const follower = createFollower({
+  home,          // the master's KraftverkApi — a server's — as the person signed in on this app asks it
+  database,      // this node's own SqlDatabase, its schema prepared: what the follower keeps
+  secrets,       // SecretsAtRest: this node's key
   installed,     // what this app has installed, and its transports where it runs
-  app,           // { name: 'Chrome on Windows', platform: 'web' }: who holds, in "held by …"
+  node,          // { id, name: 'Chrome on Windows', alwaysOn, reachable, trusted }: the node it is
   readOnly,      // () => boolean: writes from this app, refused until allowed
   http,          // a setup helper's one call to a vendor
 });
-await holding.start();      // who it is to the server, what it holds there, sending what is owed
-const api = holding.api;    // the server's KraftverkApi, with what this app holds wrapped in
+await follower.start();     // joins the master, keeps the home as it has it, holds its ways, sends what is owed
+const api = follower.api;   // the master's KraftverkApi, with what this node holds wrapped in
 ```
 
-The ways in to a server's devices that this app reaches itself — its own
+The home a node follows is the master's: the node fittest for it by what
+each declares — always on, then reached by others (`shouldLead`,
+`handover/master.ts`). The follower keeps the home and its nodes as the
+master has them (`keepHome`, `master()`). The ways in to a server's devices that this app reaches itself — its own
 Bluetooth — beside the server's: one device, one history, reached either
 way (docs/PLAN-SHARED-CORE.md, phase 6). The same session manager and
 gateway as a home, over what this app holds; its way is held only while
@@ -132,7 +135,7 @@ changed through it until it answers.
 
 Both ways as an import, planned and seen before anything moves
 (`configuration.plan({ from })`; `configuration.elsewhere()` says what
-there is). A holding given the home the app kept itself (`own`) moves it
+there is). A follower given the home the app kept itself (`own`) moves it
 to the server (`MovingToServer`): every way but one over a `nearby`
 transport moves with it, and that one this app holds for the server, its
 key kept here. A hub given the copy the app kept of the server it used
@@ -165,7 +168,7 @@ await hub.stop();
   own node holds (`held_by` its id): the server's on a server, the
   phone's in local mode. The home names its master (`home.master_id`):
   the node whose database is the home's. An app holding connections for a
-  server's home is not a second hub: it is a holding (`createHolding`,
+  server's home is not a second hub: it is a follower (`createFollower`,
   below), a node that follows the master and joins it by its own id
   (decision 24).
 - **Who is asking** is part of every call: the gateway binds a

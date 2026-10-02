@@ -34,7 +34,7 @@ slots.
 An edge (docs/PLAN-SHARED-CORE.md): the app uses it, and a device
 package's own screens (`ui/`) may — never its `src/`, which the server
 loads. It speaks in `@kraftverk/api-contract`'s shapes. An app holding
-ways for a server wraps the `httpApi` it is handed (`createHolding` in
+ways for a server wraps the `httpApi` it is handed (`createFollower` in
 `@kraftverk/hub`); this does not know.
 
 ## Why a package of its own

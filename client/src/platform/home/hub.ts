@@ -1,6 +1,6 @@
 import type { TransportDefinition, TransportFactory } from '@kraftverk/device-sdk';
 import type { KraftverkApi } from '@kraftverk/api-contract';
-import { createHolding, createHub, installedFrom, type Holding, type Hub, type Installed } from '@kraftverk/hub';
+import { createFollower, createHub, installedFrom, type Follower, type Hub, type Installed } from '@kraftverk/hub';
 import { AuditLog, createSchema, prepareDatabase, schemaStateOf, transportStore, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import { DEVICE_TYPES, PROTOCOLS, TRANSPORTS } from '../../generated/installed';
@@ -80,11 +80,11 @@ export function appHub(place: AppPlace & { copy?: SqlDatabase }): Hub {
  * `KraftverkApi` with this app's own ways wrapped in, kept in this app's
  * own database. Not started; `start()` it.
  */
-export function appHolding(place: AppPlace & { home: KraftverkApi; own?: SqlDatabase }): Holding {
-  // What a transport records is owed to the server's timeline, as the holding's own entries are.
-  let holding: Holding | null = null;
-  const installed = appInstalled(place, (entry) => holding?.owe('audit', null, entry));
-  holding = createHolding({
+export function appFollower(place: AppPlace & { home: KraftverkApi; own?: SqlDatabase }): Follower {
+  // What a transport records is owed to the server's timeline, as the follower's own entries are.
+  let follower: Follower | null = null;
+  const installed = appInstalled(place, (entry) => follower?.owe('audit', null, entry));
+  follower = createFollower({
     home: place.home,
     database: place.database,
     secrets: place.secrets,
@@ -96,5 +96,5 @@ export function appHolding(place: AppPlace & { home: KraftverkApi; own?: SqlData
     // The home this app kept itself before, offered to the server.
     ...(place.own ? { own: { database: place.own, sealing: appSealing } } : {}),
   });
-  return holding;
+  return follower;
 }

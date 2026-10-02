@@ -140,7 +140,7 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
           The ways that can be held where this home runs at all — one that
           cannot (the broker in a browser) is not offered, rather than offered
           and refused; one that can, but not now, says why. Every one is the
-          home's: this app's own, for a server's home, are its holding's.
+          home's: this app's own, for a server's home, are its follower's.
         */
         ways: methodsOf(type)
           .filter((method) => placesOf(method, transports.definition(method.transport)).includes(transports.platform))

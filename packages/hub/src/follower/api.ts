@@ -6,7 +6,7 @@ import { deviceReader, runTool, ToolRefused, type ToolRefusal } from '@kraftverk
 import { Outbox } from '../live/outbox.ts';
 import { connectionSchema } from '../setup/index.ts';
 import { holdableHere } from './holdable.ts';
-import type { Holding } from './holding.ts';
+import type { Follower } from './follower.ts';
 
 /*
   The server's `KraftverkApi`, with what this app holds wrapped in
@@ -27,7 +27,7 @@ const FLUSH_MS = 250;
 /** Why a tool was refused, as the kind of refusal it is: the home's map. */
 const TOOL_REFUSAL: Record<ToolRefusal, ApiError['kind']> = { missing: 'not-found', input: 'invalid', 'read-only': 'locked', failed: 'conflict', answer: 'failed' };
 
-export function holdingApi(h: Holding): KraftverkApi {
+export function followerApi(h: Follower): KraftverkApi {
   const { home } = h;
   /** The server's list — or, with it away, what it last said — held from, and with this app's own wrapped in. */
   const listed = async (what: 'devices' | 'removed', ask: () => Promise<DeviceView[]>): Promise<DeviceView[]> => {

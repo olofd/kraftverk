@@ -32,6 +32,7 @@ export function nodeView(node: NodeRecord, masterId: string): NodeView {
     trusted: node.trusted,
     place: node.placeId,
     master: node.id === masterId,
+    createdAt: node.createdAt,
     lastSeenAt: node.lastSeenAt,
   };
 }
@@ -63,7 +64,7 @@ export function heldApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'home' | '
     /** The home: what its people call it, and its master. */
     async home() {
       const home = hub.home.get()!;
-      return { id: home.id, name: home.name, master: home.masterId };
+      return { id: home.id, name: home.name, master: home.masterId, createdAt: home.createdAt };
     },
 
     nodes: {
