@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { ConfigSnapshotView } from '@kraftverk/api-contract';
 
 import { actorOf } from '../auth/routes.ts';
-import { body, type AppDeps } from './shared.ts';
+import { body, homeFor, type AppDeps } from './shared.ts';
 
 /*
   Configuration (docs/CONFIG.md), over HTTP: the JSON Schema an editor checks
@@ -20,14 +20,13 @@ export const SCHEMA_PATH = '/api/config/schema.json';
 
 export function configRoutes(deps: AppDeps): Hono {
   const api = new Hono();
-  const { configuration } = deps;
-
+  /** Open, as an editor cannot log in: it names nothing you have, so no one in particular asks for it. */
   api.get('/config/schema.json', (c) => {
     c.header('cache-control', 'no-cache');
-    return c.json(configuration.schema());
+    return c.json(deps.configuration.schema());
   });
 
-  api.get('/config/vocabulary', (c) => c.json(configuration.vocabulary()));
+  api.get('/config/vocabulary', async (c) => c.json(await homeFor(deps, c).configuration.vocabulary()));
 
   api.post('/config/export', async (c) => {
     const input = await body(
@@ -41,7 +40,7 @@ export function configRoutes(deps: AppDeps): Hono {
         })
         .strict()
     );
-    return c.json(await configuration.export(input, actorOf(c), { schemaUrl: `${new URL(c.req.url).origin}${SCHEMA_PATH}` }));
+    return c.json(await homeFor(deps, c).configuration.export(input, { schemaUrl: `${new URL(c.req.url).origin}${SCHEMA_PATH}` }));
   });
 
   /** `restored`: the copy the last restore was made from, kept aside — to import again with its answers, when the restore could not do it all. */
@@ -56,10 +55,10 @@ export function configRoutes(deps: AppDeps): Hono {
     if (input.restored) {
       const text = deps.snapshot?.restoredCopy() ?? null;
       if (text === null) throw new HTTPException(404, { message: 'There is no restored copy to import again' });
-      // Its secrets are this server's own, sealed with its key.
-      return c.json(await configuration.plan(text, { mode: input.mode, kept: true }, actorOf(c)));
+      // Its secrets are this server's own, sealed with its key: opened as only the server's own copy may be, not through the API.
+      return c.json(await deps.configuration.plan(text, { mode: input.mode, kept: true }, actorOf(c)));
     }
-    return c.json(await configuration.plan(input.text!, { mode: input.mode, passphrase: input.passphrase }, actorOf(c)));
+    return c.json(await homeFor(deps, c).configuration.plan({ text: input.text!, mode: input.mode, passphrase: input.passphrase }));
   });
 
   api.post('/config/apply', async (c) => {
@@ -75,7 +74,7 @@ export function configRoutes(deps: AppDeps): Hono {
         })
         .strict()
     );
-    return c.json(await configuration.apply(input, actorOf(c)));
+    return c.json(await homeFor(deps, c).configuration.apply(input));
   });
 
   /** The configuration kept beside the database: where, when it was last written, and what restoring it last did. */

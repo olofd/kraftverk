@@ -37,7 +37,7 @@ const refusing = <T>(work: () => T): T => {
 
 export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'automations'> {
   const { automations, engine, library } = hub;
-  const { view, checked, draftView, rehearsed } = hub.plans;
+  const { view, checked, draftView, rehearsed, copied } = hub.plans;
   const actor = actorOf(caller);
   const intent = intentOf(caller);
 
@@ -105,7 +105,9 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
           timeZone: input.timeZone,
           recheckMinutes: input.recheckMinutes ?? null,
         });
-        record('automation.created', created.id, `Made the automation "${created.name}", only watching on its own`, {
+        // An assistant's is a proposal: it watches until a person lets it act.
+        const proposed = caller.kind === 'agent';
+        record(proposed ? 'automation.proposed' : 'automation.created', created.id, proposed ? `An assistant proposed "${created.name}", only watching: ${view(created).sentence}` : `Made the automation "${created.name}", only watching on its own`, {
           madeFrom: created.madeFrom,
           rule: created.rule,
           roles: created.roles,
@@ -248,6 +250,9 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
         refuseProblems(result.problems);
         return rehearsed({ rule: subject.draft.rule, roles: result.roles, timeZone: subject.timeZone }, hours);
       },
+
+      /** A recipe copied into a rule of its own: what an assistant proposes, as the app starts from one. */
+      fromRecipe: async (recipe, params) => copied(recipe, params),
     },
   };
 }

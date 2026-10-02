@@ -1,17 +1,13 @@
-import { Hono, type Context } from 'hono';
+import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import type { RoleBinding } from '@kraftverk/api-contract';
-import { isTimeZone, savedDeviceId, type CapabilitySpec, type Value } from '@kraftverk/device-sdk';
-import { deviceReader } from '@kraftverk/holder';
+import { ApiError, type KraftverkApi, type RoleBinding } from '@kraftverk/api-contract';
+import { automationId, isTimeZone, savedDeviceId, type Value } from '@kraftverk/device-sdk';
+import { AGENT_RULES, REHEARSAL_MAX_HOURS, worldText } from '@kraftverk/hub';
 
 import { actorOf } from '../auth/routes.ts';
-import { RunRefusal } from '@kraftverk/automation-engine';
-import { plans, REHEARSAL_MAX_HOURS } from '@kraftverk/hub';
-import { AGENT_RULES, vocabularyOf, worldOf, worldText } from '@kraftverk/hub';
-import { db, recentAudit, policyValues } from '../platform/database.ts';
-import { auditAbout, type AppDeps } from './shared.ts';
+import { homeFor, type AppDeps } from './shared.ts';
 
 /**
  * The house for an assistant (PROPOSITION.md §5.1–5.3): the world as a model
@@ -23,13 +19,15 @@ import { auditAbout, type AppDeps } from './shared.ts';
  * nothing a person has to confirm.
  *
  * Behind the same sign-in as every route: an MCP client sends the session
- * cookie and the client header, as the app does.
+ * cookie and the client header, as the app does. Each tool asks the home
+ * (`KraftverkApi`) as an agent acting for whoever is signed in: what needs a
+ * person's yes is refused it there, in the gateway's words.
  */
 
 const MCP_PROTOCOL = '2025-06-18';
 
 type Json = Record<string, unknown>;
-type Tool = { name: string; description: string; inputSchema: Json; run: (args: Json, c: Context) => Promise<string> };
+type Tool = { name: string; description: string; inputSchema: Json; run: (args: Json, home: KraftverkApi) => Promise<string> };
 
 const object = (properties: Json, required: string[] = []): Json => ({ type: 'object', properties, required, additionalProperties: false });
 const text = (description: string): Json => ({ type: 'string', description });
@@ -44,39 +42,29 @@ const boundOf = (roles: Record<string, { device: string; part: string }>): Recor
   Object.fromEntries(Object.entries(roles).map(([role, binding]) => [role, { device: savedDeviceId(binding.device), part: binding.part }]));
 
 export function assistantRoutes(deps: AppDeps): Hono {
-  const { config, registry, library, gateway, sessions, catalog, automations, engine } = deps;
   const api = new Hono();
-  const { view, checked, copied, rehearsed } = plans({ db: db(), catalog, sessions, library, engine, automations });
-
-  const world = async () => worldOf(await registry.all(), { readOnly: config.readOnly });
-  const vocabulary = async () =>
-    vocabularyOf(
-      library,
-      policyValues(),
-      (await registry.all()).map((device) => (device.description.capabilities ?? {}) as Record<string, CapabilitySpec>)
-    );
 
   /** The house now: every device, its parts, what each offers and reports and how fresh, and the links. `?format=text` for a context window. */
   api.get('/world', async (c) => {
-    const now = await world();
+    const now = await homeFor(deps, c).world();
     return c.req.query('format') === 'text' ? c.text(worldText(now)) : c.json(now);
   });
 
   /** The words the world is said in: capabilities, meanings, link kinds, recipes, and the values the home has set. */
-  api.get('/vocabulary', async (c) => c.json(await vocabulary()));
+  api.get('/vocabulary', async (c) => c.json(await homeFor(deps, c).vocabulary()));
 
   const tools: Tool[] = [
     {
       name: 'world',
       description: 'The house now: every device with its id, its parts, what each part offers (capabilities) and reports (with meaning, unit and whether it is current), and the links between parts. Read it before acting.',
       inputSchema: object({}),
-      run: async () => worldText(await world()),
+      run: async (_, home) => worldText(await home.world()),
     },
     {
       name: 'vocabulary',
       description: 'The words the world is said in: each capability with its commands (typed arguments, and what makes one consequential), queries and meanings; link kinds; the recipes an automation can be made from, with their roles and settings.',
       inputSchema: object({}),
-      run: async () => JSON.stringify(await vocabulary()),
+      run: async (_, home) => JSON.stringify(await home.vocabulary()),
     },
     {
       name: 'command',
@@ -93,20 +81,11 @@ export function assistantRoutes(deps: AppDeps): Hono {
         },
         ['device', 'part', 'capability', 'command', 'args', 'reason']
       ),
-      run: async (args, c) => {
+      run: async (args, home) => {
         const input = z
           .object({ device: z.string().min(1).max(80), part: z.string().min(1).max(80), capability: z.string().min(1).max(80), command: z.string().min(1).max(40), args: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])), reason: z.string().min(1).max(200) })
           .parse(args);
-        const result = await gateway.execute({
-          deviceId: savedDeviceId(input.device),
-          part: input.part,
-          capability: input.capability,
-          command: input.command,
-          args: input.args as Record<string, Value>,
-          reason: input.reason,
-          actor: 'agent',
-          by: `assistant for ${actorOf(c)}`,
-        });
+        const result = await home.devices.command(savedDeviceId(input.device), input.part, input.capability, input.command, { args: input.args as Record<string, Value>, reason: input.reason });
         return `${result.outcome}: ${result.detail}`;
       },
     },
@@ -117,22 +96,18 @@ export function assistantRoutes(deps: AppDeps): Hono {
         { device: text('The device id'), part: text('The part id'), capability: text('The capability: "weather.forecast"'), query: text('Its query: "hourly"'), args: { type: 'object', description: 'The query’s arguments' } },
         ['device', 'part', 'capability', 'query']
       ),
-      run: async (args) => {
+      run: async (args, home) => {
         const input = z.object({ device: z.string().min(1).max(80), part: z.string().min(1).max(80), capability: z.string().min(1).max(80), query: z.string().min(1).max(40), args: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}) }).parse(args);
-        const record = catalog.active(savedDeviceId(input.device));
-        const session = record ? sessions.get(record.id) : null;
-        if (!record || !session) throw new Error(record ? `${record.name} is not answering: ${sessions.health(record).detail}` : 'No such device');
-        const answer = await deviceReader(session, () => sessions.description(record)).query({ part: input.part, capability: input.capability, query: input.query, args: input.args as Record<string, Value> });
-        return JSON.stringify(answer);
+        return JSON.stringify(await home.devices.query(savedDeviceId(input.device), input.part, input.capability, input.query, input.args as Record<string, Value>));
       },
     },
     {
       name: 'receipts',
       description: 'What was done lately, newest first: who did what, to what, and what came of it. One device’s, one automation’s, or all.',
       inputSchema: object({ device: text('A device id, for its receipts only'), automation: text('An automation id, for its runs only'), limit: { type: 'number', description: 'How many, at most 100' } }),
-      run: async (args) => {
+      run: async (args, home) => {
         const input = z.object({ device: z.string().max(80).optional(), automation: z.string().max(80).optional(), limit: z.number().int().min(1).max(100).default(20) }).parse(args);
-        const entries = recentAudit({ limit: input.limit, ...(input.device ? { resourceKind: 'device', resource: input.device } : input.automation ? { resourceKind: 'automation', resource: input.automation } : {}) });
+        const entries = await home.timeline({ limit: input.limit, ...(input.device ? { resourceKind: 'device', resource: input.device } : input.automation ? { resourceKind: 'automation', resource: input.automation } : {}) });
         return entries.length ? entries.map((entry) => `${entry.at} ${entry.kind} by ${entry.actor}: ${entry.summary}`).join('\n') : 'Nothing yet.';
       },
     },
@@ -140,13 +115,16 @@ export function assistantRoutes(deps: AppDeps): Hono {
       name: 'rehearse',
       description: 'Rehearse a recipe on the last hours of history: when it would have run, and what it would have done, and what history cannot show. Nothing is sent and nothing is kept.',
       inputSchema: object({ recipe: text('A recipe id from the vocabulary'), roles: roleBindings, params: { type: 'object', description: 'The recipe’s settings, within their declared ranges' }, timeZone: text('The home’s clock: "Europe/Stockholm"'), hours: { type: 'number', description: `How far back, at most ${REHEARSAL_MAX_HOURS}` } }, ['recipe', 'roles', 'params']),
-      run: async (args) => {
+      run: async (args, home) => {
         const input = planInput.extend({ hours: z.number().min(1).max(REHEARSAL_MAX_HOURS).default(24 * 7) }).omit({ name: true }).parse(args);
         // The recipe as an automation of it would be: its settings written into its blocks.
-        const rule = copied(input.recipe, input.params);
-        const result = checked({ rule, roles: boundOf(input.roles), starts: {} }, null);
-        if (result.problems.length) return `It cannot be rehearsed as it is: ${result.problems.join('; ')}`;
-        return rehearsalText(await rehearsed({ rule, roles: result.roles, timeZone: input.timeZone }, input.hours));
+        const rule = await home.automations.fromRecipe(input.recipe, input.params);
+        try {
+          return rehearsalText(await home.automations.rehearse({ draft: { rule, roles: boundOf(input.roles), starts: {} }, timeZone: input.timeZone }, input.hours));
+        } catch (error) {
+          if (error instanceof ApiError && error.kind === 'invalid') return `It cannot be rehearsed as it is: ${error.message}`;
+          throw error;
+        }
       },
     },
     {
@@ -154,8 +132,8 @@ export function assistantRoutes(deps: AppDeps): Hono {
       description:
         'The automations there are: each one’s id, what it does in a sentence, whether it acts on its own or only watches, whether it has anything that starts it on its own (none: it runs when started, as "start charging the scooter"), and whether it runs now — with the step it is in.',
       inputSchema: object({}),
-      run: async () => {
-        const all = automations.list().map(view);
+      run: async (_, home) => {
+        const all = await home.automations.list();
         if (!all.length) return 'No automations yet.';
         return all
           .map((automation) => {
@@ -175,15 +153,14 @@ export function assistantRoutes(deps: AppDeps): Hono {
       description:
         'Start an automation now — a sequence such as "start charging the scooter" — one its owner has let act: it takes its steps from now, each through the gateway. One that only watches is its owner’s to start. Say what it will do before starting it, and follow it with `automations`.',
       inputSchema: object({ automation: text('The automation id, from `automations`') }, ['automation']),
-      run: async (args, c) => {
+      run: async (args, home) => {
         const input = z.object({ automation: z.string().min(1).max(80) }).parse(args);
         try {
           // An assistant's run switches first as an assistant would: its own dwell, not a person's.
-          const run = await engine.startAsked(input.automation, { name: `assistant for ${actorOf(c)}`, actor: 'agent' });
-          auditAbout(c, 'automation.started', 'automation', input.automation, `An assistant started "${automations.get(input.automation)?.name ?? input.automation}"`, { run: run.id });
-          return `Started. Its steps: ${view(automations.get(input.automation)!).steps.map((step) => step.text).join('; ')}`;
+          const started = await home.automations.start(automationId(input.automation));
+          return `Started. Its steps: ${started.steps.map((step) => step.text).join('; ')}`;
         } catch (error) {
-          if (error instanceof RunRefusal) return `Not started: ${error.message}`;
+          if (error instanceof ApiError && error.kind === 'conflict') return `Not started: ${error.message}`;
           throw error;
         }
       },
@@ -192,14 +169,13 @@ export function assistantRoutes(deps: AppDeps): Hono {
       name: 'stop',
       description: 'Stop an automation’s run in progress: the step it is in ends, and what it does if stopped — switching back off what it switched on — runs.',
       inputSchema: object({ automation: text('The automation id') }, ['automation']),
-      run: async (args, c) => {
+      run: async (args, home) => {
         const input = z.object({ automation: z.string().min(1).max(80) }).parse(args);
         try {
-          engine.stopAsked(input.automation, `assistant for ${actorOf(c)}`);
-          auditAbout(c, 'automation.stopping', 'automation', input.automation, `An assistant stopped "${automations.get(input.automation)?.name ?? input.automation}"`);
+          await home.automations.stop(automationId(input.automation));
           return 'Stopping: what it does if stopped is running now.';
         } catch (error) {
-          if (error instanceof RunRefusal) return `Not stopped: ${error.message}`;
+          if (error instanceof ApiError && error.kind === 'conflict') return `Not stopped: ${error.message}`;
           throw error;
         }
       },
@@ -209,16 +185,20 @@ export function assistantRoutes(deps: AppDeps): Hono {
       description:
         'Propose an automation: a recipe from the vocabulary, copied — its settings, within their ranges, written into its steps — and its roles filled from the world. It is made only watching on its own — it decides and says what it would do, and acts on its own only once a person lets it in the app — and is rehearsed on the last week of history. Its owner can change any of its steps in the app.',
       inputSchema: object({ name: text('What to call it'), recipe: text('A recipe id from the vocabulary'), roles: roleBindings, params: { type: 'object', description: 'The recipe’s settings' }, timeZone: text('The home’s clock: "Europe/Stockholm"') }, ['name', 'recipe', 'roles', 'params']),
-      run: async (args, c) => {
+      run: async (args, home) => {
         const input = planInput.parse(args);
-        const rule = copied(input.recipe, input.params);
-        const result = checked({ rule, roles: boundOf(input.roles), starts: {} }, null);
-        if (result.problems.length) return `Not made: ${result.problems.join('; ')}`;
-        const created = automations.create({ name: input.name, rule, madeFrom: input.recipe, roles: result.roles, starts: {}, timeZone: input.timeZone, recheckMinutes: null });
-        auditAbout(c, 'automation.proposed', 'automation', created.id, `An assistant proposed "${created.name}", only watching: ${view(created).sentence}`, { madeFrom: created.madeFrom, rule: created.rule, roles: created.roles });
-        const rehearsal = await rehearsed(created, 24 * 7);
+        const rule = await home.automations.fromRecipe(input.recipe, input.params);
+        let created;
+        try {
+          // Made by an agent, it is a proposal: only watching, on the timeline as one.
+          created = await home.automations.create({ name: input.name, rule, madeFrom: input.recipe, roles: boundOf(input.roles), starts: {}, timeZone: input.timeZone });
+        } catch (error) {
+          if (error instanceof ApiError && error.kind === 'invalid') return `Not made: ${error.message}`;
+          throw error;
+        }
+        const rehearsal = await home.automations.rehearse({ automation: created.id }, 24 * 7);
         return [
-          `Made "${created.name}" [${created.id}], only watching: ${view(created).sentence}`,
+          `Made "${created.name}" [${created.id}], only watching: ${created.sentence}`,
           'It acts on its own only once a person lets it, in the app, where they can also change any of its steps.',
           '',
           rehearsalText(rehearsal),
@@ -241,7 +221,7 @@ export function assistantRoutes(deps: AppDeps): Hono {
   });
 
   /** One JSON-RPC message, answered: the handshake, the tool list, a tool call. */
-  const answer = async (message: Json, c: Context): Promise<Json | null> => {
+  const answer = async (message: Json, home: KraftverkApi): Promise<Json | null> => {
     const id = message.id as string | number | undefined;
     const reply = (result: Json) => ({ jsonrpc: '2.0', id, result });
     const fail = (code: number, text: string) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message: text } });
@@ -264,7 +244,7 @@ export function assistantRoutes(deps: AppDeps): Hono {
         const tool = tools.find((candidate) => candidate.name === params.name);
         if (!tool) return fail(-32602, `There is no tool "${params.name}"`);
         try {
-          return reply({ content: [{ type: 'text', text: await tool.run(params.arguments ?? {}, c) }] });
+          return reply({ content: [{ type: 'text', text: await tool.run(params.arguments ?? {}, home) }] });
         } catch (error) {
           // A refusal is an answer a model reads and acts on, not a protocol failure.
           const said = error instanceof z.ZodError ? error.issues.map((issue) => `${issue.path.join('.') || 'input'}: ${issue.message}`).join('; ') : error instanceof HTTPException ? error.message : (error as Error).message;
@@ -284,7 +264,9 @@ export function assistantRoutes(deps: AppDeps): Hono {
     const payload = (await c.req.json().catch(() => null)) as Json | Json[] | null;
     if (!payload || typeof payload !== 'object') return c.json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'That is not JSON' } }, 400);
     const messages = Array.isArray(payload) ? payload : [payload];
-    const answers = (await Promise.all(messages.map((message) => answer(message, c)))).filter((reply): reply is Json => reply !== null);
+    // The assistant asks as an agent acting for whoever is signed in.
+    const home = deps.hub.as({ kind: 'agent', for: actorOf(c) });
+    const answers = (await Promise.all(messages.map((message) => answer(message, home)))).filter((reply): reply is Json => reply !== null);
     if (!answers.length) return c.body(null, 202);
     return c.json(Array.isArray(payload) ? answers : answers[0]!);
   });

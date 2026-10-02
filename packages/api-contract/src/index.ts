@@ -53,6 +53,7 @@ import type {
 } from '@kraftverk/device-sdk';
 import type { Rule, StepKind, StepLine } from '@kraftverk/automation';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
+import type { Vocabulary } from '@kraftverk/home-file';
 
 export { ApiError, API_ERROR_STATUS, type ApiErrorKind } from './error.ts';
 
@@ -937,6 +938,8 @@ export interface KraftverkApi {
     command(id: SavedDeviceId, part: string, capability: string, command: string, body: CommandBody): Promise<GatewayResult>;
     /** Settings it keeps, through the gateway: its verdict, refused or not. */
     write(id: SavedDeviceId, write: AttributeWrite): Promise<WriteResult>;
+    /** A query its capability declares — a forecast's hours — answered in the type the capability declares. */
+    query(id: SavedDeviceId, part: string, capability: string, query: string, args: Record<string, Value>): Promise<Value>;
     /**
      * One of its type's tools, with the answer it declares. `reading`: asked
      * as a read, so one that writes is refused; one that declares what it
@@ -1022,5 +1025,32 @@ export interface KraftverkApi {
     runLog(id: AutomationId, runId: string): Promise<RunLog>;
     /** A rule rehearsed on the last hours of history — a draft, or one kept: nothing sent. */
     rehearse(subject: { draft: AutomationDraft; timeZone: string } | { automation: AutomationId }, hours?: number): Promise<Rehearsal>;
+    /** A recipe copied into a rule of its own, its settings — held to their schema — written into its blocks. */
+    fromRecipe(recipe: string, params: Record<string, Value>): Promise<Rule>;
   };
+  /** A home in one file (docs/CONFIG.md): what a file may name here, its schema, an export, an import in two steps. */
+  configuration: {
+    /** What a file may name here: the installed types, and the keys of what you have. */
+    vocabulary(): Promise<Vocabulary>;
+    /** The JSON Schema of a file: what is installed, nothing you have. */
+    schema(): Promise<unknown>;
+    /** What you have, as a file — its secrets left out, sealed, or plain where allowed. `schemaUrl`: for its first line. */
+    export(request: ConfigExportRequest, options?: { schemaUrl?: string }): Promise<ConfigExported>;
+    /** What importing a file would do, nothing written. */
+    plan(request: { text: string; mode?: 'merge' | 'replace'; passphrase?: string }): Promise<ImportPlan>;
+    /** A plan applied, with its answers, in one transaction; what it sets acting or removes wants a person's yes. */
+    apply(answers: ImportAnswers): Promise<ImportApplied>;
+  };
+  /** What the home sets as a whole that declarations name: how much is a load, the reserve. */
+  policy: {
+    list(): Promise<PolicyValueView[]>;
+    /** One set within its bounds, or back to its default with null. */
+    set(name: PolicyValueName, value: number | null): Promise<PolicyValueView[]>;
+  };
+  /** The timeline, newest first: all of it, one kind of thing's, or one thing's; `before` an entry's id pages back. */
+  timeline(query?: { limit?: number; resourceKind?: ResourceKind; resource?: string; before?: number }): Promise<AuditEntry[]>;
+  /** The house as a model reads it: every device, its parts, what each offers and reports, how fresh, and the links. */
+  world(): Promise<WorldView>;
+  /** The words the world is said in: capabilities, meanings, link kinds, recipes, the home's values. */
+  vocabulary(): Promise<VocabularyView>;
 }

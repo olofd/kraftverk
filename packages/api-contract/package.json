@@ -15,7 +15,8 @@
   "dependencies": {
     "@kraftverk/automation": "*",
     "@kraftverk/device-sdk": "*",
-    "@kraftverk/gateway": "*"
+    "@kraftverk/gateway": "*",
+    "@kraftverk/home-file": "*"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

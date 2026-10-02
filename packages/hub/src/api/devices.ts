@@ -19,7 +19,7 @@ import {
   type SavedDeviceId,
 } from '@kraftverk/device-sdk';
 import { subjectOf } from '@kraftverk/gateway';
-import { runTool, ToolRefused, type ToolRefusal } from '@kraftverk/holder';
+import { deviceReader, runTool, ToolRefused, type ToolRefusal } from '@kraftverk/holder';
 import type { DeviceRecord } from '@kraftverk/store';
 
 import { PICTURE_REF } from '../devices/registry.ts';
@@ -254,6 +254,14 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
        * back, and audited.
        */
       write: async (id, write) => gateway.write({ deviceId: deviceOf(id).id, patch: write.patch, ...intentOf(caller), confirmation: write.confirmation }),
+
+      /** A query its capability declares — a forecast's hours — asked of the device now, and answered in the type declared. */
+      async query(id, part, capability, query, args) {
+        const device = deviceOf(id);
+        const session = sessions.get(device.id);
+        if (!session) throw new ApiError('unavailable', `${device.name} is not answering: ${sessions.health(device).detail}`);
+        return deviceReader(session, () => sessions.description(device)).query({ part, capability, query, args });
+      },
 
       /**
        * A device type's own tools, declared as data: a register dump, a raw

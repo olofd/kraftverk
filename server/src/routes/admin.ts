@@ -1,20 +1,18 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import type { PolicyValueName, PolicyValueView } from '@kraftverk/api-contract';
-import { isPolicyValueName, POLICY_VALUES, RESOURCE_KINDS, type ResourceKind } from '@kraftverk/device-sdk';
+import type { PolicyValueName } from '@kraftverk/api-contract';
+import { RESOURCE_KINDS, type ResourceKind } from '@kraftverk/device-sdk';
 
 import { RESET_SECRET_MIN, resetSecret, resetSecretPath, secretMatches } from '../admin/reset.ts';
 import { LoginLimiter, limiterKeys } from '../auth/limiter.ts';
-import { actorOf, type createAuth } from '../auth/routes.ts';
-import { audit, recentAudit, resetDatabase, policyValues, setPolicyValue } from '../platform/database.ts';
-import { body, type AppDeps } from './shared.ts';
+import type { createAuth } from '../auth/routes.ts';
+import { audit, resetDatabase } from '../platform/database.ts';
+import { body, homeFor, type AppDeps } from './shared.ts';
 
-/** Erasing everything, and the audit timeline. */
-export function adminRoutes(
-  { catalog, sessions, sampler }: AppDeps,
-  accounts: ReturnType<typeof createAuth>
-): Hono {
+/** Erasing everything — the server's — and, from the home, its values and its timeline. */
+export function adminRoutes(deps: AppDeps, accounts: ReturnType<typeof createAuth>): Hono {
+  const { catalog, sessions, sampler } = deps;
   const admin = new Hono();
 
   /** Wrong reset passphrases, counted apart from logins: a typo here should not lock anyone out. */
@@ -89,29 +87,15 @@ export function adminRoutes(
   });
 
   /** What this home decides that declarations name: how much is a load worth confirming. */
-  const policyView = (): PolicyValueView[] => {
-    const set = policyValues();
-    return Object.entries(POLICY_VALUES).map(([name, spec]) => ({ name: name as PolicyValueName, ...spec, value: set[name as PolicyValueName] ?? spec.default }));
-  };
-  admin.get('/policy', (c) => c.json(policyView()));
+  admin.get('/policy', async (c) => c.json(await homeFor(deps, c).policy.list()));
 
   admin.put('/policy/:name', async (c) => {
-    const name = c.req.param('name');
-    if (!isPolicyValueName(name)) throw new HTTPException(404, { message: `There is no policy value "${name}"` });
     const { value } = await body(c, z.object({ value: z.number().finite().nullable() }).strict());
-    const spec = POLICY_VALUES[name];
-    try {
-      setPolicyValue(name, value);
-    } catch (error) {
-      throw new HTTPException(400, { message: (error as Error).message });
-    }
-    const now = value ?? spec.default;
-    audit({ at: new Date().toISOString(), kind: 'policy.changed', actor: actorOf(c), summary: `${spec.label}: now ${now} ${spec.unit}${value === null ? ', the default' : ''}`, detail: { name, value } });
-    return c.json(policyView());
+    return c.json(await homeFor(deps, c).policy.set(c.req.param('name') as PolicyValueName, value));
   });
 
   /** The timeline, newest first: all of it, one kind of thing's, or one thing's; `before` pages back. */
-  admin.get('/audit', (c) => {
+  admin.get('/audit', async (c) => {
     const query = z
       .object({
         limit: z.coerce.number().int().min(1).max(1000).default(100),
@@ -121,7 +105,7 @@ export function adminRoutes(
       })
       .strict()
       .parse(c.req.query());
-    return c.json(recentAudit(query));
+    return c.json(await homeFor(deps, c).timeline(query));
   });
 
   return admin;
