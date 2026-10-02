@@ -30,7 +30,7 @@ import {
 import { isSealed } from '@kraftverk/home-file';
 import { randomHex, type DeviceRecord, type SqlDatabase } from '@kraftverk/store';
 
-import type { Checked } from '../automations/plans.ts';
+import type { Checked } from '../automations/drafts.ts';
 import type { TransportHost } from '../installed/transports.ts';
 import { unref } from '../timers.ts';
 import { homeVocabulary, type ConfigDeps } from './export.ts';

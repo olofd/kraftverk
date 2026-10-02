@@ -1,71 +1,36 @@
-import { ApiError, type Caller, type KraftverkApi, type PolicyValueView } from '@kraftverk/api-contract';
-import { isPolicyValueName, POLICY_VALUES, type CapabilitySpec, type PolicyValueName } from '@kraftverk/device-sdk';
+import { type KraftverkApi } from '@kraftverk/api-contract';
+import { type CapabilitySpec } from '@kraftverk/device-sdk';
 
 import { vocabularyOf, worldOf } from '../assistant/world.ts';
-import type { Hub } from '../hub.ts';
-import { actorOf } from './caller.ts';
+import type { Hub } from '../node/hub.ts';
 
 /*
-  The home as a whole, as everything that uses it asks: its configuration as
-  one file, the values it sets that declarations name, its timeline, and the
-  world as a model reads it, with the words it is said in.
+  The home as a whole, as everything that uses it asks: what it is called and
+  which node is its master, its timeline, and the world as a model reads it,
+  with the words it is said in.
 */
 
-type HomeWideApi = Pick<KraftverkApi, 'configuration' | 'policy' | 'timeline' | 'world' | 'vocabulary'>;
+type HomeWideApi = Pick<KraftverkApi, 'home' | 'timeline' | 'world' | 'vocabulary'>;
 
-export function homeWideApi(hub: Hub, caller: Caller): HomeWideApi {
-  const actor = actorOf(caller);
-
-  /** What this home decides that declarations name, each with its bounds and what it is now. */
-  const policyView = (): PolicyValueView[] => {
-    const set = hub.policy.values();
-    return Object.entries(POLICY_VALUES).map(([name, spec]) => ({ name: name as PolicyValueName, ...spec, value: set[name as PolicyValueName] ?? spec.default }));
-  };
-
+export function homeWideApi(hub: Hub): HomeWideApi {
   return {
-    configuration: {
-      vocabulary: async () => hub.configuration.vocabulary(),
-      schema: async () => hub.configuration.schema(),
-      export: (request, options) => hub.configuration.export(request, actor, options),
-      /** A file; or, in an app's own home, the copy it kept of the server it used last. */
-      async plan(request) {
-        if (!('from' in request)) return hub.configuration.plan(request.text, { mode: request.mode ?? 'merge', passphrase: request.passphrase }, actor);
-        if (request.from !== 'copy' || !hub.keeping) throw new ApiError('not-found', request.from === 'this-node' ? 'Only an app with a server moves its own home to it' : 'This home keeps no copy of a server’s to bring in');
-        return hub.keeping.plan(request.mode ?? 'merge', actor);
-      },
-      apply: (answers) => (hub.keeping?.owns(answers.plan) ? hub.keeping.apply(answers, actor) : hub.configuration.apply(answers, actor)),
-      /** What a home kept beside this one has, to bring in: in an app's own home, the copy of a server's. */
-      elsewhere: async () => hub.keeping?.what() ?? null,
-    },
-
-    policy: {
-      list: async () => policyView(),
-
-      async set(name, value) {
-        if (!isPolicyValueName(name)) throw new ApiError('not-found', `There is no policy value "${name}"`);
-        const spec = POLICY_VALUES[name];
-        try {
-          hub.policy.set(name, value);
-        } catch (error) {
-          throw new ApiError('invalid', (error as Error).message);
-        }
-        const now = value ?? spec.default;
-        hub.audit.record({ at: new Date().toISOString(), kind: 'policy.changed', actor, summary: `${spec.label}: now ${now} ${spec.unit}${value === null ? ', the default' : ''}`, detail: { name, value } });
-        return policyView();
-      },
+    /** The home: what its people call it, and its master. */
+    async home() {
+      const home = hub.home.get()!;
+      return { id: home.id, name: home.name, master: home.masterId, createdAt: home.createdAt };
     },
 
     timeline: async (query = {}) => hub.audit.recent(query),
 
     /** The house now: every device, its parts, what each offers and reports and how fresh, and the links. */
-    world: async () => worldOf(hub.registry.all(), { readOnly: hub.readOnly() }),
+    world: async () => worldOf(hub.views.all(), { readOnly: hub.readOnly() }),
 
     /** The words the world is said in: capabilities — the library's and the devices' own — meanings, link kinds, recipes, and the values the home has set. */
     vocabulary: async () =>
       vocabularyOf(
         hub.library,
         hub.policy.values(),
-        hub.registry.all().map((device) => (device.description.capabilities ?? {}) as Record<string, CapabilitySpec>)
+        hub.views.all().map((device) => (device.description.capabilities ?? {}) as Record<string, CapabilitySpec>)
       ),
   };
 }

@@ -33,7 +33,7 @@ import { CHAIN_LIMIT, quoted, type AutomationEngine, type AutomationRecord, type
 /** How far back a rehearsal reaches: as long as minute samples are kept. */
 export const REHEARSAL_MAX_HOURS = 14 * 24;
 
-export type PlanDeps = {
+export type DraftDeps = {
   /** Where the home's history is kept: what a rehearsal walks. */
   /** What the home recorded: a rehearsal plays it back. */
   history: HistoryStore;
@@ -80,7 +80,7 @@ const looksLikeRule = (rule: unknown): rule is Rule => {
 
 const NOT_A_RULE = 'That is not a rule: it needs roles, settings, triggers and steps';
 
-export function plans({ history, events, catalog, sessions, library, engine, automations }: PlanDeps) {
+export function drafts({ history, events, catalog, sessions, library, engine, automations }: DraftDeps) {
   /** "Garage station", or "Garage station — AC outlets": how a role's part is named, as everywhere else. */
   const roleName = (binding: RoleBinding | undefined): string => {
     const record = binding ? catalog.get(binding.device) : null;

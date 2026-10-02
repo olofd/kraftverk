@@ -88,7 +88,7 @@ each with the few things its role decides handed in. Around them, what
 the master runs: what is installed (`DeviceTypeRegistry`,
 `ProtocolRegistry`, `TransportHost` for any platform; `installedFrom`
 makes all three from lists, as the app installs them), devices' views
-(`DeviceRegistry`), `Nearby`, `RemoteReadings`, history — what is sampled
+(`DeviceViews`), `Nearby`, `HeldReadings`, history — what is sampled
 and when (`Sampler`, `ChangeLog`, `series`, `changesOf`; how long each is
 kept in `history/retention.ts`), kept by the store's `HistoryStore` —
 `Attention` and `keepWatchedFresh`, the assistant's world, `homeDevices`
@@ -123,7 +123,7 @@ const api = follower.api;   // the master's KraftverkApi, with what this node ho
 
 The home a node follows is the master's: the node fittest for it by what
 each declares — always on, then reached by others (`shouldLead`,
-`handover/master.ts`). The follower keeps the home and its nodes as the
+`node/lead.ts`). The follower keeps the home and its nodes as the
 master has them (`keepHome`, `master()`). The ways in to a server's devices that this app reaches itself — its own
 Bluetooth — beside the server's: one device, one history, reached either
 way (docs/PLAN-SHARED-CORE.md, phase 6). The same session manager and

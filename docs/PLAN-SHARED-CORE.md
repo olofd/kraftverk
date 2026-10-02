@@ -801,7 +801,7 @@ from its ways, and `runsOn` is gone.
 **6j, part 3 — the master and its followers** (done, 2026-10-02): the
 master is the node fittest for it by what each declares — always on, then
 reached by others — and the role moves only to a fitter one
-(`handover/master.ts`: moving the app's home to a server is offered only
+(`node/lead.ts`: moving the app's home to a server is offered only
 then). `Holding` is `Follower` (`createFollower`, `follower/`), and keeps
 the home and its nodes as the master has them: its copy knows which node
 it follows, and what that node is.

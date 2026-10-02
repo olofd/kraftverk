@@ -1,7 +1,7 @@
 import { ApiError, type KraftverkApi, type Rehearsal } from '@kraftverk/api-contract';
 import { automationId, isTimeZone, savedDeviceId, type Value } from '@kraftverk/device-sdk';
 
-import { REHEARSAL_MAX_HOURS } from '../automations/plans.ts';
+import { REHEARSAL_MAX_HOURS } from '../automations/drafts.ts';
 import { AGENT_RULES, worldText } from './world.ts';
 
 /**

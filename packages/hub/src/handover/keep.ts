@@ -2,7 +2,7 @@ import { ApiError, type ElsewhereView, type ImportAnswers, type ImportApplied, t
 import { readConfig } from '@kraftverk/home-file';
 import { AppState, ConnectionStore, DeviceCatalog, LastHeard, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
-import type { Hub } from '../hub.ts';
+import type { Hub } from '../node/hub.ts';
 import { nothingToDo } from './nothing.ts';
 
 /*

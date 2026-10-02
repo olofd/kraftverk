@@ -5,7 +5,7 @@ import { AppState, ConnectionStore, databaseLedger, DeviceCatalog, LinkStore, No
 
 import type { Installed } from '../installed/from.ts';
 import { unfitFor } from '../installed/needs.ts';
-import { SetupService } from '../setup/index.ts';
+import { SetupService } from '../setup/service.ts';
 
 /*
   What every kraftverk node is made of, whatever its role (docs/ARCHITECTURE.md,

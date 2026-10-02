@@ -1,7 +1,7 @@
 import { isSimulated, platformsOf, type NodeTraits } from '@kraftverk/device-sdk';
 
-import type { Installed } from '../installed/from.ts';
-import { unfitFor } from '../installed/needs.ts';
+import type { Installed } from './from.ts';
+import { unfitFor } from './needs.ts';
 
 /** Whether a way can be held by this node where it runs: its transport has an entry here, its protocol is installed, and the node is what the way needs. A simulated one is the master's. */
 export function holdableHere(installed: Installed, node: NodeTraits, method: Parameters<typeof platformsOf>[0]): boolean {

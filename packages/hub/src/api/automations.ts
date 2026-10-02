@@ -4,7 +4,7 @@ import { RunRefusal, type AutomationRecord } from '@kraftverk/automation-engine'
 import { isTimeZone, KEY, type AutomationId, type Value } from '@kraftverk/device-sdk';
 import { subjectOf } from '@kraftverk/gateway';
 
-import type { Hub } from '../hub.ts';
+import type { Hub } from '../node/hub.ts';
 import { actorOf, intentOf } from './caller.ts';
 
 /*
@@ -36,7 +36,7 @@ const refusing = <T>(work: () => T): T => {
 
 export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'automations'> {
   const { automations, engine, library } = hub;
-  const { view, checked, draftView, rehearsed, copied } = hub.plans;
+  const { view, checked, draftView, rehearsed, copied } = hub.drafts;
   const actor = actorOf(caller);
   const intent = intentOf(caller);
 

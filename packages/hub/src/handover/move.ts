@@ -4,10 +4,10 @@ import { writeConfig, type Scalar } from '@kraftverk/home-file';
 import { NodeStore, randomHex, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import type { PassphraseSealing } from '../configuration/seal.ts';
-import { createHub, type Hub } from '../hub.ts';
-import { shouldLead } from './master.ts';
+import { createHub, type Hub } from '../node/hub.ts';
+import { shouldLead } from '../node/lead.ts';
 import { nothingToDo } from './nothing.ts';
-import { holdableHere } from '../follower/holdable.ts';
+import { holdableHere } from '../installed/holdable.ts';
 import type { Follower } from '../follower/follower.ts';
 
 /*

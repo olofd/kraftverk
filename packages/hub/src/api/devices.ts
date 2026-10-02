@@ -1,36 +1,16 @@
 import { ApiError, type Caller, type ChangesQuery, type DeviceTypeListing, type HistoryQuery, type KraftverkApi } from '@kraftverk/api-contract';
-import {
-  CATEGORIES,
-  capabilityIn,
-  describeDeviceType,
-  isLinkKind,
-  isSecretField,
-  isSimulated,
-  KEY,
-  linkFits,
-  linkKindSpec,
-  methodsOf,
-  partName,
-  partsOf,
-  platformsOf,
-  savedDeviceId,
-  type Availability,
-  type ConnectionMethod,
-  type ResourceKind,
-  type SavedDeviceId,
-} from '@kraftverk/device-sdk';
+import { capabilityIn, CATEGORIES, describeDeviceType, isSimulated, KEY, methodsOf, platformsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
 import { subjectOf } from '@kraftverk/gateway';
 import { deviceReader, runTool, ToolRefused, type ToolRefusal } from '@kraftverk/holder';
-import type { DeviceRecord } from '@kraftverk/store';
 
-import { PICTURE_REF } from '../devices/registry.ts';
+import { PICTURE_REF } from '../devices/views.ts';
 import { changesOf } from '../history/changes.ts';
 import { resolutionOf, series } from '../history/sampler.ts';
-import type { Hub } from '../hub.ts';
 import { unfitFor } from '../installed/needs.ts';
 import { platformWords } from '../installed/transports.ts';
-import { connectionSchema } from '../setup/index.ts';
-import { actorOf, intentOf } from './caller.ts';
+import type { Hub } from '../node/hub.ts';
+import { intentOf } from './caller.ts';
+import { scopeOf } from './scope.ts';
 
 /*
   The devices you have, how each is reached and how they fit the house, as
@@ -60,40 +40,12 @@ function spanOf(query: { hours?: number; from?: string; to?: string }): { from: 
 /** Why a tool was refused, as the kind of refusal it is. */
 const TOOL_REFUSAL: Record<ToolRefusal, ApiError['kind']> = { missing: 'not-found', input: 'invalid', 'read-only': 'locked', failed: 'conflict', answer: 'failed' };
 
-type DevicesApi = Pick<KraftverkApi, 'deviceTypes' | 'devices' | 'problems' | 'connections' | 'links'>;
+type DevicesApi = Pick<KraftverkApi, 'deviceTypes' | 'devices' | 'problems'>;
 
 export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
-  const { catalog, connections, links, sessions, registry, gateway, events } = hub;
+  const { catalog, sessions, views, gateway, events } = hub;
   const { types, protocols, transports } = hub.installed;
-  const actor = actorOf(caller);
-
-  /** What happened, on the timeline, as this caller did it. */
-  const record = (kind: string, resourceKind: ResourceKind, resource: string, summary: string, detail?: unknown) =>
-    hub.audit.record({ at: new Date().toISOString(), kind, actor, resourceKind, resource, summary, detail });
-  /** What a list of devices shows changed: every open screen reads it again. */
-  const changed = () => hub.bus.publish({ kind: 'changed', deviceId: null });
-
-  /**
-   * The device asked for, or no such device. There is no inference, not even
-   * "when there is only one": a guess right while you own one device is wrong,
-   * silently, the day you own two.
-   */
-  const deviceOf = (id: string, { removed = false } = {}): DeviceRecord => {
-    const found = removed ? catalog.get(savedDeviceId(id)) : catalog.active(savedDeviceId(id));
-    if (!found) throw new ApiError('not-found', 'No such device');
-    return found;
-  };
-  const viewOf = (id: SavedDeviceId) => {
-    const view = registry.find(id);
-    if (!view) throw new ApiError('not-found', 'No such device');
-    return view;
-  };
-  const connectionOf = (deviceId: string, connectionId: string) => {
-    const device = deviceOf(deviceId);
-    const connection = connections.get(connectionId);
-    if (!connection || connection.deviceId !== device.id) throw new ApiError('not-found', 'No such connection');
-    return { device, connection };
-  };
+  const { actor, record, changed, deviceOf, viewOf } = scopeOf(hub, caller);
 
   /**
    * Whether this home can hold a connection over a method: a simulated one
@@ -108,14 +60,6 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
     const protocol = protocols.get(method.protocol);
     if (!protocol?.bindings[method.transport]) return { ok: false, reason: `${platformWords(transports.platform).this} cannot reach devices this way: it needs updating` };
     return transports.available(method.transport);
-  };
-
-  /** "Garage station — Mains", or a device's name for its main part: how a link's ends read on the timeline. */
-  const endName = (end: { device: string; part: string }): string => {
-    const device = catalog.get(savedDeviceId(end.device));
-    if (!device) return 'a removed device';
-    const part = partsOf(device.removedAt ? device.description : sessions.description(device)).find((candidate) => candidate.id === end.part);
-    return partName(device.name, end.part, part?.label ?? end.part);
   };
 
   const toolOf = (id: string, name: string) => {
@@ -157,8 +101,8 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
     },
 
     devices: {
-      list: async () => registry.all(),
-      removed: async () => registry.removed(),
+      list: async () => views.all(),
+      removed: async () => views.removed(),
       get: async (id) => viewOf(deviceOf(id, { removed: true }).id),
 
       /**
@@ -307,89 +251,5 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
     /** Warnings and errors across the devices you have, newest first: what wants looking at. */
     problems: async (limit = 100) => events.problems(limit),
 
-    connections: {
-      /** Makes this the way to reach the device, whenever it can be reached. */
-      async prefer(deviceId, connectionId) {
-        const { device, connection } = connectionOf(deviceId, connectionId);
-        connections.prefer(connection.id);
-        record('device.connection-preferred', 'device', device.id, `"${device.name}" is now reached by ${connection.method} first`);
-        await sessions.sync(catalog.list());
-        changed();
-        return viewOf(device.id);
-      },
-
-      /** Removes one way to reach a device. Not the last: that is removing the device. */
-      async remove(deviceId, connectionId) {
-        const { device, connection } = connectionOf(deviceId, connectionId);
-        if (connections.forDevice(device.id).length <= 1) throw new ApiError('conflict', 'This is the only way to reach it. Remove the device instead.');
-        connections.remove(connection.id);
-        record('device.connection-removed', 'device', device.id, `"${device.name}" is no longer reached by ${connection.method} (${connection.address})`);
-        await sessions.sync(catalog.list());
-        changed();
-        return viewOf(device.id);
-      },
-
-      /** Replaces a connection's secrets, held by this home: a plug's local key can change every time it is paired again. Write-only, like every secret. */
-      async setSecrets(deviceId, connectionId, given) {
-        const { device, connection } = connectionOf(deviceId, connectionId);
-        if (connection.heldBy !== hub.self.id) throw new ApiError('conflict', 'That connection’s secrets are kept by the node that holds it');
-        const method = sessions.typeOf(device)?.connections.find((candidate) => candidate.id === connection.method) ?? null;
-        const schema = connectionSchema(method, method ? protocols.get(method.protocol) : null);
-        const refused = Object.keys(given).filter((field) => !schema.fields[field] || !isSecretField(schema.fields[field]!));
-        if (refused.length) throw new ApiError('invalid', `Not a secret of this connection: ${refused.join(', ')}`);
-        connections.setSecrets(connection.id, given);
-        // Which fields, never their values.
-        record('device.secrets-changed', 'device', device.id, `Changed ${Object.keys(given).join(', ')} for "${device.name}"`);
-        // Reopened, so the new key is used now rather than at the next restart.
-        await sessions.close(device.id);
-        await sessions.sync(catalog.list());
-        changed();
-        return viewOf(device.id);
-      },
-
-      /** Whether a connection's secrets may leave in an export as plain text: its owner's choice, off unless chosen. */
-      async setExportable(deviceId, connectionId, exportable) {
-        const { device, connection } = connectionOf(deviceId, connectionId);
-        if (connection.heldBy !== hub.self.id) throw new ApiError('conflict', 'That connection’s secrets are kept by the node that holds it, and never exported');
-        if (exportable !== connection.secretsExportable) {
-          connections.update(connection.id, { secretsExportable: exportable });
-          record(
-            'device.exportable',
-            'device',
-            device.id,
-            exportable ? `"${device.name}": its ${connection.method} secrets may now leave in an export as plain text` : `"${device.name}": its ${connection.method} secrets no longer leave in plain text`,
-            { connection: connection.id, secretsExportable: exportable }
-          );
-          changed();
-        }
-        return viewOf(device.id);
-      },
-    },
-
-    links: {
-      /** Records a fact about the house, between two parts: this plug's relay feeds that station's mains input. */
-      async add(input) {
-        if (!isLinkKind(input.kind)) throw new ApiError('invalid', `There is no link called "${input.kind}"`);
-        const source = deviceOf(input.source.device);
-        const target = deviceOf(input.target.device);
-        if (source.id === target.id) throw new ApiError('invalid', 'A device cannot be linked to itself');
-        const kind = linkKindSpec(input.kind);
-        if (!linkFits(input.kind, sessions.description(source), input.source.part, sessions.description(target), input.target.part)) {
-          throw new ApiError('invalid', `"${endName(input.source)}" cannot be said to ${kind.verb.replace(/s$/, '')} "${endName(input.target)}": the one must offer ${kind.from}, the other ${kind.to}`);
-        }
-        const link = links.add({ kind: input.kind, source: { device: source.id, part: input.source.part }, target: { device: target.id, part: input.target.part } });
-        record('device.linked', 'device', source.id, `"${endName(link.source)}" ${kind.verb} "${endName(link.target)}"`, { kind: link.kind, source: link.source, target: link.target });
-        changed();
-        return link;
-      },
-
-      async remove(id) {
-        const link = links.get(id);
-        if (!link) throw new ApiError('not-found', 'No such link');
-        links.remove(link.id);
-        record('device.unlinked', 'device', link.source.device, `"${endName(link.source)}" no longer ${linkKindSpec(link.kind).verb} "${endName(link.target)}"`);
-        changed();
-      },
-    },
   };
 }

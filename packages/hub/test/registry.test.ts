@@ -4,8 +4,8 @@ import { nodeId } from '@kraftverk/device-sdk';
 import { SessionManager } from '@kraftverk/holder';
 import { ConnectionStore, DeviceCatalog, deviceStore, HistoryStore, holding, LinkStore, NodeStore, plainSecrets } from '@kraftverk/store';
 
-import { DeviceRegistry } from '../src/devices/registry.ts';
-import { RemoteReadings } from '../src/devices/remote.ts';
+import { DeviceViews } from '../src/devices/views.ts';
+import { HeldReadings } from '../src/nodes/held-readings.ts';
 import { ProtocolRegistry } from '../src/installed/protocols.ts';
 import { TransportHost } from '../src/installed/transports.ts';
 import { DeviceTypeRegistry } from '../src/installed/types.ts';
@@ -25,7 +25,7 @@ let connections: ConnectionStore;
 let links: LinkStore;
 let nodes: NodeStore;
 let sessions: SessionManager;
-let registry: DeviceRegistry;
+let registry: DeviceViews;
 const bus = new FakeBus();
 
 beforeAll(() => {
@@ -53,7 +53,7 @@ beforeAll(() => {
     allowRawFrames: false,
     nodeName: (id) => nodes.get(id)?.name ?? null,
   });
-  registry = new DeviceRegistry({ catalog, types, sessions, connections, links, nodes, transports, remote: new RemoteReadings(new HistoryStore(db)), self: MACHINE_NODE.id, master: () => MACHINE_NODE.id, readOnly: () => false });
+  registry = new DeviceViews({ catalog, types, sessions, connections, links, nodes, transports, heldReadings: new HeldReadings(new HistoryStore(db)), self: MACHINE_NODE.id, master: () => MACHINE_NODE.id, readOnly: () => false });
 });
 
 afterAll(async () => {

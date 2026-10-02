@@ -1,6 +1,6 @@
 import type { Caller, KraftverkApi, LiveUpdate } from '@kraftverk/api-contract';
 
-import type { Hub } from '../hub.ts';
+import type { Hub } from '../node/hub.ts';
 import { Outbox } from '../live/outbox.ts';
 import { actorOf } from './caller.ts';
 

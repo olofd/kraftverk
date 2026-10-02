@@ -4,7 +4,7 @@ import { deviceStore, type NodeRecord } from '@kraftverk/store';
 
 import { loggedAttributes, recordChanges } from '../history/changes.ts';
 import { keptAttributes } from '../history/sampler.ts';
-import type { Hub } from '../hub.ts';
+import type { Hub } from '../node/hub.ts';
 import { actorOf } from './caller.ts';
 
 /*
@@ -18,6 +18,7 @@ import { actorOf } from './caller.ts';
 
 /** A device's stored value is kept up to this size. */
 const STORE_VALUE_MAX = 256 * 1024;
+
 const STORE_KEY = /^[\w.:-]{1,80}$/;
 
 /** A node of the home, as everything that uses the home sees it: `account`, who asks — whether it is theirs to forget. */
@@ -38,8 +39,8 @@ export function nodeView(node: NodeRecord, masterId: string, account: string | n
   };
 }
 
-export function heldApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'home' | 'nodes' | 'held'> {
-  const { catalog, connections, nodes, remote, sessions, events } = hub;
+export function nodesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'nodes' | 'held'> {
+  const { catalog, connections, nodes, heldReadings, sessions, events } = hub;
   const actor = actorOf(caller);
   /** Whose nodes a caller's are: a person's account. An assistant has none; a home with no accounts, its owner's, which act for nobody. */
   const account = caller.kind === 'person' ? (caller.account ?? null) : undefined;
@@ -64,12 +65,6 @@ export function heldApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'home' | '
   const masterId = () => hub.home.get()!.masterId;
 
   return {
-    /** The home: what its people call it, and its master. */
-    async home() {
-      const home = hub.home.get()!;
-      return { id: home.id, name: home.name, master: home.masterId, createdAt: home.createdAt };
-    },
-
     nodes: {
       list: async () => nodes.all().map((node) => nodeView(node, masterId(), account)),
 
@@ -116,7 +111,7 @@ export function heldApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'home' | '
           throw new ApiError('conflict', 'That connection reaches a different device, not the one you added');
         }
         // What every open screen's list shows changes only when the device does, or comes back: then it reads the list again.
-        let listChanged = remote.latest(device.id) === null;
+        let listChanged = heldReadings.latest(device.id) === null;
         if (said && !device.identity && !catalog.byIdentity(said).active) {
           catalog.update(device.id, { identity: said });
           hub.audit.record({ at: new Date().toISOString(), kind: 'device.identified', actor, resourceKind: 'device', resource: device.id, summary: `${device.name} answered for the first time, as ${said}` });
@@ -129,9 +124,9 @@ export function heldApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'home' | '
           if (catalog.describe(device.id, input.description, input.info ?? null, 'device')) listChanged = true;
         }
         const description = sessions.description(catalog.get(device.id)!);
-        const counts = remote.accept(device.id, { nodeId: node.id, connectionId: connection.id }, input.readings, keptAttributes(description));
+        const counts = heldReadings.accept(device.id, { nodeId: node.id, connectionId: connection.id }, input.readings, keptAttributes(description));
         // What it reads now, said on the live stream as a device the home holds says it; the rest went to history.
-        const latest = remote.latest(device.id);
+        const latest = heldReadings.latest(device.id);
         if (counts.live && latest) hub.bus.publish({ kind: 'readings', deviceId: device.id, readings: latest.readings });
         if (listChanged && latest) hub.bus.publish({ kind: 'changed', deviceId: device.id });
         // Its on/offs and modes, when each changed: queued ones land in their place in time.

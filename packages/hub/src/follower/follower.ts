@@ -8,7 +8,7 @@ import type { PassphraseSealing } from '../configuration/seal.ts';
 import { MovingToMaster } from '../handover/move.ts';
 import type { Installed } from '../installed/from.ts';
 import { nodeParts } from '../node/parts.ts';
-import { SetupService } from '../setup/index.ts';
+import { SetupService } from '../setup/service.ts';
 import { unref } from '../timers.ts';
 import { followerApi } from './api.ts';
 

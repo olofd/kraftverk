@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { AttributeSpec, DeviceDescription, Reading } from '@kraftverk/device-sdk';
 
-import type { DeviceRegistry } from '../src/devices/registry.ts';
+import type { DeviceViews } from '../src/devices/views.ts';
 import { AuditLog, EventStore, HistoryStore } from '@kraftverk/store';
 
 import { resolutionOf, Sampler, series } from '../src/history/sampler.ts';
@@ -41,7 +41,7 @@ const registry = (id: string, readings: Reading[], description = describedBy(rea
   db
     .query("INSERT OR IGNORE INTO device (id, key, name, config, description, added_at, type_id) VALUES (?1, ?1, ?2, '{}', ?3, ?4, 'test.device')")
     .run(id, id, JSON.stringify(description), new Date().toISOString());
-  return { all: () => [{ id, readings, description }] } as unknown as DeviceRegistry;
+  return { all: () => [{ id, readings, description }] } as unknown as DeviceViews;
 };
 
 const stored = (id: string) =>

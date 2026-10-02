@@ -26,22 +26,22 @@ import {
   type SqlDatabase,
 } from '@kraftverk/store';
 
-import { homeApi } from './api/index.ts';
-import { Attention } from './attention/attention.ts';
-import { keepWatchedFresh } from './attention/freshness.ts';
-import { homeDevices } from './automations/devices.ts';
-import { plans } from './automations/plans.ts';
-import { Configuration } from './configuration/configuration.ts';
-import type { PassphraseSealing } from './configuration/seal.ts';
-import { Nearby } from './devices/nearby.ts';
-import { DeviceRegistry } from './devices/registry.ts';
-import { RemoteReadings } from './devices/remote.ts';
-import { ChangeLog } from './history/changes.ts';
-import { Sampler } from './history/sampler.ts';
-import type { Installed } from './installed/from.ts';
-import { KeepingCopy } from './handover/keep.ts';
-import { nodeParts } from './node/parts.ts';
-import { SetupService } from './setup/index.ts';
+import { homeApi } from '../api/index.ts';
+import { Attention } from '../attention/attention.ts';
+import { keepWatchedFresh } from '../attention/freshness.ts';
+import { homeDevices } from '../automations/devices.ts';
+import { drafts } from '../automations/drafts.ts';
+import { Configuration } from '../configuration/configuration.ts';
+import type { PassphraseSealing } from '../configuration/seal.ts';
+import { Nearby } from '../devices/nearby.ts';
+import { DeviceViews } from '../devices/views.ts';
+import { HeldReadings } from '../nodes/held-readings.ts';
+import { ChangeLog } from '../history/changes.ts';
+import { Sampler } from '../history/sampler.ts';
+import type { Installed } from '../installed/from.ts';
+import { KeepingCopy } from '../handover/keep.ts';
+import { nodeParts } from './parts.ts';
+import { SetupService } from '../setup/service.ts';
 
 /** What a home is made from: everything only the place it runs can give it (docs/PLAN-SHARED-CORE.md, phase 5). */
 export type HubOptions = {
@@ -127,12 +127,12 @@ export class Hub {
   readonly gateway: ActionGateway;
   readonly library: AutomationLibrary;
   readonly engine: AutomationEngine;
-  readonly plans: ReturnType<typeof plans>;
+  readonly drafts: ReturnType<typeof drafts>;
 
   // What it does for whoever uses it.
   /** Readings an app sends for a connection it holds for this home. */
-  readonly remote: RemoteReadings;
-  readonly registry: DeviceRegistry;
+  readonly heldReadings: HeldReadings;
+  readonly views: DeviceViews;
   readonly setup: SetupService;
   readonly nearby: Nearby;
   readonly sampler: Sampler;
@@ -212,12 +212,12 @@ export class Hub {
     /** What the installed packages bring to automations: their recipes and functions. None of the core's own. */
     this.library = new AutomationLibrary(types.contributions(), (message) => this.#log('warn', message));
     this.engine = new AutomationEngine({ store: automations, library: this.library, device: homeDevices(catalog, sessions), gateway: this.gateway, record, bus: this.bus });
-    this.plans = plans({ history: this.history, events, catalog, sessions, library: this.library, engine: this.engine, automations });
+    this.drafts = drafts({ history: this.history, events, catalog, sessions, library: this.library, engine: this.engine, automations });
 
-    this.remote = new RemoteReadings(this.history);
-    this.registry = new DeviceRegistry({ catalog, types, sessions, connections, links, nodes, transports, remote: this.remote, self: self.id, master: () => this.home.get()!.masterId, readOnly: options.readOnly });
+    this.heldReadings = new HeldReadings(this.history);
+    this.views = new DeviceViews({ catalog, types, sessions, connections, links, nodes, transports, heldReadings: this.heldReadings, self: self.id, master: () => this.home.get()!.masterId, readOnly: options.readOnly });
     this.nearby = new Nearby({ types, protocols, transports, connections });
-    this.sampler = new Sampler({ history: this.history, audit: this.audit, events }, this.registry);
+    this.sampler = new Sampler({ history: this.history, audit: this.audit, events }, this.views);
     this.changeLog = new ChangeLog(this.history, this.bus, (id) => {
       const device = catalog.active(id);
       return device ? sessions.description(device) : null;
@@ -234,7 +234,7 @@ export class Hub {
       sessions,
       library: this.library,
       engine: this.engine,
-      checked: this.plans.checked,
+      checked: this.drafts.checked,
       policy: this.policy,
       sealing: options.sealing,
       kept: options.secrets,

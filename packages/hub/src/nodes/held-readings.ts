@@ -21,7 +21,7 @@ const LIVE_MS = 90_000;
 
 type Held = { nodeId: NodeId; connectionId: string; readings: Map<string, Reading>; at: number };
 
-export class RemoteReadings {
+export class HeldReadings {
   #held = new Map<SavedDeviceId, Held>();
 
   constructor(private readonly history: HistoryStore) {}

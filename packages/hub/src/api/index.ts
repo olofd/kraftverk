@@ -1,12 +1,15 @@
 import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
 
-import type { Hub } from '../hub.ts';
-import { devicesApi } from './devices.ts';
-import { heldApi } from './held.ts';
-import { liveApi } from './live.ts';
-import { homeWideApi } from './home.ts';
+import type { Hub } from '../node/hub.ts';
 import { automationsApi } from './automations.ts';
+import { configurationApi } from './configuration.ts';
+import { connectionsApi } from './connections.ts';
+import { devicesApi } from './devices.ts';
+import { homeWideApi } from './home.ts';
+import { liveApi } from './live.ts';
+import { nodesApi } from './nodes.ts';
 import { setupApi } from './setup.ts';
+import { transportsApi } from './transports.ts';
 
 /**
  * `KraftverkApi`, answered in the process for one caller: what the server's
@@ -17,10 +20,13 @@ import { setupApi } from './setup.ts';
 export function homeApi(hub: Hub, caller: Caller): KraftverkApi {
   return {
     ...devicesApi(hub, caller),
+    ...connectionsApi(hub, caller),
     ...setupApi(hub, caller),
+    ...transportsApi(hub),
     ...automationsApi(hub, caller),
-    ...homeWideApi(hub, caller),
-    ...heldApi(hub, caller),
+    ...homeWideApi(hub),
+    ...configurationApi(hub, caller),
+    ...nodesApi(hub, caller),
     ...liveApi(hub, caller),
   };
 }

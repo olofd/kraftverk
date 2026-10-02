@@ -3,7 +3,7 @@ import { isCurrent, keepsHistory, partOf, type AttributeSpec, type DeviceDescrip
 
 import type { AuditLog, EventStore, HistoryStore, Sample } from '@kraftverk/store';
 
-import type { DeviceRegistry } from '../devices/registry.ts';
+import type { DeviceViews } from '../devices/views.ts';
 import { daysBefore, HOURLY_DAYS, SAMPLE_DAYS, TIMELINE_DAYS } from './retention.ts';
 
 /**
@@ -53,7 +53,7 @@ export class Sampler {
 
   constructor(
     private readonly kept: { history: HistoryStore; audit: AuditLog; events: EventStore },
-    private readonly registry: DeviceRegistry
+    private readonly views: DeviceViews
   ) {}
 
   start(): void {
@@ -77,7 +77,7 @@ export class Sampler {
   sample(now = Date.now()): void {
     const at = new Date(now).toISOString();
     const samples: Sample[] = [];
-    for (const device of this.registry.all()) {
+    for (const device of this.views.all()) {
       const kept = keptAttributes(device.description);
       for (const reading of device.readings) {
         const attribute = kept.get(reading.key);

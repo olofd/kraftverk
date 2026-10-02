@@ -4,7 +4,7 @@ import { activeConnection, toolsOf } from '@kraftverk/holder';
 
 import type { TransportHost } from '../installed/transports.ts';
 import type { DeviceCatalog, DeviceRecord, NodeRecord, NodeStore, ConnectionRecord, ConnectionStore, LinkRecord, LinkStore } from '@kraftverk/store';
-import type { RemoteReadings } from './remote.ts';
+import type { HeldReadings } from '../nodes/held-readings.ts';
 import type { SessionManager } from '@kraftverk/holder';
 import type { DeviceTypeRegistry } from '../installed/types.ts';
 
@@ -35,7 +35,7 @@ type Joined = {
   nodes: Map<string, NodeRecord>;
 };
 
-export class DeviceRegistry {
+export class DeviceViews {
   constructor(
     private deps: {
       catalog: DeviceCatalog;
@@ -46,7 +46,7 @@ export class DeviceRegistry {
       nodes: NodeStore;
       transports: TransportHost;
       /** Readings from connections another node holds. */
-      remote: RemoteReadings;
+      heldReadings: HeldReadings;
       /** This node: the ways it holds are its own sessions'. */
       self: NodeId;
       /** The home's master: what a way it holds is said as. */
@@ -96,7 +96,7 @@ export class DeviceRegistry {
     const session = record.removedAt ? null : this.deps.sessions.get(record.id);
     const description = record.removedAt ? record.description : this.deps.sessions.description(record);
     const opened = record.removedAt ? null : this.deps.sessions.inUse(record.id);
-    const latest = record.removedAt ? null : this.deps.remote.latest(record.id);
+    const latest = record.removedAt ? null : this.deps.heldReadings.latest(record.id);
 
     /*
       The active-connection rule (docs/DATA-MODEL.md §4, decision 12): of the

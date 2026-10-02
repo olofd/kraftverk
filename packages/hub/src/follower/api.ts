@@ -4,8 +4,8 @@ import { subjectOf } from '@kraftverk/gateway';
 import { deviceReader, runTool, ToolRefused, type ToolRefusal } from '@kraftverk/holder';
 
 import { Outbox } from '../live/outbox.ts';
-import { connectionSchema } from '../setup/index.ts';
-import { holdableHere } from './holdable.ts';
+import { connectionSchema } from '../setup/service.ts';
+import { holdableHere } from '../installed/holdable.ts';
 import type { Follower } from './follower.ts';
 
 /*
