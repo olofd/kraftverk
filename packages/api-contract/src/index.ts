@@ -993,4 +993,34 @@ export interface KraftverkApi {
     add(link: NewLink): Promise<LinkRecord>;
     remove(id: LinkId): Promise<void>;
   };
+  /**
+   * Automations (docs/AUTOMATIONS.md): what they start from, the ones their
+   * owners build, their runs. Letting one act, and changing one that acts,
+   * wants a person's yes, sent back as `confirmation`.
+   */
+  automations: {
+    /** The recipes to start from, and the functions a condition may ask. */
+    kit(): Promise<AutomationKit>;
+    /** A draft checked and said, nothing kept. `self`: the automation it is, so a chain back to it is seen. */
+    draft(draft: AutomationDraft, self?: AutomationId | null): Promise<AutomationDraftView>;
+    /** Every one — or those a device fills a role of. */
+    list(filter?: { device?: SavedDeviceId }): Promise<AutomationView[]>;
+    get(id: AutomationId): Promise<AutomationView>;
+    /** Made only watching on its own. */
+    create(automation: NewAutomation): Promise<AutomationView>;
+    update(id: AutomationId, changes: AutomationChanges): Promise<AutomationView>;
+    delete(id: AutomationId): Promise<void>;
+    /** Played: it runs now, for real, whatever its mode. */
+    start(id: AutomationId): Promise<AutomationView>;
+    /** Its run stopped: what it does if stopped runs. */
+    stop(id: AutomationId): Promise<AutomationView>;
+    /** What it would do now: decided, never acted on, never kept. */
+    check(id: AutomationId): Promise<AutomationRun>;
+    /** Its runs, the latest first. */
+    runs(id: AutomationId, limit?: number): Promise<AutomationRun[]>;
+    /** One of its runs with what its devices said while it ran. */
+    runLog(id: AutomationId, runId: string): Promise<RunLog>;
+    /** A rule rehearsed on the last hours of history — a draft, or one kept: nothing sent. */
+    rehearse(subject: { draft: AutomationDraft; timeZone: string } | { automation: AutomationId }, hours?: number): Promise<Rehearsal>;
+  };
 }
