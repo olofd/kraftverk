@@ -1,3 +1,5 @@
+import { CONTRIBUTED_ID } from '@kraftverk/device-sdk';
+
 import { checkRule } from './check.ts';
 import type { AutomationFunction } from './functions.ts';
 import type { Recipe } from './rule.ts';
@@ -30,7 +32,7 @@ export function checkContribution(contribution: AutomationContribution, namespac
   const functions = contribution.functions ?? [];
   const recipes = contribution.recipes ?? [];
   const namespaced = (kind: string, id: string) => {
-    if (!id?.startsWith(`${namespace}.`) || !/^[a-z0-9.-]+\.[a-z][A-Za-z0-9-]*$/.test(id)) problem(`${kind} "${id}" must be namespaced by the type: "${namespace}.something"`);
+    if (!id?.startsWith(`${namespace}.`) || !CONTRIBUTED_ID.test(id)) problem(`${kind} "${id}" must be namespaced by the type: "${namespace}.something"`);
   };
   const seen = new Set<string>();
   for (const fn of functions) {

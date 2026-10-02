@@ -1,6 +1,9 @@
-import type { ConnectionMethod, Platform, Protocol, Sighting, TransportDefinition } from './connection.ts';
+import type { ConnectionMethod } from './connection.ts';
 import type { DeviceLogger, DeviceType, ScopedHttp } from './device-type.ts';
+import type { Platform } from './node.ts';
+import type { Protocol } from './protocol.ts';
 import type { ConfigSchema, ConfigValues } from './schema.ts';
+import type { Sighting, TransportDefinition } from './transport.ts';
 
 /**
  * Setup: how "I have one of these" becomes a device (docs/DATA-MODEL.md §1).

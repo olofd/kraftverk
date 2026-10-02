@@ -1,5 +1,5 @@
 import type { CapabilityId } from './capabilities.ts';
-import { attributeMeaning, capabilitiesOf, capabilityIn, partsOf, settingField, type AttributeSpec, type DeviceDescription, type Part } from './description.ts';
+import { attributeMeaning, capabilitiesOf, capabilityIn, partsOf, type AttributeSpec, type DeviceDescription, type Part } from './description.ts';
 import type { ConfigField, ConfigSchema } from './schema.ts';
 
 /**
@@ -49,4 +49,24 @@ export function settingsForms(description: DeviceDescription): { section: string
       },
     };
   });
+}
+
+/** A setting as the form language draws it: its value type, titled by its label. Null for one with structure. */
+function settingField(attribute: AttributeSpec): ConfigField | null {
+  const presented = { title: attribute.label, ...(attribute.description ? { description: attribute.description } : {}) };
+  const type = attribute.value;
+  switch (type.type) {
+    case 'number':
+      return { ...type, ...presented };
+    case 'boolean':
+      return { type: 'boolean', ...presented };
+    case 'enum':
+      return { type: 'enum', options: type.options, ...presented };
+    case 'string':
+      return { type: 'string', ...presented };
+    case 'timestamp':
+      return { type: 'timestamp', ...presented };
+    default:
+      return null;
+  }
 }

@@ -220,9 +220,12 @@ packages/devices/atorch-s1w/
 
 ## 4. The contract: `@kraftverk/device-sdk`
 
-The contract, in `packages/device-sdk/src` (`device-type.ts`,
-`description.ts`, `connection.ts`). Abridged: the comments in the code say
-the rest. There is one version of it (decision 21).
+The contract, in `packages/device-sdk/src`: a type (`device-type.ts`), what
+it describes (`description.ts`, checked in `check-description.ts`), how it is
+reached (`connection.ts`, over a `transport.ts`, a `protocol.ts` and the
+`channel.ts` between them), the node holding it (`node.ts`), and the ids and
+names everything is known by (`ids.ts`, `names.ts`). Abridged: the comments
+in the code say the rest. There is one version of it (decision 21).
 
 ```ts
 export interface DeviceType<Config extends ConfigValues = ConfigValues> {

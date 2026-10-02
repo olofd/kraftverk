@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
 import { conditionHolds, POLICY_VALUES, thresholdOf, type CommandResult } from './capabilities.ts';
-import { capabilitiesOf, currentForOf, deviceCapabilities, isCurrent, MAIN_PART, partIcon, partName, partsOf, validateDescription, type DeviceDescription, type Reading } from './description.ts';
+import { validateDescription } from './check-description.ts';
+import { capabilitiesOf, currentForOf, deviceCapabilities, isCurrent, MAIN_PART, partIcon, partName, partsOf, type DeviceDescription, type Reading } from './description.ts';
 import { defineDeviceType, type DeviceContext, type DeviceSession, type DeviceType } from './device-type.ts';
 import { switchConsequence } from './links.ts';
 import { checkDeviceTypeContract } from './testing.ts';

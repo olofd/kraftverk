@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { KEY, keyFrom } from './keys.ts';
+import { KEY, keyFrom } from './names.ts';
 
 /* The key a device or an automation is known by, made from the name it was given. */
 

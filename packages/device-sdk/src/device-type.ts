@@ -1,8 +1,10 @@
 import type { CapabilityId, CommandResult } from './capabilities.ts';
 import type { CategoryId } from './categories.ts';
-import { methodsOf, type ConnectionMethod, type Identified, type OpenConnection, type Platform } from './connection.ts';
+import { methodsOf, type ConnectionMethod, type Identified, type OpenConnection } from './connection.ts';
 import { deviceCapabilities, type DeviceDescription, type DeviceInfo, type Reading } from './description.ts';
-import type { SavedDeviceId, SessionHealth } from './identity.ts';
+import type { SessionHealth } from './health.ts';
+import type { SavedDeviceId } from './ids.ts';
+import type { Platform } from './node.ts';
 import { configDefaults, type ConfigSchema, type ConfigValues } from './schema.ts';
 import type { SetupStep } from './setup.ts';
 import type { Value, ValueType } from './values.ts';

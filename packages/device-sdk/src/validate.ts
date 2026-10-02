@@ -1,8 +1,12 @@
 import { CATEGORIES, isCategory } from './categories.ts';
-import { NODE_TRAITS, PLATFORMS, REACHES, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, type Protocol, type TransportDefinition } from './connection.ts';
-import { validateDescription } from './description.ts';
+import { validateDescription } from './check-description.ts';
+import { REACHES, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT } from './connection.ts';
 import type { DeviceType } from './device-type.ts';
+import { CAMEL_NAME, NAMESPACED_ID, PLAIN_ID } from './names.ts';
+import { NODE_TRAITS, PLATFORMS } from './node.ts';
+import type { Protocol } from './protocol.ts';
 import { configDefaults, isSecretField, schemaProblems, type ConfigSchema } from './schema.ts';
+import type { TransportDefinition } from './transport.ts';
 import { valueTypeProblems } from './values.ts';
 
 /** The shared vocabulary's namespace — its recipes are `standard.…` — which no device type may take. */
@@ -21,8 +25,7 @@ export const STANDARD_NAMESPACE = 'standard';
  * whole list.
  */
 
-const NAMESPACED_ID = /^[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+(-[a-z0-9]+)*)+$/;
-const PLAIN_ID = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
 
 const secretsIn = (schema: ConfigSchema | undefined): string[] =>
   Object.entries(schema?.fields ?? {})
@@ -81,7 +84,7 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
   // --- tools ------------------------------------------------------------------
   for (const [name, tool] of Object.entries(type.tools ?? {})) {
     const where = `tool "${name}"`;
-    if (!/^[a-z][A-Za-z0-9]*$/.test(name)) problem(`${where} is named in camelCase`);
+    if (!CAMEL_NAME.test(name)) problem(`${where} is named in camelCase`);
     if (!tool.label?.trim() || !tool.description?.trim()) problem(`${where} needs a label and a description`);
     problems.push(...valueTypeProblems(`${where} answer`, tool.answer));
     problems.push(...schemaProblems(`${where} input`, tool.input));

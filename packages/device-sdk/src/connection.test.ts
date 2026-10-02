@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
-import { guardChannel, openChannel, type Protocol, type Transport } from './connection.ts';
+import { guardChannel, openChannel } from './connection.ts';
+import type { Protocol } from './protocol.ts';
 import { fakeByteChannel, fakeMessageChannel } from './testing.ts';
+import type { Transport } from './transport.ts';
 
 /** Refuses any frame whose first byte is zero, as a protocol's guard would refuse a dangerous write. */
 const guarded: Protocol = {

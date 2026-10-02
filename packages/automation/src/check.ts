@@ -1,4 +1,4 @@
-import { attributeMeaning, capabilitySpec, checkValue, isCapability, MAIN_PART, meetsNeed, partsOf, standardMeaning, valueTypeOf, type AttributeSpec, type CapabilityId, type CapabilityNeed, type DeviceDescription, type Value, type ValueType } from '@kraftverk/device-sdk';
+import { attributeMeaning, CAMEL_NAME, capabilitySpec, checkValue, isCapability, MAIN_PART, meetsNeed, partsOf, standardMeaning, valueTypeOf, type AttributeSpec, type CapabilityId, type CapabilityNeed, type DeviceDescription, type Value, type ValueType } from '@kraftverk/device-sdk';
 
 import { CLOCK_TIME, EVERY_MINUTES, minutesOf, WEEKDAYS } from './clock.ts';
 import type { AutomationFunction } from './functions.ts';
@@ -85,7 +85,7 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
   const params = rule.params?.fields ?? {};
 
   for (const [role, spec] of Object.entries(roles)) {
-    if (!/^[a-z][A-Za-z0-9]*$/.test(role)) problems.push(`roles.${role}: a role is named in camelCase`);
+    if (!CAMEL_NAME.test(role)) problems.push(`roles.${role}: a role is named in camelCase`);
     if (!spec.label?.trim()) problems.push(`roles.${role}: it has no label`);
     if (isAutomationRole(spec)) continue;
     const named = [...(spec.capabilities ?? []), ...(spec.oneOf ?? [])];

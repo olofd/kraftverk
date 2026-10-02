@@ -1,18 +1,9 @@
-import type { ByteChannel, ChannelMessage, MessageChannel, OpenConnection } from './connection.ts';
-import {
-  attributeMeaning,
-  capabilitiesOf,
-  capabilityIn,
-  checkAttributeValue,
-  currentForOf,
-  isCurrent,
-  partsOf,
-  validateDescription,
-  type AttributeSpec,
-  type DeviceDescription,
-} from './description.ts';
+import type { ByteChannel, ChannelMessage, MessageChannel } from './channel.ts';
+import { validateDescription } from './check-description.ts';
+import type { OpenConnection } from './connection.ts';
+import { attributeMeaning, capabilitiesOf, capabilityIn, checkAttributeValue, currentForOf, isCurrent, partsOf, type AttributeSpec, type DeviceDescription } from './description.ts';
 import type { DeviceContext, DeviceSession, DeviceType } from './device-type.ts';
-import { savedDeviceId } from './identity.ts';
+import { savedDeviceId } from './ids.ts';
 import { configDefaults, validateConfig, valueTypeOf, type ConfigSchema, type ConfigValues } from './schema.ts';
 import { validateDeviceType } from './validate.ts';
 import { checkValue, type ScalarValueType, type Value } from './values.ts';

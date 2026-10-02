@@ -12,17 +12,24 @@
  * `@kraftverk/device-sdk/testing`, so nothing that ships loads them.
  */
 
-export * from './identity.ts';
-export * from './keys.ts';
+export * from './ids.ts';
+export * from './node.ts';
+export * from './audit.ts';
+export * from './health.ts';
+export * from './names.ts';
 export * from './values.ts';
 export * from './schema.ts';
 export * from './meanings.ts';
 export * from './capabilities.ts';
 export * from './description.ts';
+export * from './check-description.ts';
 export * from './controls.ts';
 export * from './standards.ts';
 export * from './categories.ts';
 export * from './links.ts';
+export * from './channel.ts';
+export * from './transport.ts';
+export * from './protocol.ts';
 export * from './connection.ts';
 export * from './device-type.ts';
 export * from './setup.ts';

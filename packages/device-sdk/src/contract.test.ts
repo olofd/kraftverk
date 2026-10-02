@@ -1,11 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isSimulated, methodOf, methodsOf, platformsOf, SIMULATED_METHOD, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, type Platform, type NodeNeeds, type Protocol, type TransportDefinition, unmetNeed } from './connection.ts';
+import { isSimulated, methodOf, methodsOf, platformsOf, SIMULATED_METHOD, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT } from './connection.ts';
 import { MAIN_PART, type DeviceDescription } from './description.ts';
 import type { DeviceContext, DeviceSession, DeviceType } from './device-type.ts';
 import { defineDeviceType, describeDeviceType } from './device-type.ts';
+import { unmetNeed, type NodeNeeds, type Platform } from './node.ts';
+import type { Protocol } from './protocol.ts';
 import { setupPlan } from './setup.ts';
 import { checkDeviceTypeContract, fakeByteChannel, fakeConnection } from './testing.ts';
+import type { TransportDefinition } from './transport.ts';
 import { connectionProblems, validateDeviceType, validateProtocol, validateTransportDefinition } from './validate.ts';
 
 /*
@@ -45,6 +48,7 @@ function simulatedPlug(ctx: DeviceContext<PlugConfig>, flaws: { refuse?: boolean
 }
 
 const encoder = new TextEncoder();
+
 const decoder = new TextDecoder();
 
 const PLUG: DeviceDescription = {
