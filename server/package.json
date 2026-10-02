@@ -24,6 +24,7 @@
     "@kraftverk/holder": "*",
     "@kraftverk/home-file": "*",
     "@kraftverk/hub": "*",
+    "@kraftverk/message-port": "*",
     "@kraftverk/store": "*",
     "hono": "^4.13.1",
     "zod": "^4.4.3"

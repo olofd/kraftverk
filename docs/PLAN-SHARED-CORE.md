@@ -86,6 +86,8 @@ runtime      automation-engine  runs automations: triggers, steps, runs, run log
 the API      api-contract    the API's shapes and KraftverkApi — types only; it names the
                              types of what is under it (a gateway's answer, a rule), and
                              the runtime above speaks in its shapes
+             message-port    KraftverkApi and a Transport over a message port: served on
+                             one side, the same interface on the other
 ──────────────────────────────────────────────────────────────────────────────────────
 rules        automation      the language: rules, triggers, steps, expressions; checking,
                              describing, evaluating, editing; the text form; the standard
@@ -482,11 +484,13 @@ The steps, each green and pushed:
     home made from lists on it adds and switches a lamp (the hub's
     `installed.test.ts`). The expo-sqlite adapter comes with 6c, against
     the package's own types.
-6b. **Over a message port.** `@kraftverk/message-port`: `serveApi` and
-    `apiOver`, `serveTransport` and `transportOver` — calls, refusals as
-    `ApiError`, the live stream, a step's abort, a transport's channels and
-    its chooser. `server/src/api.test.ts` asks the home a third way and
-    gets the same answers.
+6b. **Over a message port** — done, 2026-10-02. `@kraftverk/message-port`:
+    `serveApi` and `apiOver`, `serveTransport` and `transportOver` —
+    calls by their path (one the interface lacks refused where it is
+    served), refusals as `ApiError`, the live stream, a step's abort, a
+    transport's state, its live list and chooser, and its channels' bytes,
+    broker messages and HTTP answers. `server/src/api.test.ts` asks the
+    home a third way and gets the same answers.
 6c. **A phone's own home.** expo-sqlite and expo-secure-store; the
     database encrypted at rest (SQLCipher), its key in the secure store;
     `own.native.ts` makes the app's hub in the process. Typechecked and

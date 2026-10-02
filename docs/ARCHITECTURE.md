@@ -143,6 +143,8 @@ packages/
   hub/                   @kraftverk/hub                  a home, running: what is installed, devices' views, setup, history,
                                                          attention, automations, the configuration — wired over the ports
                                                          the place it runs gives it; the server's and the app's alike; pure
+  message-port/          @kraftverk/message-port         a home's API and a transport over a message port: served on one side, the
+                                                         same interface on the other — a browser's page and the hub in its worker; pure
   gateway/               @kraftverk/gateway              the action gateway's rules: pure, run by whichever holder has the connection
   api-contract/          @kraftverk/api-contract         the HTTP API's shapes, types only: declared once, imported by the server and the app
   holder/                @kraftverk/holder               what every holder does with a device: open, watch, fail over, judge a check; pure

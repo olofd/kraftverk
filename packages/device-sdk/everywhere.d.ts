@@ -110,3 +110,8 @@ interface Response {
   text(): Promise<string>;
   arrayBuffer(): Promise<ArrayBuffer>;
 }
+/** Made again where an answer crossed from another realm (`@kraftverk/message-port`): a phone's fetch polyfill has it too. */
+declare var Response: {
+  prototype: Response;
+  new (body?: BodyInit | null, init?: { status?: number; statusText?: string; headers?: HeadersInit }): Response;
+};

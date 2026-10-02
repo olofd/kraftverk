@@ -7,6 +7,7 @@ import { ApiError, type KraftverkApi, type LiveUpdate } from '@kraftverk/api-con
 import { httpApi } from '@kraftverk/api-client/http';
 import { savedDeviceId } from '@kraftverk/device-sdk';
 import { createHub, DeviceTypeRegistry, ProtocolRegistry, TransportHost, type Hub } from '@kraftverk/hub';
+import { apiOver, serveApi } from '@kraftverk/message-port';
 import { busDefinition, FakeBus, lampProtocol, lampType } from '@kraftverk/hub/testing';
 
 import { createApp } from './app.ts';
@@ -19,10 +20,11 @@ import { serverSealing } from './platform/sealing.ts';
 import { serverSecrets } from './platform/secrets.ts';
 
 /*
-  One interface, two ways to reach it (docs/PLAN-SHARED-CORE.md, principle
-  4): the same questions asked of a home in the process (`hub.as(caller)`)
-  and over HTTP (`httpApi`, through the server's routes), and the same
-  answers — refusals included, as the same ApiError. What one says and the
+  One interface, three ways to reach it (docs/PLAN-SHARED-CORE.md, principle
+  4): the same questions asked of a home in the process (`hub.as(caller)`),
+  over HTTP (`httpApi`, through the server's routes) and over a message
+  port (`apiOver`, as a browser's page asks the hub in its worker), and the
+  same answers — refusals included, as the same ApiError. What one says and the
   other does not is a route that is not an adapter, or a client that is not
   the interface.
 
@@ -64,7 +66,11 @@ beforeAll(async () => {
   app = createApp({ hub, config: loadConfig({ NODE_ENV: 'test' }, []), proxies, serverLog: { dir: null, recent: () => [] }, startedAt: new Date() }).app;
 });
 
+/** Each home served over a message port: its ports, closed with the suite. */
+const ports: MessagePort[] = [];
+
 afterAll(async () => {
+  for (const port of ports) port.close();
   await hub.stop();
   closeDb();
   rmSync(dir, { recursive: true, force: true });
@@ -93,6 +99,15 @@ const WAYS: { name: string; api: () => KraftverkApi }[] = [
         headers: { cookie: `${SESSION_COOKIE}=${cookie}` },
         fetch: async (url, init) => app.fetch(new Request(url, { ...init, headers: { host: HOST, ...(init.headers as Record<string, string>) } }), { requestIP: () => ({ address: '192.168.1.58' }) }),
       }),
+  },
+  {
+    name: 'over a message port',
+    api: () => {
+      const channel = new MessageChannel();
+      ports.push(channel.port1, channel.port2);
+      serveApi(hub.as({ kind: 'person', name: 'olof', account }), channel.port2);
+      return apiOver(channel.port1);
+    },
   },
 ];
 

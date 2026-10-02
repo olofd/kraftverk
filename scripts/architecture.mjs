@@ -64,6 +64,8 @@ const MAY_IMPORT = {
   'automation-engine': ['device-sdk', 'automation', 'gateway', 'api-contract', 'holder'],
   store: ['device-sdk', 'automation', 'gateway', 'api-contract', 'holder', 'automation-engine'],
   hub: ['device-sdk', 'automation', 'gateway', 'home-file', 'api-contract', 'holder', 'automation-engine', 'store'],
+  // A home and a transport over a message port: served on one side, the same interface on the other.
+  'message-port': ['device-sdk', 'automation', 'gateway', 'home-file', 'api-contract'],
   // The edges: the API over HTTP, and the React kit.
   'api-client': ['device-sdk', 'automation', 'gateway', 'home-file', 'api-contract'],
   ui: ['device-sdk'],
