@@ -1,184 +1,301 @@
-# Plan: one core that runs anywhere — the server's logic into packages
+# Plan: one core that runs anywhere — the logic of the server and the app into packages
 
-Written 2026-10-02, at the owner's request, after a review of what the
-server holds that is not the server's. It records the decision, what moves
-where, what stands in the way, and the order to do it in. Each phase keeps
-`npm run typecheck`, `npm test` and `npm run check:architecture` green on
-every commit, and the e2e suite at the end of each phase.
+Written 2026-10-02, at the owner's request, after a review of the server and
+the app for logic that is neither's own. It records the decision, the
+principles that follow from it, what moves where, what stands in the way,
+the guardrails that keep it so, and the order. Every commit keeps
+`npm run typecheck`, `npm test` and `npm run check:architecture` green; the
+e2e suite runs at the end of each phase.
 
 ## The decision (the owner, 2026-10-02)
 
 **Whatever can run in the app is a package the app can load.** kraftverk's
 logic — devices and their sessions, the gateway, automations and their
 language, the configuration document, history, attention — is the
-framework, not the server. It lives in packages that run in the server, in
-a browser and on a phone alike. The server is what only an always-running
-machine on the network can be: an HTTP API, accounts, the broker, a disk to
-keep files on, the packages found on that disk.
+framework, not the server's and not the app's. It lives in packages that
+run in the server, in a browser and on a phone alike.
 
-What it is for, later: the app on its own — on an Android phone, an iPhone
-or in a browser — connects to a device, keeps its own devices, history and
+- **The server** keeps only what an always-running machine on the network
+  must be: an HTTP API, accounts, the MQTT broker, a disk to keep files on,
+  the packages found on that disk.
+- **The app** keeps only what is a screen, and what is the platform's: its
+  storage, its secure storage, its radios.
+
+What it is for, later: the app on its own — on an Android phone, an iPhone,
+in a browser — connects to a device, keeps its devices, history and
 automations in its own SQLite database, and runs those automations itself.
-The server stays the always-running holder; the app becomes a full one, not
-a remote control with Bluetooth.
+The server stays the always-running holder; the app becomes a full one.
 
-This is a first-class rule (ARCHITECTURE.md §9, decision 22; AGENTS.md). It
-replaces what decision 15 said of local mode: that it cannot have history or
-automations. It can — while the app runs.
+ARCHITECTURE.md §9 records it as decision 22; AGENTS.md as a rule that never
+relaxes. It replaces what decision 15 said of local mode: that it cannot
+have history or automations. It can, while the app runs.
 
-## Where things stand
+## Principles
 
-Already shared, and pure: `device-sdk` (contracts, and today the rule
-language), `gateway`, `holder`, `api-contract`, `config`. The architecture
-check holds them to no platform built-in (`SHARED_CORE` in
-`scripts/architecture.mjs`).
+1. **Shared unless it needs the machine.** Code goes in a shared package
+   unless it needs HTTP serving, accounts, the broker, the disk or a
+   platform API. "It is only used by the server today" is not a reason.
+2. **No state at module level in shared code.** Every store, registry and
+   engine is an object made from what it is given — never a global `db()`,
+   `audit()` or `appState()`. Two hubs then run in one process (a test, an
+   app holding two homes) and nothing reaches past what it was handed.
+3. **Ports belong to the package that needs them.** A package says what it
+   needs as a small interface (the engine: where its automations and runs
+   are kept; the session manager: where its devices are). `store`
+   implements them all in SQLite; the place it runs implements the rest.
+   A package never reaches for the platform. The gateway already works so:
+   it declares its memory (`GatewayLedger`), and the server's
+   `devices/ledger.ts` keeps it in the database.
+4. **One interface, two transports.** Everything the app does with a home
+   is one typed interface, `KraftverkApi`, in `api-contract`. The hub
+   implements it in the process; `api-client` implements it over HTTP and
+   the WebSocket; the server's routes are an adapter from HTTP to the hub's.
+   The app asks the same interface whether its home is on a server or on the
+   phone, and never branches on which. Accounts, sign-in and the admin's
+   reset are the server's, and not in it.
+5. **Dependencies point down the layers** (below), and the architecture
+   check says so.
 
-The server holds about 12 000 lines, tests aside. Most of its business
-logic depends on little that is the server's:
+## The layers, at the end
 
-| Server today | What ties it to the server | Goes to |
+```
+edges        server/         HTTP (hono) adapter, accounts, admin, logs, the broker,
+             (Bun only)      finding packages on disk, the snapshot file, bun:sqlite,
+                             the secret key from the environment
+             client/         screens, React bindings, and the platform's ports:
+             (the app)       expo-sqlite / sql.js, secure storage, preferences, radios
+             api-client      KraftverkApi over HTTP and the WebSocket; pure — handed
+                             the server's address, so a CLI or a test can use it too
+             ui              the React kit
+──────────────────────────────────────────────────────────────────────────────────────
+the hub      hub             createHub({ installed, database, secrets, ... }): wires the
+                             rest, and implements KraftverkApi in the process: views,
+                             setup, history, attention, the configuration's import and
+                             export, and the uplink of an app that holds connections
+                             for a server
+             store           the data model in SQLite: one schema and its set-aside,
+                             every store — implementing the ports the packages
+                             below declare
+──────────────────────────────────────────────────────────────────────────────────────
+runtime      automation-engine  runs automations: triggers, steps, runs, run logs,
+                             rehearsal, plans; declares where its records are kept
+             holder          a device held: open, watch, fail over, judge — and the one
+                             session manager; declares where its devices are kept
+             gateway         every physical action: rules, confirmation, verification
+──────────────────────────────────────────────────────────────────────────────────────
+language     automation      the language: rules, triggers, steps, expressions; checking,
+                             describing, evaluating, editing; the text form; the standard
+                             recipes. Its README is the language's reference
+             config          the home as a document: YAML, its JSON Schema, migrations,
+                             passphrase sealing; speaks the language through automation
+──────────────────────────────────────────────────────────────────────────────────────
+contracts    device-sdk      values, meanings, capabilities, descriptions and what follows
+                             from them alone; DeviceType, Transport, Protocol, DeviceSession
+             api-contract    the API's shapes and KraftverkApi — types only
+```
+
+Device types, protocols and transports stay as they are. A device type may
+import `device-sdk` and `automation` (to declare recipes and functions), and
+its protocols. A transport keeps one entry per place it runs.
+
+Everything above the edges is shared: no Node or Bun built-in, no
+`process`, no `Buffer`, no platform API. It typechecks without Node's or
+Bun's types and bundles for a browser.
+
+## What moves — the server
+
+About 12 000 lines, tests aside. Most of it depends on little that is the
+server's:
+
+| Today | What ties it to the server | Goes to |
 |---|---|---|
-| `automations/engine.ts`, `rehearse.ts`, `runlog.ts`, `library.ts` | only its store, and the `serverDevices` adapter | `@kraftverk/automation-engine` |
-| `automations/plans.ts` | `hono/http-exception` for its errors | the engine, with errors of its own; the routes map them |
-| `automations/store.ts` | `db()` (bun:sqlite), `node:crypto` for ids | `@kraftverk/store` |
-| `device-sdk/src/automation.ts`, `recipes.ts`; `config/src/expr.ts`, `rules.ts` | nothing | `@kraftverk/automation` — the language |
-| `devices/catalog`, `connections`, `links`, `events`, `clients`, `store`, `ledger`, `remote`; `history/policy`, `changes`, `transport-store`, `schema` | `db()`, `node:crypto` for ids | `@kraftverk/store` |
-| `devices/sessions.ts` and the app's `client/src/runtime/sessions.ts` | two copies of one job | `@kraftverk/holder`: one session manager |
-| `devices/registry.ts`, `setup/*`, `nearby.ts`, `history/sampler.ts`, `attention/*`, `assistant/world.ts` | the stores and the session manager | `@kraftverk/hub` |
-| `config/export.ts`, `import.ts`, `restore.ts` | the stores; `node:crypto` | `@kraftverk/hub` |
-| `config/seal.ts` | `node:crypto` scrypt | `@kraftverk/config`, on Web Crypto (decision below) |
-| `runtime/protocols.ts`, `transports.ts` (the host) | handed what `packages.ts` finds | `@kraftverk/hub`, handed what is installed |
-| `history/db.ts` | bun:sqlite, `node:fs`, the secret key from the environment | split: opening and setting aside a schema shared; the bun:sqlite file and the key the server's |
-| `runtime/packages.ts` (discovery on disk), `config/snapshot.ts` (the file), `auth/*`, `admin/*`, `routes/*`, `app.ts`, `index.ts`, `log.ts`, `config.ts` | the disk, HTTP, accounts, the process | stay: the server |
+| `automations/engine.ts`, `rehearse.ts`, `runlog.ts`, `library.ts` | its store only; `serverDevices` | `automation-engine`; the adapter to `hub` |
+| `automations/plans.ts` | `hono/http-exception` for errors | `automation-engine`, with errors of its own; the routes map them to HTTP |
+| `automations/store.ts` | `db()`, `node:crypto` | `store`, implementing the engine's port |
+| `devices/catalog`, `connections`, `links`, `events`, `clients`, `store`, `ledger`, `remote`; `history/schema`, `changes`, `policy`, `transport-store` | `db()`, `node:crypto` | `store` |
+| `audit()`, `onAudit()`, `appState()`, `startedFresh()` in `history/db.ts` | module-level state over `db()` | `store`, as objects |
+| `history/db.ts` opening a file | bun:sqlite, `node:fs`, the key from the environment | the server's port implementations; the schema's fingerprint and set-aside to `store` |
+| `devices/sessions.ts` | `db()` | `holder`: the one session manager |
+| `devices/registry.ts`, `setup/*`, `nearby.ts`, `types.ts`; `history/sampler.ts`; `attention/*`; `assistant/world.ts` | the stores, the sessions | `hub` |
+| `runtime/protocols.ts`, `transports.ts` | handed what `packages.ts` finds | `hub`, handed `installed` |
+| `config/export.ts`, `import.ts`, `restore.ts` | the stores; `node:crypto` | `hub` |
+| `config/seal.ts` | scrypt from `node:crypto` | `config`, on Web Crypto (decision 3) |
+| `routes/live.ts`'s outbox (coalescing what goes out) | nothing | `hub`: the live updates a client is sent, in the process or over the socket |
+| `runtime/packages.ts`, `config/snapshot.ts`'s file, `auth/*`, `admin/*`, `routes/*`, `app.ts`, `index.ts`, `log.ts`, `config.ts` | the disk, HTTP, accounts, the process | stay |
 
-And the app keeps a second, smaller model of its own for local mode —
-`client/src/runtime/local.ts`, devices, connections and links in app
-preferences — which the shared store replaces.
+`index.ts` becomes `createHub(...)` and the HTTP adapter. The routes become
+thin: validate, authorise, call the hub, answer.
 
-## The packages, at the end
+## What moves — the app
 
-Shared — no Node or Bun built-in, no platform API; they typecheck without
-Node's or Bun's types and bundle for a browser:
+About 14 500 lines, tests aside. Most is screens, which stay. What is not:
 
-```
-device-sdk          contracts: values, meanings, capabilities, descriptions, DeviceType,
-                    Transport, Protocol, DeviceSession. Loses the rule language.
-automation          the language: Rule, triggers, steps, expressions; checking, describing,
-                    evaluating; the text form (the DSL); the standard recipes. Its README is
-                    the language's reference. Device packages import it to declare recipes
-                    and functions, as they import the SDK.
-config              the home as a document (devices, links, home, automations): YAML,
-                    the JSON Schema, migrations, passphrase sealing. Speaks the language
-                    through `automation`; knows no engine.
-gateway             every physical action: rules, confirmation, verification, its memory
-holder              a device held: open, watch, fail over, judge — and the one session
-                    manager both sides run
-store               the data model in SQLite, one schema, every store, over a small
-                    SQL port (below); ids from Web Crypto
-automation-engine   runs automations: triggers, steps, runs and their logs, rehearsal,
-                    plans; reads devices through the hub's ports
-hub                 a whole kraftverk: `createHub({ installed, database, secrets, ... })`
-                    wires the stores, sessions, gateway, engine, sampler, attention,
-                    setup and the configuration's import and export
-api-contract        the HTTP API's shapes
-```
+| Today | What it is | Goes to |
+|---|---|---|
+| `runtime/local.ts` | a second, smaller model of devices, connections and links, in preferences | gone: `store` |
+| `runtime/sessions.ts` | a second session manager | gone: `holder`'s |
+| `runtime/registry.ts` | what is installed, and starting transports | `hub` (`installed`); the generated registry stays the app's |
+| `runtime/runtime.ts` | wiring the app's holder | gone: `createHub` |
+| `runtime/uplink.ts` | sending a held connection's readings and audit to the server, queued | `hub`, queued in its own store |
+| `runtime/vault.ts`, `lib/preferences.ts` | secure storage, preferences | `client/src/platform/`: port implementations |
+| `state/DevicesProvider.tsx`: `describeLocal` and the local branch of every mutation | the server's device view and API again, for local mode | gone: `KraftverkApi` from the hub |
+| `features/add/flows.ts`: `AppFlow` | setup run in the app — the server's setup again | gone: `hub`'s setup, through `KraftverkApi` |
+| `features/automations/editor/draft.ts`: `listAt`, `withList`, `withStep` | edits to a rule, as data | `automation` (the draft's name and role fills stay the editor's) |
+| `features/automations/runlog/series.ts` | a run log made into series and marks | `automation-engine`, beside the run log's CSV |
+| `features/devices/model.ts`: `togglesOf`, `settingsForms` | what follows from a description alone | `device-sdk` |
+| `features/config/entries.ts`: `deviceYaml` | a device as a configuration entry — the server's export again | `config`, one function both use (as `automationEntryFrom` already is) |
+| `state/live.ts`, `state/views.ts` | applying live updates; saying what the screen shows | `api-client`, beside the stream they belong to |
+| `api-client`'s `react-native` and `expo-constants` | finding the server's address | `client/src/platform/`; `api-client` is handed it |
 
-Server only — `server/`: the HTTP API (hono), accounts and sessions,
-admin, logs, finding packages on disk, the snapshot file, the bun:sqlite
-adapter and the secret key from the environment, the process. Its
-`index.ts` becomes `createHub(...)` plus the API.
+About 60 places in the app branch on local or server mode; principle 4
+removes them. Words, icons and colours for screens — `looks.ts`,
+`modes.ts` — stay the app's: they are how it looks, not what it does.
 
-The app: `createHub(...)` in local mode, on expo-sqlite on a phone; in
-server mode, as today, a holder of the connections it has plus the API.
+## The ports
 
-## The ports — what the hub asks of where it runs
+Each declared by the package that needs it; one implementation per place.
 
-Each a small interface in the shared packages, one implementation per
-place. Nothing else differs between the server and the app.
-
-- **`SqlDatabase`** — `exec`, `all`, `get`, `run`, `transaction`;
-  synchronous, as bun:sqlite and expo-sqlite's sync API are. The schema,
-  its fingerprint and the set-aside rule (strict v1) are shared; opening a
-  file is the place's.
-- **`Installed`** — the device types, protocols and transports there are:
-  found on disk by the server, the generated registry in the app.
-- **`SecretsAtRest`** — sealing a connection's secrets in the database: the
-  server's key from its environment; the phone's secure storage (the app's
-  vault, `client/src/runtime/vault.ts`).
-- **Random ids** — `crypto.getRandomValues`, which Bun and browsers have and
-  a phone gets from a polyfill.
-- **Files** — only the server writes the snapshot; the hub hands it the
-  document.
+| Port | Declared by | Server | App |
+|---|---|---|---|
+| `SqlDatabase` (`exec`, `all`, `get`, `run`, `transaction`; synchronous) | `store` | bun:sqlite on a file | expo-sqlite on a phone; sql.js on the web |
+| where automations and runs are kept | `automation-engine` | `store` | `store` |
+| where devices, connections and secrets are kept | `holder` | `store` | `store` |
+| the gateway's memory (`GatewayLedger`) | `gateway` | `store` | `store` |
+| what a device keeps for itself (`DeviceStore`), what a transport keeps (`TransportStore`) | `device-sdk` | `store` | `store` |
+| `SecretsAtRest` (seal, open) | `store` | the key in `KRAFTVERK_SECRET_KEY` | a key kept in the phone's secure storage |
+| `Installed` (device types, protocols, transports) | `hub` | found on disk | the generated registry |
+| random ids | — | `crypto.getRandomValues` | the same, with a polyfill on a phone |
+| the snapshot file | — | the server writes what the hub hands it | none |
 
 ## Decisions for the owner
 
-1. **The language and the engine are two packages** (recommended), not one.
-   A device package declares recipes and functions in the language; it must
-   not pull in the engine. The configuration stays its own package too: it is
-   the whole home as a document, of which automations are one part.
-2. **The SQL port is synchronous** (recommended). The stores and the engine
-   stay as they are; bun:sqlite and expo-sqlite fit it. A browser's
-   persistent SQLite is asynchronous (wa-sqlite on OPFS): the browser gets
-   sql.js in memory, saved to OPFS — or the port becomes asynchronous
-   everywhere, which touches every store and the engine. Decide when the
-   browser's turn comes; nothing before needs it.
+1. **The language and the engine are two packages** (recommended). A device
+   package declares recipes and functions in the language; it must not pull
+   in the engine. The configuration stays its own package as well: it is the
+   whole home as a document, of which automations are one part.
+2. **The SQL port is synchronous** (recommended). bun:sqlite and expo-sqlite
+   fit it, and the stores and engine stay as they are. A browser gets sql.js
+   in memory, saved to its storage. The alternative — an asynchronous port,
+   for wa-sqlite on OPFS — touches every store and the engine; decide when
+   the browser's turn comes.
 3. **Passphrase sealing moves to Web Crypto** (PBKDF2 and AES-GCM), so the
-   app can open a sealed export. A new `sealed:v2:`; `v1` (scrypt) stays
+   app opens a sealed export too. A new `sealed:v2:`; `v1` (scrypt) stays
    readable on the server — the document is versioned on purpose — unless
-   no sealed export exists to keep.
+   no sealed export exists worth keeping.
 4. **An automation held by the app runs while the app runs.** In a browser,
-   while the tab is open; on a phone, in the foreground, and in the background
-   only as the platform allows (a foreground service on Android). Said where
-   an automation is held, as a connection's holder is.
+   while the tab is open; on a phone, in the foreground, and in the
+   background only as the platform allows. Said where it is held, as a
+   connection's holder is.
+5. **One interface for both modes** (recommended, principle 4). The
+   alternative keeps the app's two paths, and every feature is written
+   twice.
+6. **An app with a server stays a holder of connections**, not a second home
+   to keep in step. Syncing two homes is not part of this plan.
+
+## Guardrails — the rule enforced, not hoped for
+
+- **Shared means shared.** Each shared package typechecks with no Node or
+  Bun types (its tests apart), and a CI step bundles each one's entry for a
+  browser: a built-in, `process` or `Buffer` fails the build where it is
+  written.
+- **The layers.** `scripts/architecture.mjs` holds a table of which package
+  may import which; an import up the layers, or across them where the table
+  says not, fails.
+- **The server stays small.** `server/src` has an allowlist of folders —
+  routes, auth, admin, platform, discovery, log. A new one fails the check
+  until someone has asked whether the app could run it.
+- **The app stays screens.** A `.ts` file under `client/src` outside
+  `platform/` and `generated/` that imports neither React nor the UI kit
+  fails: logic with no screen in it belongs in a package, with its tests.
+  What is the app's own and not a screen — the list of servers it knows —
+  lives in `platform/`.
+- **The language is documented whole.** A test fails when a trigger, a step
+  kind or an operator of the language is missing from its README.
 
 ## The order
 
-Each phase green and pushed; the server's behaviour unchanged until phase 5.
+Each phase green and pushed. Files move first as they are (with git's
+history), then change. The server behaves as before throughout — the one
+visible change is a sealed export's new format (phase 5) — and the owner's
+server is checked after each phase.
 
-0. **The rule, written and enforced.**
-   - This plan; ARCHITECTURE.md §3 and §9 (decision 22, and 15 amended);
-     AGENTS.md.
-   - Each shared package typechecks without Node's or Bun's types, and one
-     CI step bundles them for a browser: a built-in, `process` or `Buffer`
-     fails the build where it is written.
-   - `server/src` gets an allowlist of its folders (routes, auth, admin,
-     storage, discovery, log): a new folder there fails the check until
-     someone has asked whether it could run in the app.
-1. **The language: `@kraftverk/automation`.** Out of `device-sdk`
-   (`automation.ts`, `recipes.ts`) and `config` (`expr.ts`, `rules.ts`).
-   Every import changes at once (strict v1). Its README becomes the
-   reference (docs/AUTOMATIONS.md and CONFIG.md point to it).
-2. **The store: `@kraftverk/store`.** The SQL port; the schema and its
-   set-aside; every store moved, given the database rather than calling
-   `db()`; ids from Web Crypto. The server's bun:sqlite adapter stays in
-   `server/`. Store tests run against both bun:sqlite and sql.js, so the
-   port is proven where the app will use it.
-3. **The engine: `@kraftverk/automation-engine`.** The engine, plans (with
-   errors of its own), rehearsal, run logs, the library. `serverDevices`
-   becomes the hub's adapter.
-4. **The hub: `@kraftverk/hub`, and one session manager.**
-   - The server's and the app's session managers become one, in `holder`.
-   - Registry, setup, nearby, sampler and changes, attention, the
-     assistant's world, and the configuration's import and export move into
-     `hub`; `createHub(...)` wires them.
-   - The server's `index.ts` becomes the hub plus the API.
-5. **The app on the hub.**
-   - Local mode runs `createHub` on expo-sqlite (a phone) and sql.js (the
-     web build). `local.ts` and its preferences go; a local install starts
-     afresh (strict v1).
-   - Automations and history in local mode; the editor and the run log
-     against the local hub.
-   - An e2e test: the app with no server adds a simulated plug, makes an
-     automation, and runs it.
-6. **The docs.** ARCHITECTURE.md §3, §4.7 and §6; DATA-MODEL.md; HANDOFF.md.
+0. **The rule, written and enforced.** This plan; ARCHITECTURE.md §3 and §9;
+   AGENTS.md. The guardrails above for what exists — the shared packages
+   there are, the layer table, the server's and the app's allowlists — with
+   today's exceptions recorded in the baseline so it can only shrink. Each
+   new package comes under them as it is made.
+1. **The language: `automation`.** From `device-sdk` (`automation.ts`,
+   `recipes.ts`), `config` (`expr.ts`, `rules.ts`) and the editor's rule
+   edits. Every import changes at once (strict v1), and the dependency rule
+   lets a device type import `automation` beside the SDK. Its README becomes the
+   reference — the JSON form and the text form side by side, every trigger,
+   step and expression, what each means and when it judges; AUTOMATIONS.md
+   and CONFIG.md point to it. The test that the reference is whole comes
+   with it.
+2. **The engine: `automation-engine`.** The engine, plans (with errors of
+   its own), rehearsal, the library, run logs with the app's series. It
+   declares its storage port; the server's store implements it until
+   phase 3.
+3. **The store: `store`.** The SQL port; the schema, its fingerprint and
+   set-aside; every store, made from a database, with nothing at module
+   level; audit and app state as objects; ids from Web Crypto; secrets at
+   rest behind their port. bun:sqlite stays in `server/`. Every store's
+   tests run on bun:sqlite and on sql.js, so the port is proven where the
+   app will use it.
+4. **One session manager, in `holder`.** The server's and the app's become
+   one, declaring where its devices are kept.
+5. **The hub, and one interface.** `KraftverkApi` in `api-contract`;
+   `createHub(...)` implements it, with registry and views, setup, nearby,
+   the sampler, attention, the assistant's world, the configuration's import
+   and export, the live outbox and the uplink. The server's routes become
+   the adapter; `api-client` implements the interface over HTTP and the
+   WebSocket, handed the server's address. Passphrase sealing moves to Web
+   Crypto here, with the import and export (decision 3).
+6. **The app on the interface.**
+   - Its providers take a `KraftverkApi`: from `api-client` with a server,
+     from `createHub` without one — on expo-sqlite on a phone, sql.js on the
+     web. `local.ts`, `describeLocal`, `AppFlow`, the app's sessions and
+     runtime go; a local install starts afresh (strict v1).
+   - The app's pure helpers move as listed above.
+   - Local mode gains history and automations: the editor, the run log and
+     the timeline against the hub in the app.
+7. **The docs.** ARCHITECTURE.md §3, §4.7 and §6; DATA-MODEL.md; DEVELOPING.md
+   (where code goes); HANDOFF.md; a README for every new package.
+
+## Risks, and how each is met
+
+- **A phone's clock.** The engine reads a home's time zone with `Intl`;
+  Hermes's support is checked on a phone in phase 6, with a small time-zone
+  library as the fallback.
+- **A phone's background.** The platform suspends a backgrounded app; the
+  engine already catches up on what was due (its grace hour). What runs in
+  the background is decision 4's.
+- **New dependencies** — sql.js (a WebAssembly build, about a megabyte, for
+  the web), expo-sqlite, a random-values polyfill — each reviewed, as ARCHITECTURE.md
+  §3 asks, and loaded only where it runs.
+- **The size of the move.** Files move unchanged first and change after, so
+  each diff is either a move or a change; the e2e suite and the server's own
+  tests guard every phase.
+
+## Not in this plan
+
+- Syncing an app's home with a server's (decision 6).
+- Running automations in a phone's background beyond what the platform
+  allows.
+- Screens in packages: the app's screens stay the app's. A package for them
+  waits for a second app to share them with.
 
 ## Verification
 
-- Every phase: typecheck, tests, the architecture check, the e2e suite.
+- Every phase: typecheck, tests, the architecture check, the e2e suite; the
+  owner's server checked after it deploys — devices connected, the charging
+  chain runs.
 - From phase 0: the shared packages typecheck without Node's or Bun's types,
-  and bundle for a browser.
-- Phase 2: every store's tests pass on bun:sqlite and on sql.js.
-- Phase 4: the server on the NAS runs as before — the owner's devices,
-  automations and the charging chain — with `createHub` underneath.
-- Phase 5: the app with no server runs an automation against a simulated
-  plug (e2e), and on a phone against a real one over Bluetooth.
+  and each bundles for a browser — `hub`, with everything under it, from
+  phase 5.
+- Phase 3: every store's tests pass on bun:sqlite and on sql.js.
+- Phase 5: the API's tests run twice — against the server over HTTP, and
+  against `createHub` in the process — and agree.
+- Phase 6: an e2e test runs the app with no server: a simulated plug added,
+  an automation made, run, and its log read; on a phone, against a real plug
+  over Bluetooth.

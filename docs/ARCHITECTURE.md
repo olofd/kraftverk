@@ -1535,10 +1535,13 @@ is continuous, and the architecture check stays at zero.
     alike, with no platform built-in, behind small ports for what differs (a
     SQLite database, what is installed, secrets at rest). The server is only
     what an always-running machine must be: the HTTP API, accounts, the
-    broker, the disk. The aim: the app on its own keeps its devices,
-    history and automations in its own SQLite and runs them. Code that is
-    not the server's is not written in `server/`; what is there moves out
-    ([PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md)).
+    broker, the disk; the app only its screens and its platform. Everything
+    the app does with a home is one interface, implemented by the hub in the
+    process and over HTTP alike, so the app never branches on where its home
+    is. The aim: the app on its own keeps its devices, history and
+    automations in its own SQLite and runs them. Logic that is neither the
+    server's nor a screen is written in a package; what is in `server/` or
+    `client/` now moves out ([PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md)).
 
 ---
 

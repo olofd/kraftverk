@@ -44,9 +44,10 @@ section is replaced by the compatibility rules, and ARCHITECTURE.md §9 says so.
   MACs, device ids, keys or deployment details. Tests use `192.0.2.x` and
   made-up ids.
 - **Device-specific code stays in its package**; the core names no product.
-- **Whatever can run in the app is a shared package**, not server code: no
-  Node or Bun built-in, the platform behind a port. `server/` is only the
-  HTTP API, accounts, the broker and the disk. Before adding to `server/src`,
-  ask whether the app could run it ([docs/PLAN-SHARED-CORE.md](docs/PLAN-SHARED-CORE.md)).
+- **Whatever can run in the app is a shared package**, not server or app
+  code: no Node or Bun built-in, the platform behind a port. `server/` is
+  only the HTTP API, accounts, the broker and the disk; `client/` only
+  screens and the platform. Before adding logic to either, ask whether a
+  package should hold it ([docs/PLAN-SHARED-CORE.md](docs/PLAN-SHARED-CORE.md)).
 - **Others may be editing this checkout.** Stage only the files you changed;
   never `git add -A`.
