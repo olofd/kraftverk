@@ -3,20 +3,18 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
 import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
-import { savedDeviceId, type ResourceKind } from '@kraftverk/device-sdk';
 
 import type { ActionGateway } from '@kraftverk/gateway';
 import type { LiveBus } from '@kraftverk/holder';
 import type { Attention, Configuration, DeviceRegistry, DeviceTypeRegistry, Hub, Nearby, ProtocolRegistry, RemoteReadings, Sampler, SetupService, TransportHost } from '@kraftverk/hub';
 import type { AutomationEngine, AutomationLibrary } from '@kraftverk/automation-engine';
-import type { AutomationStore, DeviceCatalog, DeviceRecord, ClientStore, ConnectionStore, LinkStore, EventStore } from '@kraftverk/store';
+import type { AutomationStore, DeviceCatalog, ClientStore, ConnectionStore, LinkStore, EventStore } from '@kraftverk/store';
 import { actorOf, userOf } from '../auth/routes.ts';
 import type { LoginLimiter } from '../auth/limiter.ts';
 import type { ProxyDirectory } from '../auth/trust.ts';
 import type { ServerConfig } from '../config.ts';
 import type { SessionManager } from '@kraftverk/holder';
 import type { ConfigSnapshot } from '../platform/snapshot.ts';
-import { audit } from '../platform/database.ts';
 import type { ServerLog } from '../log.ts';
 
 /**
@@ -98,7 +96,10 @@ export const homeOf = (hub: Hub): HomeDeps => ({
 });
 
 /** Who a request is, to the home: the person signed in on it. */
-export const callerOf = (c: Context): Caller => ({ kind: 'person', name: actorOf(c) });
+export const callerOf = (c: Context): Caller => {
+  const account = userOf(c)?.id;
+  return { kind: 'person', name: actorOf(c), ...(account ? { account } : {}) };
+};
 
 /** The home, as the person a request is from asks it. */
 export const homeFor = (deps: Pick<AppDeps, 'hub'>, c: Context): KraftverkApi => deps.hub.as(callerOf(c));
@@ -115,38 +116,4 @@ export async function body<T extends z.ZodType>(c: Context, schema: T): Promise<
     throw new HTTPException(400, { message: 'Expected a JSON body' });
   });
   return schema.parse(raw);
-}
-
-/**
- * Records what happened, and who did it.
- *
- * Adding, renaming and removing a device all write here. Deleting one's
- * history is the destructive one, and a device that vanishes with no entry
- * anywhere is one nobody can account for afterwards.
- */
-export const auditAbout = (c: Context, kind: string, resourceKind: ResourceKind, id: string, summary: string, detail?: unknown) =>
-  audit({ at: new Date().toISOString(), kind, actor: actorOf(c), resourceKind, resource: id, summary, detail });
-
-/**
- * The device a route names, or a 404. There is no inference here, not even
- * "when there is only one": a route that guesses right while you own one
- * device guesses wrong, silently, the day you own two.
- */
-/**
- * A phone or browser of the signed-in account, or a 404. An app speaks for
- * connections it holds only, and a client id is not a secret: it is checked
- * against the account every time.
- */
-export function ownClient(clients: ClientStore, c: Context, id: string | undefined) {
-  const user = userOf(c);
-  const client = id ? clients.get(id) : null;
-  if (!user || !client || client.userId !== user.id) throw new HTTPException(404, { message: 'No such app' });
-  return client;
-}
-
-export function deviceOr404(catalog: DeviceCatalog, id: string | undefined, { removed = false } = {}): DeviceRecord {
-  // Hono has decoded it already; decoding again turned an id with a % into a 500.
-  const record = id ? (removed ? catalog.get(savedDeviceId(id)) : catalog.active(savedDeviceId(id))) : null;
-  if (!record) throw new HTTPException(404, { message: 'No such device' });
-  return record;
 }

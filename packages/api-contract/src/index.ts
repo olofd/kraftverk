@@ -892,10 +892,25 @@ export type RunLog = {
  * an app with no server, one for its owner.
  */
 export type Caller =
-  /** A person, by the name the timeline knows them by. */
-  | { kind: 'person'; name: string }
+  /** A person, by the name the timeline knows them by — and, on a server, their account: what the apps they sign in on belong to. */
+  | { kind: 'person'; name: string; account?: string }
   /** An assistant acting for a person: it does what needs no one's yes, and is refused the rest. */
   | { kind: 'agent'; for: string };
+
+/** What an app sends for a connection it holds: what it read, who the device said it is, what it is, and what it said happened. */
+export type HeldReadings = {
+  clientId: string;
+  connectionId: string;
+  identity?: string | null;
+  readings: Reading[];
+  /** Sent only when the device describes itself: the type's own the home has already. */
+  description?: DeviceDescription;
+  info?: DeviceInfo | null;
+  events?: { id: string; part: string | null; data: Record<string, Value> | null; at: string }[];
+};
+
+/** What became of them: live ones the device's state now, queued ones history, the rest refused as out of range. */
+export type HeldReadingsTaken = { live: number; history: number; refused: number };
 
 /** A span of history asked for: `from` and `to`, or the last `hours` up to now, or the last day. */
 export type HistoryQuery = { key: string; hours?: number; from?: string; to?: string; points?: number };
@@ -1053,4 +1068,22 @@ export interface KraftverkApi {
   world(): Promise<WorldView>;
   /** The words the world is said in: capabilities, meanings, link kinds, recipes, the home's values. */
   vocabulary(): Promise<VocabularyView>;
+  /** The phones and browsers that hold connections for this home: each its account's. */
+  apps: {
+    /** An app says who it is and what it can reach devices over, at every start. */
+    register(app: { id?: string; name: string; platform: 'web' | 'native'; transports: string[] }): Promise<ClientRecord>;
+    /** This account's. */
+    list(): Promise<ClientRecord[]>;
+    /** Forgotten, with every connection it held. */
+    forget(id: ClientId): Promise<void>;
+  };
+  /** What an app sends for a connection it holds (docs/DATA-MODEL.md §4): it speaks for its own connections and nobody else's. */
+  held: {
+    readings(device: SavedDeviceId, upload: HeldReadings): Promise<HeldReadingsTaken>;
+    /** What the device keeps for its session, which the app keeps a copy of for when it is offline. */
+    store(device: SavedDeviceId): Promise<Record<string, unknown>>;
+    keep(device: SavedDeviceId, key: string, entry: { clientId: string; connectionId: string; value: unknown }): Promise<void>;
+    /** What its gateway and sessions wrote on their timeline, queued while offline: the actor is always whoever is signed in. */
+    audit(app: ClientId, entries: AuditUpload[]): Promise<{ recorded: number }>;
+  };
 }

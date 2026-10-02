@@ -26,7 +26,13 @@ export function setupApi(hub: Hub, caller: Caller): SetupApi {
   return {
     setup: {
       start: (input) => setup.start({ ...input, by: actor }),
-      startHeld: async (input) => setup.startHeld({ ...input, by: actor }),
+      /** One an app will hold: the app speaks for itself only, and must be the caller's account's. */
+      async startHeld(input) {
+        const app = hub.clients.get(input.clientId);
+        const account = caller.kind === 'person' ? caller.account : undefined;
+        if (!app || !account || app.userId !== account) throw new ApiError('not-found', 'No such app');
+        return setup.startHeld({ ...input, clientId: app.id, by: actor });
+      },
       get: async (id) => setup.view(own(id)),
       discard: async (id) => setup.discard(own(id)),
       sightings: async (id) => setup.sightings(own(id)),

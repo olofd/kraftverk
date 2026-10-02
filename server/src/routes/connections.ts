@@ -1,11 +1,9 @@
 import { Hono } from 'hono';
-import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import { connectionId, linkId, savedDeviceId, type LinkKind } from '@kraftverk/device-sdk';
+import { clientId, connectionId, linkId, savedDeviceId, type LinkKind } from '@kraftverk/device-sdk';
 
-import { userOf } from '../auth/routes.ts';
-import { auditAbout, body, homeFor, type AppDeps } from './shared.ts';
+import { body, homeFor, type AppDeps } from './shared.ts';
 
 /**
  * How each device is reached, how devices fit the house, and the phones and
@@ -17,7 +15,6 @@ import { auditAbout, body, homeFor, type AppDeps } from './shared.ts';
  */
 
 export function connectionRoutes(deps: AppDeps): Hono {
-  const { catalog, clients, sessions } = deps;
   const api = new Hono();
   const ids = (c: { req: { param(name: string): string | undefined } }) => [savedDeviceId(c.req.param('id') ?? ''), connectionId(c.req.param('connection') ?? '')] as const;
 
@@ -57,8 +54,6 @@ export function connectionRoutes(deps: AppDeps): Hono {
    * and the add flow knows what this app can hold.
    */
   api.post('/clients', async (c) => {
-    const user = userOf(c);
-    if (!user) throw new HTTPException(401, { message: 'Sign in first' });
     const input = await body(
       c,
       z
@@ -70,23 +65,14 @@ export function connectionRoutes(deps: AppDeps): Hono {
         })
         .strict()
     );
-    return c.json(clients.register({ ...input, userId: user.id }));
+    return c.json(await homeFor(deps, c).apps.register(input));
   });
 
-  api.get('/clients', (c) => {
-    const user = userOf(c);
-    if (!user) throw new HTTPException(401, { message: 'Sign in first' });
-    return c.json({ clients: clients.forUser(user.id) });
-  });
+  api.get('/clients', async (c) => c.json({ clients: await homeFor(deps, c).apps.list() }));
 
   /** Forgets a phone or browser, and every connection it held. */
   api.delete('/clients/:id', async (c) => {
-    const user = userOf(c);
-    const client = clients.get(c.req.param('id'));
-    if (!user || !client || client.userId !== user.id) throw new HTTPException(404, { message: 'No such app' });
-    clients.remove(client.id);
-    auditAbout(c, 'client.forgotten', 'client', client.id, `Forgot "${client.name}" and every connection it held`);
-    await sessions.sync(catalog.list());
+    await homeFor(deps, c).apps.forget(clientId(c.req.param('id')));
     return c.json({ ok: true });
   });
 

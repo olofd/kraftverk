@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { LINK_KIND_IDS, type LinkKind } from '@kraftverk/device-sdk';
 
-import { body, homeFor, ownClient, type AppDeps } from './shared.ts';
+import { body, homeFor, type AppDeps } from './shared.ts';
 
 const values = z.record(z.string().max(64), z.union([z.string().max(4096), z.number(), z.boolean()]));
 
@@ -24,7 +24,7 @@ export function setupRoutes(deps: AppDeps): Hono {
   /**
    * A connection this app will hold. It ran the steps itself and read the
    * device with its own radio; this is what it learnt, never a secret. The
-   * app speaks for itself only: it must be one of this account's.
+   * app speaks for itself only: the home checks it is this account's.
    */
   api.post('/app', async (c) => {
     const input = await body(
@@ -51,8 +51,7 @@ export function setupRoutes(deps: AppDeps): Hono {
         })
         .strict()
     );
-    const client = ownClient(deps.clients, c, input.clientId);
-    return c.json(await homeFor(deps, c).setup.startHeld({ ...input, clientId: client.id }));
+    return c.json(await homeFor(deps, c).setup.startHeld(input));
   });
 
   api.get('/:id', async (c) => c.json(await homeFor(deps, c).setup.get(c.req.param('id'))));

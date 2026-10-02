@@ -82,6 +82,8 @@ export function adminRoutes(deps: AppDeps, accounts: ReturnType<typeof createAut
     // Back to the state a fresh install boots into: no devices, so no sessions.
     await sessions.sync(catalog.list());
     sampler.start();
+    // Every open app's list is empty now: it reads it again.
+    deps.bus.publish({ kind: 'changed', deviceId: null });
 
     return c.json({ ok: true, tables, rows });
   });
