@@ -12,16 +12,16 @@ import { createHub, DeviceTypeRegistry, ProtocolRegistry, TransportHost, type At
 
 import { CORS_METHODS, corsOrigin, createApp } from './app.ts';
 import { CLIENT_HEADER, SESSION_COOKIE } from './auth/routes.ts';
-import { createFirstUser, createUser } from './auth/store.ts';
+import { Accounts } from './auth/accounts.ts';
 import { CLIENT_IP_HEADER, EXPOSURE_HEADER, ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
 import { busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE } from '@kraftverk/hub/testing';
-import { auditLog, closeDb, db } from './platform/database.ts';
+import { openDatabase } from './platform/database.ts';
 import { discoverDeviceTypes, discoverProtocols, discoverTransports } from './platform/packages.ts';
 import { serverSealing } from './platform/sealing.ts';
-import { openSecret } from './platform/secrets.ts';
 import { originAllowed } from './routes/live.ts';
 import { serverSecrets } from './platform/secrets.ts';
+import { AuditLog, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 /**
  * The server's routes, over HTTP, as the app and an attacker reach them.
@@ -46,10 +46,17 @@ type Server = {
   sessions: SessionManager;
   setup: SetupService;
   bus: FakeBus;
+  /** Its own database, the accounts in it, and how it seals secrets. */
+  database: SqlDatabase;
+  accounts: Accounts;
+  secrets: SecretsAtRest;
   close(): Promise<void>;
 };
 
-async function build(options: { installed: boolean; readOnly?: boolean }): Promise<Server> {
+async function build(options: { installed: boolean; readOnly?: boolean; file: string }): Promise<Server> {
+  const { database } = openDatabase(options.file);
+  const accounts = new Accounts(database);
+  const secrets = serverSecrets(null);
   const config = loadConfig({ NODE_ENV: 'test', READ_ONLY: options.readOnly ? '1' : '0' }, []);
   const bus = new FakeBus();
   const protocols = new ProtocolRegistry();
@@ -68,9 +75,9 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
 
   // As index.ts builds a home — but not started: only the bus runs, and nothing reaches a radio or the network.
   const hub = createHub({
-    database: db(),
-    audit: auditLog(),
-    secrets: serverSecrets,
+    database,
+    audit: new AuditLog(database),
+    secrets,
     sealing: serverSealing,
     installed: { types, protocols, transports },
     readOnly: () => config.readOnly,
@@ -80,7 +87,7 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
   });
   const proxies = new ProxyDirectory(PROXY);
   await proxies.refresh();
-  const { app, websocket } = createApp({ hub, config, proxies, serverLog: { dir: null, recent: () => [] }, startedAt: new Date() });
+  const { app, websocket } = createApp({ hub, accounts, config, proxies, serverLog: { dir: null, recent: () => [] }, startedAt: new Date() });
   return {
     app,
     websocket,
@@ -89,7 +96,13 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
     sessions: hub.sessions,
     setup: hub.setup,
     bus,
-    close: () => hub.stop(),
+    database,
+    accounts,
+    secrets,
+    close: async () => {
+      await hub.stop();
+      database.close();
+    },
   };
 }
 
@@ -97,16 +110,14 @@ let simulated: Server;
 let onBus: Server;
 
 beforeAll(async () => {
-  process.env.KRAFTVERK_DB = join(dir, 'test.db');
-  closeDb();
-  simulated = await build({ installed: true });
-  onBus = await build({ installed: false });
+  // Each its own database: two homes, two writers' worth of nothing shared.
+  simulated = await build({ installed: true, file: join(dir, 'simulated.db') });
+  onBus = await build({ installed: false, file: join(dir, 'on-bus.db') });
 });
 
 afterAll(async () => {
   await simulated.close();
   await onBus.close();
-  closeDb();
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -142,21 +153,30 @@ async function call(
   return { status: response.status, body: json, text, headers: response.headers, token };
 }
 
+/** Signed in as olof: on the server with installed types (`session`), and on each, by server. */
 let session: string;
+const sessions = new Map<Server, string>();
 
 const login = async (username: string, server = simulated) =>
   (await call('/auth/login', { method: 'POST', body: { username, password: PASSWORD }, server })).token!;
 
+/** An account on both servers, made by olof. */
+const createUser = async (username: string) => {
+  for (const server of [simulated, onBus]) await server.accounts.createUser(username, PASSWORD, 'olof');
+};
+
 beforeEach(async () => {
-  db().exec('DELETE FROM device; DELETE FROM sample; DELETE FROM node; DELETE FROM users; DELETE FROM sessions; DELETE FROM app_state; DELETE FROM audit; DELETE FROM automation;');
-  await simulated.sessions.sync([]);
-  await onBus.sessions.sync([]);
+  for (const server of [simulated, onBus]) {
+    server.database.exec('DELETE FROM device; DELETE FROM sample; DELETE FROM node WHERE self = 0; DELETE FROM users; DELETE FROM sessions; DELETE FROM app_state; DELETE FROM audit; DELETE FROM automation;');
+    await server.sessions.sync([]);
+    await server.accounts.createFirstUser('olof', PASSWORD);
+    sessions.set(server, await login('olof', server));
+  }
   onBus.bus.lamps.clear();
-  await createFirstUser('olof', PASSWORD);
-  session = await login('olof');
+  session = sessions.get(simulated)!;
 });
 
-const as = (path: string, options: Call = {}) => call(path, { cookie: session, ...options });
+const as = (path: string, options: Call = {}) => call(path, { cookie: sessions.get(options.server ?? simulated), ...options });
 const onBusAs = (path: string, options: Call = {}) => as(path, { server: onBus, ...options });
 const enc = encodeURIComponent;
 
@@ -405,7 +425,7 @@ describe('adding a device', () => {
     lampAt('lamp-1');
     lampAt('lamp-1');
     const lamp = await added('Hall lamp');
-    db().query("INSERT INTO sample (device_id, part, key, at, value) VALUES (?, 'main', ?, ?, ?)").run(lamp.id, 'on', new Date().toISOString(), 1);
+    onBus.database.query("INSERT INTO sample (device_id, part, key, at, value) VALUES (?, 'main', ?, ?, ?)").run(lamp.id, 'on', new Date().toISOString(), 1);
     expect((await onBusAs(`/devices/${enc(lamp.id)}`, { method: 'DELETE' })).status).toBe(200);
 
     const { id, check } = await checked();
@@ -414,7 +434,7 @@ describe('adding a device', () => {
     expect(back.status).toBe(200);
     expect(back.body.id).toBe(lamp.id);
     expect(back.body.removedAt).toBeNull();
-    expect(db().query<{ n: number }, [string]>('SELECT COUNT(*) n FROM sample WHERE device_id = ?').get(lamp.id)!.n).toBe(1);
+    expect(onBus.database.query<{ n: number }, [string]>('SELECT COUNT(*) n FROM sample WHERE device_id = ?').get(lamp.id)!.n).toBe(1);
   });
 
   test('another way to reach a device must reach that device', async () => {
@@ -481,14 +501,14 @@ describe('adding a device', () => {
     const saved = await onBusAs(`/setup/${id}/save`, { method: 'POST', body: { name: 'Keyed' } });
     expect(saved.body.connections[0].secrets).toEqual(['pin']);
     expect(saved.text).not.toContain('the-real-secret-value');
-    const row = db()
+    const row = onBus.database
       .query<{ value: string; encrypted: number }, [string]>('SELECT value, encrypted FROM connection_secret WHERE connection_id = ?')
       .get(saved.body.connections[0].id)!;
-    expect(openSecret(row.value, row.encrypted === 1)).toBe('the-real-secret-value');
+    expect(onBus.secrets.open(row.value, row.encrypted === 1)).toBe('the-real-secret-value');
   });
 
   test('a draft is only its own account’s, and nothing unknown is set up', async () => {
-    await createUser('guest', PASSWORD, 'olof');
+    await createUser('guest');
     const guest = await login('guest', onBus);
     const started = await onBusAs('/setup', { method: 'POST', body: { typeId: 'test.lamp', methodId: 'bus' } });
     expect((await call(`/setup/${started.body.id}`, { cookie: guest, server: onBus })).status).toBe(404);
@@ -579,7 +599,7 @@ describe('a device you have', () => {
     // The pack the simulator reports is kept with the device, so its history keeps its name —
     // recorded on the holder's next check, which runs every little while.
     await simulated.sessions.check();
-    const kept = db().query<{ key: string }, [string]>("SELECT key FROM device_attribute WHERE device_id = ? AND part = 'pack.1'").all(station.id);
+    const kept = simulated.database.query<{ key: string }, [string]>("SELECT key FROM device_attribute WHERE device_id = ? AND part = 'pack.1'").all(station.id);
     expect(kept.map((row) => row.key)).toEqual(['pack.1.soc']);
     expect((await as(`/devices/${enc(station.id)}/events`)).body).toEqual({ events: [] });
   });
@@ -641,7 +661,9 @@ describe('a device you have', () => {
   });
 
   test('a read-only server refuses a tool that writes to hardware before it runs; a simulated device has none', async () => {
-    const readOnly = await build({ installed: false, readOnly: true });
+    const readOnly = await build({ installed: false, readOnly: true, file: join(dir, 'read-only.db') });
+    await readOnly.accounts.createFirstUser('olof', PASSWORD);
+    sessions.set(readOnly, await login('olof', readOnly));
     try {
       readOnly.bus.lamps.set('lamp-1', { serial: 'LAMP-1', model: 'L1', on: true, answers: true });
       const real = await added('Real lamp', { server: readOnly, address: 'lamp-1' });
@@ -784,7 +806,7 @@ describe('a connection a browser holds', () => {
     expect(view.readings).toEqual([expect.objectContaining({ key: 'on', value: true })]);
     expect(view.health).toMatchObject({ status: 'connected', detail: 'Connected through Olof’s laptop', node: client.id });
     expect(view.connections[0].inUse).toBe(true);
-    expect(db().query<{ n: number }, [string]>('SELECT COUNT(*) n FROM sample WHERE device_id = ?').get(device.id)!.n).toBe(1);
+    expect(onBus.database.query<{ n: number }, [string]>('SELECT COUNT(*) n FROM sample WHERE device_id = ?').get(device.id)!.n).toBe(1);
   });
 
   test('sends what the device said happened: kept as the server’s own are, at the level its description declares, and a problem across devices', async () => {
@@ -820,7 +842,7 @@ describe('a connection a browser holds', () => {
     const started = await heldSetup(client.id, { identity: null, model: 'L1', summary: 'On.' });
     const device = (await onBusAs(`/setup/${started.body.id}/save`, { method: 'POST', body: { name: 'Desk lamp' } })).body;
     const connectionId = device.connections[0].id;
-    const identity = () => db().query<{ identity: string | null }, [string]>('SELECT identity FROM device WHERE id = ?').get(device.id)!.identity;
+    const identity = () => onBus.database.query<{ identity: string | null }, [string]>('SELECT identity FROM device WHERE id = ?').get(device.id)!.identity;
     const send = (said: string) =>
       onBusAs(`/devices/${enc(device.id)}/readings`, {
         method: 'POST',
@@ -846,7 +868,7 @@ describe('a connection a browser holds', () => {
     // A connection this server holds is not the app's to report on.
     expect((await onBusAs(`/devices/${enc(serverHeld.id)}/readings`, { method: 'POST', body: { nodeId: client.id, connectionId, readings: [reading] } })).status).toBe(403);
 
-    await createUser('guest', PASSWORD, 'olof');
+    await createUser('guest');
     const guest = await login('guest', onBus);
     const other = await call('/setup/held', {
       method: 'POST',
@@ -949,7 +971,7 @@ describe('the home and its nodes', () => {
     // A place it says it stands at is one the home has.
     expect((await as('/nodes', { method: 'POST', body: { ...phone, place: 'p-000000000000' } })).status).toBe(400);
 
-    await createUser('guest', PASSWORD, 'olof');
+    await createUser('guest');
     const guest = await login('guest');
     // Another account can neither take this phone's id nor forget it.
     expect((await call('/nodes', { method: 'POST', cookie: guest, body: { ...phone, name: 'Mine now' } })).status).toBe(409);

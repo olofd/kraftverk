@@ -54,11 +54,12 @@ Fakes on the wire — a pretend plug speaking tuya-local on a local port, a
 pretend station speaking Sydpower to a test broker, built from recorded
 sessions — will let the same tests run all the way down (NEXT-STEP phase 7).
 
-**Server tests must set `KRAFTVERK_DB`.** Bun runs every test file in one
-process, sharing the database handle, and several suites begin by deleting from
-`device` and `sample`. A suite that reaches the default file would truncate the
-owner's catalog — it has happened — so `db()` now throws rather than open it
-under `NODE_ENV=test`.
+**Each server test opens a database of its own.** Nothing in the server keeps
+a database handle: the process opens it once (`openDatabase` in `index.ts`)
+and hands it on, and a test opens its own — a temp file, or `:memory:`.
+Several suites begin by deleting from `device` and `sample`, and one that
+reached the default file would truncate the owner's catalog — it has happened —
+so `openDatabase` refuses the default path under `NODE_ENV=test`.
 
 ## Project layout
 

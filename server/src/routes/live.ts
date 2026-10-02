@@ -9,7 +9,6 @@ import { automationId, savedDeviceId } from '@kraftverk/device-sdk';
 
 import { hostName } from '../auth/host.ts';
 import { SESSION_COOKIE } from '../auth/routes.ts';
-import { sessionAlive } from '../auth/store.ts';
 import { homeFor, type AppDeps } from './shared.ts';
 
 /**
@@ -114,7 +113,7 @@ export function liveRoutes(deps: AppDeps, upgradeWebSocket: UpgradeWebSocket, co
           const raw = ws.raw as { getBufferedAmount?: () => number } | undefined;
           stream = home.live((update) => ws.send(JSON.stringify(update)), { draining: () => (raw?.getBufferedAmount?.() ?? 0) <= MAX_BUFFERED_BYTES });
           const watch = setInterval(() => {
-            if (!sessionAlive(token)) ws.close(SIGNED_OUT, 'Signed out');
+            if (!deps.accounts.sessionAlive(token)) ws.close(SIGNED_OUT, 'Signed out');
           }, SESSION_CHECK_MS);
           stop = () => {
             stream?.close();

@@ -1,20 +1,16 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
 import { nodeId, SIMULATED_ADDRESS, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT } from '@kraftverk/device-sdk';
 import { LiveBus, type LiveMessage, SessionManager } from '@kraftverk/holder';
+import { AuditLog, ConnectionStore, DeviceCatalog, deviceStore, holding, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
 
-import { closeDb, db, deviceStore, audit } from '../platform/database.ts';
-import { DeviceTypeRegistry, ProtocolRegistry, TransportHost } from '@kraftverk/hub';
-import { busDefinition, FakeBus, LAMP, lampControl, lampProtocol, lampType, MACHINE_NODE, opened } from '@kraftverk/hub/testing';
-import { DeviceCatalog, NodeStore, ConnectionStore, holding } from '@kraftverk/store';
-import { serverSecrets } from '../platform/secrets.ts';
+import { DeviceTypeRegistry, ProtocolRegistry, TransportHost } from '../src/index.ts';
+import { busDefinition, FakeBus, LAMP, lampControl, lampProtocol, lampType, MACHINE_NODE, opened } from '../src/testing.ts';
+import { testDatabase } from './home.ts';
 
 /**
  * One session per saved device, whatever it is, over the connection it is
- * reached by.
+ * reached by, as a node holds them: the session manager, over the stores.
  *
  * The manager knows no product, protocol or transport, so these use a lamp on
  * a pretend bus. What is pinned down: each device gets its own config, store
@@ -22,8 +18,7 @@ import { serverSecrets } from '../platform/secrets.ts';
  * to reach a different device is refused.
  */
 
-const dir = mkdtempSync(join(tmpdir(), 'kraftverk-sessions-'));
-
+let db: SqlDatabase;
 let catalog: DeviceCatalog;
 let connections: ConnectionStore;
 let nodes: NodeStore;
@@ -45,35 +40,33 @@ const build = (options: { readOnly?: boolean; bus?: LiveBus } = {}) => {
     protocols,
     transports,
     ...holding(connections, MACHINE_NODE.id),
-    store: deviceStore,
+    store: (deviceId) => deviceStore(db, deviceId),
     readOnly: () => options.readOnly ?? false,
     allowRawFrames: false,
     nodeName: (id) => nodes.get(id)?.name ?? null,
-    record: audit,
+    record: (entry) => new AuditLog(db).record(entry),
     onIdentified: (deviceId, identity) => identified.push([deviceId, identity]),
     bus: options.bus,
   });
 };
 
 beforeAll(() => {
-  process.env.KRAFTVERK_DB = join(dir, 'test.db');
-  closeDb();
-  catalog = new DeviceCatalog(db());
-  connections = new ConnectionStore(db(), serverSecrets);
-  nodes = new NodeStore(db());
-  // This server, the node every connection here is held by unless another is said.
+  db = testDatabase();
+  catalog = new DeviceCatalog(db);
+  connections = new ConnectionStore(db, plainSecrets);
+  nodes = new NodeStore(db);
+  // This node, the one every connection here is held by unless another is said.
   nodes.declareSelf({ ...MACHINE_NODE, platform: 'system', transports: ['bus'] });
 });
 
 afterAll(async () => {
   await sessions?.closeAll();
-  closeDb();
-  rmSync(dir, { recursive: true, force: true });
+  db.close();
 });
 
 beforeEach(async () => {
   await sessions?.closeAll();
-  db().exec('DELETE FROM device');
+  db.exec('DELETE FROM device');
   opened.length = 0;
   lampControl.failOpen = false;
   identified = [];
@@ -125,7 +118,7 @@ describe('one session per device', () => {
     expect(sessions.get(hall.id)).toBeNull();
     expect(opened[0]!.closed).toBe(true);
     // Kept with its history, so bringing it back brings its store back too.
-    expect(db().query('SELECT COUNT(*) AS n FROM device_kv').get()).toEqual({ n: 1 });
+    expect(db.query('SELECT COUNT(*) AS n FROM device_kv').get()).toEqual({ n: 1 });
   });
 
   test('a changed config reopens the device with the new one', async () => {
@@ -234,8 +227,8 @@ describe('a device that cannot open is still a device, saying why', () => {
   });
 
   test('a device held only by a phone has no session here, and says who holds it', async () => {
-    const user = db().query<{ id: string }, []>('SELECT id FROM users LIMIT 1').get();
-    const userId = user?.id ?? (db().exec("INSERT INTO users (id, username, password_hash, created_at, password_changed_at) VALUES ('u-test', 'tester', 'x', '2026-01-01', '2026-01-01')"), 'u-test');
+    const user = db.query<{ id: string }, []>('SELECT id FROM users LIMIT 1').get();
+    const userId = user?.id ?? (db.exec("INSERT INTO users (id, username, password_hash, created_at, password_changed_at) VALUES ('u-test', 'tester', 'x', '2026-01-01', '2026-01-01')"), 'u-test');
     const phone = nodes.join({ id: nodeId('n-00000000aa02'), name: 'Olof’s iPhone', platform: 'native', transports: ['ble'], alwaysOn: false, reachable: false, trusted: false }, userId);
     const record = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Pocket lamp' });
     connections.add({ deviceId: record.id, method: 'bus', transport: 'bus', heldBy: phone.id, address: 'lamp-7' });
@@ -301,7 +294,7 @@ describe('who a device is', () => {
 
     expect(sessions.get(record.id)).toBeNull();
     expect(sessions.health(record).detail).toContain('different device');
-    const audit = db().query<{ kind: string }, [string]>("SELECT kind FROM audit WHERE resource = ? AND kind = 'device.mismatch'").all(record.id);
+    const audit = db.query<{ kind: string }, [string]>("SELECT kind FROM audit WHERE resource = ? AND kind = 'device.mismatch'").all(record.id);
     expect(audit).toHaveLength(1);
   });
 });

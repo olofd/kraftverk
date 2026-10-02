@@ -1,6 +1,7 @@
-import { resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 import { allowedHosts } from './auth/host.ts';
+import { DEFAULT_DATABASE_FILE } from './platform/database.ts';
 
 /**
  * Everything the server reads from its environment and command line, read once.
@@ -33,6 +34,12 @@ export type ServerConfig = {
   development: boolean;
   trustedProxies: string | undefined;
   logDir: string;
+  /** The database (`KRAFTVERK_DB`); what the server keeps beside it — its node's id, the configuration kept — is kept beside it. */
+  databaseFile: string;
+  /** The passphrase connection secrets are sealed at rest with (`KRAFTVERK_SECRET_KEY`); none: kept as given, and said so. */
+  secretKey: string | null;
+  /** The file whose passphrase enables erasing the home (`KRAFTVERK_RESET_SECRET_FILE`). */
+  resetSecretFile: string;
   /** The environment transports read their own settings from. */
   env: Readonly<Record<string, string | undefined>>;
 };
@@ -48,6 +55,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     development: env.NODE_ENV !== 'production',
     trustedProxies: env.KRAFTVERK_TRUSTED_PROXIES,
     logDir: env.KRAFTVERK_LOG_DIR || resolve(import.meta.dirname, '../data/logs'),
+    databaseFile: env.KRAFTVERK_DB || DEFAULT_DATABASE_FILE,
+    secretKey: env.KRAFTVERK_SECRET_KEY || null,
+    resetSecretFile: env.KRAFTVERK_RESET_SECRET_FILE || resolve(import.meta.dirname, '../data/reset-secret'),
     env,
   };
 }
@@ -67,3 +77,6 @@ function allowedOrigins(raw: string | undefined): string[] {
       return false;
     });
 }
+
+/** Where the server keeps what lives beside its database: this node's id (`node-id`), the configuration kept (`config/kraftverk.yaml`). */
+export const besideDatabase = (config: Pick<ServerConfig, 'databaseFile'>, ...path: string[]): string => join(dirname(config.databaseFile), ...path);

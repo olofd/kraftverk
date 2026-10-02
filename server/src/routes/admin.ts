@@ -4,14 +4,13 @@ import { z } from 'zod';
 import type { PolicyValueName } from '@kraftverk/api-contract';
 import { RESOURCE_KINDS, type ResourceKind } from '@kraftverk/device-sdk';
 
-import { RESET_SECRET_MIN, resetSecret, resetSecretPath, secretMatches } from '../admin/reset.ts';
+import { RESET_SECRET_MIN, resetSecret, secretMatches } from '../platform/reset-secret.ts';
 import { LoginLimiter, limiterKeys } from '../auth/limiter.ts';
 import type { createAuth } from '../auth/routes.ts';
-import { audit } from '../platform/database.ts';
 import { body, homeFor, type AppDeps } from './shared.ts';
 
 /** Erasing everything — the server's — and, from the home, its values and its timeline. */
-export function adminRoutes(deps: AppDeps, accounts: ReturnType<typeof createAuth>): Hono {
+export function adminRoutes(deps: AppDeps, auth: ReturnType<typeof createAuth>): Hono {
   const admin = new Hono();
 
   /** Wrong reset passphrases, counted apart from logins: a typo here should not lock anyone out. */
@@ -22,7 +21,7 @@ export function adminRoutes(deps: AppDeps, accounts: ReturnType<typeof createAut
    * offering the control, so nobody sees a button that cannot work. It reports
    * only *that* a secret exists, never any part of it.
    */
-  admin.get('/admin/reset', async (c) => c.json({ available: (await resetSecret()) !== null, secretFile: resetSecretPath() }));
+  admin.get('/admin/reset', async (c) => c.json({ available: (await resetSecret(deps.config.resetSecretFile)) !== null, secretFile: deps.config.resetSecretFile }));
 
   /**
    * Empties the database.
@@ -37,17 +36,17 @@ export function adminRoutes(deps: AppDeps, accounts: ReturnType<typeof createAut
    * against them — it is there so that this takes more than an account.
    */
   admin.post('/admin/reset', async (c) => {
-    const who = accounts.requireUser(c).username;
-    const expected = await resetSecret();
+    const who = auth.requireUser(c).username;
+    const expected = await resetSecret(deps.config.resetSecretFile);
     if (!expected) {
       throw new HTTPException(404, {
-        message: `Resetting is not enabled. Write a passphrase of at least ${RESET_SECRET_MIN} characters to ${resetSecretPath()} on the server to enable it.`,
+        message: `Resetting is not enabled. Write a passphrase of at least ${RESET_SECRET_MIN} characters to ${deps.config.resetSecretFile} on the server to enable it.`,
       });
     }
 
     // Guessing is counted, by account and by address, like a login: a wrong
     // passphrase must cost something on the one route that erases everything.
-    const { trust } = accounts.access(c);
+    const { trust } = auth.access(c);
     const keys = limiterKeys(trust.clientIp, who, trust.onHomeNetwork);
     const wait = resetGuesses.wait(keys);
     if (wait > 0) {
@@ -58,7 +57,7 @@ export function adminRoutes(deps: AppDeps, accounts: ReturnType<typeof createAut
     const { secret } = await body(c, z.object({ secret: z.string().max(1024) }));
     if (!secretMatches(secret, expected)) {
       resetGuesses.failed(keys);
-      audit({ at: new Date().toISOString(), kind: 'database.reset-refused', actor: who, summary: `${who} gave a wrong reset passphrase`, detail: { clientIp: trust.clientIp } });
+      deps.hub.audit.record({ at: new Date().toISOString(), kind: 'database.reset-refused', actor: who, summary: `${who} gave a wrong reset passphrase`, detail: { clientIp: trust.clientIp } });
       // Deliberately says nothing about length or how close it was.
       throw new HTTPException(403, { message: 'That is not the reset passphrase' });
     }

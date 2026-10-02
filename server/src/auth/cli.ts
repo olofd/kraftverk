@@ -1,17 +1,10 @@
 import { randomBytes } from 'node:crypto';
 
-import { audit } from '../platform/database.ts';
-import {
-  AccountError,
-  countUsers,
-  createFirstUser,
-  createUser,
-  deleteUser,
-  endAllSessions,
-  findUserByName,
-  listUsers,
-  setPassword,
-} from './store.ts';
+import { AuditLog } from '@kraftverk/store';
+
+import { loadConfig } from '../config.ts';
+import { openDatabase } from '../platform/database.ts';
+import { AccountError, Accounts } from './accounts.ts';
 
 /**
  * `npm run users -- <command>` — accounts, from a shell on the server.
@@ -33,6 +26,11 @@ import {
  * your own, pipe it in:  echo -n 'a long password' | … password olof --stdin
  */
 
+// The server's own database, as the server finds it: the accounts in it, and its timeline.
+const { database } = openDatabase(loadConfig().databaseFile);
+const accounts = new Accounts(database);
+const timeline = new AuditLog(database);
+
 const [command, ...rest] = process.argv.slice(2);
 const name = rest.find((arg) => !arg.startsWith('--'));
 const fromStdin = rest.includes('--stdin');
@@ -53,12 +51,12 @@ function fail(message: string): never {
 }
 
 const record = (kind: string, summary: string, account: string) =>
-  audit({ at: new Date().toISOString(), kind, actor: 'server console', resourceKind: 'account', resource: account, summary });
+  timeline.record({ at: new Date().toISOString(), kind, actor: 'server console', resourceKind: 'account', resource: account, summary });
 
 try {
   switch (command) {
     case 'list': {
-      const users = listUsers();
+      const users = accounts.listUsers();
       if (users.length === 0) console.log('No accounts. The first can be created from the app on the home network, or with `add`.');
       for (const user of users) {
         console.log(`${user.username.padEnd(24)} created ${user.createdAt.slice(0, 10)}${user.lastLoginAt ? `, last login ${user.lastLoginAt.slice(0, 16).replace('T', ' ')}` : ', never logged in'}`);
@@ -68,31 +66,31 @@ try {
     case 'add': {
       const username = requireName();
       const { password, show } = await newPassword();
-      const user = countUsers() === 0 ? await createFirstUser(username, password) : await createUser(username, password, 'server console');
+      const user = accounts.countUsers() === 0 ? await accounts.createFirstUser(username, password) : await accounts.createUser(username, password, 'server console');
       record('user.created', `Created ${user.username} from the server console`, user.id);
       console.log(`Created ${user.username}.`);
       if (show) console.log(`Password: ${password}\nIt is not stored anywhere readable and will not be shown again.`);
       break;
     }
     case 'password': {
-      const user = findUserByName(requireName()) ?? fail(`No account called ${name}`);
+      const user = accounts.findUserByName(requireName()) ?? fail(`No account called ${name}`);
       const { password, show } = await newPassword();
-      await setPassword(user.id, password);
+      await accounts.setPassword(user.id, password);
       record('user.password', `Set a new password for ${user.username} from the server console; their sessions were signed out`, user.id);
       console.log(`New password set for ${user.username}; every session it had was signed out.`);
       if (show) console.log(`Password: ${password}\nIt is not stored anywhere readable and will not be shown again.`);
       break;
     }
     case 'remove': {
-      const user = findUserByName(requireName()) ?? fail(`No account called ${name}`);
-      deleteUser(user.id);
+      const user = accounts.findUserByName(requireName()) ?? fail(`No account called ${name}`);
+      accounts.deleteUser(user.id);
       record('user.removed', `Removed ${user.username} from the server console`, user.id);
       console.log(`Removed ${user.username}.`);
       break;
     }
     case 'signout': {
-      const user = findUserByName(requireName()) ?? fail(`No account called ${name}`);
-      const ended = endAllSessions(user.id);
+      const user = accounts.findUserByName(requireName()) ?? fail(`No account called ${name}`);
+      const ended = accounts.endAllSessions(user.id);
       record('auth.signout', `Signed ${user.username} out everywhere from the server console`, user.id);
       console.log(`Ended ${ended} session(s) for ${user.username}.`);
       break;

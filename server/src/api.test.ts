@@ -12,12 +12,13 @@ import { busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE } from '@k
 
 import { createApp } from './app.ts';
 import { SESSION_COOKIE } from './auth/routes.ts';
-import { createFirstUser } from './auth/store.ts';
+import { Accounts } from './auth/accounts.ts';
 import { ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
-import { auditLog, closeDb, db } from './platform/database.ts';
+import { openDatabase } from './platform/database.ts';
 import { serverSealing } from './platform/sealing.ts';
 import { serverSecrets } from './platform/secrets.ts';
+import { AuditLog, type SqlDatabase } from '@kraftverk/store';
 
 /*
   One interface, three ways to reach it (docs/PLAN-SHARED-CORE.md, principle
@@ -36,6 +37,8 @@ const dir = mkdtempSync(join(tmpdir(), 'kraftverk-api-'));
 const PASSWORD = 'correct horse battery staple';
 const HOST = '192.0.2.40:3333';
 
+let database: SqlDatabase;
+let accounts: Accounts;
 let hub: Hub;
 let app: ReturnType<typeof createApp>['app'];
 const bus = new FakeBus();
@@ -43,8 +46,8 @@ let account = '';
 let cookie = '';
 
 beforeAll(async () => {
-  process.env.KRAFTVERK_DB = join(dir, 'test.db');
-  closeDb();
+  ({ database } = openDatabase(join(dir, 'test.db')));
+  accounts = new Accounts(database);
   const protocols = new ProtocolRegistry();
   protocols.install(lampProtocol);
   const transports = new TransportHost({ platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } });
@@ -53,9 +56,9 @@ beforeAll(async () => {
   types.install(lampType);
   await transports.startAll(['bus']);
   hub = createHub({
-    database: db(),
-    audit: auditLog(),
-    secrets: serverSecrets,
+    database,
+    audit: new AuditLog(database),
+    secrets: serverSecrets(null),
     sealing: serverSealing,
     installed: { types, protocols, transports },
     node: MACHINE_NODE,
@@ -64,7 +67,7 @@ beforeAll(async () => {
     gateway: { verifyTimeoutMs: 300 },
   });
   const proxies = new ProxyDirectory('');
-  app = createApp({ hub, config: loadConfig({ NODE_ENV: 'test' }, []), proxies, serverLog: { dir: null, recent: () => [] }, startedAt: new Date() }).app;
+  app = createApp({ hub, accounts, config: loadConfig({ NODE_ENV: 'test' }, []), proxies, serverLog: { dir: null, recent: () => [] }, startedAt: new Date() }).app;
 });
 
 /** Each home served over a message port: its ports, closed with the suite. */
@@ -73,15 +76,15 @@ const ports: MessagePort[] = [];
 afterAll(async () => {
   for (const port of ports) port.close();
   await hub.stop();
-  closeDb();
+  database.close();
   rmSync(dir, { recursive: true, force: true });
 });
 
 beforeEach(async () => {
-  db().exec('DELETE FROM device; DELETE FROM sample; DELETE FROM node; DELETE FROM users; DELETE FROM sessions; DELETE FROM app_state; DELETE FROM audit; DELETE FROM automation;');
+  database.exec('DELETE FROM device; DELETE FROM sample; DELETE FROM node; DELETE FROM users; DELETE FROM sessions; DELETE FROM app_state; DELETE FROM audit; DELETE FROM automation;');
   await hub.sessions.sync([]);
   bus.lamps.clear();
-  account = (await createFirstUser('olof', PASSWORD)).id;
+  account = (await accounts.createFirstUser('olof', PASSWORD)).id;
   const response = await app.fetch(
     new Request(`http://${HOST}/api/auth/login`, { method: 'POST', headers: { host: HOST, 'content-type': 'application/json', 'x-kraftverk-client': 'test' }, body: JSON.stringify({ username: 'olof', password: PASSWORD }) }),
     { requestIP: () => ({ address: '192.168.1.58' }) }

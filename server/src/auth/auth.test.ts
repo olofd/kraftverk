@@ -5,21 +5,13 @@ import { join } from 'node:path';
 
 import { Hono } from 'hono';
 
-import { closeDb, db, resetDatabase } from '../platform/database.ts';
+import { AuditLog, resetDatabase } from '@kraftverk/store';
+
+import { openDatabase } from '../platform/database.ts';
 import { hostAllowed, hostGuard, hostName } from './host.ts';
 import { LoginLimiter, limiterKeys, MAX_ENTRIES } from './limiter.ts';
 import { CLIENT_HEADER, createAuth, SESSION_COOKIE } from './routes.ts';
-import {
-  AccountError,
-  countUsers,
-  createFirstUser,
-  createSession,
-  createUser,
-  deleteUser,
-  readSession,
-  setPassword,
-  verifyLogin,
-} from './store.ts';
+import { AccountError, Accounts } from './accounts.ts';
 import { assessTrust, CLIENT_IP_HEADER, EXPOSURE_HEADER, isPrivate, normaliseIp, ProxyDirectory } from './trust.ts';
 
 /**
@@ -34,19 +26,18 @@ const dir = mkdtempSync(join(tmpdir(), 'kraftverk-auth-'));
 const PROXY = '172.20.0.9';
 const PASSWORD = 'correct horse battery staple';
 
-beforeAll(() => {
-  process.env.KRAFTVERK_DB = join(dir, 'test.db');
-  closeDb();
-});
+// A database of these tests' own, and the accounts in it.
+const { database } = openDatabase(join(dir, 'test.db'));
+const accounts = new Accounts(database);
+const audit = new AuditLog(database);
 
 afterAll(() => {
-  closeDb();
-  delete process.env.KRAFTVERK_DB;
+  database.close();
   rmSync(dir, { recursive: true, force: true });
 });
 
 function emptyAccounts() {
-  db().exec('DELETE FROM users; DELETE FROM sessions; DELETE FROM app_state;');
+  database.exec('DELETE FROM users; DELETE FROM sessions; DELETE FROM app_state;');
 }
 
 // --- deciding the home network -----------------------------------------------
@@ -204,71 +195,71 @@ describe('accounts', () => {
   beforeEach(emptyAccounts);
 
   test('only one of two racing setups becomes the first administrator', async () => {
-    const results = await Promise.allSettled([createFirstUser('first', PASSWORD), createFirstUser('second', PASSWORD)]);
+    const results = await Promise.allSettled([accounts.createFirstUser('first', PASSWORD), accounts.createFirstUser('second', PASSWORD)]);
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-    expect(countUsers()).toBe(1);
+    expect(accounts.countUsers()).toBe(1);
   });
 
   test('weak or malformed credentials are refused', async () => {
-    await expect(createFirstUser('olof', 'short')).rejects.toBeInstanceOf(AccountError);
-    await expect(createFirstUser('olof dahlbom', PASSWORD)).rejects.toBeInstanceOf(AccountError);
-    await expect(createFirstUser('x'.repeat(65), PASSWORD)).rejects.toBeInstanceOf(AccountError);
-    await expect(createFirstUser('olof', 'p'.repeat(257))).rejects.toBeInstanceOf(AccountError);
+    await expect(accounts.createFirstUser('olof', 'short')).rejects.toBeInstanceOf(AccountError);
+    await expect(accounts.createFirstUser('olof dahlbom', PASSWORD)).rejects.toBeInstanceOf(AccountError);
+    await expect(accounts.createFirstUser('x'.repeat(65), PASSWORD)).rejects.toBeInstanceOf(AccountError);
+    await expect(accounts.createFirstUser('olof', 'p'.repeat(257))).rejects.toBeInstanceOf(AccountError);
   });
 
   test('names are unique regardless of case', async () => {
-    await createFirstUser('Olof', PASSWORD);
-    await expect(createUser('olof', PASSWORD, 'Olof')).rejects.toBeInstanceOf(AccountError);
+    await accounts.createFirstUser('Olof', PASSWORD);
+    await expect(accounts.createUser('olof', PASSWORD, 'Olof')).rejects.toBeInstanceOf(AccountError);
   });
 
   test('login checks the password, and a wrong name looks like a wrong password', async () => {
-    await createFirstUser('olof', PASSWORD);
-    expect((await verifyLogin('olof', PASSWORD))?.username).toBe('olof');
-    expect(await verifyLogin('OLOF', PASSWORD)).not.toBeNull();
-    expect(await verifyLogin('olof', `${PASSWORD}x`)).toBeNull();
-    expect(await verifyLogin('nobody', PASSWORD)).toBeNull();
+    await accounts.createFirstUser('olof', PASSWORD);
+    expect((await accounts.verifyLogin('olof', PASSWORD))?.username).toBe('olof');
+    expect(await accounts.verifyLogin('OLOF', PASSWORD)).not.toBeNull();
+    expect(await accounts.verifyLogin('olof', `${PASSWORD}x`)).toBeNull();
+    expect(await accounts.verifyLogin('nobody', PASSWORD)).toBeNull();
   });
 
   test('the password is stored only as an argon2id hash', async () => {
-    await createFirstUser('olof', PASSWORD);
-    const { password_hash } = db().query<{ password_hash: string }, []>('SELECT password_hash FROM users').get()!;
+    await accounts.createFirstUser('olof', PASSWORD);
+    const { password_hash } = database.query<{ password_hash: string }, []>('SELECT password_hash FROM users').get()!;
     expect(password_hash.startsWith('$argon2id$')).toBe(true);
     expect(password_hash).not.toContain(PASSWORD);
   });
 
   test('a session token is stored only as its hash', async () => {
-    const user = await createFirstUser('olof', PASSWORD);
-    const { token } = createSession(user.id, null, null);
-    const stored = db().query<{ token_hash: string }, []>('SELECT token_hash FROM sessions').get()!;
+    const user = await accounts.createFirstUser('olof', PASSWORD);
+    const { token } = accounts.createSession(user.id, null, null);
+    const stored = database.query<{ token_hash: string }, []>('SELECT token_hash FROM sessions').get()!;
     expect(stored.token_hash).not.toBe(token);
-    expect(readSession(token)?.user.id).toBe(user.id);
-    expect(readSession('forged')).toBeNull();
+    expect(accounts.readSession(token)?.user.id).toBe(user.id);
+    expect(accounts.readSession('forged')).toBeNull();
   });
 
   test('an expired session is refused and removed', async () => {
-    const user = await createFirstUser('olof', PASSWORD);
-    const { token } = createSession(user.id, null, null);
-    db().query('UPDATE sessions SET expires_at = ?').run(new Date(Date.now() - 1000).toISOString());
-    expect(readSession(token)).toBeNull();
-    expect(db().query<{ n: number }, []>('SELECT COUNT(*) n FROM sessions').get()!.n).toBe(0);
+    const user = await accounts.createFirstUser('olof', PASSWORD);
+    const { token } = accounts.createSession(user.id, null, null);
+    database.query('UPDATE sessions SET expires_at = ?').run(new Date(Date.now() - 1000).toISOString());
+    expect(accounts.readSession(token)).toBeNull();
+    expect(database.query<{ n: number }, []>('SELECT COUNT(*) n FROM sessions').get()!.n).toBe(0);
   });
 
   test('changing a password signs the account out everywhere else', async () => {
-    const user = await createFirstUser('olof', PASSWORD);
-    const here = createSession(user.id, null, null).token;
-    const elsewhere = createSession(user.id, null, null).token;
-    await setPassword(user.id, 'an entirely new passphrase', here);
-    expect(readSession(here)).not.toBeNull();
-    expect(readSession(elsewhere)).toBeNull();
-    expect(await verifyLogin('olof', PASSWORD)).toBeNull();
+    const user = await accounts.createFirstUser('olof', PASSWORD);
+    const here = accounts.createSession(user.id, null, null).token;
+    const elsewhere = accounts.createSession(user.id, null, null).token;
+    await accounts.setPassword(user.id, 'an entirely new passphrase', here);
+    expect(accounts.readSession(here)).not.toBeNull();
+    expect(accounts.readSession(elsewhere)).toBeNull();
+    expect(await accounts.verifyLogin('olof', PASSWORD)).toBeNull();
   });
 
   test('the last account cannot be removed', async () => {
-    const user = await createFirstUser('olof', PASSWORD);
-    expect(() => deleteUser(user.id)).toThrow(AccountError);
-    const other = await createUser('anna', PASSWORD, 'olof');
-    deleteUser(other.id);
-    expect(countUsers()).toBe(1);
+    const user = await accounts.createFirstUser('olof', PASSWORD);
+    expect(() => accounts.deleteUser(user.id)).toThrow(AccountError);
+    const other = await accounts.createUser('anna', PASSWORD, 'olof');
+    accounts.deleteUser(other.id);
+    expect(accounts.countUsers()).toBe(1);
   });
 });
 
@@ -280,15 +271,15 @@ describe('the gate', () => {
   beforeAll(async () => {
     const proxies = new ProxyDirectory(PROXY);
     await proxies.refresh();
-    const accounts = createAuth({ proxies, limiter: new LoginLimiter() });
+    const auth = createAuth({ proxies, accounts, audit, limiter: new LoginLimiter() });
 
     app = new Hono();
     app.use('/api/*', hostGuard(new Set(['home.example.net'])));
     const api = new Hono();
-    api.use('*', accounts.forgery);
-    api.use('*', accounts.gate);
-    api.route('/auth', accounts.auth);
-    api.route('/users', accounts.users);
+    api.use('*', auth.forgery);
+    api.use('*', auth.gate);
+    api.route('/auth', auth.auth);
+    api.route('/users', auth.users);
     api.get('/health', (c) => c.json({ ok: true }));
     api.get('/devices', (c) => c.json({ devices: [] }));
     api.post('/grid/relay', (c) => c.json({ switched: true }));
@@ -330,7 +321,7 @@ describe('the gate', () => {
     expect((await call('/health', viaLanEntrance)).status).toBe(401);
     // Loopback that came through a proxy is not this machine asking.
     expect((await call('/health', { from: '127.0.0.1', headers: { 'x-forwarded-for': PUBLIC } })).status).toBe(401);
-    await createFirstUser('olof', PASSWORD);
+    await accounts.createFirstUser('olof', PASSWORD);
     const login = await call('/auth/login', { method: 'POST', body: { username: 'olof', password: PASSWORD } });
     expect((await call('/health', { cookie: login.token })).status).toBe(200);
   });
@@ -338,7 +329,7 @@ describe('the gate', () => {
   test('a fresh server cannot be claimed from the internet', async () => {
     const attempt = await call('/auth/setup', { ...viaPublicEntrance, method: 'POST', body: { username: 'mallory', password: PASSWORD } });
     expect(attempt.status).toBe(403);
-    expect(countUsers()).toBe(0);
+    expect(accounts.countUsers()).toBe(0);
     const state = await call('/auth/state', viaPublicEntrance);
     expect(state.body).toMatchObject({ setupRequired: true, canSetup: false, onHomeNetwork: false });
     expect((await call('/devices', viaPublicEntrance)).body).toMatchObject({ loginRequired: true, setupRequired: true });
@@ -348,7 +339,7 @@ describe('the gate', () => {
     const misrouted = { ...viaLanEntrance, host: 'home.example.net' };
     expect((await call('/auth/state', misrouted)).body).toMatchObject({ canSetup: false, onHomeNetwork: false });
     expect((await call('/auth/setup', { ...misrouted, method: 'POST', body: { username: 'x', password: PASSWORD } })).status).toBe(403);
-    expect(countUsers()).toBe(0);
+    expect(accounts.countUsers()).toBe(0);
   });
 
   test('a fresh server is set up before it is used — the home network included', async () => {
@@ -369,11 +360,11 @@ describe('the gate', () => {
     expect(setup.setCookie).not.toContain('Secure'); // plain http on the LAN
     const again = await call('/auth/setup', { method: 'POST', body: { username: 'second', password: PASSWORD } });
     expect(again.status).toBe(409);
-    expect(countUsers()).toBe(1);
+    expect(accounts.countUsers()).toBe(1);
   });
 
   test('the home network needs a login too — reads as well as writes, every way in', async () => {
-    await createFirstUser('olof', PASSWORD);
+    await accounts.createFirstUser('olof', PASSWORD);
     for (const via of [{}, viaLanEntrance, { from: '127.0.0.1', host: 'localhost:3333' }]) {
       expect((await call('/devices', via)).status).toBe(401);
       expect((await call('/grid/relay', { ...via, method: 'POST', body: { on: false } })).status).toBe(401);
@@ -383,7 +374,7 @@ describe('the gate', () => {
   });
 
   test('the internet needs a login, however it dresses up', async () => {
-    await createFirstUser('olof', PASSWORD);
+    await accounts.createFirstUser('olof', PASSWORD);
     expect((await call('/devices', viaPublicEntrance)).status).toBe(401);
     expect((await call('/devices', { from: PUBLIC })).status).toBe(401);
     // Claims to be the LAN entrance, but did not come from the web container.
@@ -393,7 +384,7 @@ describe('the gate', () => {
   });
 
   test('logging in from outside works, over a Secure cookie', async () => {
-    await createFirstUser('olof', PASSWORD);
+    await accounts.createFirstUser('olof', PASSWORD);
     const login = await call('/auth/login', { ...viaPublicEntrance, method: 'POST', body: { username: 'olof', password: PASSWORD } });
     expect(login.status).toBe(200);
     expect(login.setCookie).toContain('Secure');
@@ -405,7 +396,7 @@ describe('the gate', () => {
   });
 
   test('a wrong password and an unknown name get the same answer', async () => {
-    await createFirstUser('olof', PASSWORD);
+    await accounts.createFirstUser('olof', PASSWORD);
     const wrong = await call('/auth/login', { ...viaPublicEntrance, method: 'POST', body: { username: 'olof', password: 'nope nope nope' } });
     const unknown = await call('/auth/login', { ...viaPublicEntrance, method: 'POST', body: { username: 'nobody', password: 'nope nope nope' } });
     expect(wrong.status).toBe(401);
@@ -414,7 +405,7 @@ describe('the gate', () => {
   });
 
   test('guessing is slowed down', async () => {
-    await createFirstUser('olof', PASSWORD);
+    await accounts.createFirstUser('olof', PASSWORD);
     const attempt = () =>
       call('/auth/login', { ...viaPublicEntrance, headers: { ...viaPublicEntrance.headers, [CLIENT_IP_HEADER]: '203.0.113.7' }, method: 'POST', body: { username: 'guessme', password: 'wrong wrong wrong' } });
     // Five free failures; the sixth failure starts the lock, so the seventh try is refused unheard.
@@ -425,7 +416,7 @@ describe('the gate', () => {
   });
 
   test('a write without the client header is refused, even with a session and on the LAN', async () => {
-    await createFirstUser('olof', PASSWORD);
+    await accounts.createFirstUser('olof', PASSWORD);
     const login = await call('/auth/login', { method: 'POST', body: { username: 'olof', password: PASSWORD } });
     const request = new Request('http://192.168.1.140:3333/api/grid/relay', {
       method: 'POST',
@@ -437,7 +428,7 @@ describe('the gate', () => {
   });
 
   test('a login is also a write, and cannot be forged from another site', async () => {
-    await createFirstUser('olof', PASSWORD);
+    await accounts.createFirstUser('olof', PASSWORD);
     const request = new Request('http://192.168.1.140:3333/api/auth/login', {
       method: 'POST',
       headers: { host: '192.168.1.140:3333', 'content-type': 'text/plain' },
@@ -447,7 +438,7 @@ describe('the gate', () => {
   });
 
   test('a DNS-rebinding page is refused before anything else happens', async () => {
-    await createFirstUser('olof', PASSWORD);
+    await accounts.createFirstUser('olof', PASSWORD);
     const rebound = await call('/devices', { host: 'evil.example' });
     expect(rebound.status).toBe(421);
     const claim = await call('/auth/setup', { host: 'evil.example:3333', method: 'POST', body: { username: 'x', password: PASSWORD } });
@@ -455,7 +446,7 @@ describe('the gate', () => {
   });
 
   test('managing accounts needs a real login, even on the trusted home network', async () => {
-    await createFirstUser('olof', PASSWORD);
+    await accounts.createFirstUser('olof', PASSWORD);
     expect((await call('/users')).status).toBe(401);
     expect((await call('/users', { method: 'POST', body: { username: 'backdoor', password: PASSWORD } })).status).toBe(401);
 
@@ -468,8 +459,8 @@ describe('the gate', () => {
   });
 
   test('a borrowed session cannot add, remove or take over accounts', async () => {
-    const olof = await createFirstUser('olof', PASSWORD);
-    const anna = await createUser('anna', PASSWORD, 'olof');
+    const olof = await accounts.createFirstUser('olof', PASSWORD);
+    const anna = await accounts.createUser('anna', PASSWORD, 'olof');
     const login = await call('/auth/login', { method: 'POST', body: { username: 'olof', password: PASSWORD } });
     const as = (path: string, method: string, body: Record<string, unknown>) => call(path, { method, cookie: login.token, body });
 
@@ -478,7 +469,7 @@ describe('the gate', () => {
     expect((await as('/users', 'POST', { username: 'backdoor', password: PASSWORD, yourPassword: 'a wrong guess' })).status).toBe(403);
     expect((await as(`/users/${anna.id}/password`, 'POST', { password: 'known to the thief now' })).status).toBe(400);
     expect((await as(`/users/${anna.id}`, 'DELETE', { yourPassword: 'a wrong guess' })).status).toBe(403);
-    expect(countUsers()).toBe(2);
+    expect(accounts.countUsers()).toBe(2);
 
     // Your own password is never set here, even with the right confirmation:
     // that is /auth/password, which wants the current one.
@@ -487,17 +478,17 @@ describe('the gate', () => {
     // With it, all of them.
     expect((await as(`/users/${anna.id}/password`, 'POST', { password: 'a brand new passphrase', yourPassword: PASSWORD })).status).toBe(200);
     expect((await as(`/users/${anna.id}`, 'DELETE', { yourPassword: PASSWORD })).status).toBe(200);
-    expect(countUsers()).toBe(1);
+    expect(accounts.countUsers()).toBe(1);
   });
 
   test('confirming with your password cannot be used to guess it', async () => {
-    await createFirstUser('sam', PASSWORD);
+    await accounts.createFirstUser('sam', PASSWORD);
     const login = await call('/auth/login', { from: '192.168.1.78', method: 'POST', body: { username: 'sam', password: PASSWORD } });
     const guess = (yourPassword: string) =>
       call('/users', { from: '192.168.1.78', method: 'POST', cookie: login.token, body: { username: 'backdoor', password: PASSWORD, yourPassword } });
     for (let i = 0; i < 6; i++) expect((await guess(`guess number ${i}`)).status).toBe(403);
     expect((await guess(PASSWORD)).status).toBe(429);
-    expect(countUsers()).toBe(1);
+    expect(accounts.countUsers()).toBe(1);
   });
 
   test('a fresh server cannot be claimed through a port forwarded on the router', async () => {
@@ -505,11 +496,11 @@ describe('the gate', () => {
     const forwarded = { ...viaLanEntrance, host: '198.51.100.7:8080', headers: { ...viaLanEntrance.headers, [CLIENT_IP_HEADER]: PUBLIC } };
     expect((await call('/auth/state', forwarded)).body).toMatchObject({ canSetup: false, onHomeNetwork: false });
     expect((await call('/auth/setup', { ...forwarded, method: 'POST', body: { username: 'x', password: PASSWORD } })).status).toBe(403);
-    expect(countUsers()).toBe(0);
+    expect(accounts.countUsers()).toBe(0);
   });
 
   test('changing your own password needs the current one', async () => {
-    await createFirstUser('olof', PASSWORD);
+    await accounts.createFirstUser('olof', PASSWORD);
     const login = await call('/auth/login', { method: 'POST', body: { username: 'olof', password: PASSWORD } });
     const wrong = await call('/auth/password', { method: 'POST', cookie: login.token, body: { current: 'not it at all', next: 'a brand new passphrase' } });
     expect(wrong.status).toBe(403);
@@ -518,7 +509,7 @@ describe('the gate', () => {
   });
 
   test('a borrowed session cannot guess the current password without limit', async () => {
-    await createFirstUser('pat', PASSWORD);
+    await accounts.createFirstUser('pat', PASSWORD);
     const from = '192.168.1.77';
     const login = await call('/auth/login', { from, method: 'POST', body: { username: 'pat', password: PASSWORD } });
     const guess = (current: string) => call('/auth/password', { from, method: 'POST', cookie: login.token, body: { current, next: 'a brand new passphrase' } });
@@ -528,7 +519,7 @@ describe('the gate', () => {
   });
 
   test('someone on the internet who knows your username cannot lock you out at home', async () => {
-    await createFirstUser('kim', PASSWORD);
+    await accounts.createFirstUser('kim', PASSWORD);
     const outside = (ip: string, password: string) =>
       call('/auth/login', { ...viaPublicEntrance, headers: { ...viaPublicEntrance.headers, [CLIENT_IP_HEADER]: ip }, method: 'POST', body: { username: 'kim', password } });
     for (let i = 0; i < 6; i++) expect((await outside('203.0.113.9', 'wrong wrong wrong')).status).toBe(401);
@@ -561,10 +552,10 @@ describe('erasing everything', () => {
   beforeEach(emptyAccounts);
 
   test('keeps the accounts and their sessions, so the server is never left unclaimed', async () => {
-    const user = await createFirstUser('olof', PASSWORD);
-    const { token } = createSession(user.id, null, null);
-    resetDatabase();
-    expect(countUsers()).toBe(1);
-    expect(readSession(token)?.user.username).toBe('olof');
+    const user = await accounts.createFirstUser('olof', PASSWORD);
+    const { token } = accounts.createSession(user.id, null, null);
+    resetDatabase(database);
+    expect(accounts.countUsers()).toBe(1);
+    expect(accounts.readSession(token)?.user.username).toBe('olof');
   });
 });

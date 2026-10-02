@@ -23,7 +23,7 @@ import { setupRoutes } from './routes/setup.ts';
 import { transportRoutes } from './routes/transports.ts';
 import { assistantRoutes } from './routes/assistant.ts';
 import { automationRoutes } from './routes/automations.ts';
-import { configRoutes } from './routes/config.ts';
+import { configurationRoutes } from './routes/configuration.ts';
 
 export type { AppDeps } from './routes/shared.ts';
 
@@ -127,14 +127,14 @@ export function createApp(deps: AppDeps) {
   );
 
   /** Accounts, sessions, and the one gate in front of `/api`. See `auth/routes.ts`. */
-  const accounts = createAuth({ proxies: deps.proxies, limiter: deps.limiter });
+  const auth = createAuth({ proxies: deps.proxies, accounts: deps.accounts, audit: deps.hub.audit, limiter: deps.limiter });
 
   const api = new Hono();
   // First, before any route: Hono runs middleware only for routes registered after it.
-  api.use('*', accounts.forgery);
-  api.use('*', accounts.gate);
-  api.route('/auth', accounts.auth);
-  api.route('/users', accounts.users);
+  api.use('*', auth.forgery);
+  api.use('*', auth.gate);
+  api.route('/auth', auth.auth);
+  api.route('/users', auth.users);
 
   api.get('/health', (c) => c.json({ ok: true }));
 
@@ -151,13 +151,13 @@ export function createApp(deps: AppDeps) {
   });
 
   api.route('/setup', setupRoutes(deps));
-  api.route('/', adminRoutes(deps, accounts));
+  api.route('/', adminRoutes(deps, auth));
   api.route('/', deviceRoutes(deps));
   api.route('/', connectionRoutes(deps));
   api.route('/', heldRoutes(deps));
   api.route('/', transportRoutes(deps));
   api.route('/', automationRoutes(deps));
-  api.route('/', configRoutes(deps));
+  api.route('/', configurationRoutes(deps));
   api.route('/', assistantRoutes(deps));
   api.route('/', liveRoutes(deps, upgradeWebSocket, corsOrigin(config)));
 
@@ -180,5 +180,5 @@ export function createApp(deps: AppDeps) {
     return c.json({ error: 'Internal server error' }, 500);
   });
 
-  return { app, accounts, websocket };
+  return { app, auth, websocket };
 }

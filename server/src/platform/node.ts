@@ -1,12 +1,9 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
-import { dirname, resolve } from 'node:path';
 
 import { isNodeId, newNodeId } from '@kraftverk/device-sdk';
 import type { HubOptions } from '@kraftverk/hub';
 import { NodeStore, type SqlDatabase } from '@kraftverk/store';
-
-import { databaseFile } from './database.ts';
 
 /**
  * The kraftverk node this server is (docs/DATA-MODEL.md §3): a machine that
@@ -23,7 +20,7 @@ import { databaseFile } from './database.ts';
  * Its name is the one it was first given: the machine's, unless that is a
  * container's made-up id, which would change with every deploy.
  */
-export function thisNode(database: SqlDatabase, file = resolve(dirname(databaseFile()), 'node-id')): HubOptions['node'] {
+export function thisNode(database: SqlDatabase, file: string): HubOptions['node'] {
   const kept = existsSync(file) ? readFileSync(file, 'utf8').trim() : '';
   const own = new NodeStore(database).self();
   if (own && kept && own.id !== kept) console.warn(`[node] ${file} says ${kept}, the database says ${own.id}: the database's is kept`);

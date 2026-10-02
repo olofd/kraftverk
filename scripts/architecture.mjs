@@ -287,7 +287,7 @@ function violation(file, area, specifier) {
  * anywhere else in it is a package's: an exception the baseline lists until
  * it has moved (docs/PLAN-SHARED-CORE.md).
  */
-const SERVER_PLACES = /^server\/src\/((routes|auth|admin|platform)\/|(app|index|log|config)\.ts$)/;
+const SERVER_PLACES = /^server\/src\/((routes|auth|platform)\/|(app|index|log|config)\.ts$)/;
 /** What makes a file of the app a screen, or React's binding to one. */
 const SCREEN = /^(react|tamagui|@tamagui\/|@kraftverk\/ui)(\/|$)/;
 

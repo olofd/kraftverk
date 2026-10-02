@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
 import type { Hub } from '@kraftverk/hub';
 
+import type { Accounts } from '../auth/accounts.ts';
 import { actorOf, userOf } from '../auth/routes.ts';
 import type { LoginLimiter } from '../auth/limiter.ts';
 import type { ProxyDirectory } from '../auth/trust.ts';
@@ -23,6 +24,8 @@ import type { ConfigSnapshot } from '../platform/snapshot.ts';
 export type AppDeps = {
   /** The home: what the routes adapt from HTTP to (`hub.as(caller)`). */
   hub: Hub;
+  /** Who may sign in to this entrance, and their sessions. */
+  accounts: Accounts;
   config: ServerConfig;
   proxies: ProxyDirectory;
   serverLog: Pick<ServerLog, 'dir' | 'recent'>;

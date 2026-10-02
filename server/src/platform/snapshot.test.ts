@@ -3,13 +3,12 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { AutomationLibrary } from '@kraftverk/automation-engine';
 import { readConfig } from '@kraftverk/home-file';
-import { changesConfiguration, Configuration, DeviceTypeRegistry, openKept, ProtocolRegistry, type ConfigurationDeps } from '@kraftverk/hub';
+import { changesConfiguration, createHub, DeviceTypeRegistry, installedFrom, openKept, ProtocolRegistry, type Hub } from '@kraftverk/hub';
 import { LAMP, lampProtocol, lampType, MACHINE_NODE } from '@kraftverk/hub/testing';
-import { AutomationStore, ConnectionStore, DeviceCatalog, LinkStore, NodeStore } from '@kraftverk/store';
+import { AuditLog, type SecretsAtRest } from '@kraftverk/store';
 
-import { audit, closeDb, db, onAudit, policyValues, setPolicyValue } from './database.ts';
+import { openDatabase } from './database.ts';
 import { serverSealing } from './sealing.ts';
 import { serverSecrets } from './secrets.ts';
 import { ConfigSnapshot } from './snapshot.ts';
@@ -23,54 +22,44 @@ import { ConfigSnapshot } from './snapshot.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'kraftverk-snapshot-'));
 let snapshot: ConfigSnapshot;
-let catalog: DeviceCatalog;
-let connections: ConnectionStore;
+let hub: Hub;
+let audit: AuditLog;
+/** Sealed with a key, as a server given `KRAFTVERK_SECRET_KEY` seals them. */
+const secrets: SecretsAtRest = serverSecrets('a key for these tests only');
 const file = join(dir, 'config', 'kraftverk.yaml');
 
 beforeAll(() => {
-  process.env.KRAFTVERK_DB = join(dir, 'test.db');
-  closeDb();
+  const { database } = openDatabase(join(dir, 'test.db'));
+  audit = new AuditLog(database);
   const types = new DeviceTypeRegistry();
   types.install(lampType);
   const protocols = new ProtocolRegistry();
   protocols.install(lampProtocol);
-  new NodeStore(db()).declareSelf({ ...MACHINE_NODE, platform: 'system', transports: ['bus'] });
-  catalog = new DeviceCatalog(db());
-  connections = new ConnectionStore(db(), serverSecrets);
-  const automations = new AutomationStore(db());
-  // Writing the file asks only what the home has: nothing here is imported, run or synced.
-  const unused = { sessions: { sync: async () => {} }, engine: { reset: () => {}, poke: () => {}, forget: () => {} }, transports: { definition: () => null } } as unknown as Pick<ConfigurationDeps, 'sessions' | 'engine' | 'transports'>;
-  const configuration = new Configuration({
-    db: db(),
-    catalog,
-    connections,
-    links: new LinkStore(db()),
-    self: MACHINE_NODE.id,
-    automations,
-    types,
-    protocols,
-    library: new AutomationLibrary([]),
-    checked: () => ({ problems: [], roles: {}, starts: {} }),
-    policy: { values: policyValues, set: setPolicyValue },
+  // A home as the server makes one — not started: writing the file asks only what it has.
+  hub = createHub({
+    database,
+    audit,
+    secrets,
     sealing: serverSealing,
-    kept: serverSecrets,
-    record: audit,
-    ...unused,
+    installed: installedFrom({ types: [{ type: lampType }], protocols: [lampProtocol], transports: [] }, { platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } }),
+    node: MACHINE_NODE,
+    readOnly: () => true,
+    http: () => Promise.reject(new Error('no network in these tests')),
   });
-  snapshot = new ConfigSnapshot(configuration, file);
+  snapshot = new ConfigSnapshot(hub.configuration, file);
 });
 
 afterAll(async () => {
   await snapshot.stop();
-  closeDb();
+  hub.db.close();
   rmSync(dir, { recursive: true, force: true });
 });
 
 describe('the configuration kept beside the database', () => {
   test('written whole: each device, how it is reached, its secret kept — and not again when nothing changed', async () => {
-    const lamp = catalog.add({ typeId: 'test.lamp', name: 'Hall lamp', description: LAMP });
-    const way = connections.add({ deviceId: lamp.id, method: 'bus', transport: 'bus', heldBy: MACHINE_NODE.id, address: 'lamp-1' });
-    connections.setSecrets(way.id, { pin: 'pin-from-a-test' });
+    const lamp = hub.catalog.add({ typeId: 'test.lamp', name: 'Hall lamp', description: LAMP });
+    const way = hub.connections.add({ deviceId: lamp.id, method: 'bus', transport: 'bus', heldBy: MACHINE_NODE.id, address: 'lamp-1' });
+    hub.connections.setSecrets(way.id, { pin: 'pin-from-a-test' });
     expect(await snapshot.write()).toBe(true);
     const text = readFileSync(file, 'utf8');
     expect(text.split('\n')[0]).toBe('# Kept by kraftverk beside its database, and written again after every change to it.');
@@ -79,19 +68,19 @@ describe('the configuration kept beside the database', () => {
     expect(document!.devices['hall-lamp']).toMatchObject({ type: 'test.lamp', connect: [{ via: 'bus', address: 'lamp-1', secrets: { pin: { secret: 'hall-lamp.pin' } } }] });
     // Kept as the database keeps it — sealed with the server's key where it has one — and opened again by this server.
     const kept = document!.secrets['hall-lamp.pin']!;
-    expect(kept.startsWith('sealed:server:') === Boolean(process.env.KRAFTVERK_SECRET_KEY)).toBe(true);
-    expect(openKept(serverSecrets, kept)).toBe('pin-from-a-test');
+    expect(kept.startsWith('sealed:server:')).toBe(true);
+    expect(openKept(secrets, kept)).toBe('pin-from-a-test');
     expect(await snapshot.write()).toBe(false);
   });
 
   test('a change on the timeline writes it again, a moment later — the one before it kept', async () => {
-    const stop = onAudit((entry) => {
+    const stop = audit.onRecord((entry) => {
       if (changesConfiguration(entry.kind)) snapshot.schedule();
     });
-    catalog.add({ typeId: 'test.lamp', name: 'Porch lamp', description: LAMP });
-    audit({ at: new Date().toISOString(), kind: 'device.added', actor: 'test', summary: 'Added "Porch lamp"' });
+    hub.catalog.add({ typeId: 'test.lamp', name: 'Porch lamp', description: LAMP });
+    audit.record({ at: new Date().toISOString(), kind: 'device.added', actor: 'test', summary: 'Added "Porch lamp"' });
     // A reading, a run: not a change to the configuration.
-    audit({ at: new Date().toISOString(), kind: 'automation.started', actor: 'test', summary: 'Started' });
+    audit.record({ at: new Date().toISOString(), kind: 'automation.started', actor: 'test', summary: 'Started' });
     stop();
     await snapshot.stop();
     expect(readFileSync(file, 'utf8')).toContain('porch-lamp:');

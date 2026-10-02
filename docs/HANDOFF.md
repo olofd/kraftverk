@@ -245,10 +245,10 @@ handle and `process.env`. Each server suite set `KRAFTVERK_DB` in `beforeAll` an
 cleared it in `afterAll`; the moment one file cleared it, the next file's
 `beforeEach` — several begin `DELETE FROM device; DELETE FROM sample` — reopened
 the real database and truncated it. It cost the owner four devices and ~28,000
-samples. `db()` now throws rather than open the default path under
-`NODE_ENV=test`, and no suite clears the variable. **Do not reintroduce that
-cleanup**, and if you add a suite that touches the database, set `KRAFTVERK_DB`
-before anything calls `db()`.
+samples. Since then the server keeps no database handle at all: the process
+opens it once and hands it on, each test opens its own, and `openDatabase`
+refuses the default path under `NODE_ENV=test`. **Do not reintroduce a shared
+handle**: a suite that touches the database opens one of its own.
 
 **`server/data/` is gitignored** and holds the development database. Deleting it
 resets your devices, secrets and history — the fastest way back to a blank slate

@@ -3,7 +3,6 @@ import { basename, dirname, join } from 'node:path';
 
 import type { Configuration, Restored } from '@kraftverk/hub';
 
-import { databaseFile } from './database.ts';
 
 /*
   The configuration kept beside the database (docs/CONFIG.md), as a file on
@@ -24,7 +23,6 @@ const KEPT = 5;
 /** How many copies a restore was made from are kept: the latest, and those before it. */
 const COPIES_KEPT = 5;
 
-export const snapshotFile = (): string => join(dirname(databaseFile()), 'config', 'kraftverk.yaml');
 
 export class ConfigSnapshot {
   #timer: ReturnType<typeof setTimeout> | null = null;
@@ -35,7 +33,8 @@ export class ConfigSnapshot {
 
   constructor(
     private configuration: Pick<Configuration, 'kept' | 'restore'>,
-    private file: string = snapshotFile()
+    /** Where it is kept: `config/kraftverk.yaml` beside the database (`besideDatabase`). */
+    private file: string
   ) {}
 
   /** Writes it again a moment from now: one write for a burst of changes. */

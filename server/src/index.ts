@@ -1,10 +1,13 @@
 import { changesConfiguration, createHub, DeviceTypeRegistry, ProtocolRegistry, TransportHost } from '@kraftverk/hub';
 
+import { AuditLog, transportStore } from '@kraftverk/store';
+
 import { createApp } from './app.ts';
+import { Accounts } from './auth/accounts.ts';
 import { ProxyDirectory } from './auth/trust.ts';
-import { loadConfig } from './config.ts';
+import { besideDatabase, loadConfig } from './config.ts';
 import { keepConsole } from './log.ts';
-import { audit, auditLog, closeDb, db, onAudit, startedFresh, transportStore } from './platform/database.ts';
+import { openDatabase } from './platform/database.ts';
 import { scopedHttp } from './platform/http.ts';
 import { discoverDeviceTypes, discoverProtocols, discoverTransports } from './platform/packages.ts';
 import { thisNode } from './platform/node.ts';
@@ -24,6 +27,14 @@ const config = loadConfig();
 
 // First, so everything below is kept as well as printed. See `log.ts`.
 const serverLog = keepConsole(config.logDir);
+
+/*
+  The database, opened once — a new one when it was made by another schema,
+  the old one set aside — and its timeline: handed to everything below that
+  keeps or records anything.
+*/
+const { database, fresh } = openDatabase(config.databaseFile);
+const audit = new AuditLog(database);
 
 /*
   Stopping, when asked to — registered before anything else starts.
@@ -51,7 +62,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     const exit = (how: string) => {
       console.log(`[server] Stopped ${how} in ${Date.now() - started} ms`);
       try {
-        closeDb();
+        database.close();
       } finally {
         process.exit(0);
       }
@@ -88,9 +99,9 @@ const transports = new TransportHost({
   context: {
     env: config.env,
     log: (level, message) => console[level === 'info' ? 'log' : level](message),
-    audit: (entry) => audit({ at: new Date().toISOString(), ...entry }),
+    audit: (entry) => audit.record({ at: new Date().toISOString(), ...entry }),
   },
-  store: transportStore,
+  store: (id) => transportStore(database, id),
 });
 await discoverTransports(transports);
 
@@ -110,17 +121,16 @@ console.log(
   attention and its configuration — all of it the hub's (@kraftverk/hub),
   handed what only the server can give it.
 */
-const database = db();
 const hub = createHub({
   database,
-  audit: auditLog(),
-  secrets: serverSecrets,
+  audit,
+  secrets: serverSecrets(config.secretKey),
   sealing: serverSealing,
   installed: { types, protocols, transports },
   readOnly: () => config.readOnly,
   allowRawFrames: config.allowRawFrames,
   http: scopedHttp,
-  node: thisNode(database),
+  node: thisNode(database, besideDatabase(config, 'node-id')),
 });
 
 /*
@@ -158,7 +168,7 @@ proxies.start();
   and again after every change to it, so a database set aside for a new
   schema leaves a home to restore.
 */
-const snapshot = new ConfigSnapshot(hub.configuration);
+const snapshot = new ConfigSnapshot(hub.configuration, besideDatabase(config, 'config', 'kraftverk.yaml'));
 /*
   A database started afresh this run — a new schema set the old one aside —
   is restored from the configuration kept beside it, before anything is
@@ -166,7 +176,7 @@ const snapshot = new ConfigSnapshot(hub.configuration);
   until something changes; it is copied aside first in any case.
 */
 let restoring = true;
-if (startedFresh().fresh) {
+if (fresh) {
   const restored = await snapshot.restore();
   if (restored) {
     console.log(`[config] Restored from the configuration kept beside the database: ${restored.applied ? `${restored.applied.devices.added.length} devices, ${restored.applied.automations.added.length} automations` : 'nothing'}${restored.problems.length ? `; ${restored.problems.length} problems: ${restored.problems.join('; ')}` : ''}`);
@@ -174,16 +184,16 @@ if (startedFresh().fresh) {
   }
 }
 // Each change to the configuration writes it again, a moment later.
-const stopSnapshot = onAudit((entry) => {
+const stopSnapshot = audit.onRecord((entry) => {
   if (changesConfiguration(entry.kind)) snapshot.schedule();
 });
 try {
-  if (!restoring || !startedFresh().fresh) await snapshot.write();
+  if (!restoring || !fresh) await snapshot.write();
 } catch (error) {
   console.warn(`[config] The configuration could not be kept beside the database: ${(error as Error).message}`);
 }
 
-const { app, websocket } = createApp({ hub, snapshot, config, proxies, serverLog, startedAt });
+const { app, websocket } = createApp({ hub, accounts: new Accounts(database), snapshot, config, proxies, serverLog, startedAt });
 
 // Everything is running: from here on, stopping also closes what was opened.
 onStop(stopSnapshot, () => snapshot.stop(), () => hub.stop());

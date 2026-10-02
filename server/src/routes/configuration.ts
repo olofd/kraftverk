@@ -18,7 +18,7 @@ import { body, homeFor, type AppDeps } from './shared.ts';
 /** The schema's path: open, beside the way in (`auth/routes.ts`). */
 export const SCHEMA_PATH = '/api/config/schema.json';
 
-export function configRoutes(deps: AppDeps): Hono {
+export function configurationRoutes(deps: AppDeps): Hono {
   const api = new Hono();
   /** Open, as an editor cannot log in: it names nothing you have, so no one in particular asks for it. */
   api.get('/config/schema.json', (c) => {

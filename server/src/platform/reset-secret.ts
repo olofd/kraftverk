@@ -1,5 +1,4 @@
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import { createHash, timingSafeEqual } from 'node:crypto';
 
 /**
@@ -17,13 +16,10 @@ import { createHash, timingSafeEqual } from 'node:crypto';
  * without deciding what the secret is, and that is not consent.
  */
 
-const SECRET_FILE = () =>
-  process.env.KRAFTVERK_RESET_SECRET_FILE ||
-  resolve(import.meta.dirname, '../../data/reset-secret');
 
 /** The configured secret, or null when the reset route should not exist. */
-export async function resetSecret(): Promise<string | null> {
-  const raw = await readFile(SECRET_FILE(), 'utf8').catch(() => null);
+export async function resetSecret(file: string): Promise<string | null> {
+  const raw = await readFile(file, 'utf8').catch(() => null);
   if (raw === null) return null;
 
   const trimmed = raw.trim();
@@ -48,4 +44,3 @@ export function secretMatches(supplied: string, expected: string): boolean {
 }
 
 /** Where the secret is expected, for an error message that can be acted on. */
-export const resetSecretPath = (): string => SECRET_FILE();

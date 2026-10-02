@@ -4,26 +4,9 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import { audit } from '../platform/database.ts';
+import type { AuditLog } from '@kraftverk/store';
 import { LoginLimiter, limiterKeys } from './limiter.ts';
-import {
-  AccountError,
-  countUsers,
-  createFirstUser,
-  createSession,
-  createUser,
-  deleteUser,
-  endSession,
-  getUser,
-  listUsers,
-  markLoggedIn,
-  passwordMatches,
-  readSession,
-  SESSION_LIFETIME_MS,
-  setPassword,
-  verifyLogin,
-  type User,
-} from './store.ts';
+import { AccountError, SESSION_LIFETIME_MS, type Accounts, type User } from './accounts.ts';
 import { assessTrust, EXPOSURE_HEADER, FORWARDING_HEADERS as FORWARDED, normaliseIp, type ProxyDirectory, type Trust } from './trust.ts';
 
 /**
@@ -53,7 +36,7 @@ export const CLIENT_HEADER = 'x-kraftverk-client';
  * The only paths reachable without a session: the way in — each doing one
  * narrow thing, none reading or changing anything but its own session — and
  * the configuration's JSON Schema, which an editor fetches without logging in:
- * the installed types only, nothing you have (`routes/config.ts`).
+ * the installed types only, nothing you have (`routes/configuration.ts`).
  */
 const OPEN = new Set(['/api/auth/state', '/api/auth/setup', '/api/auth/login', '/api/auth/logout', '/api/config/schema.json']);
 
@@ -83,10 +66,14 @@ export function userOf(c: Context): User | null {
 
 export type AuthDeps = {
   proxies: ProxyDirectory;
+  /** The accounts that may sign in, and their sessions. */
+  accounts: Accounts;
+  /** The home's timeline: sign-ins, failures and account changes are on it. */
+  audit: Pick<AuditLog, 'record'>;
   limiter?: LoginLimiter;
 };
 
-export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) {
+export function createAuth({ proxies, accounts, audit, limiter = new LoginLimiter() }: AuthDeps) {
   const socketIp = (c: Context): string | null => {
     const env = c.env as { requestIP?: (request: Request) => { address: string } | null } | undefined;
     return normaliseIp(env?.requestIP?.(c.req.raw)?.address ?? null);
@@ -128,7 +115,7 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
   const access = (c: Context): Access => {
     const known = accessByRequest.get(c.req.raw);
     if (known) return known;
-    const session = readSession(getCookie(c, SESSION_COOKIE));
+    const session = accounts.readSession(getCookie(c, SESSION_COOKIE));
     // Renewed sessions send the cookie again, so its own expiry moves with it.
     if (session?.renewed) writeCookie(c, getCookie(c, SESSION_COOKIE)!);
     const result: Access = { trust: trustOf(c), user: session?.user ?? null };
@@ -165,7 +152,7 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
     if (c.req.method === 'OPTIONS' || OPEN.has(c.req.path)) return next();
     if (access(c).user) return next();
     if (c.req.path === HEALTH && localCaller(c)) return next();
-    const setupRequired = countUsers() === 0;
+    const setupRequired = accounts.countUsers() === 0;
     return c.json(
       {
         error: setupRequired
@@ -210,9 +197,9 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
       c.header('Retry-After', String(Math.ceil(wait / 1000)));
       return c.json({ error: `Too many wrong passwords. Try again in ${Math.ceil(wait / 60_000)} min.` }, 429);
     }
-    if (!(await passwordMatches(user.id, password))) {
+    if (!(await accounts.passwordMatches(user.id, password))) {
       limiter.failed(keys);
-      audit({ at: now(), kind: 'auth.confirm-failed', actor: user.username, resourceKind: 'account', resource: user.id, summary: `${user.username} gave a wrong password to confirm a change`, detail: { clientIp: trust.clientIp, path: c.req.path } });
+      audit.record({ at: now(), kind: 'auth.confirm-failed', actor: user.username, resourceKind: 'account', resource: user.id, summary: `${user.username} gave a wrong password to confirm a change`, detail: { clientIp: trust.clientIp, path: c.req.path } });
       throw new HTTPException(403, { message: 'Your password is not right' });
     }
     limiter.succeeded(keys);
@@ -227,7 +214,7 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
   /** Everything the app needs to decide what to show: who, where, and whether setup is due. */
   auth.get('/state', (c) => {
     const { user, trust } = access(c);
-    const users = countUsers();
+    const users = accounts.countUsers();
     return c.json({
       user: user ? { id: user.id, username: user.username } : null,
       // Only consulted for setup: signing in is required everywhere.
@@ -253,13 +240,13 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
     // Before the body, and before the slow hash `createFirstUser` starts with:
     // once there is an account this route has nothing left to do, and must not
     // be a way to make the server hash passwords for anyone who asks.
-    if (countUsers() > 0) throw new HTTPException(409, { message: 'This server already has an administrator. Log in instead.' });
+    if (accounts.countUsers() > 0) throw new HTTPException(409, { message: 'This server already has an administrator. Log in instead.' });
     const { username, password } = await parse(c, credentials);
-    const user = await createFirstUser(username, password).catch(rethrow);
-    const { token } = createSession(user.id, trust.clientIp, c.req.header('user-agent') ?? null);
-    markLoggedIn(user.id);
+    const user = await accounts.createFirstUser(username, password).catch(rethrow);
+    const { token } = accounts.createSession(user.id, trust.clientIp, c.req.header('user-agent') ?? null);
+    accounts.markLoggedIn(user.id);
     writeCookie(c, token);
-    audit({ at: now(), kind: 'auth.setup', actor: username, resourceKind: 'account', resource: user.id, summary: `${username} created the first account`, detail: { clientIp: trust.clientIp } });
+    audit.record({ at: now(), kind: 'auth.setup', actor: username, resourceKind: 'account', resource: user.id, summary: `${username} created the first account`, detail: { clientIp: trust.clientIp } });
     return c.json({ user: { id: user.id, username: user.username } }, 201);
   });
 
@@ -274,28 +261,28 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
       return c.json({ error: `Too many failed attempts. Try again in ${Math.ceil(wait / 60_000)} min.` }, 429);
     }
 
-    const user = await verifyLogin(username, password);
+    const user = await accounts.verifyLogin(username, password);
     if (!user) {
       limiter.failed(keys);
-      audit({ at: now(), kind: 'auth.login-failed', actor: username, summary: `Failed login for ${username}`, detail: { clientIp: trust.clientIp, reason: trust.reason } });
+      audit.record({ at: now(), kind: 'auth.login-failed', actor: username, summary: `Failed login for ${username}`, detail: { clientIp: trust.clientIp, reason: trust.reason } });
       // One message for both: which half was wrong is what a guesser wants to know.
       return c.json({ error: 'That username and password do not match.' }, 401);
     }
 
     limiter.succeeded(keys);
     // Whatever session this browser held before, it holds this one instead.
-    endSession(getCookie(c, SESSION_COOKIE));
-    const { token } = createSession(user.id, trust.clientIp, c.req.header('user-agent') ?? null);
+    accounts.endSession(getCookie(c, SESSION_COOKIE));
+    const { token } = accounts.createSession(user.id, trust.clientIp, c.req.header('user-agent') ?? null);
     writeCookie(c, token);
-    audit({ at: now(), kind: 'auth.login', actor: user.username, resourceKind: 'account', resource: user.id, summary: `${user.username} logged in`, detail: { clientIp: trust.clientIp, reason: trust.reason } });
+    audit.record({ at: now(), kind: 'auth.login', actor: user.username, resourceKind: 'account', resource: user.id, summary: `${user.username} logged in`, detail: { clientIp: trust.clientIp, reason: trust.reason } });
     return c.json({ user: { id: user.id, username: user.username } });
   });
 
   auth.post('/logout', (c) => {
     const { user } = access(c);
-    endSession(getCookie(c, SESSION_COOKIE));
+    accounts.endSession(getCookie(c, SESSION_COOKIE));
     clearCookie(c);
-    if (user) audit({ at: now(), kind: 'auth.logout', actor: user.username, resourceKind: 'account', resource: user.id, summary: `${user.username} logged out` });
+    if (user) audit.record({ at: now(), kind: 'auth.logout', actor: user.username, resourceKind: 'account', resource: user.id, summary: `${user.username} logged out` });
     return c.json({ ok: true });
   });
 
@@ -305,8 +292,8 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
     const { current, next: password } = await parse(c, z.object({ current: yourPassword, next: z.string().min(1).max(256) }));
     const refused = await confirmIdentity(c, user, current);
     if (refused) return refused;
-    await setPassword(user.id, password, getCookie(c, SESSION_COOKIE)).catch(rethrow);
-    audit({ at: now(), kind: 'user.password', actor: user.username, resourceKind: 'account', resource: user.id, summary: `${user.username} changed their password; their other sessions were signed out` });
+    await accounts.setPassword(user.id, password, getCookie(c, SESSION_COOKIE)).catch(rethrow);
+    audit.record({ at: now(), kind: 'user.password', actor: user.username, resourceKind: 'account', resource: user.id, summary: `${user.username} changed their password; their other sessions were signed out` });
     return c.json({ ok: true });
   });
 
@@ -314,7 +301,7 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
 
   users.get('/', (c) => {
     requireUser(c);
-    return c.json({ users: listUsers() });
+    return c.json({ users: accounts.listUsers() });
   });
 
   users.post('/', async (c) => {
@@ -322,25 +309,25 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
     const { username, password, yourPassword: confirmation } = await parse(c, credentials.extend({ yourPassword }));
     const refused = await confirmIdentity(c, actor, confirmation);
     if (refused) return refused;
-    const user = await createUser(username, password, actor.username).catch(rethrow);
-    audit({ at: now(), kind: 'user.created', actor: actor.username, resourceKind: 'account', resource: user.id, summary: `${actor.username} added ${user.username}` });
+    const user = await accounts.createUser(username, password, actor.username).catch(rethrow);
+    audit.record({ at: now(), kind: 'user.created', actor: actor.username, resourceKind: 'account', resource: user.id, summary: `${actor.username} added ${user.username}` });
     return c.json({ user }, 201);
   });
 
   users.delete('/:id', async (c) => {
     const actor = requireUser(c);
-    const target = getUser(c.req.param('id'));
+    const target = accounts.getUser(c.req.param('id'));
     if (!target) throw new HTTPException(404, { message: 'No such user' });
     const { yourPassword: confirmation } = await parse(c, z.object({ yourPassword }));
     const refused = await confirmIdentity(c, actor, confirmation);
     if (refused) return refused;
     try {
-      deleteUser(target.id);
+      accounts.deleteUser(target.id);
     } catch (error) {
       rethrow(error);
     }
     if (target.id === actor.id) clearCookie(c);
-    audit({ at: now(), kind: 'user.removed', actor: actor.username, resourceKind: 'account', resource: target.id, summary: `${actor.username} removed ${target.username}` });
+    audit.record({ at: now(), kind: 'user.removed', actor: actor.username, resourceKind: 'account', resource: target.id, summary: `${actor.username} removed ${target.username}` });
     return c.json({ ok: true });
   });
 
@@ -353,7 +340,7 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
    */
   users.post('/:id/password', async (c) => {
     const actor = requireUser(c);
-    const target = getUser(c.req.param('id'));
+    const target = accounts.getUser(c.req.param('id'));
     if (!target) throw new HTTPException(404, { message: 'No such user' });
     if (target.id === actor.id) {
       throw new HTTPException(400, { message: 'Change your own password under “Change your password”; it needs your current one.' });
@@ -361,8 +348,8 @@ export function createAuth({ proxies, limiter = new LoginLimiter() }: AuthDeps) 
     const { password, yourPassword: confirmation } = await parse(c, z.object({ password: z.string().min(1).max(256), yourPassword }));
     const refused = await confirmIdentity(c, actor, confirmation);
     if (refused) return refused;
-    await setPassword(target.id, password).catch(rethrow);
-    audit({ at: now(), kind: 'user.password', actor: actor.username, resourceKind: 'account', resource: target.id, summary: `${actor.username} set a new password for ${target.username}; their sessions were signed out` });
+    await accounts.setPassword(target.id, password).catch(rethrow);
+    audit.record({ at: now(), kind: 'user.password', actor: actor.username, resourceKind: 'account', resource: target.id, summary: `${actor.username} set a new password for ${target.username}; their sessions were signed out` });
     return c.json({ ok: true });
   });
 
