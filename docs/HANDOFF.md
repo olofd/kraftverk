@@ -23,9 +23,10 @@ Last updated 2026-09-30.
 
 **The plan's steps 0–15 are done** (ARCHITECTURE.md §8), and so are the
 next-step plan's phases 0, 1, 2 and 5 and the assistant minimum — see *What
-is built, and what is not* below. Work happens on `main`, and pushing it to
-GitLab deploys to the owner's NAS (GitHub runs CI only; see [CI.md](CI.md)). The broker container is updated by the
-manual `broker` job, which drops the station for about a minute. The architecture baseline is
+is built, and what is not* below. Work happens on `main`; GitHub checks every push, and pushing it to the
+owner's own Forgejo checks it again and deploys it to the owner's NAS over SSH
+([CI.md](CI.md); the NAS connection: [NAS-DEPLOY.md](NAS-DEPLOY.md)). The broker container is updated by the manual `Broker`
+workflow, which drops the station for about a minute. The architecture baseline is
 empty: the core names no product, and every device is found, not listed.
 
 - **The shared core** ([PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md)): the

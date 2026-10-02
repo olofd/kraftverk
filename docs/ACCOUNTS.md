@@ -10,7 +10,7 @@ thing to change later.
   a NAS, a Raspberry Pi or a PC at home, and is its operator. Everything is
   open source: they can build and serve their own app too. They add the
   accounts — family, a friend they trust — and nobody signs up. This is what
-  the GitLab pipeline deploys to the author's own DiskStation.
+  kraftverk's Forgejo pipeline deploys to the author's own DiskStation.
 - **Hosted** — later. A service on the internet for people with no server at
   home, where strangers sign up — with a password, or with Apple or Google —
   and each sees only their own equipment.

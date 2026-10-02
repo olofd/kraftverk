@@ -121,7 +121,8 @@ services:
       # The internet's entrance, for a reverse proxy on this machine that
       # terminates HTTPS — DSM's, on a Synology. Loopback only: the internet
       # reaches it through that proxy and nowhere else. Never publish it wider
-      # (KRAFTVERK_PUBLIC_BIND exists for CI, whose Docker runs elsewhere).
+      # (KRAFTVERK_PUBLIC_BIND exists for a smoke test whose Docker runs
+      # elsewhere: scripts/ci/smoke-docker.sh).
       - "${KRAFTVERK_PUBLIC_BIND:-127.0.0.1}:${KRAFTVERK_PUBLIC_PORT:-8090}:8090"
 
 volumes:

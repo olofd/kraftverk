@@ -1,0 +1,35 @@
+# The broker, recreated from main's last commit — by hand, from Forgejo's
+# Actions tab, at a moment when losing the station for about a minute is fine
+# (docs/DOCKER.md#operating-it). The pipeline's deploy says when the broker is
+# behind; it never recreates it itself.
+#
+# The commit must have been through the pipeline: its images are the ones the
+# deploy put on the server.
+
+name: Broker
+
+on:
+  workflow_dispatch:
+
+jobs:
+  broker:
+    name: Recreate the broker
+    if: vars.KRAFTVERK_DEPLOY == 'on'
+    runs-on: docker
+    container:
+      image: docker:29-cli
+      volumes: [/var/run/docker.sock:/var/run/docker.sock]
+    timeout-minutes: 10
+    steps:
+      - name: Tools
+        shell: sh
+        run: apk add --no-cache bash git nodejs openssh-client
+      - uses: actions/checkout@v4
+      - name: The installation
+        run: bash ci/forgejo/installation.sh
+        env:
+          DEPLOY_ENV: ${{ secrets.DEPLOY_ENV }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_SSH_CONFIG: ${{ secrets.DEPLOY_SSH_CONFIG }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+      - run: bash scripts/ci/release.sh "$GITHUB_SHA" broker

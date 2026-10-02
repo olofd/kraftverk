@@ -49,6 +49,8 @@
     "//typecheck": "Every workspace, the e2e suite, and the shared packages as every place runs them: no Node or Bun types (tsconfig.shared.json, docs/PLAN-SHARED-CORE.md).",
     "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit -p e2e && tsc --noEmit -p tsconfig.shared.json",
     "//check:architecture": "The dependency rule, the product-identifier ratchet (docs/ARCHITECTURE.md section 7) and a current device registry. Add -- --update to record an improvement.",
+    "//ship": "The Forgejo pipeline's stages without Forgejo, from your own machine: main's last commit checked, built, attacked and deployed to the server, the station kept connected; -- broker also recreates the broker. Needs Docker and a deploy.env (scripts/deploy.env.example). See docs/CI.md.",
+    "ship": "bash scripts/ship.sh",
     "check:architecture": "node scripts/architecture.mjs && node scripts/run-bun.mjs scripts/gen-devices.ts --check",
     "//knip": "Files, exports and dependencies nothing uses, and dependencies used but not declared (knip.jsonc says what runs and why).",
     "knip": "knip",
