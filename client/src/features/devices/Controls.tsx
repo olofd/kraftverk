@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { YStack } from 'tamagui';
 
 import { describeError, isOnline, type DeviceView } from '@kraftverk/api-client';
-import { MAIN_PART, partName, switchConsequence, togglesOf, type Part, type Toggle } from '@kraftverk/device-sdk';
+import { MAIN_PART, partName, switchConsequence, togglesOf, type Part, type PartToggle } from '@kraftverk/device-sdk';
 import { Card, haptic, readingFor, RowSeparator, SectionLabel, ToggleRow, useWriteGate } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
@@ -26,7 +26,7 @@ export function Controls({ device, part }: { device: DeviceView; part?: string }
   const toggles = useMemo(() => togglesOf(device.description, device.name).filter((toggle) => part === undefined || toggle.part.id === part), [device, part]);
 
   const run = useCallback(
-    async (toggle: Toggle, value: boolean) => {
+    async (toggle: PartToggle, value: boolean) => {
       setError(null);
       haptic();
       try {

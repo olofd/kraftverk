@@ -11,17 +11,18 @@ import {
   isAutomationRole,
   problemArea,
   problemPlace,
-  type ProblemArea,
+  SEQUENCE_LIMITS,
   takesSteps,
   writtenAttribute,
   type BoundPart,
+  type ProblemArea,
   type Rule,
   type RuleVocabulary,
 } from '@kraftverk/automation';
 
 import type { AutomationStore, DeviceCatalog, EventStore, HistoryStore } from '@kraftverk/store';
 import type { SessionManager } from '@kraftverk/holder';
-import { CHAIN_LIMIT, quoted, type AutomationEngine, type AutomationRecord, type AutomationLibrary, rehearse } from '@kraftverk/automation-engine';
+import { quoted, type AutomationEngine, type AutomationRecord, type AutomationLibrary, rehearse } from '@kraftverk/automation-engine';
 
 /**
  * What an automation is made of, checked the one way whoever makes it — a
@@ -172,7 +173,7 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
       return 1 + Math.max(0, ...next.map((one) => deepest(one, [...seen, id])));
     };
     const below = Math.max(0, ...targets.map((target) => deepest(target, self ? [self] : [])));
-    if (1 + below > CHAIN_LIMIT) problems.push(`It would start a chain ${1 + below} automations deep: at most ${CHAIN_LIMIT}`);
+    if (1 + below > SEQUENCE_LIMITS.chain) problems.push(`It would start a chain ${1 + below} automations deep: at most ${SEQUENCE_LIMITS.chain}`);
     return [...new Set(problems)];
   };
 

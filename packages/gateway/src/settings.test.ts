@@ -60,7 +60,7 @@ function gateway(options: { stubborn?: boolean; readOnly?: boolean } = {}) {
 const intent = (patch: Record<string, Value>, extra: Partial<WriteIntent> = {}): WriteIntent => ({
   deviceId: savedDeviceId('d-1'),
   patch,
-  actor: 'user',
+  actor: 'person',
   by: 'olof',
   ...extra,
 });

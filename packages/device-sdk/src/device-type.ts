@@ -160,6 +160,18 @@ export type ToolSpec = {
 export type ToolRun = (input: ConfigValues) => Promise<Value>;
 
 /**
+ * A device as a function may see it: what it reports, how it is doing, and
+ * its queries answered — each answer checked against the type its capability
+ * declares. Nothing that acts: a function answers, it never commands, writes
+ * or runs a tool, and it is not handed anything that could.
+ */
+export type DeviceReader = {
+  readings(): readonly Reading[];
+  health(): SessionHealth;
+  query(request: QueryRequest): Promise<Value>;
+};
+
+/**
  * One device, open.
  *
  * Everything a caller reads comes from what the session already holds — the

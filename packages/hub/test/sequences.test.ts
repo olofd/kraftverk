@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { inlineParams, startCharging, stopCharging, type DeviceReader, type Rule } from '@kraftverk/automation';
-import { MAIN_PART, savedDeviceId, type AuditRecord, type AutomationId, type DeviceDescription } from '@kraftverk/device-sdk';
+import { inlineParams, startCharging, stopCharging, type Rule } from '@kraftverk/automation';
+import { MAIN_PART, savedDeviceId, type AuditRecord, type AutomationId, type DeviceDescription, type DeviceReader } from '@kraftverk/device-sdk';
 import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent, type WriteResult } from '@kraftverk/gateway';
 import { LiveBus, type LiveMessage } from '@kraftverk/holder';
 
@@ -217,7 +217,7 @@ function setup(world: Partial<World> = {}) {
 }
 
 /** A person asking. */
-const OLOF: Asker = { name: 'olof', actor: 'user' };
+const OLOF: Asker = { name: 'olof', actor: 'person' };
 
 /** A few seconds of a step, fast: how long the charger is given, and how long it is switched off. */
 const QUICK = { reachSeconds: 20, withinSeconds: 5, offSeconds: 3, tries: 3 };
@@ -336,7 +336,7 @@ describe('starting a charge', () => {
     ]);
     // Every switch is the run's, a person's, with what its rule allows: on, then off and on 3 times, then off if it fails.
     expect(new Set(sent.map((intent) => intent.run?.id))).toEqual(new Set([run.id!]));
-    expect(sent.every((intent) => intent.run?.askedBy === 'user' && intent.actor === 'automation')).toBe(true);
+    expect(sent.every((intent) => intent.run?.askedBy === 'person' && intent.actor === 'automation')).toBe(true);
     expect(sent.find((intent) => intent.deviceId === PLUG)!.run!.switches).toBe(1 + 2 * 3 + 1);
     // Ended, the gateway is told, and counts nothing more for it.
     expect(runsEnded).toEqual([run.id!]);

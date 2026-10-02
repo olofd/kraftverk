@@ -18,7 +18,7 @@ export type ConnectionView = {
    * `this-node`, the one asking, holding it for the master; or another
    * `node` of the home — a phone, a browser, another machine.
    */
-  heldBy: { kind: 'master' | 'this-node' | 'node'; id: NodeId; name: string };
+  heldBy: { kind: HeldBy | 'node'; id: NodeId; name: string };
   address: string;
   priority: number;
   /** Whether it reaches the device right now; null when nobody is trying it. */
@@ -107,7 +107,7 @@ export type PictureChoice = { picture: PictureRef };
  * the home's master, or this node, holding it for the master with what it
  * reaches itself — its own radio (docs/PLAN-SHARED-CORE.md, phase 6).
  */
-export type Holder = 'master' | 'this-node';
+export type HeldBy = 'master' | 'this-node';
 
 /**
  * A home this node keeps beside the one it shows, to bring into it
@@ -126,7 +126,7 @@ export type ElsewhereView = { from: HomeElsewhere; devices: number; automations:
  * that node can hold it at all — what the way needs of the node holding it
  * (`fits`) — and whether it can be used now, or why not.
  */
-export type WayView = { method: string; holder: Holder; fits: boolean; availability: Availability };
+export type WayView = { method: string; holder: HeldBy; fits: boolean; availability: Availability };
 
 /**
  * An installed type, and every way it can be added here: where it can run

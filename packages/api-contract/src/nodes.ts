@@ -1,6 +1,6 @@
 import type { AuditSubject, Availability, DeviceDescription, DeviceInfo, NodeId, Platform, PolicyValueName, PolicyValueSpec, Reading, ResourceKind, TransportDefinition, Value } from '@kraftverk/device-sdk';
 
-import type { Holder, Refused } from './devices.ts';
+import type { HeldBy, Refused } from './devices.ts';
 
 /*
   The nodes of a home and what they share: the transports each runs, a node
@@ -10,7 +10,7 @@ import type { Holder, Refused } from './devices.ts';
 
 export type TransportView = TransportDefinition & {
   /** Whose it is: the master's, or this node's own, which it holds the master's connections over. */
-  holder: Holder;
+  holder: HeldBy;
   running: boolean;
   availability: Availability;
   values: Record<string, string>;

@@ -6,9 +6,9 @@ import {
   type DeviceDescription,
   type DeviceSession,
   type ToolSpec,
+  type DeviceReader,
   type Value,
 } from '@kraftverk/device-sdk';
-import type { DeviceReader } from '@kraftverk/automation';
 
 /**
  * Running what a device declares as data, the same in every holder: a tool,

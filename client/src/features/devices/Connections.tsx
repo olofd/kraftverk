@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { Button, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import type { DeviceView } from '@kraftverk/api-client';
-import { Card, haptic, Icon, Row, RowSeparator, SectionLabel, Toggle as Switch } from '@kraftverk/ui';
+import { Card, haptic, Icon, Row, RowSeparator, SectionLabel, Toggle } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { Pressable } from '../../components/Pressable';
@@ -72,7 +72,7 @@ export function Connections({ device }: { device: DeviceView }) {
                           : `Off: an export leaves its ${secretWords(connection.secrets)} out, or seals it with a passphrase.`}
                       </Text>
                     </YStack>
-                    <Switch
+                    <Toggle
                       label="Its secrets may leave in plain text"
                       checked={connection.secretsExportable}
                       disabled={busy}

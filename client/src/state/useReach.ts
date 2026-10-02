@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-import type { ConnectionView, Holder } from '@kraftverk/api-client';
+import type { ConnectionView, HeldBy } from '@kraftverk/api-client';
 import type { IconName } from '@kraftverk/ui';
 
 import { HERE, HERE_PLATFORM } from '../platform/here';
@@ -24,7 +24,7 @@ export function useReach() {
       master,
       here,
       /** A way being added, by who will hold it. */
-      holder: (holder: Holder): Reach => (holder === 'master' ? master : here),
+      holder: (holder: HeldBy): Reach => (holder === 'master' ? master : here),
       /** A connection, by who holds it. */
       of: (heldBy: ConnectionView['heldBy']): string => (heldBy.kind === 'master' ? master.words : heldBy.kind === 'this-node' ? here.words : `from ${heldBy.name}`),
       /** What to say while it is being reached. */

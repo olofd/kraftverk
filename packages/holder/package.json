@@ -15,7 +15,6 @@
   },
   "dependencies": {
     "@kraftverk/api-contract": "*",
-    "@kraftverk/automation": "*",
     "@kraftverk/device-sdk": "*"
   },
   "devDependencies": {

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { defineFunction, defineRecipe, inlineParams, type DeviceReader } from '@kraftverk/automation';
-import { MAIN_PART, savedDeviceId, zonedInstant, type AuditRecord, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
+import { defineFunction, defineRecipe, inlineParams } from '@kraftverk/automation';
+import { MAIN_PART, savedDeviceId, zonedInstant, type AuditRecord, type DeviceDescription, type DeviceReader, type Value } from '@kraftverk/device-sdk';
 import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
 

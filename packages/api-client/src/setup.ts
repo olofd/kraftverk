@@ -1,4 +1,4 @@
-import type { CheckOutcome, ConfigValues, DeviceTypeListing, DraftView, Holder, KraftverkApi, SaveInput, SetupActionResult, SightingView } from '@kraftverk/api-contract';
+import type { CheckOutcome, ConfigValues, DeviceTypeListing, DraftView, HeldBy, KraftverkApi, SaveInput, SetupActionResult, SightingView } from '@kraftverk/api-contract';
 import { CATEGORIES } from '@kraftverk/device-sdk';
 
 /**
@@ -13,13 +13,13 @@ export class SetupFlow {
 
   private constructor(
     private readonly api: KraftverkApi,
-    readonly holder: Holder,
+    readonly holder: HeldBy,
     draft: DraftView
   ) {
     this.#draft = draft;
   }
 
-  static async start(api: KraftverkApi, typeId: string, methodId: string, holder: Holder): Promise<SetupFlow> {
+  static async start(api: KraftverkApi, typeId: string, methodId: string, holder: HeldBy): Promise<SetupFlow> {
     return new SetupFlow(api, holder, await api.setup.start({ typeId, methodId, holder }));
   }
 

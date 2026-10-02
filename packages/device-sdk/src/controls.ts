@@ -10,13 +10,13 @@ import type { ConfigField, ConfigSchema } from './schema.ts';
  */
 
 /** One switch a part takes: which command, which argument, and the on/off attribute it moves. */
-export type Toggle = { part: Part; capability: CapabilityId; command: string; argument: string; attribute: AttributeSpec };
+export type PartToggle = { part: Part; capability: CapabilityId; command: string; argument: string; attribute: AttributeSpec };
 
 /**
  * Every on/off a device's parts can be switched through: each command a part's
  * capability takes whose argument sets an on/off attribute it reports.
  */
-export function togglesOf(description: DeviceDescription, name?: string): Toggle[] {
+export function togglesOf(description: DeviceDescription, name?: string): PartToggle[] {
   return partsOf(description, name).flatMap((part) =>
     capabilitiesOf(description, part.id).flatMap((capability) =>
       Object.entries(capabilityIn(description, capability)?.commands ?? {}).flatMap(([command, spec]) =>

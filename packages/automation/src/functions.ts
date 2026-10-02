@@ -1,4 +1,4 @@
-import type { CapabilityName, CapabilityNeed, QueryAnswer, QueryName, QueryRequest, Reading, SessionHealth, Value, ValueType } from '@kraftverk/device-sdk';
+import type { CapabilityName, CapabilityNeed, DeviceReader, QueryAnswer, QueryName, Value, ValueType } from '@kraftverk/device-sdk';
 
 /*
   What a package brings a rule beside its device's words: functions over
@@ -8,18 +8,6 @@ import type { CapabilityName, CapabilityNeed, QueryAnswer, QueryName, QueryReque
 
 /** A value, and in words why it is what it is. */
 export type Evaluation = { value: Value; detail: string | null };
-
-/**
- * A device as a function may see it: what it reports, how it is doing, and
- * its queries answered — each answer checked against the type its capability
- * declares. Nothing that acts: a function answers, it never commands, writes
- * or runs a tool, and it is not handed anything that could.
- */
-export type DeviceReader = {
-  readings(): readonly Reading[];
-  health(): SessionHealth;
-  query(request: QueryRequest): Promise<Value>;
-};
 
 /** The part filling a role, as a function sees it. */
 export type RulePart = {

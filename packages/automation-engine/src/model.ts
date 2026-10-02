@@ -13,8 +13,6 @@ import type { AutomationStorage } from './storage.ts';
   a run, and how the gateway knows an automation's doing from a person's.
 */
 
-/** One run's result, as the API shows it. */
-export type RunResult = AutomationRun;
 export type { AutomationMode };
 
 export type AutomationRecord = {
@@ -42,9 +40,9 @@ export type AutomationRecord = {
   createdAt: string;
   updatedAt: string;
   /** Its latest run that has ended. */
-  lastRun: RunResult | null;
+  lastRun: AutomationRun | null;
   /** The run it is taking now. */
-  running: RunResult | null;
+  running: AutomationRun | null;
 };
 
 /** The part filling a role, as the engine sees it: enough to check the role, read it, and hand it to a function. */
@@ -80,9 +78,6 @@ export type AutomationEngineDeps = {
   secondMs?: number;
 };
 
-/** How many automations deep one may start another, counting the first: a chain stays one a person can follow. */
-export const CHAIN_LIMIT = 4;
-
 /** How the gateway's audit and memory name what an automation did: by its id, which a rename does not change. */
 export const AUTOMATION_ACTOR = 'automation:';
 export const actorOf = (automation: Pick<AutomationRecord, 'id'>): string => `${AUTOMATION_ACTOR}${automation.id}`;
@@ -95,4 +90,4 @@ export class RunRefusal extends Error {}
  * run says it ("olof", "assistant for olof"); `actor` is how the gateway
  * treats its first switches — a person's dwell, or an assistant's.
  */
-export type Asker = { name: string; actor: 'user' | 'agent' };
+export type Asker = { name: string; actor: 'person' | 'agent' };

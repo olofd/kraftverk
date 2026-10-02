@@ -1,10 +1,11 @@
 import { ApiError, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-contract';
-import { checkBinding, checkRule, isAutomationRole, keepsSo, MAIN, useOf, useText, type BoundPart, type PartRole } from '@kraftverk/automation';
+import { checkBinding, checkRule, isAutomationRole, keepsSo, useOf, useText, type BoundPart, type PartRole } from '@kraftverk/automation';
 import type { AutomationEngine, AutomationLibrary, AutomationRecord } from '@kraftverk/automation-engine';
 import {
   attributeMeaning,
   capabilitiesOf,
   isSimulated,
+  MAIN_PART,
   meetsNeed,
   methodsOf,
   partsOf,
@@ -368,7 +369,7 @@ function bindingProblems(deps: ImportDeps, entry: AutomationEntry, document: Con
       found.push({ message: `${spec.label}: that part of ${name} cannot do what it needs (${spec.capabilities.join(', ')})`, path: ['uses', role] });
       continue;
     }
-    bound.set(role, { name: use.part === MAIN ? name : `${name} — ${use.part}`, description, part: use.part, capabilities });
+    bound.set(role, { name: use.part === MAIN_PART ? name : `${name} — ${use.part}`, description, part: use.part, capabilities });
   }
   // What the filled parts must report and let be written: once the rule itself holds.
   if (checkRule(entry.rule, deps.library).length) return found;
@@ -398,7 +399,7 @@ function candidatesFor(deps: ImportDeps, need: PartRole | null, document: Config
   return [...yours, ...added].flatMap((device) =>
     partsOf(device.description)
       .filter((part) => !need || meetsNeed(need, capabilitiesOf(device.description, part.id)))
-      .map((part) => ({ use: useText({ device: device.key, part: part.id }), name: part.id === MAIN ? device.name : `${device.name} — ${part.label}` }))
+      .map((part) => ({ use: useText({ device: device.key, part: part.id }), name: part.id === MAIN_PART ? device.name : `${device.name} — ${part.label}` }))
   );
 }
 

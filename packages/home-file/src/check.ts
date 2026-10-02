@@ -1,7 +1,7 @@
-import { validateConfig, type ConfigSchema } from '@kraftverk/device-sdk';
+import { MAIN_PART, validateConfig, type ConfigSchema } from '@kraftverk/device-sdk';
 
 import type { ConfigDocument, DeviceEntry, SecretValue } from './document.ts';
-import { MAIN, type Issue } from '@kraftverk/automation';
+import type { Issue } from '@kraftverk/automation';
 import type { Vocabulary } from './vocabulary.ts';
 
 /*
@@ -85,14 +85,14 @@ export function checkDocument(document: ConfigDocument, vocabulary: Vocabulary, 
   // A device by its key — in the file, or one the server has — and whether it has a part.
   const deviceOf = (key: string): { name: string; parts: string[] } | null => {
     const own: DeviceEntry | undefined = document.devices[key];
-    if (own) return { name: own.name, parts: types.get(own.type)?.parts ?? [MAIN] };
+    if (own) return { name: own.name, parts: types.get(own.type)?.parts ?? [MAIN_PART] };
     const there = vocabulary.devices.find((device) => device.key === key);
     return there ? { name: there.name, parts: there.parts } : null;
   };
   const part = (ref: { device: string; part: string }, path: Path) => {
     const device = deviceOf(ref.device);
     if (!device) problem(`There is no device "${ref.device}", in the file or on the server`, path);
-    else if (ref.part !== MAIN && !device.parts.includes(ref.part)) problem(`${device.name} has no part "${ref.part}": it has ${device.parts.join(', ')}`, path);
+    else if (ref.part !== MAIN_PART && !device.parts.includes(ref.part)) problem(`${device.name} has no part "${ref.part}": it has ${device.parts.join(', ')}`, path);
   };
 
   // Each link.

@@ -1,6 +1,6 @@
 import { Button, Spinner, useTheme, YStack } from 'tamagui';
 
-import type { Holder } from '@kraftverk/api-client';
+import type { HeldBy } from '@kraftverk/api-client';
 import { Card, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { Pressable } from '../../components/Pressable';
@@ -8,7 +8,7 @@ import { useHome } from '../../state/HomeProvider';
 import { useReach } from '../../state/useReach';
 
 /** One way to connect, and who would hold it. */
-export type Way = { methodId: string; label: string; description?: string; holder: Holder; available: boolean; reason: string | null; recommended: boolean };
+export type Way = { methodId: string; label: string; description?: string; holder: HeldBy; available: boolean; reason: string | null; recommended: boolean };
 
 // --- 3 · how do you want to connect -------------------------------------------------
 

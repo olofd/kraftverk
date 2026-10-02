@@ -1,12 +1,12 @@
-import type { ConditionState, RunLog, StepLine } from '@kraftverk/api-contract';
+import type { AutomationRun, ConditionState, RunLog, StepLine } from '@kraftverk/api-contract';
 import type { LiveMessage } from '@kraftverk/holder';
 
 import { RuleContext } from './context.ts';
-import type { AutomationEngineDeps, AutomationRecord, Asker, RunResult } from './model.ts';
+import type { AutomationEngineDeps, AutomationRecord, Asker } from './model.ts';
 import { Runs } from './runs.ts';
 import { Triggers } from './triggers.ts';
 
-export { CHAIN_LIMIT, RunRefusal, type Asker, type AutomationEngineDeps, type AutomationMode, type AutomationRecord, type EngineDevice, type RunResult } from './model.ts';
+export { RunRefusal, type Asker, type AutomationEngineDeps, type AutomationMode, type AutomationRecord, type EngineDevice } from './model.ts';
 export { logKeyOf } from './listen.ts';
 export { quoted } from './words.ts';
 
@@ -131,17 +131,17 @@ export class AutomationEngine {
    * run is answered as it stands once it has begun; it goes on taking its
    * steps, said on the live bus as it does.
    */
-  startAsked(automationId: string, by: Asker): Promise<RunResult> {
+  startAsked(automationId: string, by: Asker): Promise<AutomationRun> {
     return this.#runs.startAsked(automationId, by);
   }
 
   /** Stops a run in progress: the step it is in ends as stopped, and its `otherwise` steps run. */
-  stopAsked(automationId: string, by: string): RunResult {
+  stopAsked(automationId: string, by: string): AutomationRun {
     return this.#runs.stopAsked(automationId, by);
   }
 
   /** The run an automation is taking now, as it stands; null when none. */
-  running(automationId: string): RunResult | null {
+  running(automationId: string): AutomationRun | null {
     return this.#runs.running(automationId);
   }
 
@@ -153,7 +153,7 @@ export class AutomationEngine {
    * every step, and `onBegun` is given it once it has begun. `askedBy`: who
    * asked for it; none, its own triggers started it.
    */
-  run(automation: AutomationRecord, options: Parameters<Runs['run']>[1] = {}): Promise<RunResult> {
+  run(automation: AutomationRecord, options: Parameters<Runs['run']>[1] = {}): Promise<AutomationRun> {
     return this.#runs.run(automation, options);
   }
 

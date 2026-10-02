@@ -7,7 +7,7 @@ import type { Account, AccountDetail, AuthState } from './accounts.ts';
 import type { Rehearsal, VocabularyView, WorldView } from './assistant.ts';
 import type { AutomationChanges, AutomationDraftView, AutomationKit, AutomationRun, AutomationView, NewAutomation, RunLog } from './automations.ts';
 import type { ConfigExported, ConfigExportRequest, ConfigSnapshotView, ImportAnswers, ImportApplied, ImportPlan } from './configuration.ts';
-import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, Holder, HomeElsewhere, LinkRecord, NewLink, PictureRef, ToolBody } from './devices.ts';
+import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, HomeElsewhere, LinkRecord, NewLink, PictureRef, ToolBody } from './devices.ts';
 import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, ProblemView } from './live.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, HomeView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
 import type { CheckOutcome, DraftView, FoundView, HeldSetupInput, SaveInput, SightingView } from './setup.ts';
@@ -96,7 +96,7 @@ export interface KraftverkApi {
    */
   setup: {
     /** Begins one over a method of a type, held by whoever its way says (`ways`): the master, unless this node holds it for the master. */
-    start(input: { typeId: string; methodId?: string | null; holder?: Holder }): Promise<DraftView>;
+    start(input: { typeId: string; methodId?: string | null; holder?: HeldBy }): Promise<DraftView>;
     /** One a node that follows will hold, from what it learnt reading the device itself: never a secret. */
     startHeld(input: HeldSetupInput): Promise<DraftView>;
     get(id: string): Promise<DraftView>;

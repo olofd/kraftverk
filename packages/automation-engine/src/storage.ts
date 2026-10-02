@@ -1,6 +1,8 @@
 import type { RunLog } from '@kraftverk/api-contract';
 
-import type { AutomationRecord, RunResult } from './engine.ts';
+import type { AutomationRun } from '@kraftverk/api-contract';
+
+import type { AutomationRecord } from './model.ts';
 
 /** A `becomes` trigger's state, as kept: whether its condition held, since when, and whether this hold has run it. */
 export type TriggerState = { last: boolean; heldSince: string | null; fired: boolean };
@@ -26,15 +28,15 @@ export interface AutomationStorage {
   looked(id: string, at: string): void;
 
   /** A run that takes steps, begun: its id, written again at every step. */
-  beginRun(automationId: string, run: RunResult): string;
+  beginRun(automationId: string, run: AutomationRun): string;
   /** Where a run has got to. */
-  stepRun(runId: string, run: RunResult): void;
+  stepRun(runId: string, run: AutomationRun): void;
   /** A run ended, as it came out. */
-  endRun(runId: string, run: RunResult): void;
+  endRun(runId: string, run: AutomationRun): void;
   /** A run over as it began, kept at once; null when its automation was deleted while it ran. */
-  ran(automationId: string, run: RunResult): string | null;
+  ran(automationId: string, run: AutomationRun): string | null;
   /** Runs that never ended: interrupted, when found as the engine starts. */
-  unended(): { automationId: string; run: RunResult }[];
+  unended(): { automationId: string; run: AutomationRun }[];
 
   /** What devices said while a run ran, added to what is kept of it. */
   recordLog(runId: string, log: Partial<Pick<RunLog, 'devices' | 'roles' | 'keys' | 'readings' | 'reach'>>): void;

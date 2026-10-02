@@ -1,12 +1,12 @@
 
-import type { RoleBinding, RunLog, RunLogDevice, RunLogKey, RunLogReach, RunLogReading, RunLogRole } from '@kraftverk/api-contract';
+import type { AutomationRun, RoleBinding, RunLog, RunLogDevice, RunLogKey, RunLogReach, RunLogReading, RunLogRole } from '@kraftverk/api-contract';
 import { KEY, keyFrom } from '@kraftverk/device-sdk';
 import { automationId, savedDeviceId, type AutomationId, type Quantity, type Value } from '@kraftverk/device-sdk';
 import type { Rule } from '@kraftverk/automation';
 
 import type { SqlDatabase } from './database.ts';
 import { newId, randomHex } from '@kraftverk/device-sdk';
-import type { AutomationMode, AutomationRecord, AutomationStorage, RunResult, TriggerState } from '@kraftverk/automation-engine';
+import type { AutomationMode, AutomationRecord, AutomationStorage, TriggerState } from '@kraftverk/automation-engine';
 
 /**
  * The automations you made — each with its own rule — what fills their
@@ -36,7 +36,7 @@ type RunRow = {
   automation_id: string;
   started_at: string;
   ended_at: string | null;
-  outcome: RunResult['outcome'];
+  outcome: AutomationRun['outcome'];
   started_by: string | null;
   started_by_run: string | null;
   why: string;
@@ -57,7 +57,7 @@ const RUN_SELECT = `SELECT r.*, p.automation_id AS parent_automation, pa.name AS
 export type AutomationInput = Pick<AutomationRecord, 'name' | 'rule' | 'madeFrom' | 'roles' | 'starts' | 'timeZone' | 'recheckMinutes'>;
 
 /** What a run keeps beside its columns. */
-type RunDetail = Pick<RunResult, 'saw' | 'conditions' | 'steps'>;
+type RunDetail = Pick<AutomationRun, 'saw' | 'conditions' | 'steps'>;
 
 const parse = <T>(json: string | null, fallback: T): T => {
   try {
@@ -67,7 +67,7 @@ const parse = <T>(json: string | null, fallback: T): T => {
   }
 };
 
-const runOf = (row: RunRow): RunResult => {
+const runOf = (row: RunRow): AutomationRun => {
   const detail = parse<Partial<RunDetail>>(row.detail, {});
   return {
     id: row.id,
@@ -87,7 +87,7 @@ const runOf = (row: RunRow): RunResult => {
   };
 };
 
-const detailOf = (run: RunResult): string => JSON.stringify({ saw: run.saw, conditions: run.conditions, steps: run.steps } satisfies RunDetail);
+const detailOf = (run: AutomationRun): string => JSON.stringify({ saw: run.saw, conditions: run.conditions, steps: run.steps } satisfies RunDetail);
 
 /** A rule with nothing in it: what a row whose JSON could not be read is shown as, and refuses to run. */
 const EMPTY_RULE: Rule = { roles: {}, params: { fields: {} }, when: [], then: [] };
@@ -298,7 +298,7 @@ export class AutomationStore implements AutomationStorage {
   // --- runs ---------------------------------------------------------------------------
 
   /** A run that takes steps, begun: its row, written again at every step. Throws if one of the automation's already runs. */
-  beginRun(automationId: string, run: RunResult): string {
+  beginRun(automationId: string, run: AutomationRun): string {
     const id = `r-${randomHex(8)}`;
     this.#db
       .query('INSERT INTO automation_run (id, automation_id, started_at, ended_at, outcome, started_by, started_by_run, why, summary, detail) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)')
@@ -307,12 +307,12 @@ export class AutomationStore implements AutomationStorage {
   }
 
   /** Where a run has got to. */
-  stepRun(runId: string, run: RunResult): void {
+  stepRun(runId: string, run: AutomationRun): void {
     this.#db.query('UPDATE automation_run SET summary = ?, detail = ? WHERE id = ? AND ended_at IS NULL').run(run.summary, detailOf(run), runId);
   }
 
   /** A run ended, as it came out. */
-  endRun(runId: string, run: RunResult): void {
+  endRun(runId: string, run: AutomationRun): void {
     this.#db
       .query('UPDATE automation_run SET ended_at = ?, outcome = ?, summary = ?, detail = ? WHERE id = ?')
       .run(run.endedAt ?? new Date().toISOString(), run.outcome, run.summary, detailOf(run), runId);
@@ -323,7 +323,7 @@ export class AutomationStore implements AutomationStorage {
    * at once. Null when its automation was deleted while it ran: its runs went
    * with it, and so does this one.
    */
-  ran(automationId: string, run: RunResult): string | null {
+  ran(automationId: string, run: AutomationRun): string | null {
     const id = `r-${randomHex(8)}`;
     const kept = this.#db
       .query(
@@ -334,13 +334,13 @@ export class AutomationStore implements AutomationStorage {
   }
 
   /** One run, as it stands — what a step that waits on another automation's run looks at. */
-  run(runId: string): RunResult | null {
+  run(runId: string): AutomationRun | null {
     const row = this.#db.query<RunRow, [string]>(`${RUN_SELECT} WHERE r.id = ?`).get(runId);
     return row ? runOf(row) : null;
   }
 
   /** Runs that never ended: interrupted, when found as the server starts. */
-  unended(): { automationId: string; run: RunResult }[] {
+  unended(): { automationId: string; run: AutomationRun }[] {
     return this.#db
       .query<RunRow, []>(`${RUN_SELECT} WHERE r.ended_at IS NULL`)
       .all()
@@ -419,7 +419,7 @@ export class AutomationStore implements AutomationStorage {
   }
 
   /** An automation's runs, the latest first. */
-  runs(automationId: string, limit = 50): RunResult[] {
+  runs(automationId: string, limit = 50): AutomationRun[] {
     return this.#db.query<RunRow, [string, number]>(`${RUN_SELECT} WHERE r.automation_id = ? ORDER BY r.started_at DESC LIMIT ?`).all(automationId, limit).map(runOf);
   }
 }

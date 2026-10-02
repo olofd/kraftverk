@@ -1,11 +1,11 @@
-import type { RunLog, RunStep } from '@kraftverk/api-contract';
-import { changedRoles, describeSteps, evaluate, evaluateNow, ruleUses, secondsText, settledChoice, stepKind, takesSteps, type Command, type Expr, type Rule, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
+import type { AutomationRun, RunLog, RunStep } from '@kraftverk/api-contract';
+import { changedRoles, describeSteps, evaluate, evaluateNow, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, takesSteps, type Command, type Expr, type Rule, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
 import { attributeMeaning, readingOf, type AutomationId } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
 import type { RuleContext } from './context.ts';
 import { listen, LOOK_EVERY_SECONDS, READINGS_PER_RUN } from './listen.ts';
-import { actorOf, CHAIN_LIMIT, RunRefusal, type Asker, type AutomationEngineDeps, type AutomationRecord, type RunResult } from './model.ts';
+import { actorOf, RunRefusal, type Asker, type AutomationEngineDeps, type AutomationRecord } from './model.ts';
 import { ACTS, actsOn, capitalise, lowerFirst, pastOf, quoted } from './words.ts';
 
 /*
@@ -29,7 +29,7 @@ export type LiveRun = {
   id: string;
   automation: AutomationRecord;
   rule: Rule;
-  run: RunResult;
+  run: AutomationRun;
   /** Who asked for it — or for the run that started it; null, triggers did. */
   asker: Asker | null;
   /** The automations whose runs started this one, the first first: what a `start` step may not start again. */
@@ -93,7 +93,7 @@ export class Runs {
     for (const id of [...this.#live.keys(), ...this.#once.keys()]) this.forget(id, why);
   }
 
-  async runAndKeep(automation: AutomationRecord, why: string): Promise<RunResult | null> {
+  async runAndKeep(automation: AutomationRecord, why: string): Promise<AutomationRun | null> {
     if (this.#running.has(automation.id)) return null;
     this.#running.add(automation.id);
     try {
@@ -114,7 +114,7 @@ export class Runs {
    * run is answered as it stands once it has begun; it goes on taking its
    * steps, said on the live bus as it does.
    */
-  async startAsked(automationId: string, by: Asker): Promise<RunResult> {
+  async startAsked(automationId: string, by: Asker): Promise<AutomationRun> {
     const automation = this.deps.store.get(automationId);
     if (!automation) throw new RunRefusal('No such automation');
     // Starting is a person's yes to act: one that only watches is its owner's to start, not an assistant's.
@@ -130,16 +130,16 @@ export class Runs {
    * end of a chain as long as chains go. `begun`: the run as it stands once
    * it has begun; `ended`: as it came out.
    */
-  #start(automation: AutomationRecord, how: { asker: Asker | null; from: LiveRun | null }): { begun: Promise<RunResult>; ended: Promise<RunResult> } {
+  #start(automation: AutomationRecord, how: { asker: Asker | null; from: LiveRun | null }): { begun: Promise<AutomationRun>; ended: Promise<AutomationRun> } {
     if (automation.mode === 'off') throw new RunRefusal('It is off: turn it on to start it');
     if (this.#running.has(automation.id)) throw new RunRefusal('It is already running');
     const chain = how.from ? [...how.from.chain, how.from.automation.id] : [];
     if (chain.includes(automation.id)) throw new RunRefusal('It is already in this chain: started again, it would start itself');
-    if (chain.length >= CHAIN_LIMIT) throw new RunRefusal(`A chain of automations goes ${CHAIN_LIMIT} deep at most`);
+    if (chain.length >= SEQUENCE_LIMITS.chain) throw new RunRefusal(`A chain of automations goes ${SEQUENCE_LIMITS.chain} deep at most`);
 
-    let begun!: (run: RunResult) => void;
+    let begun!: (run: AutomationRun) => void;
     let failed!: (error: unknown) => void;
-    const started = new Promise<RunResult>((resolve, reject) => ((begun = resolve), (failed = reject)));
+    const started = new Promise<AutomationRun>((resolve, reject) => ((begun = resolve), (failed = reject)));
     this.#running.add(automation.id);
     const why = how.from ? `Started by “${how.from.automation.name}”` : `Started by ${how.asker!.name}`;
     const ended = this.run(automation, { why, askedBy: how.asker, from: how.from, chain, onBegun: (run) => begun(run) })
@@ -159,7 +159,7 @@ export class Runs {
   }
 
   /** Stops a run in progress: the step it is in ends as stopped, and its `otherwise` steps run. */
-  stopAsked(automationId: string, by: string): RunResult {
+  stopAsked(automationId: string, by: string): AutomationRun {
     const live = this.#live.get(automationId);
     if (!live) throw new RunRefusal('It is not running');
     this.#stopLive(live, by);
@@ -167,7 +167,7 @@ export class Runs {
   }
 
   /** The run an automation is taking now, as it stands; null when none. */
-  running(automationId: string): RunResult | null {
+  running(automationId: string): AutomationRun | null {
     return this.#live.get(automationId)?.run ?? null;
   }
 
@@ -182,7 +182,7 @@ export class Runs {
       if (this.#live.has(automationId)) continue;
       const at = this.#context.now().toISOString();
       const inStep = run.steps.find((step) => step.endedAt === null);
-      const ended: RunResult = {
+      const ended: AutomationRun = {
         ...run,
         outcome: 'interrupted',
         endedAt: at,
@@ -220,15 +220,15 @@ export class Runs {
       /** The run whose step started it, in a chain; and the automations already in that chain. */
       from?: LiveRun | null;
       chain?: readonly AutomationId[];
-      onBegun?: (run: RunResult) => void;
+      onBegun?: (run: AutomationRun) => void;
     } = {}
-  ): Promise<RunResult> {
+  ): Promise<AutomationRun> {
     const at = this.#context.now();
     const rule = automation.rule;
     const why = options.why ?? (options.check ? 'Asked what it would do now' : 'As it was set up to');
     const judged = this.#context.judge(automation, at);
     const from = options.from ?? null;
-    const run: RunResult = {
+    const run: AutomationRun = {
       id: null,
       at: at.toISOString(),
       endedAt: null,
@@ -242,7 +242,7 @@ export class Runs {
       steps: [],
     };
     /** A run over as it began: kept, and on the timeline, unless it was only asked what it would do. */
-    const over = (outcome: RunResult['outcome'], summary: string, steps: RunStep[] = [], device?: string): RunResult => {
+    const over = (outcome: AutomationRun['outcome'], summary: string, steps: RunStep[] = [], device?: string): AutomationRun => {
       Object.assign(run, { outcome, summary, steps, endedAt: run.at });
       if (!options.check) {
         run.id = this.deps.store.ran(automation.id, run);
@@ -366,7 +366,7 @@ export class Runs {
   }
 
   /** A run on the timeline: what it came to, in a line, and which run it is. */
-  #note(automation: AutomationRecord, run: RunResult, device?: string): void {
+  #note(automation: AutomationRecord, run: AutomationRun, device?: string): void {
     this.deps.record({
       at: run.endedAt ?? run.at,
       kind: `automation.${run.outcome}`,
@@ -646,7 +646,7 @@ export class Runs {
       this.#end(live, entry, 'failed', 'There is no automation to start: it was deleted');
       return 'failed';
     }
-    let started: { begun: Promise<RunResult>; ended: Promise<RunResult> };
+    let started: { begun: Promise<AutomationRun>; ended: Promise<AutomationRun> };
     try {
       started = this.#start(automation, { asker: live.asker, from: live });
     } catch (error) {

@@ -1,4 +1,4 @@
-import { CAPABILITIES, standardMeaning, type CapabilityName } from '@kraftverk/device-sdk';
+import { CAPABILITIES, MAIN_PART, standardMeaning, type CapabilityName } from '@kraftverk/device-sdk';
 
 import { WEEKDAYS, type Weekday } from '../clock.ts';
 import { ruleUses } from '../reads.ts';
@@ -20,8 +20,6 @@ export type Issue = { message: string; path: readonly (string | number)[]; offse
 /** What fills a role, as a file names it: a device by its key and one of its parts, or another automation by its key. */
 export type Use = { device: string; part: string } | { automation: string };
 
-/** The part a device is called by alone. */
-export const MAIN = 'main';
 
 type Data = unknown;
 
@@ -379,12 +377,12 @@ export function inferredRole(rule: RuleBody, role: string, automation: boolean):
 const sameList = (a: readonly string[] | undefined, b: readonly string[] | undefined) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
 /** How a file names what fills a role: "garage-station.outlet.ac", "smart-plug" for a main part. */
-export const useText = (use: Extract<Use, { device: string }>): string => (use.part === MAIN ? use.device : `${use.device}.${use.part}`);
+export const useText = (use: Extract<Use, { device: string }>): string => (use.part === MAIN_PART ? use.device : `${use.device}.${use.part}`);
 
 /** A role's filling from its text: the device's key, then its part — the main part when none is named. */
 export function useOf(text: string): Extract<Use, { device: string }> | null {
   const match = /^([a-z0-9][a-z0-9-]*)(?:\.(.+))?$/.exec(text.trim());
-  return match ? { device: match[1]!, part: match[2] ?? MAIN } : null;
+  return match ? { device: match[1]!, part: match[2] ?? MAIN_PART } : null;
 }
 
 // --- the automation's rule, both ways ------------------------------------------------------

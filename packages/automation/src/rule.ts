@@ -192,6 +192,8 @@ export const SEQUENCE_LIMITS = {
   tries: 10,
   /** Steps within steps, at most this deep: a sequence stays a list a person can follow. */
   depth: 4,
+  /** How many automations deep one may start another, counting the first: a chain stays one a person can follow. */
+  chain: 4,
 } as const;
 
 /**
