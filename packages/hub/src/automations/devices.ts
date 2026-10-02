@@ -1,4 +1,4 @@
-import type { RoleBinding } from '@kraftverk/api-contract';
+import type { RoleBinding } from '@kraftverk/automation';
 import { capabilitiesOf, partName, partsOf } from '@kraftverk/device-sdk';
 import type { EngineDevice } from '@kraftverk/automation-engine';
 import { deviceReader } from '@kraftverk/holder';

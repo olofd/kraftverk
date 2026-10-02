@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 
 import { linkId, MAIN_PART, savedDeviceId } from '@kraftverk/device-sdk';
 
-import { fedBy, feedsTo } from './screens';
-import type { LinkView } from './types';
+import { fedBy, feedsTo } from './screens.ts';
+import type { LinkView } from '@kraftverk/api-contract';
 
 /* What a device's screen says of the house: what feeds each of its parts, and what each feeds. */
 

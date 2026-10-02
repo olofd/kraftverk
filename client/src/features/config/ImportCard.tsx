@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
-import { applyPlan, changesOf, describeError, planReadiness, rebindAnswerKey, secretAnswerKey, withConfirmation, type ElsewhereView, type HomeElsewhere, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-client';
+import { changesOf, planReadiness, rebindAnswerKey, secretAnswerKey } from '@kraftverk/api-client/config';
+import { applyPlan, describeError, withConfirmation, type ElsewhereView, type HomeElsewhere, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-client';
 import { checkDocument, configJsonSchema, CURRENT_VERSION, holdsSealed, readConfig, type Vocabulary } from '@kraftverk/home-file';
 import { Card, haptic, Icon, RowSeparator, SectionLabel, SegmentedControl, Toggle, toggled } from '@kraftverk/ui';
 

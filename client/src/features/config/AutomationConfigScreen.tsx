@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 
+import type { AutomationId } from '@kraftverk/device-sdk';
 import { describeError, type AutomationView } from '@kraftverk/api-client';
-import type { AutomationId } from '@kraftverk/api-contract';
 
 import { Loading } from '../../components/Loading';
 import { Screen } from '../../components/Screen';

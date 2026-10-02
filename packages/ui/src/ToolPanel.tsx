@@ -3,9 +3,9 @@ import { Button, Text, XStack, YStack } from 'tamagui';
 
 import type { ConfigValues, ToolSpec } from '@kraftverk/device-sdk';
 
-import { Card } from './Card';
-import { haptic } from './haptics';
-import { SchemaForm, isComplete } from './SchemaForm';
+import { Card } from './Card.tsx';
+import { haptic } from './haptics.ts';
+import { SchemaForm, isComplete } from './SchemaForm.tsx';
 
 /**
  * One of a device type's tools, drawn from its declaration: what it is, a form

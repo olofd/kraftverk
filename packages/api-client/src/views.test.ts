@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { ShownThing, ViewReport } from '@kraftverk/api-contract';
 
-import { createViews, SAY_AGAIN_AFTER_MS, SETTLE_MS } from './views';
+import { createViews, SAY_AGAIN_AFTER_MS, SETTLE_MS } from './views.ts';
 
 /** A clock the test moves by hand. */
 function handClock() {

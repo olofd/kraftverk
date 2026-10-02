@@ -1,4 +1,5 @@
-import type { AuditEntry, AutomationMode } from '@kraftverk/api-contract';
+import type { AutomationMode } from '@kraftverk/automation';
+import type { AuditEntry } from '@kraftverk/api-contract';
 
 /*
   An automation's timeline, as its page reads it: the entries that stand for

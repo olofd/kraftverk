@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { YStack } from 'tamagui';
 
-import type { AttributeSpec, DeviceView } from '@kraftverk/api-client';
-import { keepsHistory, MAIN_PART, partsOf } from '@kraftverk/device-sdk';
+import type { DeviceView } from '@kraftverk/api-client';
+import { keepsHistory, MAIN_PART, partsOf, type AttributeSpec } from '@kraftverk/device-sdk';
 import { Card, Chips, SectionLabel } from '@kraftverk/ui';
 
 import { MeasurementChart } from './MeasurementChart';

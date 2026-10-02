@@ -1,6 +1,6 @@
 import type { Quantity } from '@kraftverk/device-sdk';
 
-import { fixedRange, startsAtZero } from './measurement';
+import { fixedRange, startsAtZero } from './measurement.ts';
 
 /**
  * The arithmetic behind a chart, with no chart in sight.
@@ -12,7 +12,8 @@ import { fixedRange, startsAtZero } from './measurement';
  * chart should be able to reuse the decisions without reusing the pixels.
  */
 
-export type SeriesPoint = { at: string; value: number };
+/** A point a chart draws: a value at a time. A history series (`SeriesPoint` in the contract) is one. */
+export type ChartPoint = { at: string; value: number };
 
 export type ChartScale = {
   /** Bottom of the axis. */
@@ -35,7 +36,7 @@ export type ChartScale = {
  * couple of pixels and hide exactly the variation worth seeing.
  */
 export function chartScale(
-  points: readonly SeriesPoint[],
+  points: readonly ChartPoint[],
   quantity: Quantity | null
 ): ChartScale {
   const values = points.map((point) => point.value).filter((value) => Number.isFinite(value));
@@ -78,7 +79,7 @@ const GAP_FACTOR = 3;
  * positions stay keyed to the whole series, so a gap leaves a gap rather than
  * closing up.
  */
-export function chartSegments(points: readonly SeriesPoint[]): [number, number][] {
+export function chartSegments(points: readonly ChartPoint[]): [number, number][] {
   if (points.length < 2) return [];
 
   // Thinned series carry a wider natural stride than the sampler's minute, so
@@ -106,7 +107,7 @@ export type ChartBox = { width: number; height: number };
 
 /** An SVG path for one run of points, positioned against the whole series. */
 export function chartPath(
-  points: readonly SeriesPoint[],
+  points: readonly ChartPoint[],
   [from, to]: [number, number],
   box: ChartBox,
   scale: ChartScale

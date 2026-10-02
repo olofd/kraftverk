@@ -1,6 +1,6 @@
-import type { AutomationMode, AutomationRun, RoleBinding } from '@kraftverk/api-contract';
-import type { Rule, RulePart } from '@kraftverk/automation';
-import type { AutomationId, AuditRecord, CapabilityId, DeviceDescription } from '@kraftverk/device-sdk';
+import type { AutomationRun } from '@kraftverk/api-contract';
+import type { AutomationMode, RoleBinding, Rule, RulePart } from '@kraftverk/automation';
+import type { AuditRecord, AutomationId, CapabilityId, DeviceDescription } from '@kraftverk/device-sdk';
 import type { ActionGateway } from '@kraftverk/gateway';
 import type { LiveBus } from '@kraftverk/holder';
 

@@ -13,4 +13,3 @@ export * from './storage.ts';
 export * from './library.ts';
 export * from './rehearse.ts';
 export * from './runlog.ts';
-export * from './series.ts';

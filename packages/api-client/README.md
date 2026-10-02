@@ -27,8 +27,13 @@ slots.
   home, settled (`createViews`); one way being set up, step by step
   (`SetupFlow`); a device's and an automation's own YAML from what the home
   shows, and read back into what a form edits (`deviceYaml`,
-  `automationYaml`, `readAutomationText`, `draftOfEntry`); and what
-  feeds what, by part (`fedBy`, `feedsTo`).
+  `automationYaml`, `readAutomationText`, `draftOfEntry`, behind
+  `@kraftverk/api-client/config`, which brings YAML with it); what feeds
+  what, by part (`fedBy`, `feedsTo`); and a run's log made into what its
+  page draws (`run-chart.ts`). The index holds what is light: a device's
+  screens import it and bundle neither the HTTP client nor YAML. The
+  contract's types are re-exported for those screens, which reach the API
+  through this package alone; the app imports the contract itself.
 - **Does not:** decide anything, or find a server: it carries what the
   home says, where it is told the home is. Where a server would be, beside
   the app, is the app's platform's to work out (`client/src/platform/`).

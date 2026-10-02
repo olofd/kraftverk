@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
-import { chartPath, chartScale, chartSegments, chartY, type SeriesPoint } from './series';
+import { chartPath, chartScale, chartSegments, chartY, type ChartPoint } from './series.ts';
 
 const MINUTE = 60_000;
 const START = Date.parse('2026-01-01T00:00:00.000Z');
 
 /** `n` samples a minute apart, unless a stride is given. */
-const run = (values: number[], strideMs = MINUTE, from = START): SeriesPoint[] =>
+const run = (values: number[], strideMs = MINUTE, from = START): ChartPoint[] =>
   values.map((value, index) => ({ at: new Date(from + index * strideMs).toISOString(), value }));
 
 describe('chartScale', () => {

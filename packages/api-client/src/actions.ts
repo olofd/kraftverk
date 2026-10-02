@@ -1,8 +1,8 @@
 import { ApiError, type KraftverkApi } from '@kraftverk/api-contract';
 
-import { withConfirmation, type Ask, type ConfirmTone } from './confirm';
-import type { DeviceActions } from './screens';
-import type { DeviceView } from './types';
+import { withConfirmation, type Ask, type ConfirmTone } from './confirm.ts';
+import type { DeviceActions } from './screens.ts';
+import type { DeviceView } from '@kraftverk/api-contract';
 
 /*
   What a device's screens can do, through whoever holds it (`DeviceActions`):

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { automationYaml, draftOfEntry, readAutomationText, type AutomationSettings, type AutomationView, type DeviceView, type RoleBinding } from '@kraftverk/api-client';
-import type { PrintContext } from '@kraftverk/automation';
+import { automationYaml, draftOfEntry, readAutomationText, type AutomationSettings } from '@kraftverk/api-client/config';
+import { type AutomationView, type DeviceView } from '@kraftverk/api-client';
+import type { PrintContext, RoleBinding } from '@kraftverk/automation';
 import type { Rule } from '@kraftverk/automation';
 import type { AutomationId } from '@kraftverk/device-sdk';
 import { entryJsonSchema } from '@kraftverk/home-file';

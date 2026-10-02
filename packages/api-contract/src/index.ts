@@ -11,58 +11,15 @@
  * (`error.ts`) — and the few words of the wire (`wire.ts`).
  *
  * What a device *is* — its type, its description (parts, attributes, events),
- * its setup steps — is declared in `@kraftverk/device-sdk` and re-exported
- * from here. What is declared here is only the envelope a home wraps around
- * it: a saved device with its connections and links, a setup draft, a
- * transport as a node runs it. No device type is named.
+ * its setup steps — is declared in `@kraftverk/device-sdk`, and imported from
+ * there; a rule from `@kraftverk/automation`. What is declared here is only
+ * the envelope a home wraps around it: a saved device with its connections
+ * and links, a setup draft, a transport as a node runs it. No device type is
+ * named.
  */
 
 export { ApiError, API_ERROR_STATUS, type ApiErrorKind } from './error.ts';
 export { CLIENT_HEADER, CONFIG_SCHEMA_PATH, PASSWORD_MIN, SIGNED_OUT } from './wire.ts';
-export type {
-  AuditSubject,
-  PolicyValueName,
-  PolicyValueSpec,
-  AutomationId,
-  Availability,
-  CapabilityId,
-  CapabilityName,
-  NodeId,
-  ConnectionId,
-  LinkEnd,
-  LinkId,
-  Reach,
-  ResourceKind,
-  ToolSpec,
-  CategoryId,
-  CategorySpec,
-  ConfigField,
-  ConfigSchema,
-  ConfigValues,
-  ConnectionHealth,
-  ConnectionMethodView,
-  ConnectionStatus,
-  AttributeSpec,
-  DescriptionSource,
-  DeviceDescription,
-  DeviceInfo,
-  DeviceTypeMeta,
-  DeviceTypeView,
-  LinkKind,
-  Part,
-  Reading,
-  SavedDeviceId,
-  SetupActionResult,
-  SetupActionView,
-  SetupChoice,
-  SetupStepView,
-  SetupWaiting,
-  SupportLevel,
-  TransportDefinition,
-  Value,
-} from '@kraftverk/device-sdk';
-export type { StepKind, StepLine, Rule, RoleSpec, Step, Expr, Trigger, Weekday, CompareOp, Command, RoleBinding, RoleFills, AutomationDraft, AutomationMode } from '@kraftverk/automation';
-export type { GatewayResult, GatewayOutcome, WriteResult } from '@kraftverk/gateway';
 
 // Each area of a home, as it answers; the interface itself last.
 export type * from './devices.ts';

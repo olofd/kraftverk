@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { describeError, type SetupStepView, type SightingView } from '@kraftverk/api-client';
+import type { SetupStepView } from '@kraftverk/device-sdk';
+import { describeError, type SightingView } from '@kraftverk/api-client';
 import { Card, haptic, Icon, Row, RowSeparator } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';

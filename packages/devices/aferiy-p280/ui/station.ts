@@ -24,7 +24,7 @@ const CONFIRMED_HOLD_MS = 15_000;
  * capability commands through the holder's gateway — and are held on screen
  * until the station confirms them, then until its readings say so too: the
  * gateway's readback can arrive a moment before the live reading does, and a
- * switch must not flick back in between (see `writeGate.ts` in `@kraftverk/ui`).
+ * switch must not flick back in between (see `write-gate.ts` in `@kraftverk/ui`).
  */
 export function useStation({ device, actions, reach, readOnly, version }: DeviceScreenProps): StationView {
   const [writeError, setWriteError] = useState<string | null>(null);

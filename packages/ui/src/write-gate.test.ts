@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { WriteGate, WriteInFlightError } from './writeGate.ts';
+import { WriteGate, WriteInFlightError } from './write-gate.ts';
 
 /**
  * The races that made controls bounce, replayed step by step.

@@ -12,40 +12,39 @@
  * around it.
  */
 
-export { AnimatedNumber } from './AnimatedNumber';
-export { Card, SectionLabel, type CardProps } from './Card';
-export { DeviceCard, type DeviceCardDevice } from './DeviceCard';
-export { EnergyFlow } from './EnergyFlow';
-export { energyFlowOf, type Flow, type FlowNode } from './energy';
-export { EventList, type ListedEvent } from './EventList';
-export { Icon, IconLabel, type IconName } from './Icon';
-export { InfoCard, PartCard, ReadingRow } from './PartCard';
-export { ToolPanel } from './ToolPanel';
-export { PendingMark } from './PendingMark';
-export { Row, RowSeparator, toggled, ToggleRow } from './Row';
-export { Toggle, type ToggleProps } from './Toggle';
-export { SchemaForm, isComplete } from './SchemaForm';
-export { Chips } from './Chips';
-export { useRadioGroup, useToggleGroup } from './radioGroup';
-export { SegmentedControl } from './SegmentedControl';
-export { SliderRow } from './SliderRow';
-export { RangeSliderRow } from './RangeSliderRow';
-export { type Marker } from './SliderMarker';
-export { StatTile } from './StatTile';
-export { PowerButton } from './PowerButton';
+export { AnimatedNumber } from './AnimatedNumber.tsx';
+export { Card, SectionLabel, type CardProps } from './Card.tsx';
+export { DeviceCard, type DeviceCardDevice } from './DeviceCard.tsx';
+export { EnergyFlow } from './EnergyFlow.tsx';
+export { energyFlowOf, type Flow, type FlowNode } from './energy.ts';
+export { EventList, type ListedEvent } from './EventList.tsx';
+export { Icon, IconLabel, type IconName } from './Icon.tsx';
+export { InfoCard, PartCard, ReadingRow } from './PartCard.tsx';
+export { ToolPanel } from './ToolPanel.tsx';
+export { PendingMark } from './PendingMark.tsx';
+export { Row, RowSeparator, toggled, ToggleRow } from './Row.tsx';
+export { Toggle, type ToggleProps } from './Toggle.tsx';
+export { SchemaForm, isComplete } from './SchemaForm.tsx';
+export { Chips } from './Chips.tsx';
+export { useRadioGroup, useToggleGroup } from './radio-group.ts';
+export { SegmentedControl } from './SegmentedControl.tsx';
+export { SliderRow } from './SliderRow.tsx';
+export { RangeSliderRow } from './RangeSliderRow.tsx';
+export { type Marker } from './SliderMarker.tsx';
+export { StatTile } from './StatTile.tsx';
+export { PowerButton } from './PowerButton.tsx';
 
-export { haptic } from './haptics';
-export { WriteGate, WriteInFlightError, type WriteSnapshot } from './writeGate';
-export { useWriteGate } from './useWriteGate';
+export { haptic } from './haptics.ts';
+export { WriteGate, WriteInFlightError, type WriteSnapshot } from './write-gate.ts';
+export { useWriteGate } from './useWriteGate.ts';
 export {
   fixedRange,
   formatValue,
   isOld,
   observedAt,
   shownAttributes,
-  readingFor,
   startsAtZero,
-} from './measurement';
+} from './measurement.ts';
 export {
   chartPath,
   chartScale,
@@ -53,8 +52,8 @@ export {
   chartY,
   type ChartBox,
   type ChartScale,
-  type SeriesPoint,
-} from './series';
+  type ChartPoint,
+} from './series.ts';
 export {
   capitalise,
   formatAgo,
@@ -64,4 +63,4 @@ export {
   formatUptime,
   formatWatts,
   formatWh,
-} from './format';
+} from './format.ts';

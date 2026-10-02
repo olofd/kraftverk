@@ -2,10 +2,10 @@ import { Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { partIcon, type DeviceDescription, type Reading } from '@kraftverk/device-sdk';
 
-import { Card, SectionLabel } from './Card';
-import { energyFlowOf, type FlowNode } from './energy';
-import { formatWatts } from './format';
-import { Icon } from './Icon';
+import { Card, SectionLabel } from './Card.tsx';
+import { energyFlowOf, type FlowNode } from './energy.ts';
+import { formatWatts } from './format.ts';
+import { Icon } from './Icon.tsx';
 
 /**
  * Where a device's energy comes from, where it is kept and where it goes —

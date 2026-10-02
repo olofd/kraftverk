@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ScrollView } from 'react-native';
 import { Button, Text, YStack } from 'tamagui';
 
-import { PASSWORD_MIN } from '@kraftverk/api-client';
+import { PASSWORD_MIN } from '@kraftverk/api-contract';
 import { Card, haptic, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';

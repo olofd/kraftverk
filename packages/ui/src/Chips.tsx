@@ -1,7 +1,7 @@
 import { Text, XStack } from 'tamagui';
 
-import { haptic } from './haptics';
-import { useRadioGroup } from './radioGroup';
+import { haptic } from './haptics.ts';
+import { useRadioGroup } from './radio-group.ts';
 
 /**
  * A choice among a few, as pills: the chosen one filled. A radio group, for a

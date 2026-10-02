@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Spinner, Text, XStack, YStack } from 'tamagui';
 
-import { changeAutomation, describeError, withConfirmation, type AutomationDraftView, type AutomationSettings, type AutomationView, type RoleBinding } from '@kraftverk/api-client';
-import { isAutomationRole, OTHERWISE, pruned, rolesOf, sameParts, THEN, type ProblemArea } from '@kraftverk/automation';
+import type { AutomationSettings } from '@kraftverk/api-client/config';
+import { changeAutomation, describeError, withConfirmation, type AutomationDraftView, type AutomationView } from '@kraftverk/api-client';
+import { isAutomationRole, OTHERWISE, pruned, rolesOf, sameParts, THEN, type ProblemArea, type RoleBinding } from '@kraftverk/automation';
 import { capabilitiesOf, meetsNeed } from '@kraftverk/device-sdk';
 import { Card, haptic, Icon, SegmentedControl } from '@kraftverk/ui';
 

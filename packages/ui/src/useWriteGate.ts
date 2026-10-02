@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { WriteGate, type WriteSnapshot } from './writeGate';
+import { WriteGate, type WriteSnapshot } from './write-gate.ts';
 
 /**
  * A write gate for one screen, and a re-render whenever its writes change.

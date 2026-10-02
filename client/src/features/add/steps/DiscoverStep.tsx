@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Button } from 'tamagui';
 
-import { describeError, type SetupActionResult, type SetupStepView } from '@kraftverk/api-client';
+import type { SetupActionResult, SetupStepView } from '@kraftverk/device-sdk';
+import { describeError } from '@kraftverk/api-client';
 
 import { Choices } from './ActionCard';
 import { PRIMARY, StepFrame, type StepProps } from './StepFrame';

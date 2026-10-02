@@ -1,6 +1,6 @@
+import type { PolicyValueName } from '@kraftverk/device-sdk';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import type { PolicyValueName } from '@kraftverk/api-contract';
 
 import { aHome, refusal, type TestHome } from './a-home.ts';
 

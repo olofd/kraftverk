@@ -4,8 +4,8 @@ import type { Vocabulary } from '@kraftverk/home-file';
 import { automationId, MAIN_PART, savedDeviceId } from '@kraftverk/device-sdk';
 import type { Rule } from '@kraftverk/automation';
 
-import { automationYaml, deviceYaml, draftOfEntry, readAutomationText } from './config';
-import type { DeviceView } from './types';
+import { automationYaml, deviceYaml, draftOfEntry, readAutomationText } from './config.ts';
+import type { DeviceView } from '@kraftverk/api-contract';
 
 /*
   An automation's YAML in the app's editor: written from what the app is

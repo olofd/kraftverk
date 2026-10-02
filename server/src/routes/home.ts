@@ -1,8 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import type { PolicyValueName } from '@kraftverk/api-contract';
-import { NODE_ID, nodeId } from '@kraftverk/device-sdk';
+import { NODE_ID, nodeId, type PolicyValueName } from '@kraftverk/device-sdk';
 
 import { homeFor, RESOURCE_KIND, type AppDeps } from './context.ts';
 import { body, query } from './parse.ts';

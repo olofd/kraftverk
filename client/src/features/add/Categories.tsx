@@ -1,7 +1,8 @@
 import { router } from 'expo-router';
 import { useTheme, XStack, YStack } from 'tamagui';
 
-import { CATEGORIES, type DeviceTypeListing } from '@kraftverk/api-client';
+import { CATEGORIES } from '@kraftverk/device-sdk';
+import { type DeviceTypeListing } from '@kraftverk/api-client';
 import { Card, Icon, Row, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { featherName } from '../../components/icons';

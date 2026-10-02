@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { RunLog, RunLogKey, RunLogReach, RunStep } from '@kraftverk/api-contract';
 
-import { atOf, awayOf, changed, heldPath, marksOf, said, seriesOf, sinceStart, spansOf, valueAt, windowOf, xOf } from './series.ts';
+import { atOf, awayOf, changed, heldPath, marksOf, said, seriesOf, sinceStart, spansOf, valueAt, windowOf, xOf } from './run-chart.ts';
 
 /*
   A run's log, as its page draws it: each value held from one reading to the

@@ -1,8 +1,8 @@
 
-import type { AutomationRun, RoleBinding, RunLog, RunLogDevice, RunLogKey, RunLogReach, RunLogReading, RunLogRole } from '@kraftverk/api-contract';
+import type { AutomationRun, RunLog, RunLogDevice, RunLogKey, RunLogReach, RunLogReading, RunLogRole } from '@kraftverk/api-contract';
 import { KEY, keyFrom } from '@kraftverk/device-sdk';
 import { automationId, savedDeviceId, type AutomationId, type Quantity, type Value } from '@kraftverk/device-sdk';
-import type { Rule } from '@kraftverk/automation';
+import type { RoleBinding, Rule } from '@kraftverk/automation';
 
 import type { SqlDatabase } from './database.ts';
 import { newId, randomHex } from '@kraftverk/device-sdk';

@@ -3,11 +3,11 @@ import { Image, type ImageSourcePropType } from 'react-native';
 import { Text, XStack, YStack } from 'tamagui';
 
 import type { AttributeSpec, ConnectionHealth, Reading } from '@kraftverk/device-sdk';
-import { isOnline } from '@kraftverk/device-sdk';
+import { isOnline, readingOf } from '@kraftverk/device-sdk';
 
-import { Card } from './Card';
-import { haptic } from './haptics';
-import { formatValue, isOld, observedAt, readingFor, shownAttributes } from './measurement';
+import { Card } from './Card.tsx';
+import { haptic } from './haptics.ts';
+import { formatValue, isOld, observedAt, shownAttributes } from './measurement.ts';
 
 /**
  * One device, as a card.
@@ -62,13 +62,13 @@ type Props = {
 export function DeviceCard({ device, icon, image, secondary, onPress }: Props) {
   const online = isOnline(device.health);
   const [primary, ...rest] = shownAttributes(device.attributes);
-  const primaryReading = primary ? readingFor(device.readings, primary.key) : undefined;
+  const primaryReading = primary ? readingOf(device.readings, primary.key) : null;
   const primaryValue = primary ? formatValue(primary, primaryReading?.value ?? null) : '—';
   // Its attribute says how long a value stays current: past that it is shown as it was, and when.
   const primaryOld = primary ? isOld(primary, primaryReading) : false;
 
   const extras = (secondary ?? rest.slice(0, 2)).map((spec) => {
-    const reading = readingFor(device.readings, spec.key);
+    const reading = readingOf(device.readings, spec.key);
     return { spec, text: formatValue(spec, reading?.value ?? null), old: isOld(spec, reading) };
   });
 

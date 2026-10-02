@@ -2,7 +2,8 @@ import type { ReactNode } from 'react';
 import { router } from 'expo-router';
 import { Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import type { ConnectionStatus, DeviceView } from '@kraftverk/api-client';
+import type { ConnectionStatus } from '@kraftverk/device-sdk';
+import type { DeviceView } from '@kraftverk/api-client';
 import { Card, haptic } from '@kraftverk/ui';
 
 import { Screen } from '../../components/Screen';

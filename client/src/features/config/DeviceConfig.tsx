@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { describeError, deviceYaml, type DeviceView } from '@kraftverk/api-client';
+import { deviceYaml } from '@kraftverk/api-client/config';
+import { describeError, type DeviceView } from '@kraftverk/api-client';
 import { Card, haptic, Icon, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';

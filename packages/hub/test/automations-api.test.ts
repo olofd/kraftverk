@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import type { AutomationRun, AutomationView, DeviceView, RoleBinding } from '@kraftverk/api-contract';
-import { inlineParams, type Rule } from '@kraftverk/automation';
+import type { AutomationRun, AutomationView, DeviceView } from '@kraftverk/api-contract';
+import { inlineParams, type RoleBinding, type Rule } from '@kraftverk/automation';
 import { automationId, savedDeviceId, type AutomationId, type Value } from '@kraftverk/device-sdk';
 
 import { aHome, refusal, settle, type TestHome } from './a-home.ts';

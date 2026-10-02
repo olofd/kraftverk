@@ -1,6 +1,7 @@
 import { Text } from 'tamagui';
 
-import type { CheckOutcome, SetupStepView } from '@kraftverk/api-client';
+import type { SetupStepView } from '@kraftverk/device-sdk';
+import type { CheckOutcome } from '@kraftverk/api-client';
 import { Card } from '@kraftverk/ui';
 
 import { CheckStep } from './CheckStep';

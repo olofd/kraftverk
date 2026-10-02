@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
-import { isOnline, type DeviceView, type Value } from '@kraftverk/api-client';
-import { settingsForms, type ConfigValues } from '@kraftverk/device-sdk';
-import { Card, haptic, readingFor, SchemaForm, SectionLabel } from '@kraftverk/ui';
+import { type DeviceView } from '@kraftverk/api-client';
+import { isOnline, readingOf, settingsForms, type ConfigValues, type Value } from '@kraftverk/device-sdk';
+import { Card, haptic, SchemaForm, SectionLabel } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { useAttempt } from '../../components/useAttempt';
@@ -23,7 +23,7 @@ export function GenericSettings({ device }: { device: DeviceView }) {
   const dangerous = device.description.attributes.filter((attribute) => attribute.access === 'write' && attribute.dangerous);
 
   if (forms.length === 0) return null;
-  const values = Object.fromEntries(forms.flatMap((form) => form.keys).map((key) => [key, readingFor(device.readings, key)?.value ?? undefined]));
+  const values = Object.fromEntries(forms.flatMap((form) => form.keys).map((key) => [key, readingOf(device.readings, key)?.value ?? undefined]));
   const known = Object.values(values).some((value) => value !== undefined && value !== null);
   const pending = Object.keys(draft).length > 0;
 

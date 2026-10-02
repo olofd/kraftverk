@@ -2,9 +2,9 @@ import { Text, XStack, YStack } from 'tamagui';
 
 import { MAIN_PART, partsOf, type DeviceDescription, type EventLevel } from '@kraftverk/device-sdk';
 
-import { Card, SectionLabel } from './Card';
-import { formatAgo } from './format';
-import { RowSeparator } from './Row';
+import { Card, SectionLabel } from './Card.tsx';
+import { formatAgo } from './format.ts';
+import { RowSeparator } from './Row.tsx';
 
 /** Something a device said happened, as the kit draws it. */
 export type ListedEvent = {

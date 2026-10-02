@@ -1,5 +1,5 @@
-import type { CheckOutcome, ConfigValues, DeviceTypeListing, DraftView, HeldBy, KraftverkApi, SaveInput, SetupActionResult, SightingView } from '@kraftverk/api-contract';
-import { CATEGORIES } from '@kraftverk/device-sdk';
+import type { CheckOutcome, DeviceTypeListing, DraftView, HeldBy, KraftverkApi, SaveInput, SightingView } from '@kraftverk/api-contract';
+import { CATEGORIES, type ConfigValues, type SavedDeviceId, type SetupActionResult } from '@kraftverk/device-sdk';
 
 /**
  * One way being set up (docs/DATA-MODEL.md §1, steps 4–7), as the add
@@ -92,7 +92,7 @@ export class SetupFlow {
     return outcome;
   }
   /** Saves, and returns the device's id. */
-  async save(input: SaveInput): Promise<string> {
+  async save(input: SaveInput): Promise<SavedDeviceId> {
     return (await this.api.setup.save(this.#draft.id, input)).id;
   }
   discard(): void {

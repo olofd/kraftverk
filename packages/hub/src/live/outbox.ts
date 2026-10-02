@@ -1,5 +1,5 @@
-import type { ConnectionHealth, LiveUpdate } from '@kraftverk/api-contract';
-import type { AutomationId, Reading, SavedDeviceId } from '@kraftverk/device-sdk';
+import type { LiveUpdate } from '@kraftverk/api-contract';
+import type { AutomationId, ConnectionHealth, Reading, SavedDeviceId } from '@kraftverk/device-sdk';
 import type { LiveMessage } from '@kraftverk/holder';
 
 /** Events kept for a listener that is not draining; past this, it is told to read everything again instead. */

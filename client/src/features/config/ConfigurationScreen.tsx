@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { Text, YStack } from 'tamagui';
 
-import { CONFIG_SCHEMA_PATH, describeError, type AutomationView, type ConfigSnapshotView, type ElsewhereView } from '@kraftverk/api-client';
+import { CONFIG_SCHEMA_PATH } from '@kraftverk/api-contract';
+import { describeError, type AutomationView, type ConfigSnapshotView, type ElsewhereView } from '@kraftverk/api-client';
 import { schemaLine, type Vocabulary } from '@kraftverk/home-file';
 import { Card, Row, SectionLabel } from '@kraftverk/ui';
 

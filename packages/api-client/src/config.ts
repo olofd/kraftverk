@@ -1,4 +1,4 @@
-import type { AutomationMode, PrintContext, Rule } from '@kraftverk/automation';
+import type { AutomationMode, PrintContext, RoleBinding, Rule } from '@kraftverk/automation';
 import { savedDeviceId, type AutomationId } from '@kraftverk/device-sdk';
 import {
   automationEntryFrom,
@@ -14,7 +14,7 @@ import {
   type Vocabulary,
 } from '@kraftverk/home-file';
 
-import type { AutomationView, DeviceView, ImportItem, ImportPlan, RoleBinding } from './types';
+import type { AutomationView, DeviceView, ImportItem, ImportPlan } from '@kraftverk/api-contract';
 
 /*
   An automation's and a device's own YAML, as their pages show it and the

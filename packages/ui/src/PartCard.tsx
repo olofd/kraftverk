@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
 import { Text, YStack } from 'tamagui';
 
-import type { AttributeSpec, DeviceInfo, Reading } from '@kraftverk/device-sdk';
+import { readingOf, type AttributeSpec, type DeviceInfo, type Reading } from '@kraftverk/device-sdk';
 
-import { Card, SectionLabel } from './Card';
-import { formatValue, isOld, readingFor } from './measurement';
-import { Row, RowSeparator } from './Row';
+import { Card, SectionLabel } from './Card.tsx';
+import { formatValue, isOld } from './measurement.ts';
+import { Row, RowSeparator } from './Row.tsx';
 
 /**
  * A part as a card: what it reports, row by row, as its description says. A
@@ -14,7 +14,7 @@ import { Row, RowSeparator } from './Row';
  */
 
 /** One attribute and what it last said: its label, and its value in its own unit. A value no longer current is drawn quieter. */
-export function ReadingRow({ attribute, reading }: { attribute: AttributeSpec; reading: Reading | undefined }) {
+export function ReadingRow({ attribute, reading }: { attribute: AttributeSpec; reading: Reading | null }) {
   const quiet = attribute.category === 'diagnostic' || (reading ? isOld(attribute, reading) : false);
   return (
     <Row
@@ -48,7 +48,7 @@ export function PartCard({
         {attributes.map((attribute, index) => (
           <YStack key={attribute.key}>
             {index > 0 ? <RowSeparator /> : null}
-            <ReadingRow attribute={attribute} reading={readingFor(readings, attribute.key)} />
+            <ReadingRow attribute={attribute} reading={readingOf(readings, attribute.key)} />
           </YStack>
         ))}
         {accessory ? (

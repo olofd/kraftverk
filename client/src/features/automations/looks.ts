@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
-import type { AutomationRun, RunStep, StepKind } from '@kraftverk/api-client';
+import type { StepKind } from '@kraftverk/automation';
+import type { AutomationRun, RunStep } from '@kraftverk/api-client';
 import type { IconName } from '@kraftverk/ui';
 
 import type { Tone } from '../../components/tone';

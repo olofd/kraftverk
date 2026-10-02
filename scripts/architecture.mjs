@@ -482,7 +482,8 @@ function measure() {
  * baseline: there were never any to keep.
  */
 const CONTRACT = 'packages/api-contract/src';
-const CONTRACT_USERS = /^(server\/src|client\/src|client\/app|packages\/api-client\/src)\//;
+/** Every package that could declare a shape of the API again beside it, and the server and app. */
+const CONTRACT_USERS = /^(server\/src|client\/src|client\/app|packages\/(api-client|ui|hub|store|home-file|automation-engine|holder|gateway)\/src)\//;
 
 function contractCopies() {
   // Every file of the contract: a shape is declared in the file of its area, and re-exported from the index.

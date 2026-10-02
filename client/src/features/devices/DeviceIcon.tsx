@@ -1,6 +1,7 @@
 import { useTheme } from 'tamagui';
 
-import { isOnline, type DeviceView } from '@kraftverk/api-client';
+import { isOnline } from '@kraftverk/device-sdk';
+import { type DeviceView } from '@kraftverk/api-client';
 import { Icon } from '@kraftverk/ui';
 
 import { featherName } from '../../components/icons';

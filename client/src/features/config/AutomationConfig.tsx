@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Button, XStack, YStack } from 'tamagui';
 
-import { automationYaml, changeAutomation, describeError, type AutomationView } from '@kraftverk/api-client';
+import { automationYaml } from '@kraftverk/api-client/config';
+import { changeAutomation, describeError, type AutomationView } from '@kraftverk/api-client';
 import { haptic, Icon, RowSeparator } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';

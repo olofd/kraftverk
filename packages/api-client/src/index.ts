@@ -7,19 +7,23 @@
  * device package draws its own screens, and must ask the home without
  * importing the app that renders them. Where the server *is* stays the
  * app's: this is handed its address, and never finds one.
+ *
+ * What pulls in more is behind an entry of its own: the HTTP client
+ * (`@kraftverk/api-client/http`), and configuration text, with YAML
+ * (`@kraftverk/api-client/config`) — so a device's screens that only ask a
+ * home do not bundle either.
  */
 
-export * from './types';
-export * from './live';
-export * from './updates';
-export * from './views';
-export * from './timeline';
-export * from './confirm';
-export * from './actions';
-export * from './address';
-export * from './setup';
-export * from './config';
+export * from './types.ts';
+export * from './live.ts';
+export * from './updates.ts';
+export * from './views.ts';
+export * from './timeline.ts';
+export * from './confirm.ts';
+export * from './actions.ts';
+export * from './address.ts';
+export * from './setup.ts';
 
-export * from './screens';
-export * from './http';
-export * from './asking';
+export * from './screens.ts';
+export * from './asking.ts';
+export * from './run-chart.ts';

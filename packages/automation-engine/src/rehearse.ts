@@ -1,4 +1,4 @@
-import type { Rehearsal, RoleBinding } from '@kraftverk/api-contract';
+import type { Rehearsal } from '@kraftverk/api-contract';
 import {
   attributeMeaning,
   clockTime,
@@ -11,7 +11,7 @@ import {
   type ScalarValue,
   type Value,
 } from '@kraftverk/device-sdk';
-import { evaluate, evaluateNow, EVERY_MINUTES, minutesOf, ruleUses, runsOn, type Rule, type RuleScope } from '@kraftverk/automation';
+import { evaluate, evaluateNow, EVERY_MINUTES, minutesOf, ruleUses, runsOn, type RoleBinding, type Rule, type RuleScope } from '@kraftverk/automation';
 
 /**
  * A rule, rehearsed on what happened (PROPOSITION.md §5.3): walked through a

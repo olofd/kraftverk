@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { AttributeSpec, Quantity } from '@kraftverk/device-sdk';
 
-import { fixedRange, formatValue, isOld, readingFor, shownAttributes, startsAtZero } from './measurement';
+import { fixedRange, formatValue, isOld, shownAttributes, startsAtZero } from './measurement.ts';
 
 /** An attribute the way these cases think of it: a quantity, a unit, a precision — or an on/off. */
 const spec = (over: { key?: string; unit?: string; kind?: Quantity | 'on/off'; precision?: number; primary?: boolean; category?: AttributeSpec['category'] } = {}): AttributeSpec => {
@@ -128,9 +128,4 @@ describe('what a card shows', () => {
     expect(shownAttributes([])).toEqual([]);
   });
 
-  test('a reading is found by key, and absence is undefined rather than a guess', () => {
-    const readings = [{ key: 'soc', value: 80, at: '2026-01-01T00:00:00.000Z' }];
-    expect(readingFor(readings, 'soc')?.value).toBe(80);
-    expect(readingFor(readings, 'missing')).toBeUndefined();
-  });
 });

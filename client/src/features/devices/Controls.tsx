@@ -1,9 +1,9 @@
 import { useCallback, useMemo, useState } from 'react';
 import { YStack } from 'tamagui';
 
-import { describeError, isOnline, type DeviceView } from '@kraftverk/api-client';
-import { MAIN_PART, partName, switchConsequence, togglesOf, type Part, type PartToggle } from '@kraftverk/device-sdk';
-import { Card, haptic, readingFor, RowSeparator, SectionLabel, ToggleRow, useWriteGate } from '@kraftverk/ui';
+import { describeError, type DeviceView } from '@kraftverk/api-client';
+import { isOnline, MAIN_PART, partName, readingOf, switchConsequence, togglesOf, type Part, type PartToggle } from '@kraftverk/device-sdk';
+import { Card, haptic, RowSeparator, SectionLabel, ToggleRow, useWriteGate } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { useDevices } from '../../state/DevicesProvider';
@@ -56,7 +56,7 @@ export function Controls({ device, part }: { device: DeviceView; part?: string }
       <SectionLabel>Controls</SectionLabel>
       <Card inset>
         {toggles.map((toggle, index) => {
-          const reading = readingFor(device.readings, toggle.attribute.key);
+          const reading = readingOf(device.readings, toggle.attribute.key);
           const pending = writes.pending.has(toggle.attribute.key);
           const value = pending ? writes.pending.get(toggle.attribute.key) : reading?.value;
           return (

@@ -2,7 +2,7 @@ import { createElement, useEffect, useRef } from 'react';
 import { ActivityIndicator, Animated, Platform } from 'react-native';
 import { XStack, useTheme } from 'tamagui';
 
-import { haptic } from './haptics';
+import { haptic } from './haptics.ts';
 
 /**
  * An on/off switch, drawn explicitly rather than themed.

@@ -2,7 +2,8 @@ import { useState, type ReactNode } from 'react';
 import { useRouter } from 'expo-router';
 import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
-import { automationChangeOf, summaryOn, type AuditEntry, type AutomationMode, type AutomationRun, type AutomationView, type ConditionState, type Rehearsal } from '@kraftverk/api-client';
+import type { AutomationMode } from '@kraftverk/automation';
+import { automationChangeOf, summaryOn, type AuditEntry, type AutomationRun, type AutomationView, type ConditionState, type Rehearsal } from '@kraftverk/api-client';
 import { Icon, IconLabel, type IconName } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { automationChangeOf, isRunEntry, summaryOn } from './timeline';
+import { automationChangeOf, isRunEntry, summaryOn } from './timeline.ts';
 
 describe('an automation’s timeline', () => {
   test('a run is told from a change by the run it notes, not by its words', () => {

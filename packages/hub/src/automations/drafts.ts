@@ -1,28 +1,10 @@
-import { ApiError, type AutomationDraft, type AutomationDraftView, type AutomationView, type Rehearsal, type RoleBinding } from '@kraftverk/api-contract';
+import { ApiError, type AutomationDraftView, type AutomationView, type Rehearsal } from '@kraftverk/api-contract';
 import { capabilitiesOf, meetsNeed, partName, partsOf, savedDeviceId, validateConfig, type AutomationId, type Value } from '@kraftverk/device-sdk';
-import {
-  changedRoles,
-  checkBinding,
-  checkRule,
-  describeRule,
-  describeSteps,
-  describeTriggers,
-  inlineParams,
-  isAutomationRole,
-  problemArea,
-  problemPlace,
-  SEQUENCE_LIMITS,
-  takesSteps,
-  writtenAttribute,
-  type BoundPart,
-  type ProblemArea,
-  type Rule,
-  type RuleVocabulary,
-} from '@kraftverk/automation';
+import { changedRoles, checkBinding, checkRule, describeRule, describeSteps, describeTriggers, inlineParams, isAutomationRole, problemArea, problemPlace, SEQUENCE_LIMITS, takesSteps, writtenAttribute, type AutomationDraft, type BoundPart, type ProblemArea, type RoleBinding, type Rule, type RuleVocabulary } from '@kraftverk/automation';
 
 import type { AutomationStore, DeviceCatalog, EventStore, HistoryStore } from '@kraftverk/store';
 import type { SessionManager } from '@kraftverk/holder';
-import { quoted, type AutomationEngine, type AutomationRecord, type AutomationLibrary, rehearse } from '@kraftverk/automation-engine';
+import { quoted, rehearse, type AutomationEngine, type AutomationLibrary, type AutomationRecord } from '@kraftverk/automation-engine';
 
 /**
  * What an automation is made of, checked the one way whoever makes it — a

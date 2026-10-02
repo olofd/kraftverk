@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Button, Text, useTheme, XStack } from 'tamagui';
 
-import { describeError, PASSWORD_MIN } from '@kraftverk/api-client';
+import { PASSWORD_MIN } from '@kraftverk/api-contract';
+import { describeError } from '@kraftverk/api-client';
 import { Card, haptic, Icon } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';

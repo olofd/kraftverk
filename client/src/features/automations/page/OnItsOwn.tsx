@@ -1,7 +1,6 @@
 
 import { changeAutomation, withConfirmation, type AutomationChanges, type AutomationView } from '@kraftverk/api-client';
-import type { AutomationMode } from '@kraftverk/api-client';
-import { keepsSo } from '@kraftverk/automation';
+import { keepsSo, type AutomationMode } from '@kraftverk/automation';
 import { RowSeparator, SegmentedControl, ToggleRow } from '@kraftverk/ui';
 
 import { ErrorText } from '../../../components/ErrorText';

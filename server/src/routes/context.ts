@@ -1,7 +1,8 @@
 import type { Context } from 'hono';
 import { z } from 'zod';
 
-import type { Caller, KraftverkApi, RoleBinding } from '@kraftverk/api-contract';
+import type { RoleBinding } from '@kraftverk/automation';
+import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
 import { NODE_ID, RESOURCE_KINDS, savedDeviceId, type ResourceKind } from '@kraftverk/device-sdk';
 import type { Hub } from '@kraftverk/hub';
 

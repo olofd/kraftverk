@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { MAIN_PART, type DeviceDescription } from '@kraftverk/device-sdk';
 
-import { energyFlowOf } from './energy';
+import { energyFlowOf } from './energy.ts';
 
 /*
   The energy flow is drawn for any device whose parts say where they sit in

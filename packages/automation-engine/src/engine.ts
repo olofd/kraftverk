@@ -1,4 +1,5 @@
-import type { AutomationRun, ConditionState, RunLog, StepLine } from '@kraftverk/api-contract';
+import type { StepLine } from '@kraftverk/automation';
+import type { AutomationRun, ConditionState, RunLog } from '@kraftverk/api-contract';
 import type { LiveMessage } from '@kraftverk/holder';
 
 import { RuleContext } from './context.ts';

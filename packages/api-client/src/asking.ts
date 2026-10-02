@@ -1,4 +1,5 @@
-import { ApiError, type AutomationChanges, type AutomationId, type AutomationView, type ImportAnswers, type ImportApplied, type KraftverkApi } from '@kraftverk/api-contract';
+import type { AutomationId } from '@kraftverk/device-sdk';
+import { ApiError, type AutomationChanges, type AutomationView, type ImportAnswers, type ImportApplied, type KraftverkApi } from '@kraftverk/api-contract';
 
 /*
   What a screen does with a refusal that only wants a person's yes: shows the
@@ -18,8 +19,8 @@ export async function askingYes<T>(work: Promise<T>): Promise<{ done: T } | { ne
 }
 
 /** An automation changed — or, letting it act or changing one that acts, the yes that wants first. */
-export async function changeAutomation(api: KraftverkApi, id: string, changes: AutomationChanges): Promise<{ automation: AutomationView } | { needsConfirmation: string; reason: string }> {
-  const answer = await askingYes(api.automations.update(id as AutomationId, changes));
+export async function changeAutomation(api: KraftverkApi, id: AutomationId, changes: AutomationChanges): Promise<{ automation: AutomationView } | { needsConfirmation: string; reason: string }> {
+  const answer = await askingYes(api.automations.update(id, changes));
   return 'done' in answer ? { automation: answer.done } : answer;
 }
 
@@ -32,4 +33,14 @@ export async function applyPlan(api: KraftverkApi, answers: ImportAnswers): Prom
     if (error instanceof ApiError && error.kind === 'invalid') return { refused: error.message, problems: [...error.problems] };
     throw error;
   }
+}
+
+/**
+ * A failure, as a person reads it: a refusal in the home's words, a server
+ * out of reach as "Can't reach …", nothing for a request that was called
+ * off.
+ */
+export function describeError(error: unknown): string {
+  if (error instanceof Error && error.name === 'AbortError') return '';
+  return error instanceof Error ? error.message : 'Unknown error';
 }

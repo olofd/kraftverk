@@ -20,7 +20,7 @@ import {
   type ViewReport,
 } from '@kraftverk/api-contract';
 
-import { liveUrl, openLive } from './live';
+import { liveUrl, openLive } from './live.ts';
 
 /*
   KraftverkApi over HTTP and the live socket (docs/PLAN-SHARED-CORE.md,
@@ -287,14 +287,4 @@ export function serverApi(options: HttpApiOptions): ServerApi {
     snapshot: () => get('/config/snapshot'),
     restoredPlan: (mode) => call('POST', '/config/plan', { restored: true, mode }),
   };
-}
-
-/**
- * A failure, as a person reads it: a refusal in the home's words, a server
- * out of reach as "Can't reach …", nothing for a request that was called
- * off.
- */
-export function describeError(error: unknown): string {
-  if (error instanceof Error && error.name === 'AbortError') return '';
-  return error instanceof Error ? error.message : 'Unknown error';
 }

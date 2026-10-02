@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { DeviceView, LiveUpdate } from '@kraftverk/api-contract';
 import { nodeId, savedDeviceId } from '@kraftverk/device-sdk';
 
-import { applyLive } from './updates';
+import { applyLive } from './updates.ts';
 
 /*
   The live stream, applied to the list the app keeps: what a card shows moves

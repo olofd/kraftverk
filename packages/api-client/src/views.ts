@@ -1,17 +1,17 @@
 import type { ShownThing, ViewReport } from '@kraftverk/api-contract';
 
 /*
-  What this app's screen shows, as the server is told it (`ViewReport`,
+  What this app's screen shows, as the home is told it (`ViewReport`,
   docs/API.md): the screen, by its route — `device/[id]`, never an id — and
   the things on it, each said by the part of the screen that shows it.
 
-  A fact, not a request: the server judges what follows. Said when it
+  A fact, not a request: the home judges what follows. Said when it
   changes, settled so a screen opening says it once; again when someone uses
-  the app, at most once a minute, so the server knows it is still attended.
+  the app, at most once a minute, so the home knows it is still attended.
   Pure, so it is tested without a screen.
 */
 
-/** Using the app says again what it shows, at most this often: the server takes ten minutes of silence for nobody there. */
+/** Using the app says again what it shows, at most this often: the home takes ten minutes of silence for nobody there. */
 export const SAY_AGAIN_AFTER_MS = 60_000;
 /** Changes within this are said once. */
 export const SETTLE_MS = 250;

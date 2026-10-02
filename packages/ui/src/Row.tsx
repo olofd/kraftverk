@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Separator, Text, XStack, YStack } from 'tamagui';
 
-import { Toggle } from './Toggle';
+import { Toggle } from './Toggle.tsx';
 
 type RowProps = {
   title: string;

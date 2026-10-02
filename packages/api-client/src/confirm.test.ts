@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { ASKED_AGAIN, wantsYes, withConfirmation, type Question } from './confirm';
+import { ASKED_AGAIN, wantsYes, withConfirmation, type Question } from './confirm.ts';
 
 describe('a person’s yes', () => {
   test('one shape wants it, whatever answered: a token and why — a gateway’s verdict says why in its detail', () => {

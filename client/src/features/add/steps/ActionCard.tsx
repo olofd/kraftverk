@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 
-import { describeError, type ConfigValues, type SetupActionResult, type SetupActionView, type SetupChoice, type SetupFlow } from '@kraftverk/api-client';
+import type { ConfigValues, SetupActionResult, SetupActionView, SetupChoice } from '@kraftverk/device-sdk';
+import { describeError, type SetupFlow } from '@kraftverk/api-client';
 import { Card, isComplete, Row, RowSeparator, SchemaForm } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';

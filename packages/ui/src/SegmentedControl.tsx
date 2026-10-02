@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { Platform } from 'react-native';
 import { Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { haptic } from './haptics';
-import { PendingMark } from './PendingMark';
-import { useRadioGroup } from './radioGroup';
+import { haptic } from './haptics.ts';
+import { PendingMark } from './PendingMark.tsx';
+import { useRadioGroup } from './radio-group.ts';
 
 type Option<T extends string | number> = { value: T; label: string };
 

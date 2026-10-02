@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Text, useTheme, XStack } from 'tamagui';
 
-import type { ConfigValues, SetupChoice, SetupStepView } from '@kraftverk/api-client';
+import type { ConfigValues, SetupChoice, SetupStepView } from '@kraftverk/device-sdk';
 import { Card, Icon, isComplete, SchemaForm } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';

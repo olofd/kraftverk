@@ -1,7 +1,8 @@
-import type { DeviceView, LiveUpdate, Reading } from '@kraftverk/api-contract';
+import type { Reading } from '@kraftverk/device-sdk';
+import type { DeviceView, LiveUpdate } from '@kraftverk/api-contract';
 
 /**
- * What the server's live stream says, applied to the list the app keeps
+ * What a home's live stream says, applied to the list the app keeps
  * (`GET /api/live`, docs/API.md). Pure, so it is tested without a screen.
  */
 

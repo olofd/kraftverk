@@ -2,8 +2,8 @@ import { createElement } from 'react';
 import { ActivityIndicator, Platform } from 'react-native';
 import { useTheme, YStack } from 'tamagui';
 
-import { haptic } from './haptics';
-import { Icon } from './Icon';
+import { haptic } from './haptics.ts';
+import { Icon } from './Icon.tsx';
 
 type Props = {
   on: boolean;

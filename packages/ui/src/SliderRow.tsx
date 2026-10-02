@@ -1,8 +1,8 @@
 import { Slider, Text, XStack, YStack } from 'tamagui';
 
-import { PendingMark } from './PendingMark';
-import { SliderMarker, type Marker } from './SliderMarker';
-import { useSlide } from './useSlide';
+import { PendingMark } from './PendingMark.tsx';
+import { SliderMarker, type Marker } from './SliderMarker.tsx';
+import { useSlide } from './useSlide.ts';
 
 type Props = {
   title: string;

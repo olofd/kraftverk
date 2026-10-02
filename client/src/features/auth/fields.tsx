@@ -1,6 +1,6 @@
+import { PASSWORD_MIN } from '@kraftverk/api-contract';
 import { Input, Text, YStack } from 'tamagui';
 
-import { PASSWORD_MIN } from '@kraftverk/api-client';
 
 /**
  * One labelled field. The autocomplete hints are not decoration: they are what

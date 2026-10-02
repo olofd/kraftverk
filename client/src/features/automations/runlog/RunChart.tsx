@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { Text, useTheme, XStack, YStack } from 'tamagui';
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
-import { atOf, heldPath, said, spansOf, valueAt, xOf, type Mark, type Series, type Window } from '@kraftverk/automation-engine';
+import { atOf, heldPath, said, spansOf, valueAt, xOf, type Mark, type Series, type Window } from '@kraftverk/api-client';
 import { chartScale, chartY } from '@kraftverk/ui';
 
 /*

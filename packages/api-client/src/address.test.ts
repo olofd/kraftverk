@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { completeUrl, normaliseUrl, suggestName } from './address';
+import { completeUrl, normaliseUrl, suggestName } from './address.ts';
 
 describe('a server’s address', () => {
   test('what is typed is completed: the scheme, the API’s own port for a bare host, and /api', () => {

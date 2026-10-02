@@ -1,6 +1,6 @@
 import { enumLabel, isCurrent, quantityOf, unitOf, type AttributeSpec, type Quantity, type Reading, type Value } from '@kraftverk/device-sdk';
 
-import { formatDuration, formatWatts, formatWh } from './format';
+import { formatDuration, formatWatts, formatWh } from './format.ts';
 
 /**
  * How to draw a number nobody wrote a screen for.
@@ -14,9 +14,6 @@ import { formatDuration, formatWatts, formatWh } from './format';
  * *quantity* says how it behaves. Two quantities in watts read the same; a percentage and a
  * temperature both fit 0–100 but only one of them should start its axis at zero.
  */
-
-export const readingFor = (readings: readonly Reading[], key: string): Reading | undefined =>
-  readings.find((reading) => reading.key === key);
 
 /**
  * A value that is known but no longer current: observed longer ago than its

@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
+import type { AutomationId } from '@kraftverk/device-sdk';
 import { describeError, isRunEntry, type AutomationRun, type AutomationView, type Rehearsal } from '@kraftverk/api-client';
-import type { AutomationId } from '@kraftverk/api-contract';
 import { describeExpr } from '@kraftverk/automation';
 import { capitalise, Card, haptic, Icon, RowSeparator, type IconName } from '@kraftverk/ui';
 

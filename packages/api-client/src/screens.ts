@@ -3,16 +3,16 @@ import type { ComponentType } from 'react';
 import type { Part, Value } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
-import type { DeviceView, LinkView, VersionInfo } from './types';
+import type { DeviceView, LinkView, VersionInfo } from '@kraftverk/api-contract';
 
 /**
  * What the app hands a device type's own screens (docs/ARCHITECTURE.md §3, a
  * device type's `ui/`).
  *
  * A screen draws one device; it never learns who holds its connection. The
- * app gives it the device as the server describes it, and actions that reach
- * the device through whoever holds the connection in use — the server, over
- * HTTP, or this app's own session over its own radio. The same screen then
+ * app gives it the device as the home describes it, and actions that reach
+ * the device through whichever node holds the connection in use — a server,
+ * over HTTP, or this app's own session over its own radio. The same screen then
  * works for a station on the server's Wi-Fi and one on this browser's Bluetooth,
  * and never imports the app that renders it.
  */

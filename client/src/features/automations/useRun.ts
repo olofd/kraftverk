@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
+import type { AutomationId } from '@kraftverk/device-sdk';
 import { describeError, type AutomationView } from '@kraftverk/api-client';
-import type { AutomationId } from '@kraftverk/api-contract';
 import { triggerAsNext } from '@kraftverk/automation';
 
 import { useHome } from '../../state/HomeProvider';

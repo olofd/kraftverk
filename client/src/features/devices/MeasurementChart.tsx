@@ -3,10 +3,10 @@ import Svg, { Line, Path } from 'react-native-svg';
 import { Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { describeError } from '@kraftverk/api-client';
-import type { SavedDeviceId } from '@kraftverk/device-sdk';
+import type { AttributeSpec, SavedDeviceId } from '@kraftverk/device-sdk';
 
 import { useHome } from '../../state/HomeProvider';
-import type { AttributeSpec, SeriesPoint } from '@kraftverk/api-client';
+import type { SeriesPoint } from '@kraftverk/api-client';
 import { quantityOf } from '@kraftverk/device-sdk';
 import {
   chartPath,

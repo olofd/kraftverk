@@ -1,7 +1,8 @@
 import { Fragment } from 'react';
 import { Spinner, Text, XStack, YStack } from 'tamagui';
 
-import type { AutomationRun, RunStep, StepLine } from '@kraftverk/api-client';
+import type { StepLine } from '@kraftverk/automation';
+import type { AutomationRun, RunStep } from '@kraftverk/api-client';
 import { Icon, IconLabel } from '@kraftverk/ui';
 
 import { useTone } from '../../components/tone';

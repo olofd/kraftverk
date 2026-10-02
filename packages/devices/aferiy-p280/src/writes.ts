@@ -5,7 +5,7 @@ import type { PortId, StationSettings, StationSettingsPatch, StationStatus } fro
  *
  * Shared by both ways the app reaches a station — through a server, and over a
  * Bluetooth link it holds itself — so the two lock the same controls and show
- * the same thing while a write is in flight. See `writeGate.ts` in
+ * the same thing while a write is in flight. See `write-gate.ts` in
  * `@kraftverk/ui`.
  */
 

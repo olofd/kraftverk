@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import type { AutomationChanges, AutomationDraft } from '@kraftverk/api-contract';
-import { AUTOMATION_MODES, type Rule } from '@kraftverk/automation';
+import type { AutomationChanges } from '@kraftverk/api-contract';
+import { AUTOMATION_MODES, type AutomationDraft, type Rule } from '@kraftverk/automation';
 import { runLogCsv } from '@kraftverk/automation-engine';
 import { automationId, fileNameOf, savedDeviceId } from '@kraftverk/device-sdk';
 import { REHEARSAL_MAX_HOURS } from '@kraftverk/hub';
