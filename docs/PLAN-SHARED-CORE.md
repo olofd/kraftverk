@@ -180,10 +180,11 @@ Each declared by the package that needs it; one implementation per place.
    in the engine. The configuration stays its own package as well: it is the
    whole home as a document, of which automations are one part.
 2. **The SQL port is synchronous** (recommended). bun:sqlite and expo-sqlite
-   fit it, and the stores and engine stay as they are. A browser gets sql.js
-   in memory, saved to its storage. The alternative — an asynchronous port,
-   for wa-sqlite on OPFS — touches every store and the engine; decide when
-   the browser's turn comes.
+   fit it, and the stores and engine stay as they are. How a browser keeps
+   one was researched when its turn came (2026-10-02; "SQLite in the app",
+   below): not sql.js in memory, but the hub in a Web Worker on the SQLite
+   project's own WebAssembly build, where a file in the browser's private
+   storage is synchronous.
 3. **Passphrase sealing moves to Web Crypto** (PBKDF2 and AES-GCM), so the
    app opens a sealed export too. A new `sealed:v2:`; `v1` (scrypt) stays
    readable on the server — the document is versioned on purpose — unless
@@ -377,6 +378,56 @@ sql.js with no server, `createHolding` beside `api-client` with one; the
 ~105 places the app branches on its mode go, with `local.ts`,
 `describeLocal`, `AppFlow` and the app's runtime.
 
+### SQLite in the app (researched 2026-10-02, the owner asking for the best, not the simplest)
+
+**On a phone: expo-sqlite.** Expo's own, real SQLite in native code over
+JSI, with the synchronous API (`openDatabaseSync`, `runSync`, `getAllSync`,
+`withTransactionSync`) the store's port already is, and SQLCipher on iOS
+and Android for a database encrypted at rest, its key in the phone's
+secure storage. op-sqlite is faster in benchmarks, but a home's data is
+small, and expo-sqlite is the toolchain the app already builds with. It
+needs a development build — as the phone's Bluetooth already does.
+
+**In a browser: the hub in a dedicated Web Worker, on
+`@sqlite.org/sqlite-wasm` with its `opfs-sahpool` storage.** Every way to
+keep SQLite in a file in a browser needs a worker: the origin private file
+system's synchronous access handles exist only there, and nothing
+persistent is synchronous on the main thread (sqlite.org's own persistence
+notes). So the whole hub runs in the worker, as synchronous as on the
+server, and the screens reach it through `KraftverkApi` over messages — a
+third way to the one interface, beside the process and HTTP — so the
+screen thread never waits on SQL or an automation. Chosen over the rest:
+
+- the SQLite project's own build, released with SQLite (3.53.4, September
+  2026), against `wa-sqlite`, whose npm package has not been published
+  since January 2024 (its newer storage modes only from GitHub or a
+  company's fork);
+- `opfs-sahpool`: the fastest of its OPFS stores, and the one that needs no
+  cross-origin isolation headers; one connection at a time, which a home
+  wants anyway — its automations must run once, not once per tab;
+- against expo-sqlite on the web (alpha, needs the cross-origin isolation
+  headers, one tab) and sql.js in memory (not a file; the whole database
+  written out again on every save).
+
+What it asks of the rest:
+
+- **One tab holds the home**, chosen with a Web Lock; another tab says so,
+  and takes over when that one closes.
+- **Bluetooth stays on the page.** Web Bluetooth exists only in a window
+  (MDN; the spec's worker issue #571 is open), and choosing a device needs
+  a person's tap. The worker's Bluetooth transport is a relay: its
+  channels are carried over a message port to the page, which opens the
+  device.
+- **The site's policy allows WebAssembly** (`'wasm-unsafe-eval'` in
+  `script-src`) — and nothing else changes in it.
+- **A failed start never wipes the home.** `opfs-sahpool` deletes its
+  pool when it fails to start unless asked not to (`preserveOnInitFailure`,
+  documented, not yet in the published package): the worker starts it
+  only once it holds the tab's lock, and takes the option when it ships.
+- **The worker is a bundle of its own**, without the screens: the
+  generated registry gains a part with only device types, protocols and
+  their transports' web entries.
+
 **A structure pass** (the owner, 2026-10-02), once the hub is done and the
 packages are as they should be: the server and the app looked at again,
 critically, after so much has left them — their folders, modules and
@@ -423,8 +474,8 @@ server is checked after each phase.
    Crypto here, with the import and export (decision 3).
 6. **The app on the interface.**
    - Its providers take a `KraftverkApi`: from `api-client` with a server,
-     from `createHub` without one — on expo-sqlite on a phone, sql.js on the
-     web. `local.ts`, `describeLocal`, `AppFlow`, the app's sessions and
+     from `createHub` without one — on expo-sqlite on a phone, in a Web
+     Worker on the web ("SQLite in the app", below). `local.ts`, `describeLocal`, `AppFlow`, the app's sessions and
      runtime go; a local install starts afresh (strict v1).
    - The app's pure helpers move as listed above.
    - Local mode gains history and automations: the editor, the run log and
