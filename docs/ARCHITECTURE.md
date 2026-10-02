@@ -1589,6 +1589,17 @@ is continuous, and the architecture check stays at zero.
     things run follows from the ways a device is reached and what an
     automation needs, never from a choice put to a person. The steps:
     [PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md), "Phase 6, from 6f".
+24. **Every place is a kraftverk node** (2026-10-02, the owner: where the
+    overhaul ends). There is no server and no client as a kind of thing:
+    a node is the hub running somewhere, with the ways it can communicate
+    there and one home's database. What sets nodes apart is what each
+    declares — always on or only while open, reachable by others or only
+    reaching out, trusted with what must stay put — and the home's master
+    is chosen by those: the node that is always on and the others reach.
+    The others follow it, lend it what they reach, and can take its role
+    over (decision 23). "Server" and "client" left in the code are names
+    to retire (step 6j); on screen, people's own words stay. The steps:
+    [PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md), "Phase 6, the goal".
 
 ---
 

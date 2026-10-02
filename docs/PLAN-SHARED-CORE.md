@@ -207,6 +207,11 @@ Each declared by the package that needs it; one implementation per place.
    (its own radio) for the server. Lose the server, and the app's copy is
    the master again. Never two writers: syncing two masters is not part of
    this plan. "Phase 6, from 6f", below.
+7. **Every place is a kraftverk node** (the owner, 2026-10-02, after 6h:
+   the goal the overhaul ends at). No server and no client: nodes, each
+   declaring the ways it communicates and what it is — always on,
+   reachable by others, trusted with what must stay put — one of them the
+   home's master by those properties. "Phase 6, the goal", below; step 6j.
 
 ## Guardrails — the rule enforced, not hoped for
 
@@ -685,6 +690,73 @@ The steps, each green and pushed:
     `togglesOf` and `settingsForms` to device-sdk, `deviceYaml` to
     home-file, the editor's draft to the language. The baseline of logic in
     the app reaches nothing.
+
+### Phase 6, the goal: every place is a kraftverk node
+
+Set by the owner, 2026-10-02, after 6h, as where the whole overhaul ends:
+**there is no server and no client — only kraftverk nodes.** A node is the
+hub running somewhere — a machine on the network, a phone, a browser —
+with the ways it can communicate where it runs, and the database of one
+home. Several nodes of one home are one master and the nodes that follow
+it; which is which is a role, not a kind of machine. Phase 6 built most of
+this already — one `createHub` everywhere, one `KraftverkApi` in the
+process, over HTTP and over a message port; the master's role moving
+between nodes (6h); a node lending its radio to the master (6f) — and
+"server" and "client" are left in names, not in what the code does.
+
+**What tells nodes apart is what each declares it is**, never which it is:
+
+- **The ways it communicates** — the transports it has an entry for where
+  it runs, as now (`Platform` names the runtime a transport's entry is
+  for: a process, a browser's page, a phone; not a role).
+- **Always on, or only while open** — a node that runs while nobody looks
+  keeps history and runs automations at night.
+- **Reachable by others, or only reaching out** — a phone reaches a machine
+  on the network; the machine does not reach a phone asleep or on a mobile
+  network. A node others reach serves the interface (HTTP today) and says
+  who may (accounts).
+- **Trusted with what must stay put** — a vendor account's password belongs
+  on a node that is always on and kept at home, not in a browser: what a
+  method's `serverOnly` says today, as a requirement a method puts on a
+  node.
+
+**The master is chosen from those**: the node that is always on and that
+the others can reach — the machine on the network, when there is one; a
+phone alone, when it is alone. Every other node of the home follows it
+(a copy, 6g), lends it what it reaches itself (6f), and can take the
+master's role over when it is gone (6h). Never two writers (decision 6).
+Two always-on nodes, or a phone as master for a tablet, fall out of the
+same rule rather than needing a mode each.
+
+**6j. One kind of node** — after 6i, everywhere at once (strict version 1):
+
+- The words: ARCHITECTURE.md's vocabulary gains **node** and **master**;
+  "holder" is a node, "client" goes. The decisions that say server and
+  client (2, 6, 15, 22, 23) are said again in nodes.
+- The contract: a node's properties above, declared by each node and said
+  in `KraftverkApi` (what is this node, and what are the nodes of this
+  home); `apps` and `held` become the nodes of a home and what a node
+  sends the master for the ways it holds; `owner: 'server' | 'client'` in a
+  device's health names the node; `serverOnly` becomes what a method needs
+  of a node.
+- The store: `client` and `held_by → client` become nodes, and a node of
+  its own home knows its own id (a node's id is the id the others know it
+  by — what 6f's app id already is).
+- The hub: `createHub` and `createHolding` read as one node's two roles —
+  the master's, and a follower's — over one set of parts, rather than two
+  things; the master chosen by the rule above, not by which place opens it.
+- The server and the app: the server is a node's process with an HTTP
+  entrance and accounts; the app a node's screens and platform. Neither
+  names the other's kind.
+- **On screen** — the owner's to say when 6j starts. Recommended: people's
+  words stay ("through your server", "from this phone"): "server" for the
+  always-on node most people have one of, "this phone" or "this browser"
+  for the node in their hand, as the app already avoids the words a
+  person does not use (transport, protocol).
+
+Done when no code, type, table or route names a server or a client as a
+kind of thing, and every difference between nodes that matters is a
+property a node declares.
 
 **A structure pass** (the owner, 2026-10-02), once the hub is done and the
 packages are as they should be: the server and the app looked at again,
