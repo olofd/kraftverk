@@ -19,12 +19,6 @@
     "client/src/runtime/uplink.ts": "no screen in it: it belongs in a package",
     "client/src/runtime/vault.ts": "no screen in it: it belongs in a package",
     "client/src/state/live.ts": "no screen in it: it belongs in a package",
-    "client/src/state/views.ts": "no screen in it: it belongs in a package",
-    "server/src/automations/plans.ts": "logic that is not the server's: it belongs in a package",
-    "server/src/config/export.ts": "logic that is not the server's: it belongs in a package",
-    "server/src/config/import.ts": "logic that is not the server's: it belongs in a package",
-    "server/src/config/restore.ts": "logic that is not the server's: it belongs in a package",
-    "server/src/config/seal.ts": "logic that is not the server's: it belongs in a package",
-    "server/src/config/snapshot.ts": "logic that is not the server's: it belongs in a package"
+    "client/src/state/views.ts": "no screen in it: it belongs in a package"
   }
 }

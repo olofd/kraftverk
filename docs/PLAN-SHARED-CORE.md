@@ -263,6 +263,19 @@ devices' views, what is near, readings an app sends in, setup, history,
 attention, the assistant's world and the engine's devices — each handed
 its database and its timeline. Its tests run on SQLite in memory.
 23 files of logic left.
+Phase 5b (2026-10-02), planning and the home file — the planner, and the
+configuration as one `Configuration` per home: its vocabulary and schema,
+export, an import's plan and apply (its yes, its timeline entry, its live
+messages: what the route did), the restore, and the copy kept beside the
+database as text. An import's pending plans are the home's, not a
+module's. Refusals are `ApiError` (`api-contract`). Passphrase sealing is
+a port, `PassphraseSealing`, asynchronous: Web Crypto is not on a phone
+(`everywhere.d.ts`), so decision 3 is met by the place — the server keeps
+its scrypt `v1`, the app brings its own in phase 6 — rather than by the
+hub choosing a cipher every place must have. The snapshot's file, its
+copies and the copy a restore is made from are the server's
+(`platform/snapshot.ts`). The server has no file of logic left outside
+its places: 17 left, all the app's.
 
 ### Phase 5, in detail
 
@@ -306,15 +319,9 @@ holds goes to its own gateway and a view carries its own readings. The app
 then has one interface in both modes, and never branches on which.
 
 5a. **The hub begun** — done, above.
-5b. **Planning and the home file.** The planner (`plans.ts`) with errors of
-    its own; export, import and restore, each handed the hub's stores —
-    an import's pending plans kept by the hub, not in a module, and swept
-    by its timer. Passphrase sealing in `home-file` on Web Crypto
-    (`sealed:v2`, PBKDF2 and AES-GCM); the server still opens `v1` with
-    scrypt (decision 3). A device's entry (`deviceYaml`) moves to
-    `home-file`, one function the export and the app's editor use. The
-    snapshot's file stays the server's: the hub hands it the text, and says
-    when it changed.
+5b. **Planning and the home file** — done, above. A device's entry
+    (`deviceYaml`, the app's) moves to `home-file` with phase 6, when the
+    app's editor and the export become one function.
 5c. **`createHub`.** One object wiring the stores, the session manager, the
     gateway, the engine, the sampler and the change log, setup, nearby,
     attention and its freshness, with `start()` and `stop()`; restoring

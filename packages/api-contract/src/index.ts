@@ -3,8 +3,10 @@
  *
  * The server builds these and the app reads them, and both import them from
  * this package, so a field changed on one side fails the typecheck on the
- * other instead of failing on a phone. Types only: the server validates what
- * it receives with its own schemas, typed against the inputs declared here.
+ * other instead of failing on a phone. Types, and `ApiError` — a refusal in
+ * words, whichever way a home is reached (`error.ts`). The server validates
+ * what it receives with its own schemas, typed against the inputs declared
+ * here.
  *
  * What a device *is* — its type, its description (parts, attributes, events),
  * its setup steps — is declared in `@kraftverk/device-sdk` and re-exported
@@ -49,6 +51,8 @@ import type {
   ValueType,
 } from '@kraftverk/device-sdk';
 import type { Rule, StepKind, StepLine } from '@kraftverk/automation';
+
+export { ApiError, API_ERROR_STATUS, type ApiErrorKind } from './error.ts';
 
 export type {
   AuditSubject,

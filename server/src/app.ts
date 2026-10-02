@@ -3,9 +3,10 @@ import { createBunWebSocket } from 'hono/bun';
 import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { ZodError } from 'zod';
 
-import type { VersionInfo } from '@kraftverk/api-contract';
+import { ApiError, API_ERROR_STATUS, type VersionInfo } from '@kraftverk/api-contract';
 
 import pkg from '../package.json' with { type: 'json' };
 import { hostGuard } from './auth/host.ts';
@@ -185,6 +186,11 @@ export function createApp(deps: AppDeps) {
   app.onError((err, c) => {
     // JSON, like every other answer here: the app reads `{ error }`.
     if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
+    // The home refused, in words (`@kraftverk/hub`): its kind is the status.
+    if (err instanceof ApiError) {
+      const said = { error: err.message, ...(err.problems.length ? { problems: err.problems } : {}), ...(err.needsConfirmation ? { needsConfirmation: err.needsConfirmation } : {}) };
+      return c.json(said, API_ERROR_STATUS[err.kind] as ContentfulStatusCode);
+    }
     // Adding a device went wrong in a way the person can act on: in words.
     if (err instanceof SetupError) return c.json({ error: err.message }, err.status);
     if (err instanceof ZodError) {

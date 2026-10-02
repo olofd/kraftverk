@@ -2,7 +2,7 @@
   "name": "@kraftverk/api-contract",
   "version": "0.1.0",
   "private": true,
-  "description": "The server's HTTP surface, as shapes: what every route takes and answers. Types only, declared once, so the server that sends a shape and the app that reads it cannot drift apart.",
+  "description": "The server's HTTP surface, as shapes: what every route takes and answers. Types, declared once — and ApiError, a refusal in words — so the server that sends a shape and the app that reads it cannot drift apart.",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",

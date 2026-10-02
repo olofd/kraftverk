@@ -1,6 +1,4 @@
-import { HTTPException } from 'hono/http-exception';
-
-import type { AutomationDraft, AutomationDraftView, AutomationView, Rehearsal, RoleBinding } from '@kraftverk/api-contract';
+import { ApiError, type AutomationDraft, type AutomationDraftView, type AutomationView, type Rehearsal, type RoleBinding } from '@kraftverk/api-contract';
 import { capabilitiesOf, meetsNeed, partName, partsOf, savedDeviceId, validateConfig, type AutomationId, type Value } from '@kraftverk/device-sdk';
 import {
   changedRoles,
@@ -19,22 +17,29 @@ import {
   type RuleVocabulary,
 } from '@kraftverk/automation';
 
-import type { DeviceCatalog, AutomationStore } from '@kraftverk/store';
+import type { DeviceCatalog, AutomationStore, SqlDatabase } from '@kraftverk/store';
 import type { SessionManager } from '@kraftverk/holder';
-import { db } from '../platform/database.ts';
 import { CHAIN_LIMIT, quoted, type AutomationEngine, type AutomationRecord, type AutomationLibrary, rehearse } from '@kraftverk/automation-engine';
 
 /**
  * What an automation is made of, checked the one way whoever makes it — a
  * person building it in the app, or an assistant — and how it reads and
- * rehearses (docs/AUTOMATION-EDITOR.md). The routes and the assistant's
- * tools both come here.
+ * rehearses (docs/AUTOMATION-EDITOR.md). The API and the assistant's tools
+ * both come here.
  */
 
 /** How far back a rehearsal reaches: as long as minute samples are kept. */
 export const REHEARSAL_MAX_HOURS = 14 * 24;
 
-export type PlanDeps = { catalog: DeviceCatalog; sessions: SessionManager; library: AutomationLibrary; engine: AutomationEngine; automations: AutomationStore };
+export type PlanDeps = {
+  /** Where the home's history is kept: what a rehearsal walks. */
+  db: SqlDatabase;
+  catalog: DeviceCatalog;
+  sessions: SessionManager;
+  library: AutomationLibrary;
+  engine: AutomationEngine;
+  automations: AutomationStore;
+};
 
 /** A draft checked: what is wrong with it, and what fills its roles as far as it could be read. */
 export type Checked = { problems: string[]; roles: Record<string, RoleBinding>; starts: Record<string, AutomationId> };
@@ -58,7 +63,7 @@ const looksLikeRule = (rule: unknown): rule is Rule => {
 
 const NOT_A_RULE = 'That is not a rule: it needs roles, settings, triggers and steps';
 
-export function plans({ catalog, sessions, library, engine, automations }: PlanDeps) {
+export function plans({ db, catalog, sessions, library, engine, automations }: PlanDeps) {
   /** "Garage station", or "Garage station — AC outlets": how a role's part is named, as everywhere else. */
   const roleName = (binding: RoleBinding | undefined): string => {
     const record = binding ? catalog.get(binding.device) : null;
@@ -240,11 +245,11 @@ export function plans({ catalog, sessions, library, engine, automations }: PlanD
           return record ? { name: roleName(binding), description: sessions.description(record) } : null;
         },
         samples: (deviceId, key, start, end) =>
-          db()
+          db
             .query<{ at: string; value: number | null; text: string | null }, [string, string, string, string]>('SELECT at, value, text FROM sample WHERE device_id = ? AND key = ? AND at >= ? AND at <= ? ORDER BY at')
             .all(deviceId, key, start, end),
         events: (deviceId, part, event, start, end) =>
-          db()
+          db
             .query<{ at: string }, [string, string, string, string, string]>('SELECT at FROM device_event WHERE device_id = ? AND part = ? AND event = ? AND at >= ? AND at <= ? ORDER BY at')
             .all(deviceId, part, event, start, end)
             .map((row) => row.at),
@@ -260,9 +265,9 @@ export function plans({ catalog, sessions, library, engine, automations }: PlanD
    */
   const copied = (recipeId: string, params: Record<string, unknown>): Rule => {
     const recipe = library.recipe(recipeId);
-    if (!recipe) throw new HTTPException(400, { message: `There is no recipe called "${recipeId}"` });
+    if (!recipe) throw new ApiError('invalid', `There is no recipe called "${recipeId}"`);
     const settings = validateConfig(recipe.params, params);
-    if (!settings.ok) throw new HTTPException(400, { message: settings.issues.map((issue) => issue.message).join('; ') });
+    if (!settings.ok) throw new ApiError('invalid', settings.issues.map((issue) => issue.message).join('; '));
     const { id: _id, label: _label, description: _description, sentence: _sentence, ...rule } = recipe;
     return inlineParams(rule, settings.value as Record<string, Value>);
   };

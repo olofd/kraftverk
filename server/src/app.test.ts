@@ -10,7 +10,7 @@ import { savedDeviceId, type Value } from '@kraftverk/device-sdk';
 import { ActionGateway } from '@kraftverk/gateway';
 import { LiveBus, type LiveMessage, SessionManager } from '@kraftverk/holder';
 import { CORS_METHODS, corsOrigin, createApp } from './app.ts';
-import { Attention, DeviceRegistry, DeviceTypeRegistry, Nearby, ProtocolRegistry, RemoteReadings, Sampler, SetupService, TransportHost, homeDevices } from '@kraftverk/hub';
+import { Attention, Configuration, DeviceRegistry, DeviceTypeRegistry, Nearby, plans, ProtocolRegistry, RemoteReadings, Sampler, SetupService, TransportHost, homeDevices } from '@kraftverk/hub';
 import { AutomationEngine, AutomationLibrary } from '@kraftverk/automation-engine';
 import { AutomationStore, DeviceCatalog, ClientStore, ConnectionStore, LinkStore, EventStore, holding } from '@kraftverk/store';
 import { CLIENT_HEADER, SESSION_COOKIE } from './auth/routes.ts';
@@ -18,8 +18,9 @@ import { createFirstUser, createUser } from './auth/store.ts';
 import { CLIENT_IP_HEADER, EXPOSURE_HEADER, ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
 import { busDefinition, FakeBus, lampProtocol, lampType } from '@kraftverk/hub/testing';
-import { audit, closeDb, db, policyValues, deviceStore } from './platform/database.ts';
+import { audit, closeDb, db, policyValues, setPolicyValue, deviceStore } from './platform/database.ts';
 import { discoverDeviceTypes, discoverProtocols, discoverTransports } from './platform/packages.ts';
+import { serverSealing } from './platform/sealing.ts';
 import { openSecret } from './platform/secrets.ts';
 import { originAllowed } from './routes/live.ts';
 import { serverSecrets } from './platform/secrets.ts';
@@ -123,8 +124,28 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
   const engine = new AutomationEngine({ store: automations, library, device: homeDevices(catalog, sessions), gateway, record: audit, bus: live });
 
   const attention = new Attention();
+  const configuration = new Configuration({
+    db: db(),
+    catalog,
+    connections,
+    links,
+    automations,
+    types,
+    protocols,
+    transports,
+    sessions,
+    library,
+    engine,
+    checked: plans({ db: db(), catalog, sessions, library, engine, automations }).checked,
+    policy: { values: policyValues, set: setPolicyValue },
+    sealing: serverSealing,
+    kept: serverSecrets,
+    record: audit,
+    bus: live,
+  });
   const { app, websocket } = createApp({
     attention,
+    configuration,
     config,
     catalog,
     connections,

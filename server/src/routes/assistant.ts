@@ -8,9 +8,9 @@ import { deviceReader } from '@kraftverk/holder';
 
 import { actorOf } from '../auth/routes.ts';
 import { RunRefusal } from '@kraftverk/automation-engine';
-import { plans, REHEARSAL_MAX_HOURS } from '../automations/plans.ts';
+import { plans, REHEARSAL_MAX_HOURS } from '@kraftverk/hub';
 import { AGENT_RULES, vocabularyOf, worldOf, worldText } from '@kraftverk/hub';
-import { recentAudit, policyValues } from '../platform/database.ts';
+import { db, recentAudit, policyValues } from '../platform/database.ts';
 import { auditAbout, type AppDeps } from './shared.ts';
 
 /**
@@ -46,7 +46,7 @@ const boundOf = (roles: Record<string, { device: string; part: string }>): Recor
 export function assistantRoutes(deps: AppDeps): Hono {
   const { config, registry, library, gateway, sessions, catalog, automations, engine } = deps;
   const api = new Hono();
-  const { view, checked, copied, rehearsed } = plans({ catalog, sessions, library, engine, automations });
+  const { view, checked, copied, rehearsed } = plans({ db: db(), catalog, sessions, library, engine, automations });
 
   const world = async () => worldOf(await registry.all(), { readOnly: config.readOnly });
   const vocabulary = async () =>

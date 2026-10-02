@@ -7,7 +7,7 @@ they describe stays; who writes a rule changes.
 
 **Status:** built, 2026-09-30, as written here: the editor at
 `client/app/automation/[id].tsx` and `client/src/features/automations/editor`,
-the rule kept and checked on the server (`server/src/automations/plans.ts`),
+the rule kept and checked by the home (`plans` in `@kraftverk/hub`),
 and e2e in `e2e/sequences.e2e.ts` and `e2e/charge-window.e2e.ts`.
 
 ## The problem

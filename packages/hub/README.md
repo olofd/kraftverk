@@ -80,7 +80,11 @@ installed (`DeviceTypeRegistry`, `ProtocolRegistry`, `TransportHost` for
 any platform), devices' views (`DeviceRegistry`), `Nearby`,
 `RemoteReadings`, `SetupService`, history (`Sampler`, `ChangeLog`, `series`,
 `changesOf`), `Attention` and `keepWatchedFresh`, the assistant's world,
-and `homeDevices` for the engine — each handed its database and timeline.
+`homeDevices` for the engine, the planner (`plans`), and the home's
+configuration (`Configuration`: vocabulary, schema, export, an import's
+plan and apply, the restore, the copy kept beside the database) — each
+handed its database and timeline. Sealing a secret with a passphrase is a
+port (`PassphraseSealing`): the place's cipher, not the hub's.
 `@kraftverk/hub/testing` is a lamp on a pretend bus, for tests.
 
 ### Made from ports

@@ -1,6 +1,4 @@
-import { randomBytes } from 'node:crypto';
-
-import type { ImportApplied, ImportItem, ImportPlan } from '@kraftverk/api-contract';
+import { ApiError, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-contract';
 import {
   checkDocument,
   MODE_IN_FILE,
@@ -32,13 +30,14 @@ import {
 import { checkBinding, checkRule, isAutomationRole, takesSteps, type BoundPart, type PartRole } from '@kraftverk/automation';
 
 import type { AutomationEngine, AutomationRecord, AutomationLibrary } from '@kraftverk/automation-engine';
-import { hasConditions, type Checked } from '../automations/plans.ts';
-import type { DeviceRecord } from '@kraftverk/store';
 import type { SessionManager } from '@kraftverk/holder';
-import { db, policyValues, setPolicyValue } from '../platform/database.ts';
-import type { TransportHost } from '@kraftverk/hub';
-import { serverVocabulary, type ConfigDeps } from './export.ts';
-import { isSealed, openKept, openWith } from './seal.ts';
+import { randomHex, type DeviceRecord, type SqlDatabase } from '@kraftverk/store';
+
+import { hasConditions, type Checked } from '../automations/plans.ts';
+import type { TransportHost } from '../installed/transports.ts';
+import { unref } from '../timers.ts';
+import { homeVocabulary, type ConfigDeps } from './export.ts';
+import { isKept, isSealed, openKept } from './seal.ts';
 
 /*
   Importing a configuration (docs/CONFIG.md), in two steps. The plan reads a
@@ -53,10 +52,14 @@ import { isSealed, openKept, openWith } from './seal.ts';
   Things are matched by key. A device's type is what it is: a key naming a
   device of another type is a problem, not a change. Restoring the snapshot
   kept beside the database is an import that asks nothing: its secrets are
-  the server's own, and what acted acts again.
+  the home's own, and what acted acts again.
 */
 
 export type ImportDeps = ConfigDeps & {
+  /** Where the home is kept: an apply is one transaction. */
+  db: SqlDatabase;
+  /** The plans made and not yet applied: the hub's own, swept as they expire. */
+  pending: PendingPlans;
   sessions: Pick<SessionManager, 'sync'>;
   /** Whether a transport's addresses belong to one device each. */
   transports: Pick<TransportHost, 'definition'>;
@@ -82,26 +85,45 @@ type Kept = {
 };
 
 const PLAN_TTL_MS = 15 * 60_000;
-const plans = new Map<string, Kept>();
 
 /**
- * Plans past their time forgotten — and the secrets each opened with them:
- * on every use of the plans, and each minute besides, so an opened key does
- * not wait in memory for the next import to be made.
+ * The plans a home has made and not yet applied, each with the secrets it
+ * opened. Forgotten past their time — and those secrets with them — on every
+ * use, and each minute besides, so an opened key does not wait in memory for
+ * the next import to be made. One per home: nothing at module level.
  */
-function forgetExpired(now = Date.now()): void {
-  for (const [id, kept] of plans) if (kept.expiresAt < now) (kept.secrets.clear(), plans.delete(id));
-}
-setInterval(forgetExpired, 60_000).unref?.();
+export class PendingPlans {
+  #plans = new Map<string, Kept>();
+  #sweeper = setInterval(() => this.forgetExpired(), 60_000);
 
+  constructor() {
+    unref(this.#sweeper);
+  }
 
-export class ImportError extends Error {
-  constructor(
-    message: string,
-    readonly problems: string[] = [],
-    readonly status: 400 | 404 | 409 = 400
-  ) {
-    super(message);
+  forgetExpired(now = Date.now()): void {
+    for (const [id, kept] of this.#plans) if (kept.expiresAt < now) (kept.secrets.clear(), this.#plans.delete(id));
+  }
+
+  get(id: string): Kept | undefined {
+    this.forgetExpired();
+    return this.#plans.get(id);
+  }
+
+  set(id: string, kept: Kept): void {
+    this.forgetExpired();
+    this.#plans.set(id, kept);
+  }
+
+  /** Used up: its opened secrets go with it. */
+  delete(id: string): void {
+    this.#plans.get(id)?.secrets.clear();
+    this.#plans.delete(id);
+  }
+
+  /** Every plan forgotten, and the sweeping stopped: the home is stopping. */
+  stop(): void {
+    clearInterval(this.#sweeper);
+    for (const id of [...this.#plans.keys()]) this.delete(id);
   }
 }
 
@@ -110,10 +132,10 @@ const secretKey = (device: string, index: number, field: string) => `${device}.$
 
 /**
  * What importing a file would do. `kept`: the snapshot's own secrets, sealed
- * with this server's key, are opened as the server opens them.
+ * with this home's key, are opened as the home opens them.
  */
-export function planImport(deps: ImportDeps, text: string, options: { mode: ImportMode; passphrase?: string; by: string; kept?: boolean; lenient?: boolean }): ImportPlan {
-  const vocabulary = serverVocabulary(deps);
+export async function planImport(deps: ImportDeps, text: string, options: { mode: ImportMode; passphrase?: string; by: string; kept?: boolean; lenient?: boolean }): Promise<ImportPlan> {
+  const vocabulary = homeVocabulary(deps);
   // A restore reads what it can: an entry it cannot read is left out and said, never the whole home lost for it.
   const read = readConfig(text, unitsOfFile(deps, text), (document) => checkDocument(document, vocabulary, { hasSecret: () => true, uses: 'leave' }), { partial: options.lenient });
   const empty: ImportPlan = { id: null, from: read.from, problems: read.problems.map((each) => ({ ...each, path: [...each.path] })), devices: [], links: [], automations: [], policy: [], needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
@@ -147,20 +169,24 @@ export function planImport(deps: ImportDeps, text: string, options: { mode: Impo
   if (read.holds) notes.push(`Read as one ${read.holds.kind === 'devices' ? 'device' : 'automation'}, known by "${read.holds.key}"${(read.holds.kind === 'devices' ? deps.catalog.byKey(read.holds.key) : deps.automations.byKey(read.holds.key)) ? ': the one you have by that key is changed to it' : ''}`);
   const secrets = new Map<string, string>();
 
-  // Secrets: opened now, or said to be needed.
+  // Secrets: opened now — those sealed with a passphrase first, as sealing takes its time — or said to be needed.
+  const unsealed = new Map<string, string | null>();
+  if (options.passphrase) {
+    for (const value of sealedIn(document)) {
+      if (unsealed.has(value)) continue;
+      unsealed.set(value, await deps.sealing.open(options.passphrase, value).catch(() => null));
+    }
+  }
   const open = (value: string): string | null => {
-    if (value.startsWith('sealed:server:')) return options.kept ? openKept(value) : null;
+    if (isKept(value)) return options.kept ? openKept(deps.kept, value) : null;
     if (!isSealed(value)) return value;
     if (!options.passphrase) {
       needs.passphrase = 'missing';
       return null;
     }
-    try {
-      return openWith(options.passphrase, value);
-    } catch {
-      needs.passphrase = 'wrong';
-      return null;
-    }
+    const opened = unsealed.get(value) ?? null;
+    if (opened === null) needs.passphrase = 'wrong';
+    return opened;
   };
   const valueOf = (secret: SecretValue): string | null =>
     'plain' in secret ? secret.plain : 'sealed' in secret ? open(secret.sealed) : document.secrets[secret.secret] !== undefined ? open(document.secrets[secret.secret]!) : null;
@@ -239,7 +265,7 @@ export function planImport(deps: ImportDeps, text: string, options: { mode: Impo
   }
 
   // The home's values.
-  const now = policyValues();
+  const now = deps.policy.values();
   const policy = Object.entries(document.home.policy)
     .filter(([name, value]) => now[name as PolicyValueName] !== value)
     .map(([name, value]) => ({ name, label: POLICY_VALUES[name as PolicyValueName].label, before: now[name as PolicyValueName] ?? null, after: value }));
@@ -265,13 +291,16 @@ export function planImport(deps: ImportDeps, text: string, options: { mode: Impo
     const at = read.problems.length ? null : locate(text, each.path);
     return { ...each, line: at?.line ?? null, column: at?.column ?? null };
   });
-  const id = placed.length ? null : `p-${randomBytes(9).toString('base64url')}`;
+  const id = placed.length ? null : `p-${randomHex(12)}`;
   const view: ImportPlan = { id, from: read.from, problems: placed, devices, links, automations, policy, needs, notes };
-  if (id) {
-    forgetExpired();
-    plans.set(id, { view, document, mode: options.mode, secrets, by: options.by, expiresAt: Date.now() + PLAN_TTL_MS, turnedOff });
-  }
+  if (id) deps.pending.set(id, { view, document, mode: options.mode, secrets, by: options.by, expiresAt: Date.now() + PLAN_TTL_MS, turnedOff });
   return view;
+}
+
+/** Every value in a file sealed with a passphrase: in its secrets, or written in place. */
+function sealedIn(document: ConfigDocument): string[] {
+  const inPlace = Object.values(document.devices).flatMap((entry) => entry.connect.flatMap((way) => Object.values(way.secrets).flatMap((secret) => ('sealed' in secret ? [secret.sealed] : []))));
+  return [...Object.values(document.secrets), ...inPlace].filter(isSealed);
 }
 
 /**
@@ -422,9 +451,8 @@ export type ImportChoices = {
 };
 
 /** A kept plan, if it is this person's and still current. */
-export function keptPlan(id: string, by: string): ImportPlan | null {
-  forgetExpired();
-  const kept = plans.get(id);
+export function keptPlan(deps: Pick<ImportDeps, 'pending'>, id: string, by: string): ImportPlan | null {
+  const kept = deps.pending.get(id);
   return kept && kept.by === by && kept.expiresAt > Date.now() ? kept.view : null;
 }
 
@@ -434,11 +462,10 @@ export function keptPlan(id: string, by: string): ImportPlan | null {
  * in the plan's `needs.confirm`.
  */
 export async function applyImport(deps: ImportDeps, id: string, by: string, choices: ImportChoices, options: { lenient?: boolean } = {}): Promise<ImportApplied> {
-  forgetExpired();
-  const kept = plans.get(id);
-  if (!kept || kept.by !== by || kept.expiresAt < Date.now()) throw new ImportError('That plan has gone: read the file again', [], 404);
+  const kept = deps.pending.get(id);
+  if (!kept || kept.by !== by || kept.expiresAt < Date.now()) throw new ApiError('not-found', 'That plan has gone: read the file again');
   const { document, view } = kept;
-  if (view.needs.passphrase) throw new ImportError(view.needs.passphrase === 'missing' ? 'Give the passphrase its secrets are sealed with' : 'The passphrase does not open its secrets');
+  if (view.needs.passphrase) throw new ApiError('invalid', view.needs.passphrase === 'missing' ? 'Give the passphrase its secrets are sealed with' : 'The passphrase does not open its secrets');
   const devicesIn = (key: string) => !choices.include?.devices || choices.include.devices.includes(key);
   const automationsIn = (key: string) => !choices.include?.automations || choices.include.automations.includes(key);
 
@@ -447,7 +474,7 @@ export async function applyImport(deps: ImportDeps, id: string, by: string, choi
   // A restore asks nothing: a device whose secret is gone is restored without it.
   if (!options.lenient) for (const need of view.needs.secrets) if (devicesIn(need.device) && !choices.secrets?.[`${need.device}.${need.field}`]) missing.push(`${need.deviceName}: its ${need.title}`);
   if (!options.lenient) for (const need of view.needs.rebind) if (automationsIn(need.automation) && !choices.rebind?.[`${need.automation}.${need.role}`]) missing.push(`"${document.automations[need.automation]?.name}": a device for ${need.label}`);
-  if (missing.length) throw new ImportError(`It still needs ${missing.join('; ')}`, missing);
+  if (missing.length) throw new ApiError('invalid', `It still needs ${missing.join('; ')}`, { problems: missing });
 
   const applied: ImportApplied = { devices: { added: [], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, policy: [], notes: [] };
   const touched: AutomationId[] = [];
@@ -455,14 +482,14 @@ export async function applyImport(deps: ImportDeps, id: string, by: string, choi
   const each = (what: string, work: () => void) => {
     if (!options.lenient) return work();
     try {
-      db().transaction(work)();
+      deps.db.transaction(work)();
     } catch (error) {
-      applied.notes.push(`${what} could not be restored: ${error instanceof ImportError && error.problems.length ? error.problems.join('; ') : (error as Error).message}`);
+      applied.notes.push(`${what} could not be restored: ${error instanceof ApiError && error.problems.length ? error.problems.join('; ') : (error as Error).message}`);
     }
   };
   const forgotten: AutomationId[] = [];
 
-  db().transaction(() => {
+  deps.db.transaction(() => {
     // Devices: added, changed, removed.
     for (const item of view.devices) {
       if (!devicesIn(item.key)) continue;
@@ -525,7 +552,7 @@ export async function applyImport(deps: ImportDeps, id: string, by: string, choi
       const result = deps.checked({ rule: entry.rule, roles, starts }, id);
       // Restoring, one that cannot be kept as it was is kept turned off — its rule, what still fills it — and said: its owner's work is not lost.
       const why = [...new Set([...(kept.turnedOff.get(key) ?? []), ...result.problems])];
-      if (why.length && !options.lenient) throw new ImportError(`"${entry.name}" cannot be kept as it is`, why.map((said) => `"${entry.name}": ${said}`));
+      if (why.length && !options.lenient) throw new ApiError('invalid', `"${entry.name}" cannot be kept as it is`, { problems: why.map((said) => `"${entry.name}": ${said}`) });
       each(`"${entry.name}"`, () => {
         deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, starts: result.starts, timeZone: entry.clock, mode: why.length ? 'off' : MODE_OF_FILE[entry.mode], recheckMinutes: entry.recheckMinutes });
         if (entry.homePlace !== (existing?.homePlace ?? null)) deps.automations.placeOnHome(id, entry.homePlace);
@@ -537,14 +564,13 @@ export async function applyImport(deps: ImportDeps, id: string, by: string, choi
 
     // The home's values.
     for (const change of view.policy) {
-      setPolicyValue(change.name as PolicyValueName, change.after);
+      deps.policy.set(change.name as PolicyValueName, change.after);
       applied.policy.push(change.name);
     }
   })();
 
   // Used up: its opened secrets go with it.
-  kept.secrets.clear();
-  plans.delete(id);
+  deps.pending.delete(id);
   // Open what was added, close what was removed; what watches starts afresh, and looks now.
   await deps.sessions.sync(deps.catalog.list());
   for (const automation of forgotten) deps.engine.forget(automation);
@@ -556,7 +582,7 @@ export async function applyImport(deps: ImportDeps, id: string, by: string, choi
 function writeDevice(deps: ImportDeps, key: string, entry: DeviceEntry, opened: Map<string, string>, given: Record<string, string>): void {
   const type = deps.types.get(entry.type)!;
   const settings = validateConfig(type.config ?? { fields: {} }, entry.settings);
-  if (!settings.ok) throw new ImportError(`${entry.name}: ${settings.issues.map((issue) => issue.message).join('; ')}`);
+  if (!settings.ok) throw new ApiError('invalid', `${entry.name}: ${settings.issues.map((issue) => issue.message).join('; ')}`);
   const config: ConfigValues = settings.value;
   let device = deps.catalog.byKey(key);
   // One you removed is brought back with its history, not added beside it.

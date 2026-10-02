@@ -4,7 +4,8 @@
 
 The kraftverk API as types: what every route takes and answers, what the
 live stream carries both ways, and the views of a device, an automation
-and a run. Types only — nothing in it runs.
+and a run. Types, and one thing that runs: `ApiError`, a refusal in words,
+thrown by the hub and carried over HTTP as the same error.
 
 ## What it does — and does not
 

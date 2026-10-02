@@ -9,7 +9,9 @@ import { Confirmations, subjectOf } from '@kraftverk/gateway';
 
 import { actorOf } from '../auth/routes.ts';
 import { RunRefusal, runLogCsv } from '@kraftverk/automation-engine';
-import { hasConditions, plans, REHEARSAL_MAX_HOURS } from '../automations/plans.ts';
+import { hasConditions, plans, REHEARSAL_MAX_HOURS } from '@kraftverk/hub';
+
+import { db } from '../platform/database.ts';
 import { auditAbout, body, type AppDeps } from './shared.ts';
 
 /**
@@ -44,7 +46,7 @@ export function automationRoutes({ automations, engine, library, catalog, sessio
   const api = new Hono();
   /** Letting it act is confirmed as a command is: a token bound to this automation, these changes and this person, once. */
   const arming = new Confirmations();
-  const { view, checked, draftView, rehearsed } = plans({ catalog, sessions, library, engine, automations });
+  const { view, checked, draftView, rehearsed } = plans({ db: db(), catalog, sessions, library, engine, automations });
 
   /** A draft that cannot be kept: every problem, in one answer. */
   const refuseProblems = (problems: string[]) => {

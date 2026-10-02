@@ -12,19 +12,19 @@ import {
   type WriteContext,
 } from '@kraftverk/home-file';
 import type { PrintContext } from '@kraftverk/automation';
-import { methodsOf, partsOf, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { methodsOf, partsOf, type PolicyValueName, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
+import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, LinkStore, SecretsAtRest } from '@kraftverk/store';
 
-import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, LinkStore } from '@kraftverk/store';
-import type { DeviceTypeRegistry, ProtocolRegistry } from '@kraftverk/hub';
-import { policyValues } from '../platform/database.ts';
-import { keep, openKept, sealWith } from './seal.ts';
+import type { ProtocolRegistry } from '../installed/protocols.ts';
+import type { DeviceTypeRegistry } from '../installed/types.ts';
+import { keep, openKept, type PassphraseSealing } from './seal.ts';
 
 /*
-  The server's configuration as a document (docs/CONFIG.md): everything it
-  has, or the devices and automations chosen — each by its key — with what
-  could not go in said, and each secret as asked: left out, sealed with a
+  A home's configuration as a document (docs/CONFIG.md): everything it has,
+  or the devices and automations chosen — each by its key — with what could
+  not go in said, and each secret as asked: left out, sealed with a
   passphrase, in plain text where its owner allowed that, or kept as the
-  server keeps it, for the snapshot beside the database.
+  home keeps it, for the snapshot beside the database.
 */
 
 export type ConfigDeps = {
@@ -34,6 +34,12 @@ export type ConfigDeps = {
   automations: AutomationStore;
   types: DeviceTypeRegistry;
   protocols: ProtocolRegistry;
+  /** The home's own values: how much is a load, the reserve. */
+  policy: { values(): PolicyValues; set(name: PolicyValueName, value: number | null): PolicyValues };
+  /** How a passphrase seals a secret, and opens it: the place's. */
+  sealing: PassphraseSealing;
+  /** How the home seals its own secrets at rest: what the snapshot keeps them in. */
+  kept: SecretsAtRest;
 };
 
 /**
@@ -41,7 +47,7 @@ export type ConfigDeps = {
  * - `none` — left out, each one said;
  * - `sealed` — sealed with the passphrase given, under `secrets`;
  * - `plain` — as they are, only for connections whose owner allowed it;
- * - `kept` — as the server keeps them: the snapshot's, never sent anywhere.
+ * - `kept` — as the home keeps them: the snapshot's, never sent anywhere.
  */
 export type SecretsMode = 'none' | 'sealed' | 'plain' | 'kept';
 
@@ -68,8 +74,8 @@ export type Exported = {
   context: WriteContext;
 };
 
-/** What a configuration may name on this server: its installed types, and the keys it has. */
-export function serverVocabulary(deps: ConfigDeps): Vocabulary {
+/** What a configuration may name in this home: its installed types, and the keys it has. */
+export function homeVocabulary(deps: Pick<ConfigDeps, 'catalog' | 'automations' | 'types' | 'protocols'>): Vocabulary {
   return vocabularyOf(deps.types.all(), (id) => deps.protocols.get(id), {
     devices: deps.catalog.list().map((device) => ({ key: device.key, type: device.typeId, name: device.name, parts: partsOf(device.description).map((part) => part.id) })),
     automations: deps.automations.list().map((automation) => ({ key: automation.key, name: automation.name })),
@@ -80,7 +86,7 @@ const scalars = (values: Record<string, unknown>): Record<string, Scalar> =>
   Object.fromEntries(Object.entries(values).filter((entry): entry is [string, Scalar] => typeof entry[1] === 'string' || typeof entry[1] === 'number' || typeof entry[1] === 'boolean'));
 
 /** The configuration, as asked. */
-export function exportConfig(deps: ConfigDeps, options: ExportOptions): Exported {
+export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Promise<Exported> {
   if (options.secrets === 'sealed' && !options.passphrase) throw new Error('Sealing secrets needs a passphrase');
   const document = emptyDocument();
   const notes: string[] = [];
@@ -91,13 +97,13 @@ export function exportConfig(deps: ConfigDeps, options: ExportOptions): Exported
   if (options.devices) for (const key of options.devices) if (!devices.some((device) => device.key === key)) notes.push(`There is no device "${key}"`);
   if (options.automations) for (const key of options.automations) if (!automations.some((automation) => automation.key === key)) notes.push(`There is no automation "${key}"`);
 
-  if (everything) document.home.policy = { ...policyValues() };
+  if (everything) document.home.policy = { ...deps.policy.values() };
 
   // The secrets, as asked.
-  const secret = (device: DeviceRecord, connection: { id: string; secretsExportable: boolean }, field: string): SecretValue | null => {
+  const secret = async (device: DeviceRecord, connection: { id: string; secretsExportable: boolean }, field: string): Promise<SecretValue | null> => {
     const value = deps.connections.secret(connection.id, field);
     if (value === null) {
-      notes.push(`${device.name}'s ${field} could not be read: the server's key that sealed it is gone. Give it again after importing`);
+      notes.push(`${device.name}'s ${field} could not be read: the key that sealed it is gone. Give it again after importing`);
       return null;
     }
     const name = `${device.key}.${field}`;
@@ -110,11 +116,11 @@ export function exportConfig(deps: ConfigDeps, options: ExportOptions): Exported
         notes.push(`${device.name}'s ${field} is left out: its owner has not let it leave in plain text`);
         return null;
       case 'sealed':
-        document.secrets[name] = sealWith(options.passphrase!, value);
+        document.secrets[name] = await deps.sealing.seal(options.passphrase!, value);
         return { secret: name };
       case 'kept': {
         const before = options.keptBefore?.[name];
-        document.secrets[name] = before !== undefined && openKept(before) === value ? before : keep(value);
+        document.secrets[name] = before !== undefined && openKept(deps.kept, before) === value ? before : keep(deps.kept, value);
         return { secret: name };
       }
     }
@@ -131,7 +137,7 @@ export function exportConfig(deps: ConfigDeps, options: ExportOptions): Exported
       const method = type ? methodsOf(type).find((each) => each.id === connection.method) : undefined;
       const secrets: Record<string, SecretValue> = {};
       for (const field of deps.connections.secretFields(connection.id)) {
-        const value = secret(device, connection, field);
+        const value = await secret(device, connection, field);
         if (value) secrets[field] = value;
       }
       connect.push({ via: connection.method, address: method?.address ? null : connection.address, settings: scalars(connection.config), secrets, exportable: connection.secretsExportable });
@@ -165,7 +171,7 @@ export function exportConfig(deps: ConfigDeps, options: ExportOptions): Exported
     document.automations[automation.key] = entry;
     units.set(automation.key, unitsFrom(automation.roles, describe));
   }
-  if (elsewhere.size && !everything) notes.push(`It names devices this file does not carry, which the server it goes to must have: ${[...elsewhere].sort().join(', ')}`);
+  if (elsewhere.size && !everything) notes.push(`It names devices this file does not carry, which the home it goes to must have: ${[...elsewhere].sort().join(', ')}`);
 
   return { document, notes, context: { unitIn: (automation, role, means) => units.get(automation)?.unitOf?.(role, means) ?? null } };
 }

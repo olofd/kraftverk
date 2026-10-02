@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isSealed, openWith, sealWith } from './seal.ts';
+import { isSealed } from '@kraftverk/hub';
+
+import { openWith, sealWith } from './sealing.ts';
 
 /* A secret sealed with a passphrase: opened by it, by nothing else, and not once changed. */
 

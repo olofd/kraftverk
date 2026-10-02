@@ -1,21 +1,18 @@
-import { existsSync } from 'node:fs';
-
 import { ActionGateway } from '@kraftverk/gateway';
 import { LiveBus, SessionManager } from '@kraftverk/holder';
 import { createApp } from './app.ts';
-import { Attention, ChangeLog, DeviceRegistry, DeviceTypeRegistry, Nearby, ProtocolRegistry, RemoteReadings, Sampler, SetupService, TransportHost, homeDevices, keepWatchedFresh } from '@kraftverk/hub';
+import { Attention, ChangeLog, changesConfiguration, Configuration, DeviceRegistry, DeviceTypeRegistry, Nearby, plans, ProtocolRegistry, RemoteReadings, Sampler, SetupService, TransportHost, homeDevices, keepWatchedFresh } from '@kraftverk/hub';
 import { AutomationEngine, AutomationLibrary } from '@kraftverk/automation-engine';
-import { plans } from './automations/plans.ts';
-import { restoreFrom } from './config/restore.ts';
-import { ConfigSnapshot } from './config/snapshot.ts';
 import { AutomationStore, DeviceCatalog, EventStore, ClientStore, ConnectionStore, LinkStore, holding } from '@kraftverk/store';
 import { ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
-import { databaseLedger, audit, closeDb, startedFresh, policyValues, transportStore, db, deviceStore } from './platform/database.ts';
+import { databaseLedger, audit, closeDb, onAudit, startedFresh, policyValues, setPolicyValue, transportStore, db, deviceStore } from './platform/database.ts';
 import { keepConsole } from './log.ts';
 import { scopedHttp } from './platform/http.ts';
 import { discoverDeviceTypes, discoverProtocols, discoverTransports } from './platform/packages.ts';
+import { serverSealing } from './platform/sealing.ts';
 import { serverSecrets } from './platform/secrets.ts';
+import { ConfigSnapshot } from './platform/snapshot.ts';
 
 /*
   The server process: everything that starts something.
@@ -233,7 +230,26 @@ proxies.start();
   and again after every change to it, so a database set aside for a new
   schema leaves a home to restore.
 */
-const snapshot = new ConfigSnapshot({ catalog, connections, links, automations, types, protocols });
+const configuration = new Configuration({
+  db: db(),
+  catalog,
+  connections,
+  links,
+  automations,
+  types,
+  protocols,
+  transports,
+  sessions,
+  library,
+  engine,
+  checked: plans({ db: db(), catalog, sessions, library, engine, automations }).checked,
+  policy: { values: policyValues, set: setPolicyValue },
+  sealing: serverSealing,
+  kept: serverSecrets,
+  record: audit,
+  bus,
+});
+const snapshot = new ConfigSnapshot(configuration);
 /*
   A database started afresh this run — a new schema set the old one aside —
   is restored from the configuration kept beside it, before anything is
@@ -241,18 +257,19 @@ const snapshot = new ConfigSnapshot({ catalog, connections, links, automations, 
   until something changes; it is copied aside first in any case.
 */
 let restoring = true;
-if (startedFresh().fresh && existsSync(snapshot.path)) {
-  const { checked } = plans({ catalog, sessions, library, engine, automations });
-  const restored = await restoreFrom({ catalog, connections, links, automations, types, protocols, sessions, transports, library, engine, checked }, snapshot.path);
-  snapshot.restored = restored;
+if (startedFresh().fresh) {
+  const restored = await snapshot.restore();
   if (restored) {
     console.log(`[config] Restored from the configuration kept beside the database: ${restored.applied ? `${restored.applied.devices.added.length} devices, ${restored.applied.automations.added.length} automations` : 'nothing'}${restored.problems.length ? `; ${restored.problems.length} problems: ${restored.problems.join('; ')}` : ''}`);
     restoring = !restored.applied;
   }
 }
-snapshot.start();
+// Each change to the configuration writes it again, a moment later.
+const stopSnapshot = onAudit((entry) => {
+  if (changesConfiguration(entry.kind)) snapshot.schedule();
+});
 try {
-  if (!restoring || !startedFresh().fresh) snapshot.write();
+  if (!restoring || !startedFresh().fresh) await snapshot.write();
 } catch (error) {
   console.warn(`[config] The configuration could not be kept beside the database: ${(error as Error).message}`);
 }
@@ -266,6 +283,7 @@ const stopFreshness = keepWatchedFresh(attention, (device, until) => sessions.ge
 
 const { app, websocket } = createApp({
   attention,
+  configuration,
   snapshot,
   config,
   catalog,
@@ -295,7 +313,9 @@ const { app, websocket } = createApp({
 // Everything is running: from here on, stopping also closes what was opened.
 onStop(
   stopFreshness,
+  stopSnapshot,
   () => snapshot.stop(),
+  () => configuration.stop(),
   () => engine.stop(),
   () => sampler.stop(),
   () => changeLog.stop(),

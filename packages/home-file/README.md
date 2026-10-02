@@ -15,11 +15,12 @@ read and edit (docs/CONFIG.md).
   installed vocabulary (types, methods, the language); migrate a document
   of an older version (`kraftverk: n`, one migration per change, each with
   a kept fixture); an automation's own entry, as an export writes it.
-  Sealing secrets under a passphrase and a device's entry are still the
-  server's, and come here in phase 5 (docs/PLAN-SHARED-CORE.md).
-- **Does not:** touch a database or a device. Planning what a document
-  would change, applying it, and keeping a snapshot of a home are the
-  hub's and the server's; the rule language it writes automations in is
+  A device's entry is still the app's, and comes here in phase 6
+  (docs/PLAN-SHARED-CORE.md).
+- **Does not:** touch a database or a device, or seal a secret with a
+  passphrase — the place's cipher, asked for by the hub as a port. Planning
+  what a document would change, applying it, and keeping a snapshot of a
+  home are the hub's (`Configuration`), the snapshot's file the server's; the rule language it writes automations in is
   `@kraftverk/automation`'s.
 
 ## Where it fits

@@ -6,7 +6,7 @@ import { savedDeviceId, type ResourceKind } from '@kraftverk/device-sdk';
 
 import type { ActionGateway } from '@kraftverk/gateway';
 import type { LiveBus } from '@kraftverk/holder';
-import type { Attention, DeviceRegistry, DeviceTypeRegistry, Nearby, ProtocolRegistry, RemoteReadings, Sampler, SetupService, TransportHost } from '@kraftverk/hub';
+import type { Attention, Configuration, DeviceRegistry, DeviceTypeRegistry, Nearby, ProtocolRegistry, RemoteReadings, Sampler, SetupService, TransportHost } from '@kraftverk/hub';
 import type { AutomationEngine, AutomationLibrary } from '@kraftverk/automation-engine';
 import type { AutomationStore, DeviceCatalog, DeviceRecord, ClientStore, ConnectionStore, LinkStore, EventStore } from '@kraftverk/store';
 import { actorOf, userOf } from '../auth/routes.ts';
@@ -14,7 +14,7 @@ import type { LoginLimiter } from '../auth/limiter.ts';
 import type { ProxyDirectory } from '../auth/trust.ts';
 import type { ServerConfig } from '../config.ts';
 import type { SessionManager } from '@kraftverk/holder';
-import type { ConfigSnapshot } from '../config/snapshot.ts';
+import type { ConfigSnapshot } from '../platform/snapshot.ts';
 import { audit } from '../platform/database.ts';
 import type { ServerLog } from '../log.ts';
 
@@ -60,7 +60,9 @@ export type AppDeps = {
   startedAt: Date;
   /** Login guessing; a fresh one unless a test wants to share it. */
   limiter?: LoginLimiter;
-  /** The configuration kept beside the database (docs/CONFIG.md); none in a test that does not ask for one. */
+  /** The home's configuration: its export, its import, its restore (docs/CONFIG.md). */
+  configuration: Configuration;
+  /** The configuration kept beside the database, as a file; none in a test that does not ask for one. */
   snapshot?: ConfigSnapshot;
 };
 
