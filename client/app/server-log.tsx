@@ -2,11 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { Text, XStack, YStack } from 'tamagui';
 
 import { Card, Row, RowSeparator, SectionLabel, SegmentedControl } from '@kraftverk/ui';
-import { describeError, fetchServerLog } from '@kraftverk/api-client';
+import { describeError } from '@kraftverk/api-client';
 import type { ServerLogLine } from '@kraftverk/api-client';
 
 import { Screen } from '../src/components/Screen';
 import { useAuth } from '../src/state/AuthProvider';
+import { useServers } from '../src/state/ServersProvider';
 
 /**
  * What the server has said lately.
@@ -27,6 +28,7 @@ type Level = (typeof LEVELS)[number]['value'];
 
 export default function ServerLogScreen() {
   const { allowed } = useAuth();
+  const { server } = useServers();
   const [level, setLevel] = useState<Level>('info');
   const [lines, setLines] = useState<ServerLogLine[] | null>(null);
   const [dir, setDir] = useState<string | null>(null);
@@ -35,7 +37,10 @@ export default function ServerLogScreen() {
   const load = useCallback(
     async (signal?: AbortSignal) => {
       try {
-        const log = await fetchServerLog({ limit: 300, level }, signal);
+        if (!server) return;
+        const log = await server.log({ limit: 300, level });
+        // Asked again, or gone: what came back is not this screen's any more.
+        if (signal?.aborted) return;
         setLines(log.lines.slice().reverse());
         setDir(log.dir);
         setError(null);
@@ -44,7 +49,7 @@ export default function ServerLogScreen() {
         if (message) setError(message);
       }
     },
-    [level]
+    [level, server]
   );
 
   useEffect(() => {

@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
-import { applyPlan, describeError, planImport, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-client';
+import { applyPlan, describeError, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-client';
 import { checkDocument, configJsonSchema, CURRENT_VERSION, readConfig, type Vocabulary } from '@kraftverk/home-file';
 import { Card, RowSeparator, SectionLabel, SegmentedControl, Toggle, haptic, Icon } from '@kraftverk/ui';
 
 import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../lib/confirm';
 import { useHome } from '../../state/HomeProvider';
+import { useServers } from '../../state/ServersProvider';
 import { useTone, type Tone } from '../automations/looks';
 import { Picker } from '../automations/editor/fields';
 import { ProblemList } from './shared';
@@ -33,6 +34,8 @@ const ACTION: Record<ImportItem['action'], { label: string; tone: Tone }> = {
  */
 export function ImportCard({ vocabulary, restored, onApplied }: { vocabulary: Vocabulary | null; restored: boolean; onApplied: () => void }) {
   const { api } = useHome();
+  // The copy a restore was made from is a server's: only offered with one.
+  const { server } = useServers();
   const tone = useTone();
   const [text, setText] = useState('');
   const [mode, setMode] = useState<Mode>('merge');
@@ -60,7 +63,11 @@ export function ImportCard({ vocabulary, restored, onApplied }: { vocabulary: Vo
     setApplied(null);
     try {
       // The copy a server's last restore was made from is the server's own to plan again; anything typed, any home's.
-      const next = 'restored' in source ? await planImport({ restored: true, mode }) : await api.configuration.plan({ text: source.text, mode, ...(passphrase ? { passphrase } : {}) });
+      const restored = () => {
+        if (!server) throw new Error('Only a server keeps a copy beside its database');
+        return server.restoredPlan(mode);
+      };
+      const next = 'text' in source ? await api.configuration.plan({ text: source.text, mode, ...(passphrase ? { passphrase } : {}) }) : await restored();
       setPlan({ ...next, fromRestored: 'restored' in source });
     } catch (err) {
       setProblem(describeError(err) || 'It could not be read');
@@ -157,6 +164,8 @@ export function ImportCard({ vocabulary, restored, onApplied }: { vocabulary: Vo
  */
 function PlanView({ plan, onAgain, onApplied }: { plan: ImportPlan; onAgain: () => void; onApplied: (applied: ImportApplied) => void }) {
   const { api } = useHome();
+  // The copy a restore was made from is a server's: only offered with one.
+  const { server } = useServers();
   const tone = useTone();
   const doing = (items: ImportItem[]) => items.filter((item) => item.action !== 'same');
   const [devices, setDevices] = useState<ReadonlySet<string>>(new Set(doing(plan.devices).map((item) => item.key)));

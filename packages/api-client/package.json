@@ -2,7 +2,7 @@
   "name": "@kraftverk/api-client",
   "version": "0.1.0",
   "private": true,
-  "description": "The client side of the kraftverk API: every endpoint, typed, plus the shapes the server sends. Shared by the app shell and by device packages, so a device screen can read registers without importing from the app that renders it.",
+  "description": "The kraftverk API from the app's side: a home over HTTP and a server's own calls, on fetch, handed the server's address. Shared by the app and by device packages' screens.",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -18,22 +18,6 @@
     "@kraftverk/home-file": "*",
     "@kraftverk/device-sdk": "*",
     "@kraftverk/gateway": "*"
-  },
-  "peerDependencies": {
-    "axios": "*",
-    "expo-constants": "*",
-    "react-native": "*"
-  },
-  "peerDependenciesMeta": {
-    "axios": {
-      "optional": true
-    },
-    "expo-constants": {
-      "optional": true
-    },
-    "react-native": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

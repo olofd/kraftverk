@@ -5,7 +5,6 @@ import { useSegments } from 'expo-router';
 import { ApiError } from '@kraftverk/api-contract';
 import {
   describeError,
-  fetchVersion,
   type CommandInput,
   type ConnectionView,
   type DeviceActions,
@@ -164,9 +163,9 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
 
   // With a server: what it is, and whether it refuses every write.
   useEffect(() => {
-    if (kind !== 'server' || !allowed) return;
-    void fetchVersion().then(setVersion).catch(() => undefined);
-  }, [allowed, kind]);
+    if (!servers.server || !allowed) return;
+    void servers.server.version().then(setVersion).catch(() => undefined);
+  }, [allowed, servers.server]);
 
   const load = useCallback(async () => {
     if (!reading) {

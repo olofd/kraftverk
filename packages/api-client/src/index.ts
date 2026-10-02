@@ -1,17 +1,15 @@
 /**
- * Talking to the kraftverk server.
+ * The kraftverk API, from the app's side: a home over HTTP (`httpApi`), a
+ * server's own (`serverApi`), the live stream, the generic screens' slots,
+ * and what a screen does with a refusal that only wants a yes.
  *
- * This moved out of the app for the same reason the interface primitives did: a
- * device package draws its own screens, and one of those screens reads register
- * dumps. It cannot import the app's HTTP client to do that, so the client is a
- * package and the app is simply its first consumer.
- *
- * Where the server *is* remains the app's problem — Expo resolves that from the
- * dev host, which is not knowledge an API client should carry.
+ * Moved out of the app for the same reason the interface primitives did: a
+ * device package draws its own screens, and must ask the home without
+ * importing the app that renders them. Where the server *is* stays the
+ * app's: this is handed its address, and never finds one.
  */
 
 export * from './types';
-export * from './api';
 export * from './live';
 
 export * from './screens';

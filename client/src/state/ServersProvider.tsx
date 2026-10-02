@@ -1,6 +1,9 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-import { DEFAULT_API_BASE_URL, probeServer, setApiBaseUrl } from '@kraftverk/api-client';
+import type { ServerApi } from '@kraftverk/api-contract';
+import { serverApi } from '@kraftverk/api-client/http';
+
+import { SERVER_BESIDE_THIS_APP } from '../platform/server-address';
 
 import {
   addServer as storeAddServer,
@@ -12,7 +15,7 @@ import {
   updateServer as storeUpdateServer,
   writeActiveServerId,
   type SavedServer,
-} from '../lib/servers';
+} from '../platform/servers';
 
 /**
  * Which kraftverk server this app uses — or none, which is local mode
@@ -39,17 +42,13 @@ export type Servers = {
   /** `null` means local mode. */
   use: (id: string | null) => void;
   test: (url: string) => Promise<boolean>;
+  /** The active server's own calls — signing in, accounts, its log — or null in local mode. */
+  server: ServerApi | null;
+  /** Hears when the active server asks to sign in: a session that ended while the app was open. Returns how to stop. */
+  onLoginRequired: (listener: () => void) => () => void;
 };
 
 const ServersContext = createContext<Servers | null>(null);
-
-/*
-  Point the HTTP client at the selected server on import, before any screen has
-  had a chance to call it. Doing this in a render or an effect would let the
-  first request go to the build-time default instead.
-*/
-const selectedAtStartup = readActiveServer();
-if (selectedAtStartup) setApiBaseUrl(selectedAtStartup.url);
 
 export function ServersProvider({ children }: { children: ReactNode }) {
   const [all, setAll] = useState<SavedServer[]>(readServers);
@@ -61,8 +60,18 @@ export function ServersProvider({ children }: { children: ReactNode }) {
     const chosen = id ? (readServers().find((server) => server.id === id) ?? null) : null;
     writeActiveServerId(chosen?.id ?? null);
     setActive(chosen);
-    if (chosen) setApiBaseUrl(chosen.url);
   }, []);
+
+  // Who hears that the server wants a sign-in: whoever holds the session (AuthProvider).
+  const loginListeners = useRef(new Set<() => void>());
+  const onLoginRequired = useCallback((listener: () => void) => {
+    loginListeners.current.add(listener);
+    return () => void loginListeners.current.delete(listener);
+  }, []);
+  const server = useMemo(
+    () => (active ? serverApi({ baseUrl: active.url, onLoginRequired: () => loginListeners.current.forEach((listener) => listener()) }) : null),
+    [active]
+  );
 
   /*
     The first run looks for a server beside the app — the web container serves
@@ -73,10 +82,10 @@ export function ServersProvider({ children }: { children: ReactNode }) {
     if (!deciding) return;
     let live = true;
     void (async () => {
-      const found = await probeServer(DEFAULT_API_BASE_URL);
+      const found = await serverApi({ baseUrl: SERVER_BESIDE_THIS_APP }).probe();
       if (!live) return;
       if (found) {
-        const saved = storeAddServer({ url: DEFAULT_API_BASE_URL });
+        const saved = storeAddServer({ url: SERVER_BESIDE_THIS_APP });
         setAll(readServers());
         use(saved.id);
       } else {
@@ -104,10 +113,7 @@ export function ServersProvider({ children }: { children: ReactNode }) {
       update: (id, changes) => {
         const next = storeUpdateServer(id, changes);
         setAll(readServers());
-        if (next && next.id === active?.id) {
-          setActive(next);
-          setApiBaseUrl(next.url);
-        }
+        if (next && next.id === active?.id) setActive(next);
       },
       remove: (id) => {
         const wasActive = active?.id === id;
@@ -116,12 +122,21 @@ export function ServersProvider({ children }: { children: ReactNode }) {
         if (wasActive) use(null);
       },
       use,
-      test: (url) => probeServer(url),
+      test: (url) => serverApi({ baseUrl: url }).probe(),
+      server,
+      onLoginRequired,
     }),
-    [active, all, deciding, use]
+    [active, all, deciding, onLoginRequired, server, use]
   );
 
   return <ServersContext.Provider value={value}>{children}</ServersContext.Provider>;
+}
+
+/** The active server's own calls, for a screen that only shows with one: accounts, its log, its reset. */
+export function useServer(): ServerApi {
+  const { server } = useServers();
+  if (!server) throw new Error('useServer is for a screen shown only with a server');
+  return server;
 }
 
 export function useServers(): Servers {

@@ -4,6 +4,8 @@ import {
   type ApiErrorKind,
   type AutomationRun,
   type AutomationView,
+  type Account,
+  type AccountDetail,
   type ClientRecord,
   type DeviceEventView,
   type DeviceView,
@@ -11,6 +13,7 @@ import {
   type KraftverkApi,
   type LiveUpdate,
   type ProblemView,
+  type ServerApi,
   type SightingView,
   type ViewReport,
 } from '@kraftverk/api-contract';
@@ -48,10 +51,12 @@ const KIND_OF = new Map<number, ApiErrorKind>(
 
 type Body = { error?: string; problems?: string[]; needsConfirmation?: string; issues?: { path: string; message: string }[]; loginRequired?: boolean; setupRequired?: boolean };
 
-export function httpApi(options: HttpApiOptions): KraftverkApi {
+type How = { query?: Record<string, unknown>; verdict?: boolean; text?: boolean; signal?: AbortSignal; within?: number };
+
+/** One request to a server's API: JSON in and out, the session cookie, the app's header, a refusal as the hub's `ApiError`. */
+function requests(options: HttpApiOptions) {
   const base = options.baseUrl.replace(/\/$/, '');
   const send = options.fetch ?? ((url: string, init: RequestInit) => fetch(url, init));
-  const enc = encodeURIComponent;
 
   /** A refusal, as the hub said it. */
   const refusal = (status: number, body: Body | null): ApiError => {
@@ -63,18 +68,25 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
 
   /**
    * One request: its JSON body in and out. `verdict`: a 409 that carries a
-   * gateway's `outcome` is an answer, not a refusal.
+   * gateway's `outcome` is an answer, not a refusal. `within`: how long to
+   * wait before the server is taken to be out of reach — a probe's short
+   * wait; nothing else is cut short, a setup helper's call to a vendor
+   * among them.
    */
-  const call = async <T>(method: string, path: string, body?: unknown, how: { query?: Record<string, unknown>; verdict?: boolean; text?: boolean; signal?: AbortSignal } = {}): Promise<T> => {
+  const call = async <T>(method: string, path: string, body?: unknown, how: How = {}): Promise<T> => {
     const query = how.query ? Object.entries(how.query).filter(([, value]) => value !== undefined && value !== null) : [];
     const url = `${base}${path}${query.length ? `?${new URLSearchParams(query.map(([key, value]): [string, string] => [key, String(value)]))}` : ''}`;
+    // Its own timer rather than `AbortSignal.timeout`, which a phone may not have.
+    const timer = how.within ? new AbortController() : null;
+    const timeout = timer ? setTimeout(() => timer.abort(), how.within) : null;
+    const signal = timer?.signal ?? how.signal;
     let response: Response;
     try {
       response = await send(url, {
         method,
         headers: { Accept: 'application/json', 'X-Kraftverk-Client': 'app', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...options.headers },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        ...(how.signal ? { signal: how.signal } : {}),
+        ...(signal ? { signal } : {}),
         // The session is a cookie; it only travels if asked to.
         credentials: 'include',
       } as RequestInit);
@@ -82,6 +94,8 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
       if (how.signal?.aborted) throw error;
       // Nothing answered: not a refusal, but the home out of reach — said as one, in words.
       throw new ApiError('unavailable', `Can't reach ${base}`);
+    } finally {
+      if (timeout) clearTimeout(timeout);
     }
     const text = await response.text();
     const parsed = text ? (() => { try { return JSON.parse(text) as unknown; } catch { return null; } })() : null;
@@ -90,6 +104,12 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
     throw refusal(response.status, parsed as Body | null);
   };
   const get = <T>(path: string, query?: Record<string, unknown>) => call<T>('GET', path, undefined, { query });
+  return { base, call, get };
+}
+
+export function httpApi(options: HttpApiOptions): KraftverkApi {
+  const { base, call, get } = requests(options);
+  const enc = encodeURIComponent;
 
   return {
     deviceTypes: () => get('/device-types'),
@@ -209,4 +229,64 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
       };
     },
   };
+}
+
+/** How long an address is tried before nothing is taken to answer there. */
+const PROBE_MS = 3000;
+
+/**
+ * What is a server's own, not a home's (`ServerApi`): signing in, accounts,
+ * its version, its log, its reset, the copy kept beside its database — over
+ * the same requests as `httpApi`, handed the same address.
+ */
+export function serverApi(options: HttpApiOptions): ServerApi {
+  const { call, get } = requests(options);
+  const enc = encodeURIComponent;
+
+  return {
+    /**
+     * Whether a kraftverk server answers at this address: its sign-in state
+     * is the one thing it tells anyone (`/health` answers only its own
+     * machine).
+     */
+    async probe() {
+      try {
+        const state = await call<{ setupRequired?: unknown }>('GET', '/auth/state', undefined, { within: PROBE_MS });
+        return typeof state?.setupRequired === 'boolean';
+      } catch {
+        return false;
+      }
+    },
+    auth: {
+      state: () => get('/auth/state'),
+      setup: async (username, password) => (await call<{ user: Account }>('POST', '/auth/setup', { username, password })).user,
+      logIn: async (username, password) => (await call<{ user: Account }>('POST', '/auth/login', { username, password })).user,
+      logOut: async () => void (await call('POST', '/auth/logout', {})),
+      changePassword: async (current, next) => void (await call('POST', '/auth/password', { current, next })),
+    },
+    accounts: {
+      list: async () => (await get<{ users: AccountDetail[] }>('/users')).users,
+      add: async (username, password, yourPassword) => (await call<{ user: AccountDetail }>('POST', '/users', { username, password, yourPassword })).user,
+      remove: async (id, yourPassword) => void (await call('DELETE', `/users/${enc(id)}`, { yourPassword })),
+      setPassword: async (id, password, yourPassword) => void (await call('POST', `/users/${enc(id)}/password`, { password, yourPassword })),
+    },
+    version: () => get('/version'),
+    log: (query = {}) => get('/diagnostics/log', query),
+    reset: {
+      available: () => get('/admin/reset'),
+      run: (secret) => call('POST', '/admin/reset', { secret }),
+    },
+    snapshot: () => get('/config/snapshot'),
+    restoredPlan: (mode) => call('POST', '/config/plan', { restored: true, mode }),
+  };
+}
+
+/**
+ * A failure, as a person reads it: a refusal in the home's words, a server
+ * out of reach as "Can't reach …", nothing for a request that was called
+ * off.
+ */
+export function describeError(error: unknown): string {
+  if (error instanceof Error && error.name === 'AbortError') return '';
+  return error instanceof Error ? error.message : 'Unknown error';
 }

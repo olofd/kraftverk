@@ -3,17 +3,17 @@ import { router } from 'expo-router';
 import { Button, Input, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { Card, Row, RowSeparator, SectionLabel, ToggleRow, haptic, Icon } from '@kraftverk/ui';
-import { describeError, fetchResetAvailability, getApiBaseUrl, resetDatabase } from '@kraftverk/api-client';
+import { describeError } from '@kraftverk/api-client';
 import { POLICY_VALUES, type PolicyValueName, type PolicyValues } from '@kraftverk/device-sdk';
 
 import { confirmAction } from '../src/lib/confirm';
-import { completeUrl } from '../src/lib/servers';
+import { completeUrl } from '../src/platform/servers';
 import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
 import { useAuth } from '../src/state/AuthProvider';
 import { useDevices } from '../src/state/DevicesProvider';
 import { useHome } from '../src/state/HomeProvider';
-import { useServers } from '../src/state/ServersProvider';
+import { useServer, useServers } from '../src/state/ServersProvider';
 
 /**
  * The app's own settings, as distinct from a device's: which server, who may
@@ -24,6 +24,7 @@ import { useServers } from '../src/state/ServersProvider';
 export default function AppSettingsScreen() {
   const { mode, version, removed } = useDevices();
   const { writesAllowed, allowWrites, holding, appId, kind } = useHome();
+  const { active } = useServers();
   const auth = useAuth();
   const theme = useTheme();
   const chevron = <Icon name="chevron-right" size={16} color={theme.muted?.val} />;
@@ -117,7 +118,7 @@ export default function AppSettingsScreen() {
               <RowSeparator />
               <Row
                 title="Server version"
-                subtitle={getApiBaseUrl()}
+                subtitle={active?.url}
                 accessory={
                   <Text fontSize={13} color="$muted">
                     {version ? `v${version.version}` : '—'}
@@ -415,6 +416,7 @@ function Servers() {
  */
 function ResetEverything() {
   const { refresh } = useDevices();
+  const server = useServer();
 
   const [availability, setAvailability] = useState<{ available: boolean; secretFile: string } | null>(
     null
@@ -425,18 +427,21 @@ function ResetEverything() {
   const [done, setDone] = useState<string | null>(null);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void fetchResetAvailability(controller.signal)
-      .then(setAvailability)
-      .catch(() => setAvailability(null));
-    return () => controller.abort();
-  }, []);
+    let live = true;
+    void server.reset
+      .available()
+      .then((answer) => live && setAvailability(answer))
+      .catch(() => live && setAvailability(null));
+    return () => {
+      live = false;
+    };
+  }, [server]);
 
   const wipe = async () => {
     setBusy(true);
     setError(null);
     try {
-      const result = await resetDatabase(secret.trim());
+      const result = await server.reset.run(secret.trim());
       setSecret('');
       setDone(`Removed ${result.rows} rows across ${result.tables.length} tables.`);
       await refresh();

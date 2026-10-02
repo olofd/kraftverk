@@ -2,7 +2,6 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { Button, Spinner, Text, YStack } from 'tamagui';
 
 import type { KraftverkApi } from '@kraftverk/api-contract';
-import { getApiBaseUrl } from '@kraftverk/api-client';
 import { httpApi } from '@kraftverk/api-client/http';
 import { Card, Row, haptic } from '@kraftverk/ui';
 
@@ -95,7 +94,7 @@ export function HomeProvider({ children }: { children: ReactNode }) {
 /** A server's home, over HTTP — with what this app holds for it wrapped in, once that is open here. */
 function ServerHome({ serverKey, url, children }: { serverKey: string; url: string; children: ReactNode }) {
   const { refresh } = useAuth();
-  const server = useMemo(() => ({ key: serverKey, api: httpApi({ baseUrl: getApiBaseUrl(), onLoginRequired: () => void refresh() }) }), [refresh, serverKey, url]);
+  const server = useMemo(() => ({ key: serverKey, api: httpApi({ baseUrl: url, onLoginRequired: () => void refresh() }) }), [refresh, serverKey, url]);
   const { state, open } = useOpened(server);
   const [writesAllowed, setWritesAllowed] = useState(false);
   const home = state.status === 'open' ? state.home : null;

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { ApiError, type KraftverkApi, type LiveUpdate } from '@kraftverk/api-contract';
-import { httpApi } from '@kraftverk/api-client/http';
+import { httpApi, serverApi } from '@kraftverk/api-client/http';
 import { savedDeviceId } from '@kraftverk/device-sdk';
 import { createHub, DeviceTypeRegistry, ProtocolRegistry, TransportHost, type Hub } from '@kraftverk/hub';
 import { apiOver, serveApi } from '@kraftverk/message-port';
@@ -196,4 +196,22 @@ test('in the process, the live stream says hello first, then what moved', async 
   stream.close();
   expect(heard[0]!.type).toBe('hello');
   expect(heard.some((update) => update.type === 'changed')).toBe(true);
+});
+
+test("what is a server's own, over HTTP: whether it answers, who is signed in, its version, its accounts", async () => {
+  const over = (headers: Record<string, string>) => async (url: string, init: RequestInit) =>
+    app.fetch(new Request(url, { ...init, headers: { host: HOST, ...headers, ...(init.headers as Record<string, string>) } }), { requestIP: () => ({ address: '192.168.1.58' }) });
+  const server = serverApi({ baseUrl: `http://${HOST}/api`, fetch: over({ cookie: `${SESSION_COOKIE}=${cookie}` }) });
+  expect(await server.probe()).toBe(true);
+  expect((await server.auth.state()).user?.username).toBe('olof');
+  expect((await server.version()).readOnly).toBe(false);
+  expect((await server.accounts.list()).map((each) => each.username)).toEqual(['olof']);
+  // Nothing that answers as kraftverk does is not a kraftverk server.
+  const elsewhere = serverApi({ baseUrl: 'http://192.0.2.99/api', fetch: async () => new Response('<html></html>', { status: 200 }) });
+  expect(await elsewhere.probe()).toBe(false);
+  // Signed out: asked to sign in, and told so.
+  let asked = false;
+  const signedOut = serverApi({ baseUrl: `http://${HOST}/api`, fetch: over({}), onLoginRequired: () => (asked = true) });
+  expect((await refused(signedOut.accounts.list())).kind).toBe('forbidden');
+  expect(asked).toBe(true);
 });

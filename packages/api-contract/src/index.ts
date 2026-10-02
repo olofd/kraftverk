@@ -1136,3 +1136,43 @@ export interface KraftverkApi {
    */
   live(listener: (update: LiveUpdate) => void, options?: { draining?: () => boolean; onState?: (state: LiveState) => void }): LiveStream;
 }
+
+/**
+ * What is a server's own, not a home's (docs/PLAN-SHARED-CORE.md, principle
+ * 4): whether one answers at an address, signing in, accounts, its version,
+ * its log, its reset, and the copy of its configuration kept beside its
+ * database. Over HTTP only: a home in an app has none of it.
+ */
+export interface ServerApi {
+  /** Whether a kraftverk server answers here at all: what an address typed in is tried with. */
+  probe(): Promise<boolean>;
+  auth: {
+    /** Who is signed in, whether this network is trusted, and whether the first account is still to be made. */
+    state(): Promise<AuthState>;
+    /** The first account, from the home network only. */
+    setup(username: string, password: string): Promise<Account>;
+    logIn(username: string, password: string): Promise<Account>;
+    logOut(): Promise<void>;
+    /** Your own password: the current one too, and every other session ends. */
+    changePassword(current: string, next: string): Promise<void>;
+  };
+  /** Accounts: changing them takes your own password as well as your session. */
+  accounts: {
+    list(): Promise<AccountDetail[]>;
+    add(username: string, password: string, yourPassword: string): Promise<AccountDetail>;
+    remove(id: string, yourPassword: string): Promise<void>;
+    setPassword(id: string, password: string, yourPassword: string): Promise<void>;
+  };
+  version(): Promise<VersionInfo>;
+  /** What the server has said lately, and where its daily files are. */
+  log(options?: { limit?: number; level?: ServerLogLine['level'] }): Promise<{ dir: string | null; lines: ServerLogLine[] }>;
+  /** Emptying its database: whether it will — a passphrase in a file on it — and doing it. */
+  reset: {
+    available(): Promise<{ available: boolean; secretFile: string }>;
+    run(secret: string): Promise<{ ok: true; tables: string[]; rows: number }>;
+  };
+  /** The configuration kept beside its database: where, when last written, and what the last restore did. */
+  snapshot(): Promise<ConfigSnapshotView>;
+  /** What importing the copy the last restore was made from would do, nothing written. */
+  restoredPlan(mode: 'merge' | 'replace'): Promise<ImportPlan>;
+}

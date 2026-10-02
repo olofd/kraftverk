@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { Text, YStack } from 'tamagui';
 
-import { describeError, fetchConfigSnapshot, getApiBaseUrl, type AutomationView, type ConfigSnapshotView } from '@kraftverk/api-client';
+import { describeError, type AutomationView, type ConfigSnapshotView } from '@kraftverk/api-client';
 import { schemaLine, type Vocabulary } from '@kraftverk/home-file';
 import { Card, Row, SectionLabel } from '@kraftverk/ui';
 
@@ -11,6 +11,7 @@ import { ExportCard } from '../src/features/config/ExportCard';
 import { ImportCard } from '../src/features/config/ImportCard';
 import { useDevices } from '../src/state/DevicesProvider';
 import { useHome } from '../src/state/HomeProvider';
+import { useServers } from '../src/state/ServersProvider';
 
 /**
  * Your home as one configuration file (docs/CONFIG.md): an export of all of
@@ -24,6 +25,7 @@ export default function ConfigurationScreen() {
   const params = useLocalSearchParams<{ devices?: string; automations?: string; import?: string }>();
   const { devices, refresh } = useDevices();
   const { api, kind } = useHome();
+  const { server } = useServers();
   const [automations, setAutomations] = useState<AutomationView[] | null>(null);
   const [vocabulary, setVocabulary] = useState<Vocabulary | null>(null);
   const [snapshot, setSnapshot] = useState<ConfigSnapshotView | null>(null);
@@ -31,7 +33,7 @@ export default function ConfigurationScreen() {
 
   const load = useCallback(() => {
     // The copy kept beside a database is a server's: a home the app keeps itself has none.
-    Promise.all([api.automations.list(), api.configuration.vocabulary(), kind === 'server' ? fetchConfigSnapshot() : Promise.resolve(null)])
+    Promise.all([api.automations.list(), api.configuration.vocabulary(), server ? server.snapshot() : Promise.resolve(null)])
       .then(([all, words, kept]) => (setAutomations(all), setVocabulary(words), setSnapshot(kept), setError(null)))
       .catch((err: unknown) => setError(describeError(err) || 'It could not be read'));
   }, [api, kind]);
@@ -102,7 +104,8 @@ function Kept({ snapshot }: { snapshot: ConfigSnapshotView | null }) {
 
 /** How to write one in an editor of your own: the line that makes it check the file as it is typed. */
 function InAnEditor() {
-  const line = schemaLine(`${getApiBaseUrl()}/config/schema.json`);
+  const { active } = useServers();
+  const line = schemaLine(`${active?.url ?? ''}/config/schema.json`);
   return (
     <YStack gap="$2">
       <SectionLabel>In an editor of your own</SectionLabel>

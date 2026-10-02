@@ -607,20 +607,35 @@ it. Never two writers, so nothing is ever merged.
 
 The steps, each green and pushed:
 
-6f. **What the app holds for a server.** `createHolding` in the hub: the
-    app's own sessions and gateway for the connections it holds for a
-    server, wrapping the server's `KraftverkApi` — its readings and health
-    in the views and the live stream, a command, a setting or a tool to a
-    device it holds through its own gateway, a held connection's secrets
-    kept by it, setting up a way it holds through `setup`. What it keeps —
-    who it is to the server, the secrets, a device's store, the gateway's
-    memory, what is queued to send — in the app's own database, sealed as
-    its home's secrets are. The app's runtime, uplink, vault and registry,
-    `AppFlow` and the holding's branches in the screens go; api-client's
-    older calls go, the server's own (signing in, accounts, its log, its
-    reset, its version) as a small `serverApi` on `fetch`; finding the
-    server's address moves to the app's platform; a phone's preferences
-    are kept.
+6f. **What the app holds for a server** — done, 2026-10-02, in four
+    parts. What can be added is what is installed where: a type lists its
+    `ways` — method, holder (`home`, or `this-app` holding it for a
+    server), whether it can be used now — and `runsOn`, from what is
+    declared (`placesOf`, `runsOn` in the SDK); a home offers only the ways
+    it can hold where it runs, and with no server a type that needs one
+    says so, only its simulator offered. `createHolding` in the hub: the
+    app's own sessions and gateway for the ways it holds, held while
+    nothing above them reaches the device (`toHold`), wrapping the
+    server's `KraftverkApi` — this app's ways for a type it has installed
+    too, set up through `setup` (read here, judged and kept by the server,
+    the secrets kept here), views and the live stream with its own
+    readings, a command, a setting, a query or a tool to a device it holds
+    through its own gateway, its own transports. What it keeps is in the
+    app's own database — the server's device and the way it holds by the
+    server's ids (`mirror`), the secrets, stores, the gateway's memory and
+    what is owed (`SendQueue`, a new table) — so a restart loses none of
+    it, and with the server away it still reaches what it holds. The app
+    opens it where it runs (`openHome`: a phone's in its process, a
+    browser's in the same worker as its own home, the page serving it the
+    server's interface), and no screen knows it exists. The app's runtime
+    (registry, sessions, uplink, vault) and `AppFlow` are gone;
+    api-client's older calls too — a server's own (`ServerApi` in the
+    contract: whether one answers, signing in, accounts, its version, its
+    log, its reset, its snapshot) are `serverApi` on `fetch`, and
+    api-client needs no axios, React Native or Expo; where a server would
+    be beside the app, and the servers it knows, are the app's platform's;
+    a phone keeps its preferences, in expo-sqlite's key-value store. 10
+    files of logic left in the app.
 6g. **The app's copy of the server's home**: kept as the server's
     changes, and shown, read only and saying so, while the server is away.
 6h. **The hand-over**: a server taking over the app's home, and the app's

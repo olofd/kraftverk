@@ -2,19 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import { Card, Row, RowSeparator, SectionLabel, haptic, Icon } from '@kraftverk/ui';
-import {
-  addAccount,
-  changeOwnPassword,
-  describeError,
-  fetchAccounts,
-  removeAccount,
-  resetAccountPassword,
-} from '@kraftverk/api-client';
-import type { AccountDetail } from '@kraftverk/api-client';
+import { describeError, type AccountDetail } from '@kraftverk/api-client';
 
 import { Screen } from '../src/components/Screen';
 import { Field, passwordProblem, suggestPassword, PASSWORD_MIN } from '../src/features/auth/fields';
 import { useAuth } from '../src/state/AuthProvider';
+import { useServer } from '../src/state/ServersProvider';
 
 /**
  * Who may use this server.
@@ -49,6 +42,7 @@ export default function AccountsScreen() {
 }
 
 function SignedIn() {
+  const server = useServer();
   const { state, logOut } = useAuth();
   const theme = useTheme();
   const [accounts, setAccounts] = useState<AccountDetail[]>([]);
@@ -56,7 +50,7 @@ function SignedIn() {
 
   const load = useCallback(async () => {
     try {
-      setAccounts(await fetchAccounts());
+      setAccounts(await server.accounts.list());
       setProblem(null);
     } catch (error) {
       setProblem(describeError(error));
@@ -128,6 +122,7 @@ function AccountRow({
   onlyOne: boolean;
   onChanged: () => Promise<void>;
 }) {
+  const server = useServer();
   const theme = useTheme();
   const { logOut } = useAuth();
   const [action, setAction] = useState<'idle' | 'confirm-remove' | 'reset'>('idle');
@@ -207,7 +202,7 @@ function AccountRow({
               onPress={() => {
                 haptic();
                 void run(async () => {
-                  await removeAccount(account.id, yours);
+                  await server.accounts.remove(account.id, yours);
                   // Signed out by the server already; this also clears what the app held.
                   if (isMe) await logOut();
                 });
@@ -243,7 +238,7 @@ function AccountRow({
               opacity={busy || !yours || passwordProblem(password) !== null ? 0.5 : 1}
               onPress={() => {
                 haptic();
-                void run(() => resetAccountPassword(account.id, password, yours));
+                void run(() => server.accounts.setPassword(account.id, password, yours));
               }}
             >
               Set password
@@ -261,6 +256,7 @@ function AccountRow({
 }
 
 function AddAccount({ onAdded }: { onAdded: () => Promise<void> }) {
+  const server = useServer();
   const theme = useTheme();
   const [open, setOpen] = useState(false);
   const [username, setUsername] = useState('');
@@ -335,7 +331,7 @@ function AddAccount({ onAdded }: { onAdded: () => Promise<void> }) {
             setBusy(true);
             setProblem(null);
             try {
-              await addAccount(username.trim(), password, yours);
+              await server.accounts.add(username.trim(), password, yours);
               close();
               await onAdded();
             } catch (error) {
@@ -361,6 +357,7 @@ function ConfirmWithYours({ value, onChange }: { value: string; onChange: (value
 }
 
 function ChangeOwnPassword() {
+  const server = useServer();
   const [open, setOpen] = useState(false);
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
@@ -404,7 +401,7 @@ function ChangeOwnPassword() {
             setBusy(true);
             setMessage(null);
             try {
-              await changeOwnPassword(current, next);
+              await server.auth.changePassword(current, next);
               setCurrent('');
               setNext('');
               setConfirm('');

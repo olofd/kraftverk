@@ -1,13 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import axios from 'axios';
 
-import {
-  fetchAuthState,
-  logIn as apiLogIn,
-  logOut as apiLogOut,
-  onLoginRequired,
-  setupAdministrator,
-} from '@kraftverk/api-client';
+import { ApiError } from '@kraftverk/api-contract';
 import type { AuthState } from '@kraftverk/api-client';
 
 import { useServers } from './ServersProvider';
@@ -53,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const servers = useServers();
   const applies = servers.mode === 'server' && Boolean(servers.active);
   const serverUrl = servers.active?.url ?? null;
+  const { server, onLoginRequired } = servers;
 
   const [state, setState] = useState<AuthState | null>(null);
   const [loading, setLoading] = useState(applies);
@@ -72,14 +66,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [signedInAs]);
 
   const refresh = useCallback(async (): Promise<AuthState | null> => {
-    if (!applies || !serverUrl) {
+    if (!applies || !serverUrl || !server) {
       setState(null);
       setLoading(false);
       return null;
     }
     asked.current = serverUrl;
     try {
-      const next = await fetchAuthState();
+      const next = await server.auth.state();
       if (asked.current !== serverUrl) return null;
       setState(next);
       setUnknown(false);
@@ -90,12 +84,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Neither is a login problem, and neither should lock the app.
       setState(null);
       setUnknown(true);
-      if (!axios.isAxiosError(error)) throw error;
+      if (!(error instanceof ApiError)) throw error;
       return null;
     } finally {
       if (asked.current === serverUrl) setLoading(false);
     }
-  }, [applies, serverUrl]);
+  }, [applies, server, serverUrl]);
 
   useEffect(() => {
     setLoading(applies);
@@ -106,7 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // A session that expires while the app is open shows up as a 401 somewhere;
   // asking again is what turns that into the login screen.
-  useEffect(() => onLoginRequired(() => void refresh()), [refresh]);
+  useEffect(() => onLoginRequired(() => void refresh()), [onLoginRequired, refresh]);
 
   /*
     Held here rather than thrown to the form alone: after a first-account
@@ -126,26 +120,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logIn = useCallback(
     async (username: string, password: string) => {
-      await apiLogIn(username, password);
+      await server?.auth.logIn(username, password);
       await signedIn();
     },
-    [signedIn]
+    [server, signedIn]
   );
 
   const setup = useCallback(
     async (username: string, password: string) => {
-      await setupAdministrator(username, password);
+      await server?.auth.setup(username, password);
       await signedIn();
     },
-    [signedIn]
+    [server, signedIn]
   );
 
   const logOut = useCallback(async () => {
-    await apiLogOut().catch(() => undefined);
+    await server?.auth.logOut().catch(() => undefined);
     lastSignedIn.current = null;
     setGeneration((n) => n + 1);
     await refresh();
-  }, [refresh]);
+  }, [refresh, server]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
