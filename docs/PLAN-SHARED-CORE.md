@@ -781,7 +781,16 @@ before 6i, the owner asking for it, from the data model up):
   are (`node`), and declare it to their database; the holding joins the
   master by it. The server: `GET /home`, `/nodes`, `/nodes/:id/audit`.
 
-Next in 6j: `serverOnly` as what a method needs of a node (`trusted`); the
+**6j, part 2 — what a way needs of a node** (done, 2026-10-02): `serverOnly`
+is gone. A connection method says what it `needs` of the node holding it,
+and why (`{ trusted: 'your NIU password stays at home' }`), against the
+traits every node declares (`NodeTraits`, now the SDK's). A way is judged
+against the node that would hold it — the master's own, or the joining
+node's for one it sets up itself — and a type's listing says, per way,
+whether that node can hold it at all (`fits`); where a type runs is read
+from its ways, and `runsOn` is gone.
+
+Next in 6j: the
 master chosen by the traits, and `Holding` named as a follower; places up
 through the API, `DeviceContext` and the weather; the configuration
 document's places (a new `kraftverk:` version, with its migration); the

@@ -334,9 +334,10 @@ describe('what can be added', () => {
     expect(p280.meta.category).toBe('power-station');
     // Its own ways, and simulated — which every type has, and a server can always hold.
     expect(p280.connections.map((method: { id: string }) => method.id)).toEqual(['wifi', 'bluetooth', 'simulated']);
-    expect(p280.ways).toContainEqual({ method: 'simulated', holder: 'master', availability: { ok: true } });
-    // Over Wi-Fi only a server reaches it; over Bluetooth a phone and a browser can too.
-    expect(p280.runsOn).toEqual(['native', 'web', 'system']);
+    expect(p280.ways).toContainEqual({ method: 'simulated', holder: 'master', fits: true, availability: { ok: true } });
+    // A way that needs a node trusted with a password: this server is one.
+    const scooter = body.types.find((type: { id: string }) => type.id === 'niu.scooter');
+    expect(scooter.ways).toContainEqual(expect.objectContaining({ method: 'cloud', holder: 'master', fits: true }));
     for (const id of ['tuya.plug', 'atorch.s1w', 'open-meteo.weather']) expect(body.types.map((type: { id: string }) => type.id)).toContain(id);
     // Declarations only: every function stays on the server.
     expect(JSON.stringify(body)).not.toContain('=>');
@@ -346,8 +347,7 @@ describe('what can be added', () => {
   test('a method whose transport this server cannot use says why', async () => {
     const { body } = await onBusAs('/device-types');
     const lamp = body.types.find((type: { id: string }) => type.id === 'test.lamp');
-    expect(lamp.ways).toContainEqual({ method: 'bus', holder: 'master', availability: { ok: true } });
-    expect(lamp.runsOn).toEqual(['system']);
+    expect(lamp.ways).toContainEqual({ method: 'bus', holder: 'master', fits: true, availability: { ok: true } });
   });
 });
 
@@ -754,7 +754,7 @@ describe('a connection a browser holds', () => {
       server: simulated,
     });
     expect(refused.status).toBe(400);
-    expect(refused.body.error).toContain('held only by your server');
+    expect(refused.body.error).toContain('It needs a node trusted with it, such as your server: your NIU password stays at home');
   });
 
   test('sends its readings: live ones are the device’s state, queued ones become history', async () => {

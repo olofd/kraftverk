@@ -138,7 +138,7 @@ for (const way of WAYS) {
     test('says what can be added', async () => {
       const listing = await way.api().deviceTypes();
       const lamp = listing.types.find((type) => type.id === 'test.lamp')!;
-      expect(lamp.ways).toContainEqual({ method: 'bus', holder: 'master', availability: { ok: true } });
+      expect(lamp.ways).toContainEqual({ method: 'bus', holder: 'master', fits: true, availability: { ok: true } });
     });
 
     test('keeps no other home beside it to bring in: a server’s is its own', async () => {

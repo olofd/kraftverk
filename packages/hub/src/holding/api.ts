@@ -78,7 +78,7 @@ export function holdingApi(h: Holding): KraftverkApi {
         types: list.types.map((listing) => {
           const type = h.installed.types.get(listing.id);
           const mine: WayView[] = type
-            ? type.connections.filter((method) => holdableHere(h.installed, method)).map((method) => ({ method: method.id, holder: 'this-node', availability: transports.available(method.transport) }))
+            ? type.connections.filter((method) => holdableHere(h.installed, h.self, method)).map((method) => ({ method: method.id, holder: 'this-node', fits: true, availability: transports.available(method.transport) }))
             : [];
           return { ...listing, ways: [...listing.ways, ...mine] };
         }),
@@ -146,7 +146,7 @@ export function holdingApi(h: Holding): KraftverkApi {
         if (holder !== 'this-node') return home.setup.start(input);
         const type = h.installed.types.get(input.typeId);
         const method = type && input.methodId ? methodOf(type, input.methodId) : null;
-        if (!type || !method || !holdableHere(h.installed, method)) throw new ApiError('conflict', 'This app cannot hold that way itself: it needs updating, or it is your server’s');
+        if (!type || !method || !holdableHere(h.installed, h.self, method)) throw new ApiError('conflict', 'This app cannot hold that way itself: it needs updating, or it is your server’s');
         const draft = await h.setup.start({ typeId: input.typeId, methodId: method.id, by: intent().by });
         drafts.set(draft.id, null);
         return ownDraft(draft);

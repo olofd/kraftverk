@@ -2,7 +2,7 @@ import { ApiError, type ConnectionView, type DeviceView, type KraftverkApi, type
 import { isSimulated, placesOf, type AuditRecord, type NodeId, type Platform, type DeviceSession, type DeviceStore, type PolicyValues, type Reading, type SavedDeviceId, type ScopedHttp } from '@kraftverk/device-sdk';
 import { ActionGateway, Confirmations } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, toHold, toolsOf, withInUse, type DeviceEventMessage } from '@kraftverk/holder';
-import { AppState, ConnectionStore, databaseLedger, DeviceCatalog, deviceStore, LastHeard, LinkStore, NodeStore, SendQueue, type DeviceRecord, type NodeDeclaration, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { AppState, ConnectionStore, databaseLedger, DeviceCatalog, deviceStore, LastHeard, LinkStore, NodeStore, SendQueue, type DeviceRecord, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import type { PassphraseSealing } from '../configuration/seal.ts';
 import { MovingToServer } from '../handover/move.ts';
@@ -185,19 +185,24 @@ export class Holding {
     });
 
     // A way this app holds is set up here, over its own radio: the server judges what it finds, and keeps the device.
-    this.setup = new SetupService({ db, record, types, protocols, transports, catalog, connections, links: new LinkStore(db), sessions, http: options.http, self: self.id });
+    this.setup = new SetupService({ db, record, types, protocols, transports, catalog, connections, links: new LinkStore(db), sessions, http: options.http, self: self.id, traits: (id) => this.nodes.get(id) });
     this.moving = options.own ? new MovingToServer(this, options.own.database, { secrets: options.secrets, sealing: options.own.sealing }) : null;
     this.api = holdingApi(this);
   }
 
+  /** This node, as it declared itself: its id, its name and what it is. */
+  get self(): NodeRecord {
+    return this.nodes.self()!;
+  }
+
   /** This node: the id it joins the home by, and holds its ways under. */
   get nodeId(): NodeId {
-    return this.nodes.self()!.id;
+    return this.self.id;
   }
 
   /** What this node is called, in "held by …". */
   get name(): string {
-    return this.nodes.self()!.name;
+    return this.self.name;
   }
 
   /** Where this node runs: what its transports' entries are for. */

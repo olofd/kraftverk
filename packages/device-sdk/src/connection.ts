@@ -29,19 +29,39 @@ import type { SetupAction, SetupStep } from './setup.ts';
 // --- where code runs -----------------------------------------------------------
 
 /**
- * A place a transport implementation can run.
+ * The runtime a transport implementation is written for: what a kraftverk
+ * node runs on.
  *
- * - `server` — the kraftverk server, under Bun.
- * - `web` — the app in a browser.
- * - `native` — the app on a phone.
+ * - `system` — a process on a machine, under Bun.
+ * - `web` — a browser's page.
+ * - `native` — a phone.
  *
  * A connection method never says where it runs: that follows from which of
- * these have an implementation of its transport, and whether that one is
- * available right now.
+ * these have an implementation of its transport, what it needs of the node
+ * that holds it (`needs`), and whether that one is available right now.
  */
 export type Platform = 'system' | 'web' | 'native';
 
 export const PLATFORMS: readonly Platform[] = ['system', 'web', 'native'];
+
+/**
+ * What a kraftverk node declares it is (docs/DATA-MODEL.md §3): what tells
+ * nodes apart, what a method may need of the node holding it, and how the
+ * home's master is chosen. Never which kind of machine it is.
+ */
+export type NodeTraits = {
+  /** It runs while nobody looks: it keeps history and runs automations at night. */
+  alwaysOn: boolean;
+  /** Others connect to it: it serves the home's interface. */
+  reachable: boolean;
+  /** What must stay put — a vendor account's password — may be kept on it. */
+  trusted: boolean;
+};
+
+export const NODE_TRAITS: readonly (keyof NodeTraits)[] = ['alwaysOn', 'reachable', 'trusted'];
+
+/** What a method needs of the node that holds it, each with why: `{ trusted: 'your account password stays at home' }`. */
+export type NodeNeeds = { readonly [trait in keyof NodeTraits]?: string };
 
 /** Whether something can be used here and now, and if not, a sentence saying why. */
 export type Availability = { ok: true } | { ok: false; reason: string };
@@ -425,12 +445,12 @@ export type ConnectionMethod = {
   /** Choices of this method's own, stored with the connection. Never secrets. */
   config?: ConfigSchema;
   /**
-   * Held only by a server, and why: "your account password stays on your server".
-   * An app is not offered it, and the server refuses to save one an app would
-   * hold — a vendor account's password does not belong in a browser, and some
-   * clouds do not answer a web page at all.
+   * What the node holding it must be, each with why: `{ trusted: 'your account
+   * password stays at home' }`. A node that is not is not offered it, and
+   * the master refuses to save one such a node would hold — a vendor
+   * account's password does not belong in a browser.
    */
-  serverOnly?: string;
+  needs?: NodeNeeds;
   /** Steps of the type's own for this method, after those its layers supply. */
   steps?: readonly SetupStep[];
 };
@@ -470,20 +490,21 @@ export const methodOf = (type: { readonly connections: readonly ConnectionMethod
 export const isSimulated = (connection: { readonly transport: string }): boolean => connection.transport === SIMULATED_TRANSPORT;
 
 /**
- * Where a method can be held at all, from what is declared: the places its
- * transport has an entry for, and a server alone for one kept to a server.
- * A simulated one reaches nothing, and is held anywhere.
+ * The runtimes a method can be held on at all: those its transport has an
+ * entry for. A simulated one reaches nothing, and is held anywhere.
  */
 export function placesOf(method: ConnectionMethod, transport: Pick<TransportDefinition, 'platforms'> | null): Platform[] {
-  if (isSimulated(method)) return ['system', 'web', 'native'];
-  const platforms = transport?.platforms ?? [];
-  return method.serverOnly ? platforms.filter((platform) => platform === 'system') : [...platforms];
+  if (isSimulated(method)) return [...PLATFORMS];
+  return [...(transport?.platforms ?? [])];
 }
 
-/** Where a type can run at all, a simulated way apart: every place one of its own ways can be held. */
-export function runsOn(type: { readonly connections: readonly ConnectionMethod[] }, transport: (id: string) => Pick<TransportDefinition, 'platforms'> | null): Platform[] {
-  const places = new Set(type.connections.flatMap((method) => placesOf(method, transport(method.transport))));
-  return (['native', 'web', 'system'] as const).filter((platform) => places.has(platform));
+/** The first thing a method needs of the node holding it that the node is not, and why; null when it is all of them. */
+export function unmetNeed(method: Pick<ConnectionMethod, 'needs'>, node: NodeTraits): { trait: keyof NodeTraits; why: string } | null {
+  for (const trait of NODE_TRAITS) {
+    const why = method.needs?.[trait];
+    if (why !== undefined && !node[trait]) return { trait, why };
+  }
+  return null;
 }
 
 /**

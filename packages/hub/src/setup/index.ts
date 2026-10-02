@@ -10,6 +10,7 @@ import {
   type ConfigValues,
   type Identified,
   type NodeId,
+  type NodeTraits,
   type ScopedHttp,
   type SetupActionResult,
   type SetupChoice,
@@ -17,6 +18,7 @@ import {
 import { judgeCheck, withTimeout } from '@kraftverk/holder';
 
 import type { ProtocolRegistry } from '../installed/protocols.ts';
+import { unfitFor } from '../installed/needs.ts';
 import { platformWords, type TransportHost } from '../installed/transports.ts';
 import { unref } from '../timers.ts';
 import { randomHex, type DeviceCatalog, type DeviceRecord, type ConnectionStore, type LinkStore, type SqlDatabase } from '@kraftverk/store';
@@ -62,10 +64,17 @@ export type SetupServiceDeps = {
   http: ScopedHttp;
   /** This node: what holds a way the home sets up for itself. */
   self: NodeId;
+  /** What a node of the home declares it is, by its id: what a way needs of the node holding it is judged against it. */
+  traits: (node: NodeId) => NodeTraits | null;
 };
 
 export class SetupService {
   #drafts = new Map<string, Draft>();
+
+  /** What a node declares it is; one the home does not know is taken as nothing. */
+  #traits(node: NodeId): NodeTraits {
+    return this.deps.traits(node) ?? { alwaysOn: false, reachable: false, trusted: false };
+  }
   #sweeper: ReturnType<typeof setInterval>;
 
   constructor(private deps: SetupServiceDeps) {
@@ -92,7 +101,8 @@ export class SetupService {
     // Simulated: nothing to reach, so no protocol and no transport — only the type's own steps, then its simulator.
     let reach = SIMULATED_REACH;
     let transport = null;
-    if (method.serverOnly && this.deps.transports.platform !== 'system') throw new SetupError(`${method.label} needs a server: ${method.serverOnly}`, 409);
+    const unfit = unfitFor(method, this.#traits(this.deps.self));
+    if (unfit) throw new SetupError(`${method.label}: ${unfit}`, 409);
     if (!isSimulated(method)) {
       const protocol = this.deps.protocols.get(method.protocol);
       if (!protocol?.bindings[method.transport]) throw new SetupError(`${platformWords(this.deps.transports.platform).this} cannot reach a ${type.meta.name} by ${method.label}: it needs updating`, 409);
@@ -135,7 +145,8 @@ export class SetupService {
     if (!type) throw new SetupError(`Nothing installed here knows what "${input.typeId}" is`, 404);
     const method = type.connections.find((candidate) => candidate.id === input.methodId);
     if (!method) throw new SetupError(`${type.meta.name} has no way called "${input.methodId}"`);
-    if (method.serverOnly) throw new SetupError(`${method.label} is held only by your server: ${method.serverOnly}`);
+    const unfit = unfitFor(method, this.#traits(nodeId(input.nodeId)));
+    if (unfit) throw new SetupError(`${method.label}: ${unfit}`);
     const protocol = this.deps.protocols.get(method.protocol) ?? null;
     const secret = new Set(
       Object.entries(connectionSchema(method, protocol).fields)

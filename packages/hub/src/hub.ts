@@ -240,7 +240,7 @@ export class Hub {
 
     this.remote = new RemoteReadings(db);
     this.registry = new DeviceRegistry({ catalog, types, sessions, connections, links, nodes, transports, remote: this.remote, self: self.id, master: () => this.home.get()!.masterId });
-    this.setup = new SetupService({ db, record, types, protocols, transports, catalog, connections, links, sessions, http: options.http, self: self.id });
+    this.setup = new SetupService({ db, record, types, protocols, transports, catalog, connections, links, sessions, http: options.http, self: self.id, traits: (id) => nodes.get(id) });
     this.nearby = new Nearby({ types, protocols, transports, connections });
     this.sampler = new Sampler(db, this.registry);
     this.changeLog = new ChangeLog(db, this.bus, (id) => {

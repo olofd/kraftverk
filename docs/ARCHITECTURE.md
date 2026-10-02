@@ -246,6 +246,7 @@ export type ConnectionMethod = {
   label: string;                     // 'Wi-Fi' — the holder is added on screen: 'through your server'
   protocol: string;                  // 'sydpower'
   transport: string;                 // 'mqtt' — where it may run follows from this, never declared
+  needs?: NodeNeeds;                 // what the node holding it must be, and why: { trusted: 'your password stays at home' }
   recommended?: boolean;
   address?: string;                  // a fixed one — a web API's origin — so nothing is chosen
   config?: ConfigSchema;             // the method's own choices; secrets come from the protocol
@@ -258,7 +259,7 @@ export type TransportDefinition = { // what a transport is, as data, the same on
   channel: 'bytes' | 'messages' | 'http';
   exclusive: boolean;                // an address is one physical thing
   nearby: boolean;                   // reached only within range of its holder, as Bluetooth: such a way stays with the phone near it
-  platforms: Platform[];             // where it has an implementation: 'server', 'web', 'native'
+  platforms: Platform[];             // the runtimes it has an implementation for: 'system', 'web', 'native'
   discovery: Partial<Record<Platform, 'list' | 'chooser' | 'none'>>;
 };
 

@@ -1,4 +1,4 @@
-import { nodeId, type NodeId, type Platform } from '@kraftverk/device-sdk';
+import { nodeId, type NodeId, type NodeTraits, type Platform } from '@kraftverk/device-sdk';
 
 import type { SqlDatabase } from './database.ts';
 
@@ -8,18 +8,8 @@ import type { SqlDatabase } from './database.ts';
  * holding the connections it can reach. The one this database belongs to
  * (`self`), and the others it shares the home with. A node is known by the
  * same id in every database that knows it: made by the node itself, once,
- * and handed in by the place it runs. What it is, it declares.
+ * and handed in by the place it runs. What it is, it declares (`NodeTraits`).
  */
-
-/** What a node declares it is: what tells nodes apart, and how the master is chosen. */
-export type NodeTraits = {
-  /** It runs while nobody looks: it keeps history and runs automations at night. */
-  alwaysOn: boolean;
-  /** Others connect to it: it serves the home's interface. */
-  reachable: boolean;
-  /** What must stay put — a vendor account's password — may be kept on it. */
-  trusted: boolean;
-};
 
 /** A node as it says who it is: to its own database, or to the home it joins. */
 export type NodeDeclaration = NodeTraits & {

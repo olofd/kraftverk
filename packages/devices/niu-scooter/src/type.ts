@@ -368,7 +368,7 @@ const COMMON = {
       transport: 'https',
       address: NIU_API,
       reach: 'cloud',
-      serverOnly: 'your NIU password stays on your server, and NIU’s cloud does not answer a web page.',
+      needs: { trusted: 'your NIU password stays at home, and NIU’s cloud does not answer a web page' },
     },
   ],
 

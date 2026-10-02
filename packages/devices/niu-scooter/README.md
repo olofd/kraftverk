@@ -45,8 +45,9 @@ newer mopeds with "NIU Link".
 - Credentials: the NIU app's account (email or phone) and password. The
   password is the connection's secret, encrypted on the server, and sent only
   to NIU — hashed, as the app does. Tokens live in memory only.
-- Held only by the server (`serverOnly`): the password stays there, and NIU's
-  cloud sends no CORS headers, so a web page could not reach it anyway.
+- Held only by a node trusted with it (`needs: { trusted }`) — your server:
+  the password stays there, and NIU's cloud sends no CORS headers, so a web
+  page could not reach it anyway.
 - Adding it: sign in, and pick the scooter from the account's list.
 
 ## What NIU's cloud says — as those before us found it

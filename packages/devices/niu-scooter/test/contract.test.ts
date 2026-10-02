@@ -72,11 +72,11 @@ describe('NIU scooter', () => {
     expect(scooter.connections.map((method) => [method.protocol, method.transport, method.reach])).toEqual([['niu-cloud', 'https', 'cloud']]);
   });
 
-  test('its charge is the scooter’s headline, and what "Charge between two levels" charges; only a server holds it', () => {
+  test('its charge is the scooter’s headline, and what "Charge between two levels" charges; only a trusted node holds it', () => {
     const description = scooter.describe({});
     const soc = description.attributes.find((attribute) => attribute.means === 'battery.soc');
     expect([soc?.part ?? 'main', soc?.category]).toEqual(['main', 'primary']);
-    expect(scooter.connections[0]!.serverOnly).toContain('password stays on your server');
+    expect(scooter.connections[0]!.needs?.trusted).toContain('password stays at home');
   });
 
   test('checked once: which scooter, its model and how it is, from the account', async () => {

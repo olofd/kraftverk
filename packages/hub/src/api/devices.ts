@@ -13,7 +13,6 @@ import {
   partName,
   partsOf,
   placesOf,
-  runsOn,
   savedDeviceId,
   type Availability,
   type ConnectionMethod,
@@ -28,6 +27,7 @@ import { PICTURE_REF } from '../devices/registry.ts';
 import { changesOf } from '../history/changes.ts';
 import { resolutionOf, series } from '../history/sampler.ts';
 import type { Hub } from '../hub.ts';
+import { unfitFor } from '../installed/needs.ts';
 import { platformWords } from '../installed/transports.ts';
 import { connectionSchema } from '../setup/index.ts';
 import { actorOf, intentOf } from './caller.ts';
@@ -102,8 +102,9 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
    */
   const holds = (method: ConnectionMethod): Availability => {
     if (isSimulated(method)) return { ok: true };
-    // What a package keeps on a server only — a vendor account's password — a home in an app does not hold.
-    if (method.serverOnly && transports.platform !== 'system') return { ok: false, reason: `It needs a server: ${method.serverOnly}` };
+    // What a way needs of the node holding it — trusted with a vendor account's password — this one may not be.
+    const unfit = unfitFor(method, hub.self);
+    if (unfit) return { ok: false, reason: unfit };
     const protocol = protocols.get(method.protocol);
     if (!protocol?.bindings[method.transport]) return { ok: false, reason: `${platformWords(transports.platform).this} cannot reach devices this way: it needs updating` };
     return transports.available(method.transport);
@@ -143,8 +144,7 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
         */
         ways: methodsOf(type)
           .filter((method) => placesOf(method, transports.definition(method.transport)).includes(transports.platform))
-          .map((method) => ({ method: method.id, holder: 'master' as const, availability: holds(method) })),
-        runsOn: runsOn(type, (id) => transports.definition(id)),
+          .map((method) => ({ method: method.id, holder: 'master' as const, fits: unfitFor(method, hub.self) === null, availability: holds(method) })),
         warnings: types.warnings(type.id),
       }));
       return {

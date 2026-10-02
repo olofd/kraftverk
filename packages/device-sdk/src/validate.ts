@@ -1,5 +1,5 @@
 import { CATEGORIES, isCategory } from './categories.ts';
-import { PLATFORMS, REACHES, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, type Protocol, type TransportDefinition } from './connection.ts';
+import { NODE_TRAITS, PLATFORMS, REACHES, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, type Protocol, type TransportDefinition } from './connection.ts';
 import { validateDescription } from './description.ts';
 import type { DeviceType } from './device-type.ts';
 import { configDefaults, isSecretField, schemaProblems, type ConfigSchema } from './schema.ts';
@@ -67,6 +67,10 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
     if (!method.protocol?.trim()) problem(`connection method "${method.id}" names no protocol`);
     if (!method.transport?.trim()) problem(`connection method "${method.id}" names no transport`);
     if (!REACHES.includes(method.reach)) problem(`connection method "${method.id}" must say what it reaches: ${REACHES.join(', ')}`);
+    for (const [trait, why] of Object.entries(method.needs ?? {})) {
+      if (!(NODE_TRAITS as readonly string[]).includes(trait)) problem(`connection method "${method.id}" needs "${trait}" of a node, which no node declares: ${NODE_TRAITS.join(', ')}`);
+      else if (typeof why !== 'string' || !why.trim()) problem(`connection method "${method.id}" needs "${trait}" of a node without saying why`);
+    }
     problems.push(...schemaProblems(`connection method "${method.id}" config`, method.config));
     for (const field of secretsIn(method.config)) {
       problem(`connection method "${method.id}": "${field}" is a secret; secrets are the protocol's credentials`);

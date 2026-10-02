@@ -11,7 +11,7 @@ import {
   type Holder,
   type SaveInput,
 } from '@kraftverk/api-client';
-import { LINK_KIND_IDS, linkableParts, linkKindSpec, MAIN_PART, partName, type DeviceDescription } from '@kraftverk/device-sdk';
+import { LINK_KIND_IDS, linkableParts, linkKindSpec, MAIN_PART, partName, SIMULATED_METHOD_ID, type DeviceDescription } from '@kraftverk/device-sdk';
 import { Card, Row, RowSeparator, SectionLabel, ToggleRow, haptic, Icon } from '@kraftverk/ui';
 
 import { DeviceImage } from '../src/components/DeviceImage';
@@ -397,11 +397,14 @@ const SUPPORT: Record<string, string> = {
 /**
  * Where a type can run, in words, against where this home is: through your
  * server, from this phone, or both — and, with no server, that a real one
- * needs a server and only its simulator runs here.
+ * needs a server and only its simulator runs here. From its ways: each a
+ * node can hold at all, simulated apart.
  */
-function whereItRuns(type: Pick<DeviceTypeListing, 'runsOn'>, home: 'server' | 'own'): string {
-  const here = type.runsOn.includes(HERE_PLATFORM);
-  const server = type.runsOn.includes('system');
+function whereItRuns(type: Pick<DeviceTypeListing, 'ways'>, home: 'server' | 'own'): string {
+  const real = type.ways.filter((way) => way.fits && way.method !== SIMULATED_METHOD_ID);
+  // Without a server, the master is this app's own node.
+  const here = real.some((way) => way.holder === (home === 'own' ? 'master' : 'this-node'));
+  const server = home === 'server' && real.some((way) => way.holder === 'master');
   if (home === 'own') return here ? `Works from ${HERE}` : 'Needs a server: here, only its simulator';
   if (here && server) return `Through your server, or from ${HERE}`;
   return server ? 'Through your server' : `From ${HERE} only`;

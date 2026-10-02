@@ -98,8 +98,8 @@ test('the ways this app can hold are offered beside the server’s, for a type i
   const { holding } = await app(home);
   const lamp = (await holding.api.deviceTypes()).types.find((type) => type.id === 'test.lamp')!;
   // The server cannot reach the bus at all, so it offers only the simulator; this app offers the bus itself.
-  expect(lamp.ways.filter((way) => way.holder === 'master')).toEqual([{ method: 'simulated', holder: 'master', availability: { ok: true } }]);
-  expect(lamp.ways).toContainEqual({ method: 'bus', holder: 'this-node', availability: { ok: true } });
+  expect(lamp.ways.filter((way) => way.holder === 'master')).toEqual([{ method: 'simulated', holder: 'master', fits: true, availability: { ok: true } }]);
+  expect(lamp.ways).toContainEqual({ method: 'bus', holder: 'this-node', fits: true, availability: { ok: true } });
   // A simulator reaches nothing for this app to hold: with a server, the server holds it.
   expect(lamp.ways.some((way) => way.holder === 'this-node' && way.method === 'simulated')).toBe(false);
   expect((await holding.api.transports.list()).transports).toContainEqual(expect.objectContaining({ id: 'bus', holder: 'this-node', running: true }));

@@ -34,7 +34,7 @@ answers — and listed on the device as `tools`.
 | `POST` | `/auth/password` | Your own password; needs the current one |
 | `GET` `POST` `DELETE` | `/users` · `/users/:id` · `/users/:id/password` | Accounts |
 | `GET` | `/version` | Name, version, runtime, uptime; simulator or not, transports, read-only |
-| `GET` | `/device-types` | What can be added: categories, installed types, each with its `ways` — a method this server can hold at all, who holds it (`holder: home`), and whether it can now, or why not — and `runsOn`, every place one of its ways can be held (a phone, a browser, a server) |
+| `GET` | `/device-types` | What can be added: categories, installed types, each with its `ways` — a method whose transport runs where the master does, which node holds it (`holder: master`), whether that node is what the way needs of it (`fits`), and whether it can now, or why not |
 | `POST` | `/setup` | Start adding a device over a method this server will hold (`{ typeId, methodId, holder? }`: `this-node` is refused — a node sets up what it holds itself); the steps follow |
 | `GET` `PATCH` `DELETE` | `/setup/:id` | The draft; values from a form step (secrets stay here); discard it |
 | `GET` | `/setup/:id/sightings` | What the transport sees that this type's protocol recognises, marked when already yours |

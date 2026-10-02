@@ -95,7 +95,7 @@ export class MovingToServer {
         if (!method || isSimulated(method)) return true;
         const nearby = installed.transports.definition(method.transport)?.nearby === true;
         // Near the device, or a way the server cannot hold: this app holds it for the server, if it can.
-        if (!(nearby || !theirs.has(method.id)) || !holdableHere(installed, method)) return true;
+        if (!(nearby || !theirs.has(method.id)) || !holdableHere(installed, this.#holding.self, method)) return true;
         const connection = had ? (own.connections.forDevice(had.id).find((each) => each.method === method.id && each.heldBy === own.self.id) ?? null) : null;
         staying.push({ key, name: entry.name, typeId: entry.type, method: method.id, label: method.label, address: connection?.address ?? way.address, settings: way.settings, device: entry.settings, connection: connection?.id ?? null });
         // Its secrets stay with this app: out of the file, and out of what the file names.

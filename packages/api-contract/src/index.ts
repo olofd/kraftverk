@@ -224,19 +224,21 @@ export type HomeElsewhere = 'this-node' | 'copy';
 /** What a home this app keeps beside the one it shows has: what bringing it in would bring. Null when there is none, or it has been brought. */
 export type ElsewhereView = { from: HomeElsewhere; devices: number; automations: number } | null;
 
-/** One way a type can be added: its method, who would hold it, and whether it can be used now — or why not. */
-export type WayView = { method: string; holder: Holder; availability: Availability };
+/**
+ * One way a type can be added: its method, which node would hold it, whether
+ * that node can hold it at all — what the way needs of the node holding it
+ * (`fits`) — and whether it can be used now, or why not.
+ */
+export type WayView = { method: string; holder: Holder; fits: boolean; availability: Availability };
 
-/** An installed type: every way it can be added here, and where it can run at all. */
+/**
+ * An installed type, and every way it can be added here: where it can run
+ * follows from them — a way the master holds, or one this node holds for it;
+ * a type with no real way that fits this node needs another.
+ */
 export type DeviceTypeListing = DeviceTypeView & {
-  /** Each way it can be added here, in its type's order: the home's, then this app's for a server. */
+  /** Each way it can be added here, in its type's order: the master's, then this node's for a server. */
   ways: WayView[];
-  /**
-   * Where it can run at all, a simulated way apart: every place one of its
-   * ways can be held — on a phone, in a browser, on a server. A type no
-   * way of which runs where the app is needs a server.
-   */
-  runsOn: Platform[];
   warnings: readonly string[];
 };
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isSimulated, methodOf, methodsOf, placesOf, runsOn, SIMULATED_METHOD, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, type Platform, type Protocol, type TransportDefinition } from './connection.ts';
+import { isSimulated, methodOf, methodsOf, placesOf, SIMULATED_METHOD, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, type Platform, type NodeNeeds, type Protocol, type TransportDefinition, unmetNeed } from './connection.ts';
 import { MAIN_PART, type DeviceDescription } from './description.ts';
 import type { DeviceContext, DeviceSession, DeviceType } from './device-type.ts';
 import { defineDeviceType, describeDeviceType } from './device-type.ts';
@@ -149,18 +149,23 @@ describe('validating a declaration', () => {
     expect(broken((type) => ({ ...type, id: 'plug' }))).toEqual(['id "plug" must be namespaced lowercase, like "brand.model"']);
   });
 
-  test('where a type can run follows from its ways’ transports, and a way kept to a server', () => {
-    const lan = { platforms: ['system'] as Platform[] };
+  test('where a way can be held follows from its transport’s runtimes, and what it needs of the node holding it', () => {
     const radio = { platforms: ['system', 'web', 'native'] as Platform[] };
     const own = plug().connections[0]!;
-    const transport = (id: string) => (id === 'radio' ? radio : id === 'lan' ? lan : null);
     expect(placesOf(SIMULATED_METHOD, null)).toEqual(['system', 'web', 'native']);
     expect(placesOf({ ...own, transport: 'radio' }, radio)).toEqual(['system', 'web', 'native']);
-    expect(placesOf({ ...own, transport: 'radio', serverOnly: 'its account stays on your server' }, radio)).toEqual(['system']);
-    expect(runsOn({ connections: [{ ...own, transport: 'lan' }] }, transport)).toEqual(['system']);
-    expect(runsOn({ connections: [{ ...own, transport: 'lan' }, { ...own, id: 'b', transport: 'radio' }] }, transport)).toEqual(['native', 'web', 'system']);
     // A transport nothing installed provides runs nowhere.
-    expect(runsOn({ connections: [{ ...own, transport: 'gone' }] }, transport)).toEqual([]);
+    expect(placesOf({ ...own, transport: 'gone' }, null)).toEqual([]);
+
+    const kept = { ...own, needs: { trusted: 'its account stays at home' } };
+    const phone = { alwaysOn: false, reachable: false, trusted: false };
+    expect(unmetNeed(kept, phone)).toEqual({ trait: 'trusted', why: 'its account stays at home' });
+    expect(unmetNeed(kept, { ...phone, trusted: true })).toBeNull();
+    expect(unmetNeed(own, phone)).toBeNull();
+    expect(broken((type) => ({ ...type, connections: [{ ...own, needs: { roomy: 'why' } as NodeNeeds }] }))).toEqual([
+      `connection method "${own.id}" needs "roomy" of a node, which no node declares: alwaysOn, reachable, trusted`,
+    ]);
+    expect(broken((type) => ({ ...type, connections: [{ ...own, needs: { trusted: ' ' } }] }))).toEqual([`connection method "${own.id}" needs "trusted" of a node without saying why`]);
   });
 
   test('simulated is every type’s own way, and no type declares it', () => {
