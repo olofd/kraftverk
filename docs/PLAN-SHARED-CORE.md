@@ -63,7 +63,8 @@ edges        server/         HTTP (hono) adapter, accounts, admin, logs, the bro
              (Bun only)      finding packages on disk, the snapshot file, bun:sqlite,
                              the secret key from the environment
              client/         screens, React bindings, and the platform's ports:
-             (the app)       expo-sqlite / sql.js, secure storage, preferences, radios
+             (the app)       expo-sqlite on a phone, SQLite's WebAssembly build in a
+                             browser's worker; secure storage, preferences, radios
              api-client      KraftverkApi over HTTP and the WebSocket; pure — handed
                              the server's address, so a CLI or a test can use it too
              ui              the React kit
@@ -163,7 +164,7 @@ Each declared by the package that needs it; one implementation per place.
 
 | Port | Declared by | Server | App |
 |---|---|---|---|
-| `SqlDatabase` (`exec`, `all`, `get`, `run`, `transaction`; synchronous) | `store` | bun:sqlite on a file | expo-sqlite on a phone; sql.js on the web |
+| `SqlDatabase` (`exec`, `all`, `get`, `run`, `transaction`; synchronous) | `store` | bun:sqlite on a file | expo-sqlite on a phone; SQLite's WebAssembly build, on OPFS, in a browser's worker |
 | where automations and runs are kept | `automation-engine` | `store` | `store` |
 | where devices, connections and secrets are kept | `holder` | `store` | `store` |
 | the gateway's memory (`GatewayLedger`) | `gateway` | `store` | `store` |
@@ -373,11 +374,6 @@ then has one interface in both modes, and never branches on which.
 5e. **Over HTTP** — done, above. Finding the server's address moves to the
     app's platform with phase 6.
 
-Phase 6 then puts the app on the interface: `createHub` on expo-sqlite or
-sql.js with no server, `createHolding` beside `api-client` with one; the
-~105 places the app branches on its mode go, with `local.ts`,
-`describeLocal`, `AppFlow` and the app's runtime.
-
 ### SQLite in the app (researched 2026-10-02, the owner asking for the best, not the simplest)
 
 **On a phone: expo-sqlite.** Expo's own, real SQLite in native code over
@@ -413,20 +409,103 @@ What it asks of the rest:
 
 - **One tab holds the home**, chosen with a Web Lock; another tab says so,
   and takes over when that one closes.
-- **Bluetooth stays on the page.** Web Bluetooth exists only in a window
-  (MDN; the spec's worker issue #571 is open), and choosing a device needs
-  a person's tap. The worker's Bluetooth transport is a relay: its
-  channels are carried over a message port to the page, which opens the
-  device.
+- **The transports stay on the page.** Web Bluetooth exists only in a
+  window (MDN; the spec's worker issue #571 is open), and choosing a device
+  needs a person's tap; WebUSB, Web Serial and every chooser after them are
+  the same. So in a browser every transport runs on the page, and the
+  worker's hub reaches each over a message port — the same `Transport`,
+  its channels carried both ways — and never learns it is in a worker.
 - **The site's policy allows WebAssembly** (`'wasm-unsafe-eval'` in
   `script-src`) — and nothing else changes in it.
 - **A failed start never wipes the home.** `opfs-sahpool` deletes its
   pool when it fails to start unless asked not to (`preserveOnInitFailure`,
   documented, not yet in the published package): the worker starts it
   only once it holds the tab's lock, and takes the option when it ships.
-- **The worker is a bundle of its own**, without the screens: the
-  generated registry gains a part with only device types, protocols and
-  their transports' web entries.
+- **The worker is a bundle of its own**, without the screens and without
+  a transport: the generated registry is split, so the hub's part — device
+  types, their contributions, protocols, transport definitions — imports no
+  React. It is bundled apart from Metro (whose worker support is alpha,
+  and which cannot load the WebAssembly's own file), and served beside
+  `sqlite3.wasm`.
+
+### Phase 6, in detail
+
+Planned 2026-10-02, the owner asking that a phone not carry what only a
+browser needs, and that it hold for every place a home runs: a server, a
+phone, a browser, and whatever comes next.
+
+**Where a home runs, and how it is reached, are two things.** The hub is
+one, everywhere, made from ports (phase 5). Where it runs is the place's
+arrangement of those ports; how the screens reach it is always
+`KraftverkApi`. The screens ask one interface and never which place:
+
+| The home | Where the hub runs | Its database | How the screens reach it |
+|---|---|---|---|
+| on a server | the server's process | bun:sqlite, a file | over HTTP (`httpApi`) |
+| a phone's own | the app's own process, beside the screens | expo-sqlite | in the process (`hub.as(owner)`) |
+| a browser's own | a dedicated worker | sqlite-wasm on OPFS | over a message port |
+
+- **A phone pays for nothing a browser needs.** No worker, no messages,
+  no WebAssembly: the hub is a plain object in the app's process, as on
+  the server. Each place is a file of its own under `client/src/platform/`,
+  chosen by Metro's platform extension (`.native.ts`, `.web.ts`), so one's
+  code is never in the other's bundle.
+- **A browser pays only for what it must.** The worker exists because a
+  persistent SQLite needs one; the transports stay on the page because the
+  platform keeps them there.
+- **Nothing in the hub knows either.** The message port is a package of
+  its own (`@kraftverk/message-port`): `KraftverkApi` and `Transport`
+  carried over any `MessagePort`-like end, served on one side and the same
+  interface on the other. A worker today; a phone's background runtime, a
+  shared worker or a desktop shell's process later, with no screen
+  changing. The API's agreement suite asks it as a third way.
+- **With a server, the app holds connections, not a home** (decision 6):
+  `createHolding` wraps the server's `KraftverkApi` — the app's own
+  sessions and gateway for the connections it holds, their readings sent
+  up — in the process on a phone and on the page in a browser, where the
+  radio is. No worker, and no database: a holding keeps little, in the
+  platform's storage.
+
+The steps, each green and pushed:
+
+6a. **The parts a place puts together.** The generated registry in two:
+    `installed.ts` (device types with their contributions, protocols,
+    transport definitions — no React) and `registry.ts` (screens,
+    pictures, each transport's web and native entries). `installedFrom`
+    in the hub: the three registries from lists, for the server's
+    discovery and the app's registry alike. `SqlDatabase` over SQLite's
+    WebAssembly build and over expo-sqlite in the store, described rather
+    than imported, as sql.js was — which goes: nothing runs it now. The
+    store's tests run on bun:sqlite and on the WebAssembly build.
+6b. **Over a message port.** `@kraftverk/message-port`: `serveApi` and
+    `apiOver`, `serveTransport` and `transportOver` — calls, refusals as
+    `ApiError`, the live stream, a step's abort, a transport's channels and
+    its chooser. `server/src/api.test.ts` asks the home a third way and
+    gets the same answers.
+6c. **A phone's own home.** expo-sqlite and expo-secure-store; the
+    database encrypted at rest (SQLCipher), its key in the secure store;
+    `own.native.ts` makes the app's hub in the process. Typechecked and
+    tested where it can be: a phone has not run it until one does.
+6d. **A browser's own home.** The worker bundle; `opfs-sahpool` opened
+    only under the tab's Web Lock, handed over to another tab on asking —
+    never stolen, so a pool is never opened twice; the transports served
+    from the page; a chooser as a setup step the hub runs
+    (`setup.choose(id, { chooser })`), the person's tap carried with it;
+    `'wasm-unsafe-eval'` in the site's policy.
+6e. **The screens on the interface.** A `HomeProvider` gives a
+    `KraftverkApi` — a server's, or the app's own — and every screen asks
+    it: the devices, adding one, automations, history, the timeline, the
+    configuration. `local.ts`, `describeLocal`, `AppFlow`'s own half and
+    the mode branches go; a home of the app's own gains history,
+    automations and its configuration. An e2e test runs an automation with
+    no server.
+6f. **With a server: what the app holds.** `createHolding` in the hub;
+    the app's runtime, its uplink and api-client's older calls go; finding
+    the server's address moves to the app's platform.
+6g. **The rest of the app's logic to packages**, as listed under "What
+    moves — the app": the live updates and views to api-client,
+    `togglesOf` and `settingsForms` to device-sdk, `deviceYaml` to
+    home-file. The baseline of logic in the app reaches nothing.
 
 **A structure pass** (the owner, 2026-10-02), once the hub is done and the
 packages are as they should be: the server and the app looked at again,
@@ -491,9 +570,10 @@ server is checked after each phase.
 - **A phone's background.** The platform suspends a backgrounded app; the
   engine already catches up on what was due (its grace hour). What runs in
   the background is decision 4's.
-- **New dependencies** — sql.js (a WebAssembly build, about a megabyte, for
-  the web), expo-sqlite, a random-values polyfill — each reviewed, as ARCHITECTURE.md
-  §3 asks, and loaded only where it runs.
+- **New dependencies** — SQLite's WebAssembly build (`@sqlite.org/sqlite-wasm`,
+  about a megabyte, in a browser's worker only), expo-sqlite and
+  expo-secure-store (a phone only), a random-values polyfill — each reviewed,
+  as ARCHITECTURE.md §3 asks, and loaded only where it runs.
 - **The size of the move.** Files move unchanged first and change after, so
   each diff is either a move or a change; the e2e suite and the server's own
   tests guard every phase.
