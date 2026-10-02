@@ -45,7 +45,7 @@ export function useRun(automation: AutomationView, onChanged: (next: AutomationV
   const start = () =>
     act(async () => {
       // Only watching on its own: started by a person, it acts — said, and asked, first.
-      if (automation.mode === 'observe') {
+      if (automation.mode === 'watch') {
         const yes = await confirmAction(`Start “${automation.name}” now?`, `It only watches on its own, but started by you it acts, for real:\n\n${automation.sentence}`, 'Start it');
         if (!yes) return;
       }

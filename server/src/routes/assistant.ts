@@ -140,7 +140,7 @@ export function assistantRoutes(deps: AppDeps): Hono {
             const running = automation.running;
             const current = running ? [...running.steps].reverse().find((step) => step.outcome === 'waiting') : null;
             return [
-              `${automation.name} [${automation.id}] — ${automation.mode === 'armed' ? 'acts on its own' : automation.mode === 'observe' ? 'only watches on its own' : 'off'}${automation.when.length ? '' : ', runs when started'}`,
+              `${automation.name} [${automation.id}] — ${automation.mode === 'act' ? 'acts on its own' : automation.mode === 'watch' ? 'only watches on its own' : 'off'}${automation.when.length ? '' : ', runs when started'}`,
               `  ${automation.sentence}`,
               running ? `  Running since ${running.at}${current ? `: ${current.what}` : ''}` : automation.lastRun ? `  Last run ${automation.lastRun.at}: ${automation.lastRun.summary}` : '  Never run',
             ].join('\n');

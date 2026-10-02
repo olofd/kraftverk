@@ -336,8 +336,6 @@ erDiagram
   device ||--o{ device_event : "raised"
   device ||--o{ device_link : "is the source of"
   device ||--o{ device_link : "is the target of"
-  users |o--o{ node : "joined from"
-  users ||--o{ sessions : "has"
   device ||--o{ device_switch : "was switched"
   device ||--o{ device_write : "was written"
   automation ||--o{ automation_role : "is filled by"
@@ -410,7 +408,7 @@ erDiagram
     int trusted "1 · what must stay put may be kept on it"
     json transports "[mqtt, ble, lan, https] · what it reaches devices over, as it last said"
     text place_id FK "p-3b81e2c94f0a · where it stands · null: it moves with someone, or has not said"
-    text account_id FK "u-2a9c40e1b7d8 · the person it joined for · null: the home's own"
+    text account_id "u-2a9c40e1b7d8 · the server account it joined for · null: this node, or no accounts"
     int self "1 · the node this database belongs to: one"
     text created_at "2026-09-27T19:30:00Z"
     text last_seen_at "2026-09-27T21:05:00Z"
@@ -470,7 +468,7 @@ erDiagram
     json rule "{roles, params: {fields: {}}, when, if, then, otherwise} · its own, checked before it is kept"
     text made_from "standard.start-charging · the recipe it was copied from · null: built from nothing"
     text time_zone "Europe/Stockholm · the owner's clock"
-    text mode "off · observe · armed"
+    text mode "off · watch · act"
     int recheck_minutes "10 · null: never; how often a condition that still holds keeps things so"
     int home_place "0 · its place among the home page's shortcuts · null: not there"
     text looked_at "when it last looked again · null: not yet"
@@ -577,6 +575,17 @@ erDiagram
     text key PK "schema_hash · created_at · created_by_version"
     text value "1843021779 · 2026-09-29T12:00:00Z · 0.1.0"
   }
+```
+
+**A server's own tables.** Accounts are the server's: a phone or a browser
+keeping a home has none, so they are not in the schema every node carries.
+The server keeps them beside the home's in the same file
+([`server/src/auth/schema.ts`](../server/src/auth/schema.ts)), and its
+fingerprint covers both; a reset of the home leaves them alone.
+
+```mermaid
+erDiagram
+  users ||--o{ login_session : "has"
   users {
     text id PK "u-2a9c40e1b7d8"
     text username UK "olof · unique regardless of case"
@@ -586,7 +595,7 @@ erDiagram
     text password_changed_at "2026-08-01T12:00:00Z"
     text last_login_at "2026-09-27T19:30:00Z"
   }
-  sessions {
+  login_session {
     text token_hash PK "sha-256 of the cookie · the token is never stored"
     text user_id FK "u-2a9c40e1b7d8"
     text created_at "2026-09-27T19:30:00Z"
@@ -596,6 +605,10 @@ erDiagram
     text user_agent "Safari on iOS"
   }
 ```
+
+A node's `account_id` names one of these where the master is a server — the
+account it joined for — and deleting the account forgets the nodes it
+joined; elsewhere it is plain text, null.
 
 ### What each table is for, traced to the flow
 

@@ -206,7 +206,7 @@ export class AutomationStore implements AutomationStorage {
       this.#db
         // Not looked at yet: the engine says when it looks, on its own clock.
         .query('INSERT INTO automation (id, key, name, rule, made_from, time_zone, mode, recheck_minutes, home_place, looked_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)')
-        .run(id, key, input.name, JSON.stringify(input.rule), input.madeFrom, input.timeZone, 'observe', input.recheckMinutes, now, now);
+        .run(id, key, input.name, JSON.stringify(input.rule), input.madeFrom, input.timeZone, 'watch', input.recheckMinutes, now, now);
       this.#setRoles(id, input.roles, input.starts);
     })();
     this.#revision += 1;

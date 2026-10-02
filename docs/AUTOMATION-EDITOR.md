@@ -147,7 +147,7 @@ CREATE TABLE automation (
   rule            TEXT NOT NULL,          -- JSON: Rule, params empty; checked before it is kept
   made_from       TEXT,                   -- the recipe it was copied from; NULL: built from nothing
   time_zone       TEXT NOT NULL,
-  mode            TEXT NOT NULL CHECK (mode IN ('off', 'observe', 'armed')),
+  mode            TEXT NOT NULL CHECK (mode IN ('off', 'watch', 'act')),
   recheck_minutes INTEGER CHECK (recheck_minutes IS NULL OR recheck_minutes BETWEEN 1 AND 1440),
   home_place      INTEGER CHECK (home_place IS NULL OR home_place >= 0),  -- on the home page, and where; NULL: not on it
   looked_at       TEXT,

@@ -227,8 +227,7 @@ describe('a device that cannot open is still a device, saying why', () => {
   });
 
   test('a device held only by a phone has no session here, and says who holds it', async () => {
-    const user = db.query<{ id: string }, []>('SELECT id FROM users LIMIT 1').get();
-    const userId = user?.id ?? (db.exec("INSERT INTO users (id, username, password_hash, created_at, password_changed_at) VALUES ('u-test', 'tester', 'x', '2026-01-01', '2026-01-01')"), 'u-test');
+    const userId = 'u-test';
     const phone = nodes.join({ id: nodeId('n-00000000aa02'), name: 'Olof’s iPhone', platform: 'native', transports: ['ble'], alwaysOn: false, reachable: false, trusted: false }, userId);
     const record = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Pocket lamp' });
     connections.add({ deviceId: record.id, method: 'bus', transport: 'bus', heldBy: phone.id, address: 'lamp-7' });

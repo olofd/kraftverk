@@ -215,7 +215,7 @@ export class Accounts {
       .run(hash, new Date().toISOString(), userId);
 
     const keep = keepSessionToken ? hashToken(keepSessionToken) : '';
-    this.#db.query('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?').run(userId, keep);
+    this.#db.query('DELETE FROM login_session WHERE user_id = ? AND token_hash <> ?').run(userId, keep);
   }
 
   /** Deletes an account and its sessions. The last account cannot be deleted. */
@@ -226,7 +226,9 @@ export class Accounts {
       if (this.countUsers() <= 1) {
         throw new AccountError('The last account cannot be removed: nobody could then log in from outside the home network');
       }
-      this.#db.query('DELETE FROM sessions WHERE user_id = ?').run(userId);
+      this.#db.query('DELETE FROM login_session WHERE user_id = ?').run(userId);
+      // The nodes it joined from go with it, and every way they held: no other account may speak for them.
+      this.#db.query('DELETE FROM node WHERE account_id = ? AND self = 0').run(userId);
       this.#db.query('DELETE FROM users WHERE id = ?').run(userId);
     })();
   }
@@ -237,7 +239,7 @@ export class Accounts {
     const expiresAt = new Date(now + SESSION_LIFETIME_MS).toISOString();
     this.#db
       .query(
-        `INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, expires_at, client_ip, user_agent)
+        `INSERT INTO login_session (token_hash, user_id, created_at, last_seen_at, expires_at, client_ip, user_agent)
          VALUES (?, ?, ?, ?, ?, ?, ?)`
       )
       .run(hashToken(token), userId, new Date(now).toISOString(), new Date(now).toISOString(), expiresAt, clientIp, userAgent?.slice(0, 300) ?? null);
@@ -255,20 +257,20 @@ export class Accounts {
     const hash = hashToken(token);
     const row = this.#db
       .query<{ user_id: string; last_seen_at: string; expires_at: string }, [string]>(
-        'SELECT user_id, last_seen_at, expires_at FROM sessions WHERE token_hash = ?'
+        'SELECT user_id, last_seen_at, expires_at FROM login_session WHERE token_hash = ?'
       )
       .get(hash);
     if (!row) return null;
 
     const now = Date.now();
     if (Date.parse(row.expires_at) <= now) {
-      this.#db.query('DELETE FROM sessions WHERE token_hash = ?').run(hash);
+      this.#db.query('DELETE FROM login_session WHERE token_hash = ?').run(hash);
       return null;
     }
 
     const user = this.getUser(row.user_id);
     if (!user) {
-      this.#db.query('DELETE FROM sessions WHERE token_hash = ?').run(hash);
+      this.#db.query('DELETE FROM login_session WHERE token_hash = ?').run(hash);
       return null;
     }
 
@@ -277,9 +279,9 @@ export class Accounts {
     }
     const expiresAt = new Date(now + SESSION_LIFETIME_MS).toISOString();
     this.#db
-      .query('UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE token_hash = ?')
+      .query('UPDATE login_session SET last_seen_at = ?, expires_at = ? WHERE token_hash = ?')
       .run(new Date(now).toISOString(), expiresAt, hash);
-    this.#db.query('DELETE FROM sessions WHERE expires_at <= ?').run(new Date(now).toISOString());
+    this.#db.query('DELETE FROM login_session WHERE expires_at <= ?').run(new Date(now).toISOString());
     return { user, expiresAt, renewed: true };
   }
 
@@ -291,13 +293,13 @@ export class Accounts {
   sessionAlive(token: string | undefined | null): boolean {
     if (!token) return false;
     const row = this.#db
-      .query<{ user_id: string; expires_at: string }, [string]>('SELECT user_id, expires_at FROM sessions WHERE token_hash = ?')
+      .query<{ user_id: string; expires_at: string }, [string]>('SELECT user_id, expires_at FROM login_session WHERE token_hash = ?')
       .get(hashToken(token));
     return row !== null && Date.parse(row.expires_at) > Date.now() && this.getUser(row.user_id) !== null;
   }
 
   endSession(token: string | undefined | null): void {
-    if (token) this.#db.query('DELETE FROM sessions WHERE token_hash = ?').run(hashToken(token));
+    if (token) this.#db.query('DELETE FROM login_session WHERE token_hash = ?').run(hashToken(token));
   }
 
   /** For sign-ins that did not go through `verifyLogin` — creating the first account signs you in. */
@@ -307,7 +309,7 @@ export class Accounts {
 
   /** Signs an account out everywhere. Returns how many sessions ended. */
   endAllSessions(userId: string): number {
-    return this.#db.query('DELETE FROM sessions WHERE user_id = ?').run(userId).changes;
+    return this.#db.query('DELETE FROM login_session WHERE user_id = ?').run(userId).changes;
   }
 
   findUserByName(username: string): User | null {

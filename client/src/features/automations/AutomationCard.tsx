@@ -18,7 +18,7 @@ export function AutomationCard({ automation, onChanged }: { automation: Automati
   const tone = useTone();
   const run = useRun(automation, onChanged);
   const running = run.running !== null;
-  const acting = automation.mode === 'armed';
+  const acting = automation.mode === 'act';
   const off = automation.mode === 'off';
 
   return (

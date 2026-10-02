@@ -1,5 +1,5 @@
 import { KEY } from '@kraftverk/device-sdk';
-import type { Rule } from '@kraftverk/automation';
+import { AUTOMATION_MODES, type AutomationMode, type Rule } from '@kraftverk/automation';
 
 import { CURRENT_VERSION } from './migrate.ts';
 import { durationSeconds, durationText, ruleFromConfig, ruleToConfig, useOf, useText, type Issue, type Use } from '@kraftverk/automation';
@@ -50,11 +50,10 @@ export type DeviceEntry = {
 /** A fact about the house: this part of one device does this to that part of another. */
 export type LinkEntry = { kind: string; from: { device: string; part: string }; to: { device: string; part: string } };
 
-export type Mode = 'off' | 'watch' | 'act';
 
 export type AutomationEntry = {
   name: string;
-  mode: Mode;
+  mode: AutomationMode;
   /** Its clock: the time zone its times of day are in. */
   clock: string;
   /** How often it looks again to keep things so; null for never. */
@@ -83,7 +82,6 @@ export class SecretRef {
   constructor(readonly name: string) {}
 }
 
-const MODES: readonly Mode[] = ['off', 'watch', 'act'];
 
 type Path = readonly (string | number)[];
 const isRecord = (data: unknown): data is Record<string, unknown> => typeof data === 'object' && data !== null && !Array.isArray(data) && !(data instanceof SecretRef);
@@ -211,7 +209,7 @@ export function documentFromData(data: unknown, context: WriteContext = {}, opti
       const rules = ['uses', 'when', 'only if', 'do', 'if a step fails', 'params'];
       for (const field of Object.keys(entry)) if (![...own, ...rules].includes(field)) problem(`"${field}" is not part of an automation: it has ${[...own, ...rules].join(', ')}`, [...path, field]);
       const name = text(entry.name, [...path, 'name'], 'its name');
-      const mode = entry.mode === undefined ? 'watch' : MODES.includes(entry.mode as Mode) ? (entry.mode as Mode) : (problem('"mode" is off, watch or act', [...path, 'mode']), 'watch');
+      const mode = entry.mode === undefined ? 'watch' : AUTOMATION_MODES.includes(entry.mode as AutomationMode) ? (entry.mode as AutomationMode) : (problem('"mode" is off, watch or act', [...path, 'mode']), 'watch');
       // Its own clock, or the home's.
       const clock = entry.clock === undefined && homeClock ? homeClock : text(entry.clock, [...path, 'clock'], 'its clock: the time zone its times are in ("clock: Europe/Stockholm"), or the home\'s ("home: { clock: … }")');
       const recheck = entry.recheck === undefined || entry.recheck === null ? null : durationSeconds(entry.recheck);

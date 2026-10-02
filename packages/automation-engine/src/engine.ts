@@ -612,7 +612,7 @@ export class AutomationEngine {
     const automation = this.deps.store.get(automationId);
     if (!automation) throw new RunRefusal('No such automation');
     // An assistant's yes is a person's arming: one that only watches is its owner's to start.
-    if (by.actor === 'agent' && automation.mode !== 'armed') throw new RunRefusal('It only watches: its owner lets it act before an assistant may start it');
+    if (by.actor === 'agent' && automation.mode !== 'act') throw new RunRefusal('It only watches: its owner lets it act before an assistant may start it');
     return this.#start(automation, { asker: by, from: null }).begun;
   }
 
@@ -869,7 +869,7 @@ export class AutomationEngine {
     // It acts when it is let act — or when a person played it, or another automation's run started it: the
     // mode says what it does on its own, not what it does when asked. Only asked what it would do, or only
     // watching on its own: what it would do, said once — why it did not act is the run's own why and outcome.
-    const acts = !options.check && (automation.mode === 'armed' || Boolean(options.askedBy) || from !== null);
+    const acts = !options.check && (automation.mode === 'act' || Boolean(options.askedBy) || from !== null);
     if (!acts) {
       const steps = await this.#wouldDo(automation, rule, scope);
       if ('unknown' in steps) return over('unknown', `Could not tell what to send ${steps.unknown}`);

@@ -65,7 +65,7 @@ const automation = {
   roles: { charger: { device: plug.id, part: MAIN_PART } },
   starts: {},
   madeFrom: null,
-  mode: 'armed' as const,
+  mode: 'act' as const,
   timeZone: 'Europe/Stockholm',
   recheckMinutes: null,
   homePlace: 2,
@@ -83,7 +83,7 @@ describe('an automation as YAML, in the app', () => {
     expect(read.problems).toEqual([]);
     const { draft, settings } = draftOfEntry(read.entry!, [plug], []);
     expect(draft).toEqual({ name: 'Charge', rule, roles: automation.roles, starts: {} });
-    expect(settings).toEqual({ mode: 'armed', timeZone: 'Europe/Stockholm', recheckMinutes: null, homePlace: 2 });
+    expect(settings).toEqual({ mode: 'act', timeZone: 'Europe/Stockholm', recheckMinutes: null, homePlace: 2 });
   });
 
   test('a key naming no device here is a problem at its line; an automation it starts is found by its key', () => {

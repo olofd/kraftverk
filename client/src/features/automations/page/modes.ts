@@ -10,8 +10,8 @@ import type { Look } from '../looks';
 
 export const MODES: { value: AutomationMode; label: string }[] = [
   { value: 'off', label: 'Off' },
-  { value: 'observe', label: 'Watch only' },
-  { value: 'armed', label: 'Act' },
+  { value: 'watch', label: 'Watch only' },
+  { value: 'act', label: 'Act' },
 ];
 
 /** What each mode means for what it does on its own — for one with nothing that starts it, what is left. */
@@ -19,13 +19,13 @@ export const modeSays = (mode: AutomationMode, onItsOwn: boolean): string =>
   onItsOwn
     ? {
         off: 'It does nothing, and cannot be started.',
-        observe: 'On its own, it decides and says here what it would have done: nothing is switched. Started by you, it acts.',
-        armed: 'It acts on its own, through the same checks as a tap on a switch.',
+        watch: 'On its own, it decides and says here what it would have done: nothing is switched. Started by you, it acts.',
+        act: 'It acts on its own, through the same checks as a tap on a switch.',
       }[mode]
     : {
         off: 'It cannot be started.',
-        observe: 'Started by you, it acts; an assistant cannot start it until you let it act.',
-        armed: 'Started by you, another automation or an assistant, it acts.',
+        watch: 'Started by you, it acts; an assistant cannot start it until you let it act.',
+        act: 'Started by you, another automation or an assistant, it acts.',
       }[mode];
 
 /** How often it may look again to keep things so, in minutes; 0 is never. */
@@ -48,8 +48,8 @@ export const recheckSays = (minutes: number | null) =>
 /** Each mode its own shape as well as its colour: acting is filled, and cannot be mistaken for watching. */
 export const BADGE: Record<AutomationMode, { label: string; icon: IconName; filled: boolean }> = {
   off: { label: 'Off', icon: 'pause', filled: false },
-  observe: { label: 'Only watching', icon: 'eye', filled: false },
-  armed: { label: 'Acting', icon: 'zap', filled: true },
+  watch: { label: 'Only watching', icon: 'eye', filled: false },
+  act: { label: 'Acting', icon: 'zap', filled: true },
 };
 
 /** A change made to an automation, as its history shows it. */

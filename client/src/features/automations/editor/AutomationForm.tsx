@@ -167,7 +167,7 @@ function Editing({
   const kept = useMemo(() => pruned(draft), [draft]);
   // What the form does not edit, and its YAML does: its mode, clock, keeping it so, its place on the home page.
   const before = useMemo<AutomationSettings>(
-    () => (existing ? { mode: existing.mode, timeZone: existing.timeZone, recheckMinutes: existing.recheckMinutes, homePlace: existing.homePlace } : { mode: 'observe', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, recheckMinutes: null, homePlace: null }),
+    () => (existing ? { mode: existing.mode, timeZone: existing.timeZone, recheckMinutes: existing.recheckMinutes, homePlace: existing.homePlace } : { mode: 'watch', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, recheckMinutes: null, homePlace: null }),
     [existing]
   );
   const [settings, setSettings] = useState<AutomationSettings>(before);
@@ -233,7 +233,7 @@ function Editing({
       const body = { name: draft.name.trim(), rule: kept.rule, roles: kept.roles, starts: kept.starts };
       // What its YAML changed beyond what the form edits.
       const changes = { ...Object.fromEntries(settingsChanged.map((name) => [name, settings[name]])), ...(key && key !== existing?.key ? { key } : {}) };
-      const letAct = settings.mode === 'armed' && before.mode !== 'armed';
+      const letAct = settings.mode === 'act' && before.mode !== 'act';
       const ask = (name: string) => (reason: string, again: boolean) =>
         confirmAction(letAct ? `Let “${name}” act on its own?` : `Change “${name}” while it acts?`, `${again ? `${ASKED_AGAIN}\n\n` : ''}${reason}\n\n${check?.sentence ?? ''}`, letAct ? 'Let it act' : 'Change it');
       const wants = (result: Awaited<ReturnType<typeof changeAutomation>>) => ('needsConfirmation' in result ? { token: result.needsConfirmation, reason: result.reason } : null);

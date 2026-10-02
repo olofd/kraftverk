@@ -137,16 +137,16 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
         const changedRule = result ? { rule: nextRule, roles: result.roles, starts: result.starts } : null;
 
         // Letting it act — and changing what one that acts does — is a deliberate act.
-        const armedAfter = input.mode === 'armed' || (input.mode === undefined && current.mode === 'armed');
+        const armedAfter = input.mode === 'act' || (input.mode === undefined && current.mode === 'act');
         // How often it keeps things so changes what it does, too.
         const recheckChanged = input.recheckMinutes !== undefined && input.recheckMinutes !== current.recheckMinutes;
-        const needsConfirming = armedAfter && (current.mode !== 'armed' || changedRule !== null || recheckChanged);
+        const needsConfirming = armedAfter && (current.mode !== 'act' || changedRule !== null || recheckChanged);
         const { confirmation, ...changes } = input;
         const subject = subjectOf({ automation: current.id, changes, by: actor });
         if (needsConfirming && !hub.yes.arming.accept(confirmation, subject)) {
           // What the yes is to, in words: letting it act, keeping things so while it does, or changing what it does.
           const said =
-            current.mode !== 'armed'
+            current.mode !== 'act'
               ? 'It will switch things on its own, with nobody watching.'
               : recheckChanged && changedRule === null
                 ? input.recheckMinutes
@@ -175,7 +175,7 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
         if (input.homePlace !== undefined) updated = automations.placeOnHome(current.id, input.homePlace)!;
         const said =
           input.mode && input.mode !== current.mode
-            ? { off: 'Turned off', observe: 'Set to only watch on its own', armed: 'Let act on its own' }[input.mode]
+            ? { off: 'Turned off', watch: 'Set to only watch on its own', act: 'Let act on its own' }[input.mode]
             : input.key !== undefined && input.key !== current.key && !changedRule && !input.name
               ? `Known in configuration as ${input.key}`
               : input.homePlace !== undefined && !changedRule && !input.name
@@ -183,7 +183,7 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
                   ? 'Taken off the home page'
                   : 'Put on the home page'
                 : 'Changed';
-        record(input.mode === 'armed' && current.mode !== 'armed' ? 'automation.armed' : 'automation.changed', updated.id, `${said}: "${updated.name}"`, {
+        record(input.mode === 'act' && current.mode !== 'act' ? 'automation.armed' : 'automation.changed', updated.id, `${said}: "${updated.name}"`, {
           before: { key: current.key, mode: current.mode, rule: current.rule, roles: current.roles, starts: current.starts, recheckMinutes: current.recheckMinutes, homePlace: current.homePlace },
           after: { key: updated.key, mode: updated.mode, rule: updated.rule, roles: updated.roles, starts: updated.starts, recheckMinutes: updated.recheckMinutes, homePlace: updated.homePlace },
         });

@@ -111,7 +111,6 @@ describe('a device, described', () => {
   });
 
   test('a connection another node holds names that node', () => {
-    db.exec("INSERT INTO users (id, username, password_hash, created_at, password_changed_at) VALUES ('u-reg', 'registry', 'x', '2026-01-01', '2026-01-01')");
     const phone = nodes.join({ id: nodeId('n-00000000c0de'), name: 'Olof’s iPhone', platform: 'native', transports: ['ble'], alwaysOn: false, reachable: false, trusted: false }, 'u-reg');
     const pocket = catalog.add({ description: LAMP, typeId: 'test.lamp', name: 'Pocket' });
     connections.add({ deviceId: pocket.id, method: 'bus', transport: 'bus', heldBy: phone.id, address: 'lamp-7' });

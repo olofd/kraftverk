@@ -192,10 +192,10 @@ function setup(world: Partial<World> = {}) {
   });
   const roles = { supply: { device: STATION, part: 'outlet.ac' }, charger: { device: PLUG, part: MAIN_PART } };
   /** An automation copied from the recipe, its settings written into its blocks — as the app makes one. */
-  const make = (recipe: 'standard.start-charging' | 'standard.stop-charging', params: Record<string, string | number> = {}, mode: 'observe' | 'armed' | 'off' = 'armed') => {
+  const make = (recipe: 'standard.start-charging' | 'standard.stop-charging', params: Record<string, string | number> = {}, mode: 'watch' | 'act' | 'off' = 'act') => {
     const rule = inlineParams(recipe === 'standard.start-charging' ? startCharging : stopCharging, params);
     const created = store.create({ name: recipe === 'standard.start-charging' ? 'Start charging the scooter' : 'Stop charging the scooter', rule, madeFrom: recipe, roles, starts: {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
-    return mode === 'observe' ? created : store.update(created.id, { mode })!;
+    return mode === 'watch' ? created : store.update(created.id, { mode })!;
   };
   /** Waits for the run to end, and answers it as kept. */
   const ended = async (automationId: string) => {
@@ -208,10 +208,10 @@ function setup(world: Partial<World> = {}) {
   };
   const switches = () => sent.map((intent) => `${intent.deviceId === STATION ? 'supply' : 'charger'} ${intent.args.on ? 'on' : 'off'}`);
   /** An automation of its owner's own: a rule built from blocks, with what fills its roles. */
-  const own = (name: string, rule: Omit<Rule, 'params'>, fills: { starts?: Record<string, AutomationId>; mode?: 'observe' | 'armed' | 'off' } = {}) => {
+  const own = (name: string, rule: Omit<Rule, 'params'>, fills: { starts?: Record<string, AutomationId>; mode?: 'watch' | 'act' | 'off' } = {}) => {
     const partRoles = Object.fromEntries(Object.keys(rule.roles).filter((role) => role in roles).map((role) => [role, roles[role as keyof typeof roles]]));
     const created = store.create({ name, rule: { ...rule, params: { fields: {} } }, madeFrom: null, roles: partRoles, starts: fills.starts ?? {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
-    return fills.mode === 'observe' ? created : store.update(created.id, { mode: fills.mode ?? 'armed' })!;
+    return fills.mode === 'watch' ? created : store.update(created.id, { mode: fills.mode ?? 'act' })!;
   };
   return { engine, store, state, devices, bus, sent, writes, recorded, heard, fresh, runsEnded, make, own, ended, switches };
 }
@@ -449,7 +449,7 @@ describe('starting a charge', () => {
 
   test('asked what it would do, it says so — every step — and sends nothing; played by a person, it runs, whatever its mode', async () => {
     const { engine, make, sent, store, ended, switches } = setup({ reachableAfterMs: 20 });
-    const watching = make('standard.start-charging', QUICK, 'observe');
+    const watching = make('standard.start-charging', QUICK, 'watch');
     const would = await engine.run(watching, { check: true });
     expect(would.outcome).toBe('would-act');
     expect(would.id).toBeNull();

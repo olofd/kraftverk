@@ -120,7 +120,7 @@ export function automationRoutes(deps: AppDeps): Hono {
           roles: roles.optional(),
           starts: starts.optional(),
           timeZone: z.string().min(1).max(64).optional(),
-          mode: z.enum(['off', 'observe', 'armed']).optional(),
+          mode: z.enum(['off', 'watch', 'act']).optional(),
           recheckMinutes: recheckMinutes.optional(),
           homePlace: z.number().int().min(0).max(1000).nullable().optional(),
           confirmation: z.string().max(64).optional(),

@@ -19,17 +19,6 @@ export const SCHEMA = `
     value TEXT NOT NULL
   );
 
-  /* People who may use this server — from anywhere, the home network included. */
-  CREATE TABLE users (
-    id                  TEXT PRIMARY KEY,
-    username            TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    password_hash       TEXT NOT NULL,
-    created_at          TEXT NOT NULL,
-    created_by          TEXT,
-    password_changed_at TEXT NOT NULL,
-    last_login_at       TEXT
-  );
-
   /*
     Where things are, physically: a home is somewhere — one place or several,
     each with its position and its clock. A device and a node stand at one;
@@ -67,7 +56,8 @@ export const SCHEMA = `
     transports   TEXT NOT NULL DEFAULT '[]',
     /* Where it stands; null: it moves with someone, or has not said. */
     place_id     TEXT REFERENCES place (id) ON DELETE SET NULL,
-    account_id   TEXT REFERENCES users (id) ON DELETE CASCADE,
+    /* The account it joined from, where the master keeps accounts — a server's (its accounts are its own: server/src/auth/schema.ts); null for this node, and where there are none. */
+    account_id   TEXT,
     self         INTEGER NOT NULL CHECK (self IN (0, 1)),
     created_at   TEXT NOT NULL,
     last_seen_at TEXT NOT NULL
@@ -85,17 +75,6 @@ export const SCHEMA = `
     master_id  TEXT NOT NULL REFERENCES node (id),
     created_at TEXT NOT NULL
   );
-
-  CREATE TABLE sessions (
-    token_hash   TEXT PRIMARY KEY,
-    user_id      TEXT NOT NULL,
-    created_at   TEXT NOT NULL,
-    last_seen_at TEXT NOT NULL,
-    expires_at   TEXT NOT NULL,
-    client_ip    TEXT,
-    user_agent   TEXT
-  );
-  CREATE INDEX sessions_user ON sessions (user_id);
 
   /*
     The devices you added, and they stay added: removing one keeps its history
@@ -303,7 +282,7 @@ export const SCHEMA = `
     rule            TEXT NOT NULL,
     made_from       TEXT,
     time_zone       TEXT NOT NULL,
-    mode            TEXT NOT NULL CHECK (mode IN ('off', 'observe', 'armed')),
+    mode            TEXT NOT NULL CHECK (mode IN ('off', 'watch', 'act')),
     recheck_minutes INTEGER CHECK (recheck_minutes IS NULL OR recheck_minutes BETWEEN 1 AND 1440),
     home_place      INTEGER CHECK (home_place IS NULL OR home_place >= 0),
     looked_at       TEXT,

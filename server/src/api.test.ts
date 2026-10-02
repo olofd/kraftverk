@@ -80,7 +80,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  database.exec('DELETE FROM device; DELETE FROM sample; DELETE FROM node; DELETE FROM users; DELETE FROM sessions; DELETE FROM app_state; DELETE FROM audit; DELETE FROM automation;');
+  database.exec('DELETE FROM device; DELETE FROM sample; DELETE FROM node; DELETE FROM users; DELETE FROM login_session; DELETE FROM app_state; DELETE FROM audit; DELETE FROM automation;');
   await hub.sessions.sync([]);
   bus.lamps.clear();
   account = (await accounts.createFirstUser('olof', PASSWORD)).id;

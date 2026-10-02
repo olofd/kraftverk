@@ -37,7 +37,7 @@ afterAll(() => {
 });
 
 function emptyAccounts() {
-  database.exec('DELETE FROM users; DELETE FROM sessions; DELETE FROM app_state;');
+  database.exec('DELETE FROM users; DELETE FROM login_session; DELETE FROM app_state;');
 }
 
 // --- deciding the home network -----------------------------------------------
@@ -230,7 +230,7 @@ describe('accounts', () => {
   test('a session token is stored only as its hash', async () => {
     const user = await accounts.createFirstUser('olof', PASSWORD);
     const { token } = accounts.createSession(user.id, null, null);
-    const stored = database.query<{ token_hash: string }, []>('SELECT token_hash FROM sessions').get()!;
+    const stored = database.query<{ token_hash: string }, []>('SELECT token_hash FROM login_session').get()!;
     expect(stored.token_hash).not.toBe(token);
     expect(accounts.readSession(token)?.user.id).toBe(user.id);
     expect(accounts.readSession('forged')).toBeNull();
@@ -239,9 +239,9 @@ describe('accounts', () => {
   test('an expired session is refused and removed', async () => {
     const user = await accounts.createFirstUser('olof', PASSWORD);
     const { token } = accounts.createSession(user.id, null, null);
-    database.query('UPDATE sessions SET expires_at = ?').run(new Date(Date.now() - 1000).toISOString());
+    database.query('UPDATE login_session SET expires_at = ?').run(new Date(Date.now() - 1000).toISOString());
     expect(accounts.readSession(token)).toBeNull();
-    expect(database.query<{ n: number }, []>('SELECT COUNT(*) n FROM sessions').get()!.n).toBe(0);
+    expect(database.query<{ n: number }, []>('SELECT COUNT(*) n FROM login_session').get()!.n).toBe(0);
   });
 
   test('changing a password signs the account out everywhere else', async () => {

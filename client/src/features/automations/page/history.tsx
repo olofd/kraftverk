@@ -173,7 +173,7 @@ function changesOf(entry: AuditEntry): string[] {
   const after = detail?.after;
   if (!before || !after) return [];
   const said: string[] = [];
-  if (before.mode !== after.mode && after.mode) said.push(`${BADGE[before.mode ?? 'observe'].label} → ${BADGE[after.mode].label}`);
+  if (before.mode !== after.mode && after.mode) said.push(`${BADGE[before.mode ?? 'watch'].label} → ${BADGE[after.mode].label}`);
   if ((before.recheckMinutes ?? null) !== (after.recheckMinutes ?? null)) {
     const keep = (minutes: number | null | undefined) => (minutes ? `every ${every(minutes)}` : 'off');
     said.push(`Keep it so: ${keep(before.recheckMinutes)} → ${keep(after.recheckMinutes)}`);

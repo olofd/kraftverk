@@ -1,7 +1,7 @@
 import { attributeMeaning, unitOf, type DeviceDescription } from '@kraftverk/device-sdk';
-import type { Rule } from '@kraftverk/automation';
+import type { AutomationMode, Rule } from '@kraftverk/automation';
 
-import type { AutomationEntry, DeviceEntry, Mode, Scalar, SecretValue } from './document.ts';
+import type { AutomationEntry, DeviceEntry, Scalar, SecretValue } from './document.ts';
 import type { PrintContext } from '@kraftverk/automation';
 import type { Use } from '@kraftverk/automation';
 
@@ -13,19 +13,11 @@ import type { Use } from '@kraftverk/automation';
   shows one as YAML and saves what is written there.
 */
 
-/** How the engine says a mode. */
-export type EngineMode = 'off' | 'observe' | 'armed';
-
-/** A mode in the file's words, from the engine's. */
-export const MODE_IN_FILE: Readonly<Record<EngineMode, Mode>> = { off: 'off', observe: 'watch', armed: 'act' };
-
-/** A mode in the engine's words, from the file's. */
-export const MODE_OF_FILE: Readonly<Record<Mode, EngineMode>> = { off: 'off', watch: 'observe', act: 'armed' };
 
 /** An automation as it lives: what the server keeps, and the app is shown. */
 export type AutomationSource = {
   name: string;
-  mode: EngineMode;
+  mode: AutomationMode;
   timeZone: string;
   recheckMinutes: number | null;
   homePlace: number | null;
@@ -58,7 +50,7 @@ export function automationEntryFrom(source: AutomationSource, keyOf: { device: (
   return {
     entry: {
       name: source.name,
-      mode: MODE_IN_FILE[source.mode],
+      mode: source.mode,
       clock: source.timeZone,
       recheckMinutes: source.recheckMinutes,
       homePlace: source.homePlace,

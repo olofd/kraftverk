@@ -131,7 +131,7 @@ test('an import naming a device you do not have: one of yours, chosen, fills it 
   expect(await answer(page, true)).toContain('"Porch light" will act on its own');
   await expect(page.getByText('1 automation added.')).toBeVisible();
   const imported = (await (await request.get('/api/automations', { headers: HEADERS })).json()).automations.find((each: { key: string }) => each.key === key);
-  expect(imported.mode).toBe('armed');
+  expect(imported.mode).toBe('act');
   expect(imported.roles.plug.device).toBe(plug.id);
 });
 

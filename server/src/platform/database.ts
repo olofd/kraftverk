@@ -1,9 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-import { Database } from 'bun:sqlite';
+import { Database, type Statement } from 'bun:sqlite';
 
-import { createSchema, metaOf, prepareDatabase, SCHEMA, schemaStateOf, type SqlDatabase } from '@kraftverk/store';
+import { createSchema, metaOf, prepareDatabase, SCHEMA, schemaStateOf, type SqlDatabase, type SqlStatement } from '@kraftverk/store';
+
+import { ACCOUNTS_SCHEMA } from '../auth/schema.ts';
+
+/** The server's database is the home's, and its own accounts beside it: one definition, one fingerprint. */
+export const SERVER_SCHEMA = SCHEMA + ACCOUNTS_SCHEMA;
 
 /**
  * The server's database: one SQLite file for everything that has to outlive a
@@ -30,16 +35,33 @@ const VERSION = (() => {
 })();
 
 /*
-  bun:sqlite's Database is the port as it stands — query with get, all and
-  run, exec, transaction, close — so it is handed over as it is, and runs
-  exactly as before.
+  bun:sqlite's Database is nearly the port — get, all and run, exec,
+  transaction, close — but its own statement cache keeps twenty: one prepared
+  past those is never finalized, and its close leaves the file open (on
+  Windows, a file that cannot be removed). So each statement is prepared once
+  and kept here, and all are let go on close, as the phone's and the
+  browser's adapters do.
 */
 function open(path: string): SqlDatabase {
   const handle = new Database(path, { create: true });
   handle.exec('PRAGMA journal_mode = WAL');
   // The recovery CLI may write while the server does: wait for the lock rather than failing at once with SQLITE_BUSY.
   handle.exec('PRAGMA busy_timeout = 5000');
-  const db = handle as unknown as SqlDatabase;
+  const prepared = new Map<string, Statement>();
+  const db: SqlDatabase = {
+    query: <Row, Params extends readonly unknown[]>(sql: string) => {
+      let statement = prepared.get(sql);
+      if (!statement) prepared.set(sql, (statement = handle.prepare(sql)));
+      return statement as unknown as SqlStatement<Row, Params>;
+    },
+    exec: (sql) => handle.exec(sql),
+    transaction: (fn) => handle.transaction(fn),
+    close: () => {
+      for (const statement of prepared.values()) statement.finalize();
+      prepared.clear();
+      handle.close();
+    },
+  };
   prepareDatabase(db);
   return db;
 }
@@ -53,7 +75,7 @@ function open(path: string): SqlDatabase {
  * itself — `kraftverk.db.set-aside.<time>` — and a new one is started, saying
  * so in the log. Nothing is deleted. Exported for tests.
  */
-export function openSchema(path: string, schema = SCHEMA): SqlDatabase & { setAside?: string; created?: boolean } {
+export function openSchema(path: string, schema = SERVER_SCHEMA): SqlDatabase & { setAside?: string; created?: boolean } {
   let handle = open(path);
   const state = schemaStateOf(handle, schema);
   if (state === 'current') return handle;

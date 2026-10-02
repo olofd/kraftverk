@@ -96,7 +96,7 @@ function aHome() {
   const porch = deps.catalog.add({ typeId: 'test.lamp', name: 'Porch lamp', description: LAMP });
   deps.connections.add({ deviceId: porch.id, method: 'bus', transport: 'bus', heldBy: MACHINE_NODE.id, address: 'lamp-porch' });
   const morning = deps.automations.create({ name: 'Morning', rule: lampRule, madeFrom: null, roles: { lamp: { device: hall.id, part: 'main' } }, starts: {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
-  deps.automations.update(morning.id, { mode: 'armed' });
+  deps.automations.update(morning.id, { mode: 'act' });
   deps.automations.placeOnHome(morning.id, 0);
   return { hall, porch, morning };
 }
@@ -129,7 +129,7 @@ describe('a server’s own export, into a database wiped', () => {
     expect(way).toMatchObject({ method: 'bus', address: 'lamp-hall' });
     expect(deps.connections.secret(way.id, 'pin')).toBe('pin-of-a-test');
     const morning = deps.automations.byKey('morning')!;
-    expect(morning).toMatchObject({ mode: 'armed', homePlace: 0, rule: lampRule, roles: { lamp: { device: hall.id, part: 'main' } } });
+    expect(morning).toMatchObject({ mode: 'act', homePlace: 0, rule: lampRule, roles: { lamp: { device: hall.id, part: 'main' } } });
     expect(sessionsSynced.at(-1)).toBe(2);
 
     // Read again over what it made: nothing to do.
@@ -397,14 +397,14 @@ describe('the snapshot kept beside the database', () => {
     expect(restored!.applied!.devices.added).toEqual(['hall-lamp', 'porch-lamp']);
     const hall = deps.catalog.byKey('hall-lamp')!;
     expect(deps.connections.secret(deps.connections.forDevice(hall.id)[0]!.id, 'pin')).toBe('pin-of-a-test');
-    expect(deps.automations.byKey('morning')).toMatchObject({ mode: 'armed', homePlace: 0 });
+    expect(deps.automations.byKey('morning')).toMatchObject({ mode: 'act', homePlace: 0 });
   });
 
   test('restores item by item: an automation naming a removed device kept turned off, a device it cannot read left out — the rest restored', async () => {
     const { hall, porch } = aHome();
     // One that uses the porch lamp, which is then removed: its role is still bound to it.
     const evening = deps.automations.create({ name: 'Evening', rule: lampRule, madeFrom: null, roles: { lamp: { device: porch.id, part: 'main' } }, starts: {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
-    deps.automations.update(evening.id, { mode: 'armed' });
+    deps.automations.update(evening.id, { mode: 'act' });
     deps.catalog.remove(porch.id);
     const text = await exported('kept');
     // Its role is written empty: the file names no key the server does not list.
@@ -416,7 +416,7 @@ describe('the snapshot kept beside the database', () => {
     const restored = await restoreFrom(deps, withGone, 'kraftverk.before-a-test.yaml');
     expect(restored!.applied!.devices.added).toEqual(['hall-lamp']);
     expect(deps.catalog.byKey('hall-lamp')!.identity).toBe(hall.identity);
-    expect(deps.automations.byKey('morning')).toMatchObject({ mode: 'armed', homePlace: 0 });
+    expect(deps.automations.byKey('morning')).toMatchObject({ mode: 'act', homePlace: 0 });
     // Kept, turned off, its rule whole: its owner gives it a lamp again.
     expect(deps.automations.byKey('evening')).toMatchObject({ mode: 'off', rule: lampRule, roles: {} });
     expect(restored!.problems).toEqual([

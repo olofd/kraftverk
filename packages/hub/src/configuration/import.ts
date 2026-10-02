@@ -1,8 +1,6 @@
 import { ApiError, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-contract';
 import {
   checkDocument,
-  MODE_IN_FILE,
-  MODE_OF_FILE,
   readConfig,
   type AutomationEntry,
   type ConfigDocument,
@@ -261,8 +259,8 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     // What fills each part, checked as the apply will: a part that cannot do what its role needs is said now, not after a yes.
     for (const said of bindingProblems(deps, entry, document, leftOut)) problem(said.message, [...path, ...said.path]);
     const existing = deps.automations.byKey(key);
-    const acts = entry.mode === 'act' && (!existing || existing.mode !== 'armed' || !same(existing.rule, entry.rule) || existing.recheckMinutes !== entry.recheckMinutes);
-    if (acts) needs.confirm.push(`"${entry.name}" will act on its own${existing?.mode === 'armed' ? ', doing what the file says' : ''}`);
+    const acts = entry.mode === 'act' && (!existing || existing.mode !== 'act' || !same(existing.rule, entry.rule) || existing.recheckMinutes !== entry.recheckMinutes);
+    if (acts) needs.confirm.push(`"${entry.name}" will act on its own${existing?.mode === 'act' ? ', doing what the file says' : ''}`);
     automations.push(existing ? { key, name: entry.name, ...automationChanges(deps, existing, entry) } : { key, name: entry.name, action: 'add', changes: [] });
   }
 
@@ -427,7 +425,7 @@ function deviceChanges(deps: ImportDeps, existing: DeviceRecord, entry: DeviceEn
 function automationChanges(deps: ImportDeps, existing: AutomationRecord, entry: AutomationEntry): Pick<ImportItem, 'action' | 'changes'> {
   const changes: string[] = [];
   if (existing.name !== entry.name) changes.push(`name: ${existing.name} → ${entry.name}`);
-  if (existing.mode !== MODE_OF_FILE[entry.mode]) changes.push(`${MODE_IN_FILE[existing.mode]} → ${entry.mode}`);
+  if (existing.mode !== entry.mode) changes.push(`${existing.mode} → ${entry.mode}`);
   if (!same(existing.rule, entry.rule)) changes.push('what it does');
   const keyOf = (id: SavedDeviceId) => deps.catalog.get(id)?.key ?? '?';
   for (const [role, use] of Object.entries(entry.uses)) {
@@ -558,7 +556,7 @@ export async function applyImport(deps: ImportDeps, id: string, by: string, choi
       const why = [...new Set([...(kept.turnedOff.get(key) ?? []), ...result.problems])];
       if (why.length && !options.lenient) throw new ApiError('invalid', `"${entry.name}" cannot be kept as it is`, { problems: why.map((said) => `"${entry.name}": ${said}`) });
       each(`"${entry.name}"`, () => {
-        deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, starts: result.starts, timeZone: entry.clock, mode: why.length ? 'off' : MODE_OF_FILE[entry.mode], recheckMinutes: entry.recheckMinutes });
+        deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, starts: result.starts, timeZone: entry.clock, mode: why.length ? 'off' : entry.mode, recheckMinutes: entry.recheckMinutes });
         if (entry.homePlace !== (existing?.homePlace ?? null)) deps.automations.placeOnHome(id, entry.homePlace);
         (existing ? applied.automations.changed : applied.automations.added).push(key);
         if (why.length) applied.notes.push(`"${entry.name}" is restored turned off: ${why.join('; ')}`);

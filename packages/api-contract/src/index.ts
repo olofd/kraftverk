@@ -52,7 +52,7 @@ import type {
   Value,
   ValueType,
 } from '@kraftverk/device-sdk';
-import type { AutomationDraft, RoleFills, Rule, StepKind, StepLine } from '@kraftverk/automation';
+import type { AutomationDraft, AutomationMode, RoleFills, Rule, StepKind, StepLine } from '@kraftverk/automation';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 import type { Vocabulary } from '@kraftverk/home-file';
 
@@ -100,7 +100,7 @@ export type {
   TransportDefinition,
   Value,
 } from '@kraftverk/device-sdk';
-export type { StepKind, StepLine, Rule, RoleSpec, Step, Expr, Trigger, Weekday, CompareOp, Command, RoleBinding, RoleFills, AutomationDraft } from '@kraftverk/automation';
+export type { StepKind, StepLine, Rule, RoleSpec, Step, Expr, Trigger, Weekday, CompareOp, Command, RoleBinding, RoleFills, AutomationDraft, AutomationMode } from '@kraftverk/automation';
 export type { GatewayResult, GatewayOutcome, WriteResult } from '@kraftverk/gateway';
 
 /** `GET /api/version`. */
@@ -688,8 +688,6 @@ export type AutomationChanges = Partial<AutomationDraft> & {
   confirmation?: string;
 };
 
-/** off: nothing; observe: decides and says what it would have done; armed: acts, through the gateway. */
-export type AutomationMode = 'off' | 'observe' | 'armed';
 
 export type AutomationRun = {
   /**

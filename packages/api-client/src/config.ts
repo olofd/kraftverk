@@ -1,17 +1,15 @@
-import type { PrintContext, Rule } from '@kraftverk/automation';
+import type { AutomationMode, PrintContext, Rule } from '@kraftverk/automation';
 import { savedDeviceId, type AutomationId } from '@kraftverk/device-sdk';
 import {
   automationEntryFrom,
   checkDocument,
   deviceEntryFrom,
   fillsFrom,
-  MODE_OF_FILE,
   readAutomationYaml,
   unitsFrom,
   writeAutomationYaml,
   writeDeviceYaml,
   type AutomationEntry,
-  type EngineMode,
   type Problem,
   type Vocabulary,
 } from '@kraftverk/home-file';
@@ -27,7 +25,7 @@ import type { AutomationView, DeviceView, RoleBinding } from './types';
 */
 
 /** What the form edits, and what it does not: its mode, clock, how often it keeps things so, its place on the home page. */
-export type AutomationSettings = { mode: EngineMode; timeZone: string; recheckMinutes: number | null; homePlace: number | null };
+export type AutomationSettings = { mode: AutomationMode; timeZone: string; recheckMinutes: number | null; homePlace: number | null };
 
 /** An automation as YAML text: its rule, what fills its roles, and its settings — and the context its numbers were written in. */
 export function automationYaml(
@@ -69,7 +67,7 @@ export function draftOfEntry(entry: AutomationEntry, devices: readonly DeviceVie
       roles: Object.fromEntries(Object.entries(fills.roles).map(([role, binding]) => [role, { device: savedDeviceId(binding.device), part: binding.part }])),
       starts: fills.starts as Record<string, AutomationId>,
     },
-    settings: { mode: MODE_OF_FILE[entry.mode], timeZone: entry.clock, recheckMinutes: entry.recheckMinutes, homePlace: entry.homePlace },
+    settings: { mode: entry.mode, timeZone: entry.clock, recheckMinutes: entry.recheckMinutes, homePlace: entry.homePlace },
   };
 }
 

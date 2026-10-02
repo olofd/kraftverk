@@ -230,9 +230,9 @@ setting it changes is kept so as a command is. Time-of-day and event
 triggers have nothing to keep. The gateway's dwell still applies to every run, and turning
 it on for an armed automation is confirmed as arming is.
 
-A run evaluates `if`, then each action: an automation that **observes** says
-what it would have done; one **armed** sends it through the gateway as
-`actor: 'automation'`. Arming is confirmed with a token bound to the
+A run evaluates `if`, then each action: an automation set to **watch** says
+what it would have done; one set to **act** sends it through the gateway as
+`actor: 'automation'`. Letting it act is confirmed with a token bound to the
 automation, its changes and the person. The mode governs only what it does
 **on its own**: started by a person — ▶ on its card, on the device it is
 about, or on the home page — any automation that is not off runs and acts,

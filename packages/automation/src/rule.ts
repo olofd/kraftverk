@@ -1240,6 +1240,14 @@ export function triggerAsNext(trigger: string): string {
   return trigger;
 }
 
+/**
+ * Whether an automation acts on its own: `off` — it does nothing; `watch`
+ * — it decides and says what it would have done; `act` — it does it,
+ * through the gateway. The same words in a file, on the API and in the app.
+ */
+export type AutomationMode = 'off' | 'watch' | 'act';
+export const AUTOMATION_MODES: readonly AutomationMode[] = ['off', 'watch', 'act'];
+
 /** One step, in words, and the steps within it — what a sequence is shown as, numbered and nested. */
 export type StepLine = {
   kind: StepKind;

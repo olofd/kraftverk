@@ -43,7 +43,6 @@ afterEach(async () => {
 /** A server whose home has no way to the bus: only an app can reach the lamp. */
 async function server(): Promise<{ hub: Hub; home: KraftverkApi }> {
   const database = testDatabase();
-  database.exec("INSERT INTO users (id, username, password_hash, created_at, password_changed_at) VALUES ('u-1', 'olof', 'x', '2026-10-01', '2026-10-01')");
   const installed = installedFrom(
     { types: [{ type: lampType }], protocols: [lampProtocol], transports: [{ definition: { ...busDefinition, platforms: ['web'], discovery: { web: 'list' } }, create: null }] },
     { platform: 'system', context: { env: {}, log: () => {}, audit: () => {} } }

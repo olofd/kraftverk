@@ -112,7 +112,6 @@ for (const driver of DRIVERS) {
     });
 
     test('the nodes: this database\'s own, once and for good; others joined for a person, and forgotten', () => {
-      database.query('INSERT INTO users (id, username, password_hash, created_at, password_changed_at) VALUES (?, ?, ?, ?, ?)').run('u-one', 'owner', 'x', at(0), at(0));
       const nodes = new NodeStore(database);
       const machine = { id: nodeId('n-0000000000a1'), name: 'Test machine', platform: 'system' as const, transports: ['mqtt'], alwaysOn: true, reachable: true, trusted: true };
       expect(nodes.declareSelf(machine)).toMatchObject({ self: true, accountId: null, alwaysOn: true });
@@ -182,7 +181,7 @@ for (const driver of DRIVERS) {
       const made = store.create({ name: 'Charge the scooter', rule, madeFrom: null, roles: {}, starts: {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
       expect(made.key).toBe('charge-the-scooter');
       const revision = store.revision;
-      expect(store.update(made.id, { mode: 'armed' })?.mode).toBe('armed');
+      expect(store.update(made.id, { mode: 'act' })?.mode).toBe('act');
       expect(store.revision).toBeGreaterThan(revision);
 
       store.keepTrigger(made.id, 0, { last: true, heldSince: at(10), fired: false });
@@ -206,13 +205,19 @@ for (const driver of DRIVERS) {
       expect(store.ran(made.id, { ...run, endedAt: at(15), outcome: 'idle', summary: 'Nothing to do' })).toBeNull();
     });
 
-    test('a reset empties the house and keeps who may enter it', () => {
+    test('a reset empties the house, and keeps its nodes and what the place keeps beside it', () => {
+      // A place's own table beside the home's — a server's accounts — is the place's.
+      database.exec('CREATE TABLE IF NOT EXISTS beside (name TEXT)');
+      database.exec("INSERT INTO beside (name) VALUES ('kept')");
+      const nodes = new NodeStore(database).all().length;
       const { tables, rows } = resetDatabase(database);
       expect(tables).toContain('device');
-      expect(tables).not.toContain('users');
+      expect(tables).not.toContain('node');
+      expect(tables).not.toContain('beside');
       expect(rows).toBeGreaterThan(0);
       expect(catalog.list()).toEqual([]);
-      expect(database.query<{ n: number }, []>('SELECT COUNT(*) n FROM users').get()?.n).toBe(1);
+      expect(new NodeStore(database).all()).toHaveLength(nodes);
+      expect(database.query<{ n: number }, []>('SELECT COUNT(*) n FROM beside').get()?.n).toBe(1);
     });
   });
 }

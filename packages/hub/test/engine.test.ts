@@ -207,12 +207,12 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
   });
   const library = new AutomationLibrary(KIT, () => {});
   /** An automation copied from one of the kit's recipes, its settings written into its blocks — as the app makes one. */
-  const make = (recipe: string, roles: AutomationRecord['roles'], params: Record<string, string | number> = {}, mode: AutomationRecord['mode'] = 'observe', recheckMinutes: number | null = null) => {
+  const make = (recipe: string, roles: AutomationRecord['roles'], params: Record<string, string | number> = {}, mode: AutomationRecord['mode'] = 'watch', recheckMinutes: number | null = null) => {
     const { id: _id, label: _label, description: _description, sentence: _sentence, ...rule } = library.recipe(recipe)!;
     const created = store.create({ name: 'Test automation', rule: inlineParams(rule, params), madeFrom: recipe, roles, starts: {}, timeZone: ZONE, recheckMinutes });
-    return mode === 'observe' ? created : store.update(created.id, { mode })!;
+    return mode === 'watch' ? created : store.update(created.id, { mode })!;
   };
-  const sunny = (params: Record<string, string | number> = {}, mode: AutomationRecord['mode'] = 'observe', switchPart = { device: PLUG, part: 'main' }) =>
+  const sunny = (params: Record<string, string | number> = {}, mode: AutomationRecord['mode'] = 'watch', switchPart = { device: PLUG, part: 'main' }) =>
     make('test.kit.sunny', { forecast: { device: FORECAST, part: 'main' }, switch: switchPart }, params, mode);
   const readingsMoved = () => bus.publish({ kind: 'readings', deviceId: STATION, readings: [] });
   return { engine, store, bus, sent, written, recorded, ledger, make, sunny, station, plug, readingsMoved, at: (next: Date) => (now = next), now: () => now };
@@ -225,18 +225,18 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
 describe('at a time of day', () => {
   test('is due once, at its hour on the owner’s clock, and not long after', async () => {
     const early = setup({ now: zonedInstant({ year: 2026, month: 6, day: 15, hour: 6, minute: 59 }, ZONE) });
-    early.sunny({}, 'armed');
+    early.sunny({}, 'act');
     await early.engine.tick();
     expect(early.sent).toEqual([]);
 
     const late = setup({ now: zonedInstant({ year: 2026, month: 6, day: 15, hour: 9, minute: 0 }, ZONE) });
-    late.sunny({}, 'armed');
+    late.sunny({}, 'act');
     await late.engine.tick();
     expect(late.sent).toEqual([]);
 
     db.exec('DELETE FROM automation');
     const { engine, sunny, store, sent } = setup();
-    const armed = sunny({}, 'armed');
+    const armed = sunny({}, 'act');
     const off = sunny({}, 'off');
     await engine.tick();
     await engine.tick();
@@ -264,7 +264,7 @@ describe('at a time of day', () => {
           timeZone: ZONE,
           recheckMinutes: null,
         }).id,
-        { mode: 'armed' }
+        { mode: 'act' }
       )!;
     const weekend = at(['sat', 'sun']);
     const monday = at(['mon']);
@@ -300,7 +300,7 @@ describe('at a time of day', () => {
 
   test('armed, it acts through the gateway, as an automation, with its reason', async () => {
     const { engine, sunny, sent } = setup();
-    const automation = sunny({}, 'armed');
+    const automation = sunny({}, 'act');
     expect((await engine.run(automation)).outcome).toBe('acted');
     // Named by its id, which a rename does not change: how keeping things so tells its own switches from another's.
     expect(sent).toEqual([expect.objectContaining({ deviceId: PLUG, part: 'main', capability: 'switch', command: 'set', args: { on: true }, actor: 'automation', by: `automation:${automation.id}` })]);
@@ -309,7 +309,7 @@ describe('at a time of day', () => {
 
   test('deleted while it ran, its run goes with it: nothing is kept or on the timeline, and nothing throws', async () => {
     const { engine, store, sunny, recorded } = setup();
-    const automation = sunny({}, 'armed');
+    const automation = sunny({}, 'act');
     store.delete(automation.id);
     expect(await engine.run(automation)).toMatchObject({ outcome: 'acted', id: null });
     expect(store.runs(automation.id)).toEqual([]);
@@ -320,46 +320,46 @@ describe('at a time of day', () => {
     const { engine, sunny, sent } = setup();
     sky.value = 'cloudy';
     sky.detail = 'Tomorrow looks cloudy: 90 % cloud';
-    expect(await engine.run(sunny({}, 'armed'))).toMatchObject({ outcome: 'idle', summary: 'Tomorrow looks cloudy: 90 % cloud' });
+    expect(await engine.run(sunny({}, 'act'))).toMatchObject({ outcome: 'idle', summary: 'Tomorrow looks cloudy: 90 % cloud' });
     sky.value = null;
     sky.detail = 'The forecast does not cover tomorrow';
-    expect(await engine.run(sunny({}, 'armed'))).toMatchObject({ outcome: 'unknown', summary: 'The forecast does not cover tomorrow' });
+    expect(await engine.run(sunny({}, 'act'))).toMatchObject({ outcome: 'unknown', summary: 'The forecast does not cover tomorrow' });
     expect(sent).toEqual([]);
     sky.value = 'sunny';
     sky.detail = 'Tomorrow looks sunny: 15 % cloud';
 
     const silent = setup({ forecastSession: false });
-    expect(await silent.engine.run(silent.sunny({}, 'armed'))).toMatchObject({ outcome: 'unknown', summary: 'Weather is not answering: Not answering' });
+    expect(await silent.engine.run(silent.sunny({}, 'act'))).toMatchObject({ outcome: 'unknown', summary: 'Weather is not answering: Not answering' });
   });
 
   test('its settings are its own: a cloudy condition, and turning off', async () => {
     const { engine, sunny, sent } = setup();
     sky.value = 'cloudy';
-    expect((await engine.run(sunny({ condition: 'cloudy', action: 'off' }, 'armed'))).outcome).toBe('acted');
+    expect((await engine.run(sunny({ condition: 'cloudy', action: 'off' }, 'act'))).outcome).toBe('acted');
     expect(sent[0]).toMatchObject({ args: { on: false } });
     sky.value = 'sunny';
   });
 
   test('one outlet of a station fills a role as a plug does; a part that cannot, cannot', async () => {
     const { engine, sunny, sent } = setup();
-    expect((await engine.run(sunny({}, 'armed', { device: STATION, part: 'outlet.ac' }))).outcome).toBe('acted');
+    expect((await engine.run(sunny({}, 'act', { device: STATION, part: 'outlet.ac' }))).outcome).toBe('acted');
     expect(sent[0]).toMatchObject({ deviceId: STATION, part: 'outlet.ac' });
-    expect(await engine.run(sunny({}, 'armed', { device: STATION, part: 'input.ac' }))).toMatchObject({ outcome: 'unknown', summary: 'What to switch: Garage P280 — Mains cannot do that' });
+    expect(await engine.run(sunny({}, 'act', { device: STATION, part: 'input.ac' }))).toMatchObject({ outcome: 'unknown', summary: 'What to switch: Garage P280 — Mains cannot do that' });
   });
 
   test('a removed device stops it, and says so; a check neither acts nor records', async () => {
     const removed = setup({ plugRemoved: true });
-    expect(await removed.engine.run(removed.sunny({}, 'armed'))).toMatchObject({ outcome: 'unknown', summary: 'What to switch: Heater plug has been removed' });
+    expect(await removed.engine.run(removed.sunny({}, 'act'))).toMatchObject({ outcome: 'unknown', summary: 'What to switch: Heater plug has been removed' });
 
     const { engine, sunny, sent, recorded } = setup();
-    expect((await engine.run(sunny({}, 'armed'), { check: true })).outcome).toBe('would-act');
+    expect((await engine.run(sunny({}, 'act'), { check: true })).outcome).toBe('would-act');
     expect(sent).toEqual([]);
     expect(recorded).toEqual([]);
   });
 
   test('it owns its rule: the recipe it was copied from is not needed to run it', async () => {
     const { store, make, sent } = setup();
-    const low = make('test.kit.low', { battery: { device: STATION, part: 'main' }, switch: { device: PLUG, part: 'main' } }, { below: 60, minutes: 0 }, 'armed');
+    const low = make('test.kit.low', { battery: { device: STATION, part: 'main' }, switch: { device: PLUG, part: 'main' } }, { below: 60, minutes: 0 }, 'act');
     // A server whose packages no longer ship that recipe: the automation runs as it was built.
     const bare = new AutomationEngine({
       store,
@@ -376,7 +376,7 @@ describe('at a time of day', () => {
 
 describe('when a condition becomes true', () => {
   const low = (context: ReturnType<typeof setup>, params: Record<string, number> = {}) =>
-    context.make('test.kit.low', { battery: { device: STATION, part: 'main' }, switch: { device: PLUG, part: 'main' } }, { below: 20, minutes: 0, ...params }, 'armed');
+    context.make('test.kit.low', { battery: { device: STATION, part: 'main' }, switch: { device: PLUG, part: 'main' } }, { below: 20, minutes: 0, ...params }, 'act');
 
   test('fires on the change to true, and not again while it stays so', async () => {
     const context = setup();
@@ -563,7 +563,7 @@ describe('a setting by what it means', () => {
       timeZone: ZONE,
       recheckMinutes: null,
     });
-    const automation = store.update(created.id, { mode: 'armed' })!;
+    const automation = store.update(created.id, { mode: 'act' })!;
     expect(engine.steps(automation).steps.map((line) => line.text)).toEqual(['Set Garage P280’s AC charge limit to 80 %']);
     expect((await engine.run(automation)).outcome).toBe('acted');
     expect(written.map((intent) => intent.patch)).toEqual([{ acLimit: 80 }]);
@@ -578,7 +578,7 @@ describe('a setting by what it means', () => {
 describe('keeping things so', () => {
   const MINUTE = 60_000;
   const window = (context: ReturnType<typeof setup>, recheckMinutes: number | null) =>
-    context.make('standard.charge-between', { battery: { device: STATION, part: 'main' }, charger: { device: PLUG, part: 'main' } }, { low: 15, high: 50, minutes: 2 }, 'armed', recheckMinutes);
+    context.make('standard.charge-between', { battery: { device: STATION, part: 'main' }, charger: { device: PLUG, part: 'main' } }, { low: 15, high: 50, minutes: 2 }, 'act', recheckMinutes);
 
   test('a charger switched on by hand above the level it stops at is switched off at the next look', async () => {
     const context = setup();
@@ -699,7 +699,7 @@ describe('keeping things so', () => {
     const { engine, station, plug, written, make } = context;
     station.soc = 74;
     plug.on = true;
-    const dark = make('test.kit.dark', { battery: { device: STATION, part: 'main' }, plug: { device: PLUG, part: 'main' } }, {}, 'armed', 10);
+    const dark = make('test.kit.dark', { battery: { device: STATION, part: 'main' }, plug: { device: PLUG, part: 'main' } }, {}, 'act', 10);
     await engine.hear({ kind: 'readings', deviceId: STATION, readings: [] });
     await settle();
     expect(written.map((intent) => [intent.patch, intent.by])).toEqual([[{ light: false }, `automation:${dark.id}`]]);
@@ -718,7 +718,7 @@ describe('when a device says something happened', () => {
   test('runs on the event it waits for, from the part it was given, and nothing else', async () => {
     const context = setup();
     const { engine, bus, sent, make } = context;
-    make('test.kit.mains', { station: { device: STATION, part: 'input.ac' }, switch: { device: PLUG, part: 'main' } }, {}, 'armed');
+    make('test.kit.mains', { station: { device: STATION, part: 'input.ac' }, switch: { device: PLUG, part: 'main' } }, {}, 'act');
     engine.start();
     try {
       const event = (id: string, part: string | null) => bus.publish({ kind: 'event', deviceId: STATION, event: { id, level: 'warn', part, data: null, at: new Date().toISOString() } });
@@ -765,7 +765,7 @@ describe('between two times of day', () => {
       timeZone: ZONE,
       recheckMinutes: null,
     });
-    const automation = store.update(created.id, { mode: 'armed' })!;
+    const automation = store.update(created.id, { mode: 'act' })!;
     expect(engine.judge(automation).conditions.map((condition) => [condition.text, condition.holds])).toEqual([['It is between 22:00 and 06:00', false]]);
     await engine.tick();
     expect(sent).toEqual([]);
@@ -802,7 +802,7 @@ describe('every so many minutes', () => {
       timeZone: ZONE,
       recheckMinutes: null,
     });
-    store.update(created.id, { mode: 'armed' });
+    store.update(created.id, { mode: 'act' });
     // 07:40: the 07:30 slot has come, and it has not run in it.
     await engine.tick();
     expect(sent).toHaveLength(1);

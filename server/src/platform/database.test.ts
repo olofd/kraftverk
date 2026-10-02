@@ -5,8 +5,8 @@ import { join } from 'node:path';
 
 import { Database } from 'bun:sqlite';
 
-import { openSchema } from './database.ts';
-import { SCHEMA, schemaFingerprint, type SqlDatabase } from '@kraftverk/store';
+import { openSchema, SERVER_SCHEMA } from './database.ts';
+import { schemaFingerprint, type SqlDatabase } from '@kraftverk/store';
 
 /*
   One schema, strict version 1 (docs/ARCHITECTURE.md §9, decision 21): a new
@@ -37,11 +37,11 @@ describe('the schema', () => {
     const path = scratch();
     const handle = openSchema(path);
     expect(tables(handle)).toContain('device');
-    expect(handle.query<{ user_version: number }, []>('PRAGMA user_version').get()?.user_version).toBe(schemaFingerprint());
+    expect(handle.query<{ user_version: number }, []>('PRAGMA user_version').get()?.user_version).toBe(schemaFingerprint(SERVER_SCHEMA));
     expect(handle.setAside).toBeUndefined();
     // What it is, said by itself: the schema, when, and by which version.
     const meta = Object.fromEntries(handle.query<{ key: string; value: string }, []>('SELECT key, value FROM meta').all().map((row) => [row.key, row.value]));
-    expect(meta.schema_hash).toBe(String(schemaFingerprint()));
+    expect(meta.schema_hash).toBe(String(schemaFingerprint(SERVER_SCHEMA)));
     expect(Date.parse(meta.created_at!)).not.toBeNaN();
     expect(meta.created_by_version).toMatch(/^\d+\.\d+\.\d+/);
     handle.close();
@@ -77,8 +77,8 @@ describe('the schema', () => {
   });
 
   test('rewording a comment is not a new schema; changing a column is', () => {
-    expect(schemaFingerprint(SCHEMA.replace('/* People who may use this server — from anywhere, the home network included. */', '/* Who may come in. */'))).toBe(schemaFingerprint());
-    expect(schemaFingerprint(SCHEMA.replace('summary       TEXT NOT NULL,', 'summary       TEXT,'))).not.toBe(schemaFingerprint());
+    expect(schemaFingerprint(SERVER_SCHEMA.replace('/* People who may use this server — from anywhere, the home network included. */', '/* Who may come in. */'))).toBe(schemaFingerprint(SERVER_SCHEMA));
+    expect(schemaFingerprint(SERVER_SCHEMA.replace('summary       TEXT NOT NULL,', 'summary       TEXT,'))).not.toBe(schemaFingerprint(SERVER_SCHEMA));
   });
 
   test('a sample holds a number or text, never both and never neither', () => {

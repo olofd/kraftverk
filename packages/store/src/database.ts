@@ -64,20 +64,25 @@ export function metaOf(db: SqlDatabase): Record<string, string> {
 /**
  * Empties every table, keeping the schema.
  *
- * `users`, `sessions`, `node` and `home` are kept: erasing the house is not
- * erasing who may enter it, or what the home is and which nodes are part of
- * it. `meta` is kept: it is what the database is, not what is in it.
- * Everything else goes — devices, samples, connections, secrets, links and the
- * audit timeline — which is the point: "back to a blank canvas".
+ * Only the store's own tables (`SCHEMA`): what a place keeps beside them in
+ * the same file — a server's accounts — is the place's, and stays. Of the
+ * store's, `node` and `home` are kept: erasing the house is not erasing what
+ * the home is and which nodes are part of it. `meta` is kept: it is what the
+ * database is, not what is in it. Everything else goes — devices, samples,
+ * connections, secrets, links and the audit timeline — which is the point:
+ * "back to a blank canvas".
  *
  * Deliberately not `DROP TABLE`: the schema is `schema.ts`'s business, and
  * recreating it here would be a second definition to drift.
  */
 export function resetDatabase(db: SqlDatabase): { tables: string[]; rows: number } {
+  const kept = new Set(['node', 'home', 'meta']);
+  const own = new Set([...SCHEMA.matchAll(/CREATE TABLE (\w+)/g)].map((match) => match[1]!).filter((table) => !kept.has(table)));
   const tables = db
-    .query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('users', 'sessions', 'node', 'home', 'meta') ORDER BY name")
+    .query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     .all()
-    .map((row) => row.name);
+    .map((row) => row.name)
+    .filter((table) => own.has(table));
 
   let rows = 0;
   db.transaction(() => {
