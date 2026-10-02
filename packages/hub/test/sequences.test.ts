@@ -88,11 +88,6 @@ function setup(world: Partial<World> = {}) {
   const reachable = () => state.supplyOn && state.reachableAfterMs !== null && Date.now() - state.supplyOnAt >= state.reachableAfterMs;
   const charging = () => state.plugOn && reachable() && state.wakesOnSwitch !== null && state.plugSwitchedOn >= state.wakesOnSwitch;
   const now = () => new Date().toISOString();
-  const reader = (readings: () => { key: string; value: boolean | number }[], connected: () => boolean): DeviceReader => ({
-    health: () => ({ status: connected() ? 'connected' : 'offline', detail: connected() ? 'Connected' : 'Its gateway cannot reach it', lastReadingAt: now() }),
-    readings: () => readings().map((reading) => ({ ...reading, at: now() })),
-    query: async () => [],
-  });
   /** The station's readings, taken as often as it takes them: older than now between two. */
   let sample: { at: number; readings: { key: string; value: boolean | number }[] } | null = null;
   const supplyReadings = () => [

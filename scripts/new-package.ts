@@ -46,6 +46,7 @@ const TSCONFIG = `{
     "noEmit": true,
 
     "strict": true,
+    "noUnusedLocals": true,
     "noUncheckedIndexedAccess": true,
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true

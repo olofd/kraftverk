@@ -1,10 +1,21 @@
 import type { AutomationContribution } from '@kraftverk/automation';
 import type { DeviceType, Protocol, TransportDefinition, TransportFactory } from '@kraftverk/device-sdk';
 
-import type { Installed } from '../hub.ts';
 import { ProtocolRegistry } from './protocols.ts';
 import { TransportHost, type TransportHostOptions } from './transports.ts';
 import { DeviceTypeRegistry } from './types.ts';
+
+/**
+ * What is installed where a home runs: its device types (and what their
+ * packages bring to automations), protocols and transports. The place fills
+ * them — the server from its disk, the app from its generated registry, a
+ * test with what it brings — and the hub runs what is in them.
+ */
+export type Installed = {
+  types: DeviceTypeRegistry;
+  protocols: ProtocolRegistry;
+  transports: TransportHost;
+};
 
 /**
  * What a place has installed, as lists — an app's generated registry, a

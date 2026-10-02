@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { checkRule, describeRule, type DeviceReader } from '@kraftverk/automation';
-import { dayAfter, localTime, zonedInstant, type Value } from '@kraftverk/device-sdk';
+import { dayAfter, localTime, zonedInstant } from '@kraftverk/device-sdk';
 import type { WeatherHour } from '@kraftverk/protocol-open-meteo';
 
 import { forecastSwitch, skyLooks } from '../src/automation.ts';

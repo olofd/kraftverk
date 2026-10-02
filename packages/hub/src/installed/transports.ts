@@ -92,6 +92,13 @@ export class TransportHost {
     return [...this.#entries.values()].map((entry) => entry.definition);
   }
 
+  /** The transports with an entry where this runs, by id: what this node can reach devices over. */
+  here(): string[] {
+    return this.definitions()
+      .filter((definition) => definition.platforms.includes(this.platform))
+      .map((definition) => definition.id);
+  }
+
   get refused(): readonly Refused[] {
     return this.#refused;
   }

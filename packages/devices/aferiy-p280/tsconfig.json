@@ -12,6 +12,7 @@
     "noEmit": true,
 
     "strict": true,
+    "noUnusedLocals": true,
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true
   },

@@ -52,7 +52,7 @@ import type {
   Value,
   ValueType,
 } from '@kraftverk/device-sdk';
-import type { AutomationDraft, RoleBinding, RoleFills, Rule, StepKind, StepLine } from '@kraftverk/automation';
+import type { AutomationDraft, RoleFills, Rule, StepKind, StepLine } from '@kraftverk/automation';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 import type { Vocabulary } from '@kraftverk/home-file';
 

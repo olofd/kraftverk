@@ -12,7 +12,6 @@ import {
   PlaceStore,
   NodeStore,
   ConnectionStore,
-  databaseLedger,
   resetDatabase,
   DeviceCatalog,
   deviceStore,
@@ -39,24 +38,10 @@ import { DeviceRegistry } from './devices/registry.ts';
 import { RemoteReadings } from './devices/remote.ts';
 import { ChangeLog } from './history/changes.ts';
 import { Sampler } from './history/sampler.ts';
-import { unfitFor } from './installed/needs.ts';
-import type { ProtocolRegistry } from './installed/protocols.ts';
-import type { TransportHost } from './installed/transports.ts';
-import type { DeviceTypeRegistry } from './installed/types.ts';
+import type { Installed } from './installed/from.ts';
 import { KeepingCopy } from './handover/keep.ts';
+import { nodeParts } from './node/parts.ts';
 import { SetupService } from './setup/index.ts';
-
-/**
- * What is installed where a home runs: its device types (and what their
- * packages bring to automations), protocols and transports. The place fills
- * them — the server from its disk, the app from its generated registry, a
- * test with what it brings — and the hub runs what is in them.
- */
-export type Installed = {
-  types: DeviceTypeRegistry;
-  protocols: ProtocolRegistry;
-  transports: TransportHost;
-};
 
 /** What a home is made from: everything only the place it runs can give it (docs/PLAN-SHARED-CORE.md, phase 5). */
 export type HubOptions = {
@@ -137,7 +122,7 @@ export class Hub {
 
   // What runs.
   /** What devices say as they say it, and what changed: what a live stream, the engine and the change log hear. */
-  readonly bus = new LiveBus();
+  readonly bus: LiveBus;
   readonly sessions: SessionManager;
   readonly gateway: ActionGateway;
   readonly library: AutomationLibrary;
@@ -178,69 +163,51 @@ export class Hub {
 
     this.audit = options.audit ?? new AuditLog(db);
     const record = (entry: AuditRecord) => this.audit.record(entry);
-    this.state = new AppState(db);
-    this.catalog = new DeviceCatalog(db);
-    this.connections = new ConnectionStore(db, options.secrets);
-    this.links = new LinkStore(db);
-    this.nodes = new NodeStore(db);
     this.home = new HomeStore(db);
     this.places = new PlaceStore(db);
-    // This node, as it declares itself at every start; the home, made the first time, its master.
-    const here = transports.definitions().filter((definition) => definition.platforms.includes(transports.platform)).map((definition) => definition.id);
-    const self = this.nodes.declareSelf({ ...options.node, platform: transports.platform, transports: here });
-    // A hub is the master of what its database keeps: never a copy another node is the master of.
-    const home = this.home.ensure({ name: 'Home', masterId: self.id });
-    if (home.masterId !== self.id) throw new Error(`This database is kept for another master (${home.masterId}): it is not opened as a home of its own`);
     this.events = new EventStore(db);
     this.history = new HistoryStore(db);
     this.automations = new AutomationStore(db);
+    const { events, automations } = this;
+
+    // What every node is made of, as the master: the ways held by its id, its devices' own stores, its own timeline.
+    const parts = nodeParts(
+      { database: db, secrets: options.secrets, installed: options.installed, node: options.node, readOnly: options.readOnly, http: options.http, log: this.#log },
+      {
+        tag: 'devices',
+        record,
+        ways: ({ connections, self }) => holding(connections, self.id),
+        sessions: {
+          store: (deviceId) => deviceStore(db, deviceId),
+          allowRawFrames: options.allowRawFrames ?? false,
+          nodeName: (id) => this.nodes.get(id)?.name ?? null,
+          // A device saved before it ever answered learns who it is the first time it does.
+          onIdentified: (deviceId, identity) => {
+            if (this.catalog.byIdentity(identity).active) return;
+            this.catalog.update(deviceId, { identity });
+          },
+          onDescribed: (deviceId, description, info, source) => this.catalog.describe(deviceId, description, info, source),
+          onEvent: (deviceId, event) => events.record(deviceId, event),
+        },
+        /** What a part is linked to comes from the links, so a command on it is verified against what it reaches. */
+        gateway: ({ catalog, sessions }) => ({
+          device: (id) => {
+            const device = catalog.active(id);
+            return device ? { name: device.name, session: sessions.get(id), description: sessions.description(device), offline: sessions.health(device).detail } : null;
+          },
+          linksFrom: (id, part) => this.links.from(id, part).map((link) => ({ kind: link.kind, target: link.target })),
+          policy: options.gateway,
+          policyValues: () => this.policy.values(),
+        }),
+      }
+    );
+    ({ state: this.state, catalog: this.catalog, connections: this.connections, links: this.links, nodes: this.nodes, bus: this.bus, sessions: this.sessions, gateway: this.gateway, setup: this.setup } = parts);
+    const { self } = parts;
+    // The home, made the first time, its master this node. A hub is the master of what its database keeps: never a copy another node is the master of.
+    const home = this.home.ensure({ name: 'Home', masterId: self.id });
+    if (home.masterId !== self.id) throw new Error(`This database is kept for another master (${home.masterId}): it is not opened as a home of its own`);
     this.policy = { values: () => policyValues(this.state), set: (name, value) => setPolicyValue(this.state, name, value) };
-
-    const { catalog, connections, links, nodes, events, automations } = this;
-    this.sessions = new SessionManager({
-      platform: transports.platform,
-      node: { id: self.id, name: self.name },
-      types,
-      protocols,
-      transports,
-      // What this node holds of the home: the ways held by its id.
-      ...holding(connections, self.id),
-      store: (deviceId) => deviceStore(db, deviceId),
-      readOnly: options.readOnly,
-      allowRawFrames: options.allowRawFrames ?? false,
-      nodeName: (id) => nodes.get(id)?.name ?? null,
-      // A way this node is not what it needs of — brought in by a file, or a home handed over — waits for one that is.
-      unfit: (method) => unfitFor(method, self),
-      record,
-      // A device saved before it ever answered learns who it is the first time it does.
-      onIdentified: (deviceId, identity) => {
-        if (catalog.byIdentity(identity).active) return;
-        catalog.update(deviceId, { identity });
-      },
-      onDescribed: (deviceId, description, info, source) => catalog.describe(deviceId, description, info, source),
-      onEvent: (deviceId, event) => events.record(deviceId, event),
-      bus: this.bus,
-      log: (message) => this.#log('info', `[devices] ${message}`),
-    });
-    const { sessions } = this;
-
-    /**
-     * The only path a command to hardware takes. What a part is linked to
-     * comes from the links, so a command on it is verified against what it
-     * reaches.
-     */
-    this.gateway = new ActionGateway({
-      device: (id) => {
-        const device = catalog.active(id);
-        return device ? { name: device.name, session: sessions.get(id), description: sessions.description(device), offline: sessions.health(device).detail } : null;
-      },
-      linksFrom: (id, part) => links.from(id, part).map((link) => ({ kind: link.kind, target: link.target })),
-      isReadOnly: (id) => options.readOnly() && !sessions.simulated(id),
-      record,
-      policy: options.gateway,
-      ledger: databaseLedger(db),
-      policyValues: () => this.policy.values(),
-    });
+    const { catalog, connections, links, nodes, sessions } = this;
 
     /** What the installed packages bring to automations: their recipes and functions. None of the core's own. */
     this.library = new AutomationLibrary(types.contributions(), (message) => this.#log('warn', message));
@@ -249,7 +216,6 @@ export class Hub {
 
     this.remote = new RemoteReadings(this.history);
     this.registry = new DeviceRegistry({ catalog, types, sessions, connections, links, nodes, transports, remote: this.remote, self: self.id, master: () => this.home.get()!.masterId, readOnly: options.readOnly });
-    this.setup = new SetupService({ db, record, types, protocols, transports, catalog, connections, links, sessions, http: options.http, self: self.id, traits: (id) => nodes.get(id) });
     this.nearby = new Nearby({ types, protocols, transports, connections });
     this.sampler = new Sampler({ history: this.history, audit: this.audit, events }, this.registry);
     this.changeLog = new ChangeLog(this.history, this.bus, (id) => {

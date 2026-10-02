@@ -1,5 +1,3 @@
-import { STANDARD_NAMESPACE } from '@kraftverk/device-sdk';
-
 import { defineRecipe, type Expr, type Recipe, type RoleSpec, type Step } from './rule.ts';
 
 /**

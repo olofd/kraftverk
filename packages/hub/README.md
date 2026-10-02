@@ -70,28 +70,32 @@ in its own SQLite, and never branches on which (decision 22).
 Because a home is the same thing wherever it is kept. What a server does
 with its devices — hold them, judge a setup's check, sample their history,
 run automations, keep its configuration — is what an app with no server
-must do too, and written twice it drifts (it did: the app's local mode was
-a second, smaller model of devices with no history and no automations).
+must do too, and written twice it drifts (it did: the app's own home was
+once a second, smaller model of devices with no history and no automations).
 One package, handed its platform as ports, is one behaviour on a server, a
 phone, a browser and in a test — and the server is left as what only an
 always-running machine must be.
 
 ## In detail
 
-**Being built** (docs/PLAN-SHARED-CORE.md, "Phase 5, in detail"): what is
-below is the design, and the plan says which part is in. In now:
-`createHub` (`Hub`), which the server runs; `hub.as(caller)`, the whole of
-`KraftverkApi` (`src/api/`), which every route of the server adapts to;
-the live stream's outbox (`src/live/`); and all it wires — what is
-installed (`DeviceTypeRegistry`, `ProtocolRegistry`, `TransportHost` for
-any platform; `installedFrom` makes all three from lists, as the app
-installs them), devices' views (`DeviceRegistry`), `Nearby`,
-`RemoteReadings`, `SetupService`, history (`Sampler`, `ChangeLog`, `series`,
-`changesOf`), `Attention` and `keepWatchedFresh`, the assistant's world,
-`homeDevices` for the engine, the planner (`plans`), and the home's
-configuration (`Configuration`: vocabulary, schema, export, an import's
-plan and apply, the restore, the copy kept beside the database) — each
-handed its database and timeline. Sealing a secret with a passphrase is a
+`createHub` (`Hub`), which the server runs and the app runs for a home of
+its own; `createFollower`, which the app runs for a server's home;
+`hub.as(caller)`, the whole of `KraftverkApi` (`src/api/`), which every
+route of the server adapts to; the live stream's outbox (`src/live/`).
+Both roles are one node's parts (`src/node/parts.ts`: its stores, the node
+it declares itself to be, its session manager, its gateway, its setup),
+each with the few things its role decides handed in. Around them, what
+the master runs: what is installed (`DeviceTypeRegistry`,
+`ProtocolRegistry`, `TransportHost` for any platform; `installedFrom`
+makes all three from lists, as the app installs them), devices' views
+(`DeviceRegistry`), `Nearby`, `RemoteReadings`, history — what is sampled
+and when (`Sampler`, `ChangeLog`, `series`, `changesOf`; how long each is
+kept in `history/retention.ts`), kept by the store's `HistoryStore` —
+`Attention` and `keepWatchedFresh`, the assistant's world, `homeDevices`
+for the engine, the planner (`plans`), and the home's configuration
+(`Configuration`: vocabulary, schema, export, an import's plan and apply,
+the restore, the copy kept beside the database). No SQL is run here:
+every table is the store's. Sealing a secret with a passphrase is a
 port (`PassphraseSealing`), and every place hands in the same one
 (`passphraseSealing`, AES-256-GCM in plain JavaScript): a file sealed on one
 opens on any given the passphrase.
@@ -108,6 +112,10 @@ const follower = createFollower({
   node,          // { id, name: 'Chrome on Windows', alwaysOn, reachable, trusted }: the node it is
   readOnly,      // () => boolean: writes from this app, refused until allowed
   http,          // a setup helper's one call to a vendor
+  // optional:
+  own,           // { database, sealing }: the home this app kept itself before, offered to the master
+  sendEveryMs,   // how often what is owed goes up: a test's shorter wait
+  log,           // where it says what happened
 });
 await follower.start();     // joins the master, keeps the home as it has it, holds its ways, sends what is owed
 const api = follower.api;   // the master's KraftverkApi, with what this node holds wrapped in
@@ -153,13 +161,18 @@ with their keys. History stays where it was recorded.
 ```ts
 const hub = createHub({
   database,      // SqlDatabase: bun:sqlite, expo-sqlite or SQLite's WebAssembly build, its schema prepared
-  secrets,       // SecretsAtRest: the server's key, a phone's secure storage
+  secrets,       // SecretsAtRest: sealedWithKey(the place's key), or plainSecrets
+  sealing,       // PassphraseSealing: passphraseSealing, for a file's secrets
   installed,     // Installed: device types, protocols, transports — found by the place
   node,          // { id, name, alwaysOn, reachable, trusted }: the node it is, by its own id
   readOnly,      // () => boolean: every hardware write refused
   http,          // ScopedHttp: a setup helper's one call to a vendor
+  // optional:
+  audit,         // AuditLog: the place's own over the same database; made here when not given
+  copy,          // SqlDatabase: the copy an app kept of the server it used last, offered to keep
+  allowRawFrames, // boolean: frames nobody described, for bringing up a unit; never in an app
+  gateway,       // Partial<GatewayPolicy>: a test's shorter wait to verify
   log,           // where it says what happened
-  now,           // the clock; a test's own
 });
 await hub.start();         // transports, sessions, the engine, sampling
 const api = hub.as(caller); // KraftverkApi, for one person, agent or automation
@@ -171,7 +184,7 @@ await hub.stop();
 - **Every hub is a kraftverk node** (`node`, handed in: its id is the
   node's own, kept where it runs). A connection the hub holds is one its
   own node holds (`held_by` its id): the server's on a server, the
-  phone's in local mode. The home names its master (`home.master_id`):
+  app's in its own home. The home names its master (`home.master_id`):
   the node whose database is the home's. An app holding connections for a
   server's home is not a second hub: it is a follower (`createFollower`,
   below), a node that follows the master and joins it by its own id

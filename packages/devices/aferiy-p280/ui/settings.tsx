@@ -1,7 +1,7 @@
 import { Spinner, Text, YStack } from 'tamagui';
 
 import { Card, SectionLabel } from '@kraftverk/ui';
-import { Row, RowSeparator, ToggleRow } from '@kraftverk/ui';
+import { RowSeparator, ToggleRow } from '@kraftverk/ui';
 import { SegmentedControl } from '@kraftverk/ui';
 import { SliderRow } from '@kraftverk/ui';
 import { formatDuration } from '@kraftverk/ui';

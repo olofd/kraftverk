@@ -1,6 +1,6 @@
 import { Input, Text, XStack, YStack } from 'tamagui';
 
-import { Row, RowSeparator, ToggleRow } from './Row';
+import { RowSeparator, ToggleRow } from './Row';
 import { SliderRow } from './SliderRow';
 import { haptic } from './haptics';
 import { presentationOf, type ConfigField, type ConfigSchema, type ConfigValues } from '@kraftverk/device-sdk';

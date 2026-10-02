@@ -1,0 +1,120 @@
+import type { AuditRecord, ScopedHttp } from '@kraftverk/device-sdk';
+import { ActionGateway, type GatewayDeps } from '@kraftverk/gateway';
+import { LiveBus, SessionManager, type SessionManagerDeps } from '@kraftverk/holder';
+import { AppState, ConnectionStore, databaseLedger, DeviceCatalog, LinkStore, NodeStore, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+
+import type { Installed } from '../installed/from.ts';
+import { unfitFor } from '../installed/needs.ts';
+import { SetupService } from '../setup/index.ts';
+
+/*
+  What every kraftverk node is made of, whatever its role (docs/ARCHITECTURE.md,
+  decision 24): its own database's stores, the node it declares itself to be,
+  one session manager for the ways it holds, the gateway every action goes
+  through, and setup for a way it adds. The master (\`createHub\`) and a node
+  that follows it (\`createFollower\`) are each these parts, with the few
+  things their role decides handed in (\`NodeRole\`) — not two builds of the
+  same thing.
+*/
+
+/** What only the place a node runs can give it. */
+export type NodeOptions = {
+  /** Where this node keeps what it keeps, its schema current. */
+  database: SqlDatabase;
+  /** How the secrets of the ways it holds are sealed at rest. */
+  secrets: SecretsAtRest;
+  installed: Installed;
+  /** The node this is: its own id, its name, and what it declares it is. */
+  node: Omit<NodeDeclaration, 'platform' | 'transports'>;
+  /** Every write to hardware refused: the server's launch, an app's switch. */
+  readOnly: () => boolean;
+  /** For a setup helper that calls a vendor's API once — fetching a key. */
+  http: ScopedHttp;
+  log: (level: 'info' | 'warn' | 'error', message: string) => void;
+};
+
+/** What a node's role decides of its parts: the master's, and a follower's, differ only in these. */
+export type NodeRole = {
+  /** How its lines are tagged in the log: \`devices\`, \`follower\`. */
+  tag: string;
+  /** Where its timeline goes: the home's own, or owed to the master. */
+  record(entry: AuditRecord): void;
+  /** Which of the home's ways its sessions hold, and their secrets. */
+  ways(stores: { connections: ConnectionStore; self: NodeRecord }): Pick<SessionManagerDeps, 'connections' | 'holds' | 'secret' | 'secretFields' | 'onConnected'>;
+  /** What else its sessions are handed: where a device's store is, what is done with what a device says. */
+  sessions: Pick<SessionManagerDeps, 'store' | 'onEvent'> & Partial<Pick<SessionManagerDeps, 'allowRawFrames' | 'nodeName' | 'onIdentified' | 'onDescribed'>>;
+  /** How its gateway finds a device and what it is linked to; what read-only is called here. */
+  gateway(parts: { catalog: DeviceCatalog; sessions: SessionManager }): Pick<GatewayDeps, 'device' | 'linksFrom' | 'readOnlyReason' | 'policy' | 'policyValues'>;
+};
+
+export type NodeParts = {
+  db: SqlDatabase;
+  /** This node, as it declared itself to its own database just now. */
+  self: NodeRecord;
+  state: AppState;
+  catalog: DeviceCatalog;
+  connections: ConnectionStore;
+  links: LinkStore;
+  nodes: NodeStore;
+  /** What its sessions say, as they say it: readings, health, events. */
+  bus: LiveBus;
+  sessions: SessionManager;
+  gateway: ActionGateway;
+  setup: SetupService;
+};
+
+/** A node's parts, made for its role. */
+export function nodeParts(options: NodeOptions, role: NodeRole): NodeParts {
+  const db = options.database;
+  const { types, protocols, transports } = options.installed;
+  const state = new AppState(db);
+  const catalog = new DeviceCatalog(db);
+  const connections = new ConnectionStore(db, options.secrets);
+  const links = new LinkStore(db);
+  const nodes = new NodeStore(db);
+  // This node, as it declares itself at every start: what it is, and what it reaches devices over here.
+  const self = nodes.declareSelf({ ...options.node, platform: transports.platform, transports: transports.here() });
+  const bus = new LiveBus();
+
+  const sessions = new SessionManager({
+    platform: transports.platform,
+    node: { id: self.id, name: self.name },
+    types,
+    protocols,
+    transports,
+    ...role.ways({ connections, self }),
+    // A way this node is not what it needs of — brought in by a file, or a home handed over — waits for one that is.
+    unfit: (method) => unfitFor(method, self),
+    readOnly: options.readOnly,
+    allowRawFrames: false,
+    ...role.sessions,
+    record: (entry) => role.record(entry),
+    bus,
+    log: (message) => options.log('info', `[${role.tag}] ${message}`),
+  });
+
+  /** The only path a command to hardware takes, over what this node holds. */
+  const gateway = new ActionGateway({
+    ...role.gateway({ catalog, sessions }),
+    isReadOnly: (id) => options.readOnly() && !sessions.simulated(id),
+    record: (entry) => role.record(entry),
+    ledger: databaseLedger(db),
+  });
+
+  const setup = new SetupService({
+    db,
+    record: (entry) => role.record(entry),
+    types,
+    protocols,
+    transports,
+    catalog,
+    connections,
+    links,
+    sessions,
+    http: options.http,
+    self: self.id,
+    traits: (id) => nodes.get(id),
+  });
+
+  return { db, self, state, catalog, connections, links, nodes, bus, sessions, gateway, setup };
+}

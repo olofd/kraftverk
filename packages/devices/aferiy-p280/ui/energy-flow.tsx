@@ -179,18 +179,6 @@ function polyPath(points: Point[]): string {
   return d;
 }
 
-/** Distance-proportional stops, so a droplet moves at constant speed. */
-function stops(points: Point[]) {
-  const segs = points.slice(1).map((p, i) => Math.hypot(p.x - points[i]!.x, p.y - points[i]!.y));
-  const total = segs.reduce((a, b) => a + b, 0) || 1;
-  let run = 0;
-  return points.map((_, i) => {
-    if (i === 0) return 0;
-    run += segs[i - 1]!;
-    return run / total;
-  });
-}
-
 export function EnergyFlow({
   status,
   chargeLimit,

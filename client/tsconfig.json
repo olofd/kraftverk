@@ -2,6 +2,7 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    "noUnusedLocals": true,
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
     // `@kraftverk/protocol` is consumed as TypeScript source — it is a

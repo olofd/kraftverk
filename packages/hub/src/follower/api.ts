@@ -72,7 +72,7 @@ export function followerApi(h: Follower): KraftverkApi {
     async deviceTypes() {
       const { answer: list } = await h.kept('device-types', () => home.deviceTypes());
       const { transports } = h.installed;
-      await transports.startAll(h.transportsHere());
+      await transports.startAll(transports.here());
       return {
         ...list,
         types: list.types.map((listing) => {
@@ -218,7 +218,7 @@ export function followerApi(h: Follower): KraftverkApi {
       async list() {
         const { answer: list } = await h.kept('transports', () => home.transports.list());
         const { transports } = h.installed;
-        const mine = h.transportsHere().map((id): TransportView => {
+        const mine = h.installed.transports.here().map((id): TransportView => {
           const transport = transports.get(id);
           return {
             ...transports.definition(id)!,

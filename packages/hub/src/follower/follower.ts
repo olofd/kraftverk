@@ -1,13 +1,13 @@
 import { ApiError, type ConnectionView, type DeviceView, type KraftverkApi, type PolicyValueView } from '@kraftverk/api-contract';
-import { isSimulated, platformsOf, type AuditRecord, type NodeId, type Platform, type DeviceSession, type DeviceStore, type PolicyValues, type Reading, type SavedDeviceId, type ScopedHttp } from '@kraftverk/device-sdk';
+import type { AuditRecord, DeviceSession, DeviceStore, NodeId, Platform, PolicyValues, Reading, SavedDeviceId, ScopedHttp } from '@kraftverk/device-sdk';
 import { ActionGateway, Confirmations } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, toHold, toolsOf, withInUse, type DeviceEventMessage } from '@kraftverk/holder';
-import { AppState, ConnectionStore, databaseLedger, DeviceCatalog, deviceStore, HomeStore, LastHeard, LinkStore, NodeStore, SendQueue, type DeviceRecord, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { AppState, ConnectionStore, DeviceCatalog, deviceStore, HomeStore, LastHeard, LinkStore, NodeStore, SendQueue, type DeviceRecord, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
 import type { PassphraseSealing } from '../configuration/seal.ts';
 import { MovingToMaster } from '../handover/move.ts';
-import type { Installed } from '../hub.ts';
-import { unfitFor } from '../installed/needs.ts';
+import type { Installed } from '../installed/from.ts';
+import { nodeParts } from '../node/parts.ts';
 import { SetupService } from '../setup/index.ts';
 import { unref } from '../timers.ts';
 import { followerApi } from './api.ts';
@@ -95,10 +95,11 @@ export class Follower {
   readonly state: AppState;
   readonly catalog: DeviceCatalog;
   readonly connections: ConnectionStore;
+  readonly links: LinkStore;
   readonly queue: SendQueue;
   /** What the master last said, by what was asked: shown while it cannot be reached. */
   readonly heard: LastHeard;
-  readonly bus = new LiveBus();
+  readonly bus: LiveBus;
   readonly sessions: SessionManager;
   readonly gateway: ActionGateway;
   readonly setup: SetupService;
@@ -131,67 +132,51 @@ export class Follower {
     this.readOnly = options.readOnly;
     this.#sendEveryMs = options.sendEveryMs ?? SEND_MS;
     this.#log = options.log ?? ((level, message) => console[level === 'info' ? 'log' : level](message));
-    const { types, protocols, transports } = options.installed;
 
-    this.state = new AppState(db);
-    this.catalog = new DeviceCatalog(db);
-    this.connections = new ConnectionStore(db, options.secrets);
     this.queue = new SendQueue(db);
-    // This node, as it declares itself in its own database at every start.
-    this.nodes = new NodeStore(db);
     this.homeKept = new HomeStore(db);
-    const self = this.nodes.declareSelf({ ...options.node, platform: transports.platform, transports: transports.definitions().filter((definition) => definition.platforms.includes(transports.platform)).map((definition) => definition.id) });
     this.heard = new LastHeard(db);
-    const { catalog, connections, queue } = this;
-
+    // Its timeline is owed to the master, sent with its readings.
     const record = (entry: AuditRecord) => this.owe('audit', null, entry);
-    this.sessions = new SessionManager({
-      platform: transports.platform,
-      node: { id: self.id, name: self.name },
-      types,
-      protocols,
-      transports,
-      // Every way kept here is this node's own; it is held while nothing above it reaches the device.
-      connections: (deviceId) => (this.#holdNow.has(deviceId) ? connections.forDevice(deviceId) : []),
-      holds: () => true,
-      unfit: (method) => unfitFor(method, self),
-      secret: (connectionId, field) => connections.secret(connectionId, field),
-      secretFields: (connectionId) => connections.secretFields(connectionId),
-      onConnected: (connectionId) => connections.touch(connectionId),
-      store: (deviceId) => this.#storeOf(deviceId),
-      readOnly: options.readOnly,
-      // Frames nobody has described are for a server started to bring up a unit, never for a node that follows.
-      allowRawFrames: false,
-      record,
-      // Kept by the master, as its own devices' are: sent with the readings.
-      onEvent: (deviceId, event) => {
-        const connection = this.sessions.inUse(deviceId);
-        if (connection) this.owe('event', deviceId, { connectionId: connection.id, event } satisfies EventOwed);
-      },
-      bus: this.bus,
-      log: (message) => this.#log('info', `[follower] ${message}`),
-    });
-    const { sessions } = this;
 
-    /** The same gateway the home runs, over what this node holds — and the master's word on what it does not, to verify a switch against. */
-    this.gateway = new ActionGateway({
-      device: (id) => {
-        const seen = this.#seen.get(id);
-        const held = catalog.active(id);
-        if (held && this.#holdNow.has(id)) return { name: held.name, session: sessions.get(id), description: sessions.description(held), offline: sessions.health(held).detail };
-        return seen ? { name: seen.name, session: viewSession(seen), description: seen.description, offline: seen.health.detail } : null;
-      },
-      linksFrom: (id, part) =>
-        (this.#seen.get(id)?.links ?? []).filter((link) => link.role === 'source' && link.part === part).map((link) => ({ kind: link.kind, target: { device: link.other.id, part: link.other.part } })),
-      isReadOnly: (id) => options.readOnly() && !sessions.simulated(id),
-      readOnlyReason: 'Writes from this app are off: allow them in App settings',
-      record,
-      ledger: databaseLedger(db),
-      policyValues: () => this.policyValues(),
-    });
-
-    // A way this node holds is set up here, over its own radio: the master judges what it finds, and keeps the device.
-    this.setup = new SetupService({ db, record, types, protocols, transports, catalog, connections, links: new LinkStore(db), sessions, http: options.http, self: self.id, traits: (id) => this.nodes.get(id) });
+    // What every node is made of, as a follower: the ways it holds for the master, held while nothing above reaches the device.
+    const parts = nodeParts(
+      { database: db, secrets: options.secrets, installed: options.installed, node: options.node, readOnly: options.readOnly, http: options.http, log: this.#log },
+      {
+        tag: 'follower',
+        record,
+        ways: ({ connections }) => ({
+          // Every way kept here is this node's own; it is held while nothing above it reaches the device.
+          connections: (deviceId) => (this.#holdNow.has(deviceId) ? connections.forDevice(deviceId) : []),
+          holds: () => true,
+          secret: (connectionId, field) => connections.secret(connectionId, field),
+          secretFields: (connectionId) => connections.secretFields(connectionId),
+          onConnected: (connectionId) => connections.touch(connectionId),
+        }),
+        sessions: {
+          store: (deviceId) => this.#storeOf(deviceId),
+          // Kept by the master, as its own devices' are: sent with the readings.
+          onEvent: (deviceId, event) => {
+            const connection = this.sessions.inUse(deviceId);
+            if (connection) this.owe('event', deviceId, { connectionId: connection.id, event } satisfies EventOwed);
+          },
+        },
+        /** Over what this node holds — and the master's word on what it does not, to verify a switch against. */
+        gateway: ({ catalog, sessions }) => ({
+          device: (id) => {
+            const seen = this.#seen.get(id);
+            const held = catalog.active(id);
+            if (held && this.#holdNow.has(id)) return { name: held.name, session: sessions.get(id), description: sessions.description(held), offline: sessions.health(held).detail };
+            return seen ? { name: seen.name, session: viewSession(seen), description: seen.description, offline: seen.health.detail } : null;
+          },
+          linksFrom: (id, part) =>
+            (this.#seen.get(id)?.links ?? []).filter((link) => link.role === 'source' && link.part === part).map((link) => ({ kind: link.kind, target: { device: link.other.id, part: link.other.part } })),
+          readOnlyReason: 'Writes from this app are off: allow them in App settings',
+          policyValues: () => this.policyValues(),
+        }),
+      }
+    );
+    ({ state: this.state, catalog: this.catalog, connections: this.connections, links: this.links, nodes: this.nodes, bus: this.bus, sessions: this.sessions, gateway: this.gateway, setup: this.setup } = parts);
     this.moving = options.own ? new MovingToMaster(this, options.own.database, { secrets: options.secrets, sealing: options.own.sealing }) : null;
     this.api = followerApi(this);
   }
@@ -222,7 +207,7 @@ export class Follower {
    * last heard — and sending what is owed.
    */
   async start(): Promise<void> {
-    await this.installed.transports.startAll(this.transportsHere());
+    await this.installed.transports.startAll(this.installed.transports.here());
     await this.join().catch((error: unknown) => this.#log('warn', `[follower] the master did not hear who this node is: ${(error as Error).message}`));
     const list = await this.refresh();
     if (!list) {
@@ -248,16 +233,11 @@ export class Follower {
     await Promise.allSettled([this.sessions.closeAll(), this.installed.transports.stopAll()]);
   }
 
-  /** The transports this node can hold a way over where it runs. */
-  transportsHere(): string[] {
-    const { transports } = this.installed;
-    return transports.definitions().filter((definition) => definition.platforms.includes(transports.platform)).map((definition) => definition.id);
-  }
 
   /** Joins the home — says who this node is, what it is and what it reaches devices over — at every start, by its own id. */
   async join(): Promise<NodeId> {
     const self = this.nodes.self()!;
-    await this.home.nodes.join({ id: self.id, name: self.name, platform: self.platform, transports: this.transportsHere(), alwaysOn: self.alwaysOn, reachable: self.reachable, trusted: self.trusted, place: self.placeId });
+    await this.home.nodes.join({ id: self.id, name: self.name, platform: self.platform, transports: this.installed.transports.here(), alwaysOn: self.alwaysOn, reachable: self.reachable, trusted: self.trusted, place: self.placeId });
     this.#joined = true;
     return self.id;
   }
