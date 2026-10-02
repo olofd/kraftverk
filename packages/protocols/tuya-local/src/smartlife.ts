@@ -136,8 +136,17 @@ export function signHeaders(hashKey: string, headers: Record<string, string>, en
   return toHex(hmacSha256(hashKey, signed + encryptedQuery));
 }
 
+/** A random version-4 UUID, from the random values every place has (a phone has no `crypto.randomUUID`). */
+function randomUuid(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = toHex(bytes);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 async function call<T>(http: ScopedHttp, session: SmartLifeSession, path: string, params?: Record<string, unknown>): Promise<T> {
-  const requestId = globalThis.crypto.randomUUID();
+  const requestId = randomUuid();
   const { hashKey, secret } = requestKeys(requestId, session.refreshToken);
   const encryptedQuery = params ? encryptPayload(JSON.stringify(params), secret) : '';
 

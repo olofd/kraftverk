@@ -81,18 +81,24 @@ runtime      automation-engine  runs automations: triggers, steps, runs, run log
                              rehearsal, plans; declares where its records are kept
              holder          a device held: open, watch, fail over, judge — and the one
                              session manager; declares where its devices are kept
-             gateway         every physical action: rules, confirmation, verification
 ──────────────────────────────────────────────────────────────────────────────────────
-language     automation      the language: rules, triggers, steps, expressions; checking,
+the API      api-contract    the API's shapes and KraftverkApi — types only; it names the
+                             types of what is under it (a gateway's answer, a rule), and
+                             the runtime above speaks in its shapes
+──────────────────────────────────────────────────────────────────────────────────────
+rules        automation      the language: rules, triggers, steps, expressions; checking,
                              describing, evaluating, editing; the text form; the standard
                              recipes. Its README is the language's reference
              config          the home as a document: YAML, its JSON Schema, migrations,
                              passphrase sealing; speaks the language through automation
+             gateway         every physical action: rules, confirmation, verification
 ──────────────────────────────────────────────────────────────────────────────────────
 contracts    device-sdk      values, meanings, capabilities, descriptions and what follows
                              from them alone; DeviceType, Transport, Protocol, DeviceSession
-             api-contract    the API's shapes and KraftverkApi — types only
 ```
+
+Which package may import which is a table in `scripts/architecture.mjs`
+(`MAY_IMPORT`), checked on every commit; this picture is that table.
 
 Device types, protocols and transports stay as they are. A device type may
 import `device-sdk` and `automation` (to declare recipes and functions), and

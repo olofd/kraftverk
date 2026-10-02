@@ -27,7 +27,9 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { builtinModules } from 'node:module';
+import { tmpdir } from 'node:os';
 import { dirname, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -42,23 +44,47 @@ const TEST = /\.test\.(ts|tsx)$|(^|\/)test\//;
 // --- where a file belongs ----------------------------------------------------
 
 /** The core: knows no device type, service or protocol. */
-const CORE = [
-  'server/src/',
-  'client/src/',
-  'client/app/',
-  'packages/api-client/',
-  'packages/api-contract/',
-  'packages/config/',
-  'packages/ui/',
-  'packages/device-sdk/',
-  'packages/gateway/',
-  'packages/holder/',
-];
+const CORE = ['server/src/', 'client/src/', 'client/app/'];
+/** A core package's folder: the server, the app and these know no product. */
+const isCorePackage = (file) => /^packages\/[^/]+\//.test(file) && corePackageOf(file) !== null;
+/**
+ * The core packages, and which of them each may import, by name: the layers
+ * of docs/PLAN-SHARED-CORE.md, lowest first. An import the table does not
+ * list fails — up the layers, or across them where it says not. A package
+ * planned and not yet made is here already, so it is held from its first
+ * file.
+ */
+const MAY_IMPORT = {
+  'device-sdk': [],
+  automation: ['device-sdk'],
+  gateway: ['device-sdk'],
+  config: ['device-sdk', 'automation'],
+  'api-contract': ['device-sdk', 'automation', 'gateway', 'config'],
+  holder: ['device-sdk', 'gateway', 'api-contract'],
+  'automation-engine': ['device-sdk', 'automation', 'gateway', 'api-contract', 'holder'],
+  store: ['device-sdk', 'automation', 'gateway', 'api-contract', 'holder', 'automation-engine'],
+  hub: ['device-sdk', 'automation', 'gateway', 'config', 'api-contract', 'holder', 'automation-engine', 'store'],
+  // The edges: the API over HTTP, and the React kit.
+  'api-client': ['device-sdk', 'automation', 'gateway', 'config', 'api-contract'],
+  ui: ['device-sdk'],
+};
+/** The edges among the core packages: the rest is shared. */
+const EDGE_PACKAGES = new Set(['api-client', 'ui']);
+const SHARED_PACKAGES = Object.keys(MAY_IMPORT).filter((name) => !EDGE_PACKAGES.has(name));
+/** What a device type may import of the core: the contract, and the language to declare recipes in. */
+const DEVICE_MAY_IMPORT = new Set(['device-sdk', 'automation']);
+
 /**
  * The core both holders run: the server and the app. Pure, like a protocol —
- * no platform built-in — or the app could not run it.
+ * no platform built-in — or the app could not run it (docs/PLAN-SHARED-CORE.md;
+ * tsconfig.shared.json checks the same against the globals every place has).
  */
-const SHARED_CORE = /^packages\/(api-contract|config|device-sdk|gateway|holder)\/src\//;
+const SHARED_CORE = new RegExp(`^packages/(${SHARED_PACKAGES.join('|')})/src/`);
+/** `packages/hub/src/x.ts` → `hub`; null outside a core package. */
+const corePackageOf = (file) => {
+  const match = /^packages\/([^/]+)\//.exec(file);
+  return match && match[1] in MAY_IMPORT ? match[1] : null;
+};
 /** The one file per side allowed to import every device type. */
 const GENERATED = ['server/src/generated/', 'client/src/generated/'];
 
@@ -78,7 +104,7 @@ const TRANSPORT_PARENTS = ['packages/transports/'];
 
 function areaOf(file) {
   if (GENERATED.some((prefix) => file.startsWith(prefix))) return { kind: 'generated' };
-  if (CORE.some((prefix) => file.startsWith(prefix))) return { kind: 'core' };
+  if (CORE.some((prefix) => file.startsWith(prefix)) || isCorePackage(file)) return { kind: 'core' };
   const device = packageRoot(file, DEVICE_PARENTS);
   if (device) return { kind: 'device', root: device };
   const protocol = packageRoot(file, PROTOCOL_PARENTS);
@@ -195,17 +221,29 @@ function violation(file, area, specifier) {
   const shipped = !TEST.test(file);
 
   switch (area.kind) {
-    case 'core':
+    case 'core': {
       if (PRODUCT_PACKAGE.test(specifier)) return 'the core imports a device type, service, protocol or transport';
       if (target && PRODUCT_PATH.test(target)) return 'the core reaches into a product package';
       if (SHARED_CORE.test(file) && shipped && BUILT_IN.test(specifier)) return 'shared core imports a platform built-in: the app runs it too';
+      // The layers: a core package imports only what the table lets it, by name, never by a path.
+      const own = corePackageOf(file);
+      if (own) {
+        const named = /^@kraftverk\/([^/]+)/.exec(specifier)?.[1];
+        if (named && named !== own && named in MAY_IMPORT && !MAY_IMPORT[own].includes(named)) return `${own} may not import ${named}: it is not below it (docs/PLAN-SHARED-CORE.md)`;
+        if (target && !target.startsWith(`packages/${own}/`) && target.startsWith('packages/')) return `${own} reaches into another package by a path`;
+        if (shipped && (/^@kraftverk\/(server|client)(\/|$)/.test(specifier) || (target && /^(server|client)\//.test(target)))) return 'a package imports the server or the app';
+      }
       return null;
+    }
 
     case 'device': {
       if (target && !target.startsWith(area.root)) return 'a device type reaches outside its package';
       if (/^@kraftverk\/(server|client)(\/|$)/.test(specifier)) return 'a device type imports the app';
       if (/^@kraftverk\/transport-/.test(specifier)) return 'a device type imports a transport: it is handed a connection';
       const serverSafe = file.startsWith(`${area.root}src/`);
+      // Of the core, the contract and the language; its screens add the kit and the API.
+      const core = /^@kraftverk\/([^/]+)/.exec(specifier)?.[1];
+      if (core && core in MAY_IMPORT && !DEVICE_MAY_IMPORT.has(core) && (serverSafe || !EDGE_PACKAGES.has(core))) return `a device type imports ${core}: of the core, only the SDK and the language`;
       if (serverSafe && UI_ONLY.test(specifier)) return 'server-side device code imports UI';
       // Its own screens included: what the server loads never depends on a package's page.
       if (serverSafe && target && target.startsWith(`${area.root}ui/`)) return "server-side device code imports its package's screens";
@@ -238,6 +276,100 @@ function violation(file, area, specifier) {
   }
 }
 
+// --- where code lives ------------------------------------------------------------
+
+/**
+ * What `server/src` may hold: only what an always-running machine on the
+ * network is — the HTTP API, accounts, the admin's reset, the platform (its
+ * database file, its disk, the packages found on it) and the process. Logic
+ * anywhere else in it is a package's: an exception the baseline lists until
+ * it has moved (docs/PLAN-SHARED-CORE.md).
+ */
+const SERVER_PLACES = /^server\/src\/((routes|auth|admin|platform)\/|(app|index|log|config)\.ts$)/;
+/** What makes a file of the app a screen, or React's binding to one. */
+const SCREEN = /^(react|tamagui|@tamagui\/|@kraftverk\/ui)(\/|$)/;
+
+/** Why a file is in the wrong place, or null. */
+function misplaced(file, source) {
+  if (TEST.test(file)) return null;
+  if (file.startsWith('server/src/')) return SERVER_PLACES.test(file) ? null : "logic that is not the server's: it belongs in a package";
+  // The app's .tsx are screens; a .ts with no screen in it, outside the platform's own, is logic.
+  if (file.startsWith('client/src/') && file.endsWith('.ts') && !/^client\/src\/(platform|generated)\//.test(file)) {
+    return importsOf(source).some((specifier) => SCREEN.test(specifier)) ? null : 'no screen in it: it belongs in a package';
+  }
+  return null;
+}
+
+/** A folder under `packages/` that is neither a product's nor in the layers: it would be held to nothing. */
+function unplacedPackages() {
+  const listed = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', 'packages/*/package.json'], { cwd: ROOT, encoding: 'utf8' });
+  return listed
+    .split('\n')
+    .map((line) => line.trim().split('/'))
+    // Git's * crosses folders: only `packages/x/package.json` is a core package's.
+    .filter((parts) => parts.length === 3)
+    .map((parts) => parts[1])
+    .filter((name) => !(name in MAY_IMPORT))
+    .map((name) => `packages/${name}: a core package with no place in the layers — add it to MAY_IMPORT in scripts/architecture.mjs`);
+}
+
+// --- shared code bundles for a browser ---------------------------------------------
+
+/** Node's own modules, bare (`fs`) and prefixed (`node:fs`), and Bun's. */
+const PLATFORM_MODULE = new RegExp(
+  // `require` with no word boundary: a bundled CommonJS dependency's require("fs") becomes __require("fs").
+  `(?:\\bfrom\\s*|\\bimport\\s*\\(\\s*|require\\s*\\(\\s*)["'](?:node:[^"']+|bun(?::[^"']+)?|${builtinModules.filter((name) => !name.startsWith('_')).map((name) => name.replace(/[/]/g, '\\/')).join('|')})["']`
+);
+
+/**
+ * Each shared package — the core's, and every protocol, device type and
+ * service — bundled for a browser with every dependency, and read for a
+ * platform module: a dependency that needs Node fails here, which no
+ * typecheck sees. Bun swaps Node's modules for stand-ins in a browser build,
+ * and marks them: a polyfill is a section `// node:crypto`, an emptied one
+ * `= (() => ({}))`. Either, or an import of one left over, is a dependency
+ * needing the platform. (Bundled for Node instead, a dependency's Node build
+ * is taken — `yaml`'s, which reads `process` — not the one the app runs.)
+ */
+const STAND_IN = /^\/\/ node:[\w/]+$|=\s*\(\(\) => \(\{\}\)\);/m;
+function platformInBundles() {
+  const roots = [
+    ...SHARED_PACKAGES.map((name) => `packages/${name}/`),
+    ...execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', 'packages/protocols/*/package.json', 'packages/devices/*/package.json', 'packages/services/*/package.json'], { cwd: ROOT, encoding: 'utf8' })
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((manifest) => manifest.slice(0, -'package.json'.length)),
+  ];
+  const out = mkdtempSync(resolve(tmpdir(), 'kraftverk-bundle-'));
+  const found = [];
+  try {
+    for (const root of roots) {
+      let manifest;
+      try {
+        manifest = JSON.parse(readFileSync(resolve(ROOT, root, 'package.json'), 'utf8'));
+      } catch {
+        continue; // planned, not made yet
+      }
+      const entry = (typeof manifest.exports?.['.'] === 'string' ? manifest.exports['.'] : null) ?? manifest.main;
+      if (!entry) continue;
+      const outfile = resolve(out, `${root.replace(/\//g, '_')}.js`);
+      try {
+        execFileSync(process.execPath, [resolve(ROOT, 'scripts/run-bun.mjs'), 'build', resolve(ROOT, root, entry), '--target=browser', `--outfile=${outfile}`], { cwd: ROOT, stdio: 'pipe' });
+      } catch (error) {
+        found.push(`${root}: does not bundle for a browser — ${String(error.stderr ?? error.message).trim().split('\n').slice(-3).join(' ')}`);
+        continue;
+      }
+      const bundle = readFileSync(outfile, 'utf8');
+      const match = PLATFORM_MODULE.exec(bundle) ?? STAND_IN.exec(bundle);
+      if (match) found.push(`${root}: its browser bundle needs a platform module (${match[0].trim()}) — a dependency needs Node or Bun`);
+    }
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+  }
+  return found;
+}
+
 // --- measuring -------------------------------------------------------------
 
 function sourceFiles() {
@@ -257,6 +389,7 @@ function sourceFiles() {
 function measure() {
   const imports = {};
   const leaks = {};
+  const placement = {};
 
   for (const file of sourceFiles()) {
     let source;
@@ -271,6 +404,8 @@ function measure() {
       .filter((specifier) => violation(file, area, specifier))
       .sort();
     if (broken.length) imports[file] = broken;
+    const wrong = misplaced(file, source);
+    if (wrong) placement[file] = wrong;
 
     /*
       Shipped code only. A test that drives a real device type through a core
@@ -286,7 +421,7 @@ function measure() {
     }
   }
 
-  return { imports, leaks };
+  return { imports, leaks, placement };
 }
 
 // --- one API contract ----------------------------------------------------------
@@ -347,6 +482,9 @@ function compare(baseline, current) {
     if (count < allowed) better.push(`${file}: ${count} product identifiers, down from ${allowed}`);
   }
 
+  for (const [file, why] of Object.entries(current.placement)) if (!(file in baseline.placement)) worse.push(`${file}: ${why}`);
+  for (const file of Object.keys(baseline.placement)) if (!(file in current.placement)) better.push(`${file}: in its place now`);
+
   return { worse, better };
 }
 
@@ -356,9 +494,9 @@ const importCount = (imports) => Object.values(imports).reduce((sum, list) => su
 function load() {
   try {
     const raw = JSON.parse(readFileSync(BASELINE, 'utf8'));
-    return { imports: raw.imports ?? {}, leaks: raw.leaks ?? {} };
+    return { imports: raw.imports ?? {}, leaks: raw.leaks ?? {}, placement: raw.placement ?? {} };
   } catch {
-    return { imports: {}, leaks: {} };
+    return { imports: {}, leaks: {}, placement: {} };
   }
 }
 
@@ -369,6 +507,7 @@ function save(current) {
       'See docs/ARCHITECTURE.md section 7; update with npm run check:architecture -- --update.',
     imports: current.imports,
     leaks: current.leaks,
+    placement: current.placement,
   };
   writeFileSync(BASELINE, `${JSON.stringify(body, null, 2)}\n`);
 }
@@ -386,9 +525,19 @@ if (copies.length) {
   process.exit(1);
 }
 
+// No baseline for these: there were never any to keep.
+const unplaced = unplacedPackages();
+const platform = platformInBundles();
+if (unplaced.length || platform.length) {
+  console.error('Shared code that would not run everywhere:\n');
+  for (const line of [...unplaced, ...platform]) console.error(`  ✗ ${line}`);
+  process.exit(1);
+}
+
 const summary =
   `${importCount(current.imports)} boundary exceptions, ` +
-  `${total(current.leaks)} product words outside their packages (${PRODUCTS.length} packages) in ${Object.keys(current.leaks).length} files`;
+  `${total(current.leaks)} product words outside their packages (${PRODUCTS.length} packages) in ${Object.keys(current.leaks).length} files, ` +
+  `${Object.keys(current.placement).length} files of logic still in the server or the app (docs/PLAN-SHARED-CORE.md)`;
 
 /*
   Moving a file moves its leaks with it, and per file that looks like a new
@@ -400,6 +549,10 @@ if (rebaseline) {
   if (total(current.leaks) > total(baseline.leaks)) rose.push(`identifiers ${total(baseline.leaks)} → ${total(current.leaks)}`);
   if (importCount(current.imports) > importCount(baseline.imports)) {
     rose.push(`boundary exceptions ${importCount(baseline.imports)} → ${importCount(current.imports)}`);
+  }
+  const misplacedCount = (placement) => Object.keys(placement).length;
+  if (misplacedCount(current.placement) > misplacedCount(baseline.placement)) {
+    rose.push(`files out of place ${misplacedCount(baseline.placement)} → ${misplacedCount(current.placement)}`);
   }
   if (rose.length) {
     console.error(`Refusing to rebaseline: the totals rose (${rose.join(', ')}).`);
@@ -415,7 +568,8 @@ if (worse.length) {
   console.error('The architecture got worse:\n');
   for (const line of worse) console.error(`  ✗ ${line}`);
   console.error(
-    '\nMove product knowledge into its package instead (docs/ARCHITECTURE.md §3).' +
+    '\nMove product knowledge into its package, and logic out of the server and the app into a shared one' +
+      ' (docs/ARCHITECTURE.md §3, docs/PLAN-SHARED-CORE.md).' +
       (update ? ' --update records improvements only.' : '')
   );
   process.exit(1);

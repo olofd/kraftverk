@@ -779,9 +779,26 @@ What it found is in the data model.
   anything else that does I/O. Those packages run in the app as well as on the
   server, so this is what keeps "the code doesn't know where it runs" true;
 - **a transport** imports anything from kraftverk but the SDK, or its `web`
-  or `native` entry reaches its `server` one.
+  or `native` entry reaches its `server` one;
+- **the layers** are crossed (decision 22): a core package imports one the
+  table `MAY_IMPORT` does not list for it — up the layers, by a path into
+  another package, or the server or the app — or a device type imports the
+  core beyond the SDK and the language. A folder under `packages/` with no
+  place in the table fails outright;
+- **a shared package needs the platform**: each — the core's, every
+  protocol, device type and service — is bundled for a browser with its
+  dependencies, and a Node or Bun module in the bundle (an import, or Bun's
+  stand-in for one) fails outright. `npm run typecheck` checks the same
+  code against only the globals every place has
+  (`tsconfig.shared.json`, `packages/device-sdk/everywhere.d.ts`), so a
+  built-in, `process` or `Buffer` fails where it is written;
+- **logic is written in the server or the app**: a file in `server/src`
+  outside its routes, accounts, admin, platform and process, or a `.ts` in
+  `client/src` with no screen in it outside `platform/`. Today's are listed
+  in the baseline — the work [PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md)
+  moves out — and the list may only shrink.
 
-Both are held by a baseline, `scripts/architecture-baseline.json`, listing
+All but the outright ones are held by a baseline, `scripts/architecture-baseline.json`, listing
 today's exceptions file by file. It may only shrink: a file whose count falls
 fails the check too, until `npm run check:architecture -- --update` records the
 lower number, so the baseline always says exactly where the leaks are. Moving a

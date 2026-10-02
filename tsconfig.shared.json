@@ -1,0 +1,13 @@
+{
+  "//": "Every shared package's code as every place runs it, the server, a browser and a phone: no Node or Bun types, only the globals all three have (packages/device-sdk/everywhere.d.ts). A built-in, process or Buffer fails here (docs/PLAN-SHARED-CORE.md). The edges are not here: the server, the app, api-client, ui, transports.",
+  "extends": "./packages/device-sdk/tsconfig.json",
+  "compilerOptions": { "types": [], "lib": ["ESNext"] },
+  "include": [
+    "packages/device-sdk/everywhere.d.ts",
+    "packages/*/src/**/*.ts",
+    "packages/protocols/*/src/**/*.ts",
+    "packages/devices/*/src/**/*.ts",
+    "packages/services/*/src/**/*.ts"
+  ],
+  "exclude": ["packages/api-client/**", "packages/ui/**", "**/*.test.ts", "**/src/testing.ts", "**/node_modules/**"]
+}
