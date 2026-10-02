@@ -4,3 +4,4 @@ export * from './judge.ts';
 export * from './open.ts';
 export * from './watch.ts';
 export * from './tools.ts';
+export * from './sessions.ts';

@@ -8,12 +8,12 @@ import { inlineParams, startCharging, type Rule } from '@kraftverk/automation';
 import { savedDeviceId, type Value } from '@kraftverk/device-sdk';
 
 import { ActionGateway } from '@kraftverk/gateway';
-import { LiveBus, type LiveMessage } from '@kraftverk/holder';
+import { LiveBus, type LiveMessage, SessionManager } from '@kraftverk/holder';
 import { CORS_METHODS, corsOrigin, createApp } from './app.ts';
 import { Attention } from './attention/attention.ts';
 import { AutomationEngine, AutomationLibrary } from '@kraftverk/automation-engine';
 import { serverDevices } from './automations/devices.ts';
-import { AutomationStore, DeviceCatalog, ClientStore, ConnectionStore, LinkStore, EventStore } from '@kraftverk/store';
+import { AutomationStore, DeviceCatalog, ClientStore, ConnectionStore, LinkStore, EventStore, holding } from '@kraftverk/store';
 import { CLIENT_HEADER, SESSION_COOKIE } from './auth/routes.ts';
 import { createFirstUser, createUser } from './auth/store.ts';
 import { CLIENT_IP_HEADER, EXPOSURE_HEADER, ProxyDirectory } from './auth/trust.ts';
@@ -21,11 +21,10 @@ import { loadConfig } from './config.ts';
 import { Nearby } from './devices/nearby.ts';
 import { DeviceRegistry } from './devices/registry.ts';
 import { RemoteReadings } from './devices/remote.ts';
-import { DeviceSessionManager } from './devices/sessions.ts';
 import { SetupService } from './devices/setup/index.ts';
 import { busDefinition, FakeBus, lampProtocol, lampType } from './devices/testing.ts';
 import { DeviceTypeRegistry } from './devices/types.ts';
-import { audit, closeDb, db, policyValues } from './platform/database.ts';
+import { audit, closeDb, db, policyValues, deviceStore } from './platform/database.ts';
 import { openSecret } from './platform/secrets.ts';
 import { Sampler } from './history/sampler.ts';
 import { originAllowed } from './routes/live.ts';
@@ -53,7 +52,7 @@ type Server = {
   websocket: ReturnType<typeof createApp>['websocket'];
   attention: Attention;
   live: LiveBus;
-  sessions: DeviceSessionManager;
+  sessions: SessionManager;
   setup: SetupService;
   bus: FakeBus;
   close(): Promise<void>;
@@ -82,14 +81,18 @@ async function build(options: { installed: boolean; readOnly?: boolean }): Promi
   const clients = new ClientStore(db());
   const events = new EventStore(db());
   const live = new LiveBus();
-  const sessions = new DeviceSessionManager({
+  const sessions = new SessionManager({
+    platform: 'server',
+    owner: 'server',
     types,
     protocols,
     transports,
-    connections,
-    readOnly: config.readOnly,
+    ...holding(connections, null),
+    store: deviceStore,
+    readOnly: () => config.readOnly,
     allowRawFrames: false,
-    clientName: (id) => clients.get(id)?.name ?? null,
+    heldByName: (id) => clients.get(id)?.name ?? null,
+    record: audit,
     // As the server wires it: what a device is and raises is kept.
     onDescribed: (deviceId, description, info, source) => catalog.describe(deviceId, description, info, source),
     onEvent: (deviceId, event) => events.record(deviceId, event),

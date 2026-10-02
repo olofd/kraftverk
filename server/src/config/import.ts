@@ -34,7 +34,7 @@ import { checkBinding, checkRule, isAutomationRole, takesSteps, type BoundPart, 
 import type { AutomationEngine, AutomationRecord, AutomationLibrary } from '@kraftverk/automation-engine';
 import { hasConditions, type Checked } from '../automations/plans.ts';
 import type { DeviceRecord } from '@kraftverk/store';
-import type { DeviceSessionManager } from '../devices/sessions.ts';
+import type { SessionManager } from '@kraftverk/holder';
 import { db, policyValues, setPolicyValue } from '../platform/database.ts';
 import type { TransportHost } from '../runtime/transports.ts';
 import { serverVocabulary, type ConfigDeps } from './export.ts';
@@ -57,7 +57,7 @@ import { isSealed, openKept, openWith } from './seal.ts';
 */
 
 export type ImportDeps = ConfigDeps & {
-  sessions: Pick<DeviceSessionManager, 'sync'>;
+  sessions: Pick<SessionManager, 'sync'>;
   /** Whether a transport's addresses belong to one device each. */
   transports: Pick<TransportHost, 'definition'>;
   library: AutomationLibrary;

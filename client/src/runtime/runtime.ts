@@ -1,16 +1,15 @@
 import { Platform } from 'react-native';
 
-import type { DeviceSession, DeviceStore, PolicyValues, SavedDeviceId } from '@kraftverk/device-sdk';
+import type { ConnectionHealth, DescriptionSource, DeviceDescription, DeviceInfo, DeviceSession, DeviceStore, PolicyValues, SavedDeviceId } from '@kraftverk/device-sdk';
 import { ActionGateway, type GatewayLedger, type LedgerMark } from '@kraftverk/gateway';
-import { Failover } from '@kraftverk/holder';
+import { SessionManager, type HolderConnection, type HolderDevice } from '@kraftverk/holder';
 import { fetchDeviceStore, registerClient, type AuditUpload, type DeviceView } from '@kraftverk/api-client';
 
 import { readPreference, writePreference } from '../lib/preferences';
 import type { Mode } from '../state/ServersProvider';
 import { LocalCatalog } from './local';
 import { legacySecrets, SecretVault } from './vault';
-import { AppRegistry } from './registry';
-import { HeldSessions, type HeldDevice } from './sessions';
+import { AppRegistry, PLATFORM } from './registry';
 import { Uplink } from './uplink';
 
 /**
@@ -53,9 +52,12 @@ function viewSession(device: DeviceView): DeviceSession {
   };
 }
 
+/** A device this app holds connections to: the device, and the connections this app holds of it, preferred first. */
+export type HeldDevice = HolderDevice & { connections: HolderConnection[] };
+
 export class AppRuntime {
   readonly registry: AppRegistry;
-  readonly sessions: HeldSessions;
+  readonly sessions: SessionManager;
   readonly vault: SecretVault;
   readonly local: LocalCatalog;
   readonly gateway: ActionGateway;
@@ -68,9 +70,8 @@ export class AppRuntime {
   #listeners = new Set<() => void>();
   #view = new Map<string, DeviceView>();
   #stores = new Map<string, Record<string, unknown>>();
-  /** The holder core's failover: the same two minutes as the server. */
-  #failover = new Failover();
-  #failoverTimer: ReturnType<typeof setInterval> | null = null;
+  /** What this app holds, by device: what its session manager reaches them by. */
+  #held = new Map<string, HeldDevice>();
 
   constructor(private options: { mode: Mode; server: string | null }) {
     // Sealed secrets, one vault per server and one for local mode. The plaintext an older version kept moves in.
@@ -97,45 +98,65 @@ export class AppRuntime {
             clientId: () => this.clientId,
             key: `kraftverk.uplink.${options.server}`,
             collect: () =>
-              this.sessions.all().flatMap((held) => {
-                const session = this.sessions.get(held.deviceId);
-                if (!session) return [];
+              this.sessions.opened().flatMap((deviceId) => {
+                const session = this.sessions.get(deviceId);
+                const connection = this.sessions.inUse(deviceId);
+                if (!session || !connection) return [];
                 // Who it says it is, so a device saved before it answered learns its identity (§4.3);
                 // and what it is now, so a pack plugged in is kept on the server too.
                 return [
                   {
-                    deviceId: held.deviceId,
-                    connectionId: held.connection.id,
+                    deviceId,
+                    connectionId: connection.id,
                     identity: session.identity?.().id ?? null,
                     readings: session.readings(),
                     // Only a device's own: its type's, the server has from when it was added.
-                    description: this.sessions.describedBy(held.deviceId) === 'device' ? this.sessions.description(held.deviceId) : null,
-                    info: this.sessions.info(held.deviceId),
+                    description: this.describedBy(deviceId) === 'device' ? this.description(deviceId) : null,
+                    info: this.info(deviceId),
                   },
                 ];
               }),
           })
         : null;
-    this.sessions = new HeldSessions({
-      registry: this.registry,
+    /*
+      The same session manager the server runs (`@kraftverk/holder`), over
+      this app's own radios: every connection it is given is its own, tried in
+      order and failed over as the server's are.
+    */
+    const secrets = (connectionId: string) => (options.mode === 'local' ? this.local.secrets(connectionId) : this.heldSecrets(connectionId));
+    this.sessions = new SessionManager({
+      platform: PLATFORM,
+      owner: 'client',
+      types: this.registry.types,
+      protocols: this.registry.protocols,
+      transports: this.registry,
+      connections: (deviceId) => this.#held.get(deviceId)?.connections ?? [],
+      holds: () => true,
+      secret: (connectionId, field) => secrets(connectionId)[field] ?? null,
+      secretFields: (connectionId) => Object.keys(secrets(connectionId)),
+      store: (deviceId) => this.storeFor(deviceId, this.sessions.inUse(deviceId)?.id ?? this.#held.get(deviceId)?.connections[0]?.id ?? ''),
       readOnly: () => !this.#allowWrites,
-      // Kept by the server as its own devices' events are; with no server, they are only heard.
-      event: (held, event) => (this.uplink ? this.uplink.event(held.deviceId, held.connection.id, event) : console.log(`[event] ${held.name}: ${event.id}`)),
-      onConnected: (held) => {
-        if (options.mode === 'local') this.local.touch(held.connection.id);
+      // Frames nobody has described are for a server started to bring up a unit, never for an app.
+      allowRawFrames: false,
+      onConnected: (connectionId) => {
+        if (options.mode === 'local') this.local.touch(connectionId);
       },
-      onMismatch: (held, said) =>
-        audit({ at: new Date().toISOString(), kind: 'device.mismatch', resourceKind: 'device', resource: held.deviceId, summary: `${held.name}'s connection from this app reaches ${said} instead`, detail: { expected: held.identity } }),
+      // Kept by the server as its own devices' events are; with no server, they are only heard.
+      onEvent: (deviceId, event) => {
+        const connection = this.sessions.inUse(deviceId);
+        if (this.uplink && connection) this.uplink.event(deviceId, connection.id, event);
+        else console.log(`[event] ${this.#held.get(deviceId)?.name ?? deviceId}: ${event.id}`);
+      },
+      record: (entry) => audit(entry),
       onChange: () => this.#changed(),
-      failover: this.#failover,
     });
     this.gateway = new ActionGateway({
       device: (id: SavedDeviceId) => {
-        const held = this.sessions.held(id);
+        const held = this.#held.get(id);
         const seen = this.#view.get(id);
         if (held) {
-          const description = this.sessions.description(id) ?? seen?.description ?? { attributes: [] };
-          return { name: held.name, session: this.sessions.get(id), description, offline: this.sessions.health(id)?.detail ?? 'Not connected' };
+          const description = this.description(id) ?? seen?.description ?? { attributes: [] };
+          return { name: held.name, session: this.sessions.get(id), description, offline: this.health(id)?.detail ?? 'Not connected' };
         }
         return seen ? { name: seen.name, session: viewSession(seen), description: seen.description, offline: seen.health.detail } : null;
       },
@@ -151,7 +172,6 @@ export class AppRuntime {
       policyValues: () => this.#policyValues,
     });
     this.uplink?.start();
-    if (options.mode === 'local') this.#failoverTimer = setInterval(() => this.#failOver(), 15_000);
   }
 
   get mode(): Mode {
@@ -176,7 +196,7 @@ export class AppRuntime {
   /** Allows writes from this app, or refuses them again. Sessions reopen with the new rule. */
   setAllowWrites(allowed: boolean): void {
     this.#allowWrites = allowed;
-    void this.sessions.sync(this.sessions.all());
+    void this.sessions.sync([...this.#held.values()]);
     this.#changed();
   }
 
@@ -269,28 +289,42 @@ export class AppRuntime {
     }
   }
 
+  /** Holds these, and only these: opens what is new, reopens what changed, closes the rest. */
   hold(devices: readonly HeldDevice[]): Promise<void> {
+    this.#held = new Map(devices.map((held) => [held.id, held]));
     return this.sessions.sync(devices);
   }
 
-  /**
-   * Local mode's half of the active-connection rule (docs/DATA-MODEL.md §4):
-   * a connection down for two minutes, on a device with another, is passed
-   * over for a while and the next one tried — as the server does with its own.
-   */
-  #failOver(): void {
-    for (const held of this.sessions.all()) {
-      if (this.#failover.due(held.connection.id, this.local.connections(held.deviceId).length > 1)) this.#changed();
-    }
+  /** A device this app holds, with the connection it uses now — or would try first. */
+  held(deviceId: string): (HeldDevice & { connection: HolderConnection }) | null {
+    const held = this.#held.get(deviceId);
+    const connection = this.sessions.inUse(held?.id ?? (deviceId as SavedDeviceId)) ?? held?.connections[0];
+    return held && connection ? { ...held, connection } : null;
   }
 
-  /** Whether a connection is being passed over after failing, in local mode. */
-  avoided(connectionId: string): boolean {
-    return this.#failover.avoided(connectionId);
+  /** What a device this app has open is now; null when it has none open. */
+  description(deviceId: string): DeviceDescription | null {
+    const held = this.#held.get(deviceId);
+    return held && this.sessions.get(held.id) ? this.sessions.description(held) : null;
+  }
+
+  describedBy(deviceId: string): DescriptionSource | null {
+    const held = this.#held.get(deviceId);
+    return held && this.sessions.get(held.id) ? this.sessions.describedBy(held) : null;
+  }
+
+  info(deviceId: string): DeviceInfo | null {
+    const held = this.#held.get(deviceId);
+    return held && this.sessions.get(held.id) ? this.sessions.info(held) : null;
+  }
+
+  /** How a device this app holds is doing; null when it holds none of its connections. */
+  health(deviceId: string): ConnectionHealth | null {
+    const held = this.#held.get(deviceId);
+    return held ? this.sessions.health(held) : null;
   }
 
   async stop(): Promise<void> {
-    if (this.#failoverTimer) clearInterval(this.#failoverTimer);
     this.uplink?.stop();
     await this.uplink?.flush();
     await this.sessions.closeAll();

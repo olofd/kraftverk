@@ -244,6 +244,14 @@ Its tests run on bun:sqlite and sql.js. The server's half is
 handle, its bindings of the stores to it, and sealing with its key. What
 mixes storage with logic — the sampler, the change log, remote readings —
 moves with the hub. 44 files of logic left.
+Phase 4 (2026-10-02), one session manager — `SessionManager` in
+`@kraftverk/holder`, the server's moved there and made the app's too: told
+which connections are its holder's (`holds`), every device's ways in, its
+secrets and stores through small ports (`holding()` in the store gives a
+home's connections as one holder holds them). The app gains the server's
+retry, failover over every connection it holds and identity learning; the
+server gains the app's check of a device's identity at its first answer,
+and reopening when a secret or read-only changes. 42 files of logic left.
 
 Each phase green and pushed. Files move first as they are (with git's
 history), then change. The server behaves as before throughout — the one

@@ -1,30 +1,44 @@
-import { isSimulated, methodOf, type ConnectionHealth, type DescriptionSource, type DeviceDescription, type DeviceInfo, type DeviceSession, type DeviceType, type SavedDeviceId } from '@kraftverk/device-sdk';
-import { Failover, identityVerdict, openDevice, OpenRefused, ReadingChanges, type DeviceEventMessage, type LiveBus, type OpenedDevice } from '@kraftverk/holder';
+import {
+  isSimulated,
+  methodOf,
+  type Availability,
+  type AuditRecord,
+  type ConnectionHealth,
+  type DescriptionSource,
+  type DeviceDescription,
+  type DeviceInfo,
+  type DeviceSession,
+  type DeviceStore,
+  type DeviceType,
+  type Platform,
+  type Protocol,
+  type SavedDeviceId,
+  type TransportSource,
+} from '@kraftverk/device-sdk';
 
-import { audit, deviceStore } from '../platform/database.ts';
-import type { ProtocolRegistry } from '../runtime/protocols.ts';
-import type { TransportHost } from '../runtime/transports.ts';
-import type { DeviceRecord, ConnectionRecord, ConnectionStore } from '@kraftverk/store';
-import type { DeviceTypeRegistry } from './types.ts';
+import { ReadingChanges, type DeviceEventMessage, type LiveBus } from './bus.ts';
+
+import { openDevice, OpenRefused, type OpenedDevice } from './open.ts';
+import { Failover, identityVerdict } from './watch.ts';
 
 /**
- * One open session for every device the server holds, whatever its type
- * (docs/ARCHITECTURE.md §4.7).
+ * One open session for every device a holder holds, whatever its type
+ * (docs/ARCHITECTURE.md §4.7) — the server, or an app holding connections of
+ * its own; the same code in each (docs/PLAN-SHARED-CORE.md).
  *
- * The catalog says what you own; the registry says what each thing is; its
- * connections say how it is reached. This opens it: the connection in use is
- * the preferred one the server holds and can reach (docs/DATA-MODEL.md §4) —
- * its transport's channel, with what the protocol's binding asks for — and the
- * type's session is opened over it. A simulated connection opens the type's
- * simulator instead, and reaches nothing. It knows no product, no protocol and
- * no transport.
+ * It is told what devices there are and how each is reached; which of those
+ * ways are its own is the holder's to say (`holds`). It opens each device: the
+ * connection in use is the preferred one it holds and can reach
+ * (docs/DATA-MODEL.md §4) — its transport's channel, with what the protocol's
+ * binding asks for — and the type's session is opened over it. A simulated
+ * connection opens the type's simulator, and reaches nothing. It knows no
+ * product, no protocol and no transport.
  *
- * A device whose session cannot be opened is still a device you own. It gets
- * no session and a reason, which is what its card then says.
- *
- * Opening, the wrong-device check and failover are `@kraftverk/holder`'s, the
- * same code the app runs for the connections it holds; what is the server's
- * here is which connection to choose, the catalog, and where things are kept.
+ * A device whose session cannot be opened is still a device you have. It gets
+ * no session and a reason, which is what its card then says; what can mend
+ * itself — a transport not up yet, a device that did not answer — is tried
+ * again. A connection that reaches a different device is refused, and one down
+ * too long gives way to the next.
  */
 
 const WATCH_MS = 15_000;
@@ -39,23 +53,68 @@ const HEALTH_REFRESH_MS = 30_000;
 /** How long before trying a refused device again, by how many times it has been tried: then every five minutes. */
 const RETRY_MS = [30_000, 60_000, 120_000, 300_000];
 
-export type DeviceSessionManagerDeps = {
-  types: DeviceTypeRegistry;
-  protocols: ProtocolRegistry;
-  transports: TransportHost;
-  connections: ConnectionStore;
+/** A device as a holder is given it: what the catalog keeps of it. */
+export type HolderDevice = {
+  id: SavedDeviceId;
+  name: string;
+  typeId: string;
+  config: Record<string, unknown>;
+  /** Who the device is, when known: a connection that reaches another device is refused. */
+  identity: string | null;
+  removedAt: string | null;
+  /** What it was last known to be, for when it is not open. */
+  description: DeviceDescription;
+  descriptionSource: DescriptionSource;
+  info: DeviceInfo | null;
+};
+
+/** One way a device is reached. */
+export type HolderConnection = {
+  id: string;
+  method: string;
+  transport: string;
+  address: string;
+  config: Record<string, unknown>;
+  /** Who holds it: null for the server, else the app's id. */
+  heldBy: string | null;
+};
+
+export type SessionManagerDeps = {
+  /** Where it runs: what a method's transport opens here. */
+  platform: Platform;
+  /** Who this holder is, in a device's health. */
+  owner: NonNullable<ConnectionHealth['owner']>;
+  types: { get(typeId: string): DeviceType<any> | null | undefined };
+  protocols: { get(id: string): Protocol | null | undefined };
+  /** The transports here; one that is started on demand, and can say whether it is available, says so. */
+  transports: TransportSource & { start?(id: string): Promise<unknown>; available?(id: string): Availability };
+  /** A device's ways in, preferred first. */
+  connections(deviceId: SavedDeviceId): readonly HolderConnection[];
+  /** Whether a connection is this holder's: the server's are those no app holds; an app's, its own. */
+  holds(connection: HolderConnection): boolean;
+  secret(connectionId: string, field: string): string | null;
+  /** The secret fields a connection has, so setting one reopens it. */
+  secretFields?(connectionId: string): readonly string[];
+  /** What a device keeps for itself. */
+  store(deviceId: SavedDeviceId): DeviceStore;
   /** Every hardware write is refused. Sessions are told, and must honour it; a simulator reaches no hardware. */
-  readOnly: boolean;
+  readOnly: () => boolean;
   /** Frames nobody has described may be sent, by a type's raw-frame tool. */
   allowRawFrames: boolean;
-  /** Who a client is, for "held by Olof's iPhone". */
-  clientName?: (clientId: string) => string | null;
-  /** A device said who it is, and the catalog did not know yet. */
+  /** Who holds a connection that is not this holder's: "Olof's iPhone". */
+  heldByName?: (holder: string) => string | null;
+  /** A connection of its own answered. */
+  onConnected?: (connectionId: string) => void;
+  /** A device said who it is, and its record did not know yet. */
   onIdentified?: (deviceId: SavedDeviceId, identity: string) => void;
   /** What a device is and says about itself, to keep: returns whether its description changed. */
   onDescribed?: (deviceId: SavedDeviceId, description: DeviceDescription, info: DeviceInfo | null, source: DescriptionSource) => boolean;
   /** An event a device raised, checked against its description. */
   onEvent?: (deviceId: SavedDeviceId, event: DeviceEventMessage) => void;
+  /** What happened that the timeline keeps: a connection that reached a different device. */
+  record?: (entry: AuditRecord) => void;
+  /** Something changed that a screen shows. */
+  onChange?: () => void;
   /** Where what devices say, as they say it, is published. */
   bus?: LiveBus;
   log?: (message: string) => void;
@@ -76,21 +135,18 @@ type Refusal = {
 type Open = {
   opened: OpenedDevice;
   /** The connection in use: a simulated one opens the type's simulator. */
-  connection: ConnectionRecord;
+  connection: HolderConnection;
   /** What it was opened with, so a change reopens it. */
   fingerprint: string;
   detach: () => void;
 };
 
-const fingerprintOf = (record: DeviceRecord, connection: ConnectionRecord) =>
-  JSON.stringify([record.config, connection.id, connection.address, connection.config]);
-
-export class DeviceSessionManager {
+export class SessionManager {
   #open = new Map<SavedDeviceId, Open>();
   #refusals = new Map<SavedDeviceId, Refusal>();
   /** When each connection went down, and which have failed over and are passed over for a while. */
   #failover = new Failover();
-  #records = new Map<SavedDeviceId, DeviceRecord>();
+  #records = new Map<SavedDeviceId, HolderDevice>();
   #syncing: Promise<unknown> = Promise.resolve();
   #watch: ReturnType<typeof setInterval> | null = null;
   #pulse: ReturnType<typeof setInterval> | null = null;
@@ -98,11 +154,11 @@ export class DeviceSessionManager {
   #changes = new ReadingChanges();
   #published = new Map<SavedDeviceId, { key: string; at: number }>();
 
-  constructor(private deps: DeviceSessionManagerDeps) {}
+  constructor(private deps: SessionManagerDeps) {}
 
   /** What a device is, or null when no installed type claims it. */
-  typeOf(record: Pick<DeviceRecord, 'typeId'>): DeviceType<any> | null {
-    return this.deps.types.get(record.typeId);
+  typeOf(record: Pick<HolderDevice, 'typeId'>): DeviceType<any> | null {
+    return this.deps.types.get(record.typeId) ?? null;
   }
 
   get(deviceId: SavedDeviceId): DeviceSession | null {
@@ -110,18 +166,23 @@ export class DeviceSessionManager {
   }
 
   /** What a device is now: its open session's word, or what was last kept. */
-  description(record: Pick<DeviceRecord, 'id' | 'description'>): DeviceDescription {
+  description(record: Pick<HolderDevice, 'id' | 'description'>): DeviceDescription {
     return this.#open.get(record.id)?.opened.description() ?? record.description;
   }
 
-  /** What a device has said about itself: its open session's word, or what was last kept. */
   /** Whose word its description is: the type's, or the device's own — as the open session says, else as last kept. */
-  describedBy(record: Pick<DeviceRecord, 'id' | 'descriptionSource'>): DescriptionSource {
+  describedBy(record: Pick<HolderDevice, 'id' | 'descriptionSource'>): DescriptionSource {
     return this.#open.get(record.id)?.opened.describedBy() ?? record.descriptionSource;
   }
 
-  info(record: Pick<DeviceRecord, 'id' | 'info'>): DeviceInfo | null {
+  /** What a device has said about itself: its open session's word, or what was last kept. */
+  info(record: Pick<HolderDevice, 'id' | 'info'>): DeviceInfo | null {
     return this.#open.get(record.id)?.opened.info() ?? record.info;
+  }
+
+  /** Every device it has a session for. */
+  opened(): SavedDeviceId[] {
+    return [...this.#open.keys()];
   }
 
   /** Keeps what an open device is and has said; tells listeners when it changed. */
@@ -133,7 +194,7 @@ export class DeviceSessionManager {
   }
 
   /** The connection a device is using right now. Null when none is open. */
-  inUse(deviceId: SavedDeviceId): ConnectionRecord | null {
+  inUse(deviceId: SavedDeviceId): HolderConnection | null {
     return this.#open.get(deviceId)?.connection ?? null;
   }
 
@@ -151,7 +212,7 @@ export class DeviceSessionManager {
   }
 
   /** How a device is doing: its session's own answer, or why it has none. */
-  health(record: DeviceRecord): ConnectionHealth {
+  health(record: Pick<HolderDevice, 'id'>): ConnectionHealth {
     const open = this.#open.get(record.id);
     if (open) return open.opened.health();
     const refusal = this.#refusals.get(record.id);
@@ -161,33 +222,33 @@ export class DeviceSessionManager {
     return {
       status: refusal?.status ?? 'offline',
       detail: refusal ? `${refusal.detail}${again}` : 'Not open yet',
-      owner: 'server',
+      owner: this.deps.owner,
       transport: null,
       lastReadingAt: null,
     };
   }
 
   /**
-   * Brings the open sessions in line with the catalog: opens what was added,
-   * closes what was removed, and reopens a device whose config or connection
-   * changed. One at a time, so two syncs never each decide the other's work is
-   * still to do.
+   * Brings the open sessions in line with what it is given: opens what was
+   * added, closes what was removed, and reopens a device whose config,
+   * connection, secrets or read-only changed. One at a time, so two syncs never
+   * each decide the other's work is still to do.
    */
-  sync(records: DeviceRecord[]): Promise<void> {
+  sync(records: readonly HolderDevice[]): Promise<void> {
     const run = this.#syncing.then(() => this.#sync(records));
     this.#syncing = run.catch(() => undefined);
     return run;
   }
 
-  async #sync(records: DeviceRecord[]): Promise<void> {
+  async #sync(records: readonly HolderDevice[]): Promise<void> {
     this.#records = new Map(records.map((record) => [record.id, record]));
-    const wanted = new Map<SavedDeviceId, { record: DeviceRecord; connection: ConnectionRecord }>();
+    const wanted = new Map<SavedDeviceId, { record: HolderDevice; connection: HolderConnection }>();
 
     for (const record of records) {
       if (record.removedAt) continue;
       const type = this.typeOf(record);
       if (!type) {
-        this.#refusals.set(record.id, { status: 'unconfigured', detail: `Nothing installed on this server knows what "${record.typeId}" is` });
+        this.#refusals.set(record.id, { status: 'unconfigured', detail: `Nothing installed here knows what "${record.typeId}" is` });
         continue;
       }
       const chosen = await this.#choose(record, type);
@@ -200,27 +261,31 @@ export class DeviceSessionManager {
 
     for (const [id, open] of [...this.#open]) {
       const next = wanted.get(id);
-      if (!next || open.fingerprint !== fingerprintOf(next.record, next.connection)) await this.close(id);
+      if (!next || open.fingerprint !== this.#fingerprint(next.record, next.connection)) await this.close(id);
     }
     for (const id of [...this.#refusals.keys()]) {
       if (!records.some((record) => record.id === id && !record.removedAt)) this.#refusals.delete(id);
     }
 
     // Each isolated: one device that will not open must not keep the others shut.
-    await Promise.all(
-      [...wanted.values()].filter(({ record }) => !this.#open.has(record.id)).map(({ record, connection }) => this.#openDevice(record, connection))
-    );
+    await Promise.all([...wanted.values()].filter(({ record }) => !this.#open.has(record.id)).map(({ record, connection }) => this.#openDevice(record, connection)));
 
     this.#watch ??= setInterval(() => void this.check(), WATCH_MS);
-    this.#watch.unref?.();
+    (this.#watch as { unref?: () => void }).unref?.();
     this.#pulse ??= setInterval(() => this.pulse(), PULSE_MS);
-    this.#pulse.unref?.();
+    (this.#pulse as { unref?: () => void }).unref?.();
+    this.deps.onChange?.();
+  }
+
+  /** What it was opened with: a change to any of it reopens it. */
+  #fingerprint(record: HolderDevice, connection: HolderConnection): string {
+    return JSON.stringify([record.typeId, record.config, connection.id, connection.address, connection.config, [...(this.deps.secretFields?.(connection.id) ?? [])].sort(), this.deps.readOnly()]);
   }
 
   /**
-   * Publishes what changed for every device you have: the readings whose
-   * values moved, and health when it changed. Nothing when nobody listens.
-   * Run by a timer; a test runs it directly.
+   * Publishes what changed for every device: the readings whose values moved,
+   * and health when it changed. Nothing when nobody listens. Run by a timer; a
+   * test runs it directly.
    */
   pulse(): void {
     for (const id of this.#records.keys()) this.#publish(id);
@@ -246,26 +311,26 @@ export class DeviceSessionManager {
   }
 
   /**
-   * The connection to use: the preferred one the server holds whose transport
-   * is available here — a simulated one always is. A device held only by a
-   * phone has no server session — its card says who holds it.
+   * The connection to use: the preferred one this holder holds whose
+   * transport is available here — a simulated one always is. A device only
+   * another holds has no session here: its card says who holds it.
    */
-  async #choose(record: DeviceRecord, type: DeviceType<any>): Promise<{ connection: ConnectionRecord } | { refusal: Refusal }> {
-    const all = this.deps.connections.forDevice(record.id);
+  async #choose(record: HolderDevice, type: DeviceType<any>): Promise<{ connection: HolderConnection } | { refusal: Refusal }> {
+    const all = this.deps.connections(record.id);
     if (!all.length) return { refusal: { status: 'unconfigured', detail: 'Nothing can reach this device yet: add a way to reach it' } };
 
     const reasons: string[] = [];
-    const serverHeld = all.filter((connection) => connection.heldBy === null);
-    for (const connection of serverHeld) {
-      if (this.#failover.avoided(connection.id) && serverHeld.length > 1) continue;
+    const mine = all.filter((connection) => this.deps.holds(connection));
+    for (const connection of mine) {
+      if (this.#failover.avoided(connection.id) && mine.length > 1) continue;
       const method = methodOf(type, connection.method);
       if (!method) {
         reasons.push(`${record.typeId} no longer has a way called "${connection.method}"`);
         continue;
       }
       if (isSimulated(connection)) return { connection };
-      await this.deps.transports.start(connection.transport);
-      const available = this.deps.transports.available(connection.transport);
+      await this.deps.transports.start?.(connection.transport);
+      const available = this.deps.transports.available?.(connection.transport) ?? { ok: true };
       if (!available.ok) {
         reasons.push(available.reason);
         continue;
@@ -273,15 +338,15 @@ export class DeviceSessionManager {
       return { connection };
     }
 
-    const held = all.find((connection) => connection.heldBy !== null);
-    if (!serverHeld.length && held) {
-      const who = this.deps.clientName?.(held.heldBy!) ?? 'another app';
-      return { refusal: { status: 'offline', detail: `Held by ${who}, not by this server` } };
+    const other = all.find((connection) => !this.deps.holds(connection));
+    if (!mine.length && other) {
+      const who = (other.heldBy === null ? 'the server' : this.deps.heldByName?.(other.heldBy)) ?? 'another app';
+      return { refusal: { status: 'offline', detail: `Held by ${who}, not by this ${this.deps.owner === 'server' ? 'server' : 'app'}` } };
     }
     return { refusal: { status: 'error', detail: reasons[0] ?? 'None of its connections can be used here' } };
   }
 
-  async #openDevice(record: DeviceRecord, connection: ConnectionRecord): Promise<void> {
+  async #openDevice(record: HolderDevice, connection: HolderConnection): Promise<void> {
     const type = this.typeOf(record)!;
     const simulated = isSimulated(connection);
     this.#refusals.delete(record.id);
@@ -293,35 +358,46 @@ export class DeviceSessionManager {
         device: record,
         // A simulated one opens its type's simulator in its place, in every holder.
         connection,
-        secret: (field) => this.deps.connections.secret(connection.id, field),
+        secret: (field) => this.deps.secret(connection.id, field),
         protocols: this.deps.protocols,
         transports: this.deps.transports,
-        store: deviceStore(record.id),
-        platform: 'server',
-        readOnly: this.deps.readOnly && !simulated,
+        store: this.deps.store(record.id),
+        platform: this.deps.platform,
+        // Read-only is about hardware: a simulated device has none, and takes writes either way.
+        readOnly: this.deps.readOnly() && !simulated,
         allowRawFrames: this.deps.allowRawFrames,
         log: { info: log('log'), warn: log('warn'), error: log('error') },
         // A device that pushes, or a poll that finished: what moved is published now, not at the next pulse.
         changed: () => {
           this.#describe(record.id);
           this.#publish(record.id);
+          this.deps.onChange?.();
         },
-        afterScheduled: () => this.#publish(record.id),
+        afterScheduled: () => {
+          // A wrong device is caught at its first answer, not at the next look round.
+          void this.#verify(record.id);
+          this.#publish(record.id);
+          this.deps.onChange?.();
+        },
         event: (event) => {
           this.deps.onEvent?.(record.id, event);
           this.deps.bus?.publish({ kind: 'event', deviceId: record.id, event });
         },
       });
 
-      const entry: Open = { opened, connection, fingerprint: fingerprintOf(record, connection), detach: () => {} };
+      const entry: Open = { opened, connection, fingerprint: this.#fingerprint(record, connection), detach: () => {} };
+      // A simulator has no channel: it is there, and stays there.
+      const noteState = (connected: boolean) => {
+        this.#failover.note(connection.id, connected);
+        if (connected) this.deps.onConnected?.(connection.id);
+      };
       if (opened.channel) {
-        const noteState = (connected: boolean) => {
-          this.#failover.note(connection.id, connected);
-          if (connected) this.deps.connections.touch(connection.id);
-        };
-        entry.detach = opened.channel.onConnectedChange(noteState);
+        entry.detach = opened.channel.onConnectedChange((connected) => {
+          noteState(connected);
+          this.deps.onChange?.();
+        });
         noteState(opened.channel.connected);
-      }
+      } else noteState(true);
       this.#open.set(record.id, entry);
       this.#describe(record.id);
     } catch (error) {
@@ -343,6 +419,33 @@ export class DeviceSessionManager {
   }
 
   /**
+   * The wrong-device check: a connection whose device says it is another one
+   * is closed, nothing it says is kept as this one's, and the timeline says so.
+   * A device saying who it is for the first time is learnt. Returns whether
+   * the session still stands.
+   */
+  async #verify(deviceId: SavedDeviceId): Promise<boolean> {
+    const open = this.#open.get(deviceId);
+    const record = this.#records.get(deviceId);
+    if (!open || !record || isSimulated(open.connection)) return Boolean(open);
+    const said = open.opened.session.identity?.().id ?? null;
+    const verdict = identityVerdict(record.identity, said);
+    if (verdict === 'mismatch') {
+      // The address now leads somewhere else: nothing it says is this device's.
+      await this.close(deviceId);
+      this.#refusals.set(deviceId, { status: 'error', detail: `That connection reaches a different device (${said}), not the one you added` });
+      this.deps.record?.({ at: new Date().toISOString(), kind: 'device.mismatch', actor: this.deps.owner, resourceKind: 'device', resource: deviceId, summary: `${record.name}'s connection reaches ${said} instead`, detail: { expected: record.identity } });
+      this.deps.onChange?.();
+      return false;
+    }
+    if (verdict === 'learnt') {
+      this.deps.onIdentified?.(deviceId, said!);
+      this.#records.set(deviceId, { ...record, identity: said });
+    }
+    return true;
+  }
+
+  /**
    * Every little while: learns identities devices have said, refuses a
    * connection that reaches the wrong device, falls back from one that has
    * been down too long, and tries again to open a device whose refusal can
@@ -352,28 +455,13 @@ export class DeviceSessionManager {
     // A device refused for what can mend itself — a transport not up at boot — is tried again when due.
     let changed = [...this.#refusals.values()].some((refusal) => refusal.retryAt !== undefined && refusal.retryAt <= now);
     for (const [id, open] of [...this.#open]) {
-      const record = this.#records.get(id);
       // What it is can change while it is open: a pack plugged in, firmware read.
       this.#describe(id);
-      if (!record || isSimulated(open.connection)) continue;
-
-      const said = open.opened.session.identity?.().id ?? null;
-      const verdict = identityVerdict(record.identity, said);
-      if (verdict === 'mismatch') {
-        // The address now leads somewhere else: nothing it says is this device's.
-        await this.close(id);
-        this.#refusals.set(id, { status: 'error', detail: `That connection reaches a different device (${said}), not the one you added` });
-        audit({ at: new Date().toISOString(), kind: 'device.mismatch', actor: 'server', resourceKind: 'device', resource: id, summary: `${record.name}'s connection reaches ${said} instead`, detail: { expected: record.identity } });
-        continue;
-      }
-      if (verdict === 'learnt') {
-        this.deps.onIdentified?.(id, said!);
-        this.#records.set(id, { ...record, identity: said });
-      }
-
-      const others = this.deps.connections.forDevice(id).filter((connection) => connection.heldBy === null && connection.id !== open.connection.id);
+      if (!(await this.#verify(id)) || isSimulated(open.connection)) continue;
+      const record = this.#records.get(id);
+      const others = this.deps.connections(id).filter((connection) => this.deps.holds(connection) && connection.id !== open.connection.id);
       const down = this.#failover.downFor(open.connection.id);
-      if (this.#failover.due(open.connection.id, others.length > 0)) {
+      if (record && this.#failover.due(open.connection.id, others.length > 0)) {
         this.deps.log?.(`${record.name}: ${open.connection.method} has been down for ${Math.round((down ?? 0) / 1000)} s; trying its next connection`);
         await this.close(id);
         changed = true;
@@ -399,5 +487,6 @@ export class DeviceSessionManager {
     this.#watch = null;
     this.#pulse = null;
     await Promise.all([...this.#open.keys()].map((id) => this.close(id)));
+    this.#refusals.clear();
   }
 }

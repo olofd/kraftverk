@@ -20,7 +20,7 @@ import {
 } from '@kraftverk/automation';
 
 import type { DeviceCatalog, AutomationStore } from '@kraftverk/store';
-import type { DeviceSessionManager } from '../devices/sessions.ts';
+import type { SessionManager } from '@kraftverk/holder';
 import { db } from '../platform/database.ts';
 import { CHAIN_LIMIT, quoted, type AutomationEngine, type AutomationRecord, type AutomationLibrary, rehearse } from '@kraftverk/automation-engine';
 
@@ -34,7 +34,7 @@ import { CHAIN_LIMIT, quoted, type AutomationEngine, type AutomationRecord, type
 /** How far back a rehearsal reaches: as long as minute samples are kept. */
 export const REHEARSAL_MAX_HOURS = 14 * 24;
 
-export type PlanDeps = { catalog: DeviceCatalog; sessions: DeviceSessionManager; library: AutomationLibrary; engine: AutomationEngine; automations: AutomationStore };
+export type PlanDeps = { catalog: DeviceCatalog; sessions: SessionManager; library: AutomationLibrary; engine: AutomationEngine; automations: AutomationStore };
 
 /** A draft checked: what is wrong with it, and what fills its roles as far as it could be read. */
 export type Checked = { problems: string[]; roles: Record<string, RoleBinding>; starts: Record<string, AutomationId> };

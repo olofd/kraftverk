@@ -601,13 +601,13 @@ through the gateway; the next exception has to argue against this paragraph.
    │  transport-mqtt, -ble    │  transport-lan           │  transport-https         │
    └────────────┬─────────────┴────────────┬─────────────┴────────────┬─────────────┘
                 ▼                          ▼                          ▼
-server:  DeviceTypeRegistry ──► DeviceSessionManager: for every device, the connection in use,
+server:  DeviceTypeRegistry ──► SessionManager (holder): for every device, the connection in use,
          TransportHost (starts what      │ readings, description,│ commands, writes
          installed types need)           │ events → LiveBus      ▼
                                    Sampler / history       ActionGateway ◄── device links
                                    catalog, event store          ▲
                                          └──► AutomationEngine ──┘
-app:     the same registry, sessions and gateway rules for connections it holds; readings and audit
+app:     the same registry, SessionManager and gateway rules for connections it holds; readings and audit
          go up to the server · /api/device-types → the add flow · generic device view + optional panels
 ```
 

@@ -49,7 +49,7 @@ import { runTool, toHold, toolsOf, withInUse } from '@kraftverk/holder';
 import { ASKED_AGAIN, confirmAction, withConfirmation, type ConfirmTone } from '../lib/confirm';
 import type { LocalDevice } from '../runtime/local';
 import { AppRuntime } from '../runtime/runtime';
-import type { HeldDevice } from '../runtime/sessions';
+import type { HeldDevice } from '../runtime/runtime';
 import { useAuth } from './AuthProvider';
 import { applyLive } from './live';
 import { useServers, type Mode } from './ServersProvider';
@@ -150,10 +150,10 @@ const DevicesContext = createContext<DevicesContextValue | null>(null);
 /** A device in local mode, described the way the server describes one. */
 function describeLocal(runtime: AppRuntime, device: LocalDevice, local: Map<string, LocalDevice>): DeviceView {
   const type: DeviceType<any> | undefined = runtime.registry.types.get(device.typeId);
-  const held = runtime.sessions.held(device.id);
-  const session = runtime.sessions.get(device.id);
+  const held = runtime.held(device.id);
+  const session = runtime.sessions.get(savedDeviceId(device.id));
   // What it is: its open session's word, or its type's for its config.
-  const description = runtime.sessions.description(device.id) ?? type?.describe(device.config as never) ?? { attributes: [] };
+  const description = runtime.description(device.id) ?? type?.describe(device.config as never) ?? { attributes: [] };
   const connections = runtime.local.connections(device.id).map(
     (connection): ConnectionView => ({
       id: connectionId(connection.id),
@@ -163,7 +163,7 @@ function describeLocal(runtime: AppRuntime, device: LocalDevice, local: Map<stri
       heldBy: { kind: 'client', id: clientId('this-app'), name: 'This app' },
       address: connection.address,
       priority: connection.priority,
-      reachable: held?.connection.id === connection.id ? runtime.sessions.health(device.id)?.status === 'connected' : null,
+      reachable: held?.connection.id === connection.id ? runtime.health(device.id)?.status === 'connected' : null,
       inUse: held?.connection.id === connection.id,
       lastConnectedAt: connection.lastConnectedAt,
       secrets: Object.keys(runtime.local.secrets(connection.id)),
@@ -177,7 +177,7 @@ function describeLocal(runtime: AppRuntime, device: LocalDevice, local: Map<stri
     const [mine, other] = role === 'source' ? [link.source, link.target] : [link.target, link.source];
     const otherDevice = local.get(other.device);
     const otherType = otherDevice ? runtime.registry.types.get(otherDevice.typeId) : undefined;
-    const otherDescription = otherDevice ? (runtime.sessions.description(otherDevice.id) ?? otherType?.describe(otherDevice.config as never)) : undefined;
+    const otherDescription = otherDevice ? (runtime.description(otherDevice.id) ?? otherType?.describe(otherDevice.config as never)) : undefined;
     const partLabel = other.part === MAIN_PART ? '' : ((otherDescription ? partsOf(otherDescription).find((part) => part.id === other.part)?.label : undefined) ?? other.part);
     return {
       id: linkId(link.id),
@@ -202,15 +202,15 @@ function describeLocal(runtime: AppRuntime, device: LocalDevice, local: Map<stri
       ? { name: type.meta.name, brand: type.meta.brand, icon: type.meta.icon, support: type.meta.support, category: type.meta.category }
       : { name: device.typeId, icon: 'help-circle', support: 'experimental', category: 'unknown' },
     description,
-    descriptionSource: runtime.sessions.describedBy(device.id) ?? 'type',
+    descriptionSource: runtime.describedBy(device.id) ?? 'type',
     capabilities: deviceCapabilities(description),
-    info: runtime.sessions.info(device.id),
+    info: runtime.info(device.id),
     config: device.config,
     connections,
     links,
     tools: toolsOf(type?.tools, session ?? null).map(({ name, spec }) => ({ name, ...spec })),
     readings: session?.readings() ?? [],
-    health: runtime.sessions.health(device.id) ?? {
+    health: runtime.health(device.id) ?? {
       status: connections.length ? 'connecting' : 'unconfigured',
       detail: connections.length ? 'Connecting from this app…' : 'Nothing can reach this device yet: add a way to reach it',
       owner: 'client',
@@ -414,20 +414,21 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   const heldList = useMemo((): HeldDevice[] => {
     if (mode === 'local') {
       return (localDevices ?? []).flatMap((device): HeldDevice[] => {
-        // Highest in the list, unless it has been down long enough to try the next (§4).
-        const all = runtime.local.connections(device.id);
-        const connection = all.find((candidate) => !runtime.avoided(candidate.id)) ?? all[0];
-        if (!connection) return [];
+        // Every way in, preferred first: the session manager tries them in order, and fails over (§4).
+        const connections = runtime.local.connections(device.id);
+        if (!connections.length) return [];
         return [
           {
-            deviceId: savedDeviceId(device.id),
+            id: savedDeviceId(device.id),
             name: device.name,
             typeId: device.typeId,
             identity: device.identity,
             config: device.config,
-            connection: { id: connection.id, method: connection.method, transport: connection.transport, address: connection.address, config: connection.config },
-            secrets: runtime.local.secrets(connection.id),
-            store: runtime.storeFor(device.id, connection.id),
+            removedAt: null,
+            description: runtime.registry.types.get(device.typeId)?.describe(device.config as never) ?? { attributes: [] },
+            descriptionSource: 'type',
+            info: null,
+            connections: connections.map((connection) => ({ id: connection.id, method: connection.method, transport: connection.transport, address: connection.address, config: connection.config, heldBy: null })),
           },
         ];
       });
@@ -437,15 +438,17 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       if (!connection) return [];
       return [
         {
-          deviceId: device.id,
+          id: device.id,
           name: device.name,
           typeId: device.typeId,
           identity: device.identity,
           config: device.config,
-          connection: { id: connection.id, method: connection.method, transport: connection.transport, address: connection.address, config: connection.config },
-          // Secrets of a connection this app holds live here, never on the server.
-          secrets: runtime.heldSecrets(connection.id),
-          store: runtime.storeFor(device.id, connection.id),
+          removedAt: null,
+          description: device.description,
+          descriptionSource: device.descriptionSource,
+          info: device.info,
+          // Its secrets live here, never on the server: the runtime reads them from its vault.
+          connections: [{ id: connection.id, method: connection.method, transport: connection.transport, address: connection.address, config: connection.config, heldBy: connection.heldBy.kind === 'client' ? connection.heldBy.id : null }],
         },
       ];
     });
@@ -453,12 +456,12 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localDevices, mode, runtime, served, tick]);
 
-  const heldKey = JSON.stringify(heldList.map((held) => [held.deviceId, held.connection.id, held.config, held.connection.config]));
+  const heldKey = JSON.stringify(heldList.map((held) => [held.id, held.config, held.connections.map((connection) => [connection.id, connection.config])]));
   const heldRef = useRef(heldList);
   heldRef.current = heldList;
   useEffect(() => {
     void (async () => {
-      for (const held of heldRef.current) if (!runtime.sessions.get(held.deviceId)) await runtime.refreshStore(held.deviceId);
+      for (const held of heldRef.current) if (!runtime.sessions.get(held.id)) await runtime.refreshStore(held.id);
       await runtime.hold(heldRef.current);
     })();
   }, [heldKey, runtime]);
@@ -473,8 +476,8 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     // What this app holds, it knows first: its readings and health replace the server's.
     return served.map((device) => {
       const session = runtime.sessions.get(device.id);
-      const health = runtime.sessions.health(device.id);
-      const held = runtime.sessions.held(device.id);
+      const health = runtime.health(device.id);
+      const held = runtime.held(device.id);
       // Which secrets a connection this app holds has: the server never knows.
       const mine = (connection: ConnectionView) => connection.heldBy.kind === 'client' && connection.heldBy.id === runtime.clientId;
       const connections = device.connections.map((connection) =>
@@ -545,7 +548,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       if (holder === 'this-app') {
         const session = () => {
           const open = runtime.sessions.get(device.id);
-          if (!open) throw new Error(runtime.sessions.health(device.id)?.detail ?? 'This app is not connected to it yet');
+          if (!open) throw new Error(runtime.health(device.id)?.detail ?? 'This app is not connected to it yet');
           return open;
         };
         return {
@@ -684,7 +687,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       setExportable: (device, connection, exportable) => (mode === 'local' ? Promise.reject(new Error('Configuration is the server’s')) : mutate(() => setSecretsExportable(device.id, connection.id, exportable))),
       setPicture: (id, picture) => (mode === 'local' ? Promise.resolve(runtime.local.setPicture(id, picture)) : mutate(() => setDevicePicture(id, picture))),
       remove: async (id) => {
-        await runtime.sessions.close(id);
+        await runtime.sessions.close(savedDeviceId(id));
         if (mode === 'local') runtime.local.remove(id);
         else await mutate(() => removeDevice(id));
       },

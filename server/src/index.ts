@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 
 import { ActionGateway } from '@kraftverk/gateway';
-import { LiveBus } from '@kraftverk/holder';
+import { LiveBus, SessionManager } from '@kraftverk/holder';
 import { createApp } from './app.ts';
 import { Attention } from './attention/attention.ts';
 import { keepWatchedFresh } from './attention/freshness.ts';
@@ -10,16 +10,15 @@ import { serverDevices } from './automations/devices.ts';
 import { plans } from './automations/plans.ts';
 import { restoreFrom } from './config/restore.ts';
 import { ConfigSnapshot } from './config/snapshot.ts';
-import { AutomationStore, DeviceCatalog, EventStore, ClientStore, ConnectionStore, LinkStore } from '@kraftverk/store';
+import { AutomationStore, DeviceCatalog, EventStore, ClientStore, ConnectionStore, LinkStore, holding } from '@kraftverk/store';
 import { ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';
 import { Nearby } from './devices/nearby.ts';
 import { DeviceRegistry } from './devices/registry.ts';
 import { RemoteReadings } from './devices/remote.ts';
-import { DeviceSessionManager } from './devices/sessions.ts';
 import { SetupService } from './devices/setup/index.ts';
 import { DeviceTypeRegistry } from './devices/types.ts';
-import { databaseLedger, audit, closeDb, startedFresh, policyValues, transportStore, db } from './platform/database.ts';
+import { databaseLedger, audit, closeDb, startedFresh, policyValues, transportStore, db, deviceStore } from './platform/database.ts';
 import { ChangeLog } from './history/changes.ts';
 import { Sampler } from './history/sampler.ts';
 import { keepConsole } from './log.ts';
@@ -129,14 +128,18 @@ const clients = new ClientStore(db());
 const bus = new LiveBus();
 const events = new EventStore(db());
 
-const sessions = new DeviceSessionManager({
+const sessions = new SessionManager({
+  platform: 'server',
+  owner: 'server',
   types,
   protocols,
   transports,
-  connections,
-  readOnly: config.readOnly,
+  ...holding(connections, null),
+  store: deviceStore,
+  readOnly: () => config.readOnly,
   allowRawFrames: config.allowRawFrames,
-  clientName: (id) => clients.get(id)?.name ?? null,
+  heldByName: (id) => clients.get(id)?.name ?? null,
+  record: audit,
   // A device saved before it ever answered learns who it is the first time it does.
   onIdentified: (deviceId, identity) => {
     if (catalog.byIdentity(identity).active) return;

@@ -25,3 +25,4 @@ export * from './transport-store.ts';
 export * from './ledger.ts';
 export * from './automations.ts';
 export * from './sql-js.ts';
+export * from './holding.ts';

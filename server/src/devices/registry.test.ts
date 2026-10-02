@@ -3,13 +3,13 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { closeDb, db } from '../platform/database.ts';
+import { closeDb, db, deviceStore, audit } from '../platform/database.ts';
 import { ProtocolRegistry } from '../runtime/protocols.ts';
 import { TransportHost } from '../runtime/transports.ts';
-import { DeviceCatalog, ClientStore, ConnectionStore, LinkStore } from '@kraftverk/store';
+import { DeviceCatalog, ClientStore, ConnectionStore, LinkStore, holding } from '@kraftverk/store';
 import { DeviceRegistry } from './registry.ts';
 import { RemoteReadings } from './remote.ts';
-import { DeviceSessionManager } from './sessions.ts';
+import { SessionManager } from '@kraftverk/holder';
 import { busDefinition, FakeBus, LAMP, lampProtocol, lampType } from './testing.ts';
 import { DeviceTypeRegistry } from './types.ts';
 import { serverSecrets } from '../platform/secrets.ts';
@@ -26,7 +26,7 @@ let catalog: DeviceCatalog;
 let connections: ConnectionStore;
 let links: LinkStore;
 let clients: ClientStore;
-let sessions: DeviceSessionManager;
+let sessions: SessionManager;
 let registry: DeviceRegistry;
 const bus = new FakeBus();
 
@@ -43,7 +43,18 @@ beforeAll(() => {
   transports.install(busDefinition, { create: () => bus });
   const types = new DeviceTypeRegistry();
   types.install(lampType);
-  sessions = new DeviceSessionManager({ types, protocols, transports, connections, readOnly: false, allowRawFrames: false, clientName: (id) => clients.get(id)?.name ?? null });
+  sessions = new SessionManager({
+    platform: 'server',
+    owner: 'server',
+    types,
+    protocols,
+    transports,
+    ...holding(connections, null),
+    store: deviceStore,
+    readOnly: () => false,
+    allowRawFrames: false,
+    heldByName: (id) => clients.get(id)?.name ?? null,
+  });
   registry = new DeviceRegistry({ catalog, types, sessions, connections, links, clients, transports, remote: new RemoteReadings() });
 });
 

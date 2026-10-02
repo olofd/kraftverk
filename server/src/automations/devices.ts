@@ -4,7 +4,7 @@ import type { EngineDevice } from '@kraftverk/automation-engine';
 import { deviceReader } from '@kraftverk/holder';
 
 import type { DeviceCatalog } from '@kraftverk/store';
-import type { DeviceSessionManager } from '../devices/sessions.ts';
+import type { SessionManager } from '@kraftverk/holder';
 
 /**
  * Parts of devices as the server holds them, for the engine: a removed device
@@ -13,7 +13,7 @@ import type { DeviceSessionManager } from '../devices/sessions.ts';
  * is. A part is named with its device: "Garage station — AC outlets".
  */
 export const serverDevices =
-  (catalog: Pick<DeviceCatalog, 'get'>, sessions: Pick<DeviceSessionManager, 'get' | 'health' | 'description'>) =>
+  (catalog: Pick<DeviceCatalog, 'get'>, sessions: Pick<SessionManager, 'get' | 'health' | 'description'>) =>
   (binding: RoleBinding): EngineDevice | null => {
     const record = catalog.get(binding.device);
     if (!record) return null;

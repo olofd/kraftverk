@@ -45,7 +45,7 @@ beforeAll(() => {
   const automations = new AutomationStore(db());
   const library = new AutomationLibrary([], () => {});
   const engine = { reset: () => {}, poke: () => {}, forget: () => {} };
-  const sessions = { sync: async (records: unknown[]) => void sessionsSynced.push(records.length), description: (record: { description: unknown }) => record.description };
+  const sessions = { sync: async (records: readonly unknown[]) => void sessionsSynced.push(records.length), description: (record: { description: unknown }) => record.description };
   const { checked } = plans({ catalog, sessions: sessions as never, library, engine: engine as never, automations });
   deps = { catalog, connections: new ConnectionStore(db(), serverSecrets), links: new LinkStore(db()), automations, types, protocols, library, engine, sessions, transports: { definition: () => null }, checked };
 });

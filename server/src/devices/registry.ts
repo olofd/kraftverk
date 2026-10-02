@@ -5,7 +5,7 @@ import { activeConnection, toolsOf } from '@kraftverk/holder';
 import type { TransportHost } from '../runtime/transports.ts';
 import type { DeviceCatalog, DeviceRecord, ClientRecord, ClientStore, ConnectionRecord, ConnectionStore, LinkRecord, LinkStore } from '@kraftverk/store';
 import type { RemoteReadings } from './remote.ts';
-import type { DeviceSessionManager } from './sessions.ts';
+import type { SessionManager } from '@kraftverk/holder';
 import type { DeviceTypeRegistry } from './types.ts';
 
 /**
@@ -40,7 +40,7 @@ export class DeviceRegistry {
     private deps: {
       catalog: DeviceCatalog;
       types: DeviceTypeRegistry;
-      sessions: DeviceSessionManager;
+      sessions: SessionManager;
       connections: ConnectionStore;
       links: LinkStore;
       clients: ClientStore;

@@ -16,7 +16,7 @@ import type { ServerConfig } from '../config.ts';
 import type { Nearby } from '../devices/nearby.ts';
 import type { DeviceRegistry } from '../devices/registry.ts';
 import type { RemoteReadings } from '../devices/remote.ts';
-import type { DeviceSessionManager } from '../devices/sessions.ts';
+import type { SessionManager } from '@kraftverk/holder';
 import type { ConfigSnapshot } from '../config/snapshot.ts';
 import type { SetupService } from '../devices/setup/index.ts';
 import type { DeviceTypeRegistry } from '../devices/types.ts';
@@ -44,7 +44,7 @@ export type AppDeps = {
   protocols: ProtocolRegistry;
   transports: TransportHost;
   /** One open session per saved device the server holds. */
-  sessions: DeviceSessionManager;
+  sessions: SessionManager;
   registry: DeviceRegistry;
   setup: SetupService;
   /** What the transports can see that nothing you have is reached by. */

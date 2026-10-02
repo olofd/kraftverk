@@ -20,7 +20,7 @@ import { audit, db } from '../../platform/database.ts';
 import type { ProtocolRegistry } from '../../runtime/protocols.ts';
 import type { TransportHost } from '../../runtime/transports.ts';
 import type { DeviceCatalog, DeviceRecord, ConnectionStore, LinkStore } from '@kraftverk/store';
-import type { DeviceSessionManager } from '../sessions.ts';
+import type { SessionManager } from '@kraftverk/holder';
 import type { DeviceTypeRegistry } from '../types.ts';
 import { connectionSchema, DRAFT_TTL_MS, SetupError, viewOf, type Draft, type SaveRequest } from './draft.ts';
 import { overHardware, SIMULATED_REACH } from './reach.ts';
@@ -53,7 +53,7 @@ export type SetupServiceDeps = {
   catalog: DeviceCatalog;
   connections: ConnectionStore;
   links: LinkStore;
-  sessions: DeviceSessionManager;
+  sessions: SessionManager;
   /** For helpers that call a vendor's API once — fetching a key. */
   http: ScopedHttp;
 };

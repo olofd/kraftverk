@@ -4,13 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { SIMULATED_ADDRESS, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT } from '@kraftverk/device-sdk';
-import { LiveBus, type LiveMessage } from '@kraftverk/holder';
+import { LiveBus, type LiveMessage, SessionManager } from '@kraftverk/holder';
 
-import { closeDb, db } from '../platform/database.ts';
+import { closeDb, db, deviceStore, audit } from '../platform/database.ts';
 import { ProtocolRegistry } from '../runtime/protocols.ts';
 import { TransportHost } from '../runtime/transports.ts';
-import { DeviceCatalog, ClientStore, ConnectionStore } from '@kraftverk/store';
-import { DeviceSessionManager } from './sessions.ts';
+import { DeviceCatalog, ClientStore, ConnectionStore, holding } from '@kraftverk/store';
 import { busDefinition, FakeBus, LAMP, lampControl, lampProtocol, lampType, opened } from './testing.ts';
 import { DeviceTypeRegistry } from './types.ts';
 import { serverSecrets } from '../platform/secrets.ts';
@@ -31,7 +30,7 @@ const dir = mkdtempSync(join(tmpdir(), 'kraftverk-sessions-'));
 let catalog: DeviceCatalog;
 let connections: ConnectionStore;
 let clients: ClientStore;
-let sessions: DeviceSessionManager;
+let sessions: SessionManager;
 let bus: FakeBus;
 let identified: [string, string][];
 
@@ -42,14 +41,18 @@ const build = (options: { readOnly?: boolean; bus?: LiveBus } = {}) => {
   expect(transports.install(busDefinition, { create: () => bus })).toEqual([]);
   const types = new DeviceTypeRegistry();
   expect(types.install(lampType)).toEqual([]);
-  return new DeviceSessionManager({
+  return new SessionManager({
+    platform: 'server',
+    owner: 'server',
     types,
     protocols,
     transports,
-    connections,
-    readOnly: options.readOnly ?? false,
+    ...holding(connections, null),
+    store: deviceStore,
+    readOnly: () => options.readOnly ?? false,
     allowRawFrames: false,
-    clientName: (id) => clients.get(id)?.name ?? null,
+    heldByName: (id) => clients.get(id)?.name ?? null,
+    record: audit,
     onIdentified: (deviceId, identity) => identified.push([deviceId, identity]),
     bus: options.bus,
   });
