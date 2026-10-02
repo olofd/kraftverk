@@ -7,10 +7,12 @@ import { Hono } from 'hono';
 
 import { AuditLog, resetDatabase } from '@kraftverk/store';
 
+import { answerError } from '../app.ts';
 import { openDatabase } from '../platform/database.ts';
 import { hostAllowed, hostGuard, hostName } from './host.ts';
 import { LoginLimiter, limiterKeys, MAX_ENTRIES } from './limiter.ts';
-import { CLIENT_HEADER, createAuth, SESSION_COOKIE } from './routes.ts';
+import { CLIENT_HEADER } from '@kraftverk/api-contract';
+import { createAuth, SESSION_COOKIE } from './routes.ts';
 import { AccountError, Accounts } from './accounts.ts';
 import { assessTrust, CLIENT_IP_HEADER, EXPOSURE_HEADER, isPrivate, normaliseIp, ProxyDirectory } from './trust.ts';
 
@@ -284,6 +286,7 @@ describe('the gate', () => {
     api.get('/devices', (c) => c.json({ devices: [] }));
     api.post('/grid/relay', (c) => c.json({ switched: true }));
     app.route('/api', api);
+    app.onError(answerError);
   });
 
   beforeEach(emptyAccounts);

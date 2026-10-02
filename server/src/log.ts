@@ -20,8 +20,8 @@ import { format } from 'node:util';
  * with a time and a level in front.
  */
 
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-export type LogLine = { at: string; level: LogLevel; text: string };
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+type LogLine = { at: string; level: LogLevel; text: string };
 
 const RANK: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
 const METHODS = { debug: 'debug', log: 'info', info: 'info', warn: 'warn', error: 'error' } as const;
@@ -109,7 +109,3 @@ export function keepConsole(dir: string | null): ServerLog {
   return log;
 }
 
-/** The kept log, if `keepConsole` has run. */
-export function serverLog(): ServerLog | null {
-  return kept;
-}

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { Text, YStack } from 'tamagui';
 
-import { describeError, type AutomationView, type ConfigSnapshotView, type ElsewhereView } from '@kraftverk/api-client';
+import { CONFIG_SCHEMA_PATH, describeError, type AutomationView, type ConfigSnapshotView, type ElsewhereView } from '@kraftverk/api-client';
 import { schemaLine, type Vocabulary } from '@kraftverk/home-file';
 import { Card, Row, SectionLabel } from '@kraftverk/ui';
 
@@ -117,7 +117,7 @@ function Kept({ snapshot }: { snapshot: ConfigSnapshotView | null }) {
 /** How to write one in an editor of your own: the line that makes it check the file as it is typed. */
 function InAnEditor() {
   const { active } = useServers();
-  const line = schemaLine(`${active?.url ?? ''}/config/schema.json`);
+  const line = schemaLine(`${active?.url ?? ''}${CONFIG_SCHEMA_PATH}`);
   return (
     <YStack gap="$2">
       <SectionLabel>In an editor of your own</SectionLabel>

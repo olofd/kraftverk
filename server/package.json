@@ -11,7 +11,6 @@
     "dev:write": "node ../scripts/run-bun.mjs --watch src/index.ts",
     "//start": "Not a dev server: no --watch, so the process does not restart under you. Writes to hardware are ALLOWED.",
     "start:prod": "node ../scripts/run-bun.mjs src/index.ts",
-    "broker": "node ../scripts/run-bun.mjs ../packages/transports/mqtt/src/broker/cli.ts",
     "users": "node ../scripts/run-bun.mjs src/auth/cli.ts",
     "typecheck": "tsc --noEmit"
   },
@@ -20,17 +19,16 @@
     "@kraftverk/automation": "*",
     "@kraftverk/automation-engine": "*",
     "@kraftverk/device-sdk": "*",
-    "@kraftverk/gateway": "*",
-    "@kraftverk/holder": "*",
-    "@kraftverk/home-file": "*",
     "@kraftverk/hub": "*",
-    "@kraftverk/message-port": "*",
     "@kraftverk/store": "*",
     "hono": "^4.13.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@kraftverk/api-client": "*",
+    "@kraftverk/holder": "*",
+    "@kraftverk/home-file": "*",
+    "@kraftverk/message-port": "*",
     "@types/bun": "^1.3.14",
     "typescript": "^7.0.2"
   }

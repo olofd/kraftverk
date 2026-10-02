@@ -1,8 +1,8 @@
 import type { Context } from 'hono';
-import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
+import type { Caller, KraftverkApi, RoleBinding } from '@kraftverk/api-contract';
+import { NODE_ID, RESOURCE_KINDS, savedDeviceId, type ResourceKind } from '@kraftverk/device-sdk';
 import type { Hub } from '@kraftverk/hub';
 
 import type { Accounts } from '../auth/accounts.ts';
@@ -36,25 +36,24 @@ export type AppDeps = {
   snapshot?: ConfigSnapshot;
 };
 
-/** Who a request is, to the home: the person signed in on it. */
-export const callerOf = (c: Context): Caller => {
+/** The home, as the person a request is from asks it. */
+export const homeFor = (deps: Pick<AppDeps, 'hub'>, c: Context): KraftverkApi => {
   const account = userOf(c)?.id;
-  return { kind: 'person', name: actorOf(c), ...(account ? { account } : {}) };
+  const caller: Caller = { kind: 'person', name: actorOf(c), ...(account ? { account } : {}) };
+  return deps.hub.as(caller);
 };
 
-/** The home, as the person a request is from asks it. */
-export const homeFor = (deps: Pick<AppDeps, 'hub'>, c: Context): KraftverkApi => deps.hub.as(callerOf(c));
+// --- shapes more than one route takes ------------------------------------------
 
-/**
- * Parses and validates a JSON body.
- *
- * Deliberately not @hono/zod-validator: that package hoists to the workspace
- * root where it binds to the zod v3 an Expo dependency pulls in, while this
- * package is on zod v4. Validating inline keeps one zod and full type inference.
- */
-export async function body<T extends z.ZodType>(c: Context, schema: T): Promise<z.infer<T>> {
-  const raw = await c.req.json().catch(() => {
-    throw new HTTPException(400, { message: 'Expected a JSON body' });
-  });
-  return schema.parse(raw);
-}
+/** A part of a device: a role's filling, a link's end. */
+export const PART = z.object({ device: z.string().min(1).max(80), part: z.string().min(1).max(80) }).strict();
+
+/** What each role is filled by, its devices' ids as ids. */
+export const bindingsOf = (given: Record<string, z.infer<typeof PART>>): Record<string, RoleBinding> =>
+  Object.fromEntries(Object.entries(given).map(([role, binding]) => [role, { device: savedDeviceId(binding.device), part: binding.part }]));
+
+/** What the timeline's entries are about. */
+export const RESOURCE_KIND = z.enum(RESOURCE_KINDS as [ResourceKind, ...ResourceKind[]]);
+
+/** The node a follower speaks for, and a connection it holds. */
+export const HELD_BY = { nodeId: z.string().regex(NODE_ID), connectionId: z.string().min(1).max(40) };

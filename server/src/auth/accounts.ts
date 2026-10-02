@@ -20,7 +20,7 @@ export type User = {
   lastLoginAt: string | null;
 };
 
-export type Session = {
+type Session = {
   user: User;
   expiresAt: string;
   /** The expiry just moved, so the cookie carrying it should be sent again. */
@@ -32,9 +32,9 @@ export const SESSION_LIFETIME_MS = 30 * 86_400_000;
 /** Renewed at most this often, so a busy dashboard is not a database write per poll. */
 const RENEW_AFTER_MS = 3_600_000;
 
-export const USERNAME = /^[A-Za-z0-9._@-]{1,64}$/;
+const USERNAME = /^[A-Za-z0-9._@-]{1,64}$/;
 export const PASSWORD_MIN = 12;
-export const PASSWORD_MAX = 256;
+const PASSWORD_MAX = 256;
 
 type UserRow = {
   id: string;
@@ -85,7 +85,7 @@ const checkPassword = (password: string, hash: string) =>
 export class AccountError extends Error {}
 
 /** Why a proposed username or password is not acceptable, or null. */
-export function credentialProblem(username: string, password: string): string | null {
+function credentialProblem(username: string, password: string): string | null {
   if (!USERNAME.test(username)) {
     return 'A username is 1–64 letters, digits, dots, dashes, underscores or @';
   }

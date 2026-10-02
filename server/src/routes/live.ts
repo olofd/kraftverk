@@ -4,12 +4,12 @@ import type { UpgradeWebSocket, WSContext } from 'hono/ws';
 
 import { z } from 'zod';
 
-import type { LiveStream, ShownThing, ViewReport } from '@kraftverk/api-contract';
+import { SIGNED_OUT, type LiveStream, type ShownThing, type ViewReport } from '@kraftverk/api-contract';
 import { automationId, savedDeviceId } from '@kraftverk/device-sdk';
 
 import { hostName } from '../auth/host.ts';
 import { SESSION_COOKIE } from '../auth/routes.ts';
-import { homeFor, type AppDeps } from './shared.ts';
+import { homeFor, type AppDeps } from './context.ts';
 
 /**
  * `GET /api/live`: what changed, as it changes — a WebSocket (docs/API.md).
@@ -36,8 +36,6 @@ import { homeFor, type AppDeps } from './shared.ts';
 const SESSION_CHECK_MS = 60_000;
 /** Beyond this much unsent, a socket is sent nothing until it drains: the latest is kept, not a backlog. */
 const MAX_BUFFERED_BYTES = 1 << 20;
-/** Closed because the session it was opened with has ended. */
-export const SIGNED_OUT = 4401;
 
 /** Whether a browser page at `origin` may open a socket to this server. */
 export function originAllowed(origin: string | undefined, requestHost: string | undefined, deps: Pick<AppDeps, 'config'>, cors: (origin: string) => string | null): boolean {
@@ -70,7 +68,7 @@ const VIEW_REPORT = z
 const MAX_REPORT_BYTES = 64 * 1024;
 
 /** What an app said, if it is a view of its screen. */
-export function viewReportOf(data: unknown): ViewReport | null {
+function viewReportOf(data: unknown): ViewReport | null {
   if (typeof data !== 'string' || data.length > MAX_REPORT_BYTES) return null;
   let json: unknown;
   try {

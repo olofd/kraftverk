@@ -7,13 +7,14 @@ import { Card, Chips, Icon, ToggleRow } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
 import { Screen } from '../../../components/Screen';
-import { fileNameOf, saveText } from '../../../platform/download';
+import { saveText } from '../../../platform/download';
 import { dayOf, lasted, OUTCOME, useTone } from '../looks';
 import { Empty, Group } from '../page/Group';
 import { Mark as OutcomeMark } from '../page/history';
 import { useReadAgain } from '../useReadAgain';
 import { awayOf, RunChart, Ruler } from './RunChart';
 import { changed, marksOf, runLogCsv, said, seriesOf, sinceStart, windowOf, type Mark } from '@kraftverk/automation-engine';
+import { fileNameOf } from '@kraftverk/device-sdk';
 
 import { useHome } from '../../../state/HomeProvider';
 

@@ -1,8 +1,8 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 
-import type { Configuration, Restored } from '@kraftverk/hub';
-
+import { ApiError, type ImportPlan } from '@kraftverk/api-contract';
+import type { Configuration, ImportMode, Restored } from '@kraftverk/hub';
 
 /*
   The configuration kept beside the database (docs/CONFIG.md), as a file on
@@ -23,7 +23,6 @@ const KEPT = 5;
 /** How many copies a restore was made from are kept: the latest, and those before it. */
 const COPIES_KEPT = 5;
 
-
 export class ConfigSnapshot {
   #timer: ReturnType<typeof setTimeout> | null = null;
   #writtenAt: string | null = null;
@@ -32,10 +31,34 @@ export class ConfigSnapshot {
   restored: Restored | null = null;
 
   constructor(
-    private configuration: Pick<Configuration, 'kept' | 'restore'>,
+    private configuration: Pick<Configuration, 'kept' | 'restore' | 'plan'>,
     /** Where it is kept: `config/kraftverk.yaml` beside the database (`besideDatabase`). */
     private file: string
   ) {}
+
+  /**
+   * What the server does with it as it starts. A database started afresh
+   * this run — a new schema set the old one aside — is restored from it,
+   * before anything is written over it; a restore that brought nothing in,
+   * or a fresh start with nothing kept, leaves the file as it is until
+   * something changes. Otherwise it is written now.
+   */
+  async begin(fresh: boolean): Promise<void> {
+    if (fresh) {
+      const restored = await this.restore();
+      if (restored) {
+        const brought = restored.applied ? `${restored.applied.devices.added.length} devices, ${restored.applied.automations.added.length} automations` : 'nothing';
+        const problems = restored.problems.length ? `; ${restored.problems.length} problems: ${restored.problems.join('; ')}` : '';
+        console.log(`[config] Restored from the configuration kept beside the database: ${brought}${problems}`);
+      }
+      if (!restored?.applied) return;
+    }
+    try {
+      await this.write();
+    } catch (error) {
+      console.warn(`[config] The configuration could not be kept beside the database: ${(error as Error).message}`);
+    }
+  }
 
   /** Writes it again a moment from now: one write for a burst of changes. */
   schedule(): void {
@@ -109,10 +132,16 @@ export class ConfigSnapshot {
     return this.restored;
   }
 
-  /** The copy the last restore was made from, to import again: its text, or null when there is none. */
-  restoredCopy(): string | null {
+  /**
+   * An import's plan of the copy the last restore was made from: to bring in
+   * with its answers what the restore could not do alone. Its secrets are
+   * this server's own, sealed with its key — opened as only the server's own
+   * copy may be, never through the API.
+   */
+  planAgain(mode: ImportMode, by: string): Promise<ImportPlan> {
     const from = this.restored?.from;
-    return from && existsSync(from) ? readFileSync(from, 'utf8') : null;
+    if (!from || !existsSync(from)) throw new ApiError('not-found', 'There is no restored copy to import again');
+    return this.configuration.plan(readFileSync(from, 'utf8'), { mode, kept: true }, by);
   }
 
   /** The copies a restore was made from, the oldest beyond those kept deleted: every fresh start would otherwise leave one more for ever. */

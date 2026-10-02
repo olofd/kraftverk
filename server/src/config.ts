@@ -1,7 +1,16 @@
 import { dirname, join, resolve } from 'node:path';
 
+import pkg from '../package.json' with { type: 'json' };
 import { allowedHosts } from './auth/host.ts';
-import { DEFAULT_DATABASE_FILE } from './platform/database.ts';
+
+/** What this server is, as its package says — read here and nowhere else: `/api/version`, a new database's maker, the assistant's endpoint. */
+export const SERVER = { name: pkg.name, version: pkg.version } as const;
+
+/** Where the server keeps what it keeps unless told otherwise: `server/data/`, gitignored. */
+const DATA_DIR = resolve(import.meta.dirname, '../data');
+
+/** Where the database is kept unless `KRAFTVERK_DB` says: beside the server, gitignored. A test may never open it. */
+export const DEFAULT_DATABASE_FILE = join(DATA_DIR, 'kraftverk.db');
 
 /**
  * Everything the server reads from its environment and command line, read once.
@@ -54,10 +63,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     allowedHosts: allowedHosts(env),
     development: env.NODE_ENV !== 'production',
     trustedProxies: env.KRAFTVERK_TRUSTED_PROXIES,
-    logDir: env.KRAFTVERK_LOG_DIR || resolve(import.meta.dirname, '../data/logs'),
+    logDir: env.KRAFTVERK_LOG_DIR || join(DATA_DIR, 'logs'),
     databaseFile: env.KRAFTVERK_DB || DEFAULT_DATABASE_FILE,
     secretKey: env.KRAFTVERK_SECRET_KEY || null,
-    resetSecretFile: env.KRAFTVERK_RESET_SECRET_FILE || resolve(import.meta.dirname, '../data/reset-secret'),
+    resetSecretFile: env.KRAFTVERK_RESET_SECRET_FILE || join(DATA_DIR, 'reset-secret'),
     env,
   };
 }

@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
@@ -6,28 +6,28 @@ import { HTTPException } from 'hono/http-exception';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { ZodError } from 'zod';
 
-import { ApiError, API_ERROR_STATUS, type VersionInfo } from '@kraftverk/api-contract';
+import { ApiError, API_ERROR_STATUS, CLIENT_HEADER } from '@kraftverk/api-contract';
 
-import pkg from '../package.json' with { type: 'json' };
 import { hostGuard } from './auth/host.ts';
-import { CLIENT_HEADER, createAuth } from './auth/routes.ts';
+import { createAuth } from './auth/routes.ts';
 import { isPrivate, normaliseIp } from './auth/trust.ts';
 import type { ServerConfig } from './config.ts';
-import { adminRoutes } from './routes/admin.ts';
-import { deviceRoutes } from './routes/devices.ts';
-import { connectionRoutes } from './routes/connections.ts';
-import { heldRoutes } from './routes/held.ts';
-import { liveRoutes } from './routes/live.ts';
-import type { AppDeps } from './routes/shared.ts';
-import { setupRoutes } from './routes/setup.ts';
-import { transportRoutes } from './routes/transports.ts';
 import { assistantRoutes } from './routes/assistant.ts';
 import { automationRoutes } from './routes/automations.ts';
 import { configurationRoutes } from './routes/configuration.ts';
+import type { AppDeps } from './routes/context.ts';
+import { deviceRoutes } from './routes/devices.ts';
+import { followerRoutes } from './routes/followers.ts';
+import { homeRoutes } from './routes/home.ts';
+import { linkRoutes } from './routes/links.ts';
+import { liveRoutes } from './routes/live.ts';
+import { invalid } from './routes/parse.ts';
+import { serverRoutes } from './routes/server.ts';
+import { setupRoutes } from './routes/setup.ts';
+import { transportRoutes } from './routes/transports.ts';
 
-export type { AppDeps } from './routes/shared.ts';
+export type { AppDeps } from './routes/context.ts';
 
-/** What `GET /api/version` says about this server. */
 /** Ports the Expo dev server serves the web app on. */
 const DEV_PORTS = new Set(['8081', '19006']);
 
@@ -77,7 +77,8 @@ export function corsOrigin(config: Pick<ServerConfig, 'allowedOrigins' | 'develo
  * routes with `app.request()`.
  */
 export function createApp(deps: AppDeps) {
-  const { config, startedAt } = deps;
+  const { config } = deps;
+  const allowed = corsOrigin(config);
   const app = new Hono();
   // One per app: the socket handlers Bun is given beside `fetch` (see `index.ts`).
   const { upgradeWebSocket, websocket } = createBunWebSocket();
@@ -117,7 +118,7 @@ export function createApp(deps: AppDeps) {
   app.use(
     '/api/*',
     cors({
-      origin: corsOrigin(config),
+      origin: allowed,
       allowMethods: [...CORS_METHODS],
       // The forgery header must be allowed, or the app's own writes would fail
       // their preflight — and it is exactly what a foreign origin cannot send.
@@ -136,49 +137,41 @@ export function createApp(deps: AppDeps) {
   api.route('/auth', auth.auth);
   api.route('/users', auth.users);
 
-  api.get('/health', (c) => c.json({ ok: true }));
-
-  api.get('/version', (c) => {
-    const info: VersionInfo = {
-      name: pkg.name,
-      version: pkg.version,
-      runtime: typeof Bun !== 'undefined' ? `bun ${Bun.version}` : `node ${process.versions.node}`,
-      startedAt: startedAt.toISOString(),
-      uptimeSeconds: Math.round((Date.now() - startedAt.getTime()) / 1000),
-      readOnly: config.readOnly,
-    };
-    return c.json(info);
-  });
-
+  api.route('/', serverRoutes(deps, auth));
+  api.route('/', homeRoutes(deps));
   api.route('/setup', setupRoutes(deps));
-  api.route('/', adminRoutes(deps, auth));
+  api.route('/', followerRoutes(deps));
   api.route('/', deviceRoutes(deps));
-  api.route('/', connectionRoutes(deps));
-  api.route('/', heldRoutes(deps));
+  api.route('/', linkRoutes(deps));
   api.route('/', transportRoutes(deps));
   api.route('/', automationRoutes(deps));
   api.route('/', configurationRoutes(deps));
   api.route('/', assistantRoutes(deps));
-  api.route('/', liveRoutes(deps, upgradeWebSocket, corsOrigin(config)));
+  api.route('/', liveRoutes(deps, upgradeWebSocket, allowed));
 
   app.route('/api', api);
 
   app.notFound((c) => c.json({ error: 'Not found', path: c.req.path }, 404));
 
-  app.onError((err, c) => {
-    // JSON, like every other answer here: the app reads `{ error }`.
-    if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
-    // The home refused, in words (`@kraftverk/hub`): its kind is the status.
-    if (err instanceof ApiError) {
-      const said = { error: err.message, ...(err.problems.length ? { problems: err.problems } : {}), ...(err.needsConfirmation ? { needsConfirmation: err.needsConfirmation } : {}) };
-      return c.json(said, API_ERROR_STATUS[err.kind] as ContentfulStatusCode);
-    }
-    if (err instanceof ZodError) {
-      return c.json({ error: 'Validation failed', issues: err.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) }, 400);
-    }
-    console.error('[server]', err);
-    return c.json({ error: 'Internal server error' }, 500);
-  });
+  app.onError(answerError);
 
   return { app, auth, websocket };
+}
+
+/**
+ * What a route that threw answers: JSON, like every other answer here — the
+ * app reads `{ error }`, and `problems` and `needsConfirmation` beside it.
+ * The home's refusal (`ApiError`) answers with the status its kind maps to;
+ * a request that does not hold is refused the same way; anything else is a
+ * bug, said in the log and not to the caller.
+ */
+export function answerError(err: Error, c: Context): Response {
+  if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
+  const refusal = err instanceof ZodError ? invalid(err) : err;
+  if (refusal instanceof ApiError) {
+    const said = { error: refusal.message, ...(refusal.problems.length ? { problems: refusal.problems } : {}), ...(refusal.needsConfirmation ? { needsConfirmation: refusal.needsConfirmation } : {}) };
+    return c.json(said, API_ERROR_STATUS[refusal.kind] as ContentfulStatusCode);
+  }
+  console.error('[server]', err);
+  return c.json({ error: 'Internal server error' }, 500);
 }

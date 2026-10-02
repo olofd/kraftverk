@@ -31,8 +31,6 @@ import { hostName, isLocalName } from './host.ts';
  * is setting the server up from home; in the other, it is the station.
  */
 
-export type Exposure = 'lan' | 'public';
-
 /** The stamp the web container puts on every request it forwards. */
 export const EXPOSURE_HEADER = 'x-kraftverk-exposure';
 /** The client address the web container saw, for rate limits and the audit log only. */
@@ -41,7 +39,7 @@ export const CLIENT_IP_HEADER = 'x-kraftverk-client-ip';
 /** Headers that mean "a proxy handled this" when a proxy we know did not. */
 export const FORWARDING_HEADERS = ['x-forwarded-for', 'forwarded', 'x-real-ip', 'x-forwarded-host', EXPOSURE_HEADER];
 
-export type TrustInput = {
+type TrustInput = {
   /** The address of whatever opened the TCP connection. */
   socketIp: string | null;
   headers: Headers;
@@ -108,7 +106,7 @@ export function assessTrust({ socketIp, headers, proxies }: TrustInput): Trust {
  * The home network reaches this server by its LAN address, never by the
  * router's.
  */
-export function publicHost(header: string | null | undefined): string | null {
+function publicHost(header: string | null | undefined): string | null {
   const host = hostName(header);
   if (host === null) return null;
   const ip = normaliseIp(host);

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import type { ImportPlan } from '@kraftverk/api-contract';
 import { readConfig } from '@kraftverk/home-file';
 import { changesConfiguration, createHub, DeviceTypeRegistry, installedFrom, openKept, passphraseSealing, ProtocolRegistry, type Hub } from '@kraftverk/hub';
 import { LAMP, lampProtocol, lampType, MACHINE_NODE } from '@kraftverk/hub/testing';
@@ -94,6 +95,7 @@ describe('the configuration kept beside the database', () => {
     for (let n = 0; n < 7; n++) writeFileSync(join(folder, `kraftverk.before-2026-01-0${n + 1}T00-00-00Z.yaml`), 'kraftverk: 1\n');
     writeFileSync(kept, 'kraftverk: 1\n# the one restored from\n');
     const heard: string[] = [];
+    const planned: string[] = [];
     const restoring = new ConfigSnapshot(
       {
         kept: async () => '',
@@ -101,13 +103,19 @@ describe('the configuration kept beside the database', () => {
           heard.push(text);
           return { at: new Date().toISOString(), from, applied: null, problems: [] };
         },
+        plan: async (text) => {
+          planned.push(text);
+          return {} as ImportPlan;
+        },
       },
       kept
     );
     const restored = (await restoring.restore())!;
     expect(heard).toEqual(['kraftverk: 1\n# the one restored from\n']);
     expect(restored.from.startsWith(join(folder, 'kraftverk.before-'))).toBe(true);
-    expect(restoring.restoredCopy()).toBe(heard[0]!);
+    // What it could not do alone is planned again from that copy.
+    await restoring.planAgain('merge', 'olof');
+    expect(planned).toEqual(heard);
     const copies = readdirSync(folder).filter((name) => name.startsWith('kraftverk.before-')).sort();
     expect(copies.length).toBe(5);
     expect(copies[0]).toBe('kraftverk.before-2026-01-04T00-00-00Z.yaml');

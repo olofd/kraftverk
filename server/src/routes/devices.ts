@@ -1,16 +1,18 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import { savedDeviceId } from '@kraftverk/device-sdk';
-import { PICTURE_REF } from '@kraftverk/hub';
+import { connectionId, savedDeviceId } from '@kraftverk/device-sdk';
 
-import { body, homeFor, type AppDeps } from './shared.ts';
+import { homeFor, type AppDeps } from './context.ts';
+import { body, query } from './parse.ts';
 
 /*
-  The devices you own, whatever they are, over HTTP: what each route takes,
-  checked, handed to the home (`KraftverkApi`, `hub.as(caller)`), and its
-  answer. What each does is the hub's. A command or a setting the gateway
-  refuses is an answer, not an error: its verdict, with 409.
+  The devices you own, whatever they are, and how each is reached, over
+  HTTP: what each route takes, checked, handed to the home (`KraftverkApi`,
+  `hub.as(caller)`), and its answer. What each does is the hub's. A command
+  or a setting the gateway refuses is an answer, not an error: its verdict,
+  with 409. A connection is added by the setup flow, never here: adding one
+  has to find the device, and that is what setup is.
 */
 
 const VALUE = z.union([z.string().max(4096), z.number(), z.boolean(), z.null()]);
@@ -19,12 +21,13 @@ const SPAN = {
   from: z.iso.datetime({ offset: true }).optional(),
   to: z.iso.datetime({ offset: true }).optional(),
 };
-const LIMIT = z.coerce.number().int().min(1).max(500).default(100);
+const LIMITED = z.object({ limit: z.coerce.number().int().min(1).max(500).default(100) }).strict();
 
 export function deviceRoutes(deps: AppDeps): Hono {
   const api = new Hono();
   /** The device a route names: Hono has decoded it already, and decoding again turned an id with a % into a 500. */
   const id = (raw: string | undefined) => savedDeviceId(raw ?? '');
+  const ids = (c: { req: { param(name: string): string | undefined } }) => [id(c.req.param('id')), connectionId(c.req.param('connection') ?? '')] as const;
 
   api.get('/device-types', async (c) => c.json(await homeFor(deps, c).deviceTypes()));
 
@@ -50,8 +53,9 @@ export function deviceRoutes(deps: AppDeps): Hono {
     return c.json({ ok: true, ...(await homeFor(deps, c).devices.deleteHistory(id(c.req.param('id')), name)) });
   });
 
+  /** Which picture it shows: the home says which it has. */
   api.put('/devices/:id/picture', async (c) => {
-    const { picture } = await body(c, z.object({ picture: z.string().regex(PICTURE_REF, 'type:0, type:1… (or, one day, own:<id>)') }).strict());
+    const { picture } = await body(c, z.object({ picture: z.string().min(1).max(40) }).strict());
     return c.json(await homeFor(deps, c).devices.setPicture(id(c.req.param('id')), picture as `type:${number}`));
   });
 
@@ -61,24 +65,18 @@ export function deviceRoutes(deps: AppDeps): Hono {
     return c.json(result, result.outcome === 'verified' || result.outcome === 'unverified' ? 200 : 409);
   });
 
-  api.get('/problems', async (c) => c.json({ problems: await homeFor(deps, c).problems(LIMIT.parse(c.req.query('limit') ?? 100)) }));
+  api.get('/problems', async (c) => c.json({ problems: await homeFor(deps, c).problems(query(c, LIMITED).limit) }));
 
-  api.get('/devices/:id/events', async (c) => c.json({ events: await homeFor(deps, c).devices.events(id(c.req.param('id')), LIMIT.parse(c.req.query('limit') ?? 100)) }));
+  api.get('/devices/:id/events', async (c) => c.json({ events: await homeFor(deps, c).devices.events(id(c.req.param('id')), query(c, LIMITED).limit) }));
 
   api.get('/devices/:id/history', async (c) => {
-    const query = z
-      .object({ key: z.string().min(1).max(64), points: z.coerce.number().int().min(20).max(1000).default(240), ...SPAN })
-      .strict()
-      .parse(c.req.query());
-    return c.json(await homeFor(deps, c).devices.history(id(c.req.param('id')), query));
+    const asked = query(c, z.object({ key: z.string().min(1).max(64), points: z.coerce.number().int().min(20).max(1000).default(240), ...SPAN }).strict());
+    return c.json(await homeFor(deps, c).devices.history(id(c.req.param('id')), asked));
   });
 
   api.get('/devices/:id/changes', async (c) => {
-    const query = z
-      .object({ key: z.string().min(1).max(64).optional(), ...SPAN })
-      .strict()
-      .parse(c.req.query());
-    return c.json(await homeFor(deps, c).devices.changes(id(c.req.param('id')), query));
+    const asked = query(c, z.object({ key: z.string().min(1).max(64).optional(), ...SPAN }).strict());
+    return c.json(await homeFor(deps, c).devices.changes(id(c.req.param('id')), asked));
   });
 
   api.post('/devices/:id/parts/:part/commands/:capability/:command', async (c) => {
@@ -100,6 +98,22 @@ export function deviceRoutes(deps: AppDeps): Hono {
   api.post('/devices/:id/tools/:name', async (c) => {
     const request = await body(c, z.object({ input: z.record(z.string().max(64), VALUE).optional(), confirmation: z.string().max(64).optional() }).strict());
     return c.json(await homeFor(deps, c).devices.tool(id(c.req.param('id')), c.req.param('name'), request));
+  });
+
+  // --- how it is reached ---------------------------------------------------------
+
+  api.post('/devices/:id/connections/:connection/prefer', async (c) => c.json(await homeFor(deps, c).connections.prefer(...ids(c))));
+
+  api.delete('/devices/:id/connections/:connection', async (c) => c.json(await homeFor(deps, c).connections.remove(...ids(c))));
+
+  api.put('/devices/:id/connections/:connection/secrets', async (c) => {
+    const given = await body(c, z.record(z.string().max(64), z.string().min(1).max(4096)));
+    return c.json(await homeFor(deps, c).connections.setSecrets(...ids(c), given));
+  });
+
+  api.patch('/devices/:id/connections/:connection', async (c) => {
+    const input = await body(c, z.object({ secretsExportable: z.boolean() }).strict());
+    return c.json(await homeFor(deps, c).connections.setExportable(...ids(c), input.secretsExportable));
   });
 
   return api;

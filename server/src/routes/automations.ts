@@ -2,12 +2,13 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import type { AutomationChanges, AutomationDraft } from '@kraftverk/api-contract';
-import type { Rule } from '@kraftverk/automation';
+import { AUTOMATION_MODES, type Rule } from '@kraftverk/automation';
 import { runLogCsv } from '@kraftverk/automation-engine';
-import { automationId, savedDeviceId } from '@kraftverk/device-sdk';
+import { automationId, fileNameOf, savedDeviceId } from '@kraftverk/device-sdk';
 import { REHEARSAL_MAX_HOURS } from '@kraftverk/hub';
 
-import { body, homeFor, type AppDeps } from './shared.ts';
+import { bindingsOf, homeFor, PART, type AppDeps } from './context.ts';
+import { body, query } from './parse.ts';
 
 /**
  * Automations (docs/AUTOMATIONS.md, docs/AUTOMATION-EDITOR.md) over HTTP:
@@ -17,7 +18,7 @@ import { body, homeFor, type AppDeps } from './shared.ts';
  * says yes. A run's log is also a file to download, as a table.
  */
 
-const roles = z.record(z.string().min(1).max(40), z.object({ device: z.string().min(1).max(80), part: z.string().min(1).max(80) }).strict());
+const roles = z.record(z.string().min(1).max(40), PART);
 const starts = z.record(z.string().min(1).max(40), z.string().min(1).max(80));
 /** A rule is checked by the language, not by its shape here: the home says everything wrong with it. */
 const rule = z.record(z.string(), z.unknown());
@@ -25,15 +26,12 @@ const rule = z.record(z.string(), z.unknown());
 const recheckMinutes = z.number().int().min(1).max(1440).nullable();
 const draft = z.object({ rule, roles, starts }).strict();
 
-/** What fills each role, its devices' ids as ids. */
-const rolesOf = (given: Record<string, { device: string; part: string }>): AutomationDraft['roles'] =>
-  Object.fromEntries(Object.entries(given).map(([role, binding]) => [role, { device: savedDeviceId(binding.device), part: binding.part }]));
 /** What each role starts, its automations' ids as ids. */
 const startsOf = (given: Record<string, string>): AutomationDraft['starts'] => Object.fromEntries(Object.entries(given).map(([role, id]) => [role, automationId(id)]));
 /** A draft as the home takes it. */
 const asDraft = (input: { rule: Record<string, unknown>; roles: Record<string, { device: string; part: string }>; starts: Record<string, string> }): AutomationDraft => ({
   rule: input.rule as unknown as Rule,
-  roles: rolesOf(input.roles),
+  roles: bindingsOf(input.roles),
   starts: startsOf(input.starts),
 });
 
@@ -63,7 +61,7 @@ export function automationRoutes(deps: AppDeps): Hono {
   api.get('/automations/:id', async (c) => c.json(await homeFor(deps, c).automations.get(id(c.req.param('id')))));
 
   api.get('/automations/:id/runs', async (c) => {
-    const limit = z.coerce.number().int().min(1).max(200).default(50).parse(c.req.query('limit') ?? 50);
+    const { limit } = query(c, z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) }).strict());
     return c.json({ runs: await homeFor(deps, c).automations.runs(id(c.req.param('id')), limit) });
   });
 
@@ -74,7 +72,7 @@ export function automationRoutes(deps: AppDeps): Hono {
     if (c.req.query('format') !== 'csv') return c.json(log);
     const { name } = await home.automations.get(id(c.req.param('id')));
     c.header('content-type', 'text/csv; charset=utf-8');
-    c.header('content-disposition', `attachment; filename="${name.replace(/[^\p{L}\p{N} _-]+/gu, '').trim() || 'run'} ${log.run.at.slice(0, 19).replace(/:/g, '-')}.csv"`);
+    c.header('content-disposition', `attachment; filename="${fileNameOf(name, log.run.at, 'csv')}"`);
     return c.body(runLogCsv(log));
   });
 
@@ -88,7 +86,7 @@ export function automationRoutes(deps: AppDeps): Hono {
   });
 
   api.get('/automations/:id/rehearse', async (c) => {
-    const hours = z.coerce.number().min(1).max(REHEARSAL_MAX_HOURS).default(24 * 7).parse(c.req.query('hours') ?? 24 * 7);
+    const { hours } = query(c, z.object({ hours: z.coerce.number().min(1).max(REHEARSAL_MAX_HOURS).default(24 * 7) }).strict());
     return c.json(await homeFor(deps, c).automations.rehearse({ automation: id(c.req.param('id')) }, hours));
   });
 
@@ -120,7 +118,7 @@ export function automationRoutes(deps: AppDeps): Hono {
           roles: roles.optional(),
           starts: starts.optional(),
           timeZone: z.string().min(1).max(64).optional(),
-          mode: z.enum(['off', 'watch', 'act']).optional(),
+          mode: z.enum(AUTOMATION_MODES).optional(),
           recheckMinutes: recheckMinutes.optional(),
           homePlace: z.number().int().min(0).max(1000).nullable().optional(),
           confirmation: z.string().max(64).optional(),
@@ -132,7 +130,7 @@ export function automationRoutes(deps: AppDeps): Hono {
     const changes: AutomationChanges = {
       ...rest,
       ...(given !== undefined ? { rule: given as unknown as Rule } : {}),
-      ...(filled !== undefined ? { roles: rolesOf(filled) } : {}),
+      ...(filled !== undefined ? { roles: bindingsOf(filled) } : {}),
       ...(started !== undefined ? { starts: startsOf(started) } : {}),
     };
     return c.json(await homeFor(deps, c).automations.update(id(c.req.param('id')), changes));

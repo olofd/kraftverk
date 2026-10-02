@@ -1,4 +1,4 @@
-import { changesConfiguration, createHub, DeviceTypeRegistry, passphraseSealing, ProtocolRegistry, TransportHost } from '@kraftverk/hub';
+import { changesConfiguration, createHub, passphraseSealing, TransportHost } from '@kraftverk/hub';
 
 import { AuditLog, transportStore } from '@kraftverk/store';
 
@@ -9,7 +9,7 @@ import { besideDatabase, loadConfig } from './config.ts';
 import { keepConsole } from './log.ts';
 import { openDatabase } from './platform/database.ts';
 import { scopedHttp } from './platform/http.ts';
-import { discoverDeviceTypes, discoverProtocols, discoverTransports } from './platform/packages.ts';
+import { installedFromDisk } from './platform/packages.ts';
 import { thisNode } from './platform/node.ts';
 import { serverSecrets } from './platform/secrets.ts';
 import { ConfigSnapshot } from './platform/snapshot.ts';
@@ -86,13 +86,7 @@ process.on('unhandledRejection', (reason) => {
 
 const startedAt = new Date();
 
-/**
- * What is installed: protocols, transports and device types, each found in
- * its folder under `packages/` rather than listed here (docs/ARCHITECTURE.md §3).
- */
-const protocols = new ProtocolRegistry();
-await discoverProtocols(protocols);
-
+/** What is installed, found on disk: the transports this host starts, the protocols and the device types. */
 const transports = new TransportHost({
   platform: 'system',
   context: {
@@ -102,17 +96,7 @@ const transports = new TransportHost({
   },
   store: (id) => transportStore(database, id),
 });
-await discoverTransports(transports);
-
-const types = new DeviceTypeRegistry();
-await discoverDeviceTypes(types);
-types.checkConnections({ protocol: (id) => protocols.get(id), transport: (id) => transports.definition(id) });
-
-console.log(
-  `[devices] Installed: ${types.all().map((type) => type.id).join(', ') || 'no device types'}; ` +
-    `protocols ${protocols.all().map((protocol) => protocol.id).join(', ') || 'none'}; ` +
-    `transports ${transports.definitions().map((definition) => definition.id).join(', ') || 'none'}`
-);
+const installed = await installedFromDisk(transports);
 
 /*
   The home: its stores over the server's database, a session for every
@@ -125,7 +109,7 @@ const hub = createHub({
   audit,
   secrets: serverSecrets(config.secretKey),
   sealing: passphraseSealing,
-  installed: { types, protocols, transports },
+  installed,
   readOnly: () => config.readOnly,
   allowRawFrames: config.allowRawFrames,
   http: scopedHttp,
@@ -163,34 +147,15 @@ const proxies = new ProxyDirectory(config.trustedProxies);
 proxies.start();
 
 /*
-  The configuration kept beside the database (docs/CONFIG.md): written now,
-  and again after every change to it, so a database set aside for a new
-  schema leaves a home to restore.
+  The configuration kept beside the database (docs/CONFIG.md): a database
+  started afresh is restored from it, and it is written again after every
+  change, so a database set aside for a new schema leaves a home to restore.
 */
 const snapshot = new ConfigSnapshot(hub.configuration, besideDatabase(config, 'config', 'kraftverk.yaml'));
-/*
-  A database started afresh this run — a new schema set the old one aside —
-  is restored from the configuration kept beside it, before anything is
-  written over that. A restore with problems leaves the kept file as it is
-  until something changes; it is copied aside first in any case.
-*/
-let restoring = true;
-if (fresh) {
-  const restored = await snapshot.restore();
-  if (restored) {
-    console.log(`[config] Restored from the configuration kept beside the database: ${restored.applied ? `${restored.applied.devices.added.length} devices, ${restored.applied.automations.added.length} automations` : 'nothing'}${restored.problems.length ? `; ${restored.problems.length} problems: ${restored.problems.join('; ')}` : ''}`);
-    restoring = !restored.applied;
-  }
-}
-// Each change to the configuration writes it again, a moment later.
+await snapshot.begin(fresh);
 const stopSnapshot = audit.onRecord((entry) => {
   if (changesConfiguration(entry.kind)) snapshot.schedule();
 });
-try {
-  if (!restoring || !fresh) await snapshot.write();
-} catch (error) {
-  console.warn(`[config] The configuration could not be kept beside the database: ${(error as Error).message}`);
-}
 
 const { app, websocket } = createApp({ hub, accounts: new Accounts(database), snapshot, config, proxies, serverLog, startedAt });
 

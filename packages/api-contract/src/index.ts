@@ -57,6 +57,7 @@ import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 import type { Vocabulary } from '@kraftverk/home-file';
 
 export { ApiError, API_ERROR_STATUS, type ApiErrorKind } from './error.ts';
+export { CLIENT_HEADER, CONFIG_SCHEMA_PATH, SIGNED_OUT } from './wire.ts';
 
 export type {
   AuditSubject,
@@ -706,7 +707,7 @@ export type AutomationRun = {
   outcome:
     | 'acted' // what it did, the gateway carried out, verified
     | 'unverified' // the gateway sent it, but the effect is not proven
-    | 'would-act' // observing: it would have acted
+    | 'would-act' // watching: it would have acted
     | 'idle' // the condition was not met
     | 'unknown' // it could not tell
     | 'refused' // the gateway said no

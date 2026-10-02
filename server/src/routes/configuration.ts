@@ -1,11 +1,11 @@
 import { Hono } from 'hono';
-import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
-import type { ConfigSnapshotView } from '@kraftverk/api-contract';
+import { ApiError, CONFIG_SCHEMA_PATH, type ConfigSnapshotView } from '@kraftverk/api-contract';
 
 import { actorOf } from '../auth/routes.ts';
-import { body, homeFor, type AppDeps } from './shared.ts';
+import { homeFor, type AppDeps } from './context.ts';
+import { body } from './parse.ts';
 
 /*
   Configuration (docs/CONFIG.md), over HTTP: the JSON Schema an editor checks
@@ -15,13 +15,10 @@ import { body, homeFor, type AppDeps } from './shared.ts';
   kept beside the database. What each does is the hub's (`Configuration`).
 */
 
-/** The schema's path: open, beside the way in (`auth/routes.ts`). */
-export const SCHEMA_PATH = '/api/config/schema.json';
-
 export function configurationRoutes(deps: AppDeps): Hono {
   const api = new Hono();
   /** Open, as an editor cannot log in: it names nothing you have, so no one in particular asks for it. */
-  api.get('/config/schema.json', (c) => {
+  api.get(CONFIG_SCHEMA_PATH, (c) => {
     c.header('cache-control', 'no-cache');
     return c.json(deps.hub.configuration.schema());
   });
@@ -40,7 +37,7 @@ export function configurationRoutes(deps: AppDeps): Hono {
         })
         .strict()
     );
-    return c.json(await homeFor(deps, c).configuration.export(input, { schemaUrl: `${new URL(c.req.url).origin}${SCHEMA_PATH}` }));
+    return c.json(await homeFor(deps, c).configuration.export(input, { schemaUrl: `${new URL(c.req.url).origin}/api${CONFIG_SCHEMA_PATH}` }));
   });
 
   /** `restored`: the copy the last restore was made from, kept aside — to import again with its answers, when the restore could not do it all. */
@@ -59,17 +56,15 @@ export function configurationRoutes(deps: AppDeps): Hono {
         .refine((given) => [given.text, given.restored, given.from].filter((each) => each !== undefined).length === 1, 'A file’s text, the restored copy, or a home kept elsewhere: one of them')
     );
     if (input.restored) {
-      const text = deps.snapshot?.restoredCopy() ?? null;
-      if (text === null) throw new HTTPException(404, { message: 'There is no restored copy to import again' });
-      // Its secrets are this server's own, sealed with its key: opened as only the server's own copy may be, not through the API.
-      return c.json(await deps.hub.configuration.plan(text, { mode: input.mode, kept: true }, actorOf(c)));
+      if (!deps.snapshot) throw new ApiError('not-found', 'There is no restored copy to import again');
+      return c.json(await deps.snapshot.planAgain(input.mode, actorOf(c)));
     }
-    // A home kept elsewhere is an app's: the home says it has none.
+    // A home kept beside this one: where there is none, the home says so.
     if (input.from) return c.json(await homeFor(deps, c).configuration.plan({ from: input.from, mode: input.mode }));
     return c.json(await homeFor(deps, c).configuration.plan({ text: input.text!, mode: input.mode, passphrase: input.passphrase }));
   });
 
-  /** What a home kept beside this one has, to bring in: an app's alone, so a server's says none. */
+  /** What a home kept beside this one has, to bring in: where there is none, the home says so. */
   api.get('/config/elsewhere', async (c) => c.json(await homeFor(deps, c).configuration.elsewhere()));
 
   api.post('/config/apply', async (c) => {

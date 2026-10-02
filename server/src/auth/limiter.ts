@@ -1,3 +1,5 @@
+import type { Context } from 'hono';
+
 /**
  * Slows down guessing.
  *
@@ -33,6 +35,17 @@ export class LoginLimiter {
     const now = this.now();
     this.#forget(now);
     return Math.max(0, ...keys.map((key) => (this.#entries.get(key)?.lockedUntil ?? 0) - now));
+  }
+
+  /**
+   * The answer while any of these keys must wait: 429, saying `what` and for
+   * how long, and `Retry-After`; null when all may try.
+   */
+  refuse(c: Context, keys: string[], what: string): Response | null {
+    const wait = this.wait(keys);
+    if (wait <= 0) return null;
+    c.header('Retry-After', String(Math.ceil(wait / 1000)));
+    return c.json({ error: `${what} Try again in ${Math.ceil(wait / 60_000)} min.` }, 429);
   }
 
   failed(keys: string[]): void {

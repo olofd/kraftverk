@@ -1,6 +1,8 @@
 import {
   ApiError,
   API_ERROR_STATUS,
+  CLIENT_HEADER,
+  CONFIG_SCHEMA_PATH,
   type ApiErrorKind,
   type AutomationRun,
   type AutomationView,
@@ -51,7 +53,7 @@ const KIND_OF = new Map<number, ApiErrorKind>(
   (Object.entries(API_ERROR_STATUS) as [ApiErrorKind, number][]).filter(([kind]) => kind !== 'needs-yes').map(([kind, status]) => [status, kind])
 );
 
-type Body = { error?: string; problems?: string[]; needsConfirmation?: string; issues?: { path: string; message: string }[]; loginRequired?: boolean; setupRequired?: boolean };
+type Body = { error?: string; problems?: string[]; needsConfirmation?: string; loginRequired?: boolean; setupRequired?: boolean };
 
 type How = { query?: Record<string, unknown>; verdict?: boolean; text?: boolean; signal?: AbortSignal; within?: number };
 
@@ -64,7 +66,7 @@ function requests(options: HttpApiOptions) {
   const refusal = (status: number, body: Body | null): ApiError => {
     if (status === 401 && body?.loginRequired) options.onLoginRequired?.({ setupRequired: Boolean(body.setupRequired) });
     const kind: ApiErrorKind = body?.needsConfirmation ? 'needs-yes' : status === 401 ? 'forbidden' : (KIND_OF.get(status) ?? (status >= 500 ? 'failed' : 'invalid'));
-    const problems = body?.problems ?? body?.issues?.map((issue) => (issue.path ? `${issue.path}: ${issue.message}` : issue.message)) ?? [];
+    const problems = body?.problems ?? [];
     return new ApiError(kind, body?.error ?? `The server answered ${status}`, { problems, ...(body?.needsConfirmation ? { needsConfirmation: body.needsConfirmation } : {}) });
   };
 
@@ -86,7 +88,7 @@ function requests(options: HttpApiOptions) {
     try {
       response = await send(url, {
         method,
-        headers: { Accept: 'application/json', 'X-Kraftverk-Client': 'app', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...options.headers },
+        headers: { Accept: 'application/json', [CLIENT_HEADER]: 'app', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...options.headers },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         ...(signal ? { signal } : {}),
         // The session is a cookie; it only travels if asked to.
@@ -191,7 +193,7 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
 
     configuration: {
       vocabulary: () => get('/config/vocabulary'),
-      schema: () => get('/config/schema.json'),
+      schema: () => get(CONFIG_SCHEMA_PATH),
       // The server writes its own address into the file's first line.
       export: (request) => call('POST', '/config/export', request),
       plan: (request) => call('POST', '/config/plan', request),

@@ -4,10 +4,11 @@ import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
 import { describeError, type ConfigExported } from '@kraftverk/api-client';
 import { SegmentedControl, haptic, Icon } from '@kraftverk/ui';
+import { fileNameOf } from '@kraftverk/device-sdk';
 
 import { confirmAction } from '../../platform/confirm';
 import { useHome } from '../../state/HomeProvider';
-import { fileNameOf, saveText } from '../../platform/download';
+import { saveText } from '../../platform/download';
 import { useTone } from '../automations/looks';
 import { YamlEditor } from './YamlEditor';
 import { secretWords } from './shared';

@@ -24,7 +24,7 @@ import { checkValue, enumLabel, isScalar, type ScalarValue, type Value, type Val
  * commands — plus the functions packages contribute; it adds none of its own.
  * It can read, compare, and ask the gateway for commands: nothing else. So
  * whatever wrote a rule wrote data, and a rule can do no more than a person
- * could from a screen, after it has been seen observing and armed on purpose.
+ * could from a screen, after it has been seen watching and let act on purpose.
  *
  * Pure: no platform built-in, so a holder in the app can run it too.
  */
@@ -1245,8 +1245,8 @@ export function triggerAsNext(trigger: string): string {
  * — it decides and says what it would have done; `act` — it does it,
  * through the gateway. The same words in a file, on the API and in the app.
  */
-export type AutomationMode = 'off' | 'watch' | 'act';
-export const AUTOMATION_MODES: readonly AutomationMode[] = ['off', 'watch', 'act'];
+export const AUTOMATION_MODES = ['off', 'watch', 'act'] as const;
+export type AutomationMode = (typeof AUTOMATION_MODES)[number];
 
 /** One step, in words, and the steps within it — what a sequence is shown as, numbered and nested. */
 export type StepLine = {

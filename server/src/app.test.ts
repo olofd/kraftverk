@@ -11,7 +11,8 @@ import type { LiveBus, LiveMessage, SessionManager } from '@kraftverk/holder';
 import { createHub, DeviceTypeRegistry, passphraseSealing, ProtocolRegistry, TransportHost, type Attention, type SetupService } from '@kraftverk/hub';
 
 import { CORS_METHODS, corsOrigin, createApp } from './app.ts';
-import { CLIENT_HEADER, SESSION_COOKIE } from './auth/routes.ts';
+import { CLIENT_HEADER } from '@kraftverk/api-contract';
+import { SESSION_COOKIE } from './auth/routes.ts';
 import { Accounts } from './auth/accounts.ts';
 import { CLIENT_IP_HEADER, EXPOSURE_HEADER, ProxyDirectory } from './auth/trust.ts';
 import { loadConfig } from './config.ts';

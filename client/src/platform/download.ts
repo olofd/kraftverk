@@ -20,7 +20,3 @@ export async function saveText(fileName: string, text: string, type: string): Pr
   }
   await Share.share({ title: fileName, message: text });
 }
-
-/** A name a file can carry: what it is about, and when — "Start charging 2026-10-01 09-50-22". */
-export const fileNameOf = (about: string, at: string, extension: string): string =>
-  `${about.replace(/[^\p{L}\p{N} _-]+/gu, '').trim() || 'kraftverk'} ${at.slice(0, 19).replace('T', ' ').replace(/:/g, '-')}.${extension}`;

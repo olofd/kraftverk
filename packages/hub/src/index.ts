@@ -19,6 +19,7 @@ export * from './history/changes.ts';
 export * from './attention/attention.ts';
 export * from './attention/freshness.ts';
 export * from './assistant/world.ts';
+export { answerMcp, type McpServerInfo } from './assistant/mcp.ts';
 export * from './automations/devices.ts';
 export * from './automations/plans.ts';
 export * from './configuration/configuration.ts';

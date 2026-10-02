@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 import { Database, type Statement } from 'bun:sqlite';
@@ -6,6 +6,7 @@ import { Database, type Statement } from 'bun:sqlite';
 import { createSchema, metaOf, prepareDatabase, SCHEMA, schemaStateOf, type SqlDatabase, type SqlStatement } from '@kraftverk/store';
 
 import { ACCOUNTS_SCHEMA } from '../auth/schema.ts';
+import { DEFAULT_DATABASE_FILE, SERVER } from '../config.ts';
 
 /** The server's database is the home's, and its own accounts beside it: one definition, one fingerprint. */
 export const SERVER_SCHEMA = SCHEMA + ACCOUNTS_SCHEMA;
@@ -22,17 +23,6 @@ export const SERVER_SCHEMA = SCHEMA + ACCOUNTS_SCHEMA;
  * The file lives in `server/data/`, which is gitignored.
  */
 
-/** Where the database is kept unless `KRAFTVERK_DB` says (`config.ts`): beside the server, gitignored. */
-export const DEFAULT_DATABASE_FILE = resolve(import.meta.dirname, '../../data/kraftverk.db');
-
-/** The version of kraftverk this is, as its package says: what a new database records it was made by. */
-const VERSION = (() => {
-  try {
-    return (JSON.parse(readFileSync(resolve(import.meta.dirname, '../../package.json'), 'utf8')) as { version?: string }).version ?? 'unknown';
-  } catch {
-    return 'unknown';
-  }
-})();
 
 /*
   bun:sqlite's Database is nearly the port — get, all and run, exec,
@@ -92,7 +82,7 @@ export function openSchema(path: string, schema = SERVER_SCHEMA): SqlDatabase & 
     console.warn(`[db] ${path} was made by another schema${madeBy} and is set aside as ${setAside}; a new database is started. Nothing was deleted.`);
     handle = open(path);
   }
-  createSchema(handle, VERSION, schema);
+  createSchema(handle, SERVER.version, schema);
   return Object.assign(handle, { created: true }, setAside ? { setAside } : {});
 }
 

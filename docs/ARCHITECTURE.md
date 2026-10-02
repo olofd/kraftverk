@@ -948,7 +948,9 @@ standard ids.
 *Done.* `server/src/devices/types.ts` discovers and validates;
 `server/src/devices/sessions.ts` opens one session per device;
 `server/src/devices/registry.ts` builds every typed device's view from its
-type and session, and names no product. The P280 package now holds its
+type and session, and names no product. (Since moved: finding packages on
+disk to `server/src/platform/packages.ts`, the sessions to
+`@kraftverk/holder`, the registry to `@kraftverk/hub`.) The P280 package now holds its
 `DeviceType` (`src/type.ts`), its simulator (moved from the server, settings
 kept in its device store) and its session adapter (`src/station.ts`: readings,
 `battery`, `outlets`, `acInput`, settings checked against its own schema before

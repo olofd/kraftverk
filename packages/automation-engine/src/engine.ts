@@ -229,7 +229,7 @@ type Walked = 'ok' | 'failed' | 'stopped';
  *   the condition turns true, and with `heldForMinutes` once it has stayed
  *   true that long. Its state is kept, so a restart continues from where it
  *   was — a hold resumes with what it had left, and nothing fires twice. An
- *   automation with no state yet — new, or just changed or armed — takes a
+ *   automation with no state yet — new, just changed, or just let act — takes a
  *   condition already true as the edge.
  * - `asked`: when a person, or an assistant for one, starts it.
  *
@@ -238,7 +238,7 @@ type Walked = 'ok' | 'failed' | 'stopped';
  * (`recheckMinutes`) looks again on that schedule.
  *
  * A run evaluates the rule's condition — unknown is never true — and then its
- * steps, in order: one that observes says what it would have done; one armed
+ * steps, in order: one that watches says what it would have done; one that acts
  * sends each command through the gateway as `actor: 'automation'`, where
  * dwell, freshness, read-only mode and verification apply and a rule has no
  * way around them. A rule of commands alone is done at once; one that takes
@@ -301,8 +301,8 @@ export class AutomationEngine {
 
   /**
    * Looks at an automation's conditions at once — just made, changed or
-   * armed — rather than at the next reading or the next tick: armed while a
-   * condition already holds, it acts now.
+   * let act — rather than at the next reading or the next tick: let act
+   * while a condition already holds, it acts now.
    */
   poke(automationId: string): void {
     const automation = this.deps.store.get(automationId);
@@ -360,7 +360,7 @@ export class AutomationEngine {
           if (!takesSteps(rule)) await going;
         }
         // A condition is looked at on the clock too, not only when a reading moves: a battery that sits
-        // at 8 % sends nothing, and an automation just armed must still see it is below its level.
+        // at 8 % sends nothing, and an automation just let act must still see it is below its level.
         rule.when.forEach((trigger, index) => {
           if ('becomes' in trigger) this.#becomes(automation, rule, trigger, index);
         });
@@ -611,7 +611,7 @@ export class AutomationEngine {
   async startAsked(automationId: string, by: Asker): Promise<RunResult> {
     const automation = this.deps.store.get(automationId);
     if (!automation) throw new RunRefusal('No such automation');
-    // An assistant's yes is a person's arming: one that only watches is its owner's to start.
+    // Starting is a person's yes to act: one that only watches is its owner's to start, not an assistant's.
     if (by.actor === 'agent' && automation.mode !== 'act') throw new RunRefusal('It only watches: its owner lets it act before an assistant may start it');
     return this.#start(automation, { asker: by, from: null }).begun;
   }

@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 
 import type { AutomationContribution } from '@kraftverk/automation';
 import type { DeviceType, Protocol, TransportDefinition, TransportFactory } from '@kraftverk/device-sdk';
-import type { DeviceTypeRegistry, ProtocolRegistry, TransportHost } from '@kraftverk/hub';
+import { DeviceTypeRegistry, ProtocolRegistry, type TransportHost } from '@kraftverk/hub';
 
 /**
  * Finding installed packages, rather than listing them (docs/ARCHITECTURE.md §3).
@@ -15,15 +15,15 @@ import type { DeviceTypeRegistry, ProtocolRegistry, TransportHost } from '@kraft
  * product, a protocol or a transport, and nothing needs editing.
  */
 
-export const REPOSITORY = resolve(import.meta.dirname, '../../..');
+const REPOSITORY = resolve(import.meta.dirname, '../../..');
 
-export const ROOTS = {
+const ROOTS = {
   deviceTypes: ['packages/devices', 'packages/services'].map((root) => resolve(REPOSITORY, root)),
   protocols: [resolve(REPOSITORY, 'packages/protocols')],
   transports: [resolve(REPOSITORY, 'packages/transports')],
 } as const;
 
-export type FoundPackage = {
+type FoundPackage = {
   /** The folder's name, for messages. */
   folder: string;
   /** The package's name. */
@@ -34,7 +34,7 @@ export type FoundPackage = {
 };
 
 /** Every package under `roots` whose `kraftverk` section has `key`. Never throws. */
-export async function findPackages(roots: readonly string[], key: string): Promise<{ found: FoundPackage[]; problems: { source: string; problems: string[] }[] }> {
+async function findPackages(roots: readonly string[], key: string): Promise<{ found: FoundPackage[]; problems: { source: string; problems: string[] }[] }> {
   const found: FoundPackage[] = [];
   const problems: { source: string; problems: string[] }[] = [];
   for (const root of roots) {
@@ -114,4 +114,23 @@ export async function discoverDeviceTypes(types: DeviceTypeRegistry, roots: read
       types.refuse(pkg.folder, [(error as Error).message]);
     }
   }
+}
+
+/**
+ * What is installed: protocols, transports and device types, each found in
+ * its folder under `packages/` rather than listed (docs/ARCHITECTURE.md §3),
+ * and each type's ways checked against what is there. The transports are
+ * found into the host that will start them.
+ */
+export async function installedFromDisk(transports: TransportHost): Promise<{ types: DeviceTypeRegistry; protocols: ProtocolRegistry; transports: TransportHost }> {
+  const protocols = new ProtocolRegistry();
+  const types = new DeviceTypeRegistry();
+  await Promise.all([discoverProtocols(protocols), discoverTransports(transports), discoverDeviceTypes(types)]);
+  types.checkConnections({ protocol: (id) => protocols.get(id), transport: (id) => transports.definition(id) });
+  console.log(
+    `[devices] Installed: ${types.all().map((type) => type.id).join(', ') || 'no device types'}; ` +
+      `protocols ${protocols.all().map((protocol) => protocol.id).join(', ') || 'none'}; ` +
+      `transports ${transports.definitions().map((definition) => definition.id).join(', ') || 'none'}`
+  );
+  return { types, protocols, transports };
 }

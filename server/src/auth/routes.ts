@@ -4,7 +4,9 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 
+import { ApiError, CLIENT_HEADER, CONFIG_SCHEMA_PATH } from '@kraftverk/api-contract';
 import type { AuditLog } from '@kraftverk/store';
+import { body } from '../routes/parse.ts';
 import { LoginLimiter, limiterKeys } from './limiter.ts';
 import { AccountError, SESSION_LIFETIME_MS, type Accounts, type User } from './accounts.ts';
 import { assessTrust, EXPOSURE_HEADER, FORWARDING_HEADERS as FORWARDED, normaliseIp, type ProxyDirectory, type Trust } from './trust.ts';
@@ -30,7 +32,6 @@ import { assessTrust, EXPOSURE_HEADER, FORWARDING_HEADERS as FORWARDED, normalis
  */
 
 export const SESSION_COOKIE = 'kraftverk_session';
-export const CLIENT_HEADER = 'x-kraftverk-client';
 
 /**
  * The only paths reachable without a session: the way in — each doing one
@@ -38,7 +39,7 @@ export const CLIENT_HEADER = 'x-kraftverk-client';
  * the configuration's JSON Schema, which an editor fetches without logging in:
  * the installed types only, nothing you have (`routes/configuration.ts`).
  */
-const OPEN = new Set(['/api/auth/state', '/api/auth/setup', '/api/auth/login', '/api/auth/logout', '/api/config/schema.json']);
+const OPEN = new Set(['/api/auth/state', '/api/auth/setup', '/api/auth/login', '/api/auth/logout', `/api${CONFIG_SCHEMA_PATH}`]);
 
 /**
  * The health check, for the container's own healthcheck — which runs inside
@@ -64,7 +65,7 @@ export function userOf(c: Context): User | null {
   return accessByRequest.get(c.req.raw)?.user ?? null;
 }
 
-export type AuthDeps = {
+type AuthDeps = {
   proxies: ProxyDirectory;
   /** The accounts that may sign in, and their sessions. */
   accounts: Accounts;
@@ -167,16 +168,6 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
 
   const credentials = z.object({ username: z.string().trim().min(1).max(64), password: z.string().min(1).max(256) });
 
-  const parse = async <T extends z.ZodType>(c: Context, schema: T): Promise<z.infer<T>> => {
-    const raw = await c.req.json().catch(() => {
-      throw new HTTPException(400, { message: 'Expected a JSON body' });
-    });
-    const parsed = schema.safeParse(raw);
-    // The first problem, in words the app can show as they are.
-    if (!parsed.success) throw new HTTPException(400, { message: parsed.error.issues[0]?.message ?? 'Invalid request' });
-    return parsed.data;
-  };
-
   const now = () => new Date().toISOString();
 
   /**
@@ -192,15 +183,12 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
   const confirmIdentity = async (c: Context, user: User, password: string): Promise<Response | null> => {
     const { trust } = access(c);
     const keys = limiterKeys(trust.clientIp, user.username, trust.onHomeNetwork);
-    const wait = limiter.wait(keys);
-    if (wait > 0) {
-      c.header('Retry-After', String(Math.ceil(wait / 1000)));
-      return c.json({ error: `Too many wrong passwords. Try again in ${Math.ceil(wait / 60_000)} min.` }, 429);
-    }
+    const tooMany = limiter.refuse(c, keys, 'Too many wrong passwords.');
+    if (tooMany) return tooMany;
     if (!(await accounts.passwordMatches(user.id, password))) {
       limiter.failed(keys);
       audit.record({ at: now(), kind: 'auth.confirm-failed', actor: user.username, resourceKind: 'account', resource: user.id, summary: `${user.username} gave a wrong password to confirm a change`, detail: { clientIp: trust.clientIp, path: c.req.path } });
-      throw new HTTPException(403, { message: 'Your password is not right' });
+      throw new ApiError('forbidden', 'Your password is not right');
     }
     limiter.succeeded(keys);
     return null;
@@ -235,13 +223,13 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
   auth.post('/setup', async (c) => {
     const { trust } = access(c);
     if (!trust.onHomeNetwork) {
-      throw new HTTPException(403, { message: `The first account can only be created from the home network. ${trust.reason}.` });
+      throw new ApiError('forbidden', `The first account can only be created from the home network. ${trust.reason}.`);
     }
     // Before the body, and before the slow hash `createFirstUser` starts with:
     // once there is an account this route has nothing left to do, and must not
     // be a way to make the server hash passwords for anyone who asks.
-    if (accounts.countUsers() > 0) throw new HTTPException(409, { message: 'This server already has an administrator. Log in instead.' });
-    const { username, password } = await parse(c, credentials);
+    if (accounts.countUsers() > 0) throw new ApiError('conflict', 'This server already has an administrator. Log in instead.');
+    const { username, password } = await body(c, credentials);
     const user = await accounts.createFirstUser(username, password).catch(rethrow);
     const { token } = accounts.createSession(user.id, trust.clientIp, c.req.header('user-agent') ?? null);
     accounts.markLoggedIn(user.id);
@@ -252,14 +240,11 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
 
   auth.post('/login', async (c) => {
     const { trust } = access(c);
-    const { username, password } = await parse(c, credentials);
+    const { username, password } = await body(c, credentials);
     const keys = limiterKeys(trust.clientIp, username, trust.onHomeNetwork);
 
-    const wait = limiter.wait(keys);
-    if (wait > 0) {
-      c.header('Retry-After', String(Math.ceil(wait / 1000)));
-      return c.json({ error: `Too many failed attempts. Try again in ${Math.ceil(wait / 60_000)} min.` }, 429);
-    }
+    const tooMany = limiter.refuse(c, keys, 'Too many failed attempts.');
+    if (tooMany) return tooMany;
 
     const user = await accounts.verifyLogin(username, password);
     if (!user) {
@@ -289,7 +274,7 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
   /** Your own password. Needs the current one: a borrowed, unlocked browser should not be enough. */
   auth.post('/password', async (c) => {
     const user = requireUser(c);
-    const { current, next: password } = await parse(c, z.object({ current: yourPassword, next: z.string().min(1).max(256) }));
+    const { current, next: password } = await body(c, z.object({ current: yourPassword, next: z.string().min(1).max(256) }));
     const refused = await confirmIdentity(c, user, current);
     if (refused) return refused;
     await accounts.setPassword(user.id, password, getCookie(c, SESSION_COOKIE)).catch(rethrow);
@@ -306,7 +291,7 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
 
   users.post('/', async (c) => {
     const actor = requireUser(c);
-    const { username, password, yourPassword: confirmation } = await parse(c, credentials.extend({ yourPassword }));
+    const { username, password, yourPassword: confirmation } = await body(c, credentials.extend({ yourPassword }));
     const refused = await confirmIdentity(c, actor, confirmation);
     if (refused) return refused;
     const user = await accounts.createUser(username, password, actor.username).catch(rethrow);
@@ -317,8 +302,8 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
   users.delete('/:id', async (c) => {
     const actor = requireUser(c);
     const target = accounts.getUser(c.req.param('id'));
-    if (!target) throw new HTTPException(404, { message: 'No such user' });
-    const { yourPassword: confirmation } = await parse(c, z.object({ yourPassword }));
+    if (!target) throw new ApiError('not-found', 'No such user');
+    const { yourPassword: confirmation } = await body(c, z.object({ yourPassword }));
     const refused = await confirmIdentity(c, actor, confirmation);
     if (refused) return refused;
     try {
@@ -341,11 +326,11 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
   users.post('/:id/password', async (c) => {
     const actor = requireUser(c);
     const target = accounts.getUser(c.req.param('id'));
-    if (!target) throw new HTTPException(404, { message: 'No such user' });
+    if (!target) throw new ApiError('not-found', 'No such user');
     if (target.id === actor.id) {
-      throw new HTTPException(400, { message: 'Change your own password under “Change your password”; it needs your current one.' });
+      throw new ApiError('invalid', 'Change your own password under “Change your password”; it needs your current one.');
     }
-    const { password, yourPassword: confirmation } = await parse(c, z.object({ password: z.string().min(1).max(256), yourPassword }));
+    const { password, yourPassword: confirmation } = await body(c, z.object({ password: z.string().min(1).max(256), yourPassword }));
     const refused = await confirmIdentity(c, actor, confirmation);
     if (refused) return refused;
     await accounts.setPassword(target.id, password).catch(rethrow);
@@ -356,8 +341,8 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
   return { gate, forgery, auth, users, access, requireUser };
 }
 
-/** Account problems are the caller's to fix, so they are 400s with the reason — not 500s. */
+/** Account problems are the caller's to fix, so they are refusals with the reason — not failures. */
 function rethrow(error: unknown): never {
-  if (error instanceof AccountError) throw new HTTPException(400, { message: error.message });
+  if (error instanceof AccountError) throw new ApiError('invalid', error.message);
   throw error;
 }

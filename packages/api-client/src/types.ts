@@ -6,3 +6,4 @@
 
 export type * from '@kraftverk/api-contract';
 export { CATEGORIES, isOnline, LINK_KINDS, savedDeviceId } from '@kraftverk/device-sdk';
+export { CONFIG_SCHEMA_PATH } from '@kraftverk/api-contract';

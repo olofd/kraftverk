@@ -26,3 +26,11 @@ export function keyFrom(name: string, taken: (key: string) => boolean, fallback 
   if (!taken(base)) return base;
   for (let n = 2; ; n++) if (!taken(`${base}-${n}`)) return `${base}-${n}`;
 }
+
+/**
+ * A name a file can carry: what it is about, and when — "Start charging
+ * 2026-10-01 09-50-22.csv". The same wherever a file is made: the server's
+ * download, or the app's.
+ */
+export const fileNameOf = (about: string, at: string, extension: string): string =>
+  `${about.replace(/[^\p{L}\p{N} _-]+/gu, '').trim() || 'kraftverk'} ${at.slice(0, 19).replace('T', ' ').replace(/:/g, '-')}.${extension}`;

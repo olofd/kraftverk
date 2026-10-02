@@ -1,14 +1,17 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import { NODE_ID, nodeId, RESOURCE_KINDS, savedDeviceId, type AuditSubject, type DeviceDescription, type DeviceInfo, type ResourceKind, type Value } from '@kraftverk/device-sdk';
+import { nodeId, savedDeviceId, type AuditSubject, type DeviceDescription, type DeviceInfo, type Value } from '@kraftverk/device-sdk';
 
-import { body, homeFor, type AppDeps } from './shared.ts';
+import { HELD_BY, homeFor, RESOURCE_KIND, type AppDeps } from './context.ts';
+import { body } from './parse.ts';
 
 /**
- * What a node sends the master for a connection it holds (docs/DATA-MODEL.md §4), over
- * HTTP: checked, and handed to the home (`KraftverkApi.held`), which keeps
- * the device's history, its store and its timeline. Each call names the
+ * What a follower sends the master for a connection it holds
+ * (docs/DATA-MODEL.md §4), over HTTP: a way it set up itself, what its
+ * session read, what it kept and what its gateway did — checked, and handed
+ * to the home (`KraftverkApi.setup.startHeld`, `KraftverkApi.held`), which
+ * keeps the device's history, its store and its timeline. Each call names the
  * node, which must be the signed-in account's, and the connection, which must
  * be one that node holds.
  */
@@ -21,24 +24,58 @@ const reading = z
   })
   .strict();
 
-export function heldRoutes(deps: AppDeps): Hono {
+const values = z.record(z.string().max(64), z.union([z.string().max(4096), z.number(), z.boolean()]));
+
+export function followerRoutes(deps: AppDeps): Hono {
   const api = new Hono();
 
-  /** Readings the app took: live ones become the device's state, queued ones go straight into history. */
+  /**
+   * A way the follower will hold. It ran the steps itself and read the
+   * device with its own radio; this is what it learnt, never a secret. It
+   * speaks for itself only: the home checks the node is this account's.
+   */
+  api.post('/setup/held', async (c) => {
+    const input = await body(
+      c,
+      z
+        .object({
+          nodeId: HELD_BY.nodeId,
+          typeId: z.string().min(1).max(80),
+          methodId: z.string().min(1).max(40),
+          address: z.string().min(1).max(200),
+          identified: z
+            .object({
+              identity: z.string().min(1).max(120).nullable(),
+              model: z.string().max(80).nullable(),
+              name: z.string().max(80).optional(),
+              summary: z.string().max(300),
+              config: values.optional(),
+            })
+            .strict()
+            .nullable(),
+          failure: z.string().max(300).optional(),
+          device: values.optional(),
+          connection: values.optional(),
+        })
+        .strict()
+    );
+    return c.json(await homeFor(deps, c).setup.startHeld(input));
+  });
+
+  /** Readings the follower took: live ones become the device's state, queued ones go straight into history. */
   api.post('/devices/:id/readings', async (c) => {
     const input = await body(
       c,
       z
         .object({
-          nodeId: z.string().regex(NODE_ID),
-          connectionId: z.string().min(1).max(40),
-          // Who the device said it is, read by the app's session.
+          ...HELD_BY,
+          // Who the device said it is, read by the follower's session.
           identity: z.string().min(1).max(120).nullable().optional(),
           readings: z.array(reading).max(2000),
-          // What the device is and says about itself, by the app's session: a pack plugged in.
+          // What the device is and says about itself, by the follower's session: a pack plugged in.
           description: z.record(z.string(), z.unknown()).optional(),
           info: z.record(z.string(), z.unknown()).optional(),
-          // What the device said happened, as the app's holder heard it.
+          // What the device said happened, as the follower's holder heard it.
           events: z
             .array(
               z
@@ -65,11 +102,11 @@ export function heldRoutes(deps: AppDeps): Hono {
     return c.json(await homeFor(deps, c).held.readings(savedDeviceId(c.req.param('id')), upload));
   });
 
-  /** The device's own store, which a session keeps between runs. The app keeps a copy for when it is offline. */
+  /** The device's own store, which a session keeps between runs. The follower keeps a copy for when it is offline. */
   api.get('/devices/:id/store', async (c) => c.json({ values: await homeFor(deps, c).held.store(savedDeviceId(c.req.param('id'))) }));
 
   api.put('/devices/:id/store/:key', async (c) => {
-    const input = await body(c, z.object({ nodeId: z.string().regex(NODE_ID), connectionId: z.string().min(1).max(40), value: z.unknown() }).strict());
+    const input = await body(c, z.object({ ...HELD_BY, value: z.unknown() }).strict());
     await homeFor(deps, c).held.keep(savedDeviceId(c.req.param('id')), c.req.param('key'), input);
     return c.json({ ok: true });
   });
@@ -86,7 +123,7 @@ export function heldRoutes(deps: AppDeps): Hono {
                 .object({
                   at: z.string().max(40),
                   kind: z.string().regex(/^[a-z][a-z0-9.-]{0,63}$/),
-                  resourceKind: z.enum(RESOURCE_KINDS as [ResourceKind, ...ResourceKind[]]).optional(),
+                  resourceKind: RESOURCE_KIND.optional(),
                   resource: z.string().min(1).max(80).optional(),
                   summary: z.string().min(1).max(500),
                   detail: z.unknown().optional(),
