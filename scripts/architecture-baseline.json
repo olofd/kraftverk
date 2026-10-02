@@ -2,16 +2,5 @@
   "$comment": "Where the architecture is still broken, file by file. May only shrink. See docs/ARCHITECTURE.md section 7; update with npm run check:architecture -- --update.",
   "imports": {},
   "leaks": {},
-  "placement": {
-    "client/src/features/add/flows.ts": "no screen in it: it belongs in a package",
-    "client/src/features/automations/editor/draft.ts": "no screen in it: it belongs in a package",
-    "client/src/features/automations/said.ts": "no screen in it: it belongs in a package",
-    "client/src/features/config/entries.ts": "no screen in it: it belongs in a package",
-    "client/src/features/config/markdown.ts": "no screen in it: it belongs in a package",
-    "client/src/features/devices/model.ts": "no screen in it: it belongs in a package",
-    "client/src/lib/confirm.ts": "no screen in it: it belongs in a package",
-    "client/src/lib/download.ts": "no screen in it: it belongs in a package",
-    "client/src/state/live.ts": "no screen in it: it belongs in a package",
-    "client/src/state/views.ts": "no screen in it: it belongs in a package"
-  }
+  "placement": {}
 }

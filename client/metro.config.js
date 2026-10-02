@@ -44,7 +44,7 @@ const OPTIONAL_NATIVE_MODULES = new Set(['react-native-ble-plx']);
  * to colour code in descriptions ours never have. Its `utils/markdown` is
  * resolved to the app's own, which escapes the text and sets `code` as code.
  */
-const SCHEMA_MARKDOWN = path.resolve(projectRoot, 'src/features/config/markdown.ts');
+const SCHEMA_MARKDOWN = path.resolve(projectRoot, 'shims/codemirror-markdown.ts');
 
 const defaultResolveRequest = config.resolver.resolveRequest;
 

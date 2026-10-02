@@ -22,7 +22,13 @@ slots.
   again with a growing wait, and whether it is up. For a screen, over any
   home: a failure in words (`describeError`), and a refusal that only wants
   a person's yes as an answer to ask with (`askingYes`,
-  `changeAutomation`, `applyPlan`).
+  `changeAutomation`, `applyPlan`); the stream's updates applied to a
+  list of devices (`applyLive`), and what the screen shows said to the
+  home, settled (`createViews`); one way being set up, step by step
+  (`SetupFlow`); a device's and an automation's own YAML from what the home
+  shows, and read back into what a form edits (`deviceYaml`,
+  `automationYaml`, `readAutomationText`, `draftOfEntry`); and what
+  feeds what, by part (`fedBy`, `feedsTo`).
 - **Does not:** decide anything, or find a server: it carries what the
   home says, where it is told the home is. Where a server would be, beside
   the app, is the app's platform's to work out (`client/src/platform/`).

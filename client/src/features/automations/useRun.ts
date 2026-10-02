@@ -2,13 +2,13 @@ import { useState } from 'react';
 
 import { describeError, type AutomationView } from '@kraftverk/api-client';
 import type { AutomationId } from '@kraftverk/api-contract';
+import { triggerAsNext } from '@kraftverk/automation';
 
 import { useHome } from '../../state/HomeProvider';
 import { haptic } from '@kraftverk/ui';
 
-import { confirmAction } from '../../lib/confirm';
+import { confirmAction } from '../../platform/confirm';
 import { ago, OUTCOME, stopwatch, useNow } from './looks';
-import { nextSaid } from './said';
 
 /**
  * Running an automation now, and stopping it while it runs
@@ -72,7 +72,7 @@ export function statusOf(automation: AutomationView, now: number, step: string |
   const last = automation.lastRun;
   // A summary says what came of it — "Turned Laddare off", "Did not succeed: …" — except where only the outcome can.
   if (last) return `${SAID_BY_OUTCOME.has(last.outcome) ? `${OUTCOME[last.outcome].label}: ` : ''}${last.summary} · ${ago(last.endedAt ?? last.at)}`;
-  return automation.when[0] ? nextSaid(automation.when[0]) : 'Not started yet';
+  return automation.when[0] ? triggerAsNext(automation.when[0]) : 'Not started yet';
 }
 
 /** The outcomes a run's summary does not say by itself: refused, done but not confirmed, could not tell. */

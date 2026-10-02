@@ -686,10 +686,18 @@ The steps, each green and pushed:
     automations, running in the browser), then offered back to the server,
     which had it all.
 6i. **The rest of the app's logic to packages**, as listed under "What
-    moves — the app": the live updates and views to api-client,
-    `togglesOf` and `settingsForms` to device-sdk, `deviceYaml` to
-    home-file, the editor's draft to the language. The baseline of logic in
-    the app reaches nothing.
+    moves — the app" — done (2026-10-02): the live updates (`applyLive`),
+    what the screen shows (`createViews`), the setup flow (`SetupFlow`,
+    one class now that the app's own setup is gone), a device's and an
+    automation's YAML (`deviceYaml`, `automationYaml`) and what feeds
+    what to api-client; `togglesOf` and `settingsForms` to device-sdk;
+    one `deviceEntryFrom` in home-file, which the master's export and the
+    app's YAML both use; the editor's draft — its roles, its starting
+    points, its blank steps, and the draft types the contract now takes
+    from it — to the language, with the trigger said as what comes next
+    (`triggerAsNext`); asking a person and saving a file to the app's
+    platform; the YAML editor's markdown shim out of the app's source. The
+    baseline of logic in the server and the app is zero, and held there.
 
 ### Phase 6, the goal: every place is a kraftverk node
 

@@ -1,14 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { DeviceDescription, LinkView } from '@kraftverk/api-client';
-import { linkId, MAIN_PART, savedDeviceId } from '@kraftverk/device-sdk';
-
-import { fedBy, feedsTo, settingsForms, togglesOf } from './model';
+import { settingsForms, togglesOf } from './controls.ts';
+import { MAIN_PART, type DeviceDescription } from './description.ts';
 
 /*
-  The generic panels are these, drawn: which switches a device gets, which
-  settings forms, what feeds what — decided from its description alone, for a
-  device nobody wrote a screen for.
+  What a device can be switched and told — which switches it gets, which
+  settings forms — decided from its description alone, for a device nobody
+  wrote a screen for: the app's generic panels are these, drawn.
 */
 
 const STRIP: DeviceDescription = {
@@ -29,7 +27,7 @@ const STRIP: DeviceDescription = {
   ],
 };
 
-describe('the generic panels, from a description', () => {
+describe('what a device can be switched and told, from its description', () => {
   test('a switch for each part that takes one, and none for a part that only reports', () => {
     const toggles = togglesOf(STRIP, 'Strip');
     expect(toggles.map((toggle) => [toggle.part.id, toggle.capability, toggle.command, toggle.argument, toggle.attribute.key])).toEqual([
@@ -45,14 +43,5 @@ describe('the generic panels, from a description', () => {
       ['Settings', ['led']],
     ]);
     expect(forms[0]!.schema.fields.maxWatts).toMatchObject({ type: 'number', unit: 'W', min: 100, max: 3600 });
-  });
-
-  test('what feeds each part, from the links it is the target of', () => {
-    const links: LinkView[] = [
-      { id: linkId('l-1'), kind: 'feeds', role: 'target', part: 'input.ac', other: { id: savedDeviceId('d-plug'), name: 'Charger plug', part: MAIN_PART, partLabel: '' } },
-      { id: linkId('l-2'), kind: 'feeds', role: 'source', part: 'outlet.ac', other: { id: savedDeviceId('d-cabin'), name: 'Cabin station', part: 'input.ac', partLabel: 'Mains' } },
-    ];
-    expect(fedBy(links)).toEqual({ 'input.ac': 'Charger plug' });
-    expect(feedsTo(links)).toEqual({ 'outlet.ac': 'Cabin station — Mains' });
   });
 });

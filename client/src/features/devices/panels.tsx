@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { router } from 'expo-router';
 import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
-import { describeError, isOnline } from '@kraftverk/api-client';
+import { describeError, fedBy, feedsTo, isOnline } from '@kraftverk/api-client';
 import type { AttributeSpec, ConnectionView, DeviceEventView, DeviceView, LinkView, Value } from '@kraftverk/api-client';
 import {
   attributesOf,
@@ -13,19 +13,21 @@ import {
   MAIN_PART,
   partName,
   partsOf,
+  settingsForms,
   switchConsequence,
+  togglesOf,
   type ConfigValues,
   type LinkKind,
   type Part,
+  type Toggle,
 } from '@kraftverk/device-sdk';
 import { Card, Chips, DeviceCard, EnergyFlow, EventList, PartCard, Row, RowSeparator, SchemaForm, SectionLabel, Toggle as Switch, ToggleRow, haptic, readingFor, useWriteGate, Icon } from '@kraftverk/ui';
 
 import { MeasurementChart } from '../../components/MeasurementChart';
 import { Pressable } from '../../components/Pressable';
-import { confirmAction } from '../../lib/confirm';
+import { confirmAction } from '../../platform/confirm';
 import { secretWords } from '../config/shared';
 import { partSlotFor } from '../../devices/ui';
-import { fedBy, feedsTo, settingsForms, togglesOf, type Toggle } from './model';
 import { featherName } from '../../lib/icons';
 import { HERE } from '../../platform/here';
 import { useDevices } from '../../state/DevicesProvider';

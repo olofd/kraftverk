@@ -14,8 +14,10 @@ dependencies.
   attributes, events; links between parts; categories; config schemas;
   `DeviceType`, `DeviceSession`, `ConnectionMethod`, `Protocol`,
   `Transport` and the channels they hand each other; identity and health;
-  keys; time on a home's clock. `validateDeviceType` and the contract suite
-  every package runs (`@kraftverk/device-sdk/testing`).
+  keys; time on a home's clock; what a description offers to be switched
+  and told, for a device nobody drew a screen for (`togglesOf`,
+  `settingsForms`). `validateDeviceType` and the contract suite every
+  package runs (`@kraftverk/device-sdk/testing`).
 - **Declares the ports packages are handed:** a device's own store, a
   transport's store, a scoped HTTP client.
 - **Does not:** run anything, hold a device, keep anything, or know any

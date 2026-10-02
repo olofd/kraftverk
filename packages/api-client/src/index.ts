@@ -11,6 +11,10 @@
 
 export * from './types';
 export * from './live';
+export * from './updates';
+export * from './views';
+export * from './setup';
+export * from './config';
 
 export * from './screens';
 export * from './http';

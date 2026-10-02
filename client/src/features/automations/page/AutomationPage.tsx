@@ -15,7 +15,7 @@ import { Card, Icon, RowSeparator, SegmentedControl, ToggleRow, haptic, type Ico
 
 import { Pressable } from '../../../components/Pressable';
 import { Screen } from '../../../components/Screen';
-import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../../lib/confirm';
+import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../../platform/confirm';
 import type { AutomationId } from '@kraftverk/api-contract';
 
 import { useHome } from '../../../state/HomeProvider';

@@ -17,8 +17,10 @@ more than a person could from a screen.
 
 - **Does:** the rule as data (triggers, steps, expressions, roles); checking
   a rule and what fills its roles; describing it in words; evaluating a
-  condition; editing a rule step by step; its text form, as a home's file
-  writes it; the standard recipes; and what a package contributes
+  condition; editing a rule step by step, and an automation as it is being
+  built — its rule, and what fills each role (`AutomationDraft`, `partRole`,
+  `pruned`, `draftOfRecipe`); its text form, as a home's file writes it;
+  the standard recipes; and what a package contributes
   (`defineContribution`, checked by `checkContribution`).
 - **Does not:** run anything — no timers, no runs, no devices. That is
   `@kraftverk/automation-engine`'s. Nor does it keep automations: the

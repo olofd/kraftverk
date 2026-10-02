@@ -36,8 +36,8 @@ empty: the core names no product, and every device is found, not listed.
   its own id, declaring always on, reachable, trusted); one is the home's
   **master**, the others **follow** it (`createFollower`) and hold for it
   the ways they reach; a connection method says what it `needs` of the
-  node holding it. Next: 6i (the last files of logic in the server and the
-  app move to packages), then the structure pass. Places in the model wait
+  node holding it. 6i is done too: no logic is left in the server or the
+  app (the architecture check holds it at zero). Next: the structure pass. Places in the model wait
   on the owner's decision about what groups things (a home, or places).
 - **The layers are packages**: `packages/transports` (mqtt with the broker,
   ble with system, web and native entries, lan, https), `packages/protocols`

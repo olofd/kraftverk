@@ -1,29 +1,27 @@
-import type { AutomationDraft, AutomationId, RecipeView, RoleBinding } from '@kraftverk/api-client';
-import { capabilitiesOf, capabilityIn, type CapabilityName, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
-import {
-  inlineParams,
-  isAutomationRole,
-  NO_SETTINGS,
-  ruleCommands,
-  ruleUses,
-  stepKind,
-  usedRoles,
-  type Expr,
-  type Rule,
-  type Step,
-  type StepKind,
-} from '@kraftverk/automation';
+import { capabilitiesOf, capabilityIn, type AutomationId, type CapabilityName, type DeviceDescription, type SavedDeviceId, type Value } from '@kraftverk/device-sdk';
+
+import { usedRoles } from './edit.ts';
+import { inlineParams, isAutomationRole, NO_SETTINGS, type Expr, type Rule, type Step, type StepKind } from './rule.ts';
 
 /*
-  The editor's draft, as data (docs/AUTOMATION-EDITOR.md): a rule of the
-  automation's own, what fills its roles, and its name — changed only through
-  what is here, each change a new draft. Pure: every screen of the editor is
-  drawn from it, and its tests read it without a screen.
+  An automation as it is being built, as data (docs/AUTOMATION-EDITOR.md): a
+  rule of its own, and what fills its roles — changed only through what is
+  here, each change a new draft. What any editor builds on: the app's, an
+  assistant's. Pure, so it is tested without a screen.
 */
 
-/** An automation as it is being built. */
-export type Draft = AutomationDraft & { name: string };
+/** Which part of which device fills a role: a plug, or one of a station's outlets. */
+export type RoleBinding = { device: SavedDeviceId; part: string };
 
+/**
+ * What fills an automation's roles: a part of a device for each role one
+ * fills (`roles`), and another automation for each role a `start` step
+ * starts (`starts`).
+ */
+export type RoleFills = { roles: Record<string, RoleBinding>; starts: Record<string, AutomationId> };
+
+/** A rule as it is being built, with what fills its roles. */
+export type AutomationDraft = RoleFills & { rule: Rule };
 
 // --- roles ------------------------------------------------------------------------------
 
@@ -51,14 +49,12 @@ export const roleName = (rule: Rule, label: string): string => {
  * "Battery"), not by the device's name, which can change: whatever fills it
  * is named from the device as it is now.
  */
-export function partRole(draft: Draft, binding: RoleBinding, description: DeviceDescription): { draft: Draft; role: string } {
+export function partRole<D extends AutomationDraft>(draft: D, binding: RoleBinding, description: DeviceDescription): { draft: D; role: string } {
   const found = Object.entries(draft.roles).find(([, bound]) => bound.device === binding.device && bound.part === binding.part);
   if (found) return { draft, role: found[0] };
   // What it offers, in the order a file infers it: a role asked for what the rule uses of it is written as just its part.
-  const capabilities = capabilitiesOf(description, binding.part)
-    .filter((capability): capability is CapabilityName => typeof capability === 'string')
-    .sort();
   const offered = capabilitiesOf(description, binding.part).filter((capability): capability is CapabilityName => typeof capability === 'string');
+  const capabilities = [...offered].sort();
   const label = (offered[0] ? capabilityIn(description, offered[0])?.label : undefined) ?? 'A part';
   const role = roleName(draft.rule, label);
   return {
@@ -72,7 +68,7 @@ export function partRole(draft: Draft, binding: RoleBinding, description: Device
 }
 
 /** The role an automation fills in the draft, to be started: the one it already fills, or a new one — labelled as what it is, its name shown from the automation as it is now. */
-export function automationRole(draft: Draft, automation: AutomationId): { draft: Draft; role: string } {
+export function automationRole<D extends AutomationDraft>(draft: D, automation: AutomationId): { draft: D; role: string } {
   const found = Object.entries(draft.starts).find(([, started]) => started === automation);
   if (found) return { draft, role: found[0] };
   const role = roleName(draft.rule, 'automation');
@@ -86,15 +82,14 @@ export function automationRole(draft: Draft, automation: AutomationId): { draft:
   };
 }
 
-
 /** The draft without the roles nothing uses any more: what is kept. */
-export function pruned(draft: Draft): Draft {
+export function pruned<D extends AutomationDraft>(draft: D): D {
   const used = usedRoles(draft.rule);
   const keep = <T>(record: Readonly<Record<string, T>>) => Object.fromEntries(Object.entries(record).filter(([role]) => used.has(role)));
   return { ...draft, rule: { ...draft.rule, roles: keep(draft.rule.roles) }, roles: keep(draft.roles), starts: keep(draft.starts) };
 }
 
-/** The part roles of a rule, and the automation roles: each as the editor lists them. */
+/** The part roles of a rule, and the automation roles: each as an editor lists them. */
 export const rolesOf = (rule: Rule) => ({
   parts: Object.entries(rule.roles).filter(([, spec]) => !isAutomationRole(spec)),
   automations: Object.entries(rule.roles).filter(([, spec]) => isAutomationRole(spec)),
@@ -108,7 +103,7 @@ export const rolesOf = (rule: Rule) => ({
  * to choose.
  */
 export function sameParts(
-  draft: Draft,
+  draft: AutomationDraft,
   others: readonly { id: AutomationId; name: string; rule: Rule; roles: Record<string, RoleBinding> }[],
   fits: (role: string, binding: RoleBinding) => boolean
 ): { id: AutomationId; name: string; roles: Record<string, RoleBinding> }[] {
@@ -129,12 +124,12 @@ export function sameParts(
 // --- starting points --------------------------------------------------------------------
 
 /** An automation built from nothing: no trigger, no step yet. */
-export const EMPTY: Draft = { name: '', rule: { roles: {}, params: NO_SETTINGS, when: [], then: [] }, roles: {}, starts: {} };
+export const EMPTY_DRAFT: AutomationDraft = { rule: { roles: {}, params: NO_SETTINGS, when: [], then: [] }, roles: {}, starts: {} };
 
-/** A recipe copied: its settings, at their defaults, written into its blocks; its roles still to fill. */
-export function fromRecipe(recipe: RecipeView): Draft {
-  const defaults = Object.fromEntries(Object.entries(recipe.rule.params.fields).map(([key, field]) => [key, ('default' in field ? field.default : null) as Value]));
-  return { name: recipe.label, rule: inlineParams(recipe.rule, defaults), roles: {}, starts: {} };
+/** A recipe's rule copied: its settings, at their defaults, written into its blocks; its roles still to fill. */
+export function draftOfRecipe(rule: Rule): AutomationDraft {
+  const defaults = Object.fromEntries(Object.entries(rule.params.fields).map(([key, field]) => [key, ('default' in field ? field.default : null) as Value]));
+  return { rule: inlineParams(rule, defaults), roles: {}, starts: {} };
 }
 
 // --- blocks -----------------------------------------------------------------------------
@@ -164,20 +159,5 @@ export function blankStep(kind: StepKind, role: string | null): Step {
   }
 }
 
-/** What each kind of step is called, and what it does: the editor's words for them. */
-export const KINDS: Record<StepKind, { label: string; says: string }> = {
-  command: { label: 'Switch or send', says: 'A command to a part: on, off, or what else it takes.' },
-  write: { label: 'Change a setting', says: 'A setting the part keeps: its live readings, its light, what it does after a power cut.' },
-  wait: { label: 'Pause', says: 'Wait a while before the next step.' },
-  waitUntil: { label: 'Wait until', says: 'Wait for something to be so — at most so long, or the run does not succeed.' },
-  ensure: { label: 'Make sure', says: 'Something must come true in time; if not, take steps and look again, a few times at most.' },
-  choose: { label: 'If', says: 'One way or the other, as something is now.' },
-  watch: { label: 'Watch', says: 'Watch something for a while: steps if it stays so, others the moment it does not.' },
-  start: { label: 'Start another automation', says: 'Start one of your automations — and wait for it to end, if you like.' },
-};
-
-/** The kind of a step, as the editor names it. */
-export const kindOf = (step: Step) => KINDS[stepKind(step)];
-
-/** Seconds as the editor shows them, and back: a whole number of seconds or minutes. */
+/** A number of seconds an expression says outright; null when it says something else. */
 export const secondsOf = (expr: Expr | undefined): number | null => (expr && 'value' in expr && typeof expr.value === 'number' ? expr.value : null);

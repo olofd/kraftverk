@@ -14,9 +14,9 @@ read and edit (docs/CONFIG.md).
   an editor completes and checks it as it is typed; check it against the
   installed vocabulary (types, methods, the language); migrate a document
   of an older version (`kraftverk: n`, one migration per change, each with
-  a kept fixture); an automation's own entry, as an export writes it.
-  A device's entry is still the app's, and comes here in phase 6
-  (docs/PLAN-SHARED-CORE.md).
+  a kept fixture); an automation's and a device's own entry, as an export
+  writes it (`automationEntryFrom`, `deviceEntryFrom`) — the same functions
+  the master's export and the app's YAML of one use.
 - **Does not:** touch a database or a device, or seal a secret with a
   passphrase — the place's cipher, asked for by the hub as a port. Planning
   what a document would change, applying it, and keeping a snapshot of a

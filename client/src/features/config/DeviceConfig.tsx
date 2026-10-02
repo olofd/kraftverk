@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { describeError, type DeviceView } from '@kraftverk/api-client';
+import { describeError, deviceYaml, type DeviceView } from '@kraftverk/api-client';
 import { Card, haptic, Icon, RowSeparator, SectionLabel } from '@kraftverk/ui';
 
 import { useDevices } from '../../state/DevicesProvider';
 import { useHome } from '../../state/HomeProvider';
 import { useTone } from '../automations/looks';
-import { deviceYaml } from './entries';
 import { ExportOne } from './ExportOne';
 import { KeyField } from './KeyField';
 import { YamlEditor } from './YamlEditor';
@@ -63,11 +62,11 @@ export function DeviceConfig({ device }: { device: DeviceView }) {
           {shown ? (
             <>
               <YamlEditor value={shown.text} label={`${device.name}, as configuration`} minLines={4} />
-              {shown.secrets || shown.heldByApps ? (
+              {shown.secrets || shown.heldElsewhere ? (
                 <Text fontSize={12} color="$muted" lineHeight={17}>
                   {[
                     shown.secrets ? 'Its secrets by name only: their values stay on the server, and an export leaves them out, seals them, or carries them in plain text where allowed.' : null,
-                    shown.heldByApps ? `${shown.heldByApps === 1 ? 'A way an app holds is' : `${shown.heldByApps} ways apps hold are`} not in it: its keys live on the phone.` : null,
+                    shown.heldElsewhere ? `${shown.heldElsewhere === 1 ? 'A way an app holds is' : `${shown.heldElsewhere} ways apps hold are`} not in it: its keys live on the phone.` : null,
                   ]
                     .filter(Boolean)
                     .join(' ')}

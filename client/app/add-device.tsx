@@ -5,6 +5,7 @@ import { Button, Input, Spinner, Text, useTheme, XStack, YStack } from 'tamagui'
 import {
   CATEGORIES,
   describeError,
+  SetupFlow,
   type CheckOutcome,
   type DeviceTypeListing,
   type DeviceView,
@@ -17,10 +18,10 @@ import { Card, Row, RowSeparator, SectionLabel, ToggleRow, haptic, Icon } from '
 import { DeviceImage } from '../src/components/DeviceImage';
 import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';
-import { HomeFlow, type SetupFlow } from '../src/features/add/flows';
+
 import { StepView } from '../src/features/add/steps';
 import { secretWords } from '../src/features/config/shared';
-import { confirmAction } from '../src/lib/confirm';
+import { confirmAction } from '../src/platform/confirm';
 import { featherName } from '../src/lib/icons';
 import { HERE, HERE_PLATFORM } from '../src/platform/here';
 import { useDevices } from '../src/state/DevicesProvider';
@@ -111,7 +112,7 @@ export default function AddDeviceScreen() {
       setError(null);
       try {
         flowRef.current?.discard();
-        const next: SetupFlow = await HomeFlow.start(api, type.id, way.methodId, way.holder);
+        const next: SetupFlow = await SetupFlow.start(api, type.id, way.methodId, way.holder);
         flowRef.current = next;
         setFlow(next);
         setStepIndex(0);

@@ -19,6 +19,7 @@ export * from './schema.ts';
 export * from './meanings.ts';
 export * from './capabilities.ts';
 export * from './description.ts';
+export * from './controls.ts';
 export * from './standards.ts';
 export * from './categories.ts';
 export * from './links.ts';

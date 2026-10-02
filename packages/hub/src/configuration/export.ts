@@ -1,14 +1,13 @@
 import {
   automationEntryFrom,
+  deviceEntryFrom,
   emptyDocument,
   unitsFrom,
   vocabularyOf,
   type ConfigDocument,
-  type ConnectEntry,
-  type DeviceEntry,
-  type Scalar,
   type SecretValue,
   type Vocabulary,
+  type WaySource,
   type WriteContext,
 } from '@kraftverk/home-file';
 import type { PrintContext } from '@kraftverk/automation';
@@ -84,9 +83,6 @@ export function homeVocabulary(deps: Pick<ConfigDeps, 'catalog' | 'automations' 
   });
 }
 
-const scalars = (values: Record<string, unknown>): Record<string, Scalar> =>
-  Object.fromEntries(Object.entries(values).filter((entry): entry is [string, Scalar] => typeof entry[1] === 'string' || typeof entry[1] === 'number' || typeof entry[1] === 'boolean'));
-
 /** The configuration, as asked. */
 export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Promise<Exported> {
   if (options.secrets === 'sealed' && !options.passphrase) throw new Error('Sealing secrets needs a passphrase');
@@ -130,7 +126,7 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
 
   for (const device of devices) {
     const type = deps.types.get(device.typeId);
-    const connect: ConnectEntry[] = [];
+    const ways: WaySource[] = [];
     for (const connection of deps.connections.forDevice(device.id)) {
       if (connection.heldBy !== deps.self) {
         notes.push(`${device.name} is also reached by an app, which keeps that way and its keys itself: left out`);
@@ -142,10 +138,9 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
         const value = await secret(device, connection, field);
         if (value) secrets[field] = value;
       }
-      connect.push({ via: connection.method, address: method?.address ? null : connection.address, settings: scalars(connection.config), secrets, exportable: connection.secretsExportable });
+      ways.push({ method: connection.method, address: connection.address, config: connection.config, secrets, exportable: connection.secretsExportable, fixedAddress: Boolean(method?.address) });
     }
-    const entry: DeviceEntry = { type: device.typeId, name: device.name, identity: device.identity, picture: device.picture, settings: scalars(device.config), connect };
-    document.devices[device.key] = entry;
+    document.devices[device.key] = deviceEntryFrom(device, ways);
   }
 
   // Links between the devices it carries.

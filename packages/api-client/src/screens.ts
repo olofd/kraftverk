@@ -3,7 +3,7 @@ import type { ComponentType } from 'react';
 import type { Part, Value } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
-import type { DeviceView, VersionInfo } from './types';
+import type { DeviceView, LinkView, VersionInfo } from './types';
 
 /**
  * What the app hands a device type's own screens (docs/ARCHITECTURE.md §3, a
@@ -104,3 +104,11 @@ export type DeviceUi = {
    */
   tools?: { label: string; description: string; Screen: ComponentType<DeviceScreenProps> };
 };
+
+const endName = (link: LinkView) => (link.other.partLabel ? `${link.other.name} — ${link.other.partLabel}` : link.other.name);
+
+/** What feeds each of a device's parts, by the part's id, from the links it is the target of: what a screen says of the house. */
+export const fedBy = (links: readonly LinkView[]): Record<string, string> => Object.fromEntries(links.filter((link) => link.role === 'target').map((link) => [link.part, endName(link)]));
+
+/** What each of a device's parts feeds, by the part's id, from the links it is the source of. */
+export const feedsTo = (links: readonly LinkView[]): Record<string, string> => Object.fromEntries(links.filter((link) => link.role === 'source').map((link) => [link.part, endName(link)]));

@@ -1,12 +1,11 @@
 import { useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { changeAutomation, describeError, type AutomationView } from '@kraftverk/api-client';
+import { automationYaml, changeAutomation, describeError, type AutomationView } from '@kraftverk/api-client';
 import { haptic, Icon, RowSeparator } from '@kraftverk/ui';
 
 import { useTone } from '../automations/looks';
 import { Group } from '../automations/page/Group';
-import { automationYaml } from './entries';
 import { ExportOne } from './ExportOne';
 import { KeyField } from './KeyField';
 import { YamlEditor } from './YamlEditor';

@@ -4,6 +4,8 @@ import { useSegments } from 'expo-router';
 
 import { ApiError } from '@kraftverk/api-contract';
 import {
+  applyLive,
+  createViews,
   describeError,
   type CommandInput,
   type ConnectionView,
@@ -19,16 +21,15 @@ import {
   type NewLink,
   type SavedDeviceId,
   type VersionInfo,
+  type Views,
 } from '@kraftverk/api-client';
 import { CATEGORIES, savedDeviceId, SIMULATED_METHOD_ID, type ConnectionId, type LinkId } from '@kraftverk/device-sdk';
 
-import { ASKED_AGAIN, confirmAction, withConfirmation, type ConfirmTone } from '../lib/confirm';
+import { ASKED_AGAIN, confirmAction, withConfirmation, type ConfirmTone } from '../platform/confirm';
 import { HERE } from '../platform/here';
 import { useAuth } from './AuthProvider';
 import { useHome } from './HomeProvider';
-import { applyLive } from './live';
 import { useServers, type Mode } from './ServersProvider';
-import { createViews, type Views } from './views';
 
 /**
  * The things you have, whoever holds them.

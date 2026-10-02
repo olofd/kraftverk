@@ -2,17 +2,49 @@ import { useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
 import { capabilitiesOf, capabilityIn, isScalarType, MAIN_PART, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
-import { SEQUENCE_LIMITS, stepKind, writtenAttribute, type Command, type Expr, type Step, type StepKind, type Write } from '@kraftverk/automation';
+import {
+  automationRole,
+  blankStep,
+  insertStep,
+  kindsFor,
+  listAt,
+  mayWait,
+  moveStep,
+  removeStep,
+  secondsOf,
+  SEQUENCE_LIMITS,
+  stepKind,
+  within,
+  withStep,
+  writtenAttribute,
+  type Branch,
+  type Command,
+  type Expr,
+  type ListPath,
+  type Step,
+  type StepKind,
+  type Write,
+} from '@kraftverk/automation';
 import { Chips, haptic, Icon, IconLabel } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
-import { confirmAction } from '../../../lib/confirm';
+import { confirmAction } from '../../../platform/confirm';
 import { KIND as KIND_ICON, useTone } from '../looks';
 import { ConditionField } from './Condition';
 import { pickPart, useEditor } from './context';
-import { automationRole, blankStep, KINDS, secondsOf } from './draft';
-import { insertStep, kindsFor, listAt, mayWait, moveStep, removeStep, within, withStep, type Branch, type ListPath } from '@kraftverk/automation';
 import { DurationField, Label, NumberField, Picker, ValueField } from './fields';
+
+/** What each kind of step is called, and what it does: the editor's words for them. */
+const KINDS: Record<StepKind, { label: string; says: string }> = {
+  command: { label: 'Switch or send', says: 'A command to a part: on, off, or what else it takes.' },
+  write: { label: 'Change a setting', says: 'A setting the part keeps: its live readings, its light, what it does after a power cut.' },
+  wait: { label: 'Pause', says: 'Wait a while before the next step.' },
+  waitUntil: { label: 'Wait until', says: 'Wait for something to be so — at most so long, or the run does not succeed.' },
+  ensure: { label: 'Make sure', says: 'Something must come true in time; if not, take steps and look again, a few times at most.' },
+  choose: { label: 'If', says: 'One way or the other, as something is now.' },
+  watch: { label: 'Watch', says: 'Watch something for a while: steps if it stays so, others the moment it does not.' },
+  start: { label: 'Start another automation', says: 'Start one of your automations — and wait for it to end, if you like.' },
+};
 
 /*
   The blocks of a sequence (docs/AUTOMATION-EDITOR.md): each step a card —

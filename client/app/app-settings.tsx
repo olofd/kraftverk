@@ -6,7 +6,7 @@ import { Card, Row, RowSeparator, SectionLabel, ToggleRow, haptic, Icon } from '
 import { describeError } from '@kraftverk/api-client';
 import { POLICY_VALUES, type PolicyValueName, type PolicyValues } from '@kraftverk/device-sdk';
 
-import { confirmAction } from '../src/lib/confirm';
+import { confirmAction } from '../src/platform/confirm';
 import { completeUrl } from '../src/platform/servers';
 import { Pressable } from '../src/components/Pressable';
 import { Screen } from '../src/components/Screen';

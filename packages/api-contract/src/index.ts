@@ -52,7 +52,7 @@ import type {
   Value,
   ValueType,
 } from '@kraftverk/device-sdk';
-import type { Rule, StepKind, StepLine } from '@kraftverk/automation';
+import type { AutomationDraft, RoleBinding, RoleFills, Rule, StepKind, StepLine } from '@kraftverk/automation';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 import type { Vocabulary } from '@kraftverk/home-file';
 
@@ -100,7 +100,7 @@ export type {
   TransportDefinition,
   Value,
 } from '@kraftverk/device-sdk';
-export type { StepKind, StepLine, Rule, RoleSpec, Step, Expr, Trigger, Weekday, CompareOp, Command } from '@kraftverk/automation';
+export type { StepKind, StepLine, Rule, RoleSpec, Step, Expr, Trigger, Weekday, CompareOp, Command, RoleBinding, RoleFills, AutomationDraft } from '@kraftverk/automation';
 export type { GatewayResult, GatewayOutcome, WriteResult } from '@kraftverk/gateway';
 
 /** `GET /api/version`. */
@@ -607,9 +607,6 @@ export type AuthState = {
 };
 // --- automations ----------------------------------------------------------------
 
-/** Which part of which device fills a role: a plug, or one of a station's outlets. */
-export type RoleBinding = { device: SavedDeviceId; part: string };
-
 /**
  * A recipe the master offers, as a starting point (docs/AUTOMATION-EDITOR.md):
  * a rule with roles to fill and settings, which the app copies — its
@@ -651,16 +648,6 @@ export type FunctionView = {
 
 /** `GET /automations/recipes`: what an automation can start from, and the functions its conditions may ask. */
 export type AutomationKit = { recipes: RecipeView[]; functions: FunctionView[] };
-
-/**
- * What fills an automation's roles: a part of a device for each role one
- * fills (`roles`), and another automation for each role a `start` step
- * starts (`starts`).
- */
-export type RoleFills = { roles: Record<string, RoleBinding>; starts: Record<string, AutomationId> };
-
-/** A rule as it is being built, with what fills its roles: `POST /automations/draft` checks and says it. */
-export type AutomationDraft = RoleFills & { rule: Rule };
 
 /** `POST /automations/draft`: what is wrong with a draft — empty, nothing — and how it reads. Nothing is kept. */
 export type AutomationDraftView = {

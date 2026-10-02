@@ -6,7 +6,7 @@ import { applyPlan, describeError, type ElsewhereView, type HomeElsewhere, type 
 import { checkDocument, configJsonSchema, CURRENT_VERSION, readConfig, type Vocabulary } from '@kraftverk/home-file';
 import { Card, RowSeparator, SectionLabel, SegmentedControl, Toggle, haptic, Icon } from '@kraftverk/ui';
 
-import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../lib/confirm';
+import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../platform/confirm';
 import { useHome } from '../../state/HomeProvider';
 import { useServers } from '../../state/ServersProvider';
 import { useTone, type Tone } from '../automations/looks';

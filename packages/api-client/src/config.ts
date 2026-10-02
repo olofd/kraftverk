@@ -1,7 +1,9 @@
-import type { AutomationView, DeviceView, RoleBinding } from '@kraftverk/api-client';
+import type { PrintContext, Rule } from '@kraftverk/automation';
+import { savedDeviceId, type AutomationId } from '@kraftverk/device-sdk';
 import {
   automationEntryFrom,
   checkDocument,
+  deviceEntryFrom,
   fillsFrom,
   MODE_OF_FILE,
   readAutomationYaml,
@@ -9,21 +11,19 @@ import {
   writeAutomationYaml,
   writeDeviceYaml,
   type AutomationEntry,
-  type DeviceEntry,
   type EngineMode,
   type Problem,
-  type Scalar,
   type Vocabulary,
 } from '@kraftverk/home-file';
-import type { PrintContext } from '@kraftverk/automation';
-import { savedDeviceId, type AutomationId } from '@kraftverk/device-sdk';
-import type { Rule } from '@kraftverk/automation';
+
+import type { AutomationView, DeviceView, RoleBinding } from './types';
 
 /*
   An automation's and a device's own YAML, as their pages show it and the
-  editor writes it (docs/CONFIG.md): made from what the app is shown, by the
-  shared language — the same text the server's export writes — and read back
-  into what the form edits, checked by the same code the server checks with.
+  editor writes it (docs/CONFIG.md): made from what a home shows — its views —
+  by the configuration's own functions, the same the master's export writes
+  with, and read back into what the form edits, checked by the same code the
+  master checks with.
 */
 
 /** What the form edits, and what it does not: its mode, clock, how often it keeps things so, its place on the home page. */
@@ -73,32 +73,26 @@ export function draftOfEntry(entry: AutomationEntry, devices: readonly DeviceVie
   };
 }
 
-const scalars = (values: Record<string, unknown>): Record<string, Scalar> =>
-  Object.fromEntries(Object.entries(values).filter((entry): entry is [string, Scalar] => typeof entry[1] === 'string' || typeof entry[1] === 'number' || typeof entry[1] === 'boolean'));
-
 /**
  * A device as YAML text, as an export writes it: what it is, its settings,
- * the ways the server reaches it — each secret by name, never its value. A
- * way an app holds is not in a configuration: its keys live on the phone.
+ * the ways its master reaches it — each secret by name, never its value. A
+ * way another node holds is not in a configuration: its keys live there.
  */
-export function deviceYaml(device: DeviceView, vocabulary: Vocabulary | null): { text: string; secrets: number; heldByApps: number } {
+export function deviceYaml(device: DeviceView, vocabulary: Vocabulary | null): { text: string; secrets: number; heldElsewhere: number } {
   const type = vocabulary?.types.find((each) => each.id === device.typeId);
   const ways = [...device.connections].sort((a, b) => a.priority - b.priority);
-  const entry: DeviceEntry = {
-    type: device.typeId,
-    name: device.name,
-    identity: device.identity,
-    picture: device.picture === 'type:0' ? null : device.picture,
-    settings: scalars(device.config),
-    connect: ways
-      .filter((way) => way.heldBy.kind === 'master')
-      .map((way) => ({
-        via: way.method,
-        address: type?.methods.find((method) => method.id === way.method)?.fixedAddress ? null : way.address,
-        settings: scalars(way.config),
-        secrets: Object.fromEntries(way.secrets.map((field) => [field, { secret: `${device.key}.${field}` }])),
-        exportable: way.secretsExportable,
-      })),
-  };
-  return { text: writeDeviceYaml(entry), secrets: entry.connect.reduce((count, way) => count + Object.keys(way.secrets).length, 0), heldByApps: ways.length - entry.connect.length };
+  const masters = ways.filter((way) => way.heldBy.kind === 'master');
+  const entry = deviceEntryFrom(
+    // The view says its type's first picture by name; a file leaves it out.
+    { ...device, picture: device.picture === 'type:0' ? null : device.picture },
+    masters.map((way) => ({
+      method: way.method,
+      address: way.address,
+      config: way.config,
+      secrets: Object.fromEntries(way.secrets.map((field) => [field, { secret: `${device.key}.${field}` }])),
+      exportable: way.secretsExportable,
+      fixedAddress: Boolean(type?.methods.find((method) => method.id === way.method)?.fixedAddress),
+    }))
+  );
+  return { text: writeDeviceYaml(entry), secrets: entry.connect.reduce((count, way) => count + Object.keys(way.secrets).length, 0), heldElsewhere: ways.length - masters.length };
 }

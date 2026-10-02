@@ -6,7 +6,7 @@ import { Card, isComplete, Row, RowSeparator, SchemaForm, haptic, Icon } from '@
 
 import { Pressable } from '../../components/Pressable';
 import { QrCode } from '../../components/QrCode';
-import type { SetupFlow } from './flows';
+import type { SetupFlow } from '@kraftverk/api-client';
 
 /**
  * One setup step, drawn from its view (docs/DATA-MODEL.md §1). Nothing here

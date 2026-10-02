@@ -5,7 +5,7 @@ import { describeError, type NodeView, type TransportList } from '@kraftverk/api
 import { Card, formatAgo, Row, RowSeparator, SectionLabel, Icon } from '@kraftverk/ui';
 
 import { Screen } from '../src/components/Screen';
-import { confirmAction } from '../src/lib/confirm';
+import { confirmAction } from '../src/platform/confirm';
 import { HERE } from '../src/platform/here';
 import { useHome } from '../src/state/HomeProvider';
 

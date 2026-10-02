@@ -1,13 +1,17 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
-import type { AutomationView, DeviceView, FunctionView, RoleBinding } from '@kraftverk/api-client';
+import type { AutomationView, DeviceView, FunctionView, RecipeView, RoleBinding } from '@kraftverk/api-client';
 import { capabilitiesOf, meetsNeed, partName, partsOf, type CapabilityNeed, type DeviceDescription } from '@kraftverk/device-sdk';
 import {
   describeExpr,
   describeSteps,
   describeTriggers,
+  draftOfRecipe,
+  EMPTY_DRAFT,
   isAutomationRole,
+  partRole,
   writtenAttribute,
+  type AutomationDraft,
   type AutomationFunction,
   type Expr,
   type RuleVocabulary,
@@ -15,7 +19,14 @@ import {
   type Trigger,
 } from '@kraftverk/automation';
 
-import { partRole, type Draft } from './draft';
+/** An automation as it is being built (`@kraftverk/automation`'s draft), and its name. */
+export type Draft = AutomationDraft & { name: string };
+
+/** An automation built from nothing: no name, no trigger, no step yet. */
+export const EMPTY: Draft = { name: '', ...EMPTY_DRAFT };
+
+/** A recipe copied: named as it is, its settings at their defaults written into its blocks, its roles still to fill. */
+export const fromRecipe = (recipe: RecipeView): Draft => ({ name: recipe.label, ...draftOfRecipe(recipe.rule) });
 
 /**
  * What every part of the editor works on: the draft and how to change it, the

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { setConfirmHost, type ConfirmRequest } from '../lib/confirm';
+import { setConfirmHost, type ConfirmRequest } from '../platform/confirm';
 import { useDialogFocus } from '../lib/useDialogFocus';
 
 /**

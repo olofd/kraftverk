@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { DeviceView } from '@kraftverk/api-client';
 import type { Vocabulary } from '@kraftverk/home-file';
 import { automationId, MAIN_PART, savedDeviceId } from '@kraftverk/device-sdk';
 import type { Rule } from '@kraftverk/automation';
 
-import { automationYaml, deviceYaml, draftOfEntry, readAutomationText } from './entries';
+import { automationYaml, deviceYaml, draftOfEntry, readAutomationText } from './config';
+import type { DeviceView } from './types';
 
 /*
   An automation's YAML in the app's editor: written from what the app is
@@ -100,11 +100,11 @@ describe('an automation as YAML, in the app', () => {
 
 describe('a device as YAML, in the app', () => {
   test('names its secrets, never their values, and leaves out a way an app holds', () => {
-    const { text, secrets, heldByApps } = deviceYaml(plug, VOCABULARY);
+    const { text, secrets, heldElsewhere } = deviceYaml(plug, VOCABULARY);
     expect(text).toBe(
       'type: acme.plug\nname: Scooter plug\nsettings:\n  profile: b\nconnect:\n  - via: lan\n    address: 192.0.2.10#a4c1380000000001\n    settings:\n      deviceId: made-up-id\n    secrets:\n      localKey: !secret scooter-plug.localKey\n'
     );
     expect(secrets).toBe(1);
-    expect(heldByApps).toBe(1);
+    expect(heldElsewhere).toBe(1);
   });
 });

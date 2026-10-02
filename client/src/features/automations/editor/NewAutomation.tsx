@@ -7,7 +7,7 @@ import { Card } from '@kraftverk/ui';
 import { Screen } from '../../../components/Screen';
 import { useDevices } from '../../../state/DevicesProvider';
 import { AutomationForm, recipeFits, StartFrom, useEditorKit } from './AutomationForm';
-import { EMPTY, fromRecipe, type Draft } from './draft';
+import { EMPTY, fromRecipe, type Draft } from './context';
 
 /**
  * A new automation (docs/AUTOMATIONS-UX.md): where it starts — from nothing,

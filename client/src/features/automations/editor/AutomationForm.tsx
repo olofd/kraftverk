@@ -6,28 +6,26 @@ import {
   describeError,
   type AutomationDraftView,
   type AutomationKit,
+  type AutomationSettings,
   type AutomationView,
   type RecipeView,
   type RoleBinding,
 } from '@kraftverk/api-client';
 import { capabilitiesOf, meetsNeed, partsOf } from '@kraftverk/device-sdk';
-import { isAutomationRole } from '@kraftverk/automation';
+import { isAutomationRole, OTHERWISE, pruned, rolesOf, sameParts, THEN } from '@kraftverk/automation';
 import { Card, haptic, Icon, Row, RowSeparator, SegmentedControl } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
 import { Screen } from '../../../components/Screen';
-import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../../lib/confirm';
+import { ASKED_AGAIN, confirmAction, withConfirmation } from '../../../platform/confirm';
 import { useDevices } from '../../../state/DevicesProvider';
 import { useHome } from '../../../state/HomeProvider';
-import type { AutomationSettings } from '../../config/entries';
 import { useAutomationYaml } from '../../config/useAutomationYaml';
 import { YamlEditor } from '../../config/YamlEditor';
 import { useTone } from '../looks';
 import { Empty, Group } from '../page/Group';
 import { BlockList } from './Blocks';
-import { EditorProvider, useEditor } from './context';
-import { OTHERWISE, THEN } from '@kraftverk/automation';
-import { pruned, rolesOf, sameParts, type Draft } from './draft';
+import { EditorProvider, useEditor, type Draft } from './context';
 import { Picker } from './fields';
 import { OnlyIf, Triggers } from './Triggers';
 

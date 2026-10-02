@@ -7,7 +7,7 @@ import { Card, Chips, Icon, ToggleRow } from '@kraftverk/ui';
 
 import { Pressable } from '../../../components/Pressable';
 import { Screen } from '../../../components/Screen';
-import { fileNameOf, saveText } from '../../../lib/download';
+import { fileNameOf, saveText } from '../../../platform/download';
 import { dayOf, lasted, OUTCOME, useTone } from '../looks';
 import { Empty, Group } from '../page/Group';
 import { Mark as OutcomeMark } from '../page/history';

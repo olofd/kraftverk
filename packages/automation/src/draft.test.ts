@@ -1,16 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { AutomationId, RecipeView, RoleBinding } from '@kraftverk/api-client';
-import { checkRule, startCharging, stopCharging, type Step } from '@kraftverk/automation';
-import { savedDeviceId, type DeviceDescription } from '@kraftverk/device-sdk';
+import { savedDeviceId, type AutomationId, type DeviceDescription } from '@kraftverk/device-sdk';
 
-import { automationRole, blankStep, EMPTY, fromRecipe, partRole, pruned, roleName, sameParts } from './draft';
-import { insertStep, kindsFor, listAt, mayWait, moveStep, OTHERWISE, removeStep, THEN, withStep, within } from '@kraftverk/automation';
+import { automationRole, blankStep, draftOfRecipe, EMPTY_DRAFT, partRole, pruned, roleName, sameParts, type RoleBinding } from './draft.ts';
+import { insertStep, kindsFor, listAt, mayWait, moveStep, OTHERWISE, removeStep, THEN, withStep, within } from './edit.ts';
+import { startCharging, stopCharging } from './recipes.ts';
+import { checkRule, type Step } from './rule.ts';
 
 /*
-  The editor's draft, changed the way its screens change it: blocks added,
-  nested, moved and removed at any depth; a part picked for a block fills a
-  role of its own, once; a recipe copied with its settings written in.
+  An automation as it is being built, changed the way an editor changes it:
+  blocks added, nested, moved and removed at any depth; a part picked for a
+  block fills a role of its own, once; a recipe copied with its settings
+  written in.
 */
 
 const PLUG: DeviceDescription = {
@@ -25,7 +26,7 @@ const pause = (seconds: number): Step => ({ wait: { seconds: { value: seconds } 
 
 describe('blocks', () => {
   test('added, nested, moved and removed at any depth — the rule the language checks', () => {
-    let rule = insertStep(EMPTY.rule, THEN, 0, blankStep('choose', null));
+    let rule = insertStep(EMPTY_DRAFT.rule, THEN, 0, blankStep('choose', null));
     rule = insertStep(rule, within(THEN, 0, 'then'), 0, pause(5));
     rule = insertStep(rule, within(THEN, 0, 'then'), 1, pause(10));
     rule = moveStep(rule, within(THEN, 0, 'then'), 1, -1);
@@ -52,7 +53,7 @@ describe('blocks', () => {
 
 describe('roles', () => {
   test('a part picked fills one role, whatever uses it — named and labelled by what it is, not by a name that can change; one nothing uses is not kept', () => {
-    const first = partRole(EMPTY, plug, PLUG);
+    const first = partRole(EMPTY_DRAFT, plug, PLUG);
     // Named as a file says it, and its conditions read: switch, not part1.
     expect(first.role).toBe('switch');
     expect(first.draft.rule.roles.switch).toEqual({ label: 'Switch', description: 'Switch', capabilities: ['powerMeter', 'switch'] });
@@ -65,34 +66,31 @@ describe('roles', () => {
     expect(pruned(used).roles).toEqual({ switch: plug });
     expect(pruned(first.draft)).toMatchObject({ rule: { roles: {} }, roles: {} });
     // A label with no letters to name it by: part.
-    expect(roleName(EMPTY.rule, '42')).toBe('part');
-    expect(roleName(EMPTY.rule, 'Laddare för skotern')).toBe('laddareForSkotern');
+    expect(roleName(EMPTY_DRAFT.rule, '42')).toBe('part');
+    expect(roleName(EMPTY_DRAFT.rule, 'Laddare för skotern')).toBe('laddareForSkotern');
   });
 
   test('an automation to start fills a role of its own kind, labelled as what it is', () => {
-    const { draft, role } = automationRole(EMPTY, 'a-charge' as AutomationId);
+    const { draft, role } = automationRole(EMPTY_DRAFT, 'a-charge' as AutomationId);
     expect(role).toBe('automation');
     expect(draft.rule.roles.automation).toEqual({ automation: true, label: 'Another automation', description: 'An automation it starts' });
-    expect(draft.starts).toEqual({ automation: 'a-charge' });
+    expect(draft.starts).toEqual({ automation: 'a-charge' as AutomationId });
     expect(automationRole(draft, 'a-other' as AutomationId).role).toBe('automation2');
   });
 });
 
 test('a recipe copied: its settings at their defaults, written into its blocks — the owner’s to change', () => {
-  const recipe = { id: startCharging.id, label: startCharging.label, rule: startCharging } as unknown as RecipeView;
-  const draft = fromRecipe(recipe);
-  expect(draft.name).toBe('Start charging');
+  const draft = draftOfRecipe(startCharging);
   expect(draft.rule.params).toEqual({ fields: {} });
   expect(draft.rule.then[1]).toEqual({ waitUntil: { condition: { reachable: 'charger' }, atMostSeconds: { value: 120 } } });
   expect(checkRule(draft.rule, { fn: () => null })).toEqual([]);
 });
 
 test('stop after start: the parts another automation uses for the same roles are offered, when they fit', () => {
-  const view = (recipe: typeof startCharging) => ({ id: recipe.id, label: recipe.label, rule: recipe }) as unknown as RecipeView;
   const station: RoleBinding = { device: savedDeviceId('d-station'), part: 'ac' };
-  const start = { id: 'a-start' as AutomationId, name: 'Start charging the scooter', rule: fromRecipe(view(startCharging)).rule, roles: { supply: station, charger: plug } };
+  const start = { id: 'a-start' as AutomationId, name: 'Start charging the scooter', rule: draftOfRecipe(startCharging).rule, roles: { supply: station, charger: plug } };
   const unrelated = { id: 'a-other' as AutomationId, name: 'Heater', rule: { ...start.rule, roles: { heater: start.rule.roles.charger! } }, roles: { heater: plug } };
-  const stop = fromRecipe(view(stopCharging));
+  const stop = draftOfRecipe(stopCharging);
 
   expect(sameParts(stop, [start, unrelated], () => true)).toEqual([{ id: start.id, name: start.name, roles: { supply: station, charger: plug } }]);
   // A part that does not fit here is not offered.
