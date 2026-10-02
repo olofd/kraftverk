@@ -14,6 +14,7 @@ const definition: TransportDefinition = {
   channel: 'bytes',
   // An address on the home network is one device.
   exclusive: true,
+  nearby: false,
   platforms: ['server', 'native'],
   discovery: { server: 'list', native: 'list' },
 };

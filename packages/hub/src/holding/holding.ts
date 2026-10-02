@@ -4,6 +4,8 @@ import { ActionGateway, Confirmations } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, toHold, toolsOf, withInUse, type DeviceEventMessage } from '@kraftverk/holder';
 import { AppState, ConnectionStore, databaseLedger, DeviceCatalog, deviceStore, LastHeard, LinkStore, SendQueue, type DeviceRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
+import type { PassphraseSealing } from '../configuration/seal.ts';
+import { MovingToServer } from '../handover/move.ts';
 import type { Installed } from '../hub.ts';
 import { SetupService } from '../setup/index.ts';
 import { unref } from '../timers.ts';
@@ -62,6 +64,12 @@ export type HoldingOptions = {
   log?: (level: 'info' | 'warn' | 'error', message: string) => void;
   /** How often what is owed is sent: a test's own. */
   sendEveryMs?: number;
+  /**
+   * The home this app kept itself before it had this server, if it did:
+   * offered to the server to take over (`configuration.plan({ from:
+   * 'this-app' })`), with the cipher its secrets travel sealed with.
+   */
+  own?: { database: SqlDatabase; sealing: PassphraseSealing };
 };
 
 /** What goes up with a device's readings: the way it was read by, who it said it is, and what it is when it says so itself. */
@@ -90,6 +98,8 @@ export class Holding {
   readonly yes = new Confirmations();
   /** Everything the server answers, with what this app holds wrapped in. */
   readonly api: KraftverkApi;
+  /** The home this app kept itself, moving to the server: none when it kept none. */
+  readonly moving: MovingToServer | null;
 
   /** The server's last word on each device: what the gateway checks against for one this app does not hold. */
   #seen = new Map<SavedDeviceId, DeviceView>();
@@ -168,6 +178,7 @@ export class Holding {
 
     // A way this app holds is set up here, over its own radio: the server judges what it finds, and keeps the device.
     this.setup = new SetupService({ db, record, types, protocols, transports, catalog, connections, links: new LinkStore(db), sessions, http: options.http });
+    this.moving = options.own ? new MovingToServer(this, options.own.database, { secrets: options.secrets, sealing: options.own.sealing }) : null;
     this.api = holdingApi(this);
   }
 
@@ -229,6 +240,11 @@ export class Holding {
       const list = await this.home.devices.list();
       this.heard.keep('devices', list);
       await this.hold(list);
+      // The home as one file, as the server last said it: what this app keeps if the server is gone (`handover/keep.ts`).
+      await this.home.configuration
+        .export({ secrets: 'none' })
+        .then((exported) => this.heard.keep('configuration', exported.text))
+        .catch(() => undefined);
       return list;
     } catch {
       return null;
@@ -534,13 +550,6 @@ function recordOf(device: DeviceView): DeviceRecord {
     info: device.info,
     picture: device.picture === 'type:0' ? null : device.picture,
   };
-}
-
-/** Whether a way can be held by this app where it runs: its transport has an entry here, its protocol is installed, and it is not kept to a server. */
-export function holdableHere(installed: Installed, method: Parameters<typeof placesOf>[0]): boolean {
-  if (isSimulated(method) || method.serverOnly) return false;
-  const { transports, protocols } = installed;
-  return placesOf(method, transports.definition(method.transport)).includes(transports.platform) && Boolean(protocols.get(method.protocol)?.bindings[method.transport]);
 }
 
 /** What an app holds for a server's home, made from what the place gives it: `start()` it, ask its `api`, `stop()` it. */

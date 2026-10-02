@@ -112,8 +112,20 @@ async function start(open: Extract<ToWorker, { kind: 'open' }>) {
   const pool = await sqlite3.installOpfsSAHPoolVfs(POOL);
   // Room for this schema's file and its journal, beside any an older schema left.
   if (Number(pool.getCapacity()) - pool.getFileCount() < 4) await pool.addCapacity(4);
+  const opened = (file: string) => readyDatabase(fromSqliteWasm(new pool.OpfsSAHPoolDb(`/${file}`) as unknown as SqliteWasmDatabase), 'web');
   // A new schema is a new file: the one before is left as it was (strict version 1). With a server, one of its own.
-  const database = readyDatabase(fromSqliteWasm(new pool.OpfsSAHPoolDb(`/${databaseFile(schemaFingerprint(), open.server?.key)}`) as unknown as SqliteWasmDatabase), 'web');
+  const database = opened(databaseFile(schemaFingerprint(), open.server?.key));
+  /** Another file this browser keeps, opened only if it is there and of this schema: a home brought in from it is offered, never written over. */
+  const beside = (file: string) => {
+    if (!pool.getFileNames().includes(`/${file}`)) return null;
+    try {
+      return opened(file);
+    } catch {
+      return null;
+    }
+  };
+  // With a server, the home this browser kept itself before, offered to it; without, the copy it kept of the server it used last.
+  const other = open.server ? beside(databaseFile(schemaFingerprint())) : open.copyOf ? beside(databaseFile(schemaFingerprint(), open.copyOf)) : null;
 
   let writes = open.writes;
   const served = new Set(open.serves);
@@ -130,12 +142,13 @@ async function start(open: Extract<ToWorker, { kind: 'open' }>) {
     stopServing();
     await stopHome();
     database.close();
+    other?.close();
     pool.pauseVfs();
   };
 
   if (open.server) {
     // The server's interface, as the page asks it: the page signs in, and its address is the page's to know.
-    const holding = appHolding({ ...place, home: apiOver(scope, 'server'), name: open.server.name });
+    const holding = appHolding({ ...place, home: apiOver(scope, 'server'), name: open.server.name, ...(other ? { own: other } : {}) });
     await holding.start();
     const stopServing = serveApi(holding.api, scope, 'api');
     return {
@@ -148,7 +161,7 @@ async function start(open: Extract<ToWorker, { kind: 'open' }>) {
     };
   }
 
-  const hub = appHub(place);
+  const hub = appHub({ ...place, ...(other ? { copy: other } : {}) });
   await hub.start();
   const stopServing = serveApi(hub.as(OWNER), scope, 'api');
   return {

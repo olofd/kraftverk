@@ -11,7 +11,7 @@ import { serveTransport, transportOver } from '../src/index.ts';
   answer, and what it says on its timeline.
 */
 
-const DEFINITION: TransportDefinition = { id: 'wire', label: 'the test wire', channel: 'bytes', exclusive: true, platforms: ['web'], discovery: { web: 'chooser' } };
+const DEFINITION: TransportDefinition = { id: 'wire', label: 'the test wire', channel: 'bytes', exclusive: true, nearby: false, platforms: ['web'], discovery: { web: 'chooser' } };
 const SIGHTING: Sighting = { transport: 'wire', address: 'dev-1', seenAt: '2026-10-02T00:00:00Z', name: 'Lamp', facts: { services: ['a002'] } };
 
 /** A transport as a page would run one: everything kept here, to see from the test. */

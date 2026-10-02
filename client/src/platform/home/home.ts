@@ -34,6 +34,12 @@ export type OpenOptions = {
   server?: { key: string; api: KraftverkApi };
   /** What this app is called in "held by …": "Chrome on Windows". */
   name: string;
+  /**
+   * Without a server: the server it used last (`key`), whose home it kept a
+   * copy of — offered to keep as its own. With one, the home the app kept
+   * itself before is offered to the server.
+   */
+  copyOf?: string | null;
 };
 
 /** This browser's database is held by another of its tabs: it can be asked to let go (`takeOver`). */

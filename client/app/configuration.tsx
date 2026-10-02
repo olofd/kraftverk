@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { Text, YStack } from 'tamagui';
 
-import { describeError, type AutomationView, type ConfigSnapshotView } from '@kraftverk/api-client';
+import { describeError, type AutomationView, type ConfigSnapshotView, type ElsewhereView } from '@kraftverk/api-client';
 import { schemaLine, type Vocabulary } from '@kraftverk/home-file';
 import { Card, Row, SectionLabel } from '@kraftverk/ui';
 
@@ -22,13 +22,15 @@ import { useServers } from '../src/state/ServersProvider';
  * device's or an automation's page, its export starts with that one chosen.
  */
 export default function ConfigurationScreen() {
-  const params = useLocalSearchParams<{ devices?: string; automations?: string; import?: string }>();
+  const params = useLocalSearchParams<{ devices?: string; automations?: string; import?: string; from?: string }>();
   const { devices, refresh } = useDevices();
   const { api, kind } = useHome();
   const { server } = useServers();
   const [automations, setAutomations] = useState<AutomationView[] | null>(null);
   const [vocabulary, setVocabulary] = useState<Vocabulary | null>(null);
   const [snapshot, setSnapshot] = useState<ConfigSnapshotView | null>(null);
+  /** A home this app keeps beside this one, to bring in: its own, moving to a server; or a server's copy, staying. */
+  const [elsewhere, setElsewhere] = useState<ElsewhereView>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -36,7 +38,11 @@ export default function ConfigurationScreen() {
     Promise.all([api.automations.list(), api.configuration.vocabulary(), server ? server.snapshot() : Promise.resolve(null)])
       .then(([all, words, kept]) => (setAutomations(all), setVocabulary(words), setSnapshot(kept), setError(null)))
       .catch((err: unknown) => setError(describeError(err) || 'It could not be read'));
-  }, [api, kind]);
+    void api.configuration
+      .elsewhere()
+      .then(setElsewhere)
+      .catch(() => setElsewhere(null));
+  }, [api, kind, server]);
   useEffect(load, [load]);
 
   const split = (value: string | undefined) => (value ? value.split(',').filter(Boolean) : []);
@@ -59,7 +65,13 @@ export default function ConfigurationScreen() {
       ) : null}
       {params.import || kind !== 'server' ? null : <Kept snapshot={snapshot} />}
       {params.import ? null : automations ? <ExportCard key={`${params.devices}|${params.automations}`} devices={active} automations={automations} chosen={chosen} /> : null}
-      <ImportCard vocabulary={vocabulary} restored={!params.import && Boolean(snapshot?.restored)} onApplied={() => (void refresh(), load())} />
+      <ImportCard
+        vocabulary={vocabulary}
+        restored={!params.import && Boolean(snapshot?.restored)}
+        elsewhere={elsewhere}
+        start={params.from === 'this-app' || params.from === 'copy' ? params.from : null}
+        onApplied={() => (void refresh(), load())}
+      />
       {params.import && kind === 'server' ? <Kept snapshot={snapshot} /> : null}
       {kind === 'server' ? <InAnEditor /> : null}
     </Screen>

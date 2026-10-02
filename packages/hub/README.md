@@ -128,6 +128,18 @@ the app still reaches what it holds, and shows the rest of the home as
 the server last said it: its devices offline, saying so, and nothing
 changed through it until it answers.
 
+### A home handed over: `handover/`
+
+Both ways as an import, planned and seen before anything moves
+(`configuration.plan({ from })`; `configuration.elsewhere()` says what
+there is). A holding given the home the app kept itself (`own`) moves it
+to the server (`MovingToServer`): every way but one over a `nearby`
+transport moves with it, and that one this app holds for the server, its
+key kept here. A hub given the copy the app kept of the server it used
+last (`copy`) keeps it as its own (`KeepingCopy`): the server's
+configuration as a restore applies it, and the ways this app held come
+with their keys. History stays where it was recorded.
+
 ### Made from ports
 
 ```ts

@@ -48,9 +48,15 @@ export function configRoutes(deps: AppDeps): Hono {
     const input = await body(
       c,
       z
-        .object({ text: z.string().min(1).max(2_000_000).optional(), restored: z.literal(true).optional(), mode: z.enum(['merge', 'replace']).default('merge'), passphrase: z.string().max(200).optional() })
+        .object({
+          text: z.string().min(1).max(2_000_000).optional(),
+          restored: z.literal(true).optional(),
+          from: z.enum(['this-app', 'copy']).optional(),
+          mode: z.enum(['merge', 'replace']).default('merge'),
+          passphrase: z.string().max(200).optional(),
+        })
         .strict()
-        .refine((given) => (given.text === undefined) !== (given.restored === undefined), 'A file’s text, or the restored copy: one of them')
+        .refine((given) => [given.text, given.restored, given.from].filter((each) => each !== undefined).length === 1, 'A file’s text, the restored copy, or a home kept elsewhere: one of them')
     );
     if (input.restored) {
       const text = deps.snapshot?.restoredCopy() ?? null;
@@ -58,8 +64,13 @@ export function configRoutes(deps: AppDeps): Hono {
       // Its secrets are this server's own, sealed with its key: opened as only the server's own copy may be, not through the API.
       return c.json(await deps.hub.configuration.plan(text, { mode: input.mode, kept: true }, actorOf(c)));
     }
+    // A home kept elsewhere is an app's: the home says it has none.
+    if (input.from) return c.json(await homeFor(deps, c).configuration.plan({ from: input.from, mode: input.mode }));
     return c.json(await homeFor(deps, c).configuration.plan({ text: input.text!, mode: input.mode, passphrase: input.passphrase }));
   });
+
+  /** What a home kept beside this one has, to bring in: an app's alone, so a server's says none. */
+  api.get('/config/elsewhere', async (c) => c.json(await homeFor(deps, c).configuration.elsewhere()));
 
   api.post('/config/apply', async (c) => {
     const input = await body(

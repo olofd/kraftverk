@@ -120,6 +120,7 @@ export function validateTransportDefinition(transport: TransportDefinition): str
   if (transport.id === SIMULATED_TRANSPORT) problems.push(`transport id "${SIMULATED_TRANSPORT}" is taken: it means simulated`);
   if (!transport.label?.trim()) problems.push(`transport "${transport.id}" has no label`);
   if (!['bytes', 'messages', 'http'].includes(transport.channel)) problems.push(`transport "${transport.id}" has an unknown channel "${transport.channel}"`);
+  if (typeof transport.nearby !== 'boolean') problems.push(`transport "${transport.id}" does not say whether it reaches only what is near its holder (nearby)`);
   if (!transport.platforms?.length) problems.push(`transport "${transport.id}" runs nowhere`);
   for (const platform of transport.platforms ?? []) {
     if (!PLATFORMS.includes(platform)) problems.push(`transport "${transport.id}" names an unknown platform "${platform}"`);

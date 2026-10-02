@@ -723,6 +723,14 @@ are the home's own (`held_by` null), its secrets sealed with a key the
 platform keeps; there is no `client` row, as there is no server to hold for.
 It keeps history and runs automations while it is open.
 
+Adding a server offers to move this home to it, as an import the person
+sees first: the server takes the devices, links, automations and values,
+and holds every way but one over a radio (`nearby`: Bluetooth), which this
+app holds for it (`held_by` this app), its key staying here. History the app
+recorded stays with the app. Leaving a server offers the reverse: the copy
+the app kept of the server's home becomes its own, the server's history
+staying with the server (docs/PLAN-SHARED-CORE.md, phase 6h).
+
 ---
 
 ## 7. Later: homes

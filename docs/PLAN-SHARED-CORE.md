@@ -653,8 +653,33 @@ The steps, each green and pushed:
     gone, the home shown from the copy; the server back, live again.
     What it does not keep yet: history, the timeline, a run's log — those
     are the server's while it is away.
-6h. **The hand-over**: a server taking over the app's home, and the app's
-    copy becoming the master again.
+6h. **The hand-over** — done, 2026-10-02, both ways, as an import: one
+    the person sees planned before anything moves, and says yes to where
+    it sets something acting. A home this app kept is the home it shows,
+    brought in from another database it keeps beside it
+    (`configuration.plan({ from })`, `configuration.elsewhere()`):
+    - **This app's home to its server** (`from: 'this-app'`, the holding's,
+      `handover/move.ts`): the home as one file, sealed with a passphrase
+      made for it and never shown, imported by the server. A way over a
+      radio (`nearby` in a transport's definition: Bluetooth) stays with
+      the phone near the device, and so does one the server cannot hold:
+      left out of the file, then added as this app's way for the server —
+      read by this app, judged there as the device it now has, its key
+      kept here. Every other way moves, and the server holds it while the
+      app is closed. What the app recorded stays with it.
+    - **A server's home to this app** (`from: 'copy'`, the app's own
+      home's, `handover/keep.ts`): the server's configuration, which the
+      holding keeps in its copy (`last_heard`) at every refresh, planned and
+      applied as a restore is — a secret only the server had is left out
+      and said, a way only a server can hold comes and waits for one — and
+      the ways this app held come with their keys. The server's history
+      stays with it. The server this app used last is remembered when it
+      stops using one.
+    Offered on the home page when there is something to bring, and not
+    again once brought — or once the plan finds it all there already. Seen
+    in a browser: a server's home kept by the app (four devices, five
+    automations, running in the browser), then offered back to the server,
+    which had it all.
 6i. **The rest of the app's logic to packages**, as listed under "What
     moves — the app": the live updates and views to api-client,
     `togglesOf` and `settingsForms` to device-sdk, `deviceYaml` to

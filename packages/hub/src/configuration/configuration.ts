@@ -79,7 +79,7 @@ export class Configuration {
     if (secrets === 'sealed' && (request.passphrase ?? '').length < PASSPHRASE_MIN) {
       throw new ApiError('invalid', `A passphrase is at least ${PASSPHRASE_MIN} characters: an export travels`);
     }
-    const exported = await exportConfig(this.#deps, { devices: request.devices, automations: request.automations, secrets, passphrase: request.passphrase });
+    const exported = await this.document(request);
     const text = writeConfig(exported.document, {
       ...exported.context,
       ...(options.schemaUrl ? { schemaUrl: options.schemaUrl } : {}),
@@ -98,13 +98,22 @@ export class Configuration {
   }
 
   /**
+   * What you have as a document, as an export writes it, before it is text:
+   * what a home moving elsewhere is made into (`handover/`).
+   */
+  async document(request: ConfigExportRequest): Promise<Awaited<ReturnType<typeof exportConfig>>> {
+    return exportConfig(this.#deps, { devices: request.devices, automations: request.automations, secrets: request.secrets ?? 'none', passphrase: request.passphrase });
+  }
+
+  /**
    * What importing a file would do — nothing yet done: its problems with
    * their lines, what becomes of each device, link, automation and home
    * value, and what it still needs. `replace`: what the file does not have is
    * removed. `kept`: the file is a copy this home kept, its secrets sealed
-   * with its own key.
+   * with its own key. `lenient`: planned as a restore is — what it cannot
+   * carry is left out and said, never asked for — and applied so.
    */
-  plan(text: string, options: { mode: ImportMode; passphrase?: string; kept?: boolean }, by: string): Promise<ImportPlan> {
+  plan(text: string, options: { mode: ImportMode; passphrase?: string; kept?: boolean; lenient?: boolean }, by: string): Promise<ImportPlan> {
     return planImport(this.#deps, text, { ...options, by });
   }
 

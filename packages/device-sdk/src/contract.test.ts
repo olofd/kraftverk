@@ -109,6 +109,7 @@ const lan: TransportDefinition = {
   label: 'the home network',
   channel: 'bytes',
   exclusive: true,
+  nearby: false,
   platforms: ['server', 'native'],
   discovery: { server: 'list', native: 'list' },
 };

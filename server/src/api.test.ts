@@ -140,6 +140,13 @@ for (const way of WAYS) {
       expect(lamp.ways).toContainEqual({ method: 'bus', holder: 'home', availability: { ok: true } });
     });
 
+    test('keeps no other home beside it to bring in: a server’s is its own', async () => {
+      const home = way.api();
+      expect(await home.configuration.elsewhere()).toBeNull();
+      expect((await refused(home.configuration.plan({ from: 'this-app' }))).kind).toBe('not-found');
+      expect((await refused(home.configuration.plan({ from: 'copy' }))).kind).toBe('not-found');
+    });
+
     test('adds a device through setup, lists it, renames it, gives it a key — and refuses a key another has', async () => {
       const home = way.api();
       const hall = await addLamp(home, 'Hall', 'lamp-1');

@@ -30,6 +30,8 @@ export const busDefinition: TransportDefinition = {
   label: 'the test bus',
   channel: 'bytes',
   exclusive: true,
+  // A radio of sorts: the lamp is reached by whoever is near it.
+  nearby: true,
   platforms: ['server'],
   discovery: { server: 'list' },
 };

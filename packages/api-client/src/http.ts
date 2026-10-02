@@ -196,6 +196,7 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
       export: (request) => call('POST', '/config/export', request),
       plan: (request) => call('POST', '/config/plan', request),
       apply: (answers) => call('POST', '/config/apply', answers),
+      elsewhere: () => get('/config/elsewhere'),
     },
 
     policy: {

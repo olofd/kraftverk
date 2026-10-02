@@ -213,6 +213,18 @@ export type PictureChoice = { picture: PictureRef };
  */
 export type Holder = 'home' | 'this-app';
 
+/**
+ * A home this app keeps beside the one it shows, to bring into it
+ * (docs/PLAN-SHARED-CORE.md, phase 6h): `this-app`, the home it kept
+ * itself before it had a server, moving to the server; `copy`, the copy it
+ * kept of the server it used last, staying with this app. Only an app
+ * keeps either: a server's home has neither, and says so.
+ */
+export type HomeElsewhere = 'this-app' | 'copy';
+
+/** What a home this app keeps beside the one it shows has: what bringing it in would bring. Null when there is none, or it has been brought. */
+export type ElsewhereView = { from: HomeElsewhere; devices: number; automations: number } | null;
+
 /** One way a type can be added: its method, who would hold it, and whether it can be used now — or why not. */
 export type WayView = { method: string; holder: Holder; availability: Availability };
 
@@ -1092,9 +1104,11 @@ export interface KraftverkApi {
     /** What you have, as a file — its secrets left out, sealed, or plain where allowed. `schemaUrl`: for its first line. */
     export(request: ConfigExportRequest, options?: { schemaUrl?: string }): Promise<ConfigExported>;
     /** What importing a file would do, nothing written. */
-    plan(request: { text: string; mode?: 'merge' | 'replace'; passphrase?: string }): Promise<ImportPlan>;
+    plan(request: { text: string; mode?: 'merge' | 'replace'; passphrase?: string } | { from: HomeElsewhere; mode?: 'merge' | 'replace' }): Promise<ImportPlan>;
     /** A plan applied, with its answers, in one transaction; what it sets acting or removes wants a person's yes. */
     apply(answers: ImportAnswers): Promise<ImportApplied>;
+    /** What a home this app keeps beside the one it shows has, to bring in (`plan({ from })`); null when there is none — always, for a server's own home. */
+    elsewhere(): Promise<ElsewhereView>;
   };
   /** What the home sets as a whole that declarations name: how much is a load, the reserve. */
   policy: {

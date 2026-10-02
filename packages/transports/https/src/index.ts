@@ -13,6 +13,7 @@ const definition: TransportDefinition = {
   label: 'the internet',
   channel: 'http',
   exclusive: false,
+  nearby: false,
   platforms: ['server', 'web', 'native'],
   discovery: { server: 'none', web: 'none', native: 'none' },
 };

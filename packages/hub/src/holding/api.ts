@@ -5,7 +5,8 @@ import { deviceReader, runTool, ToolRefused, type ToolRefusal } from '@kraftverk
 
 import { Outbox } from '../live/outbox.ts';
 import { connectionSchema } from '../setup/index.ts';
-import { holdableHere, type Holding } from './holding.ts';
+import { holdableHere } from './holdable.ts';
+import type { Holding } from './holding.ts';
 
 /*
   The server's `KraftverkApi`, with what this app holds wrapped in
@@ -290,8 +291,14 @@ export function holdingApi(h: Holding): KraftverkApi {
       vocabulary: () => home.configuration.vocabulary(),
       schema: () => home.configuration.schema(),
       export: (request, options) => home.configuration.export(request, options),
-      plan: (request) => home.configuration.plan(request),
-      apply: (answers) => home.configuration.apply(answers),
+      /** A file, planned by the server; or the home this app kept itself, moving to it. */
+      async plan(request) {
+        if (!('from' in request)) return home.configuration.plan(request);
+        if (request.from !== 'this-app' || !h.moving) throw new ApiError('not-found', request.from === 'copy' ? 'A server’s home is not kept from a copy of itself' : 'This app keeps no home of its own to move');
+        return h.moving.plan(request.mode ?? 'merge');
+      },
+      apply: (answers) => (h.moving?.owns(answers.plan) ? h.moving.apply(answers) : home.configuration.apply(answers)),
+      elsewhere: async () => h.moving?.what() ?? null,
     },
 
     policy: {

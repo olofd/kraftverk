@@ -257,6 +257,7 @@ export type TransportDefinition = { // what a transport is, as data, the same on
   label: string;                     // 'Bluetooth'
   channel: 'bytes' | 'messages' | 'http';
   exclusive: boolean;                // an address is one physical thing
+  nearby: boolean;                   // reached only within range of its holder, as Bluetooth: such a way stays with the phone near it
   platforms: Platform[];             // where it has an implementation: 'server', 'web', 'native'
   discovery: Partial<Record<Platform, 'list' | 'chooser' | 'none'>>;
 };

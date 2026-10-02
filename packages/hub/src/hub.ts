@@ -37,6 +37,7 @@ import { Sampler } from './history/sampler.ts';
 import type { ProtocolRegistry } from './installed/protocols.ts';
 import type { TransportHost } from './installed/transports.ts';
 import type { DeviceTypeRegistry } from './installed/types.ts';
+import { KeepingCopy } from './handover/keep.ts';
 import { SetupService } from './setup/index.ts';
 
 /**
@@ -74,6 +75,11 @@ export type HubOptions = {
   audit?: AuditLog;
   /** Who holds what this home holds, in a device's health. */
   owner?: 'server' | 'client';
+  /**
+   * The copy an app kept of the server it used last, if this is that app's
+   * own home: offered to keep (`configuration.plan({ from: 'copy' })`).
+   */
+  copy?: SqlDatabase;
   /** The gateway's own limits, where they differ from its defaults: a test's shorter wait to verify. */
   gateway?: Partial<GatewayPolicy>;
   /** Where it says what happened: a line for a person reading a log. */
@@ -135,6 +141,8 @@ export class Hub {
    * Each good once, for a minute, bound to what was asked and who.
    */
   readonly yes = { tools: new Confirmations(), arming: new Confirmations() };
+  /** A server's home this app kept a copy of, to keep as its own: none on a server, or when there is none. */
+  readonly keeping: KeepingCopy | null;
 
   #log: NonNullable<HubOptions['log']>;
   #stopFreshness: (() => void) | null = null;
@@ -236,6 +244,7 @@ export class Hub {
       record,
       bus: this.bus,
     });
+    this.keeping = options.copy ? new KeepingCopy(this, options.copy, options.secrets) : null;
   }
 
   /**

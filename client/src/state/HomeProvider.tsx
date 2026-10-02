@@ -9,6 +9,7 @@ import { Pressable } from '../components/Pressable';
 import { appName } from '../platform/here';
 import { HomeOpenElsewhere, type OpenHome, type OpenOptions } from '../platform/home/home';
 import { openHome } from '../platform/home/open';
+import { readLastServerId } from '../platform/servers';
 import { useAuth } from './AuthProvider';
 import { useServers } from './ServersProvider';
 
@@ -55,13 +56,13 @@ type Opening =
   | { status: 'failed'; message: string };
 
 /** Opens the home where the app runs, and keeps what became of it: open, held by another tab, handed over, or why it failed. */
-function useOpened(server: OpenOptions['server']): { state: Opening; open: (takeOver: boolean) => () => void } {
+function useOpened(server: OpenOptions['server'], copyOf: string | null = null): { state: Opening; open: (takeOver: boolean) => () => void } {
   const [state, setState] = useState<Opening>({ status: 'opening' });
   const open = useCallback(
     (takeOver: boolean) => {
       let live = true;
       setState({ status: 'opening' });
-      openHome({ takeOver, server, name: appName() }).then(
+      openHome({ takeOver, server, name: appName(), copyOf }).then(
         (home) => {
           if (!live) return void home.close();
           setState({ status: 'open', home });
@@ -76,7 +77,7 @@ function useOpened(server: OpenOptions['server']): { state: Opening; open: (take
         live = false;
       };
     },
-    [server]
+    [copyOf, server]
   );
   useEffect(() => open(false), [open]);
   const home = state.status === 'open' ? state.home : null;
@@ -137,9 +138,9 @@ function ServerHome({ serverKey, url, children }: { serverKey: string; url: stri
   return <HomeContext.Provider value={value}>{children}</HomeContext.Provider>;
 }
 
-/** The app's own home: opened where the app runs, and shown once it is. */
+/** The app's own home: opened where the app runs, and shown once it is — with the copy it kept of the server it used last beside it. */
 function OwnHome({ children }: { children: ReactNode }) {
-  const { state, open } = useOpened(undefined);
+  const { state, open } = useOpened(undefined, readLastServerId());
   const [writesAllowed, setWritesAllowed] = useState(false);
   const home = state.status === 'open' ? state.home : null;
 

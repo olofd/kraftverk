@@ -20,6 +20,8 @@ export type ToWorker =
        * the browser keeps a home of its own.
        */
       server: { key: string; name: string } | null;
+      /** Without a server: the server it used last, whose home it kept a copy of — offered to keep. */
+      copyOf: string | null;
     }
   | { via: 'home'; kind: 'writes'; allowed: boolean }
   | { via: 'home'; kind: 'close' };

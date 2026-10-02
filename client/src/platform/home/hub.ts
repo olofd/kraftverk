@@ -51,8 +51,8 @@ function appInstalled(place: AppPlace, record: (entry: Parameters<AuditLog['reco
   );
 }
 
-/** The app's home in this place: not started; `start()` it. */
-export function appHub(place: AppPlace): Hub {
+/** The app's home in this place: not started; `start()` it. `copy`: the copy it kept of the server it used last, to keep as its own. */
+export function appHub(place: AppPlace & { copy?: SqlDatabase }): Hub {
   // Its timeline, made here so what a transport records goes on it too.
   const audit = new AuditLog(place.database);
   const installed = appInstalled(place, (entry) => audit.record(entry));
@@ -68,6 +68,7 @@ export function appHub(place: AppPlace): Hub {
     http: appHttp,
     owner: 'client',
     log,
+    ...(place.copy ? { copy: place.copy } : {}),
   });
 }
 
@@ -76,7 +77,7 @@ export function appHub(place: AppPlace): Hub {
  * `KraftverkApi` with this app's own ways wrapped in, kept in this app's
  * own database. Not started; `start()` it.
  */
-export function appHolding(place: AppPlace & { home: KraftverkApi; name: string }): Holding {
+export function appHolding(place: AppPlace & { home: KraftverkApi; name: string; own?: SqlDatabase }): Holding {
   // What a transport records is owed to the server's timeline, as the holding's own entries are.
   let holding: Holding | null = null;
   const installed = appInstalled(place, (entry) => holding?.owe('audit', null, entry));
@@ -89,6 +90,8 @@ export function appHolding(place: AppPlace & { home: KraftverkApi; name: string 
     readOnly: place.readOnly,
     http: appHttp,
     log,
+    // The home this app kept itself before, offered to the server.
+    ...(place.own ? { own: { database: place.own, sealing: appSealing } } : {}),
   });
   return holding;
 }

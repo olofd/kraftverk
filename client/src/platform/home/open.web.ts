@@ -73,6 +73,7 @@ export async function openHome(options: OpenOptions): Promise<OpenHome> {
     takeOver: Boolean(options.takeOver),
     writes: false,
     server: options.server ? { key: options.server.key, name: options.name } : null,
+    copyOf: options.server ? null : (options.copyOf ?? null),
   });
   await opened;
 

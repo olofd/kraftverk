@@ -200,6 +200,14 @@ export type TransportDefinition = {
    * True for a broker client, a peripheral, an IP; false for a web API.
    */
   exclusive: boolean;
+  /**
+   * A device on it is reached only within range of whoever holds it — a
+   * radio's, as Bluetooth's: what it reaches depends on where the holder
+   * is, not on which network it is on. A way over it stays with the phone
+   * near the device when a home moves to a server (docs/PLAN-SHARED-CORE.md,
+   * phase 6); a way over any other moves with the home.
+   */
+  nearby: boolean;
   /** Where it has an implementation. */
   platforms: readonly Platform[];
   /**

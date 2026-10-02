@@ -225,6 +225,8 @@ const definition: TransportDefinition = {
   label: '${title.toLowerCase()}',
   channel: 'bytes',
   exclusive: true,
+  // Reached only within a radio's range of whoever holds it, as Bluetooth is: then true.
+  nearby: false,
   platforms: ['server'],
   discovery: { server: 'none' },
 };

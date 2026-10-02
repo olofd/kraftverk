@@ -54,8 +54,21 @@ export async function openHome(options: OpenOptions): Promise<OpenHome> {
   // One app, one home: nothing on a phone asks for it.
   const ended = new Promise<'handed-over'>(() => {});
 
+  /** Another file this app keeps, opened only if it is there and of this schema: a home brought in from it is offered, never written over. */
+  const beside = (file: string) => {
+    const opened = fromExpoSqlite(openDatabaseSync(file));
+    try {
+      return readyDatabase(opened, Constants.expoConfig?.version ?? 'app');
+    } catch {
+      opened.close();
+      return null;
+    }
+  };
+
   if (options.server) {
-    const holding = appHolding({ ...place, home: options.server.api, name: options.name });
+    // The home this app kept itself before it had a server: offered to it.
+    const own = beside(databaseFile(schemaFingerprint()));
+    const holding = appHolding({ ...place, home: options.server.api, name: options.name, ...(own ? { own } : {}) });
     await holding.start();
     return {
       api: holding.api,
@@ -67,12 +80,15 @@ export async function openHome(options: OpenOptions): Promise<OpenHome> {
       close: async () => {
         await holding.stop();
         database.close();
+        own?.close();
       },
       ended,
     };
   }
 
-  const hub = appHub(place);
+  // The copy this app kept of the server it used last: offered to keep.
+  const copy = options.copyOf ? beside(databaseFile(schemaFingerprint(), options.copyOf)) : null;
+  const hub = appHub({ ...place, ...(copy ? { copy } : {}) });
   await hub.start();
   return {
     api: hub.as(OWNER),
@@ -85,6 +101,7 @@ export async function openHome(options: OpenOptions): Promise<OpenHome> {
     close: async () => {
       await hub.stop();
       database.close();
+      copy?.close();
     },
     ended,
   };

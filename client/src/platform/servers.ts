@@ -21,6 +21,7 @@ import { readPreference, writePreference, clearPreference } from './preferences'
 
 const LIST_KEY = 'kraftverk.servers';
 const ACTIVE_KEY = 'kraftverk.servers.active';
+const LAST_KEY = 'kraftverk.servers.last';
 
 export type SavedServer = {
   id: string;
@@ -141,8 +142,16 @@ export function readActiveServerId(): string | null {
 }
 
 export function writeActiveServerId(id: string | null): void {
+  // Leaving a server for none: which one it was, whose home this app kept a copy of.
+  const was = readPreference(ACTIVE_KEY);
+  if (!id && was) writePreference(LAST_KEY, was);
   if (id) writePreference(ACTIVE_KEY, id);
   else clearPreference(ACTIVE_KEY);
+}
+
+/** The server this app used last before it had none: whose home it kept a copy of, offered to keep. */
+export function readLastServerId(): string | null {
+  return readPreference(LAST_KEY);
 }
 
 export function readActiveServer(): SavedServer | null {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
 import { Button, Input, Text, XStack, YStack } from 'tamagui';
 
-import { applyPlan, describeError, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-client';
+import { applyPlan, describeError, type ElsewhereView, type HomeElsewhere, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-client';
 import { checkDocument, configJsonSchema, CURRENT_VERSION, readConfig, type Vocabulary } from '@kraftverk/home-file';
 import { Card, RowSeparator, SectionLabel, SegmentedControl, Toggle, haptic, Icon } from '@kraftverk/ui';
 
@@ -32,7 +32,27 @@ const ACTION: Record<ImportItem['action'], { label: string; tone: Tone }> = {
  * it still needs; then applied, with those answers, once you say yes to what
  * it would set acting or take away.
  */
-export function ImportCard({ vocabulary, restored, onApplied }: { vocabulary: Vocabulary | null; restored: boolean; onApplied: () => void }) {
+/** Where a plan was read from, to read it again. */
+type Source = { restored: true } | { text: string } | { from: HomeElsewhere };
+
+/** What bringing in a home kept elsewhere is called, by where it is. */
+const BRING: Record<HomeElsewhere, string> = { 'this-app': 'Move this app’s own home here', copy: 'Keep your server’s home in this app' };
+
+export function ImportCard({
+  vocabulary,
+  restored,
+  elsewhere,
+  start,
+  onApplied,
+}: {
+  vocabulary: Vocabulary | null;
+  restored: boolean;
+  /** A home this app keeps beside this one, to bring in, if there is one. */
+  elsewhere: ElsewhereView;
+  /** Read straight away: the home kept elsewhere a card on the home page offered. */
+  start: HomeElsewhere | null;
+  onApplied: () => void;
+}) {
   const { api } = useHome();
   // The copy a restore was made from is a server's: only offered with one.
   const { server } = useServers();
@@ -40,7 +60,7 @@ export function ImportCard({ vocabulary, restored, onApplied }: { vocabulary: Vo
   const [text, setText] = useState('');
   const [mode, setMode] = useState<Mode>('merge');
   const [passphrase, setPassphrase] = useState('');
-  const [plan, setPlan] = useState<(ImportPlan & { fromRestored: boolean }) | null>(null);
+  const [plan, setPlan] = useState<(ImportPlan & { source: Source }) | null>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [applied, setApplied] = useState<ImportApplied | null>(null);
@@ -56,7 +76,7 @@ export function ImportCard({ vocabulary, restored, onApplied }: { vocabulary: Vo
   const localProblems = checked?.text === text ? checked.problems : [];
   const sealed = /sealed:v1:/.test(text) || plan?.needs.passphrase != null;
 
-  const read = async (source: { restored: true } | { text: string }) => {
+  const read = async (source: Source) => {
     haptic();
     setBusy(true);
     setProblem(null);
@@ -67,14 +87,28 @@ export function ImportCard({ vocabulary, restored, onApplied }: { vocabulary: Vo
         if (!server) throw new Error('Only a server keeps a copy beside its database');
         return server.restoredPlan(mode);
       };
-      const next = 'text' in source ? await api.configuration.plan({ text: source.text, mode, ...(passphrase ? { passphrase } : {}) }) : await restored();
-      setPlan({ ...next, fromRestored: 'restored' in source });
+      const next =
+        'text' in source
+          ? await api.configuration.plan({ text: source.text, mode, ...(passphrase ? { passphrase } : {}) })
+          : 'from' in source
+            ? await api.configuration.plan({ from: source.from, mode })
+            : await restored();
+      setPlan({ ...next, source });
     } catch (err) {
       setProblem(describeError(err) || 'It could not be read');
     } finally {
       setBusy(false);
     }
   };
+
+  // Offered from the home page: read at once.
+  const [started, setStarted] = useState(false);
+  useEffect(() => {
+    if (!start || started) return;
+    setStarted(true);
+    void read({ from: start });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [start, started]);
 
   const openFile = () => {
     if (Platform.OS !== 'web') return;
@@ -137,6 +171,11 @@ export function ImportCard({ vocabulary, restored, onApplied }: { vocabulary: Vo
             Import the restored copy again
           </Button>
         ) : null}
+        {elsewhere ? (
+          <Button size="$4" disabled={busy} onPress={() => void read({ from: elsewhere.from })}>
+            {BRING[elsewhere.from]}
+          </Button>
+        ) : null}
       </XStack>
       {problem ? (
         <Text fontSize={13} color="$danger" lineHeight={19} role="alert">
@@ -147,7 +186,7 @@ export function ImportCard({ vocabulary, restored, onApplied }: { vocabulary: Vo
         <PlanView
           key={plan.id ?? 'refused'}
           plan={plan}
-          onAgain={() => void read(plan.fromRestored ? { restored: true } : { text })}
+          onAgain={() => void read(plan.source)}
           onApplied={(done) => (setApplied(done), setPlan(null), onApplied())}
         />
       ) : null}

@@ -12,6 +12,7 @@ const definition: TransportDefinition = {
   channel: 'messages',
   // A device's address on the broker is the id its topics name it by: one device.
   exclusive: true,
+  nearby: false,
   platforms: ['server'],
   discovery: { server: 'list' },
 };

@@ -82,6 +82,8 @@ type Kept = {
   expiresAt: number;
   /** Restoring: automations restored turned off, and why. */
   turnedOff: Map<string, string[]>;
+  /** Planned as a restore is: what it cannot carry — a secret, a part — is left out and said, never asked for. */
+  lenient: boolean;
 };
 
 const PLAN_TTL_MS = 15 * 60_000;
@@ -293,7 +295,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
   });
   const id = placed.length ? null : `p-${randomHex(12)}`;
   const view: ImportPlan = { id, from: read.from, problems: placed, devices, links, automations, policy, needs, notes };
-  if (id) deps.pending.set(id, { view, document, mode: options.mode, secrets, by: options.by, expiresAt: Date.now() + PLAN_TTL_MS, turnedOff });
+  if (id) deps.pending.set(id, { view, document, mode: options.mode, secrets, by: options.by, expiresAt: Date.now() + PLAN_TTL_MS, turnedOff, lenient: Boolean(options.lenient) });
   return view;
 }
 
@@ -465,6 +467,8 @@ export async function applyImport(deps: ImportDeps, id: string, by: string, choi
   const kept = deps.pending.get(id);
   if (!kept || kept.by !== by || kept.expiresAt < Date.now()) throw new ApiError('not-found', 'That plan has gone: read the file again');
   const { document, view } = kept;
+  // A plan made as a restore is applied as one.
+  options = { lenient: options.lenient ?? kept.lenient };
   if (view.needs.passphrase) throw new ApiError('invalid', view.needs.passphrase === 'missing' ? 'Give the passphrase its secrets are sealed with' : 'The passphrase does not open its secrets');
   const devicesIn = (key: string) => !choices.include?.devices || choices.include.devices.includes(key);
   const automationsIn = (key: string) => !choices.include?.automations || choices.include.automations.includes(key);
