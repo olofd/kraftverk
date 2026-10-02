@@ -7,7 +7,7 @@ data model in [`DATA-MODEL.md`](DATA-MODEL.md). This document holds only what
 those cannot: where things stand right now, and what has been learned the hard
 way. Where it describes code that the plan replaces, the plan is the target.
 
-Last updated 2026-10-02.
+Last updated 2026-10-03.
 
 > **Phase: research and development — strict version 1.** Nobody runs
 > kraftverk in production but its owner, so nothing here is kept backward
@@ -37,8 +37,15 @@ empty: the core names no product, and every device is found, not listed.
   **master**, the others **follow** it (`createFollower`) and hold for it
   the ways they reach; a connection method says what it `needs` of the
   node holding it. 6i is done too: no logic is left in the server or the
-  app (the architecture check holds it at zero). Next: the structure pass. Places in the model wait
-  on the owner's decision about what groups things (a home, or places).
+  app (the architecture check holds it at zero). The structure pass, and
+  an outside review after it (2026-10-02), are done: each file holds one
+  thing, a refusal crosses every wire as itself, and the HTTP client and
+  the routes are held in step by a test. Places are out of the schema
+  until the owner decides what groups things (a home, or places). Still
+  open, each a decision first: whether a node is trusted only once a
+  person confirms it (today it says so itself); a follower asked as the
+  person using it (`as(caller)`), not as its node; and what step 32 needs
+  before a package from outside (ARCHITECTURE.md, step 32).
 - **The layers are packages**: `packages/transports` (mqtt with the broker,
   ble with system, web and native entries, lan, https), `packages/protocols`
   (sydpower, tuya-local, open-meteo, elprisetjustnu, niu-cloud), `packages/devices`
