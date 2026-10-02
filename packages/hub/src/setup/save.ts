@@ -13,7 +13,8 @@ import {
 
 import { ApiError } from '@kraftverk/api-contract';
 import type { DeviceCatalog, DeviceRecord, ConnectionStore, LinkStore } from '@kraftverk/store';
-import { connectionSchema, type Draft, type SaveRequest } from './draft.ts';
+import { connectionSchema } from '../installed/connection-schema.ts';
+import type { Draft, SaveRequest } from './draft.ts';
 
 /**
  * Saving a draft: what it may be saved as, and the one write — the device (or

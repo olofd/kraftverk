@@ -1,8 +1,8 @@
 import { ApiError, type Caller, type KraftverkApi } from '@kraftverk/api-contract';
-import { isLinkKind, isSecretField, linkFits, linkKindSpec, partName, partsOf, savedDeviceId } from '@kraftverk/device-sdk';
+import { isLinkKind, linkFits, linkKindSpec, partName, partsOf, savedDeviceId } from '@kraftverk/device-sdk';
 
 import type { Hub } from '../node/hub.ts';
-import { connectionSchema } from '../setup/draft.ts';
+import { checkSecretFields } from '../installed/connection-schema.ts';
 import { scopeOf } from './scope.ts';
 
 /*
@@ -53,9 +53,7 @@ export function connectionsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'co
         const { device, connection } = connectionOf(deviceId, connectionId);
         if (connection.heldBy !== hub.self.id) throw new ApiError('conflict', 'That connection’s secrets are kept by the node that holds it');
         const method = sessions.typeOf(device)?.connections.find((candidate) => candidate.id === connection.method) ?? null;
-        const schema = connectionSchema(method, method ? protocols.get(method.protocol) : null);
-        const refused = Object.keys(given).filter((field) => !schema.fields[field] || !isSecretField(schema.fields[field]!));
-        if (refused.length) throw new ApiError('invalid', `Not a secret of this connection: ${refused.join(', ')}`);
+        checkSecretFields(method, method ? protocols.get(method.protocol) : null, given);
         connections.setSecrets(connection.id, given);
         // Which fields, never their values.
         record('device.secrets-changed', 'device', device.id, `Changed ${Object.keys(given).join(', ')} for "${device.name}"`);

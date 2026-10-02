@@ -11,7 +11,7 @@ import { AppState, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, 
 
 import { drafts } from '../src/automations/drafts.ts';
 import { exportConfig } from '../src/configuration/export.ts';
-import { applyImport, PendingPlans, planImport, type ImportDeps } from '../src/configuration/import.ts';
+import { PendingPlans, planImport, startWritten, writeImport, type ImportChoices, type ImportDeps } from '../src/configuration/import.ts';
 import { restoreFrom } from '../src/configuration/restore.ts';
 import type { PassphraseSealing } from '../src/configuration/seal.ts';
 import { ProtocolRegistry } from '../src/installed/protocols.ts';
@@ -31,6 +31,13 @@ import { testDatabase } from './home.ts';
 
 let db: SqlDatabase;
 let deps: ImportDeps & { record: (entry: AuditRecord) => void };
+
+/** A plan applied as an apply does: written, then set going. */
+async function applyImport(on: ImportDeps, id: string, by: string, choices: ImportChoices) {
+  const written = writeImport(on, id, by, choices);
+  await startWritten(on, written);
+  return written.applied;
+}
 const sessionsSynced: number[] = [];
 const PASSPHRASE = 'a passphrase of some length';
 
@@ -144,6 +151,31 @@ describe('a server’s own export, into a database wiped', () => {
     await expect(applyImport(deps, plan.id!, 'someone else', {})).rejects.toThrow('That plan has gone');
     await applyImport(deps, plan.id!, 'olof', {});
     await expect(applyImport(deps, plan.id!, 'olof', {})).rejects.toThrow('That plan has gone');
+  });
+
+  test('what the database will not keep is the file’s, refused; a fault in the code is not said as one — and either way nothing is written', async () => {
+    aHome();
+    const text = await exported();
+    db.exec('DELETE FROM automation; DELETE FROM device;');
+    const add = deps.catalog.add.bind(deps.catalog);
+
+    deps.catalog.add = () => {
+      throw new Error('UNIQUE constraint failed: device.key');
+    };
+    const refused = await planImport(deps, text, { mode: 'merge', passphrase: PASSPHRASE, by: 'olof' });
+    const error = await applyImport(deps, refused.id!, 'olof', {}).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).kind).toBe('invalid');
+
+    deps.catalog.add = () => {
+      throw new TypeError('a fault in the code');
+    };
+    const faulty = await planImport(deps, text, { mode: 'merge', passphrase: PASSPHRASE, by: 'olof' });
+    const fault = await applyImport(deps, faulty.id!, 'olof', {}).catch((caught: unknown) => caught);
+    expect(fault).toBeInstanceOf(TypeError);
+
+    deps.catalog.add = add;
+    expect(deps.catalog.list()).toEqual([]);
   });
 });
 

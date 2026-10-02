@@ -6,7 +6,7 @@ import { AppState, ConnectionStore, DeviceCatalog, deviceStore, HomeStore, LastH
 
 import type { PassphraseSealing } from '../configuration/seal.ts';
 import { MovingToMaster } from '../handover/move.ts';
-import type { Installed } from '../installed/from.ts';
+import { startTransports, type Installed } from '../installed/from.ts';
 import { nodeParts } from '../node/parts.ts';
 import { SetupService } from '../setup/service.ts';
 import { unref } from '../timers.ts';
@@ -123,6 +123,10 @@ export class Follower {
   #joined = false;
   #sending: Promise<void> | null = null;
   #sendEveryMs: number;
+  /** The last list held, one after the other. */
+  #holding: Promise<void> = Promise.resolve();
+  /** What the last list held came to, as written: the same again is not written again. Null, written since by something else. */
+  #heldAs: string | null = null;
 
   constructor(options: FollowerOptions) {
     const db = options.database;
@@ -207,7 +211,7 @@ export class Follower {
    * last heard — and sending what is owed.
    */
   async start(): Promise<void> {
-    await this.installed.transports.startAll(this.installed.transports.here());
+    await startTransports(this.installed, this.#log);
     await this.join().catch((error: unknown) => this.#log('warn', `[follower] the master did not hear who this node is: ${(error as Error).message}`));
     const list = await this.refresh();
     if (!list) {
@@ -336,7 +340,14 @@ export class Follower {
    * held while nothing above it reaches the device (`toHold`). A device it
    * no longer has a way to is let go, with what was kept for it.
    */
-  async hold(list: readonly DeviceView[]): Promise<void> {
+  hold(list: readonly DeviceView[]): Promise<void> {
+    // One at a time: two lists heard together are held in the order they came.
+    const held = this.#holding.then(() => this.#hold(list));
+    this.#holding = held.catch(() => undefined);
+    return held;
+  }
+
+  async #hold(list: readonly DeviceView[]): Promise<void> {
     const me = this.nodeId;
     // Never two writers: a node does not follow itself, whatever it was told.
     if (this.master()?.id === me) {
@@ -345,20 +356,30 @@ export class Follower {
     }
     this.#seen = new Map(list.map((device) => [device.id, device]));
     const mine = list.filter((device) => device.connections.some((connection) => this.#mine(connection, me)));
+    const kept = mine.map((device) => ({
+      record: recordOf(device),
+      ways: device.connections.filter((connection) => this.#mine(connection, me)).map((way) => ({ ...way, heldBy: way.heldBy.id, deviceId: device.id, createdAt: device.addedAt })),
+    }));
+    const holdNow = mine.filter((device) => toHold(device, me)).map((device) => device.id);
+    // As it was last written, nothing is written again: a screen reading the list every few seconds costs a comparison, not a rewrite.
+    const as = JSON.stringify([kept, holdNow]);
+    if (as === this.#heldAs) return;
+    this.#heldAs = null;
+
     const keep = new Set(mine.map((device) => device.id));
-    for (const kept of this.catalog.list()) {
-      if (keep.has(kept.id)) continue;
-      await this.sessions.close(kept.id);
-      this.catalog.deleteForever(kept.id);
+    for (const device of this.catalog.list()) {
+      if (keep.has(device.id)) continue;
+      await this.sessions.close(device.id);
+      this.catalog.deleteForever(device.id);
     }
-    for (const device of mine) {
-      this.catalog.mirror(recordOf(device));
-      const ways = device.connections.filter((connection) => this.#mine(connection, me));
-      for (const gone of this.connections.forDevice(device.id)) if (!ways.some((way) => way.id === gone.id)) this.connections.remove(gone.id);
-      for (const way of ways) this.connections.mirror({ ...way, heldBy: way.heldBy.id, deviceId: device.id, createdAt: device.addedAt });
+    for (const { record, ways } of kept) {
+      this.catalog.mirror(record);
+      for (const gone of this.connections.forDevice(record.id)) if (!ways.some((way) => way.id === gone.id)) this.connections.remove(gone.id);
+      for (const way of ways) this.connections.mirror(way);
     }
-    this.#holdNow = new Set(mine.filter((device) => toHold(device, me)).map((device) => device.id));
+    this.#holdNow = new Set(holdNow);
     await this.sessions.sync(this.catalog.list());
+    this.#heldAs = as;
   }
 
   /** Whether a way is this node's own. */
@@ -419,6 +440,7 @@ export class Follower {
 
   /** Lets go of a device the master no longer has, or no longer has a way of this node's to. */
   async forget(deviceId: SavedDeviceId): Promise<void> {
+    this.#heldAs = null;
     await this.sessions.close(deviceId);
     if (this.catalog.get(deviceId)) this.catalog.deleteForever(deviceId);
     this.#holdNow.delete(deviceId);

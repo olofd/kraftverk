@@ -1,5 +1,5 @@
 import type { CheckOutcome, DraftView, SaveInput } from '@kraftverk/api-contract';
-import type { NodeId, ConfigSchema, ConnectionMethod, DeviceType, Identified, Protocol, SetupStepView, Sighting } from '@kraftverk/device-sdk';
+import type { NodeId, ConnectionMethod, DeviceType, Identified, SetupStepView, Sighting } from '@kraftverk/device-sdk';
 
 import type { Reach } from './reach.ts';
 
@@ -37,11 +37,6 @@ export type Draft = {
 
 /** A save as the route has parsed it (`SaveInput` with its defaults applied). */
 export type SaveRequest = SaveInput & Required<Pick<SaveInput, 'name' | 'mode'>>;
-
-/** The schema of everything a connection stores for a method: its own config and its protocol's credentials. */
-export function connectionSchema(method: ConnectionMethod | null, protocol: Protocol | null): ConfigSchema {
-  return { fields: { ...(protocol?.credentials?.schema.fields ?? {}), ...(method?.config?.fields ?? {}) } };
-}
 
 /** A draft as the app sees it: never a secret, only which fields have one. */
 export function viewOf(draft: Draft): DraftView {

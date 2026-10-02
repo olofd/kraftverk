@@ -224,6 +224,28 @@ test('a way this app holds: set up here, judged and kept by the server, held her
   expect(hub.connections.secretFields(way.id)).toEqual([]);
 });
 
+test('a screen reading the list again writes nothing while nothing changed — and what changed is kept at once', async () => {
+  const { home } = await server();
+  const { follower, bus } = await app(home);
+  const saved = await addLamp(follower.api, bus);
+  await follower.api.devices.list();
+  let mirrored = 0;
+  const mirror = follower.catalog.mirror.bind(follower.catalog);
+  follower.catalog.mirror = (record) => {
+    mirrored += 1;
+    return mirror(record);
+  };
+
+  await follower.api.devices.list();
+  await follower.api.devices.list();
+  expect(mirrored).toBe(0);
+
+  await home.devices.update(saved.id, { name: 'Hall lamp' });
+  await follower.api.devices.list();
+  expect(mirrored).toBe(1);
+  expect(follower.catalog.get(saved.id)?.name).toBe('Hall lamp');
+});
+
 test('with the server away, what this app holds it still reaches, and what it says waits to be sent', async () => {
   const { home } = await server();
   const first = await app(home);

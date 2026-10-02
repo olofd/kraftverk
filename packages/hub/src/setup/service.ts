@@ -24,11 +24,12 @@ import { unref } from '../timers.ts';
 import { randomHex, type DeviceCatalog, type DeviceRecord, type ConnectionStore, type LinkStore, type SqlDatabase } from '@kraftverk/store';
 import type { SessionManager } from '@kraftverk/holder';
 import type { DeviceTypeRegistry } from '../installed/types.ts';
-import { connectionSchema, DRAFT_TTL_MS, viewOf, type Draft, type SaveRequest } from './draft.ts';
+import { connectionSchema } from '../installed/connection-schema.ts';
+import { DRAFT_TTL_MS, viewOf, type Draft, type SaveRequest } from './draft.ts';
 import { overHardware, SIMULATED_REACH } from './reach.ts';
 import { saveable, writeSaved } from './save.ts';
 
-export { connectionSchema, type SaveRequest } from './draft.ts';
+export type { SaveRequest } from './draft.ts';
 
 /**
  * Adding a device to a home (docs/DATA-MODEL.md §1).
@@ -75,16 +76,23 @@ export class SetupService {
   #traits(node: NodeId): NodeTraits {
     return this.deps.traits(node) ?? { alwaysOn: false, reachable: false, trusted: false };
   }
-  #sweeper: ReturnType<typeof setInterval>;
+  /** Forgets drafts past their time, each minute — only while there are drafts: made, nothing runs. */
+  #sweeper: ReturnType<typeof setInterval> | null = null;
 
-  constructor(private deps: SetupServiceDeps) {
-    this.#sweeper = setInterval(() => this.#sweep(), 60_000);
-    unref(this.#sweeper);
-  }
+  constructor(private deps: SetupServiceDeps) {}
 
   stop(): void {
-    clearInterval(this.#sweeper);
     for (const id of [...this.#drafts.keys()]) this.discard(id);
+  }
+
+  #sweepWhileNeeded(): void {
+    if (this.#drafts.size && !this.#sweeper) {
+      this.#sweeper = setInterval(() => this.#sweep(), 60_000);
+      unref(this.#sweeper);
+    } else if (!this.#drafts.size && this.#sweeper) {
+      clearInterval(this.#sweeper);
+      this.#sweeper = null;
+    }
   }
 
   /**
@@ -182,6 +190,7 @@ export class SetupService {
     const draft = this.#drafts.get(id);
     draft?.stopWatching?.();
     this.#drafts.delete(id);
+    this.#sweepWhileNeeded();
   }
 
   /** What the transport sees that this device's protocol recognises, each marked when it is already yours. */
@@ -388,6 +397,7 @@ export class SetupService {
       expiresAt: Date.now() + DRAFT_TTL_MS,
     };
     this.#drafts.set(draft.id, draft);
+    this.#sweepWhileNeeded();
     return draft;
   }
 

@@ -48,6 +48,7 @@ export class SendQueue {
 
   /** Keeps at most `max` of a kind, the newest: a master away for weeks does not fill a phone that follows it. */
   trim(kind: SendKind, max: number): void {
-    this.#db.query('DELETE FROM send_queue WHERE kind = ? AND id NOT IN (SELECT id FROM send_queue WHERE kind = ? ORDER BY id DESC LIMIT ?)').run(kind, kind, max);
+    // The oldest kept is found by the index, and only what is older goes: nothing is read when there is nothing to trim.
+    this.#db.query('DELETE FROM send_queue WHERE kind = ?1 AND id <= (SELECT id FROM send_queue WHERE kind = ?1 ORDER BY id DESC LIMIT 1 OFFSET ?2)').run(kind, max);
   }
 }

@@ -1,10 +1,10 @@
 import { ApiError, type AutomationView, type DeviceView, type DraftView, type KraftverkApi, type LiveUpdate, type TransportView, type WayView } from '@kraftverk/api-contract';
-import { capabilityIn, connectionId as asConnectionId, isSecretField, methodOf, type SavedDeviceId } from '@kraftverk/device-sdk';
-import { subjectOf } from '@kraftverk/gateway';
-import { deviceReader, runTool, ToolRefused, type ToolRefusal } from '@kraftverk/holder';
+import { capabilityIn, connectionId as asConnectionId, methodOf, type SavedDeviceId } from '@kraftverk/device-sdk';
+import { deviceReader } from '@kraftverk/holder';
 
+import { runAskedTool } from '../devices/tools.ts';
 import { Outbox } from '../live/outbox.ts';
-import { connectionSchema } from '../setup/service.ts';
+import { checkSecretFields } from '../installed/connection-schema.ts';
 import { holdableHere } from '../installed/holdable.ts';
 import type { Follower } from './follower.ts';
 
@@ -24,8 +24,6 @@ import type { Follower } from './follower.ts';
 
 /** What the live stream from what this node holds coalesces over, as a home's does. */
 const FLUSH_MS = 250;
-/** Why a tool was refused, as the kind of refusal it is: the home's map. */
-const TOOL_REFUSAL: Record<ToolRefusal, ApiError['kind']> = { missing: 'not-found', input: 'invalid', 'read-only': 'locked', failed: 'conflict', answer: 'failed' };
 
 export function followerApi(h: Follower): KraftverkApi {
   const { home } = h;
@@ -71,8 +69,8 @@ export function followerApi(h: Follower): KraftverkApi {
     /** The master's types, with the ways this node can hold for it: a type this node has installed too, over a way it can hold where it runs. */
     async deviceTypes() {
       const { answer: list } = await h.kept('device-types', () => home.deviceTypes());
+      // Read, not started: the transports this node uses started with it (`Follower.start`).
       const { transports } = h.installed;
-      await transports.startAll(transports.here());
       return {
         ...list,
         types: list.types.map((listing) => {
@@ -119,22 +117,17 @@ export function followerApi(h: Follower): KraftverkApi {
         const { device, session } = heldDevice(id);
         const spec = h.installed.types.get(device.typeId)?.tools?.[name];
         if (!spec || typeof session.tools?.[name] !== 'function') throw new ApiError('not-found', `${device.name} has no tool called "${name}"`);
-        if (body.reading && spec.writes) throw new ApiError('not-allowed', `${name} changes the device: send it as a write`);
-        const input = body.input ?? {};
-        if (spec.writes && spec.confirm) {
-          const subject = subjectOf({ device: device.id, tool: name, input, by: intent().by });
-          if (!h.yes.accept(body.confirmation, subject)) throw new ApiError('needs-yes', spec.confirm, { needsConfirmation: h.yes.ask(subject) });
-        }
-        const record = (kind: string, summary: string) => h.owe('audit', null, { at: new Date().toISOString(), kind, actor: intent().by, resourceKind: 'device', resource: device.id, summary, detail: { tool: name, input } });
-        try {
-          const answer = await runTool({ deviceName: device.name, name, spec, session, input, readOnly: h.readOnly() && !h.sessions.simulated(device.id) });
-          if (spec.writes) record('device.tool', `Ran ${spec.label.toLowerCase()} on "${device.name}"`);
-          return answer;
-        } catch (error) {
-          if (spec.writes) record('device.tool-refused', `${spec.label} on "${device.name}" was refused: ${(error as Error).message}`);
-          if (error instanceof ToolRefused) throw new ApiError(TOOL_REFUSAL[error.reason], error.message);
-          throw error;
-        }
+        return runAskedTool({
+          device,
+          name,
+          spec,
+          session,
+          body,
+          by: intent().by,
+          confirmations: h.yes,
+          readOnly: h.readOnly() && !h.sessions.simulated(device.id),
+          record: (kind, summary, detail) => h.owe('audit', null, { at: new Date().toISOString(), kind, actor: intent().by, resourceKind: 'device', resource: device.id, summary, detail }),
+        });
       },
     },
 
@@ -247,9 +240,7 @@ export function followerApi(h: Follower): KraftverkApi {
         const way = h.connections.get(asConnectionId(connection));
         const type = record ? h.installed.types.get(record.typeId) : null;
         const method = type && way ? methodOf(type, way.method) : null;
-        const schema = connectionSchema(method, method ? (h.installed.protocols.get(method.protocol) ?? null) : null);
-        const refused = Object.keys(secrets).filter((field) => !schema.fields[field] || !isSecretField(schema.fields[field]!));
-        if (refused.length) throw new ApiError('invalid', `Not a secret of this connection: ${refused.join(', ')}`);
+        checkSecretFields(method, method ? (h.installed.protocols.get(method.protocol) ?? null) : null, secrets);
         await h.setSecrets(connection, secrets);
         h.owe('audit', null, { at: new Date().toISOString(), kind: 'device.secrets-changed', actor: intent().by, resourceKind: 'device', resource: device, summary: `Changed ${Object.keys(secrets).join(', ')} for "${record?.name ?? device}", kept by ${h.name}` });
         return h.view(await home.devices.get(device));

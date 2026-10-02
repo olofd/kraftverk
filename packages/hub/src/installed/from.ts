@@ -51,3 +51,20 @@ export function installedFrom(lists: InstalledLists, host: TransportHostOptions)
   types.checkConnections({ protocol: (id) => protocols.get(id), transport: (id) => transports.definition(id) });
   return { types, protocols, transports };
 }
+
+/**
+ * Starts the transports an installed type reaches its devices over, where
+ * they run here: finding a device has to work before there is one to open.
+ * One that cannot run here is said, and the others carry on. What no type
+ * uses is never started — a broker nobody connects to, a radio nobody asks.
+ */
+export async function startTransports(installed: Installed, log: (level: 'warn', message: string) => void): Promise<void> {
+  const { types, transports } = installed;
+  const used = new Set(types.all().flatMap((type) => type.connections.map((method) => method.transport)));
+  const starting = transports.here().filter((id) => used.has(id));
+  await transports.startAll(starting);
+  for (const id of starting) {
+    const available = transports.available(id);
+    if (!available.ok) log('warn', `[transports] ${id} is unavailable here: ${available.reason}`);
+  }
+}

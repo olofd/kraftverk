@@ -26,9 +26,9 @@ import {
   type DeviceEntry,
   type SecretValue,
   type WriteContext,
+  isSealed,
 } from '@kraftverk/home-file';
-import { isSealed } from '@kraftverk/home-file';
-import { randomHex, type DeviceRecord, type SqlDatabase } from '@kraftverk/store';
+import { isConstraintError, randomHex, type DeviceRecord, type SqlDatabase } from '@kraftverk/store';
 
 import type { Checked } from '../automations/drafts.ts';
 import type { TransportHost } from '../installed/transports.ts';
@@ -93,14 +93,11 @@ const PLAN_TTL_MS = 15 * 60_000;
  */
 export class PendingPlans {
   #plans = new Map<string, Kept>();
-  #sweeper = setInterval(() => this.forgetExpired(), 60_000);
-
-  constructor() {
-    unref(this.#sweeper);
-  }
+  /** Each minute, only while a plan waits: made, nothing runs. */
+  #sweeper: ReturnType<typeof setInterval> | null = null;
 
   forgetExpired(now = Date.now()): void {
-    for (const [id, kept] of this.#plans) if (kept.expiresAt < now) (kept.secrets.clear(), this.#plans.delete(id));
+    for (const [id, kept] of this.#plans) if (kept.expiresAt < now) this.delete(id);
   }
 
   get(id: string): Kept | undefined {
@@ -111,18 +108,29 @@ export class PendingPlans {
   set(id: string, kept: Kept): void {
     this.forgetExpired();
     this.#plans.set(id, kept);
+    this.#sweepWhileNeeded();
   }
 
   /** Used up: its opened secrets go with it. */
   delete(id: string): void {
     this.#plans.get(id)?.secrets.clear();
     this.#plans.delete(id);
+    this.#sweepWhileNeeded();
   }
 
-  /** Every plan forgotten, and the sweeping stopped: the home is stopping. */
+  /** Every plan forgotten, and with them the sweeping: the home is stopping. */
   stop(): void {
-    clearInterval(this.#sweeper);
     for (const id of [...this.#plans.keys()]) this.delete(id);
+  }
+
+  #sweepWhileNeeded(): void {
+    if (this.#plans.size && !this.#sweeper) {
+      this.#sweeper = setInterval(() => this.forgetExpired(), 60_000);
+      unref(this.#sweeper);
+    } else if (!this.#plans.size && this.#sweeper) {
+      clearInterval(this.#sweeper);
+      this.#sweeper = null;
+    }
   }
 }
 
@@ -456,12 +464,17 @@ export function keptPlan(deps: Pick<ImportDeps, 'pending'>, id: string, by: stri
   return kept && kept.by === by && kept.expiresAt > Date.now() ? kept.view : null;
 }
 
+/** A plan written: what it did, and what is set going after (`startWritten`). */
+export type Written = { applied: ImportApplied; touched: AutomationId[]; forgotten: AutomationId[] };
+
 /**
  * Writes a plan, with its answers, in one transaction — or nothing, and why.
  * The plan is used up. Confirmation is the caller's: what it asks a yes to is
- * in the plan's `needs.confirm`.
+ * in the plan's `needs.confirm`. Only what the file asks is refused as
+ * invalid — an answer missing, a row the database will not keep; a fault in
+ * the code goes on as one.
  */
-export async function applyImport(deps: ImportDeps, id: string, by: string, choices: ImportChoices, options: { lenient?: boolean } = {}): Promise<ImportApplied> {
+export function writeImport(deps: ImportDeps, id: string, by: string, choices: ImportChoices, options: { lenient?: boolean } = {}): Written {
   const kept = deps.pending.get(id);
   if (!kept || kept.by !== by || kept.expiresAt < Date.now()) throw new ApiError('not-found', 'That plan has gone: read the file again');
   const { document, view } = kept;
@@ -491,93 +504,101 @@ export async function applyImport(deps: ImportDeps, id: string, by: string, choi
   };
   const forgotten: AutomationId[] = [];
 
-  deps.db.transaction(() => {
-    // Devices: added, changed, removed.
-    for (const item of view.devices) {
-      if (!devicesIn(item.key)) continue;
-      if (item.action === 'remove') {
-        const device = deps.catalog.byKey(item.key);
-        if (device && deps.catalog.remove(device.id)) applied.devices.removed.push(item.key);
-        continue;
-      }
-      if (item.action === 'same') continue;
-      const entry = document.devices[item.key]!;
-      each(entry.name, () => {
-        writeDevice(deps, item.key, entry, kept.secrets, choices.secrets ?? {});
-        (item.action === 'add' ? applied.devices.added : item.action === 'restore' ? applied.devices.restored : applied.devices.changed).push(item.key);
-      });
-    }
-
-    // Links: the file's between the devices there are now; those it does not have, when replacing.
-    for (const link of view.links) {
-      const from = useOf(link.from)!;
-      const to = useOf(link.to)!;
-      const [source, target] = [deps.catalog.byKey(from.device), deps.catalog.byKey(to.device)];
-      if (!source || !target) continue;
-      if (link.action === 'add') {
-        deps.links.add({ kind: link.kind as never, source: { device: source.id, part: from.part }, target: { device: target.id, part: to.part } });
-        applied.links.added += 1;
-      } else if (link.action === 'remove') {
-        const found = deps.links.all().find((each) => each.kind === link.kind && each.source.device === source.id && each.source.part === from.part && each.target.device === target.id && each.target.part === to.part);
-        if (found) (deps.links.remove(found.id), (applied.links.removed += 1));
-      }
-    }
-
-    // Automations: made first without what they start, so one may start another made with it; then whole.
-    const written: { key: string; entry: AutomationEntry; id: AutomationId; existing: AutomationRecord | null }[] = [];
-    for (const item of view.automations) {
-      if (!automationsIn(item.key)) continue;
-      if (item.action === 'remove') {
-        const automation = deps.automations.byKey(item.key);
-        if (automation && deps.automations.delete(automation.id)) (applied.automations.removed.push(item.key), forgotten.push(automation.id));
-        continue;
-      }
-      if (item.action === 'same') continue;
-      const entry = document.automations[item.key]!;
-      const existing = deps.automations.byKey(item.key);
-      const id = existing?.id ?? deps.automations.create({ key: item.key, name: entry.name, rule: entry.rule, madeFrom: entry.madeFrom, roles: {}, starts: {}, timeZone: entry.clock, recheckMinutes: entry.recheckMinutes }).id;
-      written.push({ key: item.key, entry, id, existing });
-    }
-    for (const { key, entry, id, existing } of written) {
-      const roles: Record<string, { device: SavedDeviceId; part: string }> = {};
-      const starts: Record<string, AutomationId> = {};
-      for (const [role, use] of Object.entries(entry.uses)) {
-        if ('automation' in use) {
-          const other = deps.automations.byKey(use.automation);
-          if (other) starts[role] = other.id;
+  try {
+    deps.db.transaction(() => {
+      // Devices: added, changed, removed.
+      for (const item of view.devices) {
+        if (!devicesIn(item.key)) continue;
+        if (item.action === 'remove') {
+          const device = deps.catalog.byKey(item.key);
+          if (device && deps.catalog.remove(device.id)) applied.devices.removed.push(item.key);
           continue;
         }
-        const named = deps.catalog.byKey(use.device) ? use : useOf(choices.rebind?.[`${key}.${role}`] ?? '');
-        const device = named ? deps.catalog.byKey(named.device) : null;
-        if (device && named) roles[role] = { device: device.id, part: named.part };
+        if (item.action === 'same') continue;
+        const entry = document.devices[item.key]!;
+        each(entry.name, () => {
+          writeDevice(deps, item.key, entry, kept.secrets, choices.secrets ?? {});
+          (item.action === 'add' ? applied.devices.added : item.action === 'restore' ? applied.devices.restored : applied.devices.changed).push(item.key);
+        });
       }
-      const result = deps.checked({ rule: entry.rule, roles, starts }, id);
-      // Restoring, one that cannot be kept as it was is kept turned off — its rule, what still fills it — and said: its owner's work is not lost.
-      const why = [...new Set([...(kept.turnedOff.get(key) ?? []), ...result.problems])];
-      if (why.length && !options.lenient) throw new ApiError('invalid', `"${entry.name}" cannot be kept as it is`, { problems: why.map((said) => `"${entry.name}": ${said}`) });
-      each(`"${entry.name}"`, () => {
-        deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, starts: result.starts, timeZone: entry.clock, mode: why.length ? 'off' : entry.mode, recheckMinutes: entry.recheckMinutes });
-        if (entry.homePlace !== (existing?.homePlace ?? null)) deps.automations.placeOnHome(id, entry.homePlace);
-        (existing ? applied.automations.changed : applied.automations.added).push(key);
-        if (why.length) applied.notes.push(`"${entry.name}" is restored turned off: ${why.join('; ')}`);
-        touched.push(id);
-      });
-    }
 
-    // The home's values.
-    for (const change of view.policy) {
-      deps.policy.set(change.name as PolicyValueName, change.after);
-      applied.policy.push(change.name);
-    }
-  })();
+      // Links: the file's between the devices there are now; those it does not have, when replacing.
+      for (const link of view.links) {
+        const from = useOf(link.from)!;
+        const to = useOf(link.to)!;
+        const [source, target] = [deps.catalog.byKey(from.device), deps.catalog.byKey(to.device)];
+        if (!source || !target) continue;
+        if (link.action === 'add') {
+          deps.links.add({ kind: link.kind as never, source: { device: source.id, part: from.part }, target: { device: target.id, part: to.part } });
+          applied.links.added += 1;
+        } else if (link.action === 'remove') {
+          const found = deps.links.all().find((each) => each.kind === link.kind && each.source.device === source.id && each.source.part === from.part && each.target.device === target.id && each.target.part === to.part);
+          if (found) (deps.links.remove(found.id), (applied.links.removed += 1));
+        }
+      }
+
+      // Automations: made first without what they start, so one may start another made with it; then whole.
+      const written: { key: string; entry: AutomationEntry; id: AutomationId; existing: AutomationRecord | null }[] = [];
+      for (const item of view.automations) {
+        if (!automationsIn(item.key)) continue;
+        if (item.action === 'remove') {
+          const automation = deps.automations.byKey(item.key);
+          if (automation && deps.automations.delete(automation.id)) (applied.automations.removed.push(item.key), forgotten.push(automation.id));
+          continue;
+        }
+        if (item.action === 'same') continue;
+        const entry = document.automations[item.key]!;
+        const existing = deps.automations.byKey(item.key);
+        const id = existing?.id ?? deps.automations.create({ key: item.key, name: entry.name, rule: entry.rule, madeFrom: entry.madeFrom, roles: {}, starts: {}, timeZone: entry.clock, recheckMinutes: entry.recheckMinutes }).id;
+        written.push({ key: item.key, entry, id, existing });
+      }
+      for (const { key, entry, id, existing } of written) {
+        const roles: Record<string, { device: SavedDeviceId; part: string }> = {};
+        const starts: Record<string, AutomationId> = {};
+        for (const [role, use] of Object.entries(entry.uses)) {
+          if ('automation' in use) {
+            const other = deps.automations.byKey(use.automation);
+            if (other) starts[role] = other.id;
+            continue;
+          }
+          const named = deps.catalog.byKey(use.device) ? use : useOf(choices.rebind?.[`${key}.${role}`] ?? '');
+          const device = named ? deps.catalog.byKey(named.device) : null;
+          if (device && named) roles[role] = { device: device.id, part: named.part };
+        }
+        const result = deps.checked({ rule: entry.rule, roles, starts }, id);
+        // Restoring, one that cannot be kept as it was is kept turned off — its rule, what still fills it — and said: its owner's work is not lost.
+        const why = [...new Set([...(kept.turnedOff.get(key) ?? []), ...result.problems])];
+        if (why.length && !options.lenient) throw new ApiError('invalid', `"${entry.name}" cannot be kept as it is`, { problems: why.map((said) => `"${entry.name}": ${said}`) });
+        each(`"${entry.name}"`, () => {
+          deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, starts: result.starts, timeZone: entry.clock, mode: why.length ? 'off' : entry.mode, recheckMinutes: entry.recheckMinutes });
+          if (entry.homePlace !== (existing?.homePlace ?? null)) deps.automations.placeOnHome(id, entry.homePlace);
+          (existing ? applied.automations.changed : applied.automations.added).push(key);
+          if (why.length) applied.notes.push(`"${entry.name}" is restored turned off: ${why.join('; ')}`);
+          touched.push(id);
+        });
+      }
+
+      // The home's values.
+      for (const change of view.policy) {
+        deps.policy.set(change.name as PolicyValueName, change.after);
+        applied.policy.push(change.name);
+      }
+    })();
+  } catch (error) {
+    // The database would not keep a row of it: the file's, said as a refusal, and nothing was written.
+    throw isConstraintError(error) ? new ApiError('invalid', (error as Error).message) : error;
+  }
 
   // Used up: its opened secrets go with it.
   deps.pending.delete(id);
-  // Open what was added, close what was removed; what watches starts afresh, and looks now.
+  return { applied, touched, forgotten };
+}
+
+/** Sets going what an import wrote: what was added opened, what was removed closed; what watches starts afresh, and looks now. */
+export async function startWritten(deps: ImportDeps, written: Written): Promise<void> {
   await deps.sessions.sync(deps.catalog.list());
-  for (const automation of forgotten) deps.engine.forget(automation);
-  for (const automation of touched) (deps.engine.reset(automation), deps.engine.poke(automation));
-  return applied;
+  for (const automation of written.forgotten) deps.engine.forget(automation);
+  for (const automation of written.touched) (deps.engine.reset(automation), deps.engine.poke(automation));
 }
 
 /** A device added or changed as its entry says: what it is, how it is reached, its secrets, kept or given. */

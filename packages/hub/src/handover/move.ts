@@ -1,10 +1,10 @@
 import { ApiError, type ElsewhereView, type ImportAnswers, type ImportApplied, type ImportPlan } from '@kraftverk/api-contract';
 import { isSimulated, methodOf } from '@kraftverk/device-sdk';
 import { writeConfig, type Scalar } from '@kraftverk/home-file';
-import { NodeStore, randomHex, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
+import { AppState, AutomationStore, ConnectionStore, DeviceCatalog, LinkStore, NodeStore, policyValues, randomHex, setPolicyValue, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
 
+import { exportConfig, type ConfigDeps } from '../configuration/export.ts';
 import type { PassphraseSealing } from '../configuration/seal.ts';
-import { createHub, type Hub } from '../node/hub.ts';
 import { shouldLead } from '../node/lead.ts';
 import { nothingToDo } from './nothing.ts';
 import { holdableHere } from '../installed/holdable.ts';
@@ -26,6 +26,8 @@ import type { Follower } from '../follower/follower.ts';
 
 /** Kept in this node's own home, once it has moved: not offered again. */
 const MOVED = 'home.moved';
+/** This node's own home as moving reads it: the stores an export reads, and its own state. */
+type OwnHome = ConfigDeps & { state: AppState };
 /** A way that stays with this node: the device it reaches, and what this node needs to hold it for the master. */
 type Staying = { key: string; name: string; typeId: string; method: string; label: string; address: string | null; settings: Record<string, Scalar>; device: Record<string, Scalar>; connection: string | null };
 
@@ -34,7 +36,7 @@ export class MovingToMaster {
   readonly #database: SqlDatabase;
   readonly #secrets: SecretsAtRest;
   readonly #sealing: PassphraseSealing;
-  #own: Hub | null = null;
+  #own: OwnHome | null = null;
   /** The plans made of the home, by the master's id: the ways that stay with this node. */
   readonly #plans = new Map<string, Staying[]>();
 
@@ -46,19 +48,30 @@ export class MovingToMaster {
     this.#sealing = options.sealing;
   }
 
-  /** This node's own home, read: made from its database, never started — nothing in it runs while it moves. */
-  #home(): Hub {
-    this.#own ??= createHub({
-      database: this.#database,
-      secrets: this.#secrets,
-      sealing: this.#sealing,
-      installed: this.#follower.installed,
+  /**
+   * This node's own home, read: its stores over the database it kept, and
+   * nothing else — not a hub, so nothing in it runs, and nothing is written
+   * to it but whether it has moved.
+   */
+  #home(): OwnHome {
+    if (this.#own) return this.#own;
+    const db = this.#database;
+    const state = new AppState(db);
+    const { types, protocols } = this.#follower.installed;
+    this.#own = {
+      state,
+      catalog: new DeviceCatalog(db),
+      connections: new ConnectionStore(db, this.#secrets),
+      links: new LinkStore(db),
+      automations: new AutomationStore(db),
       // The same node: its own home was kept by it, before it followed one — by the id that database says it is.
-      node: (({ name, alwaysOn, reachable, trusted }) => ({ id: new NodeStore(this.#database).self()?.id ?? this.#follower.nodeId, name, alwaysOn, reachable, trusted }))(this.#follower.self),
-      readOnly: () => true,
-      http: () => Promise.reject(new Error('A home moving reaches nothing')),
-      log: () => {},
-    });
+      self: new NodeStore(db).self()?.id ?? this.#follower.nodeId,
+      types,
+      protocols,
+      policy: { values: () => policyValues(state), set: (name, value) => setPolicyValue(state, name, value) },
+      sealing: this.#sealing,
+      kept: this.#secrets,
+    };
     return this.#own;
   }
 
@@ -87,7 +100,7 @@ export class MovingToMaster {
     if (own.state.get(MOVED)) throw new ApiError('not-found', 'This app’s own home has moved to your server already');
     const { installed } = this.#follower;
     const passphrase = randomHex(16);
-    const { document, context } = await own.configuration.document({ secrets: 'sealed', passphrase });
+    const { document, context } = await exportConfig(own, { secrets: 'sealed', passphrase });
     const offered = (await this.#follower.home.deviceTypes()).types;
     const staying: Staying[] = [];
     for (const [key, entry] of Object.entries(document.devices)) {
@@ -100,7 +113,7 @@ export class MovingToMaster {
         const nearby = installed.transports.definition(method.transport)?.nearby === true;
         // Near the device, or a way the master cannot hold: this node holds it for the master, if it can.
         if (!(nearby || !theirs.has(method.id)) || !holdableHere(installed, this.#follower.self, method)) return true;
-        const connection = had ? (own.connections.forDevice(had.id).find((each) => each.method === method.id && each.heldBy === own.self.id) ?? null) : null;
+        const connection = had ? (own.connections.forDevice(had.id).find((each) => each.method === method.id && each.heldBy === own.self) ?? null) : null;
         staying.push({ key, name: entry.name, typeId: entry.type, method: method.id, label: method.label, address: connection?.address ?? way.address, settings: way.settings, device: entry.settings, connection: connection?.id ?? null });
         // Its secrets stay with this node: out of the file, and out of what the file names.
         for (const secret of Object.values(way.secrets)) if ('secret' in secret) delete document.secrets[secret.secret];

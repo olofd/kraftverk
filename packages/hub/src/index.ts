@@ -24,7 +24,7 @@ export * from './automations/devices.ts';
 export * from './automations/drafts.ts';
 export * from './configuration/configuration.ts';
 export { exportConfig, homeVocabulary, type ConfigDeps, type ExportOptions, type Exported, type SecretsMode } from './configuration/export.ts';
-export { applyImport, keptPlan, PendingPlans, planImport, type ImportChoices, type ImportDeps, type ImportMode } from './configuration/import.ts';
+export { keptPlan, PendingPlans, planImport, startWritten, writeImport, type ImportChoices, type ImportDeps, type ImportMode, type Written } from './configuration/import.ts';
 export { restoreFrom, type Restored } from './configuration/restore.ts';
 export * from './configuration/seal.ts';
 export * from './node/hub.ts';

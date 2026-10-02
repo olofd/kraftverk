@@ -1,8 +1,8 @@
 import { ApiError, type Caller, type ChangesQuery, type DeviceTypeListing, type HistoryQuery, type KraftverkApi } from '@kraftverk/api-contract';
 import { capabilityIn, CATEGORIES, describeDeviceType, isSimulated, KEY, methodsOf, platformsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
-import { subjectOf } from '@kraftverk/gateway';
-import { deviceReader, runTool, ToolRefused, type ToolRefusal } from '@kraftverk/holder';
+import { deviceReader } from '@kraftverk/holder';
 
+import { runAskedTool } from '../devices/tools.ts';
 import { PICTURE_REF } from '../devices/views.ts';
 import { changesOf } from '../history/changes.ts';
 import { MAX_SPAN_MS } from '../history/retention.ts';
@@ -35,8 +35,6 @@ function spanOf(query: { hours?: number; from?: string; to?: string }): { from: 
   return { from: from.toISOString(), to: to.toISOString() };
 }
 
-/** Why a tool was refused, as the kind of refusal it is. */
-const TOOL_REFUSAL: Record<ToolRefusal, ApiError['kind']> = { missing: 'not-found', input: 'invalid', 'read-only': 'locked', failed: 'conflict', answer: 'failed' };
 
 type DevicesApi = Pick<KraftverkApi, 'deviceTypes' | 'devices' | 'problems'>;
 
@@ -142,6 +140,8 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
       async remove(id) {
         const device = deviceOf(id);
         catalog.remove(device.id);
+        // What a follower last read of it goes with it: brought back, it is read afresh.
+        hub.heldReadings.forget(device.id);
         record('device.removed', 'device', device.id, `Removed "${device.name}". Its history is kept.`, { typeId: device.typeId, identity: device.identity });
         // Removing a device closes its session.
         await sessions.sync(catalog.list());
@@ -228,21 +228,17 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
        */
       async tool(id, name, body) {
         const { device, session, spec } = toolOf(id, name);
-        if (body.reading && spec.writes) throw new ApiError('not-allowed', `${name} changes the device: send it as a write`);
-        const input = body.input ?? {};
-        if (spec.writes && spec.confirm) {
-          const subject = subjectOf({ device: device.id, tool: name, input, by: actor });
-          if (!hub.yes.tools.accept(body.confirmation, subject)) throw new ApiError('needs-yes', spec.confirm, { needsConfirmation: hub.yes.tools.ask(subject) });
-        }
-        try {
-          const answer = await runTool({ deviceName: device.name, name, spec, session, input, readOnly: hub.readOnly() && !sessions.simulated(device.id) });
-          if (spec.writes) record('device.tool', 'device', device.id, `Ran ${spec.label.toLowerCase()} on "${device.name}"`, { tool: name, input });
-          return answer;
-        } catch (error) {
-          if (spec.writes) record('device.tool-refused', 'device', device.id, `${spec.label} on "${device.name}" was refused: ${(error as Error).message}`, { tool: name, input });
-          if (error instanceof ToolRefused) throw new ApiError(TOOL_REFUSAL[error.reason], error.message);
-          throw error;
-        }
+        return runAskedTool({
+          device,
+          name,
+          spec,
+          session,
+          body,
+          by: actor,
+          confirmations: hub.yes.tools,
+          readOnly: hub.readOnly() && !sessions.simulated(device.id),
+          record: (kind, summary, detail) => record(kind, 'device', device.id, summary, detail),
+        });
       },
     },
 

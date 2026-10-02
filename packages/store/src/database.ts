@@ -97,3 +97,11 @@ export function resetDatabase(db: SqlDatabase): { tables: string[]; rows: number
   db.exec('VACUUM');
   return { tables, rows };
 }
+
+/**
+ * Whether the database refused a row as its constraints say — a key already
+ * taken, a value out of its range, a reference to nothing — rather than
+ * failed: what was asked is wrong, not the code asking. SQLite words it the
+ * same through every driver.
+ */
+export const isConstraintError = (error: unknown): boolean => error instanceof Error && /constraint failed/i.test(error.message);

@@ -1,7 +1,7 @@
 import { ApiError, type ConfigRestored } from '@kraftverk/api-contract';
 import type { AuditRecord } from '@kraftverk/device-sdk';
 
-import { applyImport, planImport, type ImportDeps } from './import.ts';
+import { planImport, startWritten, writeImport, type ImportDeps, type Written } from './import.ts';
 
 /*
   A home restored (docs/CONFIG.md): when a new schema has set the database
@@ -30,21 +30,25 @@ export async function restoreFrom(deps: ImportDeps & { record: (entry: AuditReco
   // What it left out, what the home's key no longer opens — restored without, and said.
   problems.push(...plan.notes);
   for (const need of plan.needs.secrets) problems.push(`${need.deviceName} needs its ${need.title} again`);
+  let written: Written;
   try {
-    const applied = await applyImport(deps, plan.id, BY, { secrets: {}, rebind: {} }, { lenient: true });
-    problems.push(...applied.notes);
-    const count = applied.devices.added.length + applied.devices.restored.length + applied.devices.changed.length;
-    deps.record({
-      at,
-      kind: 'config.restored',
-      actor: BY,
-      summary: `Restored ${count === 1 ? '1 device' : `${count} devices`} and ${applied.automations.added.length + applied.automations.changed.length} automations from the configuration kept beside the database`,
-      detail: { file: from, applied, problems },
-    });
-    return { at, from, applied, problems };
+    written = writeImport(deps, plan.id, BY, { secrets: {}, rebind: {} }, { lenient: true });
   } catch (error) {
     const said = error instanceof ApiError && error.problems.length ? [...error.problems] : [(error as Error).message];
     deps.record({ at, kind: 'config.restore-failed', actor: BY, summary: 'The configuration kept beside the database could not be restored', detail: { file: from, problems: said } });
     return { at, from, applied: null, problems: [...problems, ...said] };
   }
+  const { applied } = written;
+  problems.push(...applied.notes);
+  const count = applied.devices.added.length + applied.devices.restored.length + applied.devices.changed.length;
+  deps.record({
+    at,
+    kind: 'config.restored',
+    actor: BY,
+    summary: `Restored ${count === 1 ? '1 device' : `${count} devices`} and ${applied.automations.added.length + applied.automations.changed.length} automations from the configuration kept beside the database`,
+    detail: { file: from, applied, problems },
+  });
+  // Restored: what it wrote is set going, the home's as any other start is.
+  await startWritten(deps, written);
+  return { at, from, applied, problems };
 }

@@ -271,8 +271,9 @@ export class AutomationEngine {
 
   start(): void {
     this.#endInterrupted();
-    this.#timer ??= setInterval(() => void this.tick(), this.deps.everyMs ?? 30_000);
-    this.#unsubscribe ??= this.deps.bus?.subscribe((message) => void this.hear(message)) ?? null;
+    // Nobody waits on a tick or on what was heard: what goes wrong is said, never left to bring the server down.
+    this.#timer ??= setInterval(() => void this.tick().catch((error) => console.error('[automations] a tick failed:', error)), this.deps.everyMs ?? 30_000);
+    this.#unsubscribe ??= this.deps.bus?.subscribe((message) => void this.hear(message).catch((error) => console.error('[automations] hearing a device failed:', error))) ?? null;
   }
 
   stop(): void {
@@ -282,6 +283,22 @@ export class AutomationEngine {
     this.#unsubscribe = null;
     for (const entry of this.#becoming.values()) if (entry.hold) clearTimeout(entry.hold);
     this.#becoming.clear();
+  }
+
+  /**
+   * Forgets everything it holds of the automations it had: their database was
+   * emptied beneath it (`Hub.reset`). Every run ends as if its automation were
+   * deleted — neither kept nor on the new timeline — every hold is let go,
+   * and what concerns each device is read again from what there is now.
+   */
+  clear(): void {
+    for (const live of [...this.#live.values(), ...this.#once.values()]) {
+      live.gone = true;
+      this.#stopLive(live, 'everything was erased');
+    }
+    for (const entry of this.#becoming.values()) if (entry.hold) clearTimeout(entry.hold);
+    this.#becoming.clear();
+    this.#index = null;
   }
 
   /**
@@ -553,9 +570,14 @@ export class AutomationEngine {
     }
     entry.hold = setTimeout(() => {
       entry.hold = null;
-      // Still true, all this time? Only then.
-      if (evaluateNow(trigger.becomes, this.#scope(automation, rule)) !== true) return;
-      fire(`${said}, for ${minutes} min`);
+      try {
+        // Still true, all this time? Only then.
+        if (evaluateNow(trigger.becomes, this.#scope(automation, rule)) !== true) return;
+        fire(`${said}, for ${minutes} min`);
+      } catch (error) {
+        // A timer has nobody to throw to: what went wrong is said, never left to bring the server down.
+        console.error(`[automations] ${automation.id} could not fire after its hold:`, error);
+      }
     }, remaining);
     (entry.hold as { unref?: () => void }).unref?.();
   }

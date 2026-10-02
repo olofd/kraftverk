@@ -2,12 +2,11 @@ import { ApiError, type ConfigExported, type ConfigExportRequest, type ImportAns
 import type { AuditRecord } from '@kraftverk/device-sdk';
 import { Confirmations, subjectOf } from '@kraftverk/gateway';
 import type { LiveBus } from '@kraftverk/holder';
-import { configJsonSchema, readConfig, writeConfig, type Vocabulary } from '@kraftverk/home-file';
+import { configJsonSchema, PASSPHRASE_MIN, readConfig, writeConfig, type Vocabulary } from '@kraftverk/home-file';
 
 import { exportConfig, homeVocabulary } from './export.ts';
-import { applyImport, keptPlan, PendingPlans, planImport, type ImportDeps, type ImportMode } from './import.ts';
+import { keptPlan, PendingPlans, planImport, startWritten, writeImport, type ImportDeps, type ImportMode } from './import.ts';
 import { restoreFrom, type Restored } from './restore.ts';
-import { PASSPHRASE_MIN } from '@kraftverk/home-file';
 
 /*
   A home's configuration (docs/CONFIG.md), as everything that uses a home
@@ -132,10 +131,9 @@ export class Configuration {
     if (asked.length && !this.#confirming.accept(answers.confirmation, subject)) {
       throw new ApiError('needs-yes', asked.join('. '), { needsConfirmation: this.#confirming.ask(subject) });
     }
-    const applied = await applyImport(this.#deps, answers.plan, by, { include: answers.include, secrets: answers.secrets, rebind: answers.rebind }).catch((error: unknown) => {
-      // Whatever stopped it — a value out of its range, a row the database would not keep — nothing was written: said as a refusal.
-      throw error instanceof ApiError ? error : new ApiError('invalid', (error as Error).message);
-    });
+    const written = writeImport(this.#deps, answers.plan, by, { include: answers.include, secrets: answers.secrets, rebind: answers.rebind });
+    const { applied } = written;
+    // Written: on the timeline, and said, before what it wrote is set going — which is the home's, not the file's.
     this.#deps.record({
       at: new Date().toISOString(),
       kind: 'config.imported',
@@ -158,6 +156,7 @@ export class Configuration {
       const automation = this.#deps.automations.byKey(key);
       if (automation) this.#deps.bus?.publish({ kind: 'automation', automationId: automation.id });
     }
+    await startWritten(this.#deps, written);
     return applied;
   }
 

@@ -432,6 +432,20 @@ describe('starting a charge', () => {
     expect(recorded.filter((entry) => entry.resource === automation.id && entry.kind !== 'automation.started')).toEqual([]);
   });
 
+  test('everything erased while it waits: the run ends as if deleted, and nothing it held fires into the emptied home', async () => {
+    const { engine, make, store, recorded } = setup({ reachableAfterMs: 10_000 });
+    const automation = make('standard.start-charging', QUICK);
+    await engine.startAsked(automation.id, OLOF);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    engine.clear();
+    db.exec('DELETE FROM automation');
+    for (let waited = 0; waited < 5_000 && engine.running(automation.id); waited += 10) await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(engine.running(automation.id)).toBeNull();
+    expect(store.list()).toEqual([]);
+    expect(recorded.filter((entry) => entry.resource === automation.id && entry.kind !== 'automation.started')).toEqual([]);
+  });
+
   test('while it runs: kept at every step, said on the live bus, its readings wanted fresh — one run at a time', async () => {
     const { engine, make, ended, store, heard, fresh } = setup({ wakesOnSwitch: 2 });
     const automation = make('standard.start-charging', QUICK);

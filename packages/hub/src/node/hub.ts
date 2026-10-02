@@ -38,7 +38,7 @@ import { DeviceViews } from '../devices/views.ts';
 import { HeldReadings } from '../nodes/held-readings.ts';
 import { ChangeLog } from '../history/changes.ts';
 import { Sampler } from '../history/sampler.ts';
-import type { Installed } from '../installed/from.ts';
+import { startTransports, type Installed } from '../installed/from.ts';
 import { KeepingCopy } from '../handover/keep.ts';
 import { nodeParts } from './parts.ts';
 import { SetupService } from '../setup/service.ts';
@@ -256,14 +256,7 @@ export class Hub {
   async start(): Promise<void> {
     if (this.#started) return;
     this.#started = true;
-    const { types, transports } = this.installed;
-    const needed = new Set(types.all().flatMap((type) => type.connections.map((method) => method.transport)));
-    const starting = transports.definitions().map((definition) => definition.id).filter((id) => needed.has(id));
-    await transports.startAll(starting);
-    for (const id of starting) {
-      const available = transports.available(id);
-      if (!available.ok) this.#log('warn', `[transports] ${id} is unavailable here: ${available.reason}`);
-    }
+    await startTransports(this.installed, this.#log);
     await this.sessions.sync(this.catalog.list());
     this.sampler.start();
     this.changeLog.start();
@@ -281,6 +274,8 @@ export class Hub {
    */
   async reset(by: string): Promise<{ tables: string[]; rows: number }> {
     this.sampler.stop();
+    // Runs end and holds are let go before their automations' rows are: nothing steps, or fires, into an emptied home.
+    this.engine.clear();
     await this.sessions.closeAll();
     const { tables, rows } = resetDatabase(this.db);
     this.audit.record({ at: new Date().toISOString(), kind: 'database.reset', actor: by, summary: `The database was reset: ${rows} rows across ${tables.length} tables`, detail: { tables } });

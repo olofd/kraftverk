@@ -1,3 +1,4 @@
+import { ApiError, type ApiErrorKind } from '@kraftverk/api-contract';
 import {
   capabilityIn,
   checkValue,
@@ -18,15 +19,19 @@ import type { DeviceReader } from '@kraftverk/automation';
  * automation something it was never promised.
  */
 
-/** Why a tool did not answer, and so what to say: 404, 400, 423, 409 or 502 over HTTP. */
+/** Why a tool did not answer. */
 export type ToolRefusal = 'missing' | 'input' | 'read-only' | 'failed' | 'answer';
 
-export class ToolRefused extends Error {
+/** Each reason as the refusal every caller of a home says it as. */
+const KIND: Record<ToolRefusal, ApiErrorKind> = { missing: 'not-found', input: 'invalid', 'read-only': 'locked', failed: 'conflict', answer: 'failed' };
+
+/** A tool that did not answer, and why: a refusal of a home's own kind, so every holder's caller says it the same way. */
+export class ToolRefused extends ApiError {
   constructor(
     readonly reason: ToolRefusal,
     message: string
   ) {
-    super(message);
+    super(KIND[reason], message);
   }
 }
 
