@@ -1,0 +1,65 @@
+import Constants from 'expo-constants';
+import { getRandomValues } from 'expo-crypto';
+import * as SecureStore from 'expo-secure-store';
+import { openDatabaseSync } from 'expo-sqlite';
+
+import { fromExpoSqlite, schemaFingerprint } from '@kraftverk/store';
+
+import { TRANSPORT_ENTRIES } from '../../generated/transports';
+import { sealedWithKey } from '../cipher';
+import { appHub, OWNER, readyDatabase, type OwnHome } from './hub';
+
+/*
+  A phone's own home (docs/PLAN-SHARED-CORE.md, phase 6c): the hub in the
+  app's own process, beside its screens, as the server runs one beside its
+  routes — no worker, no messages, nothing a browser needs. Its SQLite is
+  expo-sqlite's; its transports are the phone's own (`transports.ts`); the
+  key its secrets are sealed with is kept in the phone's secure storage.
+  A browser's is `own.web.ts`.
+*/
+
+// A phone has no `crypto.getRandomValues` of its own: expo-crypto's, for ids and the cipher.
+if (typeof globalThis.crypto?.getRandomValues !== 'function') {
+  Object.defineProperty(globalThis, 'crypto', { value: { ...globalThis.crypto, getRandomValues }, configurable: true });
+}
+
+const SECRETS_KEY = 'kraftverk.secrets-key';
+
+const hex = (bytes: Uint8Array) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+const bytesOf = (text: string) => Uint8Array.from(text.match(/../g) ?? [], (pair) => parseInt(pair, 16));
+
+/** The key a phone seals its secrets with: made once, kept in its secure storage, never in the database. */
+async function secretsKey(): Promise<Uint8Array> {
+  const kept = await SecureStore.getItemAsync(SECRETS_KEY);
+  if (kept?.length === 64) return bytesOf(kept);
+  const key = crypto.getRandomValues(new Uint8Array(32));
+  await SecureStore.setItemAsync(SECRETS_KEY, hex(key));
+  return key;
+}
+
+/** Opens the phone's own home, and starts it. */
+export async function openOwnHome(): Promise<OwnHome> {
+  // A new schema is a new file: the one before is left as it was (strict version 1).
+  const database = readyDatabase(fromExpoSqlite(openDatabaseSync(`kraftverk-${schemaFingerprint()}.db`)), Constants.expoConfig?.version ?? 'app');
+  let writes = false;
+  const hub = appHub({
+    database,
+    secrets: sealedWithKey(await secretsKey()),
+    platform: 'native',
+    transport: (definition) => TRANSPORT_ENTRIES[definition.id] ?? null,
+    readOnly: () => !writes,
+  });
+  await hub.start();
+  return {
+    api: hub.as(OWNER),
+    allowWrites: async (allowed) => {
+      writes = allowed;
+      // Its sessions open again under the new rule.
+      await hub.sessions.sync(hub.catalog.list());
+    },
+    close: async () => {
+      await hub.stop();
+      database.close();
+    },
+  };
+}

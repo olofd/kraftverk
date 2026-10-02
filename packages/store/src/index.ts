@@ -26,4 +26,5 @@ export * from './transport-store.ts';
 export * from './ledger.ts';
 export * from './automations.ts';
 export * from './sqlite-wasm.ts';
+export * from './expo-sqlite.ts';
 export * from './holding.ts';

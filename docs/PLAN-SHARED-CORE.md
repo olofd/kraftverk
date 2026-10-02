@@ -380,11 +380,12 @@ then has one interface in both modes, and never branches on which.
 
 **On a phone: expo-sqlite.** Expo's own, real SQLite in native code over
 JSI, with the synchronous API (`openDatabaseSync`, `runSync`, `getAllSync`,
-`withTransactionSync`) the store's port already is, and SQLCipher on iOS
-and Android for a database encrypted at rest, its key in the phone's
-secure storage. op-sqlite is faster in benchmarks, but a home's data is
-small, and expo-sqlite is the toolchain the app already builds with. It
-needs a development build — as the phone's Bluetooth already does.
+`withTransactionSync`) the store's port already is. op-sqlite is faster in
+benchmarks, but a home's data is small, and expo-sqlite is the toolchain
+the app already builds with. A connection's secrets are sealed in it with
+a key kept in the phone's secure storage (below, 6c) — which runs in Expo
+Go as well; the whole file encrypted (expo-sqlite's SQLCipher) can follow
+if history itself should be, at the cost of a development build.
 
 **In a browser: the hub in a dedicated Web Worker, on
 `@sqlite.org/sqlite-wasm` with its `opfs-sahpool` storage.** Every way to
@@ -450,7 +451,8 @@ arrangement of those ports; how the screens reach it is always
 - **A phone pays for nothing a browser needs.** No worker, no messages,
   no WebAssembly: the hub is a plain object in the app's process, as on
   the server. Each place is a file of its own under `client/src/platform/`,
-  chosen by Metro's platform extension (`.native.ts`, `.web.ts`), so one's
+  chosen by Metro's platform extension (`own.ts` a phone's, `own.web.ts`
+  beside it a browser's, as the app's other web-only files are), so one's
   code is never in the other's bundle.
 - **A browser pays only for what it must.** The worker exists because a
   persistent SQLite needs one; the transports stay on the page because the
@@ -491,10 +493,20 @@ The steps, each green and pushed:
     transport's state, its live list and chooser, and its channels' bytes,
     broker messages and HTTP answers. `server/src/api.test.ts` asks the
     home a third way and gets the same answers.
-6c. **A phone's own home.** expo-sqlite and expo-secure-store; the
-    database encrypted at rest (SQLCipher), its key in the secure store;
-    `own.native.ts` makes the app's hub in the process. Typechecked and
-    tested where it can be: a phone has not run it until one does.
+6c. **A phone's own home** — done, 2026-10-02, but not yet run on a
+    phone. `client/src/platform/home/`: `hub.ts`, the app's hub as both
+    places make it (the generated registry, `installedFrom`, its timeline,
+    `OWNER`); `own.ts`, a phone's — expo-sqlite through the store's
+    `fromExpoSqlite` (its every path run by the store's suite, over
+    bun:sqlite shaped as expo-sqlite answers), a file per schema so a new
+    one never writes over the last, expo-crypto's random values where the
+    phone has none. `cipher.ts`, the app's cipher in plain JavaScript
+    (@noble/ciphers and @noble/hashes, audited, no dependencies): secrets
+    sealed at rest with a key from the phone's secure storage, and
+    passphrase sealing in the server's own `sealed:v1` — an export sealed
+    by a server opens in the app (tested against one). The app's hub runs
+    in a test with every installed package: a simulated plug added,
+    switched, an automation run, all on its owner's timeline.
 6d. **A browser's own home.** The worker bundle; `opfs-sahpool` opened
     only under the tab's Web Lock, handed over to another tab on asking —
     never stolen, so a pool is never opened twice; the transports served
