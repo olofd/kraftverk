@@ -312,6 +312,20 @@ export class SetupService {
   }
 
   /**
+   * Reads the device once and judges nothing: what an app holding a way for
+   * a server learns itself, for the server to judge against what you have
+   * (`startHeld`). With the secrets entered, which stay with whoever holds it.
+   */
+  async read(id: string): Promise<{ draft: DraftView; read: { identified: Identified } | { outcome: CheckOutcome }; secrets: Record<string, string> }> {
+    const draft = this.#draft(id);
+    if (!draft.address) throw new SetupError('Choose the device first');
+    const read = await draft.reach.identify(draft);
+    if ('identified' in read) draft.device = { ...draft.device, ...(read.identified.config ?? {}) };
+    this.#touch(draft);
+    return { draft: viewOf(draft), read, secrets: Object.fromEntries(draft.secrets) };
+  }
+
+  /**
    * Saves: in one go, the device (or the one it turned out to be), its
    * connection, that connection's secrets, and its links. Then its session opens.
    */

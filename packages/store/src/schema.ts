@@ -453,6 +453,23 @@ export const SCHEMA = `
   );
   CREATE INDEX audit_at ON audit (at);
   CREATE INDEX audit_resource ON audit (resource_kind, resource, at);
+
+  /*
+    What an app holding connections for a server's home owes it, in the
+    order it was owed (docs/PLAN-SHARED-CORE.md, phase 6): what its devices
+    read and said happened, what its gateway wrote on the timeline, what a
+    session kept — sent when the server can be reached, and gone once it
+    has them. Empty in a home that holds only for itself. No reference to a
+    device: what is owed for one this app no longer holds is still sent, and
+    refused there.
+  */
+  CREATE TABLE send_queue (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind      TEXT NOT NULL CHECK (kind IN ('readings', 'event', 'audit', 'store')),
+    device_id TEXT,
+    body      TEXT NOT NULL,
+    queued_at TEXT NOT NULL
+  );
 `;
 
 /**

@@ -10,9 +10,9 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
  * On each SQLite a home is kept in (`drivers.ts`), each a database of its own.
  */
 
-import { MAIN_PART, savedDeviceId, type DeviceDescription } from '@kraftverk/device-sdk';
+import { connectionId, MAIN_PART, savedDeviceId, type DeviceDescription } from '@kraftverk/device-sdk';
 
-import { ConnectionStore, DeviceCatalog, LinkStore, type SecretsAtRest, type SqlDatabase } from '../src/index.ts';
+import { ConnectionStore, DeviceCatalog, LinkStore, SendQueue, type SecretsAtRest, type SqlDatabase } from '../src/index.ts';
 import { DRIVERS } from './drivers.ts';
 
 /** A device's description, as a lamp's. */
@@ -234,6 +234,58 @@ for (const driver of DRIVERS) {
       test('a device cannot feed itself', () => {
         const plug = catalog.add({ description: LAMP, typeId: 'test.plug', name: 'Loop' });
         expect(() => links.add({ kind: 'feeds', source: { device: plug.id, part: 'main' }, target: { device: plug.id, part: 'main' } })).toThrow();
+      });
+    });
+
+    describe('a copy of another home’s device, held here', () => {
+      const theirs = {
+        id: savedDeviceId('d-0000000000aa'),
+        key: 'their-lamp',
+        typeId: 'test.lamp',
+        identity: 'lamp:AA',
+        name: 'Their lamp',
+        config: {},
+        addedAt: '2026-10-01T00:00:00.000Z',
+        removedAt: null,
+        description: LAMP,
+        descriptionSource: 'type' as const,
+        info: null,
+        picture: null,
+      };
+      const way = { id: connectionId('c-0000000000aa'), deviceId: theirs.id, method: 'bluetooth', transport: 'ble', address: 'AA', priority: 1, config: {}, secretsExportable: false, createdAt: theirs.addedAt };
+
+      test('is kept by its own id, held here, and brought up to date without losing what only this holder has', () => {
+        catalog.mirror(theirs);
+        connections.mirror(way);
+        connections.setSecrets(way.id, { key: 'only-here' });
+        expect(catalog.get(theirs.id)).toMatchObject({ key: 'their-lamp', name: 'Their lamp', identity: 'lamp:AA' });
+        expect(connections.forDevice(theirs.id)).toEqual([expect.objectContaining({ id: way.id, heldBy: null, priority: 1 })]);
+
+        catalog.mirror({ ...theirs, name: 'Renamed there' });
+        connections.mirror({ ...way, priority: 0, address: 'BB' });
+        expect(catalog.get(theirs.id)?.name).toBe('Renamed there');
+        expect(connections.get(way.id)).toMatchObject({ priority: 0, address: 'BB' });
+        expect(connections.secret(way.id, 'key')).toBe('only-here');
+      });
+    });
+
+    describe('what is owed to a server', () => {
+      test('is taken in the order it was owed, and gone once sent', () => {
+        const queue = new SendQueue(database);
+        queue.add('readings', 'd-1', { readings: [1] });
+        queue.add('audit', null, { kind: 'device.command' });
+        queue.add('readings', 'd-1', { readings: [2] });
+        const owed = queue.next(10);
+        expect(owed.map((each) => [each.kind, each.deviceId, each.body])).toEqual([
+          ['readings', 'd-1', { readings: [1] }],
+          ['audit', null, { kind: 'device.command' }],
+          ['readings', 'd-1', { readings: [2] }],
+        ]);
+        queue.done([owed[0]!.id]);
+        expect(queue.count()).toBe(2);
+        // Only the newest of a kind are kept, past what a phone should carry.
+        queue.trim('readings', 0);
+        expect(queue.next(10).map((each) => each.kind)).toEqual(['audit']);
       });
     });
   });

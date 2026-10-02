@@ -177,6 +177,42 @@ export class DeviceCatalog {
     return changed;
   }
 
+  /**
+   * Keeps a device as another home has it, by that home's id: an app holding
+   * a connection to a server's device keeps the device as the server does
+   * (docs/PLAN-SHARED-CORE.md, phase 6). Added, or brought up to what it is
+   * there; what this database keeps of its own for it — its store, the
+   * gateway's memory of it — stays.
+   */
+  mirror(record: DeviceRecord): void {
+    const at = new Date().toISOString();
+    this.#db.transaction(() => {
+      this.#db
+        .query(
+          `INSERT INTO device (id, key, type_id, identity, name, config, description, description_source, info, picture, added_at, removed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (id) DO UPDATE SET key = excluded.key, identity = excluded.identity, name = excluded.name, config = excluded.config,
+             description = excluded.description, description_source = excluded.description_source, info = excluded.info,
+             picture = excluded.picture, removed_at = excluded.removed_at`
+        )
+        .run(
+          record.id,
+          record.key,
+          record.typeId,
+          record.identity,
+          record.name,
+          JSON.stringify(record.config),
+          JSON.stringify(record.description),
+          record.descriptionSource,
+          record.info === null ? null : JSON.stringify(record.info),
+          record.picture,
+          record.addedAt,
+          record.removedAt
+        );
+      this.#recordAttributes(record.id, record.description, at);
+    })();
+  }
+
   /** Every attribute the device has ever had, as last described: what its history is labelled by. */
   attributes(id: SavedDeviceId): AttributeSpec[] {
     return this.#db

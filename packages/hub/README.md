@@ -92,6 +92,39 @@ handed its database and timeline. Sealing a secret with a passphrase is a
 port (`PassphraseSealing`): the place's cipher, not the hub's.
 `@kraftverk/hub/testing` is a lamp on a pretend bus, for tests.
 
+### What an app holds for a server: `createHolding`
+
+```ts
+const holding = createHolding({
+  home,          // the server's KraftverkApi, as the person signed in on this app asks it
+  database,      // this app's own SqlDatabase, its schema prepared: what the holding keeps
+  secrets,       // SecretsAtRest: this app's key
+  installed,     // what this app has installed, and its transports where it runs
+  app,           // { name: 'Chrome on Windows', platform: 'web' }: who holds, in "held by …"
+  readOnly,      // () => boolean: writes from this app, refused until allowed
+  http,          // a setup helper's one call to a vendor
+});
+await holding.start();      // who it is to the server, what it holds there, sending what is owed
+const api = holding.api;    // the server's KraftverkApi, with what this app holds wrapped in
+```
+
+The ways in to a server's devices that this app reaches itself — its own
+Bluetooth — beside the server's: one device, one history, reached either
+way (docs/PLAN-SHARED-CORE.md, phase 6). The same session manager and
+gateway as a home, over what this app holds; its way is held only while
+nothing above it reaches the device (`toHold`), so the server's Wi-Fi
+takes over again when it is back. Its `api` is the one interface the
+screens ask: a device type's ways this app can hold (`holder: this-app`),
+set up here through `setup` — read over this app's own radio, judged and
+kept by the server, the way's secrets kept here and never sent; a view
+with this app's own readings while it holds the device; a command, a
+setting, a query or a tool to one through its own gateway and session;
+the live stream with what it hears. What it keeps is in the app's own
+database — the devices it holds a way to, as the server has them
+(`mirror`), their secrets, their stores, the gateway's memory, and what
+is owed to the server (`SendQueue`) — so a restart loses none of it, and
+with the server away the app still reaches what it holds.
+
 ### Made from ports
 
 ```ts
@@ -114,8 +147,9 @@ await hub.stop();
   one hub; stopping it stops all of them.
 - **A connection the hub holds** is one no app holds (`held_by` null): the
   server's on a server, the phone's in local mode. An app holding
-  connections for a server's home is not a second hub: it holds them
-  through `@kraftverk/holder` and sends what they say up (decision 6).
+  connections for a server's home is not a second hub: it is a holding
+  (`createHolding`, below), and the server stays the home's master
+  (decision 6).
 - **Who is asking** is part of every call: the gateway binds a
   confirmation to a person, refuses an agent what needs one, and the
   timeline names the account, the automation, the app.

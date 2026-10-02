@@ -59,6 +59,7 @@ level — so two homes can be open in one process.
 | The gateway's memory | `databaseLedger` — the last switch of a part, the last write of a setting |
 | Automations | `AutomationStore`, the engine's `AutomationStorage` |
 | The home | `AppState` (decisions), `policyValues` and `setPolicyValue`, `AuditLog` (the timeline) |
+| What an app holds for a server | a server's device and the way this app holds kept by the server's ids (`mirror`), and what is owed to it (`SendQueue`) |
 | Ids | `randomHex` — from the random values every place has |
 
 Its tests run on bun:sqlite and on SQLite's WebAssembly build

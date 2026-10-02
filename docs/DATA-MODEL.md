@@ -587,6 +587,7 @@ erDiagram
 | `device.description_source` | Whether the description is the type's, for its config, or the device's own — a station that reports its packs. | step 10, then whenever it changes |
 | `sample` | History: every attribute the description says to keep, with its part, while its value is current. | continuously, by the holder |
 | `sample_change` | Every change of an on/off or an enum, when it happened: what a timeline draws ("AC outlets off 14:02–14:19"), where minute samples would blur a switch flicked between them. Two years, and each key's latest beyond. | as readings move, from the server's sessions and from apps' uplinks |
+| `send_queue` | In an app holding ways for a server: what it owes the server — readings, events, timeline entries, what a session kept — in order, kept across a restart and gone once the server has it. Empty on a server. | as the app's sessions and gateway work |
 | `transport_kv` | What a transport keeps between runs — a Bluetooth bond, a Matter fabric — its own and no other's. | by the transport |
 | `meta` | What the database is: the schema it was made with, when, and by which version — what the set-aside message reports. | when the database is made |
 | `audit.resource_kind` | What an entry is about, as a kind and an id together, so the timeline can be asked for one device's, one automation's, one account's. | with every entry |
@@ -678,6 +679,12 @@ Each device's page has a **Connections** section, and it is where
   The device's page says so, and an automation that can't reach it records why.
 - The session's store (`device_kv`) stays on the server. The app reaches it
   through the API and keeps a copy for when it is offline.
+- **What the app keeps, it keeps in its own database** (docs/PLAN-SHARED-CORE.md,
+  phase 6): the device as the server has it, by the server's ids, with the
+  way it holds (`held_by` null there: its own); that way's secrets, sealed
+  with the app's key; the session's store; the gateway's memory; and what
+  it owes the server (`send_queue`). With the server away it still reaches
+  the device, and sends what it owes when the server is back.
 
 ### Removing a device
 

@@ -155,6 +155,22 @@ export class ConnectionStore {
     this.#db.query('DELETE FROM device_connection WHERE id = ?').run(id);
   }
 
+  /**
+   * Keeps a connection another home has, held here, by that home's id: an
+   * app holding a way to a server's device (docs/PLAN-SHARED-CORE.md, phase
+   * 6). Added, or brought up to what it is there; its secrets, which only
+   * this holder has, stay.
+   */
+  mirror(record: Pick<ConnectionRecord, 'id' | 'deviceId' | 'method' | 'transport' | 'address' | 'priority' | 'config' | 'secretsExportable' | 'createdAt'>): void {
+    this.#db
+      .query(
+        `INSERT INTO device_connection (id, device_id, method, transport, held_by, address, priority, config, secrets_exportable, created_at)
+         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET address = excluded.address, priority = excluded.priority, config = excluded.config, secrets_exportable = excluded.secrets_exportable`
+      )
+      .run(record.id, record.deviceId, record.method, record.transport, record.address, record.priority, JSON.stringify(record.config), record.secretsExportable ? 1 : 0, record.createdAt);
+  }
+
   /** The device answered through this connection. */
   touch(id: string): void {
     this.#db.query('UPDATE device_connection SET last_connected_at = ? WHERE id = ?').run(new Date().toISOString(), id);
