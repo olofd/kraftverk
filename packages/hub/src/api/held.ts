@@ -135,7 +135,7 @@ export function heldApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'home' | '
         if (counts.live && latest) hub.bus.publish({ kind: 'readings', deviceId: device.id, readings: latest.readings });
         if (listChanged && latest) hub.bus.publish({ kind: 'changed', deviceId: device.id });
         // Its on/offs and modes, when each changed: queued ones land in their place in time.
-        recordChanges(hub.db, device.id, loggedAttributes(description), input.readings);
+        recordChanges(hub.history, device.id, loggedAttributes(description), input.readings);
         // Its events, kept as the home's own are: only what its description declares, at the level it declares.
         for (const event of input.events ?? []) {
           const declared = (description.events ?? []).find((spec) => spec.id === event.id);

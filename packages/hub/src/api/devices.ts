@@ -225,14 +225,14 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
       async history(id, query: HistoryQuery) {
         const device = deviceOf(id, { removed: true });
         const { from, to } = spanOf(query);
-        return { deviceId: device.id, key: query.key, from, to, resolution: resolutionOf(from, to), points: series(hub.db, device.id, query.key, from, to, query.points ?? 240) };
+        return { deviceId: device.id, key: query.key, from, to, resolution: resolutionOf(from, to), points: series(hub.history, device.id, query.key, from, to, query.points ?? 240) };
       },
 
       /** Every change of an on/off or an enum in a span, exactly when it happened: what a timeline draws. */
       async changes(id, query: ChangesQuery) {
         const device = deviceOf(id, { removed: true });
         const { from, to } = spanOf(query);
-        return { deviceId: device.id, from, to, changes: changesOf(hub.db, device.id, sessions.description(device), { from, to, key: query.key }) };
+        return { deviceId: device.id, from, to, changes: changesOf(hub.history, device.id, sessions.description(device), { from, to, key: query.key }) };
       },
 
       /** What a device said happened, newest first. A removed device's are still there to look at. */

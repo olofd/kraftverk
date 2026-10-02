@@ -1,8 +1,9 @@
 import { partOf, type AttributeSpec, type NodeId, type Reading, type SavedDeviceId } from '@kraftverk/device-sdk';
 
-import type { SqlDatabase } from '@kraftverk/store';
+import type { HistoryStore, Sample } from '@kraftverk/store';
 
-import { rollUp, sampleOf } from '../history/sampler.ts';
+import { MAX_QUEUED_MS, SKEW_MS } from '../history/retention.ts';
+import { sampleOf } from '../history/sampler.ts';
 
 /**
  * Readings from connections an app holds (docs/DATA-MODEL.md §4, "When a
@@ -17,15 +18,13 @@ import { rollUp, sampleOf } from '../history/sampler.ts';
 
 /** A reading this old is history, not the device's current state. */
 const LIVE_MS = 90_000;
-/** How far back queued readings are accepted: as long as history is kept. */
-const MAX_AGE_MS = 14 * 86_400_000;
 
 type Held = { nodeId: NodeId; connectionId: string; readings: Map<string, Reading>; at: number };
 
 export class RemoteReadings {
   #held = new Map<SavedDeviceId, Held>();
 
-  constructor(private readonly db: SqlDatabase) {}
+  constructor(private readonly history: HistoryStore) {}
 
   /**
    * Takes what an app read. Returns how many went straight into history
@@ -43,39 +42,36 @@ export class RemoteReadings {
     held.nodeId = from.nodeId;
     held.connectionId = from.connectionId;
     let live = 0;
-    let history = 0;
     let refused = 0;
-    const insert = this.db.query('INSERT OR REPLACE INTO sample (device_id, part, key, at, value, text) VALUES (?, ?, ?, ?, ?, ?)');
+    const queued: Sample[] = [];
     let earliest = Number.POSITIVE_INFINITY;
     let latest = 0;
 
-    this.db.transaction(() => {
-      for (const reading of readings) {
-        const taken = reading.at ? Date.parse(reading.at) : now;
-        if (!Number.isFinite(taken) || taken > now + 60_000 || now - taken > MAX_AGE_MS) {
-          refused += 1;
-          continue;
-        }
-        if (now - taken <= LIVE_MS) {
-          const previous = held.readings.get(reading.key);
-          if (!previous?.at || Date.parse(previous.at) <= taken) held.readings.set(reading.key, reading);
-          held.at = Math.max(held.at, taken);
-          live += 1;
-          continue;
-        }
-        // Queued while the app was away: history at the minute it was read.
-        const attribute = kept.get(reading.key);
-        const sample = attribute ? sampleOf(reading.value) : null;
-        if (!attribute || !sample) continue;
-        const minute = new Date(Math.floor(taken / 60_000) * 60_000).toISOString();
-        insert.run(deviceId, partOf(attribute), reading.key, minute, sample.value, sample.text);
-        history += 1;
-        earliest = Math.min(earliest, taken);
-        latest = Math.max(latest, taken);
+    for (const reading of readings) {
+      const taken = reading.at ? Date.parse(reading.at) : now;
+      if (!Number.isFinite(taken) || taken > now + SKEW_MS || now - taken > MAX_QUEUED_MS) {
+        refused += 1;
+        continue;
       }
-    })();
+      if (now - taken <= LIVE_MS) {
+        const previous = held.readings.get(reading.key);
+        if (!previous?.at || Date.parse(previous.at) <= taken) held.readings.set(reading.key, reading);
+        held.at = Math.max(held.at, taken);
+        live += 1;
+        continue;
+      }
+      // Queued while the app was away: history at the minute it was read.
+      const attribute = kept.get(reading.key);
+      const sample = attribute ? sampleOf(reading.value) : null;
+      if (!attribute || !sample) continue;
+      const minute = new Date(Math.floor(taken / 60_000) * 60_000).toISOString();
+      queued.push({ deviceId, part: partOf(attribute), key: reading.key, at: minute, ...sample });
+      earliest = Math.min(earliest, taken);
+      latest = Math.max(latest, taken);
+    }
+    const history = this.history.addSamples(queued);
     // The hours they landed in may be rolled up already: again, with them in.
-    if (history) rollUp(this.db, new Date(earliest).toISOString(), new Date(latest + 3_600_000).toISOString());
+    if (history) this.history.rollUp(new Date(earliest).toISOString(), new Date(latest + 3_600_000).toISOString());
     this.#held.set(deviceId, held);
     return { live, history, refused };
   }

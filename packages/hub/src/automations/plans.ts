@@ -17,7 +17,7 @@ import {
   type RuleVocabulary,
 } from '@kraftverk/automation';
 
-import type { DeviceCatalog, AutomationStore, SqlDatabase } from '@kraftverk/store';
+import type { AutomationStore, DeviceCatalog, EventStore, HistoryStore } from '@kraftverk/store';
 import type { SessionManager } from '@kraftverk/holder';
 import { CHAIN_LIMIT, quoted, type AutomationEngine, type AutomationRecord, type AutomationLibrary, rehearse } from '@kraftverk/automation-engine';
 
@@ -33,7 +33,9 @@ export const REHEARSAL_MAX_HOURS = 14 * 24;
 
 export type PlanDeps = {
   /** Where the home's history is kept: what a rehearsal walks. */
-  db: SqlDatabase;
+  /** What the home recorded: a rehearsal plays it back. */
+  history: HistoryStore;
+  events: EventStore;
   catalog: DeviceCatalog;
   sessions: SessionManager;
   library: AutomationLibrary;
@@ -63,7 +65,7 @@ const looksLikeRule = (rule: unknown): rule is Rule => {
 
 const NOT_A_RULE = 'That is not a rule: it needs roles, settings, triggers and steps';
 
-export function plans({ db, catalog, sessions, library, engine, automations }: PlanDeps) {
+export function plans({ history, events, catalog, sessions, library, engine, automations }: PlanDeps) {
   /** "Garage station", or "Garage station — AC outlets": how a role's part is named, as everywhere else. */
   const roleName = (binding: RoleBinding | undefined): string => {
     const record = binding ? catalog.get(binding.device) : null;
@@ -244,15 +246,8 @@ export function plans({ db, catalog, sessions, library, engine, automations }: P
           const record = catalog.get(binding.device);
           return record ? { name: roleName(binding), description: sessions.description(record) } : null;
         },
-        samples: (deviceId, key, start, end) =>
-          db
-            .query<{ at: string; value: number | null; text: string | null }, [string, string, string, string]>('SELECT at, value, text FROM sample WHERE device_id = ? AND key = ? AND at >= ? AND at <= ? ORDER BY at')
-            .all(deviceId, key, start, end),
-        events: (deviceId, part, event, start, end) =>
-          db
-            .query<{ at: string }, [string, string, string, string, string]>('SELECT at FROM device_event WHERE device_id = ? AND part = ? AND event = ? AND at >= ? AND at <= ? ORDER BY at')
-            .all(deviceId, part, event, start, end)
-            .map((row) => row.at),
+        samples: (deviceId, key, start, end) => history.samples(deviceId, key, start, end),
+        events: (deviceId, part, event, start, end) => events.times(deviceId, part, event, start, end),
       },
       { from, to }
     );

@@ -7,7 +7,7 @@ import type { Rule } from '@kraftverk/automation';
 import { ApiError } from '@kraftverk/api-contract';
 import { AutomationLibrary } from '@kraftverk/automation-engine';
 import type { AuditRecord } from '@kraftverk/device-sdk';
-import { AppState, AutomationStore, ConnectionStore, DeviceCatalog, LinkStore, NodeStore, plainSecrets, policyValues, setPolicyValue, type SqlDatabase } from '@kraftverk/store';
+import { AppState, AutomationStore, ConnectionStore, DeviceCatalog, EventStore, HistoryStore, LinkStore, NodeStore, plainSecrets, policyValues, setPolicyValue, type SqlDatabase } from '@kraftverk/store';
 
 import { plans } from '../src/automations/plans.ts';
 import { exportConfig } from '../src/configuration/export.ts';
@@ -55,7 +55,7 @@ beforeEach(() => {
   const library = new AutomationLibrary([], () => {});
   const engine = { reset: () => {}, poke: () => {}, forget: () => {} };
   const sessions = { sync: async (records: readonly unknown[]) => void sessionsSynced.push(records.length), description: (record: { description: unknown }) => record.description };
-  const { checked } = plans({ db, catalog, sessions: sessions as never, library, engine: engine as never, automations });
+  const { checked } = plans({ history: new HistoryStore(db), events: new EventStore(db), catalog, sessions: sessions as never, library, engine: engine as never, automations });
   const state = new AppState(db);
   // This node, the home's own: what holds the ways a file says.
   new NodeStore(db).declareSelf({ ...MACHINE_NODE, platform: 'system', transports: ['bus'] });

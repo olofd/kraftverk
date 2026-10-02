@@ -7,6 +7,7 @@ import {
   AppState,
   AuditLog,
   AutomationStore,
+  HistoryStore,
   HomeStore,
   PlaceStore,
   NodeStore,
@@ -129,6 +130,8 @@ export class Hub {
   readonly links: LinkStore;
   readonly nodes: NodeStore;
   readonly events: EventStore;
+  /** What the home recorded: samples, their roll-ups, and every change of an on/off. */
+  readonly history: HistoryStore;
   readonly automations: AutomationStore;
   readonly policy: { values(): PolicyValues; set(name: PolicyValueName, value: number | null): PolicyValues };
 
@@ -189,6 +192,7 @@ export class Hub {
     const home = this.home.ensure({ name: 'Home', masterId: self.id });
     if (home.masterId !== self.id) throw new Error(`This database is kept for another master (${home.masterId}): it is not opened as a home of its own`);
     this.events = new EventStore(db);
+    this.history = new HistoryStore(db);
     this.automations = new AutomationStore(db);
     this.policy = { values: () => policyValues(this.state), set: (name, value) => setPolicyValue(this.state, name, value) };
 
@@ -241,14 +245,14 @@ export class Hub {
     /** What the installed packages bring to automations: their recipes and functions. None of the core's own. */
     this.library = new AutomationLibrary(types.contributions(), (message) => this.#log('warn', message));
     this.engine = new AutomationEngine({ store: automations, library: this.library, device: homeDevices(catalog, sessions), gateway: this.gateway, record, bus: this.bus });
-    this.plans = plans({ db, catalog, sessions, library: this.library, engine: this.engine, automations });
+    this.plans = plans({ history: this.history, events, catalog, sessions, library: this.library, engine: this.engine, automations });
 
-    this.remote = new RemoteReadings(db);
+    this.remote = new RemoteReadings(this.history);
     this.registry = new DeviceRegistry({ catalog, types, sessions, connections, links, nodes, transports, remote: this.remote, self: self.id, master: () => this.home.get()!.masterId, readOnly: options.readOnly });
     this.setup = new SetupService({ db, record, types, protocols, transports, catalog, connections, links, sessions, http: options.http, self: self.id, traits: (id) => nodes.get(id) });
     this.nearby = new Nearby({ types, protocols, transports, connections });
-    this.sampler = new Sampler(db, this.registry);
-    this.changeLog = new ChangeLog(db, this.bus, (id) => {
+    this.sampler = new Sampler({ history: this.history, audit: this.audit, events }, this.registry);
+    this.changeLog = new ChangeLog(this.history, this.bus, (id) => {
       const device = catalog.active(id);
       return device ? sessions.description(device) : null;
     });

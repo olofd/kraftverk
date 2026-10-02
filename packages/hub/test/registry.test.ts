@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { nodeId } from '@kraftverk/device-sdk';
 import { SessionManager } from '@kraftverk/holder';
-import { NodeStore, ConnectionStore, DeviceCatalog, deviceStore, holding, LinkStore, plainSecrets } from '@kraftverk/store';
+import { ConnectionStore, DeviceCatalog, deviceStore, HistoryStore, holding, LinkStore, NodeStore, plainSecrets } from '@kraftverk/store';
 
 import { DeviceRegistry } from '../src/devices/registry.ts';
 import { RemoteReadings } from '../src/devices/remote.ts';
@@ -53,7 +53,7 @@ beforeAll(() => {
     allowRawFrames: false,
     nodeName: (id) => nodes.get(id)?.name ?? null,
   });
-  registry = new DeviceRegistry({ catalog, types, sessions, connections, links, nodes, transports, remote: new RemoteReadings(db), self: MACHINE_NODE.id, master: () => MACHINE_NODE.id, readOnly: () => false });
+  registry = new DeviceRegistry({ catalog, types, sessions, connections, links, nodes, transports, remote: new RemoteReadings(new HistoryStore(db)), self: MACHINE_NODE.id, master: () => MACHINE_NODE.id, readOnly: () => false });
 });
 
 afterAll(async () => {

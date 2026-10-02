@@ -1,4 +1,4 @@
-import type { CheckOutcome, DraftView, HeldSetupInput, SightingView } from '@kraftverk/api-contract';
+import { ApiError, type CheckOutcome, type DraftView, type HeldSetupInput, type SightingView } from '@kraftverk/api-contract';
 import {
   nodeId,
   findStep,
@@ -24,11 +24,11 @@ import { unref } from '../timers.ts';
 import { randomHex, type DeviceCatalog, type DeviceRecord, type ConnectionStore, type LinkStore, type SqlDatabase } from '@kraftverk/store';
 import type { SessionManager } from '@kraftverk/holder';
 import type { DeviceTypeRegistry } from '../installed/types.ts';
-import { connectionSchema, DRAFT_TTL_MS, SetupError, viewOf, type Draft, type SaveRequest } from './draft.ts';
+import { connectionSchema, DRAFT_TTL_MS, viewOf, type Draft, type SaveRequest } from './draft.ts';
 import { overHardware, SIMULATED_REACH } from './reach.ts';
 import { saveable, writeSaved } from './save.ts';
 
-export { connectionSchema, SetupError, type SaveRequest } from './draft.ts';
+export { connectionSchema, type SaveRequest } from './draft.ts';
 
 /**
  * Adding a device to a home (docs/DATA-MODEL.md §1).
@@ -93,22 +93,22 @@ export class SetupService {
    */
   async start(input: { typeId: string; methodId?: string | null; by: string }): Promise<DraftView> {
     const type = this.deps.types.get(input.typeId);
-    if (!type) throw new SetupError(`Nothing installed here knows what "${input.typeId}" is`, 404);
+    if (!type) throw new ApiError('not-found', `Nothing installed here knows what "${input.typeId}" is`);
 
     const method = input.methodId ? methodOf(type, input.methodId) : type.connections.length === 1 ? type.connections[0]! : null;
-    if (!method) throw new SetupError(input.methodId ? `${type.meta.name} has no way called "${input.methodId}"` : 'Choose how to connect first');
+    if (!method) throw new ApiError('invalid', input.methodId ? `${type.meta.name} has no way called "${input.methodId}"` : 'Choose how to connect first');
 
     // Simulated: nothing to reach, so no protocol and no transport — only the type's own steps, then its simulator.
     let reach = SIMULATED_REACH;
     let transport = null;
     const unfit = unfitFor(method, this.#traits(this.deps.self));
-    if (unfit) throw new SetupError(`${method.label}: ${unfit}`, 409);
+    if (unfit) throw new ApiError('conflict', `${method.label}: ${unfit}`);
     if (!isSimulated(method)) {
       const protocol = this.deps.protocols.get(method.protocol);
-      if (!protocol?.bindings[method.transport]) throw new SetupError(`${platformWords(this.deps.transports.platform).this} cannot reach a ${type.meta.name} by ${method.label}: it needs updating`, 409);
+      if (!protocol?.bindings[method.transport]) throw new ApiError('conflict', `${platformWords(this.deps.transports.platform).this} cannot reach a ${type.meta.name} by ${method.label}: it needs updating`);
       transport = await this.deps.transports.start(method.transport);
       const available = this.deps.transports.available(method.transport);
-      if (!transport || !available.ok) throw new SetupError(available.ok ? `${method.label} cannot be used here` : available.reason, 409);
+      if (!transport || !available.ok) throw new ApiError('conflict', available.ok ? `${method.label} cannot be used here` : available.reason);
       reach = overHardware(protocol, this.deps.transports.definition(method.transport), this.deps.transports);
     }
 
@@ -142,11 +142,11 @@ export class SetupService {
    */
   startHeld(input: HeldSetupInput & { by: string }): DraftView {
     const type = this.deps.types.get(input.typeId);
-    if (!type) throw new SetupError(`Nothing installed here knows what "${input.typeId}" is`, 404);
+    if (!type) throw new ApiError('not-found', `Nothing installed here knows what "${input.typeId}" is`);
     const method = type.connections.find((candidate) => candidate.id === input.methodId);
-    if (!method) throw new SetupError(`${type.meta.name} has no way called "${input.methodId}"`);
+    if (!method) throw new ApiError('invalid', `${type.meta.name} has no way called "${input.methodId}"`);
     const unfit = unfitFor(method, this.#traits(nodeId(input.nodeId)));
-    if (unfit) throw new SetupError(`${method.label}: ${unfit}`);
+    if (unfit) throw new ApiError('invalid', `${method.label}: ${unfit}`);
     const protocol = this.deps.protocols.get(method.protocol) ?? null;
     const secret = new Set(
       Object.entries(connectionSchema(method, protocol).fields)
@@ -175,7 +175,7 @@ export class SetupService {
 
   /** Refuses a draft to anyone but the account that started it: it may hold a key. */
   assertOwner(id: string, by: string): void {
-    if (this.#draft(id).by !== by) throw new SetupError('That setup has expired; start again', 404);
+    if (this.#draft(id).by !== by) throw new ApiError('not-found', 'That setup has expired; start again');
   }
 
   discard(id: string): void {
@@ -217,11 +217,11 @@ export class SetupService {
   async choose(id: string, input: { address?: string; manual?: string; chooser?: { showAll?: boolean } }): Promise<DraftView> {
     const draft = this.#draft(id);
     const binding = draft.reach.protocol?.bindings[draft.method!.transport];
-    if (!binding) throw new SetupError('This method has nothing to choose');
+    if (!binding) throw new ApiError('invalid', 'This method has nothing to choose');
 
     if (input.chooser) {
       const transport = await this.deps.transports.start(draft.method!.transport);
-      if (!transport?.choose) throw new SetupError(`${platformWords(this.deps.transports.platform).this} has no chooser for ${draft.method!.label}: choose from the list`);
+      if (!transport?.choose) throw new ApiError('invalid', `${platformWords(this.deps.transports.platform).this} has no chooser for ${draft.method!.label}: choose from the list`);
       // Shown everything, it may be a device its protocol does not know by its advertising alone: the check reads it.
       const sighting = await transport.choose(input.chooser.showAll ? {} : (binding.filter ?? {}));
       if (!sighting) return viewOf(draft);
@@ -232,13 +232,13 @@ export class SetupService {
       draft.connection = { ...draft.connection, ...(recognised?.config ?? {}) };
     } else if (input.manual !== undefined) {
       const address = binding.parseAddress?.(input.manual) ?? null;
-      if (!address) throw new SetupError(binding.parseAddress ? `That is not a ${binding.addressLabel ?? 'valid address'}` : 'An address cannot be typed for this');
+      if (!address) throw new ApiError('invalid', binding.parseAddress ? `That is not a ${binding.addressLabel ?? 'valid address'}` : 'An address cannot be typed for this');
       draft.address = address;
       draft.identityHint = null;
     } else {
       const sighting = draft.sightings.find((candidate) => candidate.address.toLowerCase() === input.address?.toLowerCase());
       const recognised = sighting ? binding.recognise(sighting) : null;
-      if (!sighting || !recognised) throw new SetupError('That device is not in the list any more; choose again');
+      if (!sighting || !recognised) throw new ApiError('invalid', 'That device is not in the list any more; choose again');
       draft.address = sighting.address;
       draft.identityHint = recognised.identity ?? null;
       // What the sighting already says — a device's id and version — fills in the connection.
@@ -254,12 +254,12 @@ export class SetupService {
     const draft = this.#draft(id);
     const schema = connectionSchema(draft.method, draft.reach.protocol);
     for (const [field, value] of Object.entries(input.device ?? {})) {
-      if (!(field in draft.type.config.fields)) throw new SetupError(`${draft.type.meta.name} has no setting "${field}"`);
+      if (!(field in draft.type.config.fields)) throw new ApiError('invalid', `${draft.type.meta.name} has no setting "${field}"`);
       draft.device[field] = value;
     }
     for (const [field, value] of Object.entries(input.connection ?? {})) {
       const spec = schema.fields[field];
-      if (!spec) throw new SetupError(`This connection has no setting "${field}"`);
+      if (!spec) throw new ApiError('invalid', `This connection has no setting "${field}"`);
       if (!isSecretField(spec)) {
         draft.connection[field] = value;
         continue;
@@ -268,7 +268,7 @@ export class SetupService {
       // A placeholder the app was handed stands for a secret already here — and only one it was handed.
       if (PLACEHOLDER.test(value)) {
         const held = draft.placeholders.get(value);
-        if (held === undefined) throw new SetupError('That value has expired; fetch it again');
+        if (held === undefined) throw new ApiError('invalid', 'That value has expired; fetch it again');
         draft.secrets.set(field, held);
       } else draft.secrets.set(field, value);
     }
@@ -281,9 +281,9 @@ export class SetupService {
   async action(id: string, stepId: string, actionId: string, input: ConfigValues, signal?: AbortSignal): Promise<SetupActionResult> {
     const draft = this.#draft(id);
     const step = findStep(draft.type, draft.method, draft.reach.protocol, stepId);
-    if (!step || step.kind !== 'form') throw new SetupError('No such step', 404);
+    if (!step || step.kind !== 'form') throw new ApiError('not-found', 'No such step');
     const action = step.actions?.find((candidate) => candidate.id === actionId);
-    if (!action) throw new SetupError('No such action', 404);
+    if (!action) throw new ApiError('not-found', 'No such action');
     const result = await withTimeout(action.run(this.#setupContext(draft, signal), input), action.label, ACTION_TIMEOUT_MS).catch(
       (error: unknown) => ({ ok: false, detail: (error as Error).message }) as SetupActionResult
     );
@@ -294,7 +294,7 @@ export class SetupService {
   async discover(id: string, stepId: string, signal?: AbortSignal): Promise<SetupActionResult> {
     const draft = this.#draft(id);
     const step = findStep(draft.type, draft.method, draft.reach.protocol, stepId);
-    if (!step || step.kind !== 'discover') throw new SetupError('No such step', 404);
+    if (!step || step.kind !== 'discover') throw new ApiError('not-found', 'No such step');
     const result = await withTimeout(step.run(this.#setupContext(draft, signal)), step.title, ACTION_TIMEOUT_MS).catch(
       (error: unknown) => ({ ok: false, detail: (error as Error).message }) as SetupActionResult
     );
@@ -314,7 +314,7 @@ export class SetupService {
   async check(id: string): Promise<CheckOutcome> {
     const draft = this.#draft(id);
     const method = draft.method!;
-    if (!draft.address) throw new SetupError('Choose the device first');
+    if (!draft.address) throw new ApiError('invalid', 'Choose the device first');
 
     if (draft.reach.exclusive) {
       const claim = this.deps.connections.claimant(method.transport, draft.address);
@@ -332,7 +332,7 @@ export class SetupService {
    */
   async read(id: string): Promise<{ draft: DraftView; read: { identified: Identified } | { outcome: CheckOutcome }; secrets: Record<string, string> }> {
     const draft = this.#draft(id);
-    if (!draft.address) throw new SetupError('Choose the device first');
+    if (!draft.address) throw new ApiError('invalid', 'Choose the device first');
     const read = await draft.reach.identify(draft);
     if ('identified' in read) draft.device = { ...draft.device, ...(read.identified.config ?? {}) };
     this.#touch(draft);
@@ -347,7 +347,7 @@ export class SetupService {
     const draft = this.#draft(id);
     const method = draft.method!;
     // The node that will hold it was forgotten while it was being set up.
-    if (!this.deps.traits(draft.heldBy)) throw new SetupError('The node that was to hold it is no longer part of this home', 404);
+    if (!this.deps.traits(draft.heldBy)) throw new ApiError('not-found', 'The node that was to hold it is no longer part of this home');
     const config = saveable(draft, input, this.deps.self);
     const { record, kind } = this.deps.db.transaction(() => writeSaved(this.deps, draft, input, config))();
 
@@ -413,7 +413,7 @@ export class SetupService {
     const draft = this.#drafts.get(id);
     if (!draft || draft.expiresAt < Date.now()) {
       if (draft) this.discard(id);
-      throw new SetupError('That setup has expired; start again', 404);
+      throw new ApiError('not-found', 'That setup has expired; start again');
     }
     return draft;
   }

@@ -59,4 +59,17 @@ export class EventStore {
       .all(limit)
       .map((row) => ({ ...toRecord(row), deviceName: row.device_name }));
   }
+
+  /** When one event of one part happened, between two times, oldest first. */
+  times(deviceId: string, part: string, event: string, fromIso: string, toIso: string): string[] {
+    return this.#db
+      .query<{ at: string }, [string, string, string, string, string]>('SELECT at FROM device_event WHERE device_id = ? AND part = ? AND event = ? AND at >= ? AND at <= ? ORDER BY at')
+      .all(deviceId, part, event, fromIso, toIso)
+      .map((row) => row.at);
+  }
+
+  /** Lets go of what happened before a time. */
+  prune(beforeIso: string): void {
+    this.#db.query('DELETE FROM device_event WHERE at < ?').run(beforeIso);
+  }
 }

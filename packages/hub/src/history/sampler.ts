@@ -1,10 +1,10 @@
 import type { SeriesPoint } from '@kraftverk/api-contract';
 import { isCurrent, keepsHistory, partOf, type AttributeSpec, type DeviceDescription, type Value } from '@kraftverk/device-sdk';
 
-import type { SqlDatabase } from '@kraftverk/store';
+import type { AuditLog, EventStore, HistoryStore, Sample } from '@kraftverk/store';
 
-import { pruneChanges } from './changes.ts';
 import type { DeviceRegistry } from '../devices/registry.ts';
+import { daysBefore, HOURLY_DAYS, SAMPLE_DAYS, TIMELINE_DAYS } from './retention.ts';
 
 /**
  * Writes one sample per device attribute, once a minute.
@@ -41,13 +41,7 @@ export const keptAttributes = (description: DeviceDescription): Map<string, Attr
   new Map(description.attributes.filter((attribute) => keepsHistory(attribute)).map((attribute) => [attribute.key, attribute]));
 
 const INTERVAL_MS = 60_000;
-/** Two weeks of minute samples is a few hundred thousand rows. Plenty, and small. */
-const RETAIN_DAYS = 14;
-/** Hourly roll-ups: two years, for charts that reach back and for calibrating forecasts. */
-const RETAIN_HOURLY_DAYS = 730;
-/** The audit timeline: a year of who did what. */
-const RETAIN_AUDIT_DAYS = 365;
-/** How far back each roll-up looks: late readings from an app that was offline land in hours already rolled up. */
+/** How far back each roll-up looks: late readings from a node that was away land in hours already rolled up. */
 const ROLLUP_WINDOW_MS = 48 * 3_600_000;
 /** Spans longer than this are drawn from the hourly roll-ups. */
 const HOURLY_ABOVE_HOURS = 48;
@@ -56,28 +50,18 @@ export class Sampler {
   #timer: ReturnType<typeof setInterval> | null = null;
   #pruneTimer: ReturnType<typeof setInterval> | null = null;
   #rollupTimer: ReturnType<typeof setInterval> | null = null;
-  /**
-   * Stops a slow round from overlapping the next one.
-   *
-   * The interval fires regardless of whether the previous sample finished, so a
-   * round that outran a minute would have a second one starting on top of it —
-   * two passes over every device, and two write transactions racing for the
-   * same table. A skipped sample is a one-minute gap in a chart; overlapping
-   * ones are load that grows with every device added.
-   */
-  #sampling = false;
 
   constructor(
-    private db: SqlDatabase,
-    private registry: DeviceRegistry
+    private readonly kept: { history: HistoryStore; audit: AuditLog; events: EventStore },
+    private readonly registry: DeviceRegistry
   ) {}
 
   start(): void {
-    this.#timer ??= setInterval(() => void this.sample(), INTERVAL_MS);
+    this.#timer ??= setInterval(() => this.sample(), INTERVAL_MS);
     this.#pruneTimer ??= setInterval(() => this.prune(), 6 * 60 * 60_000);
-    this.#rollupTimer ??= setInterval(() => rollUp(this.db), 10 * 60_000);
-    void this.sample();
-    rollUp(this.db);
+    this.#rollupTimer ??= setInterval(() => this.rollUp(), 10 * 60_000);
+    this.sample();
+    this.rollUp();
   }
 
   stop(): void {
@@ -89,110 +73,51 @@ export class Sampler {
     this.#rollupTimer = null;
   }
 
-  async sample(): Promise<void> {
-    if (this.#sampling) return;
-    this.#sampling = true;
-
-    let devices;
-    try {
-      devices = await this.registry.all();
-    } catch {
-      return; // a failed read is a missing sample, not a crashed server
-    } finally {
-      this.#sampling = false;
-    }
-
-    const now = Date.now();
+  /** One sample of every kept attribute that is current now, of every device; one deleted since it was read is skipped. */
+  sample(now = Date.now()): void {
     const at = new Date(now).toISOString();
-    const insert = this.db.query('INSERT OR REPLACE INTO sample (device_id, part, key, at, value, text) VALUES (?, ?, ?, ?, ?, ?)');
-
-    // A device deleted since it was read has no history to add to: skipped, not a failed tick.
-    const exists = this.db.query('SELECT 1 FROM device WHERE id = ?');
-
-    const write = this.db.transaction(() => {
-      for (const device of devices) {
-        if (!exists.get(device.id)) continue;
-        const kept = keptAttributes(device.description);
-        for (const reading of device.readings) {
-          const attribute = kept.get(reading.key);
-          if (!attribute || !isCurrent(attribute, reading, now)) continue;
-          const sample = sampleOf(reading.value);
-          if (sample) insert.run(device.id, partOf(attribute), reading.key, at, sample.value, sample.text);
-        }
+    const samples: Sample[] = [];
+    for (const device of this.registry.all()) {
+      const kept = keptAttributes(device.description);
+      for (const reading of device.readings) {
+        const attribute = kept.get(reading.key);
+        if (!attribute || !isCurrent(attribute, reading, now)) continue;
+        const sample = sampleOf(reading.value);
+        if (sample) samples.push({ deviceId: device.id, part: partOf(attribute), key: reading.key, at, ...sample });
       }
-    });
-
-    write();
+    }
+    this.kept.history.addSamples(samples);
   }
 
-  /** Minute samples go after two weeks — rolled up first — hourly ones and changes after two years, the audit and device events after one. */
+  /** The last two days rolled up into hours again: late readings from a node that was away land in hours already rolled up. */
+  rollUp(now = Date.now()): void {
+    this.kept.history.rollUp(new Date(now - ROLLUP_WINDOW_MS).toISOString(), new Date(now).toISOString());
+  }
+
+  /** Minute samples go after two weeks — rolled up first — hourly ones and changes after two years, the timeline and device events after one. */
   prune(now = Date.now()): void {
-    const before = (days: number) => new Date(now - days * 86_400_000).toISOString();
-    rollUp(this.db, before(RETAIN_DAYS + 2), before(RETAIN_DAYS - 1));
-    this.db.query('DELETE FROM sample WHERE at < ?').run(before(RETAIN_DAYS));
-    this.db.query('DELETE FROM sample_hour WHERE hour < ?').run(before(RETAIN_HOURLY_DAYS));
-    pruneChanges(this.db, now);
-    this.db.query('DELETE FROM audit WHERE at < ?').run(before(RETAIN_AUDIT_DAYS));
+    this.kept.history.rollUp(daysBefore(now, SAMPLE_DAYS + 2), daysBefore(now, SAMPLE_DAYS - 1));
+    this.kept.history.prune({ samples: daysBefore(now, SAMPLE_DAYS), hours: daysBefore(now, HOURLY_DAYS), changes: daysBefore(now, HOURLY_DAYS) });
+    this.kept.audit.prune(daysBefore(now, TIMELINE_DAYS));
     // What a device said happened is kept as long as what was done to it.
-    this.db.query('DELETE FROM device_event WHERE at < ?').run(before(RETAIN_AUDIT_DAYS));
+    this.kept.events.prune(daysBefore(now, TIMELINE_DAYS));
   }
-}
-
-/** The start of the hour an ISO time falls in, as the roll-ups key it. */
-const hourOf = (iso: string) => `${iso.slice(0, 13)}:00:00.000Z`;
-
-/**
- * Rolls minute samples up into hours, between two times — by default the last
- * two days. Idempotent: an hour is recomputed from its samples, so rolling it
- * up again after late readings arrived corrects it rather than counting twice.
- */
-export function rollUp(db: SqlDatabase, fromIso = new Date(Date.now() - ROLLUP_WINDOW_MS).toISOString(), toIso = new Date().toISOString()): void {
-  db
-    .query(
-      `INSERT OR REPLACE INTO sample_hour (device_id, part, key, hour, min, avg, max, n)
-         SELECT device_id, part, key, substr(at, 1, 13) || ':00:00.000Z', min(value), avg(value), max(value), count(*)
-         FROM sample WHERE value IS NOT NULL AND at >= ? AND at < ?
-         GROUP BY device_id, part, key, substr(at, 1, 13)`
-    )
-    .run(hourOf(fromIso), toIso);
 }
 
 /** Minute samples for a short span; hourly roll-ups for a long one, and for anything older than the minutes kept. */
 export function resolutionOf(fromIso: string, toIso: string): 'minute' | 'hour' {
   const span = (Date.parse(toIso) - Date.parse(fromIso)) / 3_600_000;
-  const oldest = Date.now() - RETAIN_DAYS * 86_400_000;
-  return span > HOURLY_ABOVE_HOURS || Date.parse(fromIso) < oldest ? 'hour' : 'minute';
+  return span > HOURLY_ABOVE_HOURS || Date.parse(fromIso) < Date.parse(daysBefore(Date.now(), SAMPLE_DAYS)) ? 'hour' : 'minute';
 }
 
 /**
- * One measurement over a window, thinned to at most `points`.
- *
- * Thinning happens in SQL rather than in the app: a fortnight of minute samples
- * is 20 000 points for a chart 300 pixels wide, and shipping them all would
- * make the phone do arithmetic it cannot show.
+ * One measurement over a window, thinned to at most `points`: a fortnight
+ * of minute samples is 20 000 points for a chart 300 pixels wide, and
+ * sending them all would make a phone do arithmetic it cannot show.
  */
-export function series(
-  db: SqlDatabase,
-  deviceId: string,
-  key: string,
-  fromIso: string,
-  toIso: string,
-  points = 240
-): SeriesPoint[] {
-  const rows = resolutionOf(fromIso, toIso) === 'hour'
-    ? db
-        .query<{ at: string; value: number }, [string, string, string, string]>(
-          'SELECT hour AS at, avg AS value FROM sample_hour WHERE device_id = ? AND key = ? AND hour >= ? AND hour <= ? ORDER BY hour'
-        )
-        .all(deviceId, key, hourOf(fromIso), toIso)
-    : db
-        .query<{ at: string; value: number }, [string, string, string, string]>(
-          'SELECT at, value FROM sample WHERE device_id = ? AND key = ? AND at >= ? AND at <= ? ORDER BY at'
-        )
-        .all(deviceId, key, fromIso, toIso);
-
+export function series(history: HistoryStore, deviceId: string, key: string, fromIso: string, toIso: string, points = 240): SeriesPoint[] {
+  const rows = history.series(deviceId, key, fromIso, toIso, resolutionOf(fromIso, toIso));
   if (rows.length <= points) return rows;
-
   const stride = rows.length / points;
   const thinned: SeriesPoint[] = [];
   for (let index = 0; index < points; index++) {

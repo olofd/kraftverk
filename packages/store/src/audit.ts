@@ -62,4 +62,9 @@ export class AuditLog {
         detail: row.detail ? (JSON.parse(row.detail) as unknown) : undefined,
       }));
   }
+
+  /** Lets go of what was recorded before a time. */
+  prune(beforeIso: string): void {
+    this.#db.query('DELETE FROM audit WHERE at < ?').run(beforeIso);
+  }
 }

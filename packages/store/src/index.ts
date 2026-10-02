@@ -12,6 +12,7 @@
 export * from './database.ts';
 export * from './schema.ts';
 export * from './secrets.ts';
+export * from './history.ts';
 export * from './ids.ts';
 export * from './app-state.ts';
 export * from './audit.ts';

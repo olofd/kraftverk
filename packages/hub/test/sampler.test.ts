@@ -3,7 +3,9 @@ import { describe, expect, test } from 'bun:test';
 import type { AttributeSpec, DeviceDescription, Reading } from '@kraftverk/device-sdk';
 
 import type { DeviceRegistry } from '../src/devices/registry.ts';
-import { resolutionOf, rollUp, Sampler, series } from '../src/history/sampler.ts';
+import { AuditLog, EventStore, HistoryStore } from '@kraftverk/store';
+
+import { resolutionOf, Sampler, series } from '../src/history/sampler.ts';
 import { testDatabase } from './home.ts';
 
 /**
@@ -15,6 +17,9 @@ import { testDatabase } from './home.ts';
 
 /** One home for the file: each test uses devices of its own. */
 const db = testDatabase();
+const history = new HistoryStore(db);
+/** What a sampler keeps to: this test's database. */
+const kept = { history, audit: new AuditLog(db), events: new EventStore(db) };
 
 
 /** What a device reporting these readings is: an attribute each, typed by what it reports. */
@@ -36,7 +41,7 @@ const registry = (id: string, readings: Reading[], description = describedBy(rea
   db
     .query("INSERT OR IGNORE INTO device (id, key, name, config, description, added_at, type_id) VALUES (?1, ?1, ?2, '{}', ?3, ?4, 'test.device')")
     .run(id, id, JSON.stringify(description), new Date().toISOString());
-  return { all: async () => [{ id, readings, description }] } as unknown as DeviceRegistry;
+  return { all: () => [{ id, readings, description }] } as unknown as DeviceRegistry;
 };
 
 const stored = (id: string) =>
@@ -47,7 +52,7 @@ const storedText = (id: string) =>
 describe('sampling', () => {
   test('a current reading is stored; booleans as 0 and 1', async () => {
     const at = new Date().toISOString();
-    await new Sampler(db, registry('fresh', [
+    await new Sampler(kept, registry('fresh', [
       { key: 'soc', value: 73.4, at },
       { key: 'gridConnected', value: true, at },
     ])).sample();
@@ -71,19 +76,19 @@ describe('sampling', () => {
         { key: 'serial', label: 'Serial', value: { type: 'string' } },
       ],
     };
-    await new Sampler(db, registry('modes', readings, description)).sample();
+    await new Sampler(kept, registry('modes', readings, description)).sample();
     expect(storedText('modes')).toEqual([{ key: 'state', text: 'charging' }]);
     expect(stored('modes').map((row) => row.key)).toEqual(['state']);
   });
 
   test('a device that has not reported leaves a gap, not a zero', async () => {
-    await new Sampler(db, registry('silent', [{ key: 'soc', value: null, at: new Date().toISOString() }])).sample();
+    await new Sampler(kept, registry('silent', [{ key: 'soc', value: null, at: new Date().toISOString() }])).sample();
     expect(stored('silent')).toEqual([]);
   });
 
   test('a device that stopped reporting leaves a gap, not its last value again', async () => {
     const tenMinutesAgo = new Date(Date.now() - 10 * 60_000).toISOString();
-    await new Sampler(db, registry('stale', [{ key: 'soc', value: 73.4, at: tenMinutesAgo }])).sample();
+    await new Sampler(kept, registry('stale', [{ key: 'soc', value: 73.4, at: tenMinutesAgo }])).sample();
     expect(stored('stale')).toEqual([]);
   });
 
@@ -100,7 +105,7 @@ describe('sampling', () => {
         { key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' } },
       ],
     };
-    await new Sampler(db, registry('forecast', [{ key: 'temperature', value: 12.5, at: fetched }, { key: 'watts', value: 40, at: fetched }], description)).sample();
+    await new Sampler(kept, registry('forecast', [{ key: 'temperature', value: 12.5, at: fetched }, { key: 'watts', value: 40, at: fetched }], description)).sample();
     expect(stored('forecast')).toEqual([{ key: 'temperature', value: 12.5 }]);
   });
 
@@ -113,7 +118,7 @@ describe('sampling', () => {
         { key: 'pack.1.soc', part: 'pack.1', label: 'Pack 1 charge', value: { type: 'number', unit: '%' } },
       ],
     };
-    await new Sampler(db, registry('packs', [{ key: 'soc', value: 80, at }, { key: 'pack.1.soc', value: 60, at }], description)).sample();
+    await new Sampler(kept, registry('packs', [{ key: 'soc', value: 80, at }, { key: 'pack.1.soc', value: 60, at }], description)).sample();
     expect(db.query('SELECT part, key FROM sample WHERE device_id = ? ORDER BY key').all('packs')).toEqual([
       { part: 'pack.1', key: 'pack.1.soc' },
       { part: 'main', key: 'soc' },
@@ -131,11 +136,11 @@ describe('history that lasts', () => {
     const hour = new Date(Date.UTC(2026, 8, 27, 10, 0));
     put('rolled', new Date(hour.getTime() + 60_000), 10);
     put('rolled', new Date(hour.getTime() + 2 * 60_000), 20);
-    rollUp(db, hour.toISOString(), new Date(hour.getTime() + 3_600_000).toISOString());
+    history.rollUp(hour.toISOString(), new Date(hour.getTime() + 3_600_000).toISOString());
     expect(hours('rolled')).toEqual([{ hour: '2026-09-27T10:00:00.000Z', min: 10, avg: 15, max: 20, n: 2 }]);
 
     put('rolled', new Date(hour.getTime() + 30 * 60_000), 60);
-    rollUp(db, hour.toISOString(), new Date(hour.getTime() + 3_600_000).toISOString());
+    history.rollUp(hour.toISOString(), new Date(hour.getTime() + 3_600_000).toISOString());
     expect(hours('rolled')).toEqual([{ hour: '2026-09-27T10:00:00.000Z', min: 10, avg: 30, max: 60, n: 3 }]);
   });
 
@@ -145,7 +150,7 @@ describe('history that lasts', () => {
     const old = new Date(now - 15 * 86_400_000);
     put('kept', old, 42);
     db.query("INSERT INTO sample_hour (device_id, part, key, hour, min, avg, max, n) VALUES ('kept', 'main', 'soc', '2020-01-01T00:00:00.000Z', 1, 1, 1, 1)").run();
-    new Sampler(db, registry('kept', [])).prune(now);
+    new Sampler(kept, registry('kept', [])).prune(now);
     expect(stored('kept')).toEqual([]);
     expect(hours('kept').map((row) => [row.hour.slice(0, 10), row.avg])).toEqual([[old.toISOString().slice(0, 10), 42]]);
   });
@@ -158,7 +163,7 @@ describe('history that lasts', () => {
       db.query("INSERT INTO device_event (device_id, part, event, level, data, at) VALUES ('eventful', 'main', 'tripped', 'warn', NULL, ?)").run(when);
     raise(at(400));
     raise(at(30));
-    new Sampler(db, registry('eventful', [])).prune(now);
+    new Sampler(kept, registry('eventful', [])).prune(now);
     const left = db.query("SELECT at FROM device_event WHERE device_id = 'eventful'").all() as { at: string }[];
     expect(left.map((row) => row.at)).toEqual([at(30)]);
   });
@@ -173,6 +178,6 @@ describe('history that lasts', () => {
     registry('charted', []);
     const hour = new Date(Math.floor((now - 10 * 86_400_000) / 3_600_000) * 3_600_000);
     db.query("INSERT INTO sample_hour (device_id, part, key, hour, min, avg, max, n) VALUES (?, 'main', ?, ?, 1, 50, 99, 60)").run('charted', 'soc', hour.toISOString());
-    expect(series(db, 'charted', 'soc', ago(24 * 30), to)).toEqual([{ at: hour.toISOString(), value: 50 }]);
+    expect(series(history, 'charted', 'soc', ago(24 * 30), to)).toEqual([{ at: hour.toISOString(), value: 50 }]);
   });
 });
