@@ -74,6 +74,7 @@ export function appHub(place: AppPlace & { copy?: SqlDatabase }): Hub {
     sealing: passphraseSealing,
     installed,
     readOnly: place.readOnly,
+    readOnlyReason: 'Writes from this app are off: allow them in App settings',
     // Frames nobody has described are for a server started to bring up a unit, never for an app.
     allowRawFrames: false,
     http: appHttp,
@@ -99,6 +100,7 @@ export function appFollower(place: AppPlace & { home: KraftverkApi; own?: SqlDat
     installed,
     node: nodeFor(place),
     readOnly: place.readOnly,
+    readOnlyReason: 'Writes from this app are off: allow them in App settings',
     http: appHttp,
     log,
     // The home this app kept itself before, offered to the server.

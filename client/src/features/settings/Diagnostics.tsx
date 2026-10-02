@@ -5,11 +5,11 @@ import { describeError } from '@kraftverk/api-client';
 
 import { useHome } from '../../state/HomeProvider';
 
-/** A transport's read-only diagnostics, one at a time, as the transport reports them. */
 /** How many lines a diagnostic is asked for, and how much of its answer is shown: a page, not a log file. */
 const DIAGNOSTIC_LINES = 50;
 const SHOWN_AT_MOST = 20_000;
 
+/** A transport's read-only diagnostics, one at a time, as the transport reports them. */
 export function Diagnostics({ transport, names }: { transport: string; names: string[] }) {
   const { api } = useHome();
   const [shown, setShown] = useState<{ name: string; body: string } | null>(null);

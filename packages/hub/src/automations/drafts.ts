@@ -17,8 +17,7 @@ import { quoted, rehearse, type AutomationEngine, type AutomationLibrary, type A
 export const REHEARSAL_MAX_HOURS = 14 * 24;
 
 export type DraftDeps = {
-  /** Where the home's history is kept: what a rehearsal walks. */
-  /** What the home recorded: a rehearsal plays it back. */
+  /** What the home recorded: what a rehearsal walks, and plays back. */
   history: HistoryStore;
   events: EventStore;
   catalog: DeviceCatalog;

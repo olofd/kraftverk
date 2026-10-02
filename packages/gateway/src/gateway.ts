@@ -238,7 +238,7 @@ export type GatewayDeps = {
   linksFrom: (id: SavedDeviceId, part: string) => readonly OutgoingLink[];
   /** True when writes to this device are refused: every hardware write, when read-only. A simulated device has no hardware. */
   isReadOnly: (deviceId: SavedDeviceId) => boolean;
-  /** What read-only is called where this holder runs: the server's mode, or an app's switch. */
+  /** What read-only is called where this node runs: a server's mode, or an app's switch. */
   readOnlyReason?: string;
   /**
    * Where the timeline goes: the server's database, or — for a connection an
@@ -443,7 +443,7 @@ export class ActionGateway {
     const current = settings.map((setting) => readingOf(readingsNow(), setting.attribute.key));
 
     // 2. Policy, evaluated now rather than when anything was configured.
-    if (this.#deps.isReadOnly(intent.deviceId)) return refuse(this.#deps.readOnlyReason ?? 'The server is in read-only mode');
+    if (this.#deps.isReadOnly(intent.deviceId)) return refuse(this.#deps.readOnlyReason ?? 'Every write to hardware is refused here: read-only');
 
     const key = this.#key(intent);
     const sinceLast = Date.now() - this.#lastSwitchAt(intent);
@@ -662,7 +662,7 @@ export class ActionGateway {
     }
     if (!session?.write) return refuse(session ? 'It cannot be written to' : device.offline);
 
-    if (this.#deps.isReadOnly(intent.deviceId)) return refuse(this.#deps.readOnlyReason ?? 'The server is in read-only mode');
+    if (this.#deps.isReadOnly(intent.deviceId)) return refuse(this.#deps.readOnlyReason ?? 'Every write to hardware is refused here: read-only');
 
     // A setting written moments ago is still settling: one write per setting per dwell, whoever asks.
     const writeDwell = intent.actor === 'automation' ? this.#policy.automationDwellMs : intent.actor === 'agent' ? this.#policy.agentDwellMs : this.#policy.userWriteDwellMs;

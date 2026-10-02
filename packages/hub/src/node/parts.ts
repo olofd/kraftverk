@@ -28,6 +28,8 @@ export type NodeOptions = {
   node: Omit<NodeDeclaration, 'platform' | 'transports'>;
   /** Every write to hardware refused: the server's launch, an app's switch. */
   readOnly: () => boolean;
+  /** What that is called here, in a refusal: "The server is in read-only mode", "Writes from this app are off". */
+  readOnlyReason?: string;
   /** For a setup helper that calls a vendor's API once — fetching a key. */
   http: ScopedHttp;
   log: (level: 'info' | 'warn' | 'error', message: string) => void;
@@ -44,7 +46,7 @@ export type NodeRole = {
   /** What else its sessions are handed: where a device's store is, what is done with what a device says. */
   sessions: Pick<SessionManagerDeps, 'store' | 'onEvent'> & Partial<Pick<SessionManagerDeps, 'allowRawFrames' | 'nodeName' | 'onIdentified' | 'onDescribed'>>;
   /** How its gateway finds a device and what it is linked to; what read-only is called here. */
-  gateway(parts: { catalog: DeviceCatalog; sessions: SessionManager }): Pick<GatewayDeps, 'device' | 'linksFrom' | 'readOnlyReason' | 'policy' | 'policyValues'>;
+  gateway(parts: { catalog: DeviceCatalog; sessions: SessionManager }): Pick<GatewayDeps, 'device' | 'linksFrom' | 'policy' | 'policyValues'>;
 };
 
 export type NodeParts = {
@@ -97,6 +99,7 @@ export function nodeParts(options: NodeOptions, role: NodeRole): NodeParts {
   /** The only path a command to hardware takes, over what this node holds. */
   const gateway = new ActionGateway({
     ...role.gateway({ catalog, sessions }),
+    ...(options.readOnlyReason ? { readOnlyReason: options.readOnlyReason } : {}),
     isReadOnly: (id) => options.readOnly() && !sessions.simulated(id),
     record: (entry) => role.record(entry),
     ledger: databaseLedger(db),

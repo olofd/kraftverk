@@ -323,7 +323,6 @@ export function labelOf(role: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** What a rule's own steps ask of a role's part: the capabilities its commands use. */
 /** What a rule does with its roles, as far as inferring them goes: its triggers, its condition and its steps. */
 export type RuleBody = Pick<Rule, 'when' | 'then' | 'otherwise' | 'if'>;
 
@@ -456,11 +455,11 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path, conte
   return { rule, uses, issues: [] };
 }
 
-/** A rule and what fills its roles as a file's entry writes them: the order a person reads in. */
-/** Days as a person says them: "weekdays", "weekends", or the list. */
-const daysText = (days: readonly string[]): string | string[] =>
+/** Days as a file writes them: "weekdays", "weekends", or the list. (In a sentence they are `daysText`'s.) */
+const daysInFile = (days: readonly string[]): string | string[] =>
   days.join() === 'mon,tue,wed,thu,fri' ? 'weekdays' : days.join() === 'sat,sun' ? 'weekends' : [...days];
 
+/** A rule and what fills its roles as a file's entry writes them: the order a person reads in. */
 export function ruleToConfig(rule: Rule, uses: Record<string, Use>, context: PrintContext = {}): RuleEntry {
   const expr = (value: Expr): unknown => {
     if ('value' in value && (typeof value.value === 'number' || typeof value.value === 'boolean')) return value.value;
@@ -499,7 +498,7 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>, context: Pri
     return each.start.waitSeconds !== undefined ? { start: each.start.role, 'and wait': seconds(each.start.waitSeconds) } : { start: each.start.role };
   };
   const trigger = (each: Trigger): Record<string, unknown> => {
-    if ('at' in each) return each.days ? { at: time(each.at), days: daysText(each.days) } : { at: time(each.at) };
+    if ('at' in each) return each.days ? { at: time(each.at), days: daysInFile(each.days) } : { at: time(each.at) };
     if ('every' in each) return { every: minutes(each.every) };
     if ('event' in each) return { event: each.event.event, from: each.event.role };
     return each.heldForMinutes !== undefined ? { becomes: expr(each.becomes), for: minutes(each.heldForMinutes) } : { becomes: expr(each.becomes) };

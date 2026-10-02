@@ -1,5 +1,5 @@
 import { ruleCommands, ruleUses } from './reads.ts';
-import type { Rule, Step, StepKind } from './rule.ts';
+import type { Expr, Rule, Step, StepKind } from './rule.ts';
 
 /*
   Edits to a rule, as data (docs/AUTOMATION-EDITOR.md): where a list of steps
@@ -105,3 +105,31 @@ export function usedRoles(rule: Rule): Set<string> {
     ...ruleCommands(rule).map((command) => command.role),
   ]);
 }
+
+/** A condition to start from: whether the part the step is about can be reached — or, with none yet, yes. */
+const someCondition = (role: string | null): Expr => (role ? { reachable: role } : { value: true });
+
+/** A new step of a kind, about `role` where it needs a part or an automation: its values a sensible start. */
+export function blankStep(kind: StepKind, role: string | null): Step {
+  switch (kind) {
+    case 'command':
+      return { command: { role: role ?? '', capability: 'switch', command: 'set', args: { on: { value: true } } } };
+    case 'write':
+      return { write: { role: role ?? '', key: '', value: { value: true } } };
+    case 'wait':
+      return { wait: { seconds: { value: 10 } } };
+    case 'waitUntil':
+      return { waitUntil: { condition: someCondition(role), atMostSeconds: { value: 120 } } };
+    case 'ensure':
+      return { ensure: { condition: someCondition(role), withinSeconds: { value: 20 }, tries: { value: 3 }, retry: [] } };
+    case 'choose':
+      return { choose: { if: someCondition(role), then: [], else: [] } };
+    case 'watch':
+      return { watch: { condition: someCondition(role), seconds: { value: 5 }, then: [] } };
+    case 'start':
+      return { start: { role: role ?? '' } };
+  }
+}
+
+/** A number of seconds an expression says outright; null when it says something else. */
+export const secondsOf = (expr: Expr | undefined): number | null => (expr && 'value' in expr && typeof expr.value === 'number' ? expr.value : null);

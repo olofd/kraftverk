@@ -14,7 +14,7 @@ export type RulePart = {
   /** "Heater plug", or "Garage station — AC outlets". */
   name: string;
   part: string;
-  /** Null when there is nothing to ask: it is offline, or held by an app. */
+  /** Null when there is nothing to ask here: it is offline, or another node holds it and reads it. */
   device: DeviceReader | null;
   /** Why it cannot answer, when it cannot. */
   offline: string;

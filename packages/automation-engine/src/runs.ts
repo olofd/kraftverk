@@ -1,12 +1,12 @@
 import type { AutomationRun, RunLog, RunStep } from '@kraftverk/api-contract';
-import { changedRoles, describeSteps, evaluate, evaluateNow, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, takesSteps, type Command, type Expr, type Rule, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
+import { capitalise, changedRoles, describeSteps, evaluate, evaluateNow, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, takesSteps, type Command, type Expr, type Rule, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
 import { attributeMeaning, readingOf, type AutomationId } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
 import type { RuleContext } from './context.ts';
 import { listen, LOOK_EVERY_SECONDS, READINGS_PER_RUN } from './listen.ts';
 import { actorOf, RunRefusal, type Asker, type AutomationEngineDeps, type AutomationRecord } from './model.ts';
-import { ACTS, actsOn, capitalise, lowerFirst, pastOf, quoted } from './words.ts';
+import { ACTS, actsOn, lowerFirst, pastOf, quoted } from './words.ts';
 
 /*
   Runs (docs/SEQUENCES.md): started by a trigger, a person, or another

@@ -63,10 +63,10 @@ export type ShownThing = { kind: 'device'; id: SavedDeviceId } | { kind: 'automa
  */
 export type ViewReport = { type: 'view'; screen: string; showing: ShownThing[] };
 
-/** A listener of the live stream: what it says its screen shows, and letting go. */
 /** Whether a live stream is up: opening, open (it said hello), or down — and opened again by whoever carries it. */
 export type LiveState = 'connecting' | 'live' | 'down';
 
+/** A listener of the live stream: what it says its screen shows, and letting go. */
 export type LiveStream = {
   /** What its screen shows now: a fact, not a request. */
   say(view: ViewReport): void;

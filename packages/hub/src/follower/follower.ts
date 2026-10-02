@@ -64,6 +64,8 @@ export type FollowerOptions = {
   node: Omit<NodeDeclaration, 'platform' | 'transports'>;
   /** Every write to hardware refused: until someone allows writes from this node. A simulated device reaches no hardware. */
   readOnly: () => boolean;
+  /** What that is called here, in a refusal: "Writes from this app are off". */
+  readOnlyReason?: string;
   /** For a setup helper that calls a vendor's API once — fetching a key. */
   http: ScopedHttp;
   log?: (level: 'info' | 'warn' | 'error', message: string) => void;
@@ -145,7 +147,7 @@ export class Follower {
 
     // What every node is made of, as a follower: the ways it holds for the master, held while nothing above reaches the device.
     const parts = nodeParts(
-      { database: db, secrets: options.secrets, installed: options.installed, node: options.node, readOnly: options.readOnly, http: options.http, log: this.#log },
+      { database: db, secrets: options.secrets, installed: options.installed, node: options.node, readOnly: options.readOnly, readOnlyReason: options.readOnlyReason, http: options.http, log: this.#log },
       {
         tag: 'follower',
         record,
@@ -175,7 +177,6 @@ export class Follower {
           },
           linksFrom: (id, part) =>
             (this.#seen.get(id)?.links ?? []).filter((link) => link.role === 'source' && link.part === part).map((link) => ({ kind: link.kind, target: { device: link.other.id, part: link.other.part } })),
-          readOnlyReason: 'Writes from this app are off: allow them in App settings',
           policyValues: () => this.policyValues(),
         }),
       }

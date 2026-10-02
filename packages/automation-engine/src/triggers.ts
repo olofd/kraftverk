@@ -1,4 +1,4 @@
-import { describeTriggers, evaluateNow, EVERY_MINUTES, readsRole, runsOn, slotOf, takesSteps, type Rule, type Trigger } from '@kraftverk/automation';
+import { capitalise, describeTriggers, evaluateNow, EVERY_MINUTES, readsRole, runsOn, slotOf, takesSteps, type Rule, type Trigger } from '@kraftverk/automation';
 import { localTime, MAIN_PART, zonedInstant } from '@kraftverk/device-sdk';
 import type { LiveMessage } from '@kraftverk/holder';
 
@@ -6,7 +6,6 @@ import type { RuleContext } from './context.ts';
 import { actorOf, AUTOMATION_ACTOR, type AutomationEngineDeps, type AutomationRecord } from './model.ts';
 import type { Runs } from './runs.ts';
 import type { TriggerState } from './storage.ts';
-import { capitalise } from './words.ts';
 
 /*
   When an automation starts on its own (docs/AUTOMATIONS.md): by the clock

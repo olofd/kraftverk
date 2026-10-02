@@ -88,6 +88,25 @@ describe('a window of the day, rehearsed', () => {
   });
 });
 
+describe('a time of day, rehearsed across a night the clocks change', () => {
+  test('every day of the owner’s calendar has its 07:00 — the spring-forward night too', async () => {
+    const morning = inlineParams(
+      {
+        roles: { charger: { label: 'Charger plug', description: 'What charges it', capabilities: ['switch'] } },
+        params: { fields: {} },
+        when: [{ at: { value: '07:00' } }],
+        then: [{ command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
+      },
+      {}
+    );
+    // From 23:30 the evening before Stockholm springs forward (02:00 becomes 03:00 on 28 March 2027): a day is not 24 hours that night.
+    const span = { from: new Date('2027-03-27T22:30:00.000Z'), to: new Date('2027-03-29T12:00:00.000Z') };
+    const rehearsal = await rehearse(morning, automation, source([]), span);
+    // 07:00 in Stockholm, summer time from that night: 05:00 UTC.
+    expect(rehearsal.runs.map((run) => run.at)).toEqual(['2027-03-28T05:00:00.000Z', '2027-03-29T05:00:00.000Z']);
+  });
+});
+
 describe('every so many minutes, rehearsed', () => {
   test('runs at each slot of the window, on the owner’s clock', async () => {
     const quarterly = inlineParams(

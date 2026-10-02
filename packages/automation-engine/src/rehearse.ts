@@ -3,6 +3,7 @@ import {
   attributeMeaning,
   clockTime,
   currentForOf,
+  dayAfter,
   localTime,
   standardMeaning,
   zonedInstant,
@@ -128,13 +129,21 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
   const end = window.to.getTime();
   const moments = new Set<number>();
   for (const found of series.values()) for (const point of found?.points ?? []) if (point.at >= start && point.at <= end) moments.add(point.at);
+  // Every day of the owner's calendar the span touches, and one either side: each a date, never 24 hours — a night the clocks change is still one day.
+  const days: { year: number; month: number; day: number }[] = [];
+  for (let offset = -1, last = localTime(new Date(end), automation.timeZone); ; offset += 1) {
+    const date = dayAfter(new Date(start), automation.timeZone, offset);
+    days.push(date);
+    if (date.year > last.year || (date.year === last.year && (date.month > last.month || (date.month === last.month && date.day > last.day)))) break;
+  }
+
   // And each window of the day it looks at, as it opens and closes, on the owner's clock.
   for (const window of uses.windows) {
     for (const edge of [window.from, window.to]) {
       const minutes = minutesOf(evaluateNow(edge, scopeAt(start)));
       if (minutes === null) continue;
-      for (let day = start - 86_400_000; day <= end + 86_400_000; day += 86_400_000) {
-        const instant = zonedInstant({ ...localTime(new Date(day), automation.timeZone), hour: Math.floor(minutes / 60), minute: minutes % 60 }, automation.timeZone).getTime();
+      for (const date of days) {
+        const instant = zonedInstant({ ...date, hour: Math.floor(minutes / 60), minute: minutes % 60 }, automation.timeZone).getTime();
         if (instant >= start && instant <= end) moments.add(instant);
       }
     }
@@ -147,8 +156,7 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
       const at = evaluateNow(trigger.at, scopeAt(start));
       const [hour, minute] = typeof at === 'string' ? at.split(':').map(Number) : [];
       if (hour === undefined || minute === undefined || Number.isNaN(hour) || Number.isNaN(minute)) continue;
-      for (let day = start - 86_400_000; day <= end + 86_400_000; day += 86_400_000) {
-        const date = localTime(new Date(day), automation.timeZone);
+      for (const date of days) {
         // Only on its days, on the owner's calendar.
         if (!runsOn(trigger, date)) continue;
         const instant = zonedInstant({ ...date, hour, minute }, automation.timeZone).getTime();
@@ -157,8 +165,7 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
     } else if ('every' in trigger) {
       const every = evaluateNow(trigger.every, scopeAt(start));
       if (typeof every !== 'number' || every < EVERY_MINUTES.min || every > EVERY_MINUTES.max) continue;
-      for (let day = start - 86_400_000; day <= end + 86_400_000; day += 86_400_000) {
-        const date = localTime(new Date(day), automation.timeZone);
+      for (const date of days) {
         for (let slot = 0; slot < 24 * 60; slot += every) {
           const instant = zonedInstant({ ...date, hour: Math.floor(slot / 60), minute: slot % 60 }, automation.timeZone).getTime();
           if (instant >= start && instant <= end && !fired.some((run) => run.at === instant)) fired.push({ at: instant, because: `Every ${every} min` });

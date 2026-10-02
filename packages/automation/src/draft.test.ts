@@ -3,7 +3,8 @@ import { describe, expect, test } from 'bun:test';
 import { savedDeviceId, type AutomationId, type DeviceDescription } from '@kraftverk/device-sdk';
 
 import { checkRule } from './check.ts';
-import { automationRole, blankStep, draftOfRecipe, EMPTY_DRAFT, partRole, pruned, roleName, sameParts, type RoleBinding } from './draft.ts';
+import { automationRole, draftOfRecipe, EMPTY_DRAFT, partRole, pruned, roleName, sameParts, type RoleBinding } from './draft.ts';
+import { blankStep } from './edit.ts';
 import { insertStep, kindsFor, listAt, mayWait, moveStep, OTHERWISE, removeStep, THEN, within, withStep } from './edit.ts';
 import { startCharging, stopCharging } from './recipes.ts';
 import type { Step } from './rule.ts';

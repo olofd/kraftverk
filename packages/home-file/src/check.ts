@@ -1,4 +1,4 @@
-import { MAIN_PART, validateConfig, type ConfigSchema } from '@kraftverk/device-sdk';
+import { isTimeZone, MAIN_PART, validateConfig, type ConfigSchema } from '@kraftverk/device-sdk';
 
 import type { ConfigDocument, DeviceEntry, SecretValue } from './document.ts';
 import type { Issue } from '@kraftverk/automation';
@@ -118,14 +118,4 @@ export function checkDocument(document: ConfigDocument, vocabulary: Vocabulary, 
     }
   }
   return issues;
-}
-
-/** Whether a name is a time zone the platform knows. */
-function isTimeZone(name: string): boolean {
-  try {
-    new Intl.DateTimeFormat('en', { timeZone: name });
-    return true;
-  } catch {
-    return false;
-  }
 }

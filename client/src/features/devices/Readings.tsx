@@ -21,8 +21,7 @@ export function Overview({ device }: { device: DeviceView }) {
 
 // --- readings -----------------------------------------------------------------
 
-/** What a part reports, settings apart. */
-/** What a part reports: its attributes that are not only told. */
+/** What a part reports: its attributes that are not only told — settings apart. */
 export const reportedBy = (device: DeviceView, part: string) => attributesOf(device.description, part).filter((attribute) => attribute.access !== 'write');
 
 /** Everything its main part reports, and what it last said. */

@@ -419,8 +419,11 @@ function StartFields({ start, waits, set }: { start: Extract<Step, { start: unkn
   );
 }
 
-/** "Add a step": the kinds this list may take, each with what it does. */
-/** `list`: the list's name, so each of a page's several Add a step buttons says where it adds. */
+/**
+ * "Add a step": the kinds this list may take, each with what it does. `list`:
+ * the list's name, so each of a page's several Add a step buttons says where
+ * it adds.
+ */
 function AddStep({ path, list, onAdded }: { path: ListPath; list: string; onAdded: () => void }) {
   const tone = useTone();
   const editor = useEditor();

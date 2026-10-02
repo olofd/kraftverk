@@ -53,6 +53,8 @@ export type HubOptions = {
   installed: Installed;
   /** Every write to hardware refused: the server's launch, an app's switch. A simulated device reaches no hardware. */
   readOnly: () => boolean;
+  /** What that is called here, in a refusal: "The server is in read-only mode", "Writes from this app are off". */
+  readOnlyReason?: string;
   /** Frames nobody has described may be sent, by a type's raw-frame tool. Never in an app. */
   allowRawFrames?: boolean;
   /** For a setup helper that calls a vendor's API once — fetching a key. */
@@ -168,7 +170,7 @@ export class Hub {
 
     // What every node is made of, as the master: the ways held by its id, its devices' own stores, its own timeline.
     const parts = nodeParts(
-      { database: db, secrets: options.secrets, installed: options.installed, node: options.node, readOnly: options.readOnly, http: options.http, log: this.#log },
+      { database: db, secrets: options.secrets, installed: options.installed, node: options.node, readOnly: options.readOnly, readOnlyReason: options.readOnlyReason, http: options.http, log: this.#log },
       {
         tag: 'devices',
         record,

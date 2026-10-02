@@ -281,4 +281,5 @@ export function describeRule(rule: Rule & { sentence?: string }, params: Readonl
   return capitalise(sentence);
 }
 
-const capitalise = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
+/** A sentence begun as one: "turn the heater on" is "Turn the heater on". */
+export const capitalise = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);

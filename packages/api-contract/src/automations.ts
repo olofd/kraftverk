@@ -63,8 +63,11 @@ export type AutomationDraftView = {
   names: Record<string, string>;
 };
 
-/** `POST /automations`. `timeZone` is the app's own clock: "Europe/Stockholm". `madeFrom`: the recipe it was copied from. */
-/** `POST /automations`. `key`: its name in configuration; made from its name when not given. */
+/**
+ * `POST /automations`. `key`: its name in configuration; made from its name
+ * when not given. `timeZone` is the app's own clock: "Europe/Stockholm".
+ * `madeFrom`: the recipe it was copied from.
+ */
 export type NewAutomation = AutomationDraft & { name: string; key?: string; madeFrom?: string | null; timeZone: string; recheckMinutes?: number | null };
 
 /**

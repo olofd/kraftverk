@@ -111,6 +111,7 @@ const hub = createHub({
   sealing: passphraseSealing,
   installed,
   readOnly: () => config.readOnly,
+  readOnlyReason: 'The server is in read-only mode',
   allowRawFrames: config.allowRawFrames,
   http: scopedHttp,
   node: thisNode(database, besideDatabase(config, 'node-id')),

@@ -10,7 +10,6 @@ export const actsOn = (automation: AutomationRecord, rule: Rule): string | undef
   return first ? automation.roles[first.role]?.device : undefined;
 };
 
-export const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 export const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 /** The steps that do something to the world — what a run's summary says it did. */
 export const ACTS: ReadonlySet<string> = new Set(['command', 'write', 'start']);

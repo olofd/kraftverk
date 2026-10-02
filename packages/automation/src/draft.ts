@@ -2,7 +2,7 @@ import { capabilitiesOf, capabilityIn, meetsNeed, partName, partsOf, type Automa
 
 import { usedRoles } from './edit.ts';
 import { inlineParams, NO_SETTINGS } from './evaluate.ts';
-import { isAutomationRole, type Expr, type Rule, type Step, type StepKind } from './rule.ts';
+import { isAutomationRole, type Rule } from './rule.ts';
 
 /*
   An automation as it is being built, as data (docs/AUTOMATION-EDITOR.md): a
@@ -132,36 +132,6 @@ export function draftOfRecipe(rule: Rule): AutomationDraft {
   const defaults = Object.fromEntries(Object.entries(rule.params.fields).map(([key, field]) => [key, ('default' in field ? field.default : null) as Value]));
   return { rule: inlineParams(rule, defaults), roles: {}, starts: {} };
 }
-
-// --- blocks -----------------------------------------------------------------------------
-
-/** A condition to start from: whether the part the step is about can be reached — or, with none yet, yes. */
-const someCondition = (role: string | null): Expr => (role ? { reachable: role } : { value: true });
-
-/** A new step of a kind, about `role` where it needs a part or an automation: its values a sensible start. */
-export function blankStep(kind: StepKind, role: string | null): Step {
-  switch (kind) {
-    case 'command':
-      return { command: { role: role ?? '', capability: 'switch', command: 'set', args: { on: { value: true } } } };
-    case 'write':
-      return { write: { role: role ?? '', key: '', value: { value: true } } };
-    case 'wait':
-      return { wait: { seconds: { value: 10 } } };
-    case 'waitUntil':
-      return { waitUntil: { condition: someCondition(role), atMostSeconds: { value: 120 } } };
-    case 'ensure':
-      return { ensure: { condition: someCondition(role), withinSeconds: { value: 20 }, tries: { value: 3 }, retry: [] } };
-    case 'choose':
-      return { choose: { if: someCondition(role), then: [], else: [] } };
-    case 'watch':
-      return { watch: { condition: someCondition(role), seconds: { value: 5 }, then: [] } };
-    case 'start':
-      return { start: { role: role ?? '' } };
-  }
-}
-
-/** A number of seconds an expression says outright; null when it says something else. */
-export const secondsOf = (expr: Expr | undefined): number | null => (expr && 'value' in expr && typeof expr.value === 'number' ? expr.value : null);
 
 /** Whether a rule has a part for a device: one of its roles a part of it can fill. What a device's page offers to start from. */
 export const ruleFits = (rule: Rule, device: { description: DeviceDescription; name: string }): boolean =>

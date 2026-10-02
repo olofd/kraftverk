@@ -1,3 +1,4 @@
+import { capitalise } from '@kraftverk/automation';
 import {
   memoryTransportStore,
   validateTransportDefinition,
@@ -171,8 +172,6 @@ export class TransportHost {
     console.warn(`[transports] ${source} is not a usable transport:\n  - ${problems.join('\n  - ')}`);
   }
 }
-
-const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** What a node is called by where it runs, in a reason a person reads: "This node cannot…", "A browser cannot…". */
 export const platformWords = (platform: Platform): { this: string; a: string } => PLACES[platform];

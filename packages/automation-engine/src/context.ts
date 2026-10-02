@@ -1,9 +1,9 @@
 import type { ConditionState } from '@kraftverk/api-contract';
-import { checkBinding, describeExpr, describeSteps, evaluate, evaluateNow, isAutomationRole, partRoles, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type StepLine, type Write } from '@kraftverk/automation';
+import { capitalise, checkBinding, describeExpr, describeSteps, evaluate, evaluateNow, isAutomationRole, partRoles, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type StepLine, type Write } from '@kraftverk/automation';
 import { attributeMeaning, capabilityIn, clockTime, isCurrent, isScalar, readingOf, standardMeaning, unitOf, type CapabilityName, type Value } from '@kraftverk/device-sdk';
 
 import type { AutomationEngineDeps, AutomationRecord, EngineDevice } from './model.ts';
-import { capitalise, quoted } from './words.ts';
+import { quoted } from './words.ts';
 
 /*
   An automation's rule seen against the parts filling its roles, as every
