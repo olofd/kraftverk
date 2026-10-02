@@ -22,7 +22,7 @@ import { brokerBuild, paths, type BrokerHealth } from './shared.ts';
  * when you choose to.
  */
 
-export type BrokerStatus =
+type BrokerStatus =
   /** A kraftverk broker answered. */
   | 'running'
   /** One is being started. */
@@ -223,7 +223,7 @@ export async function probeHealth(adminUrl: string, timeoutMs = 1500): Promise<B
 }
 
 /** Whether something accepts TCP connections on the port. */
-export function portInUse(host: string, port: number, timeoutMs = 700): Promise<boolean> {
+function portInUse(host: string, port: number, timeoutMs = 700): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = connect({ host: host === '0.0.0.0' ? '127.0.0.1' : host, port });
     const done = (result: boolean) => {

@@ -169,7 +169,7 @@ export const HOLDING_REGISTER_COUNT = 80;
  * told apart from data alone. Resolving it needs a station where those two
  * versions differ, or a firmware update to one of them.
  */
-export const FIRMWARE = {
+const FIRMWARE = {
   AC: 47,
   /** Either BMS or PV — see the caveat above. */
   CONTROLLER_A: 48,
@@ -189,7 +189,7 @@ export type FirmwareVersions = {
   panel: string;
 };
 
-/**
+/*
  * Observed on a real AFERIY P280 but not yet confirmed against the display or
  * BrightEMS. Recorded here so the next session starts from evidence.
  *
@@ -210,9 +210,6 @@ export type FirmwareVersions = {
  * To identify any of these: snapshot the baseline, change one thing on the
  * station, and dump again (POST /api/diagnostics/snapshot).
  */
-export const UNCONFIRMED_P280 = {
-  MAYBE_BATTERY_TEMP: 54,
-} as const;
 
 /**
  * Holding registers 14-22 look like a capability block: constants describing
@@ -261,7 +258,7 @@ export const wattsToChargeRate = (watts: AcChargingWatts): number =>
   AC_CHARGING_WATTS.indexOf(watts) + 1;
 
 /** Wattage from the 1-5 step, falling back to the nearest sane value. */
-export const chargeRateToWatts = (rate: number): AcChargingWatts =>
+const chargeRateToWatts = (rate: number): AcChargingWatts =>
   AC_CHARGING_WATTS[rate - 1] ?? 1800;
 
 /**
@@ -310,7 +307,7 @@ export const STATUS = {
  * charging and 0x4000 otherwise. A real P280 reports 0x8040 — the low bits
  * carry something else — so this must be masked, not compared for equality.
  */
-export const AC_CHARGING_ACTIVE = 0x8000;
+const AC_CHARGING_ACTIVE = 0x8000;
 
 /**
  * Values this server will write, per register.

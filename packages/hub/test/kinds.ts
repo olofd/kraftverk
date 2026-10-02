@@ -52,7 +52,7 @@ const neverOverTheBus = {
 // --- a station -----------------------------------------------------------------------
 
 /** A station: its battery on main, a mains input, AC and DC outlets it switches, and two settings — one that can harm it. */
-export const STATION: DeviceDescription = {
+const STATION: DeviceDescription = {
   parts: [
     { id: MAIN_PART, label: 'Station', kind: 'device', energy: { role: 'storage' } },
     { id: 'input.ac', label: 'Mains', kind: 'input' },
@@ -111,7 +111,7 @@ export const stationType = defineDeviceType({
 
 // --- a plug --------------------------------------------------------------------------
 
-export const PLUG: DeviceDescription = {
+const PLUG: DeviceDescription = {
   parts: [{ id: MAIN_PART, label: 'Socket', kind: 'outlet', offers: ['switch'] }],
   attributes: [
     { key: 'on', label: 'Power', value: { type: 'boolean' }, means: 'switch.on' },
@@ -149,7 +149,7 @@ export const plugType = defineDeviceType({
 
 // --- a forecast ----------------------------------------------------------------------
 
-export const FORECAST: DeviceDescription = {
+const FORECAST: DeviceDescription = {
   parts: [{ id: MAIN_PART, label: 'Forecast', kind: 'sensor', offers: ['weather.forecast'] }],
   attributes: [],
 };
@@ -187,7 +187,7 @@ const skyLooks = defineFunction({
 });
 
 /** "If tomorrow is sunny, turn the plug on": the recipe the forecast's package brings. */
-export const forecastSwitch = defineRecipe({
+const forecastSwitch = defineRecipe({
   id: 'test.forecast.forecast-switch',
   label: 'Switch by the forecast',
   description: 'Once a day, switch something on or off depending on whether the day looks sunny.',

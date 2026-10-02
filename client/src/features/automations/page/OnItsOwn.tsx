@@ -11,14 +11,14 @@ import { useHome } from '../../../state/HomeProvider';
 import { every } from '../looks';
 import { Group } from './Group';
 
-export const MODES: { value: AutomationMode; label: string }[] = [
+const MODES: { value: AutomationMode; label: string }[] = [
   { value: 'off', label: 'Off' },
   { value: 'watch', label: 'Watch only' },
   { value: 'act', label: 'Act' },
 ];
 
 /** What each mode means for what it does on its own — for one with nothing that starts it, what is left. */
-export const modeSays = (mode: AutomationMode, onItsOwn: boolean): string =>
+const modeSays = (mode: AutomationMode, onItsOwn: boolean): string =>
   onItsOwn
     ? {
         off: 'It does nothing, and cannot be started.',
@@ -32,7 +32,7 @@ export const modeSays = (mode: AutomationMode, onItsOwn: boolean): string =>
       }[mode];
 
 /** How often it may look again to keep things so, in minutes; 0 is never. */
-export const RECHECK: { value: number; label: string }[] = [
+const RECHECK: { value: number; label: string }[] = [
   { value: 0, label: 'Off' },
   { value: 5, label: '5 min' },
   { value: 10, label: '10 min' },
@@ -41,7 +41,7 @@ export const RECHECK: { value: number; label: string }[] = [
 ];
 
 /** What keeping things so means, for the choice as it stands. */
-export const recheckSays = (minutes: number | null) =>
+const recheckSays = (minutes: number | null) =>
   minutes
     ? `Every ${every(minutes)}, a condition that still holds runs it again: something switched by hand against it is switched back. What is already so is left alone.`
     : 'Once it has acted, it leaves things be until a condition comes true again: you can switch by hand in between.';

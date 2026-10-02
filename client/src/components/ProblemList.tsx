@@ -25,7 +25,7 @@ export type YamlEditorProps = {
 export const secretWords = (fields: readonly string[]): string => fields.map((field) => field.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()).join(', ');
 
 /** "line 4: …", or the message alone. */
-export const problemText = (problem: TextProblem): string => (problem.line ? `Line ${problem.line}${problem.column ? `, column ${problem.column}` : ''}: ${problem.message}` : problem.message);
+const problemText = (problem: TextProblem): string => (problem.line ? `Line ${problem.line}${problem.column ? `, column ${problem.column}` : ''}: ${problem.message}` : problem.message);
 
 /** Problems, each by its line, in the warning tone: under a text, or a plan. */
 export function ProblemList({ problems }: { problems: readonly TextProblem[] }) {

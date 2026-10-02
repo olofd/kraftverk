@@ -53,7 +53,7 @@ const POLL_WHILE_LIVE_MS = 60_000;
 const APPLY_MS = 100;
 
 /** Whether the home answers: being reached, answering, or out of reach. */
-export type HomeReach = 'connecting' | 'online' | 'offline';
+type HomeReach = 'connecting' | 'online' | 'offline';
 
 type DevicesContextValue = {
   homeReach: HomeReach;

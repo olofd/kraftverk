@@ -50,6 +50,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit -p e2e && tsc --noEmit -p tsconfig.shared.json",
     "//check:architecture": "The dependency rule, the product-identifier ratchet (docs/ARCHITECTURE.md section 7) and a current device registry. Add -- --update to record an improvement.",
     "check:architecture": "node scripts/architecture.mjs && node scripts/run-bun.mjs scripts/gen-devices.ts --check",
+    "//knip": "Files, exports and dependencies nothing uses, and dependencies used but not declared (knip.jsonc says what runs and why).",
+    "knip": "knip",
     "//gen:devices": "Writes the app's registry of device types, protocols, transports and screens from the installed packages (client/src/generated/registry.ts). Run it after adding a package; CI checks it is current.",
     "gen:devices": "node scripts/run-bun.mjs scripts/gen-devices.ts",
     "//config": "Checks a configuration file against what is installed, or prints its JSON Schema: npm run config -- check kraftverk.yaml. See docs/CONFIG.md.",
@@ -65,7 +67,9 @@
     "@playwright/test": "^1.63.0",
     "bun": "1.4.2",
     "concurrently": "^10.0.4",
-    "kill-port": "^1.6.1"
+    "kill-port": "^1.6.1",
+    "knip": "^6.39.0",
+    "typescript": "^7.0.2"
   },
   "volta": {
     "node": "24.21.0",

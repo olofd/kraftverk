@@ -17,12 +17,16 @@
   },
   "peerDependencies": {
     "@expo/vector-icons": "*",
+    "expo-haptics": "*",
     "react": "*",
     "react-native": "*",
     "tamagui": "*"
   },
   "peerDependenciesMeta": {
     "@expo/vector-icons": {
+      "optional": true
+    },
+    "expo-haptics": {
       "optional": true
     },
     "react": {

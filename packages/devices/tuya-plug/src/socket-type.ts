@@ -131,7 +131,7 @@ const PUSH_OUTRANKS_MEMORY_MS = 5_000;
 const attributeOf = ({ dp: _dp, scale: _scale, wire: _wire, example: _example, raises: _raises, ...attribute }: ProfileDatapoint): AttributeSpec => attribute;
 
 /** A socket: one part, a relay it switches, the meter its profile has, and the model's own datapoints. */
-export function describeSocket(profile: SocketProfile): DeviceDescription {
+function describeSocket(profile: SocketProfile): DeviceDescription {
   const events: EventSpec[] = [];
   for (const point of profile.datapoints ?? []) {
     if (!point.raises || point.value.type !== 'enum') continue;

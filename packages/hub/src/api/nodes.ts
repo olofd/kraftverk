@@ -22,7 +22,7 @@ const STORE_VALUE_MAX = 256 * 1024;
 const STORE_KEY = /^[\w.:-]{1,80}$/;
 
 /** A node of the home, as everything that uses the home sees it: `account`, who asks — whether it is theirs to forget. */
-export function nodeView(node: NodeRecord, masterId: string, account: string | null | undefined): NodeView {
+function nodeView(node: NodeRecord, masterId: string, account: string | null | undefined): NodeView {
   return {
     id: node.id,
     name: node.name,

@@ -254,7 +254,7 @@ export const BACKGROUNDS = {
   dark: dark.background,
 } as const;
 
-export type AppConfig = typeof config;
+type AppConfig = typeof config;
 
 declare module 'tamagui' {
   interface TamaguiCustomConfig extends AppConfig {}

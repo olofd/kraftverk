@@ -18,7 +18,7 @@ import { AGENT_RULES, worldText } from './world.ts';
  * the messages (the server's \`/api/mcp\`).
  */
 
-export const MCP_PROTOCOL = '2025-06-18';
+const MCP_PROTOCOL = '2025-06-18';
 
 type Json = Record<string, unknown>;
 /** What the endpoint says it is: the place's name and version. */
@@ -103,7 +103,7 @@ const clockOf = (given: string | undefined): string => {
 const boundOf = (roles: Plan['roles']) => Object.fromEntries(Object.entries(roles).map(([role, binding]) => [role, { device: savedDeviceId(binding.device), part: binding.part }]));
 
 /** A rehearsal in lines: when, what, and what it could not see. */
-export function rehearsalText(rehearsal: Pick<Rehearsal, 'from' | 'to' | 'runs' | 'caveats'>): string {
+function rehearsalText(rehearsal: Pick<Rehearsal, 'from' | 'to' | 'runs' | 'caveats'>): string {
   const lines = [`Rehearsed from ${rehearsal.from} to ${rehearsal.to}: ${rehearsal.runs.length ? `${rehearsal.runs.length} run${rehearsal.runs.length === 1 ? '' : 's'}` : 'it would not have run'}.`];
   for (const run of rehearsal.runs) lines.push(`${run.at} ${run.outcome}: ${run.summary}`);
   for (const caveat of rehearsal.caveats) lines.push(`Note: ${caveat}.`);

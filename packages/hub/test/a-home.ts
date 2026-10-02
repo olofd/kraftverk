@@ -17,7 +17,7 @@ import { testDatabase } from './home.ts';
 */
 
 /** The person the home is asked as: olof, signed in on the account u-olof. */
-export const OLOF: Caller = { kind: 'person', name: 'olof', account: 'u-olof' };
+const OLOF: Caller = { kind: 'person', name: 'olof', account: 'u-olof' };
 /** Another person, on another account. */
 export const GUEST: Caller = { kind: 'person', name: 'guest', account: 'u-guest' };
 
@@ -117,7 +117,7 @@ export async function aHome(options: { readOnly?: boolean } = {}): Promise<TestH
  * with `expect.objectContaining` changes what it matches: a test must not
  * change the home it asks.
  */
-export function copying<T extends object>(api: T): T {
+function copying<T extends object>(api: T): T {
   return new Proxy(api, {
     get(target, key, receiver) {
       const value: unknown = Reflect.get(target, key, receiver);

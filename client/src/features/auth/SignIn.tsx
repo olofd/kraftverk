@@ -42,7 +42,7 @@ export function SignIn() {
 }
 
 /** Username and password, for an existing account. */
-export function LoginForm({ submitLabel = 'Log in' }: { submitLabel?: string }) {
+function LoginForm({ submitLabel = 'Log in' }: { submitLabel?: string }) {
   const { logIn, notice } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -83,7 +83,7 @@ export function LoginForm({ submitLabel = 'Log in' }: { submitLabel?: string }) 
   );
 }
 
-export function SetupForm() {
+function SetupForm() {
   const { setup } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');

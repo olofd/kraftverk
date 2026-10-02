@@ -103,7 +103,7 @@ export function removeServer(id: string): void {
   if (readActiveServerId() === id) writeActiveServerId(null);
 }
 
-export function readActiveServerId(): string | null {
+function readActiveServerId(): string | null {
   return readPreference(ACTIVE_KEY);
 }
 

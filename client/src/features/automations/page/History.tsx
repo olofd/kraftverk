@@ -11,14 +11,14 @@ import { clock, dayOf, every, lasted, OUTCOME, type Look } from '../looks';
 import { RunSteps } from '../Steps';
 
 /** Each mode its own shape as well as its colour: acting is filled, and cannot be mistaken for watching. */
-export const BADGE: Record<AutomationMode, { label: string; icon: IconName; filled: boolean }> = {
+const BADGE: Record<AutomationMode, { label: string; icon: IconName; filled: boolean }> = {
   off: { label: 'Off', icon: 'pause', filled: false },
   watch: { label: 'Only watching', icon: 'eye', filled: false },
   act: { label: 'Acting', icon: 'zap', filled: true },
 };
 
 /** A change made to an automation, as its history shows it. */
-export const CHANGE: Record<string, Look> = {
+const CHANGE: Record<string, Look> = {
   'automation.created': { icon: 'plus', tone: '$color' },
   'automation.proposed': { icon: 'message-circle', tone: '$color' },
   'automation.let-act': { icon: 'zap', tone: '$success' },
@@ -34,7 +34,7 @@ export const CHANGE: Record<string, Look> = {
 */
 
 /** A small heading inside a card. */
-export function Heading({ children }: { children: ReactNode }) {
+function Heading({ children }: { children: ReactNode }) {
   return (
     <Text fontSize={11} fontWeight="800" color="$muted" textTransform="uppercase" letterSpacing={0.8}>
       {children}
@@ -43,7 +43,7 @@ export function Heading({ children }: { children: ReactNode }) {
 }
 
 /** What it read, each value a chip: "Garage station: Charge 74.2 %". */
-export function Readings({ saw }: { saw: readonly string[] }) {
+function Readings({ saw }: { saw: readonly string[] }) {
   if (!saw.length) return null;
   return (
     <XStack gap="$1.5" flexWrap="wrap">
@@ -59,7 +59,7 @@ export function Readings({ saw }: { saw: readonly string[] }) {
 }
 
 /** Each condition, and whether it holds: a filled mark, an empty one, or a question. */
-export function Conditions({ conditions }: { conditions: readonly ConditionState[] }) {
+function Conditions({ conditions }: { conditions: readonly ConditionState[] }) {
   const tone = useTone();
   return (
     <YStack gap="$2">
@@ -158,7 +158,7 @@ export function RunDetail({ run, showConditions, automationId }: { run: Automati
 }
 
 /** The way to a run's log: every value its devices gave while it ran, on a page of its own. */
-export function RunLogLink({ automationId, run }: { automationId: string; run: AutomationRun }) {
+function RunLogLink({ automationId, run }: { automationId: string; run: AutomationRun }) {
   const router = useRouter();
   const runId = run.id;
   if (!runId) return null;

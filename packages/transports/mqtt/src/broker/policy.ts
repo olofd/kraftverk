@@ -76,11 +76,8 @@ export function refusalFor(policies: Policies, topic: string, payload: Uint8Arra
   return command.policy.refuse(payload);
 }
 
-/** Whether a topic carries commands to a device, by any installed protocol. */
-export const isCommandTopic = (policies: Policies, topic: string): boolean => commandOf(policies, topic) !== null;
-
 /** Where the protocol packages are, from this file: packages/transports/mqtt/src/broker. */
-export const PROTOCOLS_DIR = resolve(import.meta.dirname, '../../../../protocols');
+const PROTOCOLS_DIR = resolve(import.meta.dirname, '../../../../protocols');
 
 /**
  * Finds every installed protocol and the broker policy of its MQTT binding.

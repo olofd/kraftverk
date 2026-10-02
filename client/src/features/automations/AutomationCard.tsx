@@ -64,7 +64,7 @@ export function AutomationCard({ automation, onChanged }: { automation: Automati
 }
 
 /** Run now, or stop: round, 44 px, the one action a card has besides opening. */
-export function PlayButton({ name, running, busy, blocked, onStart, onStop }: { name: string; running: boolean; busy: boolean; blocked: string | null; onStart: () => void; onStop: () => void }) {
+function PlayButton({ name, running, busy, blocked, onStart, onStop }: { name: string; running: boolean; busy: boolean; blocked: string | null; onStart: () => void; onStop: () => void }) {
   const tone = useTone();
   if (running) {
     return (

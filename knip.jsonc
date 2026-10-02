@@ -1,0 +1,31 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // Device packages name the app's UI (React, Tamagui, the kit, the API's slots) as optional
+  // peers on purpose: the server installs a package without them, the app provides them.
+  "rules": { "optionalPeerDependencies": "off" },
+  "workspaces": {
+    ".": {
+      // Scripts run through scripts/run-bun.mjs, which knip cannot follow; the server the e2e tests start.
+      "entry": ["scripts/*.{ts,mjs}", "e2e/serve.mjs"],
+      "playwright": { "config": ["e2e/playwright.config.ts"], "entry": ["e2e/**/*.e2e.ts"] },
+      // The vendored Bun every script runs on (scripts/run-bun.mjs finds its binary).
+      "ignoreDependencies": ["bun"]
+    },
+    "client": {
+      // The worker is bundled by scripts/build-home-worker.mjs; the shim is resolved in metro.config.js.
+      "entry": ["app/**/*.tsx", "src/platform/home/worker.ts", "shims/*.ts", "scripts/*.mjs"],
+      // @babel/core: what Expo's Babel preset runs on. expo-updates: assumed by knip's Expo plugin; not used.
+      "ignoreDependencies": ["@babel/core", "expo-updates"]
+    },
+    "server": {
+      "entry": ["src/auth/cli.ts"]
+    },
+    "packages/transports/mqtt": {
+      // The broker runs as a process of its own: its CLI, and what the supervisor launches.
+      "entry": ["src/broker/cli.ts", "src/broker/main.ts", "src/broker/launcher.ts"]
+    },
+    "packages/protocols/tuya-local": {
+      "entry": ["tools/scan.ts", "tools/keys.ts"]
+    }
+  }
+}

@@ -14,17 +14,18 @@ import { readFileSync } from 'node:fs';
 
 import { checkDocument, configJsonSchema, readConfig, vocabularyOf } from '@kraftverk/home-file';
 
-import { DeviceTypeRegistry } from '../server/src/devices/types.ts';
-import { ProtocolRegistry } from '../server/src/runtime/protocols.ts';
+import { DeviceTypeRegistry, ProtocolRegistry } from '@kraftverk/hub';
+
+import { discoverDeviceTypes, discoverProtocols } from '../server/src/platform/packages.ts';
 
 const [command, ...rest] = process.argv.slice(2);
 const quiet = console.log;
 // The registries say what they found; this says only what it was asked.
 console.log = () => {};
 const protocols = new ProtocolRegistry();
-await protocols.discover();
+await discoverProtocols(protocols);
 const types = new DeviceTypeRegistry();
-await types.discover();
+await discoverDeviceTypes(types);
 console.log = quiet;
 
 const option = (name: string): string[] =>

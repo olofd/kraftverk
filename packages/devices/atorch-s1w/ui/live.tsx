@@ -61,7 +61,7 @@ export function useLive(plug: Plug): Live {
 }
 
 /** A dot that breathes while readings arrive every second. */
-export function Pulse({ active }: { active: boolean }) {
+function Pulse({ active }: { active: boolean }) {
   const theme = useTheme();
   const opacity = useRef(new Animated.Value(1)).current;
   useEffect(() => {

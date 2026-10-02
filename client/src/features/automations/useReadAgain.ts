@@ -5,7 +5,7 @@ import { useDevices } from '../../state/DevicesProvider';
 /** How soon a run that moved is read: a burst of steps, read once. */
 const RUN_MOVED_MS = 250;
 /** How often, at most, what automations read now is read again as readings move — and how often it is polled while the stream is down. */
-export const READINGS_EVERY_MS = 15_000;
+const READINGS_EVERY_MS = 15_000;
 
 /**
  * Reads a screen's automations again when they may have changed, and only

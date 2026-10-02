@@ -150,7 +150,7 @@ export function Screen({ title, subtitle, back, backTo, status, aside, children,
 /** What a status dot shows: being reached, reached, not reached, or — a device not set to be — not trying. */
 export type StatusTone = 'connecting' | 'online' | 'offline' | 'idle';
 
-export type ScreenStatus = { tone: StatusTone; label?: string };
+type ScreenStatus = { tone: StatusTone; label?: string };
 
 function StatusDot({ status }: { status?: ScreenStatus }) {
   const { homeReach } = useDevices();

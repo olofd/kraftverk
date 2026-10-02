@@ -5,6 +5,7 @@ import { deviceReader, runTool, ToolRefused, type ToolRefusal } from '@kraftverk
 
 import { PICTURE_REF } from '../devices/views.ts';
 import { changesOf } from '../history/changes.ts';
+import { MAX_SPAN_MS } from '../history/retention.ts';
 import { resolutionOf, series } from '../history/sampler.ts';
 import { unfitFor } from '../installed/needs.ts';
 import { platformWords } from '../installed/transports.ts';
@@ -19,9 +20,6 @@ import { scopeOf } from './scope.ts';
   type's tools; its connections; the links between parts. Described the same
   whatever they are, so one card, one page and one chart do for all of them.
 */
-
-/** The longest span history or changes are asked for: as long as they are kept. */
-const MAX_SPAN_MS = 730 * 86_400_000;
 
 /**
  * The span a history or changes request asks for: `from` and `to`, or the

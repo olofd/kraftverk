@@ -1,15 +1,4 @@
-import {
-  AC_CHARGING_WATTS,
-  chargeRateToWatts,
-  decodeFirmware,
-  decodeSettings,
-  decodeTelemetry,
-  HOLDING,
-  LED_MODE_VALUES,
-  wattsToChargeRate,
-  type DecodedSettings,
-  type DecodedTelemetry,
-} from './registers.ts';
+import { AC_CHARGING_WATTS, HOLDING, LED_MODE_VALUES, wattsToChargeRate, type DecodedSettings, type DecodedTelemetry } from './registers.ts';
 import type {
   AcChargingWatts,
   PortId,
@@ -30,8 +19,9 @@ import type {
  */
 
 /** AFERIY P280: 2048 Wh base pack, each expansion adds the same again. */
-export const BASE_CAPACITY_WH = 2048;
-export const DEFAULT_MODEL = 'AFERIY P280';
+const BASE_CAPACITY_WH = 2048;
+
+const DEFAULT_MODEL = 'AFERIY P280';
 
 export const PORT_LABELS: Record<PortId, string> = {
   ac: 'AC outlets',
@@ -220,4 +210,3 @@ export function portRegister(id: PortId): number {
         : HOLDING.LED_MODE;
 }
 
-export { decodeTelemetry, decodeSettings, decodeFirmware, chargeRateToWatts };

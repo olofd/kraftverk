@@ -64,7 +64,7 @@ export function useRun(automation: AutomationView, onChanged: (next: AutomationV
  * step it is in; off; what stops it running; what it did last; or what starts
  * it next.
  */
-export function statusOf(automation: AutomationView, now: number, step: string | null): string {
+function statusOf(automation: AutomationView, now: number, step: string | null): string {
   const running = automation.running;
   if (running) return `Running · ${stopwatch((now - Date.parse(running.at)) / 1000)}${step ? ` · ${step}` : ''}`;
   if (automation.mode === 'off') return 'Off';

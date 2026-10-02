@@ -60,7 +60,7 @@ async function findPackages(roots: readonly string[], key: string): Promise<{ fo
 }
 
 /** A package's module, by a path from its own folder. */
-export async function load<T>(pkg: FoundPackage, path: string): Promise<T> {
+async function load<T>(pkg: FoundPackage, path: string): Promise<T> {
   const loaded = (await import(pathToFileURL(resolve(pkg.dir, path)).href)) as { default?: T };
   if (!loaded.default) throw new Error(`${path} has no default export`);
   return loaded.default;
