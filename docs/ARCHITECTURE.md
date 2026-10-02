@@ -1537,7 +1537,7 @@ is continuous, and the architecture check stays at zero.
     secrets, links — in its own storage instead of on a server. What it cannot
     do is what only an always-running machine can: history while the app is
     closed, and automations while it is closed. While it runs, it does both
-    (decision 22).
+    (decision 22). Adding a server hands the home over to it (decision 23).
 16. **A device is made of parts** (2026-09-29), as a Matter node is of
     endpoints: capabilities, metrics, controls and settings belong to a part.
     Nothing is modelled as a name pattern again.
@@ -1576,6 +1576,18 @@ is continuous, and the architecture check stays at zero.
     automations in its own SQLite and runs them. Logic that is neither the
     server's nor a screen is written in a package; what is in `server/` or
     `client/` now moves out ([PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md)).
+23. **The app always keeps the home; one master at a time** (2026-10-02,
+    the owner). A person starts with the app alone, and its database is
+    their home. A server added beside it extends the home — running while
+    the app is closed, reaching what only a server reaches — and becomes
+    its master, which every app they use follows; the app keeps a copy,
+    shown when the server is away, and holds for the server what it
+    reaches itself (decision 2), so one device may be reached through the
+    server and from a phone with one history. A server lost, the app's
+    copy is the master again. Never two writers: nothing is merged. Where
+    things run follows from the ways a device is reached and what an
+    automation needs, never from a choice put to a person. The steps:
+    [PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md), "Phase 6, from 6f".
 
 ---
 

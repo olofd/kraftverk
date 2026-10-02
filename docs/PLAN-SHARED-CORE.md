@@ -199,8 +199,14 @@ Each declared by the package that needs it; one implementation per place.
 5. **One interface for both modes** (recommended, principle 4). The
    alternative keeps the app's two paths, and every feature is written
    twice.
-6. **An app with a server stays a holder of connections**, not a second home
-   to keep in step. Syncing two homes is not part of this plan.
+6. **One home, one master at a time; the app always keeps it** (the owner,
+   2026-10-02, after 6e; refining "an app with a server stays a holder of
+   connections"). Without a server the app's own database is the home's
+   master. A server added beside it becomes the master — it never sleeps —
+   and the app keeps a copy of the home, and holds what it reaches itself
+   (its own radio) for the server. Lose the server, and the app's copy is
+   the master again. Never two writers: syncing two masters is not part of
+   this plan. "Phase 6, from 6f", below.
 
 ## Guardrails — the rule enforced, not hoped for
 
@@ -463,12 +469,10 @@ arrangement of those ports; how the screens reach it is always
   interface on the other. A worker today; a phone's background runtime, a
   shared worker or a desktop shell's process later, with no screen
   changing. The API's agreement suite asks it as a third way.
-- **With a server, the app holds connections, not a home** (decision 6):
-  `createHolding` wraps the server's `KraftverkApi` — the app's own
-  sessions and gateway for the connections it holds, their readings sent
-  up — in the process on a phone and on the page in a browser, where the
-  radio is. No worker, and no database: a holding keeps little, in the
-  platform's storage.
+- **With a server, the server is the master, and the app keeps a copy**
+  (decision 6): the app holds what it reaches itself for the server, and
+  shows the server's home from its own database when the server is away —
+  "Phase 6, from 6f", below.
 
 The steps, each green and pushed:
 
@@ -545,13 +549,77 @@ The steps, each green and pushed:
     added and switched, an automation written as YAML and run — once the
     gateway's dwell allows — and all of it there again after a reload. 16
     files of logic left in the app.
-6f. **With a server: what the app holds.** `createHolding` in the hub;
-    the app's runtime, its uplink and api-client's older calls go; finding
-    the server's address moves to the app's platform.
-6g. **The rest of the app's logic to packages**, as listed under "What
+6f–6i: below, "Phase 6, from 6f".
+
+### Phase 6, from 6f: the app always keeps the home
+
+Settled with the owner, 2026-10-02, after 6e, from how a person comes to
+kraftverk: they start with the app alone, and its database is their home.
+Later they may add a server, which extends what the home can do — running
+while the app is closed, reaching what only a server reaches — and the app
+still shows the home when the server is away. None of it is a choice put
+to them: the ways a device can be reached, and what an automation needs,
+decide where things run.
+
+**One master at a time** (decision 6). Without a server, the app's own
+database is the home's master — 6c to 6e, done. With a server, the server
+is: it runs while the app is closed, and every app a person uses follows
+it. Never two writers, so nothing is ever merged.
+
+- **Adding a device.** Without a server, the app's own ways only — a type
+  no way of which the app can use is not offered. With a server, the
+  server's ways, and this app's own radio for the server ("Bluetooth, from
+  this phone"); the device is the server's either way.
+- **One device, reached two ways** (decision 2, §10): a server's device
+  may have a connection this app holds — the P280 over Wi-Fi through the
+  server, and over Bluetooth from the phone — one device, one history,
+  each tried in its order. The app runs that connection's session and the
+  gateway's rules for it, and sends what it reads, its events and its
+  timeline to the server, queued while the server is away.
+- **The app's copy.** With a server, the app keeps the server's home in
+  its own database: what it has (devices, connections, links,
+  automations, the home's values — what the configuration describes,
+  without the secrets of connections only a server holds), and what each
+  device last said; recent history later. When the server is away the
+  home is shown from it, as it was last heard and saying so, read only;
+  what the app reaches itself goes on.
+- **The hand-over.** A server added to an app that has a home of its own
+  takes it over: devices, automations, links and values go to the server,
+  and a connection the app held becomes one it holds for the server. A
+  server lost or let go of, the app's copy becomes the master again: its
+  devices, automations and history stay, and ways only a server can hold
+  wait for one.
+- **Where it runs.** In a browser, the app's database is in its worker, so
+  what the app holds for a server is held there too: one owner of the
+  radio. On a phone, in the app's process, as its home is.
+- **The screens** ask one `KraftverkApi` throughout: the app's own home,
+  or the server's with what the app holds wrapped in — never which.
+
+The steps, each green and pushed:
+
+6f. **What the app holds for a server.** `createHolding` in the hub: the
+    app's own sessions and gateway for the connections it holds for a
+    server, wrapping the server's `KraftverkApi` — its readings and health
+    in the views and the live stream, a command, a setting or a tool to a
+    device it holds through its own gateway, a held connection's secrets
+    kept by it, setting up a way it holds through `setup`. What it keeps —
+    who it is to the server, the secrets, a device's store, the gateway's
+    memory, what is queued to send — in the app's own database, sealed as
+    its home's secrets are. The app's runtime, uplink, vault and registry,
+    `AppFlow` and the holding's branches in the screens go; api-client's
+    older calls go, the server's own (signing in, accounts, its log, its
+    reset, its version) as a small `serverApi` on `fetch`; finding the
+    server's address moves to the app's platform; a phone's preferences
+    are kept.
+6g. **The app's copy of the server's home**: kept as the server's
+    changes, and shown, read only and saying so, while the server is away.
+6h. **The hand-over**: a server taking over the app's home, and the app's
+    copy becoming the master again.
+6i. **The rest of the app's logic to packages**, as listed under "What
     moves — the app": the live updates and views to api-client,
     `togglesOf` and `settingsForms` to device-sdk, `deviceYaml` to
-    home-file. The baseline of logic in the app reaches nothing.
+    home-file, the editor's draft to the language. The baseline of logic in
+    the app reaches nothing.
 
 **A structure pass** (the owner, 2026-10-02), once the hub is done and the
 packages are as they should be: the server and the app looked at again,
