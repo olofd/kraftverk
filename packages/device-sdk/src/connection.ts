@@ -462,6 +462,23 @@ export const methodOf = (type: { readonly connections: readonly ConnectionMethod
 export const isSimulated = (connection: { readonly transport: string }): boolean => connection.transport === SIMULATED_TRANSPORT;
 
 /**
+ * Where a method can be held at all, from what is declared: the places its
+ * transport has an entry for, and a server alone for one kept to a server.
+ * A simulated one reaches nothing, and is held anywhere.
+ */
+export function placesOf(method: ConnectionMethod, transport: Pick<TransportDefinition, 'platforms'> | null): Platform[] {
+  if (isSimulated(method)) return ['server', 'web', 'native'];
+  const platforms = transport?.platforms ?? [];
+  return method.serverOnly ? platforms.filter((platform) => platform === 'server') : [...platforms];
+}
+
+/** Where a type can run at all, a simulated way apart: every place one of its own ways can be held. */
+export function runsOn(type: { readonly connections: readonly ConnectionMethod[] }, transport: (id: string) => Pick<TransportDefinition, 'platforms'> | null): Platform[] {
+  const places = new Set(type.connections.flatMap((method) => placesOf(method, transport(method.transport))));
+  return (['native', 'web', 'server'] as const).filter((platform) => places.has(platform));
+}
+
+/**
  * A connection, open: what a device type's session and its `identify` are handed.
  *
  * The same shape wherever it is held, which is how the same device-type code

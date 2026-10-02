@@ -85,7 +85,7 @@ type DevicesContextValue = {
   version: VersionInfo | null;
   refresh: () => Promise<void>;
   /** Who holds the connection in use: the app's own business, never a device screen's. */
-  holderOf: (device: DeviceView) => Holder;
+  holderOf: (device: DeviceView) => InUseBy;
   /** What a device's screens can do, through whoever holds it. */
   actionsFor: (device: DeviceView) => DeviceActions;
   /** Everything a device's own screens are handed. */
@@ -117,7 +117,7 @@ type DevicesContextValue = {
 };
 
 /** Who holds a device's connection in use: the home, this app for a server, another app, or nobody right now. */
-export type Holder = 'home' | 'this-app' | 'other-app' | 'none';
+export type InUseBy = 'home' | 'this-app' | 'other-app' | 'none';
 
 const DevicesContext = createContext<DevicesContextValue | null>(null);
 
@@ -369,7 +369,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   // --- what a device's screens can do -------------------------------------------
 
   const holderOf = useCallback(
-    (device: DeviceView): Holder => {
+    (device: DeviceView): InUseBy => {
       if (holding?.sessions.get(device.id)) return 'this-app';
       const inUse = device.connections.find((connection) => connection.inUse);
       if (inUse?.heldBy.kind === 'client') return inUse.heldBy.id === holding?.clientId ? 'this-app' : 'other-app';

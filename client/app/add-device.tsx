@@ -82,19 +82,18 @@ export default function AddDeviceScreen() {
   const ways = useMemo((): Way[] => {
     if (!type) return [];
     return type.connections.flatMap((method): Way[] => {
-      // The home's own way: through your server, or from where the app keeps its own — the home says whether it can, and why not.
-      const home = type.availability[method.id];
-      const rows: Way[] = [
-        {
+      // The home's own way, when it can hold it at all: through your server, or from where the app keeps its own — the home says whether it can now, and why not.
+      const rows: Way[] = type.ways
+        .filter((way) => way.method === method.id && way.holder === 'home')
+        .map((way) => ({
           methodId: method.id,
           label: `${method.label}, ${kind === 'server' ? 'through your server' : `from ${HERE}`}`,
           description: method.description,
           holder: 'home',
-          available: home?.ok ?? false,
-          reason: home && !home.ok ? home.reason : null,
+          available: way.availability.ok,
+          reason: way.availability.ok ? null : way.availability.reason,
           recommended: Boolean(method.recommended),
-        },
-      ];
+        }));
       // With a server, this app may hold a way itself too, over its own radio: never a simulated one, nor one the server keeps to itself.
       if (!holding || isSimulated(method) || method.serverOnly) return rows;
       const definition = holding.registry.definition(method.transport);
@@ -414,8 +413,22 @@ const SUPPORT: Record<string, string> = {
   experimental: 'Experimental',
 };
 
+/**
+ * Where a type can run, in words, against where this home is: through your
+ * server, from this phone, or both — and, with no server, that a real one
+ * needs a server and only its simulator runs here.
+ */
+function whereItRuns(type: Pick<DeviceTypeListing, 'runsOn'>, home: 'server' | 'own'): string {
+  const here = type.runsOn.includes(HERE_PLATFORM);
+  const server = type.runsOn.includes('server');
+  if (home === 'own') return here ? `Works from ${HERE}` : 'Needs a server: here, only its simulator';
+  if (here && server) return `Through your server, or from ${HERE}`;
+  return server ? 'Through your server' : `From ${HERE} only`;
+}
+
 function Types({ types, onPick, onBack }: { types: DeviceTypeListing[]; onPick: (id: string) => void; onBack: () => void }) {
   const theme = useTheme();
+  const { kind } = useHome();
   return (
     <YStack gap="$2">
       <SectionLabel>Which one?</SectionLabel>
@@ -428,7 +441,7 @@ function Types({ types, onPick, onBack }: { types: DeviceTypeListing[]; onPick: 
               <Row
                 leading={<DeviceImage typeId={type.id} size={40} />}
                 title={type.meta.name}
-                subtitle={[type.meta.description, SUPPORT[type.meta.support], type.meta.models?.length ? `Models: ${type.meta.models.join(', ')}` : null].filter(Boolean).join(' · ')}
+                subtitle={[whereItRuns(type, kind), type.meta.description, SUPPORT[type.meta.support], type.meta.models?.length ? `Models: ${type.meta.models.join(', ')}` : null].filter(Boolean).join(' · ')}
                 accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />}
               />
             </Pressable>

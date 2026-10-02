@@ -17,7 +17,7 @@ export function setupRoutes(deps: AppDeps): Hono {
   const api = new Hono();
 
   api.post('/', async (c) => {
-    const input = await body(c, z.object({ typeId: z.string().min(1).max(80), methodId: z.string().min(1).max(40).nullable().optional() }).strict());
+    const input = await body(c, z.object({ typeId: z.string().min(1).max(80), methodId: z.string().min(1).max(40).nullable().optional(), holder: z.enum(['home', 'this-app']).optional() }).strict());
     return c.json(await homeFor(deps, c).setup.start(input));
   });
 

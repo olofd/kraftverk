@@ -19,6 +19,7 @@
 import type {
   AutomationId,
   Availability,
+  Platform,
   CapabilityId,
   CapabilityName,
   CategorySpec,
@@ -122,8 +123,12 @@ export type ConnectionView = {
   /** "Wi-Fi", from the type. */
   methodLabel: string;
   transport: string;
-  /** Who holds it: the home itself — a server, or the app that keeps its own — or one phone or browser holding it for a server. */
-  heldBy: { kind: 'home' } | { kind: 'client'; id: ClientId; name: string };
+  /**
+   * Who holds it: the home itself — a server, or the app that keeps its
+   * own; the app asking, holding it for a server's home (`this-app`); or
+   * another phone or browser holding it for one.
+   */
+  heldBy: { kind: 'home' } | { kind: 'this-app'; id: ClientId; name: string } | { kind: 'client'; id: ClientId; name: string };
   address: string;
   priority: number;
   /** Whether it reaches the device right now; null when nobody is trying it. */
@@ -200,9 +205,27 @@ export type PictureRef = `type:${number}` | `own:${string}`;
 /** `PUT /devices/:id/picture`: which picture to show. */
 export type PictureChoice = { picture: PictureRef };
 
-/** An installed type, and whether the home — a server, or the app's own — can hold a connection over each of its methods, and if not, why. */
+/**
+ * Who would hold a way in to a device, as the app asking sees it: the home
+ * itself — a server, or the app that keeps its own — or this app, holding
+ * it for a server's home with its own radio (docs/PLAN-SHARED-CORE.md,
+ * phase 6).
+ */
+export type Holder = 'home' | 'this-app';
+
+/** One way a type can be added: its method, who would hold it, and whether it can be used now — or why not. */
+export type WayView = { method: string; holder: Holder; availability: Availability };
+
+/** An installed type: every way it can be added here, and where it can run at all. */
 export type DeviceTypeListing = DeviceTypeView & {
-  availability: Record<string, Availability>;
+  /** Each way it can be added here, in its type's order: the home's, then this app's for a server. */
+  ways: WayView[];
+  /**
+   * Where it can run at all, a simulated way apart: every place one of its
+   * ways can be held — on a phone, in a browser, on a server. A type no
+   * way of which runs where the app is needs a server.
+   */
+  runsOn: Platform[];
   warnings: readonly string[];
 };
 
@@ -474,6 +497,8 @@ export type FoundView = {
 // --- transports, apps, the server ---------------------------------------------
 
 export type TransportView = TransportDefinition & {
+  /** Whose it is: the home's, or this app's own, which it holds a server's connections over. */
+  holder: Holder;
   running: boolean;
   availability: Availability;
   values: Record<string, string>;
@@ -980,8 +1005,8 @@ export interface KraftverkApi {
    * kept until the save.
    */
   setup: {
-    /** Begins one this home will hold, over a method of a type. */
-    start(input: { typeId: string; methodId?: string | null }): Promise<DraftView>;
+    /** Begins one over a method of a type, held by whoever its way says (`ways`): the home, unless this app holds it for a server. */
+    start(input: { typeId: string; methodId?: string | null; holder?: Holder }): Promise<DraftView>;
     /** One an app will hold, from what it learnt reading the device itself: never a secret. */
     startHeld(input: HeldSetupInput): Promise<DraftView>;
     get(id: string): Promise<DraftView>;

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isSimulated, methodOf, methodsOf, SIMULATED_METHOD, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, type Protocol, type TransportDefinition } from './connection.ts';
+import { isSimulated, methodOf, methodsOf, placesOf, runsOn, SIMULATED_METHOD, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, type Platform, type Protocol, type TransportDefinition } from './connection.ts';
 import { MAIN_PART, type DeviceDescription } from './description.ts';
 import type { DeviceContext, DeviceSession, DeviceType } from './device-type.ts';
 import { defineDeviceType, describeDeviceType } from './device-type.ts';
@@ -146,6 +146,20 @@ describe('validating a declaration', () => {
 
   test('ids are namespaced', () => {
     expect(broken((type) => ({ ...type, id: 'plug' }))).toEqual(['id "plug" must be namespaced lowercase, like "brand.model"']);
+  });
+
+  test('where a type can run follows from its ways’ transports, and a way kept to a server', () => {
+    const lan = { platforms: ['server'] as Platform[] };
+    const radio = { platforms: ['server', 'web', 'native'] as Platform[] };
+    const own = plug().connections[0]!;
+    const transport = (id: string) => (id === 'radio' ? radio : id === 'lan' ? lan : null);
+    expect(placesOf(SIMULATED_METHOD, null)).toEqual(['server', 'web', 'native']);
+    expect(placesOf({ ...own, transport: 'radio' }, radio)).toEqual(['server', 'web', 'native']);
+    expect(placesOf({ ...own, transport: 'radio', serverOnly: 'its account stays on your server' }, radio)).toEqual(['server']);
+    expect(runsOn({ connections: [{ ...own, transport: 'lan' }] }, transport)).toEqual(['server']);
+    expect(runsOn({ connections: [{ ...own, transport: 'lan' }, { ...own, id: 'b', transport: 'radio' }] }, transport)).toEqual(['native', 'web', 'server']);
+    // A transport nothing installed provides runs nowhere.
+    expect(runsOn({ connections: [{ ...own, transport: 'gone' }] }, transport)).toEqual([]);
   });
 
   test('simulated is every type’s own way, and no type declares it', () => {

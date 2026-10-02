@@ -12,6 +12,8 @@ import {
   methodsOf,
   partName,
   partsOf,
+  placesOf,
+  runsOn,
   savedDeviceId,
   type Availability,
   type ConnectionMethod,
@@ -133,7 +135,16 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
     async deviceTypes() {
       const listing: DeviceTypeListing[] = types.all().map((type) => ({
         ...describeDeviceType(type),
-        availability: Object.fromEntries(methodsOf(type).map((method) => [method.id, holds(method)])),
+        /*
+          The ways that can be held where this home runs at all — one that
+          cannot (the broker in a browser) is not offered, rather than offered
+          and refused; one that can, but not now, says why. Every one is the
+          home's: this app's own, for a server's home, are its holding's.
+        */
+        ways: methodsOf(type)
+          .filter((method) => placesOf(method, transports.definition(method.transport)).includes(transports.platform))
+          .map((method) => ({ method: method.id, holder: 'home' as const, availability: holds(method) })),
+        runsOn: runsOn(type, (id) => transports.definition(id)),
         warnings: types.warnings(type.id),
       }));
       return {

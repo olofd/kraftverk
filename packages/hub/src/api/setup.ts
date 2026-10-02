@@ -25,7 +25,11 @@ export function setupApi(hub: Hub, caller: Caller): SetupApi {
 
   return {
     setup: {
-      start: (input) => setup.start({ ...input, by: actor }),
+      start: async ({ holder, ...input }) => {
+        // A way an app holds for a server is set up by that app, holding it: a home holds every way it adds itself.
+        if (holder === 'this-app') throw new ApiError('invalid', 'This home holds every way it adds itself: only an app holding ways for a server sets one up for itself');
+        return setup.start({ ...input, by: actor });
+      },
       /** One an app will hold: the app speaks for itself only, and must be the caller's account's. */
       async startHeld(input) {
         const app = hub.clients.get(input.clientId);
@@ -66,6 +70,7 @@ export function setupApi(hub: Hub, caller: Caller): SetupApi {
             const transport = transports.get(definition.id);
             return {
               ...definition,
+              holder: 'home',
               running: transport !== null,
               availability: transports.available(definition.id),
               values: transport?.values?.() ?? {},

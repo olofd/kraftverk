@@ -570,6 +570,16 @@ it. Never two writers, so nothing is ever merged.
   no way of which the app can use is not offered. With a server, the
   server's ways, and this app's own radio for the server ("Bluetooth, from
   this phone"); the device is the server's either way.
+- **What can be added is what is installed where** (the owner, the same
+  day). A server finds its packages on its own disk, so it may know types
+  the app has never heard of — a package someone adds to their server —
+  and the types offered are the home's: the server's with one, the app's
+  own without. The app's own radio is offered for a server's device only
+  for a type the app has installed too: it runs the type's code. Each type
+  says plainly where it can run — on this phone, only with a server, or
+  either — from what is declared (a transport's platforms, a method kept
+  to a server), and every way says whether it can be used now, or why not.
+  A type only a server knows is drawn by the generic pages.
 - **One device, reached two ways** (decision 2, §10): a server's device
   may have a connection this app holds — the P280 over Wi-Fi through the
   server, and over Bluetooth from the phone — one device, one history,
