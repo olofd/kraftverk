@@ -4,6 +4,9 @@ import { deviceStore, type NodeRecord } from '@kraftverk/store';
 
 import { loggedAttributes, recordChanges } from '../history/changes.ts';
 import { SKEW_MS } from '../history/retention.ts';
+
+/** A node's clock this close to the master's is taken as it is: what it sent is moved only when it is further off. */
+const CLOCK_TOLERANCE_MS = 2_000;
 import { keptAttributes } from '../history/sampler.ts';
 import type { Hub } from '../node/hub.ts';
 import { actorOf } from './caller.ts';
@@ -123,17 +126,22 @@ export function nodesApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'nodes' |
           if (catalog.describe(device.id, input.description, input.info ?? null, 'device')) listChanged = true;
         }
         const description = sessions.description(catalog.get(device.id)!);
-        const counts = heldReadings.accept(device.id, { nodeId: node.id, connectionId: connection.id }, input.readings, keptAttributes(description));
+        // On this clock: the node's own may be fast or slow, and said what it read when by it.
+        const sentAt = input.sentAt ? Date.parse(input.sentAt) : Number.NaN;
+        const offset = Number.isFinite(sentAt) && Math.abs(Date.now() - sentAt) > CLOCK_TOLERANCE_MS ? Date.now() - sentAt : 0;
+        const onOurClock = (at: string) => (offset ? new Date(Date.parse(at) + offset).toISOString() : at);
+        const readings = offset ? input.readings.map((reading) => ({ ...reading, at: onOurClock(reading.at), ...(reading.confirmedAt ? { confirmedAt: onOurClock(reading.confirmedAt) } : {}) })) : input.readings;
+        const counts = heldReadings.accept(device.id, { nodeId: node.id, connectionId: connection.id }, readings, keptAttributes(description));
         // What it reads now, said on the live stream as a device the home holds says it; the rest went to history.
         const latest = heldReadings.latest(device.id);
         if (counts.live && latest) hub.bus.publish({ kind: 'readings', deviceId: device.id, readings: latest.readings });
         if (listChanged && latest) hub.bus.publish({ kind: 'changed', deviceId: device.id });
         // Its on/offs and modes, when each changed: queued ones land in their place in time.
-        recordChanges(hub.history, device.id, loggedAttributes(description), input.readings);
+        recordChanges(hub.history, device.id, loggedAttributes(description), readings);
         // Its events, kept as the home's own are: only what its description declares, at the level it declares.
         for (const event of input.events ?? []) {
           const declared = (description.events ?? []).find((spec) => spec.id === event.id);
-          const at = Date.parse(event.at);
+          const at = Date.parse(onOurClock(event.at));
           if (!declared || !Number.isFinite(at) || at > Date.now() + SKEW_MS) continue;
           const kept = { id: event.id, level: declared.level, part: event.part ?? declared.part ?? null, data: event.data, at: new Date(at).toISOString() };
           events.record(device.id, kept);

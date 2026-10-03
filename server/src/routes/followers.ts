@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 
+import { HELD_LIMITS } from '@kraftverk/api-contract';
 import { nodeId, savedDeviceId, type AuditSubject, type DeviceDescription, type DeviceInfo, type Value } from '@kraftverk/device-sdk';
 
 import { HELD_BY, homeFor, RESOURCE_KIND, type AppDeps } from './context.ts';
@@ -71,7 +72,7 @@ export function followerRoutes(deps: AppDeps): Hono {
           ...HELD_BY,
           // Who the device said it is, read by the follower's session.
           identity: z.string().min(1).max(120).nullable().optional(),
-          readings: z.array(reading).max(2000),
+          readings: z.array(reading).max(HELD_LIMITS.readings),
           // What the device is and says about itself, by the follower's session: a pack plugged in.
           description: z.record(z.string(), z.unknown()).optional(),
           info: z.record(z.string(), z.unknown()).optional(),
@@ -87,8 +88,9 @@ export function followerRoutes(deps: AppDeps): Hono {
                 })
                 .strict()
             )
-            .max(500)
+            .max(HELD_LIMITS.events)
             .optional(),
+          sentAt: z.iso.datetime({ offset: true }).optional(),
         })
         .strict()
     );
@@ -131,7 +133,7 @@ export function followerRoutes(deps: AppDeps): Hono {
                 .strict()
                 .refine((entry) => (entry.resource === undefined) === (entry.resourceKind === undefined), 'What an entry is about is a kind and an id together, or nothing')
             )
-            .max(500),
+            .max(HELD_LIMITS.audit),
         })
         .strict()
     );

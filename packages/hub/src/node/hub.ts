@@ -182,7 +182,9 @@ export class Hub {
           // A device saved before it ever answered learns who it is the first time it does.
           onIdentified: (deviceId, identity) => {
             if (this.catalog.byIdentity(identity).active) return;
-            this.catalog.update(deviceId, { identity });
+            const device = this.catalog.update(deviceId, { identity });
+            // On the timeline — and so in the configuration kept beside the database, which is written again after it.
+            if (device) record({ at: new Date().toISOString(), kind: 'device.identified', actor: 'kraftverk', resourceKind: 'device', resource: deviceId, summary: `"${device.name}" said who it is: ${identity}`, detail: { identity } });
           },
           onDescribed: (deviceId, description, info, source) => this.catalog.describe(deviceId, description, info, source),
           onEvent: (deviceId, event) => events.record(deviceId, event),

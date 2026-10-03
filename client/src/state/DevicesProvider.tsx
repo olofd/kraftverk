@@ -164,7 +164,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       setError(null);
     } catch (err) {
       // Asked to sign in: the sign-in screen says so, not this.
-      if (err instanceof ApiError && err.kind === 'forbidden') return;
+      if (err instanceof ApiError && err.kind === 'signed-out') return;
       setUnreachable(true);
       setError(describeError(err));
     } finally {

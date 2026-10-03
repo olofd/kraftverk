@@ -67,7 +67,7 @@ function requests(options: HttpApiOptions) {
     if (status === 401 && body?.loginRequired) options.onLoginRequired?.({ setupRequired: Boolean(body.setupRequired) });
     const said = ApiError.fromWire(body);
     if (said) return said;
-    const kind: ApiErrorKind = body?.needsConfirmation ? 'needs-yes' : status === 401 ? 'forbidden' : (KIND_OF.get(status) ?? (status >= 500 ? 'failed' : 'invalid'));
+    const kind: ApiErrorKind = body?.needsConfirmation ? 'needs-yes' : (KIND_OF.get(status) ?? (status >= 500 ? 'failed' : 'invalid'));
     const problems = body?.problems ?? [];
     return new ApiError(kind, body?.error ?? `The server answered ${status}`, { problems, ...(body?.needsConfirmation ? { needsConfirmation: body.needsConfirmation } : {}) });
   };

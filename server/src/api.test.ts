@@ -223,7 +223,7 @@ test("what is a server's own, over HTTP: whether it answers, who is signed in, i
   // Signed out: asked to sign in, and told so.
   let asked = false;
   const signedOut = serverApi({ baseUrl: `http://${HOST}/api`, fetch: over({}), onLoginRequired: () => (asked = true) });
-  expect((await refused(signedOut.accounts.list())).kind).toBe('forbidden');
+  expect((await refused(signedOut.accounts.list())).kind).toBe('signed-out');
   expect(asked).toBe(true);
 });
 

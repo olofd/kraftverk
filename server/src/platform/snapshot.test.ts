@@ -116,4 +116,44 @@ describe('the configuration kept beside the database', () => {
     expect(copies.length).toBe(5);
     expect(copies[0]).toBe('kraftverk.before-2026-01-04T00-00-00Z.yaml');
   });
+
+  test('a restore that fails is tried again at the next start, and the file is not written over until it is done', async () => {
+    const folder = join(dir, 'unfinished');
+    mkdirSync(folder, { recursive: true });
+    const kept = join(folder, 'kraftverk.yaml');
+    const home = 'kraftverk: 1\n# the home to restore\n';
+    writeFileSync(kept, home);
+    let fails = true;
+    let writes = 0;
+    const snapshotOf = () =>
+      new ConfigSnapshot(
+        {
+          kept: async () => {
+            writes += 1;
+            return 'kraftverk: 1\n# an empty home\n';
+          },
+          restore: async (_, from) => {
+            if (fails) throw new Error('A value this version does not know');
+            return { at: new Date().toISOString(), from, applied: { devices: { added: ['lamp'], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, policy: [], notes: [] }, problems: [] };
+          },
+          plan: async () => {
+            throw new Error('not asked');
+          },
+        },
+        kept
+      );
+    // A fresh database: the restore fails. Nothing is written over the file.
+    await snapshotOf().begin(true);
+    expect(readFileSync(kept, 'utf8')).toBe(home);
+    expect(writes).toBe(0);
+    // The next start — the database no longer fresh — tries it again; done, the file is written as the home is now.
+    fails = false;
+    await snapshotOf().begin(false);
+    expect(writes).toBe(1);
+    expect(readFileSync(kept, 'utf8')).toBe('kraftverk: 1\n# an empty home\n');
+    // Finished: the start after that does not restore again.
+    fails = true;
+    await snapshotOf().begin(false);
+    expect(writes).toBe(2);
+  });
 });

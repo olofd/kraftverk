@@ -82,6 +82,19 @@ describe('a connection a browser holds', () => {
     expect(samples(device.id)).toBe(1);
   });
 
+  test('a node whose clock is off: what it read is moved onto the home’s clock, not refused for being in the future', async () => {
+    const client = await browser();
+    const started = await heldSetup(client.id, { identity: 'lampish:DESK', model: 'L1', summary: 'On.' });
+    const device = await t.home.setup.save(started.id, { name: 'Desk lamp' });
+    const connectionId = device.connections[0]!.id;
+    // A phone five minutes fast: it read the lamp just now, by its own clock.
+    const fast = new Date(Date.now() + 5 * 60_000).toISOString();
+    const taken = await t.home.held.readings(device.id, { nodeId: client.id, connectionId, readings: [reading(true, fast)], sentAt: fast });
+    expect(taken).toEqual({ live: 1, history: 0, refused: 0 });
+    const on = (await t.home.devices.get(device.id)).readings.find((each) => each.key === 'on')!;
+    expect(Math.abs(Date.parse(on.at) - Date.now())).toBeLessThan(5_000);
+  });
+
   test('sends what the device said happened: kept as the home’s own are, at the level its description declares, and a problem across devices', async () => {
     const client = await browser();
     const started = await heldSetup(client.id, { identity: 'lampish:HALL', model: 'L1', summary: 'On.' });

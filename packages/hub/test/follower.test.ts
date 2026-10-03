@@ -379,10 +379,30 @@ test('this app holds its way only while nothing above it reaches the device, and
   // The server's way is down: this app's takes over.
   await follower.hold([lamp(false)]);
   expect(follower.holds(id)).toBe(true);
-  // Gone from the server: let go of, with what was kept for it.
+  // Gone from the server's list with no word of it — as a server begun again lists nothing it had: kept, held no more.
   await follower.hold([]);
   expect(follower.holds(id)).toBe(false);
+  expect(follower.owns('c-00000000ab01')).toBe(true);
+  // Removed by the server: let go of, with what was kept for it.
+  await follower.hold([], new Set([id]));
   expect(follower.owns('c-00000000ab01')).toBe(false);
+});
+
+test('a server begun again — a new home, every device under a new id — takes nothing this app alone held: its way and its key are kept', async () => {
+  const first = await server();
+  // The app follows whichever server answers at the address: the first, then the one begun again.
+  let current = first.home;
+  const home = new Proxy({} as KraftverkApi, { get: (_, key) => current[key as keyof KraftverkApi] });
+  const { follower, bus } = await app(home);
+  const saved = await addLamp(follower.api, bus);
+  const way = saved.connections[0]!;
+  expect(follower.connections.secret(way.id, 'pin')).toBe('4321');
+
+  const again = await server();
+  current = again.home;
+  await follower.refresh();
+  expect(follower.catalog.get(saved.id)?.name).toBe('Desk lamp');
+  expect(follower.connections.secret(way.id, 'pin')).toBe('4321');
 });
 
 /** A home the app keeps itself, on its own database: the lamp on its bus with a PIN, a simulated one, a value set. */

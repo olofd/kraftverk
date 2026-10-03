@@ -44,13 +44,30 @@ export class ConfigSnapshot {
    * something changes. Otherwise it is written now.
    */
   async begin(fresh: boolean): Promise<void> {
-    if (fresh) {
-      const restored = await this.restore();
+    /*
+      A restore not finished — it failed, or the server stopped during it —
+      is tried again at the next start, however the database looks then: the
+      file is never written over before what it holds is in the database.
+    */
+    const unfinished = existsSync(this.#restoring);
+    if (fresh || unfinished) {
+      if (unfinished && !fresh) console.warn('[config] The last restore from the configuration kept beside the database did not finish: trying it again');
+      // Marked only when there is something to restore: a home started with nothing kept has no folder for it yet.
+      if (existsSync(this.file)) writeFileSync(this.#restoring, new Date().toISOString());
+      let restored: Restored | null;
+      try {
+        restored = await this.restore();
+      } catch (error) {
+        console.error(`[config] Restoring from the configuration kept beside the database failed; it is kept as it is, and tried again at the next start: ${(error as Error).stack ?? error}`);
+        return;
+      }
       if (restored) {
         const brought = restored.applied ? `${restored.applied.devices.added.length} devices, ${restored.applied.automations.added.length} automations` : 'nothing';
         const problems = restored.problems.length ? `; ${restored.problems.length} problems: ${restored.problems.join('; ')}` : '';
         console.log(`[config] Restored from the configuration kept beside the database: ${brought}${problems}`);
       }
+      // Nothing to restore from, or done: finished. Not done: kept, and tried again at the next start.
+      if (!restored || restored.applied) rmSync(this.#restoring, { force: true });
       if (!restored?.applied) return;
     }
     try {
@@ -86,6 +103,11 @@ export class ConfigSnapshot {
     return this.file;
   }
 
+  /** Beside the file while a restore from it is not finished. */
+  get #restoring(): string {
+    return `${this.file}.restoring`;
+  }
+
   /**
    * Writes it now, unless it already says this. The one before it is kept,
    * and the ones before that, five in all; the write itself goes through a
@@ -106,12 +128,14 @@ export class ConfigSnapshot {
     const text = await this.configuration.kept(before);
     mkdirSync(dirname(this.file), { recursive: true });
     if (before === text) return false;
-    if (before !== null) {
-      for (let n = KEPT - 1; n >= 1; n--) if (existsSync(`${this.file}.${n}`)) renameSync(`${this.file}.${n}`, `${this.file}.${n + 1}`);
-      renameSync(this.file, `${this.file}.1`);
-    }
+    // Written beside it first, the earlier ones moved along and the current one copied, and only then put in its
+    // place in one step: a crash at any point leaves a kraftverk.yaml whole — the old one, or the new.
     const writing = `${this.file}.writing`;
     writeFileSync(writing, text, { mode: 0o600 });
+    if (before !== null) {
+      for (let n = KEPT - 1; n >= 1; n--) if (existsSync(`${this.file}.${n}`)) renameSync(`${this.file}.${n}`, `${this.file}.${n + 1}`);
+      copyFileSync(this.file, `${this.file}.1`);
+    }
     renameSync(writing, this.file);
     this.#writtenAt = new Date().toISOString();
     return true;

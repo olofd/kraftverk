@@ -19,7 +19,7 @@
  */
 
 export { ApiError, API_ERROR_STATUS, isApiErrorKind, type ApiErrorKind, type ApiErrorWire } from './error.ts';
-export { CLIENT_HEADER, CONFIG_SCHEMA_PATH, PASSWORD_MIN, SIGNED_OUT } from './wire.ts';
+export { CLIENT_HEADER, CONFIG_SCHEMA_PATH, HELD_LIMITS, PASSWORD_MIN, SIGNED_OUT } from './wire.ts';
 
 // Each area of a home, as it answers; the interface itself last.
 export type * from './devices.ts';

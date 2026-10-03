@@ -198,6 +198,8 @@ export const SCHEMA = `
     CHECK ((value IS NULL) <> (text IS NULL))
   );
   CREATE INDEX sample_part ON sample (device_id, part, at);
+  /* By time alone: what the hourly roll-up and the pruning of old samples look through. */
+  CREATE INDEX sample_at ON sample (at);
 
   /*
     Every change of an on/off or an enum, when the device observed it: one row
@@ -240,6 +242,8 @@ export const SCHEMA = `
     at        TEXT NOT NULL
   );
   CREATE INDEX device_event_lookup ON device_event (device_id, at);
+  /* One event once: a node that sends again what it is not sure arrived adds nothing. */
+  CREATE UNIQUE INDEX device_event_once ON device_event (device_id, part, event, at);
   CREATE INDEX device_event_problems ON device_event (level, at) WHERE level <> 'info';
 
   /*
@@ -460,6 +464,8 @@ export const SCHEMA = `
     CHECK ((resource IS NULL) = (resource_kind IS NULL))
   );
   CREATE INDEX audit_at ON audit (at);
+  /* One entry once, when it is about something: a node that sends its timeline again adds nothing. */
+  CREATE UNIQUE INDEX audit_once ON audit (at, kind, actor, resource_kind, resource, summary) WHERE resource IS NOT NULL;
   CREATE INDEX audit_resource ON audit (resource_kind, resource, at);
 
   /*

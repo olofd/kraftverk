@@ -93,6 +93,12 @@ export type HeldReadings = {
   description?: DeviceDescription;
   info?: DeviceInfo | null;
   events?: { id: string; part: string | null; data: Record<string, Value> | null; at: string }[];
+  /**
+   * The node's clock as it sent them: what its times are read against. A
+   * phone's clock a minute fast or slow is its own; the master moves what it
+   * sent onto its own clock by the difference, so none is refused or stale.
+   */
+  sentAt?: string;
 };
 
 /** What became of them: live ones the device's state now, queued ones history, the rest refused as out of range. */

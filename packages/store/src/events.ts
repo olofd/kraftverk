@@ -40,7 +40,8 @@ export class EventStore {
 
   record(deviceId: SavedDeviceId, event: DeviceEventMessage): void {
     this.#db
-      .query('INSERT INTO device_event (device_id, part, event, level, data, at) VALUES (?, ?, ?, ?, ?, ?)')
+      // Heard again — a node sending once more what it was not sure arrived — it is the one already kept.
+      .query('INSERT OR IGNORE INTO device_event (device_id, part, event, level, data, at) VALUES (?, ?, ?, ?, ?, ?)')
       .run(deviceId, event.part ?? MAIN_PART, event.id, event.level, event.data ? JSON.stringify(event.data) : null, event.at);
   }
 

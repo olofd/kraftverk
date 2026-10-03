@@ -159,6 +159,7 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
         error: setupRequired
           ? 'This server has no accounts yet. Create the first one from the home network.'
           : 'Log in to use this server.',
+        kind: 'signed-out',
         loginRequired: true,
         setupRequired,
       },

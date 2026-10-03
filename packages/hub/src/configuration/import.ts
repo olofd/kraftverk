@@ -9,6 +9,7 @@ import {
   meetsNeed,
   methodsOf,
   partsOf,
+  isPolicyValueName,
   POLICY_VALUES,
   randomHex,
   unitOf,
@@ -274,7 +275,28 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
 
   // The home's values.
   const now = deps.policy.values();
+  /*
+    Each value is one this version knows, within its bounds: a file from another
+    version may name one renamed or gone, or one whose bounds have narrowed.
+    A restore leaves it out and says so; an import a person reads stops at it.
+  */
+  const fits = ([name, value]: [string, number | null]): boolean => {
+    if (!isPolicyValueName(name)) {
+      if (options.lenient) notes.push(`The home's value "${name}" is left out: this version has no such value`);
+      else problems.push({ message: `The home has no value called "${name}"`, path: ['home', 'policy', name], line: null, column: null });
+      return false;
+    }
+    const spec = POLICY_VALUES[name];
+    if (value !== null && !(value >= spec.min && value <= spec.max)) {
+      const said = `${spec.label} is from ${spec.min} to ${spec.max} ${spec.unit}, not ${value}`;
+      if (options.lenient) notes.push(`The home's value "${name}" is left out: ${said}`);
+      else problems.push({ message: said, path: ['home', 'policy', name], line: null, column: null });
+      return false;
+    }
+    return true;
+  };
   const policy = Object.entries(document.home.policy)
+    .filter(fits)
     .filter(([name, value]) => now[name as PolicyValueName] !== value)
     .map(([name, value]) => ({ name, label: POLICY_VALUES[name as PolicyValueName].label, before: now[name as PolicyValueName] ?? null, after: value }));
 
@@ -493,6 +515,8 @@ export function writeImport(deps: ImportDeps, id: string, by: string, choices: I
 
   const applied: ImportApplied = { devices: { added: [], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, policy: [], notes: [] };
   const touched: AutomationId[] = [];
+  /** Where each automation goes on the home page: placed after all are written, by place, so each lands where the file says. */
+  const placing: { id: AutomationId; place: number | null }[] = [];
   /** Restoring, each in a savepoint of its own: what fails is undone alone, said, and the rest goes on. */
   const each = (what: string, work: () => void) => {
     if (!options.lenient) return work();
@@ -571,12 +595,16 @@ export function writeImport(deps: ImportDeps, id: string, by: string, choices: I
         if (why.length && !options.lenient) throw new ApiError('invalid', `"${entry.name}" cannot be kept as it is`, { problems: why.map((said) => `"${entry.name}": ${said}`) });
         each(`"${entry.name}"`, () => {
           deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, starts: result.starts, timeZone: entry.clock, mode: why.length ? 'off' : entry.mode, recheckMinutes: entry.recheckMinutes });
-          if (entry.homePlace !== (existing?.homePlace ?? null)) deps.automations.placeOnHome(id, entry.homePlace);
+          if (entry.homePlace !== (existing?.homePlace ?? null)) placing.push({ id, place: entry.homePlace });
           (existing ? applied.automations.changed : applied.automations.added).push(key);
           if (why.length) applied.notes.push(`"${entry.name}" is restored turned off: ${why.join('; ')}`);
           touched.push(id);
         });
       }
+
+      // The home page, in the order of its places: one put first, then the next after it, each where the file says.
+      for (const { id } of placing.filter((each) => each.place === null)) deps.automations.placeOnHome(id, null);
+      for (const { id, place } of placing.filter((each) => each.place !== null).sort((a, b) => a.place! - b.place!)) deps.automations.placeOnHome(id, place);
 
       // The home's values.
       for (const change of view.policy) {

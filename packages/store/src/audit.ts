@@ -18,7 +18,8 @@ export class AuditLog {
   record(entry: AuditRecord): void {
     try {
       this.#db
-        .query<unknown, (string | null)[]>('INSERT INTO audit (at, kind, actor, resource_kind, resource, summary, detail) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        // Sent again by a node that was not sure it arrived: the entry already kept.
+        .query<unknown, (string | null)[]>('INSERT OR IGNORE INTO audit (at, kind, actor, resource_kind, resource, summary, detail) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .run(
           entry.at,
           entry.kind,

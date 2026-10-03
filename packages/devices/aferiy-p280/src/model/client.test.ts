@@ -140,6 +140,8 @@ describe('what the channel carries besides its answers', () => {
     };
     const client = new StationClient({ transport: station });
     await client.start();
+    // Its first poll answered, so nothing it reads lands between what this test pushes.
+    await client.poll();
     // The station's own push of its block from register 0 is its state: AC on.
     const telemetry = Array<number>(INPUT_REGISTER_COUNT).fill(0);
     telemetry[INPUT.STATUS_BITS] = STATUS.AC_OUTPUT_ON;
@@ -149,7 +151,8 @@ describe('what the channel carries besides its answers', () => {
 
     // Input registers from 80 on, every bit set: decoded as telemetry, the outlets would all read on and the charge 6553.5 %.
     push!({ kind: 'registers', fn: 0x04, start: 80, values: Array<number>(INPUT_REGISTER_COUNT).fill(0) });
-    expect(client.status()).toEqual(before);
+    // What it would have overwritten: the outlets, and the charge. (When it last read changes with the station's own polls.)
+    expect([client.status().ports, client.status().level]).toEqual([before.ports, before.level]);
     await client.stop();
   });
 });

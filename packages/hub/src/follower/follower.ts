@@ -1,4 +1,4 @@
-import { ApiError, type ConnectionView, type DeviceView, type KraftverkApi, type PolicyValueView } from '@kraftverk/api-contract';
+import { ApiError, HELD_LIMITS, type ConnectionView, type DeviceView, type KraftverkApi, type PolicyValueView } from '@kraftverk/api-contract';
 import { isPolicyValueName, type AuditRecord, type DeviceSession, type DeviceStore, type NodeId, type Platform, type PolicyValues, type Reading, type SavedDeviceId, type ScopedHttp } from '@kraftverk/device-sdk';
 import { ActionGateway, Confirmations } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, toHold, toolsOf, withInUse, type DeviceEventMessage } from '@kraftverk/holder';
@@ -42,8 +42,6 @@ const SEND_MS = 20_000;
 const REFRESH_MS = 5 * 60_000;
 /** At most this many of each kind are kept owed, the newest: a master away for weeks does not fill a phone that follows it. */
 const KEEP_OWED = { readings: 10_000, event: 1000, audit: 1000, store: 1000 } as const;
-/** At most this many readings go up in one call. */
-const READINGS_PER_CALL = 2000;
 /** What the master refuses for good — no such device, not this node's, too large — is not sent again. */
 const REFUSED_FOR_GOOD = new Set(['not-found', 'forbidden', 'conflict', 'invalid', 'too-large', 'not-allowed']);
 
@@ -259,7 +257,9 @@ export class Follower {
       const list = await this.home.devices.list();
       this.heard.keep(HEARD.devices, list);
       await this.keepHome().catch((error: unknown) => this.#log('warn', `[follower] the home and its nodes could not be kept: ${(error as Error).message}`));
-      await this.hold(list);
+      // What the master removed, so what this node held for it is let go of with it.
+      const removed = await this.home.devices.removed().then((devices) => new Set<string>(devices.map((device) => device.id)), () => undefined);
+      await this.hold(list, removed);
       // The home as one file, as the master last said it: what this node keeps if the master is gone (`handover/keep.ts`).
       await this.home.configuration
         .export({ secrets: 'none' })
@@ -341,14 +341,14 @@ export class Follower {
    * held while nothing above it reaches the device (`toHold`). A device it
    * no longer has a way to is let go, with what was kept for it.
    */
-  hold(list: readonly DeviceView[]): Promise<void> {
+  hold(list: readonly DeviceView[], removed?: ReadonlySet<string>): Promise<void> {
     // One at a time: two lists heard together are held in the order they came.
-    const held = this.#holding.then(() => this.#hold(list));
+    const held = this.#holding.then(() => this.#hold(list, removed));
     this.#holding = held.catch(() => undefined);
     return held;
   }
 
-  async #hold(list: readonly DeviceView[]): Promise<void> {
+  async #hold(list: readonly DeviceView[], removed?: ReadonlySet<string>): Promise<void> {
     const me = this.nodeId;
     // Never two writers: a node does not follow itself, whatever it was told.
     if (this.master()?.id === me) {
@@ -363,15 +363,22 @@ export class Follower {
     }));
     const holdNow = mine.filter((device) => toHold(device, me)).map((device) => device.id);
     // As it was last written, nothing is written again: a screen reading the list every few seconds costs a comparison, not a rewrite.
-    const as = JSON.stringify([kept, holdNow]);
+    const as = JSON.stringify([kept, holdNow, [...(removed ?? [])].sort()]);
     if (as === this.#heldAs) return;
     this.#heldAs = null;
 
     const keep = new Set(mine.map((device) => device.id));
+    const listed = new Set(list.map((device) => device.id));
     for (const device of this.catalog.list()) {
       if (keep.has(device.id)) continue;
       await this.sessions.close(device.id);
-      this.catalog.deleteForever(device.id);
+      /*
+        Let go of — with its keys, which only this node has — only when the master says so: it still has the
+        device, and no longer by a way of this node's; or it removed it. One it does not list at all is not its
+        word on it: a master whose database was begun again lists every device under a new id, and a node that
+        took that for "let go" destroyed what it alone held. Kept, and held no more.
+      */
+      if (listed.has(device.id) || removed?.has(device.id)) this.catalog.deleteForever(device.id);
     }
     for (const { record, ways } of kept) {
       this.catalog.mirror(record);
@@ -556,19 +563,27 @@ export class Follower {
       }
     };
 
-    const audit = owed.filter((each) => each.kind === 'audit');
+    // As much as the master takes in one call; the rest waits for the next.
+    const audit = owed.filter((each) => each.kind === 'audit').slice(0, HELD_LIMITS.audit);
     if (audit.length && !(await attempt(audit.map((each) => each.id), () => this.home.held.audit(me, audit.map((each) => each.body as never))))) return;
 
     const byDevice = new Map<string, typeof owed>();
     for (const each of owed) if ((each.kind === 'readings' || each.kind === 'event') && each.deviceId) byDevice.set(each.deviceId, [...(byDevice.get(each.deviceId) ?? []), each]);
     for (const [deviceId, rows] of byDevice) {
+      // Readings and events each to what the master takes in one call.
       const sending: typeof rows = [];
-      let count = 0;
+      let readingCount = 0;
+      let eventCount = 0;
       for (const row of rows) {
-        const size = row.kind === 'readings' ? (row.body as ReadingsOwed).readings.length : 1;
-        if (sending.length && count + size > READINGS_PER_CALL) break;
+        if (row.kind === 'readings') {
+          const size = (row.body as ReadingsOwed).readings.length;
+          if (sending.length && readingCount + size > HELD_LIMITS.readings) break;
+          readingCount += size;
+        } else {
+          if (eventCount + 1 > HELD_LIMITS.events) break;
+          eventCount += 1;
+        }
         sending.push(row);
-        count += size;
       }
       const readings = sending.filter((row) => row.kind === 'readings').map((row) => row.body as ReadingsOwed);
       const events = sending.filter((row) => row.kind === 'event').map((row) => (row.body as EventOwed).event);
@@ -585,6 +600,7 @@ export class Follower {
             readings: readings.flatMap((each) => each.readings),
             ...(described?.description ? { description: described.description, info: described.info ?? null } : {}),
             ...(events.length ? { events: events.map((event) => ({ id: event.id, part: event.part, data: event.data as never, at: event.at })) } : {}),
+            sentAt: new Date().toISOString(),
           })
       );
       if (!sent) return;
