@@ -21,7 +21,7 @@ export function ProblemsScreen() {
   const { devices, heard } = useDevices();
   const { api } = useHome();
 
-  const { value: list, error } = useAnswer(() => api.problems(PROBLEMS_SHOWN), [api, heard?.count], { failure: 'They could not be read' });
+  const { value: list, error } = useAnswer(() => api.problems(PROBLEMS_SHOWN), [api, heard.count], { failure: 'They could not be read' });
 
   const described = new Map<string, DeviceView['description']>(devices.map((device) => [device.id, device.description]));
 

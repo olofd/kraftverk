@@ -56,20 +56,20 @@ export function ExportCard({ devices, automations, chosen }: { devices: readonly
             { value: 'all', label: 'Everything' },
             { value: 'some', label: 'Choose' },
           ]}
-          onChange={(value) => setEverything(value === 'all')}
+          onChange={(value) => (setEverything(value === 'all'), file.forget())}
         />
         {!everything ? (
           <>
             {devices.map((device) => (
               <YStack key={device.id}>
                 <RowSeparator />
-                <ToggleRow title={device.name} subtitle={device.key} checked={pickedDevices.has(device.key)} onCheckedChange={(on) => setPickedDevices((set) => toggled(set, device.key, on))} />
+                <ToggleRow title={device.name} subtitle={device.key} checked={pickedDevices.has(device.key)} onCheckedChange={(on) => (setPickedDevices((set) => toggled(set, device.key, on)), file.forget())} />
               </YStack>
             ))}
             {automations.map((automation) => (
               <YStack key={automation.id}>
                 <RowSeparator />
-                <ToggleRow title={automation.name} subtitle={`${automation.key} · automation`} checked={pickedAutomations.has(automation.key)} onCheckedChange={(on) => setPickedAutomations((set) => toggled(set, automation.key, on))} />
+                <ToggleRow title={automation.name} subtitle={`${automation.key} · automation`} checked={pickedAutomations.has(automation.key)} onCheckedChange={(on) => (setPickedAutomations((set) => toggled(set, automation.key, on)), file.forget())} />
               </YStack>
             ))}
           </>

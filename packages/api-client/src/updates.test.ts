@@ -33,6 +33,12 @@ describe('applying the live stream', () => {
     expect(next[1]).toBe(list[1]!);
   });
 
+  test('a reading older than the one the list has does not undo it: heard while the list was read, put back on top of it', () => {
+    const fresh = [device(lamp, [{ key: 'watts', value: 60, at: later }])];
+    const next = applyLive(fresh, [{ type: 'readings', deviceId: lamp, readings: [{ key: 'watts', value: 40, at }] }]);
+    expect(next[0]!.readings).toEqual([{ key: 'watts', value: 60, at: later }]);
+  });
+
   test('a reading it has never had is added', () => {
     const next = applyLive(list, [{ type: 'readings', deviceId: plug, readings: [{ key: 'watts', value: 3, at: later }] }]);
     expect(next[1]!.readings.map((reading) => reading.key)).toEqual(['on', 'watts']);

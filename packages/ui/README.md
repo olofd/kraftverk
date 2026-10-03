@@ -13,7 +13,9 @@ React, React Native and Tamagui.
   value and its unit read, a chart's axis and gaps, the flow of energy
   through a device from its description; and hold what a control shows
   between a person's touch and the device's answer (the write gate, a
-  slider's value while it moves).
+  slider's value while it moves), what the device confirmed until its
+  readings say it too (`useConfirmed`), and a number as it is typed
+  (`useNumberText`).
 - **Does not:** fetch, keep anything past the screen, decide what a device
   does (the gateway's), or know any device type.
 

@@ -17,7 +17,7 @@ const EVENTS_SHOWN = 50;
 export function Events({ device, part }: { device: DeviceView; part?: string }) {
   const { heard } = useDevices();
   const { api } = useHome();
-  const count = heard?.deviceId === device.id ? heard.count : 0;
+  const count = heard.byDevice[device.id] ?? 0;
   const declares = (device.description.events?.length ?? 0) > 0;
 
   const { value: list } = useAnswer(() => api.devices.events(device.id, EVENTS_SHOWN), [api, count, device.id], { when: declares });

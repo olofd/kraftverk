@@ -27,12 +27,19 @@ export type SecretsMode = 'none' | 'sealed' | 'plain';
 /** An export as it is made: its secrets' mode and passphrase, the file once made, and making it. */
 export function useExportFile() {
   const { api, asksYourPassword } = useHome();
-  const [mode, setMode] = useState<SecretsMode>('none');
-  const [passphrase, setPassphrase] = useState('');
+  const [mode, chooseMode] = useState<SecretsMode>('none');
+  const [passphrase, typePassphrase] = useState('');
   const [yours, setYours] = useState('');
   const [exported, setExported] = useState<(ConfigExported & { at: string }) | null>(null);
   const [shown, setShown] = useState(false);
   const { busy, error, attempt } = useAttempt();
+  /** A file made with other choices is not this one: let go of, so what is downloaded is what is chosen now. */
+  const forget = () => {
+    setExported(null);
+    setShown(false);
+  };
+  const setMode = (next: SecretsMode) => (chooseMode(next), forget());
+  const setPassphrase = (next: string) => (typePassphrase(next), forget());
   /** A passphrase the home would refuse: an export travels. */
   const short = mode === 'sealed' && passphrase.length < PASSPHRASE_MIN;
   /** Your password, asked for again before secrets leave a server: a borrowed session is not enough. */
@@ -53,7 +60,7 @@ export function useExportFile() {
     }, 'It could not be exported');
   };
 
-  return { mode, setMode, passphrase, setPassphrase, short, asks, yours, setYours, blocked, exported, shown, setShown, busy, error, make };
+  return { mode, setMode, passphrase, setPassphrase, short, asks, yours, setYours, blocked, exported, shown, setShown, forget, busy, error, make };
 }
 
 export type ExportFile = ReturnType<typeof useExportFile>;

@@ -22,6 +22,14 @@ export type { LiveState };
 /** Waits before opening again, by how many times in a row it failed; then the last, for ever. */
 const RETRY_MS = [1000, 2000, 5000, 10_000, 30_000];
 
+/**
+ * How long a socket is given to say hello. A server gone from the network
+ * leaves it opening until the system gives up — minutes — and a proxy may
+ * take the upgrade and pass nothing on; meanwhile the app would neither be
+ * live nor poll. Given up on, it is down: the app polls, and it tries again.
+ */
+const HELLO_WITHIN_MS = 10_000;
+
 /** `http://host:3333/api` → `ws://host:3333/api/live`; a path alone is this page's server. */
 export function liveUrl(base: string): string {
   const page = (globalThis as { location?: { href?: string } }).location?.href;
@@ -40,6 +48,8 @@ export type LiveOptions = {
   url: string;
   /** For tests: how a socket is made. */
   socket?: (url: string) => WebSocket;
+  /** For tests: how long a socket is given to say hello (`HELLO_WITHIN_MS`). */
+  helloWithinMs?: number;
 };
 
 /** An open stream: closed with `close()`; `say` tells the server what the screen shows, if the socket is up. */
@@ -89,7 +99,19 @@ export function openLive(options: LiveOptions): LiveStream {
       }
       options.onUpdate(update);
     };
+    const late = setTimeout(() => {
+      if (opened || closed || !socket) return;
+      // Given up on: what it does as it closes is not waited for, nor done twice.
+      const given = socket;
+      socket = null;
+      given.onclose = null;
+      given.onmessage = null;
+      given.close();
+      failures += 1;
+      retry();
+    }, options.helloWithinMs ?? HELLO_WITHIN_MS);
     socket.onclose = () => {
+      clearTimeout(late);
       socket = null;
       open = false;
       if (closed) return;

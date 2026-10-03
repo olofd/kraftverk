@@ -27,6 +27,23 @@ describe('formatValue', () => {
   test('watts become kilowatts where a person would say kilowatts', () => {
     expect(formatValue(spec(), 950)).toBe('950 W');
     expect(formatValue(spec(), 1800)).toBe('1.80 kW');
+    // What rounds to a kilowatt is one; a flow the other way too.
+    expect(formatValue(spec(), 999.6)).toBe('1.00 kW');
+    expect(formatValue(spec(), -1500)).toBe('-1.50 kW');
+    expect(formatValue(spec(), -0.3)).toBe('0 W');
+  });
+
+  test('what rounds to nothing has no sign', () => {
+    expect(formatValue(spec({ kind: 'current', unit: 'A', precision: 2 }), -0.001)).toBe('0.00 A');
+    expect(formatValue(spec({ kind: 'current', unit: 'A', precision: 2 }), -0.5)).toBe('-0.50 A');
+  });
+
+  test('a length of time is rounded once, to what it shows', () => {
+    const minutes = (value: number) => formatValue(spec({ kind: 'duration', unit: 'min' }), value);
+    expect([59.6, 119.7, 2870, 65, 120, 0.5].map(minutes)).toEqual(['1h', '2h', '2d', '1h 5m', '2h', '30s']);
+    expect(formatValue(spec({ kind: 'duration', unit: 's' }), 20)).toBe('20s');
+    // None at all is a length, not nothing said.
+    expect(formatValue(spec({ kind: 'duration', unit: 's' }), 0)).toBe('0 s');
   });
 
   test('a power measurement in something other than watts keeps its own unit', () => {

@@ -50,15 +50,28 @@ export function ServersProvider({ children }: { children: ReactNode }) {
   const [active, setActive] = useState<SavedServer | null>(readActiveServer);
   const [deciding, setDeciding] = useState(() => !serversConfigured());
 
+  // Who hears that the server wants a sign-in: whoever holds the session (AuthProvider).
+  const loginListeners = useRef(new Set<() => void>());
+  const followed = useRef(active);
+  followed.current = active;
+
   const use = useCallback((id: string | null) => {
     markServersConfigured();
     const chosen = id ? (readServers().find((server) => server.id === id) ?? null) : null;
     writeActiveServerId(chosen?.id ?? null);
+    const was = followed.current;
+    /*
+      The one already followed, chosen again — to try it again: nothing is
+      torn down, its home and the ways it holds stay open. It is only asked
+      again, as when it wants a sign-in.
+    */
+    if (was && chosen && was.id === chosen.id && was.url === chosen.url) {
+      loginListeners.current.forEach((listener) => listener());
+      return;
+    }
     setActive(chosen);
   }, []);
 
-  // Who hears that the server wants a sign-in: whoever holds the session (AuthProvider).
-  const loginListeners = useRef(new Set<() => void>());
   const onLoginRequired = useCallback((listener: () => void) => {
     loginListeners.current.add(listener);
     return () => void loginListeners.current.delete(listener);

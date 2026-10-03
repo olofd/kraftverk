@@ -174,6 +174,9 @@ async function start(open: Extract<ToWorker, { kind: 'open' }>) {
   };
 }
 
+/** How long a home asks again for its lock before it says another tab has it. */
+const LOCK_PATIENCE_MS = 3_000;
+
 let home: Awaited<ReturnType<typeof start>> | null = null;
 let closing: ((why: 'asked') => void) | null = null;
 
@@ -184,8 +187,26 @@ async function open(message: Extract<ToWorker, { kind: 'open' }>) {
   }
   const handOver = new BroadcastChannel(HAND_OVER);
   if (message.takeOver) handOver.postMessage({ ask: 'hand-over' });
-  await navigator.locks.request(LOCK, message.takeOver ? {} : { ifAvailable: true }, async (lock) => {
-    if (!lock) return say({ via: 'home', kind: 'busy' });
+  /*
+    Held already: maybe by another tab — or by the home this tab is closing
+    as it opens this one, another server's, which lets go within a moment.
+    Asked again for a while before it is said to be another tab's.
+  */
+  const deadline = Date.now() + LOCK_PATIENCE_MS;
+  while ((await holdHome(message, handOver)) === 'busy') {
+    if (Date.now() >= deadline) {
+      say({ via: 'home', kind: 'busy' });
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  handOver.close();
+}
+
+/** Holds the home's lock, and the home, until it is closed or handed over; 'busy' when another holds the lock. */
+function holdHome(message: Extract<ToWorker, { kind: 'open' }>, handOver: BroadcastChannel): Promise<'busy' | 'held'> {
+  return navigator.locks.request(LOCK, message.takeOver ? {} : { ifAvailable: true }, async (lock): Promise<'busy' | 'held'> => {
+    if (!lock) return 'busy';
     const released = new Promise<'handed-over' | 'asked'>((resolve) => {
       handOver.onmessage = (event) => {
         if ((event.data as { ask?: string } | null)?.ask === 'hand-over') resolve('handed-over');
@@ -196,15 +217,15 @@ async function open(message: Extract<ToWorker, { kind: 'open' }>) {
       home = await start(message);
     } catch (error) {
       say({ via: 'home', kind: 'failed', message: (error as Error).message });
-      return;
+      return 'held';
     }
     say({ via: 'home', kind: 'ready', nodeId: home.nodeId });
     const why = await released;
     await home.stop();
     home = null;
     say({ via: 'home', kind: 'closed', why });
+    return 'held';
   });
-  handOver.close();
 }
 
 hear<ToWorker>(scope, 'home', (message) => {

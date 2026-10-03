@@ -89,6 +89,16 @@ function useOpened(server: OpenOptions['server'], copyOf: string | null = null):
   return { state, open };
 }
 
+/**
+ * Whether writes are allowed, for the home opened now: one opened again —
+ * taken back from another tab, tried again — starts with them off, as every
+ * opening does, and the switch says so rather than what the last one was.
+ */
+function useWritesFor(home: OpenHome | null): [boolean, (allowed: boolean) => void] {
+  const [allowedFor, setAllowedFor] = useState<OpenHome | null>(null);
+  return [home !== null && allowedFor === home, (allowed) => setAllowedFor(allowed ? home : null)];
+}
+
 export function HomeProvider({ children }: { children: ReactNode }) {
   const servers = useServers();
   const { generation } = useAuth();
@@ -114,8 +124,8 @@ function ServerHome({ serverKey, url, children }: { serverKey: string; url: stri
     [refresh, serverKey, url]
   );
   const { state, open } = useOpened(server);
-  const [writesAllowed, setWritesAllowed] = useState(false);
   const home = state.status === 'open' ? state.home : null;
+  const [writesAllowed, setWritesAllowed] = useWritesFor(home);
 
   const value = useMemo<HomeValue | null>(() => {
     if (state.status === 'opening') return null;
@@ -148,8 +158,8 @@ function ServerHome({ serverKey, url, children }: { serverKey: string; url: stri
 /** The app's own home: opened where the app runs, and shown once it is — with the copy it kept of the server it used last beside it. */
 function OwnHome({ children }: { children: ReactNode }) {
   const { state, open } = useOpened(undefined, readLastServerId());
-  const [writesAllowed, setWritesAllowed] = useState(false);
   const home = state.status === 'open' ? state.home : null;
+  const [writesAllowed, setWritesAllowed] = useWritesFor(home);
 
   const value = useMemo<HomeValue | null>(
     () =>

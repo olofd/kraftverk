@@ -1,10 +1,10 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Platform } from 'react-native';
 import { Input, Text, XStack, YStack } from 'tamagui';
 
 import { secondsText, WEEKDAYS, type Weekday } from '@kraftverk/automation';
 import type { Value, ValueType } from '@kraftverk/device-sdk';
-import { Chips, haptic, useRadioGroup, useToggleGroup } from '@kraftverk/ui';
+import { Chips, haptic, useNumberText, useRadioGroup, useToggleGroup } from '@kraftverk/ui';
 
 import { Picker } from '../../../components/Picker';
 
@@ -22,24 +22,6 @@ export function Label({ children }: { children: ReactNode }) {
       {children}
     </Text>
   );
-}
-
-/**
- * A number as it is typed — kept as text while it is typed, so "1." is not
- * lost — and given back as a number once it is one. `shown`: how it reads when
- * it is not being typed.
- */
-function useNumberText(value: number | null, shown: (value: number) => string = String) {
-  const [text, setText] = useState(value === null ? '' : shown(value));
-  useEffect(() => {
-    if (Number(text.replace(',', '.')) !== value) setText(value === null ? '' : shown(value));
-    // Only a value changed from outside is shown: what is being typed stays as typed.
-  }, [value]);
-  const parse = (next: string): number | null => {
-    const number = Number(next.replace(',', '.'));
-    return next.trim() === '' || !Number.isFinite(number) ? null : number;
-  };
-  return { text, setText, parse };
 }
 
 /** A number, typed, its unit beside it. */

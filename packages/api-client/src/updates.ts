@@ -6,10 +6,13 @@ import type { DeviceView, LiveUpdate } from '@kraftverk/api-contract';
  * (`GET /api/live`, docs/API.md). Pure, so it is tested without a screen.
  */
 
-/** A device's readings, with newer ones in place of the same keys. */
+/** A device's readings, with newer ones in place of the same keys — newer by when they were taken: one heard late does not undo what the list already has. */
 const merged = (readings: readonly Reading[], newer: readonly Reading[]): Reading[] => {
   const byKey = new Map(readings.map((reading) => [reading.key, reading]));
-  for (const reading of newer) byKey.set(reading.key, reading);
+  for (const reading of newer) {
+    const had = byKey.get(reading.key);
+    if (!had || !(Date.parse(had.at) > Date.parse(reading.at))) byKey.set(reading.key, reading);
+  }
   return [...byKey.values()];
 };
 

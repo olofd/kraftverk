@@ -3,6 +3,7 @@ import { Input, Text, XStack, YStack } from 'tamagui';
 import { RowSeparator, ToggleRow } from './Row.tsx';
 import { SliderRow } from './SliderRow.tsx';
 import { haptic } from './haptics.ts';
+import { useNumberText } from './number-text.ts';
 import { presentationOf, type ConfigField, type ConfigSchema, type ConfigValues } from '@kraftverk/device-sdk';
 
 /**
@@ -80,6 +81,9 @@ function Field({
   onChange: (name: string, value: string | number | boolean | undefined) => void;
   onSubmit?: () => void;
 }) {
+  // A number kept as typed while it is typed: "12." on its way to "12.5", "-0" to "-0.5".
+  const typed = useNumberText(typeof value === 'number' ? value : null);
+
   if (field.type === 'boolean') {
     return (
       <ToggleRow
@@ -146,7 +150,8 @@ function Field({
     what a form does when it knows nothing about the number.
   */
   if (field.type === 'number' && field.min !== undefined && field.max !== undefined) {
-    const step = field.step ?? (field.integer ? 1 : undefined) ?? 1;
+    // No step said: a whole one for whole numbers, else about a fiftieth of the range, rounded to a power of ten.
+    const step = field.step ?? (field.integer ? 1 : 10 ** Math.floor(Math.log10((field.max - field.min) / 50)));
     const steps = (field.max - field.min) / step;
     if (presentationOf(field) === 'slider' || (steps > 0 && steps <= 200)) {
       const current = typeof value === 'number' ? value : typeof field.default === 'number' ? field.default : field.min;
@@ -208,12 +213,13 @@ function Field({
                   ? '2026-09-29T07:00'
                   : undefined
         }
-        value={value === undefined || typeof value === 'boolean' ? '' : String(value)}
+        value={numeric && typeof value !== 'string' ? typed.text : value === undefined || typeof value === 'boolean' ? '' : String(value)}
         onChangeText={(text) => {
           if (!numeric) return onChange(name, text);
+          typed.setText(text);
           if (text.trim() === '') return onChange(name, undefined);
-          const parsed = Number(text);
-          onChange(name, Number.isFinite(parsed) ? parsed : text);
+          // Not a number: kept as typed, for the form's check to say so.
+          onChange(name, typed.parse(text) ?? text);
         }}
       />
       {numeric && (field.min !== undefined || field.max !== undefined) ? (

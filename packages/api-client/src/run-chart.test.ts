@@ -71,6 +71,15 @@ describe('a run’s log, drawn', () => {
     expect(changed(volts!)).toBe(false);
   });
 
+  test('a value that moved and moved back at one instant did not change', () => {
+    const key = LOG.keys[0]!;
+    const at = (ms: number) => new Date(T0 + ms).toISOString();
+    const readings = [3, 4, 3].map((value, index) => ({ device: key.device, key: key.key, value, at: at(index ? 200 : 100) }));
+    const [only] = seriesOf({ keys: [key], readings } as never, { from: T0, to: T0 + 1_000 });
+    expect(only!.points.map((point) => point.value)).toEqual([3]);
+    expect(changed(only!)).toBe(false);
+  });
+
   test('the steps that changed something, numbered: a check, a pause, or a switch already so is not marked', () => {
     expect(marksOf(LOG.run).map((mark) => [mark.n, mark.step.what, mark.at])).toEqual([
       [1, 'Turn Smart plug on', T0],
@@ -121,6 +130,7 @@ describe('a run’s log, drawn', () => {
     const window = windowOf(LOG);
     expect(sinceStart(T0 + 67_300, window)).toBe('+1:07');
     expect(sinceStart(T0 + 7_300, window, true)).toBe('+0:07.3');
+    expect(sinceStart(T0 + 59_960, window, true)).toBe('+1:00.0');
     expect(said(WATTS, 297)).toBe('297 W');
     expect(said(WATTS, null)).toBe('—');
     expect(said(RELAY, true)).toBe('on');

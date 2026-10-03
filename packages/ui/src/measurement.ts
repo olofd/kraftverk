@@ -91,11 +91,12 @@ export function formatValue(attribute: Formatted, value: Value | undefined): str
     case 'energy':
       return unit === 'Wh' ? formatWh(value) : withUnit(unit, precision ?? 0, value);
     case 'percent':
-      return `${value.toFixed(precision ?? 0)}%`;
+      return `${fixed(value, precision ?? 0)}%`;
     case 'duration': {
       // By the unit it declares, and nothing else: no unit, no guess.
       const minutes = DURATION_MINUTES[unit];
-      return minutes === undefined ? withUnit(unit, precision ?? 0, value) : formatDuration(value * minutes);
+      // None at all is a length too: "0 s", not the mark for nothing said.
+      return minutes === undefined || value === 0 ? withUnit(unit, precision ?? 0, value) : formatDuration(value * minutes);
     }
     default:
       return withUnit(unit, precision ?? (quantity ? DEFAULT_PRECISION[quantity] : 0), value);
@@ -105,8 +106,14 @@ export function formatValue(attribute: Formatted, value: Value | undefined): str
 /** How many minutes one of each duration unit is. */
 const DURATION_MINUTES: Record<string, number> = { ms: 1 / 60_000, s: 1 / 60, min: 1, h: 60, d: 1440 };
 
+/** A number to so many digits — and what rounds to nothing is "0.00", never "-0.00". */
+const fixed = (value: number, digits: number): string => {
+  const text = value.toFixed(digits);
+  return Number(text) === 0 ? text.replace(/^-/, '') : text;
+};
+
 const withUnit = (unit: string, digits: number, value: number): string => {
-  const number = value.toFixed(digits);
+  const number = fixed(value, digits);
   // Degrees hug their number; every other unit takes a space.
   return unit.startsWith('°') ? `${number}${unit}` : `${number} ${unit}`.trim();
 };

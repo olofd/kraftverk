@@ -57,12 +57,12 @@ export function seriesOf(log: Pick<RunLog, 'keys' | 'readings'>, window: Window)
     const id = `${reading.device} ${reading.key}`;
     const points = byKey.get(id) ?? [];
     const at = Math.max(window.from, Date.parse(reading.at));
+    // Two readings at one instant — the start of the run, say: the later one is what it was then.
+    if (points.at(-1)?.at === at) points.pop();
     const last = points.at(-1);
-    if (last && JSON.stringify(last.value) === JSON.stringify(reading.value)) continue;
-    // Two readings at the start of the run: the later one is what it was then.
-    if (last && last.at === at) points.pop();
-    points.push({ at, value: reading.value });
     byKey.set(id, points);
+    if (last && JSON.stringify(last.value) === JSON.stringify(reading.value)) continue;
+    points.push({ at, value: reading.value });
   }
   return log.keys.map((key) => ({ key, points: byKey.get(`${key.device} ${key.key}`) ?? [] }));
 }
@@ -122,10 +122,12 @@ export function spansOf(points: readonly Point[], window: Window): { from: numbe
 /** "+1:07", "+0:07.3": how far into the run an instant is — tenths when asked. */
 export function sinceStart(at: number, window: Window, tenths = false): string {
   const ms = Math.max(0, at - window.from);
-  const minutes = Math.floor(ms / 60_000);
-  const seconds = (ms % 60_000) / 1000;
-  const shown = tenths ? seconds.toFixed(1).padStart(4, '0') : String(Math.floor(seconds)).padStart(2, '0');
-  return `+${minutes}:${shown}`;
+  // Rounded once, to what it shows, then split: 59.96 s is "+1:00.0", never "+0:60.0".
+  const perMinute = tenths ? 600 : 60;
+  const steps = tenths ? Math.round(ms / 100) : Math.floor(ms / 1000);
+  const rest = steps % perMinute;
+  const shown = tenths ? (rest / 10).toFixed(1).padStart(4, '0') : String(rest).padStart(2, '0');
+  return `+${Math.floor(steps / perMinute)}:${shown}`;
 }
 
 /** A value as its key says it: "297 W", "on", "Lit while it is on", "—" when not known. */

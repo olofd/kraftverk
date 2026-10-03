@@ -71,7 +71,9 @@ export const clock = (at: string) => new Date(at).toLocaleTimeString([], { hour:
 
 /** "Today", "Yesterday", "12 Sep". */
 export function dayOf(at: string): string {
-  const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(at).setHours(0, 0, 0, 0)) / 86_400_000);
+  // Calendar days apart, not 24-hour spans: a day clocks went forward on is 23 hours.
+  const date = (instant: Date) => Date.UTC(instant.getFullYear(), instant.getMonth(), instant.getDate());
+  const days = Math.round((date(new Date()) - date(new Date(at))) / 86_400_000);
   if (days === 0) return 'Today';
   if (days === 1) return 'Yesterday';
   return new Date(at).toLocaleDateString([], { day: 'numeric', month: 'short' });

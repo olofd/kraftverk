@@ -3,7 +3,7 @@ import { YStack } from 'tamagui';
 
 import { describeError, type DeviceView } from '@kraftverk/api-client';
 import { isOnline, MAIN_PART, partName, readingOf, switchConsequence, togglesOf, type Part, type PartToggle } from '@kraftverk/device-sdk';
-import { Card, haptic, RowSeparator, SectionLabel, ToggleRow, useWriteGate } from '@kraftverk/ui';
+import { Card, haptic, RowSeparator, SectionLabel, ToggleRow, useConfirmed, useWriteGate } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { useDevices } from '../../state/DevicesProvider';
@@ -22,6 +22,8 @@ const partTitle = (device: DeviceView, part: Part) => (part.id === MAIN_PART ? d
 export function Controls({ device, part }: { device: DeviceView; part?: string }) {
   const { actionsFor } = useDevices();
   const [gate, writes] = useWriteGate<string>();
+  // What the device confirmed, shown until its readings say it too: no jump back to before.
+  const confirmed = useConfirmed();
   const [error, setError] = useState<string | null>(null);
   const toggles = useMemo(() => togglesOf(device.description, device.name).filter((toggle) => part === undefined || toggle.part.id === part), [device, part]);
 
@@ -40,12 +42,13 @@ export function Controls({ device, part }: { device: DeviceView; part?: string }
           });
           if (result.outcome === 'refused' || result.outcome === 'failed') throw new Error(result.detail);
           if (result.outcome === 'unverified') setError(result.detail);
+          else confirmed.keep({ [toggle.attribute.key]: value });
         });
       } catch (err) {
         setError(describeError(err) || 'That did not work');
       }
     },
-    [actionsFor, device, gate]
+    [actionsFor, confirmed, device, gate]
   );
 
   if (toggles.length === 0) return null;
@@ -58,7 +61,7 @@ export function Controls({ device, part }: { device: DeviceView; part?: string }
         {toggles.map((toggle, index) => {
           const reading = readingOf(device.readings, toggle.attribute.key);
           const pending = writes.pending.has(toggle.attribute.key);
-          const value = pending ? writes.pending.get(toggle.attribute.key) : reading?.value;
+          const value = pending ? writes.pending.get(toggle.attribute.key) : confirmed.shown(toggle.attribute.key, reading?.value);
           return (
             <YStack key={`${toggle.part.id}:${toggle.attribute.key}`}>
               {index > 0 ? <RowSeparator /> : null}

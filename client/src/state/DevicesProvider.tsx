@@ -55,6 +55,10 @@ const APPLY_MS = 100;
 /** Whether the home answers: being reached, answering, or out of reach. */
 type HomeReach = 'connecting' | 'online' | 'offline';
 
+/** The events the live stream carried: how many in all, and how many for each device. */
+type Heard = { count: number; byDevice: Readonly<Record<string, number>> };
+const NOTHING_HEARD: Heard = { count: 0, byDevice: {} };
+
 type DevicesContextValue = {
   homeReach: HomeReach;
   /** Whether the home's live stream is up: when it is not, the list is polled. */
@@ -85,8 +89,8 @@ type DevicesContextValue = {
   removeConnection: (device: DeviceView, connection: ConnectionView) => Promise<void>;
   addLink: (link: NewLink) => Promise<void>;
   removeLink: (link: LinkView) => Promise<void>;
-  /** The last event the live stream carried, counted, so a list of events knows to read again. */
-  heard: { deviceId: string; count: number } | null;
+  /** The events the live stream carried, counted — in all, and for each device — so a list of events knows to read again. */
+  heard: Heard;
   /**
    * Hears, from the live stream, that an automation moved — a run started,
    * took a step or ended — for as long as a screen showing it is open. Returns
@@ -121,7 +125,11 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
   }, []);
   // Opening at first: the stream reads the list when it opens, and says so if it cannot.
   const [live, setLive] = useState<LiveState>('connecting');
-  const [heard, setHeard] = useState<{ deviceId: string; count: number } | null>(null);
+  const [heard, setHeard] = useState<Heard>(NOTHING_HEARD);
+  /** Which read of the list is the latest: one that comes back after a later one was asked is not shown. */
+  const reads = useRef(0);
+  /** What the live stream said while the latest read of the list was on its way: put back on top of what it brings. */
+  const sinceAsked = useRef<LiveUpdate[] | null>(null);
 
   /*
     What the screen shows, said to the home over the live stream: the screen
@@ -157,19 +165,28 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
+    const mine = ++reads.current;
+    sinceAsked.current = [];
     try {
       const [next, gone] = await Promise.all([api.devices.list(), api.devices.removed().catch(() => [])]);
-      setDevices(next);
+      // A later read is on its way: it is the one shown, not this older one.
+      if (mine !== reads.current) return;
+      // Readings heard meanwhile are newer than the list may be: kept, not thrown away with the list they were applied to.
+      const missed = sinceAsked.current ?? [];
+      sinceAsked.current = null;
+      setDevices(applyLive(next, missed));
       setRemoved(gone);
       setUnreachable(false);
       setError(null);
     } catch (err) {
+      if (mine !== reads.current) return;
+      sinceAsked.current = null;
       // Asked to sign in: the sign-in screen says so, not this.
       if (err instanceof ApiError && err.kind === 'signed-out') return;
       setUnreachable(true);
       setError(describeError(err));
     } finally {
-      setLoading(false);
+      if (mine === reads.current) setLoading(false);
     }
   }, [api, reading]);
 
@@ -193,6 +210,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       applying = null;
       const batch = pending;
       pending = [];
+      sinceAsked.current?.push(...batch);
       setDevices((devices) => applyLive(devices, batch));
     };
     // Read the list again, once for a burst of "changed".
@@ -205,7 +223,8 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     const onUpdate = (update: LiveUpdate) => {
       // Hello: read the list, and apply what follows on top of it.
       if (update.type === 'hello' || update.type === 'changed') return readAgain();
-      if (update.type === 'event') return setHeard((last) => ({ deviceId: update.deviceId, count: (last?.count ?? 0) + 1 }));
+      // Counted for each device: two devices' events between two renders are both heard.
+      if (update.type === 'event') return setHeard((last) => ({ count: last.count + 1, byDevice: { ...last.byDevice, [update.deviceId]: (last.byDevice[update.deviceId] ?? 0) + 1 } }));
       if (update.type === 'automation') {
         for (const listener of automationListeners.current) listener(update.id);
         return;

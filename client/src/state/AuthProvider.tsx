@@ -95,6 +95,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(applies);
     setState(null);
     setNotice(null);
+    // Another server: whether the last one answered says nothing of this one.
+    setUnreachable(false);
     void refresh();
   }, [applies, serverUrl, refresh]);
 

@@ -37,6 +37,7 @@ export { PowerButton } from './PowerButton.tsx';
 export { haptic } from './haptics.ts';
 export { WriteGate, WriteInFlightError, type WriteSnapshot } from './write-gate.ts';
 export { useWriteGate } from './useWriteGate.ts';
+export { useConfirmed } from './useConfirmed.ts';
 export {
   fixedRange,
   formatValue,
@@ -54,6 +55,7 @@ export {
   type ChartScale,
   type ChartPoint,
 } from './series.ts';
+export { parseNumberText, useNumberText } from './number-text.ts';
 export {
   capitalise,
   formatAgo,
