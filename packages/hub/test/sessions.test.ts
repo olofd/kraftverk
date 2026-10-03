@@ -179,9 +179,15 @@ describe('a device that cannot open is still a device, saying why', () => {
     await sessions.sync(catalog.list());
     expect(sessions.health(record)).toMatchObject({ status: 'error', detail: 'The lamp refused the connection; trying again in under a minute' });
 
+    // Still refusing when due: tried, and the next wait is longer — a dead one is not tried every half minute for ever.
+    await sessions.check(Date.now() + 31_000);
+    expect(sessions.health(record).detail).toBe('The lamp refused the connection; trying again in 1 min');
+    await sessions.check(Date.now() + 92_000);
+    expect(sessions.health(record).detail).toBe('The lamp refused the connection; trying again in 2 min');
+
     // It may refuse because of something that has since passed: tried again when due.
     watch.failOpen = false;
-    await sessions.check(Date.now() + 31_000);
+    await sessions.check(Date.now() + 213_000);
     expect(sessions.get(record.id)).not.toBeNull();
   });
 

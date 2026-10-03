@@ -206,7 +206,6 @@ async function realSession(ctx: DeviceContext<Config>): Promise<DeviceSession> {
   const readSlow = async () => {
     [batteries, totals] = await Promise.all([client.batteries(serial), client.totals(serial)]);
     slowAt = new Date().toISOString();
-    lastSlow = Date.now();
   };
 
   const read = async () => {
@@ -229,7 +228,11 @@ async function realSession(ctx: DeviceContext<Config>): Promise<DeviceSession> {
         lastAsked = Date.now();
         await read();
       }
-      if (slowDue) await readSlow();
+      // Asked, answered or not: one that failed waits its turn as one that answered does.
+      if (slowDue) {
+        lastSlow = Date.now();
+        await readSlow();
+      }
       error = null;
     } catch (thrown) {
       error = thrown instanceof NiuError ? thrown.message : `NIU could not be reached: ${(thrown as Error).message}`;

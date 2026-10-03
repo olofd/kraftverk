@@ -40,6 +40,14 @@ describe('framing', () => {
     expect(JSON.parse(text(frames[0]!.payload))).toMatchObject({ gwId: 'abc' });
   });
 
+  test('bytes that are no frame are let go of, and a frame after them — its start split from its rest — still read', () => {
+    const frame = encodeFrame({ version: '3.3', key: KEY, sequence: 9, command: CMD.DP_QUERY, payload: utf8('{"gwId":"abc"}') });
+    const reader = new FrameReader('3.3', KEY);
+    for (let i = 0; i < 100; i++) expect(reader.push(new Uint8Array(1000).fill(0x11))).toEqual([]);
+    expect(reader.push(Uint8Array.of(0x11, 0x11, ...frame.subarray(0, 3)))).toEqual([]);
+    expect(reader.push(frame.subarray(3))).toHaveLength(1);
+  });
+
   test('a 3.3 control frame carries the 15-byte version header, a query does not', () => {
     const payload = utf8('{"dps":{"1":true}}');
     const control = encodeFrame({ version: '3.3', key: KEY, sequence: 1, command: CMD.CONTROL, payload });

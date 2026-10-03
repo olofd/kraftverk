@@ -282,6 +282,13 @@ export async function refreshTokens(http: NiuHttp, refreshToken: string, now = D
 const RENEW_BEFORE_MS = 5 * 60_000;
 
 /**
+ * After a sign-in that failed, how long before the password is tried again —
+ * longer each time: a password changed in NIU's app is not tried hundreds
+ * of times an hour, which could have the account locked.
+ */
+const SIGN_IN_AGAIN_MS = [60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000];
+
+/**
  * A signed-in conversation with the NIU cloud: it signs in when it must,
  * renews its token before it runs out — with the refresh token, else the
  * password — and, told by NIU it is signed out, signs in once more and asks
@@ -290,6 +297,10 @@ const RENEW_BEFORE_MS = 5 * 60_000;
  */
 export class NiuClient {
   #tokens: NiuTokens | null = null;
+  /** A renewal under way: every call that needs one at once waits on the same. */
+  #renewing: Promise<NiuTokens> | null = null;
+  /** The last sign-in that failed, how often in a row, and until when it is not tried again. */
+  #refused: { error: unknown; times: number; until: number } | null = null;
 
   constructor(
     private readonly http: NiuHttp,
@@ -302,19 +313,32 @@ export class NiuClient {
   }
 
   async #token(): Promise<string> {
-    const now = this.now();
     const tokens = this.#tokens;
-    if (tokens && (tokens.expiresAt === null || tokens.expiresAt - now > RENEW_BEFORE_MS)) return tokens.accessToken;
+    if (tokens && (tokens.expiresAt === null || tokens.expiresAt - this.now() > RENEW_BEFORE_MS)) return tokens.accessToken;
+    this.#renewing ??= this.#renew(tokens).finally(() => (this.#renewing = null));
+    return (await this.#renewing).accessToken;
+  }
+
+  async #renew(tokens: NiuTokens | null): Promise<NiuTokens> {
+    const now = this.now();
     if (tokens?.refreshToken && (tokens.refreshExpiresAt === null || tokens.refreshExpiresAt > now)) {
       try {
-        this.#tokens = await refreshTokens(this.http, tokens.refreshToken, now);
-        return this.#tokens.accessToken;
+        return (this.#tokens = await refreshTokens(this.http, tokens.refreshToken, now));
       } catch {
         // A refresh NIU no longer takes: the password, as at the start.
       }
     }
-    this.#tokens = await signIn(this.http, this.credentials.account, this.credentials.password, now);
-    return this.#tokens.accessToken;
+    // Refused a moment ago: said again, not asked again, until its wait is over.
+    if (this.#refused && now < this.#refused.until) throw this.#refused.error;
+    try {
+      this.#tokens = await signIn(this.http, this.credentials.account, this.credentials.password, now);
+      this.#refused = null;
+      return this.#tokens;
+    } catch (error) {
+      const times = (this.#refused?.times ?? 0) + 1;
+      this.#refused = { error, times, until: now + SIGN_IN_AGAIN_MS[Math.min(times, SIGN_IN_AGAIN_MS.length) - 1]! };
+      throw error;
+    }
   }
 
   /** One call, signed in; signed out by NIU on the way, it signs in again and asks once more. */

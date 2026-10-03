@@ -148,6 +148,12 @@ class NativeBleChannel implements ByteChannel {
 
   #connect(): Promise<void> {
     this.#connecting ??= (async () => {
+      // The link made, until it is this channel's: let go of if anything stops it on the way.
+      let reached: { cancelConnection(): Promise<unknown> } | null = null;
+      // Closed while it connected: it stops, and does not say it is connected.
+      const stillWanted = () => {
+        if (this.#closed) throw new Error(`Closed while connecting to ${this.address}`);
+      };
       try {
         if (this.#closed) return;
         const known = this.handle();
@@ -155,7 +161,10 @@ class NativeBleChannel implements ByteChannel {
           ? await known.connect()
           : // A device seen in an earlier run: the phone can still connect by its id.
             await this.manager().connectToDevice(this.address);
+        reached = device;
+        stillWanted();
         const ready = await device.discoverAllServicesAndCharacteristics();
+        stillWanted();
         const services = (await ready.services()).map((service) => service.uuid.toLowerCase());
         const layout = (this.options.gatt ?? []).find((candidate) => services.includes(fullUuid(candidate.service)));
         if (!layout) {
@@ -175,13 +184,15 @@ class NativeBleChannel implements ByteChannel {
             this.#schedule();
           }),
         ];
+        stillWanted();
         this.#backoffMs = 2000;
         this.#lastError = null;
         this.#setConnected(true);
       } catch (error) {
         this.#lastError = (error as Error).message;
-        this.log('warn', `[ble] ${this.address}: ${this.#lastError}`);
+        if (!this.#closed) this.log('warn', `[ble] ${this.address}: ${this.#lastError}`);
         await this.#teardown();
+        await reached?.cancelConnection().catch(() => undefined);
         this.#schedule();
       } finally {
         this.#connecting = null;

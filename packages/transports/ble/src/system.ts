@@ -38,6 +38,16 @@ type Peripheral = any;
 /** Drop a device from the list after this long without an advertisement. */
 const STALE_AFTER_MS = 30_000;
 
+/** How long a connection is given to be answered: noble's own waits for ever. */
+const CONNECT_TIMEOUT_MS = 20_000;
+
+/** `work`, or `said` once `ms` have passed without it. */
+const within = <T>(work: Promise<T>, ms: number, said: string): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error(said)), ms)));
+  return Promise.race([work, late]).finally(() => clearTimeout(timer));
+};
+
 export type GattDiscovery = {
   at: string;
   services: string[];
@@ -199,7 +209,7 @@ class BleServerTransport extends EventEmitter implements Transport {
  * One device's GATT connection: its write characteristic, its notifications,
  * and its reconnect loop. Per device, so two devices' bytes never meet.
  */
-class BleChannel implements ByteChannel {
+export class BleChannel implements ByteChannel {
   readonly kind = 'bytes' as const;
 
   #write: any = null;
@@ -285,10 +295,33 @@ class BleChannel implements ByteChannel {
     }
   }
 
+  /**
+   * Connects, finds its layout and listens. Whatever stops it on the way —
+   * a layout not there, a step that throws, the channel closed meanwhile —
+   * lets go of the link it made: a station that takes one connection is not
+   * left held by nobody, locked from the phone and its own app.
+   */
   async #openGatt(peripheral: Peripheral): Promise<void> {
-    await peripheral.connectAsync();
+    try {
+      await this.#gatt(peripheral);
+    } catch (error) {
+      await peripheral.disconnectAsync().catch(() => {});
+      throw error;
+    }
+  }
+
+  /** Closed while it connected: it stops here, and does not say it is connected. */
+  #stillWanted(): void {
+    if (this.#closed) throw new Error(`Closed while connecting to ${this.address}`);
+  }
+
+  async #gatt(peripheral: Peripheral): Promise<void> {
+    // One that never answers is given up, so the next advertisement can try again.
+    await within(peripheral.connectAsync(), CONNECT_TIMEOUT_MS, `${this.address} did not answer the connection within ${CONNECT_TIMEOUT_MS / 1000} s`);
+    this.#stillWanted();
 
     let { services, characteristics } = await peripheral.discoverAllServicesAndCharacteristicsAsync();
+    this.#stillWanted();
 
     const short = (uuid: string) => uuid.replace(/-/g, '').toLowerCase();
     /** 1800/1801 are Generic Access and Generic Attribute — every device has them. */
@@ -302,6 +335,7 @@ class BleChannel implements ByteChannel {
     if (services.length === 0 || onlyGenericServices(services)) {
       await new Promise((r) => setTimeout(r, 1200));
       const retry = await peripheral.discoverAllServicesAndCharacteristicsAsync();
+      this.#stillWanted();
       if (retry.services.length > services.length) {
         services = retry.services;
         characteristics = retry.characteristics;
@@ -329,7 +363,6 @@ class BleChannel implements ByteChannel {
     }
 
     if (!writeChar || !notifyChar) {
-      await peripheral.disconnectAsync().catch(() => {});
       const svc = services.map((s: any) => s.uuid).join(', ') || 'none';
       const chr = characteristics.map((c: any) => c.uuid).join(', ') || 'none';
       throw new Error(
@@ -347,6 +380,7 @@ class BleChannel implements ByteChannel {
       for (const listener of [...this.#data]) listener(bytes);
     });
     await notifyChar.subscribeAsync();
+    this.#stillWanted();
 
     peripheral.removeAllListeners('disconnect');
     peripheral.once('disconnect', () => {

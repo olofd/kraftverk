@@ -151,7 +151,11 @@ export class FrameReader {
 
     for (;;) {
       const start = this.#findPrefix();
-      if (start < 0) break;
+      if (start < 0) {
+        // No frame starts in it: only its last bytes are kept, which may be the start of one still coming.
+        this.#buffer = this.#buffer.subarray(this.#buffer.length - 3);
+        break;
+      }
       if (start > 0) this.#buffer = this.#buffer.subarray(start);
       if (this.#buffer.length < 20) break;
 

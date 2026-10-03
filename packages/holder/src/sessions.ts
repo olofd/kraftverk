@@ -371,6 +371,8 @@ export class SessionManager {
   async #openDevice(record: HolderDevice, connection: HolderConnection): Promise<void> {
     const type = this.typeOf(record)!;
     const simulated = isSimulated(connection);
+    // Tried again: what it was refused for goes, and how often it has been is kept — a dead one waits longer each time.
+    const tried = this.#refusals.get(record.id)?.attempts ?? 0;
     this.#refusals.delete(record.id);
     const log = (level: 'log' | 'warn' | 'error') => (message: string, extra?: unknown) => console[level](`[${record.name}] ${message}`, extra ?? '');
 
@@ -425,18 +427,18 @@ export class SessionManager {
       this.#describe(record.id);
     } catch (error) {
       const refused = error instanceof OpenRefused ? error : new OpenRefused((error as Error).message, 'error');
-      this.#refuse(record.id, { status: refused.status, detail: refused.message }, refused.status !== 'unconfigured');
+      this.#refuse(record.id, { status: refused.status, detail: refused.message }, refused.status !== 'unconfigured', tried);
       this.deps.log?.(`${record.name} could not be opened: ${refused.message}`);
     }
   }
 
   /** Why a device has no session; for what can mend itself, when it will be tried again. */
-  #refuse(deviceId: SavedDeviceId, refusal: Refusal, retry: boolean): void {
+  #refuse(deviceId: SavedDeviceId, refusal: Refusal, retry: boolean, tried = this.#refusals.get(deviceId)?.attempts ?? 0): void {
     if (!retry) {
       this.#refusals.set(deviceId, refusal);
       return;
     }
-    const attempts = (this.#refusals.get(deviceId)?.attempts ?? 0) + 1;
+    const attempts = tried + 1;
     const wait = RETRY_MS[Math.min(attempts, RETRY_MS.length) - 1]!;
     this.#refusals.set(deviceId, { ...refusal, attempts, retryAt: Date.now() + wait });
   }

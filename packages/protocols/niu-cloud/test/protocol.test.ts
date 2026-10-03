@@ -136,6 +136,37 @@ describe('a signed-in client', () => {
     expect(asked.filter((call) => call.url.startsWith(NIU_ACCOUNT))).toHaveLength(2);
   });
 
+  test('calls at once share one sign-in', async () => {
+    const { http, asked } = niu();
+    const client = new NiuClient(http, credentials);
+    await Promise.all([client.state('N0TAREALSERIAL01'), client.totals('N0TAREALSERIAL01'), client.scooters()]);
+    expect(asked.filter((call) => call.url.startsWith(NIU_ACCOUNT))).toHaveLength(1);
+  });
+
+  test('a password NIU refuses is not tried again at every look: it waits, longer each time', async () => {
+    let now = 1_000_000;
+    const { http, asked } = niu();
+    const client = new NiuClient(http, { ...credentials, password: 'changed in the app' }, () => now);
+    const signIns = () => asked.filter((call) => call.url.startsWith(NIU_ACCOUNT)).length;
+    await expect(client.state('N0TAREALSERIAL01')).rejects.toThrow('did not accept that account and password');
+    // Looked at every half minute for the next minute: refused as before, NIU not asked.
+    for (let look = 0; look < 3; look++) {
+      now += 15_000;
+      await expect(client.state('N0TAREALSERIAL01')).rejects.toThrow('did not accept that account and password');
+    }
+    expect(signIns()).toBe(1);
+    now += 16_000;
+    await expect(client.state('N0TAREALSERIAL01')).rejects.toThrow();
+    expect(signIns()).toBe(2);
+    // The next wait is longer.
+    now += 60_000;
+    await expect(client.state('N0TAREALSERIAL01')).rejects.toThrow();
+    expect(signIns()).toBe(2);
+    now += 5 * 60_000;
+    await expect(client.state('N0TAREALSERIAL01')).rejects.toThrow();
+    expect(signIns()).toBe(3);
+  });
+
   test('renews a token about to run out with its refresh token, not the password', async () => {
     let now = 1_000_000;
     const { http, asked } = niu();
