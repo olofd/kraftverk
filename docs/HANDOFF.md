@@ -318,3 +318,23 @@ The server runs on Bun; `scripts/run-bun.mjs` finds it even when PATH is stale.
 - **The ATORCH's local key, and the questions in [`ATORCH-S1W.md`](ATORCH-S1W.md) §7**,
   settled on the unit: which of the two Tuya devices on the LAN is the plug, and
   which datapoint switches its relay.
+- **Decisions the bug hunt of 2026-10-03 left open** — each a choice about
+  trust, not a fix to make alone:
+  - **A node's trust.** A phone or browser joins as a node of its account
+    unasked; should a person confirm it in the app before it holds ways?
+  - **A follower's caller.** What a node sends is taken as the node; should it
+    be the signed-in person (`as(caller)`), so the timeline and the gateway's
+    rules see who?
+  - **A station on the broker.** Any client on the LAN may publish on a
+    station's response topics: forged readings, a wrong toggle from them.
+    Pinning a station to the client id it first came with stops that, and
+    risks locking out the real one after a reset.
+  - **The first account.** It is made from the home network, judged by the
+    address; a forged `Host` on the plain port may pass. A one-time setup code
+    printed in the server's log would close it.
+  - **An assistant's credential.** An MCP client carries the session cookie;
+    one of its own, revocable, would keep it apart from a person's.
+  - **A Tuya plug's energy (DP 17).** Read at scale 2; Tuya's standard and the
+    Zigbee plug's own README say 3 — ten times less. Unchecked on hardware.
+  - **"Already so" from an old reading.** The gateway may judge a part already
+    on from a reading up to a minute old, and send nothing.
