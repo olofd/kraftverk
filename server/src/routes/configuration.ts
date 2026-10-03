@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { ApiError, CONFIG_SCHEMA_PATH, type ConfigSnapshotView } from '@kraftverk/api-contract';
 
 import { actorOf } from '../auth/routes.ts';
-import { homeFor, type AppDeps } from './context.ts';
+import { homeFor, type AppDeps, type ConfirmPassword } from './context.ts';
 import { body } from './parse.ts';
 
 /*
@@ -15,7 +15,7 @@ import { body } from './parse.ts';
   kept beside the database. What each does is the hub's (`Configuration`).
 */
 
-export function configurationRoutes(deps: AppDeps): Hono {
+export function configurationRoutes(deps: AppDeps, confirm: ConfirmPassword): Hono {
   const api = new Hono();
   /** Open, as an editor cannot log in: it names nothing you have, so no one in particular asks for it. */
   api.get(CONFIG_SCHEMA_PATH, (c) => {
@@ -34,10 +34,21 @@ export function configurationRoutes(deps: AppDeps): Hono {
           automations: z.array(z.string().min(1).max(63)).max(500).optional(),
           secrets: z.enum(['none', 'sealed', 'plain']).default('none'),
           passphrase: z.string().max(200).optional(),
+          yourPassword: z.string().max(256).optional(),
         })
         .strict()
     );
-    return c.json(await homeFor(deps, c).configuration.export(input, { schemaUrl: `${new URL(c.req.url).origin}/api${CONFIG_SCHEMA_PATH}` }));
+    /*
+      Secrets leave — sealed with a passphrase the asker chose, which seals
+      nothing from them, or plain — only for the account's own password: a
+      borrowed session is not a way to carry off the keys to the house.
+    */
+    const { yourPassword, ...request } = input;
+    if (request.secrets !== 'none') {
+      const refused = await confirm(c, yourPassword);
+      if (refused) return refused;
+    }
+    return c.json(await homeFor(deps, c).configuration.export(request, { schemaUrl: `${new URL(c.req.url).origin}/api${CONFIG_SCHEMA_PATH}` }));
   });
 
   /** `restored`: the copy the last restore was made from, kept aside — to import again with its answers, when the restore could not do it all. */

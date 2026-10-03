@@ -314,9 +314,11 @@ written.
   their settings, ways and secrets, the kinds of link, the home's values, and
   the keys of what you have. What the app's editor checks against.
 - `POST /config/export` — `{ devices?: [keys], automations?: [keys],
-  secrets: none | sealed | plain, passphrase? }` → `{ text, notes }`: the file,
-  and what could not go in. An export that carries secrets is on the
-  timeline.
+  secrets: none | sealed | plain, passphrase?, yourPassword? }` →
+  `{ text, notes }`: the file, and what could not go in. One that carries
+  secrets — sealed or plain — asks for your account's password
+  (`yourPassword`): a borrowed session carries off no key. An export that
+  carries secrets is on the timeline.
 - `POST /config/plan` — `{ text, mode: merge | replace, passphrase? }` → the
   plan (`ImportPlan`): `id` (null when its problems stop it), `problems` with
   lines, `devices`, `links`, `automations`, `policy`, `needs`, `notes`. In

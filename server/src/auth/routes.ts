@@ -184,10 +184,9 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
   const confirmIdentity = async (c: Context, user: User, password: string): Promise<Response | null> => {
     const { trust } = access(c);
     const keys = limiterKeys(trust.clientIp, user.username, trust.onHomeNetwork);
-    const tooMany = limiter.refuse(c, keys, 'Too many wrong passwords.');
+    const tooMany = limiter.admit(c, keys, 'Too many wrong passwords.');
     if (tooMany) return tooMany;
     if (!(await accounts.passwordMatches(user.id, password))) {
-      limiter.failed(keys);
       audit.record({ at: now(), kind: 'auth.confirm-failed', actor: user.username, resourceKind: 'account', resource: user.id, summary: `${user.username} gave a wrong password to confirm a change`, detail: { clientIp: trust.clientIp, path: c.req.path } });
       throw new ApiError('forbidden', 'Your password is not right');
     }
@@ -244,12 +243,11 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
     const { username, password } = await body(c, credentials);
     const keys = limiterKeys(trust.clientIp, username, trust.onHomeNetwork);
 
-    const tooMany = limiter.refuse(c, keys, 'Too many failed attempts.');
+    const tooMany = limiter.admit(c, keys, 'Too many failed attempts.');
     if (tooMany) return tooMany;
 
     const user = await accounts.verifyLogin(username, password);
     if (!user) {
-      limiter.failed(keys);
       audit.record({ at: now(), kind: 'auth.login-failed', actor: username, summary: `Failed login for ${username}`, detail: { clientIp: trust.clientIp, reason: trust.reason } });
       // One message for both: which half was wrong is what a guesser wants to know.
       return c.json({ error: 'That username and password do not match.' }, 401);
@@ -339,7 +337,17 @@ export function createAuth({ proxies, accounts, audit, limiter = new LoginLimite
     return c.json({ ok: true });
   });
 
-  return { gate, forgery, auth, users, access, requireUser };
+  /**
+   * The signed-in person's password, asked for again by a route outside
+   * these — before a secret leaves the server — counted as `confirmIdentity`
+   * counts it: the refusal to answer, or null when it is theirs.
+   */
+  const confirm = async (c: Context, password: string | undefined): Promise<Response | null> => {
+    if (!password) throw new ApiError('forbidden', 'Confirm with your password: a secret leaves the server only for the person it is theirs to give');
+    return confirmIdentity(c, requireUser(c), password);
+  };
+
+  return { gate, forgery, auth, users, access, requireUser, confirm };
 }
 
 /** Account problems are the caller's to fix, so they are refusals with the reason — not failures. */

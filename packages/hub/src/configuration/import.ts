@@ -440,8 +440,10 @@ function deviceChanges(deps: ImportDeps, existing: DeviceRecord, entry: DeviceEn
     else {
       if (way.address !== null && had.address !== way.address) changes.push(`${way.via}: at ${way.address}, not ${had.address}`);
       if (!same(had.config, { ...had.config, ...way.settings })) changes.push(`${way.via}: its settings`);
-      if (had.secretsExportable !== way.exportable) changes.push(`${way.via}: its secrets ${way.exportable ? 'may' : 'may no longer'} leave in plain text`);
-      for (const field of deps.connections.secretFields(had.id)) {
+      const fields = deps.connections.secretFields(had.id);
+      if (had.secretsExportable !== way.exportable && (!way.exportable || fields.every((field) => secrets.has(secretKey(key, index, field)))))
+        changes.push(`${way.via}: its secrets ${way.exportable ? 'may' : 'may no longer'} leave in plain text`);
+      for (const field of fields) {
         const given = secrets.get(secretKey(key, index, field));
         if (given !== undefined && given !== deps.connections.secret(had.id, field)) changes.push(`${way.via}: a new ${field}`);
       }
@@ -648,14 +650,20 @@ function writeDevice(deps: ImportDeps, key: string, entry: DeviceEntry, opened: 
     const method = methodsOf(type).find((each) => each.id === way.via)!;
     const address = way.address ?? method.address ?? '';
     const had = ways.find((connection) => connection.method === way.via);
-    const connection = had
-      ? deps.connections.update(had.id, { address, config: way.settings, priority: index, secretsExportable: way.exportable })!
-      : deps.connections.add({ deviceId: device!.id, method: way.via, transport: method.transport, heldBy: deps.self, address, config: way.settings, priority: index, secretsExportable: way.exportable });
     const secrets: Record<string, string> = {};
     for (const [field] of secretFieldsOf(method, deps.protocols.get(method.protocol) ?? null)) {
       const value = opened.get(secretKey(key, index, field)) ?? given[`${key}.${field}`];
       if (value) secrets[field] = value;
     }
+    /*
+      Letting a kept secret leave in plain text asks for your password (the
+      server's route): a file does not, so it turns that on only for secrets
+      it brings itself — what it already holds. Turning it off it may always.
+    */
+    const exportable = way.exportable && (!had || had.secretsExportable || deps.connections.secretFields(had.id).every((field) => field in secrets));
+    const connection = had
+      ? deps.connections.update(had.id, { address, config: way.settings, priority: index, secretsExportable: exportable })!
+      : deps.connections.add({ deviceId: device!.id, method: way.via, transport: method.transport, heldBy: deps.self, address, config: way.settings, priority: index, secretsExportable: exportable });
     if (Object.keys(secrets).length) deps.connections.setSecrets(connection.id, secrets);
   });
   for (const had of ways) if (!entry.connect.some((way) => way.via === had.method)) deps.connections.remove(had.id);

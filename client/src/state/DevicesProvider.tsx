@@ -75,7 +75,8 @@ type DevicesContextValue = {
   /** Its name in configuration (docs/CONFIG.md). */
   setKey: (id: string, key: string) => Promise<void>;
   /** Whether a home-held connection's secrets may leave in an export as plain text. */
-  setExportable: (device: DeviceView, connection: ConnectionView, exportable: boolean) => Promise<void>;
+  /** `yourPassword`: turning it on, where the home asks for it (`asksYourPassword`). */
+  setExportable: (device: DeviceView, connection: ConnectionView, exportable: boolean, yourPassword?: string) => Promise<void>;
   /** Shows another picture (`type:N`), kept by the home. */
   setPicture: (id: string, picture: PictureRef) => Promise<void>;
   remove: (id: string) => Promise<void>;
@@ -329,7 +330,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       screenProps,
       rename: (id, name) => mutate(() => api.devices.update(savedDeviceId(id), { name })),
       setKey: (id, key) => mutate(() => api.devices.update(savedDeviceId(id), { key })),
-      setExportable: (device, connection, exportable) => mutate(() => api.connections.setExportable(device.id, connection.id as ConnectionId, exportable)),
+      setExportable: (device, connection, exportable, yourPassword) => mutate(() => api.connections.setExportable(device.id, connection.id as ConnectionId, exportable, yourPassword)),
       setPicture: (id, picture) => mutate(() => api.devices.setPicture(savedDeviceId(id), picture)),
       remove: (id) => mutate(() => api.devices.remove(savedDeviceId(id))),
       deleteHistory: (id, name) => mutate(() => api.devices.deleteHistory(savedDeviceId(id), name)),

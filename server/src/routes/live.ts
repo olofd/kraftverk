@@ -48,9 +48,15 @@ export function originAllowed(origin: string | undefined, requestHost: string | 
   }
   // The same host that was asked: the app this server's web container serves.
   if (requestHost && url.host.toLowerCase() === requestHost.trim().toLowerCase()) return true;
-  // A name this server is reached by, through a proxy in front of it.
+  /*
+    A name this server is reached by, through a proxy in front of it — on
+    its scheme's own port. A cookie is not kept per port, so another site on
+    the same name at another port (a NAS's own pages, say) would otherwise
+    open a socket with your session. A proxy on a port of its own passes on
+    that Host, and is the same host asked, above.
+  */
   const name = hostName(url.host);
-  if (name && deps.config.allowedHosts.has(name)) return true;
+  if (name && url.port === '' && deps.config.allowedHosts.has(name)) return true;
   // An origin allowed to call the API with the session anyway.
   return cors(origin) !== null;
 }

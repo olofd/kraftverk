@@ -1,4 +1,5 @@
 import { router } from 'expo-router';
+import { useState } from 'react';
 import { Button, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import type { DeviceView } from '@kraftverk/api-client';
@@ -10,7 +11,9 @@ import { secretWords } from '../../components/ProblemList';
 import { useAttempt } from '../../components/useAttempt';
 import { confirmAction } from '../../platform/confirm';
 import { useDevices } from '../../state/DevicesProvider';
+import { useHome } from '../../state/HomeProvider';
 import { useReach } from '../../state/useReach';
+import { ConfirmWithYours } from '../auth/ConfirmWithYours';
 
 /**
  * How this device is reached (docs/DATA-MODEL.md §4): one connection in use,
@@ -19,6 +22,10 @@ import { useReach } from '../../state/useReach';
  */
 export function Connections({ device }: { device: DeviceView }) {
   const { prefer, removeConnection, setExportable } = useDevices();
+  const { asksYourPassword } = useHome();
+  // The connection whose secrets are to leave in plain text, once your password says it is you.
+  const [asking, setAsking] = useState<string | null>(null);
+  const [yours, setYours] = useState('');
   const reach = useReach();
   const { busy, error, attempt } = useAttempt();
   const theme = useTheme();
@@ -88,11 +95,43 @@ export function Connections({ device }: { device: DeviceView }) {
                           ))
                         )
                           return;
+                        if (on && asksYourPassword) {
+                          setYours('');
+                          setAsking(connection.id);
+                          return;
+                        }
                         await setExportable(device, connection, on);
                       })
                       }
                     />
                   </XStack>
+                ) : null}
+                {asking === connection.id ? (
+                  <YStack gap="$2">
+                    <ConfirmWithYours value={yours} onChange={setYours} />
+                    <XStack gap="$2">
+                      <Button
+                        size="$3"
+                        minHeight={44}
+                        backgroundColor="$danger"
+                        color="$background"
+                        disabled={busy || !yours}
+                        opacity={busy || !yours ? 0.5 : 1}
+                        onPress={() =>
+                          void act(async () => {
+                            await setExportable(device, connection, true, yours);
+                            setAsking(null);
+                            setYours('');
+                          })
+                        }
+                      >
+                        Let it leave
+                      </Button>
+                      <Button size="$3" minHeight={44} disabled={busy} onPress={() => setAsking(null)}>
+                        Cancel
+                      </Button>
+                    </XStack>
+                  </YStack>
                 ) : null}
                 {ordered.length > 1 ? (
                   <XStack gap="$2">

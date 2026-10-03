@@ -48,6 +48,18 @@ export class LoginLimiter {
     return c.json({ error: `${what} Try again in ${Math.ceil(wait / 60_000)} min.` }, 429);
   }
 
+  /**
+   * Lets an attempt in, or answers 429 as `refuse` does. One let in is
+   * counted as failed before its password is checked, and cleared by
+   * `succeeded`: many sent at once are each counted, so they cannot all slip
+   * past the lock while the first of them is still being hashed.
+   */
+  admit(c: Context, keys: string[], what: string): Response | null {
+    const refused = this.refuse(c, keys, what);
+    if (!refused) this.failed(keys);
+    return refused;
+  }
+
   failed(keys: string[]): void {
     const now = this.now();
     for (const key of keys) {

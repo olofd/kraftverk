@@ -49,7 +49,14 @@ export type ImportApplied = {
   notes: string[];
 };
 /** `POST /config/export`: everything, or the devices and automations chosen by key; secrets left out, sealed with a passphrase, or plain where allowed. */
-export type ConfigExportRequest = { devices?: string[]; automations?: string[]; secrets: 'none' | 'sealed' | 'plain'; passphrase?: string };
+export type ConfigExportRequest = {
+  devices?: string[];
+  automations?: string[];
+  secrets: 'none' | 'sealed' | 'plain';
+  passphrase?: string;
+  /** Your account's password, which a server with accounts asks for before any secret leaves: a borrowed session is not enough. */
+  yourPassword?: string;
+};
 /** An export: the file, and what could not go in (also in its heading). */
 export type ConfigExported = { text: string; notes: string[] };
 /** `POST /config/apply`: a plan, with the answers it asked for. */

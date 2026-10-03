@@ -141,11 +141,11 @@ export function createApp(deps: AppDeps) {
   api.route('/', homeRoutes(deps));
   api.route('/setup', setupRoutes(deps));
   api.route('/', followerRoutes(deps));
-  api.route('/', deviceRoutes(deps));
+  api.route('/', deviceRoutes(deps, auth.confirm));
   api.route('/', linkRoutes(deps));
   api.route('/', transportRoutes(deps));
   api.route('/', automationRoutes(deps));
-  api.route('/', configurationRoutes(deps));
+  api.route('/', configurationRoutes(deps, auth.confirm));
   api.route('/', assistantRoutes(deps));
   api.route('/', liveRoutes(deps, upgradeWebSocket, allowed));
 

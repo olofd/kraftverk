@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { connectionId, savedDeviceId } from '@kraftverk/device-sdk';
 
-import { homeFor, type AppDeps } from './context.ts';
+import { homeFor, type AppDeps, type ConfirmPassword } from './context.ts';
 import { body, query } from './parse.ts';
 
 /*
@@ -23,7 +23,7 @@ const SPAN = {
 };
 const LIMITED = z.object({ limit: z.coerce.number().int().min(1).max(500).default(100) }).strict();
 
-export function deviceRoutes(deps: AppDeps): Hono {
+export function deviceRoutes(deps: AppDeps, confirm: ConfirmPassword): Hono {
   const api = new Hono();
   /** The device a route names: Hono has decoded it already, and decoding again turned an id with a % into a 500. */
   const id = (raw: string | undefined) => savedDeviceId(raw ?? '');
@@ -112,7 +112,12 @@ export function deviceRoutes(deps: AppDeps): Hono {
   });
 
   api.patch('/devices/:id/connections/:connection', async (c) => {
-    const input = await body(c, z.object({ secretsExportable: z.boolean() }).strict());
+    const input = await body(c, z.object({ secretsExportable: z.boolean(), yourPassword: z.string().max(256).optional() }).strict());
+    // Letting a kept secret leave is the account's to say, not a borrowed session's.
+    if (input.secretsExportable) {
+      const refused = await confirm(c, input.yourPassword);
+      if (refused) return refused;
+    }
     return c.json(await homeFor(deps, c).connections.setExportable(...ids(c), input.secretsExportable));
   });
 

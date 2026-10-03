@@ -146,7 +146,7 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
       prefer: (device, connection) => call('POST', `/devices/${enc(device)}/connections/${enc(connection)}/prefer`, {}),
       remove: (device, connection) => call('DELETE', `/devices/${enc(device)}/connections/${enc(connection)}`),
       setSecrets: (device, connection, secrets) => call('PUT', `/devices/${enc(device)}/connections/${enc(connection)}/secrets`, secrets),
-      setExportable: (device, connection, exportable) => call('PATCH', `/devices/${enc(device)}/connections/${enc(connection)}`, { secretsExportable: exportable }),
+      setExportable: (device, connection, exportable, yourPassword) => call('PATCH', `/devices/${enc(device)}/connections/${enc(connection)}`, { secretsExportable: exportable, ...(yourPassword !== undefined ? { yourPassword } : {}) }),
     },
 
     links: {

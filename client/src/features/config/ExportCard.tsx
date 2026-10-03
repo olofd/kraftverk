@@ -7,7 +7,7 @@ import { Card, Icon, RowSeparator, SectionLabel, SegmentedControl, toggled, Togg
 import { ErrorText } from '../../components/ErrorText';
 import { useTone } from '../../components/tone';
 import { YamlEditor } from '../../components/YamlEditor';
-import { PassphraseField, SaveOrShow, useExportFile, type SecretsMode } from './ExportFile';
+import { PassphraseField, SaveOrShow, useExportFile, YoursField, type SecretsMode } from './ExportFile';
 
 const SECRETS: readonly { value: SecretsMode; label: string }[] = [
   { value: 'none', label: 'Leave out' },
@@ -32,7 +32,7 @@ export function ExportCard({ devices, automations, chosen }: { devices: readonly
     device.connections.filter((connection) => connection.heldBy.kind === 'master' && connection.secretsExportable && connection.secrets.length).map((connection) => `${device.name} (${connection.methodLabel})`)
   );
   const nothingChosen = !everything && pickedDevices.size === 0 && pickedAutomations.size === 0;
-  const ready = !file.busy && !nothingChosen && !file.short;
+  const ready = !file.busy && !nothingChosen && !file.blocked;
 
   const run = () => {
     if (!ready) return;
@@ -96,6 +96,11 @@ export function ExportCard({ devices, automations, chosen }: { devices: readonly
             <Text fontSize={12} color="$muted" lineHeight={17}>
               Kept nowhere: without it, the secrets in the file cannot be opened.
             </Text>
+          </YStack>
+        ) : null}
+        {file.asks ? (
+          <YStack paddingHorizontal="$4" paddingBottom="$3">
+            <YoursField file={file} />
           </YStack>
         ) : null}
       </Card>

@@ -31,7 +31,7 @@ export function Field({
         {label}
       </Text>
       <Input
-        size="$3"
+        size="$4"
         value={value}
         onChangeText={onChange}
         autoFocus={autoFocus}

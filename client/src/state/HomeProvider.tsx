@@ -25,6 +25,8 @@ type HomeValue = {
   api: KraftverkApi;
   /** This node's role in the home it shows: its master — the app's own home — or following one, a server's. For words — "through your server" — never for what a screen does. */
   role: 'master' | 'follower';
+  /** Whether it asks for your account's password again before a secret leaves it: a server's, which has accounts; the app's own has none. */
+  asksYourPassword: boolean;
   /** Whether writes to hardware are allowed from this app: refused every launch, until someone says. */
   writesAllowed: boolean;
   allowWrites: (allowed: boolean) => Promise<void>;
@@ -127,6 +129,7 @@ function ServerHome({ serverKey, url, children }: { serverKey: string; url: stri
     return {
       api: home?.api ?? server.api,
       role: 'follower',
+      asksYourPassword: true,
       writesAllowed,
       allowWrites: async (allowed) => {
         await home?.allowWrites(allowed);
@@ -154,6 +157,7 @@ function OwnHome({ children }: { children: ReactNode }) {
         ? {
             api: home.api,
             role: 'master',
+            asksYourPassword: false,
             writesAllowed,
             allowWrites: async (allowed) => {
               await home.allowWrites(allowed);

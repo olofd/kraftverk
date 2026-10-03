@@ -7,7 +7,7 @@ import { ErrorText } from '../../components/ErrorText';
 import { secretWords } from '../../components/ProblemList';
 import { useTone } from '../../components/tone';
 import { YamlEditor } from '../../components/YamlEditor';
-import { PassphraseField, SaveOrShow, useExportFile, type SecretsMode } from './ExportFile';
+import { PassphraseField, SaveOrShow, useExportFile, YoursField, type SecretsMode } from './ExportFile';
 
 /**
  * One device or one automation exported where it is (docs/CONFIG.md): a
@@ -44,8 +44,9 @@ export function ExportOne({ what, name, secrets = [], plainAllowed = false }: { 
         </YStack>
       ) : null}
       {file.mode === 'sealed' ? <PassphraseField file={file} onSubmit={run} /> : null}
+      <YoursField file={file} />
       <XStack gap="$2" flexWrap="wrap" alignItems="center">
-        <Button size="$3" minHeight={44} disabled={file.busy || file.short} opacity={file.busy || file.short ? 0.5 : 1} icon={<Icon name="file-text" size={16} color={tone('$color')} />} onPress={run}>
+        <Button size="$3" minHeight={44} disabled={file.busy || file.blocked} opacity={file.busy || file.blocked ? 0.5 : 1} icon={<Icon name="file-text" size={16} color={tone('$color')} />} onPress={run}>
           {file.busy ? 'Exporting…' : file.exported ? 'Export again' : 'Make the file'}
         </Button>
         <SaveOrShow file={file} about={name} />

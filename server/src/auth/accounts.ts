@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
-import { PASSWORD_MIN } from '@kraftverk/api-contract';
+import { ApiError, PASSWORD_MIN } from '@kraftverk/api-contract';
 import type { SqlDatabase } from '@kraftverk/store';
 
 /**
@@ -63,16 +63,23 @@ const hashToken = (token: string) => createHash('sha256').update(token).digest('
  * argon2id is deliberately expensive — 64 MB and tens of milliseconds each —
  * which is what makes guessing slow. Unbounded, it also makes a burst of
  * login attempts a way to exhaust a small NAS's memory. Queued instead: a
- * flood gets slower, and the server stays up.
+ * flood gets slower, and the server stays up. The queue is bounded too: a
+ * flood from more addresses than the login limiter counts is told to come
+ * back, not kept waiting in memory.
  */
 const HASH_SLOTS = 2;
+/** How many may wait for a slot; more are refused as busy. */
+export const HASH_WAITING = 32;
 
 let hashesRunning = 0;
 
 const hashQueue: (() => void)[] = [];
 
 async function slot<T>(work: () => Promise<T>): Promise<T> {
-  if (hashesRunning >= HASH_SLOTS) await new Promise<void>((resolve) => hashQueue.push(resolve));
+  if (hashesRunning >= HASH_SLOTS) {
+    if (hashQueue.length >= HASH_WAITING) throw new ApiError('unavailable', 'The server is busy checking passwords. Try again in a moment.');
+    await new Promise<void>((resolve) => hashQueue.push(resolve));
+  }
   hashesRunning++;
   try {
     return await work();
@@ -84,8 +91,8 @@ async function slot<T>(work: () => Promise<T>): Promise<T> {
 
 const hashPassword = (password: string) => slot(() => Bun.password.hash(password, { algorithm: 'argon2id' }));
 
-const checkPassword = (password: string, hash: string) =>
-  slot(() => Bun.password.verify(password, hash)).catch(() => false);
+/** False for a hash it cannot read; busy is said, not taken for a wrong password. */
+const checkPassword = (password: string, hash: string) => slot(() => Bun.password.verify(password, hash).catch(() => false));
 
 export class AccountError extends Error {}
 

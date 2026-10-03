@@ -37,6 +37,9 @@ export type AppDeps = {
   snapshot?: ConfigSnapshot;
 };
 
+/** The signed-in person's password asked for again: the refusal to answer, or null when it is theirs (`createAuth`). */
+export type ConfirmPassword = (c: Context, password: string | undefined) => Promise<Response | null>;
+
 /** The home, as the person a request is from asks it. */
 export const homeFor = (deps: Pick<AppDeps, 'hub'>, c: Context): KraftverkApi => {
   const account = userOf(c)?.id;

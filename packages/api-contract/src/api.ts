@@ -133,8 +133,8 @@ export interface KraftverkApi {
     remove(device: SavedDeviceId, connection: ConnectionId): Promise<DeviceView>;
     /** A connection's secrets replaced: write-only, as every secret is. */
     setSecrets(device: SavedDeviceId, connection: ConnectionId, secrets: Record<string, string>): Promise<DeviceView>;
-    /** Whether its secrets may leave in an export as plain text. */
-    setExportable(device: SavedDeviceId, connection: ConnectionId, exportable: boolean): Promise<DeviceView>;
+    /** Whether its secrets may leave in an export as plain text. Turning it on, a server with accounts asks for your password again. */
+    setExportable(device: SavedDeviceId, connection: ConnectionId, exportable: boolean, yourPassword?: string): Promise<DeviceView>;
   };
   links: {
     /** A fact about the house, between two parts. */

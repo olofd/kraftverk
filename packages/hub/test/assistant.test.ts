@@ -57,6 +57,15 @@ describe('an assistant', () => {
     expect((await mcp('resources/list'))!.error).toMatchObject({ code: -32601 });
   });
 
+  test('a fault inside kraftverk is said as one, not in its own words — a refusal is said as it is', async () => {
+    const failing = new Proxy(t.hub.as({ kind: 'agent', for: 'olof' }), {
+      get: (home, key) => (key === 'world' ? () => Promise.reject(new Error('SQLITE_ERROR near SELECT pin FROM connection_secret')) : Reflect.get(home, key)),
+    });
+    const said = (await answerMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'world', arguments: {} } }, failing, SERVER))!.result as { content: { text: string }[]; isError: boolean };
+    expect(said.isError).toBe(true);
+    expect(said.content[0]!.text).toBe('The tool world failed inside kraftverk; the server\'s log says why.');
+  });
+
   test('a tool’s arguments are held to the schema it advertises: one missing or one it does not take is refused, saying which', async () => {
     const plug = await t.added('Heater plug', { typeId: 'test.plug' });
     const missing = await tool('command', { device: plug.id, part: 'main', capability: 'switch', command: 'set', args: { on: true } });
@@ -67,6 +76,9 @@ describe('an assistant', () => {
     expect(unknown.content[0]!.text).toBe('everything: is not one of its arguments');
     const wrongType = await tool('receipts', { limit: 'all' });
     expect(wrongType).toMatchObject({ isError: true, content: [{ text: 'limit: should be integer' }] });
+    // What every object has is no argument of a tool.
+    expect(await tool('receipts', { constructor: 1 })).toMatchObject({ isError: true, content: [{ text: 'constructor: is not one of its arguments' }] });
+    expect((await mcp('tools/call', { name: 'receipts', arguments: 'all' }))!.error).toMatchObject({ code: -32602 });
   });
 
   test('commands through the gateway as an agent: what needs a person’s yes is left to the person, and the timeline says who asked', async () => {

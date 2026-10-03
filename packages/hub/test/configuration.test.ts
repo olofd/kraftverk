@@ -84,6 +84,31 @@ describe('configuration', () => {
     expect((await t.home.configuration.export({ secrets: 'plain' })).text).not.toContain('pin-from-a-test');
   });
 
+  test('a file lets a kept secret leave in plain text only when it brings that secret itself', async () => {
+    const lamp = await aLamp();
+    const connection = lamp.connections[0]!.id;
+    await t.home.connections.setSecrets(lamp.id, connection, { pin: 'pin-from-a-test' });
+    await t.home.connections.setExportable(lamp.id, connection, true);
+    const { text } = await t.home.configuration.export({ secrets: 'none' });
+    expect(text).toContain('exportable: true');
+    const { text: carrying } = await t.home.configuration.export({ secrets: 'plain' });
+    expect(carrying).toContain('pin: pin-from-a-test');
+    await t.home.connections.setExportable(lamp.id, connection, false);
+    const exportable = async () => (await t.home.devices.get(lamp.id)).connections[0]!.secretsExportable;
+
+    // A file without the pin: it would let out what it does not hold — the device's own page asks for a password for that.
+    const without = await t.home.configuration.plan({ text });
+    expect(without.devices[0]!.changes.join(' ')).not.toContain('plain text');
+    await t.home.configuration.apply({ plan: without.id! });
+    expect(await exportable()).toBe(false);
+
+    // A file carrying it: what it would let leave it holds already.
+    const withIt = await t.home.configuration.plan({ text: carrying });
+    expect(withIt.devices[0]!.changes).toContain('bus: its secrets may leave in plain text');
+    await t.home.configuration.apply({ plan: withIt.id! });
+    expect(await exportable()).toBe(true);
+  });
+
   test('keys: a device and an automation renamed in configuration, never to one taken or not a key', async () => {
     const hall = await aLamp();
     // Its secrets let leave in plain text as it is added: its owner's choice, on the timeline.

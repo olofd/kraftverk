@@ -13,7 +13,7 @@ import { hostAllowed, hostGuard, hostName } from './host.ts';
 import { LoginLimiter, limiterKeys, MAX_ENTRIES } from './limiter.ts';
 import { CLIENT_HEADER } from '@kraftverk/api-contract';
 import { createAuth, SESSION_COOKIE } from './routes.ts';
-import { AccountError, Accounts } from './accounts.ts';
+import { AccountError, Accounts, HASH_WAITING } from './accounts.ts';
 import { assessTrust, CLIENT_IP_HEADER, EXPOSURE_HEADER, isPrivate, normaliseIp, ProxyDirectory } from './trust.ts';
 
 /**
@@ -207,6 +207,16 @@ describe('accounts', () => {
     await expect(accounts.createFirstUser('olof dahlbom', PASSWORD)).rejects.toBeInstanceOf(AccountError);
     await expect(accounts.createFirstUser('x'.repeat(65), PASSWORD)).rejects.toBeInstanceOf(AccountError);
     await expect(accounts.createFirstUser('olof', 'p'.repeat(257))).rejects.toBeInstanceOf(AccountError);
+  });
+
+  test('a flood of passwords to check is told the server is busy, not queued without end', async () => {
+    const user = await accounts.createFirstUser('olof', PASSWORD);
+    const checks = await Promise.allSettled(Array.from({ length: HASH_WAITING + 20 }, () => accounts.passwordMatches(user.id, 'wrong wrong wrong')));
+    const busy = checks.filter((check) => check.status === 'rejected');
+    expect(busy.length).toBeGreaterThan(0);
+    expect(busy.every((check) => (check as PromiseRejectedResult).reason?.kind === 'unavailable')).toBe(true);
+    // The rest were heard, and answered as a wrong password is.
+    expect(checks.filter((check) => check.status === 'fulfilled').every((check) => (check as PromiseFulfilledResult<boolean>).value === false)).toBe(true);
   });
 
   test('names are unique regardless of case', async () => {
@@ -416,6 +426,16 @@ describe('the gate', () => {
     const refused = await attempt();
     expect(refused.status).toBe(429);
     expect(String(refused.body?.error)).toContain('Try again');
+  });
+
+  test('guesses sent all at once are counted as they come, not after their hashes', async () => {
+    await accounts.createFirstUser('olof', PASSWORD);
+    const attempt = () =>
+      call('/auth/login', { ...viaPublicEntrance, headers: { ...viaPublicEntrance.headers, [CLIENT_IP_HEADER]: '203.0.113.8' }, method: 'POST', body: { username: 'all-at-once', password: 'wrong wrong wrong' } });
+    const answers = await Promise.all(Array.from({ length: 20 }, attempt));
+    // As many heard as one after another would be — five free and the one that locks — and the rest refused unheard.
+    expect(answers.filter((answer) => answer.status === 401)).toHaveLength(6);
+    expect(answers.filter((answer) => answer.status === 429)).toHaveLength(14);
   });
 
   test('a write without the client header is refused, even with a session and on the LAN', async () => {

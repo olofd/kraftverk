@@ -6,6 +6,9 @@ import { actorOf } from '../auth/routes.ts';
 import { SERVER } from '../config.ts';
 import { homeFor, type AppDeps } from './context.ts';
 
+/** The most messages one batch may carry: each may be a command, run together. */
+export const MCP_BATCH_MAX = 20;
+
 /**
  * The house for an assistant over HTTP (PROPOSITION.md §5.1–5.3): the world
  * as a model reads it, the words it is said in, and an MCP endpoint — whose
@@ -35,10 +38,13 @@ export function assistantRoutes(deps: AppDeps): Hono {
   api.post('/mcp', async (c) => {
     const payload: unknown = await c.req.json().catch(() => null);
     if (!payload || typeof payload !== 'object') return c.json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'That is not JSON' } }, 400);
-    const messages = (Array.isArray(payload) ? payload : [payload]) as Record<string, unknown>[];
+    const messages = (Array.isArray(payload) ? payload : [payload]) as unknown[];
+    if (messages.length > MCP_BATCH_MAX) return c.json({ jsonrpc: '2.0', id: null, error: { code: -32600, message: `A batch carries at most ${MCP_BATCH_MAX} messages` } }, 400);
+    if (!messages.length || messages.some((message) => !message || typeof message !== 'object' || Array.isArray(message)))
+      return c.json({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Each message is a JSON-RPC object' } }, 400);
     // The assistant asks as an agent acting for whoever is signed in.
     const home = deps.hub.as({ kind: 'agent', for: actorOf(c) });
-    const said = (await Promise.all(messages.map((message) => answerMcp(message, home, { name: 'kraftverk', version: SERVER.version })))).filter((reply) => reply !== null);
+    const said = (await Promise.all(messages.map((message) => answerMcp(message as Record<string, unknown>, home, { name: 'kraftverk', version: SERVER.version })))).filter((reply) => reply !== null);
     if (!said.length) return c.body(null, 202);
     return c.json(Array.isArray(payload) ? said : said[0]!);
   });

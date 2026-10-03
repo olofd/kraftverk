@@ -66,7 +66,8 @@ function problemsOf(value: unknown, schema: Schema, at: string): string[] {
   const problems = required.filter((key) => given[key] === undefined).map((key) => `${at === 'input' ? key : `${at}.${key}`}: is needed`);
   for (const [key, each] of Object.entries(given)) {
     const where = at === 'input' ? key : `${at}.${key}`;
-    if (key in properties) problems.push(...problemsOf(each, properties[key]!, where));
+    // Its own arguments only: `constructor` or `__proto__` is no argument of any tool.
+    if (Object.hasOwn(properties, key)) problems.push(...problemsOf(each, properties[key]!, where));
     else if (schema.additionalProperties === false) problems.push(`${where}: is not one of its arguments`);
     else if (typeof schema.additionalProperties === 'object') problems.push(...problemsOf(each, schema.additionalProperties as Schema, where));
   }
@@ -292,10 +293,19 @@ export async function answerMcp(message: Json, home: KraftverkApi, server: McpSe
       const params = (message.params ?? {}) as { name?: string; arguments?: Json };
       const tool = TOOLS.find((candidate) => candidate.name === params.name);
       if (!tool) return fail(-32602, `There is no tool "${params.name}"`);
+      const args = params.arguments ?? {};
+      if (typeof args !== 'object' || Array.isArray(args)) return fail(-32602, 'A tool’s arguments are an object');
       try {
-        return reply({ content: [{ type: 'text', text: await tool.run(params.arguments ?? {}, home) }] });
+        return reply({ content: [{ type: 'text', text: await tool.run(args, home) }] });
       } catch (error) {
-        return reply({ content: [{ type: 'text', text: (error as Error).message }], isError: true });
+        /*
+          The home's refusal is said as it is: the model reads it and acts on
+          it. Anything else is a fault inside kraftverk — its words, a path or
+          a query, are the server log's, not an assistant's to read.
+        */
+        if (error instanceof ApiError) return reply({ content: [{ type: 'text', text: error.message }], isError: true });
+        console.error(`[assistant] The tool ${tool.name} failed:`, error);
+        return reply({ content: [{ type: 'text', text: `The tool ${tool.name} failed inside kraftverk; the server's log says why.` }], isError: true });
       }
     }
     default:

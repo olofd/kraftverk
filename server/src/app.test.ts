@@ -16,6 +16,7 @@ import { CLIENT_IP_HEADER, EXPOSURE_HEADER, ProxyDirectory } from './auth/trust.
 import { loadConfig } from './config.ts';
 import { busDefinition, FakeBus, lampProtocol, lampType, MACHINE_NODE } from '@kraftverk/hub/testing';
 import { openDatabase } from './platform/database.ts';
+import { MCP_BATCH_MAX } from './routes/assistant.ts';
 import { originAllowed } from './routes/live.ts';
 import { serverSecrets } from './platform/secrets.ts';
 import { RESET_SECRET_MIN } from './platform/reset-secret.ts';
@@ -197,6 +198,25 @@ describe('configuration', () => {
     expect(exported.body.text).toContain('# yaml-language-server: $schema=http://192.168.1.140:3333/api/config/schema.json');
   });
 
+  test('a secret leaves only for your password: a session alone — a borrowed laptop — carries off no key', async () => {
+    const sealed = { secrets: 'sealed', passphrase: 'a passphrase long enough' };
+    expect((await as('/config/export', { method: 'POST', body: sealed })).status).toBe(403);
+    expect((await as('/config/export', { method: 'POST', body: { ...sealed, yourPassword: 'not it at all' } })).status).toBe(403);
+    expect((await as('/config/export', { method: 'POST', body: { ...sealed, yourPassword: PASSWORD } })).status).toBe(200);
+    expect((await as('/config/export', { method: 'POST', body: { secrets: 'plain' } })).status).toBe(403);
+    // Left out, nothing is asked.
+    expect((await as('/config/export', { method: 'POST', body: { secrets: 'none' } })).status).toBe(200);
+
+    lampAt('lamp-1');
+    const lamp = await added('Hall lamp');
+    const exportable = (secretsExportable: boolean, yourPassword?: string) =>
+      as(`/devices/${enc(lamp.id)}/connections/${enc(lamp.connections[0]!.id)}`, { method: 'PATCH', body: { secretsExportable, ...(yourPassword ? { yourPassword } : {}) } });
+    expect((await exportable(true)).status).toBe(403);
+    expect((await exportable(true, PASSWORD)).status).toBe(200);
+    // Turned off, nothing is asked.
+    expect((await exportable(false)).status).toBe(200);
+  });
+
   test('the copy a restore was made from is imported again only when there was a restore; a file’s text, or it — not both', async () => {
     expect((await as('/config/plan', { method: 'POST', body: { restored: true } })).status).toBe(404);
     expect((await as('/config/plan', { method: 'POST', body: { restored: true, text: 'kraftverk: 1\n' } })).status).toBe(400);
@@ -348,6 +368,11 @@ describe('an assistant, over HTTP', () => {
     expect(((await as('/audit')).body as { actor: string }[]).some((entry) => entry.actor === 'assistant for olof')).toBe(true);
     // Not JSON: a parse error, as JSON-RPC says.
     expect(await call('/mcp', { method: 'POST', raw: 'nope', cookie: session })).toMatchObject({ status: 400, body: { error: { code: -32700 } } });
+    // A batch is bounded, and each of it a message: not a thousand commands at once, nor a crash on a null.
+    const ping = (id: number) => ({ jsonrpc: '2.0', id, method: 'ping' });
+    expect(await mcp(Array.from({ length: MCP_BATCH_MAX + 1 }, (_, index) => ping(index)))).toMatchObject({ status: 400, body: { error: { code: -32600 } } });
+    expect((await mcp(Array.from({ length: MCP_BATCH_MAX }, (_, index) => ping(index)))).status).toBe(200);
+    expect(await mcp([ping(1), null])).toMatchObject({ status: 400, body: { error: { code: -32600 } } });
   });
 });
 
@@ -438,6 +463,9 @@ describe('the live stream', () => {
     expect(originAllowed('https://home.example.test', 'kraftverk:3333', deps, cors)).toBe(true);
     expect(originAllowed('https://app.example.test', 'kraftverk:3333', deps, cors)).toBe(true);
     expect(originAllowed('https://evil.example', '192.0.2.10:8080', deps, cors)).toBe(false);
+    // The name, at another port: another site there shares your cookie, not this server's page.
+    expect(originAllowed('https://home.example.test:5001', 'kraftverk:3333', deps, cors)).toBe(false);
+    expect(originAllowed('http://192.0.2.10:5000', '192.0.2.10:8080', deps, cors)).toBe(false);
     expect(originAllowed('not a url', '192.0.2.10:8080', deps, cors)).toBe(false);
   });
 });
