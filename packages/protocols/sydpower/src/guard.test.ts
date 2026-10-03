@@ -130,6 +130,24 @@ describe('commandRefusal: register 68 is never set to 0, whoever built the frame
     expect(commandRefusal(writeRegister(SLEEP, 0xffff))).not.toBeNull();
   });
 
+  test('refused when it rides behind a frame the guard would pass: one command is read, and only one is let through', () => {
+    const brick = writeRegister(SLEEP, 0);
+    const behind = (first: Uint8Array) => Uint8Array.from([...first, ...brick]);
+    // A read, a harmless write, a harmless mask write — each with the brick write after it.
+    expect(commandRefusal(behind(readHoldingRegisters(0, 1)))).toContain('more than one command');
+    expect(commandRefusal(behind(writeRegister(26, 1)))).toContain('more than one command');
+    expect(commandRefusal(behind(framed([0x11, 0x16, 0x00, 0x43, 0xff, 0xff, 0x00, 0x00])))).toContain('more than one command');
+    // Two bytes, then the whole brick frame: a station skipping a bad CRC would land on it.
+    expect(commandRefusal(Uint8Array.from([0x11, 0x03, ...brick]))).not.toBeNull();
+    // Without its CRC, a frame is still read whole.
+    expect(commandRefusal(Uint8Array.from([0x11, 0x03, 0x00, 0x00, 0x00, 0x01]))).toBeNull();
+  });
+
+  test('refused when a multi-register write runs past the last register, where an address may wrap round to 68', () => {
+    const values = Array.from({ length: 120 }, () => [0, 0]).flat();
+    expect(commandRefusal(framed([0x11, 0x10, 0xff, 0xce, 0x00, 120, 240, ...values]))).toContain('past the last register');
+  });
+
   test('the permitted sleep values pass', () => {
     for (const minutes of [5, 10, 30, 480]) expect(commandRefusal(writeRegister(SLEEP, minutes))).toBeNull();
   });
