@@ -84,6 +84,14 @@ describe('writing it back', () => {
     });
   }
 
+  test('a very small or very large number is written in plain digits, and read back as itself', () => {
+    for (const value of [1e-7, 1.5e-7, 1e21, 2.5e22, -3e-9, 0.1, 123.456]) {
+      const text = printExpr({ compare: 'gt', left: read('meter', 'power.draw'), right: { value } })!;
+      expect(text).not.toMatch(/\de/);
+      expect(parse(text)).toEqual({ compare: 'gt', left: read('meter', 'power.draw'), right: { value } });
+    }
+  });
+
   test('a number beside a reading says the reading’s unit', () => {
     const unitOf = (_role: string, means: string) => (means === 'power.draw' ? 'W' : means === 'battery.soc' ? '%' : null);
     expect(printExpr({ compare: 'gt', left: read('charger', 'power.draw'), right: { value: 50 } }, { unitOf })).toBe('charger.power.draw > 50 W');

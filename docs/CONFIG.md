@@ -86,7 +86,7 @@ describes.
   - `at: "07:00"`, with `days: weekdays`, `weekends` or `[mon, fri]`
   - `every: 15 min`
   - `event: mains.lost` with `from: station`
-  - `becomes: <condition>`, with `for: 2 min`
+  - `becomes: <condition>`, with `for: 2 min` (at most a week)
 - **Only when** (`only if: <condition>`).
 - **What it does** (`do:`), and what it does if a step does not succeed or it
   is stopped (`if a step fails:`):

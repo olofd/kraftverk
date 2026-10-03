@@ -84,12 +84,20 @@ class Reader {
     throw new Stop();
   }
 
-  /** A condition or value: an expression's text, a plain value, or the rule's own data for it. */
-  expr(data: Data, path: Path): Expr {
+  /**
+   * A condition or value: an expression's text, a plain value, or the rule's
+   * own data for it. `into`: the unit what it is is read in, where that is
+   * known — a setting by its meaning — so "2 kW" there is 2000 W. A number
+   * with a unit, alone, where nothing says one is refused: its unit would be
+   * dropped, and 2 kW written as 2.
+   */
+  expr(data: Data, path: Path, into: string | null = null): Expr {
     if (typeof data === 'string') {
       const parsed = parseExpr(data);
       if (!parsed.ok) this.fail(parsed.error.message, path, parsed.error.offset);
-      return this.inUnits(parsed.expr, parsed.units, path);
+      const written = 'value' in parsed.expr ? parsed.units.get(parsed.expr) : undefined;
+      if (written && into === null) this.fail(`Nothing here says what unit it is in: write it without "${written.unit}", in the unit it is set in`, path, written.at);
+      return this.inUnits(parsed.expr, parsed.units, path, into);
     }
     if (typeof data === 'number' || typeof data === 'boolean' || data === null) return { value: data };
     if (isRecord(data)) return data as Expr;
@@ -103,7 +111,7 @@ class Reader {
    * standard meaning's; beside nothing that says one, a number is kept as
    * written.
    */
-  private inUnits(expr: Expr, units: WeakMap<Expr, WrittenUnit>, path: Path): Expr {
+  private inUnits(expr: Expr, units: WeakMap<Expr, WrittenUnit>, path: Path, into: string | null): Expr {
     const unitOfReading = (each: Expr): string | null =>
       'read' in each ? (this.context.unitOf?.(each.read.role, each.read.means) ?? standardUnit(each.read.means)) : 'math' in each ? (unitOfReading(each.left) ?? unitOfReading(each.right)) : null;
     const visit = (each: Expr, beside: string | null): Expr => {
@@ -127,7 +135,7 @@ class Reader {
       if ('not' in each) return { not: visit(each.not, null) };
       return each;
     };
-    return visit(expr, null);
+    return visit(expr, into);
   }
 
   /** A length of time, in seconds — "5 s", "2 min" — or an expression for one. A bare number is refused: seconds here, minutes there, it would mean what it does not say. */
@@ -199,11 +207,12 @@ class Reader {
       only('set', 'setting', 'meaning', 'to');
       const role = this.name(data.set, [...path, 'set'], 'the role whose setting it changes');
       if (!has('to')) this.fail('"set" needs "to": what it is set to', path);
-      const value = this.expr(data.to, [...path, 'to']);
       if (has('setting') === has('meaning')) this.fail('"set" names its setting by key ("setting") or by what it means ("meaning"), one of them', path);
-      return has('setting')
-        ? { write: { role, key: this.name(data.setting, [...path, 'setting'], 'the setting\'s key'), value } }
-        : { write: { role, means: this.name(data.meaning, [...path, 'meaning'], 'what the setting means'), value } };
+      if (has('setting')) return { write: { role, key: this.name(data.setting, [...path, 'setting'], 'the setting\'s key'), value: this.expr(data.to, [...path, 'to']) } };
+      const means = this.name(data.meaning, [...path, 'meaning'], 'what the setting means');
+      // By its meaning, its unit is known: what it is set to is in it.
+      const unit = this.context.unitOf?.(role, means) ?? standardUnit(means);
+      return { write: { role, means, value: this.expr(data.to, [...path, 'to'], unit) } };
     }
     if (has('wait until')) {
       only('wait until', 'at most');
@@ -466,7 +475,8 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>, context: Pri
     return printExpr(value, context) ?? value;
   };
   const seconds = (value: Expr): unknown => ('value' in value && typeof value.value === 'number' ? durationText(value.value) : expr(value));
-  const minutes = (value: Expr): unknown => ('value' in value && typeof value.value === 'number' && Number.isInteger(value.value * 60) ? durationText(value.value * 60) : expr(value));
+  // Kept in minutes, written in seconds: 125 s is 2.0833… min, which times 60 is not quite whole — rounded, so it is written as it was given.
+  const minutes = (value: Expr): unknown => ('value' in value && typeof value.value === 'number' ? durationText(Math.round(value.value * 60 * 1e6) / 1e6) : expr(value));
   const time = (value: Expr): unknown => ('value' in value && typeof value.value === 'string' && /^\d{2}:\d{2}$/.test(value.value) ? value.value : expr(value));
 
   const step = (each: Step): Record<string, unknown> => {

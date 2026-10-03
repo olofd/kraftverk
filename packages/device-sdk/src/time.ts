@@ -50,21 +50,43 @@ export function clockTime(date: Date, timeZone: string): string {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
+const DAY_MS = 86_400_000;
+
+/** What a clock in `timeZone` shows at `instant`, written as if it were UTC: to the minute. */
+const shownAsUtc = (instant: number, timeZone: string): number => {
+  const shown = localTime(new Date(instant), timeZone);
+  return Date.UTC(shown.year, shown.month - 1, shown.day, shown.hour, shown.minute);
+};
+
+/** How far ahead of UTC a clock in `timeZone` is at `instant`, in milliseconds. */
+const offsetAt = (instant: number, timeZone: string): number => shownAsUtc(instant, timeZone) - (instant - (((instant % 60_000) + 60_000) % 60_000));
+
 /**
- * The instant a clock in `timeZone` shows this time. Found by correcting a
- * guess by the zone's offset, twice, which settles across a daylight-saving
- * change; a time that does not exist that night (02:30 in spring) comes out
- * an hour later, as a clock would show it.
+ * Every instant a clock in `timeZone` shows this time, earliest first: one —
+ * two in the hour repeated as clocks go back, none in the hour skipped as
+ * they go forward. Tried with the offsets the zone has the day before, the
+ * day itself and the day after: a change between is the one that night.
+ */
+export function zonedInstants(local: LocalTime, timeZone: string): Date[] {
+  const wanted = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute);
+  const offsets = new Set([offsetAt(wanted - DAY_MS, timeZone), offsetAt(wanted, timeZone), offsetAt(wanted + DAY_MS, timeZone)]);
+  const instants = [...offsets].map((offset) => wanted - offset).filter((instant) => shownAsUtc(instant, timeZone) === wanted);
+  return [...new Set(instants)].sort((a, b) => a - b).map((instant) => new Date(instant));
+}
+
+/**
+ * The instant a clock in `timeZone` shows this time: in the hour repeated
+ * as clocks go back, the first time it shows it; a time that does not exist
+ * that night (02:30 in spring; 00:00 where the change is at midnight) comes
+ * out as much later as the clock moved, on that same day — as a clock would
+ * show it.
  */
 export function zonedInstant(local: LocalTime, timeZone: string): Date {
+  const [first] = zonedInstants(local, timeZone);
+  if (first) return first;
   const wanted = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute);
-  let guess = wanted;
-  for (let i = 0; i < 2; i++) {
-    const shown = localTime(new Date(guess), timeZone);
-    const shownAsUtc = Date.UTC(shown.year, shown.month - 1, shown.day, shown.hour, shown.minute);
-    guess += wanted - shownAsUtc;
-  }
-  return new Date(guess);
+  // Skipped: read with the offset from before the change, it lands past the gap by as much as it was into it.
+  return new Date(wanted - offsetAt(wanted - DAY_MS, timeZone));
 }
 
 /** The calendar day `days` after the one a clock in `timeZone` shows at `date`. */

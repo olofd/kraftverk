@@ -148,6 +148,16 @@ describe('lengths of time', () => {
     }
     expect(ruleFromConfig({ when: [{ every: 15 }], do: [] }, ['a']).issues).toEqual([{ message: 'A length of time says its unit: "15 s", "15 min" or "15 h"', path: ['a', 'when', 0, 'every'] }]);
   });
+
+  test('a hold, kept in minutes, is written as it was given: every second of an hour comes back', () => {
+    const lost: number[] = [];
+    for (let seconds = 1; seconds <= 3600; seconds++) {
+      const read = ruleFromConfig({ uses: { plug: 'smart-plug' }, when: [{ becomes: 'plug reachable', for: `${seconds} s` }], do: [{ 'turn on': 'plug' }] }, ['a']);
+      const again = ruleFromConfig(ruleToConfig(read.rule!, read.uses), ['a']);
+      if (again.issues.length || JSON.stringify(again.rule) !== JSON.stringify(read.rule)) lost.push(seconds);
+    }
+    expect(lost).toEqual([]);
+  });
 });
 
 describe('what a role needs', () => {
@@ -186,5 +196,16 @@ describe('units', () => {
     expect(read('plug.acme.flow > 2 kW').rule!.when[0]).toMatchObject({ becomes: { right: { value: 2 } } });
     // Beside a sum, too: the charge limit less 5 %.
     expect(read('plug.battery.soc < plug.battery.chargeLimit - 5 %').issues).toEqual([]);
+  });
+
+  test('a setting set by its meaning is set in its unit; a unit where nothing says one is refused, not dropped', () => {
+    const set = (step: Record<string, unknown>, context = {}) => ruleFromConfig({ uses: { st: 'station' }, do: [{ set: 'st', ...step }] }, ['a'], context);
+    expect(set({ meaning: 'acme.inputLimit', to: '2 kW' }, { unitOf: () => 'W' }).rule!.then[0]).toEqual({ write: { role: 'st', means: 'acme.inputLimit', value: { value: 2000 } } });
+    expect(set({ meaning: 'battery.chargeLimit', to: '80 %' }).rule!.then[0]).toMatchObject({ write: { value: { value: 80 } } });
+    expect(set({ meaning: 'acme.inputLimit', to: '50 °C' }, { unitOf: () => 'W' }).issues[0]!.message).toBe('That is read in W: "°C" is not a unit of it');
+    // By its key, or its meaning's unit unknown: what unit it is in nobody says, so a unit written is not quietly dropped.
+    expect(set({ setting: 'inputLimit', to: '2 kW' }).issues).toEqual([{ message: 'Nothing here says what unit it is in: write it without "kW", in the unit it is set in', path: ['a', 'do', 0, 'to'], offset: 0 }]);
+    expect(set({ meaning: 'acme.inputLimit', to: '2 kW' }).issues[0]!.message).toContain('Nothing here says what unit it is in');
+    expect(set({ setting: 'inputLimit', to: '2000' }).rule!.then[0]).toMatchObject({ write: { value: { value: 2000 } } });
   });
 });

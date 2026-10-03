@@ -11,6 +11,13 @@ import type { Trigger } from './rule.ts';
 /** How often an `every` trigger may run, in minutes: not more often than a look to keep things so, at least twice a day. */
 export const EVERY_MINUTES = { min: 5, max: 720 } as const;
 
+/**
+ * How long a condition may be asked to have held, in minutes: more than
+ * nothing, and at most a week — a wait a server keeps as one timer, which
+ * past some 24 days would not wait at all.
+ */
+export const HOLD_MINUTES = { max: 7 * 24 * 60 } as const;
+
 /** The start of the slot an `every` trigger is in at a minute of the day: every 15, at 07:40, is 07:30. */
 export const slotOf = (minuteOfDay: number, every: number): number => Math.floor(minuteOfDay / every) * every;
 

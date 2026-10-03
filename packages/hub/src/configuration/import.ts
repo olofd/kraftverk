@@ -626,9 +626,15 @@ export function writeImport(deps: ImportDeps, id: string, by: string, choices: I
 
 /** Sets going what an import wrote: what was added opened, what was removed closed; what watches starts afresh, and looks now. */
 export async function startWritten(deps: ImportDeps, written: Written): Promise<void> {
-  await deps.sessions.sync(deps.catalog.list());
+  /*
+    At once, before anything is awaited: a hold of the rule that was, or a
+    look at what it watched, is the new rule's no more — and a tick while
+    the devices open would otherwise fire it, and the look after them again.
+  */
   for (const automation of written.forgotten) deps.engine.forget(automation);
-  for (const automation of written.touched) (deps.engine.reset(automation), deps.engine.poke(automation));
+  for (const automation of written.touched) deps.engine.reset(automation);
+  await deps.sessions.sync(deps.catalog.list());
+  for (const automation of written.touched) deps.engine.poke(automation);
 }
 
 /** A device added or changed as its entry says: what it is, how it is reached, its secrets, kept or given. */

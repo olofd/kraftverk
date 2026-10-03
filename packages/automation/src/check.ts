@@ -1,6 +1,6 @@
 import { attributeMeaning, CAMEL_NAME, capabilitySpec, checkValue, isCapability, MAIN_PART, meetsNeed, partsOf, standardMeaning, valueTypeOf, type AttributeSpec, type CapabilityId, type CapabilityNeed, type DeviceDescription, type Value, type ValueType } from '@kraftverk/device-sdk';
 
-import { CLOCK_TIME, EVERY_MINUTES, minutesOf, WEEKDAYS } from './clock.ts';
+import { CLOCK_TIME, EVERY_MINUTES, HOLD_MINUTES, minutesOf, WEEKDAYS } from './clock.ts';
 import type { AutomationFunction } from './functions.ts';
 import { ruleUses } from './reads.ts';
 import { isAutomationRole, MATH_OPS, partRoles, SEQUENCE_LIMITS, type Command, type Expr, type PartRole, type Rule, type Step, type WriteTarget } from './rule.ts';
@@ -249,6 +249,8 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       if (trigger.heldForMinutes) {
         const held = shape(trigger.heldForMinutes, `${where}.heldForMinutes`, { calls: false });
         if (!fits({ type: 'number', unit: null }, held)) problems.push(`${where}.heldForMinutes: expected a number of minutes, got ${said(held)}`);
+        const length = 'value' in trigger.heldForMinutes ? trigger.heldForMinutes.value : null;
+        if (typeof length === 'number' && !(length > 0 && length <= HOLD_MINUTES.max)) problems.push(`${where}.heldForMinutes: more than 0, and at most ${HOLD_MINUTES.max} min — a week`);
       }
     } else problems.push(`${where}: not a trigger`);
   });

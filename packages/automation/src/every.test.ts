@@ -32,6 +32,13 @@ describe('every so many minutes', () => {
     expect(checkRule(rule([{ every: { value: '15' } }]), NO_FUNCTIONS)).toEqual(['when[0].every: expected a number of minutes, got a string']);
   });
 
+  test('a condition held for: more than nothing, at most a week — a longer timer would not wait at all', () => {
+    const held = (minutes: number) => rule([{ becomes: { reachable: 'plug' }, heldForMinutes: { value: minutes } }]);
+    expect(checkRule(held(10), NO_FUNCTIONS)).toEqual([]);
+    expect(checkRule(held(7 * 24 * 60), NO_FUNCTIONS)).toEqual([]);
+    for (const minutes of [0, -5, 7 * 24 * 60 + 1, 40_000]) expect(checkRule(held(minutes), NO_FUNCTIONS)).toEqual(['when[0].heldForMinutes: more than 0, and at most 10080 min — a week']);
+  });
+
   test('reads as how often, and narrowed by a window of the day', () => {
     const night = rule([{ every: { value: 15 } }], { if: { within: { from: { value: '22:00' }, to: { value: '06:00' } } } });
     expect(describeTriggers(night, {}, () => 'Scooter plug')).toEqual(['Every 15 min']);

@@ -327,13 +327,29 @@ export function printExpr(expr: Expr, context: PrintContext = {}): string | null
 
 class Unprintable extends Error {}
 
+/**
+ * A number in plain digits, as it is read back: never `1e-7`, whose `e`
+ * would be read as a unit, and the rest as a sum.
+ */
+function plainDigits(value: number): string {
+  const text = String(value);
+  const match = /^(-?)(\d)(?:\.(\d+))?e([+-]\d+)$/.exec(text);
+  if (!match) return text;
+  const [, sign, lead, rest = '', exponent] = match;
+  const digits = lead! + rest;
+  const point = 1 + Number(exponent);
+  if (point <= 0) return `${sign}0.${'0'.repeat(-point)}${digits}`;
+  if (point >= digits.length) return `${sign}${digits}${'0'.repeat(point - digits.length)}`;
+  return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`;
+}
+
 function print(expr: Expr, need: number, context: PrintContext, unit: string | null): string {
   const wrap = (text: string, level: number) => (level < need ? `(${text})` : text);
   if ('value' in expr) {
     const value = expr.value;
     if (!isPrintableValue(value)) throw new Unprintable();
     if (typeof value === 'number') {
-      const text = `${value}${unit ? (unit === '%' ? ' %' : ` ${unit}`) : ''}`;
+      const text = `${plainDigits(value)}${unit ? (unit === '%' ? ' %' : ` ${unit}`) : ''}`;
       // A negative number in a sum reads as one: "-5", not "- 5".
       return text;
     }

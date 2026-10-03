@@ -1,5 +1,5 @@
-import { capitalise, describeTriggers, evaluateNow, EVERY_MINUTES, readsRole, runsOn, slotOf, takesSteps, type Rule, type Trigger } from '@kraftverk/automation';
-import { localTime, MAIN_PART, zonedInstant } from '@kraftverk/device-sdk';
+import { capitalise, describeTriggers, evaluateNow, EVERY_MINUTES, HOLD_MINUTES, readsRole, runsOn, slotOf, takesSteps, type Rule, type Trigger } from '@kraftverk/automation';
+import { dayAfter, localTime, MAIN_PART, zonedInstant } from '@kraftverk/device-sdk';
 import type { LiveMessage } from '@kraftverk/holder';
 
 import type { RuleContext } from './context.ts';
@@ -228,11 +228,18 @@ export class Triggers {
     if (state.fired || entry.hold) return;
 
     const said = capitalise(this.#context.said(automation, rule, trigger.becomes));
-    const minutes = trigger.heldForMinutes ? Number(evaluateNow(trigger.heldForMinutes, scope)) : 0;
+    // A setting filled in later is held to a hold's bounds here too: a timer past them would not wait at all.
+    const asked = trigger.heldForMinutes ? Number(evaluateNow(trigger.heldForMinutes, scope)) : 0;
+    const minutes = Number.isFinite(asked) ? Math.min(HOLD_MINUTES.max, Math.max(0, asked)) : 0;
     const fire = (why: string) => {
+      const current = this.deps.store.get(automation.id);
+      // Turned off since — or gone — it does nothing.
+      if (!current || current.mode === 'off') return;
+      // Still taking its steps: not dealt with, so looked at again — and started once that run ends, if it still holds.
+      if (this.#runs.busy(automation.id)) return;
       state.fired = true;
       keep();
-      void this.#runs.runAndKeep(this.deps.store.get(automation.id) ?? automation, why);
+      void this.#runs.runAndKeep(current, why);
     };
     const since = Date.parse(state.heldSince ?? this.#context.now().toISOString());
     const remaining = minutes > 0 ? since + minutes * 60_000 - this.#context.now().getTime() : 0;
@@ -258,14 +265,16 @@ export class Triggers {
     const at = evaluateNow(trigger.at, this.#context.scope(automation, rule));
     const [hour, minute] = typeof at === 'string' ? at.split(':').map(Number) : [];
     if (hour === undefined || minute === undefined || Number.isNaN(hour) || Number.isNaN(minute)) return false;
-    const today = localTime(now, automation.timeZone);
-    // Only on its days, on the owner's calendar.
-    if (!runsOn(trigger, today)) return false;
-    const time = zonedInstant({ ...today, hour, minute }, automation.timeZone);
-    const since = now.getTime() - time.getTime();
-    if (since < 0 || since > GRACE_MS) return false;
     const lastStarted = Math.max(...[automation.lastRun?.at, automation.running?.at].map((at) => Date.parse(at ?? '')).filter(Number.isFinite));
-    return !Number.isFinite(lastStarted) || lastStarted < time.getTime();
+    // Today's, or yesterday's still within its grace: 23:30's, with the server back at 00:05.
+    return [localTime(now, automation.timeZone), dayAfter(now, automation.timeZone, -1)].some((day) => {
+      // Only on its days, on the owner's calendar.
+      if (!runsOn(trigger, day)) return false;
+      const time = zonedInstant({ ...day, hour, minute }, automation.timeZone);
+      const since = now.getTime() - time.getTime();
+      if (since < 0 || since > GRACE_MS) return false;
+      return !Number.isFinite(lastStarted) || lastStarted < time.getTime();
+    });
   }
 
   /** Whether an interval's latest slot, on the owner's clock, has come and it has not run since: once a slot, never catching up. */
@@ -273,8 +282,10 @@ export class Triggers {
     const every = evaluateNow(trigger.every, this.#context.scope(automation, rule));
     if (typeof every !== 'number' || every < EVERY_MINUTES.min || every > EVERY_MINUTES.max) return false;
     const today = localTime(now, automation.timeZone);
-    const slot = slotOf(today.hour * 60 + today.minute, every);
-    const time = zonedInstant({ ...today, hour: Math.floor(slot / 60), minute: slot % 60 }, automation.timeZone);
+    const minuteOfDay = today.hour * 60 + today.minute;
+    const slot = slotOf(minuteOfDay, every);
+    // Its start, counted back from now on the clock now shown: in the hour repeated as clocks go back, each of the two has its own slots.
+    const time = new Date(now.getTime() - (now.getTime() % 60_000) - (minuteOfDay - slot) * 60_000);
     const lastStarted = Math.max(...[automation.lastRun?.at, automation.running?.at].map((at) => Date.parse(at ?? '')).filter(Number.isFinite));
     return time.getTime() <= now.getTime() && (!Number.isFinite(lastStarted) || lastStarted < time.getTime());
   }

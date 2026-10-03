@@ -200,7 +200,9 @@ The server's engine runs every automation the same way:
 - **`becomes`**: evaluated when a reading of a bound device moves, from the
   live bus, and on the half-minute clock besides — a battery sitting at 8 %
   sends nothing. It fires on the change from not-true to true, and with
-  `heldForMinutes` only once it has stayed true that long. It may only read
+  `heldForMinutes` (more than 0, at most a week) only once it has stayed
+  true that long. Turned true while a run of it still takes its steps, it
+  runs again once that run ends, if it still holds. It may only read
   and compare — no function calls — so it is cheap to evaluate on every
   reading. Each trigger's state — what its condition was last, since when it
   has held, whether this hold has run — is kept in the database, so a restart

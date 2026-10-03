@@ -7,6 +7,7 @@ import {
   localTime,
   standardMeaning,
   zonedInstant,
+  zonedInstants,
   type AttributeSpec,
   type DeviceDescription,
   type ScalarValue,
@@ -167,8 +168,11 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
       if (typeof every !== 'number' || every < EVERY_MINUTES.min || every > EVERY_MINUTES.max) continue;
       for (const date of days) {
         for (let slot = 0; slot < 24 * 60; slot += every) {
-          const instant = zonedInstant({ ...date, hour: Math.floor(slot / 60), minute: slot % 60 }, automation.timeZone).getTime();
-          if (instant >= start && instant <= end && !fired.some((run) => run.at === instant)) fired.push({ at: instant, because: `Every ${every} min` });
+          // Each time the clock shows it: twice in the hour repeated as clocks go back, not at all in the one skipped.
+          for (const each of zonedInstants({ ...date, hour: Math.floor(slot / 60), minute: slot % 60 }, automation.timeZone)) {
+            const instant = each.getTime();
+            if (instant >= start && instant <= end && !fired.some((run) => run.at === instant)) fired.push({ at: instant, because: `Every ${every} min` });
+          }
         }
       }
     } else if ('event' in trigger) {

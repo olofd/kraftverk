@@ -156,7 +156,8 @@ const asEngineDevice = (device: Omit<EngineDevice, 'reachable' | 'wantFresh' | '
 });
 
 /** Two engines on one database are one server, restarted: what they keep is in the store. */
-function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: boolean } = {}) {
+/** `gate`: what a command waits on once sent — a run that takes its time. */
+function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: boolean; gate?: () => Promise<void> } = {}) {
   const sent: CommandIntent[] = [];
   const written: WriteIntent[] = [];
   const recorded: AuditRecord[] = [];
@@ -191,6 +192,7 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
     gateway: {
       execute: async (intent: CommandIntent): Promise<GatewayResult> => {
         sent.push(intent);
+        await options.gate?.();
         ledger.switched(intent.deviceId, intent.part, { at: now.getTime(), by: intent.by });
         // The plug does as it is told, and reports it.
         if (intent.deviceId === PLUG && typeof intent.args.on === 'boolean') plug.on = intent.args.on;
@@ -248,6 +250,15 @@ describe('at a time of day', () => {
     expect(sent).toHaveLength(1);
     expect(store.get(armed.id)!.lastRun).toMatchObject({ outcome: 'acted' });
     expect(store.get(off.id)!.lastRun).toBeNull();
+  });
+
+  test('late by less than its grace across midnight: 23:30’s, with the server back at 00:05, still runs', async () => {
+    const context = setup({ now: zonedInstant({ year: 2026, month: 6, day: 16, hour: 0, minute: 5 }, ZONE) });
+    context.sunny({ at: '23:30' }, 'act');
+    await context.engine.tick();
+    expect(context.sent).toHaveLength(1);
+    await context.engine.tick();
+    expect(context.sent).toHaveLength(1);
   });
 
   test('only on its days, on the owner’s calendar — and says so as why it ran', async () => {
@@ -489,6 +500,57 @@ describe('when a condition becomes true', () => {
     expect(second.sent).toHaveLength(1);
     expect(second.sent[0]!.reason).toContain('for 5 min');
     expect(second.store.trigger(automation.id, 0)).toMatchObject({ last: true, fired: true });
+  });
+
+  test('turned true again while its run still takes its steps: run again once that run ends, not lost', async () => {
+    let release!: () => void;
+    const slow = new Promise<void>((resolve) => (release = resolve));
+    const context = setup({ gate: () => slow });
+    const { engine, station, sent, readingsMoved } = context;
+    station.soc = 40;
+    low(context);
+    engine.start();
+    try {
+      readingsMoved();
+      station.soc = 18;
+      readingsMoved();
+      await settle();
+      expect(sent).toHaveLength(1);
+      // Up, and down again, while the first run waits on its command.
+      station.soc = 40;
+      readingsMoved();
+      station.soc = 17;
+      readingsMoved();
+      await settle();
+      expect(sent).toHaveLength(1);
+      // The run ends; the condition still holds, and was never dealt with.
+      release();
+      await settle();
+      readingsMoved();
+      await settle();
+      expect(sent).toHaveLength(2);
+      readingsMoved();
+      await settle();
+      expect(sent).toHaveLength(2);
+    } finally {
+      engine.stop();
+    }
+  });
+
+  test('a hold waiting when it is turned off does nothing when it runs out', async () => {
+    const context = setup();
+    const { engine, station, sent, readingsMoved, store } = context;
+    const automation = low(context, { minutes: 0.001 }); // 60 ms
+    engine.start();
+    try {
+      station.soc = 10;
+      readingsMoved();
+      store.update(automation.id, { mode: 'off' });
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      expect(sent).toEqual([]);
+    } finally {
+      engine.stop();
+    }
   });
 
   test('held for a while: only if it stays true that long', async () => {
@@ -819,6 +881,35 @@ describe('every so many minutes', () => {
     context.at(zonedInstant({ year: 2026, month: 6, day: 15, hour: 7, minute: 45 }, ZONE));
     await engine.tick();
     expect(sent).toHaveLength(2);
+    engine.stop();
+  });
+
+  test('as clocks go back, both of the repeated hour’s slots: every quarter of an hour, none skipped', async () => {
+    // 01:45 summer time on 25 October 2026 in Stockholm; at 03:00 summer time the clock shows 02:00 again.
+    const first = Date.parse('2026-10-24T23:45:00Z');
+    const context = setup({ now: new Date(first) });
+    const { engine, store, sent } = context;
+    const created = store.create({
+      name: 'Every quarter',
+      rule: {
+        roles: { switch: { label: 'Plug', description: 'A plug', capabilities: ['switch'] } },
+        params: { fields: {} },
+        when: [{ every: { value: 15 } }],
+        then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
+      },
+      madeFrom: null,
+      roles: { switch: { device: PLUG, part: 'main' } },
+      starts: {},
+      timeZone: ZONE,
+      recheckMinutes: null,
+    });
+    store.update(created.id, { mode: 'act' });
+    // Two and a quarter hours as they pass, looked at each minute: 01:45, the 02:xx of summer, the 02:xx of winter, 03:00.
+    for (let minute = 0; minute <= 135; minute++) {
+      context.at(new Date(first + minute * 60_000));
+      await engine.tick();
+    }
+    expect(sent).toHaveLength(10);
     engine.stop();
   });
 });

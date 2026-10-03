@@ -93,6 +93,11 @@ export class Runs {
     for (const id of [...this.#live.keys(), ...this.#once.keys()]) this.forget(id, why);
   }
 
+  /** Whether a run a trigger started is still taking its steps: another it asks for now would not start. */
+  busy(automationId: string): boolean {
+    return this.#running.has(automationId);
+  }
+
   async runAndKeep(automation: AutomationRecord, why: string): Promise<AutomationRun | null> {
     if (this.#running.has(automation.id)) return null;
     this.#running.add(automation.id);
@@ -664,7 +669,7 @@ export class Runs {
       return 'ok';
     }
     this.#moved(live);
-    const came = await Promise.race([started.ended.then((run) => ({ run })).catch(() => null), this.#sleep(live, seconds, mode === 'otherwise').then((slept) => ({ slept }))]);
+    const came = await Promise.race([started.ended.then((run) => ({ run })).catch(() => null), this.#sleep(live, seconds, mode === 'otherwise', started.ended).then((slept) => ({ slept }))]);
     if (came && 'run' in came) {
       const acted = came.run.outcome === 'acted';
       this.#end(live, entry, acted ? 'done' : 'failed', `It ${acted ? 'ran' : 'did not succeed'}: ${lowerFirst(came.run.summary)}`);
@@ -757,8 +762,12 @@ export class Runs {
     return new Date(this.#context.now().getTime() + seconds * 1000).toISOString();
   }
 
-  /** A pause that a stop ends early — unless it is to be taken whatever happens. */
-  #sleep(live: LiveRun, seconds: number, regardless: boolean): Promise<'slept' | 'stopped'> {
+  /**
+   * A pause that a stop ends early — unless it is to be taken whatever
+   * happens. `over`: what it waits beside, which ends it too, once settled:
+   * its timer is not left waiting out the rest of the hour for nobody.
+   */
+  #sleep(live: LiveRun, seconds: number, regardless: boolean, over?: Promise<unknown>): Promise<'slept' | 'stopped'> {
     return new Promise((resolve) => {
       const done = (outcome: 'slept' | 'stopped') => {
         clearTimeout(timer);
@@ -770,6 +779,10 @@ export class Runs {
       };
       const timer = setTimeout(() => done('slept'), seconds * (this.deps.secondMs ?? 1000));
       live.wake.add(stop);
+      over?.then(
+        () => done('slept'),
+        () => done('slept')
+      );
     });
   }
 
