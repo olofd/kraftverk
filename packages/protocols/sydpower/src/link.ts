@@ -2,7 +2,7 @@ import type { ByteChannel, Channel, MessageChannel } from '@kraftverk/device-sdk
 
 import { FrameAssembler, WRITE_SPACING_MS } from './ble.ts';
 import { commandRefusal } from './guard.ts';
-import { parseFrame, type ParsedFrame } from './modbus.ts';
+import { answers, parseCommand, parseFrame, type ParsedFrame } from './modbus.ts';
 import { channelOf, TOPICS } from './mqtt.ts';
 
 /**
@@ -52,6 +52,14 @@ const guarded = (frame: Uint8Array): void => {
 };
 
 const functionFor = (expect: 'input' | 'holding') => (expect === 'input' ? 0x04 : 0x03);
+
+/** The read a request makes: what its answer must be. A request that is not a read of the expected kind is not one this asks. */
+function readOf(frame: Uint8Array, expect: 'input' | 'holding'): { fn: number; start: number; count: number } {
+  const command = parseCommand(frame);
+  const fn = functionFor(expect);
+  if (command?.kind !== 'read' || command.fn !== fn) throw new Error(`A request is a read of ${expect} registers (function 0x0${fn})`);
+  return { fn, start: command.start, count: command.count };
+}
 
 /** Frames, and a way to wait for one. */
 function frames() {
@@ -127,10 +135,10 @@ function overMessages(channel: MessageChannel, address: string): SydpowerLink {
     },
     send,
     async request(frame, expect, timeoutMs = 5000) {
-      const fn = functionFor(expect);
+      const read = readOf(frame, expect);
       const name = expect === 'input' ? '04' : 'data';
       const answer = on(name).wait(
-        (parsed) => parsed.kind === 'registers' && parsed.fn === fn,
+        (parsed) => answers(parsed, read),
         timeoutMs,
         `${mac}/${name}`
       );
@@ -196,11 +204,11 @@ function overBytes(channel: ByteChannel, address: string, transport: string): Sy
     },
     send,
     async request(frame, expect, timeoutMs = 8000) {
-      const fn = functionFor(expect);
+      const read = readOf(frame, expect);
       const answer = incoming.wait(
-        (parsed) => parsed.kind === 'registers' && parsed.fn === fn,
+        (parsed) => answers(parsed, read),
         timeoutMs,
-        `function 0x0${fn}`
+        `function 0x0${read.fn}`
       );
       try {
         await send(frame);

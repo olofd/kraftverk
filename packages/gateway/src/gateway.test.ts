@@ -707,3 +707,55 @@ describe('a reserve the home keeps', () => {
     expect(plug.commands).toEqual([true]);
   });
 });
+
+describe('a device that does not answer as it should', () => {
+  test('a command that throws ends as failed, on the timeline — not as an error with nothing said', async () => {
+    const plug = new StubPlug({ on: true });
+    const throwing = plug.session();
+    throwing.command = async () => {
+      throw new Error('The link dropped mid-send');
+    };
+    const { gateway, events } = harness({ plug, devices: { [PLUG]: { name: 'Heater plug', session: throwing, description: PLUG_DESCRIPTION, offline: 'Not answering' } }, feeds: false });
+    expect(await gateway.execute(cut())).toEqual({ outcome: 'failed', detail: 'The link dropped mid-send' });
+    expect(events.at(-1)).toBe('command.failed');
+  });
+
+  test('one that never answers ends as failed in its time, and holds no other device’s command meanwhile', async () => {
+    const stuck = new StubPlug({ on: true });
+    const hanging = stuck.session();
+    hanging.command = () => new Promise(() => {});
+    const other = savedDeviceId('d-other-plug');
+    const otherPlug = new StubPlug({ on: true });
+    const { gateway } = harness({
+      feeds: false,
+      policy: { sendTimeoutMs: 200 },
+      devices: {
+        [PLUG]: { name: 'Heater plug', session: hanging, description: PLUG_DESCRIPTION, offline: 'Not answering' },
+        [other]: { name: 'Lamp plug', session: otherPlug.session(), description: PLUG_DESCRIPTION, offline: 'Not answering' },
+      },
+    });
+    const first = gateway.execute(cut());
+    const second = await gateway.execute(cut({ deviceId: other, actor: 'person', by: 'olof' }));
+    expect(second.outcome).toBe('verified');
+    expect(await first).toMatchObject({ outcome: 'failed', detail: 'Heater plug did not answer within 0 s' });
+  });
+
+  test('a command that sets nothing the device reports is sent once, and not said to be verified', async () => {
+    const BUTTON: DeviceDescription = {
+      parts: [{ id: MAIN_PART, label: 'Doorbell', kind: 'device', offers: ['acme.bell'] }],
+      attributes: [],
+      capabilities: { 'acme.bell': { label: 'Bell', attributes: {}, commands: { ring: { args: {}, sets: {} } } } },
+    } as unknown as DeviceDescription;
+    const rung: string[] = [];
+    const bell = savedDeviceId('d-bell');
+    const { gateway } = harness({
+      feeds: false,
+      devices: {
+        [bell]: { name: 'Doorbell', session: { health: () => health(), readings: () => [], command: async (request) => (rung.push(request.command), { accepted: true }), close: async () => {} }, description: BUTTON, offline: 'Not answering' },
+      },
+    });
+    const result = await gateway.execute(cut({ deviceId: bell, capability: 'acme.bell', command: 'ring', args: {}, actor: 'person', by: 'olof' }));
+    expect(rung).toEqual(['ring']);
+    expect(result.outcome).toBe('unverified');
+  });
+});

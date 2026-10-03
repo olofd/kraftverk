@@ -223,13 +223,15 @@ export class StationClient {
 
   #ingest(frame: ParsedFrame | null): boolean {
     if (frame?.kind !== 'registers') return false;
-    // Function 0x04 carries telemetry; 0x03 carries settings.
-    if (frame.fn === 0x04 && frame.values.length >= 60) {
+    // Function 0x04 carries telemetry; 0x03 carries settings — each the block from register 0, and nothing
+    // else: a diagnostics read of other registers shares the channel, and is not the station's state.
+    const block = (count: number) => (frame.start === 0 && frame.values.length >= 60) || (frame.start === null && frame.values.length === count);
+    if (frame.fn === 0x04 && block(INPUT_REGISTER_COUNT)) {
       this.#telemetry = decodeTelemetry(frame.values);
       this.#readingAt = new Date();
       return true;
     }
-    if (frame.fn === 0x03 && frame.values.length >= 69) {
+    if (frame.fn === 0x03 && block(HOLDING_REGISTER_COUNT) && frame.values.length >= 69) {
       this.#deviceSettings = decodeSettings(frame.values);
       this.#firmware = decodeFirmware(frame.values);
       return true;

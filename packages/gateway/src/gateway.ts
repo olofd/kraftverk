@@ -142,6 +142,8 @@ export type GatewayPolicy = {
   agentDwellMs: number;
   /** Between two writes of one setting by a person: long enough for the first to settle, short enough not to be noticed. */
   userWriteDwellMs: number;
+  /** How long a device is given to take a command or a write: one that never answers ends as failed, not as a line every other waits in. */
+  sendTimeoutMs: number;
   /** How long the device and the parts it is linked to are given to agree. */
   verifyTimeoutMs: number;
   /** Within one run, the least gap between two switches of a part, whatever its rule asks. */
@@ -156,6 +158,7 @@ export const DEFAULT_POLICY: GatewayPolicy = {
   personDwellMs: 5_000,
   agentDwellMs: 60_000,
   userWriteDwellMs: 2_000,
+  sendTimeoutMs: 20_000,
   verifyTimeoutMs: 30_000,
   runGapMs: 3_000,
   runSwitchCeiling: 12,
@@ -397,11 +400,26 @@ export class ActionGateway {
     return run;
   }
 
-  execute(intent: CommandIntent): Promise<GatewayResult> {
-    return this.#serially(() => this.#execute(intent));
+  /**
+   * Every command: checked and sent in the one line, then verified outside
+   * it — waiting for a device to agree holds no other device's command, a
+   * person's "off" among them.
+   */
+  async execute(intent: CommandIntent): Promise<GatewayResult> {
+    const sent = await this.#serially(() => this.#execute(intent));
+    return 'verify' in sent ? sent.verify() : sent;
   }
 
-  async #execute(intent: CommandIntent): Promise<GatewayResult> {
+  /** A send to a device, held to the time it is given: one that never answers is refused as failed. */
+  #within<T>(work: Promise<T>, what: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${what} did not answer within ${Math.round(this.#policy.sendTimeoutMs / 1000)} s`)), this.#policy.sendTimeoutMs);
+    });
+    return Promise.race([work, late]).finally(() => clearTimeout(timer));
+  }
+
+  async #execute(intent: CommandIntent): Promise<GatewayResult | { verify: () => Promise<GatewayResult> }> {
     const at = new Date().toISOString();
     const device = this.#deps.device(intent.deviceId);
     const partLabel = device ? (partsOf(device.description).find((part) => part.id === intent.part)?.label ?? intent.part) : intent.part;
@@ -527,7 +545,7 @@ export class ActionGateway {
         // had already lost it, looked exactly like agreement.
         return Boolean(evidence?.connected && (after === null || readAt > after) && evidence.value === link.expected);
       });
-    if (agrees()) {
+    if (settings.length && agrees()) {
       const linkAgreed = links.length ? linksAgree(null) : undefined;
       return {
         outcome: linkAgreed === false ? 'unverified' : 'verified',
@@ -554,13 +572,38 @@ export class ActionGateway {
       this.#runSwitches.set(intent.run.id, counts.set(key, inRun + 1));
     }
     const sentAt = Date.now();
-    const result = await session.command({ part: intent.part, capability: intent.capability, command: intent.command, args: intent.args });
+    let result: Awaited<ReturnType<typeof session.command>>;
+    try {
+      result = await this.#within(session.command({ part: intent.part, capability: intent.capability, command: intent.command, args: intent.args }), device.name);
+    } catch (error) {
+      result = { accepted: false, error: (error as Error).message };
+    }
     if (!result.accepted) {
       note('command.failed', `${device.name}: ${what} failed: ${result.error}`);
       return { outcome: 'failed', detail: result.error };
     }
 
-    // 7. The proofs, recorded separately.
+    // 7. The proofs, recorded separately — outside the line, so they hold no other command.
+    return { verify: () => this.#verified({ device, links, settings, sentAt, argsShown, note, agrees, linksAgree }) };
+  }
+
+  async #verified(sent: {
+    device: GatewayDevice;
+    links: Linked[];
+    settings: readonly unknown[];
+    sentAt: number;
+    argsShown: string;
+    note: (kind: string, summary: string, detail?: unknown) => void;
+    agrees: () => boolean;
+    linksAgree: (after: number | null) => boolean;
+  }): Promise<GatewayResult> {
+    const { device, links, settings, sentAt, argsShown, note, agrees, linksAgree } = sent;
+    // A command that sets nothing it reports has nothing to agree on: sent, and not claimed.
+    if (!settings.length) {
+      const detail = 'It accepted the command; it reports nothing that would show it';
+      note('command.unverified', `${device.name}: ${detail}`, { deviceAgreed: false });
+      return { outcome: 'unverified', detail, deviceAgreed: false };
+    }
     const deviceAgreed = await this.#eventually(agrees);
     const linkAgreed = links.length ? await this.#eventually(() => linksAgree(sentAt)) : undefined;
 
@@ -633,11 +676,12 @@ export class ActionGateway {
    * verified by reading it back, and audited — the intent before anything is
    * sent, and the outcome.
    */
-  write(intent: WriteIntent): Promise<WriteResult> {
-    return this.#serially(() => this.#write(intent));
+  async write(intent: WriteIntent): Promise<WriteResult> {
+    const sent = await this.#serially(() => this.#write(intent));
+    return 'verify' in sent ? sent.verify() : sent;
   }
 
-  async #write(intent: WriteIntent): Promise<WriteResult> {
+  async #write(intent: WriteIntent): Promise<WriteResult | { verify: () => Promise<WriteResult> }> {
     const device = this.#deps.device(intent.deviceId);
     const keys = Object.keys(intent.patch);
     const refuse = (detail: string, extra: Partial<WriteResult> = {}): WriteResult => {
@@ -704,7 +748,7 @@ export class ActionGateway {
     const settlingMs = () => Math.max(0, writeDwell - (Date.now() - writtenAt));
     for (const key of keys) this.#ledger.wrote(intent.deviceId, key, { at: writtenAt, by: intent.by });
     try {
-      values = await session.write(changed);
+      values = await this.#within(session.write(changed), device.name);
     } catch (error) {
       const detail = (error as Error).message;
       note('settings.failed', `${device.name}: changing ${described} failed: ${detail}`);
@@ -714,10 +758,14 @@ export class ActionGateway {
     // The device's own word, read back: what it reports now, not what was sent.
     const reported = () => Object.fromEntries(keys.map((key) => [key, readingOf(session.readings(), key)?.value ?? values[key] ?? null]));
     const agrees = () => keys.every((key) => String(reported()[key]) === String(changed[key]));
-    const verified = agrees() || (await this.#eventually(agrees));
-    const detail = verified ? `Changed ${described}, confirmed by the device` : `It accepted the change, but does not report ${labelled(keys)} as set`;
-    note(`settings.${verified ? 'verified' : 'unverified'}`, `${device.name}: ${detail}`, { patch: changed });
-    return { outcome: verified ? 'verified' : 'unverified', detail, values: reported(), settlingMs: settlingMs() };
+    return {
+      verify: async () => {
+        const verified = agrees() || (await this.#eventually(agrees));
+        const detail = verified ? `Changed ${described}, confirmed by the device` : `It accepted the change, but does not report ${labelled(keys)} as set`;
+        note(`settings.${verified ? 'verified' : 'unverified'}`, `${device.name}: ${detail}`, { patch: changed });
+        return { outcome: verified ? 'verified' : 'unverified', detail, values: reported(), settlingMs: settlingMs() };
+      },
+    };
   }
 
   #ageOf(iso: string | null): number {

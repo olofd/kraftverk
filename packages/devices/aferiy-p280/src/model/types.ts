@@ -33,13 +33,14 @@ export type StationSettings = {
   stopChargeAfterMinutes: number;
   ledMode: LedMode;
   keySound: boolean;
-  usbStandbyMinutes: 0 | 3 | 5 | 10 | 30;
-  acStandbyMinutes: 0 | 480 | 960 | 1440;
-  dcStandbyMinutes: 0 | 480 | 960 | 1440;
+  /** The standby timers, as the station holds them: one of the values the app offers, or what another app set. */
+  usbStandbyMinutes: number;
+  acStandbyMinutes: number;
+  dcStandbyMinutes: number;
   /** Seconds, unlike the standby timers above, which are minutes. */
-  screenRestSeconds: 0 | 180 | 300 | 600 | 1800;
-  /** Never 0 — that value permanently bricks the station. */
-  sleepMinutes: 5 | 10 | 30 | 480;
+  screenRestSeconds: number;
+  /** Written only as 5, 10, 30 or 480 — never 0, which permanently bricks the station — and shown as the station holds it. */
+  sleepMinutes: number;
   temperatureUnit: 'C' | 'F';
 };
 

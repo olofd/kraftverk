@@ -126,4 +126,24 @@ describe('writing a P280’s settings through its session', () => {
     await session.write!({ chargeLimit: 85 });
     expect(applied).toEqual([{ chargeLimit: 85 }]);
   });
+
+  test('a value another app set that no option names — a screen that never sleeps — blocks no other change', async () => {
+    const station = new SimulatedStation();
+    const applied: unknown[] = [];
+    const source: StationSource = {
+      status: () => station.status(),
+      // Set in the vendor's app: the screen never goes dark, and the station sleeps after an hour, which the app no longer offers.
+      settings: () => ({ ...station.settings()!, screenRestSeconds: 0, sleepMinutes: 60 }),
+      setPort: (id, on) => station.setPort(id, on),
+      applySettings: async (patch) => {
+        applied.push(patch);
+        return station.applySettings(patch);
+      },
+    };
+    const session = stationSession(source, { identity: null, connected: () => true });
+    await session.write!({ keySound: false });
+    expect(applied).toEqual([{ keySound: false }]);
+    // And it is shown as the station holds it, not as the nearest option.
+    expect(session.readings().find((reading) => reading.key === 'sleepMinutes')?.value).toBe('60');
+  });
 });

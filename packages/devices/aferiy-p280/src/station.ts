@@ -107,9 +107,14 @@ export function stationSession(source: StationSource, options: StationSessionOpt
         client's register whitelist checks again below this, and the protocol's
         guard below that.
       */
-      const merged = validateConfig(SETTINGS_SCHEMA, { ...settingsToValues(current), ...patch });
-      if (!merged.ok) throw new Error(merged.issues.map((issue) => issue.message).join('; '));
-      const changed = Object.fromEntries(Object.keys(patch).map((key) => [key, merged.value[key]]));
+      // What it changes, each by its own field: a value the station already holds that no option names — set by
+      // another app — is not this write's to answer for, and blocks no other change.
+      const fields = Object.fromEntries(Object.keys(patch).flatMap((key) => (SETTINGS_SCHEMA.fields[key] ? [[key, SETTINGS_SCHEMA.fields[key]!]] : [])));
+      const unknown = Object.keys(patch).filter((key) => !SETTINGS_SCHEMA.fields[key]);
+      if (unknown.length) throw new Error(`Not a setting of the station: ${unknown.join(', ')}`);
+      const checked = validateConfig({ fields }, patch);
+      if (!checked.ok) throw new Error(checked.issues.map((issue) => issue.message).join('; '));
+      const changed = Object.fromEntries(Object.keys(patch).map((key) => [key, checked.value[key]]));
       const applied = await source.applySettings(valuesToSettings(changed) as StationSettingsPatch);
       return settingsToValues(applied ?? current);
     },

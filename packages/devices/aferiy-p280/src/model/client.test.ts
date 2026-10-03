@@ -124,10 +124,35 @@ class TogglingStation implements StationLink {
     return { kind: 'registers', fn: 0x04, start: 0, values };
   }
 
-  onFrame() {
+  onFrame(_listener?: (frame: ParsedFrame) => void): () => void {
     return () => {};
   }
 }
+
+describe('what the channel carries besides its answers', () => {
+  test('a read of other registers — the scan tool’s — is not taken for the station’s state', async () => {
+    const station = new TogglingStation();
+    station.bits = STATUS.AC_OUTPUT_ON;
+    let push: ((frame: ParsedFrame) => void) | null = null;
+    station.onFrame = (listener: (frame: ParsedFrame) => void) => {
+      push = listener;
+      return () => {};
+    };
+    const client = new StationClient({ transport: station });
+    await client.start();
+    // The station's own push of its block from register 0 is its state: AC on.
+    const telemetry = Array<number>(INPUT_REGISTER_COUNT).fill(0);
+    telemetry[INPUT.STATUS_BITS] = STATUS.AC_OUTPUT_ON;
+    push!({ kind: 'registers', fn: 0x04, start: 0, values: telemetry });
+    const before = client.status();
+    expect(before.ports.find((p) => p.id === 'ac')?.enabled).toBe(true);
+
+    // Input registers from 80 on, every bit set: decoded as telemetry, the outlets would all read on and the charge 6553.5 %.
+    push!({ kind: 'registers', fn: 0x04, start: 80, values: Array<number>(INPUT_REGISTER_COUNT).fill(0) });
+    expect(client.status()).toEqual(before);
+    await client.stop();
+  });
+});
 
 describe('switching an output', () => {
   test('a station that has not answered is not written to — in either direction', async () => {

@@ -119,9 +119,6 @@ export function buildStatus(
   };
 }
 
-const oneOf = <T extends number>(value: number, allowed: readonly T[], fallback: T): T =>
-  (allowed as readonly number[]).includes(value) ? (value as T) : fallback;
-
 /**
  * Builds the settings model from decoded holding registers — or null before
  * they have been read. Defaults in their place were shown as the station's own
@@ -145,11 +142,13 @@ export function buildSettings(
     stopChargeAfterMinutes: s.stopChargeAfterMinutes,
     ledMode: LED_MODE_VALUES[s.ledMode] ?? 'off',
     keySound: s.keySound,
-    usbStandbyMinutes: oneOf(s.usbStandbyMinutes, [0, 3, 5, 10, 30] as const, 0),
-    acStandbyMinutes: oneOf(s.acStandbyMinutes, [0, 480, 960, 1440] as const, 0),
-    dcStandbyMinutes: oneOf(s.dcStandbyMinutes, [0, 480, 960, 1440] as const, 0),
-    screenRestSeconds: oneOf(s.screenRestSeconds, [0, 180, 300, 600, 1800] as const, 300),
-    sleepMinutes: oneOf(s.sleepMinutes, [5, 10, 30, 480] as const, 480),
+    // As the station holds them, whatever they are: a value the vendor app's lists lack is shown as it is —
+    // never as one of them, which hid what register 68 held and let a write it refused read back as done.
+    usbStandbyMinutes: s.usbStandbyMinutes,
+    acStandbyMinutes: s.acStandbyMinutes,
+    dcStandbyMinutes: s.dcStandbyMinutes,
+    screenRestSeconds: s.screenRestSeconds,
+    sleepMinutes: s.sleepMinutes,
     temperatureUnit,
   };
 }

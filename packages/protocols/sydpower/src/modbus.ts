@@ -72,7 +72,8 @@ export function writeRegister(register: number, value: number): Uint8Array {
 }
 
 export type ParsedFrame =
-  | { kind: 'registers'; fn: number; start: number; values: number[] }
+  /** `start`: the first register, when the answer says (this stack echoes it); null when it carries only a byte count. */
+  | { kind: 'registers'; fn: number; start: number | null; values: number[] }
   | { kind: 'writeAck'; register: number; value: number }
   | { kind: 'error'; fn: number; code: number };
 
@@ -138,7 +139,7 @@ export function parseFrame(payload: Uint8Array): ParsedFrame | null {
       const p = offset + i * 2;
       values.push((payload[p]! << 8) | payload[p + 1]!);
     }
-    return { kind: 'registers', fn, start: 0, values };
+    return { kind: 'registers', fn, start: null, values };
   }
 
   return null;
@@ -286,3 +287,14 @@ export const toHex = (bytes: Uint8Array) =>
 
 export const fromHex = (hex: string) =>
   Uint8Array.from(hex.match(/.{1,2}/g)?.map((b) => parseInt(b, 16)) ?? []);
+
+/**
+ * Whether a frame answers this read: its function, as many registers as
+ * were asked for, and — when the answer says which — from the register
+ * asked for. The protocol has no correlation id: a station also pushes
+ * its telemetry unprompted, and a diagnostics read of other registers
+ * shares the channel, so neither may be taken for this answer.
+ */
+export function answers(frame: ParsedFrame, read: { fn: number; start: number; count: number }): boolean {
+  return frame.kind === 'registers' && frame.fn === read.fn && frame.values.length === read.count && (frame.start === null || frame.start === read.start);
+}

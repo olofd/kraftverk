@@ -94,7 +94,7 @@ export const brokerPolicy: MessageBrokerPolicy = {
       const block = frame.fn === FN.READ_INPUT ? 'input' : 'holding';
       // Stations push telemetry unprompted, and how often is one of the open
       // questions about this protocol, so an unasked one is measured.
-      return { summary: `${block} registers ${frame.start}+${frame.values.length}`, level: 'debug', answers: block, periodic: true };
+      return { summary: `${block} registers ${frame.start ?? '?'}+${frame.values.length}`, level: 'debug', answers: block, periodic: true };
     }
     if (frame?.kind === 'writeAck') {
       return {

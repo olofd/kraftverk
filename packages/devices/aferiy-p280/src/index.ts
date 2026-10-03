@@ -302,6 +302,7 @@ export const SETTINGS_SCHEMA: ConfigSchema = {
       title: 'Screen shutdown',
       description: 'How long the station’s own display stays lit.',
       options: [
+        { value: '0', label: 'Never' },
         { value: '180', label: '3 min' },
         { value: '300', label: '5 min' },
         { value: '600', label: '10 min' },
