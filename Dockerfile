@@ -94,7 +94,7 @@ RUN npm run build:web --workspace client
 
 # --- web ---------------------------------------------------------------------
 
-FROM caddy:2.11.4-alpine AS web
+FROM caddy:2.11.6-alpine AS web
 
 # So a host can find — and prune — kraftverk's images and nothing else.
 LABEL se.kraftverk.image="web"
