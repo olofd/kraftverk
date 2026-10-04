@@ -217,7 +217,8 @@ describe('accounts', () => {
     expect(busy.every((check) => (check as PromiseRejectedResult).reason?.kind === 'unavailable')).toBe(true);
     // The rest were heard, and answered as a wrong password is.
     expect(checks.filter((check) => check.status === 'fulfilled').every((check) => (check as PromiseFulfilledResult<boolean>).value === false)).toBe(true);
-  });
+    // Real argon2id hashes, a burst of them: on a busy machine they take their time, and that is not what is tested.
+  }, 30_000);
 
   test('names are unique regardless of case', async () => {
     await accounts.createFirstUser('Olof', PASSWORD);
