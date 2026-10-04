@@ -100,7 +100,9 @@ other unasked. Two settings matter on a server that also runs kraftverk:
   it. On a network of its own it finds none, as intended.
 - **The server reachable by name from the jobs:** Forgejo's address, for
   checkout, and `host.docker.internal` for the ports the stack job publishes
-  (`--add-host=…:host-gateway`).
+  (`--add-host=…:host-gateway`). The stack job resolves that name to an
+  address before using it: kraftverk answers only to names it knows, and an
+  address on the home network is one.
 
 A runner configuration for this:
 

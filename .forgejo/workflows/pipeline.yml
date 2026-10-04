@@ -30,8 +30,11 @@ jobs:
       image: mcr.microsoft.com/playwright:v1.63.0-noble
     timeout-minutes: 45
     steps:
-      - name: git, which the architecture check asks for the files
-        run: apt-get update -qq && apt-get install -y -qq git > /dev/null
+      # git, which the architecture check asks for the files; and what the
+      # optional Bluetooth library (@stoprocent/noble) builds with — without
+      # it npm skips the library, and its types with it.
+      - name: git, and the tools native modules build with
+        run: apt-get update -qq && apt-get install -y -qq git build-essential python3 libudev-dev > /dev/null
       - uses: actions/checkout@v4
       - run: npm ci
       - run: npm run check:architecture
@@ -67,11 +70,12 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build --target server -t "$SERVER_IMAGE" . && docker build --target web -t "$WEB_IMAGE" .
       # The stack is started on the server's Docker, its ports published there:
-      # the job reaches them as host.docker.internal, the internet entrance too.
-      - run: bash scripts/ci/smoke-docker.sh
+      # the job reaches them at the server's address on its network, the
+      # internet entrance too. By address, not by the name host.docker.internal,
+      # which kraftverk rightly refuses: it answers to names it knows.
+      - run: SMOKE_HOST=$(getent hosts host.docker.internal | awk '{ print $1; exit }') bash scripts/ci/smoke-docker.sh
         env:
           SMOKE_BUILD: "0"
-          SMOKE_HOST: host.docker.internal
           KRAFTVERK_PUBLIC_BIND: 0.0.0.0
           KRAFTVERK_SERVER_IMAGE: ${{ env.SERVER_IMAGE }}
           KRAFTVERK_WEB_IMAGE: ${{ env.WEB_IMAGE }}
