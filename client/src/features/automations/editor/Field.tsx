@@ -30,7 +30,7 @@ export function Fields<T extends object>({ fields, construct, set }: { fields: r
 }
 
 /** One field, by what it holds. */
-export function FieldEditor<T extends object>({ field, fields, construct, set }: { field: FieldSpec; fields: readonly FieldSpec[]; construct: T; set: (next: T) => void }) {
+function FieldEditor<T extends object>({ field, fields, construct, set }: { field: FieldSpec; fields: readonly FieldSpec[]; construct: T; set: (next: T) => void }) {
   const editor = useEditor();
   const value = fieldValue(construct, field);
   const put = (next: unknown) => set(withField(construct, field, next));
