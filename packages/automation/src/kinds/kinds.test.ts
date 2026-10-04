@@ -6,6 +6,8 @@ import { describeRule, describeTriggers } from '../describe.ts';
 import type { Rule } from '../rule.ts';
 import { ruleFromConfig, ruleToConfig } from '../text/rules.ts';
 import { fieldSchema } from './schema.ts';
+import { parseExpr } from '../text/expr.ts';
+import { EXPR_KIND_ORDER, EXPR_KINDS, exprKind, expressionsIn, mapChildren } from './exprs.ts';
 import { ruleShape } from './shape.ts';
 import { fieldValue } from './spec.ts';
 import { STEP_KIND_ORDER, STEP_KINDS, stepKind, type StepKind, type StepSpec } from './steps.ts';
@@ -109,6 +111,22 @@ describe('the steps, as data', () => {
       }
     });
   }
+
+  test('every kind of expression: described, each example read as one that holds it, rebuilt as it was', () => {
+    expect([...EXPR_KIND_ORDER].sort() as string[]).toEqual(Object.keys(EXPR_KINDS).sort());
+    for (const kind of EXPR_KIND_ORDER) {
+      const spec = EXPR_KINDS[kind];
+      expect(spec.label.trim()).not.toBe('');
+      expect(spec.docs.summary.trim()).not.toBe('');
+      for (const example of spec.docs.examples) {
+        const parsed = parseExpr(example);
+        if (!parsed.ok) throw new Error(`${kind}: ${example}: ${parsed.error.message}`);
+        expect({ example, kinds: [...expressionsIn(parsed.expr)].map(exprKind) }).toEqual({ example, kinds: expect.arrayContaining([kind]) });
+        // Taken apart by its children and put back, it is what it was.
+        expect(mapChildren(parsed.expr, (child) => child)).toEqual(parsed.expr);
+      }
+    }
+  });
 
   test('the database knows how rules are kept: every kind and field, in its fingerprint', () => {
     const shape = ruleShape();

@@ -7,7 +7,7 @@ import { branchesOf, STEP_KIND_ORDER, STEP_KINDS } from './kinds/steps.ts';
 import { TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './kinds/triggers.ts';
 import type { AutomationFunction } from './functions.ts';
 import { ruleUses } from './reads.ts';
-import { isAutomationRole, MATH_OPS, partRoles, RUN_FACTS, SEQUENCE_LIMITS, TRIGGER_ID, type Command, type Expr, type PartRole, type Rule, type Step, type WriteTarget } from './rule.ts';
+import { COMPARE_OPS, isAutomationRole, MATH_OPS, ORDERED_OPS, partRoles, RUN_FACTS, SEQUENCE_LIMITS, TRIGGER_ID, type Command, type Expr, type PartRole, type Rule, type Step, type WriteTarget } from './rule.ts';
 
 /*
   Checking a rule before it runs (docs/AUTOMATIONS.md): every role, setting,
@@ -202,11 +202,11 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       return { type: 'boolean' };
     }
     if ('compare' in expr) {
-      if (!['lt', 'le', 'gt', 'ge', 'eq', 'ne'].includes(expr.compare)) problems.push(`${where}: "${expr.compare}" is not a comparison`);
+      if (!COMPARE_OPS.includes(expr.compare)) problems.push(`${where}: "${expr.compare}" is not a comparison`);
       const left = shape(expr.left, `${where}.left`, options);
       const right = shape(expr.right, `${where}.right`, options);
       if (!fits(left, right)) problems.push(`${where}: compares ${said(left)} with ${said(right)}`);
-      const ordered = ['lt', 'le', 'gt', 'ge'].includes(expr.compare);
+      const ordered = ORDERED_OPS.includes(expr.compare);
       if (ordered && [left, right].some((side) => side.type === 'boolean' || side.type === 'string')) problems.push(`${where}: only numbers are above or below each other`);
       if ([left, right].some((side) => side.type === 'structure')) problems.push(`${where}: a list or an object is read by a function, not compared`);
       // An option the other side can never be is a mistake, not a condition.

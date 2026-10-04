@@ -2,6 +2,7 @@ import { isScalar, type ConfigSchema, type ScalarValue, type Value } from '@kraf
 
 import { inWindow, minutesOf } from './clock.ts';
 import type { Evaluation } from './functions.ts';
+import { exprKind, expressionsIn, mapChildren, type ExprOf } from './kinds/exprs.ts';
 import { EXPRESSION_FIELDS, fieldValue, withField } from './kinds/spec.ts';
 import { stepSpec } from './kinds/steps.ts';
 import { triggerSpec } from './kinds/triggers.ts';
@@ -51,6 +52,23 @@ const combine = (kind: 'all' | 'any', values: readonly Value[]): Value => {
   return !decisive;
 };
 
+const OPPOSITE: Readonly<Record<CompareOp, CompareOp>> = { lt: 'ge', le: 'gt', gt: 'le', ge: 'lt', eq: 'ne', ne: 'eq' };
+
+/**
+ * A condition's opposite, said as plainly as it can be: a comparison turned
+ * round, "all of" made "any of" the opposites, a "not" undone — so what is
+ * not so reads as what is: "the charge is at least 15 %", not "it is not so
+ * that the charge is below 15 %". Unknown stays unknown either way.
+ */
+export function negation(expr: Expr): Expr {
+  if ('not' in expr) return expr.not;
+  if ('compare' in expr) return { ...expr, compare: OPPOSITE[expr.compare] };
+  if ('all' in expr) return { any: expr.all.map(negation) };
+  if ('any' in expr) return { all: expr.any.map(negation) };
+  if ('value' in expr && typeof expr.value === 'boolean') return { value: !expr.value };
+  return { not: expr };
+}
+
 export const shown = (value: Value, unit = ''): string =>
   value === null
     ? 'unknown'
@@ -66,63 +84,86 @@ export const shown = (value: Value, unit = ''): string =>
 
 /**
  * An expression's value, or null when it cannot be known — and, in `trace`,
- * what it read and what each function said, in words.
+ * what it read and what each function said, in words. The functions it asks
+ * are asked first (the only part that waits), each with its arguments' values;
+ * then it is evaluated as `evaluateNow` evaluates, with their answers: one
+ * evaluator, whatever an expression holds.
  */
 export async function evaluate(expr: Expr, scope: RuleScope, trace: string[] = []): Promise<Value> {
-  if ('call' in expr) {
-    if (!scope.call) return null;
+  const answers = new Map<Expr, Value>();
+  for (const each of expressionsIn(expr)) {
+    if (!('call' in each) || answers.has(each)) continue;
+    if (!scope.call) {
+      answers.set(each, null);
+      continue;
+    }
     const args: Record<string, Value> = {};
-    for (const [name, arg] of Object.entries(expr.args ?? {})) args[name] = await evaluate(arg, scope, trace);
-    const answer = await scope.call(expr.call, expr.role, args);
+    for (const [name, arg] of Object.entries(each.args ?? {})) args[name] = await evaluate(arg, scope, trace);
+    const answer = await scope.call(each.call, each.role, args);
     if (answer.detail) trace.push(answer.detail);
-    return answer.value;
+    answers.set(each, answer.value);
   }
-  if ('compare' in expr) return compare(expr.compare, await evaluate(expr.left, scope, trace), await evaluate(expr.right, scope, trace));
-  if ('math' in expr) return calculate(expr.math, await evaluate(expr.left, scope, trace), await evaluate(expr.right, scope, trace));
-  if ('all' in expr || 'any' in expr) {
-    const parts = 'all' in expr ? expr.all : expr.any;
-    const values: Value[] = [];
-    for (const part of parts) values.push(await evaluate(part, scope, trace));
-    return combine('all' in expr ? 'all' : 'any', values);
-  }
-  if ('not' in expr) {
-    const value = await evaluate(expr.not, scope, trace);
-    return typeof value === 'boolean' ? !value : null;
-  }
-  return evaluateNow(expr, scope, trace);
+  return evaluateNow(expr, scope, trace, answers);
 }
 
-/** The same, for what needs no function: a `becomes` condition, evaluated on every reading. */
-export function evaluateNow(expr: Expr, scope: RuleScope, trace: string[] = []): Value {
-  if ('value' in expr) return expr.value;
-  if ('param' in expr) return scope.param(expr.param);
-  if ('read' in expr) {
-    const read = scope.read(expr.read.role, expr.read.means);
-    trace.push(`${scope.name(expr.read.role)}: ${read ? `${read.label} ${shown(read.value, read.unit)}` : `${expr.read.means} is not known`}`);
-    return read?.value ?? null;
+/**
+ * The same, now — for what is looked at on every reading, where nothing may
+ * wait: a function it asks is unknown here, unless `answers` has already
+ * asked it. Every kind of expression, or this does not compile.
+ */
+export function evaluateNow(expr: Expr, scope: RuleScope, trace: string[] = [], answers?: ReadonlyMap<Expr, Value>): Value {
+  const now = (inner: Expr) => evaluateNow(inner, scope, trace, answers);
+  const kind = exprKind(expr);
+  switch (kind) {
+    case 'value':
+      return (expr as ExprOf<'value'>).value;
+    case 'param':
+      return scope.param((expr as ExprOf<'param'>).param);
+    case 'read': {
+      const { role, means } = (expr as ExprOf<'read'>).read;
+      const read = scope.read(role, means);
+      trace.push(`${scope.name(role)}: ${read ? `${read.label} ${shown(read.value, read.unit)}` : `${means} is not known`}`);
+      return read?.value ?? null;
+    }
+    case 'reachable': {
+      const role = (expr as ExprOf<'reachable'>).reachable;
+      const { reachable, detail } = scope.reachable(role);
+      trace.push(`${scope.name(role)}: ${reachable ? 'can be reached' : `cannot be reached (${detail})`}`);
+      return reachable;
+    }
+    case 'run':
+      return scope.run?.((expr as ExprOf<'run'>).run) ?? null;
+    case 'within': {
+      const { from, to } = (expr as ExprOf<'within'>).within;
+      const clock = scope.clock();
+      const [start, end] = [minutesOf(now(from)), minutesOf(now(to))];
+      if (clock === null || start === null || end === null) return null;
+      trace.push(`It is ${clock}`);
+      return inWindow(minutesOf(clock)!, start, end);
+    }
+    case 'call':
+      return answers?.get(expr) ?? null;
+    case 'compare': {
+      const { compare: op, left, right } = expr as ExprOf<'compare'>;
+      return compare(op, now(left), now(right));
+    }
+    case 'math': {
+      const { math: op, left, right } = expr as ExprOf<'math'>;
+      return calculate(op, now(left), now(right));
+    }
+    case 'all':
+      return combine('all', (expr as ExprOf<'all'>).all.map(now));
+    case 'any':
+      return combine('any', (expr as ExprOf<'any'>).any.map(now));
+    case 'not': {
+      const value = now((expr as ExprOf<'not'>).not);
+      return typeof value === 'boolean' ? !value : null;
+    }
+    default: {
+      const unknown: never = kind;
+      throw new Error(`No way to evaluate an expression of kind ${String(unknown)}`);
+    }
   }
-  if ('reachable' in expr) {
-    const { reachable, detail } = scope.reachable(expr.reachable);
-    trace.push(`${scope.name(expr.reachable)}: ${reachable ? 'can be reached' : `cannot be reached (${detail})`}`);
-    return reachable;
-  }
-  if ('run' in expr) return scope.run?.(expr.run) ?? null;
-  if ('within' in expr) {
-    const now = scope.clock();
-    const [from, to] = [minutesOf(evaluateNow(expr.within.from, scope)), minutesOf(evaluateNow(expr.within.to, scope))];
-    if (now === null || from === null || to === null) return null;
-    trace.push(`It is ${now}`);
-    return inWindow(minutesOf(now)!, from, to);
-  }
-  if ('compare' in expr) return compare(expr.compare, evaluateNow(expr.left, scope, trace), evaluateNow(expr.right, scope, trace));
-  if ('math' in expr) return calculate(expr.math, evaluateNow(expr.left, scope, trace), evaluateNow(expr.right, scope, trace));
-  if ('all' in expr) return combine('all', expr.all.map((part) => evaluateNow(part, scope, trace)));
-  if ('any' in expr) return combine('any', expr.any.map((part) => evaluateNow(part, scope, trace)));
-  if ('not' in expr) {
-    const value = evaluateNow(expr.not, scope, trace);
-    return typeof value === 'boolean' ? !value : null;
-  }
-  return null; // a call: not here
 }
 
 /**
@@ -173,37 +214,49 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
    * copy reads as what it watches, never as a check of its own sliders.
    */
   function expr(given: Expr): Expr {
-    if ('param' in given) return { value: scope.param(given.param) };
-    if ('call' in given) return given.args ? { call: given.call, role: given.role, args: args(given.args) } : given;
-    if ('within' in given) return { within: { from: expr(given.within.from), to: expr(given.within.to) } };
-    if ('math' in given) {
-      const left = expr(given.left);
-      const right = expr(given.right);
-      // Settings alone: the number they make, written in.
-      if ('value' in left && 'value' in right) return { value: calculate(given.math, left.value, right.value) };
-      return { math: given.math, left, right };
+    // Its parts settled first, by the kind's own children (kinds/exprs.ts); then what they settle of it.
+    const settled = mapChildren(given, expr);
+    const kind = exprKind(settled);
+    const known = (each: Expr): each is ExprOf<'value'> => 'value' in each;
+    switch (kind) {
+      case 'param':
+        return { value: scope.param((settled as ExprOf<'param'>).param) };
+      // Settings alone: the number, or the answer, they make — written in.
+      case 'math': {
+        const { math: op, left, right } = settled as ExprOf<'math'>;
+        return known(left) && known(right) ? { value: calculate(op, left.value, right.value) } : settled;
+      }
+      case 'compare': {
+        const { left, right } = settled as ExprOf<'compare'>;
+        return known(left) && known(right) ? { value: evaluateNow(settled, scope) } : settled;
+      }
+      case 'all':
+      case 'any': {
+        const every = kind === 'all';
+        const parts = every ? (settled as ExprOf<'all'>).all : (settled as ExprOf<'any'>).any;
+        // One part decided against the rest decides it; one decided for it is no part at all.
+        if (parts.some((part) => known(part) && part.value === !every)) return { value: !every };
+        const open = parts.filter((part) => !(known(part) && part.value === every));
+        if (!open.length) return { value: every };
+        if (open.length === 1) return open[0]!;
+        return every ? { all: open } : { any: open };
+      }
+      case 'not': {
+        const inner = (settled as ExprOf<'not'>).not;
+        return known(inner) && typeof inner.value === 'boolean' ? { value: !inner.value } : settled;
+      }
+      case 'value':
+      case 'read':
+      case 'call':
+      case 'reachable':
+      case 'within':
+      case 'run':
+        return settled;
+      default: {
+        const unknown: never = kind;
+        throw new Error(`No way to settle an expression of kind ${String(unknown)}`);
+      }
     }
-    if ('compare' in given) {
-      const left = expr(given.left);
-      const right = expr(given.right);
-      if ('value' in left && 'value' in right) return { value: evaluateNow({ compare: given.compare, left, right }, scope) };
-      return { compare: given.compare, left, right };
-    }
-    if ('all' in given || 'any' in given) {
-      const every = 'all' in given;
-      const parts = (every ? given.all : given.any).map(expr);
-      // One part decided against the rest decides it; one decided for it is no part at all.
-      if (parts.some((part) => 'value' in part && part.value === !every)) return { value: !every };
-      const open = parts.filter((part) => !('value' in part && part.value === every));
-      if (!open.length) return { value: every };
-      if (open.length === 1) return open[0]!;
-      return every ? { all: open } : { any: open };
-    }
-    if ('not' in given) {
-      const inner = expr(given.not);
-      return 'value' in inner && typeof inner.value === 'boolean' ? { value: !inner.value } : { not: inner };
-    }
-    return given;
   }
   const steps = (list: readonly Step[] | undefined): Step[] =>
     (list ?? []).flatMap((step) => {

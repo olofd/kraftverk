@@ -268,3 +268,24 @@ do:
   - start: chargeTheScooter
     and wait: 10 min
 ```
+
+## Conditions and values — expressions
+
+An expression is written as text — `station.battery.soc < 15 %` — wherever
+a condition or a value goes. Unknown — a reading not given, a part not
+reached — is never taken for true.
+
+| Kind | Written | Is |
+|---|---|---|
+| A value | `50 W` · `"eco"` · `07:00` | A number — with its unit beside a reading, `50 W`, `15 %` — a time of day, `07:00`, text in quotes, `true` or `false`. |
+| A setting | `$low` | One of the rule’s settings, by its name: a recipe’s, before it is copied into an automation. |
+| A reading | `station.battery.soc` · `charger.power.draw` | What the part filling a role reports now, by what it means: a standard meaning, or a type’s own. Unknown when it has not said, or said too long ago. |
+| Can be reached | `charger reachable` | Whether the part filling a role can be reached now: its holder says it is connected. Never unknown — not being reachable is the answer. |
+| What the run knows | `run.trigger == "low"` | What the run knows of itself: `run.trigger`, the id of the trigger that started it — `""` when none with an id did. |
+| Time of day | `time between 23:00 and 05:00` | Whether the owner’s clock is between two times of day, from the first up to the second — across midnight when the second comes first. |
+| Ask a package | `call acme.weather.sunny(forecast, day = "tomorrow")` | A function a package contributes, over the part filling a role: what the forecast says of tomorrow, the price’s rank. Only where a run may wait for its answer. |
+| A comparison | `station.battery.soc < 15 %` | Two values compared: `<`, `<=`, `>`, `>=`, `==`, `!=`. Unknown when either is. |
+| Arithmetic | `station.battery.soc + 10 %` · `min(station.battery.soc, 80 %)` | A number from two, in one unit: their sum or difference, or the lower or higher of them. Unknown when either is. |
+| All of | `charger reachable and station.battery.soc < 50 %` | True when every part is: one false is enough to say no, and with none false, one unknown leaves it unknown. |
+| Any of | `station.battery.soc < 10 % or time between 23:00 and 05:00` | True when any part is: one true is enough, and with none true, one unknown leaves it unknown. |
+| Not | `not charger reachable` | True when its part is false, false when it is true; unknown stays unknown. |

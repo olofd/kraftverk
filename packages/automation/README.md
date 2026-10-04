@@ -175,6 +175,17 @@ and every retry a count.
 
 ## Conditions and values — expressions
 
+Each kind is described once in `src/kinds/exprs.ts` — the expressions it
+holds, how it is rebuilt with others in their place, its page in
+**[REFERENCE.md](REFERENCE.md)** — so what walks an expression walks it by
+these; what treats each kind its own way (the checker, the words, the text
+form, the one evaluator) is a switch over every kind, which does not compile
+with one left out. `evaluate` asks the functions an expression holds first —
+the only part that waits — then evaluates it as `evaluateNow` does, with
+their answers. A condition that is not so is said as its opposite
+(`negation`): "the charge is at least 15 %", not "it is not so that the
+charge is below 15 %".
+
 | Data | Text | Is |
 |---|---|---|
 | `value` | `50 W`, `15 %`, `07:00`, `"text"`, `true` | a value; a number in the unit of what it is compared with |

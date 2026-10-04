@@ -1,4 +1,5 @@
 import { secondsText } from '../describe.ts';
+import { EXPR_KIND_ORDER, EXPR_KINDS } from './exprs.ts';
 import type { FieldSpec } from './spec.ts';
 import { STEP_KIND_ORDER, STEP_KINDS, type StepSpec } from './steps.ts';
 import { TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './triggers.ts';
@@ -88,6 +89,20 @@ export function referenceMarkdown(): string {
     const spec = STEP_KINDS[kind] as unknown as StepSpec;
     const verbs = spec.text ? spec.text.verbs : [spec.fields[0]!.key];
     lines.push(...kindPage(`### ${verbs.map((verb) => `\`${verb}\``).join(', ')} — ${spec.label}`, spec.docs.summary, spec.fields, spec.docs.examples, 'do'));
+  }
+  lines.push(
+    '## Conditions and values — expressions',
+    '',
+    'An expression is written as text — `station.battery.soc < 15 %` — wherever',
+    'a condition or a value goes. Unknown — a reading not given, a part not',
+    'reached — is never taken for true.',
+    '',
+    '| Kind | Written | Is |',
+    '|---|---|---|'
+  );
+  for (const kind of EXPR_KIND_ORDER) {
+    const spec = EXPR_KINDS[kind];
+    lines.push(`| ${spec.label} | ${spec.docs.examples.map((example) => `\`${example}\``).join(' · ')} | ${spec.docs.summary} |`);
   }
   return `${lines.join('\n').trimEnd()}\n`;
 }

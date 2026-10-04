@@ -1,5 +1,5 @@
 import type { AutomationRun, RunLog, RunStep } from '@kraftverk/api-contract';
-import { branchesOf, capitalise, changedRoles, describeSteps, evaluate, evaluateNow, fieldValue, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, stepSpec, takesSteps, type Command, type Expr, type Rule, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
+import { branchesOf, capitalise, changedRoles, describeSteps, evaluate, evaluateNow, fieldValue, negation, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, stepSpec, takesSteps, type Command, type Expr, type Rule, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
 import { attributeMeaning, readingOf, type AutomationId } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
@@ -277,7 +277,7 @@ export class Runs {
         // In the words of what it asked — "Tomorrow looks cloudy: 90 % cloud" — or, with none, the condition's own.
         const said = trace.join('; ');
         if (condition === null) return over('unknown', said || `Could not tell whether ${this.#context.said(automation, rule, rule.if)}`);
-        if (condition !== true) return over('idle', said || `Not now: it is not so that ${this.#context.said(automation, rule, rule.if)}`);
+        if (condition !== true) return over('idle', said || `Not now: ${this.#context.said(automation, rule, negation(rule.if))}`);
       }
     } catch (error) {
       return over('failed', `Could not decide: ${(error as Error).message}`);

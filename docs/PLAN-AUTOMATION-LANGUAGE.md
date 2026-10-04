@@ -176,9 +176,12 @@ static checking, explanation, simulation/tests, verification, safety budgets.
 ## Order of work (each step green and pushed)
 
 1. A1 registry skeleton + exhaustive kinds; move one category (triggers) onto it
-   end to end (checker, words, YAML codec, schema, editor, engine).
+   end to end (checker, words, YAML codec, schema, editor, engine). *(Done
+   2026-10-04.)*
 2. A2 steps and expressions onto it; delete the hand-written schema and verb
-   tables; structured problems; durations in seconds; trigger state by id.
+   tables; durations in seconds; trigger state by id. *(Done 2026-10-04, with
+   the rule's shape in the database's fingerprint and one evaluator.
+   Structured problems moved to D2, where the editor places them.)*
 3. B1 types, units as dimensions, the new syntax and operators; function registry
    with built-ins; `setting.` / `run.` / `var.` namespaces.
 4. C1 settings kept on automations; variables and kept state; event payload.
@@ -186,7 +189,10 @@ static checking, explanation, simulation/tests, verification, safety budgets.
 6. C3 functions with inputs/results; history functions; sun/dates; throttle.
 7. C4 script step behind the `ScriptSandbox` port.
 8. D1 language service, YAML completion/lint, generated reference.
-9. D2 generated form editor, notes, inline problems, words templates.
+9. D2 generated form editor, notes, inline problems, words templates;
+   structured problems `{ path, message }` with each data path mapped to its
+   word in the file through the registry, so a problem sits on its field and
+   its YAML line.
 10. D3 traces, automation tests on the virtual clock, mobile sheet editor.
 
 ## Critical files

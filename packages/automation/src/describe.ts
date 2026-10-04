@@ -3,6 +3,7 @@ import { capabilitySpec, enumLabel, isCapability, standardMeaning, type ConfigSc
 import type { RuleVocabulary } from './check.ts';
 import { WEEKDAYS, type Weekday } from './clock.ts';
 import { evaluateNow, settledChoice, settledScope, shown } from './evaluate.ts';
+import { exprKind, type ExprOf } from './kinds/exprs.ts';
 import type { Say } from './kinds/spec.ts';
 import { branchesOf, stepSpec, type StepKind, type StepSay } from './kinds/steps.ts';
 import { TRIGGER_KINDS, triggerKind } from './kinds/triggers.ts';
@@ -89,25 +90,57 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
     const standard = 'read' in expr ? standardMeaning(expr.read.means) : null;
     return standard?.type === 'number' && !standard.units ? standard.unit : '';
   };
+  /** Every kind of expression in words — or this does not compile (kinds/exprs.ts). */
   const text = (expr: Expr, unit = ''): string => {
-    if ('value' in expr) return typeof expr.value === 'number' ? shown(expr.value, unit) : shown(expr.value);
-    if ('param' in expr) return param(expr.param);
-    // What it reports, not chosen yet: "a reading" rather than an empty name.
-    if ('read' in expr) return whose(name(expr.read.role), standardMeaning(expr.read.means)?.label.toLowerCase() || expr.read.means || 'reading');
-    if ('reachable' in expr) return `${name(expr.reachable)} can be reached`;
-    if ('run' in expr) return RUN_FACT_WORDS[expr.run] ?? `the run’s ${expr.run}`;
-    if ('within' in expr) return `it is between ${text(expr.within.from)} and ${text(expr.within.to)}`;
-    if ('math' in expr) {
-      // A plain number beside a reading is in its unit: "Garage station’s charge plus 10 %".
-      const in_ = unit || unitOf(expr);
-      const [left, right] = [text(expr.left, in_), text(expr.right, in_)];
-      return expr.math === 'add' ? `${left} plus ${right}` : expr.math === 'subtract' ? `${left} minus ${right}` : `the ${expr.math === 'min' ? 'lower' : 'higher'} of ${left} and ${right}`;
+    const kind = exprKind(expr);
+    switch (kind) {
+      case 'value': {
+        const { value } = expr as ExprOf<'value'>;
+        return typeof value === 'number' ? shown(value, unit) : shown(value);
+      }
+      case 'param':
+        return param((expr as ExprOf<'param'>).param);
+      case 'read': {
+        // What it reports, not chosen yet: "a reading" rather than an empty name.
+        const { role, means } = (expr as ExprOf<'read'>).read;
+        return whose(name(role), standardMeaning(means)?.label.toLowerCase() || means || 'reading');
+      }
+      case 'reachable':
+        return `${name((expr as ExprOf<'reachable'>).reachable)} can be reached`;
+      case 'run': {
+        const fact = (expr as ExprOf<'run'>).run;
+        return RUN_FACT_WORDS[fact] ?? `the run’s ${fact}`;
+      }
+      case 'within': {
+        const { from, to } = (expr as ExprOf<'within'>).within;
+        return `it is between ${text(from)} and ${text(to)}`;
+      }
+      case 'math': {
+        const math = expr as ExprOf<'math'>;
+        // A plain number beside a reading is in its unit: "Garage station’s charge plus 10 %".
+        const in_ = unit || unitOf(math);
+        const [left, right] = [text(math.left, in_), text(math.right, in_)];
+        return math.math === 'add' ? `${left} plus ${right}` : math.math === 'subtract' ? `${left} minus ${right}` : `the ${math.math === 'min' ? 'lower' : 'higher'} of ${left} and ${right}`;
+      }
+      case 'call': {
+        const call = expr as ExprOf<'call'>;
+        return `${vocabulary?.fn(call.call)?.label.toLowerCase() ?? call.call} by ${name(call.role)}`;
+      }
+      case 'compare': {
+        const comparison = expr as ExprOf<'compare'>;
+        return started(comparison) ?? chosen(comparison) ?? `${text(comparison.left, unitOf(comparison.right))} ${OP_WORDS[comparison.compare]} ${text(comparison.right, unitOf(comparison.left))}`;
+      }
+      case 'all':
+        return (expr as ExprOf<'all'>).all.map((part) => text(part)).join(' and ');
+      case 'any':
+        return (expr as ExprOf<'any'>).any.map((part) => text(part)).join(' or ');
+      case 'not':
+        return `it is not so that ${text((expr as ExprOf<'not'>).not)}`;
+      default: {
+        const unknown: never = kind;
+        throw new Error(`No words for an expression of kind ${String(unknown)}`);
+      }
     }
-    if ('call' in expr) return `${vocabulary?.fn(expr.call)?.label.toLowerCase() ?? expr.call} by ${name(expr.role)}`;
-    if ('compare' in expr) return started(expr) ?? chosen(expr) ??`${text(expr.left, unitOf(expr.right))} ${OP_WORDS[expr.compare]} ${text(expr.right, unitOf(expr.left))}`;
-    if ('all' in expr) return expr.all.map((part) => text(part)).join(' and ');
-    if ('any' in expr) return expr.any.map((part) => text(part)).join(' or ');
-    return `not (${text(expr.not)})`;
   };
   return text(expr);
 }

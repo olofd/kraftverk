@@ -2,6 +2,7 @@ import { CAPABILITIES, MAIN_PART, type CapabilityName } from '@kraftverk/device-
 
 import { WEEKDAYS, type Weekday } from '../clock.ts';
 import { ruleUses } from '../reads.ts';
+import { mapChildren } from '../kinds/exprs.ts';
 import { fieldValue, withField, type FieldSpec } from '../kinds/spec.ts';
 import { branchesOf, STEP_KIND_ORDER, STEP_KINDS, stepSpec, type StepKind, type StepReader, type StepSpec } from '../kinds/steps.ts';
 import { TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerSpec } from '../kinds/triggers.ts';
@@ -133,10 +134,8 @@ class Reader {
         const unit = beside ?? unitOfReading(each);
         return { ...each, left: visit(each.left, unit), right: visit(each.right, unit) };
       }
-      if ('all' in each) return { all: each.all.map((one) => visit(one, null)) };
-      if ('any' in each) return { any: each.any.map((one) => visit(one, null)) };
-      if ('not' in each) return { not: visit(each.not, null) };
-      return each;
+      // Anything else holds expressions that say no unit of their own: each read beside nothing (kinds/exprs.ts).
+      return mapChildren(each, (one) => visit(one, null));
     };
     return visit(expr, into);
   }

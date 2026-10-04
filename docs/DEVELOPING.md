@@ -49,7 +49,7 @@ off, it runs on its battery — and a simulated type can be set up as the
 device you mean (a P280's charge to start from, its packs, its load).
 
 **Time, simulated.** A second server runs beside it with its home's clock
-2000 times real time (`KRAFTVERK_CLOCK_RATE`, which a server that is not
+1000 times real time (`KRAFTVERK_CLOCK_RATE`, which a server that is not
 read-only refuses: every pause that protects a relay would be that much
 shorter too). Everything that keeps time keeps that one clock (`Clock`, in
 `@kraftverk/device-sdk`): the automation engine's holds and ticks, the
@@ -58,7 +58,10 @@ holder's looks at its devices, and the simulators' batteries. A test of what
 happens over hours lives through them in seconds, over the API (`fastServer`
 in `e2e/helpers.ts`): `keep-between.e2e.ts` keeps a simulated P280 between 5
 and 30 % through the plug that feeds it — 2-minute holds, two whole cycles,
-six hours — in about 12 seconds.
+six hours — in about 25 seconds. Faster runs it in less, but at 2000× a
+reading is fresh for only 30 ms of real time, and a busy machine (the
+pipeline's) can let one go stale: the gateway then rightly refuses to act
+on it.
 
 `npm run test:e2e` builds the app first (`E2E_SKIP_BUILD=1` reuses
 `client/dist`); `-- --headed` or `-- --ui` pass through to Playwright. The

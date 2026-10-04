@@ -23,6 +23,12 @@ import type { Weekday } from './clock.ts';
 
 export type CompareOp = 'lt' | 'le' | 'gt' | 'ge' | 'eq' | 'ne';
 
+/** Every comparison. */
+export const COMPARE_OPS: readonly CompareOp[] = ['lt', 'le', 'gt', 'ge', 'eq', 'ne'];
+
+/** The comparisons of order: only numbers are above or below each other. */
+export const ORDERED_OPS: readonly CompareOp[] = ['lt', 'le', 'gt', 'ge'];
+
 /** Something that has a value when a rule runs, or is unknown (null). */
 export type Expr =
   | { value: Value }

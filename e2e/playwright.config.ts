@@ -26,7 +26,7 @@ const API_PORT = 3398;
  * it through the API alone (`fastServer` in helpers.ts).
  */
 const FAST_API_PORT = 3399;
-const FAST_CLOCK_RATE = 2000;
+const FAST_CLOCK_RATE = 1000;
 const state = process.env.E2E_STATE_DIR ?? mkdtempSync(join(tmpdir(), 'kraftverk-e2e-'));
 process.env.E2E_STATE_DIR = state;
 process.env.E2E_FAST_API = `http://127.0.0.1:${FAST_API_PORT}`;

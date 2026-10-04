@@ -1,5 +1,6 @@
 import { capabilitySpec, isCapability, type CapabilityNeed } from '@kraftverk/device-sdk';
 
+import { expressionsIn } from './kinds/exprs.ts';
 import { EXPRESSION_FIELDS, fieldValue } from './kinds/spec.ts';
 import { branchesOf, stepSpec } from './kinds/steps.ts';
 import { triggerSpec } from './kinds/triggers.ts';
@@ -39,17 +40,15 @@ export function ruleUses(rule: Rule): {
   const writes: Write[] = [];
   const windows: { from: Expr; to: Expr }[] = [];
   const starts: string[] = [];
+  // Every expression within, by its kind's children (kinds/exprs.ts): the readings, parts, windows and functions it names.
   const walk = (expr: Expr | undefined): void => {
     if (!expr) return;
-    if ('read' in expr) reads.push(expr.read);
-    else if ('reachable' in expr) reaches.push(expr.reachable);
-    else if ('run' in expr) return;
-    else if ('within' in expr) (windows.push(expr.within), walk(expr.within.from), walk(expr.within.to));
-    else if ('call' in expr) (calls.push({ fn: expr.call, role: expr.role }), Object.values(expr.args ?? {}).forEach(walk));
-    else if ('compare' in expr || 'math' in expr) (walk(expr.left), walk(expr.right));
-    else if ('all' in expr) expr.all.forEach(walk);
-    else if ('any' in expr) expr.any.forEach(walk);
-    else if ('not' in expr) walk(expr.not);
+    for (const each of expressionsIn(expr)) {
+      if ('read' in each) reads.push(each.read);
+      else if ('reachable' in each) reaches.push(each.reachable);
+      else if ('within' in each) windows.push(each.within);
+      else if ('call' in each) calls.push({ fn: each.call, role: each.role });
+    }
   };
   // Each step by its kind's fields (kinds/steps.ts): what each reads, the automations it starts, and the steps within.
   const walkSteps = (steps: readonly Step[]): void => {
