@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
 import { inlineParams, startCharging, stopCharging, type Rule } from '@kraftverk/automation';
-import { MAIN_PART, savedDeviceId, type AuditRecord, type AutomationId, type DeviceDescription, type DeviceReader } from '@kraftverk/device-sdk';
+import { MAIN_PART, savedDeviceId, scaledClock, type AuditRecord, type AutomationId, type DeviceDescription, type DeviceReader } from '@kraftverk/device-sdk';
 import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent, type WriteResult } from '@kraftverk/gateway';
 import { LiveBus, type LiveMessage } from '@kraftverk/holder';
 
@@ -193,7 +193,7 @@ function setup(world: Partial<World> = {}) {
     },
     record: (entry) => recorded.push(entry),
     bus,
-    secondMs: SECOND_MS,
+    clock: scaledClock(1000 / SECOND_MS),
   });
   const roles = { supply: { device: STATION, part: 'outlet.ac' }, charger: { device: PLUG, part: MAIN_PART } };
   /** An automation copied from the recipe, its settings written into its blocks — as the app makes one. */

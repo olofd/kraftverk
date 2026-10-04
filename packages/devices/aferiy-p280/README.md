@@ -52,6 +52,12 @@ and in its protocol, where the next Sydpower model can build on it.
 - **Protocol diagnostics** — full register dumps, a snapshot/diff workflow for
   identifying unknown registers, and a live frame log, under the device's
   **Settings → Advanced**.
+- **A simulator set up as your station** — its charge to start from, its
+  expansion packs and the load on its AC outlets, chosen when a simulated one
+  is added. Plugged into a simulated plug (a `feeds` link to its mains
+  input), it charges while the plug is on and runs on its battery while it is
+  off; its battery keeps the home's clock, so a test runs hours of it in
+  seconds.
 - **A simulator**, so all of it works with no station present.
 
 <p align="center">

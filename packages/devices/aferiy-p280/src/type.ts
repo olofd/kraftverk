@@ -138,11 +138,11 @@ export default defineDeviceType({
       level: Number(set.level ?? 68),
       packs: Number(set.packs ?? 1),
       acLoadWatts: Number(set.acLoadWatts ?? 145),
-      speed: world?.speed ?? 1,
+      clock: ctx.clock,
       // Plugged into a simulated plug, its mains is that plug: on, it charges; off, it runs on its battery.
       fed: () => world?.fed('input.ac') ?? null,
-      // Sped up, what it reports is news at every step, not at the holder's next look.
-      onTick: (world?.speed ?? 1) > 1 ? () => ctx.changed() : undefined,
+      // What it reports is news at every step, not at the holder's next look: on a fast clock, a step is a minute.
+      onTick: () => ctx.changed(),
     });
     station.start();
     const mains = mainsWatcher((event) => ctx.event(event, undefined, 'input.ac'));

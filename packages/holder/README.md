@@ -15,7 +15,10 @@ holding ways for it — runs the same code.
   device; fails over from one down too long. `SessionManager` keeps one
   session for every device its holder holds: which connections are its own
   is the holder's to say (`holds`), and it retries what can mend itself and
-  publishes what devices say on the `LiveBus`.
+  publishes what devices say on the `LiveBus`. Keeps the home's clock — its
+  looks, a device's schedule and what it stamps — and hands a simulator its
+  world: what it was set up with, and what feeds it (`fed`, answered by
+  whoever keeps the links).
 - **Does not:** keep anything (the store's, through small ports), decide
   what a home has (it is told), know any product or transport, or send a
   command (the gateway's).

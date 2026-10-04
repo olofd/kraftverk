@@ -97,7 +97,13 @@ Work through `src/type.ts` in this order:
    and whether it writes. Whoever holds the device checks the input before a
    tool runs and the answer after; the app can draw any of them.
 7. **The simulator.** `createSimulator(ctx)` keeps the same contract with no
-   hardware. Tests use it, and so does "try without hardware".
+   hardware. Tests use it, and so does "try without hardware". It keeps the
+   home's time — `ctx.clock` for what it stamps and whatever changes with
+   time, `ctx.schedule` for its steps — so a test on a fast clock lives a day
+   of it in seconds. What it can be set up with is the type's `simulation`
+   fields, chosen when a simulated one is added (`ctx.simulation.config`);
+   `ctx.simulation.fed(part)` says whether a simulated switch that feeds one
+   of its parts gives it power now.
 8. **Tests.** `test/contract.test.ts` runs `checkDeviceTypeContract`; pass it
    fake connections from `@kraftverk/device-sdk/testing` (`fakeByteChannel`,
    `fakeMessageChannel`) to check `identify` against scripted bytes.

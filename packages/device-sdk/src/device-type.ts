@@ -1,5 +1,6 @@
 import type { CapabilityId, CommandResult } from './capabilities.ts';
 import type { CategoryId } from './categories.ts';
+import type { Clock } from './clock.ts';
 import { methodsOf, type ConnectionMethod, type Identified, type OpenConnection } from './connection.ts';
 import { deviceCapabilities, type DeviceDescription, type DeviceInfo, type Reading } from './description.ts';
 import type { SessionHealth } from './health.ts';
@@ -100,10 +101,9 @@ export interface DeviceType<Config extends ConfigValues = ConfigValues> {
    */
   createSimulator(ctx: DeviceContext<Config>): Promise<DeviceSession>;
   /**
-   * What its simulator can be set up with, beside how fast its world runs
-   * (`SIMULATION_CONFIG`): a station's charge to start from. Chosen when a
-   * simulated one is added, as any way's own choices are; its simulator
-   * reads them in `ctx.simulation.config`.
+   * What its simulator can be set up with: a station's charge to start
+   * from. Chosen when a simulated one is added, as any way's own choices
+   * are; its simulator reads them in `ctx.simulation.config`.
    */
   readonly simulation?: ConfigSchema;
 
@@ -246,18 +246,12 @@ export type DeviceStore = {
 export type ScopedHttp = (url: string, init?: RequestInit & { timeoutMs?: number }) => Promise<Response>;
 
 /**
- * The world a simulator runs in: how fast its time goes, what it was set up
- * with, and what it is fed by — so simulated devices behave as a home of
- * them would, together, and a day of it can pass in minutes.
+ * The world a simulator runs in: what it was set up with, and what it is fed
+ * by — so simulated devices behave as a home of them would, together. Its
+ * time is the home's clock (`DeviceContext.clock`), which a test runs fast.
  */
 export interface Simulation {
-  /**
-   * How many times faster than real time its world runs: 1 is real time,
-   * 60 an hour a minute. What changes with time — a battery filling and
-   * draining — changes that much faster; its schedule does not.
-   */
-  readonly speed: number;
-  /** What it was set up with: `SIMULATION_CONFIG`'s fields and its type's `simulation`, validated, defaults applied. */
+  /** What it was set up with: its type's `simulation` fields, validated, defaults applied. */
   readonly config: ConfigValues;
   /**
    * Whether what feeds one of its parts is giving it power now: a simulated
@@ -277,6 +271,13 @@ export interface DeviceContext<Config extends ConfigValues = ConfigValues> {
   readonly connection: OpenConnection | null;
   /** The world a simulator runs in; null for a real device. */
   readonly simulation: Simulation | null;
+  /**
+   * The home's time: what a session stamps what it reports with, and what
+   * `schedule` keeps. Real time, except in a test that runs a home of
+   * simulated devices fast — where a simulator's battery fills and drains
+   * by this clock, so the home and its devices keep one time.
+   */
+  readonly clock: Clock;
   readonly store: DeviceStore;
   readonly log: DeviceLogger;
   /** Every hardware write is refused. A session must honour it too. */

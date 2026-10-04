@@ -12,8 +12,10 @@ keeps the library of recipes and functions the installed packages bring.
 
 - **Does:** run automations — their triggers, their steps, a person's play
   and stop — and judge each step on readings taken since the run last
-  changed something; keep every run and its log through its storage port;
-  rehearse; gather the installed contributions into a library.
+  changed something; tell each run which trigger started it (`run.trigger`);
+  keep every run and its log through its storage port; rehearse; gather the
+  installed contributions into a library. Its ticks, holds, pauses and
+  stamps keep the clock it is given — the home's, or a test's.
 - **Does not:** keep anything itself (`AutomationStorage` is a port the
   store fills), reach a device but through `EngineDevice`, or send a
   command but through the gateway. It names no database and no product.

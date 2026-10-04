@@ -562,10 +562,10 @@ function simulatedSession(ctx: DeviceContext<SocketConfig>, profiles: readonly S
   let on = ctx.store.get<boolean>('simulator.on') ?? true;
   let kwh = ctx.store.get<number>('simulator.kwh') ?? 0;
   const values: Record<string, Value> = ctx.store.get<Record<string, Value>>('simulator.values') ?? {};
-  let at = new Date().toISOString();
+  let at = new Date(ctx.clock.now()).toISOString();
   const watts = 240;
   ctx.schedule(1000, () => {
-    at = new Date().toISOString();
+    at = new Date(ctx.clock.now()).toISOString();
     if (on) {
       kwh += watts / 3_600_000;
       ctx.store.set('simulator.kwh', kwh);
@@ -596,7 +596,7 @@ function simulatedSession(ctx: DeviceContext<SocketConfig>, profiles: readonly S
       if (raw !== undefined) values[point.key] = datapointValue(point, { [String(point.dp)]: raw });
     }
     ctx.store.set('simulator.values', values);
-    at = new Date().toISOString();
+    at = new Date(ctx.clock.now()).toISOString();
   };
   const live = profile.refresh ? liveOf(ctx, profile.refresh, send, () => ({ [String(profile.refresh!.dp)]: refreshing })) : null;
   return socketSession({

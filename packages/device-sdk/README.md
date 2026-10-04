@@ -19,7 +19,11 @@ dependencies.
   `settingsForms`). `validateDeviceType` and the contract suite every
   package runs (`@kraftverk/device-sdk/testing`).
 - **Declares the ports packages are handed:** a device's own store, a
-  transport's store, a scoped HTTP client.
+  transport's store, a scoped HTTP client, and the home's `Clock` — real
+  time, or a `scaledClock` a test of simulated devices runs fast — which a
+  device's context carries, with a simulator's world (`Simulation`: what it
+  was set up with, the type's `simulation` fields; whether a simulated switch
+  that feeds one of its parts gives it power).
 - **Does not:** run anything, hold a device, keep anything, or know any
   product. Automations are `@kraftverk/automation`'s, not the contract's: a
   package that brings recipes imports that language beside this.

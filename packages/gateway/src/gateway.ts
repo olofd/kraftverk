@@ -10,6 +10,9 @@ import {
   isScalar,
   linkKindSpec,
   MAIN_PART,
+  REAL_CLOCK,
+  sleep,
+  type Clock,
   partsOf,
   partName,
   readingOf,
@@ -242,12 +245,12 @@ export type GatewayDeps = {
   /** True when writes to this device are refused: every hardware write, when read-only. A simulated device has no hardware. */
   isReadOnly: (deviceId: SavedDeviceId) => boolean;
   /**
-   * How many times faster than real time a device's world runs: a
-   * simulator's speed; 1 — or absent — for hardware. The time a part is
-   * given between switches is in its own time: ten minutes for a simulated
-   * plug at 300× is two seconds.
+   * The home's time: what a pause between switches, how old a reading may
+   * be and how long a switch is given to show are measured by, and what the
+   * ledger stamps. Real time when not given; a test of simulated devices runs
+   * it fast, on a server where nothing reaches hardware.
    */
-  timeScale?: (deviceId: SavedDeviceId) => number;
+  clock?: Clock;
   /** What read-only is called where this node runs: a server's mode, or an app's switch. */
   readOnlyReason?: string;
   /**
@@ -330,6 +333,15 @@ export class ActionGateway {
    * never resumed. Let go when the run ends.
    */
   #runSwitches = new Map<string, Map<string, number>>();
+
+  /** The home's time. */
+  get #clock(): Clock {
+    return this.#deps.clock ?? REAL_CLOCK;
+  }
+
+  #now(): number {
+    return this.#clock.now();
+  }
 
   constructor(deps: GatewayDeps) {
     this.#deps = deps;
@@ -427,13 +439,13 @@ export class ActionGateway {
   }
 
   async #execute(intent: CommandIntent): Promise<GatewayResult | { verify: () => Promise<GatewayResult> }> {
-    const at = new Date().toISOString();
+    const at = new Date(this.#now()).toISOString();
     const device = this.#deps.device(intent.deviceId);
     const partLabel = device ? (partsOf(device.description).find((part) => part.id === intent.part)?.label ?? intent.part) : intent.part;
     const argsShown = Object.values(intent.args).map(shown).join(', ');
     const what = `${intent.part === MAIN_PART ? intent.capability : partLabel} ${argsShown}`.trim();
     const note = (kind: string, summary: string, detail?: unknown) =>
-      this.#record({ at: new Date().toISOString(), kind, actor: intent.by, resourceKind: 'device', resource: intent.deviceId, summary, detail });
+      this.#record({ at: new Date(this.#now()).toISOString(), kind, actor: intent.by, resourceKind: 'device', resource: intent.deviceId, summary, detail });
     const refuse = (detail: string, extra: Partial<GatewayResult> = {}): GatewayResult => {
       this.#record({ at, kind: 'command.refused', actor: intent.by, resourceKind: 'device', resource: intent.deviceId, summary: `${what} refused: ${detail}`, detail: intent });
       return { outcome: 'refused', detail, ...extra };
@@ -471,7 +483,7 @@ export class ActionGateway {
     if (this.#deps.isReadOnly(intent.deviceId)) return refuse(this.#deps.readOnlyReason ?? 'Every write to hardware is refused here: read-only');
 
     const key = this.#key(intent);
-    const sinceLast = Date.now() - this.#lastSwitchAt(intent);
+    const sinceLast = this.#now() - this.#lastSwitchAt(intent);
     // Within a run that already switched this part: its allowance, held to the gateway's own gap and ceiling.
     const inRun = intent.run ? (this.#runSwitches.get(intent.run.id)?.get(key) ?? 0) : 0;
     if (intent.run && inRun > 0) {
@@ -483,8 +495,7 @@ export class ActionGateway {
     } else {
       // A run switches first as whoever asked for it would: a person as a person, an assistant as an assistant.
       const actor = intent.run?.askedBy ?? intent.actor;
-      const scale = Math.max(1, this.#deps.timeScale?.(intent.deviceId) ?? 1);
-      const dwell = (actor === 'automation' ? this.#policy.automationDwellMs : actor === 'agent' ? this.#policy.agentDwellMs : this.#policy.personDwellMs) / scale;
+      const dwell = actor === 'automation' ? this.#policy.automationDwellMs : actor === 'agent' ? this.#policy.agentDwellMs : this.#policy.personDwellMs;
       if (this.#lastSwitchAt(intent) > 0 && sinceLast < dwell) {
         // Said as what it is: a pause that protects the relay and what it feeds, and how long is left of it.
         return refuse(`Too soon: it was switched ${Math.round(sinceLast / 1000)} s ago, and is given ${Math.round(dwell / 1000)} s between switches. Try again in ${Math.ceil((dwell - sinceLast) / 1000)} s`);
@@ -574,12 +585,12 @@ export class ActionGateway {
     });
 
     // 6. Exactly one command.
-    this.#ledger.switched(intent.deviceId, intent.part, { at: Date.now(), by: intent.by });
+    this.#ledger.switched(intent.deviceId, intent.part, { at: this.#now(), by: intent.by });
     if (intent.run) {
       const counts = this.#runSwitches.get(intent.run.id) ?? new Map<string, number>();
       this.#runSwitches.set(intent.run.id, counts.set(key, inRun + 1));
     }
-    const sentAt = Date.now();
+    const sentAt = this.#now();
     let result: Awaited<ReturnType<typeof session.command>>;
     try {
       result = await this.#within(session.command({ part: intent.part, capability: intent.capability, command: intent.command, args: intent.args }), device.name);
@@ -668,10 +679,10 @@ export class ActionGateway {
 
   /** Waits for `check`, looking at what is cached — cheap, so often enough to answer soon. */
   async #eventually(check: () => boolean): Promise<boolean> {
-    const deadline = Date.now() + this.#policy.verifyTimeoutMs;
-    while (Date.now() < deadline) {
+    const deadline = this.#now() + this.#policy.verifyTimeoutMs;
+    while (this.#now() < deadline) {
       if (check()) return true;
-      await new Promise((resolve) => setTimeout(resolve, Math.min(1_000, this.#policy.verifyTimeoutMs / 5)));
+      await sleep(this.#clock, Math.min(1_000, this.#policy.verifyTimeoutMs / 5));
     }
     return check();
   }
@@ -693,7 +704,7 @@ export class ActionGateway {
     const device = this.#deps.device(intent.deviceId);
     const keys = Object.keys(intent.patch);
     const refuse = (detail: string, extra: Partial<WriteResult> = {}): WriteResult => {
-      this.#record({ at: new Date().toISOString(), kind: 'settings.refused', actor: intent.by, resourceKind: 'device', resource: intent.deviceId, summary: `Changing ${keys.join(', ')} refused: ${detail}` });
+      this.#record({ at: new Date(this.#now()).toISOString(), kind: 'settings.refused', actor: intent.by, resourceKind: 'device', resource: intent.deviceId, summary: `Changing ${keys.join(', ')} refused: ${detail}` });
       return { outcome: 'refused', detail, ...extra };
     };
 
@@ -719,7 +730,7 @@ export class ActionGateway {
     // A setting written moments ago is still settling: one write per setting per dwell, whoever asks.
     const writeDwell = intent.actor === 'automation' ? this.#policy.automationDwellMs : intent.actor === 'agent' ? this.#policy.agentDwellMs : this.#policy.userWriteDwellMs;
     const settling = keys
-      .map((key) => ({ key, since: Date.now() - (this.#ledger.lastWrite(intent.deviceId, key)?.at ?? 0) }))
+      .map((key) => ({ key, since: this.#now() - (this.#ledger.lastWrite(intent.deviceId, key)?.at ?? 0) }))
       .find(({ since }) => since < writeDwell);
     if (settling) return refuse(`Too soon: ${writable.get(settling.key)!.label} was changed ${Math.round(settling.since / 1000)} s ago; ${Math.ceil((writeDwell - settling.since) / 1000)} s of the dwell time remains`);
 
@@ -734,7 +745,7 @@ export class ActionGateway {
     }
 
     const note = (kind: string, summary: string, detail?: unknown) =>
-      this.#record({ at: new Date().toISOString(), kind, actor: intent.by, resourceKind: 'device', resource: intent.deviceId, summary, detail });
+      this.#record({ at: new Date(this.#now()).toISOString(), kind, actor: intent.by, resourceKind: 'device', resource: intent.deviceId, summary, detail });
     // The timeline in the words the screens use: "Brightness to 8", "After a power cut to Stay off".
     const described = keys
       .map((key) => {
@@ -752,8 +763,8 @@ export class ActionGateway {
     note('settings.intent', `${device.name}: changing ${described}`, { patch: changed });
 
     let values: Readonly<Record<string, Value>>;
-    const writtenAt = Date.now();
-    const settlingMs = () => Math.max(0, writeDwell - (Date.now() - writtenAt));
+    const writtenAt = this.#now();
+    const settlingMs = () => Math.max(0, writeDwell - (this.#now() - writtenAt));
     for (const key of keys) this.#ledger.wrote(intent.deviceId, key, { at: writtenAt, by: intent.by });
     try {
       values = await this.#within(session.write(changed), device.name);
@@ -779,6 +790,6 @@ export class ActionGateway {
   #ageOf(iso: string | null): number {
     if (iso === null) return Number.POSITIVE_INFINITY;
     const at = new Date(iso).getTime();
-    return Number.isFinite(at) ? Date.now() - at : Number.POSITIVE_INFINITY;
+    return Number.isFinite(at) ? this.#now() - at : Number.POSITIVE_INFINITY;
   }
 }

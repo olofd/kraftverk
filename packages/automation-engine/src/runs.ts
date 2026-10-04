@@ -334,7 +334,7 @@ export class Runs {
       run.summary = 'Running';
       live.id = run.id = this.deps.store.beginRun(automation.id, run);
       this.#live.set(automation.id, live);
-      live.log = listen(live, { ...this.deps, now: () => this.#context.now() }, () => ++this.#order);
+      live.log = listen(live, { ...this.deps, clock: this.#context.clock }, () => ++this.#order);
       this.#moved(live);
     } else {
       live.id = `once-${automation.id}-${at.getTime()}`;
@@ -780,14 +780,14 @@ export class Runs {
   #sleep(live: LiveRun, seconds: number, regardless: boolean, over?: Promise<unknown>): Promise<'slept' | 'stopped'> {
     return new Promise((resolve) => {
       const done = (outcome: 'slept' | 'stopped') => {
-        clearTimeout(timer);
+        this.#context.clock.clear(timer);
         live.wake.delete(stop);
         resolve(outcome);
       };
       const stop = () => {
         if (!regardless) done('stopped');
       };
-      const timer = setTimeout(() => done('slept'), seconds * (this.deps.secondMs ?? 1000));
+      const timer = this.#context.clock.setTimeout(() => done('slept'), seconds * 1000);
       live.wake.add(stop);
       over?.then(
         () => done('slept'),
@@ -799,7 +799,7 @@ export class Runs {
   /** Keeps what a condition reads fresh while a step waits on it: its holders ask their devices more often, until then. */
   #freshen(live: LiveRun, condition: Expr, seconds: number): void {
     const { reads, reaches } = ruleUses({ ...live.rule, when: [], then: [{ waitUntil: { condition, atMostSeconds: { value: 1 } } }], otherwise: [] });
-    const until = Date.now() + seconds * 1000 + 5_000;
+    const until = this.#context.clock.now() + seconds * 1000 + 5_000;
     for (const role of new Set([...reads.map((read) => read.role), ...reaches])) {
       const binding = live.automation.roles[role];
       const device = binding ? this.deps.device(binding) : null;
@@ -815,7 +815,7 @@ export class Runs {
 
   /** A run changed something — switched a part, changed a setting: what it judges after is judged on what it hears after. */
   #changed(live: LiveRun): void {
-    live.changedAt = Date.now();
+    live.changedAt = this.#context.clock.now();
     live.changedOrder = ++this.#order;
   }
 
@@ -863,13 +863,13 @@ export class Runs {
   /** Waits until a condition is true, looking every second: at most `seconds`, or until the run is stopped. */
   async #until(live: LiveRun, condition: Expr, seconds: number): Promise<{ outcome: 'met' | 'timed-out' | 'stopped'; seconds: number; saw: string }> {
     this.#freshen(live, condition, seconds);
-    const started = Date.now();
-    const unit = this.deps.secondMs ?? 1000;
+    const started = this.#context.clock.now();
+    const unit = 1000;
     for (;;) {
       const saw: string[] = [];
       // Met only on readings taken since the run last changed something.
       const holds = this.#readSince(live, condition) ? evaluateNow(condition, this.#context.scope(live.automation, live.rule, undefined, live.trigger), saw) : null;
-      const elapsed = (Date.now() - started) / unit;
+      const elapsed = (this.#context.clock.now() - started) / unit;
       // What it judged on is in the log, as it was when it judged: the same readings, read at once.
       live.log?.look();
       if (holds === true) return { outcome: 'met', seconds: elapsed, saw: [...new Set(saw)].join('; ') };
@@ -882,17 +882,17 @@ export class Runs {
   /** Watches a condition for `seconds`: held if it is true every time it is looked at; not, the moment it is not — or cannot be told. */
   async #hold(live: LiveRun, condition: Expr, seconds: number, regardless: boolean): Promise<{ outcome: 'held' | 'broke' | 'stopped'; seconds: number; saw: string }> {
     this.#freshen(live, condition, seconds + SETTLE_AT_MOST_SECONDS);
-    const unit = this.deps.secondMs ?? 1000;
+    const unit = 1000;
     // Watched from the first readings taken since the run last changed something — or, if none come, from when it gave up waiting for them.
-    const settling = Date.now();
-    while (!this.#readSince(live, condition) && (Date.now() - settling) / unit < SETTLE_AT_MOST_SECONDS) {
+    const settling = this.#context.clock.now();
+    while (!this.#readSince(live, condition) && (this.#context.clock.now() - settling) / unit < SETTLE_AT_MOST_SECONDS) {
       if ((await this.#sleep(live, LOOK_EVERY_SECONDS, regardless)) === 'stopped') return { outcome: 'stopped', seconds: 0, saw: '' };
     }
-    const started = Date.now();
+    const started = this.#context.clock.now();
     for (;;) {
       const saw: string[] = [];
       const holds = evaluateNow(condition, this.#context.scope(live.automation, live.rule, undefined, live.trigger), saw);
-      const elapsed = (Date.now() - started) / unit;
+      const elapsed = (this.#context.clock.now() - started) / unit;
       live.log?.look();
       if (holds !== true) return { outcome: 'broke', seconds: elapsed, saw: [...new Set(saw)].join('; ') };
       if (elapsed >= seconds) return { outcome: 'held', seconds: elapsed, saw: [...new Set(saw)].join('; ') };

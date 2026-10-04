@@ -1,6 +1,6 @@
 import type { AutomationRun } from '@kraftverk/api-contract';
 import type { AutomationMode, RoleBinding, Rule, RulePart } from '@kraftverk/automation';
-import type { AuditRecord, AutomationId, CapabilityId, DeviceDescription } from '@kraftverk/device-sdk';
+import type { AuditRecord, AutomationId, CapabilityId, Clock, DeviceDescription } from '@kraftverk/device-sdk';
 import type { ActionGateway } from '@kraftverk/gateway';
 import type { LiveBus } from '@kraftverk/holder';
 
@@ -71,11 +71,13 @@ export type AutomationEngineDeps = {
   record: (entry: AuditRecord) => void;
   /** What devices say as they say it: events and readings start runs; and where a run in progress is said to have moved. */
   bus?: LiveBus;
-  now?: () => Date;
-  /** How often it looks at what is due by the clock. */
+  /**
+   * The home's time: what its triggers, holds, pauses and runs keep, and
+   * what it stamps. Real time when not given; a test's own — fixed, or fast.
+   */
+  clock?: Clock;
+  /** How often it looks at what is due by the clock, in the clock's time. */
   everyMs?: number;
-  /** How long a second of a step is: a second, but shorter in tests. */
-  secondMs?: number;
 };
 
 /** How the gateway's audit and memory name what an automation did: by its id, which a rename does not change. */

@@ -1,4 +1,4 @@
-import { validateConfig, type DeviceStore } from '@kraftverk/device-sdk';
+import { REAL_CLOCK, validateConfig, type Clock, type ClockTimer, type DeviceStore } from '@kraftverk/device-sdk';
 import type {
   PortId,
   PortState,
@@ -68,8 +68,8 @@ function checked(settings: StationSettings): StationSettings | null {
 
 /**
  * What a simulated station is set up with (the type's `simulation`), and the
- * world it runs in: how fast its time goes, and whether what feeds its mains
- * input gives it power.
+ * world it runs in: the home's clock, and whether what feeds its mains input
+ * gives it power.
  */
 export type SimulatedStationOptions = {
   /** Its charge to start from, in %. */
@@ -78,8 +78,8 @@ export type SimulatedStationOptions = {
   packs?: number;
   /** What its AC outlets supply, on average: a load plugged into it. */
   acLoadWatts?: number;
-  /** How many times faster than real time it runs: its battery fills and drains that much faster. */
-  speed?: number;
+  /** The home's time: its battery fills and drains by it, and what it reports is stamped with it. Real time when not given. */
+  clock?: Clock;
   /**
    * Whether what feeds its mains input gives it power now — a simulated plug
    * it is plugged into — or null when nothing simulated does: then mains is
@@ -96,7 +96,7 @@ export class SimulatedStation implements StationSource {
   #level: number;
   #expansion: number[];
   #acLoadWatts: number;
-  #speed: number;
+  #clock: Clock;
   #fed: () => boolean | null;
   #onTick: () => void;
   #ports: Record<PortId, { enabled: boolean; watts: number }> = {
@@ -107,8 +107,8 @@ export class SimulatedStation implements StationSource {
   };
   #gridConnected = true;
   #solarWatts = 0;
-  #lastTick = Date.now();
-  #timer: ReturnType<typeof setInterval> | null = null;
+  #lastTick: number;
+  #timer: ClockTimer | null = null;
 
   /** `store` keeps its settings between runs; without one they last as long as it does. */
   constructor(store: DeviceStore | null = null, options: SimulatedStationOptions = {}) {
@@ -117,7 +117,8 @@ export class SimulatedStation implements StationSource {
     this.#expansion = Array.from({ length: Math.max(0, Math.round(options.packs ?? 1)) }, () => 82.5);
     this.#acLoadWatts = Math.max(0, options.acLoadWatts ?? 145);
     this.#ports.ac.watts = this.#acLoadWatts;
-    this.#speed = Math.max(1, options.speed ?? 1);
+    this.#clock = options.clock ?? REAL_CLOCK;
+    this.#lastTick = this.#clock.now();
     this.#fed = options.fed ?? (() => null);
     this.#onTick = options.onTick ?? (() => {});
   }
@@ -125,8 +126,8 @@ export class SimulatedStation implements StationSource {
   start(): void {
     const saved = this.#store?.get<StationSettings>(SETTINGS_KEY);
     if (saved) this.#settings = checked({ ...DEFAULTS, ...saved }) ?? { ...DEFAULTS };
-    // Sped up, it steps more often: a world an hour a second still moves a little at a time.
-    this.#timer = setInterval(() => this.#tick(), this.#speed > 1 ? 100 : 1000);
+    // A step a second of the home's time: on a fast clock, as often as it runs.
+    this.#timer = this.#clock.setInterval(() => this.#tick(), 1000);
   }
 
   /** Whether mains reaches it now: what feeds it, when something simulated does; else as last said. */
@@ -135,13 +136,13 @@ export class SimulatedStation implements StationSource {
   }
 
   stop(): void {
-    if (this.#timer) clearInterval(this.#timer);
+    this.#clock.clear(this.#timer);
     this.#timer = null;
   }
 
   #tick(): void {
-    const now = Date.now();
-    const hours = ((now - this.#lastTick) * this.#speed) / 3_600_000;
+    const now = this.#clock.now();
+    const hours = (now - this.#lastTick) / 3_600_000;
     this.#lastTick = now;
 
     for (const [id, port] of Object.entries(this.#ports) as [PortId, { enabled: boolean; watts: number }][]) {
@@ -205,7 +206,7 @@ export class SimulatedStation implements StationSource {
       watts: this.#ports[id].watts,
     }));
 
-    const now = new Date().toISOString();
+    const now = new Date(this.#clock.now()).toISOString();
     return {
       name: 'Aferiy Powerstation',
       model: MODEL,

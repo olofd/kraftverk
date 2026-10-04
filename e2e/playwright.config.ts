@@ -18,8 +18,19 @@ import { defineConfig, devices } from '@playwright/test';
 const ROOT = resolve(import.meta.dirname, '..');
 const WEB_PORT = 4398;
 const API_PORT = 3398;
+/**
+ * A second server, its home's clock 1000 times real time: a home of simulated
+ * devices lived through in seconds — a day of a station charging and
+ * draining, holds of minutes — for the tests of what happens over time.
+ * Read-only, as a fast clock must be; a database of its own. Its tests reach
+ * it through the API alone (`fastServer` in helpers.ts).
+ */
+const FAST_API_PORT = 3399;
+const FAST_CLOCK_RATE = 2000;
 const state = process.env.E2E_STATE_DIR ?? mkdtempSync(join(tmpdir(), 'kraftverk-e2e-'));
 process.env.E2E_STATE_DIR = state;
+process.env.E2E_FAST_API = `http://127.0.0.1:${FAST_API_PORT}`;
+process.env.E2E_FAST_CLOCK_RATE = String(FAST_CLOCK_RATE);
 
 export default defineConfig({
   testDir: '.',
@@ -55,6 +66,21 @@ export default defineConfig({
         READ_ONLY: '1',
         BROKER_SPAWN: '0',
         ALLOWED_ORIGINS: `http://127.0.0.1:${WEB_PORT}`,
+      },
+    },
+    {
+      command: 'node scripts/run-bun.mjs server/src/index.ts',
+      cwd: ROOT,
+      url: `http://127.0.0.1:${FAST_API_PORT}/api/health`,
+      reuseExistingServer: false,
+      timeout: 60_000,
+      env: {
+        PORT: String(FAST_API_PORT),
+        KRAFTVERK_DB: join(state, 'fast.db'),
+        KRAFTVERK_LOG_DIR: join(state, 'fast-logs'),
+        READ_ONLY: '1',
+        BROKER_SPAWN: '0',
+        KRAFTVERK_CLOCK_RATE: String(FAST_CLOCK_RATE),
       },
     },
     {

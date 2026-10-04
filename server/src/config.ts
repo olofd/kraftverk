@@ -35,6 +35,14 @@ export type ServerConfig = {
    * bringing up an unfamiliar unit. The protocol's guard still applies.
    */
   allowRawFrames: boolean;
+  /**
+   * How many times faster than real time the home's clock runs
+   * (`KRAFTVERK_CLOCK_RATE`): 1, real time. Faster lets a home of simulated
+   * devices live a day in a minute — for its tests — and is refused unless
+   * the server is read-only, since every pause that protects a relay is that
+   * much shorter too.
+   */
+  clockRate: number;
   /** Origins allowed to call the API from a browser with credentials. */
   allowedOrigins: string[];
   /** Public names this server answers to (`KRAFTVERK_ALLOWED_HOSTS`, and the hosts of those origins). */
@@ -59,6 +67,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     host: env.HOST ?? '0.0.0.0',
     readOnly: argv.includes('--read-only') || env.READ_ONLY === '1',
     allowRawFrames: env.ALLOW_RAW_FRAMES === '1',
+    clockRate: Number(env.KRAFTVERK_CLOCK_RATE || 1),
     allowedOrigins: allowedOrigins(env.ALLOWED_ORIGINS),
     allowedHosts: allowedHosts(env),
     development: env.NODE_ENV !== 'production',

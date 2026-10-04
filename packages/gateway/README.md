@@ -15,7 +15,9 @@ it, and it decides, sends, and checks what the device then says.
   keeps a dwell between switches; sends, then verifies against what the
   device reports — and against the station a plug feeds; writes every act to
   the timeline. Its memory of the last switch and write is a port it
-  declares (`GatewayLedger`), the store's to keep.
+  declares (`GatewayLedger`), the store's to keep. Its pauses, how fresh a
+  reading must be and how long a switch is given to show are measured on
+  the home's clock (`clock`); only a send's own time limit is real time.
 - **Does not:** open a device (the holder does), know any product, or keep
   anything itself. It never guesses: a command it cannot verify says so.
 

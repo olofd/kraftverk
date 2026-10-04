@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
 import { defineFunction, defineRecipe, inlineParams } from '@kraftverk/automation';
-import { MAIN_PART, savedDeviceId, zonedInstant, type AuditRecord, type DeviceDescription, type DeviceReader, type Value } from '@kraftverk/device-sdk';
+import { MAIN_PART, REAL_CLOCK, savedDeviceId, zonedInstant, type AuditRecord, type DeviceDescription, type DeviceReader, type Value } from '@kraftverk/device-sdk';
 import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
 
@@ -210,7 +210,8 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
     },
     record: (entry) => recorded.push(entry),
     bus,
-    now: () => now,
+    // A fixed time the test moves on, with real timers.
+    clock: { ...REAL_CLOCK, now: () => now.getTime() },
   });
   const library = new AutomationLibrary(KIT, () => {});
   /** An automation copied from one of the kit's recipes, its settings written into its blocks — as the app makes one. */

@@ -1,5 +1,5 @@
 import { AutomationEngine, AutomationLibrary } from '@kraftverk/automation-engine';
-import type { AuditRecord, PolicyValueName, PolicyValues, ScopedHttp } from '@kraftverk/device-sdk';
+import type { AuditRecord, Clock, PolicyValueName, PolicyValues, ScopedHttp } from '@kraftverk/device-sdk';
 import type { Caller, KraftverkApi } from '@kraftverk/api-contract';
 import { ActionGateway, Confirmations, type GatewayPolicy } from '@kraftverk/gateway';
 import { LiveBus, SessionManager } from '@kraftverk/holder';
@@ -55,6 +55,12 @@ export type HubOptions = {
   readOnly: () => boolean;
   /** What that is called here, in a refusal: "The server is in read-only mode", "Writes from this app are off". */
   readOnlyReason?: string;
+  /**
+   * The home's time: what its devices, the gateway and the automations keep.
+   * Real time when not given; faster only where every write to hardware is
+   * refused — every pause that protects a relay is that much shorter too.
+   */
+  clock?: Clock;
   /** Frames nobody has described may be sent, by a type's raw-frame tool. Never in an app. */
   allowRawFrames?: boolean;
   /** For a setup helper that calls a vendor's API once — fetching a key. */
@@ -153,6 +159,8 @@ export class Hub {
   #started = false;
 
   constructor(options: HubOptions) {
+    // A fast clock shortens every pause that protects a relay: only where nothing reaches hardware.
+    if ((options.clock?.rate ?? 1) > 1 && !options.readOnly()) throw new Error(`A clock ${options.clock!.rate} times real time runs only where every write to hardware is refused (read-only)`);
     const db = options.database;
     this.db = db;
     this.installed = options.installed;
@@ -170,7 +178,7 @@ export class Hub {
 
     // What every node is made of, as the master: the ways held by its id, its devices' own stores, its own timeline.
     const parts = nodeParts(
-      { database: db, secrets: options.secrets, installed: options.installed, node: options.node, readOnly: options.readOnly, readOnlyReason: options.readOnlyReason, http: options.http, log: this.#log },
+      { database: db, secrets: options.secrets, installed: options.installed, node: options.node, readOnly: options.readOnly, readOnlyReason: options.readOnlyReason, http: options.http, log: this.#log, clock: options.clock },
       {
         tag: 'devices',
         record,
@@ -211,7 +219,7 @@ export class Hub {
 
     /** What the installed packages bring to automations: their recipes and functions. None of the core's own. */
     this.library = new AutomationLibrary(types.contributions(), (message) => this.#log('warn', message));
-    this.engine = new AutomationEngine({ store: automations, library: this.library, device: homeDevices(catalog, sessions), gateway: this.gateway, record, bus: this.bus });
+    this.engine = new AutomationEngine({ store: automations, library: this.library, device: homeDevices(catalog, sessions), gateway: this.gateway, record, bus: this.bus, clock: options.clock });
     this.drafts = drafts({ history: this.history, events, catalog, sessions, library: this.library, engine: this.engine, automations });
 
     this.heldReadings = new HeldReadings(this.history);

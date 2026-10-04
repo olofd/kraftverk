@@ -1,5 +1,5 @@
 import type { RunLogKey, RunLogReach, RunLogReading, RunLogRole } from '@kraftverk/api-contract';
-import { MAIN_PART, quantityOf, unitOf, type DeviceDescription, type Reading } from '@kraftverk/device-sdk';
+import { MAIN_PART, quantityOf, unitOf, type Clock, type DeviceDescription, type Reading } from '@kraftverk/device-sdk';
 
 import type { AutomationEngineDeps, EngineDevice } from './model.ts';
 import type { LiveRun } from './runs.ts';
@@ -17,7 +17,7 @@ export const LOOK_EVERY_SECONDS = 1;
 export const READINGS_PER_RUN = 20_000;
 
 /** What a run's log reads, and where it is kept: the parts, the runs, what devices say, and the clock. */
-export type ListenDeps = Pick<AutomationEngineDeps, 'device' | 'bus' | 'secondMs'> & { store: Pick<AutomationStorage, 'recordLog' | 'get'>; now: () => Date };
+export type ListenDeps = Pick<AutomationEngineDeps, 'device' | 'bus'> & { store: Pick<AutomationStorage, 'recordLog' | 'get'>; clock: Clock };
 
 /**
  * Keeps the run's log (docs/SEQUENCES.md): the devices and roles it uses as
@@ -57,7 +57,7 @@ export function listen(live: LiveRun, deps: ListenDeps, order: () => number): { 
   let kept = 0;
   /** What one device says now — some of its readings, or all — and whether it can be reached: what is new of it, kept. */
   const hear = (id: string, device: EngineDevice, readings: readonly Reading[], reachable: { reachable: boolean; detail: string } | null) => {
-    const heardAt = deps.now().toISOString();
+    const heardAt = new Date(deps.clock.now()).toISOString();
     const log: { keys: RunLogKey[]; readings: RunLogReading[]; reach: RunLogReach[] } = { keys: [], readings: [], reach: [] };
     if (reachable) {
       const said = `${reachable.reachable} ${reachable.detail}`;
@@ -95,11 +95,11 @@ export function listen(live: LiveRun, deps: ListenDeps, order: () => number): { 
     if (message.kind === 'readings') hear(message.deviceId, device, message.readings, null);
     else hear(message.deviceId, device, [], device.reachable());
   });
-  const timer = setInterval(look, LOOK_EVERY_SECONDS * (deps.secondMs ?? 1000));
+  const timer = deps.clock.setInterval(look, LOOK_EVERY_SECONDS * 1000);
   return {
     look,
     stop: () => {
-      clearInterval(timer);
+      deps.clock.clear(timer);
       unsubscribe?.();
       look();
     },

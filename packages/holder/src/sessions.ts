@@ -1,10 +1,13 @@
 import {
   attributeMeaning,
   isSimulated,
+  REAL_CLOCK,
   methodOf,
   readingOf,
   type Availability,
   type AuditRecord,
+  type Clock,
+  type ClockTimer,
   type ConnectionMethod,
   type ConnectionHealth,
   type DescriptionSource,
@@ -135,6 +138,8 @@ export type SessionManagerDeps = {
    * simulated does. Whoever keeps the links answers.
    */
   fed?: (deviceId: SavedDeviceId, part: string) => boolean | null;
+  /** The home's time: what its looks at its devices, and their sessions, keep. Real time when not given. */
+  clock?: Clock;
   log?: (message: string) => void;
 };
 
@@ -164,10 +169,14 @@ export class SessionManager {
   #refusals = new Map<SavedDeviceId, Refusal>();
   /** When each connection went down, and which have failed over and are passed over for a while. */
   #failover = new Failover();
+  /** The home's time: what its devices' sessions keep, and its looks at them. */
+  get #clock(): Clock {
+    return this.deps.clock ?? REAL_CLOCK;
+  }
   #records = new Map<SavedDeviceId, HolderDevice>();
   #syncing: Promise<unknown> = Promise.resolve();
-  #watch: ReturnType<typeof setInterval> | null = null;
-  #pulse: ReturnType<typeof setInterval> | null = null;
+  #watch: ClockTimer | null = null;
+  #pulse: ClockTimer | null = null;
   /** What was last published, so only what moved is published again. */
   #changes = new ReadingChanges();
   #published = new Map<SavedDeviceId, { key: string; at: number }>();
@@ -222,13 +231,6 @@ export class SessionManager {
     return open !== undefined && isSimulated(open.connection);
   }
 
-  /** How many times faster than real time a device's world runs: its simulated way's speed; 1 for hardware, or one not open. */
-  speed(deviceId: SavedDeviceId): number {
-    const open = this.#open.get(deviceId);
-    const speed = open && isSimulated(open.connection) ? Number(open.connection.config.speed ?? 1) : 1;
-    return Number.isFinite(speed) && speed >= 1 ? speed : 1;
-  }
-
   /** What an open device reports now for a meaning on one of its parts — a plug's `switch.on` — or null: not open, or saying nothing of it. */
   reads(deviceId: SavedDeviceId, part: string, means: string): Value {
     const open = this.#open.get(deviceId);
@@ -249,7 +251,7 @@ export class SessionManager {
     if (open) return open.opened.health();
     const refusal = this.#refusals.get(record.id);
     // Coarse, so a health that says it does not change every second.
-    const wait = refusal?.retryAt ? refusal.retryAt - Date.now() : null;
+    const wait = refusal?.retryAt ? refusal.retryAt - this.#clock.now() : null;
     const again = wait === null ? '' : wait <= 45_000 ? '; trying again in under a minute' : `; trying again in ${Math.round(wait / 60_000)} min`;
     return {
       status: refusal?.status ?? 'offline',
@@ -303,10 +305,8 @@ export class SessionManager {
     await Promise.all([...wanted.values()].filter(({ record }) => !this.#open.has(record.id)).map(({ record, connection }) => this.#openDevice(record, connection)));
 
     // Nobody waits on a check: what goes wrong is said, never left unhandled.
-    this.#watch ??= setInterval(() => void this.check().catch((error: unknown) => this.deps.log?.(`checking the sessions failed: ${(error as Error).message}`)), WATCH_MS);
-    (this.#watch as { unref?: () => void }).unref?.();
-    this.#pulse ??= setInterval(() => this.pulse(), PULSE_MS);
-    (this.#pulse as { unref?: () => void }).unref?.();
+    this.#watch ??= this.#clock.setInterval(() => void this.check().catch((error: unknown) => this.deps.log?.(`checking the sessions failed: ${(error as Error).message}`)), WATCH_MS);
+    this.#pulse ??= this.#clock.setInterval(() => this.pulse(), PULSE_MS);
     this.deps.onChange?.();
   }
 
@@ -343,7 +343,7 @@ export class SessionManager {
     const health = this.health(record);
     const key = `${health.status}|${health.detail}|${health.node}|${health.transport}`;
     const last = this.#published.get(deviceId);
-    const now = Date.now();
+    const now = this.#clock.now();
     const stale = health.lastReadingAt !== null && last !== undefined && now - last.at >= HEALTH_REFRESH_MS;
     if (last?.key === key && !stale) return;
     this.#published.set(deviceId, { key, at: now });
@@ -432,6 +432,7 @@ export class SessionManager {
           this.deps.bus?.publish({ kind: 'event', deviceId: record.id, event });
         },
         fed: (part) => this.deps.fed?.(record.id, part) ?? null,
+        clock: this.#clock,
       });
 
       const entry: Open = { opened, connection, fingerprint: this.#fingerprint(record, connection), detach: () => {} };
@@ -464,7 +465,7 @@ export class SessionManager {
     }
     const attempts = tried + 1;
     const wait = RETRY_MS[Math.min(attempts, RETRY_MS.length) - 1]!;
-    this.#refusals.set(deviceId, { ...refusal, attempts, retryAt: Date.now() + wait });
+    this.#refusals.set(deviceId, { ...refusal, attempts, retryAt: this.#clock.now() + wait });
   }
 
   /**
@@ -483,7 +484,7 @@ export class SessionManager {
       // The address now leads somewhere else: nothing it says is this device's.
       await this.close(deviceId);
       this.#refusals.set(deviceId, { status: 'error', detail: `That connection reaches a different device (${said}), not the one you added` });
-      this.deps.record?.({ at: new Date().toISOString(), kind: 'device.mismatch', actor: this.deps.node.name, resourceKind: 'device', resource: deviceId, summary: `${record.name}'s connection reaches ${said} instead`, detail: { expected: record.identity } });
+      this.deps.record?.({ at: new Date(this.#clock.now()).toISOString(), kind: 'device.mismatch', actor: this.deps.node.name, resourceKind: 'device', resource: deviceId, summary: `${record.name}'s connection reaches ${said} instead`, detail: { expected: record.identity } });
       this.deps.onChange?.();
       return false;
     }
@@ -500,7 +501,7 @@ export class SessionManager {
    * been down too long, and tries again to open a device whose refusal can
    * mend itself. Run by a timer; a test runs it directly, and may say when "now" is.
    */
-  async check(now = Date.now()): Promise<void> {
+  async check(now = this.#clock.now()): Promise<void> {
     // A device refused for what can mend itself — a transport not up at boot — is tried again when due.
     let changed = [...this.#refusals.values()].some((refusal) => refusal.retryAt !== undefined && refusal.retryAt <= now);
     for (const [id, open] of [...this.#open]) {
@@ -531,8 +532,8 @@ export class SessionManager {
   }
 
   async closeAll(): Promise<void> {
-    if (this.#watch) clearInterval(this.#watch);
-    if (this.#pulse) clearInterval(this.#pulse);
+    this.#clock.clear(this.#watch);
+    this.#clock.clear(this.#pulse);
     this.#watch = null;
     this.#pulse = null;
     await Promise.all([...this.#open.keys()].map((id) => this.close(id)));

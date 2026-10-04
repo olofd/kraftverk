@@ -2,10 +2,13 @@ import {
   checkValue,
   isSimulated,
   openChannel,
+  REAL_CLOCK,
   SIMULATED_TRANSPORT,
   simulatedMethodOf,
   validateConfig,
   type Channel,
+  type Clock,
+  type ClockTimer,
   type ConnectionHealth,
   type DeviceContext,
   type DescriptionSource,
@@ -75,6 +78,8 @@ export type OpenInput = {
    * simulated does. Who knows the links answers; without it, nothing feeds.
    */
   fed?: (part: string) => boolean | null;
+  /** The home's time: its context's clock, which its scheduled work keeps. Real time when not given. */
+  clock?: Clock;
   timeoutMs?: number;
 };
 
@@ -123,10 +128,11 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
   const config = validateConfig(type.config, device.config);
   if (!config.ok) throw new OpenRefused(`Needs setting up: ${config.issues.map((issue) => issue.message).join('; ')}`, 'unconfigured');
 
-  const timers: ReturnType<typeof setInterval>[] = [];
+  const clock = input.clock ?? REAL_CLOCK;
+  const timers: ClockTimer[] = [];
   let channel: Channel | null = null;
   const stop = () => {
-    for (const timer of timers.splice(0)) clearInterval(timer);
+    for (const timer of timers.splice(0)) clock.clear(timer);
   };
 
   try {
@@ -153,12 +159,12 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
     let session: DeviceSession | null = null;
     const describe = (): DeviceDescription => session?.description?.() ?? declared;
 
-    // A simulator's world: how fast it runs and what it was set up with, by its simulated way's own choices.
+    // A simulator's world: what it was set up with, by its simulated way's own choices, and what feeds it.
     let simulation: Simulation | null = null;
     if (!connection) {
-      const setUp = validateConfig(simulatedMethodOf(type).config!, input.connection?.config ?? {});
+      const setUp = validateConfig(simulatedMethodOf(type).config ?? { fields: {} }, input.connection?.config ?? {});
       if (!setUp.ok) throw new OpenRefused(`Needs setting up: ${setUp.issues.map((issue) => issue.message).join('; ')}`, 'unconfigured');
-      simulation = { speed: Number(setUp.value.speed ?? 1), config: setUp.value, fed: (part) => input.fed?.(part) ?? null };
+      simulation = { config: setUp.value, fed: (part) => input.fed?.(part) ?? null };
     }
 
     const context: DeviceContext = {
@@ -166,6 +172,7 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
       config: config.value,
       connection,
       simulation,
+      clock,
       store: input.store,
       log: input.log,
       readOnly: input.readOnly,
@@ -174,7 +181,7 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
       schedule: (everyMs, task) => {
         let running = false;
         timers.push(
-          setInterval(() => {
+          clock.setInterval(() => {
             // Skipped, not queued: a device that stops answering must not
             // build a backlog of polls that all fire when it comes back.
             if (running) return;
@@ -204,7 +211,7 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
           input.log.warn(`raised "${id}" with "${wrong[0]}", which it does not declare as that`);
           return;
         }
-        input.event?.({ id, level: spec.level, part: part ?? spec.part ?? null, data: data ?? null, at: new Date().toISOString() });
+        input.event?.({ id, level: spec.level, part: part ?? spec.part ?? null, data: data ?? null, at: new Date(clock.now()).toISOString() });
       },
     };
 

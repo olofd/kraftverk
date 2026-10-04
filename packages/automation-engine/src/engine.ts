@@ -1,5 +1,6 @@
 import type { StepLine } from '@kraftverk/automation';
 import type { AutomationRun, ConditionState, RunLog } from '@kraftverk/api-contract';
+import type { ClockTimer } from '@kraftverk/device-sdk';
 import type { LiveMessage } from '@kraftverk/holder';
 
 import { RuleContext } from './context.ts';
@@ -52,7 +53,7 @@ export { quoted } from './words.ts';
  * and its runs (`Runs`), each with its log (`listen.ts`).
  */
 export class AutomationEngine {
-  #timer: ReturnType<typeof setInterval> | null = null;
+  #timer: ClockTimer | null = null;
   #unsubscribe: (() => void) | null = null;
   readonly #context: RuleContext;
   readonly #runs: Runs;
@@ -67,12 +68,12 @@ export class AutomationEngine {
   start(): void {
     this.#runs.endInterrupted();
     // Nobody waits on a tick or on what was heard: what goes wrong is said, never left to bring the server down.
-    this.#timer ??= setInterval(() => void this.tick().catch((error) => console.error('[automations] a tick failed:', error)), this.deps.everyMs ?? 30_000);
+    this.#timer ??= this.#context.clock.setInterval(() => void this.tick().catch((error) => console.error('[automations] a tick failed:', error)), this.deps.everyMs ?? 30_000);
     this.#unsubscribe ??= this.deps.bus?.subscribe((message) => void this.hear(message).catch((error) => console.error('[automations] hearing a device failed:', error))) ?? null;
   }
 
   stop(): void {
-    if (this.#timer) clearInterval(this.#timer);
+    this.#context.clock.clear(this.#timer);
     this.#timer = null;
     this.#unsubscribe?.();
     this.#unsubscribe = null;

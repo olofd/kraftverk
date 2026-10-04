@@ -35,3 +35,4 @@ export * from './device-type.ts';
 export * from './setup.ts';
 export * from './validate.ts';
 export * from './time.ts';
+export * from './clock.ts';

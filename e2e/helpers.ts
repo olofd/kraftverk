@@ -1,4 +1,8 @@
-import { expect, type APIRequestContext, type Page } from '@playwright/test';
+import { randomBytes } from 'node:crypto';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { expect, request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test';
 
 /**
  * What the tests do more than once. Devices are added through the Simulated
@@ -30,6 +34,27 @@ export async function addSimulated(request: APIRequestContext, typeId: string, n
   await call(`/setup/${draft.id}/check`, 'POST');
   const saved = await call(`/setup/${draft.id}/save`, 'POST', { name });
   return { id: saved.id, name: saved.name };
+}
+
+/**
+ * The second server, whose home's clock runs fast (playwright.config.ts),
+ * signed in: its first account made by the first test to ask, with a password
+ * made for this run alone and kept in its state directory; any later test
+ * signs in with it. What it says over the API, in the time it keeps.
+ */
+export async function fastServer(): Promise<{ api: APIRequestContext; rate: number }> {
+  const api = await playwrightRequest.newContext({ baseURL: process.env.E2E_FAST_API!, extraHTTPHeaders: HEADERS });
+  const kept = join(process.env.E2E_STATE_DIR!, 'fast-account.json');
+  if (!existsSync(kept)) {
+    const credentials = { username: 'e2e-fast', password: randomBytes(18).toString('base64url') };
+    writeFileSync(kept, JSON.stringify(credentials));
+    const made = await api.post('/api/auth/setup', { data: credentials });
+    expect(made.ok(), `the fast server's first account: ${await made.text()}`).toBe(true);
+  } else {
+    const signed = await api.post('/api/auth/login', { data: JSON.parse(readFileSync(kept, 'utf8')) });
+    expect(signed.ok(), `signing in to the fast server: ${await signed.text()}`).toBe(true);
+  }
+  return { api, rate: Number(process.env.E2E_FAST_CLOCK_RATE) };
 }
 
 /** Records that one part feeds another. */

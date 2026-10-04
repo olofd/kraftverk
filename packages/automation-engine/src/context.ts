@@ -1,6 +1,6 @@
 import type { ConditionState } from '@kraftverk/api-contract';
 import { capitalise, checkBinding, describeExpr, describeSteps, evaluate, evaluateNow, isAutomationRole, partRoles, secondsText, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type StepLine, type Write } from '@kraftverk/automation';
-import { attributeMeaning, capabilityIn, clockTime, isCurrent, isScalar, readingOf, standardMeaning, unitOf, type CapabilityName, type Value } from '@kraftverk/device-sdk';
+import { attributeMeaning, capabilityIn, clockTime, isCurrent, isScalar, readingOf, REAL_CLOCK, standardMeaning, unitOf, type CapabilityName, type Clock, type Value } from '@kraftverk/device-sdk';
 
 import type { AutomationEngineDeps, AutomationRecord, EngineDevice } from './model.ts';
 import { quoted } from './words.ts';
@@ -22,7 +22,7 @@ export type PlannedWrite = { binding: RoleBinding; key: string; value: Value };
 export type Planned = { command: PlannedAction } | { write: PlannedWrite };
 
 /** What the context reads: the automations, the installed functions, the parts, and the clock. */
-export type ContextDeps = Pick<AutomationEngineDeps, 'store' | 'library' | 'device' | 'now'>;
+export type ContextDeps = Pick<AutomationEngineDeps, 'store' | 'library' | 'device' | 'clock'>;
 
 export class RuleContext {
   constructor(private deps: ContextDeps) {}
@@ -235,8 +235,13 @@ export class RuleContext {
     return planned;
   }
 
-  /** Now, by the engine's clock: a test's own. */
+  /** The engine's clock: the home's, or a test's own. */
+  get clock(): Clock {
+    return this.deps.clock ?? REAL_CLOCK;
+  }
+
+  /** Now, by the engine's clock. */
   now(): Date {
-    return this.deps.now?.() ?? new Date();
+    return new Date(this.clock.now());
   }
 }

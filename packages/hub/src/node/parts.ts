@@ -1,4 +1,4 @@
-import { LINK_KINDS, type AuditRecord, type ScopedHttp } from '@kraftverk/device-sdk';
+import { LINK_KINDS, type AuditRecord, type Clock, type ScopedHttp } from '@kraftverk/device-sdk';
 import { ActionGateway, type GatewayDeps } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, type SessionManagerDeps } from '@kraftverk/holder';
 import { ConnectionStore, databaseLedger, DeviceCatalog, HomeSettings, LinkStore, NodeStore, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
@@ -33,6 +33,8 @@ export type NodeOptions = {
   /** For a setup helper that calls a vendor's API once — fetching a key. */
   http: ScopedHttp;
   log: (level: 'info' | 'warn' | 'error', message: string) => void;
+  /** The home's time: what its devices, the gateway and the automations keep. Real time when not given. */
+  clock?: Clock;
 };
 
 /** What a node's role decides of its parts: the master's, and a follower's, differ only in these. */
@@ -90,6 +92,7 @@ export function nodeParts(options: NodeOptions, role: NodeRole): NodeParts {
     unfit: (method) => unfitFor(method, self),
     readOnly: options.readOnly,
     allowRawFrames: false,
+    clock: options.clock,
     // A simulated switch that feeds a part of a simulated device is its mains, as the link says: on, power; off, none.
     fed: (deviceId, part): boolean | null => {
       const { evidence } = LINK_KINDS.feeds;
@@ -108,8 +111,7 @@ export function nodeParts(options: NodeOptions, role: NodeRole): NodeParts {
     ...role.gateway({ catalog, sessions }),
     ...(options.readOnlyReason ? { readOnlyReason: options.readOnlyReason } : {}),
     isReadOnly: (id) => options.readOnly() && !sessions.simulated(id),
-    // A simulated device's time runs as fast as its world does.
-    timeScale: (id) => sessions.speed(id),
+    clock: options.clock,
     record: (entry) => role.record(entry),
     ledger: databaseLedger(db),
   });

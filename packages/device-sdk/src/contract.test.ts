@@ -175,9 +175,8 @@ describe('validating a declaration', () => {
   test('simulated is every type’s own way, and no type declares it', () => {
     const type = plug();
     expect(methodsOf(type).map((method) => method.id)).toEqual([...type.connections.map((method) => method.id), SIMULATED_METHOD_ID]);
-    // Its own: chosen with how fast its world runs, and whatever its simulator is set up with.
-    expect(methodOf(type, SIMULATED_METHOD_ID)).toEqual(simulatedMethodOf(type));
-    expect(simulatedMethodOf(type).config?.fields.speed).toMatchObject({ type: 'number', min: 1, default: 1 });
+    // Its own: chosen with whatever its simulator is set up with, when anything.
+    expect(methodOf(type, SIMULATED_METHOD_ID)).toBe(SIMULATED_METHOD);
     expect(simulatedMethodOf({ ...type, simulation: { fields: { level: { type: 'number', title: 'Starts at', default: 50 } } } }).config?.fields).toHaveProperty('level');
     expect(isSimulated(SIMULATED_METHOD)).toBe(true);
     expect(describeDeviceType(type).connections.at(-1)).toMatchObject({ id: 'simulated', label: 'Simulated' });

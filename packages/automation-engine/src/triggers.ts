@@ -1,5 +1,5 @@
 import { capitalise, describeTriggers, evaluateNow, EVERY_MINUTES, HOLD_MINUTES, readsRole, runsOn, secondsText, slotOf, takesSteps, type NamedTrigger, type Rule, type Trigger } from '@kraftverk/automation';
-import { dayAfter, localTime, MAIN_PART, zonedInstant } from '@kraftverk/device-sdk';
+import { dayAfter, localTime, MAIN_PART, zonedInstant, type ClockTimer } from '@kraftverk/device-sdk';
 import type { LiveMessage } from '@kraftverk/holder';
 
 import type { RuleContext } from './context.ts';
@@ -22,7 +22,7 @@ const GRACE_MS = 60 * 60_000;
 export class Triggers {
   #ticking = false;
   /** Each `becomes` trigger's state, read once from the store, and its hold when one is waiting it out. */
-  #becoming = new Map<string, { state: TriggerState; hold: ReturnType<typeof setTimeout> | null }>();
+  #becoming = new Map<string, { state: TriggerState; hold: ClockTimer | null }>();
   /** Which automations each device's messages concern, by store revision: not every automation for every reading. */
   #index: { revision: number; byDevice: Map<string, AutomationRecord[]> } | null = null;
   readonly #context: RuleContext;
@@ -41,14 +41,14 @@ export class Triggers {
   forget(automationId: string): void {
     for (const [key, entry] of this.#becoming) {
       if (!key.startsWith(`${automationId}:`)) continue;
-      if (entry.hold) clearTimeout(entry.hold);
+      this.#context.clock.clear(entry.hold);
       this.#becoming.delete(key);
     }
   }
 
   /** Lets go of every condition and hold, and reads again what concerns each device: the automations were emptied beneath it. */
   clear(): void {
-    for (const entry of this.#becoming.values()) if (entry.hold) clearTimeout(entry.hold);
+    for (const entry of this.#becoming.values()) this.#context.clock.clear(entry.hold);
     this.#becoming.clear();
     this.#index = null;
   }
@@ -62,7 +62,7 @@ export class Triggers {
   reset(automationId: string): void {
     for (const [key, entry] of this.#becoming) {
       if (!key.startsWith(`${automationId}:`)) continue;
-      if (entry.hold) clearTimeout(entry.hold);
+      this.#context.clock.clear(entry.hold);
       this.#becoming.delete(key);
     }
     this.deps.store.startAfresh(automationId, this.#context.now().toISOString());
@@ -210,7 +210,7 @@ export class Triggers {
     const keep = () => this.deps.store.keepTrigger(automation.id, index, state);
 
     if (!now) {
-      if (entry.hold) clearTimeout(entry.hold);
+      this.#context.clock.clear(entry.hold);
       entry.hold = null;
       if (state.last || state.heldSince || state.fired) {
         Object.assign(state, { last: false, heldSince: null, fired: false });
@@ -245,14 +245,14 @@ export class Triggers {
     const remaining = minutes > 0 ? since + minutes * 60_000 - this.#context.now().getTime() : 0;
     // Its time is up by the engine's own clock — the timer's may not have come yet, or a test's clock ran ahead.
     if (remaining <= 0) {
-      if (entry.hold) clearTimeout(entry.hold);
+      this.#context.clock.clear(entry.hold);
       entry.hold = null;
       fire(minutes > 0 ? `${said}, for ${secondsText(minutes * 60)}` : said);
       return;
     }
     // Already waiting it out.
     if (entry.hold) return;
-    entry.hold = setTimeout(() => {
+    entry.hold = this.#context.clock.setTimeout(() => {
       entry.hold = null;
       try {
         // Still true, all this time? Only then.
@@ -263,7 +263,6 @@ export class Triggers {
         console.error(`[automations] ${automation.id} could not fire after its hold:`, error);
       }
     }, remaining);
-    (entry.hold as { unref?: () => void }).unref?.();
   }
 
   #dueAt(automation: AutomationRecord, rule: Rule, trigger: Extract<Trigger, { at: unknown }>, now: Date): boolean {

@@ -1,3 +1,4 @@
+import { scaledClock } from '@kraftverk/device-sdk';
 import { changesConfiguration, createHub, passphraseSealing, TransportHost } from '@kraftverk/hub';
 
 import { AuditLog, transportStore } from '@kraftverk/store';
@@ -113,9 +114,12 @@ const hub = createHub({
   readOnly: () => config.readOnly,
   readOnlyReason: 'The server is in read-only mode',
   allowRawFrames: config.allowRawFrames,
+  // Real time — or, for a test of simulated devices on a read-only server, faster: the hub refuses it otherwise.
+  clock: scaledClock(config.clockRate),
   http: scopedHttp,
   node: thisNode(database, besideDatabase(config, 'node-id')),
 });
+if (config.clockRate > 1) console.log(`CLOCK: the home's time runs ${config.clockRate} times real time.`);
 
 /*
   Both modes announce themselves. Read-only saying so and write mode saying
