@@ -534,6 +534,21 @@ function currentDocuments() {
   return { documents: [DOCS_INDEX, ...current.map((name) => `docs/${name}`), ...readmes], unplaced };
 }
 
+/** Which of these paths git ignores — as a file, or as a folder (`dist/`) — whether or not they are there. */
+function ignoredByGit(paths) {
+  if (!paths.length) return [];
+  const asked = paths.flatMap((path) => [path, `${path}/`]);
+  let out;
+  try {
+    out = execFileSync('git', ['check-ignore', '--no-index', '--', ...asked], { cwd: ROOT, encoding: 'utf8' });
+  } catch (error) {
+    // 1: none of them is ignored.
+    if (error.status === 1) return [];
+    throw error;
+  }
+  return out.split('\n').filter(Boolean).map((path) => path.replace(/\/$/, ''));
+}
+
 function stalePaths() {
   const { documents, unplaced } = currentDocuments();
   const found = [...unplaced];
@@ -548,13 +563,17 @@ function stalePaths() {
       if (/^[a-z]+:/i.test(target)) continue;
       named.add(posix.join(posix.dirname(document), target));
     }
+    const missing = [];
     for (const path of named) {
       try {
         readFileSync(resolve(ROOT, path));
       } catch (error) {
-        if (error.code !== 'EISDIR') found.push(`${document}: names ${path}, which is not there`);
+        if (error.code !== 'EISDIR') missing.push(path);
       }
     }
+    // What git ignores is made, not kept — a build's output, `client/dist`: named, it is there once built.
+    const made = new Set(ignoredByGit(missing));
+    for (const path of missing) if (!made.has(path)) found.push(`${document}: names ${path}, which is not there`);
   }
   return found;
 }
