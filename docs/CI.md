@@ -12,8 +12,9 @@ checks are.
 
 ## What the checks are
 
-1. **checks** — in the Playwright image the lockfile pins
-   (`mcr.microsoft.com/playwright`, the browser and its libraries in it):
+1. **the checks** — in parallel jobs, in one image built once from
+   `scripts/ci/checks.Dockerfile` (the Playwright the lockfile pins, its
+   browser and libraries, and the tools native modules build with):
    - `npm ci`;
    - `npm run check:architecture`: the dependency rule and the
      product-identifier ratchet ([ARCHITECTURE.md §7](ARCHITECTURE.md#7-guardrails-in-ci));
@@ -21,8 +22,9 @@ checks are.
    - `npm run knip`: nothing exported, depended on or written that nothing uses;
    - `npm run test:e2e`: Playwright, in Chromium, drives the web build against
      a read-only server of its own, every device simulated
-     ([DEVELOPING.md](DEVELOPING.md#end-to-end-in-a-browser)). On a failure
-     the report, the screenshots and the traces are kept for a week.
+     ([DEVELOPING.md](DEVELOPING.md#end-to-end-in-a-browser)) — in two
+     shards, each a job with a server of its own. On a failure the report, the
+     screenshots and the traces are kept for a week.
 2. **stack** — both images built from the `Dockerfile`, the three services
    started from `docker-compose.yml`, and `scripts/ci/smoke-docker.sh` run
    against them. It uses the stack the way someone at home would, and attacks

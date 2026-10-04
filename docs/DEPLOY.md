@@ -16,11 +16,12 @@ repository.
 
 ## What a push to main does
 
-The checks and the stack run side by side; the deploy waits for both.
+The checks and the stack run side by side; the deploy waits for all of them.
 
-1. **checks** — in the Playwright image the lockfile pins: the architecture
-   check, the types, the tests, unused code (knip), and the app end to end in
-   a browser ([CI.md](CI.md)).
+1. **the checks**, in parallel jobs, in one image built once
+   (`scripts/ci/checks.Dockerfile`): **static** (the architecture check, the
+   types, unused code), **unit** (the tests), and **e2e** — the app end to end
+   in a browser, in two shards, each with a server of its own ([CI.md](CI.md)).
 2. **stack** — both images built from the `Dockerfile`, tagged with the
    commit (`kraftverk-server:<sha>`, `kraftverk-web:<sha>`), started as a
    stack of their own on the server's Docker (project `kraftverk-smoke-<run>`,
@@ -110,7 +111,7 @@ A runner configuration for this:
 
 ```yaml
 runner:
-  capacity: 2          # checks and stack side by side; each run's stack has ports of its own
+  capacity: 4          # the checks' jobs and the stack side by side; each run's stack has ports of its own
   labels:
     - docker:docker://node:24-bookworm
 container:
