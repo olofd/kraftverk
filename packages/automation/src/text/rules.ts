@@ -2,7 +2,7 @@ import { CAPABILITIES, MAIN_PART, standardMeaning, type CapabilityName } from '@
 
 import { WEEKDAYS, type Weekday } from '../clock.ts';
 import { ruleUses } from '../reads.ts';
-import { isAutomationRole, type Expr, type RoleSpec, type Rule, type Step, type Trigger } from '../rule.ts';
+import { isAutomationRole, TRIGGER_ID, type Expr, type NamedTrigger, type RoleSpec, type Rule, type Step, type Trigger } from '../rule.ts';
 import { parseExpr, printExpr, type PrintContext, type WrittenUnit } from './expr.ts';
 
 /*
@@ -261,16 +261,22 @@ class Reader {
     return this.fail(`Not a step: ${Object.keys(data).map((key) => `"${key}"`).join(', ')}. A step starts with turn on, turn off, switch, send, set, wait, wait until, make sure, if, watch or start`, path);
   }
 
-  triggers(data: Data, path: Path): Trigger[] {
+  triggers(data: Data, path: Path): NamedTrigger[] {
     if (data === undefined || data === null) return [];
     if (!Array.isArray(data)) return this.fail('Expected a list of what starts it', path);
     return data.map((each, index) => this.trigger(each, [...path, index]));
   }
 
-  trigger(data: Data, path: Path): Trigger {
+  trigger(data: Data, path: Path): NamedTrigger {
     if (!isRecord(data)) return this.fail('Expected a trigger: at, every, event or becomes', path);
+    // An id of its own, that what it does can ask after: "started by low".
+    if ('id' in data) {
+      const { id, ...rest } = data;
+      if (typeof id !== 'string' || !TRIGGER_ID.test(id)) return this.fail('A trigger\'s id is letters and digits, starting with a lowercase letter: "low"', [...path, 'id']);
+      return { ...this.trigger(rest, path), id };
+    }
     const only = (...keys: string[]) => {
-      for (const key of Object.keys(data)) if (!keys.includes(key)) this.fail(`"${key}" is not part of this trigger: it takes ${keys.map((each) => `"${each}"`).join(', ')}`, [...path, key]);
+      for (const key of Object.keys(data)) if (!keys.includes(key)) this.fail(`"${key}" is not part of this trigger: it takes ${[...keys, 'id'].map((each) => `"${each}"`).join(', ')}`, [...path, key]);
     };
     if ('at' in data) {
       only('at', 'days');
@@ -507,7 +513,8 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>, context: Pri
     }
     return each.start.waitSeconds !== undefined ? { start: each.start.role, 'and wait': seconds(each.start.waitSeconds) } : { start: each.start.role };
   };
-  const trigger = (each: Trigger): Record<string, unknown> => {
+  const trigger = (each: NamedTrigger): Record<string, unknown> => (each.id ? { id: each.id, ...unnamed(each) } : unnamed(each));
+  const unnamed = (each: Trigger): Record<string, unknown> => {
     if ('at' in each) return each.days ? { at: time(each.at), days: daysInFile(each.days) } : { at: time(each.at) };
     if ('every' in each) return { every: minutes(each.every) };
     if ('event' in each) return { event: each.event.event, from: each.event.role };

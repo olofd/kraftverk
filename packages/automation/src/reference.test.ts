@@ -43,6 +43,7 @@ const EXPRESSIONS: Record<Exclude<Keys<Expr>, 'role' | 'args' | 'left' | 'right'
   not: 'not ',
   reachable: ' reachable',
   within: 'time between',
+  run: 'run.trigger',
 };
 const COMPARISONS: Record<CompareOp, string> = { lt: '<', le: '<=', gt: '>', ge: '>=', eq: '==', ne: '!=' };
 const ARITHMETIC: Record<MathOp, string> = { add: '+', subtract: '-', min: 'min(', max: 'max(' };

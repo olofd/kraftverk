@@ -99,6 +99,13 @@ export interface DeviceType<Config extends ConfigValues = ConfigValues> {
    * connection.
    */
   createSimulator(ctx: DeviceContext<Config>): Promise<DeviceSession>;
+  /**
+   * What its simulator can be set up with, beside how fast its world runs
+   * (`SIMULATION_CONFIG`): a station's charge to start from. Chosen when a
+   * simulated one is added, as any way's own choices are; its simulator
+   * reads them in `ctx.simulation.config`.
+   */
+  readonly simulation?: ConfigSchema;
 
   /**
    * Tools of this kind of device beyond its capabilities and settings — a
@@ -238,12 +245,38 @@ export type DeviceStore = {
 /** `fetch` with a mandatory timeout. */
 export type ScopedHttp = (url: string, init?: RequestInit & { timeoutMs?: number }) => Promise<Response>;
 
+/**
+ * The world a simulator runs in: how fast its time goes, what it was set up
+ * with, and what it is fed by — so simulated devices behave as a home of
+ * them would, together, and a day of it can pass in minutes.
+ */
+export interface Simulation {
+  /**
+   * How many times faster than real time its world runs: 1 is real time,
+   * 60 an hour a minute. What changes with time — a battery filling and
+   * draining — changes that much faster; its schedule does not.
+   */
+  readonly speed: number;
+  /** What it was set up with: `SIMULATION_CONFIG`'s fields and its type's `simulation`, validated, defaults applied. */
+  readonly config: ConfigValues;
+  /**
+   * Whether what feeds one of its parts is giving it power now: a simulated
+   * switch linked to it as `feeds` (a plug a station is plugged into), on or
+   * off. Null when nothing simulated feeds that part — the simulator decides
+   * for itself then. Asked as often as it likes: it is what the switch
+   * reports now.
+   */
+  fed(part: string): boolean | null;
+}
+
 export interface DeviceContext<Config extends ConfigValues = ConfigValues> {
   readonly deviceId: SavedDeviceId;
   /** This device's own config: validated, defaults applied. */
   readonly config: Config;
   /** The connection in use, already open. Null for a simulator. */
   readonly connection: OpenConnection | null;
+  /** The world a simulator runs in; null for a real device. */
+  readonly simulation: Simulation | null;
   readonly store: DeviceStore;
   readonly log: DeviceLogger;
   /** Every hardware write is refused. A session must honour it too. */

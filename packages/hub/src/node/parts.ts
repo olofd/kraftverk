@@ -1,4 +1,4 @@
-import type { AuditRecord, ScopedHttp } from '@kraftverk/device-sdk';
+import { LINK_KINDS, type AuditRecord, type ScopedHttp } from '@kraftverk/device-sdk';
 import { ActionGateway, type GatewayDeps } from '@kraftverk/gateway';
 import { LiveBus, SessionManager, type SessionManagerDeps } from '@kraftverk/holder';
 import { ConnectionStore, databaseLedger, DeviceCatalog, HomeSettings, LinkStore, NodeStore, type NodeDeclaration, type NodeRecord, type SecretsAtRest, type SqlDatabase } from '@kraftverk/store';
@@ -79,7 +79,7 @@ export function nodeParts(options: NodeOptions, role: NodeRole): NodeParts {
   const self = nodes.declareSelf({ ...options.node, platform: transports.platform, transports: transports.here() });
   const bus = new LiveBus();
 
-  const sessions = new SessionManager({
+  const sessions: SessionManager = new SessionManager({
     platform: transports.platform,
     node: { id: self.id, name: self.name },
     types,
@@ -90,6 +90,13 @@ export function nodeParts(options: NodeOptions, role: NodeRole): NodeParts {
     unfit: (method) => unfitFor(method, self),
     readOnly: options.readOnly,
     allowRawFrames: false,
+    // A simulated switch that feeds a part of a simulated device is its mains, as the link says: on, power; off, none.
+    fed: (deviceId, part): boolean | null => {
+      const { evidence } = LINK_KINDS.feeds;
+      const feeding = links.forDevice(deviceId).filter((link) => link.kind === 'feeds' && link.target.device === deviceId && link.target.part === part && sessions.simulated(link.source.device));
+      if (!feeding.length) return null;
+      return feeding.some((link) => sessions.reads(link.source.device, link.source.part, evidence.follows) === true);
+    },
     ...role.sessions,
     record: (entry) => role.record(entry),
     bus,
@@ -101,6 +108,8 @@ export function nodeParts(options: NodeOptions, role: NodeRole): NodeParts {
     ...role.gateway({ catalog, sessions }),
     ...(options.readOnlyReason ? { readOnlyReason: options.readOnlyReason } : {}),
     isReadOnly: (id) => options.readOnly() && !sessions.simulated(id),
+    // A simulated device's time runs as fast as its world does.
+    timeScale: (id) => sessions.speed(id),
     record: (entry) => role.record(entry),
     ledger: databaseLedger(db),
   });

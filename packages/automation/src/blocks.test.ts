@@ -200,12 +200,17 @@ describe('a recipe, copied', () => {
   });
 
   test('what its settings alone decide is decided: a check of its own sliders goes, and it reads as what it watches', () => {
-    const window = inlineParams(chargeBetween, { low: 15, high: 50, minutes: 2 });
-    // "Only if 15 is below 50" was the recipe checking its settings: always so, and gone.
-    expect(window.if).toBeUndefined();
+    const window = inlineParams(chargeBetween, { low: 15, lowMinutes: 2, high: 50, highMinutes: 0 });
+    // "Only if 15 is below 50" was the recipe checking its settings: always so, and gone; what is left asks of the run.
+    expect(window.if).toEqual({ compare: 'ne', left: { run: 'trigger' }, right: { value: '' } });
+    // Its triggers keep their ids; a hold of 0 min is none.
+    expect(window.when).toEqual([
+      { id: 'low', becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'battery.soc' } }, right: { value: 15 } }, heldForMinutes: { value: 2 } },
+      { id: 'high', becomes: { compare: 'ge', left: { read: { role: 'battery', means: 'battery.soc' } }, right: { value: 50 } } },
+    ]);
     const names = (role: string) => (role === 'battery' ? 'Garage P280' : 'ATORCH plug');
     expect(describeRule(window, {}, names, NO_FUNCTIONS)).toBe(
-      'When Garage P280’s charge is below 15 % for 2 min, or when Garage P280’s charge is at least 50 %, turn ATORCH plug on if Garage P280’s charge is below 50 %, off if not.'
+      'When Garage P280’s charge is below 15 % for 2 min, or when Garage P280’s charge is at least 50 %, if one of its triggers started it, turn ATORCH plug on if it started because Garage P280’s charge is below 15 % for 2 min, off if not.'
     );
     // Settings that can never hold: kept as they are, so it says so rather than acting.
     expect(inlineParams(chargeBetween, { low: 60, high: 50 }).if).toEqual({ value: false });

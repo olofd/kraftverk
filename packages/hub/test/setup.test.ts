@@ -50,8 +50,8 @@ describe('what can be added', () => {
 describe('adding a device', () => {
   test('simulated: a station is added with no hardware, by its own steps only, and opened as its simulator', async () => {
     const started = await t.home.setup.start({ typeId: 'test.station', methodId: 'simulated' });
-    // No protocol and no transport: nothing to prepare, nothing to choose.
-    expect(started.plan.map((step) => step.kind)).toEqual(['check']);
+    // No protocol and no transport: nothing to prepare, nothing to choose — but how its world is set up: how fast it runs.
+    expect(started.plan.map((step) => step.kind)).toEqual(['form', 'check']);
     expect((await t.home.setup.check(started.id)).outcome).toBe('new');
 
     const saved = await t.home.setup.save(started.id, { name: 'Garage station' });

@@ -1,6 +1,6 @@
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import type { CompareOp, Expr } from '@kraftverk/automation';
+import { triggerIdOf, type CompareOp, type Expr } from '@kraftverk/automation';
 import type { PartOption } from '@kraftverk/automation';
 import { capabilitiesOf, MAIN_PART, meetsNeed, type Value, type ValueType } from '@kraftverk/device-sdk';
 import { Chips, Icon, IconLabel } from '@kraftverk/ui';
@@ -19,13 +19,14 @@ import { Label, TimeField, ValueField } from './fields';
   said in words, and replaced whole.
 */
 
-type Kind = 'reading' | 'reachable' | 'time' | 'ask' | 'all' | 'any';
+type Kind = 'reading' | 'reachable' | 'time' | 'ask' | 'started' | 'all' | 'any';
 
 const KIND_OPTIONS: { value: Kind; label: string }[] = [
   { value: 'reading', label: 'A reading' },
   { value: 'reachable', label: 'Can be reached' },
   { value: 'time', label: 'Time of day' },
   { value: 'ask', label: 'Ask a package' },
+  { value: 'started', label: 'What started it' },
   { value: 'all', label: 'All of' },
   { value: 'any', label: 'Any of' },
 ];
@@ -51,6 +52,7 @@ function kindOf(expr: Expr): Kind | null {
   if ('reachable' in expr) return 'reachable';
   // Between two times it can draw; one whose ends are not times of day it cannot.
   if ('within' in expr) return 'value' in expr.within.from && 'value' in expr.within.to ? 'time' : null;
+  if ('compare' in expr && 'run' in expr.left && expr.left.run === 'trigger' && 'value' in expr.right && (expr.compare === 'eq' || expr.compare === 'ne')) return 'started';
   if ('compare' in expr && 'read' in expr.left && 'value' in expr.right) return 'reading';
   if ('compare' in expr && 'call' in expr.left && 'value' in expr.right) return 'ask';
   return null;
@@ -78,6 +80,8 @@ function blankOf(kind: Kind, role: string | null): Expr {
       return { within: { from: { value: '22:00' }, to: { value: '06:00' } } };
     case 'ask':
       return { compare: 'eq', left: { call: '', role: role ?? '', args: {} }, right: { value: true } };
+    case 'started':
+      return { compare: 'eq', left: { run: 'trigger' }, right: { value: '' } };
     case 'all':
       return { all: [] };
     case 'any':
@@ -130,6 +134,8 @@ export function ConditionField({ label, expr, onChange, depth = 0 }: { label: st
         <TimeOfDay expr={inner as Extract<Expr, { within: unknown }>} onChange={put} />
       ) : kind === 'reading' ? (
         <Reading expr={inner as Extract<Expr, { compare: unknown }>} onChange={put} label={label} />
+      ) : kind === 'started' ? (
+        <StartedBy expr={inner as Extract<Expr, { compare: unknown }>} onChange={put} label={label} />
       ) : (
         <Ask expr={inner as Extract<Expr, { compare: unknown }>} onChange={put} label={label} />
       )}
@@ -177,6 +183,44 @@ function PartChoice({ label, role, fits, onRole }: { label: string; role: string
         onRole(picked.role);
       }}
     />
+  );
+}
+
+/**
+ * Which of its own triggers started the run: one picked by what it says,
+ * "When the station’s charge is below 5 % for 2 min" — given an id, if it
+ * has none, for the condition to name it by.
+ */
+function StartedBy({ expr, onChange, label }: { expr: Extract<Expr, { compare: unknown }>; onChange: (expr: Expr) => void; label: string }) {
+  const editor = useEditor();
+  const when = editor.draft.rule.when;
+  const id = 'value' in expr.right && typeof expr.right.value === 'string' ? expr.right.value : '';
+  const chosen = when.findIndex((trigger) => trigger.id === id);
+  return (
+    <YStack gap="$2">
+      <Label>Which of its triggers started this run</Label>
+      <XStack>
+        <Chips label={`${label}: is or is not`} options={EQUAL_OPS} value={expr.compare} onChange={(compare) => onChange({ ...expr, compare })} />
+      </XStack>
+      {when.length ? (
+        <Picker
+          label={`${label}: which trigger`}
+          chosen={chosen >= 0 ? editor.saidTrigger(when[chosen]!) : null}
+          placeholder="Choose a trigger"
+          options={when.map((trigger, index) => ({ key: String(index), title: editor.saidTrigger(trigger), value: index, selected: index === chosen }))}
+          onPick={(index) => {
+            // The trigger first, with an id to be named by; then the condition naming it.
+            const named = triggerIdOf(editor.draft.rule, index);
+            editor.change((draft) => ({ ...draft, rule: named.rule }));
+            onChange({ ...expr, right: { value: named.id } });
+          }}
+        />
+      ) : (
+        <Text fontSize={14} color="$muted" lineHeight={20}>
+          It has no trigger yet: add one above, and choose it here.
+        </Text>
+      )}
+    </YStack>
   );
 }
 

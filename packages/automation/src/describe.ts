@@ -3,7 +3,7 @@ import { capabilitySpec, enumLabel, isCapability, standardMeaning, type ConfigSc
 import type { RuleVocabulary } from './check.ts';
 import { WEEKDAYS, type Weekday } from './clock.ts';
 import { evaluateNow, settledChoice, settledScope, shown } from './evaluate.ts';
-import { isAutomationRole, type Command, type CompareOp, type Expr, type Rule, type Step, type StepKind, type Write } from './rule.ts';
+import { isAutomationRole, type Command, type CompareOp, type Expr, type Rule, type RunFact, type Step, type StepKind, type Write } from './rule.ts';
 
 /*
   A rule in words (docs/AUTOMATIONS-UX.md): its triggers, conditions and
@@ -20,6 +20,10 @@ export function secondsText(seconds: number): string {
   return minutes % 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes / 60} h`;
 }
 
+/** How long a condition must hold, as a person says it: "2 min", "3 s" — or, a setting or a reading, in its words. */
+const holdText = (held: Expr, text: (expr: Expr) => string): string =>
+  'value' in held && typeof held.value === 'number' ? secondsText(held.value * 60) : 'value' in held ? `${text(held)} min` : text(held);
+
 /** A setting as it reads in a sentence: an option's label, a number with its unit, seconds as a duration. */
 export function paramText(schema: ConfigSchema, name: string, value: Value): string {
   const field = schema.fields[name];
@@ -33,7 +37,10 @@ export function paramText(schema: ConfigSchema, name: string, value: Value): str
   return shown(value);
 }
 
-const OP_WORDS: Record<CompareOp, string> = { lt: 'is below', le: 'is at most', gt: 'is above', ge: 'is at least', eq: 'is', ne: 'is not' };
+/** A fact of the run, as a sentence names it. */
+const RUN_FACT_WORDS: Record<RunFact, string> = { trigger: 'what started it' };
+
+const OP_WORDS: Record<CompareOp, string> ={ lt: 'is below', le: 'is at most', gt: 'is above', ge: 'is at least', eq: 'is', ne: 'is not' };
 
 /**
  * Something of a part, as English says it: "Garage station’s charge",
@@ -49,6 +56,23 @@ export const whose = (name: string, thing: string): string => {
 /** One expression of a rule, in words, with its settings filled in: "Garage station's charge is below 15 %". */
 export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<string, Value>>, name: (role: string) => string, vocabulary?: RuleVocabulary): string {
   const param = (key: string) => paramText(rule.params, key, params[key] ?? null);
+  /**
+   * Which trigger started the run, compared with one's id: said as that
+   * trigger — "it started because the station’s charge is below 40 % for 2 min".
+   */
+  const started = (expr: Extract<Expr, { compare: CompareOp }>): string | null => {
+    if (expr.compare !== 'eq' && expr.compare !== 'ne') return null;
+    const id = 'run' in expr.left && 'value' in expr.right ? expr.right.value : 'run' in expr.right && 'value' in expr.left ? expr.left.value : null;
+    if (typeof id !== 'string') return null;
+    const index = rule.when.findIndex((trigger) => trigger.id === id);
+    const trigger = index >= 0 ? describeTriggers(rule, params, name, vocabulary)[index]! : null;
+    const so = expr.compare === 'eq';
+    if (id === '') return so ? 'none of its triggers started it' : 'one of its triggers started it';
+    if (!trigger) return `it ${so ? 'was' : 'was not'} started by “${id}”`;
+    // "When …" is why it started; "Every day at 07:00" is when.
+    const because = /^When /.test(trigger) ? `because ${trigger.slice(5)}` : trigger.charAt(0).toLowerCase() + trigger.slice(1);
+    return `it ${so ? 'started' : 'did not start'} ${because}`;
+  };
   /** A setting compared with one of its own options: what its owner chose, in the option's own words. */
   const chosen = (expr: Extract<Expr, { compare: CompareOp }>): string | null => {
     if (expr.compare !== 'eq' && expr.compare !== 'ne') return null;
@@ -69,6 +93,7 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
     // What it reports, not chosen yet: "a reading" rather than an empty name.
     if ('read' in expr) return whose(name(expr.read.role), standardMeaning(expr.read.means)?.label.toLowerCase() || expr.read.means || 'reading');
     if ('reachable' in expr) return `${name(expr.reachable)} can be reached`;
+    if ('run' in expr) return RUN_FACT_WORDS[expr.run] ?? `the run’s ${expr.run}`;
     if ('within' in expr) return `it is between ${text(expr.within.from)} and ${text(expr.within.to)}`;
     if ('math' in expr) {
       // A plain number beside a reading is in its unit: "Garage station’s charge plus 10 %".
@@ -77,7 +102,7 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
       return expr.math === 'add' ? `${left} plus ${right}` : expr.math === 'subtract' ? `${left} minus ${right}` : `the ${expr.math === 'min' ? 'lower' : 'higher'} of ${left} and ${right}`;
     }
     if ('call' in expr) return `${vocabulary?.fn(expr.call)?.label.toLowerCase() ?? expr.call} by ${name(expr.role)}`;
-    if ('compare' in expr) return chosen(expr) ?? `${text(expr.left, unitOf(expr.right))} ${OP_WORDS[expr.compare]} ${text(expr.right, unitOf(expr.left))}`;
+    if ('compare' in expr) return started(expr) ?? chosen(expr) ??`${text(expr.left, unitOf(expr.right))} ${OP_WORDS[expr.compare]} ${text(expr.right, unitOf(expr.left))}`;
     if ('all' in expr) return expr.all.map((part) => text(part)).join(' and ');
     if ('any' in expr) return expr.any.map((part) => text(part)).join(' or ');
     return `not (${text(expr.not)})`;
@@ -117,7 +142,7 @@ export function describeTriggers(rule: Rule, params: Readonly<Record<string, Val
     if ('at' in trigger) return trigger.days && daysText(trigger.days) !== 'every day' ? `At ${text(trigger.at)} ${daysText(trigger.days)}` : `Every day at ${text(trigger.at)}`;
     if ('every' in trigger) return `Every ${'value' in trigger.every ? `${text(trigger.every)} min` : text(trigger.every)}`;
     if ('event' in trigger) return `When ${name(trigger.event.role)} reports ${eventWords(rule, trigger.event.role, trigger.event.event)}`;
-    const held = trigger.heldForMinutes ? ` for ${'value' in trigger.heldForMinutes ? `${text(trigger.heldForMinutes)} min` : text(trigger.heldForMinutes)}` : '';
+    const held = trigger.heldForMinutes ? ` for ${holdText(trigger.heldForMinutes, text)}` : '';
     return `When ${text(trigger.becomes)}${held}`;
   });
 }
@@ -270,7 +295,7 @@ export function describeRule(rule: Rule & { sentence?: string }, params: Readonl
           ? `every ${minutes(trigger.every)}`
           : 'event' in trigger
             ? `when ${name(trigger.event.role)} reports ${eventWords(rule, trigger.event.role, trigger.event.event)}`
-            : `when ${text(trigger.becomes)}${trigger.heldForMinutes ? ` for ${minutes(trigger.heldForMinutes)}` : ''}`
+            : `when ${text(trigger.becomes)}${trigger.heldForMinutes ? ` for ${holdText(trigger.heldForMinutes, text)}` : ''}`
     )
     .join(', or ');
   // No trigger: it is played, or started — the sentence is what it does.

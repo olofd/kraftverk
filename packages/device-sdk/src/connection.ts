@@ -105,12 +105,34 @@ export const SIMULATED_METHOD: ConnectionMethod = {
   reach: 'local',
 };
 
+/** What every simulator is set up with: how fast its world runs (`Simulation.speed`). */
+export const SIMULATION_CONFIG: ConfigSchema = {
+  fields: {
+    speed: {
+      type: 'number',
+      title: 'Time runs',
+      description: 'How many times faster than real time its simulated world runs: a battery fills and drains that much faster. 1 is real time; 60, an hour a minute.',
+      unit: '×',
+      min: 1,
+      max: 3600,
+      default: 1,
+    },
+  },
+};
+
+/** A type's simulated way: chosen with how fast its world runs, and what its own simulator is set up with. */
+export const simulatedMethodOf = (type: { readonly simulation?: ConfigSchema }): ConnectionMethod => ({
+  ...SIMULATED_METHOD,
+  config: { fields: { ...SIMULATION_CONFIG.fields, ...(type.simulation?.fields ?? {}) } },
+});
+
+type HasWays = { readonly connections: readonly ConnectionMethod[]; readonly simulation?: ConfigSchema };
+
 /** Every way a type can be added: its own, then simulated. */
-export const methodsOf = (type: { readonly connections: readonly ConnectionMethod[] }): ConnectionMethod[] => [...type.connections, SIMULATED_METHOD];
+export const methodsOf = (type: HasWays): ConnectionMethod[] => [...type.connections, simulatedMethodOf(type)];
 
 /** One of a type's ways, by id, simulated included. */
-export const methodOf = (type: { readonly connections: readonly ConnectionMethod[] }, id: string): ConnectionMethod | null =>
-  methodsOf(type).find((method) => method.id === id) ?? null;
+export const methodOf = (type: HasWays, id: string): ConnectionMethod | null => methodsOf(type).find((method) => method.id === id) ?? null;
 
 /** Whether a connection is simulated: its holder opens the type's simulator, and reaches nothing. */
 export const isSimulated = (connection: { readonly transport: string }): boolean => connection.transport === SIMULATED_TRANSPORT;

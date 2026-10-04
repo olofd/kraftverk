@@ -241,6 +241,13 @@ export type GatewayDeps = {
   linksFrom: (id: SavedDeviceId, part: string) => readonly OutgoingLink[];
   /** True when writes to this device are refused: every hardware write, when read-only. A simulated device has no hardware. */
   isReadOnly: (deviceId: SavedDeviceId) => boolean;
+  /**
+   * How many times faster than real time a device's world runs: a
+   * simulator's speed; 1 — or absent — for hardware. The time a part is
+   * given between switches is in its own time: ten minutes for a simulated
+   * plug at 300× is two seconds.
+   */
+  timeScale?: (deviceId: SavedDeviceId) => number;
   /** What read-only is called where this node runs: a server's mode, or an app's switch. */
   readOnlyReason?: string;
   /**
@@ -476,7 +483,8 @@ export class ActionGateway {
     } else {
       // A run switches first as whoever asked for it would: a person as a person, an assistant as an assistant.
       const actor = intent.run?.askedBy ?? intent.actor;
-      const dwell = actor === 'automation' ? this.#policy.automationDwellMs : actor === 'agent' ? this.#policy.agentDwellMs : this.#policy.personDwellMs;
+      const scale = Math.max(1, this.#deps.timeScale?.(intent.deviceId) ?? 1);
+      const dwell = (actor === 'automation' ? this.#policy.automationDwellMs : actor === 'agent' ? this.#policy.agentDwellMs : this.#policy.personDwellMs) / scale;
       if (this.#lastSwitchAt(intent) > 0 && sinceLast < dwell) {
         // Said as what it is: a pause that protects the relay and what it feeds, and how long is left of it.
         return refuse(`Too soon: it was switched ${Math.round(sinceLast / 1000)} s ago, and is given ${Math.round(dwell / 1000)} s between switches. Try again in ${Math.ceil((dwell - sinceLast) / 1000)} s`);

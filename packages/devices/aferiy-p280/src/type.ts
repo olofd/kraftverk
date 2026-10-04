@@ -40,6 +40,14 @@ export default defineDeviceType({
     icon: 'zap',
   },
   config: { fields: {} },
+  // A simulated one, set up as the station you mean to try it as: its charge, its packs, what is plugged into it.
+  simulation: {
+    fields: {
+      level: { type: 'number', title: 'Starts at', description: 'Its charge when it starts.', unit: '%', min: 0, max: 100, default: 68 },
+      packs: { type: 'number', title: 'Expansion packs', description: 'Beside its own 2048 Wh, each as much again.', min: 0, max: 2, integer: true, default: 1 },
+      acLoadWatts: { type: 'number', title: 'Load on its AC outlets', description: 'What is plugged into it draws about this much.', unit: 'W', min: 0, max: 2000, default: 145 },
+    },
+  },
   describe: () => describeStation(),
   tools: STATION_TOOLS,
   connections: [
@@ -124,7 +132,18 @@ export default defineDeviceType({
   },
 
   async createSimulator(ctx) {
-    const station = new SimulatedStation(ctx.store);
+    const world = ctx.simulation;
+    const set = world?.config ?? {};
+    const station = new SimulatedStation(ctx.store, {
+      level: Number(set.level ?? 68),
+      packs: Number(set.packs ?? 1),
+      acLoadWatts: Number(set.acLoadWatts ?? 145),
+      speed: world?.speed ?? 1,
+      // Plugged into a simulated plug, its mains is that plug: on, it charges; off, it runs on its battery.
+      fed: () => world?.fed('input.ac') ?? null,
+      // Sped up, what it reports is news at every step, not at the holder's next look.
+      onTick: (world?.speed ?? 1) > 1 ? () => ctx.changed() : undefined,
+    });
     station.start();
     const mains = mainsWatcher((event) => ctx.event(event, undefined, 'input.ac'));
     ctx.schedule(1000, () => mains(station.status().gridConnected));

@@ -1,4 +1,4 @@
-import type { CompareOp, Expr, MathOp } from '../rule.ts';
+import { RUN_FACTS, type CompareOp, type Expr, type MathOp, type RunFact } from '../rule.ts';
 import type { Value } from '@kraftverk/device-sdk';
 
 /*
@@ -11,7 +11,7 @@ import type { Value } from '@kraftverk/device-sdk';
   (a list for a value), nothing: the file keeps those as data.
 
   Precedence, loosest first: `or`, `and`, `not`, a comparison, `+ -`, and an
-  atom — a value, a reading, `role reachable`, `time between … and …`,
+  atom — a value, a reading, `role reachable`, `run.trigger`, `time between … and …`,
   `min( , )`, `max( , )`, `call id(role, name = …)`, `$setting`, or
   parentheses. A number may carry a unit (`50 W`, `15 %`): it is kept beside
   the expression, with where it was written, and the rule reader checks it
@@ -40,7 +40,7 @@ type Token =
   | { kind: 'symbol'; value: string; at: number }
   | { kind: 'end'; at: number };
 
-const KEYWORDS = new Set(['and', 'or', 'not', 'true', 'false', 'null', 'reachable', 'time', 'between', 'call', 'min', 'max']);
+const KEYWORDS = new Set(['and', 'or', 'not', 'true', 'false', 'null', 'reachable', 'time', 'between', 'call', 'min', 'max', 'run']);
 const COMPARE: Record<string, CompareOp> = { '<': 'lt', '<=': 'le', '>': 'gt', '>=': 'ge', '==': 'eq', '!=': 'ne' };
 const COMPARE_TEXT: Record<CompareOp, string> = { lt: '<', le: '<=', gt: '>', ge: '>=', eq: '==', ne: '!=' };
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -236,6 +236,13 @@ export function parseExpr(text: string): Parsed {
           }
           case 'call':
             return call();
+          case 'run': {
+            // What the run knows of itself: "run.trigger".
+            expect('.', `"." and what of the run: ${RUN_FACTS.map((fact) => `run.${fact}`).join(', ')}`);
+            const fact = next();
+            if (fact.kind !== 'name' || !(RUN_FACTS as readonly string[]).includes(fact.value)) throw new Failure(`A run knows its ${RUN_FACTS.join(', ')}`, fact.at);
+            return { run: fact.value as RunFact };
+          }
         }
         if (KEYWORDS.has(token.value)) throw new Failure(`"${token.value}" cannot start a value`, token.at);
         if (!NAME.test(token.value)) throw new Failure(`"${token.value}" is not a role's name: letters, digits and _ only`, token.at);
@@ -367,6 +374,10 @@ function print(expr: Expr, need: number, context: PrintContext, unit: string | n
   if ('reachable' in expr) {
     if (!NAME.test(expr.reachable) || KEYWORDS.has(expr.reachable)) throw new Unprintable();
     return `${expr.reachable} reachable`;
+  }
+  if ('run' in expr) {
+    if (!RUN_FACTS.includes(expr.run)) throw new Unprintable();
+    return `run.${expr.run}`;
   }
   if ('within' in expr) return `time between ${print(expr.within.from, LEVEL.atom, context, null)} and ${print(expr.within.to, LEVEL.atom, context, null)}`;
   if ('call' in expr) {

@@ -105,7 +105,7 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
   }
   for (const call of uses.calls) caveats.push(`It asks ${call.fn} of ${name(call.role)}, which history does not keep: taken as unknown`);
 
-  const scopeAt = (t: number): RuleScope => ({
+  const scopeAt = (t: number, trigger = ''): RuleScope => ({
     clock: () => clockTime(new Date(t), automation.timeZone),
     reachable: () => ({ reachable: null, detail: 'history does not keep whether it could be reached' }),
     // An automation's own rule has no settings: its values are in its blocks.
@@ -123,6 +123,8 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
       return { value: latest.value, label: standardMeaning(means)?.label ?? found.attribute.label, unit };
     },
     name,
+    // The trigger that started the run it rehearses: "" for none with an id.
+    run: (fact) => (fact === 'trigger' ? trigger : null),
   });
 
   // The moments anything could have changed: every sample, every time of day, every event.
@@ -150,7 +152,7 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
     }
   }
 
-  type Fired = { at: number; because: string };
+  type Fired = { at: number; because: string; trigger: string };
   const fired: Fired[] = [];
   for (const trigger of recipe.when) {
     if ('at' in trigger) {
@@ -161,7 +163,7 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
         // Only on its days, on the owner's calendar.
         if (!runsOn(trigger, date)) continue;
         const instant = zonedInstant({ ...date, hour, minute }, automation.timeZone).getTime();
-        if (instant >= start && instant <= end && !fired.some((run) => run.at === instant)) fired.push({ at: instant, because: `It is ${at}` });
+        if (instant >= start && instant <= end && !fired.some((run) => run.at === instant)) fired.push({ at: instant, because: `It is ${at}`, trigger: trigger.id ?? '' });
       }
     } else if ('every' in trigger) {
       const every = evaluateNow(trigger.every, scopeAt(start));
@@ -171,14 +173,14 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
           // Each time the clock shows it: twice in the hour repeated as clocks go back, not at all in the one skipped.
           for (const each of zonedInstants({ ...date, hour: Math.floor(slot / 60), minute: slot % 60 }, automation.timeZone)) {
             const instant = each.getTime();
-            if (instant >= start && instant <= end && !fired.some((run) => run.at === instant)) fired.push({ at: instant, because: `Every ${every} min` });
+            if (instant >= start && instant <= end && !fired.some((run) => run.at === instant)) fired.push({ at: instant, because: `Every ${every} min`, trigger: trigger.id ?? '' });
           }
         }
       }
     } else if ('event' in trigger) {
       const binding = automation.roles[trigger.event.role];
       if (!binding) continue;
-      for (const at of source.events(binding.device, binding.part, trigger.event.event, from, to)) fired.push({ at: Date.parse(at), because: `${name(trigger.event.role)} said ${trigger.event.event}` });
+      for (const at of source.events(binding.device, binding.part, trigger.event.event, from, to)) fired.push({ at: Date.parse(at), because: `${name(trigger.event.role)} said ${trigger.event.event}`, trigger: trigger.id ?? '' });
     }
   }
   // A condition turning true, and held: the engine's own rules, with nothing kept at the start.
@@ -210,13 +212,13 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
       state.fired = true;
       const trace: string[] = [];
       evaluateNow(state.trigger.becomes, scope, trace);
-      fired.push({ at: t, because: `${trace.join('; ')}${minutes > 0 ? `, for ${minutes} min` : ''}` });
+      fired.push({ at: t, because: `${trace.join('; ')}${minutes > 0 ? `, for ${minutes} min` : ''}`, trigger: state.trigger.id ?? '' });
     }
   }
 
   const runs: Rehearsal['runs'] = [];
   for (const run of fired.sort((a, b) => a.at - b.at).slice(0, MAX_RUNS)) {
-    const scope = scopeAt(run.at);
+    const scope = scopeAt(run.at, run.trigger);
     const trace = [run.because];
     const at = new Date(run.at).toISOString();
     if (recipe.if) {

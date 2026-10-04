@@ -131,5 +131,21 @@ export function blankStep(kind: StepKind, role: string | null): Step {
   }
 }
 
+/**
+ * A trigger's id, for a condition that asks which started the run
+ * (`run.trigger`): the one it has, or a fresh one given it — "trigger1",
+ * "trigger2", none another trigger has. The rule, with it.
+ */
+export function triggerIdOf(rule: Rule, index: number): { rule: Rule; id: string } {
+  const trigger = rule.when[index];
+  if (!trigger) throw new Error(`The rule has no trigger ${index + 1}`);
+  if (trigger.id) return { rule, id: trigger.id };
+  const taken = new Set(rule.when.map((each) => each.id));
+  let n = index + 1;
+  while (taken.has(`trigger${n}`)) n += 1;
+  const id = `trigger${n}`;
+  return { rule: { ...rule, when: rule.when.map((each, at) => (at === index ? { ...each, id } : each)) }, id };
+}
+
 /** A number of seconds an expression says outright; null when it says something else. */
 export const secondsOf = (expr: Expr | undefined): number | null => (expr && 'value' in expr && typeof expr.value === 'number' ? expr.value : null);

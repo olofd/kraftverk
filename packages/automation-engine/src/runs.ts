@@ -46,6 +46,8 @@ export type LiveRun = {
   wake: Set<() => void>;
   /** How often its rule may switch each role's part, at most: what it tells the gateway. */
   allowance: Record<string, number>;
+  /** The id of the trigger that started it, what `startedBy` asks; null when none with an id did. */
+  trigger: string | null;
   /** When it last changed something — switched a part, changed a setting: what is judged after is read after. 0, not yet. By this server's clock. */
   changedAt: number;
   /** Where its last change falls in what the engine heard and did, in order: what a reading heard after it is after, in the same millisecond too. */
@@ -98,11 +100,11 @@ export class Runs {
     return this.#running.has(automationId);
   }
 
-  async runAndKeep(automation: AutomationRecord, why: string): Promise<AutomationRun | null> {
+  async runAndKeep(automation: AutomationRecord, why: string, trigger: string | null = null): Promise<AutomationRun | null> {
     if (this.#running.has(automation.id)) return null;
     this.#running.add(automation.id);
     try {
-      return await this.run(automation, { why });
+      return await this.run(automation, { why, trigger });
     } catch (error) {
       // Started by a trigger, nobody waits on it: what went wrong is said, never left to bring the server down.
       console.error(`[automations] ${automation.id} could not run:`, error);
@@ -226,10 +228,17 @@ export class Runs {
       from?: LiveRun | null;
       chain?: readonly AutomationId[];
       onBegun?: (run: AutomationRun) => void;
+      /**
+       * The id of the trigger that started it, what `startedBy` asks: null,
+       * one without an id did. Not given — played, asked, started by
+       * another — it is the first of its conditions that holds now.
+       */
+      trigger?: string | null;
     } = {}
   ): Promise<AutomationRun> {
     const at = this.#context.now();
     const rule = automation.rule;
+    const trigger = options.trigger !== undefined ? options.trigger : this.#context.startedByNow(automation, rule);
     const why = options.why ?? (options.check ? 'Asked what it would do now' : 'As it was set up to');
     const judged = this.#context.judge(automation, at);
     const from = options.from ?? null;
@@ -259,7 +268,7 @@ export class Runs {
     const problems = this.#context.roleProblems(automation);
     if (problems.length) return over('unknown', problems.join('; '));
 
-    const scope = this.#context.scope(automation, rule, at);
+    const scope = this.#context.scope(automation, rule, at, trigger);
     try {
       if (rule.if) {
         const trace: string[] = [];
@@ -314,6 +323,7 @@ export class Runs {
       gone: false,
       wake: new Set(),
       allowance: this.#allowance(rule, scope),
+      trigger,
       changedAt: 0,
       changedOrder: 0,
       heard: new Map(),
@@ -440,7 +450,7 @@ export class Runs {
    * cannot go on.
    */
   async #walk(live: LiveRun, steps: readonly Step[], depth: number, within: string | null, mode: 'then' | 'retry' | 'otherwise'): Promise<Walked> {
-    const scope = () => this.#context.scope(live.automation, live.rule);
+    const scope = () => this.#context.scope(live.automation, live.rule, undefined, live.trigger);
     const stopping = () => live.stoppedBy !== null && mode !== 'otherwise';
     let result: Walked = 'ok';
     for (const step of steps) {
@@ -538,7 +548,7 @@ export class Runs {
 
   /** A command, through the gateway, with the run's allowance: one step. */
   async #command(live: LiveRun, command: Command, depth: number, within: string | null, regardless: boolean): Promise<Walked> {
-    const scope = this.#context.scope(live.automation, live.rule);
+    const scope = this.#context.scope(live.automation, live.rule, undefined, live.trigger);
     const planned = await this.#context.planCommand(live.automation, command, scope);
     if ('unknown' in planned) {
       this.#add(live, { kind: 'command', depth, within, what: `Send ${planned.unknown}`, outcome: 'failed', detail: 'Could not tell what to send', until: null });
@@ -596,7 +606,7 @@ export class Runs {
    * a setting's own dwell is not spent on what is already so.
    */
   async #write(live: LiveRun, write: Write, depth: number, within: string | null, what: string): Promise<Walked> {
-    const value = await evaluate(write.value, this.#context.scope(live.automation, live.rule), []).catch(() => null);
+    const value = await evaluate(write.value, this.#context.scope(live.automation, live.rule, undefined, live.trigger), []).catch(() => null);
     const binding = live.automation.roles[write.role];
     const device = binding ? this.deps.device(binding) : null;
     const entry = this.#add(live, { kind: 'write', depth, within, what, outcome: 'waiting', detail: 'Setting', until: null });
@@ -643,7 +653,7 @@ export class Runs {
     what: string,
     mode: 'then' | 'retry' | 'otherwise'
   ): Promise<Walked> {
-    const seconds = start.waitSeconds ? (this.#seconds(start.waitSeconds, this.#context.scope(live.automation, live.rule), 3_600) ?? 1) : null;
+    const seconds = start.waitSeconds ? (this.#seconds(start.waitSeconds, this.#context.scope(live.automation, live.rule, undefined, live.trigger), 3_600) ?? 1) : null;
     const entry = this.#add(live, { kind: 'start', depth, within, what, outcome: 'waiting', detail: 'Starting', until: seconds ? this.#after(seconds) : null });
     const target = live.automation.starts[start.role];
     const automation = target ? this.deps.store.get(target) : null;
@@ -858,7 +868,7 @@ export class Runs {
     for (;;) {
       const saw: string[] = [];
       // Met only on readings taken since the run last changed something.
-      const holds = this.#readSince(live, condition) ? evaluateNow(condition, this.#context.scope(live.automation, live.rule), saw) : null;
+      const holds = this.#readSince(live, condition) ? evaluateNow(condition, this.#context.scope(live.automation, live.rule, undefined, live.trigger), saw) : null;
       const elapsed = (Date.now() - started) / unit;
       // What it judged on is in the log, as it was when it judged: the same readings, read at once.
       live.log?.look();
@@ -881,7 +891,7 @@ export class Runs {
     const started = Date.now();
     for (;;) {
       const saw: string[] = [];
-      const holds = evaluateNow(condition, this.#context.scope(live.automation, live.rule), saw);
+      const holds = evaluateNow(condition, this.#context.scope(live.automation, live.rule, undefined, live.trigger), saw);
       const elapsed = (Date.now() - started) / unit;
       live.log?.look();
       if (holds !== true) return { outcome: 'broke', seconds: elapsed, saw: [...new Set(saw)].join('; ') };

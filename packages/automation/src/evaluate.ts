@@ -2,7 +2,7 @@ import { isScalar, type ConfigSchema, type ScalarValue, type Value } from '@kraf
 
 import { inWindow, minutesOf } from './clock.ts';
 import type { Evaluation } from './functions.ts';
-import { calculate, type CompareOp, type Expr, type Rule, type Step, type Trigger } from './rule.ts';
+import { calculate, type CompareOp, type Expr, type NamedTrigger, type Rule, type RunFact, type Step } from './rule.ts';
 
 /*
   Evaluating a rule's expressions where it runs: against what its parts read
@@ -23,6 +23,8 @@ export type RuleScope = {
   name(role: string): string;
   /** The time of day on the owner's clock, as "HH:MM"; null where there is none. */
   clock(): string | null;
+  /** A fact of the run being evaluated (`run.trigger`); null — or absent — where there is no run, or it is not known. */
+  run?(fact: RunFact): Value;
 };
 
 const compare = (op: CompareOp, left: Value, right: Value): Value => {
@@ -101,6 +103,7 @@ export function evaluateNow(expr: Expr, scope: RuleScope, trace: string[] = []):
     trace.push(`${scope.name(expr.reachable)}: ${reachable ? 'can be reached' : `cannot be reached (${detail})`}`);
     return reachable;
   }
+  if ('run' in expr) return scope.run?.(expr.run) ?? null;
   if ('within' in expr) {
     const now = scope.clock();
     const [from, to] = [minutesOf(evaluateNow(expr.within.from, scope)), minutesOf(evaluateNow(expr.within.to, scope))];
@@ -226,10 +229,16 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
     const otherwise = optional(step.watch.else).steps;
     return { watch: { condition: expr(step.watch.condition), seconds: expr(step.watch.seconds), ...(then ? { then } : {}), ...(otherwise ? { else: otherwise } : {}) } };
   }
-  const when = rule.when.map((trigger): Trigger => {
+  const when = rule.when.map((trigger): NamedTrigger => {
+    const id = trigger.id ? { id: trigger.id } : {};
     if ('at' in trigger) return { ...trigger, at: expr(trigger.at) };
-    if ('every' in trigger) return { every: expr(trigger.every) };
-    if ('becomes' in trigger) return { becomes: expr(trigger.becomes), ...(trigger.heldForMinutes ? { heldForMinutes: expr(trigger.heldForMinutes) } : {}) };
+    if ('every' in trigger) return { every: expr(trigger.every), ...id };
+    if ('becomes' in trigger) {
+      // A hold its settings make none — 0 min — is no hold: the moment it turns true.
+      const held = trigger.heldForMinutes ? expr(trigger.heldForMinutes) : null;
+      const holds = held && !('value' in held && held.value === 0);
+      return { becomes: expr(trigger.becomes), ...(holds ? { heldForMinutes: held } : {}), ...id };
+    }
     return trigger;
   });
   const otherwise = optional(rule.otherwise).steps;

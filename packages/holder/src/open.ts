@@ -3,6 +3,7 @@ import {
   isSimulated,
   openChannel,
   SIMULATED_TRANSPORT,
+  simulatedMethodOf,
   validateConfig,
   type Channel,
   type ConnectionHealth,
@@ -19,6 +20,7 @@ import {
   type Platform,
   type Protocol,
   type SavedDeviceId,
+  type Simulation,
   type TransportSource,
 } from '@kraftverk/device-sdk';
 
@@ -67,6 +69,12 @@ export type OpenInput = {
   changed?: () => void;
   /** An event the device raised, already checked against its description. */
   event?: (event: DeviceEventMessage) => void;
+  /**
+   * For a simulator: whether what feeds one of its parts gives it power now —
+   * a simulated switch linked to it as `feeds` — or null when nothing
+   * simulated does. Who knows the links answers; without it, nothing feeds.
+   */
+  fed?: (part: string) => boolean | null;
   timeoutMs?: number;
 };
 
@@ -145,10 +153,19 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
     let session: DeviceSession | null = null;
     const describe = (): DeviceDescription => session?.description?.() ?? declared;
 
+    // A simulator's world: how fast it runs and what it was set up with, by its simulated way's own choices.
+    let simulation: Simulation | null = null;
+    if (!connection) {
+      const setUp = validateConfig(simulatedMethodOf(type).config!, input.connection?.config ?? {});
+      if (!setUp.ok) throw new OpenRefused(`Needs setting up: ${setUp.issues.map((issue) => issue.message).join('; ')}`, 'unconfigured');
+      simulation = { speed: Number(setUp.value.speed ?? 1), config: setUp.value, fed: (part) => input.fed?.(part) ?? null };
+    }
+
     const context: DeviceContext = {
       deviceId: device.id,
       config: config.value,
       connection,
+      simulation,
       store: input.store,
       log: input.log,
       readOnly: input.readOnly,

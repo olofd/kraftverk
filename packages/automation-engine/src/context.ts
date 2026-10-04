@@ -1,5 +1,5 @@
 import type { ConditionState } from '@kraftverk/api-contract';
-import { capitalise, checkBinding, describeExpr, describeSteps, evaluate, evaluateNow, isAutomationRole, partRoles, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type StepLine, type Write } from '@kraftverk/automation';
+import { capitalise, checkBinding, describeExpr, describeSteps, evaluate, evaluateNow, isAutomationRole, partRoles, secondsText, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type StepLine, type Write } from '@kraftverk/automation';
 import { attributeMeaning, capabilityIn, clockTime, isCurrent, isScalar, readingOf, standardMeaning, unitOf, type CapabilityName, type Value } from '@kraftverk/device-sdk';
 
 import type { AutomationEngineDeps, AutomationRecord, EngineDevice } from './model.ts';
@@ -27,8 +27,21 @@ export type ContextDeps = Pick<AutomationEngineDeps, 'store' | 'library' | 'devi
 export class RuleContext {
   constructor(private deps: ContextDeps) {}
 
-  /** What a rule is evaluated against: its settings, and the parts filling its roles as they are now. */
-  scope(automation: AutomationRecord, rule: Rule, now = this.now()): RuleScope {
+  /**
+   * What a run started by hand counts as started by: the first of its
+   * conditions with an id that holds now, holds aside — "do what you would
+   * do now". Null when none does.
+   */
+  startedByNow(automation: AutomationRecord, rule: Rule): string | null {
+    const scope = this.scope(automation, rule);
+    return rule.when.find((trigger) => trigger.id && 'becomes' in trigger && evaluateNow(trigger.becomes, scope) === true)?.id ?? null;
+  }
+
+  /**
+   * What a rule is evaluated against: its settings, the parts filling its
+   * roles as they are now, and the trigger that started the run, if one did.
+   */
+  scope(automation: AutomationRecord, rule: Rule, now = this.now(), trigger: string | null = null): RuleScope {
     const part = (role: string): EngineDevice | null => {
       const binding = automation.roles[role];
       const device = binding ? this.deps.device(binding) : null;
@@ -36,6 +49,8 @@ export class RuleContext {
     };
     return {
       clock: () => clockTime(now, automation.timeZone),
+      // No trigger with an id started it: that is known, and said as no id at all.
+      run: (fact) => (fact === 'trigger' ? (trigger ?? '') : null),
       // An automation's own rule has no settings: its values are in its blocks. A recipe's are its defaults.
       param: (name) => {
         const field = rule.params.fields[name];
@@ -114,7 +129,7 @@ export class RuleContext {
       if (!('becomes' in trigger)) return [];
       const holds = evaluateNow(trigger.becomes, scope, saw);
       const minutes = trigger.heldForMinutes ? Number(evaluateNow(trigger.heldForMinutes, scope)) : 0;
-      const text = `${capitalise(this.said(automation, rule, trigger.becomes))}${minutes > 0 ? ` for ${minutes} min` : ''}`;
+      const text = `${capitalise(this.said(automation, rule, trigger.becomes))}${minutes > 0 ? ` for ${secondsText(minutes * 60)}` : ''}`;
       return [{ text, holds: typeof holds === 'boolean' ? holds : null }];
     });
     return { conditions, saw: [...new Set(saw)] };

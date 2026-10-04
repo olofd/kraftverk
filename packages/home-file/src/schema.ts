@@ -138,7 +138,7 @@ const EXPRESSION: Schema = {
     {
       type: 'string',
       description:
-        'An expression: a reading `role.meaning` ("charger.power.draw"), `role reachable`, numbers with units ("50 W"), times ("07:00"), "text", compared with < <= > >= == !=, joined with and, or, not; `time between 23:00 and 05:00`; min( , ), max( , ), + -; `call package.fn(role, name = value)`.',
+        'An expression: a reading `role.meaning` ("charger.power.draw"), `role reachable`, `run.trigger` (the id of the trigger that started the run), numbers with units ("50 W"), times ("07:00"), "text", compared with < <= > >= == !=, joined with and, or, not; `time between 23:00 and 05:00`; min( , ), max( , ), + -; `call package.fn(role, name = value)`.',
     },
     { type: 'number' },
     { type: 'boolean' },
@@ -192,12 +192,15 @@ const STEP: Schema = {
 
 const DAYS: Schema = { anyOf: [{ enum: ['weekdays', 'weekends'] }, { type: 'array', items: { enum: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] } }] };
 
+/** A trigger's own id, that what it does reads back as `run.trigger`. */
+const TRIGGER_ID: Schema = { type: 'string', pattern: '^[a-z][a-zA-Z0-9]{0,31}$', description: 'Its id, that what it does reads back as `run.trigger`: "low".' };
+
 const TRIGGER: Schema = {
   anyOf: [
-    { title: 'at', type: 'object', required: ['at'], additionalProperties: false, properties: { at: { $ref: '#/$defs/expression' }, days: DAYS } },
-    { title: 'every', type: 'object', required: ['every'], additionalProperties: false, properties: { every: { $ref: '#/$defs/duration' } } },
-    { title: 'event', type: 'object', required: ['event', 'from'], additionalProperties: false, properties: { event: { type: 'string' }, from: { type: 'string' } } },
-    { title: 'becomes', type: 'object', required: ['becomes'], additionalProperties: false, properties: { becomes: { $ref: '#/$defs/expression' }, for: { $ref: '#/$defs/duration' } } },
+    { title: 'at', type: 'object', required: ['at'], additionalProperties: false, properties: { id: TRIGGER_ID, at: { $ref: '#/$defs/expression' }, days: DAYS } },
+    { title: 'every', type: 'object', required: ['every'], additionalProperties: false, properties: { id: TRIGGER_ID, every: { $ref: '#/$defs/duration' } } },
+    { title: 'event', type: 'object', required: ['event', 'from'], additionalProperties: false, properties: { id: TRIGGER_ID, event: { type: 'string' }, from: { type: 'string' } } },
+    { title: 'becomes', type: 'object', required: ['becomes'], additionalProperties: false, properties: { id: TRIGGER_ID, becomes: { $ref: '#/$defs/expression' }, for: { $ref: '#/$defs/duration' } } },
   ],
 };
 

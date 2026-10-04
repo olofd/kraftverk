@@ -12,8 +12,13 @@ const HEADERS = { 'x-kraftverk-client': 'app' };
 
 export type Added = { id: string; name: string };
 
-/** Adds a simulated device straight through the API: for what a test needs to exist, not what it tests. */
-export async function addSimulated(request: APIRequestContext, typeId: string, name: string, device?: Record<string, unknown>): Promise<Added> {
+/**
+ * Adds a simulated device straight through the API: for what a test needs to
+ * exist, not what it tests. `simulation`: what its simulated world is set up
+ * with — how fast it runs (`speed`), and its type's own choices (a station's
+ * `level` to start from).
+ */
+export async function addSimulated(request: APIRequestContext, typeId: string, name: string, device?: Record<string, unknown>, simulation?: Record<string, unknown>): Promise<Added> {
   const call = async (path: string, method: 'POST' | 'PATCH', data?: unknown) => {
     const response = await request.fetch(`/api${path}`, { method, headers: HEADERS, data });
     expect(response.ok(), `${method} ${path}: ${await response.text()}`).toBe(true);
@@ -21,6 +26,7 @@ export async function addSimulated(request: APIRequestContext, typeId: string, n
   };
   const draft = await call('/setup', 'POST', { typeId, methodId: 'simulated' });
   if (device) await call(`/setup/${draft.id}`, 'PATCH', { device });
+  if (simulation) await call(`/setup/${draft.id}`, 'PATCH', { connection: simulation });
   await call(`/setup/${draft.id}/check`, 'POST');
   const saved = await call(`/setup/${draft.id}/save`, 'POST', { name });
   return { id: saved.id, name: saved.name };

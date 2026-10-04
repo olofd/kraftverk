@@ -99,10 +99,10 @@ describe('an assistant', () => {
     const station = await t.added('Garage station', { typeId: 'test.station' });
     const plug = await t.added('Charger plug', { typeId: 'test.plug' });
     const roles = { battery: { device: station.id, part: 'main' }, charger: { device: plug.id, part: 'main' } };
-    const proposal = await tool('propose', { name: 'My charge window', recipe: 'standard.charge-between', roles, params: { low: 15, high: 50, minutes: 2 }, timeZone: 'Europe/Stockholm' });
+    const proposal = await tool('propose', { name: 'My charge window', recipe: 'standard.charge-between', roles, params: { low: 15, lowMinutes: 2, high: 50, highMinutes: 0 }, timeZone: 'Europe/Stockholm' });
     expect(proposal.isError).toBeUndefined();
     expect(proposal.content[0]!.text).toContain(
-      'only watching: When Garage station’s charge is below 15 % for 2 min, or when Garage station’s charge is at least 50 %, turn Charger plug on if Garage station’s charge is below 50 %, off if not.'
+      'only watching: When Garage station’s charge is below 15 % for 2 min, or when Garage station’s charge is at least 50 %, if one of its triggers started it, turn Charger plug on if it started because Garage station’s charge is below 15 % for 2 min, off if not.'
     );
     expect(proposal.content[0]!.text).toContain('It acts on its own only once a person lets it, in the app');
     expect(proposal.content[0]!.text).toContain('Rehearsed from');

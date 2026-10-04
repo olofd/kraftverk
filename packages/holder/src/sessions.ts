@@ -1,6 +1,8 @@
 import {
+  attributeMeaning,
   isSimulated,
   methodOf,
+  readingOf,
   type Availability,
   type AuditRecord,
   type ConnectionMethod,
@@ -16,6 +18,7 @@ import {
   type Protocol,
   type SavedDeviceId,
   type TransportSource,
+  type Value,
 } from '@kraftverk/device-sdk';
 
 import { ReadingChanges, type DeviceEventMessage, type LiveBus } from './bus.ts';
@@ -126,6 +129,12 @@ export type SessionManagerDeps = {
   onChange?: () => void;
   /** Where what devices say, as they say it, is published. */
   bus?: LiveBus;
+  /**
+   * For a simulator: whether what feeds a part of it gives it power now — a
+   * simulated switch linked to it as `feeds` — or null when nothing
+   * simulated does. Whoever keeps the links answers.
+   */
+  fed?: (deviceId: SavedDeviceId, part: string) => boolean | null;
   log?: (message: string) => void;
 };
 
@@ -211,6 +220,20 @@ export class SessionManager {
   simulated(deviceId: SavedDeviceId): boolean {
     const open = this.#open.get(deviceId);
     return open !== undefined && isSimulated(open.connection);
+  }
+
+  /** How many times faster than real time a device's world runs: its simulated way's speed; 1 for hardware, or one not open. */
+  speed(deviceId: SavedDeviceId): number {
+    const open = this.#open.get(deviceId);
+    const speed = open && isSimulated(open.connection) ? Number(open.connection.config.speed ?? 1) : 1;
+    return Number.isFinite(speed) && speed >= 1 ? speed : 1;
+  }
+
+  /** What an open device reports now for a meaning on one of its parts — a plug's `switch.on` — or null: not open, or saying nothing of it. */
+  reads(deviceId: SavedDeviceId, part: string, means: string): Value {
+    const open = this.#open.get(deviceId);
+    const attribute = open ? attributeMeaning(open.opened.description(), part, means) : null;
+    return open && attribute ? (readingOf(open.opened.session.readings(), attribute.key)?.value ?? null) : null;
   }
 
   /** Whether the connection a device's session has open reaches it right now. */
@@ -408,6 +431,7 @@ export class SessionManager {
           this.deps.onEvent?.(record.id, event);
           this.deps.bus?.publish({ kind: 'event', deviceId: record.id, event });
         },
+        fed: (part) => this.deps.fed?.(record.id, part) ?? null,
       });
 
       const entry: Open = { opened, connection, fingerprint: this.#fingerprint(record, connection), detach: () => {} };

@@ -116,8 +116,29 @@ A rule has:
 | `event` | `event: mains.lost` with `from: station` | when the part filling a role raises an event its description declares |
 | `becomes` | `becomes: station.battery.soc < 15 %`, with `for: 2 min` | when a condition turns true — and, with `for` (`heldForMinutes`), has stayed true that long; reads and comparisons only |
 
+Any trigger may carry an `id` (`id: low`) — letters and digits, starting
+with a lowercase letter, unique within the rule — that what it does reads
+back as `run.trigger`. So one automation does one thing when a level is
+crossed one way and another the other way, each side with its own level and
+its own hold, and no level written twice:
+
+```text
+when:
+  - id: low
+    becomes: station.battery.soc < 5 %
+    for: 2 min
+  - id: high
+    becomes: station.battery.soc >= 30 %
+    for: 2 min
+do:
+  - switch: charger
+    on: run.trigger == "low"
+```
+
 Any automation can also be played by a person or started by another: that
-is no trigger of its own.
+is no trigger of its own. Played, it counts as started by the first of its
+conditions with an id that holds now — "do what you would do now" — and by
+none when none does.
 
 ## What it does — steps
 
@@ -153,6 +174,7 @@ and every retry a count.
 | `not` | `not a` | not true |
 | `reachable` | `charger reachable` | whether the part filling a role can be reached now: its holder says it is connected. Never unknown |
 | `within` | `time between 23:00 and 05:00` | whether the owner's clock is between two times of day, from the first up to the second — across midnight when the second comes first |
+| `run` | `run.trigger` | what the run knows of itself, as a value: `trigger`, the `id` of the trigger that started it — one of its triggers' ids, so comparing it with any other is a problem. `""` when none with an id did — known, not unknown; not in a trigger, where there is no run yet. The language's own namespace: a fact a run gains later is read the same way |
 
 Comparisons (`compare`):
 
@@ -169,7 +191,7 @@ Arithmetic (`math`): `add` `+`, `subtract` `-`, `min` `min( , )`, `max`
 `max( , )`. Unknown when either side is.
 
 Precedence, loosest first: `or`, `and`, `not`, a comparison, `+ -`, then a
-value, a reading, `role reachable`, `time between … and …`, `min( , )`,
+value, a reading, `role reachable`, `run.trigger`, `time between … and …`, `min( , )`,
 `max( , )`, `call …`, `$setting`, or parentheses.
 
 **Unknown.** A reading a device has not given, a part that cannot be reached,

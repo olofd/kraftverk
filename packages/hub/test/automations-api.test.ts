@@ -87,12 +87,13 @@ describe('automations', () => {
     const station = await t.added('Garage station', { typeId: 'test.station' });
     const plug = await t.added('Charger plug', { typeId: 'test.plug' });
     await t.home.links.add({ kind: 'feeds', source: whole(plug), target: { device: station.id, part: 'input.ac' } });
-    const window = await create('Charge between 15 and 50 %', 'standard.charge-between', { battery: whole(station), charger: whole(plug) }, { low: 15, high: 50, minutes: 2 });
+    const window = await create('Charge between 15 and 50 %', 'standard.charge-between', { battery: whole(station), charger: whole(plug) }, { low: 15, lowMinutes: 2, high: 50, highMinutes: 0 });
     expect(window).toMatchObject({
       mode: 'watch',
       problems: [],
       madeFrom: { id: 'standard.charge-between', label: 'Charge between two levels' },
-      sentence: 'When Garage station’s charge is below 15 % for 2 min, or when Garage station’s charge is at least 50 %, turn Charger plug on if Garage station’s charge is below 50 %, off if not.',
+      sentence:
+        'When Garage station’s charge is below 15 % for 2 min, or when Garage station’s charge is at least 50 %, if one of its triggers started it, turn Charger plug on if it started because Garage station’s charge is below 15 % for 2 min, off if not.',
     });
     expect((await t.home.automations.check(window.id)).saw.join(' ')).toContain('Garage station: Charge');
     // Its card says how each condition stands now, and what it read to say so.

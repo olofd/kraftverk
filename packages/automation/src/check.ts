@@ -3,7 +3,7 @@ import { attributeMeaning, CAMEL_NAME, capabilitySpec, checkValue, isCapability,
 import { CLOCK_TIME, EVERY_MINUTES, HOLD_MINUTES, minutesOf, WEEKDAYS } from './clock.ts';
 import type { AutomationFunction } from './functions.ts';
 import { ruleUses } from './reads.ts';
-import { isAutomationRole, MATH_OPS, partRoles, SEQUENCE_LIMITS, type Command, type Expr, type PartRole, type Rule, type Step, type WriteTarget } from './rule.ts';
+import { isAutomationRole, MATH_OPS, partRoles, RUN_FACTS, SEQUENCE_LIMITS, TRIGGER_ID, type Command, type Expr, type PartRole, type Rule, type Step, type WriteTarget } from './rule.ts';
 
 /*
   Checking a rule before it runs (docs/AUTOMATIONS.md): every role, setting,
@@ -83,9 +83,12 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
   const problems: string[] = [];
   const roles = rule.roles ?? {};
   const params = rule.params?.fields ?? {};
+  /** The ids its triggers carry: what `startedBy` may name. */
+  const triggerIds = new Set((rule.when ?? []).flatMap((trigger) => (trigger.id ? [trigger.id] : [])));
 
   for (const [role, spec] of Object.entries(roles)) {
     if (!CAMEL_NAME.test(role)) problems.push(`roles.${role}: a role is named in camelCase`);
+    if (role === 'run') problems.push('roles.run: "run" is what the run knows of itself — name the role otherwise');
     if (!spec.label?.trim()) problems.push(`roles.${role}: it has no label`);
     if (isAutomationRole(spec)) continue;
     const named = [...(spec.capabilities ?? []), ...(spec.oneOf ?? [])];
@@ -103,8 +106,18 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
     return spec && !isAutomationRole(spec) ? spec : null;
   };
 
-  const shape = (expr: Expr, where: string, options: { calls: boolean }): Shape => {
+  const shape = (expr: Expr, where: string, options: { calls: boolean; trigger?: boolean }): Shape => {
     if ('value' in expr) return shapeOfValue(expr.value);
+    if ('run' in expr) {
+      if (!RUN_FACTS.includes(expr.run)) {
+        problems.push(`${where}: a run knows its ${RUN_FACTS.join(', ')} — not "${String(expr.run)}"`);
+        return { type: 'unknown' };
+      }
+      // Before a run there is none: what starts it cannot ask what started it.
+      if (options.trigger) problems.push(`${where}: run.${expr.run} is known once it runs — in what it does, not in what starts it`);
+      // One of its triggers' ids: compared with any other, the comparison says so.
+      return { type: 'string', options: [...triggerIds, ''] };
+    }
     if ('param' in expr) {
       const field = params[expr.param];
       if (!field) {
@@ -195,7 +208,7 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       // An option the other side can never be is a mistake, not a condition.
       for (const [side, other] of [[left, expr.right], [right, expr.left]] as const) {
         if (side.type === 'string' && side.options && 'value' in other && typeof other.value === 'string' && !side.options.includes(other.value)) {
-          problems.push(`${where}: "${other.value}" is not one of ${side.options.join(', ')}`);
+          problems.push(`${where}: "${other.value}" is not one of ${side.options.length ? side.options.join(', ') : 'them: there are none'}`);
         }
       }
       return { type: 'boolean' };
@@ -224,8 +237,12 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
   // No trigger is allowed: it runs when played, or started by another automation.
   (rule.when ?? []).forEach((trigger, index) => {
     const where = `when[${index}]`;
+    if (trigger.id !== undefined) {
+      if (typeof trigger.id !== 'string' || !TRIGGER_ID.test(trigger.id)) problems.push(`${where}.id: letters and digits, starting with a lowercase letter`);
+      else if ((rule.when ?? []).findIndex((other) => other.id === trigger.id) !== index) problems.push(`${where}.id: "${trigger.id}" is another trigger's id too`);
+    }
     if ('at' in trigger) {
-      const got = shape(trigger.at, `${where}.at`, { calls: false });
+      const got = shape(trigger.at, `${where}.at`, { calls: false, trigger: true });
       if (!fits({ type: 'string', options: null }, got)) problems.push(`${where}.at: expected a time of day, got ${said(got)}`);
       if ('value' in trigger.at && (typeof trigger.at.value !== 'string' || !CLOCK_TIME.test(trigger.at.value))) problems.push(`${where}.at: a time of day is "HH:MM"`);
       if (trigger.days !== undefined) {
@@ -234,7 +251,7 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         if (new Set(trigger.days).size !== trigger.days.length) problems.push(`${where}.days: a day is named twice`);
       }
     } else if ('every' in trigger) {
-      const got = shape(trigger.every, `${where}.every`, { calls: false });
+      const got = shape(trigger.every, `${where}.every`, { calls: false, trigger: true });
       if (!fits({ type: 'number', unit: 'min' }, got)) problems.push(`${where}.every: expected a number of minutes, got ${said(got)}`);
       const minutes = 'value' in trigger.every ? trigger.every.value : null;
       if (typeof minutes === 'number' && (!Number.isInteger(minutes) || minutes < EVERY_MINUTES.min || minutes > EVERY_MINUTES.max)) {
@@ -244,10 +261,10 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       role(trigger.event.role, `${where}.event`);
       if (!trigger.event.event?.trim()) problems.push(`${where}.event: which event?`);
     } else if ('becomes' in trigger) {
-      const got = shape(trigger.becomes, `${where}.becomes`, { calls: false });
+      const got = shape(trigger.becomes, `${where}.becomes`, { calls: false, trigger: true });
       if (!fits({ type: 'boolean' }, got)) problems.push(`${where}.becomes: expected a condition, got ${said(got)}`);
       if (trigger.heldForMinutes) {
-        const held = shape(trigger.heldForMinutes, `${where}.heldForMinutes`, { calls: false });
+        const held = shape(trigger.heldForMinutes, `${where}.heldForMinutes`, { calls: false, trigger: true });
         if (!fits({ type: 'number', unit: null }, held)) problems.push(`${where}.heldForMinutes: expected a number of minutes, got ${said(held)}`);
         const length = 'value' in trigger.heldForMinutes ? trigger.heldForMinutes.value : null;
         if (typeof length === 'number' && !(length > 0 && length <= HOLD_MINUTES.max)) problems.push(`${where}.heldForMinutes: more than 0, and at most ${HOLD_MINUTES.max} min — a week`);

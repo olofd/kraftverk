@@ -40,6 +40,7 @@ export function ruleUses(rule: Rule): {
     if (!expr) return;
     if ('read' in expr) reads.push(expr.read);
     else if ('reachable' in expr) reaches.push(expr.reachable);
+    else if ('run' in expr) return;
     else if ('within' in expr) (windows.push(expr.within), walk(expr.within.from), walk(expr.within.to));
     else if ('call' in expr) (calls.push({ fn: expr.call, role: expr.role }), Object.values(expr.args ?? {}).forEach(walk));
     else if ('compare' in expr || 'math' in expr) (walk(expr.left), walk(expr.right));

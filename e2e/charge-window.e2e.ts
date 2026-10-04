@@ -48,7 +48,7 @@ test('a charge window of your own, copied from the shared recipe', async ({ page
   // Right now: each condition it waits for, how it stands, and the reading it stands on.
   const now = page.getByRole('region', { name: 'Right now' });
   await expect(now.getByText(`${whose(station.name)} charge is below 15 % for 2 min`, { exact: true })).toBeVisible();
-  await expect(now.getByText(`${whose(station.name)} charge is at least 50 %`, { exact: true })).toBeVisible();
+  await expect(now.getByText(`${whose(station.name)} charge is at least 50 % for 2 min`, { exact: true })).toBeVisible();
   await expect(now.getByText(new RegExp(`^${station.name}: Charge \\d`))).toBeVisible();
   // Once it has acted, what is switched by hand stays: until it is asked to keep things so.
   await expect(now.getByText(/what you switch by hand stays until one turns to yes again/)).toBeVisible();
@@ -60,17 +60,18 @@ test('a charge window of your own, copied from the shared recipe', async ({ page
   expect(await answer(page, true)).toContain('What you changed is not kept');
   await expect(page.getByRole('heading', { level: 1, name: 'Charge between two levels' })).toBeVisible();
 
-  // Changed, in its form: its step's "on while below 50 %" stays a condition — never a plain on or off —
-  // and a new name, saved with Enter, back on its page.
+  // Changed, in its form: its step's "on if the low side started it" stays a condition — never a plain on or off,
+  // and drawn as which of its triggers started the run — and a new name, saved with Enter, back on its page.
   const renamed = unique('Charge window');
   await main.getByRole('button', { name: 'Edit', exact: true }).click();
-  await page.getByRole('button', { name: /^Open step: Turn .+ on if .+ below 50 %, off if not$/ }).click();
+  await page.getByRole('button', { name: /^Open step: Turn .+ on if it started because .+ below 15 % for 2 min, off if not$/ }).click();
   await expect(page.getByText('On while this holds, off when it does not:')).toBeVisible();
+  await expect(page.getByText('Which of its triggers started this run')).toBeVisible();
   await page.getByLabel('Name').fill(renamed);
   await expect(page.getByRole('status')).toContainText('It can run as it is');
   await page.getByLabel('Name').press('Enter');
   await expect(page.getByRole('heading', { level: 1, name: renamed })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Does' }).getByText(/^Turn .+ on if .+ charge is below 50 %, off if not$/)).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Does' }).getByText(/^Turn .+ on if it started because .+ charge is below 15 % for 2 min, off if not$/)).toBeVisible();
 
   // Kept so, on its page: a look every ten minutes — not asked, while it only watches.
   await main.getByRole('radio', { name: '10 min' }).click();
@@ -89,7 +90,8 @@ test('a charge window of your own, copied from the shared recipe', async ({ page
   await main.getByRole('button', { name: 'What would it do now?' }).click();
   const checked = page.getByRole('region', { name: 'If it ran now' });
   await expect(checked.getByText('Asked what it would do now')).toBeVisible();
-  await expect(checked.getByText(/^Would turn /).first()).toBeVisible();
+  // Asked by hand, it does what is due now: the station starts at 68 %, past its high level, so the charger goes off.
+  await expect(checked.getByText(/^Would turn .+ off$/).first()).toBeVisible();
 
   // Rehearsed on the last week: this server has kept almost none of it, and says what it could.
   await main.getByRole('button', { name: 'More' }).click();

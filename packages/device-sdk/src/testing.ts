@@ -1,6 +1,6 @@
 import type { ByteChannel, ChannelMessage, MessageChannel } from './channel.ts';
 import { validateDescription } from './check-description.ts';
-import type { OpenConnection } from './connection.ts';
+import { simulatedMethodOf, type OpenConnection } from './connection.ts';
 import { attributeMeaning, capabilitiesOf, capabilityIn, checkAttributeValue, currentForOf, isCurrent, partsOf, type AttributeSpec, type DeviceDescription } from './description.ts';
 import type { DeviceContext, DeviceSession, DeviceType } from './device-type.ts';
 import { savedDeviceId } from './ids.ts';
@@ -64,6 +64,8 @@ export function simulatorContext<Config extends ConfigValues = ConfigValues>(
     // Validated against the type's own schema, so it is the type's config.
     config: config as Config,
     connection: null,
+    // Its simulated world as a new one is set up: real time, its own choices' defaults, fed by nothing simulated.
+    simulation: { speed: 1, config: configDefaults(simulatedMethodOf(type).config!), fed: () => null },
     store: {
       get: <T>(key: string) => (store.has(key) ? (store.get(key) as T) : null),
       set: (key, value) => void store.set(key, value),

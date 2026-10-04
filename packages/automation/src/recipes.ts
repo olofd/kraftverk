@@ -73,19 +73,21 @@ const soc: Expr = { read: { role: 'battery', means: 'battery.soc' } };
  * 50 %" — a charge window of your own, below what the device's own settings
  * allow, by switching what charges it.
  *
- * One rule, two edges: it runs when the charge has stayed below the low level
- * for a while, and when it reaches the high one; either way it sets the
- * charger to "below the high level?", so falling low turns it on and reaching
- * high turns it off. In between nothing happens — which is the point: the
- * battery charges up from low to high, then runs down again, instead of
- * hovering at one level with the charger clicking.
+ * One rule, two edges, each with its own id and its own hold: `low` when the
+ * charge has stayed below the low level for a while, `high` when it has
+ * stayed at the high one or above. Its one step switches the charger on when
+ * `low` started it and off when `high` did (`run.trigger`), so each level is
+ * written once and the two can never disagree. In between nothing happens —
+ * which is the point: the battery charges up from low to high, then runs down
+ * again, instead of hovering at one level with the charger clicking. Played
+ * by hand between the two, it does nothing either.
  */
 export const chargeBetween = defineRecipe({
   id: 'standard.charge-between',
   label: 'Charge between two levels',
   description:
     'Switch what charges a battery on when it runs low and off when it has charged enough: a charge window of your own, with a plug that feeds a station, say.',
-  sentence: 'Charge {battery} with {charger}: on when it stays below {low} for {minutes}, off when it reaches {high}.',
+  sentence: 'Charge {battery} with {charger}: on once it has been below {low} for {lowMinutes}, off once it has been at {high} or above for {highMinutes}.',
   roles: {
     battery: { label: 'Battery', description: 'Anything that reports its charge: a station, one of its packs', capabilities: ['battery'] },
     charger: { label: 'What charges it', description: 'A plug that feeds it, or anything that switches its charger', capabilities: ['switch'] },
@@ -93,17 +95,18 @@ export const chargeBetween = defineRecipe({
   params: {
     fields: {
       low: { type: 'number', title: 'Start charging below', unit: '%', min: 5, max: 90, step: 5, default: 15, presentation: 'slider' },
+      lowMinutes: { type: 'number', title: 'Below it for at least', description: 'So a dip under load for a moment does not count.', unit: 'min', min: 0, max: 60, step: 1, default: 2 },
       high: { type: 'number', title: 'Stop charging at', unit: '%', min: 10, max: 100, step: 5, default: 50, presentation: 'slider' },
-      minutes: { type: 'number', title: 'Below for at least', description: 'So a dip under load for a moment does not count.', unit: 'min', min: 0, max: 60, step: 1, default: 2 },
+      highMinutes: { type: 'number', title: 'At it or above for at least', description: 'So a reading that touches it for a moment does not count.', unit: 'min', min: 0, max: 60, step: 1, default: 2 },
     },
   },
   when: [
-    { becomes: { compare: 'lt', left: soc, right: { param: 'low' } }, heldForMinutes: { param: 'minutes' } },
-    { becomes: { compare: 'ge', left: soc, right: { param: 'high' } } },
+    { id: 'low', becomes: { compare: 'lt', left: soc, right: { param: 'low' } }, heldForMinutes: { param: 'lowMinutes' } },
+    { id: 'high', becomes: { compare: 'ge', left: soc, right: { param: 'high' } }, heldForMinutes: { param: 'highMinutes' } },
   ],
-  // A window that is upside down would switch the charger on and off at once.
-  if: { compare: 'lt', left: { param: 'low' }, right: { param: 'high' } },
-  then: [{ command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { compare: 'lt', left: soc, right: { param: 'high' } } } } }],
+  // A window that is upside down would switch the charger on and off at once; played between the two, nothing is due.
+  if: { all: [{ compare: 'lt', left: { param: 'low' }, right: { param: 'high' } }, { compare: 'ne', left: { run: 'trigger' }, right: { value: '' } }] },
+  then: [{ command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { compare: 'eq', left: { run: 'trigger' }, right: { value: 'low' } } } } }],
 });
 
 // --- sequences (docs/SEQUENCES.md) ------------------------------------------------------

@@ -572,7 +572,8 @@ describe('when a condition becomes true', () => {
       readingsMoved();
       await new Promise((resolve) => setTimeout(resolve, 120));
       expect(sent).toHaveLength(1);
-      expect(sent[0]!.reason).toContain('for 0.001 min');
+      // Under a second, said in whole seconds.
+      expect(sent[0]!.reason).toContain(', for 0 s');
     } finally {
       engine.stop();
     }
@@ -645,7 +646,7 @@ describe('a setting by what it means', () => {
 describe('keeping things so', () => {
   const MINUTE = 60_000;
   const window = (context: ReturnType<typeof setup>, recheckMinutes: number | null) =>
-    context.make('standard.charge-between', { battery: { device: STATION, part: 'main' }, charger: { device: PLUG, part: 'main' } }, { low: 15, high: 50, minutes: 2 }, 'act', recheckMinutes);
+    context.make('standard.charge-between', { battery: { device: STATION, part: 'main' }, charger: { device: PLUG, part: 'main' } }, { low: 15, lowMinutes: 2, high: 50, highMinutes: 0 }, 'act', recheckMinutes);
 
   test('a charger switched on by hand above the level it stops at is switched off at the next look', async () => {
     const context = setup();
@@ -910,6 +911,84 @@ describe('every so many minutes', () => {
       await engine.tick();
     }
     expect(sent).toHaveLength(10);
+    engine.stop();
+  });
+});
+
+/*
+  The owner's window, as they asked for it: a station kept between 5 and 30 %
+  through the plug that feeds it, each side waited out for 2 minutes. One
+  automation, two triggers with ids; its one step asks which started it.
+*/
+describe('a battery kept between two levels', () => {
+  const MINUTE = 60_000;
+  const roles = { battery: { device: STATION, part: 'main' }, charger: { device: PLUG, part: 'main' } };
+  const levels = { low: 5, lowMinutes: 2, high: 30, highMinutes: 2 };
+
+  test('below the low level for its hold: on; at the high level for its hold: off; a dip back is no crossing; and round again', async () => {
+    const context = setup();
+    const { engine, station, plug, sent } = context;
+    const step = async (minutes: number, soc: number) => {
+      context.at(new Date(MORNING.getTime() + minutes * MINUTE));
+      station.soc = soc;
+      await engine.hear({ kind: 'readings', deviceId: STATION, readings: [] });
+      await engine.tick();
+      await settle();
+    };
+    const switched = () => sent.map((intent) => intent.args.on);
+    plug.on = true;
+    context.make('standard.charge-between', roles, levels, 'act');
+
+    // Armed at 60 %: at the high level, and held there for 2 minutes, it switches the charger off.
+    await step(0, 60);
+    await step(1, 59.9);
+    expect(switched()).toEqual([]);
+    await step(2, 59.8);
+    expect(switched()).toEqual([false]);
+
+    // Running down: under 5 % for a minute, then back over — a dip, not a crossing.
+    await step(10, 4.9);
+    await step(11, 5.1);
+    await step(14, 5.1);
+    expect(switched()).toEqual([false]);
+
+    // Under it for its whole hold: on.
+    await step(20, 4.8);
+    await step(21, 4.7);
+    expect(switched()).toEqual([false]);
+    await step(22, 4.6);
+    expect(switched()).toEqual([false, true]);
+    expect(sent[1]!.reason).toContain('Garage P280’s charge is below 5 %, for 2 min');
+
+    // Charging up: nothing in between; at 30 % for its hold, off.
+    await step(30, 15);
+    await step(40, 29.9);
+    await step(41, 30);
+    expect(switched()).toEqual([false, true]);
+    await step(43, 30.4);
+    expect(switched()).toEqual([false, true, false]);
+
+    // And round again.
+    await step(60, 4.5);
+    await step(62, 4.4);
+    expect(switched()).toEqual([false, true, false, true]);
+    await step(80, 31);
+    await step(82, 31.2);
+    expect(switched()).toEqual([false, true, false, true, false]);
+    engine.stop();
+  });
+
+  test('played by hand, it does what is due now — and between the two levels, nothing', async () => {
+    const context = setup();
+    const { engine, station, plug } = context;
+    plug.on = false;
+    const window = context.make('standard.charge-between', roles, levels, 'act');
+    station.soc = 15;
+    expect((await engine.run(window, { check: true })).outcome).toBe('idle');
+    station.soc = 4;
+    expect((await engine.run(window, { check: true })).summary).toContain('Would turn Heater plug on');
+    station.soc = 31;
+    expect((await engine.run(window, { check: true })).summary).toContain('Would turn Heater plug off');
     engine.stop();
   });
 });

@@ -53,7 +53,30 @@ export type Expr =
    * ("22:00" to "06:00" is the night). Unknown where there is no clock: a
    * rule's settings alone cannot say what time it is.
    */
-  | { within: { from: Expr; to: Expr } };
+  | { within: { from: Expr; to: Expr } }
+  /**
+   * A fact of the run itself, read as any value is (`RUN_FACTS`): `trigger`,
+   * the id of the trigger that started it — so `run.trigger == "low"` turns
+   * the plug on when `low` started it, and one automation does one thing
+   * when a level is crossed one way and another the other way, each side
+   * with its own level and hold, nothing said twice.
+   */
+  | { run: RunFact };
+
+/**
+ * What a run knows of itself, as values a rule reads: the language's own
+ * namespace, `run.…`, beside the parts' readings and the rule's settings —
+ * so what it gains later (who started it, which attempt) is a value like
+ * these, not a construct of its own.
+ *
+ * - `trigger`: the id of the trigger that started it. A run played by hand,
+ *   or started by another automation, counts as started by the first of its
+ *   conditions with an id that holds now — "do what you would do now". The
+ *   empty text, `""`, when none with an id did: known, so a rule can tell.
+ */
+export const RUN_FACTS = ['trigger'] as const;
+
+export type RunFact = (typeof RUN_FACTS)[number];
 
 /** What `math` does with its two numbers. */
 export type MathOp = 'add' | 'subtract' | 'min' | 'max';
@@ -83,6 +106,15 @@ export type Trigger =
    * that long. Reads and comparisons only: it is evaluated on every reading.
    */
   | { becomes: Expr; heldForMinutes?: Expr };
+
+/**
+ * A trigger, with an id of its own when what the rule does asks which one
+ * started it (`run.trigger`): `low`, `high`. Unique within the rule.
+ */
+export type NamedTrigger = Trigger & { id?: string };
+
+/** A trigger's id: letters and digits, starting with a lowercase letter, as a role's name — `low`, `aboveHigh`. */
+export const TRIGGER_ID = /^[a-z][a-zA-Z0-9]{0,31}$/;
 
 // Any automation can be played by a person, or started by another: that is no trigger of its own (docs/AUTOMATION-EDITOR.md).
 
@@ -169,7 +201,7 @@ export type Rule = {
   roles: Readonly<Record<string, RoleSpec>>;
   params: ConfigSchema;
   /** Any one of these starts a run. */
-  when: readonly Trigger[];
+  when: readonly NamedTrigger[];
   /** Must be true for it to act. Unknown is not true: nothing is done, and the run says why. */
   if?: Expr;
   /** What it does, step by step. */

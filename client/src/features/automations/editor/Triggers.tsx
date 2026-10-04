@@ -44,7 +44,8 @@ export function Triggers() {
   const [adding, setAdding] = useState(false);
   const [opened, setOpened] = useState<number | null>(null);
   const put = (next: readonly Trigger[]) => editor.change((draft) => ({ ...draft, rule: { ...draft.rule, when: next } }));
-  const set = (index: number, trigger: Trigger) => put(when.map((one, at) => (at === index ? trigger : one)));
+  // A trigger changed keeps its id: what asks which started the run still means it.
+  const set = (index: number, trigger: Trigger) => put(when.map((one, at) => (at === index ? (one.id ? { ...trigger, id: one.id } : trigger) : one)));
 
   return (
     <YStack gap="$2">
@@ -64,6 +65,12 @@ export function Triggers() {
                         <Text fontSize={15} color="$color" lineHeight={22}>
                           {said}
                         </Text>
+                        {/* Its id, when a step asks which started it: what the configuration calls it. */}
+                        {trigger.id ? (
+                          <Text fontSize={13} color="$muted" lineHeight={18}>
+                            Called “{trigger.id}”
+                          </Text>
+                        ) : null}
                       </IconLabel>
                     </YStack>
                     <YStack height={22} justifyContent="center">
