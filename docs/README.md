@@ -29,7 +29,8 @@ here is in one list or the other.
 | [DOCKER.md](DOCKER.md) | The containers, their settings and data, and diagnosing a problem |
 | [BROKER.md](BROKER.md) | The MQTT broker stations connect to |
 | [DEVELOPING.md](DEVELOPING.md) | Working on the code: the layout, the tests, the end-to-end suite |
-| [CI.md](CI.md) | What every push is checked by, and the deploy |
+| [CI.md](CI.md) | What every push is checked by |
+| [DEPLOY.md](DEPLOY.md) | Deploying it: the pipeline on Forgejo, the deploy script, the server's setup |
 | [TUYA-LOCAL-KEY.md](TUYA-LOCAL-KEY.md) | Getting a Tuya plug's local key, once |
 | [PRODUCT.md](PRODUCT.md) | What kraftverk is for, beside Home Assistant, and the plan for it as a product |
 

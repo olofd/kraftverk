@@ -1,0 +1,34 @@
+# Recreates the broker with main's images, by hand: the station is gone for
+# about a minute, so this runs only when asked — when a deploy has said the
+# broker is behind, at a time when losing the station briefly is fine.
+# Run it from the repository's Actions page. docs/DEPLOY.md.
+
+name: Broker
+
+on:
+  workflow_dispatch:
+
+jobs:
+  broker:
+    name: Recreate the broker
+    if: vars.KRAFTVERK_DEPLOY == 'on'
+    runs-on: docker
+    container:
+      image: docker:29-cli
+      volumes: [/var/run/docker.sock:/var/run/docker.sock]
+    timeout-minutes: 10
+    steps:
+      - name: Tools
+        shell: sh
+        run: apk add --no-cache bash git nodejs
+      - uses: actions/checkout@v4
+      - name: Recreate it
+        run: |
+          umask 077
+          printf '%s\n' "$DEPLOY_ENV" > "$RUNNER_TEMP/deploy.env"
+          # main's images, which its pipeline deployed.
+          KRAFTVERK_DEPLOY_ENV="$RUNNER_TEMP/deploy.env" \
+            KRAFTVERK_SERVER_IMAGE="kraftverk-server:$GITHUB_SHA" KRAFTVERK_WEB_IMAGE="kraftverk-web:$GITHUB_SHA" \
+            bash scripts/deploy.sh broker
+        env:
+          DEPLOY_ENV: ${{ secrets.DEPLOY_ENV }}

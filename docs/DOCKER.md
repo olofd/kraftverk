@@ -290,6 +290,10 @@ See [SECURITY.md](SECURITY.md#recovering-access).
 
 ### Operating it
 
+New code is put in place by the pipeline, or by `scripts/deploy.sh` by hand,
+which does what follows without dropping the station
+([DEPLOY.md](DEPLOY.md)). The same, by hand with compose:
+
 ```bash
 # After pulling new code: the server and the app, and nothing else.
 docker compose up -d --build --no-deps kraftverk web

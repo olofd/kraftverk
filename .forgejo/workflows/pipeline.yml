@@ -1,0 +1,109 @@
+# kraftverk's pipeline on Forgejo: every push to main checked, built,
+# attacked, and — while the repository's variable KRAFTVERK_DEPLOY is "on" —
+# deployed onto the server the runner runs on, the station kept connected.
+# The broker is recreated only when asked: broker.yml. docs/DEPLOY.md.
+#
+# The runner gives each job a network of its own (docs/DEPLOY.md, "The
+# runner"), never the server's: there a test server looking for a broker on
+# 127.0.0.1:1883 would find the real one. The jobs that build, start and
+# ship images use the server's Docker, mounted by name — so the images the
+# stack job attacks are the very ones the deploy job ships.
+
+name: Pipeline
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  SERVER_IMAGE: kraftverk-server:${{ github.sha }}
+  WEB_IMAGE: kraftverk-web:${{ github.sha }}
+
+jobs:
+  checks:
+    name: Architecture, types, tests, unused code, and the app end to end
+    runs-on: docker
+    container:
+      # The Playwright the lockfile pins, with its browser and the browser's
+      # system libraries already in. Bump with @playwright/test.
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    timeout-minutes: 45
+    steps:
+      - name: git, which the architecture check asks for the files
+        run: apt-get update -qq && apt-get install -y -qq git > /dev/null
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm run check:architecture
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run knip
+      # Builds the app as it ships, then runs e2e/ against a read-only server
+      # of its own, every device simulated.
+      - run: npm run test:e2e
+        env:
+          CI: "1"
+      - name: Keep the report
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: e2e-report
+          path: |
+            e2e-report/
+            e2e-results/
+          retention-days: 7
+
+  stack:
+    name: Build the images, run the stack, attack it
+    runs-on: docker
+    container:
+      image: docker:29-cli
+      volumes: [/var/run/docker.sock:/var/run/docker.sock]
+    timeout-minutes: 40
+    steps:
+      - name: Tools
+        shell: sh
+        run: apk add --no-cache bash coreutils curl git nodejs
+      - uses: actions/checkout@v4
+      - run: docker build --target server -t "$SERVER_IMAGE" . && docker build --target web -t "$WEB_IMAGE" .
+      # The stack is started on the server's Docker, its ports published there:
+      # the job reaches them as host.docker.internal, the internet entrance too.
+      - run: bash scripts/ci/smoke-docker.sh
+        env:
+          SMOKE_BUILD: "0"
+          SMOKE_HOST: host.docker.internal
+          KRAFTVERK_PUBLIC_BIND: 0.0.0.0
+          KRAFTVERK_SERVER_IMAGE: ${{ env.SERVER_IMAGE }}
+          KRAFTVERK_WEB_IMAGE: ${{ env.WEB_IMAGE }}
+      - name: Keep the stack's logs
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: smoke-logs
+          path: smoke-logs.txt
+          retention-days: 7
+
+  deploy:
+    name: Deploy the server and the app
+    # Both must pass: `stack` built and attacked the very images shipped here.
+    needs: [checks, stack]
+    if: vars.KRAFTVERK_DEPLOY == 'on'
+    runs-on: docker
+    container:
+      image: docker:29-cli
+      volumes: [/var/run/docker.sock:/var/run/docker.sock]
+    timeout-minutes: 20
+    steps:
+      - name: Tools
+        shell: sh
+        run: apk add --no-cache bash git nodejs
+      - uses: actions/checkout@v4
+      - name: Deploy
+        run: |
+          umask 077
+          printf '%s\n' "$DEPLOY_ENV" > "$RUNNER_TEMP/deploy.env"
+          KRAFTVERK_DEPLOY_ENV="$RUNNER_TEMP/deploy.env" \
+            KRAFTVERK_SERVER_IMAGE="$SERVER_IMAGE" KRAFTVERK_WEB_IMAGE="$WEB_IMAGE" \
+            bash scripts/deploy.sh
+        env:
+          DEPLOY_ENV: ${{ secrets.DEPLOY_ENV }}
