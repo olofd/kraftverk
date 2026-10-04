@@ -79,6 +79,7 @@ jobs:
           # A stack and ports of this run's own: two pushes at once never meet.
           SMOKE_RUN: ${{ github.run_number }}
           KRAFTVERK_PUBLIC_BIND: 0.0.0.0
+          KRAFTVERK_HOME_PROXY_BIND: 0.0.0.0
           KRAFTVERK_SERVER_IMAGE: ${{ env.SERVER_IMAGE }}
           KRAFTVERK_WEB_IMAGE: ${{ env.WEB_IMAGE }}
       - name: Keep the stack's logs

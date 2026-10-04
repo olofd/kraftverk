@@ -7,8 +7,11 @@
 # server: someone at home, never whoever finds it on the internet first.
 #
 #   :8080  the home network. Published on the LAN.
-#   :8090  the internet. Published on the host's loopback only, for the NAS's
-#          own reverse proxy, which terminates HTTPS and forwards here.
+#   :8081  the home network, through a reverse proxy on this machine — one
+#          that gives every service a name of its own (kraftverk.local).
+#          Published on the host's loopback only: only that proxy reaches it.
+#   :8090  the internet. Published on the host's loopback only, for the
+#          host's reverse proxy, which terminates HTTPS and forwards here.
 #
 # Plain HTTP on both: TLS belongs to the reverse proxy in front.
 # See docs/DOCKER.md and docs/SECURITY.md.
@@ -26,6 +29,12 @@
 		# client's own claim: taking it let anyone pick the address their
 		# login attempts were counted against. From the right, the first
 		# address that is not a proxy is the one that really connected.
+		trusted_proxies_strict
+	}
+	# The same, for the home network's proxied entrance.
+	servers :8081 {
+		trusted_proxies static private_ranges
+		client_ip_headers X-Forwarded-For X-Real-IP
 		trusted_proxies_strict
 	}
 }
@@ -86,6 +95,21 @@
 	}
 
 	import api {exposure}
+	handle {
+		import app
+	}
+}
+
+# --- the home network, through a reverse proxy on this machine -----------------
+
+:8081 {
+	# Only a proxy on the host reaches this entrance (it is published on the
+	# host's loopback alone), so having been through one is the point here,
+	# not a mistake: what it forwards is the home network. The proxy's part is
+	# to forward only the home network's names here — a public name goes to
+	# :8090 — and the server's own tripwire still treats a request addressed
+	# by a public name as the internet.
+	import api lan
 	handle {
 		import app
 	}

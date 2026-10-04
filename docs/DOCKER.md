@@ -46,14 +46,15 @@ decided to accept the risk — not before.
 
 ---
 
-## The two entrances
+## The entrances
 
-The web container listens twice, and the difference matters:
+The web container listens three times, and the difference matters:
 
 | Port | Entrance | Published on |
 | --- | --- | --- |
 | `8080` | the home network | the host's LAN address |
-| `8090` | the internet | the host's **loopback only** — for a reverse proxy on the same machine |
+| `8081` | the home network, through a reverse proxy on the same machine — one that gives each service a name of its own (`kraftverk.local`) | the host's **loopback only** |
+| `8090` | the internet | the host's **loopback only** — for a reverse proxy on the same machine that terminates HTTPS |
 
 Every request forwarded to the server is stamped with the entrance it came
 through. It decides one thing: the first account on a fresh server can only be
@@ -61,6 +62,13 @@ created through the home network's. Everything else needs a login either way.
 Two tripwires make a mistake fail safe — a request on the home entrance that
 has been through a proxy, or that is addressed by a public name, is treated as
 the internet. See [SECURITY.md](SECURITY.md).
+
+`8081` is for a server that runs several services behind one proxy, each by a
+name of its own. Only a proxy on the host can reach it, so having been through
+one is expected there, and the address the proxy reports is the caller's. The
+proxy's part is to forward only the home network's names to `8081`, and a
+public name to `8090`; the server's own tripwire still treats a request
+addressed by a public name as the internet.
 
 The server's own port, `3333`, is published on the host's loopback only, for
 the recovery CLI and diagnostics there. Browsers go through `web`.

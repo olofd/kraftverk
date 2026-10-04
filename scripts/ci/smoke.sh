@@ -77,6 +77,16 @@ pass 'a request addressed by a public address is not the home network'
 request GET "$LAN_URL/api/auth/state" -H 'Host: rebound.example'
 expect_status 421 'a name the server does not answer to is refused (DNS rebinding)'
 
+if [ -n "${HOME_PROXY_URL:-}" ]; then
+  echo "The home network, through a reverse proxy on this machine"
+  request GET "$HOME_PROXY_URL/api/auth/state" -H 'Host: kraftverk.local' -H 'X-Forwarded-For: 192.168.1.20'
+  body_has '"canSetup":true' || fail 'a home name, through the proxy on this machine, is the home network'
+  pass 'a home name, through the proxy on this machine, is the home network'
+  request GET "$HOME_PROXY_URL/api/auth/state" -H "Host: $PUBLIC_HOST" -H 'X-Forwarded-For: 192.168.1.20'
+  body_has '"canSetup":false' || fail 'a public name, even through that proxy, is not the home network'
+  pass 'a public name, even through that proxy, is not the home network'
+fi
+
 echo "Setting up from home"
 request GET "$LAN_URL/api/auth/state"
 body_has '"canSetup":true' || fail 'the home network may set up a fresh server'

@@ -44,8 +44,9 @@ reverse proxy: every request then arrives from the proxy, which is on the LAN,
 and the whole internet looks like the living room. So:
 
 - **Through the web container** (the normal way in), trust follows *which
-  entrance* a request came through. The web container has two, and stamps
-  every request `lan` or `public`, overwriting anything the client sent. The
+  entrance* a request came through. The web container has three — the home
+  network's, the home network's through a reverse proxy on the same machine,
+  and the internet's — and stamps every request `lan` or `public`, overwriting anything the client sent. The
   server believes that stamp only from the web container itself, which it
   recognises by address (`KRAFTVERK_TRUSTED_PROXIES`).
 - **Directly** (development, or the server's own port on the LAN): trusted when
@@ -60,7 +61,7 @@ the server up from home.
 Two tripwires make a misconfigured reverse proxy fail safe:
 
 - **A request addressed by a public name or a public address is never the home
-  network**, however it arrived — through either entrance or directly. The
+  network**, however it arrived — through any entrance or directly. The
   home network reaches the server by a private address, a `.local` name or a
   single-label name; the internet reaches it by its DDNS name, or by the
   router's address. This catches a reverse proxy pointed at the wrong
@@ -70,6 +71,13 @@ Two tripwires make a misconfigured reverse proxy fail safe:
 - **The web container's home-network entrance stamps anything that has been
   through a proxy as `public`**: a request arriving with `X-Forwarded-For`,
   `Forwarded`, `X-Real-IP` or `X-Forwarded-Host` (`web/Caddyfile`).
+
+The web container's entrance for a reverse proxy on the same machine that
+serves the home network by names of its own (`8081`) is published on the
+host's loopback only too: having been through a proxy is expected there, and
+the stamp is `lan`. That proxy must forward only the home network's names to
+it; a public name forwarded there anyway is still caught by the first
+tripwire.
 
 The web container's internet entrance is published on the host's loopback
 only, so the internet reaches it through the host's reverse proxy and nowhere

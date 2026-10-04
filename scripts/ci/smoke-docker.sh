@@ -25,11 +25,11 @@ case $run in *[!0-9]* | '') echo "SMOKE_RUN is a number" >&2; exit 2 ;; esac
 offset=$(( (run % 100) * 10 ))
 project=kraftverk-smoke-$run
 host=${SMOKE_HOST:-127.0.0.1}
-lan_port=$((18080 + offset)) public_port=$((18090 + offset)) mqtt_port=$((11883 + offset))
+lan_port=$((18080 + offset)) home_proxy_port=$((18081 + offset)) public_port=$((18090 + offset)) mqtt_port=$((11883 + offset))
 export COMPOSE_PROJECT_NAME=$project
 export READ_ONLY=1
 export KRAFTVERK_ALLOWED_HOSTS=kraftverk.example.test
-export KRAFTVERK_LAN_PORT=$lan_port KRAFTVERK_PUBLIC_PORT=$public_port KRAFTVERK_MQTT_PORT=$mqtt_port KRAFTVERK_API_PORT=$((13333 + offset))
+export KRAFTVERK_LAN_PORT=$lan_port KRAFTVERK_HOME_PROXY_PORT=$home_proxy_port KRAFTVERK_PUBLIC_PORT=$public_port KRAFTVERK_MQTT_PORT=$mqtt_port KRAFTVERK_API_PORT=$((13333 + offset))
 compose() { docker compose -f docker-compose.yml "$@"; }
 
 finish() {
@@ -49,7 +49,7 @@ else
 fi
 compose ps
 
-LAN_URL=http://$host:$lan_port PUBLIC_URL=http://$host:$public_port PUBLIC_HOST=kraftverk.example.test \
+LAN_URL=http://$host:$lan_port HOME_PROXY_URL=http://$host:$home_proxy_port PUBLIC_URL=http://$host:$public_port PUBLIC_HOST=kraftverk.example.test \
   bash scripts/ci/smoke.sh
 
 echo "Inside the stack"

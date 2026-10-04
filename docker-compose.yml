@@ -118,6 +118,11 @@ services:
     ports:
       # The home network's entrance: open this in a browser.
       - "${KRAFTVERK_LAN_PORT:-8080}:8080"
+      # The home network's entrance for a reverse proxy on this machine that
+      # gives kraftverk a name of its own (kraftverk.local). Loopback only, like
+      # the internet's below: only that proxy reaches it. Never publish it wider
+      # (KRAFTVERK_HOME_PROXY_BIND exists for CI, whose Docker runs elsewhere).
+      - "${KRAFTVERK_HOME_PROXY_BIND:-127.0.0.1}:${KRAFTVERK_HOME_PROXY_PORT:-8081}:8081"
       # The internet's entrance, for a reverse proxy on this machine that
       # terminates HTTPS — DSM's, on a Synology. Loopback only: the internet
       # reaches it through that proxy and nowhere else. Never publish it wider
