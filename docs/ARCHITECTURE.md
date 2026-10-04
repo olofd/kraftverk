@@ -1423,7 +1423,7 @@ threshold recipe runs observe → act.
 
 *Done* (2026-09-29), as a language rather than as code: see
 [AUTOMATIONS.md](AUTOMATIONS.md). A recipe is a **rule** — roles, settings,
-triggers (`at`, `event`, `becomes` with `heldForMinutes`), a condition and
+triggers (`at`, `event`, `becomes` with `heldFor`), a condition and
 gateway commands, over the model's own words — checked before it runs
 (`checkRule`, `checkBinding`), evaluated three-valued with a trace, and read
 as a sentence. Code enters only as **functions** a package contributes. The

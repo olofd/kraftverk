@@ -55,7 +55,7 @@ const rule: Rule = {
   when: [],
   then: [
     { command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: true } } } },
-    { waitUntil: { condition: { compare: 'gt', left: { read: { role: 'charger', means: 'power.draw' } }, right: { value: 50 } }, atMostSeconds: { value: 20 } } },
+    { waitUntil: { condition: { compare: 'gt', left: { read: { role: 'charger', means: 'power.draw' } }, right: { value: 50 } }, atMost: { value: 20 } } },
   ],
 };
 

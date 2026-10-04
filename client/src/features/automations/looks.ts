@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import type { StepKind } from '@kraftverk/automation';
+import { STEP_KIND_ORDER, STEP_KINDS, type StepKind } from '@kraftverk/automation';
 import type { AutomationRun, RunStep } from '@kraftverk/api-client';
 import type { IconName } from '@kraftverk/ui';
 
@@ -44,16 +44,7 @@ export const STEP: Record<RunStep['outcome'], Look & { label: string }> = {
 };
 
 /** Each kind of step, its own mark: what a sequence is made of, seen at a glance. */
-export const KIND: Record<StepKind, IconName> = {
-  command: 'power',
-  wait: 'pause',
-  waitUntil: 'clock',
-  ensure: 'repeat',
-  choose: 'git-branch',
-  watch: 'eye',
-  write: 'sliders',
-  start: 'play-circle',
-};
+export const KIND: Readonly<Record<StepKind, IconName>> = Object.fromEntries(STEP_KIND_ORDER.map((kind) => [kind, STEP_KINDS[kind].icon])) as Record<StepKind, IconName>;
 
 /** The time now, moving every second while `on`: what a countdown reads. */
 export function useNow(on: boolean): number {

@@ -4,8 +4,9 @@ import type { RuleVocabulary } from './check.ts';
 import { WEEKDAYS, type Weekday } from './clock.ts';
 import { evaluateNow, settledChoice, settledScope, shown } from './evaluate.ts';
 import type { Say } from './kinds/spec.ts';
+import { branchesOf, stepSpec, type StepKind, type StepSay } from './kinds/steps.ts';
 import { TRIGGER_KINDS, triggerKind } from './kinds/triggers.ts';
-import { isAutomationRole, type Command, type CompareOp, type Expr, type Rule, type RunFact, type Step, type StepKind, type Trigger, type Write } from './rule.ts';
+import { isAutomationRole, type Command, type CompareOp, type Expr, type Rule, type RunFact, type Step, type Trigger, type Write } from './rule.ts';
 
 /*
   A rule in words (docs/AUTOMATIONS-UX.md): its triggers, conditions and
@@ -219,56 +220,26 @@ function wording(rule: Rule, params: Readonly<Record<string, Value>>, name: (rol
     if (!label.trim()) return `set a setting of ${name(role)}`;
     return `set ${whose(name(role), label)} to ${said}`;
   };
-  /** "start “Charge the scooter” and wait until it ends — at most 5 min". */
-  const start = ({ role, waitSeconds }: Extract<Step, { start: unknown }>['start']): string =>
-    `start ${name(role)}${waitSeconds ? ` and wait until it ends — at most ${seconds(waitSeconds)}` : ''}`;
   /** Steps as they read: a choice its settings decide is the steps it chose, in its place. */
   const steps = <T>(list: readonly Step[] | undefined, each: (step: Step) => T): T[] =>
     (list ?? []).flatMap((step) => {
       const chosen = 'choose' in step ? settledChoice(rule, step, params) : null;
       return chosen ? steps(chosen, each) : [each(step)];
     });
+  // What each kind's words are handed (kinds/steps.ts): how the parts of a step read.
+  const say: StepSay = { expr: text, seconds, count, name, command, write, briefs: (list) => briefs(list) };
   const lines = (list: readonly Step[] | undefined): StepLine[] => steps(list, line);
+  /** A step as its kind says it, and its branches — its lists of steps — each under its field's label. */
   const line = (step: Step): StepLine => {
-    const group = (label: string, list: readonly Step[] | undefined) => {
-      const inner = lines(list);
-      return inner.length ? [{ label, steps: inner }] : [];
-    };
-    if ('command' in step) return { kind: 'command', text: capitalise(command(step.command)), branches: [] };
-    if ('write' in step) return { kind: 'write', text: capitalise(write(step.write)), branches: [] };
-    if ('start' in step) return { kind: 'start', text: capitalise(start(step.start)), branches: [] };
-    if ('wait' in step) return { kind: 'wait', text: `Wait ${seconds(step.wait.seconds)}`, branches: [] };
-    if ('waitUntil' in step) return { kind: 'waitUntil', text: `Wait until ${text(step.waitUntil.condition)} — at most ${seconds(step.waitUntil.atMostSeconds)}`, branches: [] };
-    if ('ensure' in step) {
-      const { condition, withinSeconds, tries, retry } = step.ensure;
-      return {
-        kind: 'ensure',
-        text: `Make sure ${text(condition)} within ${seconds(withinSeconds)} — if not, try again, at most ${count(tries)}`,
-        branches: group('Each time', retry),
-      };
-    }
-    if ('choose' in step) return { kind: 'choose', text: `If ${text(step.choose.if)}`, branches: [...group('Then', step.choose.then), ...group('Otherwise', step.choose.else)] };
-    return {
-      kind: 'watch',
-      text: `Watch for ${seconds(step.watch.seconds)} whether ${text(step.watch.condition)}`,
-      branches: [...group('If it stays so', step.watch.then), ...group('If not', step.watch.else)],
-    };
+    const spec = stepSpec(step);
+    const branches = branchesOf(step).flatMap(({ field, steps: inner }) => {
+      const said = lines(inner);
+      return said.length ? [{ label: field.label, steps: said }] : [];
+    });
+    return { kind: spec.kind, text: capitalise(spec.line(step, say)), branches };
   };
   /** A step in a sentence, briefly: what it does, not its branches. */
-  const brief = (step: Step): string => {
-    if ('command' in step) return command(step.command);
-    if ('write' in step) return write(step.write);
-    if ('start' in step) return start(step.start);
-    if ('wait' in step) return `wait ${seconds(step.wait.seconds)}`;
-    if ('waitUntil' in step) return `wait until ${text(step.waitUntil.condition)}`;
-    if ('ensure' in step) return `make sure ${text(step.ensure.condition)}`;
-    if ('choose' in step) {
-      const otherwise = briefs(step.choose.else);
-      return `if ${text(step.choose.if)}, ${briefs(step.choose.then).join(' and ') || 'nothing'}${otherwise.length ? `, otherwise ${otherwise.join(' and ')}` : ''}`;
-    }
-    const then = briefs(step.watch.then);
-    return `watch whether ${text(step.watch.condition)}${then.length ? `, and if it stays so ${then.join(' and ')}` : ''}`;
-  };
+  const brief = (step: Step): string => stepSpec(step).brief(step, say);
   const briefs = (list: readonly Step[] | undefined): string[] => steps(list, brief);
   return { text, lines, briefs };
 }

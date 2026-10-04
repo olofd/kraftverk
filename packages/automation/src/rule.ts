@@ -130,21 +130,24 @@ export type Command = { role: string; capability: CapabilityName; command: strin
  * steps are only commands does everything at once; one that waits takes as
  * long as its steps allow, and never longer: every wait has a limit, every
  * retry a count. Steps nest — a choice holds steps — to a few levels, so a
- * sequence still reads as a list a person can follow.
+ * sequence still reads as a list a person can follow. Each kind is described
+ * once, in `kinds/steps.ts`, which everything that handles steps reads.
+ * Lengths of time are in seconds, named as a file says them: `for`,
+ * `atMost`, `within`, `andWait`.
  */
 export type Step =
   /** Through the gateway, as any command. */
   | { command: Command }
   /** A pause. */
-  | { wait: { seconds: Expr } }
+  | { wait: { for: Expr } }
   /** Until a condition is true — or the run stops, not having succeeded, once it has waited that long. */
-  | { waitUntil: { condition: Expr; atMostSeconds: Expr } }
+  | { waitUntil: { condition: Expr; atMost: Expr } }
   /**
    * Make sure a condition comes true within a time; if it does not, take the
    * `retry` steps and look again, at most `tries` times — then, still not, the
    * run stops, not having succeeded.
    */
-  | { ensure: { condition: Expr; withinSeconds: Expr; tries: Expr; retry: readonly Step[] } }
+  | { ensure: { condition: Expr; within: Expr; tries: Expr; retry: readonly Step[] } }
   /** One way or the other, as a condition is now. Unknown is not true: `else`. */
   | { choose: { if: Expr; then: readonly Step[]; else?: readonly Step[] } }
   /**
@@ -152,7 +155,7 @@ export type Step =
    * `else` the moment it is not — or cannot be told. "Watch whether the
    * station's AC output stays below 10 W for 5 s: then switch it off."
    */
-  | { watch: { condition: Expr; seconds: Expr; then?: readonly Step[]; else?: readonly Step[] } }
+  | { watch: { condition: Expr; for: Expr; then?: readonly Step[]; else?: readonly Step[] } }
   /**
    * Change a setting the part filling a role offers — "switch the plug's live
    * readings on" — through the gateway, read back as any setting. Never one
@@ -161,30 +164,10 @@ export type Step =
   | { write: Write }
   /**
    * Start the automation filling a role, as a person's play would — and, with
-   * `waitSeconds`, wait until its run ends: done if it acted, not if it did
+   * `andWait`, wait until its run ends: done if it acted, not if it did
    * not, or not within that time.
    */
-  | { start: { role: string; waitSeconds?: Expr } };
-
-/** The kinds of step: what a run records each as. */
-export type StepKind = 'command' | 'wait' | 'waitUntil' | 'ensure' | 'choose' | 'watch' | 'write' | 'start';
-
-export const stepKind = (step: Step): StepKind =>
-  'command' in step
-    ? 'command'
-    : 'write' in step
-      ? 'write'
-      : 'start' in step
-        ? 'start'
-        : 'wait' in step
-          ? 'wait'
-          : 'waitUntil' in step
-            ? 'waitUntil'
-            : 'ensure' in step
-              ? 'ensure'
-              : 'choose' in step
-                ? 'choose'
-                : 'watch';
+  | { start: { role: string; andWait?: Expr } };
 
 /** A role a part of a device fills: what it must offer, and what it is for. */
 export type PartRole = CapabilityNeed & { label: string; description: string };

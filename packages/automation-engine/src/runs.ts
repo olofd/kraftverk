@@ -1,5 +1,5 @@
 import type { AutomationRun, RunLog, RunStep } from '@kraftverk/api-contract';
-import { capitalise, changedRoles, describeSteps, evaluate, evaluateNow, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, takesSteps, type Command, type Expr, type Rule, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
+import { branchesOf, capitalise, changedRoles, describeSteps, evaluate, evaluateNow, fieldValue, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, stepSpec, takesSteps, type Command, type Expr, type Rule, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
 import { attributeMeaning, readingOf, type AutomationId } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
@@ -425,11 +425,15 @@ export class Runs {
     const count = (steps: readonly Step[], times: number): void => {
       for (const step of steps) {
         if ('command' in step) counts[step.command.role] = (counts[step.command.role] ?? 0) + times;
-        else if ('ensure' in step) {
-          const tries = evaluateNow(step.ensure.tries, scope);
-          count(step.ensure.retry, times * (typeof tries === 'number' ? Math.max(0, Math.floor(tries)) : 0));
-        } else if ('choose' in step) (count(step.choose.then, times), count(step.choose.else ?? [], times));
-        else if ('watch' in step) (count(step.watch.then ?? [], times), count(step.watch.else ?? [], times));
+        // Steps within, as often as the step may take them: a retry its count of times, a choice's either way once.
+        const spec = stepSpec(step);
+        const repeats = spec.fields
+          .filter((field) => field.type.type === 'count')
+          .reduce((product, field) => {
+            const value = evaluateNow(fieldValue(step, field) as Expr, scope);
+            return product * (typeof value === 'number' ? Math.max(0, Math.floor(value)) : 0);
+          }, 1);
+        for (const branch of branchesOf(step)) count(branch.steps, times * repeats);
       }
     };
     count(rule.then, 1);
@@ -462,16 +466,13 @@ export class Runs {
       // A choice its owner already made is no step of its own: the steps it chose are taken in its place.
       const chosen = 'choose' in step ? settledChoice(live.rule, step, this.#context.settled(live.automation, live.rule)) : null;
 
-      if (chosen) {
-        walked = await this.#walk(live, chosen, depth, within, mode);
-      } else if ('command' in step) {
-        walked = await this.#command(live, step.command, depth, within, mode === 'otherwise');
-      } else if ('write' in step) {
-        walked = await this.#write(live, step.write, depth, within, what());
-      } else if ('start' in step) {
-        walked = await this.#startStep(live, step.start, depth, within, what(), mode);
-      } else if ('wait' in step) {
-        const seconds = this.#seconds(step.wait.seconds, scope(), 3_600) ?? 1;
+      // Each kind its own way of being taken — every kind, or this does not compile (kinds/steps.ts).
+      if (chosen) walked = await this.#walk(live, chosen, depth, within, mode);
+      else if ('command' in step) walked = await this.#command(live, step.command, depth, within, mode === 'otherwise');
+      else if ('write' in step) walked = await this.#write(live, step.write, depth, within, what());
+      else if ('start' in step) walked = await this.#startStep(live, step.start, depth, within, what(), mode);
+      else if ('wait' in step) {
+        const seconds = this.#seconds(step.wait.for, scope(), SEQUENCE_LIMITS.waitSeconds) ?? 1;
         const entry = this.#add(live, { kind, depth, within, what: what(), outcome: 'waiting', detail: `For ${secondsText(seconds)}`, until: this.#after(seconds) });
         const woke = await this.#sleep(live, seconds, mode === 'otherwise');
         if (woke === 'stopped') {
@@ -479,17 +480,17 @@ export class Runs {
           walked = 'stopped';
         } else this.#end(live, entry, 'done', `Waited ${secondsText(seconds)}`);
       } else if ('waitUntil' in step) {
-        const seconds = this.#seconds(step.waitUntil.atMostSeconds, scope(), 3_600) ?? 1;
+        const seconds = this.#seconds(step.waitUntil.atMost, scope(), SEQUENCE_LIMITS.waitSeconds) ?? 1;
         const entry = this.#add(live, { kind, depth, within, what: what(), outcome: 'waiting', detail: 'Waiting', until: this.#after(seconds) });
         const came = await this.#until(live, step.waitUntil.condition, seconds);
         if (came.outcome === 'met') this.#end(live, entry, 'met', `${came.seconds < 1 ? 'At once' : `After ${secondsText(came.seconds)}`}${came.saw ? ` — ${came.saw}` : ''}`);
         else if (came.outcome === 'stopped') (this.#end(live, entry, 'stopped', `Stopped by ${live.stoppedBy}`), (walked = 'stopped'));
         else (this.#end(live, entry, 'timed-out', `Not in ${secondsText(seconds)}${came.saw ? ` — ${came.saw}` : ''}`), (walked = 'failed'));
       } else if ('ensure' in step) {
-        const { condition, withinSeconds, tries: triesExpr, retry } = step.ensure;
-        const seconds = this.#seconds(withinSeconds, scope(), 600) ?? 1;
+        const { condition, within: given, tries: triesExpr, retry } = step.ensure;
+        const seconds = this.#seconds(given, scope(), SEQUENCE_LIMITS.trySeconds) ?? 1;
         const triesValue = evaluateNow(triesExpr, scope());
-        const tries = typeof triesValue === 'number' ? Math.max(0, Math.min(10, Math.floor(triesValue))) : 0;
+        const tries = typeof triesValue === 'number' ? Math.max(0, Math.min(SEQUENCE_LIMITS.tries, Math.floor(triesValue))) : 0;
         const entry = this.#add(live, { kind, depth, within, what: what(), outcome: 'waiting', detail: 'Watching', until: this.#after(seconds) });
         for (let attempt = 0; ; attempt++) {
           Object.assign(entry, { until: this.#after(seconds), detail: attempt === 0 ? 'Watching' : `Watching, after try ${attempt} of ${tries}` });
@@ -522,8 +523,8 @@ export class Runs {
         const branch = holds === true ? step.choose.then : (step.choose.else ?? []);
         this.#add(live, { kind, depth, within, what: what(), outcome: 'done', detail: `${holds === true ? 'It is so' : holds === false ? 'It is not so' : 'It cannot be told, so taken as not so'}${trace.length ? ` — ${trace.join('; ')}` : ''}`, until: null });
         walked = await this.#walk(live, branch, depth + 1, holds === true ? 'Then' : 'Otherwise', mode);
-      } else {
-        const seconds = this.#seconds(step.watch.seconds, scope(), 3_600) ?? 1;
+      } else if ('watch' in step) {
+        const seconds = this.#seconds(step.watch.for, scope(), SEQUENCE_LIMITS.waitSeconds) ?? 1;
         const entry = this.#add(live, { kind, depth, within, what: what(), outcome: 'waiting', detail: 'Watching', until: this.#after(seconds) });
         const held = await this.#hold(live, step.watch.condition, seconds, mode === 'otherwise');
         if (held.outcome === 'stopped') {
@@ -534,6 +535,10 @@ export class Runs {
           this.#end(live, entry, stayed ? 'met' : 'not-met', `${stayed ? `It stayed so for ${secondsText(seconds)}` : `It did not, after ${secondsText(held.seconds)}`}${held.saw ? ` — ${held.saw}` : ''}`);
           walked = await this.#walk(live, stayed ? (step.watch.then ?? []) : (step.watch.else ?? []), depth + 1, stayed ? 'It stayed so' : 'It did not', mode);
         }
+      } else {
+        // A kind the language has and this has no way to take: never silently another.
+        const unknown: never = step;
+        throw new Error(`No way to take a step of kind ${kind}: ${JSON.stringify(unknown)}`);
       }
 
       if (walked === 'ok') continue;
@@ -653,7 +658,7 @@ export class Runs {
     what: string,
     mode: 'then' | 'retry' | 'otherwise'
   ): Promise<Walked> {
-    const seconds = start.waitSeconds ? (this.#seconds(start.waitSeconds, this.#context.scope(live.automation, live.rule, undefined, live.trigger), 3_600) ?? 1) : null;
+    const seconds = start.andWait ? (this.#seconds(start.andWait, this.#context.scope(live.automation, live.rule, undefined, live.trigger), SEQUENCE_LIMITS.waitSeconds) ?? 1) : null;
     const entry = this.#add(live, { kind: 'start', depth, within, what, outcome: 'waiting', detail: 'Starting', until: seconds ? this.#after(seconds) : null });
     const target = live.automation.starts[start.role];
     const automation = target ? this.deps.store.get(target) : null;
@@ -798,7 +803,7 @@ export class Runs {
 
   /** Keeps what a condition reads fresh while a step waits on it: its holders ask their devices more often, until then. */
   #freshen(live: LiveRun, condition: Expr, seconds: number): void {
-    const { reads, reaches } = ruleUses({ ...live.rule, when: [], then: [{ waitUntil: { condition, atMostSeconds: { value: 1 } } }], otherwise: [] });
+    const { reads, reaches } = ruleUses({ ...live.rule, when: [], then: [{ waitUntil: { condition, atMost: { value: 1 } } }], otherwise: [] });
     const until = this.#context.clock.now() + seconds * 1000 + 5_000;
     for (const role of new Set([...reads.map((read) => read.role), ...reaches])) {
       const binding = live.automation.roles[role];
@@ -828,7 +833,7 @@ export class Runs {
    */
   #readSince(live: LiveRun, condition: Expr): boolean {
     if (!live.changedAt) return true;
-    const { reads, reaches } = ruleUses({ ...live.rule, when: [], then: [{ waitUntil: { condition, atMostSeconds: { value: 1 } } }], otherwise: [] });
+    const { reads, reaches } = ruleUses({ ...live.rule, when: [], then: [{ waitUntil: { condition, atMost: { value: 1 } } }], otherwise: [] });
     /*
       Whether it can be reached, likewise: only once something has been heard
       from it since. Its connection's word alone is not enough — a device

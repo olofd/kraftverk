@@ -2,11 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { parse } from 'yaml';
 
 import { checkRule } from '../check.ts';
-import { describeTriggers } from '../describe.ts';
+import { describeRule, describeTriggers } from '../describe.ts';
 import type { Rule } from '../rule.ts';
 import { ruleFromConfig, ruleToConfig } from '../text/rules.ts';
 import { fieldSchema } from './schema.ts';
+import { ruleShape } from './shape.ts';
 import { fieldValue } from './spec.ts';
+import { STEP_KIND_ORDER, STEP_KINDS, stepKind, type StepKind, type StepSpec } from './steps.ts';
 import { TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerKind, type TriggerKind } from './triggers.ts';
 
 /*
@@ -61,4 +63,56 @@ describe('the triggers, as data', () => {
       }
     });
   }
+});
+
+const STEPS = Object.keys(STEP_KINDS) as StepKind[];
+
+/** An automation's entry around one step, its roles filled by made-up parts and an automation. */
+const doing = (step: unknown) => ({
+  uses: { charger: 'charger-plug', station: 'garage-station', plug: 'smart-plug', supply: 'garage-station.outlet.ac', chargeTheScooter: { automation: 'charge-the-scooter' } },
+  do: [step],
+});
+
+describe('the steps, as data', () => {
+  test('every kind is offered, once, in the editor’s order', () => {
+    expect([...STEP_KIND_ORDER].sort()).toEqual([...STEPS].sort());
+  });
+
+  for (const kind of STEPS) {
+    const spec = STEP_KINDS[kind] as unknown as StepSpec;
+    test(`${kind}: described whole — its words, its mark, its page`, () => {
+      expect(spec.kind).toBe(kind);
+      expect(spec.label.trim()).not.toBe('');
+      expect(spec.says.trim()).not.toBe('');
+      expect(spec.docs.summary.trim()).not.toBe('');
+      expect(spec.docs.examples.length).toBeGreaterThan(0);
+      expect(new Set(spec.fields.map((field) => field.key)).size).toBe(spec.fields.length);
+      for (const field of spec.fields) expect(fieldSchema(field)).toBeDefined();
+    });
+
+    test(`${kind}: one to start from is of its kind`, () => {
+      expect(stepKind(spec.blank('plug'))).toBe(kind);
+      expect(stepKind(spec.blank(null))).toBe(kind);
+    });
+
+    test(`${kind}: each example reads, checks, says itself, and reads back as it was written`, () => {
+      for (const example of spec.docs.examples) {
+        const read = ruleFromConfig(doing(parse(example)), []);
+        expect({ example, issues: read.issues }).toEqual({ example, issues: [] });
+        const rule = read.rule as Rule;
+        expect(stepKind(rule.then[0]!)).toBe(kind);
+        expect({ example, problems: checkRule(rule, { fn: () => null }).filter((problem) => problem.startsWith('then')) }).toEqual({ example, problems: [] });
+        expect(describeRule(rule, {}, (role) => role)).toMatch(/^[A-Z]/);
+        // Written as the file would have it — a command its shortest way — and read back, it is the same step.
+        const again = ruleFromConfig(ruleToConfig(rule, read.uses) as unknown as Record<string, unknown>, []);
+        expect(again.rule?.then).toEqual(rule.then);
+      }
+    });
+  }
+
+  test('the database knows how rules are kept: every kind and field, in its fingerprint', () => {
+    const shape = ruleShape();
+    for (const kind of [...KINDS, ...STEPS]) expect(shape).toContain(`${kind}(`);
+    expect(shape).toContain('waitUntil.atMost:duration!');
+  });
 });

@@ -50,7 +50,7 @@ type Trigger =
   | { at: Expr; days?: Weekday[] }                 // at "07:00" on the owner's clock, every day or on these
   | { every: Expr }                                // every so many minutes, on the clock from midnight
   | { event: { role: string; event: string } }     // something a device said happened
-  | { becomes: Expr; heldForMinutes?: Expr };      // a condition turning true, and staying true
+  | { becomes: Expr; heldFor?: Expr };      // a condition turning true, and staying true
 
 type Expr =
   | { value: Value }                               // a literal
@@ -67,7 +67,7 @@ type Step =
   | { command: { role: string; capability: CapabilityName; command: string; args: Record<string, Expr> } }
   | { write: { role: string; key: string; value: Expr } }          // a setting the part keeps, by its key
   | { write: { role: string; means: string; value: Expr } }        //   or by a standard meaning, which a recipe can name
-  | { start: { role: string; waitSeconds?: Expr } }                // another automation, waited for or not
+  | { start: { role: string; andWait?: Expr } }                // another automation, waited for or not
   | { wait } | { waitUntil } | { ensure } | { choose } | { watch };   // SEQUENCES.md
 ```
 
@@ -200,7 +200,7 @@ The server's engine runs every automation the same way:
 - **`becomes`**: evaluated when a reading of a bound device moves, from the
   live bus, and on the half-minute clock besides — a battery sitting at 8 %
   sends nothing. It fires on the change from not-true to true, and with
-  `heldForMinutes` (more than 0, at most a week) only once it has stayed
+  `heldFor` (more than 0, at most a week) only once it has stayed
   true that long. Turned true while a run of it still takes its steps, it
   runs again once that run ends, if it still holds. It may only read
   and compare — no function calls — so it is cheap to evaluate on every

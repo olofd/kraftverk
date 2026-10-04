@@ -3,6 +3,7 @@ import { CAPABILITIES, MAIN_PART, type CapabilityName } from '@kraftverk/device-
 import { WEEKDAYS, type Weekday } from '../clock.ts';
 import { ruleUses } from '../reads.ts';
 import { fieldValue, withField, type FieldSpec } from '../kinds/spec.ts';
+import { branchesOf, STEP_KIND_ORDER, STEP_KINDS, stepSpec, type StepKind, type StepReader, type StepSpec } from '../kinds/steps.ts';
 import { TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerSpec } from '../kinds/triggers.ts';
 import { isAutomationRole, TRIGGER_ID, type Expr, type NamedTrigger, type RoleSpec, type Rule, type Step, type Trigger } from '../rule.ts';
 import { parseExpr, printExpr, standardUnit, type PrintContext, type WrittenUnit } from './expr.ts';
@@ -70,6 +71,12 @@ function conversion(written: string, into: string): number | null {
 const round = (value: number) => Math.round(value * 1e9) / 1e9;
 
 // --- reading ------------------------------------------------------------------------------
+
+/** The verbs a kind of step starts with in a file: its own words', or its first field's key. */
+const verbsOf = (kind: StepKind): readonly string[] => STEP_KINDS[kind].text?.verbs ?? [STEP_KINDS[kind].fields[0]!.key];
+
+/** Every verb a step starts with, in the editor's order. */
+const STEP_VERBS = STEP_KIND_ORDER.flatMap(verbsOf);
 
 class Reader {
   issues: Issue[] = [];
@@ -165,89 +172,32 @@ class Reader {
 
   step(data: Data, path: Path): Step {
     if (!isRecord(data)) return this.fail('Expected a step: a verb and what it acts on ("turn on: charger")', path);
-    const has = (key: string) => key in data;
-    const only = (...keys: string[]) => {
-      for (const key of Object.keys(data)) if (!keys.includes(key)) this.fail(`"${key}" is not part of this step: it takes ${keys.map((each) => `"${each}"`).join(', ')}`, [...path, key]);
+    const kind = STEP_KIND_ORDER.find((each) => verbsOf(each).some((verb) => verb in data));
+    if (!kind) return this.fail(`Not a step: ${Object.keys(data).map((key) => `"${key}"`).join(', ')}. A step starts with ${STEP_VERBS.slice(0, -1).join(', ')} or ${STEP_VERBS.at(-1)}`, path);
+    const spec = STEP_KINDS[kind] as unknown as StepSpec;
+    if (spec.text) return spec.text.read(data, path, this.stepReader());
+    const verb = spec.fields[0]!.key;
+    const keys = spec.fields.map((field) => field.key);
+    for (const key of Object.keys(data)) if (!keys.includes(key)) this.fail(`"${key}" is not part of this step: it takes ${keys.map((each) => `"${each}"`).join(', ')}`, [...path, key]);
+    return spec.fields.reduce<Step>((step, field) => {
+      if (!(field.key in data)) {
+        // A list of steps not written is an empty one; anything else it needs is said.
+        if (field.type.type === 'steps') return field.required ? withField(step, field, []) : step;
+        return field.required ? this.fail(`"${verb}" needs "${field.key}"${field.help ? `: ${field.help.charAt(0).toLowerCase()}${field.help.slice(1).replace(/\.$/, '')}` : ''}`, path) : step;
+      }
+      return withField(step, field, this.field(field, data[field.key], [...path, field.key]));
+    }, {} as Step);
+  }
+
+  /** The reader's tools, for a kind with words of its own. */
+  private stepReader(): StepReader {
+    return {
+      expr: (data, path, into) => this.expr(data, path, into ?? null),
+      seconds: (data, path) => this.seconds(data, path),
+      name: (data, path, what) => this.name(data, path, what),
+      unitOf: (role, means) => this.context.unitOf?.(role, means) ?? standardUnit(means),
+      fail: (message, path) => this.fail(message, path),
     };
-    if (has('turn on') || has('turn off')) {
-      const on = has('turn on');
-      only(on ? 'turn on' : 'turn off');
-      const role = this.name(data[on ? 'turn on' : 'turn off'], [...path, on ? 'turn on' : 'turn off'], 'the role it turns');
-      return { command: { role, capability: 'switch', command: 'set', args: { on: { value: on } } } };
-    }
-    if (has('switch')) {
-      only('switch', 'on');
-      if (!has('on')) this.fail('"switch" needs "on": when it is on', path);
-      return { command: { role: this.name(data.switch, [...path, 'switch'], 'the role it switches'), capability: 'switch', command: 'set', args: { on: this.expr(data.on, [...path, 'on']) } } };
-    }
-    if (has('send')) {
-      only('send', 'to', 'capability', 'with');
-      const args = data.with === undefined ? {} : isRecord(data.with) ? data.with : this.fail('"with" is a map of arguments', [...path, 'with']);
-      return {
-        command: {
-          role: this.name(data.to, [...path, 'to'], 'the role it is sent to ("to")'),
-          capability: this.name(data.capability, [...path, 'capability'], 'the capability ("capability")') as CapabilityName,
-          command: this.name(data.send, [...path, 'send'], 'the command'),
-          args: Object.fromEntries(Object.entries(args).map(([name, value]) => [name, this.expr(value, [...path, 'with', name])])),
-        },
-      };
-    }
-    if (has('set')) {
-      only('set', 'setting', 'meaning', 'to');
-      const role = this.name(data.set, [...path, 'set'], 'the role whose setting it changes');
-      if (!has('to')) this.fail('"set" needs "to": what it is set to', path);
-      if (has('setting') === has('meaning')) this.fail('"set" names its setting by key ("setting") or by what it means ("meaning"), one of them', path);
-      if (has('setting')) return { write: { role, key: this.name(data.setting, [...path, 'setting'], 'the setting\'s key'), value: this.expr(data.to, [...path, 'to']) } };
-      const means = this.name(data.meaning, [...path, 'meaning'], 'what the setting means');
-      // By its meaning, its unit is known: what it is set to is in it.
-      const unit = this.context.unitOf?.(role, means) ?? standardUnit(means);
-      return { write: { role, means, value: this.expr(data.to, [...path, 'to'], unit) } };
-    }
-    if (has('wait until')) {
-      only('wait until', 'at most');
-      if (!has('at most')) this.fail('"wait until" needs "at most": every wait has its limit', path);
-      return { waitUntil: { condition: this.expr(data['wait until'], [...path, 'wait until']), atMostSeconds: this.seconds(data['at most'], [...path, 'at most']) } };
-    }
-    if (has('wait')) {
-      only('wait');
-      return { wait: { seconds: this.seconds(data.wait, [...path, 'wait']) } };
-    }
-    if (has('make sure')) {
-      only('make sure', 'within', 'tries', 'each time');
-      for (const key of ['within', 'tries']) if (!has(key)) this.fail(`"make sure" needs "${key}"`, path);
-      return {
-        ensure: {
-          condition: this.expr(data['make sure'], [...path, 'make sure']),
-          withinSeconds: this.seconds(data.within, [...path, 'within']),
-          tries: this.expr(data.tries, [...path, 'tries']),
-          retry: this.steps(data['each time'], [...path, 'each time']),
-        },
-      };
-    }
-    if (has('if')) {
-      only('if', 'then', 'else');
-      const step: Extract<Step, { choose: unknown }> = { choose: { if: this.expr(data.if, [...path, 'if']), then: this.steps(data.then, [...path, 'then']) } };
-      if (has('else')) return { choose: { ...step.choose, else: this.steps(data.else, [...path, 'else']) } };
-      return step;
-    }
-    if (has('watch')) {
-      only('watch', 'for', 'if it stays so', 'if not');
-      if (!has('for')) this.fail('"watch" needs "for": how long it watches', path);
-      return {
-        watch: {
-          condition: this.expr(data.watch, [...path, 'watch']),
-          seconds: this.seconds(data.for, [...path, 'for']),
-          ...(has('if it stays so') ? { then: this.steps(data['if it stays so'], [...path, 'if it stays so']) } : {}),
-          ...(has('if not') ? { else: this.steps(data['if not'], [...path, 'if not']) } : {}),
-        },
-      };
-    }
-    if (has('start')) {
-      only('start', 'and wait');
-      const role = this.name(data.start, [...path, 'start'], 'the role of the automation it starts');
-      return has('and wait') ? { start: { role, waitSeconds: this.seconds(data['and wait'], [...path, 'and wait']) } } : { start: { role } };
-    }
-    return this.fail(`Not a step: ${Object.keys(data).map((key) => `"${key}"`).join(', ')}. A step starts with turn on, turn off, switch, send, set, wait, wait until, make sure, if, watch or start`, path);
   }
 
   triggers(data: Data, path: Path): NamedTrigger[] {
@@ -280,15 +230,24 @@ class Reader {
   field(field: FieldSpec, data: Data, path: Path): unknown {
     switch (field.type.type) {
       case 'condition':
+      case 'value':
       case 'timeOfDay':
+      case 'count':
         return this.expr(data, path);
       case 'duration':
         return this.seconds(data, path);
       case 'days':
         return this.days(data, path);
       case 'role':
+      case 'automation':
       case 'event':
+      case 'name':
         return this.name(data, path, field.label.toLowerCase());
+      case 'steps':
+        return this.steps(data, path);
+      case 'args':
+        if (!isRecord(data)) return this.fail('Expected a map of arguments', path);
+        return Object.fromEntries(Object.entries(data).map(([name, value]) => [name, this.expr(value, [...path, name])]));
     }
   }
 
@@ -361,9 +320,7 @@ function usedCapabilities(rule: RuleBody, role: string): string[] {
   const walk = (steps: readonly Step[]) => {
     for (const step of steps) {
       if ('command' in step && step.command.role === role) used.add(step.command.capability);
-      if ('ensure' in step) walk(step.ensure.retry);
-      if ('choose' in step) (walk(step.choose.then), walk(step.choose.else ?? []));
-      if ('watch' in step) (walk(step.watch.then ?? []), walk(step.watch.else ?? []));
+      for (const branch of branchesOf(step)) walk(branch.steps);
     }
   };
   walk(rule.then);
@@ -476,33 +433,16 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>, context: Pri
   const seconds = (value: Expr): unknown => ('value' in value && typeof value.value === 'number' ? durationText(value.value) : expr(value));
   const time = (value: Expr): unknown => ('value' in value && typeof value.value === 'string' && /^\d{2}:\d{2}$/.test(value.value) ? value.value : expr(value));
 
+  // A step by its kind's words of its own, or its fields under its verb, in its kind's order (kinds/steps.ts).
   const step = (each: Step): Record<string, unknown> => {
-    if ('command' in each) {
-      const { role, capability, command, args } = each.command;
-      const names = Object.keys(args);
-      if (capability === 'switch' && command === 'set' && names.length === 1 && names[0] === 'on') {
-        const on = args.on!;
-        if ('value' in on && typeof on.value === 'boolean') return on.value ? { 'turn on': role } : { 'turn off': role };
-        return { switch: role, on: expr(on) };
-      }
-      return { send: command, to: role, capability, ...(names.length ? { with: Object.fromEntries(Object.entries(args).map(([name, value]) => [name, expr(value)])) } : {}) };
+    const spec = stepSpec(each);
+    if (spec.text) return spec.text.write(each, { expr });
+    const written: Record<string, unknown> = {};
+    for (const field of spec.fields) {
+      const value = fieldValue(each, field);
+      if (value !== undefined) written[field.key] = fieldText(field, value);
     }
-    if ('write' in each) {
-      const { role, value } = each.write;
-      return 'key' in each.write && each.write.key !== undefined ? { set: role, setting: each.write.key, to: expr(value) } : { set: role, meaning: each.write.means, to: expr(value) };
-    }
-    if ('wait' in each) return { wait: seconds(each.wait.seconds) };
-    if ('waitUntil' in each) return { 'wait until': expr(each.waitUntil.condition), 'at most': seconds(each.waitUntil.atMostSeconds) };
-    if ('ensure' in each) {
-      const { condition, withinSeconds, tries, retry } = each.ensure;
-      return { 'make sure': expr(condition), within: seconds(withinSeconds), tries: expr(tries), 'each time': retry.map(step) };
-    }
-    if ('choose' in each) return { if: expr(each.choose.if), then: each.choose.then.map(step), ...(each.choose.else !== undefined ? { else: each.choose.else.map(step) } : {}) };
-    if ('watch' in each) {
-      const { condition, seconds: forSeconds, then, else: otherwise } = each.watch;
-      return { watch: expr(condition), for: seconds(forSeconds), ...(then !== undefined ? { 'if it stays so': then.map(step) } : {}), ...(otherwise !== undefined ? { 'if not': otherwise.map(step) } : {}) };
-    }
-    return each.start.waitSeconds !== undefined ? { start: each.start.role, 'and wait': seconds(each.start.waitSeconds) } : { start: each.start.role };
+    return written;
   };
   const trigger = (each: NamedTrigger): Record<string, unknown> => (each.id ? { id: each.id, ...unnamed(each) } : unnamed(each));
   // Each of its fields by what it holds, in its kind's order (kinds/triggers.ts).
@@ -517,6 +457,8 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>, context: Pri
   const fieldText = (field: FieldSpec, value: unknown): unknown => {
     switch (field.type.type) {
       case 'condition':
+      case 'value':
+      case 'count':
         return expr(value as Expr);
       case 'timeOfDay':
         return time(value as Expr);
@@ -525,8 +467,14 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>, context: Pri
       case 'days':
         return daysInFile(value as readonly string[]);
       case 'role':
+      case 'automation':
       case 'event':
+      case 'name':
         return value;
+      case 'steps':
+        return (value as readonly Step[]).map(step);
+      case 'args':
+        return Object.fromEntries(Object.entries(value as Record<string, Expr>).map(([name, arg]) => [name, expr(arg)]));
     }
   };
 

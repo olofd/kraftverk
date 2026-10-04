@@ -4,6 +4,7 @@ import { Button, Text, XStack, YStack } from 'tamagui';
 import {
   automationRole,
   blankStep,
+  branchesOf,
   insertStep,
   kindsFor,
   listAt,
@@ -12,7 +13,9 @@ import {
   removeStep,
   secondsOf,
   SEQUENCE_LIMITS,
+  STEP_KINDS,
   stepKind,
+  stepSpec,
   within,
   withStep,
   writtenAttribute,
@@ -31,22 +34,11 @@ import { Picker } from '../../../components/Picker';
 import { Pressable } from '../../../components/Pressable';
 import { useTone } from '../../../components/tone';
 import { confirmAction } from '../../../platform/confirm';
-import { KIND as KIND_ICON } from '../looks';
 import { ConditionField } from './Condition';
 import { pickPart, useEditor } from './context';
-import { DurationField, Label, NumberField, ValueField } from './fields';
+import { Fields } from './Field';
+import { DurationField, Label, ValueField } from './fields';
 
-/** What each kind of step is called, and what it does: the editor's words for them. */
-const KINDS: Record<StepKind, { label: string; says: string }> = {
-  command: { label: 'Switch or send', says: 'A command to a part: on, off, or what else it takes.' },
-  write: { label: 'Change a setting', says: 'A setting the part keeps: its live readings, its light, what it does after a power cut.' },
-  wait: { label: 'Pause', says: 'Wait a while before the next step.' },
-  waitUntil: { label: 'Wait until', says: 'Wait for something to be so — at most so long, or the run does not succeed.' },
-  ensure: { label: 'Make sure', says: 'Something must come true in time; if not, take steps and look again, a few times at most.' },
-  choose: { label: 'If', says: 'One way or the other, as something is now.' },
-  watch: { label: 'Watch', says: 'Watch something for a while: steps if it stays so, others the moment it does not.' },
-  start: { label: 'Start another automation', says: 'Start one of your automations — and wait for it to end, if you like.' },
-};
 
 /*
   The blocks of a sequence (docs/AUTOMATION-EDITOR.md): each step a card —
@@ -100,7 +92,7 @@ function Block({ path, index, step, count, open, onToggle }: { path: ListPath; i
   ];
 
   return (
-    <YStack role="listitem" aria-label={`${KINDS[kind].label}: ${words}`} gap="$3" padding="$3" borderRadius="$4" borderWidth={1} borderColor={open ? '$accent' : '$borderColor'} backgroundColor="$background">
+    <YStack role="listitem" aria-label={`${STEP_KINDS[kind].label}: ${words}`} gap="$3" padding="$3" borderRadius="$4" borderWidth={1} borderColor={open ? '$accent' : '$borderColor'} backgroundColor="$background">
       <XStack gap="$2.5" alignItems="flex-start">
         {numbered ? (
           <YStack height={44} justifyContent="center">
@@ -115,7 +107,7 @@ function Block({ path, index, step, count, open, onToggle }: { path: ListPath; i
           <Pressable onPress={onToggle} label={`${open ? 'Close' : 'Open'} step: ${words}`}>
             {/* Its first line centred where the number and ⋯ are, however many lines follow. */}
             <YStack paddingVertical={11}>
-              <IconLabel icon={KIND_ICON[kind]} size={16} color={tone('$muted')} lineHeight={22}>
+              <IconLabel icon={STEP_KINDS[kind].icon} size={16} color={tone('$muted')} lineHeight={22}>
                 <Text fontSize={15} color="$color" lineHeight={22}>
                   {words}
                 </Text>
@@ -147,84 +139,31 @@ function Block({ path, index, step, count, open, onToggle }: { path: ListPath; i
         </XStack>
       ) : null}
 
-      {open ? <Fields path={path} step={step} set={set} /> : null}
+      {open ? <StepFields path={path} step={step} set={set} /> : null}
 
       {/* The lists it holds: always shown, so a sequence's shape is seen whole. */}
-      {branchesOf(step).map(({ branch, label }) => (
-        <YStack key={branch} gap="$2" paddingLeft="$2.5" borderLeftWidth={2} borderColor="$borderColor">
+      {branchesOf(step).map(({ field }) => (
+        <YStack key={field.key} gap="$2" paddingLeft="$2.5" borderLeftWidth={2} borderColor="$borderColor">
           <Text fontSize={13} fontWeight="600" color="$muted">
-            {label}
+            {field.label}
           </Text>
-          <BlockList path={within(path, index, branch)} label={`${words}: ${label}`} />
+          <BlockList path={within(path, index, field.data.at(-1) as Branch)} label={`${words}: ${field.label}`} />
         </YStack>
       ))}
     </YStack>
   );
 }
 
-/** The lists a step holds, each with what it is for. */
-function branchesOf(step: Step): { branch: Branch; label: string }[] {
-  if ('ensure' in step) return [{ branch: 'retry', label: 'Each time it is not so' }];
-  if ('choose' in step)
-    return [
-      { branch: 'then', label: 'Then' },
-      { branch: 'else', label: 'Otherwise' },
-    ];
-  if ('watch' in step)
-    return [
-      { branch: 'then', label: 'If it stays so' },
-      { branch: 'else', label: 'If not' },
-    ];
-  return [];
-}
-
-/** A block's fields, by its kind. */
-function Fields({ path, step, set }: { path: ListPath; step: Step; set: (step: Step) => void }) {
+/**
+ * A block's fields: its kind's own, each drawn by what it holds (kinds/steps.ts)
+ * — or, for a kind whose choices depend on the part (a command, a setting) or
+ * on the automations there are, its own form.
+ */
+function StepFields({ path, step, set }: { path: ListPath; step: Step; set: (step: Step) => void }) {
   if ('command' in step) return <CommandFields command={step.command} set={(command) => set({ command })} />;
   if ('write' in step) return <WriteFields write={step.write} set={(write) => set({ write })} />;
   if ('start' in step) return <StartFields start={step.start} waits={mayWait(path)} set={(start) => set({ start })} />;
-  if ('wait' in step) return <Seconds label="For" expr={step.wait.seconds} set={(seconds) => set({ wait: { seconds } })} />;
-  if ('waitUntil' in step) {
-    const { condition, atMostSeconds } = step.waitUntil;
-    return (
-      <YStack gap="$2.5">
-        <Label>Until</Label>
-        <ConditionField label="Wait until" expr={condition} onChange={(next) => set({ waitUntil: { condition: next, atMostSeconds } })} />
-        <Seconds label="At most" expr={atMostSeconds} set={(next) => set({ waitUntil: { condition, atMostSeconds: next } })} />
-      </YStack>
-    );
-  }
-  if ('ensure' in step) {
-    const { condition, withinSeconds, tries } = step.ensure;
-    const put = (changes: Partial<typeof step.ensure>) => set({ ensure: { ...step.ensure, ...changes } });
-    return (
-      <YStack gap="$2.5">
-        <Label>That</Label>
-        <ConditionField label="Make sure" expr={condition} onChange={(next) => put({ condition: next })} />
-        <Seconds label="Each try is given" expr={withinSeconds} max={SEQUENCE_LIMITS.trySeconds} set={(next) => put({ withinSeconds: next })} />
-        <YStack gap="$1">
-          <Label>Tries at most</Label>
-          <NumberField label="Tries at most" value={secondsOf(tries)} onChange={(next) => put({ tries: { value: next } })} />
-        </YStack>
-      </YStack>
-    );
-  }
-  if ('choose' in step) {
-    return (
-      <YStack gap="$1.5">
-        <Label>If</Label>
-        <ConditionField label="If" expr={step.choose.if} onChange={(next) => set({ choose: { ...step.choose, if: next } })} />
-      </YStack>
-    );
-  }
-  const { condition, seconds } = step.watch;
-  return (
-    <YStack gap="$2.5">
-      <Label>Whether</Label>
-      <ConditionField label="Watch whether" expr={condition} onChange={(next) => set({ watch: { ...step.watch, condition: next } })} />
-      <Seconds label="For" expr={seconds} set={(next) => set({ watch: { ...step.watch, seconds: next } })} />
-    </YStack>
-  );
+  return <Fields fields={stepSpec(step).fields} construct={step} set={set} />;
 }
 
 /** How long, as one field, with the most it may be: an hour for a wait, ten minutes for one try. */
@@ -409,10 +348,10 @@ function StartFields({ start, waits, set }: { start: Extract<Step, { start: unkn
               { value: false, label: 'Start it, and go on' },
               { value: true, label: 'Wait until it ends' },
             ]}
-            value={start.waitSeconds !== undefined}
-            onChange={(wait) => set(wait ? { role: start.role, waitSeconds: { value: 600 } } : { role: start.role })}
+            value={start.andWait !== undefined}
+            onChange={(wait) => set(wait ? { role: start.role, andWait: { value: 600 } } : { role: start.role })}
           />
-          {start.waitSeconds ? <Seconds label="At most" expr={start.waitSeconds} set={(waitSeconds) => set({ ...start, waitSeconds })} /> : null}
+          {start.andWait ? <Seconds label="At most" expr={start.andWait} set={(andWait) => set({ ...start, andWait })} /> : null}
         </YStack>
       ) : null}
     </YStack>
@@ -455,14 +394,14 @@ function AddStep({ path, list, onAdded }: { path: ListPath; list: string; onAdde
     <YStack borderRadius="$4" borderWidth={1} borderColor="$accent" overflow="hidden" backgroundColor="$background" role="menu" aria-label={`Add a step: ${list}`}>
       {kindsFor(path).map((kind, index) => (
         <YStack key={kind} borderTopWidth={index ? 1 : 0} borderColor="$borderColor">
-          <Pressable onPress={() => add(kind)} label={`Add: ${KINDS[kind].label}`}>
+          <Pressable onPress={() => add(kind)} label={`Add: ${STEP_KINDS[kind].label}`}>
             <YStack paddingHorizontal="$3" paddingVertical="$2.5">
-              <IconLabel icon={KIND_ICON[kind]} size={16} color={tone('$accent')} lineHeight={21} gap={10}>
+              <IconLabel icon={STEP_KINDS[kind].icon} size={16} color={tone('$accent')} lineHeight={21} gap={10}>
                 <Text fontSize={15} fontWeight="700" color="$color" lineHeight={21}>
-                  {KINDS[kind].label}
+                  {STEP_KINDS[kind].label}
                 </Text>
                 <Text fontSize={13} color="$muted" lineHeight={18}>
-                  {KINDS[kind].says}
+                  {STEP_KINDS[kind].says}
                 </Text>
               </IconLabel>
             </YStack>

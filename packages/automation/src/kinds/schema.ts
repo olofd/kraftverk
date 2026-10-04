@@ -1,6 +1,7 @@
 import { WEEKDAYS } from '../clock.ts';
 import { TRIGGER_ID } from '../rule.ts';
 import type { FieldSpec } from './spec.ts';
+import { STEP_KIND_ORDER, STEP_KINDS, type StepSpec } from './steps.ts';
 import { TRIGGER_KINDS, TRIGGER_KIND_ORDER } from './triggers.ts';
 
 /*
@@ -31,16 +32,44 @@ export function fieldSchema(field: FieldSpec): JsonSchema {
   const described = { description: field.help ? `${field.label}: ${field.help}` : field.label };
   switch (field.type.type) {
     case 'condition':
+    case 'value':
     case 'timeOfDay':
+    case 'count':
       return { $ref: '#/$defs/expression', ...described };
     case 'duration':
       return { $ref: '#/$defs/duration', ...described };
     case 'days':
       return DAYS_SCHEMA;
     case 'role':
+    case 'automation':
     case 'event':
+    case 'name':
       return { type: 'string', minLength: 1, ...described };
+    case 'steps':
+      return { type: 'array', items: { $ref: '#/$defs/step' }, ...described };
+    case 'args':
+      return { type: 'object', additionalProperties: { $ref: '#/$defs/expression' }, ...described };
   }
+}
+
+/** Every kind of step: one object a form — each kind's fields under its verb, or its own words' forms. */
+export function stepJsonSchema(): JsonSchema {
+  return {
+    anyOf: STEP_KIND_ORDER.flatMap((kind) => {
+      const spec = STEP_KINDS[kind] as unknown as StepSpec;
+      if (spec.text) return spec.text.schema().map((form) => ({ description: spec.docs.summary, ...form }));
+      return [
+        {
+          title: spec.label,
+          description: spec.docs.summary,
+          type: 'object',
+          required: spec.fields.filter((field) => field.required && field.type.type !== 'steps').map((field) => field.key),
+          additionalProperties: false,
+          properties: Object.fromEntries(spec.fields.map((field) => [field.key, fieldSchema(field)])),
+        },
+      ];
+    }),
+  };
 }
 
 /** Every kind of trigger: one object each, with exactly its own keys. */

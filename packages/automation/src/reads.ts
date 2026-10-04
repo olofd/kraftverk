@@ -1,6 +1,7 @@
 import { capabilitySpec, isCapability, type CapabilityNeed } from '@kraftverk/device-sdk';
 
 import { EXPRESSION_FIELDS, fieldValue } from './kinds/spec.ts';
+import { branchesOf, stepSpec } from './kinds/steps.ts';
 import { triggerSpec } from './kinds/triggers.ts';
 import type { Command, Expr, Rule, Step, Write } from './rule.ts';
 
@@ -50,16 +51,18 @@ export function ruleUses(rule: Rule): {
     else if ('any' in expr) expr.any.forEach(walk);
     else if ('not' in expr) walk(expr.not);
   };
+  // Each step by its kind's fields (kinds/steps.ts): what each reads, the automations it starts, and the steps within.
   const walkSteps = (steps: readonly Step[]): void => {
     for (const step of steps) {
-      if ('command' in step) Object.values(step.command.args).forEach(walk);
-      else if ('write' in step) (writes.push(step.write), walk(step.write.value));
-      else if ('start' in step) (starts.push(step.start.role), walk(step.start.waitSeconds));
-      else if ('wait' in step) walk(step.wait.seconds);
-      else if ('waitUntil' in step) (walk(step.waitUntil.condition), walk(step.waitUntil.atMostSeconds));
-      else if ('ensure' in step) (walk(step.ensure.condition), walk(step.ensure.withinSeconds), walk(step.ensure.tries), walkSteps(step.ensure.retry));
-      else if ('choose' in step) (walk(step.choose.if), walkSteps(step.choose.then), walkSteps(step.choose.else ?? []));
-      else (walk(step.watch.condition), walk(step.watch.seconds), walkSteps(step.watch.then ?? []), walkSteps(step.watch.else ?? []));
+      if ('write' in step) writes.push(step.write);
+      for (const field of stepSpec(step).fields) {
+        const value = fieldValue(step, field);
+        if (value === undefined) continue;
+        if (EXPRESSION_FIELDS.has(field.type.type)) walk(value as Expr);
+        else if (field.type.type === 'args') Object.values(value as Record<string, Expr>).forEach(walk);
+        else if (field.type.type === 'automation') starts.push(String(value));
+        else if (field.type.type === 'steps') walkSteps(value as readonly Step[]);
+      }
     }
   };
   const events: { role: string; event: string }[] = [];
@@ -89,9 +92,7 @@ export function ruleCommands(rule: Rule): Command[] {
   const walk = (steps: readonly Step[]) => {
     for (const step of steps) {
       if ('command' in step) found.push(step.command);
-      else if ('ensure' in step) walk(step.ensure.retry);
-      else if ('choose' in step) (walk(step.choose.then), walk(step.choose.else ?? []));
-      else if ('watch' in step) (walk(step.watch.then ?? []), walk(step.watch.else ?? []));
+      for (const branch of branchesOf(step)) walk(branch.steps);
     }
   };
   walk(rule.then);
@@ -110,7 +111,7 @@ export const changedRoles = (rule: Rule): string[] => [...new Set([...ruleComman
  * Whether a rule takes steps — waits, choices, another automation, a
  * fallback — rather than sending its commands and settings at once.
  */
-export const takesSteps = (rule: Rule): boolean => rule.then.some((step) => !('command' in step) && !('write' in step)) || Boolean(rule.otherwise?.length);
+export const takesSteps = (rule: Rule): boolean => rule.then.some((step) => !stepSpec(step).atOnce) || Boolean(rule.otherwise?.length);
 
 /** Whether a rule waits for a condition to come true. */
 export const hasConditions = (rule: Rule): boolean => rule.when.some((trigger) => 'becomes' in trigger);

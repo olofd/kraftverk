@@ -606,7 +606,7 @@ describe('blocks its owner builds', () => {
     const fast = own('Fast readings', {
       roles: { supply: SUPPLY_ROLE, charger: PLUG_ROLE },
       when: [],
-      then: [on('supply'), { waitUntil: { condition: { reachable: 'charger' }, atMostSeconds: { value: 20 } } }, { write: { role: 'charger', key: 'live', value: { value: true } } }],
+      then: [on('supply'), { waitUntil: { condition: { reachable: 'charger' }, atMost: { value: 20 } } }, { write: { role: 'charger', key: 'live', value: { value: true } } }],
     });
     await engine.startAsked(fast.id, OLOF);
     const run = await ended(fast.id);
@@ -629,7 +629,7 @@ describe('blocks its owner builds', () => {
     const charge = make('standard.start-charging', QUICK);
     const morning = own(
       'Morning',
-      { roles: { charging: { automation: true, label: 'The charging', description: 'What charges the scooter' } }, when: [], then: [{ start: { role: 'charging', waitSeconds: { value: 60 } } }] },
+      { roles: { charging: { automation: true, label: 'The charging', description: 'What charges the scooter' } }, when: [], then: [{ start: { role: 'charging', andWait: { value: 60 } } }] },
       { starts: { charging: charge.id } }
     );
     await engine.startAsked(morning.id, OLOF);
@@ -648,7 +648,7 @@ describe('blocks its owner builds', () => {
     const charge = make('standard.start-charging', QUICK);
     const morning = own(
       'Morning',
-      { roles: { charging: { automation: true, label: 'The charging', description: 'What charges the scooter' } }, when: [], then: [{ start: { role: 'charging', waitSeconds: { value: 60 } } }] },
+      { roles: { charging: { automation: true, label: 'The charging', description: 'What charges the scooter' } }, when: [], then: [{ start: { role: 'charging', andWait: { value: 60 } } }] },
       { starts: { charging: charge.id } }
     );
     await engine.startAsked(morning.id, OLOF);
@@ -674,7 +674,7 @@ describe('blocks its owner builds', () => {
     expect(refused.steps[0]).toMatchObject({ kind: 'start', outcome: 'refused', detail: 'It is off: turn it on to start it' });
 
     // A starts B, and B starts A: the second start is refused, not run round and round.
-    const a = own('A', { roles: role, when: [], then: [{ start: { role: 'charging', waitSeconds: { value: 10 } } }] });
+    const a = own('A', { roles: role, when: [], then: [{ start: { role: 'charging', andWait: { value: 10 } } }] });
     const b = own('B', { roles: role, when: [], then: [{ start: { role: 'charging' } }] }, { starts: { charging: a.id } });
     store.update(a.id, { starts: { charging: b.id } });
     await engine.startAsked(a.id, OLOF);
@@ -722,7 +722,7 @@ describe('automations that share a part', () => {
       {
         roles: { charger: { label: 'The charger’s plug', description: 'The plug the charger is in', capabilities: ['switch'] }, charging: { automation: true, label: 'The charging', description: 'What charges the scooter' } },
         when: [],
-        then: [{ start: { role: 'charging', waitSeconds: { value: 60 } } }, { command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: false } } } }],
+        then: [{ start: { role: 'charging', andWait: { value: 60 } } }, { command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: false } } } }],
       },
       { starts: { charging: charge.id } }
     );

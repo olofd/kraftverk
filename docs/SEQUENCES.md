@@ -74,22 +74,22 @@ before, at once.
 ```ts
 type Step =
   | { command: Command }                                    // through the gateway, as today
-  | { wait: { seconds: Expr } }                             // a pause
-  | { waitUntil: { condition: Expr; atMostSeconds: Expr } } // until true — or the run stops, not having succeeded
+  | { wait: { for: Expr } }                                 // a pause
+  | { waitUntil: { condition: Expr; atMost: Expr } } // until true — or the run stops, not having succeeded
   | { ensure: {                                             // make sure something comes true
       condition: Expr;
-      withinSeconds: Expr;                                  //   each time, given this long
+      within: Expr;                                  //   each time, given this long
       tries: Expr;                                          //   and retried at most this often,
       retry: Step[];                                        //   each time by these steps
     } }
   | { choose: { if: Expr; then: Step[]; else?: Step[] } }   // one way or the other, as a condition is now
   | { watch: {                                              // watch a condition for a while:
-      condition: Expr; seconds: Expr;
+      condition: Expr; for: Expr;
       then?: Step[];                                        //   if it stays true all that time
       else?: Step[];                                        //   the moment it is not, or cannot be told
     } }
   | { write: { role: string; value: Expr } & ({ key: string } | { means: string }) }   // a setting the part keeps, by key or meaning
-  | { start: { role: string; waitSeconds?: Expr } };        // another automation — waited for, at most so long
+  | { start: { role: string; andWait?: Expr } };        // another automation — waited for, at most so long
 
 type Rule = {
   roles; params;
@@ -243,7 +243,7 @@ too, and `home_setting` keeps only what the home sets as a whole, by names the s
   words. A run that takes steps started by a clock or a condition goes on by
   itself: the clock does not wait for it.
 - **Starting another.** A `start` step starts another automation for real,
-  as a person would, and — with `waitSeconds` — waits for it to end, at most
+  as a person would, and — with `andWait` — waits for it to end, at most
   so long; a run stopped stops the one it waits for. A chain goes at most
   four deep (`CHAIN_LIMIT`), and never back to one already in it: both are
   refused when the rule is checked, and again when it runs.

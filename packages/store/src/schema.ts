@@ -1,3 +1,5 @@
+import { ruleShape } from '@kraftverk/automation';
+
 /**
  * The database, as one definition (AGENTS.md, docs/ARCHITECTURE.md §9
  * decision 21).
@@ -504,15 +506,17 @@ export const SCHEMA = `
 
 /**
  * The schema's fingerprint, kept in the database's \`user_version\`: the SQL with
- * comments and spacing taken out, hashed to a positive 31-bit number. Any
- * change to what the schema says changes it; a reworded comment does not.
+ * comments and spacing taken out — and the shape its rules are kept in
+ * (\`ruleShape\`), which the SQL's \`rule TEXT\` does not show — hashed to a
+ * positive 31-bit number. Any change to what the schema says, or to how a
+ * rule is kept, changes it; a reworded comment does not.
  */
 export function schemaFingerprint(schema = SCHEMA): number {
-  const statements = schema
+  const statements = `${schema
     .replace(/\/\*[\s\S]*?\*\//g, ' ')
     .replace(/--[^\n]*/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim();
+    .trim()} -- rules: ${ruleShape()}`;
   let hash = 0x811c9dc5;
   for (let index = 0; index < statements.length; index++) hash = Math.imul(hash ^ statements.charCodeAt(index), 0x01000193) >>> 0;
   return (hash & 0x7fffffff) || 1;

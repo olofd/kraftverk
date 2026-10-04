@@ -1,4 +1,4 @@
-import { triggerJsonSchema } from '@kraftverk/automation';
+import { stepJsonSchema, triggerJsonSchema } from '@kraftverk/automation';
 import type { ConfigField, ConfigSchema } from '@kraftverk/device-sdk';
 
 import { KEY } from '@kraftverk/device-sdk';
@@ -150,46 +150,8 @@ const EXPRESSION: Schema = {
 
 const STEPS: Schema = { type: 'array', items: { $ref: '#/$defs/step' } };
 
-/** A step: its verb, and its words — each verb an object with exactly its own keys. */
-const STEP: Schema = {
-  anyOf: [
-    { title: 'turn on', type: 'object', required: ['turn on'], additionalProperties: false, properties: { 'turn on': { type: 'string', description: 'The role it turns on.' } } },
-    { title: 'turn off', type: 'object', required: ['turn off'], additionalProperties: false, properties: { 'turn off': { type: 'string', description: 'The role it turns off.' } } },
-    { title: 'switch', type: 'object', required: ['switch', 'on'], additionalProperties: false, properties: { switch: { type: 'string' }, on: { $ref: '#/$defs/expression' } } },
-    {
-      title: 'send',
-      type: 'object',
-      required: ['send', 'to', 'capability'],
-      additionalProperties: false,
-      properties: { send: { type: 'string', description: 'The command.' }, to: { type: 'string' }, capability: { type: 'string' }, with: { type: 'object', additionalProperties: { $ref: '#/$defs/expression' } } },
-    },
-    {
-      title: 'set',
-      type: 'object',
-      required: ['set', 'to'],
-      additionalProperties: false,
-      properties: { set: { type: 'string' }, setting: { type: 'string' }, meaning: { type: 'string' }, to: { $ref: '#/$defs/expression' } },
-    },
-    { title: 'wait', type: 'object', required: ['wait'], additionalProperties: false, properties: { wait: { $ref: '#/$defs/duration' } } },
-    { title: 'wait until', type: 'object', required: ['wait until', 'at most'], additionalProperties: false, properties: { 'wait until': { $ref: '#/$defs/expression' }, 'at most': { $ref: '#/$defs/duration' } } },
-    {
-      title: 'make sure',
-      type: 'object',
-      required: ['make sure', 'within', 'tries'],
-      additionalProperties: false,
-      properties: { 'make sure': { $ref: '#/$defs/expression' }, within: { $ref: '#/$defs/duration' }, tries: { $ref: '#/$defs/expression' }, 'each time': STEPS },
-    },
-    { title: 'if', type: 'object', required: ['if'], additionalProperties: false, properties: { if: { $ref: '#/$defs/expression' }, then: STEPS, else: STEPS } },
-    {
-      title: 'watch',
-      type: 'object',
-      required: ['watch', 'for'],
-      additionalProperties: false,
-      properties: { watch: { $ref: '#/$defs/expression' }, for: { $ref: '#/$defs/duration' }, 'if it stays so': STEPS, 'if not': STEPS },
-    },
-    { title: 'start', type: 'object', required: ['start'], additionalProperties: false, properties: { start: { type: 'string' }, 'and wait': { $ref: '#/$defs/duration' } } },
-  ],
-};
+/** A step: made from the language's own description of each kind (@kraftverk/automation, kinds/) — its fields under its verb, or its own words' forms. */
+const STEP: Schema = stepJsonSchema();
 
 /** What starts an automation: made from the language's own description of each kind (@kraftverk/automation, kinds/). */
 const TRIGGER: Schema = triggerJsonSchema();

@@ -1,5 +1,6 @@
 import { secondsText } from '../describe.ts';
 import type { FieldSpec } from './spec.ts';
+import { STEP_KIND_ORDER, STEP_KINDS, type StepSpec } from './steps.ts';
 import { TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './triggers.ts';
 
 /*
@@ -15,20 +16,41 @@ function holds(field: FieldSpec, fields: readonly FieldSpec[]): string {
   const type = field.type;
   switch (type.type) {
     case 'condition':
-      return 'a condition: `station.battery.soc < 15 %`';
+      return `a condition: \`station.battery.soc < 15 %\`${type.calls ? ', which may ask a package' : ''}`;
+    case 'value':
+      return 'a value, or an expression for one';
     case 'timeOfDay':
       return 'a time of day, `"HH:MM"`, on the automation’s clock';
     case 'duration':
-      return `a length of time, \`2 min\` — ${secondsText(type.min)} to ${secondsText(type.max)}${type.step ? `, in steps of ${secondsText(type.step)}` : ''}`;
+      return `a length of time, \`2 min\` — ${secondsText(type.min)} to ${secondsText(type.max)}${type.step ? `, in steps of ${secondsText(type.step)}` : ''}${type.fixed ? '; a number or a setting, never a reading' : ''}`;
+    case 'count':
+      return `how many times, 1 to ${type.max}; a number or a setting`;
     case 'days':
       return '`weekdays`, `weekends`, or a list of `mon` … `sun`';
     case 'role':
       return 'a role: what fills it is under `uses`';
+    case 'automation':
+      return 'a role another automation fills: `{ automation: key }` under `uses`';
     case 'event': {
       const from = fields.find((each) => each.key === type.role);
       return `an event the part filling \`${from?.key ?? type.role}\` declares: \`mains.lost\``;
     }
+    case 'name':
+      return 'a name its part declares';
+    case 'args':
+      return 'each argument by its name: a value, or an expression';
+    case 'steps':
+      return `steps${type.sure === false ? ' — none that waits for what might not come' : ''}${type.nonEmpty ? '; at least one' : ''}`;
   }
+}
+
+/** A kind's page: its summary, its words and what each holds, and examples as a file writes them, under `under`. */
+function kindPage(heading: string, summary: string, fields: readonly FieldSpec[], examples: readonly string[], under: string): string[] {
+  const lines = [heading, '', summary, '', '| Word | Holds | |', '|---|---|---|'];
+  for (const field of fields) lines.push(`| \`${field.key}\` | ${holds(field, fields)} | ${field.required ? 'needed' : 'if you like'} |`);
+  lines.push('');
+  for (const example of examples) lines.push('```yaml', `${under}:`, ...example.split('\n').map((line, index) => `${index === 0 ? '  - ' : '    '}${line}`), '```', '');
+  return lines;
 }
 
 /** The reference, as Markdown. */
@@ -51,10 +73,21 @@ export function referenceMarkdown(): string {
   ];
   for (const kind of TRIGGER_KIND_ORDER) {
     const spec = TRIGGER_KINDS[kind];
-    lines.push(`### \`${kind}\` — ${spec.label}`, '', spec.docs.summary, '', '| Word | Holds | |', '|---|---|---|');
-    for (const field of spec.fields) lines.push(`| \`${field.key}\` | ${holds(field, spec.fields)} | ${field.required ? 'needed' : 'if you like'} |`);
-    lines.push('');
-    for (const example of spec.docs.examples) lines.push('```yaml', 'when:', ...example.split('\n').map((line, index) => `${index === 0 ? '  - ' : '    '}${line}`), '```', '');
+    lines.push(...kindPage(`### \`${kind}\` — ${spec.label}`, spec.docs.summary, spec.fields, spec.docs.examples, 'when'));
+  }
+  lines.push(
+    '## What it does — steps',
+    '',
+    'Each step is one item under `do` (and `if a step fails`), in order. A',
+    'rule of commands and settings alone does everything at once; one that',
+    'waits takes as long as its steps allow, and never longer: every wait has',
+    'its limit, every retry its count.',
+    ''
+  );
+  for (const kind of STEP_KIND_ORDER) {
+    const spec = STEP_KINDS[kind] as unknown as StepSpec;
+    const verbs = spec.text ? spec.text.verbs : [spec.fields[0]!.key];
+    lines.push(...kindPage(`### ${verbs.map((verb) => `\`${verb}\``).join(', ')} — ${spec.label}`, spec.docs.summary, spec.fields, spec.docs.examples, 'do'));
   }
   return `${lines.join('\n').trimEnd()}\n`;
 }

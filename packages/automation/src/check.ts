@@ -3,6 +3,7 @@ import { attributeMeaning, CAMEL_NAME, capabilitySpec, checkValue, isCapability,
 import { CLOCK_TIME, minutesOf, WEEKDAYS, type Weekday } from './clock.ts';
 import { secondsText } from './describe.ts';
 import { fieldValue, type FieldSpec } from './kinds/spec.ts';
+import { branchesOf, STEP_KIND_ORDER, STEP_KINDS } from './kinds/steps.ts';
 import { TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './kinds/triggers.ts';
 import type { AutomationFunction } from './functions.ts';
 import { ruleUses } from './reads.ts';
@@ -257,17 +258,22 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         if (field.required) problems.push(`${at}: it needs ${field.label.toLowerCase()}`);
         continue;
       }
-      checkField(field, value, at);
+      checkField(field, value, at, { inTrigger: true, sure: true, depth: 1 });
     }
   });
 
   /** One field of a construct, held to what it holds (kinds/spec.ts). */
-  function checkField(field: FieldSpec, value: unknown, at: string): void {
+  function checkField(field: FieldSpec, value: unknown, at: string, where: { inTrigger: boolean; sure: boolean; depth: number }): void {
     const type = field.type;
     switch (type.type) {
       case 'condition': {
-        const got = shape(value as Expr, at, { calls: false, trigger: true });
+        const got = shape(value as Expr, at, { calls: !where.inTrigger && type.calls === true, trigger: where.inTrigger });
         if (!fits({ type: 'boolean' }, got)) problems.push(`${at}: expected a condition, got ${said(got)}`);
+        return;
+      }
+      case 'value': {
+        const got = shape(value as Expr, at, { calls: true, trigger: where.inTrigger });
+        if (got.type === 'structure') problems.push(`${at}: a setting is set to a value, not a list or an object`);
         return;
       }
       case 'timeOfDay': {
@@ -279,7 +285,9 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       }
       case 'duration': {
         const expr = value as Expr;
-        const got = shape(expr, at, { calls: false, trigger: true });
+        // A fixed one — a step's wait — is a number or a setting held to its range, so how long a run may take is known before it runs.
+        if (type.fixed) return bounded(expr, at, 's', type.min, type.max);
+        const got = shape(expr, at, { calls: false, trigger: where.inTrigger });
         if (!fits({ type: 'number', unit: 's' }, got)) problems.push(`${at}: expected a length of time, got ${said(got)}`);
         const seconds = 'value' in expr ? expr.value : null;
         const whole = type.step ? `, in steps of ${secondsText(type.step)}` : '';
@@ -297,11 +305,31 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         }
         return;
       }
+      case 'count':
+        return bounded(value as Expr, at, null, 1, type.max);
       case 'role':
         role(String(value), at);
         return;
+      case 'automation': {
+        const name = String(value);
+        const spec = roles[name];
+        if (!name) problems.push(`${at}: choose an automation`);
+        else if (!spec) problems.push(`${at}: there is no role "${name}"`);
+        else if (!isAutomationRole(spec)) problems.push(`${at}: ${name} is a part of a device, not an automation`);
+        return;
+      }
       case 'event':
         if (!String(value).trim()) problems.push(`${at}: which event?`);
+        return;
+      case 'steps': {
+        const list = value as readonly Step[];
+        if (type.nonEmpty && !list.length) problems.push(`${at}: ${type.nonEmpty}`);
+        steps(list, at, type.sure === false ? false : where.sure, where.depth + 1);
+        return;
+      }
+      // A command's capability, command and arguments, and a setting's key or meaning: their kind's own check, below.
+      case 'name':
+      case 'args':
         return;
     }
   }
@@ -311,89 +339,69 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
     if (!fits({ type: 'boolean' }, got)) problems.push(`if: expected a condition, got ${said(got)}`);
   }
 
-  /** A condition a step waits for: looked at on every reading while it waits, so reads and comparisons only. */
-  const condition = (expr: Expr, where: string, calls: boolean) => {
-    const got = shape(expr, where, { calls });
-    if (!fits({ type: 'boolean' }, got)) problems.push(`${where}: expected a condition, got ${said(got)}`);
-  };
-
   /**
    * A number a step counts by — seconds, tries — held to its limit: a literal
    * at once; a setting by its own range, so no value its form accepts can
    * exceed it.
    */
-  const bounded = (expr: Expr, where: string, unit: 's' | null, max: number, what: string) => {
+  function bounded(expr: Expr, where: string, unit: 's' | null, min: number, max: number): void {
     const got = shape(expr, where, { calls: false });
     if (!fits({ type: 'number', unit }, got)) {
-      problems.push(`${where}: expected ${unit ? 'a number of seconds' : 'a number'}, got ${said(got)}`);
+      problems.push(`${where}: expected ${unit ? 'a length of time' : 'a number'}, got ${said(got)}`);
       return;
     }
-    if ('value' in expr && typeof expr.value === 'number' && !(expr.value >= 1 && expr.value <= max)) problems.push(`${where}: ${what} between 1 and ${max}`);
+    const [low, high] = unit ? [secondsText(min), secondsText(max)] : [String(min), String(max)];
+    if ('value' in expr && typeof expr.value === 'number' && !(expr.value >= min && expr.value <= max)) problems.push(`${where}: from ${low} to ${high}`);
     if ('param' in expr) {
       const field = params[expr.param];
-      if (field?.type === 'number' && (field.max === undefined || field.max > max || field.min === undefined || field.min < 1)) {
-        problems.push(`${where}: the setting "${expr.param}" must be held to ${what} between 1 and ${max}`);
+      if (field?.type === 'number' && (field.max === undefined || field.max > max || field.min === undefined || field.min < min)) {
+        problems.push(`${where}: the setting "${expr.param}" must be held between ${low} and ${high}`);
       }
     }
-    if (!('value' in expr) && !('param' in expr)) problems.push(`${where}: ${what} is a number or a setting`);
-  };
+    if (!('value' in expr) && !('param' in expr)) problems.push(`${where}: a number or a setting, not one read or worked out: how long a run may take is known before it runs`);
+  }
 
   /**
    * Steps, in order. `sure`: where a step may fail the run — waiting for a
    * condition that never comes. Not in a retry, which is itself being tried,
    * nor in `otherwise`, which runs because something already did not succeed.
    */
-  const steps = (list: readonly Step[], where: string, sure: boolean, depth: number) => {
+  function steps(list: readonly Step[], where: string, sure: boolean, depth: number): void {
     if (list.length && depth > SEQUENCE_LIMITS.depth) problems.push(`${where}: steps within steps, more than ${SEQUENCE_LIMITS.depth} deep`);
     list.forEach((step, index) => {
       const at = `${where}[${index}]`;
+      const kind = STEP_KIND_ORDER.find((each) => each in step);
+      if (!kind) {
+        problems.push(`${at}: not a step`);
+        return;
+      }
+      const spec = STEP_KINDS[kind];
+      if (spec.waits && !sure) problems.push(`${at}: nothing here may wait for a condition that might not come: it would fail again`);
+      for (const field of spec.fields) {
+        const value = fieldValue(step, field);
+        const fieldAt = `${at}.${field.data.join('.')}`;
+        if (value === undefined || value === null) {
+          if (field.required && field.type.type !== 'name') problems.push(`${fieldAt}: it needs ${field.label.toLowerCase()}`);
+          continue;
+        }
+        checkField(field, value, fieldAt, { inTrigger: false, sure, depth });
+      }
       if ('command' in step) command(step.command, `${at}.command`);
       else if ('write' in step) {
         // Which setting, and whether the value fits it, is the bound part's to say (`checkBinding`).
-        role(step.write.role, `${at}.write`);
         const { key, means } = step.write as { key?: unknown; means?: unknown };
         if (key !== undefined && means !== undefined) problems.push(`${at}.write: a setting by its key or by its meaning, not both`);
         else if (means !== undefined) {
           if (typeof means !== 'string' || !standardMeaning(means)) problems.push(`${at}.write.means: "${String(means)}" is not a standard meaning`);
         } else if (typeof key !== 'string' || !key.trim()) problems.push(`${at}.write.key: which setting?`);
-        const got = shape(step.write.value, `${at}.write.value`, { calls: true });
-        if (got.type === 'structure') problems.push(`${at}.write.value: a setting is set to a value, not a list or an object`);
       } else if ('start' in step) {
-        const spec = roles[step.start.role];
-        if (!step.start.role) problems.push(`${at}.start: choose an automation`);
-        else if (!spec) problems.push(`${at}.start: there is no role "${step.start.role}"`);
-        else if (!isAutomationRole(spec)) problems.push(`${at}.start: ${step.start.role} is a part of a device, not an automation`);
-        if (step.start.waitSeconds !== undefined) {
-          if (!sure) problems.push(`${at}.start: nothing here may wait for what might not come: it is started, not waited for`);
-          bounded(step.start.waitSeconds, `${at}.start.waitSeconds`, 's', SEQUENCE_LIMITS.waitSeconds, 'a wait of');
-        }
-      } else if ('wait' in step) bounded(step.wait.seconds, `${at}.wait.seconds`, 's', SEQUENCE_LIMITS.waitSeconds, 'a pause of');
-      else if ('choose' in step) {
-        condition(step.choose.if, `${at}.choose.if`, true);
-        if (!step.choose.then?.length && !step.choose.else?.length) problems.push(`${at}.choose: it does nothing either way`);
-        steps(step.choose.then ?? [], `${at}.choose.then`, sure, depth + 1);
-        steps(step.choose.else ?? [], `${at}.choose.else`, sure, depth + 1);
-      } else if ('watch' in step) {
-        condition(step.watch.condition, `${at}.watch.condition`, false);
-        bounded(step.watch.seconds, `${at}.watch.seconds`, 's', SEQUENCE_LIMITS.waitSeconds, 'a watch of');
-        if (!step.watch.then?.length && !step.watch.else?.length) problems.push(`${at}.watch: it does nothing either way`);
-        steps(step.watch.then ?? [], `${at}.watch.then`, sure, depth + 1);
-        steps(step.watch.else ?? [], `${at}.watch.else`, sure, depth + 1);
-      } else if ('waitUntil' in step || 'ensure' in step) {
-        if (!sure) problems.push(`${at}: nothing here may wait for a condition that might not come: it would fail again`);
-        if ('waitUntil' in step) {
-          condition(step.waitUntil.condition, `${at}.waitUntil.condition`, false);
-          bounded(step.waitUntil.atMostSeconds, `${at}.waitUntil.atMostSeconds`, 's', SEQUENCE_LIMITS.waitSeconds, 'a wait of');
-        } else {
-          condition(step.ensure.condition, `${at}.ensure.condition`, false);
-          bounded(step.ensure.withinSeconds, `${at}.ensure.withinSeconds`, 's', SEQUENCE_LIMITS.trySeconds, 'a try of');
-          bounded(step.ensure.tries, `${at}.ensure.tries`, null, SEQUENCE_LIMITS.tries, 'tries');
-          if (!step.ensure.retry?.length) problems.push(`${at}.ensure.retry: how is it tried again?`);
-          steps(step.ensure.retry ?? [], `${at}.ensure.retry`, false, depth + 1);
-        }
-      } else problems.push(`${at}: not a step`);
+        if (step.start.andWait !== undefined && !sure) problems.push(`${at}.start: nothing here may wait for what might not come: it is started, not waited for`);
+      } else if ('choose' in step || 'watch' in step) {
+        const branches = branchesOf(step);
+        if (branches.every((branch) => !branch.steps.length)) problems.push(`${at}.${kind}: it does nothing either way`);
+      }
     });
-  };
+  }
 
   if (!rule.then?.length) problems.push('then: it does nothing');
   steps(rule.then ?? [], 'then', true, 1);

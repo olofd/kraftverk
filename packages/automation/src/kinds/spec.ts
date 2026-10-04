@@ -18,23 +18,47 @@ import type { Expr } from '../rule.ts';
  * writes ("2 min"); `min`, `max` and `step` are in seconds too.
  */
 export type FieldType =
-  /** A condition: true or false, on what the parts filling its roles report. */
-  | { type: 'condition' }
+  /**
+   * A condition: true or false, on what the parts filling its roles report.
+   * `calls`: whether it may ask a package's function — not where it is looked
+   * at on every reading, or every second.
+   */
+  | { type: 'condition'; calls?: boolean }
+  /** A value of any kind a setting or a command takes: an expression. */
+  | { type: 'value' }
   /** A time of day, "HH:MM", on the automation's clock. */
   | { type: 'timeOfDay' }
-  /** A length of time, in seconds. */
-  | { type: 'duration'; min: number; max: number; step?: number }
+  /**
+   * A length of time, in seconds. `fixed`: a number or a setting held to the
+   * range — never a reading, so how long a run may take is known before it
+   * runs.
+   */
+  | { type: 'duration'; min: number; max: number; step?: number; fixed?: boolean }
+  /** How many times: a whole number from 1, a number or a setting held to the range — never a reading. */
+  | { type: 'count'; max: number }
   /** Days of the week. */
   | { type: 'days' }
   /** A role a part of a device fills. */
   | { type: 'role' }
+  /** A role another automation fills. */
+  | { type: 'automation' }
   /** An event the part filling a role declares; `role`: the key of the field naming that role. */
-  | { type: 'event'; role: string };
+  | { type: 'event'; role: string }
+  /** A name the construct's own words check: a capability, a command, a setting's key or meaning. */
+  | { type: 'name' }
+  /** A command's arguments: each its name and an expression. */
+  | { type: 'args' }
+  /**
+   * Steps within the step: its branch. `sure`: whether they may wait for
+   * what might not come — not in a retry, which would only fail again; else
+   * as the list the step is in.
+   */
+  | { type: 'steps'; sure: 'inherit' | false; nonEmpty?: string };
 
 export type FieldTypeName = FieldType['type'];
 
-/** The kinds of field that hold an expression: what is settled, walked and read as one. */
-export const EXPRESSION_FIELDS: ReadonlySet<FieldTypeName> = new Set(['condition', 'timeOfDay', 'duration']);
+/** The kinds of field that hold one expression: what is settled, walked and read as one. */
+export const EXPRESSION_FIELDS: ReadonlySet<FieldTypeName> = new Set(['condition', 'value', 'timeOfDay', 'duration', 'count']);
 
 /** One field of a construct: where it is kept, how a file writes it, and what it holds. */
 export type FieldSpec = {
@@ -54,7 +78,7 @@ export type FieldSpec = {
 export type KindDocs = { summary: string; examples: readonly string[] };
 
 /** The marks the editor draws a kind with: names in the app's icon set. */
-export type KindIcon = 'clock' | 'repeat' | 'activity' | 'bell';
+export type KindIcon = 'clock' | 'repeat' | 'activity' | 'bell' | 'power' | 'sliders' | 'pause' | 'git-branch' | 'eye' | 'play-circle';
 
 /**
  * How a sentence says the parts of a construct — what the describer hands a

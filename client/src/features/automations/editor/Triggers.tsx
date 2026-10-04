@@ -1,16 +1,14 @@
 import { useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 
-import { fieldValue, TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerSpec, withField, type Expr, type FieldSpec, type Trigger, type TriggerSpec, type Weekday } from '@kraftverk/automation';
-import { MAIN_PART } from '@kraftverk/device-sdk';
-import { capitalise, Chips, haptic, Icon, IconLabel } from '@kraftverk/ui';
+import { TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerSpec, type Expr, type Trigger, type TriggerSpec } from '@kraftverk/automation';
+import { capitalise, haptic, Icon, IconLabel } from '@kraftverk/ui';
 
-import { Picker } from '../../../components/Picker';
 import { Pressable } from '../../../components/Pressable';
 import { useTone } from '../../../components/tone';
 import { blankCondition, ConditionField } from './Condition';
-import { pickPart, useEditor } from './context';
-import { DaysField, DurationField, Label, TimeField } from './fields';
+import { useEditor } from './context';
+import { Fields } from './Field';
 
 /*
   When an automation runs on its own (docs/AUTOMATION-EDITOR.md): at a time
@@ -111,111 +109,7 @@ export function Triggers() {
 
 /** A trigger's fields, each drawn by what it holds — its kind's own list (kinds/triggers.ts), not one form a kind. */
 function TriggerFields({ trigger, set }: { trigger: Trigger; set: (trigger: Trigger) => void }) {
-  const spec = triggerSpec(trigger);
-  return (
-    <YStack gap="$2.5">
-      {spec.fields.map((field) => (
-        <FieldOf key={field.key} field={field} fields={spec.fields} trigger={trigger} set={set} />
-      ))}
-    </YStack>
-  );
-}
-
-/** One field, by what it holds: a time, days, a length of time, a condition, a part, or an event it reports. */
-function FieldOf({ field, fields, trigger, set }: { field: FieldSpec; fields: readonly FieldSpec[]; trigger: Trigger; set: (trigger: Trigger) => void }) {
-  const editor = useEditor();
-  const value = fieldValue(trigger, field);
-  const put = (next: unknown) => set(withField(trigger, field, next));
-  const literal = (expr: unknown) => (expr && typeof expr === 'object' && 'value' in expr ? (expr as { value: unknown }).value : undefined);
-  const help = field.help ? (
-    <Text fontSize={12} color="$muted" lineHeight={17}>
-      {field.help}
-    </Text>
-  ) : null;
-  const type = field.type;
-  switch (type.type) {
-    case 'timeOfDay': {
-      const time = literal(value);
-      return (
-        <YStack gap="$1">
-          <Label>{field.label}</Label>
-          <TimeField label={field.label} value={typeof time === 'string' ? time : '07:00'} onChange={(at) => put({ value: at })} />
-          {help}
-        </YStack>
-      );
-    }
-    case 'days':
-      return (
-        <YStack gap="$1">
-          <Label>{field.label}</Label>
-          <DaysField value={value as readonly Weekday[] | undefined} onChange={(days) => put(days)} />
-        </YStack>
-      );
-    case 'duration': {
-      const seconds = literal(value);
-      return (
-        <YStack gap="$1">
-          <Label>{field.label}</Label>
-          <DurationField
-            label={field.label}
-            value={typeof seconds === 'number' ? seconds : field.required ? type.min : null}
-            max={type.max}
-            onChange={(next) => put(next === null || (next === 0 && !field.required) ? (field.required ? { value: type.min } : undefined) : { value: next })}
-          />
-          {help}
-        </YStack>
-      );
-    }
-    case 'condition':
-      return <ConditionField label={field.label} expr={(value as Expr | undefined) ?? blankCondition(null)} onChange={(next: Expr) => put(next)} />;
-    case 'role': {
-      // A part that declares events, where this kind asks for one of them.
-      const forEvents = fields.some((each) => each.type.type === 'event' && each.type.role === field.key);
-      const role = String(value ?? '');
-      const options = editor.parts((description, part) => !forEvents || (description.events ?? []).some((event) => (event.part ?? MAIN_PART) === part));
-      return (
-        <YStack gap="$1">
-          <Label>{field.label}</Label>
-          <Picker
-            label={field.label}
-            chosen={editor.draft.rule.roles[role] ? editor.name(role) : null}
-            placeholder="Choose a part"
-            options={options.map((option) => ({ key: option.key, title: option.title, subtitle: option.subtitle, value: option, selected: option.role === role }))}
-            onPick={(option) => {
-              const picked = pickPart(editor.draft, option);
-              editor.change(() => picked.draft);
-              // A new part: what it reports is chosen afresh.
-              const events = fields.filter((each) => each.type.type === 'event' && each.type.role === field.key);
-              set(events.reduce<Trigger>((next, each) => withField(next, each, ''), withField(trigger, field, picked.role)));
-            }}
-          />
-        </YStack>
-      );
-    }
-    case 'event': {
-      const from = fields.find((each) => each.key === type.role);
-      const bound = from ? editor.partOf(String(fieldValue(trigger, from) ?? '')) : null;
-      if (!bound) return null;
-      const events = (bound.description.events ?? []).filter((event) => (event.part ?? MAIN_PART) === bound.part);
-      const chosen = String(value ?? '');
-      return (
-        <YStack gap="$1">
-          <Label>{field.label}</Label>
-          {events.length <= 3 ? (
-            <Chips label={field.label} options={events.map((event) => ({ value: event.id, label: event.label }))} value={chosen || null} onChange={(event) => put(event)} />
-          ) : (
-            <Picker
-              label={field.label}
-              chosen={events.find((event) => event.id === chosen)?.label ?? null}
-              placeholder="Choose what it reports"
-              options={events.map((event) => ({ key: event.id, title: event.label, value: event.id, selected: event.id === chosen }))}
-              onPick={(event) => put(event)}
-            />
-          )}
-        </YStack>
-      );
-    }
-  }
+  return <Fields fields={triggerSpec(trigger).fields} construct={trigger} set={set} />;
 }
 
 /**

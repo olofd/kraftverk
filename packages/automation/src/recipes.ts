@@ -168,14 +168,14 @@ export const startCharging = defineRecipe({
   when: [],
   then: [
     set('supply', true),
-    { waitUntil: { condition: { reachable: 'charger' }, atMostSeconds: { param: 'reachSeconds' } } },
+    { waitUntil: { condition: { reachable: 'charger' }, atMost: { param: 'reachSeconds' } } },
     set('charger', true),
     {
       ensure: {
         condition: { compare: 'gt', left: draws('charger'), right: { param: 'chargingAbove' } },
-        withinSeconds: { param: 'withinSeconds' },
+        within: { param: 'withinSeconds' },
         tries: { param: 'tries' },
-        retry: [set('charger', false), { wait: { seconds: { param: 'offSeconds' } } }, set('charger', true)],
+        retry: [set('charger', false), { wait: { for: { param: 'offSeconds' } } }, set('charger', true)],
       },
     },
   ],
@@ -215,7 +215,7 @@ export const stopCharging = defineRecipe({
     {
       watch: {
         condition: { compare: 'lt', left: draws('supply'), right: { param: 'othersBelow' } },
-        seconds: { param: 'watchSeconds' },
+        for: { param: 'watchSeconds' },
         then: [set('supply', false)],
       },
     },

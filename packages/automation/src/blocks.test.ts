@@ -78,7 +78,7 @@ describe('change a setting', () => {
   });
 
   test('is a part’s, never an automation’s, and needs a setting', () => {
-    expect(checkRule(rule([{ write: { role: 'charging', key: 'live', value: { value: true } } }]), NO_FUNCTIONS)).toEqual(['then[0].write: charging is an automation, not a part of a device']);
+    expect(checkRule(rule([{ write: { role: 'charging', key: 'live', value: { value: true } } }]), NO_FUNCTIONS)).toEqual(['then[0].write.role: charging is an automation, not a part of a device']);
     expect(checkRule(rule([{ write: { role: 'plug', key: ' ', value: { value: true } } }]), NO_FUNCTIONS)).toEqual(['then[0].write.key: which setting?']);
   });
 
@@ -101,10 +101,10 @@ describe('change a setting', () => {
 describe('start another automation', () => {
   test('starts an automation’s role, and may wait for it — bounded, and only where waiting may fail the run', () => {
     expect(checkRule(rule([{ start: { role: 'charging' } }]), NO_FUNCTIONS)).toEqual([]);
-    expect(checkRule(rule([{ start: { role: 'charging', waitSeconds: { value: 300 } } }]), NO_FUNCTIONS)).toEqual([]);
-    expect(checkRule(rule([{ start: { role: 'plug' } }]), NO_FUNCTIONS)).toEqual(['then[0].start: plug is a part of a device, not an automation']);
-    expect(checkRule(rule([{ start: { role: 'charging', waitSeconds: { value: 7200 } } }]), NO_FUNCTIONS)).toEqual(['then[0].start.waitSeconds: a wait of between 1 and 3600']);
-    expect(checkRule(rule([live(true)], { otherwise: [{ start: { role: 'charging', waitSeconds: { value: 60 } } }] }), NO_FUNCTIONS)).toEqual([
+    expect(checkRule(rule([{ start: { role: 'charging', andWait: { value: 300 } } }]), NO_FUNCTIONS)).toEqual([]);
+    expect(checkRule(rule([{ start: { role: 'plug' } }]), NO_FUNCTIONS)).toEqual(['then[0].start.role: plug is a part of a device, not an automation']);
+    expect(checkRule(rule([{ start: { role: 'charging', andWait: { value: 7200 } } }]), NO_FUNCTIONS)).toEqual(['then[0].start.andWait: from 1 s to 1 h']);
+    expect(checkRule(rule([live(true)], { otherwise: [{ start: { role: 'charging', andWait: { value: 60 } } }] }), NO_FUNCTIONS)).toEqual([
       'otherwise[0].start: nothing here may wait for what might not come: it is started, not waited for',
     ]);
     // Started, not waited for: allowed after a failure.
@@ -119,7 +119,7 @@ describe('start another automation', () => {
   });
 
   test('takes steps, reads as it does, and its role is no device’s to bind', () => {
-    const chain = rule([{ start: { role: 'charging', waitSeconds: { value: 300 } } }]);
+    const chain = rule([{ start: { role: 'charging', andWait: { value: 300 } } }]);
     expect(takesSteps(chain)).toBe(true);
     expect(ruleUses(chain).starts).toEqual(['charging']);
     expect(describeSteps(chain, {}, names).steps[0]).toEqual({ kind: 'start', text: 'Start “Charge the scooter” and wait until it ends — at most 5 min', branches: [] });
@@ -131,7 +131,7 @@ describe('its problems, where a person finds them', () => {
   test('the language’s path becomes the step, the trigger or the role it is about', () => {
     const roles = rule([]).roles;
     expect(problemPlace('then[4].write.key: which setting?', { roles })).toBe('Step 5: which setting?');
-    expect(problemPlace('then[3].ensure.retry[1].wait.seconds: a pause of between 1 and 3600', { roles })).toBe('Step 4, each time, step 2: a pause of between 1 and 3600');
+    expect(problemPlace('then[3].ensure.retry[1].wait.for: from 1 s to 1 h', { roles })).toBe('Step 4, each time, step 2: from 1 s to 1 h');
     expect(problemPlace('then[0].choose.else[0].watch.then[2].command: plug does not ask for x', { roles })).toBe('Step 1, otherwise, step 1, if it stays so, step 3: plug does not ask for x');
     expect(problemPlace('otherwise[1].start: nothing here may wait', { roles })).toBe('If a step does not succeed, step 2: nothing here may wait');
     expect(problemPlace('when[0].days: on no day, it never runs', { roles })).toBe('Trigger 1: on no day, it never runs');
@@ -146,7 +146,7 @@ describe('its problems, where a person finds them', () => {
     expect(problemArea('roles.plug: it has no label')).toBe('uses');
     expect(problemArea('when[0].days: on no day, it never runs')).toBe('when');
     expect(problemArea('if: expected a condition, got a number')).toBe('onlyIf');
-    expect(problemArea('then[3].ensure.retry[1].wait.seconds: a pause of between 1 and 3600')).toBe('does');
+    expect(problemArea('then[3].ensure.retry[1].wait.for: from 1 s to 1 h')).toBe('does');
     expect(problemArea('then: it does nothing')).toBe('does');
     expect(problemArea('otherwise[1].start: nothing here may wait')).toBe('fails');
     expect(problemArea('It would start a chain 4 automations deep')).toBe('other');
@@ -187,7 +187,7 @@ describe('a recipe, copied', () => {
     expect(checkRule(copy, NO_FUNCTIONS)).toEqual([]);
     expect(JSON.stringify(copy)).not.toContain('"param"');
     // Its defaults, as values: wait up to 120 s for the plug.
-    expect(copy.then[1]).toEqual({ waitUntil: { condition: { reachable: 'charger' }, atMostSeconds: { value: 120 } } });
+    expect(copy.then[1]).toEqual({ waitUntil: { condition: { reachable: 'charger' }, atMost: { value: 120 } } });
     // "If it never starts charging: switch it and its supply off again" is no longer a choice: it is the two steps.
     expect(copy.otherwise).toEqual([
       { command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: false } } } },

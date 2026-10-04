@@ -26,7 +26,7 @@ const PLUG: DeviceDescription = {
 
 const plug: RoleBinding = { device: savedDeviceId('d-plug'), part: 'main' };
 
-const pause = (seconds: number): Step => ({ wait: { seconds: { value: seconds } } });
+const pause = (seconds: number): Step => ({ wait: { for: { value: seconds } } });
 
 describe('blocks', () => {
   test('added, nested, moved and removed at any depth — the rule the language checks', () => {
@@ -37,7 +37,8 @@ describe('blocks', () => {
     expect(listAt(rule, within(THEN, 0, 'then'))).toEqual([pause(10), pause(5)]);
     rule = withStep(rule, within(THEN, 0, 'then'), 0, () => pause(20));
     rule = removeStep(rule, within(THEN, 0, 'then'), 1);
-    expect(rule.then).toEqual([{ choose: { if: { value: true }, then: [pause(20)], else: [] } }]);
+    // A new choice asks about a reading of a part still to choose: a condition the editor draws, never one only said in words.
+    expect(rule.then).toEqual([{ choose: { if: { compare: 'gt', left: { read: { role: '', means: '' } }, right: { value: 0 } }, then: [pause(20)], else: [] } }]);
     // After a failure: the list is there only while it holds a step.
     rule = insertStep(rule, OTHERWISE, 0, pause(1));
     expect(rule.otherwise).toEqual([pause(1)]);
@@ -86,7 +87,7 @@ describe('roles', () => {
 test('a recipe copied: its settings at their defaults, written into its blocks — the owner’s to change', () => {
   const draft = draftOfRecipe(startCharging);
   expect(draft.rule.params).toEqual({ fields: {} });
-  expect(draft.rule.then[1]).toEqual({ waitUntil: { condition: { reachable: 'charger' }, atMostSeconds: { value: 120 } } });
+  expect(draft.rule.then[1]).toEqual({ waitUntil: { condition: { reachable: 'charger' }, atMost: { value: 120 } } });
   expect(checkRule(draft.rule, { fn: () => null })).toEqual([]);
 });
 

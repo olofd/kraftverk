@@ -74,12 +74,12 @@ type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 type Trigger =
   | { at: Expr; days?: readonly Weekday[] }            // every day, or only these
   | { event: { role: string; event: string } }
-  | { becomes: Expr; heldForMinutes?: Expr };          // `asked` is gone: anything can be played
+  | { becomes: Expr; heldFor?: Expr };          // `asked` is gone: anything can be played
 
 type Step =
   | …                                                   // command, wait, waitUntil, ensure, choose, watch
   | { write: { role: string; key: string; value: Expr } }
-  | { start: { role: string; waitSeconds?: Expr } };   // an automation's role; with a wait, until it ends
+  | { start: { role: string; andWait?: Expr } };   // an automation's role; with a wait, until it ends
 
 type RoleSpec =
   | (CapabilityNeed & { label: string; description: string })   // a part
@@ -104,7 +104,7 @@ type RoleSpec =
   person's dwell; a trigger gives it an automation's.
 - It is refused, as a step, when the other automation is off, already
   running, or would start one already in this chain.
-- With `waitSeconds`, the step lasts until that run ends — and succeeds if
+- With `andWait`, the step lasts until that run ends — and succeeds if
   it acted — or times out. Without it, the step is done once the run has
   begun.
 - Stopping a run stops a run it waits on.

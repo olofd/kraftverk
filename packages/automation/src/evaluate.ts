@@ -3,6 +3,7 @@ import { isScalar, type ConfigSchema, type ScalarValue, type Value } from '@kraf
 import { inWindow, minutesOf } from './clock.ts';
 import type { Evaluation } from './functions.ts';
 import { EXPRESSION_FIELDS, fieldValue, withField } from './kinds/spec.ts';
+import { stepSpec } from './kinds/steps.ts';
 import { triggerSpec } from './kinds/triggers.ts';
 import { calculate, type CompareOp, type Expr, type NamedTrigger, type Rule, type RunFact, type Step } from './rule.ts';
 
@@ -209,27 +210,19 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
       const chosen = 'choose' in step ? settledChoice(rule, step, values) : null;
       return chosen ? steps(chosen) : [one(step)];
     });
-  const optional = (list: readonly Step[] | undefined): { steps?: Step[] } => {
-    const inner = steps(list);
-    return inner.length ? { steps: inner } : {};
-  };
+  /** A step's expressions settled, and its steps within, by its kind's fields (kinds/steps.ts). */
   function one(step: Step): Step {
-    if ('command' in step) return { command: { ...step.command, args: args(step.command.args) } };
-    if ('write' in step) return { write: { ...step.write, value: expr(step.write.value) } };
-    if ('start' in step) return { start: step.start.waitSeconds ? { role: step.start.role, waitSeconds: expr(step.start.waitSeconds) } : { role: step.start.role } };
-    if ('wait' in step) return { wait: { seconds: expr(step.wait.seconds) } };
-    if ('waitUntil' in step) return { waitUntil: { condition: expr(step.waitUntil.condition), atMostSeconds: expr(step.waitUntil.atMostSeconds) } };
-    if ('ensure' in step) {
-      const { condition, withinSeconds, tries, retry } = step.ensure;
-      return { ensure: { condition: expr(condition), withinSeconds: expr(withinSeconds), tries: expr(tries), retry: steps(retry) } };
-    }
-    if ('choose' in step) {
-      const otherwise = optional(step.choose.else).steps;
-      return { choose: { if: expr(step.choose.if), then: steps(step.choose.then), ...(otherwise ? { else: otherwise } : {}) } };
-    }
-    const then = optional(step.watch.then).steps;
-    const otherwise = optional(step.watch.else).steps;
-    return { watch: { condition: expr(step.watch.condition), seconds: expr(step.watch.seconds), ...(then ? { then } : {}), ...(otherwise ? { else: otherwise } : {}) } };
+    return stepSpec(step).fields.reduce<Step>((settled, field) => {
+      const value = fieldValue(step, field);
+      if (value === undefined) return settled;
+      const type = field.type.type;
+      if (EXPRESSION_FIELDS.has(type)) return withField(settled, field, expr(value as Expr));
+      if (type === 'args') return withField(settled, field, args(value as Readonly<Record<string, Expr>>));
+      if (type !== 'steps') return settled;
+      // A branch it may go without, which its settings leave empty, is none.
+      const inner = steps(value as readonly Step[]);
+      return withField(settled, field, inner.length || field.required ? inner : undefined);
+    }, step);
   }
   // Each trigger's expressions settled, by its kind's fields (kinds/triggers.ts); its id kept.
   const when = rule.when.map((trigger): NamedTrigger =>
@@ -242,7 +235,8 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
       return withField(settled, field, none ? undefined : next);
     }, trigger)
   );
-  const otherwise = optional(rule.otherwise).steps;
+  const fallback = steps(rule.otherwise);
+  const otherwise = fallback.length ? fallback : undefined;
   // An "only if" its settings make always true is no condition at all.
   const only = rule.if ? expr(rule.if) : null;
   const keptIf = only && !('value' in only && only.value === true) ? { if: only } : {};

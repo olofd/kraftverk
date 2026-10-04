@@ -11,7 +11,7 @@ import type { FieldSpec, KindDocs, KindIcon, Say } from './spec.ts';
 export type TriggerKind = 'at' | 'every' | 'event' | 'becomes';
 
 /** A trigger of one kind. */
-export type TriggerOf<K extends TriggerKind> = Extract<Trigger, Record<K, unknown>>;
+export type TriggerOf<K extends TriggerKind> = K extends TriggerKind ? Extract<Trigger, Record<K, unknown>> : never;
 
 export type TriggerSpec<K extends TriggerKind = TriggerKind> = {
   /** Its key in the data and its verb in a file. */

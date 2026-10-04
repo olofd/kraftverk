@@ -81,12 +81,12 @@ const rule: Rule = {
   when: [],
   then: [
     { command: { role: 'supply', capability: 'switch', command: 'set', args: { on: { value: true } } } },
-    { waitUntil: { condition: { reachable: 'charger' }, atMostSeconds: { value: 120 } } },
+    { waitUntil: { condition: { reachable: 'charger' }, atMost: { value: 120 } } },
     { command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: true } } } },
     {
       ensure: {
         condition: { compare: 'gt', left: { read: { role: 'charger', means: 'power.draw' } }, right: { value: 50 } },
-        withinSeconds: { value: 20 },
+        within: { value: 20 },
         tries: { value: 5 },
         retry: [/* turn off, wait 10 s, turn on */],
       },
@@ -147,6 +147,14 @@ conditions with an id that holds now — "do what you would do now" — and by
 none when none does.
 
 ## What it does — steps
+
+Each kind is described once, as data, in `src/kinds/steps.ts` — its fields,
+what each holds, its words, its place in the editor, its examples, and for
+a command and a setting the forms a file writes them in — and the checker,
+the file's reader and writer, the JSON Schema, the editor's forms, the
+engine's dispatch and **[REFERENCE.md](REFERENCE.md)** are made from that.
+Lengths of time are in seconds, named as a file says them: `wait.for`,
+`waitUntil.atMost`, `ensure.within`, `watch.for`, `start.andWait`.
 
 | Data | Text | Does |
 |---|---|---|

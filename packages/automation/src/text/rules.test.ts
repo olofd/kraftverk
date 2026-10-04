@@ -79,13 +79,13 @@ describe('a rule, written and read back', () => {
         { command: { role: 'station', capability: 'beep' as CapabilityName, command: 'now', args: {} } },
         { write: { role: 'station', key: 'acChargeLimit', value: { value: 80 } } },
         { write: { role: 'station', means: 'battery.dischargeFloor', value: { value: 20 } } },
-        { wait: { seconds: { value: 90 } } },
-        { waitUntil: { condition: { reachable: 'plug' }, atMostSeconds: { value: 120 } } },
-        { ensure: { condition: { compare: 'gt', left: { read: { role: 'plug', means: 'power.draw' } }, right: { value: 50 } }, withinSeconds: { value: 20 }, tries: { value: 5 }, retry: [{ wait: { seconds: { value: 5 } } }] } },
-        { choose: { if: { reachable: 'plug' }, then: [], else: [{ start: { role: 'other', waitSeconds: { value: 600 } } }] } },
+        { wait: { for: { value: 90 } } },
+        { waitUntil: { condition: { reachable: 'plug' }, atMost: { value: 120 } } },
+        { ensure: { condition: { compare: 'gt', left: { read: { role: 'plug', means: 'power.draw' } }, right: { value: 50 } }, within: { value: 20 }, tries: { value: 5 }, retry: [{ wait: { for: { value: 5 } } }] } },
+        { choose: { if: { reachable: 'plug' }, then: [], else: [{ start: { role: 'other', andWait: { value: 600 } } }] } },
         { choose: { if: { value: true }, then: [{ start: { role: 'other' } }] } },
-        { watch: { condition: { reachable: 'plug' }, seconds: { value: 5 }, then: [] } },
-        { watch: { condition: { reachable: 'plug' }, seconds: { value: 5 }, else: [] } },
+        { watch: { condition: { reachable: 'plug' }, for: { value: 5 }, then: [] } },
+        { watch: { condition: { reachable: 'plug' }, for: { value: 5 }, else: [] } },
       ],
       otherwise: [],
     };
@@ -133,7 +133,7 @@ describe('a rule, written and read back', () => {
     expect(read.issues).toEqual([
       { message: 'It ends where a value was expected', path: ['automations', 'x', 'do', 1, 'make sure'], offset: 20 },
       { message: 'Not a step: "jump". A step starts with turn on, turn off, switch, send, set, wait, wait until, make sure, if, watch or start', path: ['automations', 'x', 'do', 2] },
-      { message: '"wait until" needs "at most": every wait has its limit', path: ['automations', 'x', 'do', 3] },
+      { message: '"wait until" needs "at most": every wait has its limit: then the run stops, not having succeeded', path: ['automations', 'x', 'do', 3] },
     ]);
   });
 });

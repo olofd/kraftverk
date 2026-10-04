@@ -72,7 +72,7 @@ do:
 `;
     const read = readAutomationYaml(text, 'hall', {}, check);
     expect(read.entry).toBeNull();
-    expect(read.problems.map(({ message, line }) => `${line}: ${message}`)).toEqual(['8: "wait until" needs "at most": every wait has its limit']);
+    expect(read.problems.map(({ message, line }) => `${line}: ${message}`)).toEqual(['8: "wait until" needs "at most": every wait has its limit: then the run stops, not having succeeded']);
     const fixed = readAutomationYaml(text.replace('reachable\n', 'reachable\n    at most: 1 min\n'), 'hall', {}, check);
     expect(fixed.problems.map(({ message, line }) => `${line}: ${message}`)).toEqual(['5: There is no device "garage-station", in the file or on the server']);
   });

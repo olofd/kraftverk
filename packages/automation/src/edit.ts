@@ -1,5 +1,7 @@
+import { fieldValue, withField, type FieldSpec } from './kinds/spec.ts';
+import { STEP_KIND_ORDER, STEP_KINDS, stepSpec, type StepKind } from './kinds/steps.ts';
 import { ruleCommands, ruleUses } from './reads.ts';
-import type { Expr, Rule, Step, StepKind } from './rule.ts';
+import { SEQUENCE_LIMITS, type Expr, type Rule, type Step } from './rule.ts';
 
 /*
   Edits to a rule, as data (docs/AUTOMATION-EDITOR.md): where a list of steps
@@ -11,8 +13,16 @@ import type { Expr, Rule, Step, StepKind } from './rule.ts';
 /** Where a list of steps is: the rule's own (`then`), what it does if a step does not succeed, or one within a step. */
 export type ListPath = { root: 'then' | 'otherwise'; trail: readonly { index: number; branch: Branch }[] };
 
-/** The lists a step holds: a retry's, a choice's or a watch's two. */
+/** The lists a step holds, by the last word of where each is kept: a retry's, a choice's or a watch's two. */
 export type Branch = 'retry' | 'then' | 'else';
+
+/** A step's field that holds the list of a branch (kinds/steps.ts). */
+const branchField = (step: Step, branch: Branch): FieldSpec | undefined => stepSpec(step).fields.find((field) => field.type.type === 'steps' && field.data.at(-1) === branch);
+
+/** The branches whose steps may not wait for what might not come: a retry's — it would only fail again. */
+const UNSURE_BRANCHES: ReadonlySet<string> = new Set(
+  STEP_KIND_ORDER.flatMap((kind) => STEP_KINDS[kind].fields.flatMap((field) => (field.type.type === 'steps' && field.type.sure === false ? [field.data.at(-1)!] : [])))
+);
 
 export const THEN: ListPath = { root: 'then', trail: [] };
 
@@ -20,18 +30,14 @@ export const OTHERWISE: ListPath = { root: 'otherwise', trail: [] };
 
 /** The list a step holds, by its branch. */
 const branchOf = (step: Step, branch: Branch): readonly Step[] => {
-  if ('ensure' in step && branch === 'retry') return step.ensure.retry;
-  if ('choose' in step && branch !== 'retry') return (branch === 'then' ? step.choose.then : step.choose.else) ?? [];
-  if ('watch' in step && branch !== 'retry') return (branch === 'then' ? step.watch.then : step.watch.else) ?? [];
-  return [];
+  const field = branchField(step, branch);
+  return field ? ((fieldValue(step, field) as readonly Step[] | undefined) ?? []) : [];
 };
 
 /** The step with one of its lists replaced. */
 const withBranch = (step: Step, branch: Branch, list: Step[]): Step => {
-  if ('ensure' in step) return { ensure: { ...step.ensure, retry: list } };
-  if ('choose' in step) return { choose: { ...step.choose, [branch === 'else' ? 'else' : 'then']: list } };
-  if ('watch' in step) return { watch: { ...step.watch, [branch === 'else' ? 'else' : 'then']: list } };
-  return step;
+  const field = branchField(step, branch);
+  return field ? withField(step, field, list) : step;
 };
 
 /** The steps at a place. */
@@ -75,7 +81,7 @@ export const moveStep = (rule: Rule, path: ListPath, index: number, by: -1 | 1):
 /** A list within a step: its path. */
 export const within = (path: ListPath, index: number, branch: Branch): ListPath => ({ root: path.root, trail: [...path.trail, { index, branch }] });
 
-/** How deep a list is: 1 for the rule's own; the language stops at four. */
+/** How deep a list is: 1 for the rule's own; the language stops at `SEQUENCE_LIMITS.depth`. */
 export const depthOf = (path: ListPath): number => 1 + path.trail.length;
 
 /**
@@ -84,13 +90,17 @@ export const depthOf = (path: ListPath): number => 1 + path.trail.length;
  * waited for there.
  */
 export function kindsFor(path: ListPath): StepKind[] {
-  const sure = path.root === 'then' && !path.trail.some((step) => step.branch === 'retry');
-  const deeper = depthOf(path) < 4;
-  return (['command', 'write', 'wait', ...(sure ? (['waitUntil'] as const) : []), ...(sure && deeper ? (['ensure'] as const) : []), ...(deeper ? (['choose', 'watch'] as const) : []), 'start'] as StepKind[]);
+  const sure = mayWait(path);
+  const deeper = depthOf(path) < SEQUENCE_LIMITS.depth;
+  return STEP_KIND_ORDER.filter((kind) => {
+    const spec = STEP_KINDS[kind];
+    const nests = spec.fields.some((field) => field.type.type === 'steps');
+    return (sure || !spec.waits) && (deeper || !nests);
+  });
 }
 
-/** Whether a start in this list may wait for the automation it starts. */
-export const mayWait = (path: ListPath): boolean => path.root === 'then' && !path.trail.some((step) => step.branch === 'retry');
+/** Whether steps in this list may wait for what might not come — a condition, an automation's end: not after a failure, nor in a retry. */
+export const mayWait = (path: ListPath): boolean => path.root === 'then' && !path.trail.some((step) => UNSURE_BRANCHES.has(step.branch));
 
 /** The roles the rule uses: what it reads, asks, waits on, switches, writes or starts. */
 export function usedRoles(rule: Rule): Set<string> {
@@ -106,30 +116,8 @@ export function usedRoles(rule: Rule): Set<string> {
   ]);
 }
 
-/** A condition to start from: whether the part the step is about can be reached — or, with none yet, yes. */
-const someCondition = (role: string | null): Expr => (role ? { reachable: role } : { value: true });
-
-/** A new step of a kind, about `role` where it needs a part or an automation: its values a sensible start. */
-export function blankStep(kind: StepKind, role: string | null): Step {
-  switch (kind) {
-    case 'command':
-      return { command: { role: role ?? '', capability: 'switch', command: 'set', args: { on: { value: true } } } };
-    case 'write':
-      return { write: { role: role ?? '', key: '', value: { value: true } } };
-    case 'wait':
-      return { wait: { seconds: { value: 10 } } };
-    case 'waitUntil':
-      return { waitUntil: { condition: someCondition(role), atMostSeconds: { value: 120 } } };
-    case 'ensure':
-      return { ensure: { condition: someCondition(role), withinSeconds: { value: 20 }, tries: { value: 3 }, retry: [] } };
-    case 'choose':
-      return { choose: { if: someCondition(role), then: [], else: [] } };
-    case 'watch':
-      return { watch: { condition: someCondition(role), seconds: { value: 5 }, then: [] } };
-    case 'start':
-      return { start: { role: role ?? '' } };
-  }
-}
+/** A new step of a kind, about `role` where it needs a part or an automation: its kind's own start (kinds/steps.ts). */
+export const blankStep = (kind: StepKind, role: string | null): Step => STEP_KINDS[kind].blank(role);
 
 /**
  * A trigger's id, for a condition that asks which started the run
