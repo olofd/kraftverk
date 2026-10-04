@@ -76,6 +76,8 @@ jobs:
       - run: SMOKE_HOST=$(getent hosts host.docker.internal | awk '{ print $1; exit }') bash scripts/ci/smoke-docker.sh
         env:
           SMOKE_BUILD: "0"
+          # A stack and ports of this run's own: two pushes at once never meet.
+          SMOKE_RUN: ${{ github.run_number }}
           KRAFTVERK_PUBLIC_BIND: 0.0.0.0
           KRAFTVERK_SERVER_IMAGE: ${{ env.SERVER_IMAGE }}
           KRAFTVERK_WEB_IMAGE: ${{ env.WEB_IMAGE }}

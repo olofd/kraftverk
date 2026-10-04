@@ -7,6 +7,9 @@
 #   SMOKE_BUILD=0   use the images already named by KRAFTVERK_SERVER_IMAGE and
 #                   KRAFTVERK_WEB_IMAGE instead of building (CI builds once and
 #                   tests what it will ship).
+#   SMOKE_RUN       a number of this run's own (default 0): its stack is
+#                   kraftverk-smoke-<n>, its ports 18080 + 10·n and so on — so
+#                   two pipelines at once on one Docker never meet.
 #   SMOKE_HOST      where the published ports are (default 127.0.0.1). From a
 #                   pipeline job on a network of its own that is the Docker
 #                   host — host.docker.internal — and the internet entrance
@@ -17,12 +20,16 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-project=kraftverk-smoke
+run=${SMOKE_RUN:-0}
+case $run in *[!0-9]* | '') echo "SMOKE_RUN is a number" >&2; exit 2 ;; esac
+offset=$(( (run % 100) * 10 ))
+project=kraftverk-smoke-$run
 host=${SMOKE_HOST:-127.0.0.1}
+lan_port=$((18080 + offset)) public_port=$((18090 + offset)) mqtt_port=$((11883 + offset))
 export COMPOSE_PROJECT_NAME=$project
 export READ_ONLY=1
 export KRAFTVERK_ALLOWED_HOSTS=kraftverk.example.test
-export KRAFTVERK_LAN_PORT=18080 KRAFTVERK_PUBLIC_PORT=18090 KRAFTVERK_MQTT_PORT=11883 KRAFTVERK_API_PORT=13333
+export KRAFTVERK_LAN_PORT=$lan_port KRAFTVERK_PUBLIC_PORT=$public_port KRAFTVERK_MQTT_PORT=$mqtt_port KRAFTVERK_API_PORT=$((13333 + offset))
 compose() { docker compose -f docker-compose.yml "$@"; }
 
 finish() {
@@ -42,7 +49,7 @@ else
 fi
 compose ps
 
-LAN_URL=http://$host:18080 PUBLIC_URL=http://$host:18090 PUBLIC_HOST=kraftverk.example.test \
+LAN_URL=http://$host:$lan_port PUBLIC_URL=http://$host:$public_port PUBLIC_HOST=kraftverk.example.test \
   bash scripts/ci/smoke.sh
 
 echo "Inside the stack"
@@ -61,7 +68,7 @@ ok 'the server connects to the broker'
 
 # A client that is not the server, connecting as a station would and then
 # trying to command one. MQTT 3.1.1 CONNECT, client id "smoke-intruder":
-exec 3<>/dev/tcp/$host/11883
+exec 3<>/dev/tcp/$host/$mqtt_port
 printf '\x10\x1a\x00\x04MQTT\x04\x02\x00\x3c\x00\x0esmoke-intruder' >&3
 connack=$(timeout 5 head -c 4 <&3 | od -An -tx1 | tr -d ' \n')
 [ "$connack" = "20020000" ] || fail "the broker accepts a connection on the station port (got '$connack')"
