@@ -46,4 +46,5 @@ here is in one list or the other.
 | [PLAN-SHARED-CORE.md](PLAN-SHARED-CORE.md) | The plan that moved the core out of the server, so the app runs a home too |
 | [PLAN-RUN-AND-CHAIN.md](PLAN-RUN-AND-CHAIN.md) | The plan for runs, chains, shared parts and the reserve |
 | [PLAN-CONFIG.md](PLAN-CONFIG.md) | The plan for configuration as a language, with import and export |
+| [PLAN-AUTOMATION-LANGUAGE.md](PLAN-AUTOMATION-LANGUAGE.md) | The plan for the automation language's next level: one registry of constructs, typed expressions, bounded-complete power, the editor — and where it stands against Home Assistant and the rest, 2026-10-04 |
 | [AUTOMATIONS-UX.md](AUTOMATIONS-UX.md) | The plan for the automation screens at phone size, 2026-10-01 |
