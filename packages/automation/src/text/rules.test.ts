@@ -71,7 +71,7 @@ describe('a rule, written and read back', () => {
         other: { automation: true, label: 'Other', description: 'Other' },
       },
       params: { fields: {} },
-      when: [{ at: { value: '07:00' }, days: ['mon', 'fri'] }, { every: { value: 15 } }, { event: { role: 'station', event: 'mains-lost' } }, { becomes: { reachable: 'plug' }, heldForMinutes: { value: 2 } }],
+      when: [{ at: { value: '07:00' }, days: ['mon', 'fri'] }, { every: { value: 900 } }, { event: { role: 'station', event: 'mains-lost' } }, { becomes: { reachable: 'plug' }, heldFor: { value: 120 } }],
       if: { all: [{ reachable: 'plug' }] },
       then: [
         { command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { compare: 'lt', left: { read: { role: 'station', means: 'battery.soc' } }, right: { value: 50 } } } } },

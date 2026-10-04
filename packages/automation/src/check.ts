@@ -1,6 +1,9 @@
 import { attributeMeaning, CAMEL_NAME, capabilitySpec, checkValue, isCapability, MAIN_PART, meetsNeed, partsOf, standardMeaning, valueTypeOf, type AttributeSpec, type CapabilityId, type CapabilityNeed, type DeviceDescription, type Value, type ValueType } from '@kraftverk/device-sdk';
 
-import { CLOCK_TIME, EVERY_MINUTES, HOLD_MINUTES, minutesOf, WEEKDAYS } from './clock.ts';
+import { CLOCK_TIME, minutesOf, WEEKDAYS, type Weekday } from './clock.ts';
+import { secondsText } from './describe.ts';
+import { fieldValue, type FieldSpec } from './kinds/spec.ts';
+import { TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './kinds/triggers.ts';
 import type { AutomationFunction } from './functions.ts';
 import { ruleUses } from './reads.ts';
 import { isAutomationRole, MATH_OPS, partRoles, RUN_FACTS, SEQUENCE_LIMITS, TRIGGER_ID, type Command, type Expr, type PartRole, type Rule, type Step, type WriteTarget } from './rule.ts';
@@ -241,36 +244,67 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       if (typeof trigger.id !== 'string' || !TRIGGER_ID.test(trigger.id)) problems.push(`${where}.id: letters and digits, starting with a lowercase letter`);
       else if ((rule.when ?? []).findIndex((other) => other.id === trigger.id) !== index) problems.push(`${where}.id: "${trigger.id}" is another trigger's id too`);
     }
-    if ('at' in trigger) {
-      const got = shape(trigger.at, `${where}.at`, { calls: false, trigger: true });
-      if (!fits({ type: 'string', options: null }, got)) problems.push(`${where}.at: expected a time of day, got ${said(got)}`);
-      if ('value' in trigger.at && (typeof trigger.at.value !== 'string' || !CLOCK_TIME.test(trigger.at.value))) problems.push(`${where}.at: a time of day is "HH:MM"`);
-      if (trigger.days !== undefined) {
-        if (!trigger.days.length) problems.push(`${where}.days: on no day, it never runs`);
-        for (const day of trigger.days) if (!WEEKDAYS.includes(day)) problems.push(`${where}.days: "${String(day)}" is not a day of the week`);
-        if (new Set(trigger.days).size !== trigger.days.length) problems.push(`${where}.days: a day is named twice`);
+    // Each kind's fields, by what each holds (kinds/triggers.ts).
+    const kind = TRIGGER_KIND_ORDER.find((each) => each in trigger);
+    if (!kind) {
+      problems.push(`${where}: not a trigger`);
+      return;
+    }
+    for (const field of TRIGGER_KINDS[kind].fields) {
+      const value = fieldValue(trigger, field);
+      const at = `${where}.${field.data.join('.')}`;
+      if (value === undefined || value === null) {
+        if (field.required) problems.push(`${at}: it needs ${field.label.toLowerCase()}`);
+        continue;
       }
-    } else if ('every' in trigger) {
-      const got = shape(trigger.every, `${where}.every`, { calls: false, trigger: true });
-      if (!fits({ type: 'number', unit: 'min' }, got)) problems.push(`${where}.every: expected a number of minutes, got ${said(got)}`);
-      const minutes = 'value' in trigger.every ? trigger.every.value : null;
-      if (typeof minutes === 'number' && (!Number.isInteger(minutes) || minutes < EVERY_MINUTES.min || minutes > EVERY_MINUTES.max)) {
-        problems.push(`${where}.every: whole minutes, from ${EVERY_MINUTES.min} to ${EVERY_MINUTES.max}`);
-      }
-    } else if ('event' in trigger) {
-      role(trigger.event.role, `${where}.event`);
-      if (!trigger.event.event?.trim()) problems.push(`${where}.event: which event?`);
-    } else if ('becomes' in trigger) {
-      const got = shape(trigger.becomes, `${where}.becomes`, { calls: false, trigger: true });
-      if (!fits({ type: 'boolean' }, got)) problems.push(`${where}.becomes: expected a condition, got ${said(got)}`);
-      if (trigger.heldForMinutes) {
-        const held = shape(trigger.heldForMinutes, `${where}.heldForMinutes`, { calls: false, trigger: true });
-        if (!fits({ type: 'number', unit: null }, held)) problems.push(`${where}.heldForMinutes: expected a number of minutes, got ${said(held)}`);
-        const length = 'value' in trigger.heldForMinutes ? trigger.heldForMinutes.value : null;
-        if (typeof length === 'number' && !(length > 0 && length <= HOLD_MINUTES.max)) problems.push(`${where}.heldForMinutes: more than 0, and at most ${HOLD_MINUTES.max} min — a week`);
-      }
-    } else problems.push(`${where}: not a trigger`);
+      checkField(field, value, at);
+    }
   });
+
+  /** One field of a construct, held to what it holds (kinds/spec.ts). */
+  function checkField(field: FieldSpec, value: unknown, at: string): void {
+    const type = field.type;
+    switch (type.type) {
+      case 'condition': {
+        const got = shape(value as Expr, at, { calls: false, trigger: true });
+        if (!fits({ type: 'boolean' }, got)) problems.push(`${at}: expected a condition, got ${said(got)}`);
+        return;
+      }
+      case 'timeOfDay': {
+        const expr = value as Expr;
+        const got = shape(expr, at, { calls: false, trigger: true });
+        if (!fits({ type: 'string', options: null }, got)) problems.push(`${at}: expected a time of day, got ${said(got)}`);
+        if ('value' in expr && (typeof expr.value !== 'string' || !CLOCK_TIME.test(expr.value))) problems.push(`${at}: a time of day is "HH:MM"`);
+        return;
+      }
+      case 'duration': {
+        const expr = value as Expr;
+        const got = shape(expr, at, { calls: false, trigger: true });
+        if (!fits({ type: 'number', unit: 's' }, got)) problems.push(`${at}: expected a length of time, got ${said(got)}`);
+        const seconds = 'value' in expr ? expr.value : null;
+        const whole = type.step ? `, in steps of ${secondsText(type.step)}` : '';
+        if (typeof seconds === 'number' && (seconds < type.min || seconds > type.max || (type.step !== undefined && seconds % type.step !== 0))) {
+          problems.push(`${at}: from ${secondsText(type.min)} to ${secondsText(type.max)}${whole}`);
+        }
+        return;
+      }
+      case 'days': {
+        const days = value as readonly string[];
+        if (!Array.isArray(days) || !days.length) problems.push(`${at}: on no day, it never runs`);
+        else {
+          for (const day of days) if (!WEEKDAYS.includes(day as Weekday)) problems.push(`${at}: "${String(day)}" is not a day of the week`);
+          if (new Set(days).size !== days.length) problems.push(`${at}: a day is named twice`);
+        }
+        return;
+      }
+      case 'role':
+        role(String(value), at);
+        return;
+      case 'event':
+        if (!String(value).trim()) problems.push(`${at}: which event?`);
+        return;
+    }
+  }
 
   if (rule.if) {
     const got = shape(rule.if, 'if', { calls: true });

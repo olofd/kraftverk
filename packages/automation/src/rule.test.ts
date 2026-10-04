@@ -41,11 +41,11 @@ const lowBattery: Recipe = {
   params: {
     fields: {
       below: { type: 'number', title: 'Below', unit: '%', default: 20 },
-      minutes: { type: 'number', title: 'For', unit: 'min', default: 5 },
+      heldFor: { type: 'number', title: 'For', unit: 's', default: 300 },
       action: { type: 'enum', title: 'Turn it', default: 'on', options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }] },
     },
   },
-  when: [{ becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'battery.soc' } }, right: { param: 'below' } }, heldForMinutes: { param: 'minutes' } }],
+  when: [{ becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'battery.soc' } }, right: { param: 'below' } }, heldFor: { param: 'heldFor' } }],
   then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: turn } } }],
 };
 
@@ -77,7 +77,7 @@ describe('checking a rule before it runs', () => {
       'when[1].becomes: only numbers are above or below each other',
       'when[2].becomes: "becomes" is evaluated on every reading, so it cannot call test.weather.sky',
       'when[2].becomes: expected a condition, got a string',
-      'when[3].event: there is no role "nobody"',
+      'when[3].event.role: there is no role "nobody"',
       'if.left: How the sky looks needs a part that offers weather.forecast, and switch does not ask for that',
       'if.left.args.cloudMax: 400 is out of range',
       'if: "rainy" is not one of sunny, cloudy',
@@ -157,12 +157,12 @@ describe('saying what it does', () => {
   const name = (role: string) => ({ battery: 'Garage P280', switch: 'Heater plug' })[role] ?? role;
 
   test('in the recipe’s own words, its settings as they read', () => {
-    const worded = { ...lowBattery, sentence: 'When {battery} stays below {below} for {minutes}, turn {switch} {action}.' };
-    expect(describeRule(worded, { below: 20, minutes: 5, action: 'on' }, name)).toBe('When Garage P280 stays below 20 % for 5 min, turn Heater plug on.');
+    const worded = { ...lowBattery, sentence: 'When {battery} stays below {below} for {heldFor}, turn {switch} {action}.' };
+    expect(describeRule(worded, { below: 20, heldFor: 300, action: 'on' }, name)).toBe('When Garage P280 stays below 20 % for 5 min, turn Heater plug on.');
   });
 
   test('or from the rule itself, when it has none: what a DSL or an AI wrote reads too', () => {
-    expect(describeRule(lowBattery, { below: 20, minutes: 5, action: 'off' }, name)).toBe(
+    expect(describeRule(lowBattery, { below: 20, heldFor: 300, action: 'off' }, name)).toBe(
       "When Garage P280’s charge is below 20 % for 5 min, turn Heater plug off."
     );
   });

@@ -55,7 +55,7 @@ describe('the shared recipes, on a station', () => {
 
   test('read as sentences', () => {
     const name = (role: string) => (role === 'switch' ? 'Heater plug' : 'Garage P280');
-    expect(describeRule(lowBattery, { below: 20, minutes: 5, action: 'on' }, name)).toBe('When Garage P280 stays below 20 % for 5 min, turn Heater plug on.');
+    expect(describeRule(lowBattery, { below: 20, heldFor: 300, action: 'on' }, name)).toBe('When Garage P280 stays below 20 % for 5 min, turn Heater plug on.');
     expect(describeRule(mainsLost, { action: 'off' }, name)).toBe('When Garage P280 loses mains power, turn Heater plug off.');
   });
 });

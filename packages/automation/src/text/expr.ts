@@ -1,5 +1,5 @@
 import { RUN_FACTS, type CompareOp, type Expr, type MathOp, type RunFact } from '../rule.ts';
-import type { Value } from '@kraftverk/device-sdk';
+import { standardMeaning, type Value } from '@kraftverk/device-sdk';
 
 /*
   The rule language's expressions as text (docs/CONFIG.md): what a condition
@@ -310,8 +310,15 @@ const levelOf = (expr: Expr): number =>
   'any' in expr ? LEVEL.or : 'all' in expr ? LEVEL.and : 'not' in expr ? LEVEL.not : 'compare' in expr ? LEVEL.compare : 'math' in expr && (expr.math === 'add' || expr.math === 'subtract') ? LEVEL.sum : LEVEL.atom;
 
 /** The unit of a reading on either side of an expression: what a bare number beside it is in. */
+/** The unit a standard meaning's readings are in — none for one that may be in several (a price's currency). */
+export function standardUnit(means: string): string | null {
+  const meaning = standardMeaning(means);
+  return meaning && meaning.type === 'number' && !meaning.units?.length ? meaning.unit : null;
+}
+
+/** The unit what a reading is read in: the part's own word when known, else its standard meaning's — as the reader reads it. */
 function unitBeside(expr: Expr, context: PrintContext): string | null {
-  if ('read' in expr) return context.unitOf?.(expr.read.role, expr.read.means) ?? null;
+  if ('read' in expr) return context.unitOf?.(expr.read.role, expr.read.means) ?? standardUnit(expr.read.means);
   if ('math' in expr) return unitBeside(expr.left, context) ?? unitBeside(expr.right, context);
   return null;
 }

@@ -200,12 +200,12 @@ describe('a recipe, copied', () => {
   });
 
   test('what its settings alone decide is decided: a check of its own sliders goes, and it reads as what it watches', () => {
-    const window = inlineParams(chargeBetween, { low: 15, lowMinutes: 2, high: 50, highMinutes: 0 });
+    const window = inlineParams(chargeBetween, { low: 15, lowFor: 120, high: 50, highFor: 0 });
     // "Only if 15 is below 50" was the recipe checking its settings: always so, and gone; what is left asks of the run.
     expect(window.if).toEqual({ compare: 'ne', left: { run: 'trigger' }, right: { value: '' } });
     // Its triggers keep their ids; a hold of 0 min is none.
     expect(window.when).toEqual([
-      { id: 'low', becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'battery.soc' } }, right: { value: 15 } }, heldForMinutes: { value: 2 } },
+      { id: 'low', becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'battery.soc' } }, right: { value: 15 } }, heldFor: { value: 120 } },
       { id: 'high', becomes: { compare: 'ge', left: { read: { role: 'battery', means: 'battery.soc' } }, right: { value: 50 } } },
     ]);
     const names = (role: string) => (role === 'battery' ? 'Garage P280' : 'ATORCH plug');

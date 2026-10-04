@@ -86,8 +86,8 @@ const kit = {
         label: 'Low battery',
         description: 'When the battery stays low, switch',
         roles: { battery: { label: 'Battery', description: 'A battery', capabilities: ['battery'] }, switch: SWITCH_ROLE },
-        params: { fields: { below: { type: 'number', title: 'Below', unit: '%', default: 20 }, minutes: { type: 'number', title: 'For', unit: 'min', default: 0 }, action: ACTION } },
-        when: [{ becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'battery.soc' } }, right: { param: 'below' } }, heldForMinutes: { param: 'minutes' } }],
+        params: { fields: { below: { type: 'number', title: 'Below', unit: '%', default: 20 }, heldFor: { type: 'number', title: 'For', unit: 's', default: 0 }, action: ACTION } },
+        when: [{ becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'battery.soc' } }, right: { param: 'below' } }, heldFor: { param: 'heldFor' } }],
         then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: TURN } } }],
       }),
       defineRecipe({
@@ -376,7 +376,7 @@ describe('at a time of day', () => {
 
   test('it owns its rule: the recipe it was copied from is not needed to run it', async () => {
     const { store, make, sent } = setup();
-    const low = make('test.kit.low', { battery: { device: STATION, part: 'main' }, switch: { device: PLUG, part: 'main' } }, { below: 60, minutes: 0 }, 'act');
+    const low = make('test.kit.low', { battery: { device: STATION, part: 'main' }, switch: { device: PLUG, part: 'main' } }, { below: 60, heldFor: 0 }, 'act');
     // A server whose packages no longer ship that recipe: the automation runs as it was built.
     const bare = new AutomationEngine({
       store,
@@ -393,7 +393,7 @@ describe('at a time of day', () => {
 
 describe('when a condition becomes true', () => {
   const low = (context: ReturnType<typeof setup>, params: Record<string, number> = {}) =>
-    context.make('test.kit.low', { battery: { device: STATION, part: 'main' }, switch: { device: PLUG, part: 'main' } }, { below: 20, minutes: 0, ...params }, 'act');
+    context.make('test.kit.low', { battery: { device: STATION, part: 'main' }, switch: { device: PLUG, part: 'main' } }, { below: 20, heldFor: 0, ...params }, 'act');
 
   test('fires on the change to true, and not again while it stays so', async () => {
     const context = setup();
@@ -478,7 +478,7 @@ describe('when a condition becomes true', () => {
     // Changing it starts it afresh: its condition, already true, is its edge again.
     second.engine.reset(automation.id);
     // What its triggers saw is forgotten; when it changed is kept: what keeping things so counts from.
-    expect(second.store.trigger(automation.id, 0)).toBeNull();
+    expect(second.store.trigger(automation.id, '#0')).toBeNull();
     expect(second.store.get(automation.id)!.lookedAt).not.toBeNull();
     await second.engine.tick();
     await settle();
@@ -488,7 +488,7 @@ describe('when a condition becomes true', () => {
   test('a hold that was running when the server stopped resumes with the time it had left', async () => {
     const first = setup();
     first.station.soc = 10;
-    const automation = low(first, { minutes: 5 });
+    const automation = low(first, { heldFor: 300 });
     await first.engine.tick();
     expect(first.sent).toEqual([]);
     first.engine.stop();
@@ -500,7 +500,7 @@ describe('when a condition becomes true', () => {
     await settle();
     expect(second.sent).toHaveLength(1);
     expect(second.sent[0]!.reason).toContain('for 5 min');
-    expect(second.store.trigger(automation.id, 0)).toMatchObject({ last: true, fired: true });
+    expect(second.store.trigger(automation.id, '#0')).toMatchObject({ last: true, fired: true });
   });
 
   test('turned true again while its run still takes its steps: run again once that run ends, not lost', async () => {
@@ -541,7 +541,7 @@ describe('when a condition becomes true', () => {
   test('a hold waiting when it is turned off does nothing when it runs out', async () => {
     const context = setup();
     const { engine, station, sent, readingsMoved, store } = context;
-    const automation = low(context, { minutes: 0.001 }); // 60 ms
+    const automation = low(context, { heldFor: 0.06 }); // 60 ms
     engine.start();
     try {
       station.soc = 10;
@@ -557,7 +557,7 @@ describe('when a condition becomes true', () => {
   test('held for a while: only if it stays true that long', async () => {
     const context = setup();
     const { engine, station, sent, readingsMoved } = context;
-    low(context, { minutes: 0.001 }); // 60 ms
+    low(context, { heldFor: 0.06 }); // 60 ms
     engine.start();
     try {
       station.soc = 50;
@@ -647,7 +647,7 @@ describe('a setting by what it means', () => {
 describe('keeping things so', () => {
   const MINUTE = 60_000;
   const window = (context: ReturnType<typeof setup>, recheckMinutes: number | null) =>
-    context.make('standard.charge-between', { battery: { device: STATION, part: 'main' }, charger: { device: PLUG, part: 'main' } }, { low: 15, lowMinutes: 2, high: 50, highMinutes: 0 }, 'act', recheckMinutes);
+    context.make('standard.charge-between', { battery: { device: STATION, part: 'main' }, charger: { device: PLUG, part: 'main' } }, { low: 15, lowFor: 120, high: 50, highFor: 0 }, 'act', recheckMinutes);
 
   test('a charger switched on by hand above the level it stops at is switched off at the next look', async () => {
     const context = setup();
@@ -862,7 +862,7 @@ describe('every so many minutes', () => {
       rule: {
         roles: { switch: { label: 'Plug', description: 'A plug', capabilities: ['switch'] } },
         params: { fields: {} },
-        when: [{ every: { value: 15 } }],
+        when: [{ every: { value: 15 * 60 } }],
         then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
       },
       madeFrom: null,
@@ -896,7 +896,7 @@ describe('every so many minutes', () => {
       rule: {
         roles: { switch: { label: 'Plug', description: 'A plug', capabilities: ['switch'] } },
         params: { fields: {} },
-        when: [{ every: { value: 15 } }],
+        when: [{ every: { value: 15 * 60 } }],
         then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
       },
       madeFrom: null,
@@ -924,7 +924,7 @@ describe('every so many minutes', () => {
 describe('a battery kept between two levels', () => {
   const MINUTE = 60_000;
   const roles = { battery: { device: STATION, part: 'main' }, charger: { device: PLUG, part: 'main' } };
-  const levels = { low: 5, lowMinutes: 2, high: 30, highMinutes: 2 };
+  const levels = { low: 5, lowFor: 120, high: 30, highFor: 120 };
 
   test('below the low level for its hold: on; at the high level for its hold: off; a dip back is no crossing; and round again', async () => {
     const context = setup();

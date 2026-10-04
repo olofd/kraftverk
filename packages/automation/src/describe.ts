@@ -3,7 +3,9 @@ import { capabilitySpec, enumLabel, isCapability, standardMeaning, type ConfigSc
 import type { RuleVocabulary } from './check.ts';
 import { WEEKDAYS, type Weekday } from './clock.ts';
 import { evaluateNow, settledChoice, settledScope, shown } from './evaluate.ts';
-import { isAutomationRole, type Command, type CompareOp, type Expr, type Rule, type RunFact, type Step, type StepKind, type Write } from './rule.ts';
+import type { Say } from './kinds/spec.ts';
+import { TRIGGER_KINDS, triggerKind } from './kinds/triggers.ts';
+import { isAutomationRole, type Command, type CompareOp, type Expr, type Rule, type RunFact, type Step, type StepKind, type Trigger, type Write } from './rule.ts';
 
 /*
   A rule in words (docs/AUTOMATIONS-UX.md): its triggers, conditions and
@@ -21,8 +23,7 @@ export function secondsText(seconds: number): string {
 }
 
 /** How long a condition must hold, as a person says it: "2 min", "3 s" — or, a setting or a reading, in its words. */
-const holdText = (held: Expr, text: (expr: Expr) => string): string =>
-  'value' in held && typeof held.value === 'number' ? secondsText(held.value * 60) : 'value' in held ? `${text(held)} min` : text(held);
+const holdText = (held: Expr, text: (expr: Expr) => string): string => ('value' in held && typeof held.value === 'number' ? secondsText(held.value) : text(held));
 
 /** A setting as it reads in a sentence: an option's label, a number with its unit, seconds as a duration. */
 export function paramText(schema: ConfigSchema, name: string, value: Value): string {
@@ -138,12 +139,17 @@ export function daysText(days: readonly Weekday[] | undefined): string {
  */
 export function describeTriggers(rule: Rule, params: Readonly<Record<string, Value>>, name: (role: string) => string, vocabulary?: RuleVocabulary): string[] {
   const text = (expr: Expr): string => describeExpr(rule, expr, params, name, vocabulary);
+  // Each kind says itself (kinds/triggers.ts); this hands it the words for what it holds.
+  const say: Say = {
+    expr: text,
+    duration: (expr) => holdText(expr, text),
+    days: daysText,
+    name,
+    event: (role, event) => eventWords(rule, role, event),
+  };
   return rule.when.map((trigger) => {
-    if ('at' in trigger) return trigger.days && daysText(trigger.days) !== 'every day' ? `At ${text(trigger.at)} ${daysText(trigger.days)}` : `Every day at ${text(trigger.at)}`;
-    if ('every' in trigger) return `Every ${'value' in trigger.every ? `${text(trigger.every)} min` : text(trigger.every)}`;
-    if ('event' in trigger) return `When ${name(trigger.event.role)} reports ${eventWords(rule, trigger.event.role, trigger.event.event)}`;
-    const held = trigger.heldForMinutes ? ` for ${holdText(trigger.heldForMinutes, text)}` : '';
-    return `When ${text(trigger.becomes)}${held}`;
+    const kind = triggerKind(trigger);
+    return (TRIGGER_KINDS[kind].words as (trigger: Trigger, say: Say) => string)(trigger, say);
   });
 }
 
@@ -286,17 +292,9 @@ export function describeRule(rule: Rule & { sentence?: string }, params: Readonl
   if (rule.sentence) return rule.sentence.replace(/\{(\w+)\}/g, (_, key: string) => (key in rule.roles ? name(key) : param(key)));
 
   const { text, briefs } = wording(rule, params, name, vocabulary);
-  const minutes = (expr: Expr) => ('value' in expr ? `${text(expr)} min` : text(expr));
-  const when = rule.when
-    .map((trigger) =>
-      'at' in trigger
-        ? `at ${text(trigger.at)}${trigger.days && daysText(trigger.days) !== 'every day' ? ` ${daysText(trigger.days)}` : ''}`
-        : 'every' in trigger
-          ? `every ${minutes(trigger.every)}`
-          : 'event' in trigger
-            ? `when ${name(trigger.event.role)} reports ${eventWords(rule, trigger.event.role, trigger.event.event)}`
-            : `when ${text(trigger.becomes)}${trigger.heldForMinutes ? ` for ${holdText(trigger.heldForMinutes, text)}` : ''}`
-    )
+  // Its triggers as their own lines say them, mid-sentence.
+  const when = describeTriggers(rule, params, name, vocabulary)
+    .map((line) => line.charAt(0).toLowerCase() + line.slice(1))
     .join(', or ');
   // No trigger: it is played, or started — the sentence is what it does.
   const opening = [when, rule.if ? `if ${text(rule.if)}` : ''].filter(Boolean).join(', ');

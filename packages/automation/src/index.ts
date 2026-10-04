@@ -9,6 +9,7 @@
  */
 
 export * from './rule.ts';
+export * from './kinds/index.ts';
 export * from './clock.ts';
 export * from './functions.ts';
 export * from './check.ts';

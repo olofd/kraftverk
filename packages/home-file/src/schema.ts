@@ -1,3 +1,4 @@
+import { triggerJsonSchema } from '@kraftverk/automation';
 import type { ConfigField, ConfigSchema } from '@kraftverk/device-sdk';
 
 import { KEY } from '@kraftverk/device-sdk';
@@ -190,19 +191,8 @@ const STEP: Schema = {
   ],
 };
 
-const DAYS: Schema = { anyOf: [{ enum: ['weekdays', 'weekends'] }, { type: 'array', items: { enum: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] } }] };
-
-/** A trigger's own id, that what it does reads back as `run.trigger`. */
-const TRIGGER_ID: Schema = { type: 'string', pattern: '^[a-z][a-zA-Z0-9]{0,31}$', description: 'Its id, that what it does reads back as `run.trigger`: "low".' };
-
-const TRIGGER: Schema = {
-  anyOf: [
-    { title: 'at', type: 'object', required: ['at'], additionalProperties: false, properties: { id: TRIGGER_ID, at: { $ref: '#/$defs/expression' }, days: DAYS } },
-    { title: 'every', type: 'object', required: ['every'], additionalProperties: false, properties: { id: TRIGGER_ID, every: { $ref: '#/$defs/duration' } } },
-    { title: 'event', type: 'object', required: ['event', 'from'], additionalProperties: false, properties: { id: TRIGGER_ID, event: { type: 'string' }, from: { type: 'string' } } },
-    { title: 'becomes', type: 'object', required: ['becomes'], additionalProperties: false, properties: { id: TRIGGER_ID, becomes: { $ref: '#/$defs/expression' }, for: { $ref: '#/$defs/duration' } } },
-  ],
-};
+/** What starts an automation: made from the language's own description of each kind (@kraftverk/automation, kinds/). */
+const TRIGGER: Schema = triggerJsonSchema();
 
 function automationSchema(vocabulary: Vocabulary): Schema {
   // The devices the server has, and their parts, offered where a role is filled.

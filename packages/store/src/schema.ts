@@ -298,7 +298,8 @@ export const SCHEMA = `
   CREATE INDEX automation_role_starts ON automation_role (starts);
 
   /*
-    Each "becomes" trigger's state, by its place among its rule's triggers:
+    Each "becomes" trigger's state, by its key — its id, or its place among
+    its rule's triggers when it has none ("#2", triggerKey):
     whether its condition held when last looked at, since when it has held,
     and whether this hold has run it. Kept so a restart continues where it
     was: a hold resumes with the time it had left, and nothing fires twice.
@@ -307,7 +308,7 @@ export const SCHEMA = `
   */
   CREATE TABLE automation_trigger (
     automation_id TEXT NOT NULL REFERENCES automation (id) ON DELETE CASCADE,
-    trigger       INTEGER NOT NULL CHECK (trigger >= 0),
+    trigger       TEXT NOT NULL CHECK (trigger <> ''),
     holds         INTEGER NOT NULL CHECK (holds IN (0, 1)),
     held_since    TEXT,
     fired         INTEGER NOT NULL CHECK (fired IN (0, 1)),

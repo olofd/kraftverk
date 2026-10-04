@@ -162,10 +162,10 @@ for (const driver of DRIVERS) {
       expect(store.update(made.id, { mode: 'act' })?.mode).toBe('act');
       expect(store.revision).toBeGreaterThan(revision);
 
-      store.keepTrigger(made.id, 0, { last: true, heldSince: at(10), fired: false });
-      expect(store.trigger(made.id, 0)).toEqual({ last: true, heldSince: at(10), fired: false });
+      store.keepTrigger(made.id, 'low', { last: true, heldSince: at(10), fired: false });
+      expect(store.trigger(made.id, 'low')).toEqual({ last: true, heldSince: at(10), fired: false });
       store.startAfresh(made.id, at(11));
-      expect(store.trigger(made.id, 0)).toBeNull();
+      expect(store.trigger(made.id, 'low')).toBeNull();
 
       const run = { id: null, at: at(12), startedBy: 'olof', startedByRun: null, endedAt: null, outcome: 'running' as const, summary: 'Taking steps', why: 'Started by olof', saw: [], conditions: [], steps: [] };
       const runId = store.beginRun(made.id, run);

@@ -19,9 +19,9 @@ export interface AutomationStorage {
   list(): AutomationRecord[];
   get(id: string): AutomationRecord | null;
 
-  /** What a trigger last saw, by its place in the rule. */
-  trigger(id: string, index: number): TriggerState | null;
-  keepTrigger(id: string, index: number, state: TriggerState): void;
+  /** What a trigger last saw, by its key (`triggerKey`): its id, or its place in the rule when it has none. */
+  trigger(id: string, trigger: string): TriggerState | null;
+  keepTrigger(id: string, trigger: string, state: TriggerState): void;
   /** It starts afresh: what its triggers saw is forgotten, and it last looked now. */
   startAfresh(id: string, at: string): void;
   /** It looked again, to keep things so. */

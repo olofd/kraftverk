@@ -109,12 +109,18 @@ A rule has:
 
 ## What starts it — triggers
 
+Each kind is described once, as data, in `src/kinds/triggers.ts` — its
+words, what each holds, its sentence, its place in the editor, its examples
+— and the checker, the file's reader and writer, the JSON Schema, the
+editor and **[REFERENCE.md](REFERENCE.md)** are made from that. Lengths of
+time are kept in seconds (`heldFor`, `every`), whatever a file writes.
+
 | Data | Text | Starts a run |
 |---|---|---|
 | `at` | `at: "07:00"`, with `days: weekdays`, `weekends` or `[mon, fri]` | at a time of day on the automation's own clock — every day, or on those days |
-| `every` | `every: 15 min` | every so many minutes from midnight (every 15 is :00, :15, :30, :45); once a slot, never catching up |
+| `every` | `every: 15 min` | every so many minutes from midnight (every 15 min is :00, :15, :30, :45); once a slot, never catching up |
 | `event` | `event: mains.lost` with `from: station` | when the part filling a role raises an event its description declares |
-| `becomes` | `becomes: station.battery.soc < 15 %`, with `for: 2 min` | when a condition turns true — and, with `for` (`heldForMinutes`), has stayed true that long; reads and comparisons only |
+| `becomes` | `becomes: station.battery.soc < 15 %`, with `for: 2 min` | when a condition turns true — and, with `for` (`heldFor`), has stayed true that long; reads and comparisons only |
 
 Any trigger may carry an `id` (`id: low`) — letters and digits, starting
 with a lowercase letter, unique within the rule — that what it does reads

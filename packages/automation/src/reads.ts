@@ -1,5 +1,7 @@
 import { capabilitySpec, isCapability, type CapabilityNeed } from '@kraftverk/device-sdk';
 
+import { EXPRESSION_FIELDS, fieldValue } from './kinds/spec.ts';
+import { triggerSpec } from './kinds/triggers.ts';
 import type { Command, Expr, Rule, Step, Write } from './rule.ts';
 
 /*
@@ -61,11 +63,19 @@ export function ruleUses(rule: Rule): {
     }
   };
   const events: { role: string; event: string }[] = [];
+  // Each trigger by its kind's fields (kinds/triggers.ts): what it reads, and the events it waits for.
   for (const trigger of rule.when) {
-    if ('at' in trigger) walk(trigger.at);
-    if ('every' in trigger) walk(trigger.every);
-    else if ('event' in trigger) events.push(trigger.event);
-    else if ('becomes' in trigger) (walk(trigger.becomes), walk(trigger.heldForMinutes));
+    const spec = triggerSpec(trigger);
+    for (const field of spec.fields) {
+      const value = fieldValue(trigger, field);
+      if (value === undefined) continue;
+      if (EXPRESSION_FIELDS.has(field.type.type)) walk(value as Expr);
+      const type = field.type;
+      if (type.type === 'event') {
+        const from = spec.fields.find((each) => each.key === type.role);
+        events.push({ role: String((from && fieldValue(trigger, from)) ?? ''), event: String(value) });
+      }
+    }
   }
   walk(rule.if);
   walkSteps(rule.then);

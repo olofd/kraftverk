@@ -128,8 +128,8 @@ export class RuleContext {
     const conditions = rule.when.flatMap((trigger): ConditionState[] => {
       if (!('becomes' in trigger)) return [];
       const holds = evaluateNow(trigger.becomes, scope, saw);
-      const minutes = trigger.heldForMinutes ? Number(evaluateNow(trigger.heldForMinutes, scope)) : 0;
-      const text = `${capitalise(this.said(automation, rule, trigger.becomes))}${minutes > 0 ? ` for ${secondsText(minutes * 60)}` : ''}`;
+      const seconds = trigger.heldFor ? Number(evaluateNow(trigger.heldFor, scope)) : 0;
+      const text = `${capitalise(this.said(automation, rule, trigger.becomes))}${seconds > 0 ? ` for ${secondsText(seconds)}` : ''}`;
       return [{ text, holds: typeof holds === 'boolean' ? holds : null }];
     });
     return { conditions, saw: [...new Set(saw)] };

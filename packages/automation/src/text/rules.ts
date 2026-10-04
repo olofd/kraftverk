@@ -1,9 +1,11 @@
-import { CAPABILITIES, MAIN_PART, standardMeaning, type CapabilityName } from '@kraftverk/device-sdk';
+import { CAPABILITIES, MAIN_PART, type CapabilityName } from '@kraftverk/device-sdk';
 
 import { WEEKDAYS, type Weekday } from '../clock.ts';
 import { ruleUses } from '../reads.ts';
+import { fieldValue, withField, type FieldSpec } from '../kinds/spec.ts';
+import { TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerSpec } from '../kinds/triggers.ts';
 import { isAutomationRole, TRIGGER_ID, type Expr, type NamedTrigger, type RoleSpec, type Rule, type Step, type Trigger } from '../rule.ts';
-import { parseExpr, printExpr, type PrintContext, type WrittenUnit } from './expr.ts';
+import { parseExpr, printExpr, standardUnit, type PrintContext, type WrittenUnit } from './expr.ts';
 
 /*
   An automation's rule as a configuration file writes it (docs/CONFIG.md):
@@ -66,12 +68,6 @@ function conversion(written: string, into: string): number | null {
 
 /** A converted number without the float's dust: 2.2 kW is 2200 W, not 2200.0000000000005. */
 const round = (value: number) => Math.round(value * 1e9) / 1e9;
-
-/** The unit a standard meaning's readings are in — none for one that may be in several (a price's currency). */
-function standardUnit(means: string): string | null {
-  const meaning = standardMeaning(means);
-  return meaning && meaning.type === 'number' && !meaning.units?.length ? meaning.unit : null;
-}
 
 // --- reading ------------------------------------------------------------------------------
 
@@ -142,13 +138,6 @@ class Reader {
   seconds(data: Data, path: Path): Expr {
     const seconds = durationSeconds(data);
     if (seconds !== null) return { value: seconds };
-    return this.lengthOfTime(data, path);
-  }
-
-  /** A length of time the rule keeps in minutes: "2 min", "90 s". */
-  minutes(data: Data, path: Path): Expr {
-    const seconds = durationSeconds(data);
-    if (seconds !== null) return { value: seconds / 60 };
     return this.lengthOfTime(data, path);
   }
 
@@ -275,28 +264,32 @@ class Reader {
       if (typeof id !== 'string' || !TRIGGER_ID.test(id)) return this.fail('A trigger\'s id is letters and digits, starting with a lowercase letter: "low"', [...path, 'id']);
       return { ...this.trigger(rest, path), id };
     }
-    const only = (...keys: string[]) => {
-      for (const key of Object.keys(data)) if (!keys.includes(key)) this.fail(`"${key}" is not part of this trigger: it takes ${[...keys, 'id'].map((each) => `"${each}"`).join(', ')}`, [...path, key]);
-    };
-    if ('at' in data) {
-      only('at', 'days');
-      const at = this.expr(data.at, [...path, 'at']);
-      return 'days' in data ? { at, days: this.days(data.days, [...path, 'days']) } : { at };
+    // Its kind by its verb, and each of its fields by what it holds (kinds/triggers.ts).
+    const kind = TRIGGER_KIND_ORDER.find((each) => each in data);
+    if (!kind) return this.fail(`Not a trigger: ${Object.keys(data).map((key) => `"${key}"`).join(', ')}. A trigger is ${TRIGGER_KIND_ORDER.join(', ')}`, path);
+    const spec = TRIGGER_KINDS[kind];
+    const keys = spec.fields.map((field) => field.key);
+    for (const key of Object.keys(data)) if (!keys.includes(key)) this.fail(`"${key}" is not part of this trigger: it takes ${[...keys, 'id'].map((each) => `"${each}"`).join(', ')}`, [...path, key]);
+    return spec.fields.reduce<Trigger>((trigger, field) => {
+      if (!(field.key in data)) return field.required ? this.fail(`"${kind}" needs "${field.key}": ${field.label.toLowerCase()}`, path) : trigger;
+      return withField(trigger, field, this.field(field, data[field.key], [...path, field.key]));
+    }, {} as Trigger);
+  }
+
+  /** One field of a construct, by what it holds (kinds/spec.ts). */
+  field(field: FieldSpec, data: Data, path: Path): unknown {
+    switch (field.type.type) {
+      case 'condition':
+      case 'timeOfDay':
+        return this.expr(data, path);
+      case 'duration':
+        return this.seconds(data, path);
+      case 'days':
+        return this.days(data, path);
+      case 'role':
+      case 'event':
+        return this.name(data, path, field.label.toLowerCase());
     }
-    if ('every' in data) {
-      only('every');
-      return { every: this.minutes(data.every, [...path, 'every']) };
-    }
-    if ('event' in data) {
-      only('event', 'from');
-      return { event: { role: this.name(data.from, [...path, 'from'], 'the role it comes from ("from")'), event: this.name(data.event, [...path, 'event'], 'the event') } };
-    }
-    if ('becomes' in data) {
-      only('becomes', 'for');
-      const becomes = this.expr(data.becomes, [...path, 'becomes']);
-      return 'for' in data ? { becomes, heldForMinutes: this.minutes(data.for, [...path, 'for']) } : { becomes };
-    }
-    return this.fail(`Not a trigger: ${Object.keys(data).map((key) => `"${key}"`).join(', ')}. A trigger is at, every, event or becomes`, path);
   }
 
   days(data: Data, path: Path): Weekday[] {
@@ -481,8 +474,6 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>, context: Pri
     return printExpr(value, context) ?? value;
   };
   const seconds = (value: Expr): unknown => ('value' in value && typeof value.value === 'number' ? durationText(value.value) : expr(value));
-  // Kept in minutes, written in seconds: 125 s is 2.0833… min, which times 60 is not quite whole — rounded, so it is written as it was given.
-  const minutes = (value: Expr): unknown => ('value' in value && typeof value.value === 'number' ? durationText(Math.round(value.value * 60 * 1e6) / 1e6) : expr(value));
   const time = (value: Expr): unknown => ('value' in value && typeof value.value === 'string' && /^\d{2}:\d{2}$/.test(value.value) ? value.value : expr(value));
 
   const step = (each: Step): Record<string, unknown> => {
@@ -514,11 +505,29 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>, context: Pri
     return each.start.waitSeconds !== undefined ? { start: each.start.role, 'and wait': seconds(each.start.waitSeconds) } : { start: each.start.role };
   };
   const trigger = (each: NamedTrigger): Record<string, unknown> => (each.id ? { id: each.id, ...unnamed(each) } : unnamed(each));
+  // Each of its fields by what it holds, in its kind's order (kinds/triggers.ts).
   const unnamed = (each: Trigger): Record<string, unknown> => {
-    if ('at' in each) return each.days ? { at: time(each.at), days: daysInFile(each.days) } : { at: time(each.at) };
-    if ('every' in each) return { every: minutes(each.every) };
-    if ('event' in each) return { event: each.event.event, from: each.event.role };
-    return each.heldForMinutes !== undefined ? { becomes: expr(each.becomes), for: minutes(each.heldForMinutes) } : { becomes: expr(each.becomes) };
+    const written: Record<string, unknown> = {};
+    for (const field of triggerSpec(each).fields) {
+      const value = fieldValue(each, field);
+      if (value !== undefined) written[field.key] = fieldText(field, value);
+    }
+    return written;
+  };
+  const fieldText = (field: FieldSpec, value: unknown): unknown => {
+    switch (field.type.type) {
+      case 'condition':
+        return expr(value as Expr);
+      case 'timeOfDay':
+        return time(value as Expr);
+      case 'duration':
+        return seconds(value as Expr);
+      case 'days':
+        return daysInFile(value as readonly string[]);
+      case 'role':
+      case 'event':
+        return value;
+    }
   };
 
   const usesOut: Record<string, unknown> = {};

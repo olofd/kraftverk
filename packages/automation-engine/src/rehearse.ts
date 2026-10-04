@@ -13,7 +13,7 @@ import {
   type ScalarValue,
   type Value,
 } from '@kraftverk/device-sdk';
-import { evaluate, evaluateNow, EVERY_MINUTES, minutesOf, ruleUses, runsOn, type RoleBinding, type Rule, type RuleScope } from '@kraftverk/automation';
+import { evaluate, evaluateNow, EVERY_SECONDS, minutesOf, ruleUses, runsOn, secondsText, type RoleBinding, type Rule, type RuleScope } from '@kraftverk/automation';
 
 /**
  * A rule, rehearsed on what happened (PROPOSITION.md §5.3): walked through a
@@ -166,14 +166,15 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
         if (instant >= start && instant <= end && !fired.some((run) => run.at === instant)) fired.push({ at: instant, because: `It is ${at}`, trigger: trigger.id ?? '' });
       }
     } else if ('every' in trigger) {
-      const every = evaluateNow(trigger.every, scopeAt(start));
-      if (typeof every !== 'number' || every < EVERY_MINUTES.min || every > EVERY_MINUTES.max) continue;
+      const seconds = evaluateNow(trigger.every, scopeAt(start));
+      if (typeof seconds !== 'number' || seconds < EVERY_SECONDS.min || seconds > EVERY_SECONDS.max || seconds % EVERY_SECONDS.step !== 0) continue;
+      const every = seconds / 60;
       for (const date of days) {
         for (let slot = 0; slot < 24 * 60; slot += every) {
           // Each time the clock shows it: twice in the hour repeated as clocks go back, not at all in the one skipped.
           for (const each of zonedInstants({ ...date, hour: Math.floor(slot / 60), minute: slot % 60 }, automation.timeZone)) {
             const instant = each.getTime();
-            if (instant >= start && instant <= end && !fired.some((run) => run.at === instant)) fired.push({ at: instant, because: `Every ${every} min`, trigger: trigger.id ?? '' });
+            if (instant >= start && instant <= end && !fired.some((run) => run.at === instant)) fired.push({ at: instant, because: `Every ${secondsText(seconds)}`, trigger: trigger.id ?? '' });
           }
         }
       }
@@ -202,17 +203,17 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
         Object.assign(state, { last: false, heldSince: null, fired: false });
         continue;
       }
-      const minutes = state.trigger.heldForMinutes ? Number(evaluateNow(state.trigger.heldForMinutes, scope)) : 0;
+      const seconds = state.trigger.heldFor ? Number(evaluateNow(state.trigger.heldFor, scope)) : 0;
       if (!state.last) {
         Object.assign(state, { last: true, heldSince: t, fired: false });
-        if (minutes > 0) lookAgainAt(t + minutes * 60_000);
+        if (seconds > 0) lookAgainAt(t + seconds * 1000);
       }
       if (state.fired) continue;
-      if (t - (state.heldSince ?? t) < minutes * 60_000) continue;
+      if (t - (state.heldSince ?? t) < seconds * 1000) continue;
       state.fired = true;
       const trace: string[] = [];
       evaluateNow(state.trigger.becomes, scope, trace);
-      fired.push({ at: t, because: `${trace.join('; ')}${minutes > 0 ? `, for ${minutes} min` : ''}`, trigger: state.trigger.id ?? '' });
+      fired.push({ at: t, because: `${trace.join('; ')}${seconds > 0 ? `, for ${secondsText(seconds)}` : ''}`, trigger: state.trigger.id ?? '' });
     }
   }
 

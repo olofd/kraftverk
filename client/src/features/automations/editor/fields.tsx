@@ -48,20 +48,27 @@ export function NumberField({ label, value, unit, onChange, width = 96 }: { labe
   );
 }
 
-const UNITS = ['s', 'min'] as const;
+const UNITS = ['s', 'min', 'h'] as const;
 
 type Unit = (typeof UNITS)[number];
 
+const UNIT_SECONDS: Readonly<Record<Unit, number>> = { s: 1, min: 60, h: 3600 };
+
+const UNIT_WORDS: Readonly<Record<Unit, string>> = { s: 'seconds', min: 'minutes', h: 'hours' };
+
+/** The unit a length of time reads best in: the largest it is whole in, from two of them — 90 s, 2 min, 3 h. */
+const unitOf = (seconds: number | null): Unit => (seconds === null ? 's' : seconds >= 7200 && seconds % 3600 === 0 ? 'h' : seconds >= 120 && seconds % 60 === 0 ? 'min' : 's');
+
 /**
  * How long, as one control: the number and its unit together — "20 s",
- * "5 min" — kept as seconds, and the most it may be said under it before it
- * is reached, not after.
+ * "5 min", "2 h" — kept as seconds, and the most it may be said under it
+ * before it is reached, not after.
  */
 export function DurationField({ label, value, max, onChange }: { label: string; value: number | null; max?: number; onChange: (value: number | null) => void }) {
-  const [unit, setUnit] = useState<Unit>(value !== null && value >= 120 && value % 60 === 0 ? 'min' : 's');
-  const inUnit = value === null ? null : unit === 'min' ? value / 60 : value;
+  const [unit, setUnit] = useState<Unit>(unitOf(value));
+  const inUnit = value === null ? null : value / UNIT_SECONDS[unit];
   const { text, setText, parse } = useNumberText(inUnit);
-  const toSeconds = (number: number | null, as: Unit) => (number === null ? null : Math.round(as === 'min' ? number * 60 : number));
+  const toSeconds = (number: number | null, as: Unit) => (number === null ? null : Math.round(number * UNIT_SECONDS[as]));
   const over = value !== null && max !== undefined && value > max;
   // The number stays as typed; what it means changes with its unit.
   const measureIn = (each: Unit) => (haptic(), setUnit(each), onChange(toSeconds(parse(text), each)));
@@ -88,7 +95,7 @@ export function DurationField({ label, value, max, onChange }: { label: string; 
                 key={each}
                 role="radio"
                 aria-checked={chosen}
-                aria-label={each === 's' ? 'seconds' : 'minutes'}
+                aria-label={UNIT_WORDS[each]}
                 {...radio(index)}
                 cursor="pointer"
                 minWidth={48}

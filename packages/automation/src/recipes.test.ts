@@ -44,7 +44,7 @@ describe('charging between two levels', () => {
     parts: [{ id: MAIN_PART, label: 'Plug', kind: 'outlet', offers: ['switch'] }],
     attributes: [{ key: 'relay', label: 'Power', value: { type: 'boolean' }, means: 'switch.on' }],
   };
-  const params = { low: 15, lowMinutes: 2, high: 50, highMinutes: 3 };
+  const params = { low: 15, lowFor: 120, high: 50, highFor: 180 };
   /** As a run sees it: the charge, the settings, and the id of the trigger that started it ("" — none did). */
   const scope = (soc: Value, overrides: Record<string, Value> = {}, trigger = ''): RuleScope => ({
     param: (name) => ({ ...params, ...overrides })[name as keyof typeof params] ?? null,
@@ -74,7 +74,7 @@ describe('charging between two levels', () => {
   });
 
   test('each side holds for its own time, and the step reads no level: the two can never disagree', () => {
-    expect(chargeBetween.when.map((trigger) => ('becomes' in trigger ? trigger.heldForMinutes : null))).toEqual([{ param: 'lowMinutes' }, { param: 'highMinutes' }]);
+    expect(chargeBetween.when.map((trigger) => ('becomes' in trigger ? trigger.heldFor : null))).toEqual([{ param: 'lowFor' }, { param: 'highFor' }]);
     expect(JSON.stringify(on)).not.toContain('battery.soc');
   });
 
@@ -96,7 +96,7 @@ describe('charging between two levels', () => {
   test('reads as what it does', () => {
     const name = (role: string) => (role === 'battery' ? 'Garage P280' : 'ATORCH plug');
     expect(describeRule(chargeBetween, params, name)).toBe('Charge Garage P280 with ATORCH plug: on once it has been below 15 % for 2 min, off once it has been at 50 % or above for 3 min.');
-    expect(describeRule(lowBattery, { below: 20, minutes: 5, action: 'on' }, name)).toBe('When Garage P280 stays below 20 % for 5 min, turn ATORCH plug on.');
+    expect(describeRule(lowBattery, { below: 20, heldFor: 300, action: 'on' }, name)).toBe('When Garage P280 stays below 20 % for 5 min, turn ATORCH plug on.');
   });
 
   test('says when it runs, a trigger at a time', () => {

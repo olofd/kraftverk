@@ -269,17 +269,17 @@ export class AutomationStore implements AutomationStorage {
 
   // --- what its triggers last saw ---------------------------------------------------
 
-  trigger(id: string, index: number): TriggerState | null {
+  trigger(id: string, trigger: string): TriggerState | null {
     const row = this.#db
-      .query<{ holds: number; held_since: string | null; fired: number }, [string, number]>('SELECT holds, held_since, fired FROM automation_trigger WHERE automation_id = ? AND trigger = ?')
-      .get(id, index);
+      .query<{ holds: number; held_since: string | null; fired: number }, [string, string]>('SELECT holds, held_since, fired FROM automation_trigger WHERE automation_id = ? AND trigger = ?')
+      .get(id, trigger);
     return row ? { last: row.holds === 1, heldSince: row.held_since, fired: row.fired === 1 } : null;
   }
 
-  keepTrigger(id: string, index: number, state: TriggerState): void {
+  keepTrigger(id: string, trigger: string, state: TriggerState): void {
     this.#db
       .query('INSERT INTO automation_trigger (automation_id, trigger, holds, held_since, fired) VALUES (?, ?, ?, ?, ?) ON CONFLICT (automation_id, trigger) DO UPDATE SET holds = excluded.holds, held_since = excluded.held_since, fired = excluded.fired')
-      .run(id, index, state.last ? 1 : 0, state.last ? state.heldSince : null, state.last && state.fired ? 1 : 0);
+      .run(id, trigger, state.last ? 1 : 0, state.last ? state.heldSince : null, state.last && state.fired ? 1 : 0);
   }
 
   /** It starts afresh: what its triggers saw is forgotten, and it last looked now. */

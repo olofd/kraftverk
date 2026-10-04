@@ -54,7 +54,7 @@ test('a station kept between 5 and 30 % by the plug that feeds it, round and rou
   await confirmed(api, 'PATCH', `/api/devices/${station.id}/attributes`, { patch: { chargeLimit: 60, acChargingWatts: 900, dischargeFloor: FLOOR } });
 
   // The shared recipe as the app copies it, at the owner's levels and holds.
-  const copied = await (await api.post('/api/automations/recipes/standard.charge-between/copy', { data: { params: { low: LOW, lowMinutes: 2, high: HIGH, highMinutes: 2 } } })).json();
+  const copied = await (await api.post('/api/automations/recipes/standard.charge-between/copy', { data: { params: { low: LOW, lowFor: 120, high: HIGH, highFor: 120 } } })).json();
   const rule = copied.rule ?? copied;
   expect(rule.when.map((trigger: { id?: string }) => trigger.id)).toEqual(['low', 'high']);
   const name = unique('Keep the P280 between 5 and 30 %');

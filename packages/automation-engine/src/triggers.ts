@@ -1,4 +1,4 @@
-import { capitalise, describeTriggers, evaluateNow, EVERY_MINUTES, HOLD_MINUTES, readsRole, runsOn, secondsText, slotOf, takesSteps, type NamedTrigger, type Rule, type Trigger } from '@kraftverk/automation';
+import { capitalise, describeTriggers, evaluateNow, EVERY_SECONDS, HOLD_SECONDS, readsRole, runsOn, secondsText, slotOf, takesSteps, triggerKey, triggerKind, type NamedTrigger, type Rule, type Trigger } from '@kraftverk/automation';
 import { dayAfter, localTime, MAIN_PART, zonedInstant, type ClockTimer } from '@kraftverk/device-sdk';
 import type { LiveMessage } from '@kraftverk/holder';
 
@@ -106,7 +106,7 @@ export class Triggers {
       for (const automation of this.deps.store.list()) {
         if (automation.mode === 'off') continue;
         const rule = automation.rule;
-        const due = rule.when.find((trigger) => ('at' in trigger && this.#dueAt(automation, rule, trigger, now)) || ('every' in trigger && this.#dueEvery(automation, rule, trigger, now)));
+        const due = rule.when.find((trigger) => this.#due(automation, rule, trigger, now));
         if (due) {
           // A run that takes steps goes on by itself: the clock does not wait for it.
           // Why, as the trigger reads: "Every day at 07:00", "At 07:00 on weekdays".
@@ -142,7 +142,7 @@ export class Triggers {
     for (const [index, trigger] of rule.when.entries()) {
       if (!('becomes' in trigger)) continue;
       // Fired and still true: a hold still waiting it out, or a condition that has ended, is not one.
-      const state = this.#becoming.get(`${automation.id}:${index}`)?.state;
+      const state = this.#becoming.get(`${automation.id}:${triggerKey(trigger, index)}`)?.state;
       if (!state?.last || !state.fired) continue;
       if (evaluateNow(trigger.becomes, scope) !== true) continue;
       const planned = await this.#context.plan(automation, rule, this.#context.scope(automation, rule, now, trigger.id ?? null));
@@ -194,7 +194,7 @@ export class Triggers {
    * a hold with the time it had left and never fires one twice.
    */
   #becomes(automation: AutomationRecord, rule: Rule, trigger: Extract<NamedTrigger, { becomes: unknown }>, index: number): void {
-    const key = `${automation.id}:${index}`;
+    const key = `${automation.id}:${triggerKey(trigger, index)}`;
     const scope = this.#context.scope(automation, rule);
     const now = evaluateNow(trigger.becomes, scope);
     // Unknown — a device gone quiet — changes nothing: neither a start nor an end.
@@ -203,11 +203,11 @@ export class Triggers {
     let entry = this.#becoming.get(key);
     if (!entry) {
       // Nothing kept: as if it had been false, so a condition already true is its edge.
-      entry = { state: this.deps.store.trigger(automation.id, index) ?? { last: false, heldSince: null, fired: false }, hold: null };
+      entry = { state: this.deps.store.trigger(automation.id, triggerKey(trigger, index)) ?? { last: false, heldSince: null, fired: false }, hold: null };
       this.#becoming.set(key, entry);
     }
     const { state } = entry;
-    const keep = () => this.deps.store.keepTrigger(automation.id, index, state);
+    const keep = () => this.deps.store.keepTrigger(automation.id, triggerKey(trigger, index), state);
 
     if (!now) {
       this.#context.clock.clear(entry.hold);
@@ -229,8 +229,8 @@ export class Triggers {
 
     const said = capitalise(this.#context.said(automation, rule, trigger.becomes));
     // A setting filled in later is held to a hold's bounds here too: a timer past them would not wait at all.
-    const asked = trigger.heldForMinutes ? Number(evaluateNow(trigger.heldForMinutes, scope)) : 0;
-    const minutes = Number.isFinite(asked) ? Math.min(HOLD_MINUTES.max, Math.max(0, asked)) : 0;
+    const asked = trigger.heldFor ? Number(evaluateNow(trigger.heldFor, scope)) : 0;
+    const seconds = Number.isFinite(asked) ? Math.min(HOLD_SECONDS.max, Math.max(0, asked)) : 0;
     const fire = (why: string) => {
       const current = this.deps.store.get(automation.id);
       // Turned off since — or gone — it does nothing.
@@ -242,12 +242,12 @@ export class Triggers {
       void this.#runs.runAndKeep(current, why, trigger.id ?? null);
     };
     const since = Date.parse(state.heldSince ?? this.#context.now().toISOString());
-    const remaining = minutes > 0 ? since + minutes * 60_000 - this.#context.now().getTime() : 0;
+    const remaining = seconds > 0 ? since + seconds * 1000 - this.#context.now().getTime() : 0;
     // Its time is up by the engine's own clock — the timer's may not have come yet, or a test's clock ran ahead.
     if (remaining <= 0) {
       this.#context.clock.clear(entry.hold);
       entry.hold = null;
-      fire(minutes > 0 ? `${said}, for ${secondsText(minutes * 60)}` : said);
+      fire(seconds > 0 ? `${said}, for ${secondsText(seconds)}` : said);
       return;
     }
     // Already waiting it out.
@@ -257,12 +257,26 @@ export class Triggers {
       try {
         // Still true, all this time? Only then.
         if (evaluateNow(trigger.becomes, this.#context.scope(automation, rule)) !== true) return;
-        fire(`${said}, for ${secondsText(minutes * 60)}`);
+        fire(`${said}, for ${secondsText(seconds)}`);
       } catch (error) {
         // A timer has nobody to throw to: what went wrong is said, never left to bring the server down.
         console.error(`[automations] ${automation.id} could not fire after its hold:`, error);
       }
     }, remaining);
+  }
+
+  /** Whether a trigger of the clock's is due now; one the clock does not start is never. */
+  #due(automation: AutomationRecord, rule: Rule, trigger: NamedTrigger, now: Date): boolean {
+    const kind = triggerKind(trigger);
+    switch (kind) {
+      case 'at':
+        return this.#dueAt(automation, rule, trigger as Extract<Trigger, { at: unknown }>, now);
+      case 'every':
+        return this.#dueEvery(automation, rule, trigger as Extract<Trigger, { every: unknown }>, now);
+      case 'event':
+      case 'becomes':
+        return false;
+    }
   }
 
   #dueAt(automation: AutomationRecord, rule: Rule, trigger: Extract<Trigger, { at: unknown }>, now: Date): boolean {
@@ -283,8 +297,9 @@ export class Triggers {
 
   /** Whether an interval's latest slot, on the owner's clock, has come and it has not run since: once a slot, never catching up. */
   #dueEvery(automation: AutomationRecord, rule: Rule, trigger: Extract<Trigger, { every: unknown }>, now: Date): boolean {
-    const every = evaluateNow(trigger.every, this.#context.scope(automation, rule));
-    if (typeof every !== 'number' || every < EVERY_MINUTES.min || every > EVERY_MINUTES.max) return false;
+    const seconds = evaluateNow(trigger.every, this.#context.scope(automation, rule));
+    if (typeof seconds !== 'number' || seconds < EVERY_SECONDS.min || seconds > EVERY_SECONDS.max || seconds % EVERY_SECONDS.step !== 0) return false;
+    const every = seconds / 60;
     const today = localTime(now, automation.timeZone);
     const minuteOfDay = today.hour * 60 + today.minute;
     const slot = slotOf(minuteOfDay, every);

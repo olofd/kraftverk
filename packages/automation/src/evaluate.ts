@@ -2,6 +2,8 @@ import { isScalar, type ConfigSchema, type ScalarValue, type Value } from '@kraf
 
 import { inWindow, minutesOf } from './clock.ts';
 import type { Evaluation } from './functions.ts';
+import { EXPRESSION_FIELDS, fieldValue, withField } from './kinds/spec.ts';
+import { triggerSpec } from './kinds/triggers.ts';
 import { calculate, type CompareOp, type Expr, type NamedTrigger, type Rule, type RunFact, type Step } from './rule.ts';
 
 /*
@@ -229,18 +231,17 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
     const otherwise = optional(step.watch.else).steps;
     return { watch: { condition: expr(step.watch.condition), seconds: expr(step.watch.seconds), ...(then ? { then } : {}), ...(otherwise ? { else: otherwise } : {}) } };
   }
-  const when = rule.when.map((trigger): NamedTrigger => {
-    const id = trigger.id ? { id: trigger.id } : {};
-    if ('at' in trigger) return { ...trigger, at: expr(trigger.at) };
-    if ('every' in trigger) return { every: expr(trigger.every), ...id };
-    if ('becomes' in trigger) {
-      // A hold its settings make none — 0 min — is no hold: the moment it turns true.
-      const held = trigger.heldForMinutes ? expr(trigger.heldForMinutes) : null;
-      const holds = held && !('value' in held && held.value === 0);
-      return { becomes: expr(trigger.becomes), ...(holds ? { heldForMinutes: held } : {}), ...id };
-    }
-    return trigger;
-  });
+  // Each trigger's expressions settled, by its kind's fields (kinds/triggers.ts); its id kept.
+  const when = rule.when.map((trigger): NamedTrigger =>
+    triggerSpec(trigger).fields.reduce<NamedTrigger>((settled, field) => {
+      const value = fieldValue(trigger, field);
+      if (value === undefined || !EXPRESSION_FIELDS.has(field.type.type)) return settled;
+      const next = expr(value as Expr);
+      // A length of time its settings make none — 0 — where none may be, is none: a hold of 0 min is no hold.
+      const none = !field.required && field.type.type === 'duration' && 'value' in next && next.value === 0;
+      return withField(settled, field, none ? undefined : next);
+    }, trigger)
+  );
   const otherwise = optional(rule.otherwise).steps;
   // An "only if" its settings make always true is no condition at all.
   const only = rule.if ? expr(rule.if) : null;

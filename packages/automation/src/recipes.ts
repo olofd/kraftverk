@@ -30,7 +30,7 @@ export const lowBattery = defineRecipe({
   id: 'standard.low-battery',
   label: 'When a battery runs low',
   description: 'Switch something when a battery stays below a level for a while: a charger plug on, or a load off.',
-  sentence: 'When {battery} stays below {below} for {minutes}, turn {switch} {action}.',
+  sentence: 'When {battery} stays below {below} for {heldFor}, turn {switch} {action}.',
   roles: {
     battery: { label: 'Battery', description: 'Anything that reports its charge: a station, one of its packs', capabilities: ['battery'] },
     switch: SWITCH,
@@ -38,14 +38,14 @@ export const lowBattery = defineRecipe({
   params: {
     fields: {
       below: { type: 'number', title: 'Below', unit: '%', min: 5, max: 95, step: 5, default: 20, presentation: 'slider' },
-      minutes: { type: 'number', title: 'For at least', description: 'So a dip for a moment does not count.', unit: 'min', min: 0, max: 60, step: 1, default: 5 },
+      heldFor: { type: 'number', title: 'For at least', description: 'So a dip for a moment does not count.', unit: 's', min: 0, max: 3600, step: 60, default: 300 },
       action: { ...ACTION, default: 'on' },
     },
   },
   when: [
     {
       becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'battery.soc' } }, right: { param: 'below' } },
-      heldForMinutes: { param: 'minutes' },
+      heldFor: { param: 'heldFor' },
     },
   ],
   then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: turn } } }],
@@ -87,7 +87,7 @@ export const chargeBetween = defineRecipe({
   label: 'Charge between two levels',
   description:
     'Switch what charges a battery on when it runs low and off when it has charged enough: a charge window of your own, with a plug that feeds a station, say.',
-  sentence: 'Charge {battery} with {charger}: on once it has been below {low} for {lowMinutes}, off once it has been at {high} or above for {highMinutes}.',
+  sentence: 'Charge {battery} with {charger}: on once it has been below {low} for {lowFor}, off once it has been at {high} or above for {highFor}.',
   roles: {
     battery: { label: 'Battery', description: 'Anything that reports its charge: a station, one of its packs', capabilities: ['battery'] },
     charger: { label: 'What charges it', description: 'A plug that feeds it, or anything that switches its charger', capabilities: ['switch'] },
@@ -95,14 +95,14 @@ export const chargeBetween = defineRecipe({
   params: {
     fields: {
       low: { type: 'number', title: 'Start charging below', unit: '%', min: 5, max: 90, step: 5, default: 15, presentation: 'slider' },
-      lowMinutes: { type: 'number', title: 'Below it for at least', description: 'So a dip under load for a moment does not count.', unit: 'min', min: 0, max: 60, step: 1, default: 2 },
+      lowFor: { type: 'number', title: 'Below it for at least', description: 'So a dip under load for a moment does not count.', unit: 's', min: 0, max: 3600, step: 60, default: 120 },
       high: { type: 'number', title: 'Stop charging at', unit: '%', min: 10, max: 100, step: 5, default: 50, presentation: 'slider' },
-      highMinutes: { type: 'number', title: 'At it or above for at least', description: 'So a reading that touches it for a moment does not count.', unit: 'min', min: 0, max: 60, step: 1, default: 2 },
+      highFor: { type: 'number', title: 'At it or above for at least', description: 'So a reading that touches it for a moment does not count.', unit: 's', min: 0, max: 3600, step: 60, default: 120 },
     },
   },
   when: [
-    { id: 'low', becomes: { compare: 'lt', left: soc, right: { param: 'low' } }, heldForMinutes: { param: 'lowMinutes' } },
-    { id: 'high', becomes: { compare: 'ge', left: soc, right: { param: 'high' } }, heldForMinutes: { param: 'highMinutes' } },
+    { id: 'low', becomes: { compare: 'lt', left: soc, right: { param: 'low' } }, heldFor: { param: 'lowFor' } },
+    { id: 'high', becomes: { compare: 'ge', left: soc, right: { param: 'high' } }, heldFor: { param: 'highFor' } },
   ],
   // A window that is upside down would switch the charger on and off at once; played between the two, nothing is due.
   if: { all: [{ compare: 'lt', left: { param: 'low' }, right: { param: 'high' } }, { compare: 'ne', left: { run: 'trigger' }, right: { value: '' } }] },

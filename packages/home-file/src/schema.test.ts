@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import Ajv from 'ajv';
 
+import { ruleFromConfig, TRIGGER_KINDS } from '@kraftverk/automation';
+
 import { configJsonSchema, entryJsonSchema } from './schema.ts';
 import { DOCUMENT, VOCABULARY } from './testing.ts';
-import { parseDocument } from 'yaml';
+import { parse, parseDocument } from 'yaml';
 import { secretTag } from './yaml.ts';
 
 /*
@@ -50,6 +52,32 @@ describe('the schema a file is checked against as it is typed', () => {
     const data = asData(DOCUMENT);
     data.automations['start-charging'].do.push({ 'turn on': 'charger', within: '5 s' }, { 'wait until': 'charger reachable' });
     expect(valid(schema, data).length).toBeGreaterThan(0);
+  });
+
+  /*
+    The schema and the reader agree, because both are made from the
+    language's description of each trigger: every example of every kind is
+    allowed by both, and a word of another kind or a missing verb's word is
+    refused by both.
+  */
+  test('every kind of trigger: what the reader reads, the schema allows — and what it refuses, the schema refuses', () => {
+    const automation = entryJsonSchema(VOCABULARY, 'automation');
+    const entry = (trigger: unknown) => ({ name: 'A trigger', uses: { station: 'garage-station', plug: 'smart-plug' }, when: [trigger], do: [{ 'turn on': 'plug' }] });
+    for (const spec of Object.values(TRIGGER_KINDS)) {
+      for (const example of spec.docs.examples) {
+        const trigger = parse(example) as Record<string, unknown>;
+        expect({ example, schema: valid(automation, entry(trigger)), reader: ruleFromConfig(entry(trigger), []).issues }).toEqual({ example, schema: [], reader: [] });
+        // A word another kind takes, and the verb's own word missing: both refuse.
+        const strange = { ...trigger, 'not a word': 1 };
+        expect(valid(automation, entry(strange)).length).toBeGreaterThan(0);
+        expect(ruleFromConfig(entry(strange), []).issues.length).toBeGreaterThan(0);
+        for (const field of spec.fields.filter((each) => each.required && each.key !== spec.kind)) {
+          const { [field.key]: _gone, ...without } = trigger;
+          expect(valid(automation, entry(without)).length).toBeGreaterThan(0);
+          expect(ruleFromConfig(entry(without), []).issues.length).toBeGreaterThan(0);
+        }
+      }
+    }
   });
 
   test('one automation’s own schema, as its page edits it', () => {

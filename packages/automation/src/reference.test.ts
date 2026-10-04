@@ -20,7 +20,7 @@ const CODE = [...README.matchAll(/`([^`\n]+)`/g)].map((match) => match[1]!);
 type Keys<U> = U extends unknown ? keyof U : never;
 
 /** Each kind, by its name in data, and a word of its text form. */
-const TRIGGERS: Record<Exclude<Keys<Trigger>, 'days' | 'heldForMinutes'>, string> = { at: 'at:', every: 'every:', event: 'event:', becomes: 'becomes:' };
+const TRIGGERS: Record<Exclude<Keys<Trigger>, 'days' | 'heldFor'>, string> = { at: 'at:', every: 'every:', event: 'event:', becomes: 'becomes:' };
 const STEPS: Record<Keys<Step>, string> = {
   command: 'turn on:',
   write: 'set:',

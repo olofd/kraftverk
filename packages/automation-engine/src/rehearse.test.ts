@@ -35,7 +35,7 @@ const source = (charge = CHARGE): RehearseSource => ({
 
 const automation = { roles: { battery: { device: STATION, part: MAIN_PART }, charger: { device: PLUG, part: MAIN_PART } }, timeZone: 'Europe/Stockholm' };
 /** The charge window as an automation owns it: its settings written into its blocks. */
-const SETTINGS = { low: 15, lowMinutes: 2, high: 50, highMinutes: 0 };
+const SETTINGS = { low: 15, lowFor: 120, high: 50, highFor: 0 };
 const window15to50 = inlineParams(chargeBetween, SETTINGS);
 const window = { from: new Date(START), to: new Date(START + 20 * 60_000) };
 
@@ -63,7 +63,7 @@ describe('a rule rehearsed on history', () => {
     const later = { from: new Date(START), to: new Date(START + 60 * 60_000) };
     expect((await rehearse(window15to50, automation, source(once), later)).runs.map((run) => [run.at, run.summary.split('.')[0]])).toEqual([[minute(2), 'Would turn Charger plug on']]);
     // Held for five: by then the sample is five minutes old, past current, and nothing is known.
-    expect((await rehearse(inlineParams(chargeBetween, { ...SETTINGS, lowMinutes: 5 }), automation, source(once), later)).runs).toEqual([]);
+    expect((await rehearse(inlineParams(chargeBetween, { ...SETTINGS, lowFor: 300 }), automation, source(once), later)).runs).toEqual([]);
   });
 });
 
@@ -113,7 +113,7 @@ describe('every so many minutes, rehearsed', () => {
       {
         roles: { charger: { label: 'Charger plug', description: 'What charges it', capabilities: ['switch'] } },
         params: { fields: {} },
-        when: [{ every: { value: 30 } }],
+        when: [{ every: { value: 30 * 60 } }],
         then: [{ command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
       },
       {}

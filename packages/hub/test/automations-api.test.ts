@@ -87,7 +87,7 @@ describe('automations', () => {
     const station = await t.added('Garage station', { typeId: 'test.station' });
     const plug = await t.added('Charger plug', { typeId: 'test.plug' });
     await t.home.links.add({ kind: 'feeds', source: whole(plug), target: { device: station.id, part: 'input.ac' } });
-    const window = await create('Charge between 15 and 50 %', 'standard.charge-between', { battery: whole(station), charger: whole(plug) }, { low: 15, lowMinutes: 2, high: 50, highMinutes: 0 });
+    const window = await create('Charge between 15 and 50 %', 'standard.charge-between', { battery: whole(station), charger: whole(plug) }, { low: 15, lowFor: 120, high: 50, highFor: 0 });
     expect(window).toMatchObject({
       mode: 'watch',
       problems: [],
@@ -157,7 +157,7 @@ describe('automations', () => {
 
     const filled = await draft({ roles: { forecast: whole(weather), switch: whole(plug) } });
     expect(filled).toMatchObject({ problems: [], when: ['Every day at 07:00'], names: { forecast: 'Weather', switch: 'Heater plug' } });
-    expect(filled.sentence).toStartWith('At 07:00, if ');
+    expect(filled.sentence).toStartWith('Every day at 07:00, if ');
 
     // Its own settings are its blocks: a rule with settings is no automation's.
     expect((await draft({ rule: { ...rule, params: { fields: { x: { type: 'number', title: 'X' } } } }, roles: { forecast: whole(weather), switch: whole(plug) } })).problems).toEqual([

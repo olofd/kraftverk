@@ -89,23 +89,27 @@ export const calculate = (op: MathOp, left: Value, right: Value): Value => {
   return op === 'add' ? left + right : op === 'subtract' ? left - right : op === 'min' ? Math.min(left, right) : Math.max(left, right);
 };
 
+/**
+ * What starts a run — each kind described once, in `kinds/triggers.ts`, which
+ * everything that handles triggers reads. Lengths of time are in seconds.
+ */
 export type Trigger =
   /** At this time — "07:00" — on the automation's own clock: every day, or only on `days`. */
   | { at: Expr; days?: readonly Weekday[] }
   /**
-   * Every so many minutes, on the owner's clock from midnight: every 15 is
-   * :00, :15, :30 and :45. Once a slot; a server that was down runs once, at
-   * the latest, and does not catch up. `if` narrows it: "every 15 minutes,
-   * between 22:00 and 06:00".
+   * Every so many seconds — whole minutes, 5 min to 12 h — on the owner's
+   * clock from midnight: every 15 min is :00, :15, :30 and :45. Once a slot;
+   * a server that was down runs once, at the latest, and does not catch up.
+   * `if` narrows it: "every 15 minutes, between 22:00 and 06:00".
    */
   | { every: Expr }
   /** When the part filling a role raises an event its description declares. */
   | { event: { role: string; event: string } }
   /**
-   * When a condition turns true — and, with `heldForMinutes`, has stayed true
-   * that long. Reads and comparisons only: it is evaluated on every reading.
+   * When a condition turns true — and, with `heldFor` (seconds), has stayed
+   * true that long. Reads and comparisons only: it is evaluated on every reading.
    */
-  | { becomes: Expr; heldForMinutes?: Expr };
+  | { becomes: Expr; heldFor?: Expr };
 
 /**
  * A trigger, with an id of its own when what the rule does asks which one
