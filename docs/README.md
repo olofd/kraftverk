@@ -49,3 +49,4 @@ here is in one list or the other.
 | [PLAN-CONFIG.md](PLAN-CONFIG.md) | The plan for configuration as a language, with import and export |
 | [PLAN-AUTOMATION-LANGUAGE.md](PLAN-AUTOMATION-LANGUAGE.md) | The plan for the automation language's next level: one registry of constructs, typed expressions, bounded-complete power, the editor — and where it stands against Home Assistant and the rest, 2026-10-04 |
 | [AUTOMATIONS-UX.md](AUTOMATIONS-UX.md) | The plan for the automation screens at phone size, 2026-10-01 |
+| [PLAN-INTEGRATIONS.md](PLAN-INTEGRATIONS.md) | The design for integrations: integration and service as words, accounts and bridges, the manifest and catalogue, setup that asks again, porting Home Assistant's integrations and running them beside kraftverk, 2026-10-06 |
