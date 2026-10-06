@@ -112,7 +112,13 @@ export const lampProtocol: Protocol = {
     },
   },
   credentials: {
-    schema: { fields: { pin: { type: 'string', presentation: 'secret', title: 'PIN' } } },
+    schema: {
+      fields: {
+        pin: { type: 'string', presentation: 'secret', title: 'PIN' },
+        // A sign-in its session keeps, as a vendor's token is: never asked.
+        token: { type: 'string', presentation: 'secret', kept: 'session', title: 'Signed in' },
+      },
+    },
     // Finds a secret, as fetching a key from a vendor's cloud does.
     actions: [
       {
@@ -158,7 +164,7 @@ async function ask(channel: ByteChannel, what: string, timeoutMs = 500): Promise
 type LampConfig = { room?: string };
 
 /** What a test sees of the lamps it opens: every context a session was opened with, and whether it was closed; and whether opening one fails. */
-export type LampWatch = { opened: { ctx: DeviceContext<LampConfig>; closed: boolean }[]; failOpen: boolean; failWith?: Error | null };
+export type LampWatch = { opened: { ctx: DeviceContext<LampConfig>; closed: boolean }[]; failOpen: boolean; failWith?: Error | null; keepToken?: string };
 
 const lampSession = (ctx: DeviceContext<LampConfig>, channel: ByteChannel | null, watch: LampWatch): DeviceSession => {
   const entry = { ctx, closed: false };
@@ -243,6 +249,8 @@ export function makeLampType(): { type: ReturnType<typeof defineDeviceType<LampC
     },
     async createSession(ctx) {
       if (watch.failOpen) throw watch.failWith ?? new Error('The lamp refused the connection');
+      // What a session keeps as it runs — a sign-in token — when a test asks it to.
+      if (watch.keepToken !== undefined && ctx.connection?.kind === 'direct') ctx.connection.secrets.set('token', watch.keepToken);
       return lampSession(ctx, channelOf(ctx.connection, 'bytes', 'A lamp is reached over the bus'), watch);
     },
     async createSimulator(ctx) {

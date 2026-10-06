@@ -154,7 +154,8 @@ export class Follower {
           connections: (deviceId) => (this.#holdNow.has(deviceId) ? connections.forDevice(deviceId) : []),
           holds: () => true,
           secret: (connectionId, field) => connections.secret(connectionId, field),
-          secretFields: (connectionId) => connections.secretFields(connectionId),
+          secretFields: (connectionId) => connections.secretFields(connectionId, 'person'),
+          keepSecret: (connectionId, field, value) => (value === null ? connections.forgetSecret(connectionId, field) : connections.setSecrets(connectionId, { [field]: value }, 'session')),
           onConnected: (connectionId) => connections.touch(connectionId),
         }),
         sessions: {

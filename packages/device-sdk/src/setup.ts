@@ -3,7 +3,7 @@ import { isBridgedMethod, type ConnectionMethod } from './connection.ts';
 import type { DeviceLogger, DeviceType, ScopedHttp } from './device-type.ts';
 import type { Platform } from './node.ts';
 import type { Protocol } from './protocol.ts';
-import type { ConfigSchema, ConfigValues } from './schema.ts';
+import { personFields, type ConfigSchema, type ConfigValues } from './schema.ts';
 import type { Sighting, TransportDefinition } from './transport.ts';
 
 /**
@@ -253,7 +253,7 @@ export function setupPlan(input: SetupPlanInput): SetupStepView[] {
           kind: 'form',
           target: 'connection',
           title: protocol.credentials.title ?? 'Credentials',
-          schema: protocol.credentials.schema,
+          schema: personFields(protocol.credentials.schema),
           actions: protocol.credentials.actions,
         })
       : null;
@@ -302,7 +302,7 @@ export function findStep(type: DeviceType<any>, method: ConnectionMethod | null,
       id,
       title: protocol.credentials.title ?? 'Credentials',
       target: 'connection' as const,
-      schema: protocol.credentials.schema,
+      schema: personFields(protocol.credentials.schema),
       actions: protocol.credentials.actions,
     };
   }

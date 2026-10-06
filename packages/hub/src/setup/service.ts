@@ -32,7 +32,7 @@ import { connectionSchema } from '../installed/connection-schema.ts';
 import { DRAFT_TTL_MS, viewOf, type Draft, type SaveRequest } from './draft.ts';
 import { membersOnOffer, openBridges, type MemberOffer } from '../devices/members.ts';
 import { overHardware, SIMULATED_REACH, throughBridge } from './reach.ts';
-import { saveable, writeSaved } from './save.ts';
+import { keepSecrets, saveable, writeSaved } from './save.ts';
 
 export type { SaveRequest } from './draft.ts';
 
@@ -482,7 +482,7 @@ export class SetupService {
     const settings = Object.fromEntries(Object.entries(draft.connection).filter(([field]) => schema.fields[field] && !isSecretField(schema.fields[field]!)));
     this.deps.db.transaction(() => {
       this.deps.connections.update(again.connectionId, { config: settings });
-      if (draft.secrets.size) this.deps.connections.setSecrets(again.connectionId, Object.fromEntries(draft.secrets));
+      if (draft.secrets.size) keepSecrets(this.deps, draft, again.connectionId);
     })();
     // Which fields, never their values.
     this.deps.record({

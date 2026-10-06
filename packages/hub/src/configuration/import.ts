@@ -3,6 +3,7 @@ import { checkBinding, checkRule, isAutomationRole, isGroupRole, keepsSo, useOf,
 import type { AutomationEngine, AutomationLibrary, AutomationRecord } from '@kraftverk/automation-engine';
 import {
   capabilitiesOf,
+  isSessionKept,
   isSimulated,
   MAIN_PART,
   meetsNeed,
@@ -33,7 +34,7 @@ import {
 import { isConstraintError, type ConnectionRecord, type DeviceRecord, type SqlDatabase } from '@kraftverk/store';
 
 import type { Checked } from '../automations/drafts.ts';
-import { secretFieldsOf } from '../installed/connection-schema.ts';
+import { bySource, secretFieldsOf } from '../installed/connection-schema.ts';
 import type { TransportHost } from '../installed/transports.ts';
 import { unref } from '../timers.ts';
 import { homeVocabulary, type ConfigDeps } from './export.ts';
@@ -231,7 +232,8 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
         const value = given ? valueOf(given) : null;
         if (value !== null) secrets.set(secretKey(key, index, field), value);
         else if (had && deps.connections.secret(had.id, field) !== null) continue;
-        else if (given || spec.required) needs.secrets.push({ device: key, deviceName: entry.name, field, title: spec.title });
+        // What its session keeps, it keeps again: never asked of a person.
+        else if (!isSessionKept(spec) && (given || spec.required)) needs.secrets.push({ device: key, deviceName: entry.name, field, title: spec.title });
       }
     });
     if (leftOut.has(key)) continue;
@@ -685,7 +687,12 @@ function writeDevice(deps: ImportDeps, key: string, entry: DeviceEntry, opened: 
     const connection = had
       ? deps.connections.update(had.id, { address, config: way.settings, priority: index, secretsExportable: exportable })!
       : deps.connections.add({ deviceId: device!.id, method: way.via, transport: transportOf(method), ...holdingOf(deps, way), address, config: way.settings, priority: index, secretsExportable: exportable });
-    if (Object.keys(secrets).length) deps.connections.setSecrets(connection.id, secrets);
+    if (Object.keys(secrets).length) {
+      // What a person gave, and what its session keeps: a sign-in token, carried so a restore does not sign in again.
+      const { person, session } = bySource(method, deps.protocols.get(method.protocol) ?? null, secrets);
+      if (Object.keys(person).length) deps.connections.setSecrets(connection.id, person);
+      if (Object.keys(session).length) deps.connections.setSecrets(connection.id, session, 'session');
+    }
   });
   for (const had of ways) if (!entry.connect.some((way) => sameWay(deps, had, way))) deps.connections.remove(had.id);
 }

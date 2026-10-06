@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { needsSignIn } from '@kraftverk/device-sdk';
 
-import protocol, { md5Hex, NIU_ACCOUNT, NIU_API, NIU_APP_ID, NiuClient, parseScooters, parseState, signIn, timeOf, type NiuHttp } from '../src/protocol/index.ts';
+import protocol, { md5Hex, NIU_ACCOUNT, NIU_API, NIU_APP_ID, NiuClient, parseScooters, parseState, signIn, timeOf, type NiuHttp, type NiuTokens } from '../src/protocol/index.ts';
 
 /**
  * The NIU cloud as those before us found it (README.md): a sign-in that takes
@@ -161,6 +161,19 @@ describe('a signed-in client', () => {
       now += 3_600_000;
       await expect(client.state('N0TAREALSERIAL01')).rejects.toThrow('did not accept that account and password');
     }
+    expect(signIns()).toBe(1);
+  });
+
+  test('keeps what it signed in with: a client started from kept tokens asks NIU without signing in again', async () => {
+    const now = 1_000_000;
+    const cloud = niu();
+    const signIns = () => cloud.asked.filter((call) => call.url.startsWith(NIU_ACCOUNT)).length;
+    const kept: (NiuTokens | null)[] = [];
+    await new NiuClient(cloud.http, credentials, () => now, { onTokens: (tokens) => kept.push(tokens) }).state('N0TAREALSERIAL01');
+    expect(kept).toHaveLength(1);
+    expect(signIns()).toBe(1);
+    // A restart, to the same NIU: the tokens its session kept, and no sign-in.
+    await new NiuClient(cloud.http, credentials, () => now + 60_000, { tokens: kept[0] }).state('N0TAREALSERIAL01');
     expect(signIns()).toBe(1);
   });
 

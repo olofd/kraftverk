@@ -222,8 +222,12 @@ export type DirectConnection = OpenBase & {
   readonly protocol: string;
   readonly transport: string;
   readonly channel: Channel;
-  /** The connection's secrets, by field. */
-  readonly secrets: { get(field: string): string | null };
+  /**
+   * The connection's secrets, by field. `set` writes one its protocol
+   * declares its session keeps (`kept: 'session'`) — a sign-in token, null to
+   * forget it — and refuses any other: a person gives those.
+   */
+  readonly secrets: { get(field: string): string | null; set(field: string, value: string | null): void };
 };
 
 /**

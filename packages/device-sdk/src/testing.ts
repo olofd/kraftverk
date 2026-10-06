@@ -467,6 +467,8 @@ export function fakeConnection(input: {
   config?: ConfigValues;
   secrets?: Record<string, string>;
 }): DirectConnection {
+  // What a session keeps, kept here: a test reads it back as a holder would.
+  const secrets: Record<string, string> = { ...input.secrets };
   return {
     kind: 'direct',
     method: input.method,
@@ -475,7 +477,13 @@ export function fakeConnection(input: {
     address: input.address,
     channel: input.channel,
     config: input.config ?? {},
-    secrets: { get: (field) => input.secrets?.[field] ?? null },
+    secrets: {
+      get: (field) => secrets[field] ?? null,
+      set: (field, value) => {
+        if (value === null) delete secrets[field];
+        else secrets[field] = value;
+      },
+    },
     platform: 'system',
   };
 }

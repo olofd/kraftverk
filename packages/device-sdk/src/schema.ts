@@ -29,7 +29,19 @@ export type Presentation = 'secret' | 'host' | 'multiline' | 'slider';
 type Presented = { title: string; description?: string; required?: boolean };
 
 export type ConfigField =
-  | (StringValue & Presented & { default?: string; placeholder?: string; presentation?: 'secret' | 'host' | 'multiline' })
+  | (StringValue &
+      Presented & {
+        default?: string;
+        placeholder?: string;
+        presentation?: 'secret' | 'host' | 'multiline';
+        /**
+         * A secret its session keeps, not one a person gives — a sign-in
+         * token, renewed as it runs: never asked for, written by the session
+         * through its connection, and kept sealed with the rest, in the file
+         * too, so a restart does not sign in again.
+         */
+        kept?: 'session';
+      })
   | (NumberValue & Presented & { default?: number; presentation?: 'slider' })
   | (BooleanValue & Presented & { default?: boolean })
   | (EnumValue & Presented & { default?: string })
@@ -74,6 +86,12 @@ export type ValidationResult =
   | { ok: false; issues: ValidationIssue[] };
 
 export const isSecretField = (field: ConfigField): boolean => presentationOf(field) === 'secret';
+
+/** Whether a field is a secret its session keeps, not one a person gives. */
+export const isSessionKept = (field: ConfigField): boolean => isSecretField(field) && 'kept' in field && field.kept === 'session';
+
+/** A schema with only what a person gives: the secrets a session keeps left out. What a setup form asks. */
+export const personFields = (schema: ConfigSchema): ConfigSchema => ({ ...schema, fields: Object.fromEntries(Object.entries(schema.fields).filter(([, field]) => !isSessionKept(field))) });
 
 /** The fields kept as connection secrets rather than in config. */
 export function secretFields(schema: ConfigSchema): string[] {

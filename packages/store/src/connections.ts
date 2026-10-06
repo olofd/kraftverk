@@ -232,11 +232,12 @@ export class ConnectionStore {
     return row ? this.#secrets.open(row.value, row.encrypted === 1) : null;
   }
 
-  /** Which secrets a connection has, by field — never their values. */
-  secretFields(connectionId: string): string[] {
+  /** Which secrets a connection has, by field — never their values; given by a person, or kept by its session, when asked which. */
+  secretFields(connectionId: string, source?: 'person' | 'session'): string[] {
     return this.#db
-      .query<{ field: string }, [string]>('SELECT field FROM connection_secret WHERE connection_id = ? ORDER BY field')
+      .query<{ field: string; source: string }, [string]>('SELECT field, source FROM connection_secret WHERE connection_id = ? ORDER BY field')
       .all(connectionId)
+      .filter((row) => source === undefined || row.source === source)
       .map((row) => row.field);
   }
 
@@ -259,16 +260,23 @@ export class ConnectionStore {
     return grouped;
   }
 
-  setSecrets(connectionId: string, values: Record<string, string>): void {
+  /** Secrets, sealed, by field: given by a person, or kept by the connection's session. */
+  setSecrets(connectionId: string, values: Record<string, string>, source: 'person' | 'session' = 'person'): void {
     const upsert = this.#db.query(
-      'INSERT INTO connection_secret (connection_id, field, value, encrypted) VALUES (?, ?, ?, ?) ' +
-        'ON CONFLICT (connection_id, field) DO UPDATE SET value = excluded.value, encrypted = excluded.encrypted'
+      'INSERT INTO connection_secret (connection_id, field, value, encrypted, source, written_at) VALUES (?, ?, ?, ?, ?, ?) ' +
+        'ON CONFLICT (connection_id, field) DO UPDATE SET value = excluded.value, encrypted = excluded.encrypted, source = excluded.source, written_at = excluded.written_at'
     );
+    const at = new Date().toISOString();
     this.#db.transaction(() => {
       for (const [field, value] of Object.entries(values)) {
         const sealed = this.#secrets.seal(value);
-        upsert.run(connectionId, field, sealed.value, sealed.encrypted ? 1 : 0);
+        upsert.run(connectionId, field, sealed.value, sealed.encrypted ? 1 : 0, source, at);
       }
     })();
+  }
+
+  /** Forgets one secret: what a session does with a token that no longer signs in. */
+  forgetSecret(connectionId: string, field: string): void {
+    this.#db.query('DELETE FROM connection_secret WHERE connection_id = ? AND field = ?').run(connectionId, field);
   }
 }

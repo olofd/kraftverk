@@ -1,6 +1,7 @@
 import {
   checkValue,
   closingOnce,
+  isSessionKept,
   needsSignIn,
   retryAfterOf,
   isBridgedMethod,
@@ -78,6 +79,8 @@ export type OpenInput = {
   /** For a connection through a bridge: the bridge's open session, which hands it its link. Null when it is not open here. */
   bridge?: Bridge | null;
   secret: (field: string) => string | null;
+  /** Keeps a secret its session writes — a sign-in token — or forgets it, given null. */
+  keepSecret?: (field: string, value: string | null) => void;
   protocols: { get(id: string): Protocol | null | undefined };
   transports: TransportSource;
   store: DeviceStore;
@@ -195,7 +198,15 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
           address: input.connection.address,
           channel,
           config,
-          secrets: { get: input.secret },
+          secrets: {
+            get: input.secret,
+            // Only what its protocol says its session keeps: a person gives the rest.
+            set: (field, value) => {
+              const spec = input.protocols.get(method.protocol)?.credentials?.schema.fields[field];
+              if (!spec || !isSessionKept(spec)) throw new Error(`"${field}" is not a secret its session keeps`);
+              input.keepSecret?.(field, value);
+            },
+          },
           platform: input.platform,
         };
       }

@@ -1,5 +1,5 @@
 import { ApiError } from '@kraftverk/api-contract';
-import { isBridgedMethod, isSecretField, type ConfigField, type ConfigSchema, type ConnectionMethod, type Protocol } from '@kraftverk/device-sdk';
+import { isBridgedMethod, isSecretField, isSessionKept, type ConfigField, type ConfigSchema, type ConnectionMethod, type Protocol } from '@kraftverk/device-sdk';
 
 /**
  * The schema of everything a connection stores for a method: its own config
@@ -25,4 +25,16 @@ export function checkSecretFields(method: ConnectionMethod | null, protocol: Pro
   const { fields } = connectionSchema(method, protocol);
   const refused = Object.keys(given).filter((field) => !fields[field] || !isSecretField(fields[field]!));
   if (refused.length) throw new ApiError('invalid', `Not a secret of this connection: ${refused.join(', ')}`);
+  // What its session keeps is its own: a person gives the rest.
+  const kept = Object.keys(given).filter((field) => isSessionKept(fields[field]!));
+  if (kept.length) throw new ApiError('invalid', `Kept by its session, not given: ${kept.join(', ')}`);
+}
+
+/** Secrets as given, split by who keeps them: what a person gave, and what its session keeps — a file carries both. */
+export function bySource(method: ConnectionMethod | null, protocol: Protocol | null, secrets: Readonly<Record<string, string>>): { person: Record<string, string>; session: Record<string, string> } {
+  const { fields } = connectionSchema(method, protocol);
+  const person: Record<string, string> = {};
+  const session: Record<string, string> = {};
+  for (const [field, value] of Object.entries(secrets)) (fields[field] && isSessionKept(fields[field]!) ? session : person)[field] = value;
+  return { person, session };
 }

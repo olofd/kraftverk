@@ -222,6 +222,23 @@ describe('a device that cannot open is still a device, saying why', () => {
     watch.failWith = null;
   });
 
+  test('what its session keeps is kept as the session’s: sealed, never a reason to reopen it, and refused when it is not its to keep', async () => {
+    watch.keepToken = 'a-token-from-a-sign-in';
+    const { record } = addLamp('Hall', 'lamp-1');
+    await sessions.sync(catalog.list());
+    const session = sessions.get(record.id);
+    expect(session).not.toBeNull();
+    const [way] = connections.forDevice(record.id);
+    expect(connections.secret(way!.id, 'token')).toBe('a-token-from-a-sign-in');
+    expect(connections.secretFields(way!.id, 'session')).toEqual(['token']);
+    // Synced again: the same session, not one reopened for a secret its session wrote.
+    await sessions.sync(catalog.list());
+    expect(sessions.get(record.id)).toBe(session);
+    const ctx = watch.opened.at(-1)!.ctx;
+    expect(() => (ctx.connection as { secrets: { set(field: string, value: string): void } }).secrets.set('pin', 'not its to keep')).toThrow('not a secret its session keeps');
+    watch.keepToken = undefined;
+  });
+
   test('a paused one is kept, and not opened, until resumed — and what is through it says why', async () => {
     const { record } = addLamp('Hall', 'lamp-1');
     catalog.setPaused(record.id, true);

@@ -44,7 +44,7 @@ export type NodeRole = {
   /** Where its timeline goes: the home's own, or owed to the master. */
   record(entry: AuditRecord): void;
   /** Which of the home's ways its sessions hold, and their secrets. */
-  ways(stores: { connections: ConnectionStore; self: NodeRecord }): Pick<SessionManagerDeps, 'connections' | 'holds' | 'secret' | 'secretFields' | 'onConnected'>;
+  ways(stores: { connections: ConnectionStore; self: NodeRecord }): Pick<SessionManagerDeps, 'connections' | 'holds' | 'secret' | 'secretFields' | 'keepSecret' | 'onConnected'>;
   /** What else its sessions are handed: where a device's store is, what is done with what a device says. */
   sessions: Pick<SessionManagerDeps, 'store' | 'onEvent'> & Partial<Pick<SessionManagerDeps, 'allowRawFrames' | 'nodeName' | 'onIdentified' | 'onDescribed'>>;
   /** How its gateway finds a device and what it is linked to; what read-only is called here. */

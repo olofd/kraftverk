@@ -116,8 +116,10 @@ export type SessionManagerDeps = {
    */
   unfit?: (method: ConnectionMethod) => string | null;
   secret(connectionId: string, field: string): string | null;
-  /** The secret fields a connection has, so setting one reopens it. */
+  /** The secret fields a person gave a connection, so giving one anew reopens it. */
   secretFields?(connectionId: string): readonly string[];
+  /** Keeps a secret a connection's session writes — a sign-in token — or forgets it, given null. Reopens nothing. */
+  keepSecret?(connectionId: string, field: string, value: string | null): void;
   /** What a device keeps for itself. */
   store(deviceId: SavedDeviceId): DeviceStore;
   /** Every hardware write is refused. Sessions are told, and must honour it; a simulator reaches no hardware. */
@@ -477,6 +479,7 @@ export class SessionManager {
         // A member's channel is its bridge's to open.
         bridge: connection.through !== null ? (this.#open.get(connection.through)?.opened.session.bridge ?? null) : null,
         secret: (field) => this.deps.secret(connection.id, field),
+        keepSecret: (field, value) => this.deps.keepSecret?.(connection.id, field, value),
         protocols: this.deps.protocols,
         transports: this.deps.transports,
         store: this.deps.store(record.id),

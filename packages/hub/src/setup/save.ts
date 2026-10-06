@@ -14,7 +14,7 @@ import {
 
 import { ApiError } from '@kraftverk/api-contract';
 import type { DeviceCatalog, DeviceRecord, ConnectionStore, LinkStore } from '@kraftverk/store';
-import { connectionSchema } from '../installed/connection-schema.ts';
+import { bySource, connectionSchema } from '../installed/connection-schema.ts';
 import type { Draft, SaveRequest } from './draft.ts';
 
 /**
@@ -24,6 +24,13 @@ import type { Draft, SaveRequest } from './draft.ts';
  */
 
 export type SaveDeps = { catalog: DeviceCatalog; connections: ConnectionStore; links: LinkStore; self: NodeId };
+
+/** A draft's secrets, kept for its connection: what a person gave, and what its check kept for its session — a sign-in token. */
+export function keepSecrets(deps: Pick<SaveDeps, 'connections'>, draft: Draft, connectionId: string): void {
+  const { person, session } = bySource(draft.method, draft.reach.protocol, Object.fromEntries(draft.secrets));
+  if (Object.keys(person).length) deps.connections.setSecrets(connectionId, person);
+  if (Object.keys(session).length) deps.connections.setSecrets(connectionId, session, 'session');
+}
 
 /** Whether the check lets it be saved, and its device's and connection's config as they will be kept. Throws why not. */
 export function saveable(draft: Draft, input: SaveRequest, self: NodeId): { device: ConfigValues; connection: ConfigValues } {
@@ -115,7 +122,7 @@ export function writeSaved(deps: SaveDeps, draft: Draft, input: SaveRequest, con
 
   const holding = draft.through ? { through: draft.through } : { heldBy: draft.heldBy };
   const saved = deps.connections.add({ deviceId: record.id, method: method.id, transport: transportOf(method), ...holding, address, config: config.connection, secretsExportable: draft.heldBy === deps.self && input.secretsExportable === true });
-  if (draft.secrets.size) deps.connections.setSecrets(saved.id, Object.fromEntries(draft.secrets));
+  if (draft.secrets.size) keepSecrets(deps, draft, saved.id);
 
   for (const link of input.links ?? []) {
     if (!isLinkKind(link.kind)) throw new ApiError('invalid', `There is no link called "${link.kind}"`);

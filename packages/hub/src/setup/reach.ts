@@ -95,7 +95,11 @@ export function overHardware(protocol: Protocol | null, transport: TransportDefi
           address: draft.address!,
           channel,
           config: draft.connection as ConfigValues,
-          secrets: { get: (field) => draft.secrets.get(field) ?? null },
+          // What it keeps while it is read — a sign-in token — is kept with what the person gave, and saved with it.
+          secrets: {
+            get: (field) => draft.secrets.get(field) ?? null,
+            set: (field, value) => void (value === null ? draft.secrets.delete(field) : draft.secrets.set(field, value)),
+          },
           platform: transports.platform,
         };
       }),

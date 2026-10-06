@@ -1375,6 +1375,16 @@ Fields a protocol declares `kept: 'session'`; `secrets.set` on the open
 connection; `connection_secret.source` and `written_at`; carried sealed in the
 file. NIU keeps its sign-in token for as long as NIU honours it.
 *Done when* restarting the server does not make NIU sign in again.
+**Done 2026-10-07.** A secret field may say `kept: 'session'`: never asked
+(`personFields` leaves it out of every form), refused from a person
+(`checkSecretFields`), written by the session through
+`connection.secrets.set` — any other field is refused there — and kept with
+`connection_secret.source = 'session'` and `written_at`. What a person gave
+alone decides a reopen, so a renewed token reopens nothing. The check step
+keeps what it signs in with in the draft, saved as the session's; the file
+carries it sealed, and an import keeps it as the session's, never asking
+for it. NIU keeps its tokens as `session`, starts from them, and forgets
+them when its password is refused.
 
 **Step 11 · Quality measured, updates declared.**
 `updates` (push, poll, both) on each method, checked against the code;

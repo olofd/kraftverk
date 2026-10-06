@@ -303,11 +303,12 @@ const SIGN_IN_AGAIN_MS = [60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000];
  * A signed-in conversation with the NIU cloud: it signs in when it must,
  * renews its token before it runs out — with the refresh token, else the
  * password — and, told by NIU it is signed out, signs in once more and asks
- * again. Tokens live only in memory: what is kept is the password, as the
- * connection's secret.
+ * again. It starts from the tokens it was given, when there are any, and
+ * says each new pair (`onTokens`): kept by its session, a restart does not
+ * sign in again.
  */
 export class NiuClient {
-  #tokens: NiuTokens | null = null;
+  #tokens: NiuTokens | null;
   /** A renewal under way: every call that needs one at once waits on the same. */
   #renewing: Promise<NiuTokens> | null = null;
   /** The last sign-in that failed, how often in a row, and until when it is not tried again. */
@@ -316,8 +317,18 @@ export class NiuClient {
   constructor(
     private readonly http: NiuHttp,
     private readonly credentials: { account: string; password: string },
-    private readonly now: () => number = Date.now
-  ) {}
+    private readonly now: () => number = Date.now,
+    private readonly kept: { tokens?: NiuTokens | null; onTokens?: (tokens: NiuTokens | null) => void } = {}
+  ) {
+    this.#tokens = kept.tokens ?? null;
+  }
+
+  /** Tokens newly had: kept by the client, and said to whoever keeps them. */
+  #had(tokens: NiuTokens): NiuTokens {
+    this.#tokens = tokens;
+    this.kept.onTokens?.(tokens);
+    return tokens;
+  }
 
   get signedIn(): boolean {
     return this.#tokens !== null;
@@ -334,7 +345,7 @@ export class NiuClient {
     const now = this.now();
     if (tokens?.refreshToken && (tokens.refreshExpiresAt === null || tokens.refreshExpiresAt > now)) {
       try {
-        return (this.#tokens = await refreshTokens(this.http, tokens.refreshToken, now));
+        return this.#had(await refreshTokens(this.http, tokens.refreshToken, now));
       } catch {
         // A refresh NIU no longer takes: the password, as at the start.
       }
@@ -342,13 +353,15 @@ export class NiuClient {
     // Refused a moment ago: said again, not asked again, until its wait is over.
     if (this.#refused && now < this.#refused.until) throw this.#refused.error;
     try {
-      this.#tokens = await signIn(this.http, this.credentials.account, this.credentials.password, now);
+      const signedIn = this.#had(await signIn(this.http, this.credentials.account, this.credentials.password, now));
       this.#refused = null;
-      return this.#tokens;
+      return signedIn;
     } catch (error) {
       const times = (this.#refused?.times ?? 0) + 1;
       // A password refused is not tried again at all: it waits on a person giving it anew.
       const wait = needsSignIn(error) ? Number.POSITIVE_INFINITY : SIGN_IN_AGAIN_MS[Math.min(times, SIGN_IN_AGAIN_MS.length) - 1]!;
+      // A password refused: what was kept signs in no more.
+      if (needsSignIn(error)) this.kept.onTokens?.(null);
       this.#refused = { error, times, until: now + wait };
       throw error;
     }

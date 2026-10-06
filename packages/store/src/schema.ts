@@ -175,6 +175,9 @@ export const SCHEMA = `
     field         TEXT NOT NULL,
     value         TEXT NOT NULL,
     encrypted     INTEGER NOT NULL,
+    /* Who gave it: a person, at setup or since; or the session, keeping what it needs — a sign-in token. */
+    source        TEXT NOT NULL DEFAULT 'person' CHECK (source IN ('person', 'session')),
+    written_at    TEXT NOT NULL,
     PRIMARY KEY (connection_id, field)
   );
 

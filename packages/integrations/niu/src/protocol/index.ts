@@ -1,6 +1,6 @@
-import { channelOf, directOf, identityOf, type ConfigSchema, type OpenConnection, type Protocol, type SetupAction } from '@kraftverk/device-sdk';
+import { channelOf, directOf, identityOf, personFields, type ConfigSchema, type OpenConnection, type Protocol, type SetupAction } from '@kraftverk/device-sdk';
 
-import { NIU_ACCOUNT, NiuClient, NiuError, signIn, type NiuHttp } from './api.ts';
+import { NIU_ACCOUNT, NiuClient, NiuError, signIn, type NiuHttp, type NiuTokens } from './api.ts';
 
 export * from './api.ts';
 export { md5Hex } from './md5.ts';
@@ -32,6 +32,8 @@ export const CREDENTIALS: ConfigSchema = {
       description: 'Kept encrypted where the account is held, and sent only to NIU, to sign in.',
       required: true,
     },
+    // NIU's tokens, kept by the account's session as it renews them: a restart, or a restore, does not sign in again.
+    session: { type: 'string', presentation: 'secret', kept: 'session', title: 'Signed in', description: 'NIU’s sign-in, kept by the account itself. Never asked of you.' },
   },
 };
 
@@ -43,7 +45,7 @@ const signInAction: SetupAction = {
   id: 'signIn',
   label: 'Sign in with your NIU account',
   description: 'The account you use in the NIU app. Your scooters are found on it; nothing is changed on them.',
-  input: CREDENTIALS,
+  input: personFields(CREDENTIALS),
   async run(ctx, input) {
     const account = String(input.account ?? '').trim();
     const password = String(input.password ?? '');
@@ -76,11 +78,31 @@ const protocol: Protocol = {
 
 export default protocol;
 
-/** A signed-in client over an account's open connection: its channel, and the account stored with it. */
+/** NIU's tokens as its session keeps them; none when what is kept is not a pair. */
+function keptTokens(text: string | null): NiuTokens | null {
+  if (!text) return null;
+  try {
+    const tokens = JSON.parse(text) as NiuTokens;
+    return typeof tokens.accessToken === 'string' ? tokens : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A signed-in client over an account's open connection: its channel, the
+ * account stored with it — and NIU's tokens, kept by its session
+ * (`session`), so it starts signed in and keeps each new pair.
+ */
 export function clientOver(connection: OpenConnection, now?: () => number): { client: NiuClient; account: string } {
   const channel = channelOf(connection, 'http', 'The NIU cloud is reached over HTTPS');
+  const { secrets } = directOf(connection, 'The NIU cloud is reached over HTTPS');
   const account = String(connection.config.account ?? '').trim();
-  const password = directOf(connection, 'The NIU cloud is reached over HTTPS').secrets.get('password');
+  const password = secrets.get('password');
   if (!account || !password) throw new Error('No NIU account: sign in again in the account’s connection settings');
-  return { client: new NiuClient((url, init) => channel.fetch(url, init), { account, password }, now), account };
+  const client = new NiuClient((url, init) => channel.fetch(url, init), { account, password }, now, {
+    tokens: keptTokens(secrets.get('session')),
+    onTokens: (tokens) => secrets.set('session', tokens ? JSON.stringify(tokens) : null),
+  });
+  return { client, account };
 }
