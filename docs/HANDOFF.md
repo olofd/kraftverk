@@ -154,6 +154,19 @@ begins a new one, so the first account is created again from the home network
 and the station added again through the add flow. The `.before-migration-*`
 and `.set-aside.*` copies on the server's volume are the owner's to delete.
 
+## Integrations
+
+Built to step 11 of [PLAN-INTEGRATIONS.md](PLAN-INTEGRATIONS.md) on
+2026-10-07 (Part A: what kraftverk has, on the model), on the model its §1.1
+sets out: an integration is the one place kraftverk meets a service — its
+protocol, accounts, gateways and own screens — and a device package builds
+on one integration and nothing else; parts talk by typed calls, never
+publish/subscribe; accounts live on their integration's page. Next is Part B
+(discovery by declaration, mDNS and SSDP, the lists opened, code loaded on
+demand, the porting guide), which waits on two of the owner's choices: how
+the server's container hears mDNS (host networking or a reflector), and
+which small integration is ported first (D7).
+
 ## The automation language
 
 Paused at a good point on 2026-10-06, its plan's phases A–C done and
