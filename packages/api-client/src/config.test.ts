@@ -63,7 +63,7 @@ const automation = {
   name: 'Charge',
   rule,
   roles: { charger: { device: plug.id, part: MAIN_PART } },
-  starts: {},
+  groups: {}, starts: {},
   madeFrom: null,
   mode: 'act' as const,
   timeZone: 'Europe/Stockholm',
@@ -82,7 +82,7 @@ describe('an automation as YAML, in the app', () => {
     const read = readAutomationText(text, 'charge', VOCABULARY);
     expect(read.problems).toEqual([]);
     const { draft, settings } = draftOfEntry(read.entry!, [plug], []);
-    expect(draft).toEqual({ name: 'Charge', rule, roles: automation.roles, starts: {} });
+    expect(draft).toEqual({ name: 'Charge', rule, roles: automation.roles, groups: {}, starts: {} });
     expect(settings).toEqual({ mode: 'act', timeZone: 'Europe/Stockholm', recheckMinutes: null, homePlace: 2 });
   });
 

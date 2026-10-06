@@ -2,7 +2,7 @@ import { capabilitiesOf, capabilityIn, meetsNeed, partName, partsOf, type Automa
 
 import { usedRoles } from './edit.ts';
 import { NO_SETTINGS, withSettings } from './evaluate.ts';
-import { isAutomationRole, type Rule } from './rule.ts';
+import { isAutomationRole, isGroupRole, roleKind, type Rule } from './rule.ts';
 
 /*
   An automation as it is being built, as data (docs/AUTOMATION-EDITOR.md): a
@@ -16,10 +16,17 @@ export type RoleBinding = { device: SavedDeviceId; part: string };
 
 /**
  * What fills an automation's roles: a part of a device for each role one
- * fills (`roles`), and another automation for each role a `start` step
- * starts (`starts`).
+ * fills (`roles`), the parts of each group a `for each` goes through
+ * (`groups`), and another automation for each role a `start` step starts
+ * (`starts`).
  */
-export type RoleFills = { roles: Record<string, RoleBinding>; starts: Record<string, AutomationId> };
+export type RoleFills = { roles: Record<string, RoleBinding>; groups: Record<string, readonly RoleBinding[]>; starts: Record<string, AutomationId> };
+
+/** The parts filling a role: one, a group's several, or none — another automation's role, or one not filled yet. */
+export const bindingsOf = (fills: Pick<RoleFills, 'roles' | 'groups'>, role: string): readonly RoleBinding[] => {
+  const one = fills.roles[role];
+  return one ? [one] : (fills.groups[role] ?? []);
+};
 
 /** A rule as it is being built, with what fills its roles. */
 export type AutomationDraft = RoleFills & { rule: Rule };
@@ -68,6 +75,26 @@ export function partRole<D extends AutomationDraft>(draft: D, binding: RoleBindi
   };
 }
 
+/**
+ * A group in the draft filled by these parts: the one given — its parts
+ * replaced — or a new one, "Parts", asking of each what all of them offer.
+ */
+export function groupRole<D extends AutomationDraft>(draft: D, role: string | null, parts: readonly { binding: RoleBinding; description: DeviceDescription }[]): { draft: D; role: string } {
+  const offered = parts.map(({ binding, description }) => new Set(capabilitiesOf(description, binding.part).filter((capability): capability is CapabilityName => typeof capability === 'string')));
+  const capabilities = offered.length ? [...offered[0]!].filter((capability) => offered.every((each) => each.has(capability))).sort() : [];
+  const named = role ?? roleName(draft.rule, 'Parts');
+  const current = draft.rule.roles[named];
+  const label = current && isGroupRole(current) ? current.label : 'Parts';
+  return {
+    role: named,
+    draft: {
+      ...draft,
+      rule: { ...draft.rule, roles: { ...draft.rule.roles, [named]: { group: true, label, capabilities } } },
+      groups: { ...draft.groups, [named]: parts.map((part) => part.binding) },
+    },
+  };
+}
+
 /** The role an automation fills in the draft, to be started: the one it already fills, or a new one — labelled as what it is, its name shown from the automation as it is now. */
 export function automationRole<D extends AutomationDraft>(draft: D, automation: AutomationId): { draft: D; role: string } {
   const found = Object.entries(draft.starts).find(([, started]) => started === automation);
@@ -87,13 +114,14 @@ export function automationRole<D extends AutomationDraft>(draft: D, automation: 
 export function pruned<D extends AutomationDraft>(draft: D): D {
   const used = usedRoles(draft.rule);
   const keep = <T>(record: Readonly<Record<string, T>>) => Object.fromEntries(Object.entries(record).filter(([role]) => used.has(role)));
-  return { ...draft, rule: { ...draft.rule, roles: keep(draft.rule.roles) }, roles: keep(draft.roles), starts: keep(draft.starts) };
+  return { ...draft, rule: { ...draft.rule, roles: keep(draft.rule.roles) }, roles: keep(draft.roles), groups: keep(draft.groups), starts: keep(draft.starts) };
 }
 
-/** The part roles of a rule, and the automation roles: each as an editor lists them. */
+/** The roles of a rule, by kind — one part, several, another automation — each as an editor lists them. */
 export const rolesOf = (rule: Rule) => ({
-  parts: Object.entries(rule.roles).filter(([, spec]) => !isAutomationRole(spec)),
-  automations: Object.entries(rule.roles).filter(([, spec]) => isAutomationRole(spec)),
+  parts: Object.entries(rule.roles).filter(([, spec]) => roleKind(spec) === 'part'),
+  groups: Object.entries(rule.roles).filter(([, spec]) => roleKind(spec) === 'group'),
+  automations: Object.entries(rule.roles).filter(([, spec]) => roleKind(spec) === 'automation'),
 });
 
 /**
@@ -125,10 +153,10 @@ export function sameParts(
 // --- starting points --------------------------------------------------------------------
 
 /** An automation built from nothing: no trigger, no step yet. */
-export const EMPTY_DRAFT: AutomationDraft = { rule: { roles: {}, params: NO_SETTINGS, when: [], then: [] }, roles: {}, starts: {} };
+export const EMPTY_DRAFT: AutomationDraft = { rule: { roles: {}, params: NO_SETTINGS, when: [], then: [] }, roles: {}, groups: {}, starts: {} };
 
 /** A recipe's rule copied: its settings kept, at the recipe's values, for its owner to set; its roles still to fill. */
-export const draftOfRecipe = (rule: Rule): AutomationDraft => ({ rule: withSettings(rule, {}), roles: {}, starts: {} });
+export const draftOfRecipe = (rule: Rule): AutomationDraft => ({ rule: withSettings(rule, {}), roles: {}, groups: {}, starts: {} });
 
 /** Whether a rule has a part for a device: one of its roles a part of it can fill. What a device's page offers to start from. */
 export const ruleFits = (rule: Rule, device: { description: DeviceDescription; name: string }): boolean =>
@@ -150,11 +178,22 @@ export function roleSaid(draft: AutomationDraft, role: string, devices: readonly
     const started = automations.find((automation) => automation.id === draft.starts[role]);
     return started ? `“${started.name}”` : unfilled;
   }
+  // A group: its parts, named — "Garage plug and Scooter plug".
+  if (isGroupRole(spec)) {
+    const named = (draft.groups[role] ?? []).flatMap((binding) => {
+      const device = devices.find((each) => each.id === binding.device);
+      return device ? [partName(device.name, binding.part, partsOf(device.description, device.name).find((part) => part.id === binding.part)?.label)] : [];
+    });
+    return named.length ? listed(named) : unfilled;
+  }
   const binding = draft.roles[role];
   const device = binding ? devices.find((each) => each.id === binding.device) : undefined;
   if (!device || !binding) return unfilled;
   return partName(device.name, binding.part, partsOf(device.description, device.name).find((part) => part.id === binding.part)?.label);
 }
+
+/** Names in a sentence: "A", "A and B", "A, B and C". */
+export const listed = (names: readonly string[]): string => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : (names[0] ?? ''));
 
 /** A part a block may use: the role it fills already — or none, a part of a device not in the draft yet. */
 export type PartOption = { key: string; title: string; subtitle?: string; role: string | null; binding: RoleBinding; description: DeviceDescription; name: string };

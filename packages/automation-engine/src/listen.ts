@@ -1,4 +1,5 @@
 import type { RunLogKey, RunLogReach, RunLogReading, RunLogRole } from '@kraftverk/api-contract';
+import { bindingsOf } from '@kraftverk/automation';
 import { MAIN_PART, quantityOf, unitOf, type Clock, type DeviceDescription, type Reading } from '@kraftverk/device-sdk';
 
 import type { AutomationEngineDeps, EngineDevice } from './model.ts';
@@ -34,12 +35,13 @@ export function listen(live: LiveRun, deps: ListenDeps, order: () => number): { 
   const roles: RunLogRole[] = [];
   // In the rule's order of its roles: what it uses first, first.
   for (const role of Object.keys(live.rule.roles)) {
-    const binding = live.automation.roles[role];
-    const device = binding ? deps.device(binding) : null;
-    if (!binding) continue;
-    if (!device) continue;
-    if (!devices.has(binding.device)) devices.set(binding.device, device);
-    roles.push({ role, label: live.rule.roles[role]?.label ?? role, device: binding.device, part: binding.part });
+    // Each part filling it: a group's each.
+    for (const binding of bindingsOf(live.automation, role)) {
+      const device = deps.device(binding);
+      if (!device) continue;
+      if (!devices.has(binding.device)) devices.set(binding.device, device);
+      roles.push({ role, label: live.rule.roles[role]?.label ?? role, device: binding.device, part: binding.part });
+    }
   }
   const keep = (log: Parameters<AutomationStorage['recordLog']>[1]) => {
     try {

@@ -339,6 +339,9 @@ erDiagram
   automation ||--o{ automation_role : "is filled by"
   device ||--o{ automation_role : "fills"
   automation ||--o{ automation_role : "is started by"
+  automation ||--o{ automation_group_part : "goes through"
+  device ||--o{ automation_group_part : "is one of"
+  automation ||--o{ automation_memory : "remembers"
   automation ||--o{ automation_trigger : "watches with"
   automation ||--o{ automation_run : "ran"
   automation_run |o--o{ automation_run : "started"
@@ -478,9 +481,21 @@ erDiagram
     text part "main · outlet.ac"
     text starts FK "a-0c9d1e2f3a4b0c9d · the automation a step starts · null: a part fills it"
   }
+  automation_group_part {
+    text automation_id PK "a-71c2d0e5f9a371c2"
+    text role PK "chargers · a group a for each goes through"
+    int place PK "0 · its order in the group"
+    text device_id FK "d-3f9a2c61b0e43f9a"
+    text part "main · outlet.ac"
+  }
+  automation_memory {
+    text automation_id PK "a-71c2d0e5f9a371c2"
+    text name PK "timesCharged"
+    text value "3 · JSON, in its field's unit"
+  }
   automation_trigger {
     text automation_id PK "a-71c2d0e5f9a371c2"
-    int trigger PK "0 · its place in its rule's when"
+    text trigger PK "low · its id · or #2, its place in its rule's when"
     int holds "1"
     text held_since "2026-10-16T05:00:12Z"
     int fired "1"
@@ -635,6 +650,8 @@ joined; elsewhere it is plain text, null.
 | `device.picture` | Which picture a device shows: its owner's pick, the same in every app. | on its page |
 | `device_switch`, `device_write` | The gateway's memory of each part and setting: when it was last switched or written, and by whom — what the dwell counts from, so a restart is no way around it, and what lets an automation that keeps things so leave what another automation set. A part never switched has no row: its first switch through a consequential link is confirmed. | by the gateway, at each switch and write |
 | `automation`, `automation_role` | An automation: its own rule, the recipe it was copied from, its clock, mode and place on the home page; and what fills each role — a part of a device, or another automation a step starts — a row each, so a device's page asks which automations it can start; an automation deleted takes with it the roles that would start it, and those that did say they have nothing to start. | made, changed |
+| `automation_group_part` | The parts of each group a `for each` goes through, in order, each once: a device's page asks this too. | made, changed |
+| `automation_memory` | What each automation remembers, by name: the value a run last left it, kept across runs, restarts and changes to it. | as a run remembers |
 | `automation_trigger` | Each `becomes` trigger's state, so a restart continues a hold and never fires one twice. | as its conditions are looked at |
 | `automation_run` | Every run, with each step it took; the unended one is running now, written at every step — one at a time, held by a unique index. A restart ends it as interrupted (docs/SEQUENCES.md). | as it runs |
 | `automation_run_device`, `automation_run_role`, `automation_run_key` | A run's log, as the run saw its world: each device it used (its name and type then), which part of which device filled each role, and what each value it kept is (part, label, kind, unit, quantity, the words for on/off and options) — so a log stays whole when a device is renamed, re-described or removed, or a role filled by another. | as a run that takes steps begins, and as a value is first seen |

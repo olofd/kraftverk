@@ -10,7 +10,7 @@ import type { FieldSpec, KindDocs, KindIcon } from './spec.ts';
   seconds.
 */
 
-export type StepKind = 'command' | 'write' | 'wait' | 'waitUntil' | 'waitFor' | 'ensure' | 'choose' | 'watch' | 'repeat' | 'try' | 'stop' | 'start' | 'remember';
+export type StepKind = 'command' | 'write' | 'wait' | 'waitUntil' | 'waitFor' | 'ensure' | 'choose' | 'watch' | 'repeat' | 'forEach' | 'try' | 'stop' | 'start' | 'remember';
 
 /** A step of one kind. */
 export type StepOf<K extends StepKind> = K extends StepKind ? Extract<Step, Record<K, unknown>> : never;
@@ -353,6 +353,26 @@ const REPEAT: StepSpec<'repeat'> = {
   },
 };
 
+const FOR_EACH: StepSpec<'forEach'> = {
+  kind: 'forEach',
+  label: 'For each',
+  icon: 'layers',
+  says: 'Take steps for each of several parts: one after the other, or all at the same time.',
+  fields: [
+    { data: ['forEach', 'as'], key: 'for each', type: { type: 'each' }, required: true, label: 'Each called', help: 'What its steps call each part, in turn.' },
+    { data: ['forEach', 'in'], key: 'in', type: { type: 'group' }, required: true, label: 'Of these parts' },
+    { data: ['forEach', 'together'], key: 'together', type: { type: 'flag' }, required: false, label: 'All at the same time', help: 'Otherwise one after the other.' },
+    { data: ['forEach', 'steps'], key: 'do', type: { type: 'steps', sure: 'inherit', nonEmpty: 'what does it do with each?' }, required: true, label: 'For each' },
+  ],
+  blank: () => ({ forEach: { as: 'part', in: '', steps: [] } }),
+  line: (step, say) => `For each of ${say.name(step.forEach.in)}, ${step.forEach.together ? 'all at the same time' : 'one after the other'}`,
+  brief: (step, say) => `${say.briefs(step.forEach.steps).join(' and ') || 'nothing'}, for each of ${say.name(step.forEach.in)}${step.forEach.together ? ' at the same time' : ''}`,
+  docs: {
+    summary: 'Take the steps under `do` for each part filling a group role — one after the other, or, with `together: true`, all at the same time — each called by the name after `for each` within them, as a role is. One that does not succeed: the others, together, go on to their end; one after the other, the rest are not taken.',
+    examples: ['for each: outlet\nin: outlets\ndo:\n  - turn on: outlet', 'for each: outlet\nin: outlets\ntogether: true\ndo:\n  - turn on: outlet\n  - wait until: outlet.power > 10 W\n    at most: 1 min'],
+  },
+};
+
 // --- when a step does not succeed ------------------------------------------------------------------
 
 const TRY: StepSpec<'try'> = {
@@ -445,6 +465,7 @@ export const STEP_KINDS: { readonly [K in StepKind]: StepSpec<K> } = {
   choose: CHOOSE,
   watch: WATCH,
   repeat: REPEAT,
+  forEach: FOR_EACH,
   try: TRY,
   stop: STOP,
   start: START,
@@ -452,7 +473,7 @@ export const STEP_KINDS: { readonly [K in StepKind]: StepSpec<K> } = {
 };
 
 /** The order the editor offers them in. */
-export const STEP_KIND_ORDER: readonly StepKind[] = ['command', 'write', 'wait', 'waitUntil', 'waitFor', 'ensure', 'choose', 'watch', 'repeat', 'try', 'stop', 'start', 'remember'];
+export const STEP_KIND_ORDER: readonly StepKind[] = ['command', 'write', 'wait', 'waitUntil', 'waitFor', 'ensure', 'choose', 'watch', 'repeat', 'forEach', 'try', 'stop', 'start', 'remember'];
 
 /** Which kind a step is — by its key; one of no kind is an error, never taken for another. */
 export function stepKind(step: Step): StepKind {

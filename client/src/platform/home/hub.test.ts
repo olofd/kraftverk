@@ -52,7 +52,7 @@ test('every installed type can be added, and a simulated plug is added, switched
       then: [{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
     },
     roles: { plug: { device: plug.id, part: 'main' } },
-    starts: {},
+    groups: {}, starts: {},
     timeZone: 'Europe/Stockholm',
   });
   await home.automations.start(automation.id);

@@ -44,6 +44,13 @@ from it (`src/reference.test.ts`).
 
 ## Two forms of one rule
 
+**Every construct — each part of an automation (`kinds/parts.ts`), trigger,
+step, kind of expression, function of the language and unit — has its page
+in [REFERENCE.md](REFERENCE.md), with examples, generated from the
+language's own description; and every example there is read, checked and
+written back by the tests.** A construct without its page and examples does
+not compile, or does not pass.
+
 A rule is a value of type `Rule`. A configuration file (docs/CONFIG.md)
 writes the same rule in words; `ruleFromConfig` reads the words into the
 value, `ruleToConfig` writes the value back, and the two always agree.
@@ -100,7 +107,7 @@ A rule has:
 
 | Part | Text | What it is |
 |---|---|---|
-| `roles` | `uses:` | What it works on, by role: a part of a device that offers some capabilities, or another automation. Filled when the rule becomes an automation. |
+| `roles` | `uses:` | What it works on, by role: a part of a device that offers some capabilities; a group of such parts (`group: true`; a list under `uses`), gone through by a `for each`; or another automation. Filled when the rule becomes an automation. What a `for each` calls each part is read as its group (`eachAsGroup`) by what binds, holds and infers a role. |
 | `params` | `settings:` | Its settings: each a field of a form — title, unit, range — whose `default` is the value the rule runs with, read as `setting.name`. A recipe's are what each copy starts from; an automation keeps them (`withSettings`), its owner's to set in one place. `inlineParams` writes them into the blocks, for a rule read with its values in place. |
 | `memory` | `memory:` | What it remembers: written as its settings are, each the value it starts from (`timesCharged: 0`, `lastPower: 0 W`), read as `memory.name` and set by a `remember` step. Kept by where it runs, in its field's unit, across runs, restarts and changes to it; a value its field no longer takes is read as the one it starts from. None: it remembers nothing. |
 | `whileRunning` | `while running:` | What one of its triggers starting it while it runs does: `skip` — let go, as when none is written; `restart` — the run stopped, as a person would, its fallback taken, and started afresh; `queue` — started once the run ends, at most `SEQUENCE_LIMITS.queued` waiting. A person or another automation starting it while it runs is told it is running. |
@@ -178,6 +185,7 @@ Lengths of time are in seconds, named as a file says them: `wait.for`,
 | `choose` | `if: <condition>` with `then: [steps]` and `else: [steps]` | one way or the other, as the condition is now; unknown is not true |
 | `watch` | `watch: <condition>` with `for: 5 s`, `if it stays so: [steps]` and `if not: [steps]` | watch the condition for a while: the first steps if it stays true all that time, the others the moment it is not, or cannot be told |
 | `repeat` | `repeat: 3` with `do: [steps]` — and `until: <condition>` | the steps, round after round: so many times — or until the condition is so after a round, at most that many, not succeeding if it never is. A round that does not succeed ends it |
+| `forEach` | `for each: charger` with `in: chargers`, `do: [steps]` — and `together: true` | the steps for each part of a group, one after the other — or all at the same time — each called `charger` within them, as a role is. One that does not succeed: one after the other, the rest are not taken; together, the others go on to their end |
 | `try` | `try: [steps]` with `if it fails: [steps]` | the steps; one that does not succeed is answered by the others — none, and it goes on as if it had. A stop is not caught |
 | `stop` | `stop: Already charged` — and `failed: true` | the run ends here, saying why: as it went — or, failed, as not having succeeded, its `if a step fails` steps taken |
 | `start` | `start: role` with `and wait: 10 min` | start the automation filling the role, as a person's play would; with a wait, until its run ends |

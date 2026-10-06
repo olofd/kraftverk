@@ -9,7 +9,7 @@ import type { Say } from './kinds/spec.ts';
 import { branchesOf, stepSpec, type StepKind, type StepSay } from './kinds/steps.ts';
 import { TRIGGER_KINDS, triggerKind } from './kinds/triggers.ts';
 import { convert, UNITS } from '@kraftverk/device-sdk';
-import { isAutomationRole, type Command, type CompareOp, type Expr, type Rule, type RunFact, type Step, type Trigger, type Write } from './rule.ts';
+import { isAutomationRole, isGroupRole, memberRole, type Command, type CompareOp, type Expr, type Rule, type RunFact, type Step, type Trigger, type Write } from './rule.ts';
 
 /*
   A rule in words (docs/AUTOMATIONS-UX.md): its triggers, conditions and
@@ -212,6 +212,9 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
   return text(expr);
 }
 
+/** What a "for each" calls each part, within a sentence: `charger` is "each charger", `smallPlug` "each small plug". */
+export const eachSaid = (name: string): string => `each ${name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()}`;
+
 /** An event as its capability names it — "mains lost" — or, a type's own, its id in words. */
 const eventWords = (rule: Rule, role: string, event: string): string => {
   const spec = rule.roles[role];
@@ -333,17 +336,28 @@ function wording(rule: Rule, params: Readonly<Record<string, Value>>, name: (rol
   // What each kind's words are handed (kinds/steps.ts): how the parts of a step read.
   const say: StepSay = { expr: text, seconds, count, name, command, write, briefs: (list) => briefs(list), memory: (key) => memoryWords(rule, key), event: (role, event) => eventWords(rule, role, event) };
   const lines = (list: readonly Step[] | undefined): StepLine[] => steps(list, line);
+  /** The words within a "for each": each part of its group said as what its steps call it — "each charger". */
+  const within = (each: Extract<Step, { forEach: unknown }>['forEach']) => {
+    const group = rule.roles[each.in];
+    const roles = group && isGroupRole(group) ? { ...rule.roles, [each.as]: memberRole(group) } : rule.roles;
+    return wording({ ...rule, roles }, params, (role) => (role === each.as ? eachSaid(each.as) : name(role)), vocabulary);
+  };
   /** A step as its kind says it, and its branches — its lists of steps — each under its field's label. */
   const line = (step: Step): StepLine => {
     const spec = stepSpec(step);
+    const words = 'forEach' in step ? within(step.forEach) : null;
     const branches = branchesOf(step).flatMap(({ field, steps: inner }) => {
-      const said = lines(inner);
+      const said = words ? words.lines(inner) : lines(inner);
       return said.length ? [{ label: field.label, steps: said }] : [];
     });
     return { kind: spec.kind, text: capitalise(spec.line(step, say)), branches };
   };
-  /** A step in a sentence, briefly: what it does, not its branches. */
-  const brief = (step: Step): string => stepSpec(step).brief(step, say);
+  /** A step in a sentence, briefly: what it does, not its branches — a "for each"'s steps in its own words. */
+  const brief = (step: Step): string => {
+    if (!('forEach' in step)) return stepSpec(step).brief(step, say);
+    const words = within(step.forEach);
+    return stepSpec(step).brief(step, { ...say, briefs: (list) => words.briefs(list) });
+  };
   const briefs = (list: readonly Step[] | undefined): string[] => steps(list, brief);
   return { text, lines, briefs };
 }

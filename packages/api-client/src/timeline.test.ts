@@ -18,7 +18,7 @@ describe('an automation’s timeline', () => {
         detail: { before: { mode: 'watch', recheckMinutes: null, rule, roles: { a: 1 }, homePlace: null }, after: { mode: 'act', recheckMinutes: 5, rule: { ...rule, when: [{}] }, roles: { a: 1 }, homePlace: 2 } },
       })
     ).toEqual({ mode: { from: 'watch', to: 'act' }, recheckMinutes: { from: null, to: 5 }, rule: true, uses: false, homePlace: 'put' });
-    expect(automationChangeOf({ detail: { before: { homePlace: 1, starts: {} }, after: { homePlace: null, starts: { b: 'x' } } } })).toEqual({ rule: false, uses: true, homePlace: 'taken' });
+    expect(automationChangeOf({ detail: { before: { homePlace: 1, groups: {}, starts: {} }, after: { homePlace: null, starts: { b: 'x' } } } })).toEqual({ rule: false, uses: true, homePlace: 'taken' });
     expect(automationChangeOf({ detail: null })).toBeNull();
   });
 

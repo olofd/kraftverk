@@ -102,7 +102,7 @@ function aHome() {
   deps.connections.setSecrets(way.id, { pin: 'pin-of-a-test' });
   const porch = deps.catalog.add({ typeId: 'test.lamp', name: 'Porch lamp', description: LAMP });
   deps.connections.add({ deviceId: porch.id, method: 'bus', transport: 'bus', heldBy: MACHINE_NODE.id, address: 'lamp-porch' });
-  const morning = deps.automations.create({ name: 'Morning', rule: lampRule, madeFrom: null, roles: { lamp: { device: hall.id, part: 'main' } }, starts: {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
+  const morning = deps.automations.create({ name: 'Morning', rule: lampRule, madeFrom: null, roles: { lamp: { device: hall.id, part: 'main' } }, groups: {}, starts: {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
   deps.automations.update(morning.id, { mode: 'act' });
   deps.automations.placeOnHome(morning.id, 0);
   return { hall, porch, morning };
@@ -436,7 +436,7 @@ describe('the snapshot kept beside the database', () => {
   test('restores item by item: an automation naming a removed device kept turned off, a device it cannot read left out — the rest restored', async () => {
     const { hall, porch } = aHome();
     // One that uses the porch lamp, which is then removed: its role is still bound to it.
-    const evening = deps.automations.create({ name: 'Evening', rule: lampRule, madeFrom: null, roles: { lamp: { device: porch.id, part: 'main' } }, starts: {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
+    const evening = deps.automations.create({ name: 'Evening', rule: lampRule, madeFrom: null, roles: { lamp: { device: porch.id, part: 'main' } }, groups: {}, starts: {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
     deps.automations.update(evening.id, { mode: 'act' });
     deps.catalog.remove(porch.id);
     const text = await exported('kept');

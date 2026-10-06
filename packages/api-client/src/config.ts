@@ -1,4 +1,4 @@
-import type { AutomationMode, RoleBinding, Rule } from '@kraftverk/automation';
+import type { AutomationMode, RoleBinding, RoleFills, Rule } from '@kraftverk/automation';
 import { savedDeviceId, type AutomationId } from '@kraftverk/device-sdk';
 import {
   automationEntryFrom,
@@ -28,7 +28,7 @@ export type AutomationSettings = { mode: AutomationMode; timeZone: string; reche
 
 /** An automation as YAML text: its rule, what fills its roles, and its settings. */
 export function automationYaml(
-  automation: { name: string; rule: Rule; roles: Readonly<Record<string, RoleBinding>>; starts: Readonly<Record<string, string>>; madeFrom: string | null } & AutomationSettings,
+  automation: { name: string; rule: Rule; roles: Readonly<Record<string, RoleBinding>>; groups: Readonly<Record<string, readonly RoleBinding[]>>; starts: Readonly<Record<string, string>>; madeFrom: string | null } & AutomationSettings,
   devices: readonly DeviceView[],
   automations: readonly Pick<AutomationView, 'id' | 'key'>[]
 ): string {
@@ -53,7 +53,7 @@ export function readAutomationText(text: string, key: string, vocabulary: Vocabu
  * and what fills each role by id, and its settings. A key naming nothing here
  * is a problem the meaning check has already said.
  */
-export function draftOfEntry(entry: AutomationEntry, devices: readonly DeviceView[], automations: readonly Pick<AutomationView, 'id' | 'key'>[]): { draft: { name: string; rule: Rule; roles: Record<string, RoleBinding>; starts: Record<string, AutomationId> }; settings: AutomationSettings } {
+export function draftOfEntry(entry: AutomationEntry, devices: readonly DeviceView[], automations: readonly Pick<AutomationView, 'id' | 'key'>[]): { draft: { name: string; rule: Rule } & RoleFills; settings: AutomationSettings } {
   const fills = fillsFrom(entry.uses, {
     device: (key) => devices.find((device) => device.key === key && !device.removedAt)?.id ?? null,
     automation: (key) => automations.find((each) => each.key === key)?.id ?? null,
@@ -63,6 +63,7 @@ export function draftOfEntry(entry: AutomationEntry, devices: readonly DeviceVie
       name: entry.name,
       rule: entry.rule,
       roles: Object.fromEntries(Object.entries(fills.roles).map(([role, binding]) => [role, { device: savedDeviceId(binding.device), part: binding.part }])),
+      groups: Object.fromEntries(Object.entries(fills.groups).map(([role, parts]) => [role, parts.map((binding) => ({ device: savedDeviceId(binding.device), part: binding.part }))])),
       starts: fills.starts as Record<string, AutomationId>,
     },
     settings: { mode: entry.mode, timeZone: entry.clock, recheckMinutes: entry.recheckMinutes, homePlace: entry.homePlace },

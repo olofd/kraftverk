@@ -187,7 +187,7 @@ export class AutomationEngine {
    * part that no longer fits, a meaning it does not report, a setting it
    * cannot change — or an automation to start that is gone.
    */
-  roleProblems(automation: Pick<AutomationRecord, 'rule' | 'roles' | 'starts'>): string[] {
+  roleProblems(automation: Pick<AutomationRecord, 'rule' | 'roles' | 'groups' | 'starts'>): string[] {
     return this.#context.roleProblems(automation);
   }
 }

@@ -47,6 +47,12 @@ const bound = (role: string): BoundPart | null =>
       ? { name: 'Garage station', description: STATION, part: 'main', capabilities: ['battery'] }
       : null;
 
+/** What fills each role, as a binding check is given it: one part, or none. */
+const partsOf = (role: string): BoundPart[] => {
+  const part = bound(role);
+  return part ? [part] : [];
+};
+
 const vocabulary = { ...NO_FUNCTIONS, attribute: (role: string, target: WriteTarget) => { const part = bound(role); return part ? writtenAttribute(part.description, part.part, target) : null; } };
 
 const names = (role: string) => (role === 'plug' ? 'Scooter plug' : role === 'station' ? 'Garage station' : role === 'charging' ? '“Charge the scooter”' : role);
@@ -68,13 +74,13 @@ const live = (value: unknown): Step => ({ write: { role: 'plug', key: 'live', va
 describe('change a setting', () => {
   test('is checked when bound: a setting the part has, may be told, and cannot harm it — with a value that fits', () => {
     expect(checkRule(rule([live(true)]), NO_FUNCTIONS)).toEqual([]);
-    expect(checkBinding(rule([live(true)]), bound)).toEqual([]);
-    expect(checkBinding(rule([{ write: { role: 'plug', key: 'nothing', value: { value: 1 } } }]), bound)).toEqual(['Plug: Scooter plug has no setting "nothing"']);
-    expect(checkBinding(rule([{ write: { role: 'plug', key: 'countdown', value: { value: 60 } } }]), bound)).toEqual(['Plug: Countdown of Scooter plug is read, not set']);
-    expect(checkBinding(rule([{ write: { role: 'plug', key: 'firmwareMode', value: { value: true } } }]), bound)).toEqual([
+    expect(checkBinding(rule([live(true)]), partsOf)).toEqual([]);
+    expect(checkBinding(rule([{ write: { role: 'plug', key: 'nothing', value: { value: 1 } } }]), partsOf)).toEqual(['Plug: Scooter plug has no setting "nothing"']);
+    expect(checkBinding(rule([{ write: { role: 'plug', key: 'countdown', value: { value: 60 } } }]), partsOf)).toEqual(['Plug: Countdown of Scooter plug is read, not set']);
+    expect(checkBinding(rule([{ write: { role: 'plug', key: 'firmwareMode', value: { value: true } } }]), partsOf)).toEqual([
       'Plug: Firmware mode of Scooter plug can harm it, and is never changed by an automation',
     ]);
-    expect(checkBinding(rule([live('yes')]), bound)).toEqual(['Plug: Live readings must be true or false']);
+    expect(checkBinding(rule([live('yes')]), partsOf)).toEqual(['Plug: Live readings must be true or false']);
   });
 
   test('is a part’s, never an automation’s, and needs a setting', () => {
@@ -113,7 +119,7 @@ describe('start another automation', () => {
 
   test('an automation is started, never read, asked or switched', () => {
     expect(checkRule(rule([{ command: { role: 'charging', capability: 'switch', command: 'set', args: { on: { value: true } } } }]), NO_FUNCTIONS)).toContain(
-      'then[0].command: charging is an automation, not a part of a device'
+      'then[0].command.role: charging is an automation, not a part of a device'
     );
     expect(checkRule(rule([live(true)], { if: { reachable: 'charging' } }), NO_FUNCTIONS)).toEqual(['if: charging is an automation, not a part of a device']);
   });
@@ -123,7 +129,7 @@ describe('start another automation', () => {
     expect(takesSteps(chain)).toBe(true);
     expect(ruleUses(chain).starts).toEqual(['charging']);
     expect(describeSteps(chain, {}, names).steps[0]).toEqual({ kind: 'start', text: 'Start “Charge the scooter” and wait until it ends — at most 5 min', branches: [] });
-    expect(checkBinding(chain, bound)).toEqual([]);
+    expect(checkBinding(chain, partsOf)).toEqual([]);
   });
 });
 
@@ -243,17 +249,17 @@ describe('change a setting by what it means', () => {
     expect(checkRule(rule([{ write: { role: 'station', means: 'chargeLimit', key: 'acLimit', value: { value: 80 } } as never }]), NO_FUNCTIONS)).toEqual([
       'then[0].write: a setting by its key or by its meaning, not both',
     ]);
-    expect(checkBinding(rule([limit(80)]), bound)).toEqual([]);
-    expect(checkBinding(rule([limit(40)]), bound)).toEqual(['Station: AC charge limit must be at least 60']);
-    expect(checkBinding(rule([{ write: { role: 'plug', means: 'chargeLimit', value: { value: 80 } } }]), bound)).toEqual(['Plug: Scooter plug has no setting that is its charge limit']);
+    expect(checkBinding(rule([limit(80)]), partsOf)).toEqual([]);
+    expect(checkBinding(rule([limit(40)]), partsOf)).toEqual(['Station: AC charge limit must be at least 60']);
+    expect(checkBinding(rule([{ write: { role: 'plug', means: 'chargeLimit', value: { value: 80 } } }]), partsOf)).toEqual(['Plug: Scooter plug has no setting that is its charge limit']);
     // A reading with the meaning is not a setting.
-    expect(checkBinding(rule([{ write: { role: 'station', means: 'charge', value: { value: 80 } } }]), bound)).toEqual(['Station: Garage station has no setting that is its charge']);
+    expect(checkBinding(rule([{ write: { role: 'station', means: 'charge', value: { value: 80 } } }]), partsOf)).toEqual(['Station: Garage station has no setting that is its charge']);
   });
 
   test('a value between steps is refused: 600, 900 … 1800 W, never 700', () => {
     const power = (watts: number): Step => ({ write: { role: 'station', means: 'mainsInputLimit', value: { value: watts } } });
-    expect(checkBinding(rule([power(1200)]), bound)).toEqual([]);
-    expect(checkBinding(rule([power(700)]), bound)).toEqual(['Station: AC charging power must be in steps of 300 from 600']);
+    expect(checkBinding(rule([power(1200)]), partsOf)).toEqual([]);
+    expect(checkBinding(rule([power(700)]), partsOf)).toEqual(['Station: AC charging power must be in steps of 300 from 600']);
   });
 
   test('reads as the device names it once bound, and as the meaning before', () => {

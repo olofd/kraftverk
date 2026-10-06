@@ -111,6 +111,8 @@ export function checkDocument(document: ConfigDocument, vocabulary: Vocabulary, 
     for (const [role, use] of Object.entries(automation.uses)) {
       if ('device' in use) {
         if (options.uses !== 'leave') part(use, [...path, 'uses', role]);
+      } else if ('parts' in use) {
+        if (options.uses !== 'leave') use.parts.forEach((each, index) => part(each, [...path, 'uses', role, index]));
       }
       else if (!(use.automation in document.automations) && !vocabulary.automations.some((each) => each.key === use.automation)) {
         problem(`There is no automation "${use.automation}", in the file or on the server`, [...path, 'uses', role]);

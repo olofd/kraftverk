@@ -35,6 +35,7 @@ const STEPS: Record<Keys<Step>, string> = {
   repeat: 'repeat:',
   try: 'try:',
   stop: 'stop:',
+  forEach: 'for each:',
 };
 const EXPRESSIONS: Record<Exclude<Keys<Expr>, 'role' | 'args' | 'left' | 'right' | 'unit' | 'then' | 'else' | 'item' | 'field'>, string> = {
   value: '50 W',

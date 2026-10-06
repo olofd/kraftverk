@@ -2,9 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { automationYaml, draftOfEntry, readAutomationText, type AutomationSettings } from '@kraftverk/api-client/config';
 import { type AutomationView, type DeviceView } from '@kraftverk/api-client';
-import type { RoleBinding } from '@kraftverk/automation';
+import type { RoleFills } from '@kraftverk/automation';
 import type { Rule } from '@kraftverk/automation';
-import type { AutomationId } from '@kraftverk/device-sdk';
 import { entryJsonSchema } from '@kraftverk/home-file';
 
 import type { TextProblem } from '../../components/ProblemList';
@@ -12,7 +11,7 @@ import { useAnswer } from '../../components/useAnswer';
 import { useHome } from '../../state/HomeProvider';
 
 /** What the form edits: its name, rule, and what fills each role. */
-type Draft = { name: string; rule: Rule; roles: Record<string, RoleBinding>; starts: Record<string, AutomationId> };
+type Draft = { name: string; rule: Rule } & RoleFills;
 
 /**
  * An automation written as YAML instead of through the form (docs/CONFIG.md):

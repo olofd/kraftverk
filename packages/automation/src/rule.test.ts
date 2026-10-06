@@ -109,7 +109,7 @@ describe('checking it against the parts that fill its roles', () => {
   };
   test('fits, or says which role does not', () => {
     const bound = (parts: Record<string, string>) => (role: string) =>
-      parts[role] ? { name: role === 'battery' ? 'Station' : 'Station — AC', description: station, part: parts[role]!, capabilities: parts[role] === 'main' ? (['battery'] as const) : (['switch'] as const) } : null;
+      parts[role] ? [{ name: role === 'battery' ? 'Station' : 'Station — AC', description: station, part: parts[role]!, capabilities: parts[role] === 'main' ? (['battery'] as const) : (['switch'] as const) }] : [];
     expect(checkBinding(lowBattery, bound({ battery: 'main', switch: 'outlet.ac' }))).toEqual([]);
     expect(checkBinding(lowBattery, bound({ battery: 'outlet.ac', switch: 'outlet.ac' }))).toEqual(['Battery: Station cannot do that', 'Battery: Station does not report charge']);
     expect(checkBinding(lowBattery, bound({ battery: 'main' }))).toEqual(['What to switch: no device']);

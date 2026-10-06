@@ -101,6 +101,7 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
           rule: input.rule,
           madeFrom: input.madeFrom ?? null,
           roles: result.roles,
+          groups: result.groups,
           starts: result.starts,
           timeZone: input.timeZone,
           recheckMinutes: input.recheckMinutes ?? null,
@@ -111,6 +112,7 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
           madeFrom: created.madeFrom,
           rule: created.rule,
           roles: created.roles,
+          groups: created.groups,
           starts: created.starts,
           recheckMinutes: created.recheckMinutes,
         });
@@ -123,15 +125,15 @@ export function automationsApi(hub: Hub, caller: Caller): Pick<KraftverkApi, 'au
         const current = automationOf(id);
         if (input.timeZone) zoned(input.timeZone);
         if (input.key !== undefined && input.key !== current.key) checkKey(input.key, automations.keyTaken(input.key, current.id), 'automation', 'start-charging');
-        // A new rule comes with what fills its roles: the three together, or none.
-        const rebuilt = input.rule !== undefined || input.roles !== undefined || input.starts !== undefined;
-        if (rebuilt && (!input.rule || !input.roles || !input.starts)) throw new ApiError('invalid', 'A new rule comes with what fills its roles: rule, roles and starts together');
-        const result = rebuilt ? checked({ rule: input.rule!, roles: input.roles!, starts: input.starts! } satisfies AutomationDraft, current.id) : null;
+        // A new rule comes with what fills its roles: all of them together, or none.
+        const rebuilt = input.rule !== undefined || input.roles !== undefined || input.groups !== undefined || input.starts !== undefined;
+        if (rebuilt && (!input.rule || !input.roles || !input.groups || !input.starts)) throw new ApiError('invalid', 'A new rule comes with what fills its roles: rule, roles, groups and starts together');
+        const result = rebuilt ? checked({ rule: input.rule!, roles: input.roles!, groups: input.groups!, starts: input.starts! } satisfies AutomationDraft, current.id) : null;
         if (result) refuseProblems(result.problems);
         const nextRule = result ? input.rule! : current.rule;
         const nextRecheck = input.recheckMinutes !== undefined ? input.recheckMinutes : current.recheckMinutes;
         if (nextRecheck && !keepsSo(nextRule)) throw new ApiError('invalid', KEEPS_SO_ONLY);
-        const changedRule = result ? { rule: nextRule, roles: result.roles, starts: result.starts } : null;
+        const changedRule = result ? { rule: nextRule, roles: result.roles, groups: result.groups, starts: result.starts } : null;
 
         // Letting it act — and changing what one that acts does — is a deliberate act.
         const armedAfter = input.mode === 'act' || (input.mode === undefined && current.mode === 'act');

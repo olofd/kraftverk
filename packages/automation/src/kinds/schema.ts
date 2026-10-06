@@ -1,3 +1,5 @@
+import { CAMEL_NAME } from '@kraftverk/device-sdk';
+
 import { WEEKDAYS } from '../clock.ts';
 import { TRIGGER_ID } from '../rule.ts';
 import type { FieldSpec } from './spec.ts';
@@ -35,9 +37,12 @@ export function fieldSchema(field: FieldSpec): JsonSchema {
       return DAYS_SCHEMA;
     case 'role':
     case 'automation':
+    case 'group':
     case 'event':
     case 'name':
       return { type: 'string', minLength: 1, ...described };
+    case 'each':
+      return { type: 'string', pattern: CAMEL_NAME.source, ...described };
     case 'id':
       return { type: 'string', pattern: TRIGGER_ID.source, ...described };
     case 'memory':

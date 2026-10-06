@@ -42,6 +42,10 @@ export type FieldType =
   | { type: 'role' }
   /** A role another automation fills. */
   | { type: 'automation' }
+  /** A role several parts fill: what a `for each` goes through. */
+  | { type: 'group' }
+  /** What each part of a group is called within a `for each`'s steps — a name of its own, as a role's: `charger`. */
+  | { type: 'each' }
   /** An event the part filling a role declares; `role`: the key of the field naming that role. */
   | { type: 'event'; role: string }
   /** A name the construct's own words check: a capability, a command, a setting's key or meaning. */
@@ -86,7 +90,7 @@ export type FieldSpec = {
 export type KindDocs = { summary: string; examples: readonly string[] };
 
 /** The marks the editor draws a kind with: names in the app's icon set. */
-export type KindIcon = 'clock' | 'repeat' | 'activity' | 'bell' | 'power' | 'sliders' | 'pause' | 'git-branch' | 'eye' | 'play-circle' | 'save' | 'rotate-cw' | 'shield' | 'octagon';
+export type KindIcon = 'clock' | 'repeat' | 'activity' | 'bell' | 'power' | 'sliders' | 'pause' | 'git-branch' | 'eye' | 'play-circle' | 'save' | 'rotate-cw' | 'shield' | 'octagon' | 'layers';
 
 /**
  * How a sentence says the parts of a construct — what the describer hands a

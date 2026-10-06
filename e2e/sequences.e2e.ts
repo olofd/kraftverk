@@ -132,6 +132,7 @@ test('built from nothing: a time, a setting changed, and another automation star
         then: [{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
       },
       roles: { plug: { device: plug.id, part: 'main' } },
+      groups: {},
       starts: {},
       timeZone: 'Europe/Stockholm',
     },
@@ -222,6 +223,39 @@ test('through the night: a window of the day, across midnight, is what starts it
   await expect(now.getByText('It is between 23:00 and 05:00', { exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'When' }).getByText('When it is between 23:00 and 05:00')).toBeVisible();
   await expect(page.getByRole('region', { name: 'When' }).getByText('Started again while it runs: the run is stopped, and it starts again.')).toBeVisible();
+});
+
+test('for each of several plugs: its parts chosen in its block, and each switched in turn', async ({ page, request }) => {
+  const desk = await addSimulated(request, 'tuya.zigbee-plug', unique('Desk plug'));
+  const lamp = await addSimulated(request, 'tuya.zigbee-plug', unique('Lamp plug'));
+  await page.goto('/automation/new');
+  await press(page, 'Nothing');
+  const name = unique('All off');
+  await page.getByLabel('Name').fill(name);
+
+  // The block, and the parts it goes through, switched in.
+  await page.getByRole('button', { name: 'Add a step: What it does' }).click();
+  await page.getByRole('button', { name: 'Add: For each' }).click();
+  const parts = page.getByRole('group', { name: 'Of these parts' });
+  await parts.getByRole('switch', { name: desk.name }).click();
+  await parts.getByRole('switch', { name: lamp.name }).click();
+  const block = `For each of ${desk.name} and ${lamp.name}, one after the other`;
+  await expect(page.getByRole('listitem', { name: `For each: ${block}` })).toBeVisible();
+
+  // Within it, each part: switched off.
+  await page.getByRole('button', { name: `Add a step: ${block}: For each` }).click();
+  await page.getByRole('button', { name: 'Add: Switch or send' }).click();
+  await pick(page, 'Which part', 'Each part');
+  await page.getByRole('radio', { name: 'Off' }).last().click();
+  await expect(page.getByRole('listitem', { name: 'Switch or send: Turn each part off' })).toBeVisible();
+  await expect(page.getByRole('status')).toContainText('It can run as it is');
+  await press(page, 'Create');
+
+  // Run: one after the other, each by its own name.
+  const main = page.getByRole('main');
+  await main.getByRole('button', { name: `Start ${name}` }).click();
+  await answer(page, true);
+  await expect(main.getByRole('status').first()).toHaveText(new RegExp(`^Turned ${desk.name} off, turned ${lamp.name} off · `), { timeout: 60_000 });
 });
 
 test('round after round, and a stop that says why: blocks within blocks, run to their end', async ({ page, request }) => {

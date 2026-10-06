@@ -1,6 +1,9 @@
+import { UNITS, type Dimension } from '@kraftverk/device-sdk';
+
 import { secondsText } from '../describe.ts';
 import { BUILTIN_ORDER, BUILTINS } from './builtins.ts';
 import { EXPR_KIND_ORDER, EXPR_KINDS } from './exprs.ts';
+import { RULE_PART_DOCS } from './parts.ts';
 import type { FieldSpec } from './spec.ts';
 import { STEP_KIND_ORDER, STEP_KINDS, type StepSpec } from './steps.ts';
 import { TRIGGER_FIELDS, TRIGGER_FIELDS_DOCS, TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './triggers.ts';
@@ -12,6 +15,9 @@ import { TRIGGER_FIELDS, TRIGGER_FIELDS_DOCS, TRIGGER_KIND_ORDER, TRIGGER_KINDS 
   behind it. `npm run gen:reference` writes it; the architecture check says
   when it is not current.
 */
+
+/** A number to show each quantity's units with, in an example. */
+const UNIT_EXAMPLE: Readonly<Record<Dimension, string>> = { power: '50', energy: '1.5', current: '6', voltage: '230', frequency: '50', time: '2', ratio: '20', temperature: '21', length: '12', speed: '25', irradiance: '800', signal: '-60', illuminance: '300', 'price.EUR': '0.25', 'price.SEK': '1.5', 'price.NOK': '1.5', 'price.DKK': '1.5' };
 
 /** What a field holds, as the reference says it. */
 function holds(field: FieldSpec, fields: readonly FieldSpec[]): string {
@@ -33,6 +39,10 @@ function holds(field: FieldSpec, fields: readonly FieldSpec[]): string {
       return 'a role: what fills it is under `uses`';
     case 'automation':
       return 'a role another automation fills: `{ automation: key }` under `uses`';
+    case 'group':
+      return 'a role several parts fill: a list of them under `uses`';
+    case 'each':
+      return 'a name of its own, as a role’s: what its steps call each part, in turn';
     case 'event': {
       const from = fields.find((each) => each.key === type.role);
       return `an event the part filling \`${from?.key ?? type.role}\` declares: \`mains.lost\``;
@@ -70,16 +80,27 @@ export function referenceMarkdown(): string {
     '',
     '<!-- Written from the language\'s own description (packages/automation/src/kinds). Do not edit: run `npm run gen:reference`. -->',
     '',
-    'Every construct the language has, as a configuration file writes it. The',
-    'grammar of expressions, units and the rules a run keeps are in',
-    '[README.md](README.md).',
+    'Every construct the language has, as a configuration file writes it,',
+    'each with examples — and every example here is read and checked by the',
+    'language’s tests. The grammar of expressions and the rules a run keeps',
+    'are in [README.md](README.md).',
     '',
+    '## An automation — its parts',
+    '',
+    'An automation in a file is its name and these, each under its key. Each',
+    'example is a whole automation, but for its name.',
+    '',
+  ];
+  for (const part of Object.values(RULE_PART_DOCS)) {
+    lines.push(`### \`${part.key}\` — ${part.label}`, '', part.summary, '', ...part.examples.flatMap((example) => ['```yaml', example, '```', '']));
+  }
+  lines.push(
     '## What starts it — triggers',
     '',
     'Each trigger is one item under `when`, and any of them may say what it',
     'does itself (below).',
-    '',
-  ];
+    ''
+  );
   for (const kind of TRIGGER_KIND_ORDER) {
     const spec = TRIGGER_KINDS[kind];
     lines.push(...kindPage(`### \`${kind}\` — ${spec.label}`, spec.docs.summary, spec.fields, spec.docs.examples, 'when'));
@@ -126,5 +147,15 @@ export function referenceMarkdown(): string {
     const spec = BUILTINS[name];
     lines.push(`| \`${name}(${spec.params.join(', ')})\` — ${spec.label} | ${spec.docs.examples.map((example) => `\`${example}\``).join(' · ')} | ${spec.docs.summary} |`);
   }
+  lines.push(
+    '',
+    '### Units',
+    '',
+    'A number may carry one of these, written after it — `50 W`, `1.5 kWh`, `2 min`. Any other is refused where it is written. Numbers of one quantity are converted to each other as they are compared or added; a product or quotient makes the unit the two make (a power for a time is an energy).',
+    '',
+    '| Unit | Is | Of | Written |',
+    '|---|---|---|---|'
+  );
+  for (const [unit, spec] of Object.entries(UNITS)) lines.push(`| \`${unit}\` | ${spec.label} | ${spec.dimension} | \`${UNIT_EXAMPLE[spec.dimension]} ${unit}\` |`);
   return `${lines.join('\n').trimEnd()}\n`;
 }

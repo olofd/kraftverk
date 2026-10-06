@@ -20,6 +20,7 @@ import { useAutomationYaml } from '../../config/useAutomationYaml';
 import { Group } from '../page/Group';
 import { BlockList } from './Blocks';
 import { EditorProvider, useEditor, useEditorKit, type Draft } from './context';
+import { GroupParts } from './GroupParts';
 import { OnlyIf, Triggers } from './Triggers';
 
 /*
@@ -164,7 +165,7 @@ function Editing({
     const turn = ++asked.current;
     const timer = setTimeout(() => {
       api.automations
-        .draft({ rule: kept.rule, roles: kept.roles, starts: kept.starts }, existing?.id ?? null)
+        .draft({ rule: kept.rule, roles: kept.roles, groups: kept.groups, starts: kept.starts }, existing?.id ?? null)
         .then((answer) => turn === asked.current && setCheck(answer))
         .catch(() => undefined);
     }, 300);
@@ -181,7 +182,7 @@ function Editing({
     setBusy(true);
     setProblem(null);
     try {
-      const body = { name: draft.name.trim(), rule: kept.rule, roles: kept.roles, starts: kept.starts };
+      const body = { name: draft.name.trim(), rule: kept.rule, roles: kept.roles, groups: kept.groups, starts: kept.starts };
       // What its YAML changed beyond what the form edits.
       const changes = { ...Object.fromEntries(settingsChanged.map((name) => [name, settings[name]])), ...(key && key !== existing?.key ? { key } : {}) };
       const letAct = settings.mode === 'act' && before.mode !== 'act';
@@ -419,8 +420,8 @@ function Problems({ list }: { list: readonly string[] }) {
 function Uses({ problems }: { problems: readonly string[] }) {
   const editor = useEditor();
   const tone = useTone();
-  const { parts, automations } = rolesOf(editor.draft.rule);
-  if (!parts.length && !automations.length) return null;
+  const { parts, groups, automations } = rolesOf(editor.draft.rule);
+  if (!parts.length && !groups.length && !automations.length) return null;
   const choices = (spec: (typeof parts)[number][1]) => editor.parts((description, part) => !isAutomationRole(spec) && meetsNeed(spec, capabilitiesOf(description, part)));
   // What another automation already uses for the same roles, in one tap: a stop made after its start.
   const fits = (role: string, binding: RoleBinding) => {
@@ -429,7 +430,7 @@ function Uses({ problems }: { problems: readonly string[] }) {
   };
   const same = sameParts(editor.draft, editor.automations, fits).slice(0, 2);
   return (
-    <Group icon="box" title="Uses" summary={`${parts.length + automations.length}`}>
+    <Group icon="box" title="Uses" summary={`${parts.length + groups.length + automations.length}`}>
       <Problems list={problems} />
       {same.map((other) => (
         <Button
@@ -459,6 +460,15 @@ function Uses({ problems }: { problems: readonly string[] }) {
           </YStack>
         );
       })}
+      {/* Each group a "for each" goes through: its parts, switched in and out here. */}
+      {groups.map(([role, spec]) => (
+        <YStack key={role} gap="$1.5">
+          <Text fontSize={13} fontWeight="600" color="$muted">
+            {spec.label}
+          </Text>
+          <GroupParts role={role} label={spec.label} />
+        </YStack>
+      ))}
       {automations.map(([role, spec]) => (
         <YStack key={role} gap="$1.5">
           <Text fontSize={13} fontWeight="600" color="$muted">

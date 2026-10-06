@@ -63,6 +63,7 @@ test('a station kept between 5 and 30 % by the plug that feeds it, round and rou
     name,
     rule,
     roles: { battery: { device: station.id, part: 'main' }, charger: { device: plug.id, part: 'main' } },
+    groups: {},
     starts: {},
     timeZone: 'Europe/Stockholm',
   });

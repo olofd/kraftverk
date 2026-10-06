@@ -1,5 +1,6 @@
 import { fieldValue, withField, type FieldSpec } from './kinds/spec.ts';
-import { STEP_KIND_ORDER, STEP_KINDS, stepSpec, type StepKind } from './kinds/steps.ts';
+import { branchesOf, STEP_KIND_ORDER, STEP_KINDS, stepSpec, type StepKind } from './kinds/steps.ts';
+import { stepListsOf } from './kinds/triggers.ts';
 import { ruleCommands, ruleUses } from './reads.ts';
 import { SEQUENCE_LIMITS, type Rule, type Step } from './rule.ts';
 
@@ -132,12 +133,42 @@ export function usedRoles(rule: Rule): Set<string> {
     ...uses.reads.map((read) => read.role),
     ...uses.events.map((event) => event.role),
     ...uses.awaits.map((event) => event.role),
+    ...uses.groups,
     ...uses.calls.map((call) => call.role),
     ...uses.reaches,
     ...uses.writes.map((write) => write.role),
     ...uses.starts,
     ...ruleCommands(rule).map((command) => command.role),
   ]);
+}
+
+/**
+ * What each `for each` around a list calls each part of its group, the
+ * outermost first: within its steps, a part a block may use — "each charger".
+ */
+export function eachAt(rule: Rule, path: ListPath): { as: string; in: string }[] {
+  const found: { as: string; in: string }[] = [];
+  let list: readonly Step[] = rootList(rule, path.root);
+  for (const { index, branch } of path.trail) {
+    const step = list[index];
+    if (!step) break;
+    if ('forEach' in step && branch === 'steps') found.push({ as: step.forEach.as, in: step.forEach.in });
+    list = branchOf(step, branch);
+  }
+  return found;
+}
+
+/** What each `for each` in a rule calls each part, and the group it goes through: what an editor names, and finds a part for, anywhere. */
+export function eachNames(rule: Rule): Record<string, string> {
+  const found: Record<string, string> = {};
+  const walk = (steps: readonly Step[]) => {
+    for (const step of steps) {
+      if ('forEach' in step && step.forEach.as && !(step.forEach.as in found)) found[step.forEach.as] = step.forEach.in;
+      for (const branch of branchesOf(step)) walk(branch.steps);
+    }
+  };
+  for (const list of stepListsOf(rule)) walk(list.steps);
+  return found;
 }
 
 /** A new step of a kind, about `role` where it needs a part or an automation: its kind's own start (kinds/steps.ts). */

@@ -6,3 +6,4 @@ export * from './steps.ts';
 export * from './shape.ts';
 export * from './exprs.ts';
 export * from './builtins.ts';
+export * from './parts.ts';

@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
 import type { AutomationView, DeviceView, FunctionView, RecipeView } from '@kraftverk/api-client';
-import { describeExpr, describeSteps, describeTriggers, draftOfRecipe, EMPTY_DRAFT, partOptions, partRole, roleSaid, writtenAttribute, type AutomationDraft, type AutomationFunction, type Expr, type PartOption, type RoleBinding, type RuleVocabulary, type Step, type Trigger } from '@kraftverk/automation';
+import { capitalise, describeExpr, describeSteps, describeTriggers, draftOfRecipe, eachAt, eachNames, eachSaid, EMPTY_DRAFT, partOptions, partRole, roleSaid, writtenAttribute, type AutomationDraft, type AutomationFunction, type Expr, type ListPath, type PartOption, type RoleBinding, type RuleVocabulary, type Step, type Trigger } from '@kraftverk/automation';
 import { capabilitiesOf, meetsNeed, type CapabilityNeed, type DeviceDescription, type SavedDeviceId } from '@kraftverk/device-sdk';
 
 import { useAnswer } from '../../../components/useAnswer';
@@ -54,11 +54,17 @@ export function useEditor() {
 
   return useMemo(() => {
     const deviceOf = (binding: RoleBinding | undefined) => (binding ? devices.find((device) => device.id === binding.device) : undefined);
-    /** A role's name, as its steps say it. */
-    const name = (role: string): string => roleSaid(draft, role, devices, automations);
-    /** The part filling a role: its device's description, and which part. */
+    /** What each "for each" calls each part, and its group. */
+    const each = eachNames(draft.rule);
+    /** A role's name, as its steps say it — what a "for each" calls each part, as "each part". */
+    const name = (role: string): string => (each[role] && !draft.rule.roles[role] ? eachSaid(role) : roleSaid(draft, role, devices, automations));
+    /**
+     * The part filling a role: its device's description, and which part — for
+     * what a "for each" calls each part, its group's first: what its blocks
+     * offer to send and set is what that part offers.
+     */
     const partOf = (role: string): { description: DeviceDescription; part: string; device: DeviceView } | null => {
-      const binding = draft.roles[role];
+      const binding = draft.roles[role] ?? (each[role] ? draft.groups[each[role]!]?.[0] : undefined);
       const device = deviceOf(binding);
       return device && binding ? { description: device.description, part: binding.part, device } : null;
     };
@@ -75,11 +81,26 @@ export function useEditor() {
     const saidExpr = (expr: Expr): string => describeExpr(draft.rule, expr, {}, name, vocabulary);
     /** What starts it, one trigger, in words: "At 07:00 on weekdays". */
     const saidTrigger = (trigger: Trigger): string => describeTriggers({ ...draft.rule, when: [trigger] }, {}, name, vocabulary)[0] ?? '';
-    /** Every part a block may use: the draft's own first, then each part of each of your devices that fits. */
-    const parts = (fits: (description: DeviceDescription, part: string) => boolean): PartOption[] => partOptions(draft, devices, automations, fits, (prefer ?? null) as SavedDeviceId | null);
+    /**
+     * Every part a block may use: within a "for each", each part of its group
+     * first — then the draft's own, then each part of each of your devices
+     * that fits.
+     */
+    const parts = (fits: (description: DeviceDescription, part: string) => boolean, path?: ListPath): PartOption[] => {
+      const inLoops = (path ? eachAt(draft.rule, path) : []).flatMap(({ as, in: group }): PartOption[] => {
+        const first = draft.groups[group]?.[0];
+        const device = deviceOf(first);
+        if (!first || !device || !fits(device.description, first.part)) return [];
+        const title = capitalise(eachSaid(as));
+        return [{ key: `each:${as}`, title, subtitle: `Of ${name(group)}`, role: as, binding: first, description: device.description, name: title }];
+      });
+      return [...inLoops, ...partOptions(draft, devices, automations, fits, (prefer ?? null) as SavedDeviceId | null)];
+    };
     /** Parts that offer what a need asks. */
     const offering = (need: CapabilityNeed) => (description: DeviceDescription, part: string) => meetsNeed(need, capabilitiesOf(description, part));
-    return { ...kit, name, partOf, vocabulary, said, saidExpr, saidTrigger, parts, offering };
+    /** Whether a block's part is chosen: a role of the draft's, or what a "for each" calls each part. */
+    const chosen = (role: string): boolean => Boolean(role && (draft.rule.roles[role] || each[role]));
+    return { ...kit, name, partOf, vocabulary, said, saidExpr, saidTrigger, parts, offering, chosen };
   }, [kit, draft, devices, automations, functions, prefer]);
 }
 

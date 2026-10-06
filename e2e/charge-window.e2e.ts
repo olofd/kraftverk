@@ -121,6 +121,7 @@ test('an automation is let act only with a yes, in the app’s own words, and de
         then: [{ command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { compare: 'lt', left: SOC, right: { value: 50 } } } } }],
       },
       roles: { battery: { device: station.id, part: 'main' }, charger: { device: plug.id, part: 'main' } },
+      groups: {},
       starts: {},
       timeZone: 'Europe/Stockholm',
     },

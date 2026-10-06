@@ -300,6 +300,23 @@ export const SCHEMA = `
   CREATE INDEX automation_role_starts ON automation_role (starts);
 
   /*
+    The parts filling each of an automation's groups — the roles a "for
+    each" goes through — in their order (place 0, 1, …), each part once. A
+    device deleted takes its place in them with it; one removed stays, and
+    says it cannot run.
+  */
+  CREATE TABLE automation_group_part (
+    automation_id TEXT NOT NULL REFERENCES automation (id) ON DELETE CASCADE,
+    role          TEXT NOT NULL,
+    place         INTEGER NOT NULL CHECK (place >= 0),
+    device_id     TEXT NOT NULL REFERENCES device (id) ON DELETE CASCADE,
+    part          TEXT NOT NULL,
+    PRIMARY KEY (automation_id, role, place),
+    UNIQUE (automation_id, role, device_id, part)
+  );
+  CREATE INDEX automation_group_part_device ON automation_group_part (device_id);
+
+  /*
     Each "becomes" trigger's state, by its key — its id, or its place among
     its rule's triggers when it has none ("#2", triggerKey):
     whether its condition held when last looked at, since when it has held,
@@ -380,14 +397,14 @@ export const SCHEMA = `
     PRIMARY KEY (run_id, device_id)
   );
 
-  /* Which part of which device filled each of the run's roles as it ran: "The charger's plug" was Smart plug, main. */
+  /* Which part of which device filled each of the run's roles as it ran: "The charger's plug" was Smart plug, main — a group's, a row each part. */
   CREATE TABLE automation_run_role (
     run_id    TEXT NOT NULL,
     role      TEXT NOT NULL,
     label     TEXT NOT NULL,
     device_id TEXT NOT NULL,
     part      TEXT NOT NULL,
-    PRIMARY KEY (run_id, role),
+    PRIMARY KEY (run_id, role, device_id, part),
     FOREIGN KEY (run_id, device_id) REFERENCES automation_run_device (run_id, device_id) ON DELETE CASCADE
   );
 

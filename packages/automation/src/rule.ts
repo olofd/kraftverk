@@ -229,7 +229,13 @@ export type Step =
   /** The run ends here, saying why: as it went — or, `failed`, as not having succeeded, its `if a step fails` steps taken. */
   | { stop: { why: string; failed?: boolean } }
   /** Until the part filling a role raises an event — or the run stops, not having succeeded, once it has waited that long. */
-  | { waitFor: { role: string; event: string; atMost: Expr } };
+  | { waitFor: { role: string; event: string; atMost: Expr } }
+  /**
+   * The steps for each part of a group in turn — or, `together`, for every
+   * one at the same time — the part called `as` within them, as a role is:
+   * `for each: charger`, `in: chargers`, `do: [turn on: charger]`.
+   */
+  | { forEach: { as: string; in: string; together?: boolean; steps: readonly Step[] } };
 
 /**
  * What one of its triggers starting it while it runs does: it is let go —
@@ -250,13 +256,19 @@ export const WHILE_RUNNING: { readonly [W in WhileRunning]: { label: string; say
 export const isWhileRunning = (value: unknown): value is WhileRunning => typeof value === 'string' && Object.hasOwn(WHILE_RUNNING, value);
 
 /** A role a part of a device fills: what it is called, and what it must offer. */
-export type PartRole = CapabilityNeed & { label: string };
+export type PartRole = CapabilityNeed & { label: string; group?: never; automation?: never };
+
+/**
+ * A role several parts fill — one or more, each offering what it needs —
+ * named one at a time by a `for each`: "the chargers".
+ */
+export type GroupRole = CapabilityNeed & { label: string; group: true; automation?: never };
 
 /** A role another automation fills: one a `start` step starts. */
-export type AutomationRole = { automation: true; label: string };
+export type AutomationRole = { automation: true; label: string; group?: never };
 
-/** What fills a role — a part, or an automation — and what it is called. */
-export type RoleSpec = PartRole | AutomationRole;
+/** What fills a role — a part, several, or an automation — and what it is called. */
+export type RoleSpec = PartRole | GroupRole | AutomationRole;
 
 /**
  * A recipe's role: what it is, said for whoever fills it — "Anything that
@@ -267,25 +279,40 @@ export type RoleSpec = PartRole | AutomationRole;
 export type RecipeRole = RoleSpec & { description: string };
 
 /** What a role of each kind holds: what an automation keeps of one, and what a database's fingerprint carries. */
-export const ROLE_FIELDS = { part: ['label', 'capabilities', 'oneOf'], automation: ['automation', 'label'] } as const satisfies {
+export const ROLE_FIELDS = { part: ['label', 'capabilities', 'oneOf'], group: ['group', 'label', 'capabilities', 'oneOf'], automation: ['automation', 'label'] } as const satisfies {
   part: readonly (keyof PartRole)[];
+  group: readonly (keyof GroupRole)[];
   automation: readonly (keyof AutomationRole)[];
 };
+
+/** The kinds of role: one part, several, or another automation. */
+export type RoleKind = keyof typeof ROLE_FIELDS;
+
+/** Which kind of role it is. */
+export const roleKind = (spec: RoleSpec): RoleKind => (isAutomationRole(spec) ? 'automation' : isGroupRole(spec) ? 'group' : 'part');
 
 /** A rule's roles as an automation keeps them: its fields alone — what a recipe said for whoever fills them stays with the recipe. */
 export const automationRoles = (roles: Readonly<Record<string, RoleSpec>>): Record<string, RoleSpec> =>
   Object.fromEntries(
     Object.entries(roles).map(([role, spec]) => {
-      const fields: readonly string[] = isAutomationRole(spec) ? ROLE_FIELDS.automation : ROLE_FIELDS.part;
+      const fields: readonly string[] = ROLE_FIELDS[roleKind(spec)];
       return [role, Object.fromEntries(Object.entries(spec).filter(([field]) => fields.includes(field))) as RoleSpec];
     })
   );
 
 export const isAutomationRole = (spec: RoleSpec): spec is AutomationRole => 'automation' in spec && spec.automation === true;
 
-/** The roles parts of devices fill: what binding checks, and what a device's page lists. */
+export const isGroupRole = (spec: RoleSpec): spec is GroupRole => 'group' in spec && spec.group === true;
+
+/** The roles one part of a device fills each: what binding checks, and what a device's page lists. */
 export const partRoles = (rule: Pick<Rule, 'roles'>): [string, PartRole][] =>
-  Object.entries(rule.roles).filter((entry): entry is [string, PartRole] => !isAutomationRole(entry[1]));
+  Object.entries(rule.roles).filter((entry): entry is [string, PartRole] => !isAutomationRole(entry[1]) && !isGroupRole(entry[1]));
+
+/** The roles several parts fill. */
+export const groupRoles = (rule: Pick<Rule, 'roles'>): [string, GroupRole][] => Object.entries(rule.roles).filter((entry): entry is [string, GroupRole] => isGroupRole(entry[1]));
+
+/** What each part of a group is, as the steps of a `for each` name it: a role of one part, asking what the group asks of each. */
+export const memberRole = (group: GroupRole): PartRole => ({ label: group.label, capabilities: group.capabilities, ...(group.oneOf ? { oneOf: group.oneOf } : {}) });
 
 export type Rule = {
   roles: Readonly<Record<string, RoleSpec>>;

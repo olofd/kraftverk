@@ -42,7 +42,7 @@ describe('mains, as events', () => {
 describe('the shared recipes, on a station', () => {
   const description = describeStation(2);
   const bound = (parts: Record<string, string>) => (role: string) =>
-    parts[role] ? { name: 'Garage P280', description, part: parts[role]!, capabilities: capabilitiesOf(description, parts[role]!) } : null;
+    parts[role] ? [{ name: 'Garage P280', description, part: parts[role]!, capabilities: capabilitiesOf(description, parts[role]!) }] : [];
 
   test('are filled by its parts: its battery or a pack, its mains input, one of its outlets', () => {
     expect(validateDescription(description, 'aferiy.p280')).toEqual([]);

@@ -108,6 +108,7 @@ describes.
   | `if: <condition>` + `then: [steps]` + `else: [steps]` | a choice |
   | `watch: <condition>` + `for: 5 s` + `if it stays so:` + `if not:` | watch, then choose |
   | `repeat: 3` + `do: [steps]` — and `until: <condition>` | round after round: so many times, or until it holds, at most that many |
+  | `for each: charger` + `in: chargers` + `do: [steps]` — and `together: true` | the steps for each part of a group, `charger` within them — one after the other, or all at once |
   | `try: [steps]` + `if it fails: [steps]` | a step that does not succeed is answered, and the run goes on |
   | `stop: Already charged` — and `failed: true` | the run ends here, saying why |
   | `start: role` + `and wait: 10 min` | start another automation |
@@ -142,8 +143,11 @@ describes.
 - **Lengths of time**: `5 s`, `2 min`, `1 h` — always with their unit: a
   bare `15` would be seconds to a wait and minutes to `every`, so it is
   refused.
-- **What fills a role** (`uses:`): `device-key` or `device-key.part`; another
-  automation as `{ automation: key }`. A role's label and what it needs come
+- **What fills a role** (`uses:`): `device-key` or `device-key.part`; for a
+  group a `for each` goes through, a list of them —
+  `chargers: [garage-plug, scooter-plug]`, in order, or
+  `{ parts: [...], label: …, needs: […] }`; another automation as
+  `{ automation: key }`. A role's label and what it needs come
   from what the rule does with it — the commands it is sent, the standard
   readings read from it (`charge` asks for a battery, `power` a
   power meter), the events it raises (`mains.lost`, an AC input); say them

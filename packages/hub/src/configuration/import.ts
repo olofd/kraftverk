@@ -1,5 +1,5 @@
 import { ApiError, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-contract';
-import { checkBinding, checkRule, isAutomationRole, keepsSo, useOf, useText, type BoundPart, type PartRole } from '@kraftverk/automation';
+import { checkBinding, checkRule, isAutomationRole, isGroupRole, keepsSo, useOf, useText, type AutomationDraft, type BoundPart, type GroupRole, type PartRole, type PartUse } from '@kraftverk/automation';
 import type { AutomationEngine, AutomationLibrary, AutomationRecord } from '@kraftverk/automation-engine';
 import {
   capabilitiesOf,
@@ -63,7 +63,7 @@ export type ImportDeps = ConfigDeps & {
   library: AutomationLibrary;
   engine: Pick<AutomationEngine, 'reset' | 'poke' | 'forget'>;
   /** The automation checks the API applies to an automation made or changed (`automations/plans.ts`). */
-  checked: (draft: { rule: AutomationRecord['rule']; roles: Record<string, { device: SavedDeviceId; part: string }>; starts: Record<string, AutomationId> }, self: AutomationId | null) => Checked;
+  checked: (draft: AutomationDraft, self: AutomationId | null) => Checked;
 };
 
 export type ImportMode = 'merge' | 'replace';
@@ -250,15 +250,24 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     if (entry.recheckMinutes !== null && !keepsSo(entry.rule)) problem('Only an automation that waits for a condition, and does what it does at once, can keep things so ("recheck")', [...path, 'recheck']);
     // A role nothing fills — a rule written while it was being built — cannot run: said where it is.
     for (const [role, spec] of Object.entries(entry.rule.roles)) if (!entry.uses[role]) problem(`${spec.label}: nothing fills it — name ${isAutomationRole(spec) ? 'an automation' : 'a device'} for it`, [...path, 'uses', role]);
+    /** Whether a device is here, or the file brings it. */
+    const known = (device: string) => Boolean((document.devices[device] && !leftOut.has(device)) || deps.catalog.byKey(device));
     for (const [role, use] of Object.entries(entry.uses)) {
       const spec = entry.rule.roles[role];
       if ('automation' in use) {
         if (!document.automations[use.automation] && !deps.automations.byKey(use.automation)) problem(`There is no automation "${use.automation}", in the file or here`, [...path, 'uses', role]);
         continue;
       }
-      if ((document.devices[use.device] && !leftOut.has(use.device)) || deps.catalog.byKey(use.device)) continue;
+      // A group's parts, each where it is in its list: one not here is said, not chosen again.
+      if ('parts' in use) {
+        use.parts.forEach((part, index) => {
+          if (!known(part.device)) problem(`${spec?.label ?? role}: "${useText(part)}" is not here`, [...path, 'uses', role, index]);
+        });
+        continue;
+      }
+      if (known(use.device)) continue;
       // A device you do not have: one of yours that can do what the role needs — or, restoring, nothing yet.
-      const need = spec && !isAutomationRole(spec) ? spec : null;
+      const need = spec && !isAutomationRole(spec) && !isGroupRole(spec) ? spec : null;
       if (options.lenient) problem(`${spec?.label ?? role}: "${useText(use)}" is not here`, [...path, 'uses', role]);
       else needs.rebind.push({ automation: key, role, label: spec?.label ?? role, wanted: useText(use), candidates: candidatesFor(deps, need, document) });
     }
@@ -344,31 +353,40 @@ function locate(text: string, path: (string | number)[]): { line: number | null;
  */
 function bindingProblems(deps: ImportDeps, entry: AutomationEntry, document: ConfigDocument, leftOut: ReadonlySet<string>): { message: string; path: (string | number)[] }[] {
   const found: { message: string; path: (string | number)[] }[] = [];
-  const bound = new Map<string, BoundPart>();
-  for (const [role, spec] of Object.entries(entry.rule.roles)) {
-    const use = entry.uses[role];
-    if (isAutomationRole(spec) || !use || 'automation' in use) continue;
+  const bound = new Map<string, BoundPart[]>();
+  /** One part filling a role — the role's, or one of its group's — as it will be: null when it is not known, or cannot do what the role needs (said). */
+  const partOf = (spec: PartRole | GroupRole, use: PartUse, path: (string | number)[]): BoundPart | null => {
     const brought = leftOut.has(use.device) ? undefined : document.devices[use.device];
     const here = deps.catalog.byKey(use.device);
     // The file's own word on it first: what it will be once imported.
     const description = brought ? deps.types.get(brought.type)?.describe(brought.settings as never) : here?.description;
     const name = brought?.name ?? here?.name;
-    if (!description || !name) continue;
+    if (!description || !name) return null;
     if (!partsOf(description).some((part) => part.id === use.part)) {
-      found.push({ message: `${spec.label}: ${name} has no part "${use.part}"`, path: ['uses', role] });
-      continue;
+      found.push({ message: `${spec.label}: ${name} has no part "${use.part}"`, path });
+      return null;
     }
     const capabilities = capabilitiesOf(description, use.part);
     if (!meetsNeed(spec, capabilities)) {
-      found.push({ message: `${spec.label}: that part of ${name} cannot do what it needs (${spec.capabilities.join(', ')})`, path: ['uses', role] });
-      continue;
+      found.push({ message: `${spec.label}: that part of ${name} cannot do what it needs (${spec.capabilities.join(', ')})`, path });
+      return null;
     }
-    bound.set(role, { name: use.part === MAIN_PART ? name : `${name} — ${use.part}`, description, part: use.part, capabilities });
+    return { name: use.part === MAIN_PART ? name : `${name} — ${use.part}`, description, part: use.part, capabilities };
+  };
+  for (const [role, spec] of Object.entries(entry.rule.roles)) {
+    const use = entry.uses[role];
+    if (isAutomationRole(spec) || !use || 'automation' in use) continue;
+    const uses = 'parts' in use ? use.parts : [use];
+    const parts = uses.flatMap((each, index) => {
+      const part = partOf(spec, each, 'parts' in use ? ['uses', role, index] : ['uses', role]);
+      return part ? [part] : [];
+    });
+    if (parts.length) bound.set(role, parts);
   }
   // What the filled parts must report and let be written: once the rule itself holds.
   if (checkRule(entry.rule, deps.library).length) return found;
   const filled = Object.fromEntries(Object.entries(entry.rule.roles).filter(([role, spec]) => !isAutomationRole(spec) && bound.has(role)));
-  for (const said of checkBinding({ ...entry.rule, roles: filled }, (role) => bound.get(role) ?? null)) found.push({ message: said, path: [] });
+  for (const said of checkBinding({ ...entry.rule, roles: filled }, (role) => bound.get(role) ?? [])) found.push({ message: said, path: [] });
   return found;
 }
 
@@ -547,11 +565,12 @@ export function writeImport(deps: ImportDeps, id: string, by: string, choices: I
         if (item.action === 'same') continue;
         const entry = document.automations[item.key]!;
         const existing = deps.automations.byKey(item.key);
-        const id = existing?.id ?? deps.automations.create({ key: item.key, name: entry.name, rule: entry.rule, madeFrom: entry.madeFrom, roles: {}, starts: {}, timeZone: entry.clock, recheckMinutes: entry.recheckMinutes }).id;
+        const id = existing?.id ?? deps.automations.create({ key: item.key, name: entry.name, rule: entry.rule, madeFrom: entry.madeFrom, roles: {}, groups: {}, starts: {}, timeZone: entry.clock, recheckMinutes: entry.recheckMinutes }).id;
         written.push({ key: item.key, entry, id, existing });
       }
       for (const { key, entry, id, existing } of written) {
         const roles: Record<string, { device: SavedDeviceId; part: string }> = {};
+        const groups: Record<string, { device: SavedDeviceId; part: string }[]> = {};
         const starts: Record<string, AutomationId> = {};
         for (const [role, use] of Object.entries(entry.uses)) {
           if ('automation' in use) {
@@ -559,16 +578,24 @@ export function writeImport(deps: ImportDeps, id: string, by: string, choices: I
             if (other) starts[role] = other.id;
             continue;
           }
+          // A group: each part that is here, in order.
+          if ('parts' in use) {
+            groups[role] = use.parts.flatMap((part) => {
+              const device = deps.catalog.byKey(part.device);
+              return device ? [{ device: device.id, part: part.part }] : [];
+            });
+            continue;
+          }
           const named = deps.catalog.byKey(use.device) ? use : useOf(choices.rebind?.[`${key}.${role}`] ?? '');
           const device = named ? deps.catalog.byKey(named.device) : null;
           if (device && named) roles[role] = { device: device.id, part: named.part };
         }
-        const result = deps.checked({ rule: entry.rule, roles, starts }, id);
+        const result = deps.checked({ rule: entry.rule, roles, groups, starts }, id);
         // Restoring, one that cannot be kept as it was is kept turned off — its rule, what still fills it — and said: its owner's work is not lost.
         const why = [...new Set([...(kept.turnedOff.get(key) ?? []), ...result.problems])];
         if (why.length && !options.lenient) throw new ApiError('invalid', `"${entry.name}" cannot be kept as it is`, { problems: why.map((said) => `"${entry.name}": ${said}`) });
         each(`"${entry.name}"`, () => {
-          deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, starts: result.starts, timeZone: entry.clock, mode: why.length ? 'off' : entry.mode, recheckMinutes: entry.recheckMinutes });
+          deps.automations.update(id, { name: entry.name, rule: entry.rule, roles: result.roles, groups: result.groups, starts: result.starts, timeZone: entry.clock, mode: why.length ? 'off' : entry.mode, recheckMinutes: entry.recheckMinutes });
           if (entry.homePlace !== (existing?.homePlace ?? null)) placing.push({ id, place: entry.homePlace });
           (existing ? applied.automations.changed : applied.automations.added).push(key);
           if (why.length) applied.notes.push(`"${entry.name}" is restored turned off: ${why.join('; ')}`);

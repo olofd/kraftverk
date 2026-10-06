@@ -230,11 +230,18 @@ function automationSchema(vocabulary: Vocabulary): Schema {
       },
       uses: {
         type: 'object',
-        description: 'Each role, and what fills it: "device-key" or "device-key.part" — or { automation: key } for one a step starts. Empty (~) while nothing fills it yet.',
+        description: 'Each role, and what fills it: "device-key" or "device-key.part"; a list of them for a group a "for each" goes through; or { automation: key } for one a step starts. Empty (~) while nothing fills it yet.',
         additionalProperties: {
           anyOf: [
             partRef,
             { type: 'null', description: 'Nothing fills it yet.' },
+            { type: 'array', items: partRef, uniqueItems: true, description: 'A group: the parts a "for each" goes through, in order.' },
+            {
+              type: 'object',
+              required: ['parts'],
+              additionalProperties: false,
+              properties: { parts: { type: 'array', items: partRef, uniqueItems: true }, label: { type: 'string' }, needs: { type: 'array', items: { type: 'string' } }, 'one of': { type: 'array', items: { type: 'string' } } },
+            },
             {
               type: 'object',
               required: ['part'],

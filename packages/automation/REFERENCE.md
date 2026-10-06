@@ -2,9 +2,194 @@
 
 <!-- Written from the language's own description (packages/automation/src/kinds). Do not edit: run `npm run gen:reference`. -->
 
-Every construct the language has, as a configuration file writes it. The
-grammar of expressions, units and the rules a run keeps are in
-[README.md](README.md).
+Every construct the language has, as a configuration file writes it,
+each with examples — and every example here is read and checked by the
+language’s tests. The grammar of expressions and the rules a run keeps
+are in [README.md](README.md).
+
+## An automation — its parts
+
+An automation in a file is its name and these, each under its key. Each
+example is a whole automation, but for its name.
+
+### `uses` — What it uses
+
+Each role, by the name its steps and conditions call it, and what fills it: a device by its key — `device-key.part` for one of its parts; a list of them for a group a `for each` goes through; or `{ automation: key }` for another automation a `start` step starts. What each role must offer is read from what is done with it; say it — `needs:` — or give it a label in the long form. `~` (or `[]` for a group): nothing fills it yet.
+
+```yaml
+uses:
+  supply: garage-station.outlet.ac
+  charger: charger-plug
+do:
+  - turn on: supply
+  - wait until: charger reachable
+    at most: 2 min
+  - turn on: charger
+```
+
+```yaml
+uses:
+  outlets: [smart-plug, garage-station.outlet.ac]
+do:
+  - for each: outlet
+    in: outlets
+    do:
+      - turn off: outlet
+```
+
+```yaml
+uses:
+  plug:
+    part: smart-plug
+    label: The kettle
+  morning:
+    automation: morning-charge
+do:
+  - turn on: plug
+  - start: morning
+```
+
+### `settings` — Its settings
+
+Levels set once and read anywhere in it as `setting.name`: a value alone — `low: 20 %` — or, long, with its title, range and how the app sets it. A number keeps its unit; a length of time is kept in seconds whatever it is written in. A recipe’s copies start from its settings, for their owners to set.
+
+```yaml
+settings:
+  low: 20 %
+  lowFor:
+    title: For at least
+    value: 2 min
+    max: 1 h
+uses:
+  station: garage-station
+  charger: charger-plug
+when:
+  - becomes: station.charge < setting.low
+    for: setting.lowFor
+do:
+  - turn on: charger
+```
+
+```yaml
+settings:
+  mode:
+    title: Then
+    value: eco
+    options: { eco: Save power, boost: Charge fast }
+uses:
+  station: garage-station
+  charger: charger-plug
+when:
+  - becomes: station.charge < 50 %
+do:
+  - if: setting.mode == "boost"
+    then:
+      - turn on: charger
+```
+
+### `memory` — What it remembers
+
+Values kept across runs, restarts and changes to it — written as settings are, each the value it starts from; read as `memory.name`, set by a `remember` step, in its unit and held to its range.
+
+```yaml
+memory:
+  timesCharged: { value: 0, integer: true, min: 0 }
+  lastPower: 0 W
+uses:
+  charger: charger-plug
+do:
+  - remember: timesCharged
+    as: memory.timesCharged + 1
+  - remember: lastPower
+    as: charger.power
+```
+
+### `when` — What starts it
+
+Its triggers: any one starts a run — a time of day, every so often, a condition becoming true, an event a device raises. None: it runs only when you, or another automation, start it.
+
+```yaml
+uses:
+  station: garage-station
+  charger: charger-plug
+when:
+  - at: "07:00"
+    days: weekdays
+  - becomes: station.charge < 15 %
+    for: 2 min
+do:
+  - turn on: charger
+```
+
+### `while running` — Started again while it runs
+
+What one of its triggers starting it while a run still takes its steps does: `skip` — the start is let go, as when none is written; `restart` — the run is stopped, its `if a step fails` steps taken, and it starts afresh; `queue` — it starts again once the run ends, at most 10 waiting.
+
+```yaml
+while running: restart
+uses:
+  mains: garage-station.input.ac
+  light: hall-light
+when:
+  - event: mains.lost
+    from: mains
+do:
+  - turn on: light
+  - wait: 5 min
+  - turn off: light
+```
+
+### `only if` — Only if
+
+A condition that must hold for a run to do anything, whatever started it. Unknown is not true: it does nothing, and says why.
+
+```yaml
+uses:
+  station: garage-station
+  charger: charger-plug
+when:
+  - at: "23:00"
+only if: station.charge < 80 % and charger reachable
+do:
+  - turn on: charger
+```
+
+### `do` — What it does
+
+Its steps, in order — each below. A trigger may have steps of its own instead (`do:` under it).
+
+```yaml
+uses:
+  charger: charger-plug
+do:
+  - turn on: charger
+  - wait: 10 s
+  - make sure: charger.power > 50 W
+    within: 20 s
+    tries: 3
+    each time:
+      - turn off: charger
+      - wait: 5 s
+      - turn on: charger
+```
+
+### `if a step fails` — If a step fails, or you stop it
+
+Steps taken when a step does not succeed, or a person stops the run: each tried, whatever the others do, and none that waits for what might not come.
+
+```yaml
+uses:
+  supply: garage-station.outlet.ac
+  charger: charger-plug
+do:
+  - turn on: supply
+  - turn on: charger
+  - wait until: charger.power > 10 W
+    at most: 2 min
+if a step fails:
+  - turn off: charger
+  - turn off: supply
+```
 
 ## What starts it — triggers
 
@@ -317,6 +502,36 @@ do:
       - wait: 20 s
 ```
 
+### `for each` — For each
+
+Take the steps under `do` for each part filling a group role — one after the other, or, with `together: true`, all at the same time — each called by the name after `for each` within them, as a role is. One that does not succeed: the others, together, go on to their end; one after the other, the rest are not taken.
+
+| Word | Holds | |
+|---|---|---|
+| `for each` | a name of its own, as a role’s: what its steps call each part, in turn | needed |
+| `in` | a role several parts fill: a list of them under `uses` | needed |
+| `together` | `true` or `false`; `false` when it is not written | if you like |
+| `do` | steps; at least one | needed |
+
+```yaml
+do:
+  - for each: outlet
+    in: outlets
+    do:
+      - turn on: outlet
+```
+
+```yaml
+do:
+  - for each: outlet
+    in: outlets
+    together: true
+    do:
+      - turn on: outlet
+      - wait until: outlet.power > 10 W
+        at most: 1 min
+```
+
 ### `try` — Try
 
 Try the steps under `try`: one that does not succeed ends them, and the steps under `if it fails` are taken — none, and it goes on as if it had succeeded. The run goes on after it either way, unless what it took after a failure did not succeed. A stop is not caught.
@@ -442,3 +657,46 @@ Each takes numbers, each with its unit, and answers in the first one’s unit. U
 | `floor(x)` — Round down | `floor(station.charge)` | A number rounded down to a whole one, in its own unit. |
 | `ceil(x)` — Round up | `ceil(station.charge)` | A number rounded up to a whole one, in its own unit. |
 | `abs(x)` — Size | `abs(meter.power)` | How large a number is, whichever way: −5 W is 5 W. |
+
+### Units
+
+A number may carry one of these, written after it — `50 W`, `1.5 kWh`, `2 min`. Any other is refused where it is written. Numbers of one quantity are converted to each other as they are compared or added; a product or quotient makes the unit the two make (a power for a time is an energy).
+
+| Unit | Is | Of | Written |
+|---|---|---|---|
+| `W` | watts | power | `50 W` |
+| `kW` | kilowatts | power | `50 kW` |
+| `MW` | megawatts | power | `50 MW` |
+| `Wh` | watt-hours | energy | `1.5 Wh` |
+| `kWh` | kilowatt-hours | energy | `1.5 kWh` |
+| `MWh` | megawatt-hours | energy | `1.5 MWh` |
+| `A` | amperes | current | `6 A` |
+| `mA` | milliamperes | current | `6 mA` |
+| `V` | volts | voltage | `230 V` |
+| `mV` | millivolts | voltage | `230 mV` |
+| `kV` | kilovolts | voltage | `230 kV` |
+| `Hz` | hertz | frequency | `50 Hz` |
+| `kHz` | kilohertz | frequency | `50 kHz` |
+| `s` | seconds | time | `2 s` |
+| `min` | minutes | time | `2 min` |
+| `h` | hours | time | `2 h` |
+| `d` | days | time | `2 d` |
+| `%` | percent | ratio | `20 %` |
+| `°C` | degrees Celsius | temperature | `21 °C` |
+| `°F` | degrees Fahrenheit | temperature | `21 °F` |
+| `K` | kelvin | temperature | `21 K` |
+| `mm` | millimetres | length | `12 mm` |
+| `cm` | centimetres | length | `12 cm` |
+| `m` | metres | length | `12 m` |
+| `km` | kilometres | length | `12 km` |
+| `mi` | miles | length | `12 mi` |
+| `m/s` | metres a second | speed | `25 m/s` |
+| `km/h` | kilometres an hour | speed | `25 km/h` |
+| `mph` | miles an hour | speed | `25 mph` |
+| `W/m²` | watts a square metre | irradiance | `800 W/m²` |
+| `dBm` | decibel-milliwatts | signal | `-60 dBm` |
+| `lx` | lux | illuminance | `300 lx` |
+| `EUR/kWh` | euros a kilowatt-hour | price.EUR | `0.25 EUR/kWh` |
+| `SEK/kWh` | kronor a kilowatt-hour | price.SEK | `1.5 SEK/kWh` |
+| `NOK/kWh` | Norwegian kroner a kilowatt-hour | price.NOK | `1.5 NOK/kWh` |
+| `DKK/kWh` | Danish kroner a kilowatt-hour | price.DKK | `1.5 DKK/kWh` |

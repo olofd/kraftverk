@@ -48,7 +48,8 @@ type Token =
   | { kind: 'end'; at: number };
 
 /** The language's own words: never a role's name. */
-const KEYWORDS = new Set(['and', 'or', 'not', 'in', 'true', 'false', 'null', 'reachable', 'time', 'between', 'run', 'setting', 'memory']);
+/** The language's own words: none names a role, nor what a "for each" calls each part. */
+export const KEYWORDS: ReadonlySet<string> = new Set(['and', 'or', 'not', 'in', 'true', 'false', 'null', 'reachable', 'time', 'between', 'run', 'setting', 'memory']);
 const COMPARE: Record<string, CompareOp> = { '<': 'lt', '<=': 'le', '>': 'gt', '>=': 'ge', '==': 'eq', '!=': 'ne' };
 const COMPARE_TEXT: Record<CompareOp, string> = { lt: '<', le: '<=', gt: '>', ge: '>=', eq: '==', ne: '!=' };
 const MATH_TEXT: Record<MathOp, string> = { add: '+', subtract: '-', multiply: '*', divide: '/' };

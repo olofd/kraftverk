@@ -219,7 +219,7 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
   /** An automation copied from one of the kit's recipes, its settings written into its blocks — as the app makes one. */
   const make = (recipe: string, roles: AutomationRecord['roles'], params: Record<string, string | number> = {}, mode: AutomationRecord['mode'] = 'watch', recheckMinutes: number | null = null) => {
     const { id: _id, label: _label, description: _description, sentence: _sentence, ...rule } = library.recipe(recipe)!;
-    const created = store.create({ name: 'Test automation', rule: inlineParams(rule, params), madeFrom: recipe, roles, starts: {}, timeZone: ZONE, recheckMinutes });
+    const created = store.create({ name: 'Test automation', rule: inlineParams(rule, params), madeFrom: recipe, roles, groups: {}, starts: {}, timeZone: ZONE, recheckMinutes });
     return mode === 'watch' ? created : store.update(created.id, { mode })!;
   };
   const sunny = (params: Record<string, string | number> = {}, mode: AutomationRecord['mode'] = 'watch', switchPart = { device: PLUG, part: 'main' }) =>
@@ -279,7 +279,7 @@ describe('at a time of day', () => {
           },
           madeFrom: null,
           roles: { switch: { device: PLUG, part: 'main' } },
-          starts: {},
+          groups: {}, starts: {},
           timeZone: ZONE,
           recheckMinutes: null,
         }).id,
@@ -630,7 +630,7 @@ describe('a setting by what it means', () => {
       rule: { roles: { station: { label: 'Station', capabilities: ['battery'] } }, params: { fields: {} }, when: [], then: [{ write: { role: 'station', means: 'chargeLimit', value: { value: 80 } } }] },
       madeFrom: null,
       roles: { station: { device: STATION, part: 'main' } },
-      starts: {},
+      groups: {}, starts: {},
       timeZone: ZONE,
       recheckMinutes: null,
     });
@@ -817,7 +817,7 @@ describe('when a device says something happened', () => {
       then: [{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { all: [{ compare: 'eq', left: { run: 'event' }, right: { value: 'mains.lost' } }, { compare: 'gt', left: { run: 'event', field: 'voltage' }, right: { value: 200, unit: 'V' } }] } } } }],
     };
     expect(checkRule(rule, { fn: () => null })).toEqual([]);
-    const made = store.create({ name: 'On what it said', rule, madeFrom: null, roles: { station: { device: STATION, part: 'input.ac' }, plug: { device: PLUG, part: 'main' } }, starts: {}, timeZone: ZONE, recheckMinutes: null });
+    const made = store.create({ name: 'On what it said', rule, madeFrom: null, roles: { station: { device: STATION, part: 'input.ac' }, plug: { device: PLUG, part: 'main' } }, groups: {}, starts: {}, timeZone: ZONE, recheckMinutes: null });
     store.update(made.id, { mode: 'act' });
     engine.start();
     try {
@@ -853,7 +853,7 @@ describe('when a device says something happened', () => {
       ],
     };
     expect(checkRule(rule, { fn: () => null })).toEqual([]);
-    const made = store.create({ name: 'Count the outages', rule, madeFrom: null, roles: { station: { device: STATION, part: 'input.ac' }, plug: { device: PLUG, part: 'main' } }, starts: {}, timeZone: ZONE, recheckMinutes: null });
+    const made = store.create({ name: 'Count the outages', rule, madeFrom: null, roles: { station: { device: STATION, part: 'input.ac' }, plug: { device: PLUG, part: 'main' } }, groups: {}, starts: {}, timeZone: ZONE, recheckMinutes: null });
     store.update(made.id, { mode: 'act' });
     engine.start();
     try {
@@ -904,7 +904,7 @@ describe('between two times of day', () => {
       },
       madeFrom: null,
       roles: { switch: { device: PLUG, part: 'main' } },
-      starts: {},
+      groups: {}, starts: {},
       timeZone: ZONE,
       recheckMinutes: null,
     });
@@ -941,7 +941,7 @@ describe('every so many minutes', () => {
       },
       madeFrom: null,
       roles: { switch: { device: PLUG, part: 'main' } },
-      starts: {},
+      groups: {}, starts: {},
       timeZone: ZONE,
       recheckMinutes: null,
     });
@@ -975,7 +975,7 @@ describe('every so many minutes', () => {
       },
       madeFrom: null,
       roles: { switch: { device: PLUG, part: 'main' } },
-      starts: {},
+      groups: {}, starts: {},
       timeZone: ZONE,
       recheckMinutes: null,
     });
@@ -1058,7 +1058,7 @@ describe('a battery kept between two levels', () => {
     const { engine, station, plug, sent, store } = context;
     plug.on = false;
     const { id: _id, label: _label, description: _description, sentence: _sentence, ...recipe } = new AutomationLibrary([], () => {}).recipe('standard.charge-between')!;
-    const made = store.create({ name: 'Kept levels', rule: withSettings(recipe, levels), madeFrom: 'standard.charge-between', roles, starts: {}, timeZone: ZONE, recheckMinutes: null });
+    const made = store.create({ name: 'Kept levels', rule: withSettings(recipe, levels), madeFrom: 'standard.charge-between', roles, groups: {}, starts: {}, timeZone: ZONE, recheckMinutes: null });
     const window = store.update(made.id, { mode: 'act' })!;
     station.soc = 4;
     const run = await engine.run(window, { askedBy: { actor: 'person', name: 'olof' } });
@@ -1123,7 +1123,7 @@ describe('how a run goes: round after round, tried, ended where it is, waiting f
       ...more,
     };
     expect(checkRule(rule, { fn: () => null })).toEqual([]);
-    const made = context.store.create({ name: 'Steps', rule, madeFrom: null, roles: { plug: { device: PLUG, part: 'main' }, station: { device: STATION, part: 'input.ac' } }, starts: {}, timeZone: ZONE, recheckMinutes: null });
+    const made = context.store.create({ name: 'Steps', rule, madeFrom: null, roles: { plug: { device: PLUG, part: 'main' }, station: { device: STATION, part: 'input.ac' } }, groups: {}, starts: {}, timeZone: ZONE, recheckMinutes: null });
     return context.store.update(made.id, { mode: 'act' })!;
   };
   const OLOF = { askedBy: { actor: 'person' as const, name: 'olof' } };
@@ -1264,6 +1264,73 @@ describe('how a run goes: round after round, tried, ended where it is, waiting f
       } finally {
         context.engine.stop();
       }
+    });
+  });
+
+  describe('for each part of a group', () => {
+    const OUTLETS: Rule['roles'] = { outlets: { group: true, label: 'Outlets', capabilities: ['switch'] } };
+    const MEMBERS = [
+      { device: PLUG, part: 'main' },
+      { device: STATION, part: 'outlet.ac' },
+    ];
+    const turnOn: Step = { command: { role: 'outlet', capability: 'switch', command: 'set', args: { on: { value: true } } } };
+    const pause: Step = { wait: { for: { value: 1, unit: 's' } } };
+    /** An automation of these steps for each outlet, let act: the heater plug, then the station's AC outlets. */
+    const eachOutlet = (context: ReturnType<typeof setup>, steps: readonly Step[], together = false) => {
+      const rule: Rule = { roles: OUTLETS, params: { fields: {} }, when: [], then: [{ forEach: { as: 'outlet', in: 'outlets', ...(together ? { together } : {}), steps } }] };
+      expect(checkRule(rule, { fn: () => null })).toEqual([]);
+      const made = context.store.create({ name: 'Each outlet', rule, madeFrom: null, roles: {}, groups: { outlets: MEMBERS }, starts: {}, timeZone: ZONE, recheckMinutes: null });
+      return context.store.update(made.id, { mode: 'act' })!;
+    };
+
+    test('kept, in order — and found by each of its devices', () => {
+      const context = setup();
+      const made = eachOutlet(context, [turnOn]);
+      expect(context.store.get(made.id)!.groups).toEqual({ outlets: MEMBERS });
+      expect(context.store.usingDevice(STATION).map((each) => each.id)).toEqual([made.id]);
+      expect(context.engine.roleProblems(made)).toEqual([]);
+    });
+
+    test('one after the other: each part its steps, called by its name within them', async () => {
+      const context = setup();
+      const made = eachOutlet(context, [turnOn]);
+      const run = await context.engine.run(made, OLOF);
+      expect(run.outcome).toBe('acted');
+      expect(context.sent.map((intent) => `${intent.deviceId}:${intent.part}`)).toEqual([`${PLUG}:main`, `${STATION}:outlet.ac`]);
+      // Its log: each part of the group, what filled it as it ran.
+      expect(context.store.runLog(made.id, run.id!)!.roles.map((role) => [role.role, role.device, role.part])).toEqual([
+        ['outlets', PLUG, 'main'],
+        ['outlets', STATION, 'outlet.ac'],
+      ]);
+      expect(run.steps.map((step) => [step.depth, step.within, step.what])).toEqual([
+        [0, null, 'For each of Heater plug and Garage P280 — AC outlets, one after the other'],
+        [1, 'Heater plug', 'Turn Heater plug on'],
+        [1, 'Garage P280 — AC outlets', 'Turn Garage P280 — AC outlets on'],
+      ]);
+      expect(run.summary).toBe('Turned Heater plug on, turned Garage P280 — AC outlets on');
+    });
+
+    test('all at the same time: the parts wait together, not one after the other', async () => {
+      const context = setup();
+      const began = Date.now();
+      const run = await context.engine.run(eachOutlet(context, [pause, turnOn], true), OLOF);
+      expect(run.outcome).toBe('acted');
+      expect(Date.now() - began).toBeLessThan(1_800);
+      expect(context.sent).toHaveLength(2);
+    });
+
+    test('a part that does not succeed: one after the other, the rest wait on it; together, the others go on', async () => {
+      const refuse = (intent: CommandIntent) => (intent.deviceId === PLUG ? { outcome: 'refused' as const, detail: 'Not now' } : null);
+      const after = setup({ refuse });
+      const inTurn = await after.engine.run(eachOutlet(after, [turnOn]), OLOF);
+      expect(inTurn.outcome).toBe('refused');
+      expect(after.sent.map((intent) => intent.deviceId)).toEqual([PLUG]);
+      expect(inTurn.steps[0]).toMatchObject({ kind: 'forEach', outcome: 'failed', detail: 'One part did not succeed' });
+
+      const together = setup({ refuse });
+      const atOnce = await together.engine.run(eachOutlet(together, [turnOn], true), OLOF);
+      expect(atOnce.outcome).toBe('refused');
+      expect(together.sent.map((intent) => intent.deviceId).sort()).toEqual([PLUG, STATION].sort());
     });
   });
 

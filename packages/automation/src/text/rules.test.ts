@@ -164,7 +164,7 @@ describe('a rule, written and read back', () => {
     expect(read.rule).toBeNull();
     expect(read.issues).toEqual([
       { message: 'It ends where a value was expected', path: ['automations', 'x', 'do', 1, 'make sure'], offset: 15 },
-      { message: 'Not a step: "jump". A step starts with turn on, turn off, switch, send, set, wait, wait until, wait for, make sure, if, watch, repeat, try, stop, start or remember', path: ['automations', 'x', 'do', 2] },
+      { message: 'Not a step: "jump". A step starts with turn on, turn off, switch, send, set, wait, wait until, wait for, make sure, if, watch, repeat, for each, try, stop, start or remember', path: ['automations', 'x', 'do', 2] },
       { message: '"wait until" needs "at most": every wait has its limit: then the run stops, not having succeeded', path: ['automations', 'x', 'do', 3] },
     ]);
   });
@@ -257,8 +257,8 @@ describe('units', () => {
       description: { parts: [{ id: 'main', label: 'Station', kind: 'device' }], attributes: [{ key: 'inputLimit', label: 'Input limit', value: { type: 'number', unit: 'W', min: 0, max }, access: 'write' }] },
     });
     const twoKilowatts = set({ setting: 'inputLimit', to: '2 kW' }).rule!;
-    expect(checkBinding(twoKilowatts, () => station(3000) as never)).toEqual([]);
-    expect(checkBinding(twoKilowatts, () => station(1500) as never)).toHaveLength(1);
-    expect(checkBinding(set({ setting: 'inputLimit', to: '50 °C' }).rule!, () => station(3000) as never)).toEqual(['St: Input limit is set in W, not °C']);
+    expect(checkBinding(twoKilowatts, () => [station(3000) as never])).toEqual([]);
+    expect(checkBinding(twoKilowatts, () => [station(1500) as never])).toHaveLength(1);
+    expect(checkBinding(set({ setting: 'inputLimit', to: '50 °C' }).rule!, () => [station(3000) as never])).toEqual(['St: Input limit is set in W, not °C']);
   });
 });

@@ -54,7 +54,7 @@ const RUN_SELECT = `SELECT r.*, p.automation_id AS parent_automation, pa.name AS
   LEFT JOIN automation pa ON pa.id = p.automation_id`;
 
 /** What an automation is made of, as it is kept: its rule, and what fills its roles. */
-export type AutomationInput = Pick<AutomationRecord, 'name' | 'rule' | 'madeFrom' | 'roles' | 'starts' | 'timeZone' | 'recheckMinutes'>;
+export type AutomationInput = Pick<AutomationRecord, 'name' | 'rule' | 'madeFrom' | 'roles' | 'groups' | 'starts' | 'timeZone' | 'recheckMinutes'>;
 
 /** What a run keeps beside its columns. */
 type RunDetail = Pick<AutomationRun, 'saw' | 'conditions' | 'steps'>;
@@ -120,6 +120,17 @@ export class AutomationStore implements AutomationStorage {
       if (role.starts) starts.set(role.automation_id, { ...starts.get(role.automation_id), [role.role]: automationId(role.starts) });
       else if (role.device_id && role.part) roles.set(role.automation_id, { ...roles.get(role.automation_id), [role.role]: { device: savedDeviceId(role.device_id), part: role.part } });
     }
+    // Each group's parts, in their order.
+    const groups = new Map<string, Record<string, RoleBinding[]>>();
+    for (const member of this.#db
+      .query<{ automation_id: string; role: string; device_id: string; part: string }, string[]>(
+        `SELECT automation_id, role, device_id, part FROM automation_group_part WHERE automation_id IN (${marks}) ORDER BY automation_id, role, place`
+      )
+      .all(...ids)) {
+      const own = groups.get(member.automation_id) ?? {};
+      own[member.role] = [...(own[member.role] ?? []), { device: savedDeviceId(member.device_id), part: member.part }];
+      groups.set(member.automation_id, own);
+    }
     // Each one's latest ended run, and the one it runs now.
     const last = new Map(
       this.#db
@@ -144,6 +155,7 @@ export class AutomationStore implements AutomationStorage {
       rule: parse<Rule>(row.rule, EMPTY_RULE),
       madeFrom: row.made_from,
       roles: roles.get(row.id) ?? {},
+      groups: groups.get(row.id) ?? {},
       starts: starts.get(row.id) ?? {},
       timeZone: row.time_zone,
       mode: row.mode,
@@ -169,8 +181,10 @@ export class AutomationStore implements AutomationStorage {
   usingDevice(deviceId: string): AutomationRecord[] {
     return this.#records(
       this.#db
-        .query<Row, [string]>('SELECT a.* FROM automation a WHERE a.id IN (SELECT automation_id FROM automation_role WHERE device_id = ?) ORDER BY a.created_at')
-        .all(deviceId)
+        .query<Row, [string, string]>(
+          'SELECT a.* FROM automation a WHERE a.id IN (SELECT automation_id FROM automation_role WHERE device_id = ? UNION SELECT automation_id FROM automation_group_part WHERE device_id = ?) ORDER BY a.created_at'
+        )
+        .all(deviceId, deviceId)
     );
   }
 
@@ -179,12 +193,15 @@ export class AutomationStore implements AutomationStorage {
     return this.#records(this.#db.query<Row, []>('SELECT * FROM automation WHERE home_place IS NOT NULL ORDER BY home_place').all());
   }
 
-  #setRoles(id: string, roles: Record<string, RoleBinding>, starts: Record<string, AutomationId>): void {
+  #setRoles(id: string, fills: Pick<AutomationRecord, 'roles' | 'groups' | 'starts'>): void {
     this.#db.query('DELETE FROM automation_role WHERE automation_id = ?').run(id);
+    this.#db.query('DELETE FROM automation_group_part WHERE automation_id = ?').run(id);
     const part = this.#db.query('INSERT INTO automation_role (automation_id, role, device_id, part, starts) VALUES (?, ?, ?, ?, NULL)');
-    for (const [role, binding] of Object.entries(roles)) part.run(id, role, binding.device, binding.part);
+    for (const [role, binding] of Object.entries(fills.roles)) part.run(id, role, binding.device, binding.part);
+    const member = this.#db.query('INSERT INTO automation_group_part (automation_id, role, place, device_id, part) VALUES (?, ?, ?, ?, ?)');
+    for (const [role, parts] of Object.entries(fills.groups)) parts.forEach((binding, place) => member.run(id, role, place, binding.device, binding.part));
     const automation = this.#db.query('INSERT INTO automation_role (automation_id, role, device_id, part, starts) VALUES (?, ?, NULL, NULL, ?)');
-    for (const [role, started] of Object.entries(starts)) automation.run(id, role, started);
+    for (const [role, started] of Object.entries(fills.starts)) automation.run(id, role, started);
   }
 
   /** The automation known by this key, or null. */
@@ -207,14 +224,14 @@ export class AutomationStore implements AutomationStorage {
         // Not looked at yet: the engine says when it looks, on its own clock.
         .query('INSERT INTO automation (id, key, name, rule, made_from, time_zone, mode, recheck_minutes, home_place, looked_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)')
         .run(id, key, input.name, JSON.stringify(input.rule), input.madeFrom, input.timeZone, 'watch', input.recheckMinutes, now, now);
-      this.#setRoles(id, input.roles, input.starts);
+      this.#setRoles(id, input);
     })();
     this.#revision += 1;
     return this.get(id)!;
   }
 
   /** A change: a new rule comes with what fills its roles. */
-  update(id: string, changes: Partial<Pick<AutomationRecord, 'key' | 'name' | 'rule' | 'roles' | 'starts' | 'timeZone' | 'mode' | 'recheckMinutes'>>): AutomationRecord | null {
+  update(id: string, changes: Partial<Pick<AutomationRecord, 'key' | 'name' | 'rule' | 'roles' | 'groups' | 'starts' | 'timeZone' | 'mode' | 'recheckMinutes'>>): AutomationRecord | null {
     const current = this.get(id);
     if (!current) return null;
     if (changes.key !== undefined && changes.key !== current.key && (!KEY.test(changes.key) || this.keyTaken(changes.key, id))) {
@@ -225,7 +242,7 @@ export class AutomationStore implements AutomationStorage {
       this.#db
         .query('UPDATE automation SET key = ?, name = ?, rule = ?, time_zone = ?, mode = ?, recheck_minutes = ?, updated_at = ? WHERE id = ?')
         .run(next.key, next.name, JSON.stringify(next.rule), next.timeZone, next.mode, next.recheckMinutes, new Date().toISOString(), id);
-      if (changes.roles || changes.starts) this.#setRoles(id, next.roles, next.starts);
+      if (changes.roles || changes.groups || changes.starts) this.#setRoles(id, next);
     })();
     this.#revision += 1;
     return this.get(id);

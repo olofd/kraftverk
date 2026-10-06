@@ -1,11 +1,11 @@
 import { CAPABILITIES, MAIN_PART, type CapabilityName } from '@kraftverk/device-sdk';
 
 import { WEEKDAYS, type Weekday } from '../clock.ts';
-import { ruleUses } from '../reads.ts';
+import { ruleCommands, ruleUses } from '../reads.ts';
 import { fieldValue, withField, type FieldSpec } from '../kinds/spec.ts';
-import { branchesOf, STEP_KIND_ORDER, STEP_KINDS, stepSpec, type StepKind, type StepReader, type StepSpec } from '../kinds/steps.ts';
-import { stepListsOf, TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerFields } from '../kinds/triggers.ts';
-import { isAutomationRole, isWhileRunning, TRIGGER_ID, WHILE_RUNNING, type Expr, type RuleTrigger, type RoleSpec, type Rule, type Step } from '../rule.ts';
+import { STEP_KIND_ORDER, STEP_KINDS, stepSpec, type StepKind, type StepReader, type StepSpec } from '../kinds/steps.ts';
+import { TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerFields } from '../kinds/triggers.ts';
+import { isAutomationRole, isWhileRunning, roleKind, TRIGGER_ID, WHILE_RUNNING, type Expr, type RoleKind, type RuleTrigger, type RoleSpec, type Rule, type Step } from '../rule.ts';
 import { parseExpr, printExpr } from './expr.ts';
 import { settingsFromConfig, settingsToConfig } from './settings.ts';
 
@@ -22,7 +22,11 @@ import { settingsFromConfig, settingsToConfig } from './settings.ts';
 export type Issue = { message: string; path: readonly (string | number)[]; offset?: number };
 
 /** What fills a role, as a file names it: a device by its key and one of its parts, or another automation by its key. */
-export type Use = { device: string; part: string } | { automation: string };
+/** What fills a role, as a file names it: a device's part by its key; for a group, several; or another automation. */
+export type Use = PartUse | { parts: readonly PartUse[] } | { automation: string };
+
+/** A device's part, by the device's key: `{ device: 'garage-station', part: 'outlet.ac' }`. */
+export type PartUse = { device: string; part: string };
 
 
 type Data = unknown;
@@ -170,6 +174,8 @@ class Reader {
         return this.days(data, path);
       case 'role':
       case 'automation':
+      case 'group':
+      case 'each':
       case 'event':
       case 'name':
       case 'memory':
@@ -255,33 +261,31 @@ const CAPABILITY_OF = (() => {
  */
 function usedCapabilities(rule: RuleBody, role: string): string[] {
   const used = new Set<string>();
-  const walk = (steps: readonly Step[]) => {
-    for (const step of steps) {
-      if ('command' in step && step.command.role === role) used.add(step.command.capability);
-      for (const branch of branchesOf(step)) walk(branch.steps);
-    }
-  };
-  for (const list of stepListsOf(rule)) walk(list.steps);
-  const uses = ruleUses({ roles: {}, params: { fields: {} }, when: rule.when, ...(rule.if !== undefined ? { if: rule.if } : {}), then: rule.then, ...(rule.otherwise !== undefined ? { otherwise: rule.otherwise } : {}) });
+  // A group's, from what a "for each" does to each of its parts.
+  const whole: Rule = { roles: {}, params: { fields: {} }, when: rule.when, ...(rule.if !== undefined ? { if: rule.if } : {}), then: rule.then, ...(rule.otherwise !== undefined ? { otherwise: rule.otherwise } : {}) };
+  for (const command of ruleCommands(whole)) if (command.role === role) used.add(command.capability);
+  const uses = ruleUses(whole);
   const add = (capability: string | null) => void (capability && used.add(capability));
   for (const read of uses.reads) if (read.role === role) add(CAPABILITY_OF(`read:${read.means}`));
   for (const event of [...uses.events, ...uses.awaits]) if (event.role === role) add(CAPABILITY_OF(`event:${event.event}`));
   return [...used].sort();
 }
 
-/** A role as the file would have it said, when it says only what fills it. */
-export function inferredRole(rule: RuleBody, role: string, automation: boolean): RoleSpec {
+/** A role as the file would have it said, when it says only what fills it: one part, several, or an automation. */
+export function inferredRole(rule: RuleBody, role: string, kind: RoleKind): RoleSpec {
   const label = labelOf(role);
-  return automation ? { automation: true, label } : { label, capabilities: usedCapabilities(rule, role) as CapabilityName[] };
+  if (kind === 'automation') return { automation: true, label };
+  const capabilities = usedCapabilities(rule, role) as CapabilityName[];
+  return kind === 'group' ? { group: true, label, capabilities } : { label, capabilities };
 }
 
 const sameList = (a: readonly string[] | undefined, b: readonly string[] | undefined) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
 /** How a file names what fills a role: "garage-station.outlet.ac", "smart-plug" for a main part. */
-export const useText = (use: Extract<Use, { device: string }>): string => (use.part === MAIN_PART ? use.device : `${use.device}.${use.part}`);
+export const useText = (use: PartUse): string => (use.part === MAIN_PART ? use.device : `${use.device}.${use.part}`);
 
 /** A role's filling from its text: the device's key, then its part — the main part when none is named. */
-export function useOf(text: string): Extract<Use, { device: string }> | null {
+export function useOf(text: string): PartUse | null {
   const match = /^([a-z0-9][a-z0-9-]*)(?:\.(.+))?$/.exec(text.trim());
   return match ? { device: match[1]!, part: match[2] ?? MAIN_PART } : null;
 }
@@ -325,36 +329,52 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { ru
     for (const [role, data] of Object.entries(usesData)) {
       const at = [...path, 'uses', role];
       tryRead(reader, () => {
+        /** Several parts, each its text: a group's. */
+        const partsOf = (list: readonly unknown[], where: Path): PartUse[] =>
+          list.map((each, index) => {
+            const use = typeof each === 'string' ? useOf(each) : null;
+            return use ?? reader.fail(`"${String(each)}" is not a device's part: "device-key" or "device-key.part"`, [...where, index]);
+          });
         // Nothing fills it yet: a rule being built, as the app's editor writes one.
         if (data === null) {
-          roles[role] = inferredRole(steps, role, false);
+          roles[role] = inferredRole(steps, role, 'part');
           return;
         }
         if (typeof data === 'string') {
           const use = useOf(data);
           if (!use) return reader.fail(`"${data}" is not a device's part: "device-key" or "device-key.part"`, at);
           uses[role] = use;
-          roles[role] = inferredRole(steps, role, false);
+          roles[role] = inferredRole(steps, role, 'part');
           return;
         }
-        if (!isRecord(data)) return reader.fail('Expected what fills the role: "device-key.part", or { automation: key }', at);
-        const automation = 'automation' in data;
-        const inferred = inferredRole(steps, role, automation);
+        // A list: a group, its parts each named — none yet, an empty one.
+        if (Array.isArray(data)) {
+          uses[role] = { parts: partsOf(data, at) };
+          roles[role] = inferredRole(steps, role, 'group');
+          return;
+        }
+        if (!isRecord(data)) return reader.fail('Expected what fills the role: "device-key.part", a list of them, or { automation: key }', at);
+        const kind: RoleKind = 'automation' in data ? 'automation' : 'parts' in data ? 'group' : 'part';
+        const inferred = inferredRole(steps, role, kind);
         const label = typeof data.label === 'string' ? data.label : inferred.label;
-        const keys = automation ? ROLE_KEYS.automation : ROLE_KEYS.part;
+        const keys = ROLE_KEYS[kind];
         for (const key of Object.keys(data)) if (!(keys as readonly string[]).includes(key)) reader.fail(`"${key}" is not part of a role: it takes ${keys.map((each) => `"${each}"`).join(', ')}`, [...at, key]);
-        if (automation) {
+        if (kind === 'automation') {
           if (data.automation !== null) uses[role] = { automation: reader.name(data.automation, [...at, 'automation'], 'the key of the automation it starts') };
           roles[role] = { automation: true, label };
           return;
         }
-        if (data.part !== null) {
+        if (kind === 'group') {
+          if (!Array.isArray(data.parts)) return reader.fail('Expected its parts: a list of "device-key.part"', [...at, 'parts']);
+          uses[role] = { parts: partsOf(data.parts, [...at, 'parts']) };
+        } else if (data.part !== null) {
           const use = useOf(reader.name(data.part, [...at, 'part'], 'the part that fills it ("part")'));
           if (!use) return reader.fail(`"${String(data.part)}" is not a device's part`, [...at, 'part']);
           uses[role] = use;
         }
         const capabilities = Array.isArray(data.needs) ? (data.needs as CapabilityName[]) : isAutomationRole(inferred) ? [] : inferred.capabilities;
-        roles[role] = { label, capabilities, ...(Array.isArray(data['one of']) ? { oneOf: data['one of'] as CapabilityName[] } : {}) };
+        const need = { label, capabilities, ...(Array.isArray(data['one of']) ? { oneOf: data['one of'] as CapabilityName[] } : {}) };
+        roles[role] = kind === 'group' ? { group: true, ...need } : need;
       });
     }
   }
@@ -374,7 +394,7 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { ru
 }
 
 /** What a role says of itself in a file, beside what fills it. */
-const ROLE_KEYS = { part: ['part', 'label', 'needs', 'one of'], automation: ['automation', 'label'] } as const satisfies Record<string, readonly string[]>;
+const ROLE_KEYS = { part: ['part', 'label', 'needs', 'one of'], group: ['parts', 'label', 'needs', 'one of'], automation: ['automation', 'label'] } as const satisfies Record<RoleKind, readonly string[]>;
 
 /** Days as a file writes them: "weekdays", "weekends", or the list. (In a sentence they are `daysText`'s.) */
 const daysInFile = (days: readonly string[]): string | string[] =>
@@ -422,6 +442,8 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
         return daysInFile(value as readonly string[]);
       case 'role':
       case 'automation':
+      case 'group':
+      case 'each':
       case 'event':
       case 'name':
       case 'id':
@@ -439,16 +461,20 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
   const usesOut: Record<string, unknown> = {};
   for (const [role, spec] of Object.entries(rule.roles)) {
     const use = uses[role];
-    const automation = isAutomationRole(spec);
-    const inferred = inferredRole(rule, role, automation);
+    const kind = roleKind(spec);
+    const inferred = inferredRole(rule, role, kind);
     const extra: Record<string, unknown> = {};
     if (spec.label !== inferred.label) extra.label = spec.label;
-    if (!automation && !isAutomationRole(inferred)) {
+    if (!isAutomationRole(spec) && !isAutomationRole(inferred)) {
       if (!sameList(spec.capabilities, inferred.capabilities)) extra.needs = [...spec.capabilities];
       if (spec.oneOf !== undefined) extra['one of'] = [...spec.oneOf];
     }
-    if (automation) usesOut[role] = { automation: use && 'automation' in use ? use.automation : null, ...extra };
-    else {
+    if (kind === 'automation') usesOut[role] = { automation: use && 'automation' in use ? use.automation : null, ...extra };
+    else if (kind === 'group') {
+      // A group: its parts, as a list — with more to say, under "parts".
+      const parts = use && 'parts' in use ? use.parts.map(useText) : [];
+      usesOut[role] = Object.keys(extra).length ? { parts, ...extra } : parts;
+    } else {
       const part = use && 'device' in use ? useText(use) : null;
       usesOut[role] = Object.keys(extra).length ? { part, ...extra } : part;
     }

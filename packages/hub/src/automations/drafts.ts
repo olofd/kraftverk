@@ -1,6 +1,6 @@
 import { ApiError, type AutomationDraftView, type AutomationView, type Rehearsal } from '@kraftverk/api-contract';
 import { capabilitiesOf, meetsNeed, partName, partsOf, savedDeviceId, validateConfig, type AutomationId, type Value } from '@kraftverk/device-sdk';
-import { changedRoles, checkBinding, checkRule, describeRule, describeSteps, describeTriggers, isAutomationRole, problemArea, problemPlace, SEQUENCE_LIMITS, takesSteps, withSettings, writtenAttribute, type AutomationDraft, type BoundPart, type ProblemArea, type RoleBinding, type Rule, type RuleVocabulary } from '@kraftverk/automation';
+import { bindingsOf, changedRoles, checkBinding, isGroupRole, listed, type GroupRole, type PartRole, type RoleFills, checkRule, describeRule, describeSteps, describeTriggers, isAutomationRole, problemArea, problemPlace, SEQUENCE_LIMITS, takesSteps, withSettings, writtenAttribute, type AutomationDraft, type BoundPart, type ProblemArea, type RoleBinding, type Rule, type RuleVocabulary } from '@kraftverk/automation';
 
 import type { AutomationStore, DeviceCatalog, EventStore, HistoryStore } from '@kraftverk/store';
 import type { SessionManager } from '@kraftverk/holder';
@@ -33,6 +33,7 @@ export type Checked = {
   /** The same problems, by the part of the automation each is in. */
   areas: Record<ProblemArea, string[]>;
   roles: Record<string, RoleBinding>;
+  groups: Record<string, RoleBinding[]>;
   starts: Record<string, AutomationId>;
 };
 
@@ -70,13 +71,14 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
     return partName(record.name, binding.part, partsOf(record.description).find((candidate) => candidate.id === binding.part)?.label);
   };
 
-  /** Each role's name as a step says it: a part by its device, an automation in quotes; one not filled yet, by its label, as words in a sentence. */
-  const namesOf = (rule: Rule, roles: Record<string, RoleBinding>, starts: Record<string, AutomationId>): Record<string, string> =>
+  /** Each role's name as a step says it: a part by its device, a group by its parts, an automation in quotes; one not filled yet, by its label, as words in a sentence. */
+  const namesOf = (rule: Rule, fills: RoleFills): Record<string, string> =>
     Object.fromEntries(
       Object.entries(rule.roles).map(([role, spec]) => {
         const unfilled = spec.label.charAt(0).toLowerCase() + spec.label.slice(1);
-        if (isAutomationRole(spec)) return [role, starts[role] ? quoted(automations.get(starts[role])?.name ?? null) : unfilled];
-        return [role, roles[role] ? roleName(roles[role]) : unfilled];
+        if (isAutomationRole(spec)) return [role, fills.starts[role] ? quoted(automations.get(fills.starts[role])?.name ?? null) : unfilled];
+        if (isGroupRole(spec)) return [role, fills.groups[role]?.length ? listed(fills.groups[role].map(roleName)) : unfilled];
+        return [role, fills.roles[role] ? roleName(fills.roles[role]) : unfilled];
       })
     );
 
@@ -91,10 +93,10 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
   });
 
   /** How a rule reads with what fills its roles. */
-  const said = (rule: Rule, roles: Record<string, RoleBinding>, starts: Record<string, AutomationId>) => {
-    const names = namesOf(rule, roles, starts);
+  const said = (rule: Rule, fills: RoleFills) => {
+    const names = namesOf(rule, fills);
     const name = (role: string) => names[role] ?? (role ? role : 'a part not chosen yet');
-    const vocabulary = vocabularyOf(roles);
+    const vocabulary = vocabularyOf(fills.roles);
     return {
       names,
       sentence: describeRule(rule, {}, name, vocabulary),
@@ -105,13 +107,8 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
   };
 
   /** The parts an automation may change, by `device:part`, each with what fills it. */
-  const changedParts = (automation: Pick<AutomationRecord, 'rule' | 'roles'>): Map<string, RoleBinding> =>
-    new Map(
-      changedRoles(automation.rule).flatMap((role): [string, RoleBinding][] => {
-        const binding = automation.roles[role];
-        return binding ? [[`${binding.device}:${binding.part}`, binding]] : [];
-      })
-    );
+  const changedParts = (automation: Pick<AutomationRecord, 'rule' | 'roles' | 'groups'>): Map<string, RoleBinding> =>
+    new Map(changedRoles(automation.rule).flatMap((role) => bindingsOf(automation, role).map((binding): [string, RoleBinding] => [`${binding.device}:${binding.part}`, binding])));
 
   /** The other automations that change a part this one changes, and which parts, as everywhere else names them. */
   const sharedWith = (automation: AutomationRecord): AutomationView['sharedWith'] => {
@@ -130,7 +127,7 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
       ...shown,
       madeFrom: madeFrom ? { id: madeFrom, label: library.recipe(madeFrom)?.label ?? madeFrom } : null,
       sharedWith: sharedWith(automation),
-      ...said(automation.rule, automation.roles, automation.starts),
+      ...said(automation.rule, automation),
       now: engine.judge(automation),
       nextLookAt: engine.nextLookAt(automation),
       problems: engine.roleProblems(automation),
@@ -169,9 +166,10 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
    */
   const checked = (draft: AutomationDraft, self: AutomationId | null): Checked => {
     const roles: Record<string, RoleBinding> = {};
+    const groups: Record<string, RoleBinding[]> = {};
     const starts: Record<string, AutomationId> = {};
     const rule: unknown = draft.rule;
-    const notARule = (): Checked => ({ problems: [NOT_A_RULE], areas: byArea([{ text: NOT_A_RULE, area: 'other' }]), roles, starts });
+    const notARule = (): Checked => ({ problems: [NOT_A_RULE], areas: byArea([{ text: NOT_A_RULE, area: 'other' }]), roles, groups, starts });
     if (!looksLikeRule(rule)) return notARule();
     let language: { text: string; area: ProblemArea }[];
     try {
@@ -187,7 +185,20 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
       uses: (text: string) => placed.push({ text, area: 'uses' }),
     };
 
-    const bound = new Map<string, BoundPart>();
+    const bound = new Map<string, BoundPart[]>();
+    /** A part filling a role — one of a group's, or the one — that is one of your devices' and can do what the role needs; null, said why. */
+    const part = (spec: PartRole | GroupRole, binding: RoleBinding): BoundPart | null => {
+      const device = catalog.active(savedDeviceId(binding.device));
+      if (!device) {
+        problems.uses(`${spec.label}: choose one of your devices`);
+        return null;
+      }
+      const description = sessions.description(device);
+      if (!partsOf(description).some((each) => each.id === binding.part)) problems.uses(`${spec.label}: ${device.name} has no part "${binding.part}"`);
+      else if (!meetsNeed(spec, capabilitiesOf(description, binding.part))) problems.uses(`${spec.label}: that part of ${device.name} cannot do that`);
+      else return { name: roleName({ device: device.id, part: binding.part }), description, part: binding.part, capabilities: capabilitiesOf(description, binding.part) };
+      return null;
+    };
     for (const [role, spec] of Object.entries(rule.roles)) {
       if (isAutomationRole(spec)) {
         const target = draft.starts?.[role];
@@ -197,31 +208,43 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
         else starts[role] = automation.id;
         continue;
       }
+      // A group: at least one part, each once, each able to do what it needs.
+      if (isGroupRole(spec)) {
+        const given = draft.groups?.[role] ?? [];
+        if (!given.length) problems.uses(`${spec.label}: choose its parts`);
+        if (new Set(given.map((binding) => `${binding.device}:${binding.part}`)).size < given.length) problems.uses(`${spec.label}: a part is in it twice`);
+        const parts = given.flatMap((binding) => {
+          const found = part(spec, binding);
+          return found ? [{ binding: { device: savedDeviceId(binding.device), part: binding.part }, found }] : [];
+        });
+        if (parts.length && parts.length === given.length) {
+          groups[role] = parts.map((each) => each.binding);
+          bound.set(role, parts.map((each) => each.found));
+        }
+        continue;
+      }
       const binding = draft.roles?.[role];
-      const device = binding ? catalog.active(savedDeviceId(binding.device)) : null;
-      if (!binding || !device) {
+      if (!binding) {
         problems.uses(`${spec.label}: choose one of your devices`);
         continue;
       }
-      const description = sessions.description(device);
-      if (!partsOf(description).some((part) => part.id === binding.part)) problems.uses(`${spec.label}: ${device.name} has no part "${binding.part}"`);
-      else if (!meetsNeed(spec, capabilitiesOf(description, binding.part))) problems.uses(`${spec.label}: that part of ${device.name} cannot do that`);
-      else {
-        roles[role] = { device: device.id, part: binding.part };
-        bound.set(role, { name: roleName(roles[role]), description, part: binding.part, capabilities: capabilitiesOf(description, binding.part) });
+      const found = part(spec, binding);
+      if (found) {
+        roles[role] = { device: savedDeviceId(binding.device), part: binding.part };
+        bound.set(role, [found]);
       }
     }
-    for (const role of [...Object.keys(draft.roles ?? {}), ...Object.keys(draft.starts ?? {})]) {
+    for (const role of [...Object.keys(draft.roles ?? {}), ...Object.keys(draft.groups ?? {}), ...Object.keys(draft.starts ?? {})]) {
       if (!rule.roles[role]) problems.push(`There is no role called ${role}`);
     }
     // What the filled parts must report, raise and let be written: said once the rule itself holds.
     if (!language.length) {
       const filled = Object.fromEntries(Object.entries(rule.roles).filter(([role, spec]) => !isAutomationRole(spec) && bound.has(role)));
       // What a part cannot do is said by its role: what it uses.
-      for (const text of checkBinding({ ...rule, roles: filled }, (role) => bound.get(role) ?? null)) problems.uses(text);
+      for (const text of checkBinding({ ...rule, roles: filled }, (role) => bound.get(role) ?? [])) problems.uses(text);
     }
     problems.push(...chainProblems(self, Object.values(starts)));
-    return { problems: [...new Set(placed.map((each) => each.text))], areas: byArea(placed), roles, starts };
+    return { problems: [...new Set(placed.map((each) => each.text))], areas: byArea(placed), roles, groups, starts };
   };
 
   /** A draft, checked and said — nothing kept: what the editor shows as its owner builds. */
@@ -231,7 +254,7 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
     const found = { problems: result.problems, areas: result.areas };
     if (result.problems[0] === NOT_A_RULE) return { ...found, ...unsaid };
     try {
-      return { ...found, ...said(draft.rule, result.roles, result.starts) };
+      return { ...found, ...said(draft.rule, result) };
     } catch {
       // A rule the checker has problems with may not read: its problems are what to show.
       return { ...found, ...unsaid };

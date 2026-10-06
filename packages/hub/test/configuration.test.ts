@@ -123,10 +123,10 @@ describe('configuration', () => {
     expect((await t.home.timeline()).find((entry) => entry.kind === 'device.keyed')?.summary).toBe('"Hall lamp" is now known in configuration as hallway, not hall-lamp');
 
     const roles = { lamp: { device: hall.id, part: 'main' } };
-    const automation = await t.home.automations.create({ name: 'Lamp on', key: 'lamp-on', rule: lampOnRule, roles, starts: {}, timeZone: 'Europe/Stockholm' });
+    const automation = await t.home.automations.create({ name: 'Lamp on', key: 'lamp-on', rule: lampOnRule, roles, groups: {}, starts: {}, timeZone: 'Europe/Stockholm' });
     expect(automation.key).toBe('lamp-on');
     expect((await t.home.automations.update(automation.id, { key: 'hall-on' })).key).toBe('hall-on');
-    const other = await t.home.automations.create({ name: 'Lamp on', rule: lampOnRule, roles, starts: {}, timeZone: 'Europe/Stockholm' });
+    const other = await t.home.automations.create({ name: 'Lamp on', rule: lampOnRule, roles, groups: {}, starts: {}, timeZone: 'Europe/Stockholm' });
     expect(other.key).toBe('lamp-on');
     expect((await refusal(t.home.automations.update(other.id, { key: 'hall-on' }))).kind).toBe('conflict');
   });
@@ -155,6 +155,26 @@ describe('configuration', () => {
     const wrong = await t.home.configuration.plan({ text: 'kraftverk: 4\ndevices:\n  x:\n    type: test.nothing\n    name: X\n' });
     expect(wrong.id).toBeNull();
     expect(wrong.problems[0]).toMatchObject({ message: 'No installed device type is called "test.nothing"', line: 4 });
+  });
+
+  test('a group: exported as the list of its parts, in order, and imported back so', async () => {
+    const hall = await aLamp('Hall lamp', 'lamp-1');
+    const porch = await aLamp('Porch lamp', 'lamp-2');
+    const rule: Rule = {
+      roles: { lamps: { group: true, label: 'Lamps', capabilities: ['switch'] } },
+      params: { fields: {} },
+      when: [],
+      then: [{ forEach: { as: 'lamp', in: 'lamps', steps: [{ command: { role: 'lamp', capability: 'switch', command: 'set', args: { on: { value: true } } } }] } }],
+    };
+    const made = await t.home.automations.create({ name: 'Lamps on', key: 'lamps-on', rule, roles: {}, groups: { lamps: [{ device: porch.id, part: 'main' }, { device: hall.id, part: 'main' }] }, starts: {}, timeZone: 'Europe/Stockholm' });
+    const { text } = await t.home.configuration.export({ secrets: 'none' });
+    expect(text).toContain('    uses:\n      lamps:\n        - porch-lamp\n        - hall-lamp\n');
+    // Gone, then imported from its own export: the same parts, in the same order.
+    await t.home.automations.delete(made.id);
+    const applied = await t.home.configuration.apply({ plan: (await t.home.configuration.plan({ text })).id! });
+    expect(applied.automations.added).toEqual(['lamps-on']);
+    const back = (await t.home.automations.list()).find((each) => each.key === 'lamps-on')!;
+    expect(back.groups).toEqual({ lamps: [{ device: porch.id, part: 'main' }, { device: hall.id, part: 'main' }] });
   });
 
   test('a run or a reading on the timeline is no change to it; a device or an automation changed is', () => {

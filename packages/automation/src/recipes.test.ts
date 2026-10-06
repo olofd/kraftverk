@@ -64,7 +64,7 @@ describe('charging between two levels', () => {
       role === 'battery'
         ? { name: 'Garage P280', description: station, part: MAIN_PART, capabilities: capabilitiesOf(station, MAIN_PART) }
         : { name: 'ATORCH plug', description: plug, part: MAIN_PART, capabilities: capabilitiesOf(plug, MAIN_PART) };
-    expect(checkBinding(chargeBetween, bound)).toEqual([]);
+    expect(checkBinding(chargeBetween, (role) => [bound(role)])).toEqual([]);
   });
 
   test('falling below the low level turns the charger on; reaching the high level turns it off — each said beside its trigger', () => {

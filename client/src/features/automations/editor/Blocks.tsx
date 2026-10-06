@@ -159,11 +159,11 @@ function Block({ path, index, step, count, open, onToggle }: { path: ListPath; i
  * on the automations there are, its own form.
  */
 function StepFields({ path, step, set }: { path: ListPath; step: Step; set: (step: Step) => void }) {
-  if ('command' in step) return <CommandFields command={step.command} set={(command) => set({ command })} />;
-  if ('write' in step) return <WriteFields write={step.write} set={(write) => set({ write })} />;
+  if ('command' in step) return <CommandFields path={path} command={step.command} set={(command) => set({ command })} />;
+  if ('write' in step) return <WriteFields path={path} write={step.write} set={(write) => set({ write })} />;
   if ('start' in step) return <StartFields start={step.start} waits={mayWait(path)} set={(start) => set({ start })} />;
   if ('remember' in step) return <RememberFields remember={step.remember} set={(remember) => set({ remember })} />;
-  return <Fields fields={stepSpec(step).fields} construct={step} set={set} />;
+  return <Fields fields={stepSpec(step).fields} construct={step} set={set} path={path} />;
 }
 
 /** How long, as one field, with the most it may be: an hour for a wait, ten minutes for one try. */
@@ -177,16 +177,16 @@ function Seconds({ label, expr, set, max = SEQUENCE_LIMITS.waitSeconds }: { labe
 }
 
 /** A part picker for a block: what fills its role, among the parts that can do what it needs. */
-function PartField({ role, fits, onRole }: { role: string; fits: Parameters<ReturnType<typeof useEditor>['parts']>[0]; onRole: (role: string) => void }) {
+function PartField({ path, role, fits, onRole }: { path: ListPath; role: string; fits: Parameters<ReturnType<typeof useEditor>['parts']>[0]; onRole: (role: string) => void }) {
   const editor = useEditor();
   return (
     <YStack gap="$1">
       <Label>Which part</Label>
       <Picker
         label="Which part"
-        chosen={editor.draft.rule.roles[role] ? editor.name(role) : null}
+        chosen={editor.chosen(role) ? editor.name(role) : null}
         placeholder="Choose a part"
-        options={editor.parts(fits).map((option) => ({ key: option.key, title: option.title, subtitle: option.subtitle, value: option, selected: option.role === role }))}
+        options={editor.parts(fits, path).map((option) => ({ key: option.key, title: option.title, subtitle: option.subtitle, value: option, selected: option.role === role }))}
         onPick={(option) => {
           const picked = pickPart(editor.draft, option);
           editor.change(() => picked.draft);
@@ -198,7 +198,7 @@ function PartField({ role, fits, onRole }: { role: string; fits: Parameters<Retu
 }
 
 /** A command: a part, one of the commands it offers, and what it is told. */
-function CommandFields({ command, set }: { command: Command; set: (command: Command) => void }) {
+function CommandFields({ path, command, set }: { path: ListPath; command: Command; set: (command: Command) => void }) {
   const editor = useEditor();
   const bound = editor.partOf(command.role);
   // Every command the part offers, by its capability: "Switch: on or off".
@@ -212,7 +212,7 @@ function CommandFields({ command, set }: { command: Command; set: (command: Comm
   const isSwitch = command.capability === 'switch' && command.command === 'set';
   return (
     <YStack gap="$2.5">
-      <PartField role={command.role} fits={(description, part) => capabilitiesOf(description, part).some((capability) => Object.keys(capabilityIn(description, capability)?.commands ?? {}).length > 0)} onRole={(role) => set({ ...command, role })} />
+      <PartField path={path} role={command.role} fits={(description, part) => capabilitiesOf(description, part).some((capability) => Object.keys(capabilityIn(description, capability)?.commands ?? {}).length > 0)} onRole={(role) => set({ ...command, role })} />
       {bound && offered.length > 1 ? (
         <YStack gap="$1">
           <Label>Which command</Label>
@@ -287,7 +287,7 @@ const startValue = (type: Parameters<typeof ValueField>[0]['type']): Value =>
  * that can harm it — and its value. One a recipe names by its meaning shows as
  * the part's setting that has it; another picked is named by its key.
  */
-function WriteFields({ write, set }: { write: Write; set: (write: Write) => void }) {
+function WriteFields({ path, write, set }: { path: ListPath; write: Write; set: (write: Write) => void }) {
   const editor = useEditor();
   const bound = editor.partOf(write.role);
   const settingsOf = (description: DeviceDescription, part: string) =>
@@ -297,7 +297,7 @@ function WriteFields({ write, set }: { write: Write; set: (write: Write) => void
   const chosen = settings.find((attribute) => attribute === named) ?? null;
   return (
     <YStack gap="$2.5">
-      <PartField role={write.role} fits={(description, part) => settingsOf(description, part).length > 0} onRole={(role) => set({ role, key: '', value: write.value })} />
+      <PartField path={path} role={write.role} fits={(description, part) => settingsOf(description, part).length > 0} onRole={(role) => set({ role, key: '', value: write.value })} />
       {bound ? (
         <YStack gap="$1">
           <Label>Which setting</Label>

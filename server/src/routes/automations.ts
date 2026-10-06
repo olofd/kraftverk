@@ -19,19 +19,25 @@ import { body, query } from './parse.ts';
  */
 
 const roles = z.record(z.string().min(1).max(40), PART);
+/** Each group's parts, in order: a "for each" goes through at most so many. */
+const groups = z.record(z.string().min(1).max(40), z.array(PART).max(50));
 const starts = z.record(z.string().min(1).max(40), z.string().min(1).max(80));
 /** A rule is checked by the language, not by its shape here: the home says everything wrong with it. */
 const rule = z.record(z.string(), z.unknown());
 /** Minutes between looks that keep things so, a day at most; null, never. */
 const recheckMinutes = z.number().int().min(1).max(1440).nullable();
-const draft = z.object({ rule, roles, starts }).strict();
+const draft = z.object({ rule, roles, groups, starts }).strict();
 
 /** What each role starts, its automations' ids as ids. */
 const startsOf = (given: Record<string, string>): AutomationDraft['starts'] => Object.fromEntries(Object.entries(given).map(([role, id]) => [role, automationId(id)]));
+/** Each group's parts, its devices' ids as ids. */
+const groupsOf = (given: Record<string, { device: string; part: string }[]>): AutomationDraft['groups'] =>
+  Object.fromEntries(Object.entries(given).map(([role, parts]) => [role, parts.map((binding) => ({ device: savedDeviceId(binding.device), part: binding.part }))]));
 /** A draft as the home takes it. */
-const asDraft = (input: { rule: Record<string, unknown>; roles: Record<string, { device: string; part: string }>; starts: Record<string, string> }): AutomationDraft => ({
+const asDraft = (input: { rule: Record<string, unknown>; roles: Record<string, { device: string; part: string }>; groups: Record<string, { device: string; part: string }[]>; starts: Record<string, string> }): AutomationDraft => ({
   rule: input.rule as unknown as Rule,
   roles: bindingsOf(input.roles),
+  groups: groupsOf(input.groups),
   starts: startsOf(input.starts),
 });
 
@@ -113,9 +119,10 @@ export function automationRoutes(deps: AppDeps): Hono {
         .object({
           name: z.string().trim().min(1).max(80).optional(),
           key: z.string().trim().min(1).max(63).optional(),
-          // A new rule comes with what fills its roles: the three together, or none.
+          // A new rule comes with what fills its roles: all together, or none.
           rule: rule.optional(),
           roles: roles.optional(),
+          groups: groups.optional(),
           starts: starts.optional(),
           timeZone: z.string().min(1).max(64).optional(),
           mode: z.enum(AUTOMATION_MODES).optional(),
@@ -125,12 +132,13 @@ export function automationRoutes(deps: AppDeps): Hono {
         })
         .strict()
     );
-    const { rule: given, roles: filled, starts: started, ...rest } = input;
+    const { rule: given, roles: filled, groups: grouped, starts: started, ...rest } = input;
     // What was not sent is not said: the home refuses a rule without what fills its roles.
     const changes: AutomationChanges = {
       ...rest,
       ...(given !== undefined ? { rule: given as unknown as Rule } : {}),
       ...(filled !== undefined ? { roles: bindingsOf(filled) } : {}),
+      ...(grouped !== undefined ? { groups: groupsOf(grouped) } : {}),
       ...(started !== undefined ? { starts: startsOf(started) } : {}),
     };
     return c.json(await homeFor(deps, c).automations.update(id(c.req.param('id')), changes));

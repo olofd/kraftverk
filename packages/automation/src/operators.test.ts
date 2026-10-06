@@ -202,7 +202,7 @@ describe('what the event that started it carried', () => {
       description: { parts: [{ id: 'input.ac', label: 'Mains', kind: 'input', offers: ['acInput'] }], attributes: [], events: [{ id: 'mains.lost', label: 'Mains lost', level: 'warn', part: 'input.ac', ...(data ? { data } : {}) }] },
     });
     const plug = { name: 'Plug', part: 'main', capabilities: ['switch'], description: { parts: [{ id: 'main', label: 'Plug', kind: 'outlet', offers: ['switch'] }], attributes: [{ key: 'on', label: 'On', value: { type: 'boolean' }, means: 'on' }] } };
-    const bound = (data?: Record<string, unknown>) => (role: string) => (role === 'station' ? station(data) : plug) as never;
+    const bound = (data?: Record<string, unknown>) => (role: string) => [(role === 'station' ? station(data) : plug) as never];
     expect(checkBinding(rule('run.event.voltage > 200 V'), bound({ voltage: { type: 'number', unit: 'V' } }))).toEqual([]);
     expect(checkBinding(rule('run.event.voltage > 200 V'), bound())).toEqual(['run.event.voltage: none of the events it waits for carries "voltage"']);
   });

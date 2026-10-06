@@ -7,7 +7,9 @@ import type { Rule } from '../rule.ts';
 import { ruleFromConfig, ruleToConfig } from '../text/rules.ts';
 import { fieldSchema } from './schema.ts';
 import { parseExpr } from '../text/expr.ts';
+import { BUILTIN_ORDER, BUILTINS } from './builtins.ts';
 import { EXPR_KIND_ORDER, EXPR_KINDS, exprKind, expressionsIn, mapChildren } from './exprs.ts';
+import { RULE_PART_DOCS } from './parts.ts';
 import { ruleShape } from './shape.ts';
 import { fieldValue } from './spec.ts';
 import { STEP_KIND_ORDER, STEP_KINDS, stepKind, type StepKind, type StepSpec } from './steps.ts';
@@ -71,7 +73,7 @@ const STEPS = Object.keys(STEP_KINDS) as StepKind[];
 
 /** An automation's entry around one step, its roles filled by made-up parts and an automation. */
 const doing = (step: unknown) => ({
-  uses: { charger: 'charger-plug', station: 'garage-station', plug: 'smart-plug', supply: 'garage-station.outlet.ac', chargeTheScooter: { automation: 'charge-the-scooter' } },
+  uses: { charger: 'charger-plug', station: 'garage-station', plug: 'smart-plug', supply: 'garage-station.outlet.ac', outlets: ['smart-plug', 'garage-station.outlet.ac'], chargeTheScooter: { automation: 'charge-the-scooter' } },
   // What the examples remember: a count, and a reading.
   memory: { timesCharged: 0, lastPower: '0 W' },
   do: [step],
@@ -126,6 +128,36 @@ describe('the steps, as data', () => {
         expect({ example, kinds: [...expressionsIn(parsed.expr)].map(exprKind) }).toEqual({ example, kinds: expect.arrayContaining([kind]) });
         // Taken apart by its children and put back, it is what it was.
         expect(mapChildren(parsed.expr, (child) => child)).toEqual(parsed.expr);
+      }
+    }
+  });
+
+  test('every kind of expression has examples; every function of the language, each example a call of it', () => {
+    for (const kind of EXPR_KIND_ORDER) expect({ kind, examples: EXPR_KINDS[kind].docs.examples.length > 0 }).toEqual({ kind, examples: true });
+    for (const name of BUILTIN_ORDER) {
+      const spec = BUILTINS[name];
+      expect(spec.docs.examples.length).toBeGreaterThan(0);
+      for (const example of spec.docs.examples) {
+        const parsed = parseExpr(example);
+        if (!parsed.ok) throw new Error(`${name}: ${example}: ${parsed.error.message}`);
+        expect({ example, calls: [...expressionsIn(parsed.expr)].some((each) => 'apply' in each && each.apply === name) }).toEqual({ example, calls: true });
+      }
+    }
+  });
+
+  test('every part of an automation has its page, and each example is a whole automation that reads, checks and is written back as it was', () => {
+    for (const [part, docs] of Object.entries(RULE_PART_DOCS)) {
+      expect(docs.summary.trim()).not.toBe('');
+      expect(docs.examples.length).toBeGreaterThan(0);
+      for (const example of docs.examples) {
+        const entry = parse(example) as Record<string, unknown>;
+        // Each example is about its own part.
+        expect({ part, says: docs.key in entry }).toEqual({ part, says: true });
+        const read = ruleFromConfig(entry, []);
+        expect({ example, issues: read.issues }).toEqual({ example, issues: [] });
+        expect({ example, problems: checkRule(read.rule!, { fn: () => null }) }).toEqual({ example, problems: [] });
+        const again = ruleFromConfig(ruleToConfig(read.rule!, read.uses) as unknown as Record<string, unknown>, []);
+        expect(again.rule).toEqual(read.rule);
       }
     }
   });

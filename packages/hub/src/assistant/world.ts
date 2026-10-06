@@ -11,7 +11,7 @@ import {
   type CapabilitySpec,
   type PolicyValues,
 } from '@kraftverk/device-sdk';
-import { isAutomationRole } from '@kraftverk/automation';
+import { isAutomationRole, isGroupRole } from '@kraftverk/automation';
 
 import type { AutomationLibrary } from '@kraftverk/automation-engine';
 
@@ -111,7 +111,7 @@ export function vocabularyOf(library: AutomationLibrary, policy: PolicyValues, o
       label: recipe.label,
       description: recipe.description,
       roles: Object.fromEntries(
-        Object.entries(recipe.roles).map(([role, spec]) => [role, isAutomationRole(spec) ? { label: spec.label, automation: true as const } : { label: spec.label, capabilities: spec.capabilities, ...(spec.oneOf ? { oneOf: spec.oneOf } : {}) }])
+        Object.entries(recipe.roles).map(([role, spec]) => [role, isAutomationRole(spec) ? { label: spec.label, automation: true as const } : { label: spec.label, capabilities: spec.capabilities, ...(spec.oneOf ? { oneOf: spec.oneOf } : {}), ...(isGroupRole(spec) ? { group: true as const } : {}) }])
       ),
       params: recipe.params,
     })),

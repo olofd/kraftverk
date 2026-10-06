@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
 import { checkBinding, checkRule } from './check.ts';
-import { describeSteps } from './describe.ts';
+import { describeRule, describeSteps } from './describe.ts';
 import { kindsFor, OTHERWISE, THEN, within } from './edit.ts';
 import { inlineParams } from './evaluate.ts';
-import { ruleUses } from './reads.ts';
-import { SEQUENCE_LIMITS, type Rule, type Step } from './rule.ts';
+import { changedRoles, eachAsGroup, ruleUses } from './reads.ts';
+import { SEQUENCE_LIMITS, type Expr, type Rule, type Step } from './rule.ts';
+import { parseExpr } from './text/expr.ts';
 import { ruleFromConfig, ruleToConfig } from './text/rules.ts';
 
 /*
@@ -54,8 +55,64 @@ describe('held to their limits before they run', () => {
       description: { parts: [{ id: 'input.ac', label: 'Mains', kind: 'input', offers: ['acInput'] }], attributes: [], events: [{ id: 'mains.lost', label: 'Mains lost', level: 'warn', part: 'input.ac' }] },
     };
     const charger = { name: 'Charger', part: 'main', capabilities: ['switch', 'powerMeter'], description: { parts: [{ id: 'main', label: 'Charger', kind: 'outlet', offers: ['switch', 'powerMeter'] }], attributes: [] } };
-    const bound = (role: string) => (role === 'station' ? station : charger) as never;
+    const bound = (role: string) => [(role === 'station' ? station : charger) as never];
     expect(checkBinding(rule([waitFor]), bound)).toEqual(['Station: Garage station never says "mains.restored"']);
+  });
+});
+
+describe('for each part of a group', () => {
+  const groupRoles: Rule['roles'] = { chargers: { group: true, label: 'Chargers', capabilities: ['switch', 'powerMeter'] } };
+  const forEach = (steps: readonly Step[], as = 'charger', group = 'chargers'): Step => ({ forEach: { as, in: group, steps } });
+  const turnOn = (role: string): Step => ({ command: { role, capability: 'switch', command: 'set', args: { on: { value: true } } } });
+  const grouped = (then: readonly Step[]): Rule => ({ roles: groupRoles, params: { fields: {} }, when: [], then });
+  const parse = (text: string): Expr => {
+    const parsed = parseExpr(text);
+    if (!parsed.ok) throw new Error(parsed.error.message);
+    return parsed.expr;
+  };
+
+  test('within its steps, its name is each part — a role of one; outside them, the group is several parts', () => {
+    expect(check(grouped([forEach([turnOn('charger'), { waitUntil: { condition: parse('charger.power > 10 W'), atMost: { value: 1, unit: 'min' } } }])]))).toEqual([]);
+    expect(check(grouped([turnOn('chargers')]))).toEqual(['then[0].command.role: chargers is several parts — name each in turn with "for each"']);
+    expect(check(grouped([forEach([turnOn('charger')]), turnOn('charger')]))).toEqual(['then[1].command.role: there is no role "charger"']);
+    expect(check(grouped([forEach([turnOn('chargers')], 'chargers')]))).toEqual([
+      'then[0].forEach.as: "chargers" names something already — call each part otherwise',
+      'then[0].forEach.steps[0].command.role: chargers is several parts — name each in turn with "for each"',
+    ]);
+    expect(check({ ...grouped([forEach([turnOn('charger')], 'charger', 'plug')]), roles: { ...groupRoles, plug: { label: 'Plug', capabilities: ['switch'] } } })).toContainEqual('then[0].forEach.in: plug is one part, not several');
+    expect(check(grouped([forEach([])]))).toEqual(['then[0].forEach.steps: what does it do with each?']);
+  });
+
+  test('written as a list of parts, its needs read from what is done to each, and read back as it was', () => {
+    const entry = { uses: { chargers: ['garage-plug', 'garage-station.outlet.ac'] }, do: [{ 'for each': 'charger', in: 'chargers', together: true, do: [{ 'turn on': 'charger' }, { 'wait until': 'charger.power > 10 W', 'at most': '1 min' }] }] };
+    const read = ruleFromConfig({ when: [{ at: '07:00' }], ...entry }, []);
+    expect(read.issues).toEqual([]);
+    expect(read.rule!.roles.chargers).toEqual({ group: true, label: 'Chargers', capabilities: ['powerMeter', 'switch'] });
+    expect(read.uses.chargers).toEqual({ parts: [{ device: 'garage-plug', part: 'main' }, { device: 'garage-station', part: 'outlet.ac' }] });
+    const written = ruleToConfig(read.rule!, read.uses);
+    expect(written.uses).toEqual(entry.uses);
+    expect(written.do).toEqual(entry.do);
+    // The long form: its label, and what each must offer.
+    expect(ruleFromConfig({ when: [{ at: '07:00' }], uses: { chargers: { parts: ['garage-plug'], label: 'My chargers' } }, do: entry.do }, []).rule!.roles.chargers).toMatchObject({ group: true, label: 'My chargers' });
+  });
+
+  test('what is done to each is done to the group: read, sent, held — and every part bound is held to it', () => {
+    const rule = grouped([forEach([turnOn('charger'), { choose: { if: parse('charger.power > 10 W'), then: [] } }])]);
+    expect(eachAsGroup(rule).then).toEqual([forEach([turnOn('chargers'), { choose: { if: parse('chargers.power > 10 W'), then: [] } }])]);
+    expect(ruleUses(rule)).toMatchObject({ reads: [{ role: 'chargers', means: 'power' }], groups: ['chargers'] });
+    expect(changedRoles(rule)).toEqual(['chargers']);
+    const plug = (name: string, offers: readonly string[]) => ({ name, part: 'main', capabilities: offers, description: { parts: [{ id: 'main', label: name, kind: 'outlet', offers }], attributes: [{ key: 'watts', label: 'Power', value: { type: 'number', unit: 'W' }, means: 'power' }] } }) as never;
+    expect(checkBinding(rule, () => [plug('Garage plug', ['switch', 'powerMeter']), plug('Scooter plug', ['switch', 'powerMeter'])])).toEqual([]);
+    expect(checkBinding(rule, () => [plug('Garage plug', ['switch', 'powerMeter']), plug('Lamp', ['switch'])])).toEqual(['Chargers: Lamp cannot do that']);
+    expect(checkBinding(rule, () => [])).toEqual(['Chargers: no device']);
+  });
+
+  test('said as each of its parts — one after the other, or all at the same time', () => {
+    const name = (role: string) => (role === 'chargers' ? 'Garage plug and Scooter plug' : role);
+    const lines = describeSteps(grouped([{ forEach: { as: 'charger', in: 'chargers', together: true, steps: [turnOn('charger')] } }]), {}, name).steps;
+    expect(lines[0]!.text).toBe('For each of Garage plug and Scooter plug, all at the same time');
+    expect(lines[0]!.branches).toEqual([{ label: 'For each', steps: [{ kind: 'command', text: 'Turn each charger on', branches: [] }] }]);
+    expect(describeRule({ ...grouped([forEach([turnOn('charger')])]), when: [{ at: { value: '07:00' } }] }, {}, name)).toBe('Every day at 07:00, turn each charger on, for each of Garage plug and Scooter plug.');
   });
 });
 

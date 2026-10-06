@@ -199,7 +199,7 @@ function setup(world: Partial<World> = {}) {
   /** An automation copied from the recipe, its settings written into its blocks — as the app makes one. */
   const make = (recipe: 'standard.start-charging' | 'standard.stop-charging', params: Record<string, string | number> = {}, mode: 'watch' | 'act' | 'off' = 'act') => {
     const rule = inlineParams(recipe === 'standard.start-charging' ? startCharging : stopCharging, params);
-    const created = store.create({ name: recipe === 'standard.start-charging' ? 'Start charging the scooter' : 'Stop charging the scooter', rule, madeFrom: recipe, roles, starts: {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
+    const created = store.create({ name: recipe === 'standard.start-charging' ? 'Start charging the scooter' : 'Stop charging the scooter', rule, madeFrom: recipe, roles, groups: {}, starts: {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
     return mode === 'watch' ? created : store.update(created.id, { mode })!;
   };
   /** Waits for the run to end, and answers it as kept. */
@@ -215,7 +215,7 @@ function setup(world: Partial<World> = {}) {
   /** An automation of its owner's own: a rule built from blocks, with what fills its roles. */
   const own = (name: string, rule: Omit<Rule, 'params'>, fills: { starts?: Record<string, AutomationId>; mode?: 'watch' | 'act' | 'off' } = {}) => {
     const partRoles = Object.fromEntries(Object.keys(rule.roles).filter((role) => role in roles).map((role) => [role, roles[role as keyof typeof roles]]));
-    const created = store.create({ name, rule: { ...rule, params: { fields: {} } }, madeFrom: null, roles: partRoles, starts: fills.starts ?? {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
+    const created = store.create({ name, rule: { ...rule, params: { fields: {} } }, madeFrom: null, roles: partRoles, groups: {}, starts: fills.starts ?? {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
     return fills.mode === 'watch' ? created : store.update(created.id, { mode: fills.mode ?? 'act' })!;
   };
   return { engine, store, state, devices, bus, sent, writes, recorded, heard, fresh, runsEnded, make, own, ended, switches };

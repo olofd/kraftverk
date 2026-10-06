@@ -1,7 +1,7 @@
 import { capabilitySpec, isCapability, type CapabilityNeed } from '@kraftverk/device-sdk';
 
-import { expressionsIn } from './kinds/exprs.ts';
-import { EXPRESSION_FIELDS, fieldValue, type FieldSpec } from './kinds/spec.ts';
+import { expressionsIn, mapChildren } from './kinds/exprs.ts';
+import { EXPRESSION_FIELDS, fieldValue, withField, type FieldSpec } from './kinds/spec.ts';
 import { branchesOf, stepSpec } from './kinds/steps.ts';
 import { stepListsOf, triggerSpec } from './kinds/triggers.ts';
 import type { Command, Expr, Rule, Step, Write } from './rule.ts';
@@ -11,6 +11,44 @@ import type { Command, Expr, Rule, Step, Write } from './rule.ts';
   steps command and write, whether it takes steps or keeps things so — what
   the engine listens to, and what a screen says a rule does to a part.
 */
+
+/**
+ * The rule with what each `for each` calls each part read as its group: a
+ * reading of `charger` in its steps is a reading of `chargers`, a command to
+ * it a command to each of them — what binding, holding a run's parts and
+ * inferring what a role needs all see. Its steps run as written: the engine
+ * names each part in turn.
+ */
+export function eachAsGroup(rule: Rule): Rule {
+  const renamed = (expr: Expr, names: Readonly<Record<string, string>>): Expr => {
+    const inner = mapChildren(expr, (child) => renamed(child, names));
+    if ('read' in inner && names[inner.read.role]) return { ...inner, read: { ...inner.read, role: names[inner.read.role]! } };
+    if ('reachable' in inner && names[inner.reachable]) return { reachable: names[inner.reachable]! };
+    if ('call' in inner && names[inner.role]) return { ...inner, role: names[inner.role]! };
+    return inner;
+  };
+  const steps = (list: readonly Step[], names: Readonly<Record<string, string>>): Step[] =>
+    list.map((step) => {
+      // Within a "for each", its name is its group.
+      const within = 'forEach' in step ? { ...names, [step.forEach.as]: step.forEach.in } : names;
+      return stepSpec(step).fields.reduce<Step>((done, field) => {
+        const value = fieldValue(step, field);
+        if (value === undefined) return done;
+        const type = field.type.type;
+        if (type === 'role') return withField(done, field, names[value as string] ?? value);
+        if (EXPRESSION_FIELDS.has(type)) return withField(done, field, renamed(value as Expr, names));
+        if (type === 'args') return withField(done, field, Object.fromEntries(Object.entries(value as Record<string, Expr>).map(([name, arg]) => [name, renamed(arg, names)])));
+        if (type === 'steps') return withField(done, field, steps(value as readonly Step[], within));
+        return done;
+      }, step);
+    });
+  return {
+    ...rule,
+    when: rule.when.map((trigger) => (trigger.then ? { ...trigger, then: steps(trigger.then, {}) } : trigger)),
+    then: steps(rule.then, {}),
+    ...(rule.otherwise ? { otherwise: steps(rule.otherwise, {}) } : {}),
+  };
+}
 
 /** The events a role's capabilities declare: what a trigger on it can wait for before it is bound. */
 export const roleEvents = (spec: CapabilityNeed): string[] =>
@@ -48,7 +86,7 @@ export function* ruleExpressions(rule: Rule): Generator<Expr> {
  * settings it writes and the automations it starts: what running it,
  * rehearsing it on history, or binding it, needs.
  */
-export function ruleUses(rule: Rule): {
+export function ruleUses(written: Rule): {
   reads: { role: string; means: string }[];
   /** The events that start it: its triggers'. */
   events: { role: string; event: string }[];
@@ -61,15 +99,20 @@ export function ruleUses(rule: Rule): {
   writes: Write[];
   /** The roles of the automations it starts. */
   starts: string[];
+  /** The groups a "for each" goes through. */
+  groups: string[];
   /** The windows of the day it looks at: when each opens and closes, something may turn true. */
   windows: { from: Expr; to: Expr }[];
 } {
+  // What a "for each"'s steps do to each part, they do to its group.
+  const rule = eachAsGroup(written);
   const reads: { role: string; means: string }[] = [];
   const calls: { fn: string; role: string }[] = [];
   const reaches: string[] = [];
   const writes: Write[] = [];
   const windows: { from: Expr; to: Expr }[] = [];
   const starts: string[] = [];
+  const groups: string[] = [];
   const awaits: { role: string; event: string }[] = [];
   // Every expression within, by its kind's children (kinds/exprs.ts): the readings, parts, windows and functions it names.
   for (const top of ruleExpressions(rule)) {
@@ -89,6 +132,7 @@ export function ruleUses(rule: Rule): {
         const value = fieldValue(step, field);
         if (value === undefined) continue;
         if (field.type.type === 'automation') starts.push(String(value));
+        else if (field.type.type === 'group') groups.push(String(value));
         else if (field.type.type === 'steps') walkSteps(value as readonly Step[]);
       }
     }
@@ -97,7 +141,7 @@ export function ruleUses(rule: Rule): {
   for (const list of stepListsOf(rule)) walkSteps(list.steps);
   // Each trigger by its kind's fields (kinds/triggers.ts): the events it waits for.
   const events = rule.when.flatMap((trigger) => eventsIn(trigger, triggerSpec(trigger).fields));
-  return { reads, events, awaits, calls, reaches: [...new Set(reaches)], writes, starts: [...new Set(starts)], windows };
+  return { reads, events, awaits, calls, reaches: [...new Set(reaches)], writes, starts: [...new Set(starts)], groups: [...new Set(groups)], windows };
 }
 
 /** The events a construct names, by its fields: each with the role whose part raises it — the field its event field names. */
@@ -112,8 +156,9 @@ function eventsIn(construct: object, fields: readonly FieldSpec[]): { role: stri
   });
 }
 
-/** Every command a rule may send, in its steps, its triggers', retries and `otherwise`: what its roles must be able to take. */
-export function ruleCommands(rule: Rule): Command[] {
+/** Every command a rule may send, in its steps, its triggers', retries and `otherwise`: what its roles must be able to take — a "for each"'s to its group. */
+export function ruleCommands(written: Rule): Command[] {
+  const rule = eachAsGroup(written);
   const found: Command[] = [];
   const walk = (steps: readonly Step[]) => {
     for (const step of steps) {

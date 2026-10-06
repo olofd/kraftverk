@@ -1,13 +1,13 @@
-import { ruleCommands, type Rule } from '@kraftverk/automation';
+import { bindingsOf, ruleCommands, type Rule } from '@kraftverk/automation';
 
 import type { AutomationRecord } from './model.ts';
 
 /* How the engine says what runs did, in sentences a person reads on a card and the timeline. */
 
-/** The device a run is about on the timeline: the one its first command acts on. */
+/** The device a run is about on the timeline: the one its first command acts on — a group's first part. */
 export const actsOn = (automation: AutomationRecord, rule: Rule): string | undefined => {
   const first = ruleCommands(rule)[0];
-  return first ? automation.roles[first.role]?.device : undefined;
+  return first ? bindingsOf(automation, first.role)[0]?.device : undefined;
 };
 
 export const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);

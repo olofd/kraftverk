@@ -156,7 +156,7 @@ for (const driver of DRIVERS) {
     test('automations: made, changed and deleted; what their triggers saw; their runs and logs', () => {
       const store = new AutomationStore(database);
       const rule = { roles: {}, params: { fields: {} }, when: [], then: [] };
-      const made = store.create({ name: 'Charge the scooter', rule, madeFrom: null, roles: {}, starts: {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
+      const made = store.create({ name: 'Charge the scooter', rule, madeFrom: null, roles: {}, groups: {}, starts: {}, timeZone: 'Europe/Stockholm', recheckMinutes: null });
       expect(made.key).toBe('charge-the-scooter');
       const revision = store.revision;
       expect(store.update(made.id, { mode: 'act' })?.mode).toBe('act');

@@ -1,5 +1,5 @@
 import type { ConditionState } from '@kraftverk/api-contract';
-import { capitalise, memoryOf, settingOf, checkBinding, describeExpr, describeSteps, evaluateNow, measure, numberIn, secondsNow, isAutomationRole, partRoles, secondsText, triggerKey, triggerOf, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type RuleSteps, type Step, type Write } from '@kraftverk/automation';
+import { bindingsOf, capitalise, groupRoles, listed, memoryOf, settingOf, checkBinding, describeExpr, describeSteps, evaluateNow, measure, numberIn, secondsNow, isAutomationRole, partRoles, secondsText, triggerKey, triggerOf, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type RuleSteps, type Step, type Write } from '@kraftverk/automation';
 import { attributeMeaning, capabilityIn, clockTime, MAIN_PART, isCurrent, isScalar, readingOf, REAL_CLOCK, standardMeaning, unitIn, type CapabilityName, type Clock, type Value } from '@kraftverk/device-sdk';
 
 import type { AutomationEngineDeps, AutomationRecord, EngineDevice } from './model.ts';
@@ -92,6 +92,9 @@ export class RuleContext {
       name: (role) => {
         const started = automation.starts[role];
         if (started) return quoted(this.deps.store.get(started)?.name ?? null);
+        // A group: its parts, each by name.
+        const members = automation.groups[role];
+        if (members) return listed(members.map((member) => this.deps.device(member)?.name ?? 'a device you no longer have')) || 'no parts';
         return part(role)?.name ?? 'a device you no longer have';
       },
     };
@@ -163,24 +166,27 @@ export class RuleContext {
    * part that no longer fits, a meaning it does not report, a setting it
    * cannot change — or an automation to start that is gone.
    */
-  roleProblems(automation: Pick<AutomationRecord, 'rule' | 'roles' | 'starts'>): string[] {
+  roleProblems(automation: Pick<AutomationRecord, 'rule' | 'roles' | 'groups' | 'starts'>): string[] {
     const rule = automation.rule;
-    const removed = partRoles(rule).flatMap(([role, spec]) => {
-      const binding = automation.roles[role];
-      const device = binding ? this.deps.device(binding) : null;
-      return device?.removed ? [`${spec.label}: ${device.name} has been removed`] : [];
-    });
+    // Each part filling a role, a group's each.
+    const removed = [...partRoles(rule), ...groupRoles(rule)].flatMap(([role, spec]) =>
+      bindingsOf(automation, role).flatMap((binding) => {
+        const device = this.deps.device(binding);
+        return device?.removed ? [`${spec.label}: ${device.name} has been removed`] : [];
+      })
+    );
     if (removed.length) return removed;
     const nothingToStart = Object.entries(rule.roles)
       .filter(([role, spec]) => isAutomationRole(spec) && !(automation.starts[role] && this.deps.store.get(automation.starts[role]!)))
       .map(([, spec]) => `${spec.label}: nothing to start — the automation it started is gone`);
     return [
       ...nothingToStart,
-      ...checkBinding(rule, (role): BoundPart | null => {
-        const binding = automation.roles[role];
-        const device = binding ? this.deps.device(binding) : null;
-        return device ? { name: device.name, description: device.description, part: device.part, capabilities: device.hasPart ? device.capabilities : [] } : null;
-      }),
+      ...checkBinding(rule, (role): BoundPart[] =>
+        bindingsOf(automation, role).flatMap((binding) => {
+          const device = this.deps.device(binding);
+          return device ? [{ name: device.name, description: device.description, part: device.part, capabilities: device.hasPart ? device.capabilities : [] }] : [];
+        })
+      ),
     ];
   }
 

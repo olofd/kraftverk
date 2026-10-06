@@ -53,7 +53,7 @@ describe('the live stream', () => {
         name: 'Start charging',
         rule: inlineParams(startCharging, {}),
         roles: { supply: { device: savedDeviceId(station.id), part: 'outlet.ac' }, charger: { device: savedDeviceId(plug.id), part: 'main' } },
-        starts: {},
+        groups: {}, starts: {},
         timeZone: 'Europe/Stockholm',
       });
       await until(() => updates.slice(before).some((update) => update.type === 'automation' && update.id === created.id));

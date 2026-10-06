@@ -26,6 +26,8 @@ export type AutomationRecord = {
   madeFrom: string | null;
   /** Which part of which device fills each role a part fills. */
   roles: Record<string, RoleBinding>;
+  /** The parts filling each group a `for each` goes through, in order. */
+  groups: Record<string, readonly RoleBinding[]>;
   /** Which automation fills each role a `start` step starts. */
   starts: Record<string, AutomationId>;
   /** The owner's clock, from the app it was made in: "Europe/Stockholm". */

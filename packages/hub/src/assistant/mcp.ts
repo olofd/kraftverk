@@ -177,7 +177,7 @@ const TOOLS: Tool[] = [
       // The recipe as an automation of it would be: its settings written into its blocks.
       const rule = await home.automations.fromRecipe(input.recipe, input.params);
       try {
-        return rehearsalText(await home.automations.rehearse({ draft: { rule, roles: boundOf(input.roles), starts: {} }, timeZone }, input.hours ?? 24 * 7));
+        return rehearsalText(await home.automations.rehearse({ draft: { rule, roles: boundOf(input.roles), groups: {}, starts: {} }, timeZone }, input.hours ?? 24 * 7));
       } catch (error) {
         if (error instanceof ApiError && error.kind === 'invalid') return `It cannot be rehearsed as it is: ${error.message}`;
         throw error;
@@ -249,7 +249,7 @@ const TOOLS: Tool[] = [
       let created;
       try {
         // Made by an agent, it is a proposal: only watching, on the timeline as one.
-        created = await home.automations.create({ name: input.name.trim(), rule, madeFrom: input.recipe, roles: boundOf(input.roles), starts: {}, timeZone });
+        created = await home.automations.create({ name: input.name.trim(), rule, madeFrom: input.recipe, roles: boundOf(input.roles), groups: {}, starts: {}, timeZone });
       } catch (error) {
         if (error instanceof ApiError && error.kind === 'invalid') return `Not made: ${error.message}`;
         throw error;

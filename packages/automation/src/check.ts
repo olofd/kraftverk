@@ -9,9 +9,10 @@ import { fieldValue, type FieldSpec } from './kinds/spec.ts';
 import { branchesOf, STEP_KIND_ORDER, STEP_KINDS } from './kinds/steps.ts';
 import { TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './kinds/triggers.ts';
 import type { AutomationFunction } from './functions.ts';
-import { ruleExpressions, ruleUses } from './reads.ts';
+import { eachAsGroup, ruleExpressions, ruleUses } from './reads.ts';
 import { convert, convertible, isUnit, product, quotient, unitIn, type Unit } from '@kraftverk/device-sdk';
-import { COMPARE_OPS, isAutomationRole, isWhileRunning, MATH_OPS, WHILE_RUNNING, ORDERED_OPS, partRoles, RUN_FACTS, SEQUENCE_LIMITS, TRIGGER_ID, type Command, type Expr, type PartRole, type Rule, type Step, type WriteTarget } from './rule.ts';
+import { KEYWORDS } from './text/expr.ts';
+import { COMPARE_OPS, groupRoles, isAutomationRole, isGroupRole, isWhileRunning, memberRole, MATH_OPS, WHILE_RUNNING, ORDERED_OPS, partRoles, RUN_FACTS, SEQUENCE_LIMITS, TRIGGER_ID, type Command, type Expr, type PartRole, type Rule, type Step, type WriteTarget } from './rule.ts';
 
 /*
   Checking a rule before it runs (docs/AUTOMATIONS.md): every role, setting,
@@ -114,14 +115,29 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
     for (const capability of named) if (!isCapability(capability)) problems.push(`roles.${role}: there is no capability "${capability}"`);
   }
 
-  /** A role a part fills: what is read, asked, switched or written. */
+  /**
+   * What the steps of a `for each` call each part of its group, while they
+   * are checked: a role of one part, asking what the group asks of each.
+   */
+  let scoped: Readonly<Record<string, PartRole>> = {};
+
+  /** The role of one part a name is — within a `for each`, each part of its group — without a word about it: what a field's own check has said already. */
+  const quietly = (name: string): PartRole | null => {
+    const spec = scoped[name] ?? roles[name];
+    return spec && !isAutomationRole(spec) && !isGroupRole(spec) ? spec : null;
+  };
+
+  /** A role a part fills: what is read, asked, switched or written — or, within a `for each`, each part of its group. */
   const role = (name: string, where: string): PartRole | null => {
+    const each = scoped[name];
+    if (each) return each;
     const spec = roles[name];
     // A block whose part is still to choose, as an editor makes one: said as that.
     if (!name) problems.push(`${where}: choose a part`);
     else if (!spec) problems.push(`${where}: there is no role "${name}"`);
     else if (isAutomationRole(spec)) problems.push(`${where}: ${name} is an automation, not a part of a device`);
-    return spec && !isAutomationRole(spec) ? spec : null;
+    else if (isGroupRole(spec)) problems.push(`${where}: ${name} is several parts — name each in turn with "for each"`);
+    return spec && !isAutomationRole(spec) && !isGroupRole(spec) ? spec : null;
   };
 
   const shape = (expr: Expr, where: string, options: { calls: boolean; trigger?: boolean }): Shape => {
@@ -428,6 +444,21 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         else if (!isAutomationRole(spec)) problems.push(`${at}: ${name} is a part of a device, not an automation`);
         return;
       }
+      case 'group': {
+        const name = String(value);
+        const spec = roles[name];
+        if (!name) problems.push(`${at}: choose the parts`);
+        else if (!spec) problems.push(`${at}: there is no role "${name}"`);
+        else if (!isGroupRole(spec)) problems.push(`${at}: ${name} is ${isAutomationRole(spec) ? 'an automation' : 'one part'}, not several`);
+        return;
+      }
+      case 'each': {
+        // A name of its own: not a role's, nor an outer "for each"'s, nor one the language keeps.
+        const name = String(value);
+        if (!CAMEL_NAME.test(name)) problems.push(`${at}: a name in camelCase: "charger"`);
+        else if (roles[name] || scoped[name] || KEYWORDS.has(name)) problems.push(`${at}: "${name}" names something already — call each part otherwise`);
+        return;
+      }
       case 'event':
         if (!String(value).trim()) problems.push(`${at}: which event?`);
         return;
@@ -525,6 +556,7 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       if (spec.waits && !sure) problems.push(`${at}: nothing here may wait for a condition that might not come: it would fail again`);
       /** What each of its values was found to be, by its key. */
       const shapes: Record<string, Shape> = {};
+      const outer = scoped;
       for (const field of spec.fields) {
         const value = fieldValue(step, field);
         const fieldAt = `${at}.${field.data.join('.')}`;
@@ -532,9 +564,16 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
           if (field.required && field.type.type !== 'name') problems.push(`${fieldAt}: it needs ${field.label.toLowerCase()}`);
           continue;
         }
+        // A "for each"'s steps call each part of its group by its name: a role of one part, while they are checked.
+        if ('forEach' in step && field.type.type === 'steps') {
+          const group = roles[step.forEach.in];
+          // A name already taken names nothing new: what it would hide stays as it is.
+          if (group && isGroupRole(group) && CAMEL_NAME.test(step.forEach.as) && !roles[step.forEach.as] && !outer[step.forEach.as] && !KEYWORDS.has(step.forEach.as)) scoped = { ...outer, [step.forEach.as]: memberRole(group) };
+        }
         const got = checkField(field, value, fieldAt, { inTrigger: false, sure, depth });
         if (got) shapes[field.key] = got;
       }
+      scoped = outer;
       if ('command' in step) command(step.command, `${at}.command`);
       else if ('write' in step) {
         // Which setting, and whether the value fits it, is the bound part's to say (`checkBinding`).
@@ -599,7 +638,8 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
   return problems;
 
   function command(command: Command, where: string): void {
-    const spec = role(command.role, where);
+    // Its role is its field's to check, and said there: here only what it asks of it.
+    const spec = quietly(command.role);
     if (!isCapability(command.capability)) {
       problems.push(`${where}: there is no capability "${command.capability}"`);
       return;
@@ -659,12 +699,18 @@ export function problemPlace(problem: string, rule: Pick<Rule, 'roles'>): string
   if (!root) return problem;
   if (root[2] === undefined) return root[1] === 'then' ? `What it does: ${said}` : `If a step does not succeed: ${said}`;
   const places = [`${root[1] === 'then' ? 'Step' : 'If a step does not succeed, step'} ${Number(root[2]) + 1}`];
-  const WITHIN: Readonly<Record<string, string>> = { 'ensure.retry': 'each time', 'choose.then': 'then', 'choose.else': 'otherwise', 'watch.then': 'if it stays so', 'watch.else': 'if not' };
-  for (const step of path.slice(root[0].length).matchAll(/\.(ensure\.retry|choose\.then|choose\.else|watch\.then|watch\.else)\[(\d+)\]/g)) {
-    places.push(`${WITHIN[step[1]!]}, step ${Number(step[2]) + 1}`);
+  // Steps within a step, by its field's words (kinds/steps.ts): "each time, step 2".
+  for (const step of path.slice(root[0].length).matchAll(/\.([A-Za-z]+\.[A-Za-z]+)\[(\d+)\]/g)) {
+    const within = WITHIN_WORDS.get(step[1]!);
+    if (within) places.push(`${within}, step ${Number(step[2]) + 1}`);
   }
   return `${places.join(', ')}: ${said}`;
 }
+
+/** Each list of steps within a step, by where it is kept — `ensure.retry` — as a problem's place says it: "each time". */
+const WITHIN_WORDS: ReadonlyMap<string, string> = new Map(
+  STEP_KIND_ORDER.flatMap((kind) => STEP_KINDS[kind].fields.flatMap((field): [string, string][] => (field.type.type === 'steps' ? [[field.data.join('.'), field.label.toLowerCase()]] : [])))
+);
 
 /** The part filling a role, as a binding check sees it. */
 export type BoundPart = {
@@ -678,34 +724,38 @@ export type BoundPart = {
  * Everything wrong with a rule's roles as they are filled: a part that does
  * not offer what its role needs, reports no meaning the rule reads, or never
  * raises an event the rule waits for. Empty when it can run as it is.
+ * `bound`: the parts filling a role — one, several for a group, none yet.
  */
-export function checkBinding(rule: Rule, bound: (role: string) => BoundPart | null): string[] {
+export function checkBinding(written: Rule, bound: (role: string) => readonly BoundPart[]): string[] {
   const problems: string[] = [];
+  // What a "for each" does to each part, it does to every part of its group: each is held to it.
+  const rule = eachAsGroup(written);
   // An automation's roles are the server's to check: whether the automation is there, and the chain it makes.
-  for (const [role, spec] of partRoles(rule)) {
-    const part = bound(role);
-    if (!part) {
-      problems.push(`${spec.label}: no device`);
-      continue;
+  for (const [role, spec] of [...partRoles(rule), ...groupRoles(rule)]) {
+    const parts = bound(role);
+    if (!parts.length) problems.push(`${spec.label}: no device`);
+    for (const part of parts) {
+      if (!partsOf(part.description).some((candidate) => candidate.id === part.part)) problems.push(`${spec.label}: ${part.name} no longer has that part`);
+      else if (!meetsNeed(spec, part.capabilities)) problems.push(`${spec.label}: ${part.name} cannot do that`);
     }
-    if (!partsOf(part.description).some((candidate) => candidate.id === part.part)) problems.push(`${spec.label}: ${part.name} no longer has that part`);
-    else if (!meetsNeed(spec, part.capabilities)) problems.push(`${spec.label}: ${part.name} cannot do that`);
   }
   const { reads, events, awaits, writes } = ruleUses(rule);
   for (const read of reads) {
-    const part = bound(read.role);
-    if (part && !attributeMeaning(part.description, part.part, read.means)) problems.push(`${rule.roles[read.role]?.label ?? read.role}: ${part.name} does not report ${read.means}`);
+    for (const part of bound(read.role)) {
+      if (!attributeMeaning(part.description, part.part, read.means)) problems.push(`${rule.roles[read.role]?.label ?? read.role}: ${part.name} does not report ${read.means}`);
+    }
   }
   for (const wanted of [...events, ...awaits]) {
-    const part = bound(wanted.role);
-    const declared = part?.description.events?.find((event) => event.id === wanted.event && (event.part ?? MAIN_PART) === part.part);
-    if (part && !declared) problems.push(`${rule.roles[wanted.role]?.label ?? wanted.role}: ${part.name} never says "${wanted.event}"`);
+    for (const part of bound(wanted.role)) {
+      const declared = part.description.events?.find((event) => event.id === wanted.event && (event.part ?? MAIN_PART) === part.part);
+      if (!declared) problems.push(`${rule.roles[wanted.role]?.label ?? wanted.role}: ${part.name} never says "${wanted.event}"`);
+    }
   }
   // What an event carried, read as run.event.<field>: something at least one of the events it waits for carries, as its device declares it.
   const carried = new Set([...ruleExpressions(rule)].flatMap((top) => [...expressionsIn(top)].flatMap((each) => ('run' in each && each.run === 'event' && each.field ? [each.field] : []))));
   for (const field of carried) {
     const declaring = events.map((wanted) => {
-      const part = bound(wanted.role);
+      const [part] = bound(wanted.role);
       return part ? (part.description.events?.find((event) => event.id === wanted.event && (event.part ?? MAIN_PART) === part.part) ?? null) : undefined;
     });
     // A part not bound yet says nothing either way.
@@ -713,9 +763,7 @@ export function checkBinding(rule: Rule, bound: (role: string) => BoundPart | nu
     if (!declaring.some((event) => event?.data && field in event.data)) problems.push(`run.event.${field}: none of the events it waits for carries "${field}"`);
   }
   // A setting changed: the part has it, it can be written, it is not one that can harm the hardware, and the value fits it.
-  for (const write of writes) {
-    const part = bound(write.role);
-    if (!part) continue;
+  for (const write of writes) for (const part of bound(write.role)) {
     const attribute = writtenAttribute(part.description, part.part, write);
     const who = rule.roles[write.role]?.label ?? write.role;
     if (!attribute) problems.push(`${who}: ${part.name} has no setting ${write.means !== undefined ? `that is its ${(standardMeaning(write.means)?.label ?? write.means).toLowerCase()}` : `"${write.key}"`}`);
@@ -734,19 +782,21 @@ export function checkBinding(rule: Rule, bound: (role: string) => BoundPart | nu
     }
   }
   // A number beside a reading is in a unit of its quantity: "50 °C" beside a part's power is a mistake, seen once the part is known.
-  const unitRead = (expr: Expr): { unit: Unit; label: string; part: string } | null => {
-    if (!('read' in expr)) return null;
-    const part = bound(expr.read.role);
-    const attribute = part ? attributeMeaning(part.description, part.part, expr.read.means) : null;
-    const unit = attribute ? unitIn(attribute) : null;
-    return part && attribute && unit ? { unit, label: attribute.label, part: part.name } : null;
+  const unitsRead = (expr: Expr): { unit: Unit; label: string; part: string }[] => {
+    if (!('read' in expr)) return [];
+    return bound(expr.read.role).flatMap((part) => {
+      const attribute = attributeMeaning(part.description, part.part, expr.read.means);
+      const unit = attribute ? unitIn(attribute) : null;
+      return attribute && unit ? [{ unit, label: attribute.label, part: part.name }] : [];
+    });
   };
   for (const top of ruleExpressions(rule)) {
     for (const each of expressionsIn(top)) {
       if (!('compare' in each) && !('math' in each)) continue;
       for (const [side, other] of [[each.left, each.right], [each.right, each.left]] as const) {
-        const read = unitRead(side);
-        if (read && 'value' in other && other.unit && !convertible(other.unit, read.unit)) problems.push(`${read.part}’s ${read.label.toLowerCase()} is in ${read.unit}: "${other.unit}" is not a unit of it`);
+        for (const read of unitsRead(side)) {
+          if ('value' in other && other.unit && !convertible(other.unit, read.unit)) problems.push(`${read.part}’s ${read.label.toLowerCase()} is in ${read.unit}: "${other.unit}" is not a unit of it`);
+        }
       }
     }
   }

@@ -1,12 +1,13 @@
 import { Input, Text, YStack } from 'tamagui';
 
-import { fieldValue, withField, type Expr, type FieldSpec, type Weekday } from '@kraftverk/automation';
+import { fieldValue, withField, type Expr, type FieldSpec, type ListPath, type Weekday } from '@kraftverk/automation';
 import { MAIN_PART, wholeTime } from '@kraftverk/device-sdk';
 import { Chips } from '@kraftverk/ui';
 
 import { Picker } from '../../../components/Picker';
 import { blankCondition, ConditionField } from './Condition';
 import { pickPart, useEditor } from './context';
+import { GroupParts } from './GroupParts';
 import { DaysField, DurationField, durationOf, Label, NumberField, TimeField, type Measure } from './fields';
 
 /*
@@ -19,18 +20,19 @@ import { DaysField, DurationField, durationOf, Label, NumberField, TimeField, ty
 */
 
 /** A construct's fields, each drawn by what it holds. */
-export function Fields<T extends object>({ fields, construct, set }: { fields: readonly FieldSpec[]; construct: T; set: (next: T) => void }) {
+/** `path`: where a step's fields are, within a sequence — inside a "for each", its parts are offered first. */
+export function Fields<T extends object>({ fields, construct, set, path }: { fields: readonly FieldSpec[]; construct: T; set: (next: T) => void; path?: ListPath }) {
   return (
     <YStack gap="$2.5">
       {fields.map((field) => (
-        <FieldEditor key={field.key} field={field} fields={fields} construct={construct} set={set} />
+        <FieldEditor key={field.key} field={field} fields={fields} construct={construct} set={set} {...(path ? { path } : {})} />
       ))}
     </YStack>
   );
 }
 
 /** One field, by what it holds. */
-function FieldEditor<T extends object>({ field, fields, construct, set }: { field: FieldSpec; fields: readonly FieldSpec[]; construct: T; set: (next: T) => void }) {
+function FieldEditor<T extends object>({ field, fields, construct, set, path }: { field: FieldSpec; fields: readonly FieldSpec[]; construct: T; set: (next: T) => void; path?: ListPath }) {
   const editor = useEditor();
   const value = fieldValue(construct, field);
   const put = (next: unknown) => set(withField(construct, field, next));
@@ -94,13 +96,13 @@ function FieldEditor<T extends object>({ field, fields, construct, set }: { fiel
       // A part that declares events, where this kind asks for one of them.
       const forEvents = fields.some((each) => each.type.type === 'event' && each.type.role === field.key);
       const role = String(value ?? '');
-      const options = editor.parts((description, part) => !forEvents || (description.events ?? []).some((event) => (event.part ?? MAIN_PART) === part));
+      const options = editor.parts((description, part) => !forEvents || (description.events ?? []).some((event) => (event.part ?? MAIN_PART) === part), path);
       return (
         <YStack gap="$1">
           <Label>{field.label}</Label>
           <Picker
             label={field.label}
-            chosen={editor.draft.rule.roles[role] ? editor.name(role) : null}
+            chosen={editor.chosen(role) ? editor.name(role) : null}
             placeholder="Choose a part"
             options={options.map((option) => ({ key: option.key, title: option.title, subtitle: option.subtitle, value: option, selected: option.role === role }))}
             onPick={(option) => {
@@ -137,6 +139,23 @@ function FieldEditor<T extends object>({ field, fields, construct, set }: { fiel
         </YStack>
       );
     }
+    case 'group':
+      // The parts it goes through: chosen here, the group made with the first.
+      return (
+        <YStack gap="$1">
+          <Label>{field.label}</Label>
+          <GroupParts role={typeof value === 'string' && value ? value : null} label={field.label} onRole={(role) => put(role)} />
+        </YStack>
+      );
+    case 'each':
+      // What its steps call each part: a name of its own.
+      return (
+        <YStack gap="$1">
+          <Label>{field.label}</Label>
+          <Input size="$4" value={typeof value === 'string' ? value : ''} aria-label={field.label} autoCapitalize="none" autoCorrect={false} backgroundColor="$background" borderColor="$borderColor" onChangeText={(text) => put(text.trim())} />
+          {help}
+        </YStack>
+      );
     case 'text':
       return (
         <YStack gap="$1">

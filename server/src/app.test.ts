@@ -250,7 +250,7 @@ describe('a refusal over HTTP', () => {
     expect((await as(`/devices/${hall.id}/tools/ping`)).body).toEqual({ pong: true, room: 'Hall' });
 
     // A yes wanted: 409, with the token to send it back with.
-    const automation = await as('/automations', { method: 'POST', body: { name: 'Lamp on', rule: lampOnRule, roles: { lamp: { device: hall.id, part: 'main' } }, starts: {}, timeZone: 'Europe/Stockholm' } });
+    const automation = await as('/automations', { method: 'POST', body: { name: 'Lamp on', rule: lampOnRule, roles: { lamp: { device: hall.id, part: 'main' } }, groups: {}, starts: {}, timeZone: 'Europe/Stockholm' } });
     expect(automation.status).toBe(200);
     const asked = await as(`/automations/${automation.body.id}`, { method: 'PATCH', body: { mode: 'act' } });
     expect(asked.status).toBe(409);
@@ -280,7 +280,7 @@ describe('a refusal over HTTP', () => {
     expect(typed.status).toBe(400);
     expect(typed.body).toEqual({ error: expect.any(String), kind: 'invalid', problems: [expect.any(String)] });
     expect((await as(`${path}/picture`, { method: 'PUT', body: { picture: 2 } })).status).toBe(400);
-    const automation = await as('/automations', { method: 'POST', body: { name: 'Lamp on', rule: lampOnRule, roles: { lamp: { device: lamp.id, part: 'main' } }, starts: {}, timeZone: 'Europe/Stockholm' } });
+    const automation = await as('/automations', { method: 'POST', body: { name: 'Lamp on', rule: lampOnRule, roles: { lamp: { device: lamp.id, part: 'main' } }, groups: {}, starts: {}, timeZone: 'Europe/Stockholm' } });
     expect((await as(`/automations/${automation.body.id}`, { method: 'PATCH', body: { recheckMinutes: 0 } })).status).toBe(400);
     // An entry about an id with no kind could not be filtered by, and is refused.
     const node = await as('/nodes', { method: 'POST', body: { id: 'n-000000000000aa01', name: 'Olof’s laptop', platform: 'web', transports: ['bus'], alwaysOn: false, reachable: false, trusted: false } });
@@ -312,7 +312,7 @@ describe('a refusal over HTTP', () => {
   test('one thing’s automations and timeline are asked for in the query', async () => {
     lampAt('lamp-1');
     const lamp = await added('Hall lamp');
-    const automation = await as('/automations', { method: 'POST', body: { name: 'Lamp on', rule: lampOnRule, roles: { lamp: { device: lamp.id, part: 'main' } }, starts: {}, timeZone: 'Europe/Stockholm' } });
+    const automation = await as('/automations', { method: 'POST', body: { name: 'Lamp on', rule: lampOnRule, roles: { lamp: { device: lamp.id, part: 'main' } }, groups: {}, starts: {}, timeZone: 'Europe/Stockholm' } });
     expect((await as(`/automations?device=${enc(lamp.id)}`)).body.automations.map((one: { id: string }) => one.id)).toEqual([automation.body.id]);
     expect((await as('/automations?device=d-000000000000')).body.automations).toEqual([]);
     const its = (await as(`/audit?resourceKind=device&resource=${enc(lamp.id)}`)).body as { resource: string }[];

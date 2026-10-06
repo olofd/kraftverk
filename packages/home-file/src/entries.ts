@@ -23,6 +23,8 @@ export type AutomationSource = {
   rule: Rule;
   /** What fills each part role: a device by its id, and which of its parts. */
   roles: Readonly<Record<string, { device: string; part: string }>>;
+  /** The parts filling each group, in order: each a device by its id, and which of its parts. */
+  groups: Readonly<Record<string, readonly { device: string; part: string }[]>>;
   /** What fills each automation role: an automation by its id. */
   starts: Readonly<Record<string, string>>;
 };
@@ -39,6 +41,15 @@ export function automationEntryFrom(source: AutomationSource, keyOf: { device: (
     const key = keyOf.device(binding.device);
     if (key) uses[role] = { device: key, part: binding.part };
     else gone.push(role);
+  }
+  // A group keeps the parts still here; one gone is said, by its group.
+  for (const [role, parts] of Object.entries(source.groups)) {
+    const kept = parts.flatMap((binding) => {
+      const key = keyOf.device(binding.device);
+      return key ? [{ device: key, part: binding.part }] : [];
+    });
+    uses[role] = { parts: kept };
+    if (kept.length < parts.length) gone.push(role);
   }
   for (const [role, id] of Object.entries(source.starts)) {
     const key = keyOf.automation(id);
@@ -68,8 +79,9 @@ export function automationEntryFrom(source: AutomationSource, keyOf: { device: (
 export function fillsFrom(
   uses: Readonly<Record<string, Use>>,
   idOf: { device: (key: string) => string | null; automation: (key: string) => string | null }
-): { roles: Record<string, { device: string; part: string }>; starts: Record<string, string>; missing: { role: string; key: string }[] } {
+): { roles: Record<string, { device: string; part: string }>; groups: Record<string, { device: string; part: string }[]>; starts: Record<string, string>; missing: { role: string; key: string }[] } {
   const roles: Record<string, { device: string; part: string }> = {};
+  const groups: Record<string, { device: string; part: string }[]> = {};
   const starts: Record<string, string> = {};
   const missing: { role: string; key: string }[] = [];
   for (const [role, use] of Object.entries(uses)) {
@@ -79,11 +91,20 @@ export function fillsFrom(
       else missing.push({ role, key: use.automation });
       continue;
     }
+    // A group: each part it names that is here, in order; each that is not, said.
+    if ('parts' in use) {
+      groups[role] = use.parts.flatMap((part) => {
+        const id = idOf.device(part.device);
+        if (!id) missing.push({ role, key: part.device });
+        return id ? [{ device: id, part: part.part }] : [];
+      });
+      continue;
+    }
     const id = idOf.device(use.device);
     if (id) roles[role] = { device: id, part: use.part };
     else missing.push({ role, key: use.device });
   }
-  return { roles, starts, missing };
+  return { roles, groups, starts, missing };
 }
 
 /** A device as it lives: what the server keeps, and the app is shown. */

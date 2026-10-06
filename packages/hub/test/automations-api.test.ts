@@ -30,7 +30,7 @@ const bound = (roles: Roles): Record<string, RoleBinding> => Object.fromEntries(
 /** A recipe copied into a rule of the automation's own, its settings written into its blocks — as the app does. */
 const copy = async (recipe: string, params: Record<string, Value> = {}): Promise<Rule> => inlineParams((await t.home.automations.kit()).recipes.find((one) => one.id === recipe)!.rule, params);
 const create = async (name: string, recipe: string, roles: Roles, params: Record<string, Value> = {}, extra: { recheckMinutes?: number } = {}) =>
-  t.home.automations.create({ name, rule: await copy(recipe, params), roles: bound(roles), starts: {}, madeFrom: recipe, timeZone: 'Europe/Stockholm', ...extra });
+  t.home.automations.create({ name, rule: await copy(recipe, params), roles: bound(roles), groups: {}, starts: {}, madeFrom: recipe, timeZone: 'Europe/Stockholm', ...extra });
 
 /** A forecast and a plug, simulated: what "if tomorrow is sunny, turn the plug on" needs. */
 const forecastAndPlug = async (): Promise<{ weather: DeviceView; plug: DeviceView }> => ({
@@ -148,7 +148,7 @@ describe('automations', () => {
   test('a draft is checked and said as it is built — every problem at once — and nothing is kept', async () => {
     const { weather, plug } = await forecastAndPlug();
     const rule = await copy('test.forecast.forecast-switch', { day: 'tomorrow', at: '07:00' });
-    const draft = (given: { rule?: Rule; roles?: Roles }) => t.home.automations.draft({ rule: given.rule ?? rule, roles: bound(given.roles ?? {}), starts: {} });
+    const draft = (given: { rule?: Rule; roles?: Roles }) => t.home.automations.draft({ rule: given.rule ?? rule, roles: bound(given.roles ?? {}), groups: {}, starts: {} });
 
     const empty = await draft({});
     expect(empty.problems).toEqual(['Forecast: choose one of your devices', 'What to switch: choose one of your devices']);
@@ -179,7 +179,7 @@ describe('automations', () => {
     expect((await refusal(t.home.automations.update(created.id, { mode: 'act', confirmation: 'confirm' }))).kind).toBe('needs-yes');
     const asked = await refusal(t.home.automations.update(created.id, { mode: 'act' }));
     // A yes to letting it act is not one to letting it act with another rule.
-    const other = { rule: await copy('test.forecast.forecast-switch', { day: 'today', at: '09:00' }), roles: bound({ forecast: whole(weather), switch: whole(plug) }), starts: {} };
+    const other = { rule: await copy('test.forecast.forecast-switch', { day: 'today', at: '09:00' }), roles: bound({ forecast: whole(weather), switch: whole(plug) }), groups: {}, starts: {} };
     expect((await refusal(t.home.automations.update(created.id, { mode: 'act', ...other, confirmation: asked.needsConfirmation! }))).kind).toBe('needs-yes');
     expect((await arm(created.id)).mode).toBe('act');
     // Changing what one that acts does is confirmed again; a rule comes with what fills its roles.
@@ -247,6 +247,7 @@ describe('automations', () => {
       name: 'Morning',
       rule: { roles: role, params: { fields: {} }, when: [], then: [{ start: { role: 'charging', andWait: { value: 60, unit: 's' } } }] },
       roles: {},
+      groups: {},
       starts: { charging: charge.id },
       timeZone: 'Europe/Stockholm',
     });
@@ -260,14 +261,14 @@ describe('automations', () => {
     expect(child).toMatchObject({ outcome: 'acted', startedBy: 'olof', startedByRun: { automationId: morning.id, name: 'Morning' } });
 
     // The other made to start this one back: refused, as a chain that would start itself.
-    const back = { rule: { roles: role, params: { fields: {} }, when: [], then: [{ start: { role: 'charging' } }] } as Rule, roles: {}, starts: { charging: morning.id } };
+    const back = { rule: { roles: role, params: { fields: {} }, when: [], then: [{ start: { role: 'charging' } }] } as Rule, roles: {}, groups: {}, starts: { charging: morning.id } };
     expect((await t.home.automations.draft(back, charge.id)).problems).toEqual(['Starting “Start charging the scooter” would come back to it: a chain may not start itself']);
     expect((await refusal(t.home.automations.update(charge.id, back))).kind).toBe('invalid');
 
     // Deleted, the one that started it has nothing to start, and says so.
     await t.home.automations.delete(charge.id);
     const [left] = await t.home.automations.list();
-    expect(left).toMatchObject({ id: morning.id, starts: {}, problems: ['The charging: nothing to start — the automation it started is gone'] });
+    expect(left).toMatchObject({ id: morning.id, groups: {}, starts: {}, problems: ['The charging: nothing to start — the automation it started is gone'] });
   }, 30_000);
 
   test('on the home page, in their places: put there, moved, taken off — the others closing up', async () => {
@@ -305,6 +306,28 @@ describe('automations', () => {
     await t.home.automations.delete(created.id);
     expect(await t.home.automations.list()).toEqual([]);
     expect((await refusal(t.home.automations.delete(created.id))).kind).toBe('not-found');
+  });
+
+  test('a group is filled by several parts, each able to do what is done to each — and is said by them', async () => {
+    const { station, plug } = await stationAndScooterPlug();
+    const weather = await t.added('Weather', { typeId: 'test.forecast' });
+    const rule: Rule = {
+      roles: { outlets: { group: true, label: 'Outlets', capabilities: ['switch'] } },
+      params: { fields: {} },
+      when: [{ at: { value: '07:00' } }],
+      then: [{ forEach: { as: 'outlet', in: 'outlets', steps: [{ command: { role: 'outlet', capability: 'switch', command: 'set', args: { on: { value: true } } } }] } }],
+    };
+    const draft = (parts: Roles[string][]) => ({ rule, roles: {}, groups: { outlets: parts.map((part) => bound({ part }).part!) }, starts: {} });
+
+    expect((await t.home.automations.draft(draft([]), null)).problems).toEqual(['Outlets: choose its parts']);
+    expect((await t.home.automations.draft(draft([whole(plug), whole(weather)]), null)).problems).toEqual(['Outlets: that part of Weather cannot do that']);
+    expect((await t.home.automations.draft(draft([whole(plug), whole(plug)]), null)).problems).toEqual(['Outlets: a part is in it twice']);
+
+    const made = await t.home.automations.create({ name: 'Everything on', ...draft([whole(plug), { device: station.id, part: 'outlet.ac' }]), madeFrom: null, timeZone: 'Europe/Stockholm' });
+    expect(made.groups).toEqual({ outlets: [bound({ part: whole(plug) }).part!, bound({ part: { device: station.id, part: 'outlet.ac' } }).part!] });
+    expect(made.sentence).toBe('Every day at 07:00, turn each outlet on, for each of Scooter plug and Garage station — AC outlets.');
+    // Each of its parts' pages lists it.
+    expect((await t.home.automations.list({ device: savedDeviceId(station.id) })).map((each) => each.name)).toEqual(['Everything on']);
   });
 
   test('one outlet of a station fills the switch role, and only a part it has that can switch', async () => {

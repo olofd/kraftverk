@@ -94,7 +94,8 @@ type Step =
   | { repeat: { times: Expr; until?: Expr; steps: Step[] } }         // round after round — or until true, at most so many
   | { try: { steps: Step[]; recover?: Step[] } }                     // a step that does not succeed answered, and on
   | { stop: { why: string; failed?: boolean } }                      // the run ends here, saying why
-  | { remember: { name: string; value: Expr } };                     // a value kept for later runs
+  | { remember: { name: string; value: Expr } }                      // a value kept for later runs
+  | { forEach: { as: string; in: string; together?: boolean; steps: Step[] } };   // each part of a group, in turn or at once
 
 type Rule = {
   roles; params;
@@ -111,7 +112,7 @@ Six kinds of step, each general, none about charging: **do** (a command),
 **watch** — and, added with the editor, **change a setting** and **start
 another automation**; and, with the language's second phase
 (docs/PLAN-AUTOMATION-LANGUAGE.md), **wait for an event**, **repeat**,
-**try**, **stop** and **remember**. Steps nest — a choice, a watch, a repeat
+**try**, **stop**, **remember** and **for each**. Steps nest — a choice, a watch, a repeat, a for each
 and a try hold steps — at most four deep, and a run takes at most 500 steps
 (`SEQUENCE_LIMITS`), so whatever it repeats, it ends.
 A choice its settings alone decide — "if you chose to switch them off
