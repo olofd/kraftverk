@@ -19,10 +19,11 @@ and check a file with the same code.
 
 ```yaml
 # yaml-language-server: $schema=http://<your server>/api/config/schema.json
-kraftverk: 3                      # the document's version: required
+kraftverk: 4                      # the document's version: required
 
 home:
   clock: Europe/Stockholm          # what an automation that says no clock keeps time in
+  location: { latitude: 51.48, longitude: 0 }   # where it is: what sunrise and sunset are told by
   policy: { loadWatts: 50, reserveSoc: 20 }
 
 devices:
@@ -142,6 +143,9 @@ describes.
     `average(station.charge, 1 h)`, `lowest(…)`, `highest(…)`,
     `change(station.charge, 30 min)` (how much it changed), `ago(…, 10 min)`
     (what it was then) — a minute to two weeks, a number or a setting;
+  - the sun, where the home is (`home: location`): `sunrise`, `sunset`,
+    `30 min before sunset` — a time of day, for `at:` and
+    `time between sunset and sunrise`; unknown until the home has a location;
   - a recipe's setting: `setting.low`;
   - a package's function, by its id: `open-meteo.weather.skyLooks(forecast, cloudMax = 40)`.
 - **Lengths of time**: `5 s`, `2 min`, `1 h` — always with their unit: a

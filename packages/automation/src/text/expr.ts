@@ -2,6 +2,7 @@ import { isUnit, type Unit, type Value } from '@kraftverk/device-sdk';
 
 import { BUILTIN_ORDER, isBuiltin } from '../kinds/builtins.ts';
 import { HISTORY_ORDER, isHistoryFn } from '../kinds/history.ts';
+import { isSunEvent } from '../sun.ts';
 import { RUN_FACTS, type CompareOp, type Expr, type MathOp, type RunFact } from '../rule.ts';
 
 /*
@@ -50,7 +51,7 @@ type Token =
 
 /** The language's own words: never a role's name. */
 /** The language's own words: none names a role, nor what a "for each" calls each part. */
-export const KEYWORDS: ReadonlySet<string> = new Set(['and', 'or', 'not', 'in', 'true', 'false', 'null', 'reachable', 'time', 'between', 'run', 'setting', 'memory']);
+export const KEYWORDS: ReadonlySet<string> = new Set(['and', 'or', 'not', 'in', 'true', 'false', 'null', 'reachable', 'time', 'between', 'run', 'setting', 'memory', 'sunrise', 'sunset', 'before', 'after']);
 const COMPARE: Record<string, CompareOp> = { '<': 'lt', '<=': 'le', '>': 'gt', '>=': 'ge', '==': 'eq', '!=': 'ne' };
 const COMPARE_TEXT: Record<CompareOp, string> = { lt: '<', le: '<=', gt: '>', ge: '>=', eq: '==', ne: '!=' };
 const MATH_TEXT: Record<MathOp, string> = { add: '+', subtract: '-', multiply: '*', divide: '/' };
@@ -240,7 +241,17 @@ export function parseExpr(text: string): Parsed {
     }
     return { negate: unary() };
   };
+  /** A value — or a length of time before or after the sun: "30 min before sunset", "setting.lead after sunrise". */
   const atom = (): Expr => {
+    const got = primary();
+    if (!isWord('before') && !isWord('after')) return got;
+    const before = isWord('before');
+    next();
+    const event = next();
+    if (event.kind !== 'name' || !isSunEvent(event.value)) throw new Failure(`Expected sunrise or sunset after "${before ? 'before' : 'after'}"`, event.at);
+    return { sun: event.value, offset: { by: got, before } };
+  };
+  const primary = (): Expr => {
     const token = next();
     switch (token.kind) {
       case 'number':
@@ -292,6 +303,10 @@ export function parseExpr(text: string): Parsed {
         }
         return { run: fact.value as RunFact };
       }
+      case 'sunrise':
+      case 'sunset':
+        // When the sun rises or sets: a time of day.
+        return { sun: token.value };
       case 'setting': {
         // One of the rule's settings: "setting.low".
         expect('.', '"." and the setting\'s name: setting.low');
@@ -454,6 +469,10 @@ function print(expr: Expr, need: number): string {
       return `run.event.${expr.field}`;
     }
     return `run.${expr.run}`;
+  }
+  if ('sun' in expr) {
+    if (!isSunEvent(expr.sun)) throw new Unprintable();
+    return expr.offset ? `${print(expr.offset.by, LEVEL.unary)} ${expr.offset.before ? 'before' : 'after'} ${expr.sun}` : expr.sun;
   }
   if ('within' in expr) return `time between ${print(expr.within.from, LEVEL.unary)} and ${print(expr.within.to, LEVEL.unary)}`;
   if ('call' in expr) {

@@ -137,6 +137,17 @@ automations:
     ]);
   });
 
+  test('where the home is: its latitude and longitude, written back as they were — and each held to the globe', () => {
+    const located = readConfig('kraftverk: 4\nhome:\n  location: { latitude: 51.4779, longitude: -0.0015 }\n');
+    expect(located.problems).toEqual([]);
+    expect(located.document!.home.location).toEqual({ latitude: 51.4779, longitude: -0.0015 });
+    expect(readConfig(writeConfig(located.document!)).document!.home.location).toEqual({ latitude: 51.4779, longitude: -0.0015 });
+    const wrong = (location: string) => readConfig(`kraftverk: 4\nhome:\n  location: ${location}\n`).problems.map((problem) => problem.message);
+    expect(wrong('{ latitude: 95, longitude: 0 }')).toEqual(['A latitude is a number from -90 to 90']);
+    expect(wrong('{ latitude: 51, longitude: "east" }')).toEqual(['A longitude is a number from -180 to 180']);
+    expect(wrong('{ lat: 51, lon: 0 }')).toEqual(['"location" is its latitude and longitude, in degrees: { latitude: 59.3, longitude: 18.1 }']);
+  });
+
   test('YAML that is not YAML, a missing version, and one written by a newer kraftverk', () => {
     expect(readConfig('devices: [').problems[0]).toMatchObject({ line: 1 });
     expect(readConfig('devices: {}').problems[0]!.message).toBe('The document says which version it is: "kraftverk: 4" at its top');

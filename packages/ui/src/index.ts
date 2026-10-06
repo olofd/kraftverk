@@ -59,6 +59,7 @@ export { parseNumberText, useNumberText } from './number-text.ts';
 export {
   capitalise,
   formatAgo,
+  formatCoordinates,
   formatDuration,
   formatFresh,
   formatTemperature,

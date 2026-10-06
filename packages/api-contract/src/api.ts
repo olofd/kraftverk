@@ -1,4 +1,4 @@
-import type { AutomationDraft, Rule } from '@kraftverk/automation';
+import type { AutomationDraft, Coordinates, Rule } from '@kraftverk/automation';
 import type { AutomationId, ConfigValues, ConnectionId, LinkId, NodeId, PolicyValueName, ResourceKind, SavedDeviceId, SetupActionResult, Value } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 import type { Vocabulary } from '@kraftverk/home-file';
@@ -202,6 +202,8 @@ export interface KraftverkApi {
   vocabulary(): Promise<VocabularyView>;
   /** The home: what its people call it, and which node is its master. */
   home(): Promise<HomeView>;
+  /** Where the home is — what sunrise and sunset are told by — or, null, not said. */
+  setHomeLocation(location: Coordinates | null): Promise<HomeView>;
   /** The nodes of the home: its master, and every node that follows it. */
   nodes: {
     list(): Promise<NodeView[]>;

@@ -295,6 +295,13 @@ export function configJsonSchema(vocabulary: Vocabulary): Schema {
         additionalProperties: false,
         properties: {
           clock: { type: 'string', description: 'The time zone the home’s automations keep time in, when one says none of its own: "Europe/Stockholm".' },
+          location: {
+            type: 'object',
+            description: 'Where the home is, in degrees: what sunrise and sunset are told by.',
+            required: ['latitude', 'longitude'],
+            additionalProperties: false,
+            properties: { latitude: { type: 'number', minimum: -90, maximum: 90 }, longitude: { type: 'number', minimum: -180, maximum: 180 } },
+          },
           policy: {
             type: 'object',
             additionalProperties: false,

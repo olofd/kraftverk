@@ -101,7 +101,7 @@ describe('the configuration kept beside the database', () => {
         },
         plan: async (text): Promise<ImportPlan> => {
           planned.push(text);
-          return { id: null, from: 1, problems: [], devices: [], links: [], automations: [], policy: [], needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
+          return { id: null, from: 1, problems: [], devices: [], links: [], automations: [], policy: [], location: null, needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
         },
       },
       kept
@@ -134,7 +134,7 @@ describe('the configuration kept beside the database', () => {
           },
           restore: async (_, from) => {
             if (fails) throw new Error('A value this version does not know');
-            return { at: new Date().toISOString(), from, applied: { devices: { added: ['lamp'], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, policy: [], notes: [] }, problems: [] };
+            return { at: new Date().toISOString(), from, applied: { devices: { added: ['lamp'], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, policy: [], location: false, notes: [] }, problems: [] };
           },
           plan: async () => {
             throw new Error('not asked');

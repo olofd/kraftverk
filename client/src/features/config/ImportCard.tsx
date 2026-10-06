@@ -5,7 +5,7 @@ import { Button, Input, Text, XStack, YStack } from 'tamagui';
 import { changesOf, planReadiness, rebindAnswerKey, secretAnswerKey } from '@kraftverk/api-client/config';
 import { applyPlan, describeError, withConfirmation, type ElsewhereView, type HomeElsewhere, type ImportApplied, type ImportItem, type ImportPlan } from '@kraftverk/api-client';
 import { checkDocument, configJsonSchema, CURRENT_VERSION, holdsSealed, readConfig, type Vocabulary } from '@kraftverk/home-file';
-import { Card, haptic, Icon, RowSeparator, SectionLabel, SegmentedControl, Toggle, toggled } from '@kraftverk/ui';
+import { Card, formatCoordinates, haptic, Icon, RowSeparator, SectionLabel, SegmentedControl, Toggle, toggled } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
 import { Picker } from '../../components/Picker';
@@ -287,6 +287,17 @@ function PlanView({ plan, onAgain, onApplied }: { plan: ImportPlan; onAgain: () 
           ))}
         </Card>
       ) : null}
+      {plan.location ? (
+        <Card gap="$1.5">
+          <Text fontSize={15} fontWeight="600" color="$color">
+            Where the home is
+          </Text>
+          <Text fontSize={13} color="$color" lineHeight={19}>
+            {plan.location.before ? `${formatCoordinates(plan.location.before)} → ` : 'Not said yet → '}
+            {formatCoordinates(plan.location.after)}
+          </Text>
+        </Card>
+      ) : null}
 
       {plan.needs.secrets.length ? (
         <Card gap="$3">
@@ -466,6 +477,7 @@ function AppliedView({ applied }: { applied: ImportApplied }) {
     count(applied.links.added, 'link', 'added'),
     count(applied.links.removed, 'link', 'removed'),
     applied.policy.length ? `${applied.policy.length} of the home’s values set` : null,
+    applied.location ? 'where the home is set' : null,
   ].filter(Boolean);
   return (
     <Card gap="$2" borderColor="$success" role="status">

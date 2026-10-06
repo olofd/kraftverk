@@ -5,6 +5,7 @@ import { WEEKDAYS, type Weekday } from './clock.ts';
 import { evaluateNow, measureNow, secondsNow, settledChoice, settledScope, shown } from './evaluate.ts';
 import { BUILTINS } from './kinds/builtins.ts';
 import { HISTORY_FNS } from './kinds/history.ts';
+import { SUN_EVENTS } from './sun.ts';
 import { exprKind, type ExprOf } from './kinds/exprs.ts';
 import type { Say } from './kinds/spec.ts';
 import { branchesOf, stepSpec, type StepKind, type StepSay } from './kinds/steps.ts';
@@ -148,6 +149,11 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
       case 'within': {
         const { from, to } = (expr as ExprOf<'within'>).within;
         return `it is between ${text(from)} and ${text(to)}`;
+      }
+      case 'sun': {
+        // "sunset", "30 min before sunset".
+        const { sun: event, offset } = expr as ExprOf<'sun'>;
+        return offset ? `${text(offset.by)} ${offset.before ? 'before' : 'after'} ${SUN_EVENTS[event]}` : SUN_EVENTS[event];
       }
       case 'math': {
         const math = expr as ExprOf<'math'>;

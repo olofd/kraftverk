@@ -9,6 +9,7 @@ import { useAuth } from '../../state/AuthProvider';
 import { useDevices } from '../../state/DevicesProvider';
 import { useHome } from '../../state/HomeProvider';
 import { useServers } from '../../state/ServersProvider';
+import { HomeLocation } from './HomeLocation';
 import { HomePolicy } from './HomePolicy';
 import { ResetEverything } from './ResetEverything';
 import { Servers } from './Servers';
@@ -90,6 +91,8 @@ export function AppSettings() {
       </YStack>
 
       <HomePolicy />
+
+      <HomeLocation />
 
       <Servers />
 

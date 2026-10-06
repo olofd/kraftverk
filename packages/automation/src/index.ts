@@ -15,6 +15,7 @@ export * from './functions.ts';
 export * from './check.ts';
 export * from './reads.ts';
 export * from './evaluate.ts';
+export * from './sun.ts';
 export * from './describe.ts';
 export * from './recipes.ts';
 export * from './contribution.ts';

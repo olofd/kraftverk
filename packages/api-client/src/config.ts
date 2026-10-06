@@ -124,7 +124,7 @@ export function planReadiness(
   answers: { secrets: Readonly<Record<string, string>>; rebind: Readonly<Record<string, string>> }
 ): { nothing: boolean; secretsMissing: ImportPlan['needs']['secrets']; rebindMissing: ImportPlan['needs']['rebind']; ready: boolean; everything: boolean } {
   const changes = changesOf(plan);
-  const nothing = !changes.devices.length && !changes.automations.length && !plan.links.some((link) => link.action !== 'same') && !plan.policy.length;
+  const nothing = !changes.devices.length && !changes.automations.length && !plan.links.some((link) => link.action !== 'same') && !plan.policy.length && !plan.location;
   const secretsMissing = plan.needs.secrets.filter((need) => chosen.devices.has(need.device) && !answers.secrets[secretAnswerKey(need)]);
   const rebindMissing = plan.needs.rebind.filter((need) => chosen.automations.has(need.automation) && !answers.rebind[rebindAnswerKey(need)]);
   return {

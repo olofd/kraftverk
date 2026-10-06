@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 
 import { writeConfig } from '@kraftverk/home-file';
 import { defineDeviceType, MAIN_PART } from '@kraftverk/device-sdk';
-import type { Rule } from '@kraftverk/automation';
+import type { Coordinates, Rule } from '@kraftverk/automation';
 
 import { ApiError } from '@kraftverk/api-contract';
 import { AutomationLibrary } from '@kraftverk/automation-engine';
@@ -31,6 +31,8 @@ import { testDatabase } from './home.ts';
 
 let db: SqlDatabase;
 let deps: ImportDeps & { record: (entry: AuditRecord) => void };
+/** Where the home is, as these tests keep it. */
+let location: Coordinates | null = null;
 
 /** A plan applied as an apply does: written, then set going. */
 async function applyImport(on: ImportDeps, id: string, by: string, choices: ImportChoices) {
@@ -52,6 +54,7 @@ const testSealing: PassphraseSealing = {
 };
 
 beforeEach(() => {
+  location = null;
   db = testDatabase();
   const types = new DeviceTypeRegistry();
   types.install(lampType);
@@ -82,6 +85,7 @@ beforeEach(() => {
     checked,
     pending: new PendingPlans(),
     policy: { values: () => policyValues(state), set: (name, value) => setPolicyValue(state, name, value) },
+    location: { get: () => location, set: (next) => void (location = next) },
     sealing: testSealing,
     kept: plainSecrets,
     record: () => {},

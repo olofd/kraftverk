@@ -42,8 +42,8 @@ const AT: TriggerSpec<'at'> = {
   blank: () => ({ at: { value: '07:00' } }),
   words: (trigger, say) => (trigger.days && say.days(trigger.days) !== 'every day' ? `At ${say.expr(trigger.at)} ${say.days(trigger.days)}` : `Every day at ${say.expr(trigger.at)}`),
   docs: {
-    summary: 'At a time of day on the automation’s own clock: every day, or only on the days it names. A server that was down at that time still runs it within the hour, once.',
-    examples: ['at: "07:00"', 'at: "22:30"\ndays: weekdays', 'at: "09:00"\ndays: [mon, wed, fri]'],
+    summary: 'At a time of day on the automation’s own clock — `07:00`, or by the sun where the home is: `sunset`, `30 min before sunset` — every day, or only on the days it names. A server that was down at that time still runs it within the hour, once.',
+    examples: ['at: "07:00"', 'at: "22:30"\ndays: weekdays', 'at: "09:00"\ndays: [mon, wed, fri]', 'at: sunset', 'at: 30 min before sunset\ndays: weekdays'],
   },
 };
 

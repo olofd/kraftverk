@@ -17,6 +17,12 @@ export function homeRoutes(deps: AppDeps): Hono {
 
   api.get('/home', async (c) => c.json(await homeFor(deps, c).home()));
 
+  /** Where the home is — what sunrise and sunset are told by — or, null, not said. */
+  api.put('/home/location', async (c) => {
+    const { location } = await body(c, z.object({ location: z.object({ latitude: z.number().finite().min(-90).max(90), longitude: z.number().finite().min(-180).max(180) }).strict().nullable() }).strict());
+    return c.json(await homeFor(deps, c).setHomeLocation(location));
+  });
+
   /**
    * A node joins the home, saying who it is — by its own id — and what it can
    * reach devices over. It does so at every start, so "held by Olof's iPhone"

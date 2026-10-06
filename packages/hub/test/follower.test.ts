@@ -120,7 +120,7 @@ test('the machine behind the address another now: the follower keeps the new mas
   // As this node last kept it: another machine was the master then.
   const old = { id: nodeId('n-00000000000000dd'), name: 'Old machine', platform: 'system' as const, transports: [], alwaysOn: true, reachable: true, trusted: true, createdAt: '2026-10-01T00:00:00.000Z', lastSeenAt: '2026-10-01T00:00:00.000Z' };
   follower.nodes.mirror(old);
-  follower.homeKept.mirror({ id: 'h-000000000old', name: 'Home', masterId: old.id, createdAt: old.createdAt });
+  follower.homeKept.mirror({ id: 'h-000000000old', name: 'Home', masterId: old.id, createdAt: old.createdAt, location: null });
 
   await follower.keepHome();
   expect(follower.master()?.id).toBe(MACHINE_NODE.id);

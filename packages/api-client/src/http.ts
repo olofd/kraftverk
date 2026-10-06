@@ -212,6 +212,7 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
     world: () => get('/world'),
     vocabulary: () => get('/vocabulary'),
     home: () => get('/home'),
+    setHomeLocation: (location) => call('PUT', '/home/location', { location }),
 
     nodes: {
       join: (node) => call('POST', '/nodes', node),

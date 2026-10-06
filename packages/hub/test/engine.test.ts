@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { checkRule, defineFunction, defineRecipe, inlineParams, SEQUENCE_LIMITS, withSettings, type Rule, type Step } from '@kraftverk/automation';
+import { checkRule, defineFunction, defineRecipe, inlineParams, SEQUENCE_LIMITS, sunTimes, withSettings, type Coordinates, type Rule, type Step } from '@kraftverk/automation';
 import { MAIN_PART, REAL_CLOCK, savedDeviceId, zonedInstant, type AuditRecord, type DeviceDescription, type DeviceReader, type Value } from '@kraftverk/device-sdk';
 import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
@@ -157,8 +157,8 @@ const asEngineDevice = (device: Omit<EngineDevice, 'reachable' | 'wantFresh' | '
 
 /** Two engines on one database are one server, restarted: what they keep is in the store. */
 /** `gate`: what a command waits on once sent — a run that takes its time. `refuse`: what the gateway says instead of acting, when it says something. */
-/** `history`: what the home kept of each reading, for a rule that looks back. */
-function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: boolean; gate?: () => Promise<void>; refuse?: (intent: CommandIntent) => GatewayResult | null; history?: EngineHistory } = {}) {
+/** `history`: what the home kept of each reading, for a rule that looks back; `location`: where the home is, for the sun. */
+function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: boolean; gate?: () => Promise<void>; refuse?: (intent: CommandIntent) => GatewayResult | null; history?: EngineHistory; location?: Coordinates } = {}) {
   const sent: CommandIntent[] = [];
   const written: WriteIntent[] = [];
   const recorded: AuditRecord[] = [];
@@ -213,6 +213,7 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
     },
     record: (entry) => recorded.push(entry),
     ...(options.history ? { history: options.history } : {}),
+    ...(options.location ? { location: () => options.location! } : {}),
     bus,
     // A fixed time the test moves on, with real timers.
     clock: { ...REAL_CLOCK, now: () => now.getTime() },
@@ -1104,6 +1105,45 @@ describe('a battery kept between two levels', () => {
     expect(sent.map((intent) => intent.args.on)).toEqual([true, true]);
     expect(plug.on).toBe(true);
     engine.stop();
+  });
+});
+
+describe('by the sun', () => {
+  /** A made-up home at Greenwich, its automations on the Stockholm clock. */
+  const GREENWICH = { latitude: 51.4779, longitude: 0 };
+  const sunset = sunTimes({ year: 2026, month: 6, day: 15 }, GREENWICH).sunset!;
+  const rule: Rule = {
+    roles: { switch: { label: 'Lamp', capabilities: ['switch'] } },
+    params: { fields: {} },
+    when: [{ at: { sun: 'sunset', offset: { by: { value: 30, unit: 'min' }, before: true } } }],
+    then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
+  };
+  /** An automation of the rule, alone in the home — the tests share one database — at a time, where the home is. */
+  const lampAt = (now: Date, location?: Coordinates) => {
+    db.exec('DELETE FROM automation');
+    const context = setup({ now, ...(location ? { location } : {}) });
+    const made = context.store.create({ name: 'Dusk', rule, madeFrom: null, roles: { switch: { device: PLUG, part: 'main' } }, groups: {}, starts: {}, timeZone: ZONE, recheckMinutes: null });
+    context.store.update(made.id, { mode: 'act' });
+    return context;
+  };
+
+  test('at 30 min before sunset, where the home is, on the owner’s clock — once', async () => {
+    expect(checkRule(rule, { fn: () => null })).toEqual([]);
+    const early = lampAt(new Date(sunset - 31 * 60_000), GREENWICH);
+    await early.engine.tick();
+    expect(early.sent).toEqual([]);
+
+    const due = lampAt(new Date(sunset - 29 * 60_000), GREENWICH);
+    await due.engine.tick();
+    await due.engine.tick();
+    expect(due.sent.map((intent) => intent.args.on)).toEqual([true]);
+    expect(due.store.list()[0]!.lastRun?.why).toBe('Every day at 30 min before sunset');
+  });
+
+  test('where the home is not said, the sun cannot be told: nothing runs', async () => {
+    const blind = lampAt(new Date(sunset - 29 * 60_000));
+    await blind.engine.tick();
+    expect(blind.sent).toEqual([]);
   });
 });
 

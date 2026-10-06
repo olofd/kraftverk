@@ -28,6 +28,9 @@ export type CompareOp = 'lt' | 'le' | 'gt' | 'ge' | 'eq' | 'ne';
 /** The ways of looking back at a reading (`HISTORY_FNS`, kinds/history.ts). */
 export type HistoryFn = 'average' | 'lowest' | 'highest' | 'change' | 'ago';
 
+/** When the sun crosses the horizon (`SUN_EVENTS`, sun.ts). */
+export type SunEvent = 'sunrise' | 'sunset';
+
 /** Every comparison. */
 export const COMPARE_OPS: readonly CompareOp[] = ['lt', 'le', 'gt', 'ge', 'eq', 'ne'];
 
@@ -55,6 +58,14 @@ export type Expr =
    * setting. Unknown when nothing was kept for that time.
    */
   | { history: HistoryFn; of: { role: string; means: string }; over: Expr }
+  /**
+   * The time of day the sun rises or sets where the home is, on the
+   * automation's clock — or so long before or after: `sunset`,
+   * `30 min before sunset`. A time of day, as `07:00` is: what `at` and
+   * `time between` take. Unknown where the home has no place, or on a day
+   * the sun does not cross the horizon.
+   */
+  | { sun: SunEvent; offset?: { by: Expr; before: boolean } }
   /** A function a package contributes, over the part filling a role: `acme.weather.sunny(forecast, day = "tomorrow")`. */
   | { call: string; role: string; args?: Readonly<Record<string, Expr>> }
   /** One of the language's own functions (`BUILTINS`, kinds/builtins.ts): `round(x)`, `clamp(x, 0 W, 2 kW)`, `max(a, b, c)`. */

@@ -318,7 +318,7 @@ export class Follower {
         const { master: _master, yours: _yours, ...record } = node;
         this.nodes.mirror(record);
       }
-      this.homeKept.mirror({ id: home.id, name: home.name, masterId: home.master, createdAt: home.createdAt });
+      this.homeKept.mirror({ id: home.id, name: home.name, masterId: home.master, createdAt: home.createdAt, location: home.location });
       const listed = new Set(nodes.map((node) => node.id));
       for (const kept of this.nodes.all()) if (!kept.self && !listed.has(kept.id)) this.nodes.remove(kept.id);
     })();

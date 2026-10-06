@@ -57,7 +57,11 @@ export const SCHEMA = `
     id         TEXT PRIMARY KEY,
     name       TEXT NOT NULL,
     master_id  TEXT NOT NULL REFERENCES node (id),
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    /* Where it is, in degrees — what the sun's times are told by. Both null: not said. */
+    latitude   REAL CHECK (latitude BETWEEN -90 AND 90),
+    longitude  REAL CHECK (longitude BETWEEN -180 AND 180),
+    CHECK ((latitude IS NULL) = (longitude IS NULL))
   );
 
   /*

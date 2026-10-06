@@ -1,3 +1,5 @@
+import type { Coordinates } from '@kraftverk/automation';
+
 /*
   A home's configuration (docs/CONFIG.md): an export, an import's plan with
   what it needs, its answers and what it applied, and the copy kept beside
@@ -26,6 +28,8 @@ export type ImportPlan = {
   links: { kind: string; from: string; to: string; action: 'add' | 'same' | 'remove' }[];
   automations: ImportItem[];
   policy: { name: string; label: string; before: number | null; after: number }[];
+  /** Where the home is, as the file says it — when that is not where it is now. */
+  location: { before: Coordinates | null; after: Coordinates } | null;
   needs: {
     /** It carries secrets sealed with a passphrase, and none was given — or the one given does not open them. */
     passphrase: 'missing' | 'wrong' | null;
@@ -45,6 +49,8 @@ export type ImportApplied = {
   automations: { added: string[]; changed: string[]; removed: string[] };
   links: { added: number; removed: number };
   policy: string[];
+  /** Whether where the home is was set from the file. */
+  location: boolean;
   /** What was done otherwise than the file says — restoring, an automation kept turned off, a device left out — each in words. */
   notes: string[];
 };

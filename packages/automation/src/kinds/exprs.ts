@@ -11,7 +11,7 @@ import type { KindDocs } from './spec.ts';
   one left out.
 */
 
-export type ExprKind = 'value' | 'param' | 'memory' | 'read' | 'history' | 'call' | 'apply' | 'compare' | 'math' | 'negate' | 'if' | 'either' | 'in' | 'all' | 'any' | 'not' | 'reachable' | 'within' | 'run';
+export type ExprKind = 'value' | 'param' | 'memory' | 'read' | 'history' | 'sun' | 'call' | 'apply' | 'compare' | 'math' | 'negate' | 'if' | 'either' | 'in' | 'all' | 'any' | 'not' | 'reachable' | 'within' | 'run';
 
 /** An expression of one kind. */
 export type ExprOf<K extends ExprKind> = K extends ExprKind ? Extract<Expr, Record<K, unknown>> : never;
@@ -123,6 +123,16 @@ export const EXPR_KINDS: { readonly [K in ExprKind]: ExprSpec<K> } = {
     rebuild: (_expr, [from, to]) => ({ within: { from: from!, to: to! } }),
     docs: { summary: 'Whether the owner’s clock is between two times of day, from the first up to the second — across midnight when the second comes first.', examples: ['time between 23:00 and 05:00'] },
   },
+  sun: {
+    kind: 'sun',
+    label: 'The sun',
+    children: (expr) => (expr.offset ? [expr.offset.by] : []),
+    rebuild: (expr, [by]) => (expr.offset ? { ...expr, offset: { ...expr.offset, by: by! } } : expr),
+    docs: {
+      summary: 'When the sun rises or sets where the home is, on the automation’s clock — or so long before or after, a minute to twelve hours: a time of day, as `07:00` is, for `at` and `time between`. Unknown until the home has a place, and on a day the sun does not cross the horizon.',
+      examples: ['sunset', '30 min before sunset', 'time between sunset and sunrise', 'time between 1 h after sunrise and setting.lead before sunset'],
+    },
+  },
   run: leaf('run', 'What the run knows', {
     summary:
       'What the run knows of itself: `run.trigger`, the id of the trigger that started it — `""` when none with an id did; `run.event`, the event a device raised that started it, and `run.event.voltage`, what it carried, as its device declares it — unknown when no event did.',
@@ -131,7 +141,7 @@ export const EXPR_KINDS: { readonly [K in ExprKind]: ExprSpec<K> } = {
 };
 
 /** The order the reference lists them in. */
-export const EXPR_KIND_ORDER: readonly ExprKind[] = ['value', 'param', 'memory', 'read', 'history', 'reachable', 'run', 'within', 'call', 'apply', 'compare', 'in', 'math', 'negate', 'if', 'either', 'all', 'any', 'not'];
+export const EXPR_KIND_ORDER: readonly ExprKind[] = ['value', 'param', 'memory', 'read', 'history', 'reachable', 'run', 'within', 'sun', 'call', 'apply', 'compare', 'in', 'math', 'negate', 'if', 'either', 'all', 'any', 'not'];
 
 /** Which kind an expression is — by its key; one of no kind is an error, never taken for another. */
 export function exprKind(expr: Expr): ExprKind {

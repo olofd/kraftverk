@@ -219,7 +219,7 @@ export class Hub {
 
     /** What the installed packages bring to automations: their recipes and functions. None of the core's own. */
     this.library = new AutomationLibrary(types.contributions(), (message) => this.#log('warn', message));
-    this.engine = new AutomationEngine({ store: automations, library: this.library, device: homeDevices(catalog, sessions), gateway: this.gateway, record, bus: this.bus, history: this.history, clock: options.clock });
+    this.engine = new AutomationEngine({ store: automations, library: this.library, device: homeDevices(catalog, sessions), gateway: this.gateway, record, bus: this.bus, history: this.history, location: () => this.home.get()?.location ?? null, clock: options.clock });
     this.drafts = drafts({ history: this.history, events, catalog, sessions, library: this.library, engine: this.engine, automations });
 
     this.heldReadings = new HeldReadings(this.history);
@@ -244,6 +244,7 @@ export class Hub {
       engine: this.engine,
       checked: this.drafts.checked,
       policy: this.policy,
+      location: { get: () => this.home.get()?.location ?? null, set: (location) => void this.home.locate(location) },
       sealing: options.sealing,
       kept: options.secrets,
       self: self.id,

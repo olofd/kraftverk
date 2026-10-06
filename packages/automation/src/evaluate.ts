@@ -4,6 +4,7 @@ import { inWindow, minutesOf } from './clock.ts';
 import type { Evaluation } from './functions.ts';
 import { BUILTINS } from './kinds/builtins.ts';
 import { HISTORY_FNS, type HistoryPoint } from './kinds/history.ts';
+import type { SunEvent } from './rule.ts';
 import { childrenOf, exprKind, expressionsIn, mapChildren, type ExprOf } from './kinds/exprs.ts';
 import { EXPRESSION_FIELDS, fieldValue, withField } from './kinds/spec.ts';
 import { stepSpec } from './kinds/steps.ts';
@@ -103,6 +104,8 @@ export type RuleScope = {
    * null, where none is kept: unknown.
    */
   history?(role: string, means: string, seconds: number): { points: readonly HistoryPoint[]; from: number; to: number; unit: Unit | null; label: string } | null;
+  /** When the sun rises or sets today where the home is — moved by `offset` seconds — as a time of day, "HH:MM", on the automation's clock. Absent, or null, where it cannot be known. */
+  sun?(event: SunEvent, offset: number): string | null;
   /** How a role's part is named: "Garage station". */
   name(role: string): string;
   /** The time of day on the owner's clock, as "HH:MM"; null where there is none. */
@@ -240,6 +243,14 @@ export function measureNow(expr: Expr, scope: RuleScope, trace: string[] = [], a
     case 'run': {
       const { run: fact, field } = expr as ExprOf<'run'>;
       return scope.run?.(fact, field) ?? plain(null);
+    }
+    case 'sun': {
+      const { sun: event, offset } = expr as ExprOf<'sun'>;
+      const seconds = offset ? numberIn(now(offset.by), 's') : 0;
+      const at = seconds === null ? null : (scope.sun?.(event, offset?.before ? -seconds : seconds) ?? null);
+      const lead = (s: number) => (s % 3_600 === 0 ? `${s / 3_600} h` : s % 60 === 0 ? `${s / 60} min` : `${s} s`);
+      trace.push(at === null ? `When the ${event} is, is not known` : `${offset ? `${lead(seconds!)} ${offset.before ? 'before' : 'after'} ${event}` : event.charAt(0).toUpperCase() + event.slice(1)} is at ${at}`);
+      return plain(at);
     }
     case 'within': {
       const { from, to } = (expr as ExprOf<'within'>).within;
@@ -446,6 +457,7 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
       case 'within':
       case 'run':
       case 'memory':
+      case 'sun':
         return settled;
       default: {
         const unknown: never = kind;

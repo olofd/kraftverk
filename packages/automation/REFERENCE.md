@@ -198,7 +198,7 @@ does itself (below).
 
 ### `at` — At a time
 
-At a time of day on the automation’s own clock: every day, or only on the days it names. A server that was down at that time still runs it within the hour, once.
+At a time of day on the automation’s own clock — `07:00`, or by the sun where the home is: `sunset`, `30 min before sunset` — every day, or only on the days it names. A server that was down at that time still runs it within the hour, once.
 
 | Word | Holds | |
 |---|---|---|
@@ -220,6 +220,17 @@ when:
 when:
   - at: "09:00"
     days: [mon, wed, fri]
+```
+
+```yaml
+when:
+  - at: sunset
+```
+
+```yaml
+when:
+  - at: 30 min before sunset
+    days: weekdays
 ```
 
 ### `every` — Every so often
@@ -633,6 +644,7 @@ reached — is never taken for true.
 | Can be reached | `charger reachable` | Whether the part filling a role can be reached now: its holder says it is connected. Never unknown — not being reachable is the answer. |
 | What the run knows | `run.trigger == "low"` · `run.event.voltage < 200 V` | What the run knows of itself: `run.trigger`, the id of the trigger that started it — `""` when none with an id did; `run.event`, the event a device raised that started it, and `run.event.voltage`, what it carried, as its device declares it — unknown when no event did. |
 | Time of day | `time between 23:00 and 05:00` | Whether the owner’s clock is between two times of day, from the first up to the second — across midnight when the second comes first. |
+| The sun | `sunset` · `30 min before sunset` · `time between sunset and sunrise` · `time between 1 h after sunrise and setting.lead before sunset` | When the sun rises or sets where the home is, on the automation’s clock — or so long before or after, a minute to twelve hours: a time of day, as `07:00` is, for `at` and `time between`. Unknown until the home has a place, and on a day the sun does not cross the horizon. |
 | Ask a package | `acme.weather.sunny(forecast, day = "tomorrow")` | A function a package contributes, over the part filling a role: what the forecast says of tomorrow, the price’s rank. Only where a run may wait for its answer. |
 | A function of the language | `min(station.charge, 80 %)` · `clamp(charger.power, 0 W, 2 kW)` | One of the language’s own functions — min, max, clamp, round, floor, ceil, abs — on numbers, each with its unit; the answer in the first one’s unit. |
 | A comparison | `station.charge < 15 %` | Two values compared: `<`, `<=`, `>`, `>=`, `==`, `!=`. Unknown when either is. |

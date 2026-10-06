@@ -1,3 +1,4 @@
+import type { Coordinates } from '@kraftverk/automation';
 import type { AuditSubject, Availability, DeviceDescription, DeviceInfo, NodeId, Platform, PolicyValueName, PolicyValueSpec, Reading, ResourceKind, TransportDefinition, Value } from '@kraftverk/device-sdk';
 
 import type { HeldBy, Refused } from './devices.ts';
@@ -54,8 +55,8 @@ export type NodeView = {
 /** A node joining a home, saying what it is: by its own id, the same in every home it is part of. */
 export type NodeJoin = Pick<NodeView, 'id' | 'name' | 'platform' | 'transports' | 'alwaysOn' | 'reachable' | 'trusted'>;
 
-/** The home: what its people call it, and which node is its master. */
-export type HomeView = { id: string; name: string; master: NodeId; createdAt: string };
+/** The home: what its people call it, which node is its master, and where it is — null until its people say. */
+export type HomeView = { id: string; name: string; master: NodeId; createdAt: string; location: Coordinates | null };
 
 /** One line of the server's own log. */
 export type ServerLogLine = { at: string; level: 'debug' | 'info' | 'warn' | 'error'; text: string };

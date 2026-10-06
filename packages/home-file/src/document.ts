@@ -1,5 +1,5 @@
 import { KEY } from '@kraftverk/device-sdk';
-import { AUTOMATION_MODES, type AutomationMode, type Rule } from '@kraftverk/automation';
+import { AUTOMATION_MODES, type AutomationMode, type Coordinates, type Rule } from '@kraftverk/automation';
 
 import { CURRENT_VERSION } from './migrate.ts';
 import { durationSeconds, durationText, ruleFromConfig, ruleToConfig, useOf, useText, type Issue, type Use } from '@kraftverk/automation';
@@ -77,7 +77,7 @@ export type AutomationEntry = {
 export type ConfigDocument = {
   version: number;
   /** The home's values, and its clock: the time zone an automation that says none of its own keeps time in. */
-  home: { policy: Record<string, number>; clock: string | null };
+  home: { policy: Record<string, number>; clock: string | null; location: Coordinates | null };
   devices: Record<string, DeviceEntry>;
   links: LinkEntry[];
   automations: Record<string, AutomationEntry>;
@@ -124,11 +124,21 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
   // The home.
   const policy: Record<string, number> = {};
   let homeClock: string | null = null;
+  let location: Coordinates | null = null;
   if (data.home !== undefined) {
     if (!isRecord(data.home)) problem('"home" is a map', ['home']);
     else {
-      for (const field of Object.keys(data.home)) if (!['policy', 'clock'].includes(field)) problem(`"${field}" is not part of the home: it has policy and clock`, ['home', field]);
+      for (const field of Object.keys(data.home)) if (!['policy', 'clock', 'location'].includes(field)) problem(`"${field}" is not part of the home: it has policy, clock and location`, ['home', field]);
       if (data.home.clock !== undefined) homeClock = text(data.home.clock, ['home', 'clock'], 'its clock: the time zone its automations keep time in ("clock: Europe/Stockholm")');
+      // Where it is: what sunrise and sunset are told by.
+      if (data.home.location !== undefined) {
+        const given = data.home.location;
+        const fits = (value: unknown, most: number) => typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= most;
+        if (!isRecord(given) || Object.keys(given).some((key) => key !== 'latitude' && key !== 'longitude')) problem('"location" is its latitude and longitude, in degrees: { latitude: 59.3, longitude: 18.1 }', ['home', 'location']);
+        else if (!fits(given.latitude, 90)) problem('A latitude is a number from -90 to 90', ['home', 'location', 'latitude']);
+        else if (!fits(given.longitude, 180)) problem('A longitude is a number from -180 to 180', ['home', 'location', 'longitude']);
+        else location = { latitude: given.latitude as number, longitude: given.longitude as number };
+      }
       if (data.home.policy !== undefined) {
         if (!isRecord(data.home.policy)) problem('"policy" is a map of the home\'s values', ['home', 'policy']);
         else for (const [name, value] of Object.entries(data.home.policy)) typeof value === 'number' ? (policy[name] = value) : problem('A policy value is a number', ['home', 'policy', name]);
@@ -238,7 +248,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
 
   // Partial: what could be read, beside every problem — whose entries the reader leaves out (`readConfig`).
   if (issues.length && !options.partial) return { document: null, issues };
-  return { document: { version: CURRENT_VERSION, home: { policy, clock: homeClock }, devices, links, automations, secrets }, issues };
+  return { document: { version: CURRENT_VERSION, home: { policy, clock: homeClock, location }, devices, links, automations, secrets }, issues };
 }
 
 
@@ -285,8 +295,14 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
   );
   return {
     kraftverk: document.version,
-    ...(Object.keys(document.home.policy).length || document.home.clock !== null
-      ? { home: { ...(document.home.clock !== null ? { clock: document.home.clock } : {}), ...(Object.keys(document.home.policy).length ? { policy: document.home.policy } : {}) } }
+    ...(Object.keys(document.home.policy).length || document.home.clock !== null || document.home.location !== null
+      ? {
+          home: {
+            ...(document.home.clock !== null ? { clock: document.home.clock } : {}),
+            ...(document.home.location !== null ? { location: { latitude: document.home.location.latitude, longitude: document.home.location.longitude } } : {}),
+            ...(Object.keys(document.home.policy).length ? { policy: document.home.policy } : {}),
+          },
+        }
       : {}),
     ...(Object.keys(document.devices).length ? { devices } : {}),
     ...(document.links.length ? { links: document.links.map((link) => ({ [link.kind]: { from: useText(link.from), to: useText(link.to) } })) } : {}),
@@ -296,4 +312,4 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
 }
 
 /** An empty document of this version. */
-export const emptyDocument = (): ConfigDocument => ({ version: CURRENT_VERSION, home: { policy: {}, clock: null }, devices: {}, links: [], automations: {}, secrets: {} });
+export const emptyDocument = (): ConfigDocument => ({ version: CURRENT_VERSION, home: { policy: {}, clock: null, location: null }, devices: {}, links: [], automations: {}, secrets: {} });

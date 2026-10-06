@@ -146,7 +146,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
   const vocabulary = homeVocabulary(deps);
   // A restore reads what it can: an entry it cannot read is left out and said, never the whole home lost for it.
   const read = readConfig(text, (document) => checkDocument(document, vocabulary, { hasSecret: () => true, uses: 'leave' }), { partial: options.lenient });
-  const empty: ImportPlan = { id: null, from: read.from, problems: read.problems.map((each) => ({ ...each, path: [...each.path] })), devices: [], links: [], automations: [], policy: [], needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
+  const empty: ImportPlan = { id: null, from: read.from, problems: read.problems.map((each) => ({ ...each, path: [...each.path] })), devices: [], links: [], automations: [], policy: [], location: null, needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
   if (!read.document) return empty;
   const document = read.document;
   const problems: ImportPlan['problems'] = [];
@@ -305,6 +305,10 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     .filter(fits)
     .filter(([name, value]) => now[name as PolicyValueName] !== value)
     .map(([name, value]) => ({ name, label: POLICY_VALUES[name as PolicyValueName].label, before: now[name as PolicyValueName] ?? null, after: value }));
+  // Where the home is: set when the file says it, and it is not so already. A file that says none leaves it as it is.
+  const here = deps.location.get();
+  const said = document.home.location;
+  const location = said && (said.latitude !== here?.latitude || said.longitude !== here?.longitude) ? { before: here, after: said } : null;
 
   // Replacing: what the file does not have goes.
   if (options.mode === 'replace') {
@@ -328,7 +332,7 @@ export async function planImport(deps: ImportDeps, text: string, options: { mode
     return { ...each, line: at?.line ?? null, column: at?.column ?? null };
   });
   const id = placed.length ? null : `p-${randomHex(12)}`;
-  const view: ImportPlan = { id, from: read.from, problems: placed, devices, links, automations, policy, needs, notes };
+  const view: ImportPlan = { id, from: read.from, problems: placed, devices, links, automations, policy, location, needs, notes };
   if (id) deps.pending.set(id, { view, document, mode: options.mode, secrets, by: options.by, expiresAt: Date.now() + PLAN_TTL_MS, turnedOff, lenient: Boolean(options.lenient) });
   return view;
 }
@@ -505,7 +509,7 @@ export function writeImport(deps: ImportDeps, id: string, by: string, choices: I
   if (!options.lenient) for (const need of view.needs.rebind) if (automationsIn(need.automation) && !choices.rebind?.[`${need.automation}.${need.role}`]) missing.push(`"${document.automations[need.automation]?.name}": a device for ${need.label}`);
   if (missing.length) throw new ApiError('invalid', `It still needs ${missing.join('; ')}`, { problems: missing });
 
-  const applied: ImportApplied = { devices: { added: [], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, policy: [], notes: [] };
+  const applied: ImportApplied = { devices: { added: [], restored: [], changed: [], removed: [] }, automations: { added: [], changed: [], removed: [] }, links: { added: 0, removed: 0 }, policy: [], location: false, notes: [] };
   const touched: AutomationId[] = [];
   /** Where each automation goes on the home page: placed after all are written, by place, so each lands where the file says. */
   const placing: { id: AutomationId; place: number | null }[] = [];
@@ -611,6 +615,10 @@ export function writeImport(deps: ImportDeps, id: string, by: string, choices: I
       for (const change of view.policy) {
         deps.policy.set(change.name as PolicyValueName, change.after);
         applied.policy.push(change.name);
+      }
+      if (view.location) {
+        deps.location.set(view.location.after);
+        applied.location = true;
       }
     })();
   } catch (error) {

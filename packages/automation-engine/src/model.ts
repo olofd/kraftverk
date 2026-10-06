@@ -1,5 +1,5 @@
 import type { AutomationRun } from '@kraftverk/api-contract';
-import type { AutomationMode, RoleBinding, Rule, RulePart } from '@kraftverk/automation';
+import type { AutomationMode, Coordinates, RoleBinding, Rule, RulePart } from '@kraftverk/automation';
 import type { AuditRecord, AutomationId, CapabilityId, Clock, DeviceDescription } from '@kraftverk/device-sdk';
 import type { ActionGateway } from '@kraftverk/gateway';
 import type { LiveBus } from '@kraftverk/holder';
@@ -83,6 +83,8 @@ export type AutomationEngineDeps = {
   bus?: LiveBus;
   /** What the home kept of each reading: what a rule looks back at (`average(station.charge, 1 h)`). None: unknown. */
   history?: EngineHistory;
+  /** Where the home is, as it is now: what `sunrise` and `sunset` are told by. None, or null: unknown. */
+  location?: () => Coordinates | null;
   /**
    * The home's time: what its triggers, holds, pauses and runs keep, and
    * what it stamps. Real time when not given; a test's own — fixed, or fast.

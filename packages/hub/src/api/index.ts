@@ -24,7 +24,7 @@ export function homeApi(hub: Hub, caller: Caller): KraftverkApi {
     ...setupApi(hub, caller),
     ...transportsApi(hub),
     ...automationsApi(hub, caller),
-    ...homeWideApi(hub),
+    ...homeWideApi(hub, caller),
     ...configurationApi(hub, caller),
     ...nodesApi(hub, caller),
     ...liveApi(hub, caller),

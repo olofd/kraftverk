@@ -5,6 +5,7 @@ import { secondsText } from './describe.ts';
 import { evaluateNow, settledScope } from './evaluate.ts';
 import { BUILTIN_ORDER, BUILTINS, isBuiltin } from './kinds/builtins.ts';
 import { HISTORY_ORDER, HISTORY_SECONDS, isHistoryFn } from './kinds/history.ts';
+import { isSunEvent, SUN_OFFSET_SECONDS } from './sun.ts';
 import { expressionsIn } from './kinds/exprs.ts';
 import { fieldValue, type FieldSpec } from './kinds/spec.ts';
 import { branchesOf, STEP_KIND_ORDER, STEP_KINDS } from './kinds/steps.ts';
@@ -319,6 +320,12 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         }
       });
       return { type: 'boolean' };
+    }
+    if ('sun' in expr) {
+      if (!isSunEvent(expr.sun)) problems.push(`${where}: "${String(expr.sun)}" is not when the sun rises or sets: sunrise, sunset`);
+      // So long before or after it: a number or a setting, known before it runs.
+      if (expr.offset) bounded(expr.offset.by, `${where}.offset.by`, 's', SUN_OFFSET_SECONDS.min, SUN_OFFSET_SECONDS.max);
+      return { type: 'string', options: null };
     }
     if ('within' in expr) {
       const ends = [

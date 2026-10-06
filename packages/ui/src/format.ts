@@ -83,3 +83,7 @@ export function formatTemperature(celsius: number, unit: 'C' | 'F') {
 
 /** A phrase begun as a sentence: "this phone" → "This phone". */
 export const capitalise = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** Where something is, as a map says it: "59.33° N, 18.07° E". */
+export const formatCoordinates = ({ latitude, longitude }: { latitude: number; longitude: number }): string =>
+  `${Math.abs(latitude).toFixed(2)}° ${latitude < 0 ? 'S' : 'N'}, ${Math.abs(longitude).toFixed(2)}° ${longitude < 0 ? 'W' : 'E'}`;

@@ -10,6 +10,7 @@ import {
 } from '@kraftverk/home-file';
 import { methodsOf, partsOf, type NodeId, type PolicyValueName, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
 import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, LinkStore, SecretsAtRest } from '@kraftverk/store';
+import type { Coordinates } from '@kraftverk/automation';
 
 import type { ProtocolRegistry } from '../installed/protocols.ts';
 import type { DeviceTypeRegistry } from '../installed/types.ts';
@@ -34,6 +35,8 @@ export type ConfigDeps = {
   protocols: ProtocolRegistry;
   /** The home's own values: how much is a load, the reserve. */
   policy: { values(): PolicyValues; set(name: PolicyValueName, value: number | null): PolicyValues };
+  /** Where the home is: what sunrise and sunset are told by. */
+  location: { get(): Coordinates | null; set(location: Coordinates | null): void };
   /** How a passphrase seals a secret, and opens it: the place's. */
   sealing: PassphraseSealing;
   /** How the home seals its own secrets at rest: what the snapshot keeps them in. */
@@ -90,7 +93,10 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
   if (options.devices) for (const key of options.devices) if (!devices.some((device) => device.key === key)) notes.push(`There is no device "${key}"`);
   if (options.automations) for (const key of options.automations) if (!automations.some((automation) => automation.key === key)) notes.push(`There is no automation "${key}"`);
 
-  if (everything) document.home.policy = { ...deps.policy.values() };
+  if (everything) {
+    document.home.policy = { ...deps.policy.values() };
+    document.home.location = deps.location.get();
+  }
 
   // The secrets, as asked.
   const secret = async (device: DeviceRecord, connection: { id: string; secretsExportable: boolean }, field: string): Promise<SecretValue | null> => {
