@@ -53,6 +53,10 @@ export function AppSettings() {
             />
           </Pressable>
           <RowSeparator />
+          <Pressable onPress={() => router.push('/integrations')}>
+            <Row title="Integrations" subtitle="The platforms kraftverk reaches, the products it knows on each, and where each runs" accessory={chevron} />
+          </Pressable>
+          <RowSeparator />
           <Pressable onPress={() => router.push('/removed')}>
             <Row title="Removed devices" subtitle={removed.length ? `${removed.length} kept with their history` : 'None'} accessory={chevron} />
           </Pressable>

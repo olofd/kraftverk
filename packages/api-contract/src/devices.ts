@@ -1,4 +1,4 @@
-import type { Availability, CapabilityId, CategorySpec, ConnectionHealth, ConnectionId, DescriptionSource, DeviceDescription, DeviceInfo, DeviceTypeMeta, DeviceTypeView, LinkEnd, LinkId, LinkKind, NodeId, Reading, SavedDeviceId, ToolSpec, TransportDefinition, Value } from '@kraftverk/device-sdk';
+import type { Availability, CapabilityId, CategorySpec, ConnectionHealth, ConnectionId, DescriptionSource, DeviceDescription, DeviceInfo, DeviceTypeMeta, DeviceTypeView, IntegrationInfo, LinkEnd, LinkId, LinkKind, NodeId, Placement, Reading, SavedDeviceId, ToolSpec, TransportDefinition, TypeSource, Value } from '@kraftverk/device-sdk';
 
 /*
   The devices you have, as a home answers for them: a device with its
@@ -134,6 +134,10 @@ export type WayView = { method: string; holder: HeldBy; fits: boolean; availabil
  * a type with no real way that fits this node needs another.
  */
 export type DeviceTypeListing = DeviceTypeView & {
+  /** The platform it is on, and whether it is a product on it or the platform's own (docs/PLAN-INTEGRATIONS.md §1). */
+  source: TypeSource;
+  /** Where each of its real ways can be held: the platforms, and what the node must be — wherever this home runs. */
+  placements: Placement[];
   /** Each way it can be added here, in its type's order: the master's, then this node's for the master. */
   ways: WayView[];
   warnings: readonly string[];
@@ -144,6 +148,9 @@ export type Refused = { source: string; problems: string[] };
 /** `GET /api/device-types`. */
 export type DeviceTypeList = {
   categories: Record<string, CategorySpec>;
+  /** The installed integrations, each a platform its types are on: the types name theirs (`source`). */
+  integrations: IntegrationInfo[];
+  /** Products first within each platform, its own types after: the order they are offered in. */
   types: DeviceTypeListing[];
   transports: TransportDefinition[];
   refused: { types: Refused[]; protocols: Refused[]; transports: Refused[] };

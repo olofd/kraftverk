@@ -23,6 +23,7 @@ export * from './confirm.ts';
 export * from './actions.ts';
 export * from './address.ts';
 export * from './setup.ts';
+export * from './integrations.ts';
 
 export * from './screens.ts';
 export * from './asking.ts';

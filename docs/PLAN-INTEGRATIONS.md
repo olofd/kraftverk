@@ -1118,6 +1118,12 @@ server: worked out from its methods, §0), the devices using it, its README
 as its page.
 *Done when* the page lists the five platforms, each with its products and the
 devices that use them.
+**Done 2026-10-06, simpler than written.** The platforms and where each type
+runs (`source`, `placements`) came into the one list the add screen already
+reads (`GET /api/device-types`), rather than a second endpoint; brands stay
+each type's `meta.brand`, and a generated catalogue waits for loading on
+demand (step 15), which is what needs it. A README shown in the app waits for
+a way to ship text with the app.
 
 **Step 3 · Bridges in the contract and the database.**
 `kind: 'account'`; `BridgeSpec`, `BridgeSession` and `Member`; a connection

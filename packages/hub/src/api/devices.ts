@@ -1,5 +1,5 @@
 import { ApiError, type Caller, type ChangesQuery, type DeviceTypeListing, type HistoryQuery, type KraftverkApi } from '@kraftverk/api-contract';
-import { capabilityIn, CATEGORIES, describeDeviceType, isSimulated, methodsOf, platformsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
+import { capabilityIn, CATEGORIES, describeDeviceType, isSimulated, methodsOf, placementsOf, platformsOf, type Availability, type ConnectionMethod } from '@kraftverk/device-sdk';
 import { deviceReader } from '@kraftverk/holder';
 
 import { runAskedTool } from '../devices/tools.ts';
@@ -58,6 +58,13 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
     return transports.available(method.transport);
   };
 
+  /** Where an installed type came from: every one came from an integration, or it was not installed. */
+  const sourceOf = (id: string) => {
+    const source = types.sourceOf(id);
+    if (!source) throw new Error(`${id} is installed with no integration`);
+    return source;
+  };
+
   const toolOf = (id: string, name: string) => {
     const device = deviceOf(id);
     const session = sessions.get(device.id);
@@ -76,6 +83,8 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
     async deviceTypes() {
       const listing: DeviceTypeListing[] = types.all().map((type) => ({
         ...describeDeviceType(type),
+        source: sourceOf(type.id),
+        placements: placementsOf(type, (id) => transports.definition(id)),
         /*
           The ways that can be held where this home runs at all — one that
           cannot (the broker in a browser) is not offered, rather than offered
@@ -89,6 +98,7 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
       }));
       return {
         categories: CATEGORIES,
+        integrations: types.integrations(),
         types: listing,
         transports: transports.definitions(),
         /** Packages that were found and refused, and why: for whoever is writing one. */

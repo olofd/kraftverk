@@ -130,6 +130,18 @@ export function platformsOf(method: ConnectionMethod, transport: Pick<TransportD
 }
 
 /**
+ * Where one way of reaching a device can be held — two facts, kept apart
+ * (docs/PLAN-INTEGRATIONS.md §0): the platforms its transport runs on, a fact
+ * of software; and what the node holding it must be, a choice with its reason.
+ */
+export type Placement = { method: string; platforms: Platform[]; needs: NodeNeeds };
+
+/** Each of a type's real ways, and where it can be held: what "where it runs" is worked out from. Its simulator runs anywhere, and is not among them. */
+export function placementsOf(type: Pick<HasWays, 'connections'>, transportOf: (id: string) => Pick<TransportDefinition, 'platforms'> | null): Placement[] {
+  return type.connections.map((method) => ({ method: method.id, platforms: platformsOf(method, transportOf(method.transport)), needs: { ...method.needs } }));
+}
+
+/**
  * A connection, open: what a device type's session and its `identify` are handed.
  *
  * The same shape wherever it is held, which is how the same device-type code
