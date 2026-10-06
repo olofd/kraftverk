@@ -132,6 +132,7 @@ export function followerApi(h: Follower): KraftverkApi {
     },
 
     problems: async (limit) => (await h.kept(HEARD.problems(limit), () => home.problems(limit))).answer,
+    needsYou: async () => (await h.kept(HEARD.needsYou, () => home.needsYou())).answer,
 
     setup: {
       /** A way this node holds is set up here, over its own radio; any other, by the master. */

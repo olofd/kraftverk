@@ -14,6 +14,7 @@ import {
   type FoundView,
   type KraftverkApi,
   type LiveUpdate,
+  type NeedsYouView,
   type ProblemView,
   type ServerApi,
   type SightingView,
@@ -142,6 +143,7 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
     },
 
     problems: async (limit) => (await get<{ problems: ProblemView[] }>('/problems', { limit })).problems,
+    needsYou: async () => (await get<{ needsYou: NeedsYouView[] }>('/needs-you')).needsYou,
 
     connections: {
       prefer: (device, connection) => call('POST', `/devices/${enc(device)}/connections/${enc(connection)}/prefer`, {}),

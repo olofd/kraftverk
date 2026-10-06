@@ -1343,6 +1343,12 @@ bridge not yet added. Served by the API, shown on Home with a count, each
 item opening what fixes it.
 *Done when* a refused NIU password and a new scooter on the account both
 appear in it, each with its button.
+**Done 2026-10-06.** `needsYou()` (`GET /needs-you`): each device or account
+whose own health is `needs-you` — a member that only takes it from its
+bridge is not listed again — and each device found behind a bridge of yours.
+Home shows what to act on first ("Needs you"), each row opening the page
+that fixes it — an account's under its integration — and what is found
+stays under "Found near you", beside it.
 
 **Step 9 · Setup that asks again, and runs again.**
 Actions that answer `ask`, with what the next turn needs (`carry`) kept by

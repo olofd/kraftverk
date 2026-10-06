@@ -8,7 +8,7 @@ import type { Rehearsal, VocabularyView, WorldView } from './assistant.ts';
 import type { AutomationChanges, AutomationDraftView, AutomationKit, AutomationRun, AutomationView, NewAutomation, RunLog } from './automations.ts';
 import type { ConfigExported, ConfigExportRequest, ConfigSnapshotView, ImportAnswers, ImportApplied, ImportPlan } from './configuration.ts';
 import type { AttributeWrite, ChangesQuery, CommandBody, DeviceChanges, DeviceHistory, DeviceTypeList, DeviceView, ElsewhereView, HistoryQuery, HeldBy, HomeElsewhere, LinkRecord, NewLink, PictureRef, ToolBody } from './devices.ts';
-import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, ProblemView } from './live.ts';
+import type { DeviceEventView, LiveState, LiveStream, LiveUpdate, NeedsYouView, ProblemView } from './live.ts';
 import type { AuditEntry, AuditUpload, HeldReadings, HeldReadingsTaken, HomeView, NodeJoin, NodeView, PolicyValueView, ServerLogLine, TransportList } from './nodes.ts';
 import type { CheckOutcome, DraftView, FoundAt, FoundView, HeldSetupInput, SaveInput, SightingView } from './setup.ts';
 
@@ -91,6 +91,8 @@ export interface KraftverkApi {
   };
   /** Warnings and errors across the devices you have, newest first. */
   problems(limit?: number): Promise<ProblemView[]>;
+  /** What waits on a person: a sign-in to give again, a device found behind an account. */
+  needsYou(): Promise<NeedsYouView[]>;
   /**
    * Adding a device (docs/DATA-MODEL.md §1): a draft only its starter sees,
    * each step that touches the device run where it will be held, nothing

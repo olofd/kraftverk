@@ -37,7 +37,7 @@ function spanOf(query: { hours?: number; from?: string; to?: string }): { from: 
 }
 
 
-type DevicesApi = Pick<KraftverkApi, 'deviceTypes' | 'devices' | 'problems'>;
+type DevicesApi = Pick<KraftverkApi, 'deviceTypes' | 'devices' | 'problems' | 'needsYou'>;
 
 export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
   const { catalog, sessions, views, gateway, events } = hub;
@@ -273,6 +273,22 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
 
     /** Warnings and errors across the devices you have, newest first: what wants looking at. */
     problems: async (limit = 100) => events.problems(limit),
+
+    /**
+     * What waits on a person: each device or account that needs signing in to
+     * again — its own need, not one it only takes from the bridge it is
+     * behind, which is listed once, as the bridge — and each device found
+     * behind a bridge of yours and not added yet.
+     */
+    async needsYou() {
+      const all = views.all();
+      const needing = new Set(all.filter((device) => device.health.status === 'needs-you').map((device) => device.id));
+      const acts = all
+        .filter((device) => needing.has(device.id) && !device.connections.some((connection) => connection.through !== null && needing.has(connection.through.id)))
+        .map((device) => ({ kind: 'act' as const, device: { id: device.id, name: device.name, kind: device.kind, integration: device.integration }, detail: device.health.detail }));
+      const found = hub.nearby.list().filter((entry) => entry.through !== null && !entry.ignored);
+      return [...acts, ...found.map((entry) => ({ kind: 'found' as const, found: entry }))];
+    },
 
   };
 }

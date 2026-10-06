@@ -72,6 +72,7 @@ export function deviceRoutes(deps: AppDeps, confirm: ConfirmPassword): Hono {
   });
 
   api.get('/problems', async (c) => c.json({ problems: await homeFor(deps, c).problems(query(c, LIMITED).limit) }));
+  api.get('/needs-you', async (c) => c.json({ needsYou: await homeFor(deps, c).needsYou() }));
 
   api.get('/devices/:id/events', async (c) => c.json({ events: await homeFor(deps, c).devices.events(id(c.req.param('id')), query(c, LIMITED).limit) }));
 

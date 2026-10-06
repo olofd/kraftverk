@@ -21,6 +21,25 @@ const withHub = async () => {
   return hub.id;
 };
 
+describe('what waits on a person', () => {
+  test('a bridge whose sign-in is refused is listed once — not each device behind it, which says why — beside what is found behind it', async () => {
+    const hub = await withHub();
+    const draft = await home.home.setup.start({ typeId: 'test.relayed-lamp', methodId: 'hub' });
+    await home.home.setup.choose(draft.id, { address: 'lamp-a' });
+    await home.home.setup.check(draft.id);
+    const lamp = await home.home.setup.save(draft.id, { name: 'Lamp A' });
+
+    expect((await home.home.needsYou()).map((item) => (item.kind === 'act' ? ['act', item.device.name] : ['found', item.found.address]))).toEqual([['found', 'lamp-b']]);
+
+    home.bridged.needsYou = 'The hub refused its PIN: give it again on its page';
+    const items = await home.home.needsYou();
+    expect(items.filter((item) => item.kind === 'act')).toEqual([{ kind: 'act', device: { id: hub, name: 'Hub', kind: 'account', integration: { id: 'test', name: 'Test' } }, detail: 'The hub refused its PIN: give it again on its page' }]);
+    // The lamp behind it says it waits too, in the hub's words.
+    expect((await home.home.devices.get(lamp.id)).health).toMatchObject({ status: 'needs-you', detail: 'Hub: The hub refused its PIN: give it again on its page' });
+    home.bridged.needsYou = undefined;
+  });
+});
+
 describe('members of a bridge', () => {
   test('are found near you through it, each as the type the bridge says it is', async () => {
     const hub = await withHub();

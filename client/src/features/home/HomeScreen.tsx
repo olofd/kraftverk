@@ -18,6 +18,7 @@ import { PROBLEMS_SHOWN } from '../devices/ProblemsScreen';
 import { pictureFor } from '../devices/registry';
 import { Elsewhere } from './Elsewhere';
 import { FoundNearYou } from './FoundNearYou';
+import { NeedsYou } from './NeedsYou';
 
 /** What can be added, from the categories something installed is in: "Power stations, smart plugs, weather". */
 const addSubtitle = (installed: readonly { meta: { category: string } }[]) =>
@@ -75,6 +76,7 @@ export function HomeScreen() {
 
       <Elsewhere />
       <Shortcuts />
+      <NeedsYou />
       <FoundNearYou />
 
       {loading && devices.length === 0 ? (

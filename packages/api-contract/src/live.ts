@@ -1,4 +1,6 @@
-import type { AutomationId, ConnectionHealth, EventLevel, Reading, SavedDeviceId, Value } from '@kraftverk/device-sdk';
+import type { AutomationId, ConnectionHealth, DeviceKind, EventLevel, IntegrationInfo, Reading, SavedDeviceId, Value } from '@kraftverk/device-sdk';
+
+import type { FoundView } from './setup.ts';
 
 /*
   What a home says as it happens: the live stream's updates, what devices
@@ -20,6 +22,22 @@ export type DeviceEventView = {
 
 /** `GET /problems`: warnings and errors across the devices you have, newest first, each with its device's name. */
 export type ProblemView = DeviceEventView & { deviceName: string };
+
+/**
+ * One thing that waits on a person (docs/PLAN-INTEGRATIONS.md step 8): a
+ * device or an account that needs signing in to again — its own, not one
+ * that only waits on the bridge it is behind — or a device behind one of
+ * your accounts or gateways, found and not added yet. Each says what opens
+ * it: the page that fixes it.
+ */
+export type NeedsYouView =
+  | {
+      kind: 'act';
+      device: { id: SavedDeviceId; name: string; kind: DeviceKind; integration: IntegrationInfo | null };
+      /** What it needs, in its own words: "NIU did not accept that password: sign in again on the account's page". */
+      detail: string;
+    }
+  | { kind: 'found'; found: FoundView };
 
 /** Something a device said happened, as the live stream carries it. */
 export type LiveEvent = {

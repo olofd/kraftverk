@@ -10,7 +10,13 @@ import { LAMP } from './testing.ts';
 */
 
 /** What is behind the hub: the state it keeps of each lamp, and which links it handed out and had back. */
-export type HubWatch = { lamps: Map<string, { name: string; on: boolean }>; opened: string[]; closed: string[] };
+export type HubWatch = {
+  lamps: Map<string, { name: string; on: boolean }>;
+  opened: string[];
+  closed: string[];
+  /** Said by the hub when set: its sign-in refused, waiting on a person. */
+  needsYou?: string;
+};
 
 /** What a lamp reads and asks through its hub: plain calls. */
 export type RelayLink = MemberLink & {
@@ -48,7 +54,7 @@ function hubBridge(watch: HubWatch): Bridge<RelayLink> {
 function hubSession(watch: HubWatch): DeviceSession {
   const at = new Date().toISOString();
   return {
-    health: () => ({ status: 'connected', detail: 'A hub with its lamps', lastReadingAt: at }),
+    health: () => (watch.needsYou ? { status: 'needs-you', detail: watch.needsYou, lastReadingAt: at } : { status: 'connected', detail: 'A hub with its lamps', lastReadingAt: at }),
     readings: () => [{ key: 'members', value: watch.lamps.size, at }],
     async command() {
       return { accepted: false, error: 'A hub takes no commands' };
