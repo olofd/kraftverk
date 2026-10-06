@@ -1,3 +1,3 @@
-import { Integrations } from '../src/features/settings/Integrations';
+import { IntegrationsScreen } from '../src/features/integrations/IntegrationsScreen';
 
-export default Integrations;
+export default IntegrationsScreen;

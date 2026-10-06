@@ -191,6 +191,7 @@ export class DeviceViews {
       addedAt: record.addedAt,
       removedAt: record.removedAt,
       kind: type?.kind ?? 'hardware',
+      integration: this.deps.types.sourceOf(record.typeId)?.integration ?? null,
       meta: type
         ? { name: type.meta.name, brand: type.meta.brand, icon: type.meta.icon, support: type.meta.support, category: type.meta.category }
         : { name: record.typeId, icon: 'help-circle', support: 'experimental', category: 'unknown' },

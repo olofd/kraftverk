@@ -23,7 +23,8 @@
           "ui": "./ui/index.ts"
         }
       ],
-      "migrations": "./src/migrations.ts"
+      "migrations": "./src/migrations.ts",
+      "ui": "./ui/integration.tsx"
     }
   },
   "exports": {
@@ -32,7 +33,8 @@
     "./scooter": "./src/scooter.ts",
     "./migrations": "./src/migrations.ts",
     "./ui": "./ui/index.ts",
-    "./protocol": "./src/protocol/index.ts"
+    "./protocol": "./src/protocol/index.ts",
+    "./ui/integration": "./ui/integration.tsx"
   },
   "scripts": {
     "test": "node ../../../scripts/run-bun.mjs test",

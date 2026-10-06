@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react';
 
-import type { Part, Value } from '@kraftverk/device-sdk';
+import type { IntegrationInfo, Part, Value } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
 import type { DeviceView, LinkView, VersionInfo } from '@kraftverk/api-contract';
@@ -103,6 +103,22 @@ export type DeviceUi = {
    * device; this is polish on top.
    */
   tools?: { label: string; description: string; Screen: ComponentType<DeviceScreenProps> };
+};
+
+/** What an integration's own piece of its page is handed: the integration, and the accounts you have on it. */
+export type IntegrationScreenProps = { integration: IntegrationInfo; accounts: readonly DeviceView[] };
+
+/**
+ * Which pieces of its pages an integration draws itself
+ * (docs/PLAN-INTEGRATIONS.md §1.1): its page, and an account's, beside what
+ * the app draws for every integration — where it runs, its accounts and
+ * signing in to them, the devices on it. A device's pages stay its type's.
+ */
+export type IntegrationUi = {
+  /** On its page, below its accounts: what only this platform has to say. */
+  page?: ComponentType<IntegrationScreenProps>;
+  /** On an account's page, above what is reached through it: the account's own panel. */
+  account?: ComponentType<DeviceScreenProps>;
 };
 
 const endName = (link: LinkView) => (link.other.partLabel ? `${link.other.name} — ${link.other.partLabel}` : link.other.name);

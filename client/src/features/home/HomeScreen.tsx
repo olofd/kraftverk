@@ -51,8 +51,8 @@ export function HomeScreen() {
   const problemCount = useAnswer(() => api.problems(PROBLEMS_SHOWN), [api, heard.count]).value?.length ?? null;
   const hardware = devices.filter((device) => device.kind === 'hardware');
   const services = devices.filter((device) => device.kind === 'service');
-  // Sign-ins to someone's cloud, and what is reached through each: an account's members are among the devices above.
-  const accounts = devices.filter((device) => device.kind === 'account');
+  // Accounts are not here: each is its integration's, managed on its page (docs/PLAN-INTEGRATIONS.md §1.1); what is reached through one is among the devices above.
+  const accounts = devices.filter((device) => device.kind === 'account' && !device.removedAt).length;
   // Every device here shows its readings: while this page is in front, the home reads them more often.
   useShowing(devices.map((device) => ({ kind: 'device', id: device.id })));
 
@@ -119,12 +119,6 @@ export function HomeScreen() {
           <DeviceList devices={services} />
         </YStack>
       ) : null}
-      {accounts.length > 0 ? (
-        <YStack gap="$3">
-          <SectionLabel>Accounts</SectionLabel>
-          <DeviceList devices={accounts} />
-        </YStack>
-      ) : null}
 
       <YStack gap="$2">
         <SectionLabel>Manage</SectionLabel>
@@ -134,6 +128,14 @@ export function HomeScreen() {
               title="Add a device"
               subtitle={addSubtitle(installed)}
               accessory={<Icon name="plus" size={16} color={theme.muted?.val} />}
+            />
+          </Pressable>
+          <RowSeparator />
+          <Pressable onPress={() => router.push('/integrations')}>
+            <Row
+              title="Integrations"
+              subtitle={accounts ? `Your ${accounts === 1 ? 'account' : `${accounts} accounts`} on the services kraftverk reaches, and what each knows` : 'The services and platforms kraftverk reaches: sign in to an account, and what is on it is found'}
+              accessory={<Icon name="chevron-right" size={16} color={theme.muted?.val} />}
             />
           </Pressable>
           <RowSeparator />

@@ -1278,6 +1278,21 @@ only their integration; bridges hand their members a typed link of calls,
 and the NIU account's topics go; an integration's page in the app, with its
 accounts — signed into again and changed there — and its own screens, and
 accounts no longer listed among the devices.
+**Done 2026-10-06.** Protocols live in `src/protocol/`, declared in the
+manifest (`protocols`), each id the integration's or beginning with it; a
+way speaks only its own integration's protocol, and a device package's only
+import of the wire is `@kraftverk/integration-<id>/protocol`. A bridged way
+names its bridges and nothing else; its session links with
+`linkOf(connection, changed, why)`, the holder lets go of every link when
+the device closes (`closingOnce`). NIU's scooter reads `ScooterLink`. The
+app: Home → Integrations → an integration's page (accounts, its own page
+piece, your devices on it, what it knows) → an account's page (its panel —
+NIU's says how NIU is asked — what is through it, signing in again, rename
+and remove); a device page of an account goes there. An integration ships
+its screens by `kraftverk.integration.ui` (`IntegrationUi`: `page`,
+`account`), bound into the app as `INTEGRATION_UI`. *Learnt:* a link's
+callback can come before the session holds the link — a session reads it
+once linked, and ignores a call before.
 
 **Step 6 · The Tuya gateway as a bridge.**
 `tuya.gateway`, the Tuya integration's: hardware, a bridge, reached by `tuya-local` over `lan` with

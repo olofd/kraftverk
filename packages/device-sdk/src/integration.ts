@@ -49,6 +49,12 @@ export type IntegrationManifest = {
   readonly types: readonly PackageTypeEntry[];
   /** The module whose default export is its file migrations (`FileMigration[]`), when its entries in a configuration file ever changed. */
   readonly migrations?: string;
+  /**
+   * The module whose default export is its own screens (`IntegrationUi`):
+   * pieces of its page and of an account's, beside what the app draws for
+   * every integration. A device's screens stay its type's (§1.1).
+   */
+  readonly ui?: string;
 };
 
 /** What a file migration may know of what is installed: each type, and the bridge types each of its ways goes through. */
@@ -150,6 +156,7 @@ export function integrationManifestProblems(raw: unknown): string[] {
   typeEntryProblems(manifest.types, problems, valid ? (id as string) : null);
   if (manifest.protocols !== undefined && (!Array.isArray(manifest.protocols) || !manifest.protocols.every(isPath))) problems.push('protocols must be paths in the package, like "./src/protocol/index.ts"');
   if (manifest.migrations !== undefined && !isPath(manifest.migrations)) problems.push('migrations must be a path in the package, like "./src/migrations.ts"');
+  if (manifest.ui !== undefined && !isPath(manifest.ui)) problems.push('ui must be a path in the package, like "./ui/integration.ts"');
   return problems;
 }
 

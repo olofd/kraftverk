@@ -223,6 +223,9 @@ packages/integrations/tuya/
   src/protocol/         how Tuya is spoken to: pure, the SDK and its own files only
   src/index.ts          what its devices are made with: a builder, its ways in, the link a
                         device behind its gateway reads
+  ui/                   its own screens ("kraftverk": { "integration": { "ui": … } }): pieces of
+                        its page and of an account's, which the app shows under Integrations —
+                        never among the devices; a device's screens are its type's
 
 packages/devices/atorch-s1w/
   package.json          "kraftverk": { "device": { "integration": "tuya", "types": [{ "id": "atorch.s1w",

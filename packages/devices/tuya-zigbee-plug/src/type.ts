@@ -1,5 +1,4 @@
-import type { SocketProfile } from '@kraftverk/integration-tuya/protocol';
-import { defineTuyaSocket } from '@kraftverk/integration-tuya';
+import { defineTuyaSocket, type SocketProfile } from '@kraftverk/integration-tuya';
 
 /**
  * A 16 A Zigbee energy plug, paired with a Tuya Zigbee gateway: the Tuya

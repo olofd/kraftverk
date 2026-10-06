@@ -66,6 +66,8 @@ export type DeviceView = {
   addedAt: string;
   removedAt: string | null;
   kind: DeviceKind;
+  /** The integration its type is on: where its accounts are managed, and its own screens. Null for a type not installed. */
+  integration: IntegrationInfo | null;
   meta: Pick<DeviceTypeMeta, 'name' | 'brand' | 'icon' | 'support'> & { category: string };
   /** What it is: its parts, their attributes — settings among them — and its events. Its own when it reports one. */
   description: DeviceDescription;

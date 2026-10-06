@@ -199,18 +199,21 @@ async function memberSession(ctx: DeviceContext<Config>): Promise<DeviceSession>
   const serial = ctx.connection!.address;
   // The report the last charging event was worked out from: a new one that starts or stops charging is an event.
   let heard: NiuState | null = null;
-  const scooter: ScooterLink = await linkOf<ScooterLink>(
-    ctx.connection,
-    () => {
-      const report = scooter.report();
-      const event = report ? chargingEventOf(heard, report.state) : null;
-      if (report) heard = report.state;
-      if (event) ctx.event(event.id, { soc: event.soc });
-      ctx.changed();
-    },
-    THROUGH_ITS_ACCOUNT
-  );
+  // Told before it is linked, when the account already knows something: read once linked, below.
+  let linked: ScooterLink | null = null;
+  const moved = () => {
+    if (!linked) return;
+    const report = linked.report();
+    const event = report ? chargingEventOf(heard, report.state) : null;
+    if (report) heard = report.state;
+    if (event) ctx.event(event.id, { soc: event.soc });
+    // A new report, its slow figures, or why NIU could not be asked: each is read again.
+    ctx.changed();
+  };
+  const scooter = await linkOf<ScooterLink>(ctx.connection, moved, THROUGH_ITS_ACCOUNT);
+  linked = scooter;
   heard = scooter.report()?.state ?? null;
+  if (heard) ctx.changed();
 
   return {
     health(): SessionHealth {

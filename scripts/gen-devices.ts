@@ -14,7 +14,8 @@
  *                      worker builds a hub from it
  *   transports.ts      each transport's entry for a phone
  *   transports.web.ts  each transport's entry for a browser's page
- *   registry.ts        the screens and pictures device types ship
+ *   registry.ts        the screens and pictures device types ship, and the
+ *                      screens integrations ship for their own pages
  *
  * The app runs the same code the server does, and these are the only files
  * in it that import an integration, a device package or a transport.
@@ -118,13 +119,14 @@ const HEADER = (what: string) => [
 ];
 
 const installed: Written = { file: 'installed.ts', what: 'What a hub installs, with no screens: the app keeps its own home from this.', imports: [], body: [] };
-const screens: Written = { file: 'registry.ts', what: 'The screens and pictures device types ship.', imports: [], body: [] };
+const screens: Written = { file: 'registry.ts', what: 'The screens and pictures device types ship, and the screens integrations ship.', imports: [], body: [] };
 const onPhone: Written = { file: 'transports.ts', what: 'Each transport as a phone runs it.', imports: [], body: [] };
 const onPage: Written = { file: 'transports.web.ts', what: "Each transport as a browser's page runs it.", imports: [], body: [] };
 
 const platforms: string[] = [];
 let typeCount = 0;
 const uis: string[] = [];
+const integrationUis: string[] = [];
 const pictures: string[] = [];
 let protocolCount = 0;
 const definitions: string[] = [];
@@ -179,6 +181,11 @@ for (const { dir, manifest } of packages('packages/integrations')) {
     protocolCount += 1;
     return name;
   });
+  // Its own screens: its page, and an account's.
+  if (integration.ui) {
+    screens.imports.push(`import ${local(integration.id, 'IntegrationUi')} from '${exported(manifest, integration.ui)}';`);
+    integrationUis.push(`  '${integration.id}': ${local(integration.id, 'IntegrationUi')},`);
+  }
   // How its entries in a file changed: what reading a file kept before brings it to now.
   const migrations = integration.migrations ? local(integration.id, 'Migrations') : null;
   if (migrations) installed.imports.push(`import ${migrations} from '${exported(manifest, integration.migrations!)}';`);
@@ -222,6 +229,7 @@ installed.body = [
 
 screens.body = [
   "import type { DeviceAssets, DeviceUi } from '../features/devices/registry';",
+  "import type { IntegrationUi } from '../features/integrations/registry';",
   '',
   ...screens.imports,
   '',
@@ -233,6 +241,11 @@ screens.body = [
   '/** Pictures a device type ships, by device type id. */',
   'export const DEVICE_ASSETS: Readonly<Record<string, DeviceAssets>> = {',
   ...pictures,
+  '};',
+  '',
+  '/** Screens an integration ships for its own pages, by integration id. */',
+  'export const INTEGRATION_UI: Readonly<Record<string, IntegrationUi>> = {',
+  ...integrationUis,
   '};',
   '',
 ];

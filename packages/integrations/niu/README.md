@@ -21,7 +21,8 @@ Support is `experimental` until a model has been mapped.
   to every scooter on it (docs/PLAN-INTEGRATIONS.md §4.3); read each scooter
   through it — charge, charging, range, odometer, state — as a vehicle; the
   builder a model is made with; the generic scooter and its screens, which
-  models reuse; and how a configuration file kept before the account was a
+  models reuse; the integration's own panel on an account's page — how NIU
+  is asked, and where the password is kept (`ui/integration.tsx`); and how a configuration file kept before the account was a
   device of its own comes back with one (`src/migrations.ts`).
 - **Does not:** know a model — each is a device package that names this
   integration — control the scooter (it is read only), or charge it — a plug in front of its

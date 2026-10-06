@@ -353,6 +353,7 @@ test('this app holds its way only while nothing above it reaches the device, and
       key: 'hall-lamp',
       typeId: 'test.lamp',
       installed: true,
+      integration: { id: 'test', name: 'Test' },
       name: 'Hall lamp',
       identity: null,
       addedAt: '2026-10-01T00:00:00.000Z',

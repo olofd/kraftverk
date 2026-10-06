@@ -42,3 +42,21 @@ export function whereTheyRun(types: readonly Pick<DeviceTypeListing, 'placements
   });
   return { platforms, needs };
 }
+
+/** Where a node runs, as a person says it. */
+const ON: Record<Platform, string> = { system: 'on a server', web: 'in a browser', native: 'on a phone' };
+
+/** What a node must be, as a person says it. */
+const MUST_BE: Record<Need['trait'], string> = { alwaysOn: 'always on', reachable: 'reachable by your other nodes', trusted: 'trusted to keep it' };
+
+/** "a", "a and b", "a, b and c". */
+const listed = (words: readonly string[]): string => (words.length < 2 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`);
+
+/** Where some types run, said in two sentences kept apart: the platforms, then what the node holding them must be, and why. */
+export function whereTheyRunSaid(types: readonly Pick<DeviceTypeListing, 'placements'>[]): string {
+  const { platforms, needs } = whereTheyRun(types);
+  if (!platforms.length) return 'Nothing installed on it yet';
+  const where = `Runs ${listed(platforms.map((platform) => ON[platform]))}.`;
+  const must = needs.map((need) => `Held by a node that is ${MUST_BE[need.trait]}: ${need.why.join('; ')}.`);
+  return [where, ...must].join(' ');
+}

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { Spinner, Text, useTheme, XStack, YStack } from 'tamagui';
 
 import type { ConnectionStatus } from '@kraftverk/device-sdk';
@@ -10,6 +10,7 @@ import { Screen } from '../../components/Screen';
 import type { StatusTone } from '../../components/Screen';
 import { useDevice, useDevices } from '../../state/DevicesProvider';
 import { useShowing } from '../../state/useShowing';
+import { accountPath } from '../integrations/IntegrationScreen';
 import { DevicePicture } from './DevicePicture';
 import { pictureFor } from './registry';
 
@@ -109,6 +110,9 @@ export function DeviceShell({ id, tab, children }: { id: string | undefined; tab
       </Screen>
     );
   }
+
+  // An account is its integration's, and has its page there (docs/PLAN-INTEGRATIONS.md §1.1).
+  if (device.kind === 'account' && device.integration && !device.removedAt) return <Redirect href={accountPath(device.integration.id, device.id)} />;
 
   const path = `/device/${encodeURIComponent(device.id)}`;
 

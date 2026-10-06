@@ -15,12 +15,17 @@ const HEADERS = { 'x-kraftverk-client': 'app' };
 test('a NIU account finds its scooters: one is added through it, as its model, and read through it', async ({ page, request }) => {
   const account = await addSimulated(request, 'niu.account', unique('NIU account'));
 
-  // Home lists it under Accounts.
-  await page.goto('/');
+  // Not among the devices: under its integration, on NIU's page.
+  await page.goto('/integration/niu');
   await expect(page.getByText('Accounts', { exact: true })).toBeVisible();
+  await press(page, account.name);
+  await expect(page).toHaveURL(new RegExp(`/integration/niu/account/${account.id}`));
+  // NIU's own panel, and signing in again.
+  await expect(page.getByText('How NIU is asked', { exact: true })).toBeVisible();
 
-  // Its page: what is behind it, not added yet — each as the model it says it is.
+  // Its page: what is behind it, not added yet — each as the model it says it is. A device's address for it leads here too.
   await page.goto(`/device/${account.id}`);
+  await expect(page).toHaveURL(new RegExp(`/integration/niu/account/${account.id}`));
   await expect(page.getByText('Through it', { exact: true })).toBeVisible();
   await expect(page.getByText('Not added yet · NIU UQi GT')).toBeVisible();
   await expect(page.getByText('Not added yet · NIU scooter')).toBeVisible();

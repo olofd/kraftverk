@@ -3,28 +3,30 @@ import { expect, test } from '@playwright/test';
 import { press } from './helpers';
 
 /*
-  What this kraftverk can reach, by platform (docs/PLAN-INTEGRATIONS.md §1):
-  each integration with where it runs and what its node must be, kept apart
-  (§0), and the products known on it — the platform's generic one last.
+  Where kraftverk meets each service and platform (docs/PLAN-INTEGRATIONS.md
+  §1.1): every integration, where it runs and what its node must be, kept
+  apart (§0) — and on its own page, the kinds of device it knows, the
+  integration's generic one last.
 */
 
-test('App settings → Integrations: each platform, where it runs, and the products on it', async ({ page }) => {
-  await page.goto('/app-settings');
+test('Integrations, from Home: each platform, where it runs, and its own page with what it knows', async ({ page }) => {
+  await page.goto('/');
   await press(page, 'Integrations');
-  await expect(page.getByText('The platforms kraftverk reaches, and the products it knows on each')).toBeVisible();
+  await expect(page.getByText('Where kraftverk meets each service and platform: your accounts on it, and the devices it knows')).toBeVisible();
 
-  // A platform with no type of its own: its product, and where that runs.
+  // Each platform, and where it runs: NIU's, and apart from that, what the node holding it must be, and why.
   await expect(page.getByText('Sydpower', { exact: true })).toBeVisible();
-  await expect(page.getByText('AFERIY P280', { exact: true })).toBeVisible();
-  // Tuya: its products first, then the plug for one nobody has described.
-  const tuya = page.getByText('Tuya', { exact: true });
-  await expect(tuya).toBeVisible();
-  await expect(page.getByText('ATORCH S1W', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Runs on a server and on a phone\. Held by a node that is trusted to keep it: your NIU password stays at home/)).toBeVisible();
+
+  // Tuya's page: its products first, then the plug for one nobody has described.
+  await press(page, 'Tuya');
+  await expect(page.getByText('What it knows', { exact: true })).toBeVisible();
+  await expect(page.getByText('ATORCH S1W', { exact: true }).last()).toBeVisible();
   await expect(page.getByText(/Tuya smart plug/).first()).toBeVisible();
   await expect(page.getByText(/For one nobody has described yet/).first()).toBeVisible();
-  // NIU: where it runs, and apart from that, what the node holding it must be, and why.
-  await expect(page.getByText(/Runs on a server and on a phone\. Held by a node that is trusted to keep it: your NIU password stays at home/)).toBeVisible();
+
   // A service is the platform's own.
+  await page.goto('/integration/open-meteo');
   await expect(page.getByText(/Its service/).first()).toBeVisible();
 
   await page.screenshot({ path: 'test-results/integrations-page.png', fullPage: true });

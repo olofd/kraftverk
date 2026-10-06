@@ -18,13 +18,13 @@ import { SimulatedScooter } from './simulation.ts';
 type Config = Record<string, never>;
 
 /** How often each scooter is asked about while charging or switched on: a charge moves about 1 % in 3–4 minutes. */
-const BUSY_EVERY_MS = 60_000;
+export const BUSY_EVERY_MS = 60_000;
 /** Otherwise: an idle scooter's charge barely moves, and NIU is asked gently. */
-const IDLE_EVERY_MS = 10 * 60_000;
+export const IDLE_EVERY_MS = 10 * 60_000;
 /** Its batteries' health and its totals change slowly. */
-const SLOW_EVERY_MS = 30 * 60_000;
+export const SLOW_EVERY_MS = 30 * 60_000;
 /** Which scooters are on the account: a scooter bound or unbound in the NIU app is seen within this. */
-const LIST_EVERY_MS = 30 * 60_000;
+export const LIST_EVERY_MS = 30 * 60_000;
 /** How often the account looks at what is due. */
 const TICK_MS = 30_000;
 

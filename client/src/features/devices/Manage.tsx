@@ -33,7 +33,7 @@ export function Manage({ device }: { device: DeviceView }) {
       ? ` ${members.map((member) => member.name).join(', ')} ${members.length === 1 ? 'is' : 'are'} reached through it: ${members.length === 1 ? 'it stays, and is' : 'they stay, and are'} reached no other way until you add one.`
       : '';
     const message = `${device.name} leaves your list, and its connections go. Its history is kept: add the same device again to bring it back.${through}`;
-    if (!(await confirmAction('Remove this device?', message, 'Remove', 'dangerous'))) return;
+    if (!(await confirmAction(`Remove this ${device.kind === 'hardware' ? 'device' : device.kind}?`, message, 'Remove', 'dangerous'))) return;
     setBusy(true);
     setError(null);
     try {

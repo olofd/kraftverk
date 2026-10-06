@@ -4,3 +4,6 @@
  * packages build theirs with it.
  */
 export { defineTuyaSocket, type SocketTypeDefinition } from './socket-type.ts';
+
+/** A socket's data layout: what a product package describes its socket with. */
+export type { ProfileDatapoint, SocketProfile } from './protocol/index.ts';
