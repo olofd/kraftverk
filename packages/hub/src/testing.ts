@@ -120,6 +120,16 @@ export const lampProtocol: Protocol = {
         label: 'Fetch the PIN',
         run: async () => ({ ok: true, detail: 'Found one', choices: [{ id: 'a', label: 'The lamp', config: { pin: 'the-real-secret-value' } }] }),
       },
+      // Signs in in two turns, as a vendor sending a code to a phone does: the first carries what the second needs.
+      {
+        id: 'twoStep',
+        label: 'Sign in with a code',
+        run: async (_ctx, input) => {
+          if (input.code === undefined) return { ok: true, detail: 'A code was sent to your phone', ask: { schema: { fields: { code: { type: 'string', title: 'The code', required: true } } }, carry: { half: 'half-a-sign-in' } } };
+          if (input.half !== 'half-a-sign-in') return { ok: false, detail: 'What the first turn began was not carried' };
+          return input.code === '123456' ? { ok: true, detail: 'Signed in', suggestedConfig: { pin: 'pin-from-a-code' } } : { ok: false, detail: 'That code is not it' };
+        },
+      },
     ],
   },
 };

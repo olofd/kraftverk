@@ -26,6 +26,12 @@ export function setupRoutes(deps: AppDeps): Hono {
     return c.json(await homeFor(deps, c).setup.start(input));
   });
 
+  /** One of a device's ways, set up again: signed in again, its key fetched again. */
+  api.post('/again', async (c) => {
+    const input = await body(c, z.object({ deviceId: z.string().min(1).max(40), connectionId: z.string().min(1).max(40) }).strict());
+    return c.json(await homeFor(deps, c).setup.again(input));
+  });
+
   api.get('/:id', async (c) => c.json(await homeFor(deps, c).setup.get(c.req.param('id'))));
 
   api.delete('/:id', async (c) => {

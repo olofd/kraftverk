@@ -47,6 +47,50 @@ describe('what can be added', () => {
   });
 });
 
+describe('a way set up again', () => {
+  test('its credentials given anew, checked as the same device, and saved over that way — nothing added', async () => {
+    t.lampAt('lamp-1');
+    const lamp = await t.added('Hall lamp');
+    const [way] = (await t.home.devices.get(lamp.id)).connections;
+    const again = await t.home.setup.again({ deviceId: lamp.id, connectionId: way!.id });
+    expect(again.again).toEqual({ deviceId: lamp.id, connectionId: way!.id, name: 'Hall lamp' });
+    // Never found again, nor what the lamp itself is: its credentials, then the check.
+    expect(again.plan.map((step) => step.kind)).toEqual(['form', 'check']);
+    expect(again.address).toBe('lamp-1');
+
+    await t.home.setup.update(again.id, { connection: { pin: 'a-new-pin' } });
+    expect(await t.home.setup.check(again.id)).toMatchObject({ outcome: 'yours', device: { id: lamp.id } });
+    const saved = await t.home.setup.save(again.id, { name: 'ignored' });
+    expect(saved.id).toBe(lamp.id);
+    expect((await t.home.devices.list()).filter((device) => device.typeId === 'test.lamp')).toHaveLength(1);
+    expect(t.hub.connections.secretFields(way!.id)).toEqual(['pin']);
+    expect((await t.home.timeline()).find((entry) => entry.kind === 'device.secrets-changed')?.summary).toBe('Set up Test bus again for "Hall lamp": pin given anew');
+  });
+
+  test('a device that answers as another is not saved over this one', async () => {
+    t.lampAt('lamp-1');
+    const lamp = await t.added('Hall lamp');
+    const [way] = (await t.home.devices.get(lamp.id)).connections;
+    const again = await t.home.setup.again({ deviceId: lamp.id, connectionId: way!.id });
+    t.lampAt('lamp-1', { serial: 'LAMP-9' });
+    expect(await t.home.setup.check(again.id)).toMatchObject({ outcome: 'no-answer', saveAnyway: null, summary: 'That answered as another device, not Hall lamp: nothing is changed.' });
+    expect((await refusal(t.home.setup.save(again.id, { name: 'x' }))).kind).toBe('conflict');
+  });
+
+  test('an action may ask one more thing: what it carries to its next turn never reaches the app', async () => {
+    t.lampAt('lamp-1');
+    const started = await t.home.setup.start({ typeId: 'test.lamp', methodId: 'bus' });
+    const credentials = started.plan.find((step) => step.id === 'credentials')!;
+    const first = await t.home.setup.action(started.id, credentials.id, 'twoStep', {});
+    expect(first).toEqual({ ok: true, detail: 'A code was sent to your phone', ask: { schema: { fields: { code: { type: 'string', title: 'The code', required: true } } } } });
+    expect(JSON.stringify(first)).not.toContain('half-a-sign-in');
+    const second = await t.home.setup.action(started.id, credentials.id, 'twoStep', { code: '123456' });
+    expect(second).toMatchObject({ ok: true, detail: 'Signed in' });
+    // Carried once: asked again, the first turn has to begin again.
+    expect(await t.home.setup.action(started.id, credentials.id, 'twoStep', { code: '123456' })).toMatchObject({ ok: false, detail: 'What the first turn began was not carried' });
+  });
+});
+
 describe('adding a device', () => {
   test('simulated: a station is added with no hardware, by its own steps only, and opened as its simulator', async () => {
     const started = await t.home.setup.start({ typeId: 'test.station', methodId: 'simulated' });

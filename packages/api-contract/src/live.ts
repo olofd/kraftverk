@@ -34,7 +34,7 @@ export type NeedsYouView =
   | {
       kind: 'act';
       device: { id: SavedDeviceId; name: string; kind: DeviceKind; integration: IntegrationInfo | null };
-      /** What it needs, in its own words: "NIU did not accept that password: sign in again on the account's page". */
+      /** What it needs, in its own words: "The service did not accept that password: sign in again on its page". */
       detail: string;
     }
   | { kind: 'found'; found: FoundView };

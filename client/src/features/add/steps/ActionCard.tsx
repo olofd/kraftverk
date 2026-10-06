@@ -70,6 +70,30 @@ function Waiting({ result, onAgain, onCancel }: { result: SetupActionResult; onA
   );
 }
 
+/**
+ * A result that asks one more thing — a code sent to a phone, the PIN a TV
+ * shows — drawn inside the step, and the same action run again with it.
+ * What the helper carries to that turn stays with the home, never here.
+ */
+function Asked({ result, busy, onAnswer }: { result: SetupActionResult; busy: boolean; onAnswer: (answers: ConfigValues) => void }) {
+  const schema = result.ask!.schema;
+  const [answers, setAnswers] = useState<ConfigValues>({});
+  const ready = isComplete(schema, answers);
+  return (
+    <YStack gap="$3">
+      <Text fontSize={13} color="$color" lineHeight={19} paddingHorizontal="$1">
+        {result.detail}
+      </Text>
+      <Card inset backgroundColor="$background">
+        <SchemaForm schema={schema} values={answers} disabled={busy} onChange={(name, value) => setAnswers((before) => ({ ...before, [name]: value }))} onSubmit={() => (!busy && ready ? onAnswer(answers) : undefined)} />
+      </Card>
+      <Button alignSelf="flex-start" size="$3" {...PRIMARY} disabled={busy || !ready} opacity={busy || !ready ? 0.5 : 1} onPress={() => onAnswer(answers)}>
+        {busy ? 'Working…' : 'Continue'}
+      </Button>
+    </YStack>
+  );
+}
+
 /** One helper: its card, its own questions when it has any, and what it answers. */
 export function ActionCard({
   flow,
@@ -113,7 +137,7 @@ export function ActionCard({
         }
         setResult(next);
         // Filled in without a choice: done.
-        if (next.ok && !next.waiting && !next.choices?.length && next.suggestedConfig) onDone(null);
+        if (next.ok && !next.waiting && !next.ask && !next.choices?.length && next.suggestedConfig) onDone(null);
       } catch (err) {
         setError(describeError(err) || 'That did not work');
       } finally {
@@ -142,6 +166,8 @@ export function ActionCard({
 
       {result?.waiting ? (
         <Waiting result={result} onAgain={(next) => void run(next)} onCancel={() => setResult(null)} />
+      ) : result?.ask ? (
+        <Asked result={result} busy={busy} onAnswer={(answers) => void run({ ...input, ...answers })} />
       ) : result?.choices?.length ? (
         <Choices
           result={result}

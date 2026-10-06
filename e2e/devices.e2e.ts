@@ -91,7 +91,9 @@ test('a Zigbee plug is offered under Smart plugs, reached through its gateway; i
   await page.goto('/add-device');
   await page.getByText('Smart plugs', { exact: true }).click();
   await page.getByText('Tuya Zigbee plug', { exact: true }).click();
-  await expect(page.getByText('Its Zigbee gateway, through your server', { exact: true })).toBeVisible();
+  await expect(page.getByText(/^Through its Zigbee gateway/).first()).toBeVisible();
+  // Not until a gateway is there: it is reached through one.
+  await expect(page.getByText(/reached through Tuya Zigbee gateway: add that first/).first()).toBeVisible();
 
   const plug = await addSimulated(request, 'tuya.zigbee-plug', unique('Fan plug'));
   await page.goto(`/device/${plug.id}/settings`);

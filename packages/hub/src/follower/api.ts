@@ -146,6 +146,8 @@ export function followerApi(h: Follower): KraftverkApi {
         return ownDraft(draft);
       },
       startHeld: (input) => home.setup.startHeld(input),
+      // A way is set up again by the home that keeps it.
+      again: (input) => home.setup.again(input),
       get: async (id) => (local(id) ? ownDraft(h.setup.view(id)) : home.setup.get(id)),
       async discard(id) {
         if (!local(id)) return home.setup.discard(id);

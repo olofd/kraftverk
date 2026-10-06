@@ -68,6 +68,18 @@ export function Connections({ device }: { device: DeviceView }) {
                   </YStack>
                   {connection.inUse ? <Icon name="check-circle" size={16} color={theme.success?.val} /> : null}
                 </XStack>
+                {/* Its key or password given anew, through the same steps as adding it: a plug paired again, a password changed. */}
+                {connection.heldBy.kind === 'master' && connection.through === null && connection.secrets.length ? (
+                  <Button
+                    size="$3"
+                    minHeight={44}
+                    alignSelf="flex-start"
+                    {...(device.health.status === 'needs-you' ? { backgroundColor: '$accent', color: '$background' } : {})}
+                    onPress={() => router.push(`/add-device?again=${encodeURIComponent(device.id)}&connection=${encodeURIComponent(connection.id)}`)}
+                  >
+                    {`Set ${connection.methodLabel} up again`}
+                  </Button>
+                ) : null}
                 {connection.heldBy.kind === 'master' && connection.secrets.length ? (
                   <XStack alignItems="center" gap="$3">
                     <YStack flex={1} gap={2}>

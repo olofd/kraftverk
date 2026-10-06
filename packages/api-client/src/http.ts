@@ -160,6 +160,7 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
     setup: {
       start: (input) => call('POST', '/setup', input),
       startHeld: (input) => call('POST', '/setup/held', input),
+      again: (input) => call('POST', '/setup/again', input),
       get: (id) => get(`/setup/${enc(id)}`),
       discard: async (id) => void (await call('DELETE', `/setup/${enc(id)}`)),
       sightings: async (id) => (await get<{ sightings: SightingView[] }>(`/setup/${enc(id)}/sightings`)).sightings,

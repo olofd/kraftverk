@@ -108,6 +108,13 @@ export interface KraftverkApi {
     start(input: { typeId: string; methodId?: string | null; holder?: HeldBy; through?: string }): Promise<DraftView>;
     /** One a node that follows will hold, from what it learnt reading the device itself: never a secret. */
     startHeld(input: HeldSetupInput): Promise<DraftView>;
+    /**
+     * Sets one of a device's ways up again — signed in again, its key
+     * fetched again — through the same steps as adding it: its credentials,
+     * then a check that it is the same device. Saving changes that way; it
+     * adds nothing.
+     */
+    again(input: { deviceId: string; connectionId: string }): Promise<DraftView>;
     get(id: string): Promise<DraftView>;
     discard(id: string): Promise<void>;
     /** What the transport sees that the type's protocol recognises. */

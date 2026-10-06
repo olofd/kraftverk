@@ -23,6 +23,16 @@ export class SetupFlow {
     return new SetupFlow(api, holder, await api.setup.start({ typeId, methodId, holder }));
   }
 
+  /** One of a device's ways, set up again: its credentials given anew, checked as the same device. */
+  static async again(api: KraftverkApi, deviceId: string, connectionId: string): Promise<SetupFlow> {
+    return new SetupFlow(api, 'master', await api.setup.again({ deviceId, connectionId }));
+  }
+
+  /** The way being set up again, when it is one: its device and connection. */
+  get again() {
+    return this.#draft.again;
+  }
+
   get plan() {
     return this.#draft.plan;
   }

@@ -85,6 +85,15 @@ export type SetupActionResult = {
   suggestedConfig?: ConfigValues;
   /** Asked again after a person has done something: see `SetupWaiting`. */
   waiting?: SetupWaiting;
+  /**
+   * One more thing to ask the person before it is done — a code sent to a
+   * phone, the PIN a TV shows. The app draws `schema` as a form inside the
+   * step, and runs the same action again with what they give. `carry` is
+   * what the next turn needs that is not theirs to see — a sign-in half
+   * made: kept by whoever runs the setup, added to that next input, and never
+   * sent to the app.
+   */
+  ask?: { schema: ConfigSchema; carry?: ConfigValues };
 };
 
 /** What a step's function can reach. */

@@ -1,5 +1,5 @@
 import type { CheckOutcome, DraftView, SaveInput } from '@kraftverk/api-contract';
-import type { NodeId, ConnectionMethod, DeviceType, Identified, SavedDeviceId, SetupStepView, Sighting } from '@kraftverk/device-sdk';
+import type { NodeId, ConfigValues, ConnectionMethod, DeviceType, Identified, SavedDeviceId, SetupStepView, Sighting } from '@kraftverk/device-sdk';
 
 import type { Reach } from './reach.ts';
 
@@ -25,6 +25,10 @@ export type Draft = {
   address: string | null;
   /** The bridge it is reached through, for a member of one: its address is then its key there. Null otherwise, or until chosen. */
   through: SavedDeviceId | null;
+  /** A way you have, set up again: its device and connection. Null while adding. */
+  again: { deviceId: SavedDeviceId; connectionId: string; name: string; identity: string | null } | null;
+  /** What an action's next turn needs that the app never sees (`ask.carry`), by action. */
+  carried: Map<string, ConfigValues>;
   identityHint: string | null;
   device: Record<string, unknown>;
   connection: Record<string, unknown>;
@@ -45,6 +49,7 @@ export function viewOf(draft: Draft): DraftView {
   const checked = draft.checked ? (({ identified: _identified, ...rest }) => rest as CheckOutcome)(draft.checked) : null;
   return {
     id: draft.id,
+    again: draft.again ? { deviceId: draft.again.deviceId, connectionId: draft.again.connectionId, name: draft.again.name } : null,
     heldBy: draft.heldBy,
     typeId: draft.type.id,
     methodId: draft.method?.id ?? null,

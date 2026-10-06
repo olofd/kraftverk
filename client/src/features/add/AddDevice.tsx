@@ -35,18 +35,20 @@ import { Ways, type Way } from './Ways';
 type Stage = 'category' | 'type' | 'method' | 'steps' | 'finish';
 
 export function AddDevice() {
-  const params = useLocalSearchParams<{ type?: string; method?: string; address?: string; through?: string; attach?: string }>();
+  const params = useLocalSearchParams<{ type?: string; method?: string; address?: string; through?: string; attach?: string; again?: string; connection?: string }>();
   const { devices, refresh } = useDevices();
   const { api, role } = useHome();
   const reach = useReach();
-  const attachTo = params.attach ? (devices.find((device) => device.id === params.attach) ?? null) : null;
+  // Set up again — signed in again, its key fetched again — is a way of a device you have, as adding another way is.
+  const againOf = params.again ? (devices.find((device) => device.id === params.again) ?? null) : null;
+  const attachTo = againOf ?? (params.attach ? (devices.find((device) => device.id === params.attach) ?? null) : null);
 
   // What can be added: the home's installed types, and whether it can hold each way.
   const { value: types, error: loadError } = useAnswer(() => api.deviceTypes().then((list) => list.types), [api], { failure: 'What can be added could not be read' });
-  const [stage, setStage] = useState<Stage>(params.type ? 'method' : 'category');
+  const [stage, setStage] = useState<Stage>(params.again ? 'steps' : params.type ? 'method' : 'category');
   const [category, setCategory] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [typeId, setTypeId] = useState<string | null>(params.type ?? null);
+  const [typeId, setTypeId] = useState<string | null>(params.type ?? againOf?.typeId ?? null);
   const [flow, setFlow] = useState<SetupFlow | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [outcome, setOutcome] = useState<CheckOutcome | null>(null);
@@ -101,6 +103,30 @@ export function AddDevice() {
     [api, type]
   );
 
+  // Set up again: straight into its steps, from its way's credentials to the check.
+  const againStarted = useRef(false);
+  useEffect(() => {
+    if (againStarted.current || !params.again || !params.connection) return;
+    againStarted.current = true;
+    void attempt(async () => {
+      const next = await SetupFlow.again(api, params.again!, params.connection!);
+      flowRef.current = next;
+      setFlow(next);
+      setStepIndex(0);
+    }, 'It cannot be set up again right now');
+  }, [api, attempt, params.again, params.connection]);
+
+  /** Saved over the way it set up again — nothing added — and back where it was asked from. */
+  const saveAgain = useCallback(async () => {
+    if (!flow || !againOf) return;
+    await attempt(async () => {
+      await flow.save({ name: againOf.name });
+      flowRef.current = null;
+      await refresh();
+      router.back();
+    }, 'It could not be saved');
+  }, [againOf, attempt, flow, refresh]);
+
   // "Found near you" names the method too: start it straight away.
   const autostarted = useRef(false);
   useEffect(() => {
@@ -111,7 +137,7 @@ export function AddDevice() {
     void begin(way);
   }, [begin, params.method, type, ways]);
 
-  const title = attachTo ? `Another way to reach ${attachTo.name}` : 'Add a device';
+  const title = againOf ? `Sign ${againOf.name} in again` : attachTo ? `Another way to reach ${attachTo.name}` : 'Add a device';
 
   // --- moving through the steps ---------------------------------------------------------
 
@@ -203,7 +229,7 @@ export function AddDevice() {
             ...flow.plan
               .map((step, index) => ({ title: step.title, index, skipped: flow.skips(index) && index !== stepIndex }))
               .filter((step) => !step.skipped),
-            { title: attachTo ? 'Add it' : 'Name it', index: flow.plan.length },
+            ...(againOf ? [] : [{ title: attachTo ? 'Add it' : 'Name it', index: flow.plan.length }]),
           ]}
           at={stage === 'finish' ? flow.plan.length : stepIndex}
           onGoTo={goTo}
@@ -227,7 +253,7 @@ export function AddDevice() {
               }
             }}
             onRetry={() => setOutcome(null)}
-            onContinue={() => setStage('finish')}
+            onContinue={() => (againOf ? void saveAgain() : setStage('finish'))}
             onOtherType={(id) => {
               setTypeId(id);
               setStage('method');

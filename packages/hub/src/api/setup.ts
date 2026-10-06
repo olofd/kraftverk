@@ -35,6 +35,7 @@ export function setupApi(hub: Hub, caller: Caller): SetupApi {
         if (!node || node.self || account === undefined || node.accountId !== account) throw new ApiError('not-found', 'No such node');
         return setup.startHeld({ ...input, nodeId: node.id, by: actor });
       },
+      again: async (input) => setup.again({ ...input, by: actor }),
       get: async (id) => setup.view(own(id)),
       discard: async (id) => setup.discard(own(id)),
       sightings: async (id) => setup.sightings(own(id)),

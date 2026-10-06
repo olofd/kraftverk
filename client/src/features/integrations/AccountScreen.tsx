@@ -1,26 +1,22 @@
-import { useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Button, Text, YStack } from 'tamagui';
 
 import type { ConnectionView, DeviceView } from '@kraftverk/api-client';
 import { Card, SectionLabel } from '@kraftverk/ui';
 
-import { ErrorText } from '../../components/ErrorText';
 import { secretWords } from '../../components/ProblemList';
 import { Screen } from '../../components/Screen';
-import { useAttempt } from '../../components/useAttempt';
 import { useDevice, useDevices } from '../../state/DevicesProvider';
-import { useHome } from '../../state/HomeProvider';
-import { Field } from '../auth/fields';
 import { deviceStatus } from '../devices/DeviceShell';
 import { Manage } from '../devices/Manage';
 import { Members } from '../devices/Members';
 import { integrationScreens } from './registry';
 
 /**
- * Signing in again: each of the account's own ways, and its secrets — a
- * password — given anew. Write-only, as every secret is; where another node
- * keeps them, said, since only that node may change them.
+ * Signing in again: each of the account's own ways, set up again through
+ * the same steps as adding it — its credentials, a code it asks for, then a
+ * check that it is the same account. Where another node keeps them, said,
+ * since only that node may change them.
  */
 function SignIn({ account }: { account: DeviceView }) {
   const ways = account.connections.filter((connection) => connection.through === null && connection.secrets.length > 0);
@@ -36,21 +32,8 @@ function SignIn({ account }: { account: DeviceView }) {
 }
 
 function SignInWay({ account, way }: { account: DeviceView; way: ConnectionView }) {
-  const { api } = useHome();
-  const { busy, error, attempt } = useAttempt();
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [saved, setSaved] = useState(false);
   const kept = way.heldBy.kind === 'node' ? way.heldBy.name : null;
-  const given = Object.fromEntries(Object.entries(values).filter(([, value]) => value.length > 0));
-
-  const save = async () => {
-    setSaved(false);
-    if (await attempt(() => api.connections.setSecrets(account.id, way.id, given), 'It could not be changed')) {
-      setValues({});
-      setSaved(true);
-    }
-  };
-
+  const waits = account.health.status === 'needs-you';
   return (
     <Card>
       <YStack gap="$3">
@@ -59,29 +42,18 @@ function SignInWay({ account, way }: { account: DeviceView; way: ConnectionView 
         </Text>
         {kept ? (
           <Text fontSize={13} color="$muted" lineHeight={19}>
-            {`${kept} keeps it: change it there.`}
+            {`${kept} keeps it: sign in again there.`}
           </Text>
         ) : (
-          <>
-            {way.secrets.map((field) => (
-              <Field
-                key={field}
-                label={`Its ${secretWords([field])}, if it changed`}
-                value={values[field] ?? ''}
-                onChange={(next) => setValues((before) => ({ ...before, [field]: next }))}
-                kind="current-password"
-              />
-            ))}
-            {error ? <ErrorText>{error}</ErrorText> : null}
-            {saved ? (
-              <Text fontSize={13} color="$muted" lineHeight={19}>
-                Changed: it signs in with it now.
-              </Text>
-            ) : null}
-            <Button size="$3" minHeight={44} alignSelf="flex-start" disabled={busy || !Object.keys(given).length} opacity={busy || !Object.keys(given).length ? 0.5 : 1} onPress={() => void save()}>
-              Sign in again
-            </Button>
-          </>
+          <Button
+            size="$3"
+            minHeight={44}
+            alignSelf="flex-start"
+            {...(waits ? { backgroundColor: '$accent', color: '$background' } : {})}
+            onPress={() => router.push(`/add-device?again=${encodeURIComponent(account.id)}&connection=${encodeURIComponent(way.id)}`)}
+          >
+            Sign in again
+          </Button>
         )}
       </YStack>
     </Card>

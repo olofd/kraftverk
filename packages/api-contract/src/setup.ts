@@ -30,6 +30,12 @@ export type SightingView = {
 /** One setup, part-way through, in the home. */
 export type DraftView = {
   id: string;
+  /**
+   * A way you have, set up again — signed in again with a new password, its
+   * key fetched again — rather than a device added: its device and the
+   * connection it changes. Null while adding.
+   */
+  again: { deviceId: SavedDeviceId; connectionId: string; name: string } | null;
   /** The node that will hold the connection: the master, or one that follows it. */
   heldBy: NodeId;
   typeId: string;

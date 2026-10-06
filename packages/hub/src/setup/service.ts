@@ -338,9 +338,17 @@ export class SetupService {
     if (!step || step.kind !== 'form') throw new ApiError('not-found', 'No such step');
     const action = step.actions?.find((candidate) => candidate.id === actionId);
     if (!action) throw new ApiError('not-found', 'No such action');
-    const result = await withTimeout(action.run(this.#setupContext(draft, signal), input), action.label, ACTION_TIMEOUT_MS).catch(
+    // What its last turn asked to carry comes back with what the person gave, and only once.
+    const carried = draft.carried.get(actionId) ?? {};
+    draft.carried.delete(actionId);
+    const result = await withTimeout(action.run(this.#setupContext(draft, signal), { ...input, ...carried }), action.label, ACTION_TIMEOUT_MS).catch(
       (error: unknown) => ({ ok: false, detail: (error as Error).message }) as SetupActionResult
     );
+    // Kept here for its next turn, never sent: the app sees what to ask, not what was carried.
+    if (result.ask?.carry) {
+      draft.carried.set(actionId, result.ask.carry);
+      return this.#hold(draft, step.target, { ...result, ask: { schema: result.ask.schema } });
+    }
     return this.#hold(draft, step.target, result);
   }
 
@@ -369,6 +377,17 @@ export class SetupService {
     const draft = this.#draft(id);
     const method = draft.method!;
     if (!draft.address) throw new ApiError('invalid', 'Choose the device first');
+
+    // Set up again: it must answer as the device it is — anything else is not saved over it.
+    if (draft.again) {
+      const read = await draft.reach.identify(draft);
+      if ('outcome' in read) return this.#checked(draft, { ...read.outcome, ...(read.outcome.outcome === 'no-answer' ? { saveAnyway: null } : {}) } as CheckOutcome);
+      const said = read.identified.identity;
+      if (said && draft.again.identity && said !== draft.again.identity) {
+        return this.#checked(draft, { outcome: 'no-answer', summary: `That answered as another device, not ${draft.again.name}: nothing is changed.`, saveAnyway: null });
+      }
+      return this.#checked(draft, { outcome: 'yours', summary: `${draft.again.name} answered: it is reached this way from now on.`, device: { id: draft.again.deviceId, name: draft.again.name } }, read.identified);
+    }
 
     if (draft.reach.exclusive) {
       const claim = draft.through ? this.deps.connections.member(draft.through, draft.address) : this.deps.connections.claimant(transportOf(method), draft.address);
@@ -400,6 +419,7 @@ export class SetupService {
   async save(id: string, input: SaveRequest): Promise<DeviceRecord> {
     const draft = this.#draft(id);
     const method = draft.method!;
+    if (draft.again) return this.#saveAgain(draft);
     // The node that will hold it was forgotten while it was being set up.
     if (!this.deps.traits(draft.heldBy)) throw new ApiError('not-found', 'The node that was to hold it is no longer part of this home');
     const config = saveable(draft, input, this.deps.self);
@@ -425,6 +445,61 @@ export class SetupService {
     return record;
   }
 
+  /**
+   * Sets one of a device's ways up again: its credentials, through the same
+   * steps as adding it, then a check that it is the same device. Only a way
+   * this node holds itself, over a transport: one through a bridge has
+   * nothing of its own to give — its bridge is signed into instead.
+   */
+  async again(input: { deviceId: string; connectionId: string; by: string }): Promise<DraftView> {
+    const device = this.deps.catalog.active(input.deviceId as SavedDeviceId);
+    const connection = device ? this.deps.connections.forDevice(device.id).find((each) => each.id === input.connectionId) : undefined;
+    if (!device || !connection) throw new ApiError('not-found', 'No such way to reach it');
+    if (connection.heldBy !== this.deps.self) throw new ApiError('conflict', 'That way is kept by the node that holds it: set it up again there');
+    const type = this.deps.types.get(device.typeId);
+    const method = type ? methodOf(type, connection.method) : null;
+    if (!type || !method || isBridgedMethod(method) || isSimulated(method)) throw new ApiError('conflict', 'That way has nothing to sign in with: its bridge, or nothing, is');
+    const protocol = this.deps.protocols.get(method.protocol);
+    const transport = await this.deps.transports.start(method.transport);
+    const available = this.deps.transports.available(method.transport);
+    if (!protocol || !transport || !available.ok) throw new ApiError('conflict', available.ok ? `${method.label} cannot be used here` : available.reason);
+    const reach = overHardware(protocol, this.deps.transports.definition(method.transport), this.deps.transports);
+    // What a person gives again: the way's credentials and its own steps — never finding it, never what the device itself is.
+    const plan = setupPlan({ type, method, protocol, transport: reach.transport, platform: this.deps.transports.platform, values: transport.values?.() ?? {} }).filter(
+      (step) => step.kind === 'check' || (step.kind === 'form' && step.target === 'connection') || (step.kind !== 'choose' && step.kind !== 'instructions' && 'target' in step && step.target === 'connection')
+    );
+    const draft = this.#newDraft({ by: input.by, heldBy: this.deps.self, type, method, reach, plan, address: connection.address, through: null, again: { deviceId: device.id, connectionId: connection.id, name: device.name, identity: device.identity } });
+    draft.device = { ...device.config };
+    draft.connection = { ...connection.config };
+    return viewOf(draft);
+  }
+
+  /** Saves a way set up again: its settings and secrets given anew, and its device opened with them — nothing added. */
+  async #saveAgain(draft: Draft): Promise<DeviceRecord> {
+    const again = draft.again!;
+    if (draft.checked?.outcome !== 'yours') throw new ApiError('conflict', 'Check it first: it must answer as the device it is');
+    const schema = connectionSchema(draft.method, draft.reach.protocol);
+    const settings = Object.fromEntries(Object.entries(draft.connection).filter(([field]) => schema.fields[field] && !isSecretField(schema.fields[field]!)));
+    this.deps.db.transaction(() => {
+      this.deps.connections.update(again.connectionId, { config: settings });
+      if (draft.secrets.size) this.deps.connections.setSecrets(again.connectionId, Object.fromEntries(draft.secrets));
+    })();
+    // Which fields, never their values.
+    this.deps.record({
+      at: new Date().toISOString(),
+      kind: 'device.secrets-changed',
+      actor: draft.by,
+      resourceKind: 'device',
+      resource: again.deviceId,
+      summary: `Set up ${draft.method!.label} again for "${again.name}"${draft.secrets.size ? `: ${[...draft.secrets.keys()].join(', ')} given anew` : ''}`,
+    });
+    this.discard(draft.id);
+    // Closed on purpose, so what it waited on is forgotten, and opened with what was given.
+    await this.deps.sessions.close(again.deviceId);
+    await this.deps.sessions.sync(this.deps.catalog.list());
+    return this.deps.catalog.get(again.deviceId)!;
+  }
+
   // --- internals ----------------------------------------------------------------------
 
   /** The members a draft through a bridge may be: of every bridge open here its way goes through, each saying which. */
@@ -432,9 +507,11 @@ export class SetupService {
     return membersOnOffer(this.deps, draft.method?.through);
   }
 
-  #newDraft(start: Pick<Draft, 'by' | 'heldBy' | 'type' | 'method' | 'reach' | 'plan' | 'address' | 'through'>): Draft {
+  #newDraft(start: Pick<Draft, 'by' | 'heldBy' | 'type' | 'method' | 'reach' | 'plan' | 'address' | 'through'> & Partial<Pick<Draft, 'again'>>): Draft {
     const draft: Draft = {
       id: `s-${randomHex(8)}`,
+      again: null,
+      carried: new Map(),
       ...start,
       identityHint: null,
       device: {},

@@ -1359,6 +1359,16 @@ you"; a Tuya plug paired again in the vendor's app, whose key has changed,
 fetches its new key the same way.
 *Done when* a changed NIU password is fixed without removing anything, and a
 re-paired Tuya plug gets its new key the same way.
+**Done 2026-10-07.** An action may answer `ask: { schema, carry }`: the app
+draws the form inside the step and runs the action again with what is
+given; `carry` stays in the draft for that one next turn and never reaches
+the app. `setup.again({ deviceId, connectionId })` sets one of a device's
+own ways up again — its credentials and the way's own steps, never finding
+it again, then a check that refuses a device answering as another — and
+saving changes that way and nothing else: secrets given anew, the device
+closed on purpose (what it waited on forgotten) and opened with them. The
+app: "Sign in again" on an account's page, "Set … up again" on a device's
+connection, both the add flow's own steps.
 
 **Step 10 · Secrets a session keeps.**
 Fields a protocol declares `kept: 'session'`; `secrets.set` on the open
