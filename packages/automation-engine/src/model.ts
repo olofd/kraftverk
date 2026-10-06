@@ -65,6 +65,14 @@ export type EngineDevice = RulePart & {
   wantFresh(until: number): void;
 };
 
+/** What the home kept of each reading, minute by minute, by device and attribute key. */
+export type EngineHistory = {
+  /** What was kept between two times, oldest first. */
+  samples(deviceId: string, key: string, fromIso: string, toIso: string): readonly { at: string; value: number | null }[];
+  /** The last kept at or before a time: what the reading was then. */
+  at(deviceId: string, key: string, iso: string): { at: string; value: number | null } | null;
+};
+
 export type AutomationEngineDeps = {
   store: AutomationStorage;
   library: Pick<AutomationLibrary, 'fn'>;
@@ -73,6 +81,8 @@ export type AutomationEngineDeps = {
   record: (entry: AuditRecord) => void;
   /** What devices say as they say it: events and readings start runs; and where a run in progress is said to have moved. */
   bus?: LiveBus;
+  /** What the home kept of each reading: what a rule looks back at (`average(station.charge, 1 h)`). None: unknown. */
+  history?: EngineHistory;
   /**
    * The home's time: what its triggers, holds, pauses and runs keep, and
    * what it stamps. Real time when not given; a test's own — fixed, or fast.

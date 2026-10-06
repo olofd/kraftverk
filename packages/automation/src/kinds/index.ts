@@ -7,3 +7,4 @@ export * from './shape.ts';
 export * from './exprs.ts';
 export * from './builtins.ts';
 export * from './parts.ts';
+export * from './history.ts';

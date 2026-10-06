@@ -8,6 +8,7 @@ import { ruleFromConfig, ruleToConfig } from '../text/rules.ts';
 import { fieldSchema } from './schema.ts';
 import { parseExpr } from '../text/expr.ts';
 import { BUILTIN_ORDER, BUILTINS } from './builtins.ts';
+import { HISTORY_FNS, HISTORY_ORDER } from './history.ts';
 import { EXPR_KIND_ORDER, EXPR_KINDS, exprKind, expressionsIn, mapChildren } from './exprs.ts';
 import { RULE_PART_DOCS } from './parts.ts';
 import { ruleShape } from './shape.ts';
@@ -141,6 +142,18 @@ describe('the steps, as data', () => {
         const parsed = parseExpr(example);
         if (!parsed.ok) throw new Error(`${name}: ${example}: ${parsed.error.message}`);
         expect({ example, calls: [...expressionsIn(parsed.expr)].some((each) => 'apply' in each && each.apply === name) }).toEqual({ example, calls: true });
+      }
+    }
+  });
+
+  test('every way of looking back has examples, each a look back of its own', () => {
+    for (const name of HISTORY_ORDER) {
+      const spec = HISTORY_FNS[name];
+      expect(spec.docs.examples.length).toBeGreaterThan(0);
+      for (const example of spec.docs.examples) {
+        const parsed = parseExpr(example);
+        if (!parsed.ok) throw new Error(`${name}: ${example}: ${parsed.error.message}`);
+        expect({ example, looks: [...expressionsIn(parsed.expr)].some((each) => 'history' in each && each.history === name) }).toEqual({ example, looks: true });
       }
     }
   });

@@ -4,6 +4,7 @@ import { CLOCK_TIME, minutesOf, WEEKDAYS, type Weekday } from './clock.ts';
 import { secondsText } from './describe.ts';
 import { evaluateNow, settledScope } from './evaluate.ts';
 import { BUILTIN_ORDER, BUILTINS, isBuiltin } from './kinds/builtins.ts';
+import { HISTORY_ORDER, HISTORY_SECONDS, isHistoryFn } from './kinds/history.ts';
 import { expressionsIn } from './kinds/exprs.ts';
 import { fieldValue, type FieldSpec } from './kinds/spec.ts';
 import { branchesOf, STEP_KIND_ORDER, STEP_KINDS } from './kinds/steps.ts';
@@ -222,6 +223,17 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       }
       for (const name of Object.keys(given)) if (!(name in fn.args)) problems.push(`${where}.args.${name}: ${fn.label} takes no "${name}"`);
       return shapeOf(fn.returns);
+    }
+    if ('history' in expr) {
+      // A number a part reports, looked back at for a minute to two weeks — a number or a setting, known before it runs.
+      if (!isHistoryFn(expr.history)) {
+        problems.push(`${where}: "${String(expr.history)}" is not a way of looking back: ${HISTORY_ORDER.join(', ')}`);
+        return { type: 'unknown' };
+      }
+      bounded(expr.over, `${where}.over`, 's', HISTORY_SECONDS.min, HISTORY_SECONDS.max);
+      const read = shape({ read: expr.of }, where, options);
+      if (read.type !== 'number' && read.type !== 'unknown') problems.push(`${where}: only a number is looked back at, not ${said(read)}`);
+      return read.type === 'number' ? read : { type: 'number', unit: null };
     }
     if ('reachable' in expr) {
       role(expr.reachable, where);

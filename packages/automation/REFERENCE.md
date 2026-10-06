@@ -247,7 +247,7 @@ When a condition turns true — and, with `for`, has stayed true that long. Read
 | Word | Holds | |
 |---|---|---|
 | `becomes` | a condition: `station.charge < 15 %` | needed |
-| `for` | a length of time, `2 min` — 1 s to 168 h | if you like |
+| `for` | a length of time, `2 min` — 1 s to 7 d | if you like |
 
 ```yaml
 when:
@@ -629,6 +629,7 @@ reached — is never taken for true.
 | A setting | `setting.low` | One of the rule’s settings, by its name: a recipe’s, before it is copied into an automation. |
 | What it remembers | `memory.timesCharged` | A value it remembers, as a run last left it — or, before any did, as it starts: kept across runs and restarts. |
 | A reading | `station.charge` · `charger.power` | What the part filling a role reports now, by what it means: a standard meaning, or a type’s own. Unknown when it has not said, or said too long ago. |
+| Over the time just gone | `average(station.charge, 1 h)` · `change(station.charge, 30 min) > 5 %` · `ago(charger.power, 10 min)` | A reading over the time just gone, from what the home kept of it: `average`, `lowest`, `highest`, `change` — how much it changed — or `ago`, what it was then. In the reading’s unit; the time a number or a setting, a minute to two weeks. Unknown when nothing was kept for that time. |
 | Can be reached | `charger reachable` | Whether the part filling a role can be reached now: its holder says it is connected. Never unknown — not being reachable is the answer. |
 | What the run knows | `run.trigger == "low"` · `run.event.voltage < 200 V` | What the run knows of itself: `run.trigger`, the id of the trigger that started it — `""` when none with an id did; `run.event`, the event a device raised that started it, and `run.event.voltage`, what it carried, as its device declares it — unknown when no event did. |
 | Time of day | `time between 23:00 and 05:00` | Whether the owner’s clock is between two times of day, from the first up to the second — across midnight when the second comes first. |
@@ -657,6 +658,18 @@ Each takes numbers, each with its unit, and answers in the first one’s unit. U
 | `floor(x)` — Round down | `floor(station.charge)` | A number rounded down to a whole one, in its own unit. |
 | `ceil(x)` — Round up | `ceil(station.charge)` | A number rounded up to a whole one, in its own unit. |
 | `abs(x)` — Size | `abs(meter.power)` | How large a number is, whichever way: −5 W is 5 W. |
+
+### Over the time just gone
+
+Each looks back at a reading — `role.meaning` — for a length of time, from 1 min to 14 d: a number or a setting. Each value counts from when it was read until the next; the answer is in the reading’s unit, unknown when nothing was kept for that time.
+
+| Function | Written | Is |
+|---|---|---|
+| `average(reading, time)` — The average | `average(station.charge, 1 h)` · `average(charger.power, setting.window) > 50 W` | The average of a reading over the time just gone, each value weighed by how long it held — in the reading’s unit. |
+| `lowest(reading, time)` — The lowest | `lowest(station.charge, 1 d) < 10 %` | The lowest a reading was over the time just gone, in its unit. |
+| `highest(reading, time)` — The highest | `highest(charger.power, 10 min) < 5 W` | The highest a reading was over the time just gone, in its unit. |
+| `change(reading, time)` — How much it changed | `change(station.charge, 30 min) > 5 %` | How much a reading changed over the time just gone: now, less what it was then — in its unit; unknown when either is. |
+| `ago(reading, time)` — What it was then | `ago(station.charge, 10 min)` | What a reading was, so long ago — in its unit; unknown when nothing was kept of it then. |
 
 ### Units
 

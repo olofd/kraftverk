@@ -3,6 +3,7 @@ import { UNITS, type Dimension } from '@kraftverk/device-sdk';
 import { secondsText } from '../describe.ts';
 import { BUILTIN_ORDER, BUILTINS } from './builtins.ts';
 import { EXPR_KIND_ORDER, EXPR_KINDS } from './exprs.ts';
+import { HISTORY_FNS, HISTORY_ORDER, HISTORY_SECONDS } from './history.ts';
 import { RULE_PART_DOCS } from './parts.ts';
 import type { FieldSpec } from './spec.ts';
 import { STEP_KIND_ORDER, STEP_KINDS, type StepSpec } from './steps.ts';
@@ -146,6 +147,19 @@ export function referenceMarkdown(): string {
   for (const name of BUILTIN_ORDER) {
     const spec = BUILTINS[name];
     lines.push(`| \`${name}(${spec.params.join(', ')})\` — ${spec.label} | ${spec.docs.examples.map((example) => `\`${example}\``).join(' · ')} | ${spec.docs.summary} |`);
+  }
+  lines.push(
+    '',
+    '### Over the time just gone',
+    '',
+    `Each looks back at a reading — \`role.meaning\` — for a length of time, from ${secondsText(HISTORY_SECONDS.min)} to ${secondsText(HISTORY_SECONDS.max)}: a number or a setting. Each value counts from when it was read until the next; the answer is in the reading’s unit, unknown when nothing was kept for that time.`,
+    '',
+    '| Function | Written | Is |',
+    '|---|---|---|'
+  );
+  for (const name of HISTORY_ORDER) {
+    const spec = HISTORY_FNS[name];
+    lines.push(`| \`${name}(reading, time)\` — ${spec.label} | ${spec.docs.examples.map((example) => `\`${example}\``).join(' · ')} | ${spec.docs.summary} |`);
   }
   lines.push(
     '',

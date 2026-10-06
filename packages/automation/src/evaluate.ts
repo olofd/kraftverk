@@ -3,6 +3,7 @@ import { checkValue, isScalar, valueTypeOf, type ConfigSchema, type ScalarValue,
 import { inWindow, minutesOf } from './clock.ts';
 import type { Evaluation } from './functions.ts';
 import { BUILTINS } from './kinds/builtins.ts';
+import { HISTORY_FNS, type HistoryPoint } from './kinds/history.ts';
 import { childrenOf, exprKind, expressionsIn, mapChildren, type ExprOf } from './kinds/exprs.ts';
 import { EXPRESSION_FIELDS, fieldValue, withField } from './kinds/spec.ts';
 import { stepSpec } from './kinds/steps.ts';
@@ -95,6 +96,13 @@ export type RuleScope = {
   call?(fn: string, role: string, args: Readonly<Record<string, Value>>): Promise<Evaluation>;
   /** Whether the part filling a role can be reached now — and, when not, why. */
   reachable(role: string): { reachable: boolean | null; detail: string };
+  /**
+   * What the home kept of a reading over the last `seconds`: each value from
+   * its time on (ms) — the one holding as the time began first, the reading
+   * now last — between `from` and `to`, with its unit and label. Absent, or
+   * null, where none is kept: unknown.
+   */
+  history?(role: string, means: string, seconds: number): { points: readonly HistoryPoint[]; from: number; to: number; unit: Unit | null; label: string } | null;
   /** How a role's part is named: "Garage station". */
   name(role: string): string;
   /** The time of day on the owner's clock, as "HH:MM"; null where there is none. */
@@ -213,6 +221,15 @@ export function measureNow(expr: Expr, scope: RuleScope, trace: string[] = [], a
       const read = scope.read(role, means);
       trace.push(`${scope.name(role)}: ${read ? `${read.label} ${shown(read.value, read.unit ?? '')}` : `${means} is not known`}`);
       return read ? { value: read.value, unit: typeof read.value === 'number' ? read.unit : null } : plain(null);
+    }
+    case 'history': {
+      const { history: fn, of, over } = expr as ExprOf<'history'>;
+      const seconds = numberIn(now(over), 's');
+      const kept = seconds !== null && seconds > 0 ? (scope.history?.(of.role, of.means, seconds) ?? null) : null;
+      const found = kept ? HISTORY_FNS[fn].of(kept.points, kept.from, kept.to) : null;
+      const value = found === null ? null : tidy(found);
+      trace.push(`${scope.name(of.role)}: ${fn} of ${kept?.label ?? of.means}${value === null ? ' is not known' : ` ${shown(value, kept?.unit ?? '')}`}`);
+      return { value, unit: value === null ? null : (kept?.unit ?? null) };
     }
     case 'reachable': {
       const role = (expr as ExprOf<'reachable'>).reachable;
@@ -423,6 +440,7 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
       }
       case 'value':
       case 'read':
+      case 'history':
       case 'call':
       case 'reachable':
       case 'within':

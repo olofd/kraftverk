@@ -131,6 +131,15 @@ describe('history that lasts', () => {
   const hours = (id: string) =>
     db.query('SELECT hour, min, avg, max, n FROM sample_hour WHERE device_id = ? ORDER BY hour').all(id) as { hour: string; min: number; avg: number; max: number; n: number }[];
 
+  test('what a reading was at a time: the last kept at or before it — what a rule looking back reads', () => {
+    registry('then', []);
+    const ten = new Date(Date.UTC(2026, 8, 27, 10, 0));
+    put('then', ten, 40);
+    put('then', new Date(ten.getTime() + 10 * 60_000), 55);
+    const at = (minutes: number) => history.at('then', 'soc', new Date(ten.getTime() + minutes * 60_000).toISOString())?.value ?? null;
+    expect([at(-1), at(0), at(5), at(10), at(60)]).toEqual([null, 40, 40, 55, 55]);
+  });
+
   test('minutes roll up into hours — and again, correctly, when late readings arrive', () => {
     registry('rolled', []);
     const hour = new Date(Date.UTC(2026, 8, 27, 10, 0));

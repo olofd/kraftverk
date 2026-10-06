@@ -138,6 +138,10 @@ describes.
     first known, `outdoor.temperature ?? 10 °C`;
   - the language's functions: `min(a, b, …)`, `max(…)`, `clamp(x, low, high)`,
     `round(x)`, `round(x, digits)`, `floor(x)`, `ceil(x)`, `abs(x)`;
+  - a reading over the time just gone, from what the home kept:
+    `average(station.charge, 1 h)`, `lowest(…)`, `highest(…)`,
+    `change(station.charge, 30 min)` (how much it changed), `ago(…, 10 min)`
+    (what it was then) — a minute to two weeks, a number or a setting;
   - a recipe's setting: `setting.low`;
   - a package's function, by its id: `open-meteo.weather.skyLooks(forecast, cloudMax = 40)`.
 - **Lengths of time**: `5 s`, `2 min`, `1 h` — always with their unit: a

@@ -216,6 +216,7 @@ charge is below 15 %".
 | `param` | `setting.cloudMax` | one of a recipe's settings |
 | `memory` | `memory.timesCharged` | what it remembers, as a run last left it, in its unit, or before any did, as it starts |
 | `read` | `charger.power` | what the part filling a role reports now, by meaning (`charge`) or by its type's own (`acme.minutesToFull`) |
+| `history` | `average(station.charge, 1 h)` · `lowest(…)` · `highest(…)` · `change(…, 30 min)` · `ago(…, 10 min)` | a reading over the time just gone, from what the home kept (`RuleScope.history`, the engine's `EngineHistory` port): each value counted from when it was read until the next, the time a number or a setting from 1 min to 14 d, the answer in the reading's unit — unknown when nothing was kept. It reads what it looks back at, so it binds and re-evaluates as a reading does |
 | `call` | `acme.weather.sunny(forecast, day = "tomorrow")` | a function a package contributes, over the part filling a role: its whole id, then the role it reads and its arguments by name |
 | `apply` | `min(a, b)`, `clamp(x, 0 W, 2 kW)`, `round(x, 1)` | one of the language's own functions (`src/kinds/builtins.ts`: min, max, clamp, round, floor, ceil, abs) — numbers in, a number in the first one's unit out |
 | `compare` | `a > b` | a comparison (below) |

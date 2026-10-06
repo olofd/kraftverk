@@ -5,7 +5,7 @@ import { MAIN_PART, REAL_CLOCK, savedDeviceId, zonedInstant, type AuditRecord, t
 import { memoryLedger, type CommandIntent, type GatewayResult, type WriteIntent } from '@kraftverk/gateway';
 import { LiveBus } from '@kraftverk/holder';
 
-import { AutomationEngine, type AutomationRecord, type EngineDevice, AutomationLibrary } from '@kraftverk/automation-engine';
+import { AutomationEngine, type AutomationRecord, type EngineDevice, type EngineHistory, AutomationLibrary } from '@kraftverk/automation-engine';
 import { AutomationStore, type SqlDatabase } from '@kraftverk/store';
 
 import { testDatabase } from './home.ts';
@@ -157,7 +157,8 @@ const asEngineDevice = (device: Omit<EngineDevice, 'reachable' | 'wantFresh' | '
 
 /** Two engines on one database are one server, restarted: what they keep is in the store. */
 /** `gate`: what a command waits on once sent — a run that takes its time. `refuse`: what the gateway says instead of acting, when it says something. */
-function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: boolean; gate?: () => Promise<void>; refuse?: (intent: CommandIntent) => GatewayResult | null } = {}) {
+/** `history`: what the home kept of each reading, for a rule that looks back. */
+function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: boolean; gate?: () => Promise<void>; refuse?: (intent: CommandIntent) => GatewayResult | null; history?: EngineHistory } = {}) {
   const sent: CommandIntent[] = [];
   const written: WriteIntent[] = [];
   const recorded: AuditRecord[] = [];
@@ -211,6 +212,7 @@ function setup(options: { now?: Date; plugRemoved?: boolean; forecastSession?: b
       lastWrite: (device, attribute) => ledger.lastWrite(device, attribute),
     },
     record: (entry) => recorded.push(entry),
+    ...(options.history ? { history: options.history } : {}),
     bus,
     // A fixed time the test moves on, with real timers.
     clock: { ...REAL_CLOCK, now: () => now.getTime() },
@@ -1102,6 +1104,43 @@ describe('a battery kept between two levels', () => {
     expect(sent.map((intent) => intent.args.on)).toEqual([true, true]);
     expect(plug.on).toBe(true);
     engine.stop();
+  });
+});
+
+describe('looking back at what the home kept', () => {
+  test('the average of a reading over the last hour: each value by how long it held, the reading now last', async () => {
+    const minutes = (n: number) => new Date(MORNING.getTime() - n * 60_000).toISOString();
+    // The station's charge: 20 % from an hour and a half ago, 60 % from half an hour ago.
+    const kept = [
+      { at: minutes(90), value: 20 },
+      { at: minutes(30), value: 60 },
+    ];
+    const asked: string[] = [];
+    const history: EngineHistory = {
+      samples: (device, key, from, to) => (asked.push(`${device} ${key}`), kept.filter((sample) => sample.at >= from && sample.at <= to)),
+      at: (_device, _key, iso) => kept.filter((sample) => sample.at <= iso).at(-1) ?? null,
+    };
+    const context = setup({ history });
+    const rule: Rule = {
+      roles: { station: { label: 'Station', capabilities: ['battery'] }, plug: { label: 'Plug', capabilities: ['switch'] } },
+      params: { fields: {} },
+      when: [],
+      if: { compare: 'gt', left: { history: 'average', of: { role: 'station', means: 'charge' }, over: { value: 1, unit: 'h' } }, right: { value: 30, unit: '%' } },
+      then: [{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
+    };
+    expect(checkRule(rule, { fn: () => null })).toEqual([]);
+    const made = context.store.create({ name: 'Charged lately', rule, madeFrom: null, roles: { station: { device: STATION, part: 'main' }, plug: { device: PLUG, part: 'main' } }, groups: {}, starts: {}, timeZone: ZONE, recheckMinutes: null });
+    // Half the hour at 20 %, half at 60 %, and 50 % now: 40 % on average.
+    const run = await context.engine.run(made, { check: true });
+    expect(run.outcome).toBe('would-act');
+    expect(run.saw).toContain('Garage P280: average of Charge 40 %');
+    expect(asked).toEqual([`${STATION} soc`]);
+
+    // Nothing kept: it cannot tell, and does nothing.
+    const blind = setup({ history: { samples: () => [], at: () => null } });
+    const unknown = await blind.engine.run(blind.store.create({ name: 'Blind', rule, madeFrom: null, roles: { station: { device: STATION, part: 'main' }, plug: { device: PLUG, part: 'main' } }, groups: {}, starts: {}, timeZone: ZONE, recheckMinutes: null }), { check: true });
+    // The reading now is all there is: an average of it alone.
+    expect(unknown.saw).toContain('Garage P280: average of Charge 50 %');
   });
 });
 

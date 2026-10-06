@@ -25,6 +25,9 @@ import type { Weekday } from './clock.ts';
 
 export type CompareOp = 'lt' | 'le' | 'gt' | 'ge' | 'eq' | 'ne';
 
+/** The ways of looking back at a reading (`HISTORY_FNS`, kinds/history.ts). */
+export type HistoryFn = 'average' | 'lowest' | 'highest' | 'change' | 'ago';
+
 /** Every comparison. */
 export const COMPARE_OPS: readonly CompareOp[] = ['lt', 'le', 'gt', 'ge', 'eq', 'ne'];
 
@@ -45,6 +48,13 @@ export type Expr =
   | { memory: string }
   /** What the part filling a role reports now, by meaning: `charge`, or a type's own `acme.minutesToFull`. */
   | { read: { role: string; means: string } }
+  /**
+   * A reading over the time just gone, from what the home kept of it: its
+   * average, lowest, highest, how much it changed, or what it was then —
+   * `average(station.charge, 1 h)`. `over`: a length of time, a number or a
+   * setting. Unknown when nothing was kept for that time.
+   */
+  | { history: HistoryFn; of: { role: string; means: string }; over: Expr }
   /** A function a package contributes, over the part filling a role: `acme.weather.sunny(forecast, day = "tomorrow")`. */
   | { call: string; role: string; args?: Readonly<Record<string, Expr>> }
   /** One of the language's own functions (`BUILTINS`, kinds/builtins.ts): `round(x)`, `clamp(x, 0 W, 2 kW)`, `max(a, b, c)`. */

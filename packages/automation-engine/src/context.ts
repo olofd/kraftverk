@@ -1,5 +1,5 @@
 import type { ConditionState } from '@kraftverk/api-contract';
-import { bindingsOf, capitalise, groupRoles, listed, memoryOf, settingOf, checkBinding, describeExpr, describeSteps, evaluateNow, measure, numberIn, secondsNow, isAutomationRole, partRoles, secondsText, triggerKey, triggerOf, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type RuleSteps, type Step, type Write } from '@kraftverk/automation';
+import { bindingsOf, capitalise, type HistoryPoint, groupRoles, listed, memoryOf, settingOf, checkBinding, describeExpr, describeSteps, evaluateNow, measure, numberIn, secondsNow, isAutomationRole, partRoles, secondsText, triggerKey, triggerOf, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type RuleSteps, type Step, type Write } from '@kraftverk/automation';
 import { attributeMeaning, capabilityIn, clockTime, MAIN_PART, isCurrent, isScalar, readingOf, REAL_CLOCK, standardMeaning, unitIn, type CapabilityName, type Clock, type Value } from '@kraftverk/device-sdk';
 
 import type { AutomationEngineDeps, AutomationRecord, EngineDevice } from './model.ts';
@@ -22,7 +22,7 @@ export type PlannedWrite = { binding: RoleBinding; key: string; value: Value };
 export type Planned = { command: PlannedAction } | { write: PlannedWrite };
 
 /** What the context reads: the automations, the installed functions, the parts, and the clock. */
-export type ContextDeps = Pick<AutomationEngineDeps, 'store' | 'library' | 'device' | 'clock'>;
+export type ContextDeps = Pick<AutomationEngineDeps, 'store' | 'library' | 'device' | 'clock' | 'history'>;
 
 /** The event a device raised that started a run: its id, and what it carried. */
 export type StartingEvent = { id: string; data: Readonly<Record<string, Value>> | null };
@@ -77,6 +77,24 @@ export class RuleContext {
         // What it reports now: a reading past how long it stays current is not known, and neither is structure.
         if (!attribute || !reading || !isCurrent(attribute, reading, now.getTime()) || !isScalar(reading.value)) return null;
         return { value: reading.value, label: standardMeaning(means)?.label ?? attribute.label, unit: unitIn(attribute) };
+      },
+      // What the home kept of a reading: the value holding as the time began, each kept since, and the reading now — each a number.
+      history: (role, means, seconds) => {
+        const binding = automation.roles[role];
+        const device = part(role);
+        const attribute = device ? attributeMeaning(device.description, device.part, means) : null;
+        if (!binding || !device || !attribute || !this.deps.history) return null;
+        const to = now.getTime();
+        const from = to - seconds * 1000;
+        const iso = (ms: number) => new Date(ms).toISOString();
+        const before = this.deps.history.at(binding.device, attribute.key, iso(from));
+        const points: HistoryPoint[] = [
+          ...(before ? [{ at: from, value: before.value }] : []),
+          ...this.deps.history.samples(binding.device, attribute.key, iso(from), iso(to)).map((sample) => ({ at: Date.parse(sample.at), value: sample.value })),
+        ].filter((point): point is HistoryPoint => typeof point.value === 'number' && Number.isFinite(point.value));
+        const reading = device.device ? readingOf(device.device.readings(), attribute.key) : null;
+        if (reading && typeof reading.value === 'number' && isCurrent(attribute, reading, to)) points.push({ at: Math.max(Date.parse(reading.at), points.at(-1)?.at ?? from), value: reading.value });
+        return points.length ? { points, from, to, unit: unitIn(attribute), label: standardMeaning(means)?.label ?? attribute.label } : null;
       },
       reachable: (role) => {
         const device = part(role);

@@ -37,7 +37,7 @@ describe('every so many minutes', () => {
     expect(checkRule(held(10 * 60), NO_FUNCTIONS)).toEqual([]);
     expect(checkRule(held(30), NO_FUNCTIONS)).toEqual([]);
     expect(checkRule(held(7 * 24 * 3600), NO_FUNCTIONS)).toEqual([]);
-    for (const seconds of [0, -5, 7 * 24 * 3600 + 1]) expect(checkRule(held(seconds), NO_FUNCTIONS)).toEqual(['when[0].heldFor: from 1 s to 168 h']);
+    for (const seconds of [0, -5, 7 * 24 * 3600 + 1]) expect(checkRule(held(seconds), NO_FUNCTIONS)).toEqual(['when[0].heldFor: from 1 s to 7 d']);
   });
 
   test('reads as how often, and narrowed by a window of the day', () => {

@@ -1,6 +1,7 @@
 import { isUnit, type Unit, type Value } from '@kraftverk/device-sdk';
 
-import { isBuiltin } from '../kinds/builtins.ts';
+import { BUILTIN_ORDER, isBuiltin } from '../kinds/builtins.ts';
+import { HISTORY_ORDER, isHistoryFn } from '../kinds/history.ts';
 import { RUN_FACTS, type CompareOp, type Expr, type MathOp, type RunFact } from '../rule.ts';
 
 /*
@@ -307,9 +308,19 @@ export function parseExpr(text: string): Parsed {
       }
     }
     if (KEYWORDS.has(token.value)) throw new Failure(`"${token.value}" cannot start a value`, token.at);
+    // A reading over the time just gone: "average(station.charge, 1 h)" — what it reads, then how long.
+    if (isSymbol('(') && isHistoryFn(token.value)) {
+      next();
+      const of = ternary();
+      if (!('read' in of)) throw new Failure(`${token.value}( looks back at a reading: "${token.value}(station.charge, 1 h)"`, token.at);
+      expect(',', `"," and how long it looks back: "${token.value}(station.charge, 1 h)"`);
+      const over = ternary();
+      expect(')', `a ")" to close ${token.value}(`);
+      return { history: token.value, of: of.read, over };
+    }
     // One of the language's own functions: "min(a, b)".
     if (isSymbol('(')) {
-      if (!isBuiltin(token.value)) throw new Failure(`"${token.value}" is not a function: min, max, clamp, round, floor, ceil, abs — or a package's, by its whole id`, token.at);
+      if (!isBuiltin(token.value)) throw new Failure(`"${token.value}" is not a function: ${BUILTIN_ORDER.join(', ')}; over time ${HISTORY_ORDER.join(', ')} — or a package's, by its whole id`, token.at);
       next();
       const args: Expr[] = [];
       if (!isSymbol(')')) {
@@ -452,6 +463,10 @@ function print(expr: Expr, need: number): string {
       return `${name} = ${print(arg, LEVEL.ternary)}`;
     });
     return `${expr.call}(${[roleText(expr.role), ...args].join(', ')})`;
+  }
+  if ('history' in expr) {
+    if (!isHistoryFn(expr.history) || !NAME.test(expr.of.role) || !MEANING.test(expr.of.means)) throw new Unprintable();
+    return `${expr.history}(${expr.of.role}.${expr.of.means}, ${print(expr.over, LEVEL.ternary)})`;
   }
   if ('apply' in expr) {
     if (!isBuiltin(expr.apply)) throw new Unprintable();

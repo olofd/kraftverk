@@ -4,6 +4,7 @@ import type { RuleVocabulary } from './check.ts';
 import { WEEKDAYS, type Weekday } from './clock.ts';
 import { evaluateNow, measureNow, secondsNow, settledChoice, settledScope, shown } from './evaluate.ts';
 import { BUILTINS } from './kinds/builtins.ts';
+import { HISTORY_FNS } from './kinds/history.ts';
 import { exprKind, type ExprOf } from './kinds/exprs.ts';
 import type { Say } from './kinds/spec.ts';
 import { branchesOf, stepSpec, type StepKind, type StepSay } from './kinds/steps.ts';
@@ -17,12 +18,14 @@ import { isAutomationRole, isGroupRole, memberRole, type Command, type CompareOp
   them — what every screen, the assistant and a run's log say.
 */
 
-/** A number of seconds as a person says it: "20 s", "2 min", "1 min 30 s", "1 h". */
+/** A number of seconds as a person says it: "20 s", "2 min", "1 min 30 s", "1 h", "2 d". */
 export function secondsText(seconds: number): string {
   const whole = Math.max(0, Math.round(seconds));
   if (whole < 60) return `${whole} s`;
   if (whole < 3_600) return whole % 60 ? `${Math.floor(whole / 60)} min ${whole % 60} s` : `${whole / 60} min`;
   const minutes = Math.round(whole / 60);
+  // Whole days, as days: two weeks is "14 d", not "336 h".
+  if (minutes >= 1_440 && minutes % 1_440 === 0) return `${minutes / 1_440} d`;
   return minutes % 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes / 60} h`;
 }
 
@@ -32,7 +35,6 @@ const holdText = (held: Expr, text: (expr: Expr) => string): string => {
   return seconds === null ? text(held) : secondsText(seconds);
 };
 
-/** A setting as it reads in a sentence: an option's label, a number with its unit, seconds as a duration. */
 /** One of what a rule remembers, as a sentence calls it: its title, mid-sentence — "times charged". */
 const memoryWords = (rule: Pick<Rule, 'memory'>, key: string): string => {
   const title = rule.memory?.fields[key]?.title ?? key;
@@ -45,6 +47,7 @@ const settingValue = (rule: Pick<Rule, 'params'>, params: Readonly<Record<string
   return (params[key] ?? (field && 'default' in field ? field.default : undefined) ?? null) as Value;
 };
 
+/** A setting as it reads in a sentence: an option's label, a number with its unit, seconds as a duration. */
 export function paramText(schema: ConfigSchema, name: string, value: Value): string {
   const field = schema.fields[name];
   if (value === null || value === undefined) return '…';
@@ -108,7 +111,8 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
     if ('negate' in expr) return unitOf(expr.negate);
     if ('if' in expr) return unitOf(expr.then) || unitOf(expr.else);
     if ('either' in expr) return expr.either.map(unitOf).find(Boolean) ?? '';
-    const standard = 'read' in expr ? standardMeaning(expr.read.means) : null;
+    // Over time, a reading is in its own unit still.
+    const standard = 'read' in expr ? standardMeaning(expr.read.means) : 'history' in expr ? standardMeaning(expr.of.means) : null;
     return standard?.type === 'number' && !standard.units ? (standard.unit ?? '') : '';
   };
   /** Every kind of expression in words — or this does not compile (kinds/exprs.ts). */
@@ -127,6 +131,11 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
         // What it reports, not chosen yet: "a reading" rather than an empty name.
         const { role, means } = (expr as ExprOf<'read'>).read;
         return whose(name(role), standardMeaning(means)?.label.toLowerCase() || means || 'reading');
+      }
+      case 'history': {
+        // "the average of Garage station’s charge over the last 1 h".
+        const { history: fn, of, over } = expr as ExprOf<'history'>;
+        return HISTORY_FNS[fn].words(whose(name(of.role), standardMeaning(of.means)?.label.toLowerCase() || of.means || 'reading'), text(over));
       }
       case 'reachable':
         return `${name((expr as ExprOf<'reachable'>).reachable)} can be reached`;

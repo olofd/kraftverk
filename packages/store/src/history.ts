@@ -56,6 +56,11 @@ export class HistoryStore {
       .all(deviceId, key, fromIso, toIso);
   }
 
+  /** The last of an attribute's samples at or before a time: what it was then. Null when none was kept. */
+  at(deviceId: string, key: string, iso: string): Kept | null {
+    return this.#db.query<Kept, [string, string, string]>('SELECT at, value, text FROM sample WHERE device_id = ? AND key = ? AND at <= ? ORDER BY at DESC LIMIT 1').get(deviceId, key, iso) ?? null;
+  }
+
   /**
    * Rolls minute samples up into hours, between two times. Idempotent: an
    * hour is recomputed from its samples, so rolling it up again after late
