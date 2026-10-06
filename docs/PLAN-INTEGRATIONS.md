@@ -49,6 +49,48 @@ here is built yet.
 
 ---
 
+## 0. It runs where the home runs
+
+The one difference from Home Assistant that everything else must keep:
+**kraftverk runs whole on a phone or in a browser, with no server.** A home
+can be the app alone; a server, when there is one, is a node that is always
+on and reachable, not the place the code lives. So:
+
+- **Every integration's code runs on every platform** — `system` (a machine,
+  under Bun), `web` (a browser), `native` (a phone). It is pure: no platform
+  built-in, held by the architecture check, and bundled for a browser by it.
+  An integration that cannot is refused, however good it is.
+- **What differs is what a way of reaching a device needs, and it is data.**
+  Two declarations, kept apart:
+  - **The platform it can run on** comes from its transport (and, for a
+    cloud, whether that cloud answers a browser at all): `platforms`. A
+    Bluetooth radio is on a phone and a server; a cloud without CORS headers
+    is not reachable from a browser's page. A fact about software, never a
+    choice.
+  - **What the node holding it must be** is the method's `needs`, from the
+    node's traits: `alwaysOn` (it must run while nobody looks), `reachable`,
+    `trusted` (a vendor password may be kept on it). A choice about safety and
+    usefulness, with the reason said.
+  NIU's method today says `needs: { trusted: '… NIU's cloud does not answer a
+  web page' }`, which mixes the two; the platform half moves to the method's
+  platforms (step 5).
+- **A phone is a temporary node.** It holds a way while the app is open. A
+  method that only *works better* always on — iCloud fetching locations at
+  night — does not need `alwaysOn`; it runs on the phone while it is open,
+  and the catalogue says what an always-on node would add. Only what is
+  useless or unsafe without it needs it.
+- **The catalogue says, per integration, where it runs:** "on this phone",
+  "in a browser", "needs a server" — worked out from its methods' platforms
+  and needs, never written by hand. The add screen offers what this home's
+  nodes can hold, and says what a server would make possible.
+- **Nothing in this design is server-only by construction.** Setup's page
+  elsewhere (OAuth) returns to whichever node runs the flow — a server's
+  route, or the app's own link; containment (§6.2) has an implementation for
+  every platform; a bridge's members are held wherever the bridge is, a phone
+  included.
+
+---
+
 ## 1. Integration, service, device: the words
 
 The owner asked whether "service" and "integration" are the same thing.
@@ -82,7 +124,7 @@ Assistant arrived at the same place: a weather service is a device of type
 | Word | What it is | Kind of thing | Examples |
 |---|---|---|---|
 | **Integration** | An installed package that teaches kraftverk one product, family, cloud or standard. What contributors write; what the integrations page lists. It declares one or more device types. | Code | `icloud`, `apple-tv`, `tuya`, `aferiy`, `open-meteo`, `home-assistant` |
-| **Device type** | One kind of thing an integration knows, as today. | Code | `icloud.account`, `apple.device`, `tuya.plug` |
+| **Device type** | One kind of thing an integration knows, as today. | Code | `icloud.account`, `icloud.device`, `tuya.plug` |
 | **Device** | One thing a person added, of a type. Kind *hardware*. | Instance | "Garage P280", "Living room Apple TV" |
 | **Service** | A device without hardware, as today. Kind *service*. | Instance | "Weather here", "Electricity prices", "Phone notifications" |
 | **Account** | A device that is a sign-in to someone's cloud. Kind *account*. New. | Instance | "Family iCloud", "NIU account" |
@@ -371,42 +413,42 @@ packages/integrations/icloud/
   NOTICE              where it was ported from, and those licences
   src/
     account.ts        defineDeviceType: icloud.account (kind account, a bridge)
-    device.ts         defineDeviceType: apple.device (kind hardware, a member)
-    index.ts          export default defineIntegration({ types: [...] })
+    device.ts         defineDeviceType: icloud.device (kind hardware, a member)
   ui/                 pictures; screens of its own, rarely
   test/
     fixtures/         recorded exchanges, replayed in tests
 ```
 
-**The manifest** is the `kraftverk.integration` section of `package.json`. It is
-**data**, read without importing code, so the catalogue of a thousand
-integrations costs a JSON file:
+**The manifest** is the `kraftverk.integration` section of `package.json`:
+**data**, saying only what finding the code needs — the integration, and
+where each of its types' entries, screens and pictures are:
 
 ```jsonc
 {
   "name": "@kraftverk/integration-icloud",
   "kraftverk": {
     "integration": {
-      "id": "icloud",                       // the namespace: every type id begins with it, or with a brand it claims
+      "id": "icloud",                       // the namespace: every type id begins with "icloud."
       "name": "iCloud",
       "brands": ["apple"],
-      "contract": 1,                        // the SDK contract it is written for
-      "entry": "./src/index.ts",
-      "types": [                            // what the catalogue shows before loading
-        { "id": "icloud.account", "kind": "account", "category": "account", "bridge": true },
-        { "id": "apple.device", "kind": "hardware", "category": "phone", "through": ["icloud.account"] }
+      "types": [
+        { "id": "icloud.account", "entry": "./src/account.ts" },
+        { "id": "icloud.device", "entry": "./src/device.ts", "ui": "./ui/device.ts", "images": ["./assets/iphone.png"] }
       ],
-      "reach": "cloud",                     // the most it needs: local | cloud-at-setup | cloud
-      "updates": "poll",                    // push | poll | both: said on the add screen
-      "needs": { "trusted": "your Apple account password stays at home", "alwaysOn": "family locations are fetched while nobody looks" },
-      "discovery": [],                      // matchers: see 4.4
-      "protocols": ["icloud-web"],
-      "portedFrom": { "homeAssistant": "icloud", "at": "2026.10", "library": "pyicloud 2.6.5" },
-      "docs": "README.md"
-    }
+      "portedFrom": { "homeAssistant": "icloud", "at": "2026.10", "library": "pyicloud 2.6.5" }
+    },
+    "words": ["icloud"]
   }
 }
 ```
+
+Everything else the catalogue says is **worked out from the code** when the
+catalogue is generated, never written twice: each type's kind, category and
+whether it is a bridge; each method's platforms, needs, reach, updates and
+discovery matchers; and from those, where the integration runs (§0). The
+catalogue is what is read without importing code — a thousand integrations
+cost one generated JSON file — and a check holds it current, as the
+generated registry is held today.
 
 A **brand** is a small record of its own (`packages/brands/<id>.json`: name,
 logo, the integrations that serve it, and the standards its products speak —
@@ -420,11 +462,10 @@ Matter".
 An integration may refine another's type (ARCHITECTURE.md step 30's `refines`), so `atorch`
 stays an integration of its own that refines `tuya.plug`.
 
-**The code's entry** exports `defineIntegration({ types, functions,
-recipes })`: what the type packages export today, gathered, plus the
-automation contributions that already live beside them. The generated
-lists, and checks that the manifest's `types` match the code's, keep the two
-honest.
+**Each type's entry** default-exports its `defineDeviceType`, as a type
+package's does today; what a type brings to automations stays an entry
+beside it (`automation`). The type's id must be the manifest's, and begin
+with the integration's: a check refuses a package where they differ.
 
 ### 4.3 The contract: accounts and bridges
 
@@ -496,8 +537,8 @@ members too: they are where it is.
 
 ### 4.4 Discovery
 
-Each method declares what it is found by, as data in the manifest, compiled
-into the catalogue:
+Each method declares what it is found by, as data beside its transport,
+compiled into the catalogue:
 
 ```jsonc
 "discovery": [
@@ -534,7 +575,7 @@ here:
 
 ### 4.6 Poll or push
 
-`updates: 'push' | 'poll' | 'both'` in the manifest, beside `reach`, so the
+`updates: 'push' | 'poll' | 'both'` on each method, beside `reach`, so the
 add screen says "Updates arrive as they happen" or "Checked every few
 minutes", as Home Assistant's `iot_class` does. Unlike Home Assistant it is
 checked: a type that says `push` and schedules a poll faster than a minute
@@ -579,7 +620,8 @@ line of steps the app can draw as a progress bar:
 - **Apple TV:** found → *pair* → for each protocol the TV supports, `ask`
   "Enter the code shown on the TV" → done.
 - **OAuth** (a cloud with an app registration): `open` the vendor's page →
-  the server's `/api/setup/callback` completes the action → tokens are
+  the vendor returns to the node running the flow — a server's callback
+  route, or the app's own link on a phone — and that completes the action → tokens are
   secrets with `source: 'session'`.
 
 ### 5.3 The same flow, again, for a device you have
@@ -642,25 +684,28 @@ the app holds only what is near it (Bluetooth) and what runs in a browser.
 | | In the hub's process | Contained | Beside kraftverk |
 |---|---|---|---|
 | **What** | Integrations in this repository | An integration from outside it | Home Assistant's own integrations, in Home Assistant |
-| **Isolation** | None; reviewed code | Its own process, no built-ins, channels by message, limits on memory and time | A container |
+| **Isolation** | None; reviewed code | A realm of its own — a WebAssembly engine, or the platform's worker — no built-ins, channels by message, limits on memory and time | A container |
 | **Speaks** | The SDK, directly | The SDK, over messages | Home Assistant's WebSocket API, through the `home-assistant` integration |
 | **When** | Today | Later | Later |
 
 **Contained** is possible because of the seam kraftverk already has: a
 type's code does no I/O of its own. It is handed channels, a clock, a store
 and a logger. Every one of those can cross a process boundary as messages,
-so running an integration in a separate Bun process — with no `fetch`,
-no file system, its channels opened by the hub and passed in, under a memory
+so running an integration in a realm of its own — with no `fetch`, no
+file system, its channels opened by the hub and passed in, under a memory
 limit and a watchdog — needs no change to the integration. The architecture
 check that forbids built-ins in device code (`scripts/architecture.mjs`)
 already enforces the rule that makes this work. Home Assistant cannot do
 this: its integrations open their own sockets.
 
-The sandbox is one port, `IntegrationSandbox`, with two implementations
-to choose between when it is built (decision D5): a **process** (fast,
-with the operating system's confinement around it) or **QuickJS in
-WebAssembly** (the strongest isolation, slower; the same engine the script
-step will use). A crash or a hang takes down only the integration; the hub
+The sandbox is one port, `IntegrationSandbox`, and it has an
+implementation on **every** platform, as everything else does (§0): a
+phone-only home runs contained integrations too. So the choice (decision
+D5) is between **QuickJS in WebAssembly** — the same everywhere, the
+strongest isolation, slower, the engine the script step will use — and each
+platform's own **worker** (a Bun worker, a Web Worker, a JavaScript context
+on a phone), faster, with three implementations to keep honest. An operating
+system's process alone is not enough: a phone has none to give. A crash or a hang takes down only the integration; the hub
 marks its devices `failed` and starts it again with backoff.
 
 ---
@@ -773,7 +818,7 @@ copyright; the README says so where it applies.
   starting point, pyicloud the reference. Apple changes this several times a
   year; pyicloud's issue tracker is the early warning.
 - **Types:** `icloud.account` (account, bridge; needs trusted and always on;
-  identity: Apple's account id); `apple.device` (hardware, through the
+  identity: Apple's account id); `icloud.device` (hardware, through the
   account; parts `main`; attributes position, battery charge, charging,
   owner; commands `alert.playSound`, `findMy.lostMode` — consequential: it
   locks someone's phone).
@@ -794,7 +839,7 @@ copyright; the README says so where it applies.
   TypeScript, no native code) already speaks these; it is vendored behind a
   protocol package rather than ported line by line from pyatv.
 - **Transport:** `lan` with TCP and mDNS discovery (step 13).
-- **Type `apple.tv`:** hardware; discovered by `_companion-link._tcp` and
+- **Type `apple-tv.tv`:** hardware; discovered by `_companion-link._tcp` and
   `_airplay._tcp` with `model=AppleTV*`; capabilities `onOff`,
   `mediaPlayback`, `contentLauncher`, `keypadInput`, `audioOutput`; pairing
   credentials per protocol as connection secrets; push updates.
@@ -946,8 +991,9 @@ protocols, transports, the database and the file do not change.
 **Step 2 · The catalogue and the integrations page.**
 Brands as records; `gen:catalogue` in place of `gen:devices`, one catalogue
 for the server and the app; `GET /api/integrations`; an *Integrations* page
-in Settings — each integration, its types, its reach, the devices using it,
-its README as its page.
+in Settings — each integration, its types, its reach, where it runs (this
+phone, a browser, a server: worked out from its methods, §0), the devices
+using it, its README as its page.
 *Done when* the page lists the six, each with the devices that use it.
 
 **Step 3 · Bridges in the contract and the database.**
@@ -975,8 +1021,9 @@ app's tests on the fast clock.
 its session signs in once, lists the scooters as members and fetches each
 one's state. `niu.scooter` and `niu.uqi-gt` are reached through it. The
 protocol splits into signing in and listing, which the account speaks, and
-a scooter's state and commands, which its members speak. The file goes to
-version 6: a scooter that carries its own account becomes an account entry —
+a scooter's state and commands, which its members speak. NIU's cloud not
+answering a browser becomes a fact of the method's platforms, apart from
+what it needs of its node (§0). The file goes to version 6: a scooter that carries its own account becomes an account entry —
 one per distinct account — and the scooter through it.
 *Done when* two scooters on one account sign in once and keep one password,
 and the configuration kept on the server comes back as an account with its
@@ -1027,7 +1074,7 @@ file. NIU keeps its sign-in token for as long as NIU honours it.
 *Done when* restarting the server does not make NIU sign in again.
 
 **Step 11 · Quality measured, updates declared.**
-`updates` (push, poll, both) in the manifest, checked against the code;
+`updates` (push, poll, both) on each method, checked against the code;
 `check:integrations` runs the checklist (§10) over every integration and
 writes its level into its README; `SupportLevel` is computed from it. The
 six are brought up to what they can reach.
@@ -1037,7 +1084,7 @@ states how far each reaches and how it updates.
 ### Part B — Ready for new integrations
 
 **Step 12 · Discovery by declaration.**
-Sightings carry typed facts; manifests declare matchers, compiled into the
+Sightings carry typed facts; methods declare matchers, compiled into the
 catalogue; the hub matches sightings without loading an integration, and
 gathers one device's many announcements by host; a found device is a "needs
 you" item until added or ignored. Tuya's own broadcast discovery moves onto
@@ -1073,7 +1120,7 @@ token kept, Find My with the family's devices; tested against recorded
 exchanges with made-up data.
 
 **Step 18 · iCloud's account and devices.** `icloud.account` as a bridge,
-`apple.device` as its members: position, battery, play a sound, lost mode
+`icloud.device` as its members: position, battery, play a sound, lost mode
 (consequential), and the interval that shortens while someone moves.
 *Done when* the family's devices are on their pages, and an automation
 starts when a phone gets home.
@@ -1114,8 +1161,9 @@ Before step 1:
 
 Later:
 
-- **D5. How contained integrations are contained:** a separate process,
-  or QuickJS in WebAssembly. Measured, when that work starts.
+- **D5. How contained integrations are contained:** QuickJS in
+  WebAssembly, or each platform's own worker — on every platform either way
+  (§0). Measured, when that work starts.
 - **D6. Home Assistant beside kraftverk:** run and updated by the
   deployment, as a container kraftverk connects to. Kraftverk does not
   supervise containers itself. Recommended, when that work starts.
