@@ -1,4 +1,4 @@
-import { stepJsonSchema, triggerJsonSchema } from '@kraftverk/automation';
+import { stepJsonSchema, triggerJsonSchema, WHILE_RUNNING } from '@kraftverk/automation';
 import type { ConfigField, ConfigSchema } from '@kraftverk/device-sdk';
 
 import { KEY, QUANTITY_UNITS, UNIT_LIST } from '@kraftverk/device-sdk';
@@ -254,6 +254,12 @@ function automationSchema(vocabulary: Vocabulary): Schema {
         },
       },
       when: { type: 'array', items: { $ref: '#/$defs/trigger' } },
+      'while running': {
+        enum: Object.keys(WHILE_RUNNING),
+        enumDescriptions: Object.values(WHILE_RUNNING).map((way) => `${way.label}: ${way.says}`),
+        default: 'skip',
+        description: 'What one of its triggers starting it while it runs does.',
+      },
       'only if': { $ref: '#/$defs/expression' },
       do: STEPS,
       'if a step fails': STEPS,

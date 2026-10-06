@@ -475,5 +475,15 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
   // An "only if" its settings make always true is no condition at all.
   const only = rule.if ? expr(rule.if) : null;
   const keptIf = only && !('value' in only && only.value === true) ? { if: only } : {};
-  return { roles: automationRoles(rule.roles), params: NO_SETTINGS, ...(rule.memory ? { memory: rule.memory } : {}), when, ...keptIf, then: steps(rule.then), ...(otherwise ? { otherwise } : {}) };
+  // Each part of a rule — not a recipe's own words, which its settings filled in no longer say — what it remembers and what a start while it runs does as they are.
+  return {
+    roles: automationRoles(rule.roles),
+    params: NO_SETTINGS,
+    ...(rule.memory ? { memory: rule.memory } : {}),
+    when,
+    ...(rule.whileRunning ? { whileRunning: rule.whileRunning } : {}),
+    ...keptIf,
+    then: steps(rule.then),
+    ...(otherwise ? { otherwise } : {}),
+  };
 }

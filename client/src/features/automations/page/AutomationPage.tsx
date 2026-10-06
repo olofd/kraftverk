@@ -4,7 +4,7 @@ import { Button, Text, XStack, YStack } from 'tamagui';
 
 import type { AutomationId, Value } from '@kraftverk/device-sdk';
 import { describeError, isRunEntry, type AutomationRun, type AutomationView, type Rehearsal } from '@kraftverk/api-client';
-import { describeExpr, paramText } from '@kraftverk/automation';
+import { describeExpr, paramText, WHILE_RUNNING } from '@kraftverk/automation';
 import { capitalise, Card, haptic, Icon, RowSeparator, type IconName } from '@kraftverk/ui';
 
 import { ErrorText } from '../../../components/ErrorText';
@@ -143,6 +143,12 @@ function Page({ automation, onChanged, onEdit }: { automation: AutomationView; o
         ) : (
           <Empty>Nothing starts it on its own: you start it, or another automation does.</Empty>
         )}
+        {/* Said only where it is not the usual: a start while it runs let go. */}
+        {onItsOwn && automation.rule.whileRunning && automation.rule.whileRunning !== 'skip' ? (
+          <Text fontSize={13} color="$muted" lineHeight={19}>
+            Started again while it runs: {WHILE_RUNNING[automation.rule.whileRunning].says}.
+          </Text>
+        ) : null}
       </Group>
 
       <Group icon="filter" title="Only if" summary={condition ? undefined : 'Always'}>

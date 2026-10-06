@@ -1111,7 +1111,8 @@ describe('how a run goes: round after round, tried, ended where it is, waiting f
   const COUNT: NonNullable<Rule['memory']> = { fields: { count: { type: 'number', title: 'Count', integer: true, min: 0, default: 0 } } };
   const COUNT_ONE: Step = { remember: { name: 'count', value: { math: 'add', left: { memory: 'count' }, right: { value: 1 } } } };
   /** An automation of these steps, let act, about the heater plug and the station's mains. */
-  const automation = (context: ReturnType<typeof setup>, then: readonly Step[], otherwise?: readonly Step[]) => {
+  /** `more`: what else the rule says — what starts it, what a start while it runs does. */
+  const automation = (context: ReturnType<typeof setup>, then: readonly Step[], otherwise?: readonly Step[], more: Partial<Rule> = {}) => {
     const rule: Rule = {
       roles: { plug: { label: 'Plug', capabilities: ['switch'] }, station: { label: 'Mains', capabilities: ['acInput'] } },
       params: { fields: {} },
@@ -1119,6 +1120,7 @@ describe('how a run goes: round after round, tried, ended where it is, waiting f
       when: [],
       then,
       ...(otherwise ? { otherwise } : {}),
+      ...more,
     };
     expect(checkRule(rule, { fn: () => null })).toEqual([]);
     const made = context.store.create({ name: 'Steps', rule, madeFrom: null, roles: { plug: { device: PLUG, part: 'main' }, station: { device: STATION, part: 'input.ac' } }, starts: {}, timeZone: ZONE, recheckMinutes: null });
@@ -1196,6 +1198,73 @@ describe('how a run goes: round after round, tried, ended where it is, waiting f
     expect(late.outcome).toBe('failed');
     expect(late.steps[0]).toMatchObject({ kind: 'waitFor', outcome: 'timed-out', detail: 'Not in 1 s' });
     expect(context.sent).toHaveLength(1);
+  });
+
+  describe('started again by its trigger while it runs', () => {
+    const WHEN_LOST: Partial<Rule> = { when: [{ event: { role: 'station', event: 'mains.lost' } }] };
+    /** Counts, and takes a second over it. */
+    const SLOW: Step[] = [COUNT_ONE, { wait: { for: { value: 1, unit: 's' } } }];
+    const lost = (context: ReturnType<typeof setup>) => context.bus.publish({ kind: 'event', deviceId: STATION, event: { id: 'mains.lost', level: 'warn', part: 'input.ac', data: null, at: new Date().toISOString() } });
+    /** Until nothing of it runs, nor waits to. */
+    const quiet = async (context: ReturnType<typeof setup>, id: string) => {
+      for (let tries = 0; tries < 100; tries++) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        if (!context.engine.running(id) && context.store.runs(id).every((run) => run.endedAt !== null)) {
+          // A start it queued begins at once: looked at once more.
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          if (!context.engine.running(id)) return;
+        }
+      }
+    };
+
+    test('let go, as it is unless it says otherwise: one run, whatever starts it meanwhile', async () => {
+      const context = setup();
+      const made = automation(context, SLOW, undefined, WHEN_LOST);
+      context.engine.start();
+      try {
+        for (let times = 0; times < 3; times++) (lost(context), await settle());
+        await quiet(context, made.id);
+        expect(context.store.memory(made.id)).toEqual({ count: 1 });
+        expect(context.store.runs(made.id)).toHaveLength(1);
+      } finally {
+        context.engine.stop();
+      }
+    });
+
+    test('started afresh: the run stopped as a person would — its fallback taken — and it starts again', async () => {
+      const context = setup();
+      const made = automation(context, SLOW, [OFF], { ...WHEN_LOST, whileRunning: 'restart' });
+      context.engine.start();
+      try {
+        lost(context);
+        await settle();
+        lost(context);
+        await quiet(context, made.id);
+        expect(context.store.memory(made.id)).toEqual({ count: 2 });
+        const runs = context.store.runs(made.id);
+        expect(runs.map((run) => run.outcome).sort()).toEqual(['acted', 'stopped']);
+        expect(runs.find((run) => run.outcome === 'stopped')!.summary).toBe('Stopped by a new start; then turned Heater plug off');
+        expect(context.sent.map((intent) => intent.args.on)).toEqual([false]);
+      } finally {
+        context.engine.stop();
+      }
+    });
+
+    test('after it: each start in turn, once the run before it ends', async () => {
+      const context = setup();
+      const made = automation(context, SLOW, undefined, { ...WHEN_LOST, whileRunning: 'queue' });
+      context.engine.start();
+      try {
+        for (let times = 0; times < 3; times++) (lost(context), await settle());
+        await quiet(context, made.id);
+        expect(context.store.memory(made.id)).toEqual({ count: 3 });
+        const runs = context.store.runs(made.id);
+        expect(runs.map((run) => run.outcome)).toEqual(['acted', 'acted', 'acted']);
+        expect(runs.filter((run) => run.why.endsWith('once the run before it ended'))).toHaveLength(2);
+      } finally {
+        context.engine.stop();
+      }
+    });
   });
 
   test('whatever it repeats, a run ends: so many steps, and no more', async () => {

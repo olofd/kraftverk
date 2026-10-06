@@ -203,6 +203,9 @@ test('through the night: a window of the day, across midnight, is what starts it
   await page.getByLabel('From', { exact: true }).fill('23:00');
   await page.getByLabel('Until', { exact: true }).fill('05:00');
   await expect(page.getByText('Across midnight: from 23:00 until 05:00 the next morning.')).toBeVisible();
+  // Started again while it runs: afresh.
+  await page.getByRole('radio', { name: 'Start afresh' }).click();
+  await expect(page.getByText('The run is stopped, and it starts again.')).toBeVisible();
 
   // The plug on.
   await press(page, 'Add a step');
@@ -218,6 +221,7 @@ test('through the night: a window of the day, across midnight, is what starts it
   const now = page.getByRole('region', { name: 'Right now' });
   await expect(now.getByText('It is between 23:00 and 05:00', { exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'When' }).getByText('When it is between 23:00 and 05:00')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'When' }).getByText('Started again while it runs: the run is stopped, and it starts again.')).toBeVisible();
 });
 
 test('round after round, and a stop that says why: blocks within blocks, run to their end', async ({ page, request }) => {

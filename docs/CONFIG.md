@@ -178,6 +178,11 @@ describes.
   of some options lists them, `options: { eco: Save power, boost: Charge fast }`.
   An automation copied from a recipe keeps the recipe's settings, at the
   values its owner chose; the app sets them with a slider each.
+- **Started again while it runs** (`while running:`): what one of its
+  triggers starting it while a run still takes its steps does — `skip`, the
+  start is let go (as when none is written); `restart`, the run is stopped,
+  as you would, its `if a step fails` steps taken, and it starts afresh;
+  `queue`, it starts again once the run ends, at most 10 waiting.
 - **What it remembers** (`memory:`): written as its settings are, each the
   value it starts from; read as `memory.timesCharged`, set by a `remember`
   step:

@@ -75,6 +75,10 @@ type Walked = 'ok' | 'failed' | 'stopped' | 'ended';
 export class Runs {
   /** Automations running now: one run of the same automation at a time. */
   #running = new Set<string>();
+  /** Each running automation's run, as it will end: what a fresh start waits on once it has stopped it. */
+  #ending = new Map<string, Promise<unknown>>();
+  /** Starts its triggers made while it ran, in order, for an automation whose triggers queue: each taken once the run before it ends. */
+  #queued = new Map<string, { why: string; trigger: string | null; event: StartingEvent | null }[]>();
   /** Runs taking steps now, by automation. */
   #live = new Map<string, LiveRun>();
   /** Runs of commands alone, acting now: not shown as running, but stopped all the same when their automation goes. */
@@ -92,6 +96,8 @@ export class Runs {
 
   /** Stops the run an automation takes, as one whose automation is gone: neither kept nor on the timeline. */
   forget(automationId: string, why: string): void {
+    // What its triggers queued goes with it.
+    this.#queued.delete(automationId);
     const live = this.#live.get(automationId) ?? this.#once.get(automationId);
     if (!live) return;
     live.gone = true;
@@ -108,18 +114,54 @@ export class Runs {
     return this.#running.has(automationId);
   }
 
+  /**
+   * A run its triggers started, kept. Started while it runs, it does as its
+   * rule says (`whileRunning`): let go; the run stopped — as a person would,
+   * its fallback taken — and started afresh; or started once the run ends.
+   * Null when it did not run now.
+   */
   async runAndKeep(automation: AutomationRecord, why: string, trigger: string | null = null, event: StartingEvent | null = null): Promise<AutomationRun | null> {
-    if (this.#running.has(automation.id)) return null;
+    if (this.#running.has(automation.id)) {
+      const way = automation.rule.whileRunning ?? 'skip';
+      if (way === 'skip') return null;
+      if (way === 'queue') {
+        const waiting = this.#queued.get(automation.id) ?? [];
+        // At most so many waiting: one more is let go, as one that skips.
+        if (waiting.length < SEQUENCE_LIMITS.queued) this.#queued.set(automation.id, [...waiting, { why, trigger, event }]);
+        return null;
+      }
+      const live = this.#live.get(automation.id) ?? this.#once.get(automation.id);
+      if (live) this.#stopLive(live, 'a new start');
+      await this.#ending.get(automation.id);
+      // Another start got in first: this one is let go.
+      if (this.#running.has(automation.id)) return null;
+    }
     this.#running.add(automation.id);
+    const going = this.run(automation, { why, trigger, event });
+    this.#ending.set(automation.id, going.catch(() => undefined));
     try {
-      return await this.run(automation, { why, trigger, event });
+      return await going;
     } catch (error) {
       // Started by a trigger, nobody waits on it: what went wrong is said, never left to bring the server down.
       console.error(`[automations] ${automation.id} could not run:`, error);
       return null;
     } finally {
-      this.#running.delete(automation.id);
+      this.#ended(automation.id);
     }
+  }
+
+  /** A run of an automation ended: the next of the starts it queued, if any, is taken — as it is now, unless it has been turned off or deleted since. */
+  #ended(automationId: string): void {
+    this.#running.delete(automationId);
+    this.#ending.delete(automationId);
+    const waiting = this.#queued.get(automationId) ?? [];
+    const [next, ...rest] = waiting;
+    if (rest.length) this.#queued.set(automationId, rest);
+    else this.#queued.delete(automationId);
+    if (!next) return;
+    const current = this.deps.store.get(automationId);
+    if (!current || current.mode === 'off') return void this.#queued.delete(automationId);
+    void this.runAndKeep(current, `${next.why} — once the run before it ended`, next.trigger, next.event);
   }
 
   /**
@@ -157,7 +199,9 @@ export class Runs {
     const started = new Promise<AutomationRun>((resolve, reject) => ((begun = resolve), (failed = reject)));
     this.#running.add(automation.id);
     const why = how.from ? `Started by “${how.from.automation.name}”` : `Started by ${how.asker!.name}`;
-    const ended = this.run(automation, { why, askedBy: how.asker, from: how.from, chain, onBegun: (run) => begun(run) })
+    const going = this.run(automation, { why, askedBy: how.asker, from: how.from, chain, onBegun: (run) => begun(run) });
+    this.#ending.set(automation.id, going.catch(() => undefined));
+    const ended = going
       .then(
         (run) => (begun(run), run),
         (error: unknown) => {
@@ -167,7 +211,7 @@ export class Runs {
           throw error;
         }
       )
-      .finally(() => this.#running.delete(automation.id));
+      .finally(() => this.#ended(automation.id));
     // Nobody may wait on its end: what went wrong is already said.
     ended.catch(() => undefined);
     return { begun: started, ended };

@@ -11,7 +11,7 @@ import { TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './kinds/trigg
 import type { AutomationFunction } from './functions.ts';
 import { ruleExpressions, ruleUses } from './reads.ts';
 import { convert, convertible, isUnit, product, quotient, unitIn, type Unit } from '@kraftverk/device-sdk';
-import { COMPARE_OPS, isAutomationRole, MATH_OPS, ORDERED_OPS, partRoles, RUN_FACTS, SEQUENCE_LIMITS, TRIGGER_ID, type Command, type Expr, type PartRole, type Rule, type Step, type WriteTarget } from './rule.ts';
+import { COMPARE_OPS, isAutomationRole, isWhileRunning, MATH_OPS, WHILE_RUNNING, ORDERED_OPS, partRoles, RUN_FACTS, SEQUENCE_LIMITS, TRIGGER_ID, type Command, type Expr, type PartRole, type Rule, type Step, type WriteTarget } from './rule.ts';
 
 /*
   Checking a rule before it runs (docs/AUTOMATIONS.md): every role, setting,
@@ -585,6 +585,8 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
   // A condition its settings alone make false: it would never act — the settings are the mistake.
   if (rule.if && evaluateNow(rule.if, settledScope(rule as Rule, {})) === false) problems.push('settings: with these settings it is never so that it may act');
 
+  // A start while it runs: one of the ways there are.
+  if (rule.whileRunning !== undefined && !isWhileRunning(rule.whileRunning)) problems.push(`whileRunning: "${String(rule.whileRunning)}" is none of ${Object.keys(WHILE_RUNNING).join(', ')}`);
   // Whatever starts it does something: its own steps, or the automation's.
   if (!rule.then?.length) {
     const without = (rule.when ?? []).flatMap((trigger, index) => (trigger.then?.length ? [] : [index]));

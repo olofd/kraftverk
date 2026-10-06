@@ -231,6 +231,24 @@ export type Step =
   /** Until the part filling a role raises an event — or the run stops, not having succeeded, once it has waited that long. */
   | { waitFor: { role: string; event: string; atMost: Expr } };
 
+/**
+ * What one of its triggers starting it while it runs does: it is let go —
+ * the run goes on; the run is stopped, as a person would, and it starts
+ * afresh; or it starts once the run ends, at most `SEQUENCE_LIMITS.queued`
+ * waiting. A person, or another automation, starting it while it runs is
+ * told it is running, whichever.
+ */
+export type WhileRunning = 'skip' | 'restart' | 'queue';
+
+/** Each way, as the editor offers it and the reference says it. */
+export const WHILE_RUNNING: { readonly [W in WhileRunning]: { label: string; says: string } } = {
+  skip: { label: 'Let it run', says: 'the run goes on, and the start is let go' },
+  restart: { label: 'Start afresh', says: 'the run is stopped, and it starts again' },
+  queue: { label: 'Start after it', says: 'it starts again once the run ends' },
+};
+
+export const isWhileRunning = (value: unknown): value is WhileRunning => typeof value === 'string' && Object.hasOwn(WHILE_RUNNING, value);
+
 /** A role a part of a device fills: what it is called, and what it must offer. */
 export type PartRole = CapabilityNeed & { label: string };
 
@@ -281,6 +299,8 @@ export type Rule = {
   memory?: ConfigSchema;
   /** Any one of these starts a run. */
   when: readonly RuleTrigger[];
+  /** What one of its triggers starting it while it runs does (`WHILE_RUNNING`). None: it is let go. */
+  whileRunning?: WhileRunning;
   /** Must be true for it to act. Unknown is not true: nothing is done, and the run says why. */
   if?: Expr;
   /**
@@ -312,6 +332,8 @@ export const SEQUENCE_LIMITS = {
   rounds: 100,
   /** The most steps one run takes, rounds and branches counted: whatever it repeats, a run ends. Its `if a step fails` steps besides. */
   steps: 500,
+  /** The most starts that wait for a run to end, for an automation whose triggers queue. */
+  queued: 10,
 } as const;
 
 /**

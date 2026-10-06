@@ -238,8 +238,9 @@ export class Triggers {
       const current = this.deps.store.get(automation.id);
       // Turned off since — or gone — it does nothing.
       if (!current || current.mode === 'off') return;
-      // Still taking its steps: not dealt with, so looked at again — and started once that run ends, if it still holds.
-      if (this.#runs.busy(automation.id)) return;
+      // Still taking its steps, and a start is let go: not dealt with, so looked at again — and started once that run ends, if it still holds.
+      // One that starts afresh, or after it, is dealt with now.
+      if (this.#runs.busy(automation.id) && (current.rule.whileRunning ?? 'skip') === 'skip') return;
       state.fired = true;
       keep();
       void this.#runs.runAndKeep(current, why, triggerKey(trigger, index));

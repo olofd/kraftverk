@@ -18,7 +18,7 @@ import { TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './triggers.ts
 */
 
 /** What a rule holds, each part: one more, or one fewer, is another shape. */
-const RULE_PARTS = { roles: true, params: true, memory: true, when: true, if: true, then: true, otherwise: true } as const satisfies Record<keyof Rule, true>;
+const RULE_PARTS = { roles: true, params: true, memory: true, when: true, whileRunning: true, if: true, then: true, otherwise: true } as const satisfies Record<keyof Rule, true>;
 
 const fieldShape = (field: FieldSpec): string => `${field.data.join('.')}:${field.type.type}${field.required ? '!' : ''}`;
 

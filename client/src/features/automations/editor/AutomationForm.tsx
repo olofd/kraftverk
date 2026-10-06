@@ -3,9 +3,9 @@ import { Button, Input, Spinner, Text, XStack, YStack } from 'tamagui';
 
 import type { AutomationSettings } from '@kraftverk/api-client/config';
 import { changeAutomation, describeError, withConfirmation, type AutomationDraftView, type AutomationView } from '@kraftverk/api-client';
-import { isAutomationRole, OTHERWISE, pruned, rolesOf, sameParts, THEN, type ProblemArea, type RoleBinding } from '@kraftverk/automation';
+import { capitalise, isAutomationRole, OTHERWISE, pruned, rolesOf, sameParts, THEN, WHILE_RUNNING, type ProblemArea, type RoleBinding, type WhileRunning } from '@kraftverk/automation';
 import { capabilitiesOf, configDefaults, meetsNeed } from '@kraftverk/device-sdk';
-import { Card, haptic, Icon, SchemaForm, SegmentedControl } from '@kraftverk/ui';
+import { Card, Chips, haptic, Icon, SchemaForm, SegmentedControl } from '@kraftverk/ui';
 
 import { ErrorText } from '../../../components/ErrorText';
 import { Loading } from '../../../components/Loading';
@@ -312,6 +312,28 @@ function Editing({
           <Group icon="clock" title="When" summary={nothingStarts ? 'When started' : undefined}>
             <Problems list={problems('when')} />
             <Triggers />
+            {/* What a trigger does while a run of it still takes its steps: only where something starts it on its own. */}
+            {draft.rule.when.length ? (
+              <YStack gap="$1.5">
+                <Text fontSize={13} fontWeight="600" color="$muted">
+                  Started again while it runs
+                </Text>
+                <Chips
+                  label="Started again while it runs"
+                  options={(Object.keys(WHILE_RUNNING) as WhileRunning[]).map((way) => ({ value: way, label: WHILE_RUNNING[way].label }))}
+                  value={draft.rule.whileRunning ?? 'skip'}
+                  onChange={(way) =>
+                    editor.change((current) => {
+                      const { whileRunning: _was, ...rule } = current.rule;
+                      return { ...current, rule: way === 'skip' ? rule : { ...rule, whileRunning: way } };
+                    })
+                  }
+                />
+                <Text fontSize={13} color="$muted" lineHeight={19}>
+                  {capitalise(WHILE_RUNNING[draft.rule.whileRunning ?? 'skip'].says)}.
+                </Text>
+              </YStack>
+            ) : null}
             <Text fontSize={13} color="$muted" lineHeight={19}>
               Whatever starts it on its own, you can always run it yourself.
             </Text>

@@ -5,7 +5,7 @@ import { ruleUses } from '../reads.ts';
 import { fieldValue, withField, type FieldSpec } from '../kinds/spec.ts';
 import { branchesOf, STEP_KIND_ORDER, STEP_KINDS, stepSpec, type StepKind, type StepReader, type StepSpec } from '../kinds/steps.ts';
 import { stepListsOf, TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerFields } from '../kinds/triggers.ts';
-import { isAutomationRole, TRIGGER_ID, type Expr, type RuleTrigger, type RoleSpec, type Rule, type Step } from '../rule.ts';
+import { isAutomationRole, isWhileRunning, TRIGGER_ID, WHILE_RUNNING, type Expr, type RuleTrigger, type RoleSpec, type Rule, type Step } from '../rule.ts';
 import { parseExpr, printExpr } from './expr.ts';
 import { settingsFromConfig, settingsToConfig } from './settings.ts';
 
@@ -297,6 +297,7 @@ export type RuleEntry = {
   'if a step fails'?: unknown;
   settings?: unknown;
   memory?: unknown;
+  'while running'?: unknown;
 };
 
 /**
@@ -312,6 +313,8 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { ru
   const params = tryRead(reader, () => settingsFromConfig(entry.settings, [...path, 'settings'], (message, at) => reader.fail(message, at))) ?? { fields: {} };
   // What it remembers: written as its settings are, each the value it starts from.
   const memory = 'memory' in entry ? tryRead(reader, () => settingsFromConfig(entry.memory, [...path, 'memory'], (message, at) => reader.fail(message, at), 'memory')) : null;
+  // What a trigger starting it while it runs does: let go, unless it says otherwise.
+  const whileRunning = 'while running' in entry ? tryRead(reader, () => (isWhileRunning(entry['while running']) ? entry['while running'] : reader.fail(`Expected one of ${Object.keys(WHILE_RUNNING).join(', ')}`, [...path, 'while running']))) : null;
 
   const steps: RuleBody = { when, ...(condition !== undefined && condition !== null ? { if: condition } : {}), then, ...(otherwise !== undefined && otherwise !== null ? { otherwise } : {}) };
   const roles: Record<string, RoleSpec> = {};
@@ -362,6 +365,7 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { ru
     params,
     ...(memory && Object.keys(memory.fields).length ? { memory } : {}),
     when,
+    ...(whileRunning && whileRunning !== 'skip' ? { whileRunning } : {}),
     ...(condition !== undefined && condition !== null ? { if: condition } : {}),
     then,
     ...(otherwise !== undefined && otherwise !== null ? { otherwise } : {}),
@@ -455,6 +459,7 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
     ...(Object.keys(rule.params.fields).length ? { settings: settingsToConfig(rule.params) } : {}),
     ...(rule.memory && Object.keys(rule.memory.fields).length ? { memory: settingsToConfig(rule.memory) } : {}),
     ...(rule.when.length ? { when: rule.when.map(trigger) } : {}),
+    ...(rule.whileRunning !== undefined && rule.whileRunning !== 'skip' ? { 'while running': rule.whileRunning } : {}),
     ...(rule.if !== undefined ? { 'only if': expr(rule.if) } : {}),
     do: rule.then.map(step),
     ...(rule.otherwise !== undefined ? { 'if a step fails': rule.otherwise.map(step) } : {}),

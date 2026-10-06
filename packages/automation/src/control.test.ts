@@ -3,9 +3,10 @@ import { describe, expect, test } from 'bun:test';
 import { checkBinding, checkRule } from './check.ts';
 import { describeSteps } from './describe.ts';
 import { kindsFor, OTHERWISE, THEN, within } from './edit.ts';
+import { inlineParams } from './evaluate.ts';
 import { ruleUses } from './reads.ts';
 import { SEQUENCE_LIMITS, type Rule, type Step } from './rule.ts';
-import { ruleFromConfig } from './text/rules.ts';
+import { ruleFromConfig, ruleToConfig } from './text/rules.ts';
 
 /*
   How a run goes, beyond one step after another: steps repeated, tried, a
@@ -55,6 +56,20 @@ describe('held to their limits before they run', () => {
     const charger = { name: 'Charger', part: 'main', capabilities: ['switch', 'powerMeter'], description: { parts: [{ id: 'main', label: 'Charger', kind: 'outlet', offers: ['switch', 'powerMeter'] }], attributes: [] } };
     const bound = (role: string) => (role === 'station' ? station : charger) as never;
     expect(checkBinding(rule([waitFor]), bound)).toEqual(['Station: Garage station never says "mains.restored"']);
+  });
+});
+
+describe('started again while it runs', () => {
+  test('written as one of its ways, read back so; letting it go is the way when none is written', () => {
+    const restarting = read({ 'while running': 'restart', do: [{ 'turn on': 'charger' }] });
+    expect(restarting.whileRunning).toBe('restart');
+    expect(ruleToConfig(restarting, {})['while running']).toBe('restart');
+    // Kept as a recipe's copy is made.
+    expect(inlineParams(restarting, {}).whileRunning).toBe('restart');
+    expect(read({ 'while running': 'skip', do: [{ 'turn on': 'charger' }] }).whileRunning).toBeUndefined();
+    const wrong = ruleFromConfig({ when: [{ at: '07:00' }], 'while running': 'twice', do: [] }, ['automations', 0]);
+    expect(wrong.issues).toEqual([{ message: 'Expected one of skip, restart, queue', path: ['automations', 0, 'while running'] }]);
+    expect(check({ ...rule([on]), whileRunning: 'twice' as never })).toEqual(['whileRunning: "twice" is none of skip, restart, queue']);
   });
 });
 
