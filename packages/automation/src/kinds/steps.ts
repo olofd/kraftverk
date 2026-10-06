@@ -10,7 +10,7 @@ import type { FieldSpec, KindDocs, KindIcon } from './spec.ts';
   seconds.
 */
 
-export type StepKind = 'command' | 'write' | 'wait' | 'waitUntil' | 'waitFor' | 'ensure' | 'choose' | 'watch' | 'repeat' | 'forEach' | 'try' | 'stop' | 'start' | 'remember';
+export type StepKind = 'command' | 'write' | 'wait' | 'waitUntil' | 'waitFor' | 'ensure' | 'choose' | 'watch' | 'repeat' | 'forEach' | 'try' | 'stop' | 'answer' | 'start' | 'remember';
 
 /** A step of one kind. */
 export type StepOf<K extends StepKind> = K extends StepKind ? Extract<Step, Record<K, unknown>> : never;
@@ -423,14 +423,40 @@ const START: StepSpec<'start'> = {
   says: 'Start one of your automations — and wait for it to end, if you like.',
   fields: [
     { data: ['start', 'role'], key: 'start', type: { type: 'automation' }, required: true, label: 'Which automation' },
+    { data: ['start', 'args'], key: 'with', type: { type: 'args' }, required: false, label: 'Given', help: 'Its inputs, by name: what it reads as given.level.' },
     { data: ['start', 'andWait'], key: 'and wait', type: { type: 'duration', min: 1, max: WAIT_MAX, fixed: true }, required: false, label: 'And wait until it ends, at most', help: 'Done if it acted; not if it did not, or not in time.' },
+    { data: ['start', 'remember'], key: 'remember as', type: { type: 'memory' }, required: false, label: 'Remember what it answers as', help: 'One of what this automation remembers.' },
   ],
   blank: (role) => ({ start: { role: role ?? '' } }),
-  line: (step, say) => `Start ${say.name(step.start.role)}${step.start.andWait ? ` and wait until it ends — at most ${say.seconds(step.start.andWait)}` : ''}`,
-  brief: (step, say) => `start ${say.name(step.start.role)}${step.start.andWait ? ` and wait until it ends — at most ${say.seconds(step.start.andWait)}` : ''}`,
+  line: (step, say) => `Start ${say.name(step.start.role)}${given(step, say)}${step.start.andWait ? ` and wait until it ends — at most ${say.seconds(step.start.andWait)}` : ''}${step.start.remember ? `, remembering what it answers as ${say.memory(step.start.remember)}` : ''}`,
+  brief: (step, say) => `start ${say.name(step.start.role)}${given(step, say)}${step.start.andWait ? ` and wait until it ends — at most ${say.seconds(step.start.andWait)}` : ''}`,
   docs: {
-    summary: 'Start the automation filling a role, as a person’s play would — and, with `and wait`, wait until its run ends: done if it acted, not if it did not, or not within that time.',
-    examples: ['start: chargeTheScooter', 'start: chargeTheScooter\nand wait: 10 min'],
+    summary:
+      'Start the automation filling a role, as a person’s play would — given its inputs under `with`, the rest their defaults — and, with `and wait`, wait until its run ends: done if it acted, not if it did not, or not within that time. Waited for, what it answers is remembered, with `remember as`, as one of what this automation remembers.',
+    examples: ['start: chargeTheScooter', 'start: chargeTheScooter\nand wait: 10 min', 'start: chargeTheScooter\nwith:\n  level: 90 %\nand wait: 30 min\nremember as: lastPower'],
+  },
+};
+
+/** What a start step gives, said: " with level 90 %". */
+const given = (step: StepOf<'start'>, say: StepSay): string => {
+  const args = Object.entries(step.start.args ?? {});
+  return args.length ? ` with ${args.map(([name, value]) => `${name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()} ${say.expr(value)}`).join(', ')}` : '';
+};
+
+// --- an answer ---------------------------------------------------------------------------------
+
+const ANSWER: StepSpec<'answer'> = {
+  kind: 'answer',
+  label: 'Answer',
+  icon: 'corner-down-left',
+  says: 'End the run answering with a value: what the automation that started it, and waited, is given.',
+  fields: [{ data: ['answer'], key: 'answer', type: { type: 'value' }, required: true, label: 'With' }],
+  blank: () => ({ answer: { value: 0 } }),
+  line: (step, say) => `Answer ${say.expr(step.answer)}`,
+  brief: (step, say) => `answer ${say.expr(step.answer)}`,
+  docs: {
+    summary: 'End the run, answering with a value of the kind the automation’s `result` says, in its unit: what a run that started it with `and wait` remembers, with `remember as`.',
+    examples: ['answer: charger.power', 'answer: memory.lastPower * 2'],
   },
 };
 
@@ -468,12 +494,13 @@ export const STEP_KINDS: { readonly [K in StepKind]: StepSpec<K> } = {
   forEach: FOR_EACH,
   try: TRY,
   stop: STOP,
+  answer: ANSWER,
   start: START,
   remember: REMEMBER,
 };
 
 /** The order the editor offers them in. */
-export const STEP_KIND_ORDER: readonly StepKind[] = ['command', 'write', 'wait', 'waitUntil', 'waitFor', 'ensure', 'choose', 'watch', 'repeat', 'forEach', 'try', 'stop', 'start', 'remember'];
+export const STEP_KIND_ORDER: readonly StepKind[] = ['command', 'write', 'wait', 'waitUntil', 'waitFor', 'ensure', 'choose', 'watch', 'repeat', 'forEach', 'try', 'stop', 'answer', 'start', 'remember'];
 
 /** Which kind a step is — by its key; one of no kind is an error, never taken for another. */
 export function stepKind(step: Step): StepKind {

@@ -62,10 +62,12 @@ function numberOf(data: unknown, at: Path, fail: Fail): { value: number; unit: U
  * same fields, the value one a setting's or the one it starts from — each
  * named in what is said of it.
  */
-export type FormSection = 'settings' | 'memory';
+export type FormSection = 'settings' | 'memory' | 'inputs' | 'result';
 const SECTION_WORDS: Record<FormSection, { each: string; name: string; part: string }> = {
   settings: { each: 'each setting by its name: "low: 20 %"', name: "a setting's name", part: 'a setting' },
   memory: { each: 'what it remembers, each by its name: "timesCharged: 0"', name: 'a name for what it remembers', part: 'what it remembers' },
+  inputs: { each: 'each input by its name, and what it takes when not given: "level: 80 %"', name: "an input's name", part: 'an input' },
+  result: { each: 'what it answers, and what it answers when none is given: "result: 0 %"', name: 'result', part: 'what it answers' },
 };
 
 /** The settings of a rule, from a file's `settings:` — or what it remembers, from its `memory:`. */

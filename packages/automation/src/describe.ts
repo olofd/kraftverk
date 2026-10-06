@@ -227,6 +227,9 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
         return `it is not so that ${text((expr as ExprOf<'not'>).not)}`;
       case 'memory':
         return memoryWords(rule, (expr as ExprOf<'memory'>).memory);
+      case 'input':
+        // By its name, a noun — "the level it was given" — not its title, which may be a phrase ("Charge to").
+        return `the ${(expr as ExprOf<'input'>).input.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').toLowerCase()} it was given`;
       default: {
         const unknown: never = kind;
         throw new Error(`No words for an expression of kind ${String(unknown)}`);

@@ -43,6 +43,20 @@ export const RULE_PART_DOCS: { readonly [K in keyof Rule]-?: RulePartDocs } = {
       'Values kept across runs, restarts and changes to it — written as settings are, each the value it starts from; read as `memory.name`, set by a `remember` step, in its unit and held to its range.',
     examples: ['memory:\n  timesCharged: { value: 0, integer: true, min: 0 }\n  lastPower: 0 W\nuses:\n  charger: charger-plug\ndo:\n  - remember: timesCharged\n    as: memory.timesCharged + 1\n  - remember: lastPower\n    as: charger.power'],
   },
+  inputs: {
+    key: 'inputs',
+    label: 'What it may be given',
+    summary:
+      'What another automation’s `start` step may give it, under `with` — each written as a setting is, its value what a run takes when not given, as one a person or a trigger starts does. Read as `given.name`, in its unit. One automation, many uses: "charge to 80 %" and "charge to 100 %" are one charge, given two levels.',
+    examples: ['inputs:\n  level: { title: Charge to, value: 80 %, min: 20 %, max: 100 % }\nuses:\n  station: garage-station\n  charger: charger-plug\ndo:\n  - turn on: charger\n  - wait until: station.charge >= given.level\n    at most: 1 h\n  - turn off: charger'],
+  },
+  result: {
+    key: 'result',
+    label: 'What it answers',
+    summary:
+      'The kind of value it answers — one field, written as a setting is, its value what a run that gives none answers. An `answer` step gives it and ends the run; a `start` step that waits for it remembers it, with `remember as`.',
+    examples: ['result: { title: Charge reached, value: 0 % }\nuses:\n  station: garage-station\ndo:\n  - answer: station.charge'],
+  },
   when: {
     key: 'when',
     label: 'What starts it',

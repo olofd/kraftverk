@@ -10,7 +10,7 @@ import { isSunEvent, SUN_OFFSET_SECONDS } from './sun.ts';
 import { expressionsIn } from './kinds/exprs.ts';
 import { fieldValue, type FieldSpec } from './kinds/spec.ts';
 import { branchesOf, STEP_KIND_ORDER, STEP_KINDS } from './kinds/steps.ts';
-import { TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './kinds/triggers.ts';
+import { stepListsOf, TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './kinds/triggers.ts';
 import type { AutomationFunction } from './functions.ts';
 import { eachAsGroup, ruleExpressions, ruleUses } from './reads.ts';
 import { convert, convertible, isUnit, product, quotient, unitIn, type Unit } from '@kraftverk/device-sdk';
@@ -111,6 +111,7 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
     if (role === 'run') problems.push('roles.run: "run" is what the run knows of itself — name the role otherwise');
     if (role === 'setting') problems.push('roles.setting: "setting" is how the rule names its settings — name the role otherwise');
     if (role === 'memory') problems.push('roles.memory: "memory" is how the rule names what it remembers — name the role otherwise');
+    if (role === 'given') problems.push('roles.given: "given" is how the rule names what it is given — name the role otherwise');
     if (!spec.label?.trim()) problems.push(`roles.${role}: it has no label`);
     if (isAutomationRole(spec)) continue;
     const named = [...(spec.capabilities ?? []), ...(spec.oneOf ?? [])];
@@ -176,6 +177,14 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       const field = params[expr.param];
       if (!field) {
         problems.push(`${where}: there is no setting "${expr.param}"`);
+        return { type: 'unknown' };
+      }
+      return shapeOf(valueTypeOf(field));
+    }
+    if ('input' in expr) {
+      const field = rule.inputs?.fields[expr.input];
+      if (!field) {
+        problems.push(`${where}: it takes no input called "${expr.input}"`);
         return { type: 'unknown' };
       }
       return shapeOf(valueTypeOf(field));
@@ -641,6 +650,25 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         }
       } else if ('start' in step) {
         if (step.start.andWait !== undefined && !sure) problems.push(`${at}.start: nothing here may wait for what might not come: it is started, not waited for`);
+        // What it answers is known only once it has ended: waited for.
+        if (step.start.remember !== undefined) {
+          if (step.start.andWait === undefined) problems.push(`${at}.start.remember: what it answers is known once it ends — wait for it ("and wait")`);
+          if (!memory[step.start.remember]) problems.push(`${at}.start.remember: it remembers nothing called "${step.start.remember}" — say it under memory`);
+        }
+        for (const [name, given] of Object.entries(step.start.args ?? {})) {
+          if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(name)) problems.push(`${at}.start.args.${name}: "${name}" is not an input's name`);
+          const got = shape(given, `${at}.start.args.${name}`, { calls: true });
+          if (got.type === 'structure') problems.push(`${at}.start.args.${name}: an input is given a value, not a list or an object`);
+        }
+      } else if ('answer' in step) {
+        // Of the kind it says it answers, in a unit of it.
+        if (!rule.result) problems.push(`${at}.answer: it answers nothing — say what it answers under result`);
+        else {
+          const wanted = shapeOf(valueTypeOf(rule.result));
+          const got = shapes.answer ?? { type: 'unknown' };
+          if (!fits(wanted, got)) problems.push(`${at}.answer: ${rule.result.title} is ${said(wanted)}, not ${said(got)}`);
+          else literalFits(step.answer, valueTypeOf(rule.result), `${at}.answer`);
+        }
       } else if ('choose' in step || 'watch' in step) {
         const branches = branchesOf(step);
         if (branches.every((branch) => !branch.steps.length)) problems.push(`${at}.${kind}: it does nothing either way`);
@@ -648,6 +676,15 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
     });
   }
 
+  // Each input takes a value its field takes when not given; what it answers, when none is given.
+  for (const [key, field] of Object.entries(rule.inputs?.fields ?? {})) {
+    const value = 'default' in field ? field.default : undefined;
+    if (value === undefined || value === null) problems.push(`inputs.${key}: it takes no value when not given`);
+    else {
+      const checked = checkValue(valueTypeOf(field), value);
+      if (!checked.ok) problems.push(`inputs.${key}: ${field.title} ${checked.problem}`);
+    }
+  }
   // What it remembers starts from a value its field takes.
   for (const [key, field] of Object.entries(memory)) {
     const value = 'default' in field ? field.default : undefined;
@@ -765,6 +802,50 @@ export type BoundPart = {
   part: string;
   capabilities: readonly CapabilityId[];
 };
+
+/**
+ * What a rule's `start` steps give the automation filling `role`, and what
+ * they remember of its answer, held to that one's `inputs` and `result`:
+ * each input it is given one it takes, a value written out of its kind and
+ * range; what it answers, of the kind it is remembered as. Said by the role's
+ * label: "Charging: it takes no input "speed"".
+ */
+export function checkStarted(rule: Rule, role: string, target: Pick<Rule, 'inputs' | 'result'>): string[] {
+  const problems: string[] = [];
+  const who = rule.roles[role]?.label ?? role;
+  const walk = (steps: readonly Step[]): void => {
+    for (const step of steps) {
+      if ('start' in step && step.start.role === role) {
+        for (const [name, given] of Object.entries(step.start.args ?? {})) {
+          const field = target.inputs?.fields[name];
+          if (!field) {
+            problems.push(`${who}: it takes no input "${name}"${Object.keys(target.inputs?.fields ?? {}).length ? ` — it takes ${Object.keys(target.inputs!.fields).join(', ')}` : ''}`);
+            continue;
+          }
+          // A value written out is held to the input now: in its unit, of its kind and range.
+          if ('value' in given && given.value !== null) {
+            const type = valueTypeOf(field);
+            const into = type.type === 'number' ? type.unit : undefined;
+            const value = typeof given.value === 'number' && given.unit && into ? convert(given.value, given.unit, into) : given.value;
+            if (value === null) problems.push(`${who}: ${field.title} is in ${into}, not ${given.unit}`);
+            else {
+              const checked = checkValue(type, value);
+              if (!checked.ok) problems.push(`${who}: ${field.title} ${checked.problem}`);
+            }
+          }
+        }
+        if (step.start.remember !== undefined) {
+          const kept = rule.memory?.fields[step.start.remember];
+          if (!target.result) problems.push(`${who}: it answers nothing to remember`);
+          else if (kept && !fits(shapeOf(valueTypeOf(kept)), shapeOf(valueTypeOf(target.result)))) problems.push(`${who}: it answers ${said(shapeOf(valueTypeOf(target.result)))}, and ${kept.title} is ${said(shapeOf(valueTypeOf(kept)))}`);
+        }
+      }
+      for (const branch of branchesOf(step)) walk(branch.steps);
+    }
+  };
+  for (const list of stepListsOf(rule)) walk(list.steps);
+  return problems;
+}
 
 /**
  * Everything wrong with a rule's roles as they are filled: a part that does

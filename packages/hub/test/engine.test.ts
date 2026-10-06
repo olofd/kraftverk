@@ -1108,6 +1108,45 @@ describe('a battery kept between two levels', () => {
   });
 });
 
+describe('an automation as a function', () => {
+  test('given its inputs by the one that starts it, it answers — and what it answers is remembered there', async () => {
+    db.exec('DELETE FROM automation');
+    const context = setup();
+    const { engine, store } = context;
+    // The one started: given a level — 80 % unless told — it answers 5 % below it.
+    const answering: Rule = {
+      roles: {},
+      params: { fields: {} },
+      inputs: { fields: { level: { type: 'number', title: 'Level', unit: '%', min: 0, max: 100, default: 80 } } },
+      result: { type: 'number', title: 'Answer', unit: '%', default: 0 },
+      when: [],
+      then: [{ answer: { math: 'subtract', left: { input: 'level' }, right: { value: 5, unit: '%' } } }],
+    };
+    expect(checkRule(answering, { fn: () => null })).toEqual([]);
+    const child = store.create({ name: 'Answers', rule: answering, madeFrom: null, roles: {}, groups: {}, starts: {}, timeZone: ZONE, recheckMinutes: null });
+    store.update(child.id, { mode: 'act' });
+    // The one that starts it: gives 90 %, waits, and remembers the answer.
+    const starting: Rule = {
+      roles: { answers: { automation: true, label: 'Answers' } },
+      params: { fields: {} },
+      memory: { fields: { got: { type: 'number', title: 'Got', unit: '%', default: 0 } } },
+      when: [],
+      then: [{ start: { role: 'answers', args: { level: { value: 90, unit: '%' } }, andWait: { value: 1, unit: 'min' }, remember: 'got' } }],
+    };
+    expect(checkRule(starting, { fn: () => null })).toEqual([]);
+    const parent = store.create({ name: 'Asks', rule: starting, madeFrom: null, roles: {}, groups: {}, starts: { answers: child.id }, timeZone: ZONE, recheckMinutes: null });
+    const run = await engine.run(store.get(parent.id)!, { askedBy: { actor: 'person', name: 'olof' } });
+    expect(run.outcome).toBe('acted');
+    expect(store.memory(parent.id)).toEqual({ got: 85 });
+    const answered = store.runs(child.id)[0]!;
+    expect(answered).toMatchObject({ answered: 85, summary: 'Answered 85 %' });
+
+    // Played by a person, nothing given: its default.
+    const alone = await engine.run(store.get(child.id)!, { askedBy: { actor: 'person', name: 'olof' } });
+    expect(alone.answered).toBe(75);
+  });
+});
+
 describe('at most every so often', () => {
   test('a start sooner than that after the trigger’s last is let go — and one after it is not', async () => {
     db.exec('DELETE FROM automation');

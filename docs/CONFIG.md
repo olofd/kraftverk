@@ -196,6 +196,21 @@ describes.
   of some options lists them, `options: { eco: Save power, boost: Charge fast }`.
   An automation copied from a recipe keeps the recipe's settings, at the
   values its owner chose; the app sets them with a slider each.
+- **What it may be given, and what it answers** (`inputs:`, `result:`):
+  an automation as a function. Its inputs are written as settings are,
+  each the value a run takes when not given, and read as `given.level`;
+  its result is one field, the kind it answers, given by an `answer` step.
+  Another automation's `start` gives it values and keeps its answer:
+
+  ```yaml
+  start: charge
+  with: { level: 90 % }
+  and wait: 1 h
+  remember as: reached        # one of what this automation remembers
+  ```
+
+  What it is given, and what is remembered, are held to its inputs and
+  result as soon as both automations are known.
 - **Started again while it runs** (`while running:`): what one of its
   triggers starting it while a run still takes its steps does — `skip`, the
   start is let go (as when none is written); `restart`, the run is stopped,

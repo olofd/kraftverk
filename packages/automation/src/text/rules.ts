@@ -301,6 +301,8 @@ export type RuleEntry = {
   'if a step fails'?: unknown;
   settings?: unknown;
   memory?: unknown;
+  inputs?: unknown;
+  result?: unknown;
   'while running'?: unknown;
 };
 
@@ -317,6 +319,9 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { ru
   const params = tryRead(reader, () => settingsFromConfig(entry.settings, [...path, 'settings'], (message, at) => reader.fail(message, at))) ?? { fields: {} };
   // What it remembers: written as its settings are, each the value it starts from.
   const memory = 'memory' in entry ? tryRead(reader, () => settingsFromConfig(entry.memory, [...path, 'memory'], (message, at) => reader.fail(message, at), 'memory')) : null;
+  // What a run may be given, and what it answers: written as settings are — the answer one field.
+  const inputs = 'inputs' in entry ? tryRead(reader, () => settingsFromConfig(entry.inputs, [...path, 'inputs'], (message, at) => reader.fail(message, at), 'inputs')) : null;
+  const result = 'result' in entry ? (tryRead(reader, () => settingsFromConfig({ result: entry.result }, path, (message, at) => reader.fail(message, at), 'result'))?.fields.result ?? null) : null;
   // What a trigger starting it while it runs does: let go, unless it says otherwise.
   const whileRunning = 'while running' in entry ? tryRead(reader, () => (isWhileRunning(entry['while running']) ? entry['while running'] : reader.fail(`Expected one of ${Object.keys(WHILE_RUNNING).join(', ')}`, [...path, 'while running']))) : null;
 
@@ -384,6 +389,8 @@ export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { ru
     roles,
     params,
     ...(memory && Object.keys(memory.fields).length ? { memory } : {}),
+    ...(inputs && Object.keys(inputs.fields).length ? { inputs } : {}),
+    ...(result ? { result } : {}),
     when,
     ...(whileRunning && whileRunning !== 'skip' ? { whileRunning } : {}),
     ...(condition !== undefined && condition !== null ? { if: condition } : {}),
@@ -484,6 +491,8 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
     uses: usesOut,
     ...(Object.keys(rule.params.fields).length ? { settings: settingsToConfig(rule.params) } : {}),
     ...(rule.memory && Object.keys(rule.memory.fields).length ? { memory: settingsToConfig(rule.memory) } : {}),
+    ...(rule.inputs && Object.keys(rule.inputs.fields).length ? { inputs: settingsToConfig(rule.inputs) } : {}),
+    ...(rule.result ? { result: settingsToConfig({ fields: { result: rule.result } }).result } : {}),
     ...(rule.when.length ? { when: rule.when.map(trigger) } : {}),
     ...(rule.whileRunning !== undefined && rule.whileRunning !== 'skip' ? { 'while running': rule.whileRunning } : {}),
     ...(rule.if !== undefined ? { 'only if': expr(rule.if) } : {}),

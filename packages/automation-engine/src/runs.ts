@@ -1,6 +1,6 @@
 import type { AutomationRun, RunLog, RunStep } from '@kraftverk/api-contract';
-import { bindingsOf, eachAsGroup, triggerOf, isGroupRole, memberRole, branchesOf, capitalise, changedRoles, describeSteps, evaluate, evaluateNow, measure, paramText, toRemember, secondsNow, fieldValue, negation, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, stepsOf, stepSpec, takesSteps, type StepOf, type Command, type Expr, type Rule, type RoleBinding, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
-import { attributeMeaning, MAIN_PART, readingOf, type AutomationId } from '@kraftverk/device-sdk';
+import { bindingsOf, eachAsGroup, settingOf, triggerOf, isGroupRole, memberRole, branchesOf, capitalise, changedRoles, describeSteps, evaluate, evaluateNow, measure, paramText, toRemember, secondsNow, fieldValue, negation, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, stepsOf, stepSpec, takesSteps, type StepOf, type Command, type Expr, type Rule, type RoleBinding, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
+import { attributeMeaning, MAIN_PART, readingOf, type AutomationId, type Value } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
 import type { RuleContext, StartingEvent } from './context.ts';
@@ -53,6 +53,8 @@ export type LiveRun = {
   trigger: string | null;
   /** The event a device raised that started it: what `run.event` asks. Null when none did. */
   event: StartingEvent | null;
+  /** What it was given, by its inputs' names, in their units: what `given.level` reads. */
+  inputs: Readonly<Record<string, Value>>;
   /** When it last changed something — switched a part, changed a setting: what is judged after is read after. 0, not yet. By this server's clock. */
   changedAt: number;
   /** Where its last change falls in what the engine heard and did, in order: what a reading heard after it is after, in the same millisecond too. */
@@ -207,7 +209,7 @@ export class Runs {
    * end of a chain as long as chains go. `begun`: the run as it stands once
    * it has begun; `ended`: as it came out.
    */
-  #start(automation: AutomationRecord, how: { asker: Asker | null; from: LiveRun | null }): { begun: Promise<AutomationRun>; ended: Promise<AutomationRun> } {
+  #start(automation: AutomationRecord, how: { asker: Asker | null; from: LiveRun | null; inputs?: Readonly<Record<string, Value>> }): { begun: Promise<AutomationRun>; ended: Promise<AutomationRun> } {
     if (automation.mode === 'off') throw new RunRefusal('It is off: turn it on to start it');
     if (this.#running.has(automation.id)) throw new RunRefusal('It is already running');
     const chain = how.from ? [...how.from.chain, how.from.automation.id] : [];
@@ -219,7 +221,7 @@ export class Runs {
     const started = new Promise<AutomationRun>((resolve, reject) => ((begun = resolve), (failed = reject)));
     this.#running.add(automation.id);
     const why = how.from ? `Started by “${how.from.automation.name}”` : `Started by ${how.asker!.name}`;
-    const going = this.run(automation, { why, askedBy: how.asker, from: how.from, chain, onBegun: (run) => begun(run) });
+    const going = this.run(automation, { why, askedBy: how.asker, from: how.from, chain, onBegun: (run) => begun(run), ...(how.inputs ? { inputs: how.inputs } : {}) });
     this.#ending.set(automation.id, going.catch(() => undefined));
     const ended = going
       .then(
@@ -308,6 +310,8 @@ export class Runs {
       trigger?: string | null;
       /** The event a device raised that started it, what `run.event` asks; none, no event did. */
       event?: StartingEvent | null;
+      /** What it is given, by its inputs' names, in their units; not given, their defaults. */
+      inputs?: Readonly<Record<string, Value>>;
     } = {}
   ): Promise<AutomationRun> {
     const at = this.#context.now();
@@ -328,6 +332,7 @@ export class Runs {
       saw: judged.saw,
       conditions: judged.conditions,
       steps: [],
+      answered: null,
     };
     /** A run over as it began: kept, and on the timeline, unless it was only asked what it would do. */
     const over = (outcome: AutomationRun['outcome'], summary: string, steps: RunStep[] = [], device?: string): AutomationRun => {
@@ -343,7 +348,8 @@ export class Runs {
     if (problems.length) return over('unknown', problems.join('; '));
 
     const event = options.event ?? null;
-    const scope = this.#context.scope(automation, rule, at, trigger, event);
+    const inputs = options.inputs ?? {};
+    const scope = this.#context.scope(automation, rule, at, trigger, event, inputs);
     try {
       if (rule.if) {
         const trace: string[] = [];
@@ -405,6 +411,7 @@ export class Runs {
       allowance: this.#allowance(eachAsGroup({ ...rule, then: steps }).then, eachAsGroup(rule).otherwise ?? [], scope),
       trigger,
       event,
+      inputs,
       changedAt: 0,
       changedOrder: 0,
       heard: new Map(),
@@ -541,7 +548,7 @@ export class Runs {
    * cannot go on.
    */
   async #walk(live: LiveRun, here: Here, steps: readonly Step[], depth: number, within: string | null, mode: 'then' | 'retry' | 'otherwise'): Promise<Walked> {
-    const scope = () => this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event);
+    const scope = () => this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event, live.inputs);
     const stopping = () => live.stoppedBy !== null && mode !== 'otherwise';
     let result: Walked = 'ok';
     for (const step of steps) {
@@ -568,6 +575,7 @@ export class Runs {
       else if ('forEach' in step) walked = await this.#forEach(live, here, step.forEach, depth, within, what(), mode);
       else if ('try' in step) walked = await this.#try(live, here, step.try, depth, within, what(), mode);
       else if ('stop' in step) walked = this.#stop(live, here, step.stop, depth, within, what());
+      else if ('answer' in step) walked = await this.#answer(live, here, step.answer, depth, within, what());
       else if ('waitFor' in step) walked = await this.#waitFor(live, here, step.waitFor, depth, within, what(), mode === 'otherwise');
       else if ('wait' in step) {
         const seconds = this.#seconds(step.wait.for, scope(), SEQUENCE_LIMITS.waitSeconds) ?? 1;
@@ -657,7 +665,7 @@ export class Runs {
    * that does not succeed ends it, as it would the list it is in.
    */
   async #repeat(live: LiveRun, here: Here, repeat: StepOf<'repeat'>['repeat'], depth: number, within: string | null, what: string, mode: 'then' | 'retry' | 'otherwise'): Promise<Walked> {
-    const scope = () => this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event);
+    const scope = () => this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event, live.inputs);
     const given = evaluateNow(repeat.times, scope());
     const rounds = typeof given === 'number' ? Math.max(0, Math.min(SEQUENCE_LIMITS.rounds, Math.floor(given))) : 0;
     const entry = this.#add(live, { kind: 'repeat', depth, within, what, outcome: 'waiting', detail: rounds ? `Round 1 of ${rounds}` : 'No rounds', until: null });
@@ -745,9 +753,22 @@ export class Runs {
     return stop.failed ? 'failed' : 'ended';
   }
 
+  /** The run ends, answering with a value: in its result's unit, one its result takes — else not succeeding, saying why. */
+  async #answer(live: LiveRun, here: Here, value: Expr, depth: number, within: string | null, what: string): Promise<Walked> {
+    const result = here.rule.result;
+    if (!result) return (this.#add(live, { kind: 'answer', depth, within, what, outcome: 'failed', detail: 'It answers nothing: no result is said', until: null }), 'failed');
+    const schema = { fields: { result } };
+    const measured = await measure(value, this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event, live.inputs)).catch(() => ({ value: null, unit: null }));
+    const kept = toRemember(schema, 'result', measured);
+    if ('problem' in kept) return (this.#add(live, { kind: 'answer', depth, within, what, outcome: 'failed', detail: `Not answered: ${kept.problem}`, until: null }), 'failed');
+    live.run.answered = kept.value;
+    this.#add(live, { kind: 'answer', depth, within, what, outcome: 'done', detail: `Answered ${paramText(schema, 'result', kept.value)}`, until: null });
+    return 'ended';
+  }
+
   /** Until the part filling a role raises an event — one raised after it began to wait — at most so long. */
   async #waitFor(live: LiveRun, here: Here, wait: StepOf<'waitFor'>['waitFor'], depth: number, within: string | null, what: string, regardless: boolean): Promise<Walked> {
-    const seconds = this.#seconds(wait.atMost, this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event), SEQUENCE_LIMITS.waitSeconds) ?? 1;
+    const seconds = this.#seconds(wait.atMost, this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event, live.inputs), SEQUENCE_LIMITS.waitSeconds) ?? 1;
     const binding = here.automation.roles[wait.role];
     const entry = this.#add(live, { kind: 'waitFor', depth, within, what, outcome: 'waiting', detail: 'Waiting', until: this.#after(seconds) });
     if (!binding) return (this.#end(live, entry, 'failed', 'No device fills its role'), 'failed');
@@ -772,7 +793,7 @@ export class Runs {
   /** A value remembered — in its field's unit, one its field takes — for this run's later steps and later runs. */
   async #remember(live: LiveRun, here: Here, remember: { name: string; value: Expr }, depth: number, within: string | null, what: string): Promise<Walked> {
     const schema = here.rule.memory ?? { fields: {} };
-    const measured = await measure(remember.value, this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event)).catch(() => ({ value: null, unit: null }));
+    const measured = await measure(remember.value, this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event, live.inputs)).catch(() => ({ value: null, unit: null }));
     const kept = toRemember(schema, remember.name, measured);
     if ('problem' in kept) {
       this.#add(live, { kind: 'remember', depth, within, what, outcome: 'failed', detail: `Not remembered: ${kept.problem}`, until: null });
@@ -785,7 +806,7 @@ export class Runs {
 
   /** A command, through the gateway, with the run's allowance: one step. */
   async #command(live: LiveRun, here: Here, command: Command, depth: number, within: string | null, regardless: boolean): Promise<Walked> {
-    const scope = this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event);
+    const scope = this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event, live.inputs);
     const planned = await this.#context.planCommand(here.automation, command, scope);
     if ('unknown' in planned) {
       this.#add(live, { kind: 'command', depth, within, what: `Send ${planned.unknown}`, outcome: 'failed', detail: 'Could not tell what to send', until: null });
@@ -861,7 +882,7 @@ export class Runs {
    */
   async #write(live: LiveRun, here: Here, write: Write, depth: number, within: string | null, what: string): Promise<Walked> {
     const binding = here.automation.roles[write.role];
-    const value = binding ? await this.#context.settingValue(binding, write, this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event)) : null;
+    const value = binding ? await this.#context.settingValue(binding, write, this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event, live.inputs)) : null;
     const device = binding ? this.deps.device(binding) : null;
     const entry = this.#add(live, { kind: 'write', depth, within, what, outcome: 'waiting', detail: 'Setting', until: null });
     if (!binding || !device || device.removed) {
@@ -908,7 +929,7 @@ export class Runs {
     what: string,
     mode: 'then' | 'retry' | 'otherwise'
   ): Promise<Walked> {
-    const seconds = start.andWait ? (this.#seconds(start.andWait, this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event), SEQUENCE_LIMITS.waitSeconds) ?? 1) : null;
+    const seconds = start.andWait ? (this.#seconds(start.andWait, this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event, live.inputs), SEQUENCE_LIMITS.waitSeconds) ?? 1) : null;
     const entry = this.#add(live, { kind: 'start', depth, within, what, outcome: 'waiting', detail: 'Starting', until: seconds ? this.#after(seconds) : null });
     const target = here.automation.starts[start.role];
     const automation = target ? this.deps.store.get(target) : null;
@@ -916,9 +937,17 @@ export class Runs {
       this.#end(live, entry, 'failed', 'There is no automation to start: it was deleted');
       return 'failed';
     }
+    // What it is given: each worked out here, in the unit of its input there, and one it takes.
+    const inputs: Record<string, Value> = {};
+    const scope = this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event, live.inputs);
+    for (const [name, given] of Object.entries(start.args ?? {})) {
+      const kept = toRemember(automation.rule.inputs ?? { fields: {} }, name, await measure(given, scope).catch(() => ({ value: null, unit: null })));
+      if ('problem' in kept) return (this.#end(live, entry, 'failed', `Not given ${name}: ${kept.problem}`), 'failed');
+      inputs[name] = kept.value;
+    }
     let started: { begun: Promise<AutomationRun>; ended: Promise<AutomationRun> };
     try {
-      started = this.#start(automation, { asker: live.asker, from: live });
+      started = this.#start(automation, { asker: live.asker, from: live, inputs });
     } catch (error) {
       if (!(error instanceof RunRefusal)) throw error;
       this.#end(live, entry, 'refused', error.message);
@@ -937,6 +966,13 @@ export class Runs {
     const came = await Promise.race([started.ended.then((run) => ({ run })).catch(() => null), this.#sleep(live, seconds, mode === 'otherwise', started.ended).then((slept) => ({ slept }))]);
     if (came && 'run' in came) {
       const acted = came.run.outcome === 'acted';
+      // What it answered, remembered here: in the unit it is remembered in.
+      if (acted && start.remember !== undefined) {
+        const result = automation.rule.result;
+        const kept = result ? toRemember(here.rule.memory ?? { fields: {} }, start.remember, settingOf({ fields: { result } }, 'result', came.run.answered ?? undefined)) : { problem: 'it answers nothing' };
+        if ('problem' in kept) return (this.#end(live, entry, 'failed', `It ran, and what it answered is not remembered: ${kept.problem}`), 'failed');
+        this.deps.store.remember(here.automation.id, start.remember, kept.value);
+      }
       this.#end(live, entry, acted ? 'done' : 'failed', `It ${acted ? 'ran' : 'did not succeed'}: ${lowerFirst(came.run.summary)}`);
       return acted ? 'ok' : 'failed';
     }
@@ -975,7 +1011,7 @@ export class Runs {
     }
     // Ended by a stop: why, in its own words — after what it changed.
     if (walked === 'ended') {
-      const why = [...steps].reverse().find((step) => step.kind === 'stop')?.detail ?? 'Ended';
+      const why = [...steps].reverse().find((step) => step.kind === 'stop' || step.kind === 'answer')?.detail ?? 'Ended';
       return `${capitalise(why)}${changed.length ? ` — after it ${changed.join(', ')}` : ''}`;
     }
     // What changed leads; what was already so is said once; what it made sure of is said as the reading it saw.
@@ -1150,7 +1186,7 @@ export class Runs {
     for (;;) {
       const saw: string[] = [];
       // Met only on readings taken since the run last changed something.
-      const holds = this.#readSince(live, here, condition) ? evaluateNow(condition, this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event), saw) : null;
+      const holds = this.#readSince(live, here, condition) ? evaluateNow(condition, this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event, live.inputs), saw) : null;
       const elapsed = (this.#context.clock.now() - started) / unit;
       // What it judged on is in the log, as it was when it judged: the same readings, read at once.
       live.log?.look();
@@ -1173,7 +1209,7 @@ export class Runs {
     const started = this.#context.clock.now();
     for (;;) {
       const saw: string[] = [];
-      const holds = evaluateNow(condition, this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event), saw);
+      const holds = evaluateNow(condition, this.#context.scope(here.automation, here.rule, undefined, live.trigger, live.event, live.inputs), saw);
       const elapsed = (this.#context.clock.now() - started) / unit;
       live.log?.look();
       if (holds !== true) return { outcome: 'broke', seconds: elapsed, saw: [...new Set(saw)].join('; ') };

@@ -228,6 +228,12 @@ function automationSchema(vocabulary: Vocabulary): Schema {
         description: 'What it remembers, each by its name, read as memory.name and set by a remember step: the value it starts from ("timesCharged: 0"), or with its title and range. Kept across runs and restarts.',
         additionalProperties: FORM_FIELD,
       },
+      inputs: {
+        type: 'object',
+        description: 'What another automation’s start step may give it under "with", each by its name, read as given.name: what it takes when not given ("level: 80 %"), or with its title and range.',
+        additionalProperties: FORM_FIELD,
+      },
+      result: { ...FORM_FIELD, description: 'What it answers: an answer step gives it, and a start step that waits remembers it ("remember as").' },
       uses: {
         type: 'object',
         description: 'Each role, and what fills it: "device-key" or "device-key.part"; a list of them for a group a "for each" goes through; or { automation: key } for one a step starts. Empty (~) while nothing fills it yet.',

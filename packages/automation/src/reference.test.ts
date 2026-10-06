@@ -36,6 +36,7 @@ const STEPS: Record<Keys<Step>, string> = {
   try: 'try:',
   stop: 'stop:',
   forEach: 'for each:',
+  answer: 'answer:',
 };
 const EXPRESSIONS: Record<Exclude<Keys<Expr>, 'role' | 'args' | 'left' | 'right' | 'unit' | 'then' | 'else' | 'item' | 'field' | 'of' | 'over' | 'offset' | 'as' | 'group'>, string> = {
   value: '50 W',
@@ -44,6 +45,7 @@ const EXPRESSIONS: Record<Exclude<Keys<Expr>, 'role' | 'args' | 'left' | 'right'
   read: 'charger.power',
   history: 'average(',
   sun: 'sunset',
+  input: 'given.',
   across: 'any(c in',
   call: 'acme.weather.sunny(',
   apply: 'min(',

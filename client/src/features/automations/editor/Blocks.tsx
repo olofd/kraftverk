@@ -3,6 +3,7 @@ import { Button, Text, XStack, YStack } from 'tamagui';
 
 import {
   automationRole,
+  paramText,
   blankStep,
   branchesOf,
   insertStep,
@@ -357,6 +358,8 @@ function RememberFields({ remember, set }: { remember: Extract<Step, { remember:
 function StartFields({ start, waits, set }: { start: Extract<Step, { start: unknown }>['start']; waits: boolean; set: (start: Extract<Step, { start: unknown }>['start']) => void }) {
   const editor = useEditor();
   const chosen = editor.draft.starts[start.role];
+  /** The automation it starts: what it may be given, and what it answers. */
+  const target = editor.automations.find((automation) => automation.id === chosen);
   return (
     <YStack gap="$2.5">
       <YStack gap="$1">
@@ -382,9 +385,49 @@ function StartFields({ start, waits, set }: { start: Extract<Step, { start: unkn
               { value: true, label: 'Wait until it ends' },
             ]}
             value={start.andWait !== undefined}
-            onChange={(wait) => set(wait ? { role: start.role, andWait: { value: 10, unit: 'min' } } : { role: start.role })}
+            onChange={(wait) => {
+              // Not waited for, its answer is not known: what is remembered of it goes too.
+              const { andWait: _wait, remember: _remember, ...rest } = start;
+              set(wait ? { ...rest, andWait: { value: 10, unit: 'min' } } : rest);
+            }}
           />
           {start.andWait ? <Seconds label="At most" expr={start.andWait} set={(andWait) => set({ ...start, andWait })} /> : null}
+        </YStack>
+      ) : null}
+      {/* What it may be given: each of its inputs — not given, its own default. */}
+      {Object.entries(target?.rule.inputs?.fields ?? {}).map(([name, field]) => (
+        <YStack key={name} gap="$1">
+          <Label>{field.title}</Label>
+          <ArgField
+            label={field.title}
+            type={valueTypeOf(field)}
+            expr={start.args?.[name]}
+            onChange={(next) => set({ ...start, args: { ...start.args, [name]: next } })}
+          />
+          {start.args?.[name] === undefined ? (
+            <Text fontSize={12} color="$muted">
+              Not given: it takes {paramText(target!.rule.inputs!, name, (field.default ?? null) as Value)}.
+            </Text>
+          ) : null}
+        </YStack>
+      ))}
+      {/* What it answers, waited for: remembered as one of what this one remembers. */}
+      {start.andWait && target?.rule.result ? (
+        <YStack gap="$1">
+          <Label>Remember what it answers as</Label>
+          <Picker
+            label="Remember what it answers as"
+            chosen={start.remember ? (editor.draft.rule.memory?.fields[start.remember]?.title ?? start.remember) : 'Not remembered'}
+            placeholder="Not remembered"
+            options={[
+              { key: '', title: 'Not remembered', value: null as string | null, selected: !start.remember },
+              ...Object.entries(editor.draft.rule.memory?.fields ?? {}).map(([name, field]) => ({ key: name, title: field.title, value: name as string | null, selected: start.remember === name })),
+            ]}
+            onPick={(name) => {
+              const { remember: _remember, ...rest } = start;
+              set(name ? { ...rest, remember: name } : rest);
+            }}
+          />
         </YStack>
       ) : null}
     </YStack>

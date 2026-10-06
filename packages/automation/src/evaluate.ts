@@ -92,6 +92,8 @@ export type RuleScope = {
   param(name: string): Measured;
   /** What it remembers, as a run last left it — or as it starts; absent where nothing is kept: its starting value. */
   memory?(name: string): Measured;
+  /** One of its inputs, as the run was given it — or its default — in its unit. */
+  input?(name: string): Measured;
   /** What the part filling a role reports now for a meaning — a number in its unit, if it has one — or null when it cannot be known. */
   read(role: string, means: string): { value: ScalarValue; label: string; unit: Unit | null } | null;
   /** A function's answer; not given where calls are not allowed. */
@@ -222,6 +224,8 @@ export function measureNow(expr: Expr, scope: RuleScope, trace: string[] = [], a
       return scope.param((expr as ExprOf<'param'>).param);
     case 'memory':
       return scope.memory?.((expr as ExprOf<'memory'>).memory) ?? plain(null);
+    case 'input':
+      return scope.input?.((expr as ExprOf<'input'>).input) ?? plain(null);
     case 'read': {
       const { role, means } = (expr as ExprOf<'read'>).read;
       const read = scope.read(role, means);
@@ -360,6 +364,8 @@ export function settledScope(rule: Rule, params: Readonly<Record<string, Value>>
     param: (key) => settingOf(rule.params, key, params[key]),
     // Before any run: what it starts from.
     memory: (key) => settingOf(rule.memory ?? NO_SETTINGS, key),
+    // Not started by another: what it takes when not given.
+    input: (key) => settingOf(rule.inputs ?? NO_SETTINGS, key),
     read: () => null,
     reachable: () => ({ reachable: null, detail: 'not known until it runs' }),
     name,
@@ -473,6 +479,7 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
       case 'within':
       case 'run':
       case 'memory':
+      case 'input':
       case 'sun':
       case 'across':
         return settled;
@@ -527,6 +534,8 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
     roles: automationRoles(rule.roles),
     params: NO_SETTINGS,
     ...(rule.memory ? { memory: rule.memory } : {}),
+    ...(rule.inputs ? { inputs: rule.inputs } : {}),
+    ...(rule.result ? { result: rule.result } : {}),
     when,
     ...(rule.whileRunning ? { whileRunning: rule.whileRunning } : {}),
     ...keptIf,

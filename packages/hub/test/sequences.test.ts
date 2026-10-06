@@ -512,6 +512,7 @@ describe('starting a charge', () => {
       saw: [],
       conditions: [],
       steps: [{ kind: 'waitUntil', depth: 0, within: null, what: 'Wait until Scooter plug can be reached — at most 2 min', outcome: 'waiting', detail: 'Waiting', at, endedAt: null, until: at }],
+      answered: null,
     });
 
     // A new process, the same database.

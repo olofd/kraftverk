@@ -46,7 +46,7 @@ export class RuleContext {
    * roles as they are now, and the trigger that started the run, by its
    * key, if one did.
    */
-  scope(automation: AutomationRecord, rule: Rule, now = this.now(), trigger: string | null = null, event: StartingEvent | null = null): RuleScope {
+  scope(automation: AutomationRecord, rule: Rule, now = this.now(), trigger: string | null = null, event: StartingEvent | null = null, inputs: Readonly<Record<string, Value>> = {}): RuleScope {
     const part = (role: string): EngineDevice | null => {
       const binding = automation.roles[role];
       const device = binding ? this.deps.device(binding) : null;
@@ -68,6 +68,8 @@ export class RuleContext {
       },
       // Its settings, as it runs with them: each its value, in its unit.
       param: (name) => settingOf(rule.params, name),
+      // What it was given — or, not given, its default — in its unit.
+      input: (name) => settingOf(rule.inputs ?? { fields: {} }, name, inputs[name]),
       // What it remembers: as a run last left it, or as it starts.
       memory: (name) => memoryOf(rule.memory ?? { fields: {} }, name, this.deps.store.memory(automation.id)[name]),
       read: (role, means) => {

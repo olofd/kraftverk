@@ -90,7 +90,7 @@ export type FieldSpec = {
 export type KindDocs = { summary: string; examples: readonly string[] };
 
 /** The marks the editor draws a kind with: names in the app's icon set. */
-export type KindIcon = 'clock' | 'repeat' | 'activity' | 'bell' | 'power' | 'sliders' | 'pause' | 'git-branch' | 'eye' | 'play-circle' | 'save' | 'rotate-cw' | 'shield' | 'octagon' | 'layers';
+export type KindIcon = 'clock' | 'repeat' | 'activity' | 'bell' | 'power' | 'sliders' | 'pause' | 'git-branch' | 'eye' | 'play-circle' | 'save' | 'rotate-cw' | 'shield' | 'octagon' | 'layers' | 'corner-down-left';
 
 /**
  * How a sentence says the parts of a construct — what the describer hands a

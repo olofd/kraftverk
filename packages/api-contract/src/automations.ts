@@ -133,6 +133,8 @@ export type AutomationRun = {
    * nothing.
    */
   steps: RunStep[];
+  /** What it answered — an `answer` step's value, in its result's unit — or null: it answered nothing. */
+  answered: Value | null;
 };
 
 /** One condition an automation waits for, and whether it holds: null when it cannot be judged (a device gone quiet). */

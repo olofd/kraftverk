@@ -1,6 +1,6 @@
 import { ApiError, type AutomationDraftView, type AutomationView, type Rehearsal } from '@kraftverk/api-contract';
 import { capabilitiesOf, meetsNeed, partName, partsOf, savedDeviceId, validateConfig, type AutomationId, type Value } from '@kraftverk/device-sdk';
-import { bindingsOf, changedRoles, checkBinding, isGroupRole, listed, type GroupRole, type PartRole, type RoleFills, checkRule, describeRule, describeSteps, describeTriggers, isAutomationRole, problemArea, problemPlace, SEQUENCE_LIMITS, takesSteps, withSettings, writtenAttribute, type AutomationDraft, type BoundPart, type ProblemArea, type RoleBinding, type Rule, type RuleVocabulary } from '@kraftverk/automation';
+import { bindingsOf, changedRoles, checkBinding, checkStarted, isGroupRole, listed, type GroupRole, type PartRole, type RoleFills, checkRule, describeRule, describeSteps, describeTriggers, isAutomationRole, problemArea, problemPlace, SEQUENCE_LIMITS, takesSteps, withSettings, writtenAttribute, type AutomationDraft, type BoundPart, type ProblemArea, type RoleBinding, type Rule, type RuleVocabulary } from '@kraftverk/automation';
 
 import type { AutomationStore, DeviceCatalog, EventStore, HistoryStore } from '@kraftverk/store';
 import type { SessionManager } from '@kraftverk/holder';
@@ -205,7 +205,11 @@ export function drafts({ history, events, catalog, sessions, library, engine, au
         const automation = target ? automations.get(target) : null;
         if (!automation) problems.uses(`${spec.label}: choose an automation to start`);
         else if (automation.id === self) problems.uses(`${spec.label}: an automation does not start itself`);
-        else starts[role] = automation.id;
+        else {
+          starts[role] = automation.id;
+          // What it is given, and what is remembered of its answer: held to its inputs and its result.
+          for (const text of checkStarted(rule, role, automation.rule)) problems.uses(text);
+        }
         continue;
       }
       // A group: at least one part, each once, each able to do what it needs.

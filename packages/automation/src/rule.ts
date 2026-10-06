@@ -1,4 +1,4 @@
-import type { CapabilityName, CapabilityNeed, ConfigSchema, Unit, Value } from '@kraftverk/device-sdk';
+import type { CapabilityName, CapabilityNeed, ConfigField, ConfigSchema, Unit, Value } from '@kraftverk/device-sdk';
 
 import type { BuiltinName } from './kinds/builtins.ts';
 
@@ -52,6 +52,8 @@ export type Expr =
   | { param: string }
   /** What it remembers, as a run last left it — or as it starts: `memory.timesCharged`. */
   | { memory: string }
+  /** What the run was given, or its default: `given.level`. */
+  | { input: string }
   /** What the part filling a role reports now, by meaning: `charge`, or a type's own `acme.minutesToFull`. */
   | { read: { role: string; means: string } }
   /**
@@ -248,7 +250,18 @@ export type Step =
    * `andWait`, wait until its run ends: done if it acted, not if it did
    * not, or not within that time.
    */
-  | { start: { role: string; andWait?: Expr } }
+  | {
+      start: {
+        role: string;
+        andWait?: Expr;
+        /** What it is given, by its inputs' names: what it reads as `given.level`. Not given: their defaults. */
+        args?: Readonly<Record<string, Expr>>;
+        /** What it answered, waited for, remembered as: one of what this automation remembers. */
+        remember?: string;
+      };
+    }
+  /** The run ends here, answering with a value: of the kind its `result` says, what the run that started it and waited remembers. */
+  | { answer: Expr }
   /** Remember a value — kept until a run remembers another, across runs and restarts: `remember: timesCharged`, `as: memory.timesCharged + 1`. */
   | { remember: { name: string; value: Expr } }
   /**
@@ -361,6 +374,15 @@ export type Rule = {
    * by where it runs, across runs and restarts. None: it remembers nothing.
    */
   memory?: ConfigSchema;
+  /**
+   * What a run of it may be given: each a field of a form — its kind, unit,
+   * range — whose `default` is the value it takes when not given, as a run
+   * a person or a trigger starts is. Given by a `start` step's `with`; read
+   * as `given.level`. None: it takes nothing.
+   */
+  inputs?: ConfigSchema;
+  /** What it answers — one field, its kind and unit; its `default` the answer of a run that gives none: what an `answer` step gives. None: it answers nothing. */
+  result?: ConfigField;
   /** Any one of these starts a run. */
   when: readonly RuleTrigger[];
   /** What one of its triggers starting it while it runs does (`WHILE_RUNNING`). None: it is let go. */

@@ -57,7 +57,7 @@ const RUN_SELECT = `SELECT r.*, p.automation_id AS parent_automation, pa.name AS
 export type AutomationInput = Pick<AutomationRecord, 'name' | 'rule' | 'madeFrom' | 'roles' | 'groups' | 'starts' | 'timeZone' | 'recheckMinutes'>;
 
 /** What a run keeps beside its columns. */
-type RunDetail = Pick<AutomationRun, 'saw' | 'conditions' | 'steps'>;
+type RunDetail = Pick<AutomationRun, 'saw' | 'conditions' | 'steps' | 'answered'>;
 
 const parse = <T>(json: string | null, fallback: T): T => {
   try {
@@ -84,10 +84,11 @@ const runOf = (row: RunRow): AutomationRun => {
     saw: detail.saw ?? [],
     conditions: detail.conditions ?? [],
     steps: detail.steps ?? [],
+    answered: detail.answered ?? null,
   };
 };
 
-const detailOf = (run: AutomationRun): string => JSON.stringify({ saw: run.saw, conditions: run.conditions, steps: run.steps } satisfies RunDetail);
+const detailOf = (run: AutomationRun): string => JSON.stringify({ saw: run.saw, conditions: run.conditions, steps: run.steps, answered: run.answered } satisfies RunDetail);
 
 /** A rule with nothing in it: what a row whose JSON could not be read is shown as, and refuses to run. */
 const EMPTY_RULE: Rule = { roles: {}, params: { fields: {} }, when: [], then: [] };

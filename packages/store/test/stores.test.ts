@@ -167,7 +167,7 @@ for (const driver of DRIVERS) {
       store.startAfresh(made.id, at(11));
       expect(store.trigger(made.id, 'low')).toBeNull();
 
-      const run = { id: null, at: at(12), startedBy: 'olof', startedByRun: null, endedAt: null, outcome: 'running' as const, summary: 'Taking steps', why: 'Started by olof', saw: [], conditions: [], steps: [] };
+      const run = { id: null, at: at(12), startedBy: 'olof', startedByRun: null, endedAt: null, outcome: 'running' as const, summary: 'Taking steps', why: 'Started by olof', saw: [], conditions: [], steps: [], answered: null };
       const runId = store.beginRun(made.id, run);
       expect(store.unended().map((unended) => unended.automationId)).toEqual([made.id]);
       store.recordLog(runId, { keys: [], readings: [] });

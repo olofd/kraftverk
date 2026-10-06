@@ -104,6 +104,35 @@ do:
     as: charger.power
 ```
 
+### `inputs` — What it may be given
+
+What another automation’s `start` step may give it, under `with` — each written as a setting is, its value what a run takes when not given, as one a person or a trigger starts does. Read as `given.name`, in its unit. One automation, many uses: "charge to 80 %" and "charge to 100 %" are one charge, given two levels.
+
+```yaml
+inputs:
+  level: { title: Charge to, value: 80 %, min: 20 %, max: 100 % }
+uses:
+  station: garage-station
+  charger: charger-plug
+do:
+  - turn on: charger
+  - wait until: station.charge >= given.level
+    at most: 1 h
+  - turn off: charger
+```
+
+### `result` — What it answers
+
+The kind of value it answers — one field, written as a setting is, its value what a run that gives none answers. An `answer` step gives it and ends the run; a `start` step that waits for it remembers it, with `remember as`.
+
+```yaml
+result: { title: Charge reached, value: 0 % }
+uses:
+  station: garage-station
+do:
+  - answer: station.charge
+```
+
 ### `when` — What starts it
 
 Its triggers: any one starts a run — a time of day, every so often, a condition becoming true, an event a device raises. None: it runs only when you, or another automation, start it.
@@ -594,14 +623,34 @@ do:
     failed: true
 ```
 
+### `answer` — Answer
+
+End the run, answering with a value of the kind the automation’s `result` says, in its unit: what a run that started it with `and wait` remembers, with `remember as`.
+
+| Word | Holds | |
+|---|---|---|
+| `answer` | a value, or an expression for one | needed |
+
+```yaml
+do:
+  - answer: charger.power
+```
+
+```yaml
+do:
+  - answer: memory.lastPower * 2
+```
+
 ### `start` — Start another automation
 
-Start the automation filling a role, as a person’s play would — and, with `and wait`, wait until its run ends: done if it acted, not if it did not, or not within that time.
+Start the automation filling a role, as a person’s play would — given its inputs under `with`, the rest their defaults — and, with `and wait`, wait until its run ends: done if it acted, not if it did not, or not within that time. Waited for, what it answers is remembered, with `remember as`, as one of what this automation remembers.
 
 | Word | Holds | |
 |---|---|---|
 | `start` | a role another automation fills: `{ automation: key }` under `uses` | needed |
+| `with` | each argument by its name: a value, or an expression | if you like |
 | `and wait` | a length of time, `2 min` — 1 s to 1 h; a number or a setting, never a reading | if you like |
+| `remember as` | one of what it remembers, by its name: under `memory` | if you like |
 
 ```yaml
 do:
@@ -612,6 +661,15 @@ do:
 do:
   - start: chargeTheScooter
     and wait: 10 min
+```
+
+```yaml
+do:
+  - start: chargeTheScooter
+    with:
+      level: 90 %
+    and wait: 30 min
+    remember as: lastPower
 ```
 
 ### `remember` — Remember
@@ -645,6 +703,7 @@ reached — is never taken for true.
 |---|---|---|
 | A value | `50 W` · `"eco"` · `07:00` | A number — with its unit beside a reading, `50 W`, `15 %` — a time of day, `07:00`, text in quotes, `true` or `false`. |
 | A setting | `setting.low` | One of the rule’s settings, by its name: a recipe’s, before it is copied into an automation. |
+| What it was given | `given.level` | One of the automation’s inputs, as the step that started the run gave it — or, not given, its default. |
 | What it remembers | `memory.timesCharged` | A value it remembers, as a run last left it — or, before any did, as it starts: kept across runs and restarts. |
 | A reading | `station.charge` · `charger.power` | What the part filling a role reports now, by what it means: a standard meaning, or a type’s own. Unknown when it has not said, or said too long ago. |
 | Over the time just gone | `average(station.charge, 1 h)` · `change(station.charge, 30 min) > 5 %` · `ago(charger.power, 10 min)` | A reading over the time just gone, from what the home kept of it: `average`, `lowest`, `highest`, `change` — how much it changed — or `ago`, what it was then. In the reading’s unit; the time a number or a setting, a minute to two weeks. Unknown when nothing was kept for that time. |

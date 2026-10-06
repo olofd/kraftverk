@@ -52,7 +52,7 @@ type Token =
 
 /** The language's own words: never a role's name. */
 /** The language's own words: none names a role, nor what a "for each" calls each part. */
-export const KEYWORDS: ReadonlySet<string> = new Set(['and', 'or', 'not', 'in', 'true', 'false', 'null', 'reachable', 'time', 'between', 'run', 'setting', 'memory', 'sunrise', 'sunset', 'before', 'after']);
+export const KEYWORDS: ReadonlySet<string> = new Set(['and', 'or', 'not', 'in', 'true', 'false', 'null', 'reachable', 'time', 'between', 'run', 'setting', 'memory', 'given', 'sunrise', 'sunset', 'before', 'after']);
 const COMPARE: Record<string, CompareOp> = { '<': 'lt', '<=': 'le', '>': 'gt', '>=': 'ge', '==': 'eq', '!=': 'ne' };
 const COMPARE_TEXT: Record<CompareOp, string> = { lt: '<', le: '<=', gt: '>', ge: '>=', eq: '==', ne: '!=' };
 const MATH_TEXT: Record<MathOp, string> = { add: '+', subtract: '-', multiply: '*', divide: '/' };
@@ -315,6 +315,13 @@ export function parseExpr(text: string): Parsed {
         if (name.kind !== 'name' || !PARAM.test(name.value)) throw new Failure('Expected a setting\'s name after "setting."', name.at);
         return { param: name.value };
       }
+      case 'given': {
+        // What the run was given: "given.level".
+        expect('.', '"." and the input\'s name: given.level');
+        const name = next();
+        if (name.kind !== 'name' || !PARAM.test(name.value)) throw new Failure('Expected an input\'s name after "given."', name.at);
+        return { input: name.value };
+      }
       case 'memory': {
         // What the rule remembers: "memory.timesCharged".
         expect('.', '"." and what it remembers: memory.timesCharged');
@@ -466,6 +473,10 @@ function print(expr: Expr, need: number): string {
   if ('param' in expr) {
     if (!PARAM.test(expr.param)) throw new Unprintable();
     return `setting.${expr.param}`;
+  }
+  if ('input' in expr) {
+    if (!PARAM.test(expr.input)) throw new Unprintable();
+    return `given.${expr.input}`;
   }
   if ('memory' in expr) {
     if (!PARAM.test(expr.memory)) throw new Unprintable();

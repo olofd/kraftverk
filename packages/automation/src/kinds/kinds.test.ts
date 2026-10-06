@@ -78,6 +78,8 @@ const doing = (step: unknown) => ({
   uses: { charger: 'charger-plug', station: 'garage-station', plug: 'smart-plug', supply: 'garage-station.outlet.ac', outlets: ['smart-plug', 'garage-station.outlet.ac'], chargeTheScooter: { automation: 'charge-the-scooter' } },
   // What the examples remember: a count, and a reading.
   memory: { timesCharged: 0, lastPower: '0 W' },
+  // What the examples answer: a power.
+  result: '0 W',
   do: [step],
 });
 

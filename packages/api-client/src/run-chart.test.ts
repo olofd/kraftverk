@@ -32,6 +32,7 @@ const LOG: Pick<RunLog, 'run' | 'keys' | 'readings' | 'reach'> = {
     saw: [],
     conditions: [],
     steps: [step('command', 0, 'Turn Smart plug on'), step('ensure', 1, 'Make sure it draws'), step('wait', 2, 'Wait 5 s'), step('command', 30, 'Turn Smart plug off')],
+    answered: null,
   },
   keys: [WATTS, RELAY, VOLTS],
   readings: [
