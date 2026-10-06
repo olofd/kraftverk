@@ -128,9 +128,11 @@ describe('the steps, as data', () => {
     }
   });
 
-  test('the database knows how rules are kept: every kind and field, in its fingerprint', () => {
+  test('the database knows how rules are kept: every kind and field, and the meanings a reading names, in its fingerprint', () => {
     const shape = ruleShape();
     for (const kind of [...KINDS, ...STEPS]) expect(shape).toContain(`${kind}(`);
     expect(shape).toContain('waitUntil.atMost:duration!');
+    // A rule keeps "charge", not its label: renamed, a kept rule would read nothing.
+    expect(shape).toMatch(/means .*\bcharge\b/);
   });
 });
