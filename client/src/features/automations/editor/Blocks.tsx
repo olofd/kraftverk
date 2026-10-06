@@ -11,7 +11,6 @@ import {
   mayWait,
   moveStep,
   removeStep,
-  secondsOf,
   SEQUENCE_LIMITS,
   STEP_KINDS,
   stepKind,
@@ -37,7 +36,7 @@ import { confirmAction } from '../../../platform/confirm';
 import { ConditionField } from './Condition';
 import { pickPart, useEditor } from './context';
 import { Fields } from './Field';
-import { DurationField, Label, ValueField } from './fields';
+import { DurationField, durationOf, Label, ValueField } from './fields';
 
 
 /*
@@ -171,7 +170,7 @@ function Seconds({ label, expr, set, max = SEQUENCE_LIMITS.waitSeconds }: { labe
   return (
     <YStack gap="$1.5">
       <Label>{label}</Label>
-      <DurationField label={label} value={secondsOf(expr)} max={max} onChange={(next) => set({ value: next })} />
+      <DurationField label={label} value={durationOf(expr)} max={max} onChange={(next) => set(next ?? { value: 0, unit: 's' })} />
     </YStack>
   );
 }
@@ -251,7 +250,7 @@ function CommandFields({ command, set }: { command: Command; set: (command: Comm
  */
 function ArgField({ label, type, expr, switchLike, onChange }: { label: string; type: Parameters<typeof ValueField>[0]['type']; expr: Expr | undefined; switchLike?: boolean; onChange: (expr: Expr) => void }) {
   const editor = useEditor();
-  if (!expr || 'value' in expr) return <ValueField label={label} type={type} value={expr && 'value' in expr ? expr.value : null} onChange={(next) => onChange({ value: next })} />;
+  if (!expr || 'value' in expr) return <ValueField label={label} type={type} literal={expr && 'value' in expr ? expr : null} onChange={onChange} />;
   const fixed = async () => {
     const said = editor.saidExpr(expr);
     if (await confirmAction('Use a fixed value instead?', `Now it is worked out as it runs: ${said}. A fixed value is the same every time.`, 'Use a fixed value')) onChange({ value: startValue(type) });
@@ -349,7 +348,7 @@ function StartFields({ start, waits, set }: { start: Extract<Step, { start: unkn
               { value: true, label: 'Wait until it ends' },
             ]}
             value={start.andWait !== undefined}
-            onChange={(wait) => set(wait ? { role: start.role, andWait: { value: 600 } } : { role: start.role })}
+            onChange={(wait) => set(wait ? { role: start.role, andWait: { value: 10, unit: 'min' } } : { role: start.role })}
           />
           {start.andWait ? <Seconds label="At most" expr={start.andWait} set={(andWait) => set({ ...start, andWait })} /> : null}
         </YStack>

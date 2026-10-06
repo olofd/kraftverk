@@ -2,13 +2,13 @@ import { Button, Text, XStack, YStack } from 'tamagui';
 
 import { triggerIdOf, type CompareOp, type Expr } from '@kraftverk/automation';
 import type { PartOption } from '@kraftverk/automation';
-import { capabilitiesOf, MAIN_PART, meetsNeed, type Value, type ValueType } from '@kraftverk/device-sdk';
+import { capabilitiesOf, MAIN_PART, meetsNeed, type ValueType } from '@kraftverk/device-sdk';
 import { Chips, Icon, IconLabel } from '@kraftverk/ui';
 
 import { Picker } from '../../../components/Picker';
 import { useTone } from '../../../components/tone';
 import { pickPart, useEditor } from './context';
-import { Label, TimeField, ValueField } from './fields';
+import { Label, TimeField, ValueField, type Literal } from './fields';
 
 /*
   A condition, built without showing an expression (docs/AUTOMATION-EDITOR.md):
@@ -260,7 +260,6 @@ function TimeOfDay({ expr, onChange }: { expr: Extract<Expr, { within: unknown }
 function Reading({ expr, onChange, label }: { expr: Extract<Expr, { compare: unknown }>; onChange: (expr: Expr) => void; label: string }) {
   const editor = useEditor();
   const read = (expr.left as Extract<Expr, { read: unknown }>).read;
-  const value = (expr.right as Extract<Expr, { value: unknown }>).value;
   const bound = editor.partOf(read.role);
   // What it can read of the part: what it reports that has a meaning — a charge, a draw, a state.
   const readings = bound ? bound.description.attributes.filter((attribute) => attribute.means && (attribute.part ?? MAIN_PART) === bound.part) : [];
@@ -281,7 +280,7 @@ function Reading({ expr, onChange, label }: { expr: Extract<Expr, { compare: unk
           chosen={chosen?.label ?? null}
           placeholder="Choose what it reports"
           options={readings.map((attribute) => ({ key: attribute.key, title: attribute.label, subtitle: attribute.value.type === 'number' && attribute.value.unit ? attribute.value.unit : undefined, value: attribute, selected: attribute.means === read.means }))}
-          onPick={(attribute) => onChange({ compare: attribute.value.type === 'number' ? 'gt' : 'eq', left: { read: { role: read.role, means: attribute.means! } }, right: { value: attribute.value.type === 'boolean' ? true : attribute.value.type === 'enum' ? (attribute.value.options[0]?.value ?? '') : 0 } })}
+          onPick={(attribute) => onChange({ compare: attribute.value.type === 'number' ? 'gt' : 'eq', left: { read: { role: read.role, means: attribute.means! } }, right: attribute.value.type === 'number' ? { value: 0, ...(attribute.value.unit ? { unit: attribute.value.unit } : {}) } : { value: attribute.value.type === 'boolean' ? true : attribute.value.type === 'enum' ? (attribute.value.options[0]?.value ?? '') : '' } })}
         />
       ) : null}
       {chosen ? (
@@ -297,7 +296,7 @@ function Reading({ expr, onChange, label }: { expr: Extract<Expr, { compare: unk
           ) : (
             <Chips label={`${label}: compared`} options={EQUAL_OPS} value={expr.compare} onChange={(compare) => onChange({ ...expr, compare })} />
           )}
-          <ValueField label={`${label}: value`} type={type} value={value} onChange={(next: Value) => onChange({ ...expr, right: { value: next } })} />
+          <ValueField label={`${label}: value`} type={type} literal={expr.right as Literal} onChange={(right) => onChange({ ...expr, right })} />
         </YStack>
       ) : null}
     </YStack>
@@ -308,7 +307,6 @@ function Reading({ expr, onChange, label }: { expr: Extract<Expr, { compare: unk
 function Ask({ expr, onChange, label }: { expr: Extract<Expr, { compare: unknown }>; onChange: (expr: Expr) => void; label: string }) {
   const editor = useEditor();
   const call = expr.left as Extract<Expr, { call: unknown }>;
-  const value = (expr.right as Extract<Expr, { value: unknown }>).value;
   const fn = editor.functions.find((candidate) => candidate.id === call.call) ?? null;
   const set = (changes: Partial<Extract<Expr, { call: unknown }>>) => onChange({ ...expr, left: { ...call, ...changes } });
   return (
@@ -339,12 +337,12 @@ function Ask({ expr, onChange, label }: { expr: Extract<Expr, { compare: unknown
             return (
               <YStack key={name} gap="$1">
                 <Label>{'title' in type && typeof type.title === 'string' ? type.title : name}</Label>
-                <ValueField label={`${label}: ${name}`} type={type} value={arg && 'value' in arg ? arg.value : null} onChange={(next) => set({ args: { ...call.args, [name]: { value: next } } })} />
+                <ValueField label={`${label}: ${name}`} type={type} literal={arg && 'value' in arg ? arg : null} onChange={(next) => set({ args: { ...call.args, [name]: next } })} />
               </YStack>
             );
           })}
           <Label>Its answer</Label>
-          <ValueField label={`${label}: its answer`} type={fn.returns} value={value} onChange={(next) => onChange({ ...expr, right: { value: next } })} />
+          <ValueField label={`${label}: its answer`} type={fn.returns} literal={expr.right as Literal} onChange={(right) => onChange({ ...expr, right })} />
         </>
       ) : null}
     </YStack>

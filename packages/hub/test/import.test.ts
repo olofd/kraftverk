@@ -110,7 +110,7 @@ function aHome() {
 
 const exported = async (secrets: 'sealed' | 'kept' | 'none' = 'sealed') => {
   const out = await exportConfig(deps, { secrets, passphrase: PASSPHRASE });
-  return writeConfig(out.document, out.context);
+  return writeConfig(out.document);
 };
 
 describe('a server’s own export, into a database wiped', () => {
@@ -310,8 +310,9 @@ automations:
     const plan = await planImport(deps, text('2 kW'), { mode: 'merge', by: 'olof' });
     expect(plan.problems).toEqual([]);
     await applyImport(deps, plan.id!, 'olof', {});
-    expect(deps.automations.byKey('flowing')!.rule.when[0]).toMatchObject({ becomes: { right: { value: 2000 } } });
-    expect((await planImport(deps, text('2 °C'), { mode: 'merge', by: 'olof' })).problems.map((problem) => problem.message)).toEqual(['That is read in W: "°C" is not a unit of it']);
+    // Kept as written; a run converts it.
+    expect(deps.automations.byKey('flowing')!.rule.when[0]).toMatchObject({ becomes: { right: { value: 2, unit: 'kW' } } });
+    expect((await planImport(deps, text('2 °C'), { mode: 'merge', by: 'olof' })).problems.map((problem) => problem.message)).toEqual(['Meter’s flow is in W: "°C" is not a unit of it']);
   });
 
   test('simulated devices share their address: no claim on it, as setup makes none', async () => {

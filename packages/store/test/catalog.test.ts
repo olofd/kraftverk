@@ -72,7 +72,7 @@ for (const driver of DRIVERS) {
       test('knows whose word its description is: its type’s when added, its own once it says more', () => {
         const record = add('Station');
         expect(record.descriptionSource).toBe('type');
-        const own = { ...record.description, attributes: [...record.description.attributes, { key: 'pack.1.soc', label: 'Pack 1', value: { type: 'number' as const, unit: '%' } }] };
+        const own = { ...record.description, attributes: [...record.description.attributes, { key: 'pack.1.soc', label: 'Pack 1', value: { type: 'number' as const, unit: '%' as const } }] };
         expect(catalog.describe(record.id, own, null, 'device')).toBe(true);
         expect(catalog.get(record.id)).toMatchObject({ descriptionSource: 'device', description: own });
       });

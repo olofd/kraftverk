@@ -1,5 +1,6 @@
 import type { ProfileDatapoint, SocketProfile } from '@kraftverk/protocol-tuya-local';
 import { defineTuyaSocket } from '@kraftverk/device-tuya-plug';
+import type { Unit } from '@kraftverk/device-sdk';
 
 /**
  * The ATORCH S1W / S1WP / S1BW: a Tuya energy socket with an LCD meter, its own
@@ -18,7 +19,7 @@ import { defineTuyaSocket } from '@kraftverk/device-tuya-plug';
  * so that a cut they cause is explained, and never offered.
  */
 
-const number = (unit: string | undefined, min: number, max: number, step?: number) =>
+const number = (unit: Unit | undefined, min: number, max: number, step?: number) =>
   ({ type: 'number', ...(unit ? { unit } : {}), min, max, ...(step ? { step, precision: Math.max(0, -Math.floor(Math.log10(step))) } : { integer: true }) }) as const;
 
 const SAFETY = 'Safety cut-off';

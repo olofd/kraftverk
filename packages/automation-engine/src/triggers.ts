@@ -1,4 +1,4 @@
-import { capitalise, describeTriggers, evaluateNow, EVERY_SECONDS, HOLD_SECONDS, readsRole, runsOn, secondsText, slotOf, stepsOf, takesSteps, triggerKey, triggerKind, type RuleTrigger, type Rule, type Trigger } from '@kraftverk/automation';
+import { capitalise, describeTriggers, evaluateNow, secondsNow, EVERY_SECONDS, HOLD_SECONDS, readsRole, runsOn, secondsText, slotOf, stepsOf, takesSteps, triggerKey, triggerKind, type RuleTrigger, type Rule, type Trigger } from '@kraftverk/automation';
 import { dayAfter, localTime, MAIN_PART, zonedInstant, type ClockTimer } from '@kraftverk/device-sdk';
 import type { LiveMessage } from '@kraftverk/holder';
 
@@ -232,7 +232,7 @@ export class Triggers {
 
     const said = capitalise(this.#context.said(automation, rule, trigger.becomes));
     // A setting filled in later is held to a hold's bounds here too: a timer past them would not wait at all.
-    const asked = trigger.heldFor ? Number(evaluateNow(trigger.heldFor, scope)) : 0;
+    const asked = trigger.heldFor ? (secondsNow(trigger.heldFor, scope) ?? 0) : 0;
     const seconds = Number.isFinite(asked) ? Math.min(HOLD_SECONDS.max, Math.max(0, asked)) : 0;
     const fire = (why: string) => {
       const current = this.deps.store.get(automation.id);
@@ -300,7 +300,7 @@ export class Triggers {
 
   /** Whether an interval's latest slot, on the owner's clock, has come and it has not run since: once a slot, never catching up. */
   #dueEvery(automation: AutomationRecord, rule: Rule, trigger: Extract<Trigger, { every: unknown }>, now: Date): boolean {
-    const seconds = evaluateNow(trigger.every, this.#context.scope(automation, rule));
+    const seconds = secondsNow(trigger.every, this.#context.scope(automation, rule));
     if (typeof seconds !== 'number' || seconds < EVERY_SECONDS.min || seconds > EVERY_SECONDS.max || seconds % EVERY_SECONDS.step !== 0) return false;
     const every = seconds / 60;
     const today = localTime(now, automation.timeZone);

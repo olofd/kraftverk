@@ -33,7 +33,7 @@ export function AutomationConfig({ automation, onChanged, onEditYaml }: { automa
     try {
       // The devices that fill its roles and the automations it starts, by their keys: read now, so none is missed while the app's own list is still coming.
       const [devices, others] = await Promise.all([api.devices.list(), Object.keys(automation.starts).length ? api.automations.list() : Promise.resolve([])]);
-      setShown(automationYaml({ ...automation, madeFrom: automation.madeFrom?.id ?? null }, devices, others).text);
+      setShown(automationYaml({ ...automation, madeFrom: automation.madeFrom?.id ?? null }, devices, others));
     } catch (err) {
       setProblem(describeError(err) || 'It could not be read');
     }

@@ -429,6 +429,16 @@ Assistant); and `price` and `priceRank`, what electricity costs now
 hour stands among the day's by price. An on/off has no quantity: it is a boolean, drawn as a band. `validateDescription` checks every rule, and
 the contract suite checks a session keeps its description.
 
+**Units** are one enumeration (`units.ts`): every unit kraftverk knows,
+what it measures and how it converts, and the units each quantity is
+measured in (`QUANTITY_UNITS`, which is also what Home Assistant takes for
+it). A number's unit is a `Unit`, never free text — in a description, a
+meaning, a setting, a rule's own numbers — so a typo does not compile; one
+arriving as data is refused by `validateDescription`, the rule checker and
+the file's schema; and the app offers a unit as a choice among those of its
+dimension, never a text field. Numbers of one dimension meet converted
+(`2 kW` beside a reading in W is 2000 W); two dimensions never meet.
+
 ### 4.3 Connection methods and setup
 
 Adding a device is one flow for every type, described screen by screen in

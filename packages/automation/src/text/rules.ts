@@ -2,12 +2,11 @@ import { CAPABILITIES, MAIN_PART, type CapabilityName } from '@kraftverk/device-
 
 import { WEEKDAYS, type Weekday } from '../clock.ts';
 import { ruleUses } from '../reads.ts';
-import { mapChildren } from '../kinds/exprs.ts';
 import { fieldValue, withField, type FieldSpec } from '../kinds/spec.ts';
 import { branchesOf, STEP_KIND_ORDER, STEP_KINDS, stepSpec, type StepKind, type StepReader, type StepSpec } from '../kinds/steps.ts';
 import { stepListsOf, TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS, triggerFields } from '../kinds/triggers.ts';
 import { isAutomationRole, TRIGGER_ID, type Expr, type RuleTrigger, type RoleSpec, type Rule, type Step } from '../rule.ts';
-import { parseExpr, printExpr, standardUnit, type PrintContext, type WrittenUnit } from './expr.ts';
+import { parseExpr, printExpr } from './expr.ts';
 
 /*
   An automation's rule as a configuration file writes it (docs/CONFIG.md):
@@ -49,28 +48,6 @@ export function durationSeconds(data: Data): number | null {
   return match ? Number(match[1]) * SECONDS[match[2] as keyof typeof SECONDS] : null;
 }
 
-// --- units ----------------------------------------------------------------------------------
-
-/** Units of one quantity, each by how many of the first it is. */
-const UNIT_FAMILIES: readonly Readonly<Record<string, number>>[] = [
-  { W: 1, kW: 1000, MW: 1_000_000 },
-  { Wh: 1, kWh: 1000, MWh: 1_000_000 },
-  { A: 1, mA: 0.001 },
-  { V: 1, mV: 0.001, kV: 1000 },
-  { Hz: 1, kHz: 1000 },
-  { s: 1, min: 60, h: 3600 },
-];
-
-/** What a number written in one unit is multiplied by to be in another: 1 when the same, null when they are not one quantity's. */
-function conversion(written: string, into: string): number | null {
-  if (written === into) return 1;
-  const family = UNIT_FAMILIES.find((units) => written in units && into in units);
-  return family ? family[written]! / family[into]! : null;
-}
-
-/** A converted number without the float's dust: 2.2 kW is 2200 W, not 2200.0000000000005. */
-const round = (value: number) => Math.round(value * 1e9) / 1e9;
-
 // --- reading ------------------------------------------------------------------------------
 
 /** The verbs a kind of step starts with in a file: its own words', or its first field's key. */
@@ -81,7 +58,6 @@ const STEP_VERBS = STEP_KIND_ORDER.flatMap(verbsOf);
 
 class Reader {
   issues: Issue[] = [];
-  constructor(private context: PrintContext = {}) {}
 
   fail(message: string, path: Path, offset?: number): never {
     this.issues.push(offset === undefined ? { message, path } : { message, path, offset });
@@ -90,18 +66,14 @@ class Reader {
 
   /**
    * A condition or value: an expression's text, a plain value, or the rule's
-   * own data for it. `into`: the unit what it is is read in, where that is
-   * known — a setting by its meaning — so "2 kW" there is 2000 W. A number
-   * with a unit, alone, where nothing says one is refused: its unit would be
-   * dropped, and 2 kW written as 2.
+   * own data for it. Each number keeps the unit it is written in: the checker
+   * says whether it fits what it is beside, and a run converts it.
    */
-  expr(data: Data, path: Path, into: string | null = null): Expr {
+  expr(data: Data, path: Path): Expr {
     if (typeof data === 'string') {
       const parsed = parseExpr(data);
-      if (!parsed.ok) this.fail(parsed.error.message, path, parsed.error.offset);
-      const written = 'value' in parsed.expr ? parsed.units.get(parsed.expr) : undefined;
-      if (written && into === null) this.fail(`Nothing here says what unit it is in: write it without "${written.unit}", in the unit it is set in`, path, written.at);
-      return this.inUnits(parsed.expr, parsed.units, path, into);
+      if (!parsed.ok) return this.fail(parsed.error.message, path, parsed.error.offset);
+      return parsed.expr;
     }
     if (typeof data === 'number' || typeof data === 'boolean' || data === null) return { value: data };
     if (isRecord(data)) return data as Expr;
@@ -109,46 +81,11 @@ class Reader {
   }
 
   /**
-   * Each number written with a unit, in the unit of what it is beside: "2 kW"
-   * beside a reading in W is 2000; "50 °C" beside one is a problem, where it
-   * is. What a reading is in is the part's own word (the context), or its
-   * standard meaning's; beside nothing that says one, a number is kept as
-   * written.
+   * A length of time — "5 s", "2 min", kept as written — or an expression for
+   * one. A bare number is refused: seconds here, minutes there, it would mean
+   * what it does not say.
    */
-  private inUnits(expr: Expr, units: WeakMap<Expr, WrittenUnit>, path: Path, into: string | null): Expr {
-    const unitOfReading = (each: Expr): string | null =>
-      'read' in each ? (this.context.unitOf?.(each.read.role, each.read.means) ?? standardUnit(each.read.means)) : 'math' in each ? (unitOfReading(each.left) ?? unitOfReading(each.right)) : null;
-    const visit = (each: Expr, beside: string | null): Expr => {
-      if ('value' in each) {
-        const written = units.get(each);
-        if (!written || beside === null || typeof each.value !== 'number') return each;
-        const factor = conversion(written.unit, beside);
-        if (factor === null) return this.fail(`That is read in ${beside || 'no unit'}: "${written.unit}" is not ${beside ? `a unit of it` : 'one'}`, path, written.at);
-        return { value: round(each.value * factor) };
-      }
-      if ('compare' in each) {
-        const unit = unitOfReading(each.left) ?? unitOfReading(each.right);
-        return { ...each, left: visit(each.left, unit), right: visit(each.right, unit) };
-      }
-      if ('math' in each) {
-        const unit = beside ?? unitOfReading(each);
-        return { ...each, left: visit(each.left, unit), right: visit(each.right, unit) };
-      }
-      // Anything else holds expressions that say no unit of their own: each read beside nothing (kinds/exprs.ts).
-      return mapChildren(each, (one) => visit(one, null));
-    };
-    return visit(expr, into);
-  }
-
-  /** A length of time, in seconds — "5 s", "2 min" — or an expression for one. A bare number is refused: seconds here, minutes there, it would mean what it does not say. */
   seconds(data: Data, path: Path): Expr {
-    const seconds = durationSeconds(data);
-    if (seconds !== null) return { value: seconds };
-    return this.lengthOfTime(data, path);
-  }
-
-  /** A length of time that is not "5 s": an expression for one — never a bare number, which says no unit. */
-  private lengthOfTime(data: Data, path: Path): Expr {
     const bare = typeof data === 'number' || (typeof data === 'string' && /^\s*-?\d+(\.\d+)?\s*$/.test(data));
     if (bare) return this.fail(`A length of time says its unit: "${String(data).trim()} s", "${String(data).trim()} min" or "${String(data).trim()} h"`, path);
     return this.expr(data, path);
@@ -191,10 +128,9 @@ class Reader {
   /** The reader's tools, for a kind with words of its own. */
   private stepReader(): StepReader {
     return {
-      expr: (data, path, into) => this.expr(data, path, into ?? null),
+      expr: (data, path) => this.expr(data, path),
       seconds: (data, path) => this.seconds(data, path),
       name: (data, path, what) => this.name(data, path, what),
-      unitOf: (role, means) => this.context.unitOf?.(role, means) ?? standardUnit(means),
       fail: (message, path) => this.fail(message, path),
     };
   }
@@ -360,8 +296,8 @@ export type RuleEntry = {
  * A rule and what fills its roles from a file's entry, every problem with its
  * path. `path`: where the entry is in the file.
  */
-export function ruleFromConfig(entry: Record<string, unknown>, path: Path, context: PrintContext = {}): { rule: Rule | null; uses: Record<string, Use>; issues: Issue[] } {
-  const reader = new Reader(context);
+export function ruleFromConfig(entry: Record<string, unknown>, path: Path): { rule: Rule | null; uses: Record<string, Use>; issues: Issue[] } {
+  const reader = new Reader();
   const when = tryRead(reader, () => reader.triggers(entry.when, [...path, 'when'])) ?? [];
   const condition = 'only if' in entry ? tryRead(reader, () => reader.expr(entry['only if'], [...path, 'only if'])) : undefined;
   const then = tryRead(reader, () => reader.steps(entry.do, [...path, 'do'])) ?? [];
@@ -424,12 +360,11 @@ const daysInFile = (days: readonly string[]): string | string[] =>
   days.join() === 'mon,tue,wed,thu,fri' ? 'weekdays' : days.join() === 'sat,sun' ? 'weekends' : [...days];
 
 /** A rule and what fills its roles as a file's entry writes them: the order a person reads in. */
-export function ruleToConfig(rule: Rule, uses: Record<string, Use>, context: PrintContext = {}): RuleEntry {
+export function ruleToConfig(rule: Rule, uses: Record<string, Use>): RuleEntry {
   const expr = (value: Expr): unknown => {
-    if ('value' in value && (typeof value.value === 'number' || typeof value.value === 'boolean')) return value.value;
-    return printExpr(value, context) ?? value;
+    if ('value' in value && value.unit === undefined && (typeof value.value === 'number' || typeof value.value === 'boolean')) return value.value;
+    return printExpr(value) ?? value;
   };
-  const seconds = (value: Expr): unknown => ('value' in value && typeof value.value === 'number' ? durationText(value.value) : expr(value));
   const time = (value: Expr): unknown => ('value' in value && typeof value.value === 'string' && /^\d{2}:\d{2}$/.test(value.value) ? value.value : expr(value));
 
   // A step by its kind's words of its own, or its fields under its verb, in its kind's order (kinds/steps.ts).
@@ -461,7 +396,7 @@ export function ruleToConfig(rule: Rule, uses: Record<string, Use>, context: Pri
       case 'timeOfDay':
         return time(value as Expr);
       case 'duration':
-        return seconds(value as Expr);
+        return expr(value as Expr);
       case 'days':
         return daysInFile(value as readonly string[]);
       case 'role':

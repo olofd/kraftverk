@@ -17,6 +17,33 @@ export const roleEvents = (spec: CapabilityNeed): string[] =>
   [...new Set([...spec.capabilities, ...(spec.oneOf ?? [])].flatMap((name) => (isCapability(name) ? Object.keys(capabilitySpec(name).events ?? {}) : [])))];
 
 /**
+ * Every expression a rule holds at its top — each trigger's, its condition,
+ * each step's, within steps too — by its kinds' fields: what a walk over all
+ * it reads and compares visits (`expressionsIn` for what is within each).
+ */
+export function* ruleExpressions(rule: Rule): Generator<Expr> {
+  for (const trigger of rule.when) {
+    for (const field of triggerSpec(trigger).fields) {
+      const value = fieldValue(trigger, field);
+      if (value !== undefined && EXPRESSION_FIELDS.has(field.type.type)) yield value as Expr;
+    }
+  }
+  if (rule.if) yield rule.if;
+  function* inSteps(steps: readonly Step[]): Generator<Expr> {
+    for (const step of steps) {
+      for (const field of stepSpec(step).fields) {
+        const value = fieldValue(step, field);
+        if (value === undefined) continue;
+        if (EXPRESSION_FIELDS.has(field.type.type)) yield value as Expr;
+        else if (field.type.type === 'args') yield* Object.values(value as Record<string, Expr>);
+        else if (field.type.type === 'steps') yield* inSteps(value as readonly Step[]);
+      }
+    }
+  }
+  for (const list of stepListsOf(rule)) yield* inSteps(list.steps);
+}
+
+/**
  * What a rule reads, the events it waits for, the functions it calls, the
  * settings it writes and the automations it starts: what running it,
  * rehearsing it on history, or binding it, needs.
@@ -41,47 +68,41 @@ export function ruleUses(rule: Rule): {
   const windows: { from: Expr; to: Expr }[] = [];
   const starts: string[] = [];
   // Every expression within, by its kind's children (kinds/exprs.ts): the readings, parts, windows and functions it names.
-  const walk = (expr: Expr | undefined): void => {
-    if (!expr) return;
-    for (const each of expressionsIn(expr)) {
+  for (const top of ruleExpressions(rule)) {
+    for (const each of expressionsIn(top)) {
       if ('read' in each) reads.push(each.read);
       else if ('reachable' in each) reaches.push(each.reachable);
       else if ('within' in each) windows.push(each.within);
       else if ('call' in each) calls.push({ fn: each.call, role: each.role });
     }
-  };
-  // Each step by its kind's fields (kinds/steps.ts): what each reads, the automations it starts, and the steps within.
+  }
+  // Each step by its kind's fields (kinds/steps.ts): the settings it writes, the automations it starts, and the steps within.
   const walkSteps = (steps: readonly Step[]): void => {
     for (const step of steps) {
       if ('write' in step) writes.push(step.write);
       for (const field of stepSpec(step).fields) {
         const value = fieldValue(step, field);
         if (value === undefined) continue;
-        if (EXPRESSION_FIELDS.has(field.type.type)) walk(value as Expr);
-        else if (field.type.type === 'args') Object.values(value as Record<string, Expr>).forEach(walk);
-        else if (field.type.type === 'automation') starts.push(String(value));
+        if (field.type.type === 'automation') starts.push(String(value));
         else if (field.type.type === 'steps') walkSteps(value as readonly Step[]);
       }
     }
   };
+  // Its own steps, each trigger's, and what it does if one fails.
+  for (const list of stepListsOf(rule)) walkSteps(list.steps);
   const events: { role: string; event: string }[] = [];
-  // Each trigger by its kind's fields (kinds/triggers.ts): what it reads, and the events it waits for.
+  // Each trigger by its kind's fields (kinds/triggers.ts): the events it waits for.
   for (const trigger of rule.when) {
     const spec = triggerSpec(trigger);
     for (const field of spec.fields) {
+      const type = field.type;
+      if (type.type !== 'event') continue;
       const value = fieldValue(trigger, field);
       if (value === undefined) continue;
-      if (EXPRESSION_FIELDS.has(field.type.type)) walk(value as Expr);
-      const type = field.type;
-      if (type.type === 'event') {
-        const from = spec.fields.find((each) => each.key === type.role);
-        events.push({ role: String((from && fieldValue(trigger, from)) ?? ''), event: String(value) });
-      }
+      const from = spec.fields.find((each) => each.key === type.role);
+      events.push({ role: String((from && fieldValue(trigger, from)) ?? ''), event: String(value) });
     }
   }
-  walk(rule.if);
-  // Its own steps, each trigger's, and what it does if one fails.
-  for (const list of stepListsOf(rule)) walkSteps(list.steps);
   return { reads, events, calls, reaches: [...new Set(reaches)], writes, starts: [...new Set(starts)], windows };
 }
 

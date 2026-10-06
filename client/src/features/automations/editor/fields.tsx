@@ -2,8 +2,8 @@ import { useState, type ReactNode } from 'react';
 import { Platform } from 'react-native';
 import { Input, Text, XStack, YStack } from 'tamagui';
 
-import { secondsText, WEEKDAYS, type Weekday } from '@kraftverk/automation';
-import type { Value, ValueType } from '@kraftverk/device-sdk';
+import { secondsText, WEEKDAYS, type Expr, type Weekday } from '@kraftverk/automation';
+import { convert, QUANTITY_UNITS, UNITS, unitsLike, type Unit, type Value, type ValueType } from '@kraftverk/device-sdk';
 import { Chips, haptic, useNumberText, useRadioGroup, useToggleGroup } from '@kraftverk/ui';
 
 import { Picker } from '../../../components/Picker';
@@ -24,8 +24,8 @@ export function Label({ children }: { children: ReactNode }) {
   );
 }
 
-/** A number, typed, its unit beside it. */
-export function NumberField({ label, value, unit, onChange, width = 96 }: { label: string; value: number | null; unit?: string; onChange: (value: number | null) => void; width?: number }) {
+/** A number, typed, of no unit — one with a unit is a `MeasureField`. */
+export function NumberField({ label, value, onChange, width = 96 }: { label: string; value: number | null; onChange: (value: number | null) => void; width?: number }) {
   const { text, setText, parse } = useNumberText(value);
   return (
     <XStack alignItems="center" gap="$2">
@@ -39,92 +39,124 @@ export function NumberField({ label, value, unit, onChange, width = 96 }: { labe
         borderColor="$borderColor"
         onChangeText={(next) => (setText(next), onChange(parse(next)))}
       />
-      {unit ? (
-        <Text fontSize={14} color="$muted">
-          {unit}
-        </Text>
-      ) : null}
     </XStack>
   );
 }
 
-const UNITS = ['s', 'min', 'h'] as const;
+/** A number as a rule keeps it beside its unit: what a field with a unit edits. */
+export type Measure = { value: number; unit: Unit };
 
-type Unit = (typeof UNITS)[number];
+/** A number and its unit from a rule's value, when it is written outright in one of these units; null otherwise. */
+const measureOf = (expr: Expr | undefined, units: readonly Unit[]): Measure | null =>
+  expr && 'value' in expr && typeof expr.value === 'number' && expr.unit && units.includes(expr.unit) ? { value: expr.value, unit: expr.unit } : null;
 
-const UNIT_SECONDS: Readonly<Record<Unit, number>> = { s: 1, min: 60, h: 3600 };
+/** The units of time a length of time is written in. */
+const TIME_UNITS = QUANTITY_UNITS.duration;
 
-const UNIT_WORDS: Readonly<Record<Unit, string>> = { s: 'seconds', min: 'minutes', h: 'hours' };
+/** Those offered side by side — a phone's width — with days only for a length already written in days. */
+const timeUnitsFor = (value: Measure | null): readonly Unit[] => (value?.unit === 'd' ? TIME_UNITS : TIME_UNITS.filter((unit) => unit !== 'd'));
 
-/** The unit a length of time reads best in: the largest it is whole in, from two of them — 90 s, 2 min, 3 h. */
-const unitOf = (seconds: number | null): Unit => (seconds === null ? 's' : seconds >= 7200 && seconds % 3600 === 0 ? 'h' : seconds >= 120 && seconds % 60 === 0 ? 'min' : 's');
+/** A length of time from a rule's value — its number and unit — or null for one that is not written outright. */
+export const durationOf = (expr: Expr | undefined): Measure | null => measureOf(expr, TIME_UNITS);
 
 /**
- * How long, as one control: the number and its unit together — "20 s",
- * "5 min", "2 h" — kept as seconds, and the most it may be said under it
- * before it is reached, not after.
+ * A number and its unit, as one control: the number typed, the unit chosen —
+ * never typed — from those that measure what it measures (units.ts): a few
+ * side by side, more from a list. The number stays as typed; what it means
+ * changes with its unit. `max`: the most it may be, said under it before it
+ * is reached, not after.
  */
-export function DurationField({ label, value, max, onChange }: { label: string; value: number | null; max?: number; onChange: (value: number | null) => void }) {
-  const [unit, setUnit] = useState<Unit>(unitOf(value));
-  const inUnit = value === null ? null : value / UNIT_SECONDS[unit];
-  const { text, setText, parse } = useNumberText(inUnit);
-  const toSeconds = (number: number | null, as: Unit) => (number === null ? null : Math.round(number * UNIT_SECONDS[as]));
-  const over = value !== null && max !== undefined && value > max;
-  // The number stays as typed; what it means changes with its unit.
-  const measureIn = (each: Unit) => (haptic(), setUnit(each), onChange(toSeconds(parse(text), each)));
-  const radio = useRadioGroup(UNITS.length, UNITS.indexOf(unit), (index) => measureIn(UNITS[index]!));
+function MeasureField({ label, value, units, max, onChange }: { label: string; value: Measure | null; units: readonly Unit[]; max?: Measure; onChange: (value: Measure | null) => void }) {
+  const [unit, setUnit] = useState<Unit>(value?.unit ?? units[0]!);
+  const { text, setText, parse } = useNumberText(value?.value ?? null);
+  const written = (number: number | null, as: Unit): Measure | null => (number === null ? null : { value: number, unit: as });
+  const over = value !== null && max !== undefined && (convert(value.value, value.unit, max.unit) ?? 0) > max.value;
+  const measureIn = (each: Unit) => (haptic(), setUnit(each), onChange(written(parse(text), each)));
+  const radio = useRadioGroup(units.length, units.indexOf(unit), (index) => measureIn(units[index]!));
+  const number = (
+    <Input
+      unstyled
+      width={72}
+      paddingHorizontal="$3"
+      fontSize={16}
+      color="$color"
+      value={text}
+      inputMode="decimal"
+      aria-label={label}
+      onChangeText={(next) => (setText(next), onChange(written(parse(next), unit)))}
+    />
+  );
   return (
     <YStack gap="$1.5">
-      <XStack alignSelf="flex-start" alignItems="stretch" height={44} borderWidth={1} borderColor={over ? '$warning' : '$borderColor'} borderRadius="$4" backgroundColor="$background" overflow="hidden">
-        <Input
-          unstyled
-          width={72}
-          paddingHorizontal="$3"
-          fontSize={16}
-          color="$color"
-          value={text}
-          inputMode="decimal"
-          aria-label={label}
-          onChangeText={(next) => (setText(next), onChange(toSeconds(parse(next), unit)))}
-        />
-        <XStack role="radiogroup" aria-label={`${label}: in`} borderLeftWidth={1} borderColor="$borderColor">
-          {UNITS.map((each, index) => {
-            const chosen = each === unit;
-            return (
-              <XStack
-                key={each}
-                role="radio"
-                aria-checked={chosen}
-                aria-label={UNIT_WORDS[each]}
-                {...radio(index)}
-                cursor="pointer"
-                minWidth={48}
-                paddingHorizontal="$3"
-                alignItems="center"
-                justifyContent="center"
-                backgroundColor={chosen ? '$accent' : 'transparent'}
-                focusVisibleStyle={{ outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid' }}
-                onPress={() => measureIn(each)}
-              >
-                <Text fontSize={14} fontWeight={chosen ? '700' : '500'} color={chosen ? '$background' : '$color'}>
-                  {each}
-                </Text>
-              </XStack>
-            );
-          })}
+      {units.length > 4 ? (
+        // More than fit beside it: chosen from a list.
+        <XStack alignItems="center" gap="$2" flexWrap="wrap">
+          <XStack height={44} borderWidth={1} borderColor={over ? '$warning' : '$borderColor'} borderRadius="$4" backgroundColor="$background" overflow="hidden">
+            {number}
+          </XStack>
+          <Picker
+            label={`${label}: in`}
+            chosen={unit}
+            placeholder="Unit"
+            options={units.map((each) => ({ key: each, title: each, subtitle: UNITS[each].label, value: each, selected: each === unit }))}
+            onPick={measureIn}
+          />
         </XStack>
-      </XStack>
+      ) : (
+        <XStack alignSelf="flex-start" alignItems="stretch" height={44} borderWidth={1} borderColor={over ? '$warning' : '$borderColor'} borderRadius="$4" backgroundColor="$background" overflow="hidden">
+          {number}
+          <XStack role="radiogroup" aria-label={`${label}: in`} borderLeftWidth={1} borderColor="$borderColor">
+            {units.map((each, index) => {
+              const chosen = each === unit;
+              return (
+                <XStack
+                  key={each}
+                  role="radio"
+                  aria-checked={chosen}
+                  aria-label={UNITS[each].label}
+                  {...radio(index)}
+                  cursor="pointer"
+                  minWidth={48}
+                  paddingHorizontal="$3"
+                  alignItems="center"
+                  justifyContent="center"
+                  backgroundColor={chosen ? '$accent' : 'transparent'}
+                  focusVisibleStyle={{ outlineColor: '$accent', outlineWidth: 2, outlineStyle: 'solid' }}
+                  onPress={() => measureIn(each)}
+                >
+                  <Text fontSize={14} fontWeight={chosen ? '700' : '500'} color={chosen ? '$background' : '$color'}>
+                    {each}
+                  </Text>
+                </XStack>
+              );
+            })}
+          </XStack>
+        </XStack>
+      )}
       {max !== undefined ? (
         <Text fontSize={12} color={over ? '$warning' : '$muted'}>
-          Longest: {secondsText(max)}
+          {UNITS[max.unit].dimension === 'time' ? `Longest: ${secondsText(convert(max.value, max.unit, 's') ?? max.value)}` : `At most ${max.value} ${max.unit}`}
         </Text>
       ) : null}
     </YStack>
   );
 }
 
-/** A value of a type: on/off, one of some options, a number in its unit, or text. */
-export function ValueField({ label, type, value, onChange }: { label: string; type: ValueType | null; value: Value; onChange: (value: Value) => void }) {
+/** How long, as one control: a number and its unit of time — "20 s", "5 min", "2 h" — and the most it may be, in seconds. */
+export function DurationField({ label, value, max, onChange }: { label: string; value: Measure | null; max?: number; onChange: (value: Measure | null) => void }) {
+  return <MeasureField label={label} value={value} units={timeUnitsFor(value)} {...(max !== undefined ? { max: { value: max, unit: 's' } } : {})} onChange={onChange} />;
+}
+
+/** A value as a rule writes it outright: a value, and the unit a number is written in. */
+export type Literal = { value: Value; unit?: Unit };
+
+/**
+ * A value of a type: on/off, one of some options, a number — in a unit like
+ * its type's, chosen from a list, when it has one — or text.
+ */
+export function ValueField({ label, type, literal, onChange: onLiteral }: { label: string; type: ValueType | null; literal: Literal | null; onChange: (literal: Literal) => void }) {
+  const value = literal?.value ?? null;
+  const onChange = (next: Value) => onLiteral({ value: next });
   if (!type || type.type === 'boolean') {
     const words = type?.type === 'boolean' ? type.words : undefined;
     return (
@@ -153,7 +185,13 @@ export function ValueField({ label, type, value, onChange }: { label: string; ty
       />
     );
   }
-  if (type.type === 'number') return <NumberField label={label} value={typeof value === 'number' ? value : null} unit={type.unit} onChange={onChange} />;
+  if (type.type === 'number') {
+    if (!type.unit) return <NumberField label={label} value={typeof value === 'number' ? value : null} onChange={onChange} />;
+    const units = unitsLike(type.unit);
+    // A number written with no unit is in its type's.
+    const measure = typeof value === 'number' ? { value, unit: literal?.unit && units.includes(literal.unit) ? literal.unit : type.unit } : null;
+    return <MeasureField label={label} value={measure} units={units} onChange={(next) => onLiteral(next ?? { value: null })} />;
+  }
   return <Input size="$4" value={typeof value === 'string' ? value : ''} aria-label={label} backgroundColor="$background" borderColor="$borderColor" onChangeText={onChange} />;
 }
 

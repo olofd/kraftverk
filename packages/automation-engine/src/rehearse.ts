@@ -6,6 +6,7 @@ import {
   dayAfter,
   localTime,
   standardMeaning,
+  unitIn,
   zonedInstant,
   zonedInstants,
   type AttributeSpec,
@@ -13,7 +14,7 @@ import {
   type ScalarValue,
   type Value,
 } from '@kraftverk/device-sdk';
-import { evaluate, evaluateNow, EVERY_SECONDS, minutesOf, ruleUses, runsOn, secondsText, stepsOf, triggerKey, triggerOf, type RoleBinding, type Rule, type RuleScope } from '@kraftverk/automation';
+import { evaluate, evaluateNow, EVERY_SECONDS, minutesOf, ruleUses, runsOn, secondsNow, secondsText, stepsOf, triggerKey, triggerOf, type RoleBinding, type Rule, type RuleScope } from '@kraftverk/automation';
 
 /**
  * A rule, rehearsed on what happened (PROPOSITION.md §5.3): walked through a
@@ -119,8 +120,7 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
       const latest = found.points[after(found.points, t) - 1];
       // A sample older than its attribute stays current was not known then.
       if (!latest || t - latest.at > currentForOf(found.attribute) + SAMPLE_SLACK_MS) return null;
-      const unit = found.attribute.value.type === 'number' ? (found.attribute.value.unit ?? '') : '';
-      return { value: latest.value, label: standardMeaning(means)?.label ?? found.attribute.label, unit };
+      return { value: latest.value, label: standardMeaning(means)?.label ?? found.attribute.label, unit: unitIn(found.attribute) };
     },
     name,
     // The trigger that started the run it rehearses, by its key: its id, or "" for none with one.
@@ -167,7 +167,7 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
         if (instant >= start && instant <= end && !fired.some((run) => run.at === instant)) fired.push({ at: instant, because: `It is ${at}`, trigger: key });
       }
     } else if ('every' in trigger) {
-      const seconds = evaluateNow(trigger.every, scopeAt(start));
+      const seconds = secondsNow(trigger.every, scopeAt(start));
       if (typeof seconds !== 'number' || seconds < EVERY_SECONDS.min || seconds > EVERY_SECONDS.max || seconds % EVERY_SECONDS.step !== 0) continue;
       const every = seconds / 60;
       for (const date of days) {
@@ -204,7 +204,7 @@ export async function rehearse(recipe: Rule, automation: Rehearsed, source: Rehe
         Object.assign(state, { last: false, heldSince: null, fired: false });
         continue;
       }
-      const seconds = state.trigger.heldFor ? Number(evaluateNow(state.trigger.heldFor, scope)) : 0;
+      const seconds = state.trigger.heldFor ? (secondsNow(state.trigger.heldFor, scope) ?? 0) : 0;
       if (!state.last) {
         Object.assign(state, { last: true, heldSince: t, fired: false });
         if (seconds > 0) lookAgainAt(t + seconds * 1000);

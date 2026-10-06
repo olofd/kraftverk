@@ -1,5 +1,5 @@
 import type { AutomationRun, RunLog, RunStep } from '@kraftverk/api-contract';
-import { branchesOf, capitalise, changedRoles, describeSteps, evaluate, evaluateNow, fieldValue, negation, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, stepsOf, stepSpec, takesSteps, type Command, type Expr, type Rule, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
+import { branchesOf, capitalise, changedRoles, describeSteps, evaluate, evaluateNow, secondsNow, fieldValue, negation, ruleUses, secondsText, SEQUENCE_LIMITS, settledChoice, stepKind, stepsOf, stepSpec, takesSteps, type Command, type Expr, type Rule, type RuleScope, type Step, type StepLine, type Write } from '@kraftverk/automation';
 import { attributeMeaning, readingOf, type AutomationId } from '@kraftverk/device-sdk';
 import type { GatewayResult, WriteResult } from '@kraftverk/gateway';
 
@@ -447,8 +447,8 @@ export class Runs {
 
   /** Seconds a step's expression says, held to what the language allows. */
   #seconds(expr: Expr, scope: RuleScope, max: number): number | null {
-    const value = evaluateNow(expr, scope);
-    return typeof value === 'number' && value >= 1 ? Math.min(value, max) : null;
+    const value = secondsNow(expr, scope);
+    return value !== null && value >= 1 ? Math.min(value, max) : null;
   }
 
   /**
@@ -615,8 +615,8 @@ export class Runs {
    * a setting's own dwell is not spent on what is already so.
    */
   async #write(live: LiveRun, write: Write, depth: number, within: string | null, what: string): Promise<Walked> {
-    const value = await evaluate(write.value, this.#context.scope(live.automation, live.rule, undefined, live.trigger), []).catch(() => null);
     const binding = live.automation.roles[write.role];
+    const value = binding ? await this.#context.settingValue(binding, write, this.#context.scope(live.automation, live.rule, undefined, live.trigger)) : null;
     const device = binding ? this.deps.device(binding) : null;
     const entry = this.#add(live, { kind: 'write', depth, within, what, outcome: 'waiting', detail: 'Setting', until: null });
     if (!binding || !device || device.removed) {
@@ -760,8 +760,8 @@ export class Runs {
         } else if ('write' in step) {
           // A setting: already so when the part reads what it would be set to.
           const what = describeSteps({ ...rule, then: [step], otherwise: [] }, settled, (role) => scope.name(role), this.#context.vocabulary(automation)).steps[0]!.text;
-          const value = await evaluate(step.write.value, scope, []).catch(() => null);
           const binding = automation.roles[step.write.role];
+          const value = binding ? await this.#context.settingValue(binding, step.write, scope) : null;
           const reader = binding ? this.deps.device(binding)?.device : null;
           const key = binding ? this.#context.settingKey(binding, step.write) : null;
           const reading = reader && key ? readingOf(reader.readings(), key) : null;

@@ -10,9 +10,7 @@ import {
   type AutomationEntry,
   type ConfigDocument,
   type DeviceEntry,
-  type WriteContext,
 } from './document.ts';
-import type { PrintContext } from '@kraftverk/automation';
 import { CURRENT_VERSION, migrate } from './migrate.ts';
 import type { Issue } from '@kraftverk/automation';
 
@@ -81,13 +79,13 @@ function entryKind(data: Record<string, unknown>): 'devices' | 'automations' | n
 }
 
 /** An entry's data read as the document it would be part of: the same checks, its own problems placed in its own text. */
-function readWrapped(parsed: Parsed, kind: 'automations' | 'devices', key: string, context: PrintContext, check?: Check, around?: ConfigDocument): { document: ConfigDocument | null; problems: Problem[] } {
-  const { [kind]: _theirs, ...rest } = around ? (documentToData(around, context) as Record<string, unknown>) : { kraftverk: CURRENT_VERSION };
+function readWrapped(parsed: Parsed, kind: 'automations' | 'devices', key: string, check?: Check, around?: ConfigDocument): { document: ConfigDocument | null; problems: Problem[] } {
+  const { [kind]: _theirs, ...rest } = around ? (documentToData(around) as Record<string, unknown>) : { kraftverk: CURRENT_VERSION };
   const whole = { ...rest, kraftverk: CURRENT_VERSION, [kind]: { [key]: parsed.data } };
   const own = (issue: Issue): Problem | null =>
     issue.path[0] === kind && issue.path[1] === key ? parsed.place({ ...issue, path: issue.path.slice(2) }) : issue.path[0] === 'secrets' ? null : { ...issue, line: null, column: null };
   const placed = (issues: Issue[]) => issues.map(own).filter((problem): problem is Problem => problem !== null);
-  const read = documentFromData(whole, context);
+  const read = documentFromData(whole);
   if (!read.document) return { document: null, problems: placed(read.issues) };
   const meaning = placed(check?.(read.document) ?? []);
   return { document: meaning.length ? null : read.document, problems: meaning };
@@ -114,10 +112,10 @@ function withoutTroubled(document: ConfigDocument, issues: readonly Issue[]): Co
 }
 
 /** A whole document's data read: brought to this version, its shape and meaning checked. */
-function readWhole(parsed: Parsed & { data: Record<string, unknown> }, context: WriteContext, check?: Check, options: ReadOptions = {}): { document: ConfigDocument | null; problems: Problem[]; from: number | null } {
+function readWhole(parsed: Parsed & { data: Record<string, unknown> }, check?: Check, options: ReadOptions = {}): { document: ConfigDocument | null; problems: Problem[]; from: number | null } {
   const migrated = migrate(parsed.data);
   if (!migrated.ok) return { document: null, from: null, problems: [parsed.place({ message: migrated.message, path: ['kraftverk'] })] };
-  const read = documentFromData(migrated.document, context, options);
+  const read = documentFromData(migrated.document, options);
   if (!read.document) return { document: null, from: migrated.from, problems: read.issues.map(parsed.place) };
   if (options.partial) {
     const shaped = withoutTroubled(read.document, read.issues);
@@ -134,7 +132,7 @@ function readWhole(parsed: Parsed & { data: Record<string, unknown> }, context: 
  * shows — is read as a document of that one, under a key made from its name
  * (`holds`).
  */
-export function readConfig(text: string, context: WriteContext = {}, check?: Check, options: ReadOptions = {}): { document: ConfigDocument | null; problems: Problem[]; from: number | null; holds: Holds } {
+export function readConfig(text: string, check?: Check, options: ReadOptions = {}): { document: ConfigDocument | null; problems: Problem[]; from: number | null; holds: Holds } {
   const parsed = parseYaml(text);
   if (parsed.problems.length) return { document: null, from: null, problems: parsed.problems, holds: null };
   const data = parsed.data;
@@ -142,9 +140,9 @@ export function readConfig(text: string, context: WriteContext = {}, check?: Che
   const kind = entryKind(data);
   if (kind) {
     const key = keyFrom(typeof data.name === 'string' ? data.name : '', () => false, kind === 'devices' ? 'device' : 'automation');
-    return { ...readWrapped(parsed, kind, key, context, check), from: CURRENT_VERSION, holds: { kind, key } };
+    return { ...readWrapped(parsed, kind, key, check), from: CURRENT_VERSION, holds: { kind, key } };
   }
-  return { ...readWhole({ ...parsed, data }, context, check, options), holds: null };
+  return { ...readWhole({ ...parsed, data }, check, options), holds: null };
 }
 
 /**
@@ -153,7 +151,7 @@ export function readConfig(text: string, context: WriteContext = {}, check?: Che
  * its problems placed in the entry's own text. A whole document holding just
  * one such entry is read too — one exported, pasted — and says its key.
  */
-function readEntry<T>(kind: 'automations' | 'devices', text: string, key: string, context: PrintContext, check?: Check, around?: ConfigDocument): { entry: T | null; problems: Problem[]; key: string } {
+function readEntry<T>(kind: 'automations' | 'devices', text: string, key: string, check?: Check, around?: ConfigDocument): { entry: T | null; problems: Problem[]; key: string } {
   const parsed = parseYaml(text);
   if (parsed.problems.length) return { entry: null, problems: parsed.problems, key };
   const data = parsed.data;
@@ -166,20 +164,19 @@ function readEntry<T>(kind: 'automations' | 'devices', text: string, key: string
     if (held.length !== 1 || beside.length) {
       return { entry: null, key, problems: [parsed.place({ message: `Here is one ${one}: a file with ${held.length === 1 ? beside.join(' and ') : `${held.length} ${kind}`} in it is imported under App settings → Configuration`, path: [] })] };
     }
-    const read = readWhole({ ...parsed, data }, context, check);
+    const read = readWhole({ ...parsed, data }, check);
     const own = held[0]!;
     return { entry: (read.document?.[kind] as Record<string, T> | undefined)?.[own] ?? null, problems: read.problems, key: own };
   }
-  const read = readWrapped(parsed, kind, key, context, check, around);
+  const read = readWrapped(parsed, kind, key, check, around);
   return { entry: (read.document?.[kind] as Record<string, T> | undefined)?.[key] ?? null, problems: read.problems, key };
 }
 
 /** An automation's own YAML read, every problem placed in it. */
-export const readAutomationYaml = (text: string, key: string, context: PrintContext = {}, check?: Check, around?: ConfigDocument) =>
-  readEntry<AutomationEntry>('automations', text, key, context, check, around);
+export const readAutomationYaml = (text: string, key: string, check?: Check, around?: ConfigDocument) => readEntry<AutomationEntry>('automations', text, key, check, around);
 
 /** A device's own YAML read, every problem placed in it. */
-export const readDeviceYaml = (text: string, key: string, context: PrintContext = {}, check?: Check, around?: ConfigDocument) => readEntry<DeviceEntry>('devices', text, key, context, check, around);
+export const readDeviceYaml = (text: string, key: string, check?: Check, around?: ConfigDocument) => readEntry<DeviceEntry>('devices', text, key, check, around);
 
 /** Data as YAML text: in the order given, times of day quoted, secrets by name as `!secret`. */
 function yamlText(data: unknown): string {
@@ -197,15 +194,15 @@ function yamlText(data: unknown): string {
  * heading as comments, then the document in the order a person reads it.
  * Expressions are plain text, quoted only where YAML needs them to be.
  */
-export function writeConfig(document: ConfigDocument, options: WriteContext & { schemaUrl?: string; heading?: string } = {}): string {
-  const body = yamlText(documentToData(document, options));
+export function writeConfig(document: ConfigDocument, options: { schemaUrl?: string; heading?: string } = {}): string {
+  const body = yamlText(documentToData(document));
   const head = [options.schemaUrl ? schemaLine(options.schemaUrl) : null, options.heading ? options.heading.split('\n').map((line) => (line ? `# ${line}` : '#')).join('\n') : null].filter(Boolean).join('\n');
   return head ? `${head}\n${body}` : body;
 }
 
 /** An automation's own YAML, as its page shows it. */
-export function writeAutomationYaml(entry: AutomationEntry, context: PrintContext = {}): string {
-  const data = documentToData({ ...emptyDocument(), automations: { entry } }, context) as { automations: { entry: unknown } };
+export function writeAutomationYaml(entry: AutomationEntry): string {
+  const data = documentToData({ ...emptyDocument(), automations: { entry } }) as { automations: { entry: unknown } };
   return yamlText(data.automations.entry);
 }
 

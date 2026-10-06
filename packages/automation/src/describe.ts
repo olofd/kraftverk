@@ -2,11 +2,12 @@ import { capabilitySpec, enumLabel, isCapability, standardMeaning, type ConfigSc
 
 import type { RuleVocabulary } from './check.ts';
 import { WEEKDAYS, type Weekday } from './clock.ts';
-import { evaluateNow, settledChoice, settledScope, shown } from './evaluate.ts';
+import { evaluateNow, measureNow, secondsNow, settledChoice, settledScope, shown } from './evaluate.ts';
 import { exprKind, type ExprOf } from './kinds/exprs.ts';
 import type { Say } from './kinds/spec.ts';
 import { branchesOf, stepSpec, type StepKind, type StepSay } from './kinds/steps.ts';
 import { TRIGGER_KINDS, triggerKind } from './kinds/triggers.ts';
+import { convert, UNITS } from '@kraftverk/device-sdk';
 import { isAutomationRole, type Command, type CompareOp, type Expr, type Rule, type RunFact, type Step, type Trigger, type Write } from './rule.ts';
 
 /*
@@ -25,7 +26,10 @@ export function secondsText(seconds: number): string {
 }
 
 /** How long a condition must hold, as a person says it: "2 min", "3 s" — or, a setting or a reading, in its words. */
-const holdText = (held: Expr, text: (expr: Expr) => string): string => ('value' in held && typeof held.value === 'number' ? secondsText(held.value) : text(held));
+const holdText = (held: Expr, text: (expr: Expr) => string): string => {
+  const seconds = 'value' in held && typeof held.value === 'number' ? (held.unit ? convert(held.value, held.unit, 's') : held.value) : null;
+  return seconds === null ? text(held) : secondsText(seconds);
+};
 
 /** A setting as it reads in a sentence: an option's label, a number with its unit, seconds as a duration. */
 export function paramText(schema: ConfigSchema, name: string, value: Value): string {
@@ -88,15 +92,17 @@ export function describeExpr(rule: Rule, expr: Expr, params: Readonly<Record<str
   const unitOf = (expr: Expr): string => {
     if ('math' in expr) return unitOf(expr.left) || unitOf(expr.right);
     const standard = 'read' in expr ? standardMeaning(expr.read.means) : null;
-    return standard?.type === 'number' && !standard.units ? standard.unit : '';
+    return standard?.type === 'number' && !standard.units ? (standard.unit ?? '') : '';
   };
   /** Every kind of expression in words — or this does not compile (kinds/exprs.ts). */
   const text = (expr: Expr, unit = ''): string => {
     const kind = exprKind(expr);
     switch (kind) {
       case 'value': {
-        const { value } = expr as ExprOf<'value'>;
-        return typeof value === 'number' ? shown(value, unit) : shown(value);
+        // As it was written — "2 kW" — or, with no unit, in the unit of what it is beside.
+        const { value, unit: own } = expr as ExprOf<'value'>;
+        if (typeof value !== 'number') return shown(value);
+        return own && UNITS[own].dimension === 'time' ? secondsText(convert(value, own, 's') ?? value) : shown(value, own ?? unit);
       }
       case 'param':
         return param((expr as ExprOf<'param'>).param);
@@ -215,8 +221,8 @@ function wording(rule: Rule, params: Readonly<Record<string, Value>>, name: (rol
   const text = (expr: Expr): string => describeExpr(rule, expr, params, name, vocabulary);
   const settled = settledScope(rule, params, name);
   const seconds = (expr: Expr): string => {
-    const known = evaluateNow(expr, settled);
-    return typeof known === 'number' ? secondsText(known) : text(expr);
+    const known = secondsNow(expr, settled);
+    return known !== null ? secondsText(known) : text(expr);
   };
   const count = (expr: Expr): string => {
     const known = evaluateNow(expr, settled);
@@ -227,8 +233,8 @@ function wording(rule: Rule, params: Readonly<Record<string, Value>>, name: (rol
     const on = capability === 'switch' && command === 'set' && args.on ? args.on : null;
     if (on && typeof evaluateNow(on, settled) !== 'boolean' && !('param' in on) && !('value' in on)) return `turn ${name(role)} on if ${text(on)}, off if not`;
     const values = Object.values(args).map((arg) => {
-      const known = evaluateNow(arg, settled);
-      return typeof known === 'boolean' ? (known ? 'on' : 'off') : known !== null ? shown(known) : text(arg);
+      const { value: known, unit } = measureNow(arg, settled);
+      return typeof known === 'boolean' ? (known ? 'on' : 'off') : known !== null ? shown(known, unit ?? '') : text(arg);
     });
     return capability === 'switch' && command === 'set' ? `turn ${name(role)} ${values.join(' ')}` : `${capability}.${command} ${name(role)} (${values.join(', ')})`;
   };
@@ -236,7 +242,10 @@ function wording(rule: Rule, params: Readonly<Record<string, Value>>, name: (rol
   const write = (step: Write): string => {
     const { role, value } = step;
     const attribute = vocabulary?.attribute?.(role, step) ?? null;
-    const known = evaluateNow(value, settled);
+    const measured = measureNow(value, settled);
+    const known = measured.value;
+    // A number in the unit it was written in — or, with none, the setting's own.
+    const unit = measured.unit ?? (attribute?.value.type === 'number' ? (attribute.value.unit ?? '') : '');
     const said =
       known === null
         ? text(value)
@@ -246,7 +255,7 @@ function wording(rule: Rule, params: Readonly<Record<string, Value>>, name: (rol
             ? enumLabel(attribute.value, known)
             : typeof known === 'boolean'
               ? (known ? 'on' : 'off')
-              : shown(known, attribute?.value.type === 'number' ? (attribute.value.unit ?? '') : '');
+              : shown(known, unit);
     // No setting chosen yet: said as what it is about, not as an empty name.
     // By meaning, before a part fills it: as the meaning is called.
     const label = attribute?.label ?? (step.means !== undefined ? (standardMeaning(step.means)?.label ?? step.means) : step.key);

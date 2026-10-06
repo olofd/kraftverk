@@ -13,11 +13,14 @@
  * draw, rather than being `unknown`.
  */
 
+import { isUnit, type Unit } from './units.ts';
+
 export type EnumOption = { value: string; label: string };
 
 export type NumberValue = {
   type: 'number';
-  unit?: string;
+  /** The unit it is in (units.ts) — none for a count, a rank, a ratio of no unit. */
+  unit?: Unit;
   min?: number;
   max?: number;
   step?: number;
@@ -183,7 +186,10 @@ export function valueTypeProblems(what: string, type: ValueType | undefined): st
       return new Set(values).size === values.length ? [] : [`${what} is an enum with an option twice`];
     }
     case 'number':
-      return type.min !== undefined && type.max !== undefined && type.min > type.max ? [`${what} has a minimum above its maximum`] : [];
+      return [
+        ...(type.unit !== undefined && !isUnit(type.unit) ? [`${what} is in "${String(type.unit)}", which is not a unit kraftverk knows`] : []),
+        ...(type.min !== undefined && type.max !== undefined && type.min > type.max ? [`${what} has a minimum above its maximum`] : []),
+      ];
     case 'boolean':
       return type.words && !(type.words.true?.trim() && type.words.false?.trim()) ? [`${what} has words for on/off, but not for both`] : [];
     case 'string':

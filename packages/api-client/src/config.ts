@@ -1,4 +1,4 @@
-import type { AutomationMode, PrintContext, RoleBinding, Rule } from '@kraftverk/automation';
+import type { AutomationMode, RoleBinding, Rule } from '@kraftverk/automation';
 import { savedDeviceId, type AutomationId } from '@kraftverk/device-sdk';
 import {
   automationEntryFrom,
@@ -6,7 +6,6 @@ import {
   deviceEntryFrom,
   fillsFrom,
   readAutomationYaml,
-  unitsFrom,
   writeAutomationYaml,
   writeDeviceYaml,
   type AutomationEntry,
@@ -27,18 +26,17 @@ import type { AutomationView, DeviceView, ImportItem, ImportPlan } from '@kraftv
 /** What the form edits, and what it does not: its mode, clock, how often it keeps things so, its place on the home page. */
 export type AutomationSettings = { mode: AutomationMode; timeZone: string; recheckMinutes: number | null; homePlace: number | null };
 
-/** An automation as YAML text: its rule, what fills its roles, and its settings — and the context its numbers were written in. */
+/** An automation as YAML text: its rule, what fills its roles, and its settings. */
 export function automationYaml(
   automation: { name: string; rule: Rule; roles: Readonly<Record<string, RoleBinding>>; starts: Readonly<Record<string, string>>; madeFrom: string | null } & AutomationSettings,
   devices: readonly DeviceView[],
   automations: readonly Pick<AutomationView, 'id' | 'key'>[]
-): { text: string; context: PrintContext } {
-  const context = unitsFrom(automation.roles, (id) => devices.find((device) => device.id === id)?.description ?? null);
+): string {
   const { entry } = automationEntryFrom(automation, {
     device: (id) => devices.find((device) => device.id === id)?.key ?? null,
     automation: (id) => automations.find((each) => each.id === id)?.key ?? null,
   });
-  return { text: writeAutomationYaml(entry, context), context };
+  return writeAutomationYaml(entry);
 }
 
 /**
@@ -46,8 +44,8 @@ export function automationYaml(
  * its text, as the server would find them; and its key: a whole file of just
  * it, pasted in, says its own.
  */
-export function readAutomationText(text: string, key: string, vocabulary: Vocabulary, context: PrintContext): { entry: AutomationEntry | null; problems: Problem[]; key: string } {
-  return readAutomationYaml(text, key, context, (document) => checkDocument(document, vocabulary));
+export function readAutomationText(text: string, key: string, vocabulary: Vocabulary): { entry: AutomationEntry | null; problems: Problem[]; key: string } {
+  return readAutomationYaml(text, key, (document) => checkDocument(document, vocabulary));
 }
 
 /**

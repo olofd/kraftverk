@@ -1,4 +1,4 @@
-import type { CapabilityName, CapabilityNeed, ConfigSchema, Value } from '@kraftverk/device-sdk';
+import type { CapabilityName, CapabilityNeed, ConfigSchema, Unit, Value } from '@kraftverk/device-sdk';
 
 import type { Weekday } from './clock.ts';
 
@@ -31,7 +31,12 @@ export const ORDERED_OPS: readonly CompareOp[] = ['lt', 'le', 'gt', 'ge'];
 
 /** Something that has a value when a rule runs, or is unknown (null). */
 export type Expr =
-  | { value: Value }
+  /**
+   * A value as it is written — a number with the unit it was written in
+   * (`2 kW`, `90 %`, `2 min`: units.ts), converted where it meets another of
+   * its quantity; with none, in the unit of what it is beside.
+   */
+  | { value: Value; unit?: Unit }
   /** One of the rule's settings. */
   | { param: string }
   /** What the part filling a role reports now, by meaning: `charge`, or a type's own `acme.minutesToFull`. */

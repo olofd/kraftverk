@@ -35,11 +35,9 @@ export type StepSay = {
 
 /** What a kind's own text form reads with: the file reader's tools. */
 export type StepReader = {
-  expr(data: unknown, path: readonly (string | number)[], into?: string | null): Expr;
+  expr(data: unknown, path: readonly (string | number)[]): Expr;
   seconds(data: unknown, path: readonly (string | number)[]): Expr;
   name(data: unknown, path: readonly (string | number)[], what: string): string;
-  /** The unit a role's reading or setting is in, by its meaning — when the reader knows it. */
-  unitOf(role: string, means: string): string | null;
   fail(message: string, path: readonly (string | number)[]): never;
 };
 
@@ -191,7 +189,7 @@ const WRITE: StepSpec<'write'> = {
       if ('setting' in data) return { write: { role, key: reader.name(data.setting, [...path, 'setting'], 'the setting\'s key'), value: reader.expr(data.to, [...path, 'to']) } };
       const means = reader.name(data.meaning, [...path, 'meaning'], 'what the setting means');
       // By its meaning, its unit is known: what it is set to is in it.
-      return { write: { role, means, value: reader.expr(data.to, [...path, 'to'], reader.unitOf(role, means)) } };
+      return { write: { role, means, value: reader.expr(data.to, [...path, 'to']) } };
     },
     write: (step, writer) =>
       step.write.key !== undefined ? { set: step.write.role, setting: step.write.key, to: writer.expr(step.write.value) } : { set: step.write.role, meaning: step.write.means, to: writer.expr(step.write.value) },
@@ -217,7 +215,7 @@ const WAIT: StepSpec<'wait'> = {
   icon: 'pause',
   says: 'Wait a while before the next step.',
   fields: [{ data: ['wait', 'for'], key: 'wait', type: { type: 'duration', min: 1, max: WAIT_MAX, fixed: true }, required: true, label: 'For', help: 'At most an hour.' }],
-  blank: () => ({ wait: { for: { value: 10 } } }),
+  blank: () => ({ wait: { for: { value: 10, unit: 's' } } }),
   line: (step, say) => `Wait ${say.seconds(step.wait.for)}`,
   brief: (step, say) => `wait ${say.seconds(step.wait.for)}`,
   docs: { summary: 'A pause, before the next step: at most an hour.', examples: ['wait: 5 s', 'wait: 2 min'] },
@@ -233,7 +231,7 @@ const WAIT_UNTIL: StepSpec<'waitUntil'> = {
     { data: ['waitUntil', 'condition'], key: 'wait until', type: { type: 'condition', calls: false }, required: true, label: 'Until' },
     { data: ['waitUntil', 'atMost'], key: 'at most', type: { type: 'duration', min: 1, max: WAIT_MAX, fixed: true }, required: true, label: 'At most', help: 'Every wait has its limit: then the run stops, not having succeeded.' },
   ],
-  blank: (role) => ({ waitUntil: { condition: someCondition(role), atMost: { value: 120 } } }),
+  blank: (role) => ({ waitUntil: { condition: someCondition(role), atMost: { value: 2, unit: 'min' } } }),
   line: (step, say) => `Wait until ${say.expr(step.waitUntil.condition)} — at most ${say.seconds(step.waitUntil.atMost)}`,
   brief: (step, say) => `wait until ${say.expr(step.waitUntil.condition)}`,
   docs: {
@@ -254,7 +252,7 @@ const ENSURE: StepSpec<'ensure'> = {
     { data: ['ensure', 'tries'], key: 'tries', type: { type: 'count', max: SEQUENCE_LIMITS.tries }, required: true, label: 'Tries at most', help: 'How often it is tried again before it gives up.' },
     { data: ['ensure', 'retry'], key: 'each time', type: { type: 'steps', sure: false, nonEmpty: 'how is it tried again?' }, required: true, label: 'Each time' },
   ],
-  blank: (role) => ({ ensure: { condition: someCondition(role), within: { value: 20 }, tries: { value: 3 }, retry: [] } }),
+  blank: (role) => ({ ensure: { condition: someCondition(role), within: { value: 20, unit: 's' }, tries: { value: 3 }, retry: [] } }),
   line: (step, say) => `Make sure ${say.expr(step.ensure.condition)} within ${say.seconds(step.ensure.within)} — if not, try again, at most ${say.count(step.ensure.tries)}`,
   brief: (step, say) => `make sure ${say.expr(step.ensure.condition)}`,
   docs: {
@@ -295,7 +293,7 @@ const WATCH: StepSpec<'watch'> = {
     { data: ['watch', 'then'], key: 'if it stays so', type: { type: 'steps', sure: 'inherit' }, required: false, label: 'If it stays so' },
     { data: ['watch', 'else'], key: 'if not', type: { type: 'steps', sure: 'inherit' }, required: false, label: 'If not' },
   ],
-  blank: (role) => ({ watch: { condition: someCondition(role), for: { value: 5 }, then: [] } }),
+  blank: (role) => ({ watch: { condition: someCondition(role), for: { value: 5, unit: 's' }, then: [] } }),
   line: (step, say) => `Watch for ${say.seconds(step.watch.for)} whether ${say.expr(step.watch.condition)}`,
   brief: (step, say) => {
     const then = say.briefs(step.watch.then);

@@ -100,7 +100,7 @@ export class MovingToMaster {
     if (own.settings.get(MOVED)) throw new ApiError('not-found', 'This app’s own home has moved to your server already');
     const { installed } = this.#follower;
     const passphrase = randomHex(16);
-    const { document, context } = await exportConfig(own, { secrets: 'sealed', passphrase });
+    const { document } = await exportConfig(own, { secrets: 'sealed', passphrase });
     const offered = (await this.#follower.home.deviceTypes()).types;
     const staying: Staying[] = [];
     for (const [key, entry] of Object.entries(document.devices)) {
@@ -120,7 +120,7 @@ export class MovingToMaster {
         return false;
       });
     }
-    const plan = await this.#follower.home.configuration.plan({ text: writeConfig(document, context), mode, passphrase });
+    const plan = await this.#follower.home.configuration.plan({ text: writeConfig(document), mode, passphrase });
     if (plan.id) this.#plans.set(plan.id, staying);
     // All of it is on the master already, and nothing stays to be added: there is nothing to move, and it is not offered again.
     if (nothingToDo(plan) && !staying.length) own.settings.set(MOVED, new Date().toISOString());

@@ -101,8 +101,7 @@ describe('a configuration file', () => {
 
   test('written back and read again: the same document, its secret still by name', () => {
     const first = readConfig(EXAMPLE).document!;
-    const unitOf = (_role: string, means: string) => (means === 'power' ? 'W' : null);
-    const text = writeConfig(first, { schemaUrl: 'http://192.0.2.1:8080/api/config/schema.json', unitOf });
+    const text = writeConfig(first, { schemaUrl: 'http://192.0.2.1:8080/api/config/schema.json' });
     expect(text.split('\n')[0]).toBe('# yaml-language-server: $schema=http://192.0.2.1:8080/api/config/schema.json');
     expect(text).toContain('localKey: !secret smart-plug-key');
     expect(text).toContain('make sure: charger.power > 50 W');

@@ -113,7 +113,7 @@ describe('every so many minutes, rehearsed', () => {
       {
         roles: { charger: { label: 'Charger plug', capabilities: ['switch'] } },
         params: { fields: {} },
-        when: [{ every: { value: 30 * 60 } }],
+        when: [{ every: { value: 30 * 60, unit: 's' } }],
         then: [{ command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
       },
       {}

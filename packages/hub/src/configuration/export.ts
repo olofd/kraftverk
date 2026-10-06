@@ -2,15 +2,12 @@ import {
   automationEntryFrom,
   deviceEntryFrom,
   emptyDocument,
-  unitsFrom,
   vocabularyOf,
   type ConfigDocument,
   type SecretValue,
   type Vocabulary,
   type WaySource,
-  type WriteContext,
 } from '@kraftverk/home-file';
-import type { PrintContext } from '@kraftverk/automation';
 import { methodsOf, partsOf, type NodeId, type PolicyValueName, type PolicyValues, type SavedDeviceId } from '@kraftverk/device-sdk';
 import type { AutomationStore, DeviceCatalog, DeviceRecord, ConnectionStore, LinkStore, SecretsAtRest } from '@kraftverk/store';
 
@@ -71,8 +68,6 @@ export type Exported = {
   document: ConfigDocument;
   /** What could not go in, or went in otherwise than asked: said in the file's heading and to whoever exported it. */
   notes: string[];
-  /** How the file is written: each number beside a reading in its unit. */
-  context: WriteContext;
 };
 
 /** What a configuration may name in this home: its installed types, and the keys it has. */
@@ -155,9 +150,7 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
   // Automations: what fills each role, by key.
   // A device you removed fills nothing in a file: its role is written empty, and said.
   const keyOf = { device: (id: string) => { const device = deps.catalog.get(id as SavedDeviceId); return device && !device.removedAt ? device.key : null; }, automation: (id: string) => deps.automations.get(id)?.key ?? null };
-  const describe = (id: string) => deps.catalog.get(id as SavedDeviceId)?.description ?? null;
   const elsewhere = new Set<string>();
-  const units = new Map<string, PrintContext>();
   for (const automation of automations) {
     const { entry, gone } = automationEntryFrom(automation, keyOf);
     for (const role of gone) notes.push(`"${automation.name}": ${automation.rule.roles[role]?.label ?? role} was filled by ${role in automation.starts ? 'an automation' : 'a device'} that is gone: written empty`);
@@ -166,9 +159,8 @@ export async function exportConfig(deps: ConfigDeps, options: ExportOptions): Pr
       if (key && !carried.has(binding.device)) elsewhere.add(key);
     }
     document.automations[automation.key] = entry;
-    units.set(automation.key, unitsFrom(automation.roles, describe));
   }
   if (elsewhere.size && !everything) notes.push(`It names devices this file does not carry, which the home it goes to must have: ${[...elsewhere].sort().join(', ')}`);
 
-  return { document, notes, context: { unitIn: (automation, role, means) => units.get(automation)?.unitOf?.(role, means) ?? null } };
+  return { document, notes };
 }

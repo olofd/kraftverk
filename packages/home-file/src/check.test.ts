@@ -15,7 +15,7 @@ const check = (document: Parameters<typeof checkDocument>[0]) => checkDocument(d
 
 describe('what a file means', () => {
   test('a whole charging chain means nothing wrong', () => {
-    const read = readConfig(DOCUMENT, {}, check);
+    const read = readConfig(DOCUMENT, check);
     expect(read.problems).toEqual([]);
     expect(Object.keys(read.document!.devices)).toEqual(['garage-station', 'smart-plug', 'ac-in-meter']);
   });
@@ -29,7 +29,7 @@ describe('what a file means', () => {
       .replace('charger: smart-plug', 'charger: smart-plug\n      other: { automation: dawn }')
       .replace('clock: Europe/Stockholm', 'clock: Europe/Atlantis')
       .replace('loadWatts: 50', 'loadWatts: 50000');
-    const { document, problems } = readConfig(text, {}, check);
+    const { document, problems } = readConfig(text, check);
     expect(document).toBeNull();
     expect(problems.map(({ message, line }) => `${line}: ${message}`)).toEqual([
       '4: A load worth confirming is from 0 to 5000 W',
@@ -46,14 +46,14 @@ describe('what a file means', () => {
 
   test('a device the server has may be named without being in the file; one neither has may not', () => {
     const text = DOCUMENT.replace('charger: smart-plug', 'charger: hall-lamp').replace('supply: garage-station.outlet.ac', 'supply: cellar-station');
-    expect(readConfig(text, {}, check).problems.map((problem) => problem.message)).toEqual(['There is no device "cellar-station", in the file or on the server']);
+    expect(readConfig(text, check).problems.map((problem) => problem.message)).toEqual(['There is no device "cellar-station", in the file or on the server']);
   });
 });
 
 describe('one automation’s own YAML', () => {
   test('written as its page shows it, and read back the same', () => {
     const entry = readConfig(DOCUMENT).document!.automations['start-charging']!;
-    const text = writeAutomationYaml(entry, { unitOf: (_role, means) => (means === 'power' ? 'W' : null) });
+    const text = writeAutomationYaml(entry);
     expect(text.split('\n').slice(0, 4)).toEqual(['name: Start charging the scooter', 'mode: watch', 'clock: Europe/Stockholm', 'uses:']);
     const read = readAutomationYaml(text, 'start-charging');
     expect(read.problems).toEqual([]);
@@ -70,10 +70,10 @@ do:
   - turn on: lamp
   - wait until: lamp reachable
 `;
-    const read = readAutomationYaml(text, 'hall', {}, check);
+    const read = readAutomationYaml(text, 'hall', check);
     expect(read.entry).toBeNull();
     expect(read.problems.map(({ message, line }) => `${line}: ${message}`)).toEqual(['8: "wait until" needs "at most": every wait has its limit: then the run stops, not having succeeded']);
-    const fixed = readAutomationYaml(text.replace('reachable\n', 'reachable\n    at most: 1 min\n'), 'hall', {}, check);
+    const fixed = readAutomationYaml(text.replace('reachable\n', 'reachable\n    at most: 1 min\n'), 'hall', check);
     expect(fixed.problems.map(({ message, line }) => `${line}: ${message}`)).toEqual(['5: There is no device "garage-station", in the file or on the server']);
   });
 });

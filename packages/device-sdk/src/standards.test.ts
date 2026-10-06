@@ -3,13 +3,13 @@ import { describe, expect, test } from 'bun:test';
 import { CAPABILITIES, CAPABILITY_NAMES, type CapabilityAttribute } from './capabilities.ts';
 import {
   CAPABILITY_PROJECTIONS,
-  HOME_ASSISTANT_QUANTITIES,
   MATTER_CLUSTERS,
   MEANING_PROJECTIONS,
   homeAssistantEntityOf,
   isProjected,
 } from './standards.ts';
 import { STANDARD_MEANINGS, unitsOfMeaning, type StandardMeaning, type StandardMeaningId } from './meanings.ts';
+import { QUANTITY_UNITS } from './units.ts';
 
 /*
   The projections into Home Assistant and Matter (docs/ARCHITECTURE.md §8
@@ -26,7 +26,7 @@ describe('standard meanings', () => {
     for (const id of meanings) {
       const meaning: StandardMeaning = STANDARD_MEANINGS[id];
       if (meaning.type !== 'number') continue;
-      expect({ id, ok: unitsOfMeaning(meaning).every((unit) => HOME_ASSISTANT_QUANTITIES[meaning.quantity].units.includes(unit)) }).toEqual({ id, ok: true });
+      expect({ id, ok: unitsOfMeaning(meaning).every((unit) => QUANTITY_UNITS[meaning.quantity].includes(unit)) }).toEqual({ id, ok: true });
     }
   });
 

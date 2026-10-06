@@ -2,6 +2,7 @@ import { isCapability, isPolicyValueName, requiredMeanings, type CapabilitySpec 
 import { attributeMeaning, capabilitiesOf, capabilityIn, isStandardPartKind, MAIN_PART, partOf, partsOf, quantityOf, type DeviceDescription } from './description.ts';
 import { QUANTITIES, standardMeaning, STATE_CLASSES, unitsOfMeaning } from './meanings.ts';
 import { ATTRIBUTE_KEY, NAMESPACED_ID, NAMESPACED_NAME, PART_ID, PLAIN_ID } from './names.ts';
+import { QUANTITY_UNITS } from './units.ts';
 import { valueTypeProblems } from './values.ts';
 
 /*
@@ -102,6 +103,11 @@ export function validateDescription(description: DeviceDescription, typeId = 'br
     }
     if (!attribute.label?.trim()) problem(`${where} has no label`);
     problems.push(...valueTypeProblems(where, attribute.value));
+    // A number of a quantity is in one of the units that quantity is measured in.
+    const quantity = attribute.value?.type === 'number' ? quantityOf(attribute) : null;
+    if (quantity && attribute.value?.type === 'number' && attribute.value.unit !== undefined && !QUANTITY_UNITS[quantity].includes(attribute.value.unit)) {
+      problem(`${where} is ${quantity}, which is not measured in "${attribute.value.unit}": ${QUANTITY_UNITS[quantity].map((unit) => `"${unit}"`).join(', ') || 'it has no unit'}`);
+    }
     if (attribute.category === 'primary') primaries.set(part, (primaries.get(part) ?? 0) + 1);
     if (attribute.currentFor !== undefined && !(Number.isInteger(attribute.currentFor) && attribute.currentFor > 0)) problem(`${where} is current for ${attribute.currentFor} ms; a whole number of milliseconds above zero`);
 
@@ -127,8 +133,10 @@ export function validateDescription(description: DeviceDescription, typeId = 'br
       if (attribute.value?.type !== 'boolean') problem(`${where} means ${attribute.means}, which is on or off, but is not a boolean`);
     } else if (standard) {
       const standardState = standard.stateClass ?? 'measurement';
-      if (attribute.value?.type !== 'number' || !unitsOfMeaning(standard).includes(attribute.value.unit ?? '') || quantityOf(attribute) !== standard.quantity) {
-        problem(`${where} means ${attribute.means}, which is ${standard.quantity} in ${unitsOfMeaning(standard).map((unit) => `"${unit}"`).join(' or ')}`);
+      const units = unitsOfMeaning(standard);
+      const fits = attribute.value?.type === 'number' && (attribute.value.unit === undefined ? units.length === 0 : units.includes(attribute.value.unit));
+      if (!fits || quantityOf(attribute) !== standard.quantity) {
+        problem(`${where} means ${attribute.means}, which is ${standard.quantity} ${units.length ? `in ${units.map((unit) => `"${unit}"`).join(' or ')}` : 'in no unit'}`);
       } else if ((attribute.stateClass ?? 'measurement') !== standardState) {
         problem(`${where} means ${attribute.means}, which is ${standardState}, but is declared ${attribute.stateClass ?? 'measurement'}`);
       }

@@ -1,5 +1,6 @@
 import type { EventLevel } from './description.ts';
 import type { StandardMeaningId } from './meanings.ts';
+import type { Unit } from './units.ts';
 import type { ScalarValue, ScalarValueType, ValueOf, ValueType } from './values.ts';
 
 /**
@@ -44,7 +45,7 @@ export type CommandResult = { accepted: true } | { accepted: false; error: strin
  * and the home says how much a load is: a night light at 6 W is not a
  * freezer. Each has the value it takes until someone changes it.
  */
-export type PolicyValueSpec = { label: string; description: string; unit: string; default: number; min: number; max: number };
+export type PolicyValueSpec = { label: string; description: string; unit: Unit; default: number; min: number; max: number };
 
 export const POLICY_VALUES = {
   loadWatts: {

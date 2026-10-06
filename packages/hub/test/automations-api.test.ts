@@ -245,7 +245,7 @@ describe('automations', () => {
     const role = { charging: { automation: true as const, label: 'The charging', description: 'What charges the scooter' } };
     const morning = await t.home.automations.create({
       name: 'Morning',
-      rule: { roles: role, params: { fields: {} }, when: [], then: [{ start: { role: 'charging', andWait: { value: 60 } } }] },
+      rule: { roles: role, params: { fields: {} }, when: [], then: [{ start: { role: 'charging', andWait: { value: 60, unit: 's' } } }] },
       roles: {},
       starts: { charging: charge.id },
       timeZone: 'Europe/Stockholm',

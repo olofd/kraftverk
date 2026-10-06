@@ -2,11 +2,13 @@ import { attributeMeaning, CAMEL_NAME, capabilitySpec, checkValue, isCapability,
 
 import { CLOCK_TIME, minutesOf, WEEKDAYS, type Weekday } from './clock.ts';
 import { secondsText } from './describe.ts';
+import { expressionsIn } from './kinds/exprs.ts';
 import { fieldValue, type FieldSpec } from './kinds/spec.ts';
 import { branchesOf, STEP_KIND_ORDER, STEP_KINDS } from './kinds/steps.ts';
 import { TRIGGER_FIELDS, TRIGGER_KIND_ORDER, TRIGGER_KINDS } from './kinds/triggers.ts';
 import type { AutomationFunction } from './functions.ts';
-import { ruleUses } from './reads.ts';
+import { ruleExpressions, ruleUses } from './reads.ts';
+import { convert, convertible, isUnit, unitIn, type Unit } from '@kraftverk/device-sdk';
 import { COMPARE_OPS, isAutomationRole, MATH_OPS, ORDERED_OPS, partRoles, RUN_FACTS, SEQUENCE_LIMITS, TRIGGER_ID, type Command, type Expr, type PartRole, type Rule, type Step, type WriteTarget } from './rule.ts';
 
 /*
@@ -21,7 +23,8 @@ import { COMPARE_OPS, isAutomationRole, MATH_OPS, ORDERED_OPS, partRoles, RUN_FA
  * object is `structure`: a rule can hand one to a function, never compare it —
  * reading into structure is what functions are for.
  */
-type Shape = { type: 'number'; unit: string | null } | { type: 'boolean' } | { type: 'string'; options: readonly string[] | null } | { type: 'structure' } | { type: 'unknown' };
+/** A number's unit: one written or reported, `''` for one that has none (a rank), null when it is the unit of what it is beside. */
+type Shape = { type: 'number'; unit: Unit | '' | null } | { type: 'boolean' } | { type: 'string'; options: readonly string[] | null } | { type: 'structure' } | { type: 'unknown' };
 
 const shapeOf = (type: ValueType): Shape => {
   switch (type.type) {
@@ -52,13 +55,16 @@ const shapeOfValue = (value: Value): Shape =>
           : { type: 'structure' };
 
 const said = (shape: Shape): string =>
-  shape.type === 'number' && shape.unit ? `a number in ${shape.unit}` : shape.type === 'number' ? 'a number' : shape.type === 'structure' ? 'a list or an object' : `a ${shape.type}`;
+  shape.type === 'number' && shape.unit ? `a number in ${shape.unit}` : shape.type === 'number' && shape.unit === '' ? 'a number with no unit' : shape.type === 'number' ? 'a number' : shape.type === 'structure' ? 'a list or an object' : `a ${shape.type}`;
 
-/** Whether a value of shape `given` may stand where `wanted` is expected. */
+/** Whether a value of shape `given` may stand where `wanted` is expected: a number in a unit of the same quantity, converted as it runs. */
 function fits(wanted: Shape, given: Shape): boolean {
   if (wanted.type === 'unknown' || given.type === 'unknown') return true;
   if (wanted.type !== given.type) return false;
-  if (wanted.type === 'number' && given.type === 'number') return !wanted.unit || !given.unit || wanted.unit === given.unit;
+  if (wanted.type === 'number' && given.type === 'number') {
+    if (wanted.unit === null || given.unit === null) return true;
+    return wanted.unit === '' || given.unit === '' ? wanted.unit === given.unit : convertible(given.unit, wanted.unit);
+  }
   return true;
 }
 
@@ -111,7 +117,12 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
   };
 
   const shape = (expr: Expr, where: string, options: { calls: boolean; trigger?: boolean }): Shape => {
-    if ('value' in expr) return shapeOfValue(expr.value);
+    if ('value' in expr) {
+      if (expr.unit === undefined) return shapeOfValue(expr.value);
+      if (typeof expr.value !== 'number') problems.push(`${where}: only a number has a unit`);
+      else if (!isUnit(expr.unit)) problems.push(`${where}: "${expr.unit}" is not a unit the language knows`);
+      return typeof expr.value === 'number' ? { type: 'number', unit: expr.unit } : shapeOfValue(expr.value);
+    }
     if ('run' in expr) {
       if (!RUN_FACTS.includes(expr.run)) {
         problems.push(`${where}: a run knows its ${RUN_FACTS.join(', ')} — not "${String(expr.run)}"`);
@@ -142,7 +153,7 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         problems.push(`${where}: ${expr.read.role} asks for nothing that reports ${expr.read.means}`);
       }
       // One in any of several units — a price, in its provider's currency — is compared in its own, known once bound.
-      return standard.type === 'boolean' ? { type: 'boolean' } : { type: 'number', unit: standard.units ? null : standard.unit || null };
+      return standard.type === 'boolean' ? { type: 'boolean' } : { type: 'number', unit: standard.units ? null : (standard.unit ?? '') };
     }
     if ('call' in expr) {
       if (!options.calls) problems.push(`${where}: "becomes" is evaluated on every reading, so it cannot call ${expr.call}`);
@@ -179,8 +190,8 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
       for (const [side, got] of [['left', left], ['right', right]] as const) {
         if (!fits({ type: 'number', unit: null }, got)) problems.push(`${where}.${side}: expected a number, got ${said(got)}`);
       }
-      const units = [left, right].flatMap((side) => (side.type === 'number' && side.unit ? [side.unit] : []));
-      if (new Set(units).size > 1) problems.push(`${where}: ${units[0]} and ${units[1]} are not one unit`);
+      const units = [left, right].flatMap((side) => (side.type === 'number' && side.unit !== null ? [side.unit] : []));
+      if (units.length === 2 && !fits({ type: 'number', unit: units[0]! }, { type: 'number', unit: units[1]! })) problems.push(`${where}: ${units[0]} and ${units[1]} are not of one quantity`);
       return { type: 'number', unit: units[0] ?? null };
     }
     if ('within' in expr) {
@@ -285,8 +296,8 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
         // A fixed one — a step's wait — is a number or a setting held to its range, so how long a run may take is known before it runs.
         if (type.fixed) return bounded(expr, at, 's', type.min, type.max);
         const got = shape(expr, at, { calls: false, trigger: where.inTrigger });
-        if (!fits({ type: 'number', unit: 's' }, got)) problems.push(`${at}: expected a length of time, got ${said(got)}`);
-        const seconds = 'value' in expr ? expr.value : null;
+        if (!isTime(expr, got)) problems.push(`${at}: expected a length of time, got ${said(got)}`);
+        const seconds = secondsOfLiteral(expr, at);
         const whole = type.step ? `, in steps of ${secondsText(type.step)}` : '';
         if (typeof seconds === 'number' && (seconds < type.min || seconds > type.max || (type.step !== undefined && seconds % type.step !== 0))) {
           problems.push(`${at}: from ${secondsText(type.min)} to ${secondsText(type.max)}${whole}`);
@@ -345,14 +356,35 @@ export function checkRule(rule: Rule, vocabulary: RuleVocabulary): string[] {
    * at once; a setting by its own range, so no value its form accepts can
    * exceed it.
    */
+  /**
+   * Whether a length of time is in a unit it can be read in: one written in
+   * any unit of time, converted; a setting — a plain number in its own unit,
+   * not converted — only in seconds, as a run reads it.
+   */
+  function isTime(expr: Expr, got: Shape): boolean {
+    if ('param' in expr) return got.type === 'unknown' || (got.type === 'number' && (got.unit === null || got.unit === 's'));
+    return fits({ type: 'number', unit: 's' }, got);
+  }
+
+  /** A length of time written outright, in seconds — or null, said where it is, when it says no unit of time. */
+  function secondsOfLiteral(expr: Expr, where: string): number | null {
+    if (!('value' in expr) || typeof expr.value !== 'number') return null;
+    if (expr.unit === undefined) {
+      problems.push(`${where}: a length of time says its unit: "${expr.value} s", "${expr.value} min" or "${expr.value} h"`);
+      return null;
+    }
+    return convert(expr.value, expr.unit, 's');
+  }
+
   function bounded(expr: Expr, where: string, unit: 's' | null, min: number, max: number): void {
     const got = shape(expr, where, { calls: false });
-    if (!fits({ type: 'number', unit }, got)) {
+    if (unit ? !isTime(expr, got) : !fits({ type: 'number', unit }, got)) {
       problems.push(`${where}: expected ${unit ? 'a length of time' : 'a number'}, got ${said(got)}`);
       return;
     }
     const [low, high] = unit ? [secondsText(min), secondsText(max)] : [String(min), String(max)];
-    if ('value' in expr && typeof expr.value === 'number' && !(expr.value >= min && expr.value <= max)) problems.push(`${where}: from ${low} to ${high}`);
+    const value = unit ? secondsOfLiteral(expr, where) : 'value' in expr ? expr.value : null;
+    if (typeof value === 'number' && !(value >= min && value <= max)) problems.push(`${where}: from ${low} to ${high}`);
     if ('param' in expr) {
       const field = params[expr.param];
       if (field?.type === 'number' && (field.max === undefined || field.max > max || field.min === undefined || field.min < min)) {
@@ -525,8 +557,32 @@ export function checkBinding(rule: Rule, bound: (role: string) => BoundPart | nu
     else if (attribute.access !== 'write') problems.push(`${who}: ${attribute.label} of ${part.name} is read, not set`);
     else if (attribute.dangerous) problems.push(`${who}: ${attribute.label} of ${part.name} can harm it, and is never changed by an automation`);
     else if ('value' in write.value) {
-      const checked = checkValue(attribute.value, write.value.value);
-      if (!checked.ok) problems.push(`${who}: ${attribute.label} ${checked.problem}`);
+      // In the setting's own unit: 2 kW to one in W is 2000.
+      const { value, unit } = write.value;
+      const into = attribute.value.type === 'number' ? attribute.value.unit : undefined;
+      const converted = typeof value === 'number' && unit && into ? convert(value, unit, into) : value;
+      if (converted === null) problems.push(`${who}: ${attribute.label} is set in ${into}, not ${unit}`);
+      else {
+        const checked = checkValue(attribute.value, converted);
+        if (!checked.ok) problems.push(`${who}: ${attribute.label} ${checked.problem}`);
+      }
+    }
+  }
+  // A number beside a reading is in a unit of its quantity: "50 °C" beside a part's power is a mistake, seen once the part is known.
+  const unitRead = (expr: Expr): { unit: Unit; label: string; part: string } | null => {
+    if (!('read' in expr)) return null;
+    const part = bound(expr.read.role);
+    const attribute = part ? attributeMeaning(part.description, part.part, expr.read.means) : null;
+    const unit = attribute ? unitIn(attribute) : null;
+    return part && attribute && unit ? { unit, label: attribute.label, part: part.name } : null;
+  };
+  for (const top of ruleExpressions(rule)) {
+    for (const each of expressionsIn(top)) {
+      if (!('compare' in each) && !('math' in each)) continue;
+      for (const [side, other] of [[each.left, each.right], [each.right, each.left]] as const) {
+        const read = unitRead(side);
+        if (read && 'value' in other && other.unit && !convertible(other.unit, read.unit)) problems.push(`${read.part}’s ${read.label.toLowerCase()} is in ${read.unit}: "${other.unit}" is not a unit of it`);
+      }
     }
   }
   return problems;

@@ -26,7 +26,7 @@ const PLUG: DeviceDescription = {
 
 const plug: RoleBinding = { device: savedDeviceId('d-plug'), part: 'main' };
 
-const pause = (seconds: number): Step => ({ wait: { for: { value: seconds } } });
+const pause = (seconds: number): Step => ({ wait: { for: { value: seconds, unit: 's' } } });
 
 describe('blocks', () => {
   test('added, nested, moved and removed at any depth — the rule the language checks', () => {
@@ -87,7 +87,7 @@ describe('roles', () => {
 test('a recipe copied: its settings at their defaults, written into its blocks — the owner’s to change', () => {
   const draft = draftOfRecipe(startCharging);
   expect(draft.rule.params).toEqual({ fields: {} });
-  expect(draft.rule.then[1]).toEqual({ waitUntil: { condition: { reachable: 'charger' }, atMost: { value: 120 } } });
+  expect(draft.rule.then[1]).toEqual({ waitUntil: { condition: { reachable: 'charger' }, atMost: { value: 2, unit: 'min' } } });
   expect(checkRule(draft.rule, { fn: () => null })).toEqual([]);
 });
 

@@ -2,11 +2,11 @@ import { describe, expect, test } from 'bun:test';
 
 import type { CapabilityName, Value } from '@kraftverk/device-sdk';
 
-import { checkRule } from '../check.ts';
+import { checkBinding, checkRule } from '../check.ts';
 import type { Weekday } from '../clock.ts';
-import { inlineParams } from '../evaluate.ts';
+import { evaluateNow, inlineParams, type RuleScope } from '../evaluate.ts';
 import { STANDARD_RECIPES } from '../recipes.ts';
-import { isAutomationRole, type Recipe, type Rule } from '../rule.ts';
+import { isAutomationRole, type Expr, type Recipe, type Rule } from '../rule.ts';
 import { durationSeconds, durationText, ruleFromConfig, ruleToConfig, type Use } from './rules.ts';
 
 /*
@@ -71,7 +71,7 @@ describe('a rule, written and read back', () => {
         other: { automation: true, label: 'Other' },
       },
       params: { fields: {} },
-      when: [{ at: { value: '07:00' }, days: ['mon', 'fri'] }, { every: { value: 900 } }, { event: { role: 'station', event: 'mains-lost' } }, { becomes: { reachable: 'plug' }, heldFor: { value: 120 } }],
+      when: [{ at: { value: '07:00' }, days: ['mon', 'fri'] }, { every: { value: 900, unit: 's' } }, { event: { role: 'station', event: 'mains-lost' } }, { becomes: { reachable: 'plug' }, heldFor: { value: 120, unit: 's' } }],
       if: { all: [{ reachable: 'plug' }] },
       then: [
         { command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { compare: 'lt', left: { read: { role: 'station', means: 'charge' } }, right: { value: 50 } } } } },
@@ -79,13 +79,13 @@ describe('a rule, written and read back', () => {
         { command: { role: 'station', capability: 'beep' as CapabilityName, command: 'now', args: {} } },
         { write: { role: 'station', key: 'acChargeLimit', value: { value: 80 } } },
         { write: { role: 'station', means: 'dischargeFloor', value: { value: 20 } } },
-        { wait: { for: { value: 90 } } },
-        { waitUntil: { condition: { reachable: 'plug' }, atMost: { value: 120 } } },
-        { ensure: { condition: { compare: 'gt', left: { read: { role: 'plug', means: 'power' } }, right: { value: 50 } }, within: { value: 20 }, tries: { value: 5 }, retry: [{ wait: { for: { value: 5 } } }] } },
-        { choose: { if: { reachable: 'plug' }, then: [], else: [{ start: { role: 'other', andWait: { value: 600 } } }] } },
+        { wait: { for: { value: 90, unit: 's' } } },
+        { waitUntil: { condition: { reachable: 'plug' }, atMost: { value: 120, unit: 's' } } },
+        { ensure: { condition: { compare: 'gt', left: { read: { role: 'plug', means: 'power' } }, right: { value: 50 } }, within: { value: 20, unit: 's' }, tries: { value: 5 }, retry: [{ wait: { for: { value: 5, unit: 's' } } }] } },
+        { choose: { if: { reachable: 'plug' }, then: [], else: [{ start: { role: 'other', andWait: { value: 600, unit: 's' } } }] } },
         { choose: { if: { value: true }, then: [{ start: { role: 'other' } }] } },
-        { watch: { condition: { reachable: 'plug' }, for: { value: 5 }, then: [] } },
-        { watch: { condition: { reachable: 'plug' }, for: { value: 5 }, else: [] } },
+        { watch: { condition: { reachable: 'plug' }, for: { value: 5, unit: 's' }, then: [] } },
+        { watch: { condition: { reachable: 'plug' }, for: { value: 5, unit: 's' }, else: [] } },
       ],
       otherwise: [],
     };
@@ -213,30 +213,51 @@ describe('what a role needs', () => {
 });
 
 describe('units', () => {
-  const read = (condition: string, context = {}) => ruleFromConfig({ uses: { plug: 'plug' }, when: [{ becomes: condition }], do: [] }, ['a'], context);
-  test('a number beside a reading is in its unit: converted from another of the same quantity, refused from another quantity', () => {
-    // power is in W, its standard meaning says.
-    expect(read('plug.power > 2 kW').rule!.when[0]).toEqual({ becomes: { compare: 'gt', left: { read: { role: 'plug', means: 'power' } }, right: { value: 2000 } } });
-    expect(read('plug.power > 2.2 kW').rule!.when[0]).toMatchObject({ becomes: { right: { value: 2200 } } });
-    expect(read('plug.power < 50 W').rule!.when[0]).toMatchObject({ becomes: { right: { value: 50 } } });
-    expect(read('plug.power > 50 °C').issues).toEqual([{ message: 'That is read in W: "°C" is not a unit of it', path: ['a', 'when', 0, 'becomes'], offset: 13 }]);
-    // A unit on a reading that has none: refused.
-    expect(read('plug.priceRank <= 4 W').issues[0]!.message).toBe('That is read in no unit: "W" is not one');
-    // A type's own meaning: its part's unit, as the context says it — or, unknown, the number as written.
-    expect(read('plug.acme.flow > 2 kW', { unitOf: () => 'W' }).rule!.when[0]).toMatchObject({ becomes: { right: { value: 2000 } } });
-    expect(read('plug.acme.flow > 2 kW').rule!.when[0]).toMatchObject({ becomes: { right: { value: 2 } } });
-    // Beside a sum, too: the charge limit less 5 %.
-    expect(read('plug.charge < plug.chargeLimit - 5 %').issues).toEqual([]);
+  const read = (condition: string) => ruleFromConfig({ uses: { plug: 'plug' }, when: [{ becomes: condition }], do: [{ 'turn on': 'plug' }] }, ['a']);
+  const problems = (condition: string) => checkRule(read(condition).rule!, { fn: () => null });
+  const scope = (watts: number): RuleScope => ({
+    param: () => null,
+    read: (_role, means) => (means === 'power' ? { value: watts, label: 'Power', unit: 'W' } : null),
+    reachable: () => ({ reachable: true, detail: '' }),
+    name: (role) => role,
+    clock: () => null,
   });
 
-  test('a setting set by its meaning is set in its unit; a unit where nothing says one is refused, not dropped', () => {
-    const set = (step: Record<string, unknown>, context = {}) => ruleFromConfig({ uses: { st: 'station' }, do: [{ set: 'st', ...step }] }, ['a'], context);
-    expect(set({ meaning: 'acme.inputLimit', to: '2 kW' }, { unitOf: () => 'W' }).rule!.then[0]).toEqual({ write: { role: 'st', means: 'acme.inputLimit', value: { value: 2000 } } });
-    expect(set({ meaning: 'chargeLimit', to: '80 %' }).rule!.then[0]).toMatchObject({ write: { value: { value: 80 } } });
-    expect(set({ meaning: 'acme.inputLimit', to: '50 °C' }, { unitOf: () => 'W' }).issues[0]!.message).toBe('That is read in W: "°C" is not a unit of it');
-    // By its key, or its meaning's unit unknown: what unit it is in nobody says, so a unit written is not quietly dropped.
-    expect(set({ setting: 'inputLimit', to: '2 kW' }).issues).toEqual([{ message: 'Nothing here says what unit it is in: write it without "kW", in the unit it is set in', path: ['a', 'do', 0, 'to'], offset: 0 }]);
-    expect(set({ meaning: 'acme.inputLimit', to: '2 kW' }).issues[0]!.message).toContain('Nothing here says what unit it is in');
-    expect(set({ setting: 'inputLimit', to: '2000' }).rule!.then[0]).toMatchObject({ write: { value: { value: 2000 } } });
+  test('a number keeps the unit it is written in, is written back so, and is converted where it meets a reading', () => {
+    const rule = read('plug.power > 2 kW').rule!;
+    expect(rule.when[0]).toEqual({ becomes: { compare: 'gt', left: { read: { role: 'plug', means: 'power' } }, right: { value: 2, unit: 'kW' } } });
+    expect(ruleToConfig(rule, { plug: { device: 'plug', part: 'main' } }).when).toEqual([{ becomes: 'plug.power > 2 kW' }]);
+    const becomes = (rule.when[0] as { becomes: Expr }).becomes;
+    expect(evaluateNow(becomes, scope(2500))).toBe(true);
+    expect(evaluateNow(becomes, scope(1500))).toBe(false);
+    // With no unit, a number is in the unit of what it is beside.
+    expect(evaluateNow((read('plug.power > 2000').rule!.when[0] as { becomes: Expr }).becomes, scope(2500))).toBe(true);
+  });
+
+  test('two quantities never meet: refused before it runs — and a unit the language does not know, where it is written', () => {
+    expect(problems('plug.power > 50 °C')).toEqual(['when[0].becomes: compares a number in W with a number in °C']);
+    expect(problems('plug.priceRank <= 4 W')).toEqual(['when[0].becomes: compares a number with no unit with a number in W']);
+    expect(read('plug.power > 50 parsecs').issues).toEqual([{ message: '"parsecs" is not a unit kraftverk knows: W, kWh, %, °C, min …', path: ['a', 'when', 0, 'becomes'], offset: 16 }]);
+    // Beside a sum, too: a charge less 5 %, but not less 5 W.
+    expect(problems('plug.charge < plug.charge - 5 %')).toEqual([]);
+    expect(problems('plug.charge < plug.charge - 5 W')).toEqual(['when[0].becomes.right: % and W are not of one quantity']);
+  });
+
+  test('a setting keeps the unit it is set in: the setting\'s own is the binding\'s to hold it to', () => {
+    const set = (step: Record<string, unknown>) => ruleFromConfig({ uses: { st: 'station' }, do: [{ set: 'st', ...step }] }, ['a']);
+    expect(set({ meaning: 'chargeLimit', to: '80 %' }).rule!.then[0]).toEqual({ write: { role: 'st', means: 'chargeLimit', value: { value: 80, unit: '%' } } });
+    expect(set({ setting: 'inputLimit', to: '2 kW' }).rule!.then[0]).toEqual({ write: { role: 'st', key: 'inputLimit', value: { value: 2, unit: 'kW' } } });
+    expect(set({ setting: 'inputLimit', to: '2000' }).rule!.then[0]).toEqual({ write: { role: 'st', key: 'inputLimit', value: { value: 2000 } } });
+    // Bound: held to the setting's range in its own unit — 2 kW is 2000 W — and refused in another quantity's.
+    const station = (max: number) => ({
+      name: 'Station',
+      part: 'main',
+      capabilities: [],
+      description: { parts: [{ id: 'main', label: 'Station', kind: 'device' }], attributes: [{ key: 'inputLimit', label: 'Input limit', value: { type: 'number', unit: 'W', min: 0, max }, access: 'write' }] },
+    });
+    const twoKilowatts = set({ setting: 'inputLimit', to: '2 kW' }).rule!;
+    expect(checkBinding(twoKilowatts, () => station(3000) as never)).toEqual([]);
+    expect(checkBinding(twoKilowatts, () => station(1500) as never)).toHaveLength(1);
+    expect(checkBinding(set({ setting: 'inputLimit', to: '50 °C' }).rule!, () => station(3000) as never)).toEqual(['St: Input limit is set in W, not °C']);
   });
 });

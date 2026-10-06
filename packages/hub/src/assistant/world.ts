@@ -104,7 +104,7 @@ const capabilityWords = (spec: CapabilitySpec) => ({
 export function vocabularyOf(library: AutomationLibrary, policy: PolicyValues, own: readonly Record<string, CapabilitySpec>[] = []): VocabularyView {
   return {
     capabilities: Object.fromEntries([...Object.entries(CAPABILITIES), ...own.flatMap((capabilities) => Object.entries(capabilities))].map(([id, spec]) => [id, capabilityWords(spec)])),
-    meanings: Object.fromEntries(Object.entries(STANDARD_MEANINGS).map(([id, meaning]) => [id, { label: meaning.label, type: meaning.type, unit: meaning.type === 'number' ? meaning.unit : null }])),
+    meanings: Object.fromEntries(Object.entries(STANDARD_MEANINGS).map(([id, meaning]) => [id, { label: meaning.label, type: meaning.type, unit: 'unit' in meaning ? meaning.unit : null }])),
     links: Object.fromEntries(Object.entries(LINK_KINDS).map(([id, kind]) => [id, { verb: kind.verb, from: kind.from, to: kind.to, description: kind.description }])),
     recipes: library.recipes().map(({ recipe }) => ({
       id: recipe.id,

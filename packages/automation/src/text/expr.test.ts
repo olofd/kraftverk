@@ -18,10 +18,10 @@ const parse = (text: string): Expr => {
 const read = (role: string, means: string): Expr => ({ read: { role, means } });
 
 describe('reading a condition', () => {
-  test('a reading against a number with its unit, and the unit kept beside it', () => {
+  test('a reading against a number with its unit, the unit kept with it', () => {
     const parsed = parseExpr('charger.power > 50 W');
-    expect(parsed.ok && parsed.expr).toEqual({ compare: 'gt', left: read('charger', 'power'), right: { value: 50 } });
-    if (parsed.ok && 'compare' in parsed.expr) expect(parsed.units.get(parsed.expr.right)?.unit).toBe('W');
+    expect(parsed.ok && parsed.expr).toEqual({ compare: 'gt', left: read('charger', 'power'), right: { value: 50, unit: 'W' } });
+    expect(parse('station.charge < 15%')).toEqual({ compare: 'lt', left: read('station', 'charge'), right: { value: 15, unit: '%' } });
   });
 
   test('"and" binds before "or", "not" before both; parentheses where they are written', () => {
@@ -33,7 +33,7 @@ describe('reading a condition', () => {
 
   test('time of day, a window across midnight, sums, the lower of two, a setting, a function', () => {
     expect(parse('time between 23:00 and 05:00')).toEqual({ within: { from: { value: '23:00' }, to: { value: '05:00' } } });
-    expect(parse('station.chargeLimit - 5 %')).toEqual({ math: 'subtract', left: read('station', 'chargeLimit'), right: { value: 5 } });
+    expect(parse('station.chargeLimit - 5 %')).toEqual({ math: 'subtract', left: read('station', 'chargeLimit'), right: { value: 5, unit: '%' } });
     expect(parse('min(forecast.hours, 4) >= $hours')).toEqual({ compare: 'ge', left: { math: 'min', left: read('forecast', 'hours'), right: { value: 4 } }, right: { param: 'hours' } });
     expect(parse('call open-meteo.weather.skyLooks(forecast, cloudMax = 40) == "sunny"')).toEqual({
       compare: 'eq',
@@ -44,7 +44,7 @@ describe('reading a condition', () => {
 
   test('"30 min" is minutes; "min(" the lower of two', () => {
     const parsed = parseExpr('station.time.toFull < 30 min');
-    expect(parsed.ok && parsed.expr).toEqual({ compare: 'lt', left: read('station', 'time.toFull'), right: { value: 30 } });
+    expect(parsed.ok && parsed.expr).toEqual({ compare: 'lt', left: read('station', 'time.toFull'), right: { value: 30, unit: 'min' } });
   });
 
   test('what is wrong, and where', () => {
@@ -92,10 +92,12 @@ describe('writing it back', () => {
     }
   });
 
-  test('a number beside a reading says the reading’s unit', () => {
-    const unitOf = (_role: string, means: string) => (means === 'power' ? 'W' : means === 'charge' ? '%' : null);
-    expect(printExpr({ compare: 'gt', left: read('charger', 'power'), right: { value: 50 } }, { unitOf })).toBe('charger.power > 50 W');
-    expect(printExpr({ compare: 'lt', left: read('station', 'charge'), right: { value: 15 } }, { unitOf })).toBe('station.charge < 15 %');
+  test('a number says the unit it was written in, and none when it had none', () => {
+    expect(printExpr({ compare: 'gt', left: read('charger', 'power'), right: { value: 2, unit: 'kW' } })).toBe('charger.power > 2 kW');
+    expect(printExpr({ compare: 'lt', left: read('station', 'charge'), right: { value: 15, unit: '%' } })).toBe('station.charge < 15 %');
+    expect(printExpr({ compare: 'lt', left: read('station', 'charge'), right: { value: 15 } })).toBe('station.charge < 15');
+    // One the language does not know is not text it can say.
+    expect(printExpr({ value: 3, unit: 'parsecs' as never })).toBeNull();
   });
 
   test('what text cannot say is not said: a list for a value, one condition alone in an "all"', () => {

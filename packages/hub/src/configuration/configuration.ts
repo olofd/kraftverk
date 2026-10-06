@@ -80,7 +80,6 @@ export class Configuration {
     }
     const exported = await this.document(request);
     const text = writeConfig(exported.document, {
-      ...exported.context,
       ...(options.schemaUrl ? { schemaUrl: options.schemaUrl } : {}),
       heading: [`Exported from kraftverk, ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC.`, ...exported.notes.map((note) => `- ${note}`)].join('\n'),
     });
@@ -173,8 +172,8 @@ export class Configuration {
    */
   async kept(before: string | null): Promise<string> {
     const keptBefore = before ? (readConfig(before).document?.secrets ?? {}) : {};
-    const { document, context } = await exportConfig(this.#deps, { secrets: 'kept', keptBefore });
-    return writeConfig(document, { ...context, heading: KEPT_HEADING });
+    const { document } = await exportConfig(this.#deps, { secrets: 'kept', keptBefore });
+    return writeConfig(document, { heading: KEPT_HEADING });
   }
 
   /** Forgets every plan made and not applied, with the secrets each opened: the home is stopping. */

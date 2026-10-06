@@ -71,7 +71,7 @@ export function ImportCard({
   const [checked, setChecked] = useState<{ text: string; problems: ReturnType<typeof readConfig>['problems'] } | null>(null);
   useEffect(() => {
     if (!vocabulary || !text.trim()) return setChecked(null);
-    const timer = setTimeout(() => setChecked({ text, problems: readConfig(text, {}, (document) => checkDocument(document, vocabulary, { hasSecret: () => true, uses: 'leave' })).problems }), 250);
+    const timer = setTimeout(() => setChecked({ text, problems: readConfig(text, (document) => checkDocument(document, vocabulary, { hasSecret: () => true, uses: 'leave' })).problems }), 250);
     return () => clearTimeout(timer);
   }, [text, vocabulary]);
   const schema = useMemo(() => (vocabulary ? configJsonSchema(vocabulary) : null), [vocabulary]);

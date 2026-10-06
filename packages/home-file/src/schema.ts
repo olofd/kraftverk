@@ -1,7 +1,7 @@
 import { stepJsonSchema, triggerJsonSchema } from '@kraftverk/automation';
 import type { ConfigField, ConfigSchema } from '@kraftverk/device-sdk';
 
-import { KEY } from '@kraftverk/device-sdk';
+import { KEY, QUANTITY_UNITS, UNIT_LIST } from '@kraftverk/device-sdk';
 import { CURRENT_VERSION } from './migrate.ts';
 import type { Vocabulary, VocabularyMethod, VocabularyType } from './vocabulary.ts';
 
@@ -129,8 +129,28 @@ function deviceSchema(types: readonly VocabularyType[]): Schema {
 }
 
 /** A length of time — "5 s", "2 min", "1 h" — or an expression for one. Never a bare number: it would say no unit. */
+/** A number with its unit, as the rule's own data keeps it — the unit one kraftverk knows (units.ts). */
+const LITERAL: Schema = {
+  type: 'object',
+  required: ['value'],
+  additionalProperties: false,
+  properties: { value: {}, unit: { enum: [...UNIT_LIST], description: 'The unit it is written in' } },
+};
+
+const TIME_UNITS = QUANTITY_UNITS.duration;
+
 const DURATION: Schema = {
-  anyOf: [{ type: 'string', pattern: '\\D', description: 'A length of time with its unit: "5 s", "2 min", "1 h" — or an expression.' }, { type: 'object' }],
+  anyOf: [
+    {
+      type: 'string',
+      pattern: `^\\s*-?\\d+(\\.\\d+)?\\s*(${TIME_UNITS.join('|')})\\s*$`,
+      description: `A length of time with its unit, one of ${TIME_UNITS.join(', ')}: "5 s", "2 min", "1 h".`,
+      examples: ['5 s', '2 min', '1 h'],
+    },
+    { type: 'string', pattern: '^\\s*\\D', description: 'An expression for a length of time: a setting, or a sum of lengths of time.' },
+    LITERAL,
+    { type: 'object' },
+  ],
 };
 
 /** A condition or value: an expression's text — or a plain value, or the rule's own data. */
@@ -139,11 +159,14 @@ const EXPRESSION: Schema = {
     {
       type: 'string',
       description:
-        'An expression: a reading `role.meaning` ("charger.power"), `role reachable`, `run.trigger` (the id of the trigger that started the run), numbers with units ("50 W"), times ("07:00"), "text", compared with < <= > >= == !=, joined with and, or, not; `time between 23:00 and 05:00`; min( , ), max( , ), + -; `call package.fn(role, name = value)`.',
+        'An expression: a reading `role.meaning` ("charger.power"), `role reachable`, `run.trigger` (the id of the trigger that started the run), numbers with units ("50 W" — ' +
+        UNIT_LIST.join(', ') +
+        '), times ("07:00"), "text", compared with < <= > >= == !=, joined with and, or, not; `time between 23:00 and 05:00`; min( , ), max( , ), + -; `call package.fn(role, name = value)`.',
     },
     { type: 'number' },
     { type: 'boolean' },
     { type: 'null' },
+    LITERAL,
     { type: 'object' },
   ],
 };

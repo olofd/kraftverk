@@ -1,8 +1,6 @@
-import { attributeMeaning, unitOf, type DeviceDescription } from '@kraftverk/device-sdk';
 import type { AutomationMode, Rule } from '@kraftverk/automation';
 
 import type { AutomationEntry, DeviceEntry, Scalar, SecretValue } from './document.ts';
-import type { PrintContext } from '@kraftverk/automation';
 import type { Use } from '@kraftverk/automation';
 
 /*
@@ -86,21 +84,6 @@ export function fillsFrom(
     else missing.push({ role, key: use.device });
   }
   return { roles, starts, missing };
-}
-
-/**
- * How numbers beside a role's readings are written: in the unit of what the
- * part filling it reports — `charger.power > 50 W`.
- */
-export function unitsFrom(roles: Readonly<Record<string, { device: string; part: string }>>, describe: (device: string) => DeviceDescription | null): PrintContext {
-  return {
-    unitOf: (role, means) => {
-      const binding = roles[role];
-      const description = binding ? describe(binding.device) : null;
-      const attribute = description ? attributeMeaning(description, binding!.part, means) : null;
-      return attribute ? unitOf(attribute) || null : null;
-    },
-  };
 }
 
 /** A device as it lives: what the server keeps, and the app is shown. */

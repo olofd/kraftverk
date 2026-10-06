@@ -16,6 +16,8 @@
  * so the two never meet.
  */
 
+import type { Unit } from './units.ts';
+
 /**
  * What a number is a quantity of, which decides how it is formatted, charted
  * and projected into the standards. Adding one is a decision about every
@@ -83,16 +85,17 @@ export type StandardMeaning =
   | {
       label: string;
       type: 'number';
-      unit: string;
-      /** Other units an attribute claiming it may be in instead — a price is in its provider's currency — each one Home Assistant takes for the quantity. */
-      units?: readonly string[];
+      /** The unit it is in — none for one that has none, a rank. */
+      unit?: Unit;
+      /** Other units an attribute claiming it may be in instead — a price is in its provider's currency — each one its quantity allows. */
+      units?: readonly Unit[];
       quantity: Quantity;
       stateClass?: StateClass;
     }
   | { label: string; type: 'boolean' };
 
 /** The units an attribute with this meaning may be in: its own, or one of the others it allows. */
-export const unitsOfMeaning = (meaning: Extract<StandardMeaning, { type: 'number' }>): readonly string[] => [meaning.unit, ...(meaning.units ?? [])];
+export const unitsOfMeaning = (meaning: Extract<StandardMeaning, { type: 'number' }>): readonly Unit[] => [...(meaning.unit ? [meaning.unit] : []), ...(meaning.units ?? [])];
 
 /**
  * Meanings every device that has them shares.
@@ -134,7 +137,7 @@ export const STANDARD_MEANINGS = {
   /** What electricity costs now, per kWh, in the provider's currency. */
   price: { label: 'Electricity price', type: 'number', unit: 'EUR/kWh', units: ['SEK/kWh', 'NOK/kWh', 'DKK/kWh'], quantity: 'price' },
   /** Where the hour now stands among the day's hours by price: 1 is the cheapest. "The cheapest four hours" is a rank of 4 or less. */
-  priceRank: { label: 'Price rank', type: 'number', unit: '', quantity: 'rank' },
+  priceRank: { label: 'Price rank', type: 'number', quantity: 'rank' },
 } as const satisfies Record<string, StandardMeaning>;
 
 export type StandardMeaningId = keyof typeof STANDARD_MEANINGS;

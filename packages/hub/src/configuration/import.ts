@@ -2,7 +2,6 @@ import { ApiError, type ImportApplied, type ImportItem, type ImportPlan } from '
 import { checkBinding, checkRule, isAutomationRole, keepsSo, useOf, useText, type BoundPart, type PartRole } from '@kraftverk/automation';
 import type { AutomationEngine, AutomationLibrary, AutomationRecord } from '@kraftverk/automation-engine';
 import {
-  attributeMeaning,
   capabilitiesOf,
   isSimulated,
   MAIN_PART,
@@ -12,7 +11,6 @@ import {
   isPolicyValueName,
   POLICY_VALUES,
   randomHex,
-  unitOf,
   validateConfig,
   type AutomationId,
   type ConfigValues,
@@ -27,7 +25,6 @@ import {
   type ConfigDocument,
   type DeviceEntry,
   type SecretValue,
-  type WriteContext,
   isSealed,
 } from '@kraftverk/home-file';
 import { isConstraintError, type DeviceRecord, type SqlDatabase } from '@kraftverk/store';
@@ -148,7 +145,7 @@ const secretKey = (device: string, index: number, field: string) => `${device}.$
 export async function planImport(deps: ImportDeps, text: string, options: { mode: ImportMode; passphrase?: string; by: string; kept?: boolean; lenient?: boolean }): Promise<ImportPlan> {
   const vocabulary = homeVocabulary(deps);
   // A restore reads what it can: an entry it cannot read is left out and said, never the whole home lost for it.
-  const read = readConfig(text, unitsOfFile(deps, text), (document) => checkDocument(document, vocabulary, { hasSecret: () => true, uses: 'leave' }), { partial: options.lenient });
+  const read = readConfig(text, (document) => checkDocument(document, vocabulary, { hasSecret: () => true, uses: 'leave' }), { partial: options.lenient });
   const empty: ImportPlan = { id: null, from: read.from, problems: read.problems.map((each) => ({ ...each, path: [...each.path] })), devices: [], links: [], automations: [], policy: [], needs: { passphrase: null, secrets: [], rebind: [], confirm: [] }, notes: [] };
   if (!read.document) return empty;
   const document = read.document;
@@ -333,34 +330,9 @@ function sealedIn(document: ConfigDocument): string[] {
   return [...Object.values(document.secrets), ...inPlace].filter(isSealed);
 }
 
-/**
- * The unit of what each role of each automation in a file reads — from the
- * part filling it, a device the file brings or one here — so a number written
- * beside a type's own reading is checked and converted as one beside a
- * standard reading is. Read once roughly for what fills each role; the plan
- * reads again with it.
- */
-function unitsOfFile(deps: ImportDeps, text: string): WriteContext {
-  const first = readConfig(text, {}, undefined, { partial: true }).document;
-  if (!first) return {};
-  const describe = (key: string) => {
-    const brought = first.devices[key];
-    return brought ? (deps.types.get(brought.type)?.describe(brought.settings as never) ?? null) : (deps.catalog.byKey(key)?.description ?? null);
-  };
-  return {
-    unitIn: (automation, role, means) => {
-      const use = first.automations[automation]?.uses[role];
-      if (!use || 'automation' in use) return null;
-      const description = describe(use.device);
-      const attribute = description ? attributeMeaning(description, use.part, means) : null;
-      return attribute ? unitOf(attribute) || null : null;
-    },
-  };
-}
-
 /** Where a path is in the text: the reader's own placing, for problems the plan finds after reading. */
 function locate(text: string, path: (string | number)[]): { line: number | null; column: number | null } {
-  const placed = readConfig(text, {}, () => [{ message: '', path }]).problems[0];
+  const placed = readConfig(text, () => [{ message: '', path }]).problems[0];
   return { line: placed?.line ?? null, column: placed?.column ?? null };
 }
 

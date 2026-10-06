@@ -42,7 +42,7 @@ const description = (currency: Currency): DeviceDescription => ({
       key: 'rank',
       label: 'Price rank today',
       description: 'Where the hour now stands among the day’s hours by price: 1 is the cheapest.',
-      value: { type: 'number', unit: '', integer: true, min: 1, max: 25 },
+      value: { type: 'number', integer: true, min: 1, max: 25 },
       quantity: 'rank',
       means: 'priceRank',
       currentFor: CURRENT_FOR_MS,

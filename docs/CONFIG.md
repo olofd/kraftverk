@@ -112,11 +112,13 @@ describes.
   - a reading: `role.meaning` — `charger.power`, `station.charge`;
   - `role reachable`;
   - numbers with units — `50 W`, `15 %`, `30 min` — times of day `07:00`,
-    `"text"`, `true`, `false`. A number beside a reading is in the unit
-    that reading is in — its standard meaning's (`power` is in W), or
-    the part's own: one written in another unit of the same quantity is
-    converted (`2 kW` beside a reading in W is 2000), one of another
-    quantity is a problem (`50 °C` beside W);
+    `"text"`, `true`, `false`. A unit is one kraftverk knows
+    (`packages/device-sdk/src/units.ts`: W, kW, Wh, kWh, %, °C, s, min, h …);
+    any other is refused where it is written. A number keeps the unit it is
+    written in, and is written back so; it meets a reading of the same
+    dimension converted as it runs (`2 kW` beside a reading in W is
+    2000 W), and one of another is a problem (`50 °C` beside W). A number
+    with no unit is in the unit of what it is beside;
   - `< <= > >= == !=`, joined with `and`, `or`, `not`, and parentheses;
   - `time between 23:00 and 05:00` (across midnight when the end comes first);
   - `+`, `-`, `min(a, b)`, `max(a, b)`;

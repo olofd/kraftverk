@@ -31,7 +31,7 @@ const STEPS: Record<Keys<Step>, string> = {
   watch: 'watch:',
   start: 'start:',
 };
-const EXPRESSIONS: Record<Exclude<Keys<Expr>, 'role' | 'args' | 'left' | 'right'>, string> = {
+const EXPRESSIONS: Record<Exclude<Keys<Expr>, 'role' | 'args' | 'left' | 'right' | 'unit'>, string> = {
   value: '50 W',
   param: '$',
   read: 'charger.power',

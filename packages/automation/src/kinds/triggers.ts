@@ -62,7 +62,7 @@ const EVERY: TriggerSpec<'every'> = {
       help: 'From 5 minutes to 12 hours, in whole minutes. Add a condition below to narrow it — between 22:00 and 06:00, say.',
     },
   ],
-  blank: () => ({ every: { value: 15 * 60 } }),
+  blank: () => ({ every: { value: 15, unit: 'min' } }),
   words: (trigger, say) => `Every ${say.duration(trigger.every)}`,
   docs: {
     summary: 'Every so many minutes, counted on the owner’s clock from midnight: every 15 min is :00, :15, :30 and :45. Once a slot; a server that was down runs once, at the latest, and does not catch up.',

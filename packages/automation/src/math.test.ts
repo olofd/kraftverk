@@ -47,7 +47,7 @@ describe('arithmetic', () => {
   test('is checked: numbers, in one unit — a plain number takes the other side’s', () => {
     const below = (right: Expr) => rule({ compare: 'lt', left: soc, right });
     expect(checkRule(below({ math: 'subtract', left: { value: 90 }, right: { value: 5 } }), NO_FUNCTIONS)).toEqual([]);
-    expect(checkRule(below({ math: 'add', left: soc, right: draw }), NO_FUNCTIONS)).toEqual(['then[0].command.args.on.right: % and W are not one unit']);
+    expect(checkRule(below({ math: 'add', left: soc, right: draw }), NO_FUNCTIONS)).toEqual(['then[0].command.args.on.right: % and W are not of one quantity']);
     expect(checkRule(below({ math: 'add', left: soc, right: { value: true } }), NO_FUNCTIONS)).toEqual(['then[0].command.args.on.right.right: expected a number, got a boolean']);
     // The sum is in its unit, and compared as that.
     expect(checkRule(rule({ compare: 'lt', left: draw, right: { math: 'add', left: soc, right: { value: 5 } } }), NO_FUNCTIONS)).toEqual(['then[0].command.args.on: compares a number in W with a number in %']);
@@ -67,6 +67,6 @@ describe('arithmetic', () => {
       { params: { fields: { high: { type: 'number', title: 'High', unit: '%', default: 80 }, margin: { type: 'number', title: 'Margin', unit: '%', default: 5 } } } }
     );
     const copy = inlineParams(recipe, {});
-    expect(copy.then).toEqual([{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { compare: 'lt', left: soc, right: { value: 75 } } } } }]);
+    expect(copy.then).toEqual([{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { compare: 'lt', left: soc, right: { value: 75, unit: '%' } } } } }]);
   });
 });

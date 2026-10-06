@@ -101,10 +101,10 @@ describe('change a setting', () => {
 describe('start another automation', () => {
   test('starts an automation’s role, and may wait for it — bounded, and only where waiting may fail the run', () => {
     expect(checkRule(rule([{ start: { role: 'charging' } }]), NO_FUNCTIONS)).toEqual([]);
-    expect(checkRule(rule([{ start: { role: 'charging', andWait: { value: 300 } } }]), NO_FUNCTIONS)).toEqual([]);
+    expect(checkRule(rule([{ start: { role: 'charging', andWait: { value: 300, unit: 's' } } }]), NO_FUNCTIONS)).toEqual([]);
     expect(checkRule(rule([{ start: { role: 'plug' } }]), NO_FUNCTIONS)).toEqual(['then[0].start.role: plug is a part of a device, not an automation']);
-    expect(checkRule(rule([{ start: { role: 'charging', andWait: { value: 7200 } } }]), NO_FUNCTIONS)).toEqual(['then[0].start.andWait: from 1 s to 1 h']);
-    expect(checkRule(rule([live(true)], { otherwise: [{ start: { role: 'charging', andWait: { value: 60 } } }] }), NO_FUNCTIONS)).toEqual([
+    expect(checkRule(rule([{ start: { role: 'charging', andWait: { value: 7200, unit: 's' } } }]), NO_FUNCTIONS)).toEqual(['then[0].start.andWait: from 1 s to 1 h']);
+    expect(checkRule(rule([live(true)], { otherwise: [{ start: { role: 'charging', andWait: { value: 60, unit: 's' } } }] }), NO_FUNCTIONS)).toEqual([
       'otherwise[0].start: nothing here may wait for what might not come: it is started, not waited for',
     ]);
     // Started, not waited for: allowed after a failure.
@@ -119,7 +119,7 @@ describe('start another automation', () => {
   });
 
   test('takes steps, reads as it does, and its role is no device’s to bind', () => {
-    const chain = rule([{ start: { role: 'charging', andWait: { value: 300 } } }]);
+    const chain = rule([{ start: { role: 'charging', andWait: { value: 300, unit: 's' } } }]);
     expect(takesSteps(chain)).toBe(true);
     expect(ruleUses(chain).starts).toEqual(['charging']);
     expect(describeSteps(chain, {}, names).steps[0]).toEqual({ kind: 'start', text: 'Start “Charge the scooter” and wait until it ends — at most 5 min', branches: [] });
@@ -186,8 +186,8 @@ describe('a recipe, copied', () => {
     expect(copy.params).toEqual({ fields: {} });
     expect(checkRule(copy, NO_FUNCTIONS)).toEqual([]);
     expect(JSON.stringify(copy)).not.toContain('"param"');
-    // Its defaults, as values: wait up to 120 s for the plug.
-    expect(copy.then[1]).toEqual({ waitUntil: { condition: { reachable: 'charger' }, atMost: { value: 120 } } });
+    // Its defaults, as values in their units: wait up to 2 min for the plug.
+    expect(copy.then[1]).toEqual({ waitUntil: { condition: { reachable: 'charger' }, atMost: { value: 2, unit: 'min' } } });
     // "If it never starts charging: switch it and its supply off again" is no longer a choice: it is the two steps.
     expect(copy.otherwise).toEqual([
       { command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: false } } } },
@@ -203,11 +203,11 @@ describe('a recipe, copied', () => {
     const window = inlineParams(chargeBetween, { low: 15, lowFor: 120, high: 50, highFor: 0 });
     // "Only if 15 is below 50" was the recipe checking its settings: always so, and gone.
     expect(window.if).toBeUndefined();
-    // Each trigger keeps what it does beside it; a hold of 0 min is none.
+    // Each trigger keeps what it does beside it, its settings in their units; a hold of 0 min is none.
     const turn = (on: boolean): Step[] => [{ command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: on } } } }];
     expect(window.when).toEqual([
-      { becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'charge' } }, right: { value: 15 } }, heldFor: { value: 120 }, then: turn(true) },
-      { becomes: { compare: 'ge', left: { read: { role: 'battery', means: 'charge' } }, right: { value: 50 } }, then: turn(false) },
+      { becomes: { compare: 'lt', left: { read: { role: 'battery', means: 'charge' } }, right: { value: 15, unit: '%' } }, heldFor: { value: 2, unit: 'min' }, then: turn(true) },
+      { becomes: { compare: 'ge', left: { read: { role: 'battery', means: 'charge' } }, right: { value: 50, unit: '%' } }, then: turn(false) },
     ]);
     const names = (role: string) => (role === 'battery' ? 'Garage P280' : 'ATORCH plug');
     expect(describeRule(window, {}, names, NO_FUNCTIONS)).toBe(

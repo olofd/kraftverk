@@ -1,16 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { AttributeSpec, Quantity } from '@kraftverk/device-sdk';
+import type { AttributeSpec, Quantity, Unit } from '@kraftverk/device-sdk';
 
 import { fixedRange, formatValue, isOld, shownAttributes, startsAtZero } from './measurement.ts';
 
 /** An attribute the way these cases think of it: a quantity, a unit, a precision — or an on/off. */
-const spec = (over: { key?: string; unit?: string; kind?: Quantity | 'on/off'; precision?: number; primary?: boolean; category?: AttributeSpec['category'] } = {}): AttributeSpec => {
+const spec = (over: { key?: string; unit?: Unit | null; kind?: Quantity | 'on/off'; precision?: number; primary?: boolean; category?: AttributeSpec['category'] } = {}): AttributeSpec => {
   const kind = over.kind ?? 'power';
   return {
     key: over.key ?? 'x',
     label: 'X',
-    value: kind === 'on/off' ? { type: 'boolean' } : { type: 'number', unit: over.unit ?? 'W', ...(over.precision !== undefined ? { precision: over.precision } : {}) },
+    value: kind === 'on/off' ? { type: 'boolean' } : { type: 'number', ...(over.unit === null ? {} : { unit: over.unit ?? 'W' }), ...(over.precision !== undefined ? { precision: over.precision } : {}) },
     ...(kind !== 'on/off' ? { quantity: kind } : {}),
     ...(over.primary ? { category: 'primary' as const } : over.category ? { category: over.category } : {}),
   };
@@ -67,7 +67,7 @@ describe('formatValue', () => {
   });
 
   test('an on/off reads as on or off whichever way it was expressed', () => {
-    const port = spec({ kind: 'on/off', unit: '' });
+    const port = spec({ kind: 'on/off', unit: null });
     expect(formatValue(port, true)).toBe('On');
     expect(formatValue(port, false)).toBe('Off');
     expect(formatValue(port, 1)).toBe('On');
@@ -87,7 +87,7 @@ describe('formatValue', () => {
   });
 
   test('a unitless number is not left with a trailing space', () => {
-    expect(formatValue(spec({ kind: 'frequency', unit: '' }), 50)).toBe('50.00');
+    expect(formatValue(spec({ kind: 'frequency', unit: null }), 50)).toBe('50.00');
   });
 
   test('an operating mode shows its label, and one the type does not know shows as itself', () => {

@@ -862,7 +862,7 @@ describe('every so many minutes', () => {
       rule: {
         roles: { switch: { label: 'Plug', capabilities: ['switch'] } },
         params: { fields: {} },
-        when: [{ every: { value: 15 * 60 } }],
+        when: [{ every: { value: 15 * 60, unit: 's' } }],
         then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
       },
       madeFrom: null,
@@ -896,7 +896,7 @@ describe('every so many minutes', () => {
       rule: {
         roles: { switch: { label: 'Plug', capabilities: ['switch'] } },
         params: { fields: {} },
-        when: [{ every: { value: 15 * 60 } }],
+        when: [{ every: { value: 15 * 60, unit: 's' } }],
         then: [{ command: { role: 'switch', capability: 'switch', command: 'set', args: { on: { value: true } } } }],
       },
       madeFrom: null,

@@ -1,3 +1,4 @@
+import type { Unit } from './units.ts';
 import { CAPABILITIES, CAPABILITY_NAMES, isCapability, mustBeOffered, requiredMeanings, type CapabilityId, type CapabilitySpec } from './capabilities.ts';
 import { standardMeaning, type Quantity, type StateClass } from './meanings.ts';
 import { checkValue, isScalarType, type ScalarValueType, type Value, type ValueType } from './values.ts';
@@ -221,6 +222,9 @@ export function quantityOf(attribute: Pick<AttributeSpec, 'quantity' | 'means' |
   const standard = attribute.means ? standardMeaning(attribute.means) : null;
   return standard?.type === 'number' ? standard.quantity : null;
 }
+
+/** The unit a number is in, or null: not a number, or one with no unit. */
+export const unitIn = (attribute: Pick<AttributeSpec, 'value'>): Unit | null => (attribute.value.type === 'number' ? (attribute.value.unit ?? null) : null);
 
 /** The unit a value is shown in: a number's own, or none. */
 export const unitOf = (attribute: Pick<AttributeSpec, 'value'>): string => (attribute.value.type === 'number' ? (attribute.value.unit ?? '') : '');

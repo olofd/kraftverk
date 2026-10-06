@@ -76,7 +76,7 @@ for (const width of [320, 375]) {
           when: [{ becomes: { compare: 'lt', left: SOC, right: { value: 15 } }, heldForMinutes: { value: 2 } }, { at: { value: '07:00' }, days: ['mon', 'tue', 'wed', 'thu', 'fri'] }],
           then: [
             { command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { compare: 'lt', left: SOC, right: { value: 50 } } } } },
-            { ensure: { condition: { compare: 'gt', left: SOC, right: { value: 10 } }, within: { value: 20 }, tries: { value: 3 }, retry: [{ wait: { for: { value: 5 } } }] } },
+            { ensure: { condition: { compare: 'gt', left: SOC, right: { value: 10 } }, within: { value: 20, unit: 's' }, tries: { value: 3 }, retry: [{ wait: { for: { value: 5, unit: 's' } } }] } },
           ],
         },
         roles: { battery: { device: station.id, part: 'main' }, charger: { device: plug.id, part: 'main' } },
@@ -142,7 +142,7 @@ for (const width of [320, 375]) {
           roles: { plug: { label: 'Plug', description: 'The plug', capabilities: ['switch'] } },
           params: { fields: {} },
           when: [],
-          then: [{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { value: true } } } }, { wait: { for: { value: 1 } } }],
+          then: [{ command: { role: 'plug', capability: 'switch', command: 'set', args: { on: { value: true } } } }, { wait: { for: { value: 1, unit: 's' } } }],
         },
         roles: { plug: { device: meter.id, part: 'main' } },
         starts: {},

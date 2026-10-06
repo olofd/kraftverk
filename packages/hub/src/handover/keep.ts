@@ -48,7 +48,7 @@ export class KeepingCopy {
   /** What bringing the copy in would bring; null when there is nothing to. */
   what(): ElsewhereView {
     const text = this.#text();
-    const document = text ? readConfig(text, {}, undefined, { partial: true }).document : null;
+    const document = text ? readConfig(text, undefined, { partial: true }).document : null;
     const devices = Object.keys(document?.devices ?? {}).length;
     const automations = Object.keys(document?.automations ?? {}).length;
     return devices || automations ? { from: 'copy', devices, automations } : null;

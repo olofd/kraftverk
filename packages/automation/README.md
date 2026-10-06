@@ -194,7 +194,7 @@ charge is below 15 %".
 
 | Data | Text | Is |
 |---|---|---|
-| `value` | `50 W`, `15 %`, `07:00`, `"text"`, `true` | a value; a number in the unit of what it is compared with |
+| `value` | `50 W`, `15 %`, `07:00`, `"text"`, `true` | a value; a number keeps the unit it is written in (`{ value: 50, unit: 'W' }`) — with none, it is in the unit of what it is compared with |
 | `param` | `$cloudMax` | one of a recipe's settings |
 | `read` | `charger.power` | what the part filling a role reports now, by meaning (`charge`) or by its type's own (`acme.minutesToFull`) |
 | `call` | `call open-meteo.weather.skyLooks(forecast, cloudMax = 40)` | a function a package contributes, over the part filling a role |
@@ -232,13 +232,23 @@ never acts on what it cannot see.
 
 ## Units and lengths of time
 
-- A number beside a reading is in that reading's unit — its standard
-  meaning's (`power` is in W), or the part's own. One written in another
-  unit of the same quantity is converted (`2 kW` beside a reading in W is
-  2000); one of another quantity is a problem (`50 °C` beside W).
-- Lengths of time are written with their unit — `5 s`, `2 min`, `1 h`. A
-  bare `15` would be seconds to a wait and minutes to `every`, so it is
-  refused.
+- A unit is one of kraftverk's (`Unit`, `packages/device-sdk/src/units.ts`):
+  an enumeration, never free text. Each says what it measures (its
+  dimension) and how it converts; the parser refuses one it does not know
+  where it is written, the checker one in data.
+- A number keeps the unit it is written in — the data is
+  `{ value: 2, unit: 'kW' }`, the file says `2 kW` again — and is
+  converted where it meets another of its dimension: compared with a
+  reading in W, it is 2000 W; written to a setting in W, 2000. One of
+  another dimension is a problem before it runs: `50 °C` beside W, said by
+  the checker for a standard meaning and by the binding for a part's own.
+  A number with no unit is in the unit of what it is beside.
+- Lengths of time are written with their unit — `5 s`, `2 min`, `1 h`,
+  `1 d` — and read in seconds as a run waits. A bare `15` would be seconds
+  to a wait and minutes to `every`, so it is refused. A setting used as a
+  length of time is kept in seconds, as a run reads it.
+- The app never asks for a unit as text: a number with a unit is a field
+  and a choice among the units of its dimension.
 
 ## Roles
 

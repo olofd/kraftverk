@@ -1,7 +1,7 @@
 import { fieldValue, withField, type FieldSpec } from './kinds/spec.ts';
 import { STEP_KIND_ORDER, STEP_KINDS, stepSpec, type StepKind } from './kinds/steps.ts';
 import { ruleCommands, ruleUses } from './reads.ts';
-import { SEQUENCE_LIMITS, type Expr, type Rule, type Step } from './rule.ts';
+import { SEQUENCE_LIMITS, type Rule, type Step } from './rule.ts';
 
 /*
   Edits to a rule, as data (docs/AUTOMATION-EDITOR.md): where a list of steps
@@ -157,6 +157,3 @@ export function triggerIdOf(rule: Rule, index: number): { rule: Rule; id: string
   const id = `trigger${n}`;
   return { rule: { ...rule, when: rule.when.map((each, at) => (at === index ? { ...each, id } : each)) }, id };
 }
-
-/** A number of seconds an expression says outright; null when it says something else. */
-export const secondsOf = (expr: Expr | undefined): number | null => (expr && 'value' in expr && typeof expr.value === 'number' ? expr.value : null);

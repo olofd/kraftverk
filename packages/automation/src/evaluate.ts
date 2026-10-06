@@ -1,4 +1,4 @@
-import { isScalar, type ConfigSchema, type ScalarValue, type Value } from '@kraftverk/device-sdk';
+import { isScalar, type ConfigSchema, type ScalarValue, type Unit, type Value } from '@kraftverk/device-sdk';
 
 import { inWindow, minutesOf } from './clock.ts';
 import type { Evaluation } from './functions.ts';
@@ -7,18 +7,43 @@ import { EXPRESSION_FIELDS, fieldValue, withField } from './kinds/spec.ts';
 import { stepSpec } from './kinds/steps.ts';
 import { triggerFields } from './kinds/triggers.ts';
 import { automationRoles, calculate, type CompareOp, type Expr, type RuleTrigger, type Rule, type RunFact, type Step } from './rule.ts';
+import { convert, wholeTime } from '@kraftverk/device-sdk';
 
 /*
   Evaluating a rule's expressions where it runs: against what its parts read
   now, its settings and its clock — unknown when anything it needs is, never
   guessed — and its settings put in for what the rule says, step by step.
+  Every number is evaluated with its unit (units.ts): a literal's, a
+  reading's; two meet in one, converted, and a number with none is in the
+  unit of what it is beside.
 */
+
+/** A value as it is evaluated: a number with the unit it is in — none, in the unit of what it is beside. */
+export type Measured = { value: Value; unit: Unit | null };
+
+const plain = (value: Value): Measured => ({ value, unit: null });
+
+/**
+ * Two numbers in one unit: the first's, or — it has none — the second's.
+ * Null when they are of two quantities, which the checker refuses before it runs.
+ */
+function inOneUnit(left: Measured, right: Measured): { left: Value; right: Value; unit: Unit | null } | null {
+  if (typeof left.value !== 'number' || typeof right.value !== 'number' || !left.unit || !right.unit) return { left: left.value, right: right.value, unit: left.unit ?? right.unit };
+  const converted = convert(right.value, right.unit, left.unit);
+  return converted === null ? null : { left: left.value, right: converted, unit: left.unit };
+}
+
+/** A measured number in a unit: one with none is taken as in it already; null when it is not a number, or not of that quantity. */
+export function numberIn(measured: Measured, unit: Unit): number | null {
+  if (typeof measured.value !== 'number') return null;
+  return measured.unit ? convert(measured.value, measured.unit, unit) : measured.value;
+}
 
 /** What an expression is evaluated against. */
 export type RuleScope = {
   param(name: string): Value;
-  /** What the part filling a role reports now for a meaning, or null when it cannot be known. */
-  read(role: string, means: string): { value: ScalarValue; label: string; unit: string } | null;
+  /** What the part filling a role reports now for a meaning — a number in its unit, if it has one — or null when it cannot be known. */
+  read(role: string, means: string): { value: ScalarValue; label: string; unit: Unit | null } | null;
   /** A function's answer; not given where calls are not allowed. */
   call?(fn: string, role: string, args: Readonly<Record<string, Value>>): Promise<Evaluation>;
   /** Whether the part filling a role can be reached now — and, when not, why. */
@@ -90,6 +115,11 @@ export const shown = (value: Value, unit = ''): string =>
  * evaluator, whatever an expression holds.
  */
 export async function evaluate(expr: Expr, scope: RuleScope, trace: string[] = []): Promise<Value> {
+  return (await measure(expr, scope, trace)).value;
+}
+
+/** The same, with the unit its number is in: what a setting written, or a command's argument, is converted from. */
+export async function measure(expr: Expr, scope: RuleScope, trace: string[] = []): Promise<Measured> {
   const answers = new Map<Expr, Value>();
   for (const each of expressionsIn(expr)) {
     if (!('call' in each) || answers.has(each)) continue;
@@ -103,7 +133,7 @@ export async function evaluate(expr: Expr, scope: RuleScope, trace: string[] = [
     if (answer.detail) trace.push(answer.detail);
     answers.set(each, answer.value);
   }
-  return evaluateNow(expr, scope, trace, answers);
+  return measureNow(expr, scope, trace, answers);
 }
 
 /**
@@ -112,52 +142,64 @@ export async function evaluate(expr: Expr, scope: RuleScope, trace: string[] = [
  * asked it. Every kind of expression, or this does not compile.
  */
 export function evaluateNow(expr: Expr, scope: RuleScope, trace: string[] = [], answers?: ReadonlyMap<Expr, Value>): Value {
-  const now = (inner: Expr) => evaluateNow(inner, scope, trace, answers);
+  return measureNow(expr, scope, trace, answers).value;
+}
+
+/** A length of time, now, in seconds — whatever unit it was written in; null when it is not one, or not known. */
+export const secondsNow = (expr: Expr, scope: RuleScope): number | null => numberIn(measureNow(expr, scope), 's');
+
+/** An expression's value now, with the unit its number is in. Every kind of expression, or this does not compile. */
+export function measureNow(expr: Expr, scope: RuleScope, trace: string[] = [], answers?: ReadonlyMap<Expr, Value>): Measured {
+  const now = (inner: Expr) => measureNow(inner, scope, trace, answers);
   const kind = exprKind(expr);
   switch (kind) {
-    case 'value':
-      return (expr as ExprOf<'value'>).value;
+    case 'value': {
+      const { value, unit } = expr as ExprOf<'value'>;
+      return { value, unit: typeof value === 'number' ? (unit ?? null) : null };
+    }
     case 'param':
-      return scope.param((expr as ExprOf<'param'>).param);
+      return plain(scope.param((expr as ExprOf<'param'>).param));
     case 'read': {
       const { role, means } = (expr as ExprOf<'read'>).read;
       const read = scope.read(role, means);
-      trace.push(`${scope.name(role)}: ${read ? `${read.label} ${shown(read.value, read.unit)}` : `${means} is not known`}`);
-      return read?.value ?? null;
+      trace.push(`${scope.name(role)}: ${read ? `${read.label} ${shown(read.value, read.unit ?? '')}` : `${means} is not known`}`);
+      return read ? { value: read.value, unit: typeof read.value === 'number' ? read.unit : null } : plain(null);
     }
     case 'reachable': {
       const role = (expr as ExprOf<'reachable'>).reachable;
       const { reachable, detail } = scope.reachable(role);
       trace.push(`${scope.name(role)}: ${reachable ? 'can be reached' : `cannot be reached (${detail})`}`);
-      return reachable;
+      return plain(reachable);
     }
     case 'run':
-      return scope.run?.((expr as ExprOf<'run'>).run) ?? null;
+      return plain(scope.run?.((expr as ExprOf<'run'>).run) ?? null);
     case 'within': {
       const { from, to } = (expr as ExprOf<'within'>).within;
       const clock = scope.clock();
-      const [start, end] = [minutesOf(now(from)), minutesOf(now(to))];
-      if (clock === null || start === null || end === null) return null;
+      const [start, end] = [minutesOf(now(from).value), minutesOf(now(to).value)];
+      if (clock === null || start === null || end === null) return plain(null);
       trace.push(`It is ${clock}`);
-      return inWindow(minutesOf(clock)!, start, end);
+      return plain(inWindow(minutesOf(clock)!, start, end));
     }
     case 'call':
-      return answers?.get(expr) ?? null;
+      return plain(answers?.get(expr) ?? null);
     case 'compare': {
       const { compare: op, left, right } = expr as ExprOf<'compare'>;
-      return compare(op, now(left), now(right));
+      const both = inOneUnit(now(left), now(right));
+      return plain(both ? compare(op, both.left, both.right) : null);
     }
     case 'math': {
       const { math: op, left, right } = expr as ExprOf<'math'>;
-      return calculate(op, now(left), now(right));
+      const both = inOneUnit(now(left), now(right));
+      return both ? { value: calculate(op, both.left, both.right), unit: both.unit } : plain(null);
     }
     case 'all':
-      return combine('all', (expr as ExprOf<'all'>).all.map(now));
+      return plain(combine('all', (expr as ExprOf<'all'>).all.map((inner) => now(inner).value)));
     case 'any':
-      return combine('any', (expr as ExprOf<'any'>).any.map(now));
+      return plain(combine('any', (expr as ExprOf<'any'>).any.map((inner) => now(inner).value)));
     case 'not': {
-      const value = now((expr as ExprOf<'not'>).not);
-      return typeof value === 'boolean' ? !value : null;
+      const value = now((expr as ExprOf<'not'>).not).value;
+      return plain(typeof value === 'boolean' ? !value : null);
     }
     default: {
       const unknown: never = kind;
@@ -207,6 +249,14 @@ export const NO_SETTINGS: ConfigSchema = { fields: {} };
  */
 export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>): Rule {
   const scope = settledScope(rule, values);
+  /** A setting's value as a rule writes it: a number in the setting's unit — a length of time in the largest that says it whole. */
+  const written = (name: string): Expr => {
+    const value = scope.param(name);
+    const field = rule.params.fields[name];
+    const unit = field?.type === 'number' ? field.unit : undefined;
+    if (typeof value !== 'number' || !unit) return { value };
+    return unit === 's' ? wholeTime(value) : { value, unit };
+  };
   const args = (given: Readonly<Record<string, Expr>>): Record<string, Expr> => Object.fromEntries(Object.entries(given).map(([name, arg]) => [name, expr(arg)]));
   /**
    * Every setting its value — and what the settings alone decide, decided:
@@ -220,11 +270,13 @@ export function inlineParams(rule: Rule, values: Readonly<Record<string, Value>>
     const known = (each: Expr): each is ExprOf<'value'> => 'value' in each;
     switch (kind) {
       case 'param':
-        return { value: scope.param((settled as ExprOf<'param'>).param) };
-      // Settings alone: the number, or the answer, they make — written in.
+        return written((settled as ExprOf<'param'>).param);
+      // Settings alone: the number, or the answer, they make — written in, in their unit.
       case 'math': {
-        const { math: op, left, right } = settled as ExprOf<'math'>;
-        return known(left) && known(right) ? { value: calculate(op, left.value, right.value) } : settled;
+        const { left, right } = settled as ExprOf<'math'>;
+        if (!known(left) || !known(right)) return settled;
+        const { value, unit } = measureNow(settled, scope);
+        return unit && typeof value === 'number' ? { value, unit } : { value };
       }
       case 'compare': {
         const { left, right } = settled as ExprOf<'compare'>;

@@ -44,8 +44,8 @@ describe('the language', () => {
   });
 
   test('every wait has a limit and every retry a count: literal or setting, held to them', () => {
-    expect(checkRule(rule([{ wait: { for: { value: SEQUENCE_LIMITS.waitSeconds + 1 } } }]), NO_FUNCTIONS)).toEqual(['then[0].wait.for: from 1 s to 1 h']);
-    expect(checkRule(rule([{ ensure: { condition: drawing!, within: { value: 20 }, tries: { value: 11 }, retry: [on] } }]), NO_FUNCTIONS)).toEqual(['then[0].ensure.tries: from 1 to 10']);
+    expect(checkRule(rule([{ wait: { for: { value: SEQUENCE_LIMITS.waitSeconds + 1, unit: 's' } } }]), NO_FUNCTIONS)).toEqual(['then[0].wait.for: from 1 s to 1 h']);
+    expect(checkRule(rule([{ ensure: { condition: drawing!, within: { value: 20, unit: 's' }, tries: { value: 11 }, retry: [on] } }]), NO_FUNCTIONS)).toEqual(['then[0].ensure.tries: from 1 to 10']);
     // A setting with no maximum could be anything its form accepts.
     const unbounded = rule([{ wait: { for: { param: 'long' } } }], { params: { fields: { long: { type: 'number', title: 'Long', unit: 's', min: 1 } } } });
     expect(checkRule(unbounded, NO_FUNCTIONS)).toEqual(['then[0].wait.for: the setting "long" must be held between 1 s and 1 h']);
@@ -55,9 +55,9 @@ describe('the language', () => {
   });
 
   test('what might not come is waited for only where failing is allowed: not in a retry, not in what runs after a failure', () => {
-    const waits: Step = { waitUntil: { condition: { reachable: 'plug' }, atMost: { value: 60 } } };
+    const waits: Step = { waitUntil: { condition: { reachable: 'plug' }, atMost: { value: 60, unit: 's' } } };
     expect(checkRule(rule([on], { otherwise: [waits] }), NO_FUNCTIONS)).toEqual(['otherwise[0]: nothing here may wait for a condition that might not come: it would fail again']);
-    expect(checkRule(rule([{ ensure: { condition: drawing!, within: { value: 20 }, tries: { value: 3 }, retry: [waits] } }]), NO_FUNCTIONS)).toEqual([
+    expect(checkRule(rule([{ ensure: { condition: drawing!, within: { value: 20, unit: 's' }, tries: { value: 3 }, retry: [waits] } }]), NO_FUNCTIONS)).toEqual([
       'then[0].ensure.retry[0]: nothing here may wait for a condition that might not come: it would fail again',
     ]);
     // In a choice within `then`, it may.
@@ -65,11 +65,11 @@ describe('the language', () => {
   });
 
   test('conditions are conditions, of roles it has; a choice or a watch does something; steps nest only so deep', () => {
-    expect(checkRule(rule([{ waitUntil: { condition: { read: { role: 'plug', means: 'power' } }, atMost: { value: 5 } } }]), NO_FUNCTIONS)).toEqual([
+    expect(checkRule(rule([{ waitUntil: { condition: { read: { role: 'plug', means: 'power' } }, atMost: { value: 5, unit: 's' } } }]), NO_FUNCTIONS)).toEqual([
       'then[0].waitUntil.condition: expected a condition, got a number in W',
     ]);
-    expect(checkRule(rule([{ waitUntil: { condition: { reachable: 'lamp' }, atMost: { value: 5 } } }]), NO_FUNCTIONS)).toEqual(['then[0].waitUntil.condition: there is no role "lamp"']);
-    expect(checkRule(rule([{ watch: { condition: drawing!, for: { value: 5 } } }]), NO_FUNCTIONS)).toEqual(['then[0].watch: it does nothing either way']);
+    expect(checkRule(rule([{ waitUntil: { condition: { reachable: 'lamp' }, atMost: { value: 5, unit: 's' } } }]), NO_FUNCTIONS)).toEqual(['then[0].waitUntil.condition: there is no role "lamp"']);
+    expect(checkRule(rule([{ watch: { condition: drawing!, for: { value: 5, unit: 's' } } }]), NO_FUNCTIONS)).toEqual(['then[0].watch: it does nothing either way']);
     const nest = (depth: number): Step => ({ choose: { if: { reachable: 'plug' }, then: [depth <= 1 ? on : nest(depth - 1)] } });
     expect(checkRule(rule([nest(SEQUENCE_LIMITS.depth - 1)]), NO_FUNCTIONS)).toEqual([]);
     expect(checkRule(rule([nest(SEQUENCE_LIMITS.depth)]), NO_FUNCTIONS)).toEqual([`then[0].choose.then[0].choose.then[0].choose.then[0].choose.then: steps within steps, more than ${SEQUENCE_LIMITS.depth} deep`]);

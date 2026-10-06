@@ -1,5 +1,7 @@
 import { RUN_FACTS, type CompareOp, type Expr, type MathOp, type RunFact } from '../rule.ts';
-import { standardMeaning, type Value } from '@kraftverk/device-sdk';
+import type { Value } from '@kraftverk/device-sdk';
+
+import { isUnit, type Unit } from '@kraftverk/device-sdk';
 
 /*
   The rule language's expressions as text (docs/CONFIG.md): what a condition
@@ -13,27 +15,22 @@ import { standardMeaning, type Value } from '@kraftverk/device-sdk';
   Precedence, loosest first: `or`, `and`, `not`, a comparison, `+ -`, and an
   atom — a value, a reading, `role reachable`, `run.trigger`, `time between … and …`,
   `min( , )`, `max( , )`, `call id(role, name = …)`, `$setting`, or
-  parentheses. A number may carry a unit (`50 W`, `15 %`): it is kept beside
-  the expression, with where it was written, and the rule reader checks it
-  against what the other side reads — converting `2 kW` beside a reading in W
-  to 2000, refusing `50 °C` beside one in W. The language's numbers are in the
-  unit of what they are compared with.
+  parentheses. A number may carry a unit (`50 W`, `15 %`, `2 min`), one the
+  language knows (units.ts): it is kept with the number, and printed with it,
+  as it was written. Where it meets another of its quantity it is converted —
+  `2 kW` beside a reading in W is 2000 W — and the checker refuses one of
+  another quantity (`50 °C` beside W). A number with no unit is in the unit
+  of what it is beside.
 */
 
 /** Where a text went wrong: a message, and how far into the text. */
 export type ExprError = { message: string; offset: number };
 
-/** A unit written after a number, and where in the text: what the rule reader checks it by. */
-export type WrittenUnit = { unit: string; at: number };
-
-/** A parsed expression, with the unit written after each number that had one, by the value it became. */
-export type Parsed = { ok: true; expr: Expr; units: WeakMap<Expr, WrittenUnit> } | { ok: false; error: ExprError };
-
-/** What printing may ask: the unit of what a role's part reads, so a number beside it says it. */
-export type PrintContext = { unitOf?: (role: string, means: string) => string | null };
+/** A parsed expression, or where it went wrong. */
+export type Parsed = { ok: true; expr: Expr } | { ok: false; error: ExprError };
 
 type Token =
-  | { kind: 'number'; value: number; unit: string | null; at: number }
+  | { kind: 'number'; value: number; unit: Unit | null; at: number }
   | { kind: 'time'; value: string; at: number }
   | { kind: 'string'; value: string; at: number }
   | { kind: 'name'; value: string; at: number }
@@ -83,11 +80,13 @@ function tokenize(text: string): Token[] {
       // A unit after it, a space or none between: "50 W", "15%". Not a word of the language.
       const gap = /^\s*/.exec(text.slice(at))![0].length;
       const unit = UNIT.exec(text.slice(at + gap));
-      let written: string | null = null;
+      let written: Unit | null = null;
       // "min" is minutes after a number — unless it opens "min(", the lower of two.
       const minutes = unit?.[0] === 'min' && !/^\s*\(/.test(text.slice(at + gap + 3));
       if (unit && (!KEYWORDS.has(unit[0]) || minutes)) {
-        written = unit[0];
+        const text = unit[0];
+        if (!isUnit(text)) throw new Failure(`"${text}" is not a unit kraftverk knows: W, kWh, %, °C, min …`, at + gap);
+        written = text;
         at += gap + unit[0].length;
       }
       tokens.push({ kind: 'number', value: Number(number[0]), unit: written, at: start });
@@ -120,7 +119,6 @@ function tokenize(text: string): Token[] {
 
 /** Reads an expression's text; every problem with where it is. */
 export function parseExpr(text: string): Parsed {
-  const units = new WeakMap<Expr, WrittenUnit>();
   let tokens: Token[];
   try {
     tokens = tokenize(text);
@@ -182,11 +180,8 @@ export function parseExpr(text: string): Parsed {
   const atom = (): Expr => {
     const token = next();
     switch (token.kind) {
-      case 'number': {
-        const expr: Expr = { value: token.value };
-        if (token.unit) units.set(expr, { unit: token.unit, at: token.at });
-        return expr;
-      }
+      case 'number':
+        return token.unit ? { value: token.value, unit: token.unit } : { value: token.value };
       case 'time':
         return { value: token.value };
       case 'string':
@@ -199,9 +194,7 @@ export function parseExpr(text: string): Parsed {
         }
         if (token.value === '-' && peek().kind === 'number') {
           const number = next() as Extract<Token, { kind: 'number' }>;
-          const expr: Expr = { value: -number.value };
-          if (number.unit) units.set(expr, { unit: number.unit, at: token.at });
-          return expr;
+          return number.unit ? { value: -number.value, unit: number.unit } : { value: -number.value };
         }
         if (token.value === '$') {
           const name = next();
@@ -296,7 +289,7 @@ export function parseExpr(text: string): Parsed {
     const expr = or();
     const after = peek();
     if (after.kind !== 'end') throw new Failure(`Nothing more was expected here, but there is ${describe(after)}`, after.at);
-    return { ok: true, expr, units };
+    return { ok: true, expr };
   } catch (error) {
     if (!(error instanceof Failure)) throw error;
     return { ok: false, error: { message: error.message, offset: error.offset } };
@@ -309,30 +302,16 @@ const LEVEL = { or: 1, and: 2, not: 3, compare: 4, sum: 5, atom: 6 } as const;
 const levelOf = (expr: Expr): number =>
   'any' in expr ? LEVEL.or : 'all' in expr ? LEVEL.and : 'not' in expr ? LEVEL.not : 'compare' in expr ? LEVEL.compare : 'math' in expr && (expr.math === 'add' || expr.math === 'subtract') ? LEVEL.sum : LEVEL.atom;
 
-/** The unit of a reading on either side of an expression: what a bare number beside it is in. */
-/** The unit a standard meaning's readings are in — none for one that may be in several (a price's currency). */
-export function standardUnit(means: string): string | null {
-  const meaning = standardMeaning(means);
-  return meaning && meaning.type === 'number' && !meaning.units?.length ? meaning.unit : null;
-}
-
-/** The unit what a reading is read in: the part's own word when known, else its standard meaning's — as the reader reads it. */
-function unitBeside(expr: Expr, context: PrintContext): string | null {
-  if ('read' in expr) return context.unitOf?.(expr.read.role, expr.read.means) ?? standardUnit(expr.read.means);
-  if ('math' in expr) return unitBeside(expr.left, context) ?? unitBeside(expr.right, context);
-  return null;
-}
-
 const isPrintableValue = (value: Value): boolean => value === null || typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string';
 
 /**
  * An expression as its text, or null when text cannot say it — a list or a
- * record for a value, a name the text cannot write. `unit`: what a number
- * here is in, from the reading beside it.
+ * record for a value, a name the text cannot write. Each number with the
+ * unit it was written in.
  */
-export function printExpr(expr: Expr, context: PrintContext = {}): string | null {
+export function printExpr(expr: Expr): string | null {
   try {
-    return print(expr, 0, context, null);
+    return print(expr, 0);
   } catch (error) {
     if (error instanceof Unprintable) return null;
     throw error;
@@ -357,15 +336,15 @@ function plainDigits(value: number): string {
   return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`;
 }
 
-function print(expr: Expr, need: number, context: PrintContext, unit: string | null): string {
+function print(expr: Expr, need: number): string {
   const wrap = (text: string, level: number) => (level < need ? `(${text})` : text);
   if ('value' in expr) {
-    const value = expr.value;
+    const { value, unit } = expr;
     if (!isPrintableValue(value)) throw new Unprintable();
     if (typeof value === 'number') {
-      const text = `${plainDigits(value)}${unit ? (unit === '%' ? ' %' : ` ${unit}`) : ''}`;
+      if (unit !== undefined && !isUnit(unit)) throw new Unprintable();
       // A negative number in a sum reads as one: "-5", not "- 5".
-      return text;
+      return `${plainDigits(value)}${unit ? ` ${unit}` : ''}`;
     }
     if (typeof value === 'string') return CLOCK.test(value) ? value : JSON.stringify(value);
     return String(value);
@@ -386,34 +365,30 @@ function print(expr: Expr, need: number, context: PrintContext, unit: string | n
     if (!RUN_FACTS.includes(expr.run)) throw new Unprintable();
     return `run.${expr.run}`;
   }
-  if ('within' in expr) return `time between ${print(expr.within.from, LEVEL.atom, context, null)} and ${print(expr.within.to, LEVEL.atom, context, null)}`;
+  if ('within' in expr) return `time between ${print(expr.within.from, LEVEL.atom)} and ${print(expr.within.to, LEVEL.atom)}`;
   if ('call' in expr) {
     if (!FUNCTION_ID.test(expr.call) || !NAME.test(expr.role) || KEYWORDS.has(expr.role)) throw new Unprintable();
     const args = Object.entries(expr.args ?? {}).map(([name, arg]) => {
       if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(name) || KEYWORDS.has(name)) throw new Unprintable();
-      return `${name} = ${print(arg, LEVEL.or, context, null)}`;
+      return `${name} = ${print(arg, LEVEL.or)}`;
     });
     return `call ${expr.call}(${[expr.role, ...args].join(', ')})`;
   }
-  if ('compare' in expr) {
-    const beside = unitBeside(expr.left, context) ?? unitBeside(expr.right, context);
-    return wrap(`${print(expr.left, LEVEL.sum, context, beside)} ${COMPARE_TEXT[expr.compare]} ${print(expr.right, LEVEL.sum, context, beside)}`, LEVEL.compare);
-  }
+  if ('compare' in expr) return wrap(`${print(expr.left, LEVEL.sum)} ${COMPARE_TEXT[expr.compare]} ${print(expr.right, LEVEL.sum)}`, LEVEL.compare);
   if ('math' in expr) {
-    const beside = unit ?? unitBeside(expr, context);
-    if (expr.math === 'min' || expr.math === 'max') return `${expr.math}(${print(expr.left, LEVEL.or, context, beside)}, ${print(expr.right, LEVEL.or, context, beside)})`;
+    if (expr.math === 'min' || expr.math === 'max') return `${expr.math}(${print(expr.left, LEVEL.or)}, ${print(expr.right, LEVEL.or)})`;
     // Left to right: a sum on the left needs nothing, one on the right its parentheses.
-    return wrap(`${print(expr.left, LEVEL.sum, context, beside)} ${expr.math === 'add' ? '+' : '-'} ${print(expr.right, LEVEL.atom, context, beside)}`, LEVEL.sum);
+    return wrap(`${print(expr.left, LEVEL.sum)} ${expr.math === 'add' ? '+' : '-'} ${print(expr.right, LEVEL.atom)}`, LEVEL.sum);
   }
-  if ('not' in expr) return wrap(`not ${print(expr.not, LEVEL.not, context, null)}`, LEVEL.not);
+  if ('not' in expr) return wrap(`not ${print(expr.not, LEVEL.not)}`, LEVEL.not);
   if ('all' in expr) {
     // One alone, or none, is no "and": the file keeps it as data.
     if (expr.all.length < 2) throw new Unprintable();
-    return wrap(expr.all.map((each) => print(each, LEVEL.not, context, null)).join(' and '), LEVEL.and);
+    return wrap(expr.all.map((each) => print(each, LEVEL.not)).join(' and '), LEVEL.and);
   }
   if ('any' in expr) {
     if (expr.any.length < 2) throw new Unprintable();
-    return wrap(expr.any.map((each) => print(each, LEVEL.and + 0.5, context, null)).join(' or '), LEVEL.or);
+    return wrap(expr.any.map((each) => print(each, LEVEL.and + 0.5)).join(' or '), LEVEL.or);
   }
   throw new Unprintable();
 }

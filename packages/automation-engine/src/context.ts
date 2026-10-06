@@ -1,6 +1,6 @@
 import type { ConditionState } from '@kraftverk/api-contract';
-import { capitalise, checkBinding, describeExpr, describeSteps, evaluate, evaluateNow, isAutomationRole, partRoles, secondsText, triggerKey, triggerOf, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type RuleSteps, type Step, type Write } from '@kraftverk/automation';
-import { attributeMeaning, capabilityIn, clockTime, isCurrent, isScalar, readingOf, REAL_CLOCK, standardMeaning, unitOf, type CapabilityName, type Clock, type Value } from '@kraftverk/device-sdk';
+import { capitalise, checkBinding, describeExpr, describeSteps, evaluateNow, measure, numberIn, secondsNow, isAutomationRole, partRoles, secondsText, triggerKey, triggerOf, writtenAttribute, type BoundPart, type Command, type Expr, type RoleBinding, type Rule, type RuleScope, type RuleVocabulary, type RuleSteps, type Step, type Write } from '@kraftverk/automation';
+import { attributeMeaning, capabilityIn, clockTime, isCurrent, isScalar, readingOf, REAL_CLOCK, standardMeaning, unitIn, type CapabilityName, type Clock, type Value } from '@kraftverk/device-sdk';
 
 import type { AutomationEngineDeps, AutomationRecord, EngineDevice } from './model.ts';
 import { quoted } from './words.ts';
@@ -64,7 +64,7 @@ export class RuleContext {
         const reading = device?.device && attribute ? readingOf(device.device.readings(), attribute.key) : null;
         // What it reports now: a reading past how long it stays current is not known, and neither is structure.
         if (!attribute || !reading || !isCurrent(attribute, reading, now.getTime()) || !isScalar(reading.value)) return null;
-        return { value: reading.value, label: standardMeaning(means)?.label ?? attribute.label, unit: unitOf(attribute) };
+        return { value: reading.value, label: standardMeaning(means)?.label ?? attribute.label, unit: unitIn(attribute) };
       },
       reachable: (role) => {
         const device = part(role);
@@ -130,7 +130,7 @@ export class RuleContext {
     const conditions = rule.when.flatMap((trigger): ConditionState[] => {
       if (!('becomes' in trigger)) return [];
       const holds = evaluateNow(trigger.becomes, scope, saw);
-      const seconds = trigger.heldFor ? Number(evaluateNow(trigger.heldFor, scope)) : 0;
+      const seconds = trigger.heldFor ? (secondsNow(trigger.heldFor, scope) ?? 0) : 0;
       const text = `${capitalise(this.said(automation, rule, trigger.becomes))}${seconds > 0 ? ` for ${secondsText(seconds)}` : ''}`;
       return [{ text, holds: typeof holds === 'boolean' ? holds : null }];
     });
@@ -206,12 +206,32 @@ export class RuleContext {
     return reading !== null && String(reading.value) === String(write.value);
   }
 
-  /** One command as it would be sent, its arguments evaluated: an unknown one is not guessed. */
+  /**
+   * The value a setting is set to, in the setting's own unit — "2 kW" to one
+   * in W is 2000 — evaluated now; null when it cannot be known, or put in it.
+   */
+  async settingValue(binding: RoleBinding, write: Write, scope: RuleScope): Promise<Value> {
+    const measured = await measure(write.value, scope, []).catch(() => null);
+    if (!measured) return null;
+    const device = this.deps.device(binding);
+    const attribute = device ? writtenAttribute(device.description, binding.part, write) : null;
+    const unit = attribute?.value.type === 'number' ? attribute.value.unit : undefined;
+    return unit && typeof measured.value === 'number' ? numberIn(measured, unit) : measured.value;
+  }
+
+  /** One command as it would be sent, its arguments evaluated — each number in the unit its capability takes it in: an unknown one is not guessed. */
   async planCommand(automation: AutomationRecord, command: Command, scope: RuleScope): Promise<PlannedAction | { unknown: string }> {
-    const args: Record<string, Value> = {};
-    for (const [name, expr] of Object.entries(command.args)) args[name] = await evaluate(expr, scope, []);
-    if (Object.values(args).some((value) => value === null)) return { unknown: scope.name(command.role) };
     const binding = automation.roles[command.role]!;
+    const device = binding ? this.deps.device(binding) : null;
+    const takes = device ? capabilityIn(device.description, command.capability)?.commands[command.command]?.args : undefined;
+    const args: Record<string, Value> = {};
+    for (const [name, expr] of Object.entries(command.args)) {
+      const measured = await measure(expr, scope, []);
+      const type = takes?.[name];
+      const unit = type?.type === 'number' ? type.unit : undefined;
+      args[name] = unit && typeof measured.value === 'number' ? numberIn(measured, unit) : measured.value;
+    }
+    if (Object.values(args).some((value) => value === null)) return { unknown: scope.name(command.role) };
     const name = scope.name(command.role);
     const setting = Object.values(args).map((value) => (value === true ? 'on' : value === false ? 'off' : String(value))).join(', ');
     const what = command.capability === 'switch' && command.command === 'set' ? `turn ${name} ${setting}` : `${command.capability}.${command.command} ${name} (${setting})`;
@@ -228,7 +248,7 @@ export class RuleContext {
         planned.push({ command: action });
       } else if ('write' in step) {
         const binding = automation.roles[step.write.role];
-        const value = await evaluate(step.write.value, scope, []).catch(() => null);
+        const value = binding ? await this.settingValue(binding, step.write, scope) : null;
         const key = binding ? this.settingKey(binding, step.write) : null;
         if (!binding || value === null || !key) return { unknown: scope.name(step.write.role) };
         planned.push({ write: { binding, key, value } });

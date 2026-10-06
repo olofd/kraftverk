@@ -26,26 +26,27 @@ export type NoProjection = { none: string };
 export type HomeAssistantPlatform = 'sensor' | 'binary_sensor' | 'switch' | 'number';
 
 /**
- * Home Assistant's sensor device class for a quantity, and the units it
- * accepts for it; null where Home Assistant has no class and shows the unit as
+ * Home Assistant's sensor device class for a quantity — the units it takes
+ * are the quantity's own (`QUANTITY_UNITS`, units.ts) — or null where Home
+ * Assistant has no class and shows the unit as
  * given (a percentage that is not a battery).
  */
-export const HOME_ASSISTANT_QUANTITIES: Readonly<Record<Quantity, { deviceClass: string | null; units: readonly string[] }>> = {
-  power: { deviceClass: 'power', units: ['W', 'kW'] },
-  energy: { deviceClass: 'energy', units: ['Wh', 'kWh', 'MWh'] },
-  percent: { deviceClass: null, units: ['%'] },
-  voltage: { deviceClass: 'voltage', units: ['V', 'mV'] },
-  current: { deviceClass: 'current', units: ['A', 'mA'] },
-  temperature: { deviceClass: 'temperature', units: ['°C', '°F', 'K'] },
-  frequency: { deviceClass: 'frequency', units: ['Hz', 'kHz'] },
-  duration: { deviceClass: 'duration', units: ['s', 'min', 'h', 'd'] },
-  humidity: { deviceClass: 'humidity', units: ['%'] },
-  illuminance: { deviceClass: 'illuminance', units: ['lx'] },
-  signal: { deviceClass: 'signal_strength', units: ['dBm', 'dB'] },
-  distance: { deviceClass: 'distance', units: ['km', 'm', 'mi'] },
-  speed: { deviceClass: 'speed', units: ['km/h', 'm/s', 'mph'] },
-  price: { deviceClass: 'monetary', units: ['EUR/kWh', 'SEK/kWh', 'NOK/kWh', 'DKK/kWh'] },
-  rank: { deviceClass: null, units: [''] },
+export const HOME_ASSISTANT_QUANTITIES: Readonly<Record<Quantity, { deviceClass: string | null }>> = {
+  power: { deviceClass: 'power' },
+  energy: { deviceClass: 'energy' },
+  percent: { deviceClass: null },
+  voltage: { deviceClass: 'voltage' },
+  current: { deviceClass: 'current' },
+  temperature: { deviceClass: 'temperature' },
+  frequency: { deviceClass: 'frequency' },
+  duration: { deviceClass: 'duration' },
+  humidity: { deviceClass: 'humidity' },
+  illuminance: { deviceClass: 'illuminance' },
+  signal: { deviceClass: 'signal_strength' },
+  distance: { deviceClass: 'distance' },
+  speed: { deviceClass: 'speed' },
+  price: { deviceClass: 'monetary' },
+  rank: { deviceClass: null },
 };
 
 /** Home Assistant uses the same three state classes, by the same names. */

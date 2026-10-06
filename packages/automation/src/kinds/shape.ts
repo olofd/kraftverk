@@ -24,4 +24,4 @@ const kindsShape = <K extends string>(order: readonly K[], table: { readonly [k 
 
 /** How a rule is kept, as text: what a database's fingerprint carries beside its SQL. */
 export const ruleShape = (): string =>
-  [`when ${kindsShape(TRIGGER_KIND_ORDER, TRIGGER_KINDS)} any(${TRIGGER_FIELDS.map(fieldShape).join(',')})`, `do ${kindsShape(STEP_KIND_ORDER, STEP_KINDS)}`, `expr ${[...EXPR_KIND_ORDER].sort().join(',')}`, `run ${RUN_FACTS.join(',')}`, `means ${Object.keys(STANDARD_MEANINGS).sort().join(',')}`, `roles part(${ROLE_FIELDS.part.join(',')}) automation(${ROLE_FIELDS.automation.join(',')})`].join('; ');
+  [`when ${kindsShape(TRIGGER_KIND_ORDER, TRIGGER_KINDS)} any(${TRIGGER_FIELDS.map(fieldShape).join(',')})`, `do ${kindsShape(STEP_KIND_ORDER, STEP_KINDS)}`, `expr ${[...EXPR_KIND_ORDER].sort().join(',')} value(value,unit)`, `run ${RUN_FACTS.join(',')}`, `means ${Object.keys(STANDARD_MEANINGS).sort().join(',')}`, `roles part(${ROLE_FIELDS.part.join(',')}) automation(${ROLE_FIELDS.automation.join(',')})`].join('; ');

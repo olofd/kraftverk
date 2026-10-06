@@ -9,7 +9,9 @@ dependencies.
 
 ## What it does — and does not
 
-- **Does:** values and their types; meanings (`charge`, `power`)
+- **Does:** values and their types; the units kraftverk knows
+  (`units.ts`: one enumeration, each unit's dimension and conversion, the
+  units each quantity is measured in); meanings (`charge`, `power`)
   and their units; capabilities and their commands; descriptions — parts,
   attributes, events; links between parts; categories; config schemas;
   `DeviceType`, `DeviceSession`, `ConnectionMethod`, `Protocol`,

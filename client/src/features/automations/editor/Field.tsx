@@ -1,13 +1,13 @@
 import { Text, YStack } from 'tamagui';
 
-import { fieldValue, secondsOf, withField, type Expr, type FieldSpec, type Weekday } from '@kraftverk/automation';
-import { MAIN_PART } from '@kraftverk/device-sdk';
+import { fieldValue, withField, type Expr, type FieldSpec, type Weekday } from '@kraftverk/automation';
+import { MAIN_PART, wholeTime } from '@kraftverk/device-sdk';
 import { Chips } from '@kraftverk/ui';
 
 import { Picker } from '../../../components/Picker';
 import { blankCondition, ConditionField } from './Condition';
 import { pickPart, useEditor } from './context';
-import { DaysField, DurationField, Label, NumberField, TimeField } from './fields';
+import { DaysField, DurationField, durationOf, Label, NumberField, TimeField, type Measure } from './fields';
 
 /*
   One field of a construct — a trigger's, a step's — drawn by what it holds
@@ -60,15 +60,16 @@ function FieldEditor<T extends object>({ field, fields, construct, set }: { fiel
         </YStack>
       );
     case 'duration': {
-      const seconds = literal(value);
+      // At least its shortest, when it must have one: in the largest unit that says it whole.
+      const least: Measure = wholeTime(type.min);
       return (
         <YStack gap="$1">
           <Label>{field.label}</Label>
           <DurationField
             label={field.label}
-            value={typeof seconds === 'number' ? seconds : field.required ? type.min : null}
+            value={durationOf(value as Expr | undefined) ?? (field.required ? least : null)}
             max={type.max}
-            onChange={(next) => put(next === null || (next === 0 && !field.required) ? (field.required ? { value: type.min } : undefined) : { value: next })}
+            onChange={(next) => put(next === null || (next.value === 0 && !field.required) ? (field.required ? least : undefined) : next)}
           />
           {help}
         </YStack>
@@ -78,7 +79,7 @@ function FieldEditor<T extends object>({ field, fields, construct, set }: { fiel
       return (
         <YStack gap="$1">
           <Label>{field.label}</Label>
-          <NumberField label={field.label} value={secondsOf(value as Expr | undefined)} onChange={(next) => put({ value: next })} />
+          <NumberField label={field.label} value={((n) => (typeof n === 'number' ? n : null))(literal(value))} onChange={(next) => put({ value: next })} />
           {help}
         </YStack>
       );

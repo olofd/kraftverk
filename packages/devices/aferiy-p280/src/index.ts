@@ -1,4 +1,4 @@
-import { MAIN_PART, valueTypeOf, type AttributeSpec, type ConfigSchema, type DeviceDescription, type DeviceInfo, type EventSpec, type Part, type Reading } from '@kraftverk/device-sdk';
+import { MAIN_PART, valueTypeOf, type AttributeSpec, type ConfigSchema, type DeviceDescription, type DeviceInfo, type EventSpec, type Part, type Reading, type Unit } from '@kraftverk/device-sdk';
 
 import type { PortId, StationSettings, StationStatus } from './model/types.ts';
 
@@ -85,7 +85,7 @@ const SECTIONS: Record<string, string> = {
   temperatureUnit: 'Display',
 };
 
-const number = (unit: string, precision = 0) => ({ type: 'number' as const, unit, precision });
+const number = (unit: Unit, precision = 0) => ({ type: 'number' as const, unit, precision });
 
 /**
  * What a P280 is: the station, its two inputs, its three outlets, its light

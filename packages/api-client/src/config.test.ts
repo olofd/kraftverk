@@ -55,7 +55,7 @@ const rule: Rule = {
   when: [],
   then: [
     { command: { role: 'charger', capability: 'switch', command: 'set', args: { on: { value: true } } } },
-    { waitUntil: { condition: { compare: 'gt', left: { read: { role: 'charger', means: 'power' } }, right: { value: 50 } }, atMost: { value: 20 } } },
+    { waitUntil: { condition: { compare: 'gt', left: { read: { role: 'charger', means: 'power' } }, right: { value: 50, unit: 'W' } }, atMost: { value: 20, unit: 's' } } },
   ],
 };
 
@@ -73,13 +73,13 @@ const automation = {
 
 describe('an automation as YAML, in the app', () => {
   test('is written as the server writes it, and read back to the draft it came from', () => {
-    const { text, context } = automationYaml(automation, [plug], []);
+    const text = automationYaml(automation, [plug], []);
     expect(text).toContain('mode: act');
     // It reads the plug's power as well as switching it: what it needs is said.
     expect(text).toContain('  charger:\n    part: scooter-plug\n    needs:\n      - switch\n      - powerMeter\n');
     expect(text).toContain('wait until: charger.power > 50 W');
     expect(text).toContain('home page: 2');
-    const read = readAutomationText(text, 'charge', VOCABULARY, context);
+    const read = readAutomationText(text, 'charge', VOCABULARY);
     expect(read.problems).toEqual([]);
     const { draft, settings } = draftOfEntry(read.entry!, [plug], []);
     expect(draft).toEqual({ name: 'Charge', rule, roles: automation.roles, starts: {} });
@@ -88,10 +88,10 @@ describe('an automation as YAML, in the app', () => {
 
   test('a key naming no device here is a problem at its line; an automation it starts is found by its key', () => {
     const text = 'name: Charge\nclock: Europe/Stockholm\nuses:\n  charger: cellar-plug\n  later: { automation: night }\ndo:\n  - turn on: charger\n  - start: later\n';
-    const read = readAutomationText(text, 'charge', VOCABULARY, {});
+    const read = readAutomationText(text, 'charge', VOCABULARY);
     expect(read.entry).toBeNull();
     expect(read.problems).toEqual([{ message: 'There is no device "cellar-plug", in the file or on the server', path: ['uses', 'charger'], line: 4, column: 12 }]);
-    const fine = readAutomationText(text.replace('cellar-plug', 'scooter-plug'), 'charge', VOCABULARY, {});
+    const fine = readAutomationText(text.replace('cellar-plug', 'scooter-plug'), 'charge', VOCABULARY);
     expect(fine.problems).toEqual([]);
     const { draft } = draftOfEntry(fine.entry!, [plug], [{ id: automationId('a-night'), key: 'night' }]);
     expect(draft.starts).toEqual({ later: automationId('a-night') });
