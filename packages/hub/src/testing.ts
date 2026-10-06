@@ -239,8 +239,8 @@ export function makeLampType(): { type: ReturnType<typeof defineDeviceType<LampC
       },
     },
     connections: [
-      { id: 'bus', label: 'Test bus', protocol: 'test-lamp', transport: 'bus', reach: 'local', recommended: true },
-      { id: 'backup', label: 'Test bus, second port', protocol: 'test-lamp', transport: 'bus', reach: 'local' },
+      { id: 'bus', label: 'Test bus', protocol: 'test-lamp', transport: 'bus', reach: 'local', updates: 'poll', recommended: true },
+      { id: 'backup', label: 'Test bus, second port', protocol: 'test-lamp', transport: 'bus', reach: 'local', updates: 'poll' },
     ],
     setup: { saveAnyway: 'A lamp that is switched off at the wall cannot answer.' },
     async identify(connection, ctx) {

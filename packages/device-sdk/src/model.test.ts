@@ -88,7 +88,7 @@ const station = (flaws: Flaws = {}): DeviceType =>
     kind: 'hardware',
     meta: { name: 'Example station', category: 'power-station', support: 'experimental', icon: 'zap' },
     config: { fields: {} },
-    connections: [{ id: 'ble', label: 'Bluetooth', protocol: 'example', transport: 'ble', reach: 'local' }],
+    connections: [{ id: 'ble', label: 'Bluetooth', protocol: 'example', transport: 'ble', reach: 'local', updates: 'poll' }],
     describe: () => STATION,
     tools: {
       cells: {

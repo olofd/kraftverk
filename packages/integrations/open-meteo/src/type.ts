@@ -195,6 +195,7 @@ export default defineDeviceType<WeatherConfig>({
       transport: 'https',
       address: OPEN_METEO,
       reach: 'cloud',
+      updates: 'poll',
     },
   ],
   setup: {

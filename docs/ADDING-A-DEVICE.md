@@ -222,6 +222,16 @@ A device package builds on its integration by the integration's package
 name — the ATORCH S1W is Tuya's socket with a profile — and never on another
 device package.
 
+## How good it is, measured
+
+Every way says how far it reaches (`reach`) and how what it says arrives
+(`updates`: `push`, `poll` or `both`); the add screen says both in words.
+`npm run check:integrations` measures an integration and the device
+packages on it against the checklist (docs/PLAN-INTEGRATIONS.md §10) and
+writes what it found into the integration's README, under "Quality,
+measured": run it after a change, and commit what it writes — the checks
+fail a README that is not current.
+
 ## An account, and a device behind it
 
 When a service is signed into once and brings many devices — an iCloud

@@ -314,6 +314,7 @@ const COMMON = {
       description: 'Through the NIU account it is on, which asks NIU’s servers for it. Needs the internet: the scooter reports to NIU over the mobile network.',
       through: ['niu.account'],
       reach: 'cloud',
+      updates: 'poll',
     },
   ],
 

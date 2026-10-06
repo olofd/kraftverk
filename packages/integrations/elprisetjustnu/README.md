@@ -66,3 +66,17 @@ reading — "only if the price is below 0.50".
 
 A made-up day, cheap at night and dear in the morning and early evening,
 per quarter hour, with no network.
+
+<!-- quality: written by npm run check:integrations -->
+## Quality, measured
+
+7 of 7 (docs/PLAN-INTEGRATIONS.md §10):
+
+- ✓ Every type keeps the device-type contract, its simulator included
+- ✓ Every value a person reads has a meaning or a quantity
+- ✓ Every key, password or token is a secret: sealed, and left out of what is shown
+- ✓ Every way says how far it reaches and how what it says arrives
+- ✓ A device that announces itself is found by what its protocol declares
+- ✓ Its packages have tests of their own
+- ✓ Its packages say what they are
+<!-- /quality -->

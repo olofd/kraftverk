@@ -17,6 +17,8 @@ export const SYDPOWER_WIFI: ConnectionMethod = {
   protocol: sydpower.id,
   transport: 'mqtt',
   reach: 'local',
+  // The station publishes its own figures to the broker, and is asked for the rest.
+  updates: 'both',
   recommended: true,
 };
 
@@ -28,6 +30,7 @@ export const SYDPOWER_BLUETOOTH: ConnectionMethod = {
   protocol: sydpower.id,
   transport: 'ble',
   reach: 'local',
+  updates: 'both',
 };
 
 /** Every way a Sydpower station is reached, the one to suggest first. */

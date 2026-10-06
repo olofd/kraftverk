@@ -168,6 +168,7 @@ export default defineDeviceType<PriceConfig>({
       transport: 'https',
       address: ELPRISET,
       reach: 'cloud',
+      updates: 'poll',
     },
   ],
   setup: {

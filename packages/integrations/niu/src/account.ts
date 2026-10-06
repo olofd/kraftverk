@@ -252,6 +252,7 @@ export default defineDeviceType<Config>({
       transport: 'https',
       address: NIU_API,
       reach: 'cloud',
+      updates: 'poll',
       // NIU's cloud answers no browser's page: from a server or a phone, never a browser — a fact, apart from what it needs.
       platforms: ['system', 'native'],
       needs: { trusted: 'your NIU password stays at home' },

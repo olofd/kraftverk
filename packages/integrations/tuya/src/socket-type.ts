@@ -72,6 +72,8 @@ const METHODS: Readonly<Record<'directly' | 'gateway', ConnectionMethod>> = {
     transport: 'lan',
     // The local key comes from the Tuya cloud account the plug is paired with, once.
     reach: 'cloud-at-setup',
+    // Asked every few seconds, and it says a change as it happens.
+    updates: 'both',
   },
   gateway: {
     id: 'gateway',
@@ -79,6 +81,7 @@ const METHODS: Readonly<Record<'directly' | 'gateway', ConnectionMethod>> = {
     description: 'Through the Tuya gateway it is paired with, on your home network, with no cloud: add the gateway, and the plug is found through it.',
     through: ['tuya.gateway'],
     reach: 'local',
+    updates: 'both',
   },
 };
 

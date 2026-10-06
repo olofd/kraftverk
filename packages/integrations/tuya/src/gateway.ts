@@ -259,6 +259,7 @@ export default defineDeviceType<Config>({
       protocol: 'tuya-local',
       transport: 'lan',
       reach: 'cloud-at-setup',
+      updates: 'both',
     },
   ],
 

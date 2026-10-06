@@ -1,7 +1,7 @@
 import { CATEGORIES, isCategory } from './categories.ts';
 import { validateDescription } from './check-description.ts';
 import { BRIDGE_TRANSPORT } from './bridge.ts';
-import { isBridgedMethod, REACHES, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT } from './connection.ts';
+import { isBridgedMethod, REACHES, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT, UPDATES } from './connection.ts';
 import { DEVICE_KINDS, type DeviceType } from './device-type.ts';
 import { CAMEL_NAME, NAMESPACED_ID, PLAIN_ID } from './names.ts';
 import { NODE_TRAITS, PLATFORMS } from './node.ts';
@@ -85,6 +85,7 @@ export function validateDeviceType(type: DeviceType<any>): string[] {
       if (!method.transport?.trim()) problem(`connection method "${method.id}" names no transport`);
     }
     if (!REACHES.includes(method.reach)) problem(`connection method "${method.id}" must say what it reaches: ${REACHES.join(', ')}`);
+    if (!UPDATES.includes(method.updates)) problem(`connection method "${method.id}" must say how what it says arrives: ${UPDATES.join(', ')}`);
     for (const [trait, why] of Object.entries(method.needs ?? {})) {
       if (!(NODE_TRAITS as readonly string[]).includes(trait)) problem(`connection method "${method.id}" needs "${trait}" of a node, which no node declares: ${NODE_TRAITS.join(', ')}`);
       else if (typeof why !== 'string' || !why.trim()) problem(`connection method "${method.id}" needs "${trait}" of a node without saying why`);

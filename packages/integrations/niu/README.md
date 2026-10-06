@@ -202,3 +202,17 @@ the cloud cannot answer that fast.
   [bilbo-b/niu-api.py](https://github.com/bilbo-b/niu-api.py),
   [volkerschulz/NIU-API](https://github.com/volkerschulz/NIU-API),
   [node-red-contrib-niu-cloud](https://www.npmjs.com/package/node-red-contrib-niu-cloud).
+
+<!-- quality: written by npm run check:integrations -->
+## Quality, measured
+
+7 of 7 (docs/PLAN-INTEGRATIONS.md §10):
+
+- ✓ Every type keeps the device-type contract, its simulator included
+- ✓ Every value a person reads has a meaning or a quantity
+- ✓ Every key, password or token is a secret: sealed, and left out of what is shown
+- ✓ Every way says how far it reaches and how what it says arrives
+- ✓ A device that announces itself is found by what its protocol declares
+- ✓ Its packages have tests of their own
+- ✓ Its packages say what they are
+<!-- /quality -->

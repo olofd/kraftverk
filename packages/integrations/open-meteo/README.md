@@ -26,3 +26,17 @@ product, so no device package builds on it.
 Because weather is one source among others: a home installs it, and a
 recipe written against the forecast capability works with whichever
 forecast it has.
+
+<!-- quality: written by npm run check:integrations -->
+## Quality, measured
+
+7 of 7 (docs/PLAN-INTEGRATIONS.md §10):
+
+- ✓ Every type keeps the device-type contract, its simulator included
+- ✓ Every value a person reads has a meaning or a quantity
+- ✓ Every key, password or token is a secret: sealed, and left out of what is shown
+- ✓ Every way says how far it reaches and how what it says arrives
+- ✓ A device that announces itself is found by what its protocol declares
+- ✓ Its packages have tests of their own
+- ✓ Its packages say what they are
+<!-- /quality -->

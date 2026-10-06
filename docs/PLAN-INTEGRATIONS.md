@@ -1393,6 +1393,15 @@ writes its level into its README; `SupportLevel` is computed from it. The
 six are brought up to what they can reach.
 *Done when* every integration has a measured level, and the add screen
 states how far each reaches and how it updates.
+**Done 2026-10-07.** Every way declares `updates` (`push`, `poll`, `both`) beside
+`reach`, validated; the add screen says both in words (`waySaid`).
+`npm run check:integrations` measures each integration and the device
+packages on it — the contract with its simulator, meanings, secrets, ways,
+discovery declared where a device announces itself, tests, its READMEs — and
+writes "Quality, measured" into its README; the architecture check fails a
+README that says other than what is measured. `meta.support` stays its
+author's word: a check cannot say a device was in someone's hands. "Agree
+with the code" for `updates` is not measured yet.
 
 ### Part B — Ready for new integrations
 

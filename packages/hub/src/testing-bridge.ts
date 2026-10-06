@@ -84,7 +84,7 @@ export function makeHubType(): { type: ReturnType<typeof defineDeviceType>; watc
     }),
     config: { fields: {} },
     bridge: { fallback: 'test.relayed-lamp' },
-    connections: [{ id: 'bus', label: 'Test bus', protocol: 'test-lamp', transport: 'bus', reach: 'local' }],
+    connections: [{ id: 'bus', label: 'Test bus', protocol: 'test-lamp', transport: 'bus', reach: 'local', updates: 'poll' }],
     async identify() {
       return { identity: 'hub:1', model: null, summary: 'A hub.' };
     },
@@ -128,7 +128,7 @@ export const relayedLampType = defineDeviceType({
   meta: { name: 'Relayed lamp', category: 'smart-plug', support: 'experimental', icon: 'sun', models: ['R1'] },
   describe: () => LAMP,
   config: { fields: {} },
-  connections: [{ id: 'hub', label: 'Through the hub', through: ['test.hub'], reach: 'local' }],
+  connections: [{ id: 'hub', label: 'Through the hub', through: ['test.hub'], reach: 'local', updates: 'poll' }],
   async identify(connection) {
     const lamp = await linkOf<RelayLink>(connection, () => {}, 'A relayed lamp is reached through its hub');
     return { identity: null, model: 'R1', summary: `A lamp behind the hub, ${lamp.on() ? 'on' : 'off'}.` };

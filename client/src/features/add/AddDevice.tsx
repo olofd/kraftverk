@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Input, Spinner } from 'tamagui';
 
-import { SetupFlow, typeMatches, type CheckOutcome } from '@kraftverk/api-client';
+import { SetupFlow, typeMatches, waySaid, type CheckOutcome } from '@kraftverk/api-client';
 import { Card, haptic } from '@kraftverk/ui';
 
 import { ErrorText } from '../../components/ErrorText';
@@ -77,6 +77,7 @@ export function AddDevice() {
           methodId: method.id,
           label: `${method.label}, ${reach.holder(way.holder).words}`,
           description: way.holder === 'this-node' ? `While ${HERE} has it: kept by your server, which hears what it says when it can.` : method.description,
+          reaches: waySaid(method),
           holder: way.holder,
           available: way.availability.ok,
           reason: way.availability.ok ? null : way.availability.reason,

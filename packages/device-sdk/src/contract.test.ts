@@ -65,7 +65,7 @@ const plug = (flaws: Parameters<typeof simulatedPlug>[1] = {}, description: Devi
     kind: 'hardware',
     meta: { name: 'Example plug', category: 'smart-plug', support: 'experimental', icon: 'power' },
     config: { fields: { pollSeconds: { type: 'number', title: 'Poll interval', default: 10, min: 1 } } },
-    connections: [{ id: 'lan', label: 'Home network', protocol: 'example', transport: 'lan', reach: 'local' }],
+    connections: [{ id: 'lan', label: 'Home network', protocol: 'example', transport: 'lan', reach: 'local', updates: 'poll' }],
     describe: () => description,
     // Asks the plug who it is: it answers "id:<serial>".
     async identify(connection) {

@@ -42,6 +42,18 @@ export type Reach = 'local' | 'cloud-at-setup' | 'cloud';
 
 export const REACHES: readonly Reach[] = ['local', 'cloud-at-setup', 'cloud'];
 
+/**
+ * How what a device says reaches kraftverk, over a way: said as an outcome
+ * on the add screen, beside how far it reaches.
+ *
+ * - `push` — the device says it as it happens.
+ * - `poll` — it is asked, every so often: as current as the last time.
+ * - `both` — asked, and it says what changes between.
+ */
+export type Updates = 'push' | 'poll' | 'both';
+
+export const UPDATES: readonly Updates[] = ['push', 'poll', 'both'];
+
 /** What every way of reaching a device says, however it reaches it. */
 type WayBase = {
   /** `wifi`, `bluetooth`, `lan`, `account`. Stable forever within the type: connections name it. */
@@ -52,6 +64,8 @@ type WayBase = {
   description?: string;
   /** Whether it needs anything beyond your home network: said on the add screen before anything is chosen. */
   reach: Reach;
+  /** How what it says arrives: told as it happens, asked for, or both. */
+  updates: Updates;
   /** The one to suggest, when a type has several. */
   recommended?: boolean;
   /** Choices of this method's own, stored with the connection. Never secrets. */
@@ -143,6 +157,7 @@ export const SIMULATED_METHOD: DirectMethod = {
   transport: SIMULATED_TRANSPORT,
   address: SIMULATED_ADDRESS,
   reach: 'local',
+  updates: 'push',
 };
 
 /** A type's simulated way: chosen with what its own simulator is set up with, when it is set up with anything. */

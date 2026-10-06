@@ -8,7 +8,17 @@ import { useHome } from '../../state/HomeProvider';
 import { useReach } from '../../state/useReach';
 
 /** One way to connect, and who would hold it. */
-export type Way = { methodId: string; label: string; description?: string; holder: HeldBy; available: boolean; reason: string | null; recommended: boolean };
+export type Way = {
+  methodId: string;
+  label: string;
+  description?: string;
+  /** How far it reaches and how what it says arrives, in words. */
+  reaches: string;
+  holder: HeldBy;
+  available: boolean;
+  reason: string | null;
+  recommended: boolean;
+};
 
 // --- 3 · how do you want to connect -------------------------------------------------
 
@@ -29,7 +39,7 @@ export function Ways({ ways, busy, onPick, onBack }: { ways: Way[]; busy: boolea
             <Pressable disabled={busy || !way.available} onPress={() => onPick(way)}>
               <Row
                 title={`${way.label}${way.recommended ? ' · recommended' : ''}`}
-                subtitle={way.available ? way.description : (way.reason ?? 'Not available here')}
+                subtitle={way.available ? [way.reaches, way.description].filter(Boolean).join('. ') : (way.reason ?? 'Not available here')}
                 disabled={!way.available}
                 accessory={<Icon name={reach.holder(way.holder).icon} size={16} color={theme.muted?.val} />}
               />

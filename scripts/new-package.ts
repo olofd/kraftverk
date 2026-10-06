@@ -107,7 +107,7 @@ import protocol from './protocol/index.ts';
  */
 
 /** Every way a thing on ${title} is reached: its protocol over a transport. */
-export const ${waysOf(name)}: readonly ConnectionMethod[] = [{ id: 'lan', label: 'Home network', protocol: protocol.id, transport: 'lan', reach: 'local' }];
+export const ${waysOf(name)}: readonly ConnectionMethod[] = [{ id: 'lan', label: 'Home network', protocol: protocol.id, transport: 'lan', reach: 'local', updates: 'poll' }];
 `;
   files['src/protocol/index.ts'] = `import type { Protocol, Sighting } from '@kraftverk/device-sdk';
 

@@ -297,7 +297,7 @@ automations:
           ],
         }),
         config: { fields: {} },
-        connections: [{ id: 'bus', label: 'Test bus', protocol: 'test-lamp', transport: 'bus', reach: 'local' }],
+        connections: [{ id: 'bus', label: 'Test bus', protocol: 'test-lamp', transport: 'bus', reach: 'local', updates: 'poll' }],
         async identify() {
           return { identity: null, model: null, summary: 'A meter.' };
         },

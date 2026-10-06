@@ -1,5 +1,5 @@
 import type { DeviceTypeList, DeviceTypeListing } from '@kraftverk/api-contract';
-import { NODE_TRAITS, PLATFORMS, type IntegrationInfo, type NodeTraits, type Platform } from '@kraftverk/device-sdk';
+import { NODE_TRAITS, PLATFORMS, type IntegrationInfo, type NodeTraits, type Platform, type Reach, type Updates } from '@kraftverk/device-sdk';
 
 /*
   What a home has installed, by platform (docs/PLAN-INTEGRATIONS.md §1):
@@ -59,4 +59,11 @@ export function whereTheyRunSaid(types: readonly Pick<DeviceTypeListing, 'placem
   const where = `Runs ${listed(platforms.map((platform) => ON[platform]))}.`;
   const must = needs.map((need) => `Held by a node that is ${MUST_BE[need.trait]}: ${need.why.join('; ')}.`);
   return [where, ...must].join(' ');
+}
+
+/** How far a way reaches, and how what it says arrives, as a person says them: what the add screen shows beside each way. */
+export function waySaid(method: { readonly reach: Reach; readonly updates: Updates }): string {
+  const reach = method.reach === 'local' ? 'On your home network, no cloud' : method.reach === 'cloud-at-setup' ? 'Your home network, after the cloud once at setup' : 'Over the internet, through its maker’s cloud';
+  const updates = method.updates === 'push' ? 'it tells as it happens' : method.updates === 'poll' ? 'asked every so often' : 'asked, and it tells what changes between';
+  return reach + ' · ' + updates;
 }

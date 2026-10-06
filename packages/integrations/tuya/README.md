@@ -42,3 +42,17 @@ among them — and what they need of the wire from
 Because every Tuya socket speaks the same protocol and is the same device
 apart from its data layout: written and tested once here, on frames alone,
 the next plug is a profile in a package of its own.
+
+<!-- quality: written by npm run check:integrations -->
+## Quality, measured
+
+7 of 7 (docs/PLAN-INTEGRATIONS.md §10):
+
+- ✓ Every type keeps the device-type contract, its simulator included
+- ✓ Every value a person reads has a meaning or a quantity
+- ✓ Every key, password or token is a secret: sealed, and left out of what is shown
+- ✓ Every way says how far it reaches and how what it says arrives
+- ✓ A device that announces itself is found by what its protocol declares
+- ✓ Its packages have tests of their own
+- ✓ Its packages say what they are
+<!-- /quality -->

@@ -19,7 +19,7 @@ const member = (connection: Partial<BridgedMethod> = {}): DeviceType =>
     meta: { name: 'Member', category: 'smart-plug', support: 'experimental', icon: 'power' },
     config: { fields: {} },
     describe: () => ({ parts: [], attributes: [] }),
-    connections: [{ id: 'through', label: 'Through the hub', through: ['acme.hub'], reach: 'local', ...connection }],
+    connections: [{ id: 'through', label: 'Through the hub', through: ['acme.hub'], reach: 'local', updates: 'poll', ...connection }],
     identify: async () => ({ identity: null, model: null, summary: '' }),
     createSession: async () => {
       throw new Error('not here');
@@ -55,7 +55,7 @@ test('a member is kept under the bridge, and held wherever its bridge is', () =>
 });
 
 test('where a member runs, said: where its bridge can be held, and what that needs of a node', () => {
-  const account = { connections: [{ id: 'cloud', label: 'Cloud', protocol: 'acme-cloud', transport: 'https', reach: 'cloud', platforms: ['system', 'native'], needs: { trusted: 'the password stays home' } }] as ConnectionMethod[] };
+  const account = { connections: [{ id: 'cloud', label: 'Cloud', protocol: 'acme-cloud', transport: 'https', reach: 'cloud', updates: 'poll', platforms: ['system', 'native'], needs: { trusted: 'the password stays home' } }] as ConnectionMethod[] };
   const https = { platforms: ['system', 'web', 'native'] as const };
   const placements = placementsOf(member(), (id) => (id === 'https' ? { platforms: [...https.platforms] } : null), (id) => (id === 'acme.hub' ? account : null));
   expect(placements).toEqual([{ method: 'through', platforms: ['system', 'native'], needs: { trusted: 'the password stays home' } }]);

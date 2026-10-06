@@ -37,3 +37,17 @@ Because the stack is shared by several brands, and its guard must stand
 wherever bytes are sent — a server, a phone, the broker — whichever station
 sends them: the ways in and the protocol belong to the platform, so the next
 station is a product that names this, not a copy of the P280's.
+
+<!-- quality: written by npm run check:integrations -->
+## Quality, measured
+
+7 of 7 (docs/PLAN-INTEGRATIONS.md §10):
+
+- ✓ Every type keeps the device-type contract, its simulator included
+- ✓ Every value a person reads has a meaning or a quantity
+- ✓ Every key, password or token is a secret: sealed, and left out of what is shown
+- ✓ Every way says how far it reaches and how what it says arrives
+- ✓ A device that announces itself is found by what its protocol declares
+- ✓ Its packages have tests of their own
+- ✓ Its packages say what they are
+<!-- /quality -->
