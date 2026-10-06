@@ -21,6 +21,7 @@ const plug = {
   name: 'Scooter plug',
   identity: null,
   removedAt: null,
+  pausedAt: null,
   picture: 'type:0',
   config: { profile: 'b' },
   description: {

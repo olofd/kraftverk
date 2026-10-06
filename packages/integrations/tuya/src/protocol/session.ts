@@ -18,6 +18,12 @@ import type { Dps } from './socket.ts';
  * PROTOCOL.md; see docs/ATORCH-S1W.md §1.
  */
 
+/**
+ * Whether a failure says its key is wrong: what waits on a person — the key
+ * fetched again — not on the device coming back.
+ */
+export const wrongKey = (message: string | null): boolean => message !== null && /local key|refused the session handshake|failed to prove/.test(message);
+
 /** The port a Tuya device listens on. The binding asks the transport for it. */
 export const TUYA_PORT = 6668;
 

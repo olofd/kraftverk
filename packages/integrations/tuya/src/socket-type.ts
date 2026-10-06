@@ -27,6 +27,7 @@ import {
   linkOver,
   relayDps,
   tuyaIdentity,
+  wrongKey,
   zigbeeIdentity,
   type Dps,
   type ProfileDatapoint,
@@ -598,6 +599,8 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
     health: () => {
       if (unreachable) return { status: 'offline', detail: 'Its gateway cannot reach it: is it plugged in?', lastReadingAt: state?.at ?? null };
       const fresh = lastOk !== null && Date.now() - lastOk < pollMs * 2.5;
+      // A wrong key waits on a person fetching it again: said so, not as a plug that is merely away.
+      if (!fresh && wrongKey(lastError)) return { status: 'needs-you', detail: `${lastError} — fetch its key again: sign in with Smart Life on its connection`, lastReadingAt: state?.at ?? null };
       return {
         status: fresh ? 'connected' : lastError ? (link.connected() ? 'error' : 'offline') : 'connecting',
         // Said for the page's header: the protocol version is the Datapoints tool's to show.

@@ -150,6 +150,21 @@ export function devicesApi(hub: Hub, caller: Caller): DevicesApi {
         return viewOf(device.id);
       },
 
+      /**
+       * Pauses a device — kept, with its history, its connections and links,
+       * and not reached, by its holder or anything through it — or resumes it.
+       */
+      async setPaused(id, paused) {
+        const device = deviceOf(id);
+        if (Boolean(device.pausedAt) !== paused) {
+          catalog.setPaused(device.id, paused);
+          record(paused ? 'device.paused' : 'device.resumed', 'device', device.id, `${paused ? 'Paused' : 'Resumed'} "${device.name}"`);
+          await sessions.sync(catalog.list());
+          changed();
+        }
+        return viewOf(device.id);
+      },
+
       /** Removes a device, keeping its history. Its connections and links go; adding the same device again offers to bring it all back. */
       async remove(id) {
         const device = deviceOf(id);

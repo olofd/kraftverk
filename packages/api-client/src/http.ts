@@ -128,6 +128,7 @@ export function httpApi(options: HttpApiOptions): KraftverkApi {
       get: (id) => get(`/devices/${enc(id)}`),
       update: (id, changes) => call('PATCH', `/devices/${enc(id)}`, changes),
       setPicture: (id, picture) => call('PUT', `/devices/${enc(id)}/picture`, { picture }),
+      setPaused: (id, paused) => call('PUT', `/devices/${enc(id)}/paused`, { paused }),
       remove: async (id) => void (await call('DELETE', `/devices/${enc(id)}`)),
       deleteHistory: async (id, name) => ({ samples: (await call<{ samples: number }>('POST', `/devices/${enc(id)}/delete-history`, { name })).samples }),
       history: (id, query) => get(`/devices/${enc(id)}/history`, query),

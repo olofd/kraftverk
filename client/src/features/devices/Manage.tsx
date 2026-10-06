@@ -18,7 +18,7 @@ import { useDevices } from '../../state/DevicesProvider';
  * back.
  */
 export function Manage({ device }: { device: DeviceView }) {
-  const { rename, remove, devices } = useDevices();
+  const { rename, remove, devices, setPaused } = useDevices();
   // What is reached through it — an account's scooters, a gateway's plugs — said before it goes.
   const members = devices.filter((other) => other.connections.some((connection) => connection.through?.id === device.id));
   const [name, setName] = useState(device.name);
@@ -44,6 +44,15 @@ export function Manage({ device }: { device: DeviceView }) {
     } finally {
       setBusy(false);
     }
+  };
+
+  const pauseIt = (paused: boolean) => {
+    haptic();
+    setBusy(true);
+    setError(null);
+    setPaused(device.id, paused)
+      .catch((err: unknown) => setError(describeError(err) || (paused ? 'It could not be paused' : 'It could not be resumed')))
+      .finally(() => setBusy(false));
   };
 
   const saveName = () => {
@@ -76,6 +85,20 @@ export function Manage({ device }: { device: DeviceView }) {
             {device.identity ? ` · ${device.identity}` : ''}
           </Text>
         </YStack>
+        <RowSeparator />
+        <Row
+          title={device.pausedAt ? 'Paused' : `Pause this ${device.kind === 'hardware' ? 'device' : device.kind}`}
+          subtitle={
+            device.pausedAt
+              ? 'Kept, with its history, and not reached — nor anything through it — until you resume it'
+              : 'Kept as it is, and not reached until you resume it: for one that is away, or being mended'
+          }
+          accessory={
+            <Button size="$3" minHeight={44} disabled={busy} icon={<Icon name={device.pausedAt ? 'play' : 'pause'} size={13} color={theme.color?.val} />} onPress={() => pauseIt(!device.pausedAt)}>
+              {device.pausedAt ? 'Resume' : 'Pause'}
+            </Button>
+          }
+        />
         <RowSeparator />
         <Row
           title="Remove this device"

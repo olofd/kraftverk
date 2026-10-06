@@ -1,4 +1,4 @@
-import { defineDeviceType, identityOf, MAIN_PART, type Bridge, type DeviceContext, type DeviceSession, type Member, type OpenConnection, type SessionHealth } from '@kraftverk/device-sdk';
+import { defineDeviceType, identityOf, MAIN_PART, needsSignIn, type Bridge, type DeviceContext, type DeviceSession, type Member, type OpenConnection, type SessionHealth } from '@kraftverk/device-sdk';
 
 import type { ScooterLink, ScooterRaw, ScooterReport, ScooterSlow } from './link.ts';
 import { accountIdentity, clientOver, NIU_API, NiuError, type NiuBatteryHealth, type NiuState, type NiuTotals, type NiuVehicle } from './protocol/index.ts';
@@ -47,7 +47,7 @@ type Kept = {
   linked: Set<() => void>;
 };
 
-const errorOf = (thrown: unknown) => (thrown instanceof NiuError ? thrown.message : `NIU could not be reached: ${(thrown as Error).message}`);
+const errorOf = (thrown: unknown) => (thrown instanceof NiuError || needsSignIn(thrown) ? (thrown as Error).message : `NIU could not be reached: ${(thrown as Error).message}`);
 
 /**
  * The scooters on an account, and a link to each — the account's bridge,
@@ -148,7 +148,10 @@ function session(ctx: DeviceContext<Config>, scooters: Scooters, list: () => Pro
   let listedAt = 0;
   let at: string | null = null;
   let error: string | null = null;
+  /** Why it waits on a person — its password refused — when it does: then it asks NIU nothing, until it is given anew. */
+  let needsYou: string | null = null;
   const tick = async () => {
+    if (needsYou) return;
     try {
       if (Date.now() - listedAt >= LIST_EVERY_MS) {
         scooters.listed(await list());
@@ -159,6 +162,7 @@ function session(ctx: DeviceContext<Config>, scooters: Scooters, list: () => Pro
       error = null;
     } catch (thrown) {
       error = errorOf(thrown);
+      if (needsSignIn(thrown)) needsYou = error;
       scooters.failed(error);
       ctx.log.warn(error);
     }
@@ -168,6 +172,7 @@ function session(ctx: DeviceContext<Config>, scooters: Scooters, list: () => Pro
   void tick();
   return {
     health(): SessionHealth {
+      if (needsYou) return { status: 'needs-you', detail: needsYou, lastReadingAt: at };
       if (error) return { status: 'error', detail: error, lastReadingAt: at };
       if (!at) return { status: 'connecting', detail: `Signing in ${via}`, lastReadingAt: null };
       const count = scooters.members().length;

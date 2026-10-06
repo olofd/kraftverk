@@ -190,6 +190,7 @@ export class DeviceViews {
       identity: record.identity,
       addedAt: record.addedAt,
       removedAt: record.removedAt,
+      pausedAt: record.pausedAt,
       kind: type?.kind ?? 'hardware',
       integration: this.deps.types.sourceOf(record.typeId)?.integration ?? null,
       meta: type

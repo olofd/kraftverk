@@ -64,6 +64,8 @@ export interface KraftverkApi {
     update(id: SavedDeviceId, changes: { name?: string; key?: string }): Promise<DeviceView>;
     /** Which picture it shows. */
     setPicture(id: SavedDeviceId, picture: PictureRef): Promise<DeviceView>;
+    /** Pauses it — kept, with its history, and not reached until resumed — or resumes it. */
+    setPaused(id: SavedDeviceId, paused: boolean): Promise<DeviceView>;
     /** Removes it, keeping its history: adding it again brings it back. */
     remove(id: SavedDeviceId): Promise<void>;
     /** A removed device and everything it recorded, gone: its name, typed back, confirms it. */

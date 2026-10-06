@@ -24,6 +24,8 @@ const DOT: Record<ConnectionStatus, StatusTone> = {
   offline: 'idle',
   unconfigured: 'idle',
   error: 'offline',
+  'needs-you': 'connecting',
+  paused: 'idle',
 };
 
 /** The header status for any screen about one device: that device's health, not the server's. */

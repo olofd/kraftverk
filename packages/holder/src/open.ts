@@ -1,6 +1,8 @@
 import {
   checkValue,
   closingOnce,
+  needsSignIn,
+  retryAfterOf,
   isBridgedMethod,
   isSimulated,
   openChannel,
@@ -45,14 +47,27 @@ import type { DeviceEventMessage } from './bus.ts';
 /** How long a type may take to open a session before it counts as not answering. */
 export const OPEN_TIMEOUT_MS = 10_000;
 
-/** Why a device could not be opened, with whether the person has something to set up. */
+/**
+ * Why a device could not be opened: with whether a person has something to
+ * set up, or to do before it is tried again — and, for what will mend
+ * itself, when it says to try again.
+ */
 export class OpenRefused extends Error {
   constructor(
     message: string,
-    readonly status: 'unconfigured' | 'error'
+    readonly status: 'unconfigured' | 'error' | 'needs-you',
+    readonly retryAfterMs: number | null = null
   ) {
     super(message);
   }
+}
+
+/** What was thrown while opening, as a refusal: a sign-in refused waits on a person; what says when, is tried then. */
+export function refusalOf(thrown: unknown): OpenRefused {
+  if (thrown instanceof OpenRefused) return thrown;
+  const message = (thrown as Error)?.message ?? String(thrown);
+  if (needsSignIn(thrown)) return new OpenRefused(message, 'needs-you');
+  return new OpenRefused(message, 'error', retryAfterOf(thrown));
 }
 
 export type OpenInput = {
@@ -277,6 +292,6 @@ export async function openDevice(input: OpenInput): Promise<OpenedDevice> {
     stop();
     await channel?.close().catch(() => undefined);
     letGo();
-    throw error instanceof OpenRefused ? error : new OpenRefused((error as Error).message, 'error');
+    throw refusalOf(error);
   }
 }

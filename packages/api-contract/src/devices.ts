@@ -65,6 +65,8 @@ export type DeviceView = {
   identity: string | null;
   addedAt: string;
   removedAt: string | null;
+  /** When its owner paused it: kept, and not reached, until resumed. Null when it is not paused. */
+  pausedAt: string | null;
   kind: DeviceKind;
   /** The integration its type is on: where its accounts are managed, and its own screens. Null for a type not installed. */
   integration: IntegrationInfo | null;

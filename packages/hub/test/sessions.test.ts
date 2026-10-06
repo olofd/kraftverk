@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 
-import { nodeId, SIMULATED_ADDRESS, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT } from '@kraftverk/device-sdk';
+import { NeedsSignIn, nodeId, NotReachable, SIMULATED_ADDRESS, SIMULATED_METHOD_ID, SIMULATED_TRANSPORT } from '@kraftverk/device-sdk';
 import { LiveBus, type LiveMessage, SessionManager } from '@kraftverk/holder';
 import { AuditLog, ConnectionStore, DeviceCatalog, deviceStore, holding, NodeStore, plainSecrets, type SqlDatabase } from '@kraftverk/store';
 
@@ -180,15 +180,56 @@ describe('a device that cannot open is still a device, saying why', () => {
     await sessions.sync(catalog.list());
     expect(sessions.health(record)).toMatchObject({ status: 'error', detail: 'The lamp refused the connection; trying again in under a minute' });
 
-    // Still refusing when due: tried, and the next wait is longer — a dead one is not tried every half minute for ever.
+    // Still refusing when due: tried, and the next wait is longer — a dead one is not tried every quarter minute for ever.
     await sessions.check(Date.now() + 31_000);
-    expect(sessions.health(record).detail).toBe('The lamp refused the connection; trying again in 1 min');
+    expect(sessions.health(record).detail).toBe('The lamp refused the connection; trying again in under a minute');
     await sessions.check(Date.now() + 92_000);
-    expect(sessions.health(record).detail).toBe('The lamp refused the connection; trying again in 2 min');
+    expect(sessions.health(record).detail).toBe('The lamp refused the connection; trying again in 1 min');
 
     // It may refuse because of something that has since passed: tried again when due.
     watch.failOpen = false;
     await sessions.check(Date.now() + 213_000);
+    expect(sessions.get(record.id)).not.toBeNull();
+  });
+
+  test('one that waits on a person is not tried again until they act; one that says when, is tried then', async () => {
+    watch.failOpen = true;
+    watch.failWith = new NeedsSignIn('The lamp refused its PIN: give it again');
+    const { record } = addLamp('Hall', 'lamp-1');
+    await sessions.sync(catalog.list());
+    expect(sessions.health(record)).toMatchObject({ status: 'needs-you', detail: 'The lamp refused its PIN: give it again' });
+    // Due or not, synced or checked, it is left alone: a vendor tried in a loop locks the account.
+    watch.failOpen = false;
+    await sessions.check(Date.now() + 3_600_000);
+    await sessions.sync(catalog.list());
+    expect(sessions.get(record.id)).toBeNull();
+    // A person acted — its secrets given anew close it on purpose — and it is tried at once.
+    await sessions.close(record.id);
+    await sessions.sync(catalog.list());
+    expect(sessions.get(record.id)).not.toBeNull();
+    await sessions.close(record.id);
+
+    // Rate-limited: tried again when it said, not before.
+    watch.failOpen = true;
+    watch.failWith = new NotReachable('Too many requests: wait a while', 600_000);
+    await sessions.sync(catalog.list());
+    expect(sessions.health(record)).toMatchObject({ status: 'error', detail: 'Too many requests: wait a while; trying again in 10 min' });
+    watch.failOpen = false;
+    await sessions.check(Date.now() + 300_000);
+    expect(sessions.get(record.id)).toBeNull();
+    await sessions.check(Date.now() + 601_000);
+    expect(sessions.get(record.id)).not.toBeNull();
+    watch.failWith = null;
+  });
+
+  test('a paused one is kept, and not opened, until resumed — and what is through it says why', async () => {
+    const { record } = addLamp('Hall', 'lamp-1');
+    catalog.setPaused(record.id, true);
+    await sessions.sync(catalog.list());
+    expect(sessions.get(record.id)).toBeNull();
+    expect(sessions.health(record)).toMatchObject({ status: 'paused' });
+    catalog.setPaused(record.id, false);
+    await sessions.sync(catalog.list());
     expect(sessions.get(record.id)).not.toBeNull();
   });
 
@@ -221,7 +262,7 @@ describe('a device that cannot open is still a device, saying why', () => {
     // Still down when due: tried, refused, and the next wait is longer.
     await sessions.check(Date.now() + 31_000);
     expect(sessions.get(record.id)).toBeNull();
-    expect(sessions.health(record).detail).toBe('No bus on this machine; trying again in 1 min');
+    expect(sessions.health(record).detail).toBe('No bus on this machine; trying again in under a minute');
 
     // Back: opened on the next try, with no one touching the catalog.
     bus.unavailable = null;

@@ -53,6 +53,12 @@ export function deviceRoutes(deps: AppDeps, confirm: ConfirmPassword): Hono {
     return c.json({ ok: true, ...(await homeFor(deps, c).devices.deleteHistory(id(c.req.param('id')), name)) });
   });
 
+  /** Paused, or resumed: kept, and not reached, until resumed. */
+  api.put('/devices/:id/paused', async (c) => {
+    const { paused } = await body(c, z.object({ paused: z.boolean() }).strict());
+    return c.json(await homeFor(deps, c).devices.setPaused(id(c.req.param('id')), paused));
+  });
+
   /** Which picture it shows: the home says which it has. */
   api.put('/devices/:id/picture', async (c) => {
     const { picture } = await body(c, z.object({ picture: z.string().min(1).max(40) }).strict());

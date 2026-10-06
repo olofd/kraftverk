@@ -50,6 +50,14 @@ test('a NIU account finds its scooters: one is added through it, as its model, a
   // The account's page lists it now as one of yours.
   await page.goto(`/device/${account.id}`);
   await expect(page.getByText(name, { exact: true })).toBeVisible();
+
+  // Paused there, the account is kept and not reached — and the scooter says why; resumed, it is read again.
+  await press(page, 'Pause');
+  await expect(page.getByText('Resume', { exact: true })).toBeVisible();
+  const health = async () => (await (await request.get(`/api/devices/${id}`, { headers: HEADERS })).json()).health;
+  await expect.poll(async () => (await health()).status).toBe('paused');
+  await press(page, 'Resume');
+  await expect.poll(async () => (await health()).detail).toContain('through its NIU account');
 });
 
 test('a file kept before an account was a device of its own comes back with one: the scooter reached through it', async ({ request }) => {

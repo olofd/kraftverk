@@ -251,6 +251,7 @@ for (const driver of DRIVERS) {
         config: {},
         addedAt: '2026-10-01T00:00:00.000Z',
         removedAt: null,
+        pausedAt: null,
         description: LAMP,
         descriptionSource: 'type' as const,
         info: null,

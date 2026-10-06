@@ -108,7 +108,7 @@ export function fillsFrom(
 }
 
 /** A device as it lives: what the server keeps, and the app is shown. */
-export type DeviceSource = { typeId: string; name: string; identity: string | null; picture: string | null; config: Readonly<Record<string, unknown>> };
+export type DeviceSource = { typeId: string; name: string; identity: string | null; picture: string | null; pausedAt: string | null; config: Readonly<Record<string, unknown>> };
 
 /** One way a device is reached, as an entry is written from it: its secrets as asked for — by name, sealed, or plain — and whether its method fixes the address. */
 export type WaySource = {
@@ -139,6 +139,7 @@ export function deviceEntryFrom(device: DeviceSource, ways: readonly WaySource[]
     name: device.name,
     identity: device.identity,
     picture: device.picture,
+    paused: device.pausedAt !== null,
     settings: scalars(device.config),
     connect: ways.map((way) => ({ via: way.method, through: way.through, address: way.fixedAddress ? null : way.address, settings: scalars(way.config), secrets: way.secrets, exportable: way.exportable })),
   };

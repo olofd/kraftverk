@@ -46,6 +46,9 @@ const DOT: Record<ConnectionHealth['status'], string> = {
   offline: '$muted',
   unconfigured: '$muted',
   error: '$danger',
+  // Waiting on a person: amber, and its sentence says what to do.
+  'needs-you': '$warning',
+  paused: '$muted',
 };
 
 type Props = {

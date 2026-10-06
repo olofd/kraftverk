@@ -27,7 +27,7 @@ import {
 
 import { ReadingChanges, type DeviceEventMessage, type LiveBus } from './bus.ts';
 
-import { openDevice, OpenRefused, type OpenedDevice } from './open.ts';
+import { openDevice, refusalOf, type OpenedDevice } from './open.ts';
 import { Failover, identityVerdict } from './watch.ts';
 
 /**
@@ -61,7 +61,11 @@ const PULSE_MS = 1000;
 /** Health is published when it changes, and at least this often while readings keep arriving, so "last heard" stays true. */
 const HEALTH_REFRESH_MS = 30_000;
 /** How long before trying a refused device again, by how many times it has been tried: then every five minutes. */
-const RETRY_MS = [30_000, 60_000, 120_000, 300_000];
+/** How long a device that could not be opened waits before it is tried again: longer each time, to 5 min. */
+const RETRY_MS = [15_000, 30_000, 60_000, 120_000, 300_000];
+
+/** Each wait, a fifth longer or shorter at random: devices refused together are not all tried again together. */
+const jittered = (ms: number): number => Math.round(ms * (0.8 + Math.random() * 0.4));
 
 /** A device as a holder is given it: what the catalog keeps of it. */
 export type HolderDevice = {
@@ -72,6 +76,8 @@ export type HolderDevice = {
   /** Who the device is, when known: a connection that reaches another device is refused. */
   identity: string | null;
   removedAt: string | null;
+  /** When its owner paused it: kept, and not opened, until resumed. Null when it is not paused. */
+  pausedAt: string | null;
   /** What it was last known to be, for when it is not open. */
   description: DeviceDescription;
   descriptionSource: DescriptionSource;
@@ -146,7 +152,7 @@ export type SessionManagerDeps = {
 };
 
 type Refusal = {
-  status: 'unconfigured' | 'offline' | 'error';
+  status: 'unconfigured' | 'offline' | 'error' | 'needs-you' | 'paused';
   detail: string;
   /**
    * When to try again, for what can mend itself — a transport not up yet, a
@@ -255,7 +261,17 @@ export class SessionManager {
   /** How a device is doing: its session's own answer, or why it has none. */
   health(record: Pick<HolderDevice, 'id'>): ConnectionHealth {
     const open = this.#open.get(record.id);
-    if (open) return open.opened.health();
+    if (open) {
+      const own = open.opened.health();
+      // Through a bridge that waits on a person, or is paused: so does it, and it says why.
+      const bridge = open.connection.through !== null ? this.#open.get(open.connection.through) : null;
+      const theirs = bridge?.opened.health();
+      if (theirs && (theirs.status === 'needs-you' || theirs.status === 'paused')) {
+        const name = this.#records.get(open.connection.through!)?.name ?? 'Its bridge';
+        return { ...own, status: theirs.status, detail: `${name}: ${theirs.detail}` };
+      }
+      return own;
+    }
     const refusal = this.#refusals.get(record.id);
     // Coarse, so a health that says it does not change every second.
     const wait = refusal?.retryAt ? refusal.retryAt - this.#clock.now() : null;
@@ -301,6 +317,10 @@ export class SessionManager {
 
     for (const record of records) {
       if (record.removedAt) continue;
+      if (record.pausedAt) {
+        this.#refusals.set(record.id, { status: 'paused', detail: 'Paused: kept, with its history, and not reached until you resume it' });
+        continue;
+      }
       const type = this.typeOf(record);
       if (!type) {
         this.#refusals.set(record.id, { status: 'unconfigured', detail: `Nothing installed here knows what "${record.typeId}" is` });
@@ -316,7 +336,7 @@ export class SessionManager {
 
     for (const [id, open] of [...this.#open]) {
       const next = wanted.get(id);
-      if (!next || open.fingerprint !== this.#fingerprint(next.record, next.connection)) await this.close(id);
+      if (!next || open.fingerprint !== this.#fingerprint(next.record, next.connection)) await this.#shut(id);
     }
     for (const id of [...this.#refusals.keys()]) {
       if (!records.some((record) => record.id === id && !record.removedAt)) this.#refusals.delete(id);
@@ -325,7 +345,8 @@ export class SessionManager {
     // Each isolated: one device that will not open must not keep the others shut. What is reached
     // directly first; then what goes through a bridge, once the bridge stands — a bridge closed and
     // reopened above has a new session, which its members open over.
-    const opening = [...wanted.values()].filter(({ record }) => !this.#open.has(record.id));
+    // Not what waits on a person: it is tried again when they have acted — its secrets given anew close it, and clear that.
+    const opening = [...wanted.values()].filter(({ record }) => !this.#open.has(record.id) && this.#refusals.get(record.id)?.status !== 'needs-you');
     await Promise.all(opening.filter(({ connection }) => connection.through === null).map(({ record, connection }) => this.#openDevice(record, connection)));
     await Promise.all(
       opening.filter(({ connection }) => connection.through !== null && this.#open.get(connection.through)?.opened.session.bridge).map(({ record, connection }) => this.#openDevice(record, connection))
@@ -390,6 +411,13 @@ export class SessionManager {
   async #choose(record: HolderDevice, type: DeviceType<any>): Promise<{ connection: HolderConnection } | { refusal: Refusal }> {
     const all = this.deps.connections(record.id);
     if (!all.length) return { refusal: { status: 'unconfigured', detail: 'Nothing can reach this device yet: add a way to reach it' } };
+
+    // Every way through a bridge that is paused: it waits with it, and says so.
+    const paused = all.every((connection) => connection.through !== null && this.#records.get(connection.through)?.pausedAt);
+    if (paused) {
+      const bridge = this.#records.get(all[0]!.through!)!;
+      return { refusal: { status: 'paused', detail: `${bridge.name} is paused: what is reached through it waits until it is resumed` } };
+    }
 
     const reasons: string[] = [];
     const mine = all.filter((connection) => this.#mine(connection));
@@ -494,20 +522,21 @@ export class SessionManager {
       this.#open.set(record.id, entry);
       this.#describe(record.id);
     } catch (error) {
-      const refused = error instanceof OpenRefused ? error : new OpenRefused((error as Error).message, 'error');
-      this.#refuse(record.id, { status: refused.status, detail: refused.message }, refused.status !== 'unconfigured', tried);
+      const refused = refusalOf(error);
+      this.#refuse(record.id, { status: refused.status, detail: refused.message }, refused.status === 'error', tried, refused.retryAfterMs);
       this.deps.log?.(`${record.name} could not be opened: ${refused.message}`);
     }
   }
 
   /** Why a device has no session; for what can mend itself, when it will be tried again. */
-  #refuse(deviceId: SavedDeviceId, refusal: Refusal, retry: boolean, tried = this.#refusals.get(deviceId)?.attempts ?? 0): void {
+  #refuse(deviceId: SavedDeviceId, refusal: Refusal, retry: boolean, tried = this.#refusals.get(deviceId)?.attempts ?? 0, after: number | null = null): void {
     if (!retry) {
       this.#refusals.set(deviceId, refusal);
       return;
     }
     const attempts = tried + 1;
-    const wait = RETRY_MS[Math.min(attempts, RETRY_MS.length) - 1]!;
+    // When it said when, then; else longer each time.
+    const wait = after ?? jittered(RETRY_MS[Math.min(attempts, RETRY_MS.length) - 1]!);
     this.#refusals.set(deviceId, { ...refusal, attempts, retryAt: this.#clock.now() + wait });
   }
 
@@ -563,7 +592,18 @@ export class SessionManager {
     if (changed) await this.sync([...this.#records.values()]);
   }
 
+  /**
+   * Closes a device's session — and forgets why it had none: closed on
+   * purpose, its secrets given anew say, it is tried again at the next sync,
+   * whatever it waited on.
+   */
   async close(deviceId: SavedDeviceId): Promise<void> {
+    this.#refusals.delete(deviceId);
+    await this.#shut(deviceId);
+  }
+
+  /** Closes a device's session, and what is reached through it, keeping why it is not open. */
+  async #shut(deviceId: SavedDeviceId): Promise<void> {
     const open = this.#open.get(deviceId);
     this.#open.delete(deviceId);
     // Opened again, everything it says is news.
@@ -572,9 +612,10 @@ export class SessionManager {
     open.detach();
     // What is reached through it goes first: its channels are the bridge's.
     const members = [...this.#open].filter(([, other]) => other.connection.through === deviceId).map(([id]) => id);
-    await Promise.all(members.map((id) => this.close(id)));
+    await Promise.all(members.map((id) => this.#shut(id)));
     const bridge = this.#records.get(deviceId)?.name ?? 'its bridge';
-    for (const id of members) this.#refusals.set(id, { status: 'offline', detail: `Reached through ${bridge}, which closed` });
+    // Unless it already says why: paused with it, in this same sync.
+    for (const id of members) if (!this.#refusals.has(id)) this.#refusals.set(id, { status: 'offline', detail: `Reached through ${bridge}, which closed` });
     // The channel is this manager's: it opened it, so it closes it.
     await open.opened.close();
   }

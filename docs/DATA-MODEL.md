@@ -365,6 +365,7 @@ erDiagram
     json info "{manufacturer: AFERIY, model: P280, firmware: {...}} · null until it has said"
     text picture "type:1 · own:<id> one day · null: its type's first"
     text added_at "2026-09-27T19:40:00Z"
+    text paused_at "null · set by Pause · kept, not reached"
     text removed_at "null · set by Remove · history kept"
   }
   device_connection {
@@ -637,6 +638,7 @@ joined; elsewhere it is plain text, null.
 |---|---|---|
 | `device` | The thing you added, and the key its history hangs on. | step 10 |
 | `device.identity` | So the same physical device is recognised however it was found, and so re-adding a removed one can bring its history back. | step 7, or at the first connection after *Save anyway* |
+| `device.paused_at` | So a device away, or being mended, is kept as it is and not reached — nor anything through it — without removing it. | Pause, Resume |
 | `device.removed_at` | So Remove doesn't destroy years of history. | Remove |
 | `device_connection` | A device can be reached more than one way, from more than one place. Your station over Wi-Fi from the server *and* over Bluetooth from your phone is one device with two connections. A way is held by a node, or goes **through** a bridge — another device, such as an account its scooters are reached through — and is then held wherever that device is, its address the member's key within it (PLAN-INTEGRATIONS.md §4.3). Never both. | step 10, or *Add another way to reach it* |
 | `connection_secret` | Credentials belong to a way of reaching the device (the Tuya local key is part of *tuya-local over lan*), not to the device. | step 6 |

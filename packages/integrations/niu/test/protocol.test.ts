@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import { needsSignIn } from '@kraftverk/device-sdk';
+
 import protocol, { md5Hex, NIU_ACCOUNT, NIU_API, NIU_APP_ID, NiuClient, parseScooters, parseState, signIn, timeOf, type NiuHttp } from '../src/protocol/index.ts';
 
 /**
@@ -146,28 +148,20 @@ describe('a signed-in client', () => {
     expect(asked.filter((call) => call.url.startsWith(NIU_ACCOUNT))).toHaveLength(1);
   });
 
-  test('a password NIU refuses is not tried again at every look: it waits, longer each time', async () => {
+  test('a password NIU refuses waits on a person: never tried again, however often it is looked at', async () => {
     let now = 1_000_000;
     const { http, asked } = niu();
     const client = new NiuClient(http, { ...credentials, password: 'changed in the app' }, () => now);
     const signIns = () => asked.filter((call) => call.url.startsWith(NIU_ACCOUNT)).length;
-    await expect(client.state('N0TAREALSERIAL01')).rejects.toThrow('did not accept that account and password');
-    // Looked at every half minute for the next minute: refused as before, NIU not asked.
-    for (let look = 0; look < 3; look++) {
-      now += 15_000;
+    const refused = await client.state('N0TAREALSERIAL01').catch((error: unknown) => error);
+    expect(needsSignIn(refused)).toBe(true);
+    expect((refused as Error).message).toContain('did not accept that account and password');
+    // Looked at for a day: refused as before, NIU not asked again — tried in a loop, NIU locks the account.
+    for (let look = 0; look < 24; look++) {
+      now += 3_600_000;
       await expect(client.state('N0TAREALSERIAL01')).rejects.toThrow('did not accept that account and password');
     }
     expect(signIns()).toBe(1);
-    now += 16_000;
-    await expect(client.state('N0TAREALSERIAL01')).rejects.toThrow();
-    expect(signIns()).toBe(2);
-    // The next wait is longer.
-    now += 60_000;
-    await expect(client.state('N0TAREALSERIAL01')).rejects.toThrow();
-    expect(signIns()).toBe(2);
-    now += 5 * 60_000;
-    await expect(client.state('N0TAREALSERIAL01')).rejects.toThrow();
-    expect(signIns()).toBe(3);
   });
 
   test('renews a token about to run out with its refresh token, not the password', async () => {

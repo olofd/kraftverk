@@ -11,7 +11,7 @@ import {
 } from '@kraftverk/device-sdk';
 
 import type { ZigbeeLink } from './link.ts';
-import { linkOver, tuyaIdentity, zigbeeIdentity, type Dps } from './protocol/index.ts';
+import { linkOver, tuyaIdentity, wrongKey, zigbeeIdentity, type Dps } from './protocol/index.ts';
 
 /**
  * A Tuya Zigbee gateway, as a device of its own (docs/PLAN-INTEGRATIONS.md
@@ -186,6 +186,7 @@ async function gatewaySession(ctx: DeviceContext<Config>): Promise<DeviceSession
     known,
     () => {
       if (tuya.connected) return { status: 'connected', detail: `${known.keys().length === 1 ? '1 Zigbee device' : `${known.keys().length} Zigbee devices`} · Tuya ${tuya.version}`, lastReadingAt: at };
+      if (error && wrongKey(error)) return { status: 'needs-you', detail: `${error} — fetch its key again: sign in with Smart Life on its connection`, lastReadingAt: at };
       if (error) return { status: 'error', detail: error, lastReadingAt: at };
       return { status: 'connecting', detail: 'Connecting', lastReadingAt: at };
     },

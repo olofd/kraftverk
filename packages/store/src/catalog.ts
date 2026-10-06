@@ -33,6 +33,8 @@ export type DeviceRecord = {
   addedAt: string;
   /** When it was removed; its history is kept. Null while it is yours. */
   removedAt: string | null;
+  /** When its owner paused it: kept, and not reached, until resumed. Null while it is not paused. */
+  pausedAt: string | null;
   /** What it is — parts, attributes, events — as it was last described: by its type, or by itself. */
   description: DeviceDescription;
   /** Which of the two that was. */
@@ -55,6 +57,7 @@ type Row = {
   info: string | null;
   picture: string | null;
   added_at: string;
+  paused_at: string | null;
   removed_at: string | null;
 };
 
@@ -68,6 +71,7 @@ const toRecord = (row: Row): DeviceRecord => ({
   config: JSON.parse(row.config) as Record<string, unknown>,
   addedAt: row.added_at,
   removedAt: row.removed_at,
+  pausedAt: row.paused_at,
   description: JSON.parse(row.description) as DeviceDescription,
   descriptionSource: row.description_source,
   info: row.info === null ? null : (JSON.parse(row.info) as DeviceInfo),
@@ -133,6 +137,7 @@ export class DeviceCatalog {
       key: input.key ?? keyFrom(input.name, (key) => this.keyTaken(key), 'device'),
       typeId: input.typeId,
       identity: input.identity ?? null,
+      pausedAt: null,
       name: input.name,
       config: input.config ?? {},
       addedAt: new Date().toISOString(),
@@ -189,11 +194,11 @@ export class DeviceCatalog {
     this.#db.transaction(() => {
       this.#db
         .query(
-          `INSERT INTO device (id, key, type_id, identity, name, config, description, description_source, info, picture, added_at, removed_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO device (id, key, type_id, identity, name, config, description, description_source, info, picture, added_at, paused_at, removed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT (id) DO UPDATE SET key = excluded.key, identity = excluded.identity, name = excluded.name, config = excluded.config,
              description = excluded.description, description_source = excluded.description_source, info = excluded.info,
-             picture = excluded.picture, removed_at = excluded.removed_at`
+             picture = excluded.picture, paused_at = excluded.paused_at, removed_at = excluded.removed_at`
         )
         .run(
           record.id,
@@ -207,6 +212,7 @@ export class DeviceCatalog {
           record.info === null ? null : JSON.stringify(record.info),
           record.picture,
           record.addedAt,
+          record.pausedAt,
           record.removedAt
         );
       this.#recordAttributes(record.id, record.description, at);
@@ -251,6 +257,12 @@ export class DeviceCatalog {
   /** Which picture it shows: its owner's pick, or null for its type's first. */
   setPicture(id: SavedDeviceId, picture: string | null): DeviceRecord | null {
     this.#db.query('UPDATE device SET picture = ? WHERE id = ?').run(picture, id);
+    return this.get(id);
+  }
+
+  /** Pauses a device — kept, and not reached, until resumed — or resumes it. */
+  setPaused(id: SavedDeviceId, paused: boolean): DeviceRecord | null {
+    this.#db.query('UPDATE device SET paused_at = ? WHERE id = ?').run(paused ? new Date().toISOString() : null, id);
     return this.get(id);
   }
 

@@ -88,6 +88,7 @@ export function followerApi(h: Follower): KraftverkApi {
       get: oneOf,
       update: (id, changes) => viewed(home.devices.update(id, changes)),
       setPicture: (id, picture) => viewed(home.devices.setPicture(id, picture)),
+      setPaused: (id, paused) => viewed(home.devices.setPaused(id, paused)),
       async remove(id) {
         await home.devices.remove(id);
         await h.forget(id);

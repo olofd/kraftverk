@@ -22,8 +22,15 @@ export type ConnectionStatus =
   | 'offline'
   /** Never finished being set up, or its type is not installed here. */
   | 'unconfigured'
-  /** Something is wrong that the user has to act on — a wrong key, a refused link. */
-  | 'error';
+  /** Something is wrong — a wrong key, a refused link — and it is tried again, in a while. */
+  | 'error'
+  /**
+   * It waits on a person — a password refused, a sign-in lapsed — and nothing
+   * tries it again until they act: tried in a loop, a vendor locks the account.
+   */
+  | 'needs-you'
+  /** Paused by its owner: kept, with its history, and not reached until resumed. */
+  | 'paused';
 
 /**
  * How a device is doing, as its session knows it. Nothing about who holds it
@@ -44,6 +51,41 @@ export type ConnectionHealth = SessionHealth & {
   /** The transport of the connection in use — `ble`, `mqtt`, `lan` — or `sim`. Null when none is. */
   transport: string | null;
 };
+
+/**
+ * Thrown by a session, its check or a bridge when a person must act before it
+ * can work — a password refused, a sign-in lapsed. Its holder tries nothing
+ * again until they have: its connection's secrets given anew, say. The
+ * message says what to do, in a person's words.
+ */
+export class NeedsSignIn extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NeedsSignIn';
+  }
+}
+
+/**
+ * Thrown when it cannot be reached now but may be later — rate-limited,
+ * unplugged, the service down. Its holder tries again: after
+ * `retryAfterMs` when it is said, else on its own backoff.
+ */
+export class NotReachable extends Error {
+  constructor(
+    message: string,
+    readonly retryAfterMs: number | null = null
+  ) {
+    super(message);
+    this.name = 'NotReachable';
+  }
+}
+
+/** Whether what was thrown waits on a person: by its name, so a copy of the SDK bundled elsewhere is understood too. */
+export const needsSignIn = (thrown: unknown): boolean => thrown instanceof Error && thrown.name === 'NeedsSignIn';
+
+/** When what was thrown says to try again, in ms; null when it does not say. */
+export const retryAfterOf = (thrown: unknown): number | null =>
+  thrown instanceof Error && thrown.name === 'NotReachable' ? ((thrown as NotReachable).retryAfterMs ?? null) : null;
 
 /** Connected, and nothing else. The one question most UI actually asks. */
 export const isOnline = (health: SessionHealth): boolean => health.status === 'connected';

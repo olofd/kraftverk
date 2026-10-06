@@ -642,6 +642,7 @@ function recordOf(device: DeviceView): DeviceRecord {
     config: device.config,
     addedAt: device.addedAt,
     removedAt: device.removedAt,
+    pausedAt: device.pausedAt,
     description: device.description,
     descriptionSource: device.descriptionSource,
     info: device.info,

@@ -51,6 +51,8 @@ export type DeviceEntry = {
   identity: string | null;
   /** Which of its pictures it shows ("type:2"); null for its type's first. */
   picture: string | null;
+  /** Paused by its owner: kept, and not reached, until resumed. Written only when it is. */
+  paused: boolean;
   /** Its type's settings. */
   settings: Record<string, Scalar>;
   /** The ways it is reached, preferred first. */
@@ -160,7 +162,7 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         problem('Expected a device: its type, name and how it is reached', path);
         continue;
       }
-      for (const field of Object.keys(entry)) if (!['type', 'name', 'identity', 'picture', 'settings', 'connect'].includes(field)) problem(`"${field}" is not part of a device: it has type, name, identity, picture, settings and connect`, [...path, field]);
+      for (const field of Object.keys(entry)) if (!['type', 'name', 'identity', 'picture', 'paused', 'settings', 'connect'].includes(field)) problem(`"${field}" is not part of a device: it has type, name, identity, picture, paused, settings and connect`, [...path, field]);
       const type = text(entry.type, [...path, 'type'], 'its type ("type: acme.plug")');
       const name = text(entry.name, [...path, 'name'], 'its name');
       const connect: ConnectEntry[] = [];
@@ -191,7 +193,8 @@ export function documentFromData(data: unknown, options: { partial?: boolean } =
         if (via) connect.push({ via, through, address: typeof way.address === 'string' ? way.address : null, settings: scalars(way.settings, [...at, 'settings']), secrets, exportable: way.exportable === true });
       }
       const optional = (field: 'identity' | 'picture') => (entry[field] === undefined || entry[field] === null ? null : typeof entry[field] === 'string' ? entry[field] : (problem(`"${field}" is text`, [...path, field]), null));
-      if (type && name) devices[key] = { type, name, identity: optional('identity'), picture: optional('picture'), settings: scalars(entry.settings, [...path, 'settings']), connect };
+      if (entry.paused !== undefined && typeof entry.paused !== 'boolean') problem('"paused" is true or false', [...path, 'paused']);
+      if (type && name) devices[key] = { type, name, identity: optional('identity'), picture: optional('picture'), paused: entry.paused === true, settings: scalars(entry.settings, [...path, 'settings']), connect };
     }
 
   // The links.
@@ -266,6 +269,7 @@ export function documentToData(document: ConfigDocument): Record<string, unknown
         name: device.name,
         ...(device.identity !== null ? { identity: device.identity } : {}),
         ...(device.picture !== null ? { picture: device.picture } : {}),
+        ...(device.paused ? { paused: true } : {}),
         ...(Object.keys(device.settings).length ? { settings: device.settings } : {}),
         ...(device.connect.length
           ? {

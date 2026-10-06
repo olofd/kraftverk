@@ -1325,6 +1325,17 @@ removed (`device.paused_at`). NIU says `NeedsSignIn` when its password is
 refused and `NotReachable` when it is rate-limited; Tuya says `NotReachable`.
 *Done when* a refused NIU password shows "needs you to sign in" on the
 account and on its scooters, and nothing retries it in a loop.
+**Done 2026-10-06**, kept close to what was there: the health statuses gain
+`needs-you` and `paused` beside `connected`, `connecting`, `offline`, `unconfigured` and
+`error` (a rename to the plan's six bought nothing). `NeedsSignIn` and
+`NotReachable(retryAfterMs)` in the SDK; the holder never tries what needs
+you until a person acts — a deliberate close, as giving its secrets anew
+does, clears it — tries what said when then, and the rest on 15 s → 5 min
+with a fifth of jitter. A member through a bridge that needs you, or is
+paused, says so as its own. `device.paused_at`, paused and resumed from a
+device's (or an account's) page, kept in the file (version 8). NIU's
+refused password is never tried again by its client; 429 is `NotReachable`.
+Tuya's wrong key is `needs-you`.
 
 **Step 8 · The "needs you" list.**
 One list from the hub: connections that need a person, and members of a

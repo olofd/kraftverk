@@ -13,7 +13,7 @@
 import type { FileMigration, FileTypes } from '@kraftverk/device-sdk';
 
 /** The version this kraftverk writes. */
-export const CURRENT_VERSION = 7;
+export const CURRENT_VERSION = 8;
 
 /** Each version's document, as data, made into the next version's. */
 export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unknown>) => Record<string, unknown>>> = {
@@ -26,6 +26,8 @@ export const MIGRATIONS: Readonly<Record<number, (document: Record<string, unkno
   5: (document) => document,
   // Version 7: as 6 — an integration's entries changed (a Zigbee socket through its gateway); the document's shape did not.
   6: (document) => document,
+  // Version 8 may say a device is paused (`paused: true`): nothing older does, so nothing changes.
+  7: (document) => document,
 };
 
 /** What an integration brings to a file's migration: its own steps, and what is installed for them to find their entries by. */

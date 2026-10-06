@@ -83,6 +83,8 @@ type DevicesContextValue = {
   setExportable: (device: DeviceView, connection: ConnectionView, exportable: boolean, yourPassword?: string) => Promise<void>;
   /** Shows another picture (`type:N`), kept by the home. */
   setPicture: (id: string, picture: PictureRef) => Promise<void>;
+  /** Pauses it, or resumes it. */
+  setPaused: (id: string, paused: boolean) => Promise<void>;
   remove: (id: string) => Promise<void>;
   deleteHistory: (id: string, name: string) => Promise<void>;
   prefer: (device: DeviceView, connection: ConnectionView) => Promise<void>;
@@ -351,6 +353,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       setKey: (id, key) => mutate(() => api.devices.update(savedDeviceId(id), { key })),
       setExportable: (device, connection, exportable, yourPassword) => mutate(() => api.connections.setExportable(device.id, connection.id as ConnectionId, exportable, yourPassword)),
       setPicture: (id, picture) => mutate(() => api.devices.setPicture(savedDeviceId(id), picture)),
+      setPaused: (id, paused) => mutate(() => api.devices.setPaused(savedDeviceId(id), paused)),
       remove: (id) => mutate(() => api.devices.remove(savedDeviceId(id))),
       deleteHistory: (id, name) => mutate(() => api.devices.deleteHistory(savedDeviceId(id), name)),
       prefer: (device, connection) => mutate(() => api.connections.prefer(device.id, connection.id as ConnectionId)),

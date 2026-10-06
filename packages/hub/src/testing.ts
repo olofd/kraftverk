@@ -148,7 +148,7 @@ async function ask(channel: ByteChannel, what: string, timeoutMs = 500): Promise
 type LampConfig = { room?: string };
 
 /** What a test sees of the lamps it opens: every context a session was opened with, and whether it was closed; and whether opening one fails. */
-export type LampWatch = { opened: { ctx: DeviceContext<LampConfig>; closed: boolean }[]; failOpen: boolean };
+export type LampWatch = { opened: { ctx: DeviceContext<LampConfig>; closed: boolean }[]; failOpen: boolean; failWith?: Error | null };
 
 const lampSession = (ctx: DeviceContext<LampConfig>, channel: ByteChannel | null, watch: LampWatch): DeviceSession => {
   const entry = { ctx, closed: false };
@@ -232,7 +232,7 @@ export function makeLampType(): { type: ReturnType<typeof defineDeviceType<LampC
       return { identity: `test-lamp:${said.serial}`, model: said.model, summary: `It is ${said.on ? 'on' : 'off'}.`, config: ctx.config.room ? {} : { room: 'Hall' } };
     },
     async createSession(ctx) {
-      if (watch.failOpen) throw new Error('The lamp refused the connection');
+      if (watch.failOpen) throw watch.failWith ?? new Error('The lamp refused the connection');
       return lampSession(ctx, channelOf(ctx.connection, 'bytes', 'A lamp is reached over the bus'), watch);
     },
     async createSimulator(ctx) {

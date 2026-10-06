@@ -89,6 +89,8 @@ export const SCHEMA = `
     */
     picture     TEXT CHECK (picture IS NULL OR picture GLOB 'type:[0-9]*' OR picture GLOB 'own:?*'),
     added_at    TEXT NOT NULL,
+    /* When its owner paused it: kept, and not reached, until resumed. NULL: it is not paused. */
+    paused_at   TEXT,
     removed_at  TEXT
   );
   CREATE UNIQUE INDEX device_identity ON device (identity) WHERE identity IS NOT NULL AND removed_at IS NULL;

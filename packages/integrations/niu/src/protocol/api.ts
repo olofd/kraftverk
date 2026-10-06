@@ -1,3 +1,5 @@
+import { NeedsSignIn, needsSignIn, NotReachable } from '@kraftverk/device-sdk';
+
 import { md5Hex } from './md5.ts';
 
 /**
@@ -224,7 +226,14 @@ export const parseTotals = (data: unknown): NiuTotals => {
 
 // --- asking ------------------------------------------------------------------------------
 
+/** How long NIU is left alone when it asks to be asked less often, unless it says how long. */
+const RATE_LIMITED_MS = 15 * 60_000;
+
 async function envelope<T>(response: Response, what: string): Promise<T> {
+  if (response.status === 429) {
+    const seconds = Number(response.headers.get('retry-after'));
+    throw new NotReachable('NIU asks to be asked less often: it is left alone a while', Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : RATE_LIMITED_MS);
+  }
   if (!response.ok) throw new NiuError(`NIU answered HTTP ${response.status} to ${what}`, undefined, response.status);
   const body = (await response.json()) as Envelope<T>;
   if (body.status !== 0) {
@@ -261,8 +270,10 @@ export async function signIn(http: NiuHttp, account: string, password: string, n
   try {
     return tokensOf(await envelope(response, 'the sign-in'), now);
   } catch (error) {
-    // NIU says little about a wrong password; say what it most likely is.
-    if (error instanceof NiuError && error.status !== undefined) throw new NiuError(`NIU did not accept that account and password (${error.message.replace(/^NIU said no to the sign-in: /, '')})`, error.status);
+    // NIU says little about a wrong password; say what it most likely is — and that it waits on a person: tried in a loop, NIU locks the account.
+    if (error instanceof NiuError && error.status !== undefined) {
+      throw new NeedsSignIn(`NIU did not accept that account and password (${error.message.replace(/^NIU said no to the sign-in: /, '')}): sign in again on the account's page`);
+    }
     throw error;
   }
 }
@@ -336,7 +347,9 @@ export class NiuClient {
       return this.#tokens;
     } catch (error) {
       const times = (this.#refused?.times ?? 0) + 1;
-      this.#refused = { error, times, until: now + SIGN_IN_AGAIN_MS[Math.min(times, SIGN_IN_AGAIN_MS.length) - 1]! };
+      // A password refused is not tried again at all: it waits on a person giving it anew.
+      const wait = needsSignIn(error) ? Number.POSITIVE_INFINITY : SIGN_IN_AGAIN_MS[Math.min(times, SIGN_IN_AGAIN_MS.length) - 1]!;
+      this.#refused = { error, times, until: now + wait };
       throw error;
     }
   }

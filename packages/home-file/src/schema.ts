@@ -93,6 +93,7 @@ function deviceSchema(types: readonly VocabularyType[]): Schema {
       name: { type: 'string', minLength: 1, description: 'Its name, as the app shows it.' },
       identity: { type: 'string', description: 'Who the hardware says it is, as it said when added.' },
       picture: { type: 'string', pattern: '^(type:[0-9]+|own:.+)$', description: 'Which of its pictures it shows: "type:2".' },
+      paused: { type: 'boolean', description: 'Paused by its owner: kept, and not reached, until resumed.' },
       settings: { type: 'object', description: 'Its type’s settings.' },
       connect: {
         type: 'array',
