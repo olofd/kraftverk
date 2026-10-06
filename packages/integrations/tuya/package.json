@@ -14,10 +14,15 @@
       ],
       "types": [
         {
+          "id": "tuya.gateway",
+          "entry": "./src/gateway.ts"
+        },
+        {
           "id": "tuya.plug",
           "entry": "./src/plug.ts"
         }
-      ]
+      ],
+      "migrations": "./src/migrations.ts"
     },
     "words": [
       "Tuya",
@@ -27,7 +32,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./plug": "./src/plug.ts",
-    "./protocol": "./src/protocol/index.ts"
+    "./protocol": "./src/protocol/index.ts",
+    "./gateway": "./src/gateway.ts",
+    "./migrations": "./src/migrations.ts"
   },
   "scripts": {
     "test": "node ../../../scripts/run-bun.mjs test",

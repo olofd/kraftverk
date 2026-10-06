@@ -9,7 +9,7 @@ import { aesEcbDecrypt, aesEcbEncrypt } from './crypto/aes.ts';
 import { crc32, hmacSha256 } from './crypto/hash.ts';
 import { decodeBroadcast, DISCOVERY_KEY } from './discovery.ts';
 import { CMD, encodeFrame, FrameReader, PREFIX_55AA, SUFFIX_55AA, type ProtocolVersion } from './frame.ts';
-import protocol, { cidOfAddress, linkOver, parseTuyaAddress, tuyaIdentity } from './index.ts';
+import protocol, { linkOver, parseTuyaAddress, tuyaIdentity, zigbeeIdentity } from './index.ts';
 import { parseDps, sessionKeyOf, TuyaLink } from './session.ts';
 import { datapointRaw, datapointValue, decodeSocket, encodeSocket, relayDps, type ProfileDatapoint, type SocketProfile } from './socket.ts';
 
@@ -373,6 +373,8 @@ function fakeGateway(key: Uint8Array, children: Record<string, Record<string, st
           Object.assign(child, changed);
           out.push(frame(CMD.STATUS, { protocol: 4, t: 1, data: { dps: changed, cid, type: 'query' } }));
         }
+      } else if (got.command === CMD.HEART_BEAT) {
+        out.push(frame(CMD.HEART_BEAT, new Uint8Array()));
       } else if (got.command === CMD.CONTROL_NEW) {
         const asked = JSON.parse(text(got.payload)) as { data: { cid: string; dps: Record<string, boolean> } };
         Object.assign(children[asked.data.cid]!, asked.data.dps);
@@ -405,12 +407,18 @@ describe('a device behind a gateway', () => {
   const PLUG = 'a4c1380000000001';
   const OTHER = 'a4c1380000000002';
 
+  /** One conversation with the gateway, for every device behind it. */
+  const gatewayLink = (channel: ReturnType<typeof fakeGateway> | ReturnType<typeof fakeByteChannel>, options: Partial<ConstructorParameters<typeof TuyaLink>[1]> = {}) =>
+    new TuyaLink(channel, { deviceId: 'bfgw', localKey: GATEWAY_KEY, version: '3.4', gateway: { members: () => [PLUG] }, ...options });
+
   test('is read and switched through the gateway, named by its cid; the gateway’s own datapoints are not its', async () => {
     const gateway = fakeGateway(utf8(GATEWAY_KEY), { [PLUG]: { '1': false, '19': 0 }, [OTHER]: { '1': true } });
-    const link = new TuyaLink(gateway, { deviceId: 'bfplug', localKey: GATEWAY_KEY, version: '3.4', cid: PLUG });
-    expect(await link.status()).toEqual({ '1': false, '19': 0 });
-    expect(await link.set({ '1': true })).toEqual({});
-    expect(await link.status()).toEqual({ '1': true, '19': 0 });
+    const link = gatewayLink(gateway);
+    expect(await link.status(PLUG)).toEqual({ '1': false, '19': 0 });
+    expect(await link.set({ '1': true }, PLUG)).toEqual({});
+    expect(await link.status(PLUG)).toEqual({ '1': true, '19': 0 });
+    // The same conversation, for the other device behind it.
+    expect(await link.status(OTHER)).toEqual({ '1': true });
     const asked = gateway.written.map((bytes) => new FrameReader('3.4', utf8(GATEWAY_KEY)).push(bytes)).flat();
     expect(asked.length).toBeGreaterThan(0);
     await link.close();
@@ -420,20 +428,23 @@ describe('a device behind a gateway', () => {
     const gateway = fakeGateway(utf8(GATEWAY_KEY), { [PLUG]: { '1': true, '19': 0 }, [OTHER]: { '1': true } }, { [PLUG]: { '19': 9970, '18': 4310 } });
     const pushed: Record<string, unknown>[] = [];
     const presence: boolean[] = [];
-    const link = new TuyaLink(gateway, { deviceId: 'bfplug', localKey: GATEWAY_KEY, version: '3.4', cid: PLUG, onPush: (dps) => pushed.push(dps), onPresence: (online) => presence.push(online) });
+    const link = gatewayLink(gateway, {
+      onPush: (dps, cid) => void (cid === PLUG && pushed.push(dps)),
+      onPresence: (cid, online) => void (cid === PLUG && presence.push(online)),
+    });
     // A query is answered with what the gateway last heard, and has the plug measure nothing.
-    expect(await link.status()).toEqual({ '1': true, '19': 0 });
+    expect(await link.status(PLUG)).toEqual({ '1': true, '19': 0 });
     await Bun.sleep(5);
     expect(pushed).toEqual([]);
     // A refresh does: what changed follows as a push — heard. Asked again, nothing has changed, and nothing is said.
-    await link.refresh([18, 19, 20]);
+    await link.refresh([18, 19, 20], PLUG);
     await Bun.sleep(5);
     expect(pushed).toEqual([{ '19': 9970, '18': 4310 }]);
-    await link.refresh([18, 19, 20]);
+    await link.refresh([18, 19, 20], PLUG);
     await Bun.sleep(5);
     expect(pushed).toHaveLength(1);
     // The gateway's memory has what was measured.
-    expect(await link.status()).toEqual({ '1': true, '19': 9970, '18': 4310 });
+    expect(await link.status(PLUG)).toEqual({ '1': true, '19': 9970, '18': 4310 });
 
     gateway.say(CMD.STATUS, { protocol: 4, t: 2, data: { dps: { '1': false }, cid: OTHER } });
     gateway.say(CMD.STATUS, { protocol: 4, t: 2, data: { dps: { '1': false }, cid: PLUG } });
@@ -447,12 +458,12 @@ describe('a device behind a gateway', () => {
   test('a gateway that loses its power closes nothing: its silence is taken for the connection gone — at a request, or between heartbeats', async () => {
     const gateway = fakeGateway(utf8(GATEWAY_KEY), { [PLUG]: { '1': false } });
     const said: string[] = [];
-    const link = new TuyaLink(gateway, { deviceId: 'bfplug', localKey: GATEWAY_KEY, version: '3.4', cid: PLUG, requestTimeoutMs: 40, heartbeatMs: 25, log: (message) => said.push(message) });
-    expect(await link.status()).toEqual({ '1': false });
+    const link = gatewayLink(gateway, { requestTimeoutMs: 40, heartbeatMs: 25, log: (message) => said.push(message) });
+    expect(await link.status(PLUG)).toEqual({ '1': false });
     expect(link.connected).toBe(true);
     // Its power cut: a request is not answered, nothing else is heard — the connection is gone, opened afresh, and refused.
     gateway.power(false);
-    await expect(link.set({ '1': true })).rejects.toThrow('did not answer');
+    await expect(link.set({ '1': true }, PLUG)).rejects.toThrow('did not answer');
     expect(link.connected).toBe(false);
     expect(gateway.resets()).toBe(1);
     expect(said).toContain('the connection is gone: nothing heard for 0 s');
@@ -460,7 +471,7 @@ describe('a device behind a gateway', () => {
     // Back: the next request connects again, and is answered.
     gateway.power(true);
     await gateway.reset();
-    expect(await link.status()).toEqual({ '1': false });
+    expect(await link.status(PLUG)).toEqual({ '1': false });
     expect(link.connected).toBe(true);
     // Idle, and its power cut again: two heartbeats of silence are enough.
     gateway.power(false);
@@ -470,37 +481,38 @@ describe('a device behind a gateway', () => {
     await link.close();
   });
 
-  test('its address is its gateway’s, # its Zigbee address; typed, it is checked as such', () => {
-    expect(parseTuyaAddress('192.0.2.30')).toBe('192.0.2.30');
-    expect(parseTuyaAddress(' 192.0.2.30#A4C1380000000001 ')).toBe('192.0.2.30#a4c1380000000001');
-    expect(parseTuyaAddress('192.0.2.30#plug')).toBeNull();
-    expect(parseTuyaAddress('192.0.2.30#a4c1380000000001#x')).toBeNull();
+  test('an address is one thing: an IP address, the gateway’s or a plug’s; a device behind a gateway is known by its Zigbee address', () => {
+    expect(parseTuyaAddress(' 192.0.2.30 ')).toBe('192.0.2.30');
+    expect(parseTuyaAddress('192.0.2.30#a4c1380000000001')).toBeNull();
     expect(parseTuyaAddress('example.com')).toBeNull();
-    expect(cidOfAddress('192.0.2.30#a4c1380000000001')).toBe('a4c1380000000001');
-    expect(cidOfAddress('192.0.2.30')).toBeNull();
+    expect(zigbeeIdentity('A4C1380000000001')).toBe('zigbee:a4c1380000000001');
   });
 
-  test('a connection to it builds a link that names it, from its address', async () => {
+  test('a gateway’s connection builds one link for every device behind it — its device id not needed', async () => {
     const gateway = fakeGateway(utf8(GATEWAY_KEY), { [PLUG]: { '1': true } });
-    const link = linkOver({
-      kind: 'direct',
-      method: 'lan',
-      protocol: 'tuya-local',
-      transport: 'lan',
-      address: `192.0.2.30#${PLUG}`,
-      channel: gateway,
-      config: { deviceId: 'bfplug', protocolVersion: '3.4' },
-      secrets: { get: (field) => (field === 'localKey' ? GATEWAY_KEY : null) },
-      platform: 'system',
-    });
-    expect(await link.status()).toEqual({ '1': true });
+    const link = linkOver(
+      {
+        kind: 'direct',
+        method: 'lan',
+        protocol: 'tuya-local',
+        transport: 'lan',
+        address: '192.0.2.30',
+        channel: gateway,
+        config: { protocolVersion: '3.4' },
+        secrets: { get: (field) => (field === 'localKey' ? GATEWAY_KEY : null) },
+        platform: 'system',
+      },
+      { gateway: { members: () => [PLUG] } }
+    );
+    await link.open();
+    expect(await link.status(PLUG)).toEqual({ '1': true });
     await link.close();
   });
 
   test('a device the gateway does not have is said to be that, not a wrong key', async () => {
     const gateway = fakeGateway(utf8(GATEWAY_KEY), { [OTHER]: { '1': true } });
-    const link = new TuyaLink(gateway, { deviceId: 'bfplug', localKey: GATEWAY_KEY, version: '3.4', cid: PLUG });
-    await expect(link.status()).rejects.toThrow('says nothing of');
+    const link = gatewayLink(gateway);
+    await expect(link.status(PLUG)).rejects.toThrow('says nothing of');
     await link.close();
   }, 30_000);
 
@@ -517,8 +529,8 @@ describe('a device behind a gateway', () => {
     const note = (reason: unknown) => void unhandled.push(reason);
     process.on('unhandledRejection', note);
     try {
-      const link = new TuyaLink(channel, { deviceId: 'bfgw', localKey: GATEWAY_KEY, version: '3.4', cid: PLUG });
-      await expect(link.status()).rejects.toThrow('Connection closed');
+      const link = gatewayLink(channel);
+      await expect(link.status(PLUG)).rejects.toThrow('Connection closed');
       await new Promise((resolve) => setTimeout(resolve, 10));
       expect(unhandled).toEqual([]);
       await link.close();

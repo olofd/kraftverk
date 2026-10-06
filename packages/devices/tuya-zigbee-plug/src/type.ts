@@ -100,7 +100,7 @@ export default defineTuyaSocket({
     supportNote: 'Mapped on one plug behind an RSH GW018-DM gateway; other Tuya Zigbee gateways speak the same way.',
   },
   profiles: [ZIGBEE_PLUG],
-  reached: 'gateway',
+  ways: ['gateway'],
   // Each read asks the gateway's memory and has the plug measure, over Zigbee: every 15 s, and every 2 s while an automation watches it.
   pollSeconds: 15,
 });

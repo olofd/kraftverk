@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { checkDeviceTypeContract, fakeByteChannel, fakeConnection } from '@kraftverk/device-sdk/testing';
+import { bridgedConnection, checkDeviceTypeContract, fakeByteChannel, fakeConnection, simulatorContext } from '@kraftverk/device-sdk/testing';
+import gatewayType from '@kraftverk/integration-tuya/gateway';
 import { CMD, encodeFrame, FrameReader, hmacSha256, sessionKeyOf } from '@kraftverk/integration-tuya/protocol';
 
 import plugType, { ZIGBEE_PLUG } from '../src/type.ts';
@@ -89,18 +90,18 @@ function gateway(dps: Dps) {
   };
 }
 
-const over = (channel: ReturnType<typeof gateway>['channel']) =>
-  fakeConnection({
-    method: 'lan',
-    protocol: 'tuya-local',
-    transport: 'lan',
-    address: `192.0.2.74#${CID}`,
-    channel,
-    config: { deviceId: 'bf7c0000000000000000zp', protocolVersion: '3.4' },
-    secrets: { localKey: KEY },
-  });
-
 const quiet = { info: () => {}, warn: () => {}, error: () => {} };
+
+/** The plug's way through its gateway: the gateway opened over the scripted one, as its holder opens it, and the plug linked through it. */
+async function over(channel: ReturnType<typeof gateway>['channel']) {
+  const { context } = simulatorContext(gatewayType);
+  const opened = await gatewayType.createSession({
+    ...context,
+    connection: fakeConnection({ method: 'lan', protocol: 'tuya-local', transport: 'lan', address: '192.0.2.74', channel, config: { protocolVersion: '3.4' }, secrets: { localKey: KEY } }),
+    schedule: () => {},
+  });
+  return bridgedConnection(opened.bridge!, { method: 'gateway', address: CID });
+}
 
 /** A real session over a scripted gateway, the way a holder opens one. */
 async function session(dps: Dps) {
@@ -109,7 +110,7 @@ async function session(dps: Dps) {
   const scheduled: (() => unknown)[] = [];
   const opened = await plugType.createSession({
     config: { profile: ZIGBEE_PLUG.id, pollSeconds: 60 },
-    connection: over(device.channel),
+    connection: await over(device.channel),
     log: quiet,
     readOnly: false,
     store: { get: () => undefined, set: () => {}, delete: () => {} },
@@ -137,12 +138,12 @@ describe('the Tuya Zigbee plug', () => {
     const connection = () => over(gateway({ ...MAPPED }).channel);
     expect(await checkDeviceTypeContract(plugType, { settleMs: 1_500, connections: [connection] })).toEqual([]);
     expect(plugType.meta.category).toBe('smart-plug');
-    expect(plugType.connections).toEqual([expect.objectContaining({ protocol: 'tuya-local', transport: 'lan', label: 'Its Zigbee gateway' })]);
+    expect(plugType.connections).toEqual([expect.objectContaining({ id: 'gateway', through: ['tuya.gateway'], label: 'Through its Zigbee gateway' })]);
   });
 
   test('its check reads the plug through the gateway, in the units its app shows', async () => {
-    const found = await plugType.identify(over(gateway({ ...MAPPED }).channel), { config: {}, log: quiet, signal: AbortSignal.timeout(10_000) });
-    expect(found.identity).toBe('tuya-local:bf7c0000000000000000zp');
+    const found = await plugType.identify(await over(gateway({ ...MAPPED }).channel), { config: {}, log: quiet, signal: AbortSignal.timeout(10_000) });
+    expect(found.identity).toBe('zigbee:a4c1380000000001');
     expect(found.summary).toBe('Answering through its gateway, Tuya 3.4: the relay is on, drawing 997 W.');
   });
 

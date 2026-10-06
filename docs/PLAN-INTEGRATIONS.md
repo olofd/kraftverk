@@ -1304,6 +1304,17 @@ gateway — and the plug through it. Tuya's Smart Life sign-in stays what it is:
 used once, at setup, to fetch a key, and never kept (D8).
 *Done when* two Zigbee plugs behind one gateway share one connection, and no
 address in the code or the file holds two things.
+**Done 2026-10-06**, on the simplified model (§1.1). `tuya.gateway` holds one
+`TuyaLink` in gateway mode — each request names the device by its Zigbee
+address, a push says which device it is of — and hands each plug a
+`ZigbeeLink`. Its members are what it reports reachable and what has been
+linked, kept in its store; a Zigbee device's identity is `zigbee:<address>`,
+the same whichever integration reaches it. A socket type says its `ways`:
+`tuya.plug` both, the Zigbee plug `gateway` only. The Smart Life sign-in
+offers the gateway — with the key Tuya hands its plugs — never a plug
+behind it. File version 7, by Tuya's migration. *Learnt:* a gateway says
+nothing of a device it does not have, so silence about one device is told
+apart from a gateway gone by a heartbeat before giving up the connection.
 
 **Step 7 · Health the core owns.**
 `NeedsSignIn` and `NotReachable({ retryAfter })` in the SDK; the states

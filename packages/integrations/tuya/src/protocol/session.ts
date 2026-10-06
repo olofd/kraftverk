@@ -39,17 +39,21 @@ export type TuyaLinkOptions = {
   requestTimeoutMs?: number;
   /** How often an idle session says it is there; 10 s unless said. */
   heartbeatMs?: number;
-  /** Datapoints the device sends unasked: a change at the plug, or its own refresh. */
-  onPush?: (dps: Dps) => void;
   /**
-   * A device behind a gateway — a Zigbee plug — by the id its gateway knows it
-   * by (its Zigbee address). The link then speaks to the gateway, with the
-   * gateway's key, names the device in every request, and hears only what the
-   * gateway says of it: not the gateway's own datapoints, nor its other devices'.
+   * Datapoints sent unasked: a change at the plug, or its own refresh. Through
+   * a gateway, `cid` says which device behind it they are of; null for a
+   * device spoken to directly, and for the gateway's own.
    */
-  cid?: string;
-  /** For a device behind a gateway: the gateway saying it is reachable, or not. */
-  onPresence?: (online: boolean) => void;
+  onPush?: (dps: Dps, cid: string | null) => void;
+  /**
+   * A gateway's link: one conversation with a Tuya gateway, with its key, for
+   * every device behind it — each named, by its Zigbee address (`cid`), in
+   * the requests about it. Its key is proven by the handshake (3.4, 3.5), or
+   * on 3.3 by asking about one of its `members`, when it has any yet.
+   */
+  gateway?: { members(): readonly string[] };
+  /** A gateway saying it can, or cannot, reach a device behind it. */
+  onPresence?: (cid: string, online: boolean) => void;
 };
 
 /** Which device behind a gateway a frame is about: `cid` at its top, or in its `data`. Null for the gateway's own. */
@@ -139,10 +143,24 @@ export class TuyaLink {
     return this.#version;
   }
 
-  /** Reads every datapoint the device will report. */
-  async status(): Promise<Dps> {
+  /** Talks, if it is not talking already: what a gateway's link does to stand ready for the devices behind it. */
+  async open(): Promise<void> {
     await this.#ensure();
-    return this.#query();
+  }
+
+  /**
+   * Reads every datapoint the device will report — through a gateway, of the
+   * device behind it named by `cid`, as the gateway last heard it.
+   */
+  async status(cid?: string): Promise<Dps> {
+    await this.#ensure();
+    try {
+      return await this.#query(cid);
+    } catch (error) {
+      // The gateway answers about what it has: silence about one device, with the connection good, is a device it does not have.
+      if (cid && this.connected && /did not answer/.test((error as Error).message)) throw new Error(`the gateway answered, but says nothing of ${cid}: is it paired with this gateway?`);
+      throw error;
+    }
   }
 
   /**
@@ -157,16 +175,15 @@ export class TuyaLink {
    * home network; named bare, as tinytuya does, a gateway acknowledges it and
    * asks nothing (packages/devices/tuya-zigbee-plug/README.md).
    */
-  async refresh(dps: readonly number[]): Promise<void> {
+  async refresh(dps: readonly number[], cid?: string): Promise<void> {
     await this.#ensure();
-    const { cid } = this.#options;
     await this.#send(CMD.UPDATEDPS, utf8(JSON.stringify(cid ? { dpId: dps, cid: [cid] } : { dpId: dps })));
   }
 
-  /** Writes datapoints. The caller is the action gateway's path, never a screen directly. */
-  async set(dps: Dps): Promise<Dps> {
+  /** Writes datapoints — through a gateway, to the device behind it named by `cid`. The caller is the action gateway's path, never a screen directly. */
+  async set(dps: Dps, cid?: string): Promise<Dps> {
     await this.#ensure();
-    const { deviceId, cid } = this.#options;
+    const { deviceId } = this.#options;
     const modern = this.#version === '3.4' || this.#version === '3.5';
     const command = modern ? CMD.CONTROL_NEW : CMD.CONTROL;
     const t = Math.floor(Date.now() / 1000);
@@ -181,7 +198,7 @@ export class TuyaLink {
     const frame = await this.#exchange(
       command,
       utf8(JSON.stringify(payload)),
-      (f) => f.command === command || ((f.command === CMD.STATUS || f.command === CMD.CONTROL) && this.#mine(f))
+      (f) => f.command === command || ((f.command === CMD.STATUS || f.command === CMD.CONTROL) && this.#about(f, cid))
     );
     if (frame.returnCode !== 0) throw new Error(`The device rejected the command (code ${frame.returnCode})`);
     return parseDps(frame.payload);
@@ -267,12 +284,18 @@ export class TuyaLink {
       it proves nothing about the key, and a wrong key decrypts to nonsense
       that parses as "no datapoints".
     */
-    const probe = await this.#query().catch((error: Error) => {
-      // The handshake above proved the key: a gateway that says nothing of the device does not have it.
-      if (this.#options.cid && version !== '3.3') throw new Error(`the gateway answered, but says nothing of ${this.#options.cid}: is it paired with this gateway?`);
-      throw error;
-    });
-    if (Object.keys(probe).length === 0) throw new Error('connected, but no datapoints could be decoded — usually a wrong local key');
+    const gateway = this.#options.gateway;
+    if (!gateway) {
+      const probe = await this.#query();
+      if (Object.keys(probe).length === 0) throw new Error('connected, but no datapoints could be decoded — usually a wrong local key');
+    } else if (version === '3.3') {
+      // A gateway on 3.3 has no handshake to prove its key: asked about a device behind it, when it has one yet.
+      const member = gateway.members()[0];
+      if (member) {
+        const probe = await this.#query(member);
+        if (Object.keys(probe).length === 0) throw new Error('connected, but no datapoints could be decoded — usually a wrong local key');
+      }
+    }
 
     this.#readyFor = epoch;
     /*
@@ -343,8 +366,8 @@ export class TuyaLink {
   // --- requests ---------------------------------------------------------------------
 
   /** The query itself, without establishing — establishing uses it to probe. */
-  async #query(): Promise<Dps> {
-    const { deviceId, cid } = this.#options;
+  async #query(cid?: string): Promise<Dps> {
+    const { deviceId } = this.#options;
     const modern = this.#version === '3.4' || this.#version === '3.5';
     const command = modern ? CMD.DP_QUERY_NEW : CMD.DP_QUERY;
     const t = Math.floor(Date.now() / 1000);
@@ -365,30 +388,30 @@ export class TuyaLink {
     const frame = await this.#exchange(
       command,
       utf8(JSON.stringify(payload)),
-      (f) => f.payload.length > 0 && (f.command === command || f.command === CMD.STATUS || f.command === CMD.DP_QUERY) && this.#mine(f)
+      (f) => f.payload.length > 0 && (f.command === command || f.command === CMD.STATUS || f.command === CMD.DP_QUERY) && this.#about(f, cid)
     );
     return parseDps(frame.payload);
   }
 
-  /** A frame about this device: any, directly; behind a gateway, one naming it. */
-  #mine(frame: TuyaFrame): boolean {
-    return !this.#options.cid || cidOf(frame.payload) === this.#options.cid;
+  /** A frame about the device asked of: any, directly; through a gateway, one naming it — or, for the gateway's own, naming none. */
+  #about(frame: TuyaFrame, cid: string | undefined): boolean {
+    if (!this.#options.gateway) return true;
+    return (cidOf(frame.payload) ?? undefined) === cid;
   }
 
   #deliver(frame: TuyaFrame): void {
     const index = this.#waiters.findIndex((waiter) => waiter.match(frame));
     if (index < 0) {
-      // Unasked: a change at the plug, or its own refresh — behind a gateway, only what it says of this device.
-      if (frame.command === CMD.STATUS && this.#mine(frame)) {
+      // Unasked: a change at the plug, or its own refresh — through a gateway, with which device it is of.
+      if (frame.command === CMD.STATUS) {
         const dps = parseDps(frame.payload);
-        if (Object.keys(dps).length) this.#options.onPush?.(dps);
+        if (Object.keys(dps).length) this.#options.onPush?.(dps, this.#options.gateway ? cidOf(frame.payload) : null);
       }
       // A gateway telling which of its devices it can reach.
-      const cid = this.#options.cid;
-      if (cid && frame.command === CMD.LAN_EXT_STREAM) {
+      if (this.#options.gateway && frame.command === CMD.LAN_EXT_STREAM) {
         const presence = presenceOf(frame.payload);
-        if (presence?.online.includes(cid)) this.#options.onPresence?.(true);
-        else if (presence?.offline.includes(cid)) this.#options.onPresence?.(false);
+        for (const cid of presence?.online ?? []) this.#options.onPresence?.(cid, true);
+        for (const cid of presence?.offline ?? []) this.#options.onPresence?.(cid, false);
       }
       // A refresh it would not take is said: nothing else would tell.
       if (frame.command === CMD.UPDATEDPS && frame.returnCode !== 0) this.#options.log?.(`a refresh was refused: ${text(frame.payload) || `code ${frame.returnCode}`}`);
@@ -411,9 +434,14 @@ export class TuyaLink {
         if (index < 0) return;
         this.#waiters.splice(index, 1);
         const timeout = this.#options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
-        reject(new Error(`The device did not answer command 0x${command.toString(16)} in ${timeout}ms`));
+        const unanswered = new Error(`The device did not answer command 0x${command.toString(16)} in ${timeout}ms`);
         // Not a word of anything while it waited: not this request unanswered, the connection gone.
-        if (this.connected && Date.now() - this.#heardAt >= timeout) this.#gone(`nothing heard for ${Math.round(timeout / 1000)} s`);
+        if (!this.connected || Date.now() - this.#heardAt < timeout) return reject(unanswered);
+        // A gateway says nothing of a device it does not have: whether it is there at all is asked before it is given up.
+        void (this.#options.gateway ? this.#stillThere() : Promise.resolve(false)).then((there) => {
+          if (!there) this.#gone(`nothing heard for ${Math.round(timeout / 1000)} s`);
+          reject(unanswered);
+        });
       }, this.#options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS);
     });
     // A connection closed while the request is written fails the waiter before it is returned to anyone: handled here, said below.
@@ -440,12 +468,27 @@ export class TuyaLink {
     await this.#channel.write(frame);
   }
 
+  /** Whether the other end still answers: a heartbeat, and a moment for anything at all to come back. */
+  async #stillThere(): Promise<boolean> {
+    if (!this.#channel.connected) return false;
+    const before = this.#heardAt;
+    await this.#send(CMD.HEART_BEAT, utf8('{}')).catch(() => undefined);
+    const until = Date.now() + Math.min(this.#options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS, 1_000);
+    while (Date.now() < until) {
+      if (this.#heardAt > before) return true;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    return this.#heardAt > before;
+  }
+
   /**
    * The connection taken for gone: whoever waits is told, and it is opened
    * afresh — the next request connects again, and fails until the device is
    * there to answer.
    */
   #gone(why: string): void {
+    // Once for each connection: a heartbeat and a request may both find it silent.
+    if (!this.connected) return;
     this.#options.log?.(`the connection is gone: ${why}`);
     this.#stopHeartbeat();
     this.#readyFor = -1;

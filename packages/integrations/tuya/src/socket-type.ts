@@ -1,8 +1,10 @@
 import {
   defineDeviceType,
+  linkOf,
   MAIN_PART,
   type AttributeSpec,
   type ConfigSchema,
+  type ConnectionMethod,
   type DeviceContext,
   type DeviceDescription,
   type DeviceSession,
@@ -16,8 +18,8 @@ import {
   type ToolSpec,
   type Value,
 } from '@kraftverk/device-sdk';
+import type { ZigbeeLink } from './link.ts';
 import {
-  cidOfAddress,
   datapointRaw,
   datapointValue,
   decodeSocket,
@@ -25,6 +27,7 @@ import {
   linkOver,
   relayDps,
   tuyaIdentity,
+  zigbeeIdentity,
   type Dps,
   type ProfileDatapoint,
   type SocketProfile,
@@ -48,27 +51,89 @@ export type SocketTypeDefinition = {
   /** The layouts this type knows. With more than one, setup asks which. */
   profiles: readonly SocketProfile[];
   /**
-   * `gateway`: a Zigbee socket, reached through the Tuya gateway it is paired
-   * with — on the home network, with the gateway's key — rather than straight
-   * to a plug on Wi-Fi. Its address is the gateway's, `#` its Zigbee address.
+   * How it is reached: `directly`, a plug on Wi-Fi spoken to on the home
+   * network; or `gateway`, a Zigbee socket reached through the Tuya gateway
+   * it is paired with (`tuya.gateway`), by its Zigbee address. Directly, when
+   * not said; a type for any socket, both.
    */
-  reached?: 'directly' | 'gateway';
+  ways?: readonly ('directly' | 'gateway')[];
   /** How often it is read, by default. A Zigbee socket is asked through its gateway, which asks it over Zigbee: less often. */
   pollSeconds?: number;
 };
 
 /** How each way in is offered. */
-const METHODS = {
+const METHODS: Readonly<Record<'directly' | 'gateway', ConnectionMethod>> = {
   directly: {
+    id: 'lan',
     label: 'Home network',
     description: 'Straight to the plug on your home network, with no cloud. Needs its local key, once.',
+    protocol: 'tuya-local',
+    transport: 'lan',
+    // The local key comes from the Tuya cloud account the plug is paired with, once.
+    reach: 'cloud-at-setup',
   },
   gateway: {
-    label: 'Its Zigbee gateway',
-    description:
-      'Through the Tuya gateway it is paired with, on your home network, with no cloud. Needs the gateway’s key, once: signing in with Smart Life brings it with the plug.',
+    id: 'gateway',
+    label: 'Through its Zigbee gateway',
+    description: 'Through the Tuya gateway it is paired with, on your home network, with no cloud: add the gateway, and the plug is found through it.',
+    through: ['tuya.gateway'],
+    reach: 'local',
   },
-} as const;
+};
+
+/** What a socket's session speaks to: the plug itself, or the plug through its gateway — the same calls either way. */
+type Wire = {
+  status(): Promise<Dps>;
+  refresh(dps: readonly number[]): Promise<void>;
+  set(dps: Dps): Promise<Dps>;
+  connected(): boolean;
+  version(): string;
+  close(): Promise<void>;
+};
+
+const THROUGH_ITS_GATEWAY = 'A Zigbee socket is reached through its Tuya gateway';
+
+/**
+ * The wire to a socket over its open connection: a Tuya conversation with the
+ * plug, or the link its gateway hands it. `heard` is told what the plug
+ * pushes; `presence`, behind a gateway, whether the gateway can reach it.
+ */
+async function wireOf(connection: OpenConnection, log: (message: string) => void, heard: (dps: Dps) => void, presence: (online: boolean | null) => void): Promise<Wire> {
+  if (connection.kind === 'bridged') {
+    let zigbee: ZigbeeLink | null = null;
+    zigbee = await linkOf<ZigbeeLink>(
+      connection,
+      () => {
+        if (!zigbee) return;
+        for (const dps of zigbee.takePushes()) heard(dps);
+        presence(zigbee.online());
+      },
+      THROUGH_ITS_GATEWAY
+    );
+    const linked = zigbee;
+    return {
+      status: () => linked.status(),
+      refresh: (dps) => linked.refresh(dps),
+      set: (dps) => linked.set(dps),
+      connected: () => linked.connected(),
+      version: () => linked.version(),
+      close: async () => linked.close(),
+    };
+  }
+  const tuya = linkOver(connection, { log, onPush: (dps) => heard(dps) });
+  return {
+    status: () => tuya.status(),
+    refresh: (dps) => tuya.refresh(dps),
+    set: (dps) => tuya.set(dps),
+    connected: () => tuya.connected,
+    version: () => tuya.version,
+    close: () => tuya.close(),
+  };
+}
+
+/** Who a socket is: its Tuya device id, on Wi-Fi; behind a gateway, its Zigbee address. */
+const identityOf = (connection: OpenConnection): string | null =>
+  connection.kind === 'bridged' ? zigbeeIdentity(connection.address) : connection.config.deviceId ? tuyaIdentity(String(connection.config.deviceId)) : null;
 
 type SocketConfig = {
   profile: string;
@@ -418,7 +483,7 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
 
   // Declared before it is defined: live readings send through it, and it reads what live readings heard.
   let live: Live | null = null;
-  const behindGateway = cidOfAddress(connection.address) !== null;
+  const behindGateway = connection.kind === 'bridged';
   /** When the plug itself last said each datapoint. */
   const pushedAt = new Map<string, number>();
   /**
@@ -461,19 +526,21 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
   // protection — and, with fast refresh on, its readings every second.
   // Behind a gateway: the gateway saying it cannot reach the plug.
   let unreachable = false;
-  const link = linkOver(connection, {
-    log: (message) => ctx.log.info(message),
-    onPush: (dps) => {
+  const link = await wireOf(
+    connection,
+    (message) => ctx.log.info(message),
+    (dps) => {
       unreachable = false;
       for (const dp of Object.keys(dps)) pushedAt.set(dp, Date.now());
       ingest(dps, true);
       ctx.changed();
     },
-    onPresence: (online) => {
+    (online) => {
+      if (online === null || unreachable === !online) return;
       unreachable = !online;
       ctx.changed();
-    },
-  });
+    }
+  );
 
   const metricsAsked = [...metricDps].map(Number);
   const poll = async () => {
@@ -527,12 +594,12 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
     profile,
     read: () => state,
     live,
-    identity: tuyaIdentity(String(connection.config.deviceId ?? '')),
+    identity: identityOf(connection),
     health: () => {
       if (unreachable) return { status: 'offline', detail: 'Its gateway cannot reach it: is it plugged in?', lastReadingAt: state?.at ?? null };
       const fresh = lastOk !== null && Date.now() - lastOk < pollMs * 2.5;
       return {
-        status: fresh ? 'connected' : lastError ? (link.connected ? 'error' : 'offline') : 'connecting',
+        status: fresh ? 'connected' : lastError ? (link.connected() ? 'error' : 'offline') : 'connecting',
         // Said for the page's header: the protocol version is the Datapoints tool's to show.
         detail: fresh ? 'Connected' : (lastError ?? 'Connecting'),
         lastReadingAt: state?.at ?? null,
@@ -540,7 +607,7 @@ async function realSession(ctx: DeviceContext<SocketConfig>, profiles: readonly 
     },
     send,
     wantFresh,
-    tools: { datapoints: async () => datapointsAnswer(link.version, profile, await link.status()) },
+    tools: { datapoints: async () => datapointsAnswer(link.version(), profile, await link.status()) },
     close: () => link.close(),
   });
 }
@@ -613,7 +680,7 @@ function simulatedSession(ctx: DeviceContext<SocketConfig>, profiles: readonly S
 
 export function defineTuyaSocket(definition: SocketTypeDefinition): DeviceType<SocketConfig> {
   const { profiles } = definition;
-  const reached = definition.reached ?? 'directly';
+  const ways = definition.ways ?? ['directly'];
   return defineDeviceType<SocketConfig>({
     id: definition.id,
     kind: 'hardware',
@@ -621,16 +688,7 @@ export function defineTuyaSocket(definition: SocketTypeDefinition): DeviceType<S
     config: configSchema(profiles, definition.pollSeconds),
     describe: (config) => describeSocket(profileOf(profiles, config.profile)),
     tools: toolsOf(profiles),
-    connections: [
-      {
-        id: 'lan',
-        ...METHODS[reached],
-        protocol: 'tuya-local',
-        transport: 'lan',
-        // The local key comes from the Tuya cloud account the plug is paired with, once.
-        reach: 'cloud-at-setup',
-      },
-    ],
+    connections: ways.map((way) => METHODS[way]),
     setup: {
       steps:
         profiles.length > 1
@@ -650,16 +708,16 @@ export function defineTuyaSocket(definition: SocketTypeDefinition): DeviceType<S
     /** Reads the plug once: who it is, and what its layout makes of it. */
     async identify(connection: OpenConnection, ctx) {
       const profile = profileOf(profiles, ctx.config.profile);
-      const link = linkOver(connection, { log: (message) => ctx.log.info(message) });
+      const link = await wireOf(connection, (message) => ctx.log.info(message), () => {}, () => {});
       try {
         const reading = decodeSocket(profile, await link.status());
         const relay = reading.relayOn === undefined ? 'the relay could not be read' : `the relay is ${reading.relayOn ? 'on' : 'off'}`;
         const drawing = reading.watts === undefined ? '' : `, drawing ${Math.round(reading.watts)} W`;
         return {
-          identity: tuyaIdentity(String(connection.config.deviceId ?? '')),
+          identity: identityOf(connection),
           // A socket does not say what model it is; the layout is the person's choice.
           model: null,
-          summary: `Answering${reached === 'gateway' ? ' through its gateway' : ''}, Tuya ${link.version}: ${relay}${drawing}.`,
+          summary: `Answering${connection.kind === 'bridged' ? ' through its gateway' : ''}, Tuya ${link.version()}: ${relay}${drawing}.`,
         };
       } finally {
         await link.close();

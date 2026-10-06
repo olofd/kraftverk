@@ -210,7 +210,7 @@ describe('the Smart Life login and listing', () => {
     expect(done.choices?.[0]).toMatchObject({ name: 'Charger', config: { deviceId: 'bf0e5a1c2d3b4f6a7c8d9e', localKey: 'a1b2c3d4e5f6g7h8', protocolVersion: '3.5' } });
   });
 
-  test('from setup: a Zigbee plug comes with its gateway’s address, # its Zigbee address, and the gateway’s key and version', async () => {
+  test('from setup: a Zigbee gateway comes with the key Tuya hands the plugs behind it, its address and version; the plugs are found through it', async () => {
     const signIn = protocol.credentials!.actions!.find((action) => action.id === 'signIn')!;
     const listing = fakeTuya({
       '/v1.0/m/life/users/homes': () => [{ ownerId: 11, name: 'Home' }],
@@ -246,13 +246,14 @@ describe('the Smart Life login and listing', () => {
     const done = await signIn.run(ctx, { userCode: 'user-code', token: 'QRTOKEN' });
     expect(done.choices).toEqual([
       expect.objectContaining({
-        label: 'Fan plug',
-        address: '192.0.2.74#a4c1380000000001',
-        detail: 'Smart plug · through its gateway at 192.0.2.74',
+        label: 'Gateway',
+        address: '192.0.2.74',
+        detail: 'Zigbee gateway · a gateway: what is paired with it is found through it · on your network at 192.0.2.74',
         recommended: true,
-        config: { deviceId: 'bf7c0000000000000000zp', localKey: 'g1a2t3e4w5a6y7k8', protocolVersion: '3.4' },
+        config: { deviceId: 'bf8d0000000000000000gw', localKey: 'g1a2t3e4w5a6y7k8', protocolVersion: '3.4' },
       }),
     ]);
+    expect(done.detail).toContain('1 more is behind a gateway: add the gateway, and it is found through it');
   });
 
   test('a wrong user code says where to find the right one', async () => {

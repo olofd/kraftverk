@@ -20,4 +20,6 @@ export default defineTuyaSocket({
     supportNote: 'The layout most Tuya energy sockets use; the check step confirms it on yours.',
   },
   profiles: [GENERIC_SOCKET],
+  // Any socket: one on Wi-Fi, or one behind a Tuya Zigbee gateway that no package claims.
+  ways: ['directly', 'gateway'],
 });

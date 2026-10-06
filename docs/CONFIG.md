@@ -374,6 +374,7 @@ nothing wrong — and write back the same.
 | 4 | A setting is `setting.low`, not `$low`; a package's function is called by its id alone, without `call` |
 | 5 | A way may go `through` another device — an account, a gateway — named by its key, its address then its key there. Nothing older says so, so nothing changes |
 | 6 | The document's shape is as in 5; an integration's own entries changed, as its migrations say: a NIU scooter is reached through its NIU account, a device of its own |
+| 7 | As 6; a Zigbee socket is reached through its Tuya gateway, a device of its own (Tuya's migration): one gateway entry per gateway address, its key the one the sockets had, and each socket `via: gateway` by its Zigbee address |
 
 **An integration's own entries.** A change to what a type is reached by —
 a way it no longer has — is not the document's shape, but a home kept

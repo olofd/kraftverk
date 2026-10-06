@@ -24,33 +24,34 @@ for a while.
 
 ## Where it fits
 
-A device package (docs/PLAN-INTEGRATIONS.md §1): a product on the Tuya
-integration, `@kraftverk/integration-tuya`, as the ATORCH is.
+A device package (docs/PLAN-INTEGRATIONS.md §1.1): a product on the Tuya
+integration, `@kraftverk/integration-tuya`, as the ATORCH is — reached
+through the integration's gateway (`tuya.gateway`), a device of its own.
 
 ## Why a package of its own
 
-Because a model behind a gateway is a profile and an address, not new
-code in the socket every Tuya plug shares.
+Because a model behind a gateway is a profile, not new code in the socket
+every Tuya plug shares, nor in the gateway it is reached through.
 
 ## How it is reached
 
 A Zigbee plug has no IP address and no key of its own. kraftverk speaks to its
-**gateway**, and names the plug there by its **Zigbee address** (the `cid`,
-16 hex digits; Tuya's begin `a4c138`).
+**gateway** — a device of its own, `tuya.gateway`, one conversation for every
+plug behind it — and names the plug there by its **Zigbee address** (the
+`cid`, 16 hex digits; Tuya's begin `a4c138`), which is also its identity:
+`zigbee:<address>`, the same whatever reaches it.
 
 - **The key is the gateway's.** Smart Life lists the plug with a "local key":
   it is its gateway's — the 3.4 handshake with the gateway succeeds with it.
-  The gateway itself is listed with no key.
-- **The address is the gateway's, `#`, the plug's Zigbee address**:
-  `192.168.1.20#a4c1380000000001`. The whole address is the one plug: two
-  plugs behind one gateway are two addresses, each claimed by its own device,
-  each with a connection of its own to the gateway (the `lan` transport
-  connects to the part before `#`).
-- **Setup:** Add a device → Smart plugs → Tuya Zigbee plug → sign in with
-  Smart Life. The plug comes back with its gateway's key, and — when its
-  gateway is heard on the network — its address. The Zigbee address is Tuya's
-  `uuid` for it (**to confirm on the owner's account**; typed by hand
-  otherwise, as the gateway's IP address `#` the Zigbee address).
+  The gateway itself is listed with no key, so signing in for the gateway
+  gives it the key Tuya hands its plugs.
+- **Its way is "through its Zigbee gateway"**, its address the Zigbee address:
+  the plug's session reads it through the gateway's link (`ZigbeeLink`), and
+  never holds the key or a connection of its own.
+- **Setup:** add the gateway (Add a device → Gateways → Tuya Zigbee gateway →
+  sign in with Smart Life); the plugs behind it are then found through it —
+  on its page and under "Found near you" — as the gateway reports which it
+  can reach.
 - **Read every 15 s**: each read has the gateway ask the plug over Zigbee.
 
 ### What the gateway does, seen on the wire (2026-09-30)

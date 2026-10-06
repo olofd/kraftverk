@@ -46,22 +46,19 @@ const isIpv4 = (input: string): boolean => {
   return parts.length === 4 && parts.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255);
 };
 
-/** A Zigbee address, as a Tuya gateway names the device: 16 hex digits. */
-const CID = /^[0-9a-f]{16}$/i;
+/** A Zigbee address, as a Tuya gateway names the device behind it: 16 hex digits, its IEEE address. */
+export const CID = /^[0-9a-f]{16}$/i;
 
-/**
- * An address as typed: a device's IP address — or, for a device behind a Tuya
- * gateway, the gateway's IP address, `#`, and the device's Zigbee address.
- */
+/** An address as typed: a device's — or a gateway's — IP address on the home network. */
 export function parseTuyaAddress(input: string): string | null {
-  const [host = '', cid, ...rest] = input.trim().split('#');
-  if (rest.length || !isIpv4(host.trim())) return null;
-  if (cid === undefined) return host.trim();
-  return CID.test(cid.trim()) ? `${host.trim()}#${cid.trim().toLowerCase()}` : null;
+  return isIpv4(input.trim()) ? input.trim() : null;
 }
 
-/** The device behind a gateway an address names, or null for a device reached directly. */
-export const cidOfAddress = (address: string): string | null => address.split('#')[1] ?? null;
+/**
+ * A Zigbee device's identity, by its Zigbee address: the same whichever
+ * gateway — or whichever integration — reaches it.
+ */
+export const zigbeeIdentity = (cid: string): string => identityOf('zigbee', cid.toLowerCase());
 
 /** Categories Tuya gives its gateways: Zigbee, Zigbee with Wi-Fi, and the multi-mode ones. */
 const GATEWAY_CATEGORIES = new Set(['wg2', 'wfcon', 'wg', 'dgnzk', 'wgsxj']);
@@ -75,8 +72,7 @@ export const CREDENTIALS: ConfigSchema = {
     deviceId: {
       type: 'string',
       title: 'Device id',
-      description: 'Filled in when the plug is found on the network; the Smart Life app calls it "Virtual ID".',
-      required: true,
+      description: 'Filled in when the plug or gateway is found on the network; the Smart Life app calls it "Virtual ID". A plug cannot be spoken to without it; a gateway on 3.4 or 3.5 can.',
     },
     localKey: { type: 'string', presentation: 'secret', title: 'Local key', description: '16 characters. It never leaves the server.', required: true },
     protocolVersion: {
@@ -220,32 +216,34 @@ const signIn: SetupAction = {
       }
 
       const account = await smartLifeDevices(ctx.http, session);
-      const devices = account.filter((device) => device.localKey);
+      /*
+        What is spoken to on the home network: a plug on Wi-Fi, or a Zigbee
+        gateway. A device behind a gateway — a Zigbee plug — is not: it is
+        added through its gateway once that is here, and found there.
+      */
+      const subs = account.filter((device) => device.sub);
+      const gateways = account.filter((device) => GATEWAY_CATEGORIES.has(device.category ?? ''));
+      /*
+        Tuya lists a gateway with no key of its own, and hands the devices
+        behind it its key: with one gateway on the account, that is its key.
+      */
+      const keyOf = (device: (typeof account)[number]) => device.localKey || (gateways.length === 1 && gateways[0] === device ? (subs.find((sub) => sub.localKey)?.localKey ?? '') : '');
+      const devices = account.filter((device) => !device.sub).map((device) => ({ ...device, localKey: keyOf(device) })).filter((device) => device.localKey);
+      const behind = subs.length;
       if (!devices.length) return { ok: false, detail: 'Signed in, but the account has no devices that can be reached on a home network.' };
       const here = heard(ctx.sightings);
-      /*
-        A device behind a gateway — a Zigbee plug — has no address of its own,
-        and carries its gateway's key. Its gateway is the account's gateway
-        heard on this network; with one such, that is the one. Its Zigbee
-        address — the `cid` the gateway knows it by — is Tuya's `uuid` for it.
-      */
-      const gateways = account.filter((device) => (!device.localKey || GATEWAY_CATEGORIES.has(device.category ?? '')) && here.has(device.id));
-      const gateway = gateways.length === 1 ? here.get(gateways[0]!.id)! : null;
-      const reach = (device: (typeof devices)[number]) => {
-        if (!device.sub) return here.get(device.id) ?? null;
-        const cid = device.uuid && CID.test(device.uuid) ? device.uuid.toLowerCase() : null;
-        return gateway && cid ? { address: `${gateway.address}#${cid}`, version: gateway.version, through: gateway.address } : null;
-      };
       const choices: SetupChoice[] = devices
         .map((device) => {
-          const seen = reach(device);
+          const seen = here.get(device.id) ?? null;
+          const gateway = GATEWAY_CATEGORIES.has(device.category ?? '');
           const plug = device.category === 'cz' || device.category === 'pc';
           return {
             id: device.id,
             label: device.name || device.productName || device.id,
             detail: [
               device.productName,
-              seen && 'through' in seen ? `through its gateway at ${seen.through}` : seen ? `on your network at ${seen.address}` : device.sub ? 'behind a gateway not heard on this network' : 'not heard on this network yet',
+              gateway ? 'a gateway: what is paired with it is found through it' : null,
+              seen ? `on your network at ${seen.address}` : 'not heard on this network yet',
               device.online === false ? 'offline' : null,
             ]
               .filter(Boolean)
@@ -257,12 +255,13 @@ const signIn: SetupAction = {
             },
             ...(seen ? { address: seen.address } : {}),
             ...(device.name ? { name: device.name } : {}),
-            recommended: plug && Boolean(seen),
+            recommended: (plug || gateway) && Boolean(seen),
           };
         })
         // What is on this network first, then plugs, then the rest.
         .sort((a, b) => Number(Boolean(b.address)) - Number(Boolean(a.address)) || Number(b.recommended) - Number(a.recommended) || a.label.localeCompare(b.label));
-      return { ok: true, detail: `Signed in: ${devices.length} device${devices.length === 1 ? '' : 's'} on the account. Which is it?`, choices };
+      const through = behind ? ` ${behind} more ${behind === 1 ? 'is' : 'are'} behind a gateway: add the gateway, and ${behind === 1 ? 'it is' : 'they are'} found through it.` : '';
+      return { ok: true, detail: `Signed in: ${devices.length} device${devices.length === 1 ? '' : 's'} on the account. Which is it?${through}`, choices };
     } catch (error) {
       return { ok: false, detail: error instanceof SmartLifeError ? error.message : (error as Error).message };
     }
@@ -303,7 +302,7 @@ const protocol: Protocol = {
           'keeps it where kraftverk expects it.',
       },
       parseAddress: parseTuyaAddress,
-      addressLabel: 'IP address (behind a gateway: its IP address#Zigbee address)',
+      addressLabel: 'IP address',
     },
   },
   // Signing in lists the plugs by name, with their keys and — matched against the network — where they are: so it comes first.
@@ -314,23 +313,21 @@ export default protocol;
 
 /**
  * A Tuya conversation over an open connection: its channel, and the device id,
- * version and local key setup stored with it. `onPush` hears what the plug
- * sends unasked.
+ * version and local key setup stored with it. `onPush` hears what the device
+ * sends unasked. With `gateway`, the conversation is a gateway's, for every
+ * device behind it.
  */
-export function linkOver(connection: OpenConnection, options: Pick<TuyaLinkOptions, 'log' | 'onPush' | 'onPresence'> = {}): TuyaLink {
+export function linkOver(connection: OpenConnection, options: Pick<TuyaLinkOptions, 'log' | 'onPush' | 'onPresence' | 'gateway'> = {}): TuyaLink {
   const channel = channelOf(connection, 'bytes', 'Tuya local needs a byte stream');
   const localKey = directOf(connection, 'Tuya local needs a byte stream').secrets.get('localKey');
-  if (!localKey) throw new Error('No local key: add it in the plug’s connection settings');
+  if (!localKey) throw new Error('No local key: add it in the connection’s settings');
   const deviceId = String(connection.config.deviceId ?? '');
-  if (!deviceId) throw new Error('No device id: set the plug up again from the network');
+  if (!deviceId && !options.gateway) throw new Error('No device id: set the plug up again from the network');
   const version = String(connection.config.protocolVersion ?? 'auto');
-  // Behind a gateway, the address names the device there: the link speaks to the gateway about it.
-  const cid = cidOfAddress(connection.address);
   return new TuyaLink(channel, {
     deviceId,
     localKey,
     version: (VERSIONS as readonly string[]).includes(version) ? (version as ProtocolVersion) : 'auto',
-    ...(cid ? { cid } : {}),
     ...options,
   });
 }

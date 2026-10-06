@@ -20,10 +20,12 @@ import openMeteoWeatherAutomation from '@kraftverk/integration-open-meteo/automa
 import openMeteoProtocol from '@kraftverk/integration-open-meteo/protocol';
 import aferiyP280Type from '@kraftverk/device-aferiy-p280/type';
 import sydpowerProtocol from '@kraftverk/integration-sydpower/protocol';
+import tuyaGatewayType from '@kraftverk/integration-tuya/gateway';
 import tuyaPlugType from '@kraftverk/integration-tuya/plug';
 import atorchS1wType from '@kraftverk/device-atorch-s1w';
 import tuyaZigbeePlugType from '@kraftverk/device-tuya-zigbee-plug';
 import tuyaProtocol from '@kraftverk/integration-tuya/protocol';
+import tuyaMigrations from '@kraftverk/integration-tuya/migrations';
 import transportBle from '@kraftverk/transport-ble';
 import transportHttps from '@kraftverk/transport-https';
 import transportLan from '@kraftverk/transport-lan';
@@ -35,7 +37,7 @@ export const INTEGRATIONS: readonly InstalledIntegration[] = [
   { id: 'niu', name: 'NIU', protocols: [niuProtocol], types: [{ type: niuAccountType, automation: null }, { type: niuScooterType, automation: null }], products: [{ type: niuUqiGtType, automation: null }], migrations: niuMigrations },
   { id: 'open-meteo', name: 'Open-Meteo', protocols: [openMeteoProtocol], types: [{ type: openMeteoWeatherType, automation: openMeteoWeatherAutomation }], products: [] },
   { id: 'sydpower', name: 'Sydpower', protocols: [sydpowerProtocol], types: [], products: [{ type: aferiyP280Type, automation: null }] },
-  { id: 'tuya', name: 'Tuya', protocols: [tuyaProtocol], types: [{ type: tuyaPlugType, automation: null }], products: [{ type: atorchS1wType, automation: null }, { type: tuyaZigbeePlugType, automation: null }] },
+  { id: 'tuya', name: 'Tuya', protocols: [tuyaProtocol], types: [{ type: tuyaGatewayType, automation: null }, { type: tuyaPlugType, automation: null }], products: [{ type: atorchS1wType, automation: null }, { type: tuyaZigbeePlugType, automation: null }], migrations: tuyaMigrations },
 ];
 
 /** Every transport, as data: what the hub knows of it wherever it runs. Its entry for a place is that place's file. */

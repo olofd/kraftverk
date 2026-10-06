@@ -24,7 +24,7 @@ afterEach(async () => {
 describe('what can be added', () => {
   test('every installed type, by category, with how it can be reached and whether this home can', async () => {
     const listing = await t.home.deviceTypes();
-    expect(Object.keys(listing.categories)).toEqual(['power-station', 'smart-plug', 'weather', 'energy-price', 'vehicle', 'account']);
+    expect(Object.keys(listing.categories)).toEqual(['power-station', 'smart-plug', 'weather', 'energy-price', 'vehicle', 'account', 'gateway']);
     const station = listing.types.find((type) => type.id === 'test.station')!;
     expect(station.meta.category).toBe('power-station');
     // Its own ways, and simulated — which every type has, and a home can always hold.

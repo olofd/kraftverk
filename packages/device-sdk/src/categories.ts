@@ -31,6 +31,8 @@ export const CATEGORIES = {
   vehicle: { label: 'Vehicles', singular: 'vehicle', icon: 'navigation' },
   // A sign-in to someone's cloud, and what is reached through it: an account and the scooters on it.
   account: { label: 'Accounts', singular: 'account', icon: 'user' },
+  // A device other devices are reached through, on the home network: a Zigbee gateway and the plugs paired with it.
+  gateway: { label: 'Gateways', singular: 'gateway', icon: 'share-2' },
 } as const satisfies Record<string, CategorySpec>;
 
 export type CategoryId = keyof typeof CATEGORIES;

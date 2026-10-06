@@ -71,7 +71,7 @@ export const VOCABULARY: Vocabulary = {
 };
 
 /** A whole document, as the owner's charging chain would be written. */
-export const DOCUMENT = `kraftverk: 6
+export const DOCUMENT = `kraftverk: 7
 
 home:
   policy: { loadWatts: 50, reserveSoc: 20 }
@@ -88,7 +88,7 @@ devices:
     name: Smart plug
     connect:
       - via: lan
-        address: 192.0.2.10#a4c1380000000001
+        address: 192.0.2.10
         settings: { deviceId: bf7c0000000000000000zp, protocolVersion: "3.4" }
         secrets: { localKey: !secret smart-plug-key }
   ac-in-meter:
